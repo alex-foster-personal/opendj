@@ -226,17 +226,36 @@ def is_redirect(tok: str) -> bool:
 # ----- commands launched from inside another command's arguments -------------------
 
 FIND_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
-UV_RUN_FLAGS_WITH_VALUE = frozenset(
-    {"--with", "--with-editable", "--with-requirements", "--project", "--directory"}
-    | {"--python", "-p", "--extra", "--group", "--package", "--env-file", "--index"}
+# Every option the tool's own help shows with a <VALUE> (`uv run --help`, uv 0.12.4
+# and 0.12.19; `pnpm help exec`, pnpm 11.22). A missing one would make its value
+# the launched command; test_launcher_value_options_match_the_tools_own_help holds
+# these to the installed tool.
+UV_RUN_VALUE_OPTIONS = frozenset(
+    {"--allow-insecure-host", "--cache-dir", "--color", "--config-file", "--config-setting"}
+    | {"--config-settings-package", "--default-index", "--directory", "--env-file"}
+    | {"--exclude-newer", "--exclude-newer-package", "--extra", "--extra-index-url"}
+    | {"--find-links", "--fork-strategy", "--group", "--index", "--index-strategy"}
+    | {"--index-url", "--keyring-provider", "--link-mode", "--no-binary-package"}
+    | {"--no-build-isolation-package", "--no-build-package", "--no-editable-package"}
+    | {"--no-extra", "--no-group", "--no-sources-package", "--only-group", "--package"}
+    | {"--prerelease", "--prerelease-package", "--project", "--python", "--python-platform"}
+    | {"--refresh-package", "--reinstall-package", "--resolution", "--upgrade-group"}
+    | {"--upgrade-package", "--with", "--with-editable", "--with-requirements"}
+    | {"-C", "-P", "-f", "-i", "-p", "-w"}
 )
-# name: (tokens that start the launched command, flags that take a value before it,
-# the workspace dir it resolves in first, or "" when it is a PATH lookup on the runner).
-LAUNCHERS: dict[str, tuple[frozenset[str], frozenset[str], str]] = {
-    "find": (FIND_ACTIONS, frozenset(), ""),
-    "doppler": (frozenset({"--"}), frozenset(), ""),
-    "uv": (frozenset({"run"}), UV_RUN_FLAGS_WITH_VALUE, ".venv/bin/"),
-    "pnpm": (frozenset({"exec"}), frozenset(), "node_modules/.bin/"),
+PNPM_EXEC_VALUE_OPTIONS = frozenset(
+    {"--changed-files-ignore-pattern", "--dir", "--filter", "--filter-prod", "--loglevel"}
+    | {"--test-pattern", "-C", "-F"}
+)
+# name: (tokens that start the launched command, options that take a value before it).
+# `uv run` and `pnpm exec` look in the project environment first and then fall back
+# to the runner PATH, so their command is recorded like any other; the completeness
+# test allowlists the ones the project itself provides (PROJECT_PROVIDED).
+LAUNCHERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    "find": (FIND_ACTIONS, frozenset()),
+    "doppler": (frozenset({"--"}), frozenset()),
+    "uv": (frozenset({"run"}), UV_RUN_VALUE_OPTIONS),
+    "pnpm": (frozenset({"exec"}), PNPM_EXEC_VALUE_OPTIONS),
 }
 
 
@@ -244,11 +263,9 @@ def launched_commands(name: str, toks: list[str]) -> list[list[str]]:
     """The argv of each command `name` launches from its arguments `toks`.
 
     `find ... -exec CMD {} +` (a `;` terminator is already a separator token),
-    `doppler run -- CMD`, `uv run [flags] CMD`, `pnpm exec CMD`. A workspace
-    launcher's CMD is prefixed with its workspace dir, which the walker reads as a
-    workspace file rather than an executable the runner provides.
+    `doppler run -- CMD`, `uv run [options] CMD`, `pnpm exec [options] CMD`.
     """
-    starts, flags_with_value, workspace = LAUNCHERS[name]
+    starts, value_options = LAUNCHERS[name]
     args = list(takewhile(lambda tok: not is_separator(tok), toks))
     found: list[list[str]] = []
     idx = 0
@@ -257,12 +274,11 @@ def launched_commands(name: str, toks: list[str]) -> list[list[str]]:
         if args[idx - 1] not in starts:
             continue
         while name != "find" and idx < len(args) and args[idx].startswith("-"):
-            idx += 2 if args[idx] in flags_with_value else 1
+            idx += 2 if args[idx] in value_options else 1
         end = len(args)
         if name == "find":
             end = next((j for j in range(idx + 1, end) if args[j - 1 : j + 1] == ["{}", "+"]), end)
         if idx < end:
-            cmd = args[idx] if "/" in args[idx] or not workspace else workspace + args[idx]
-            found.append([cmd, *args[idx + 1 : end]])
+            found.append(args[idx:end])
         idx = end if name == "find" else len(args)
     return found
