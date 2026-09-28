@@ -1,5 +1,7 @@
 """ops/ci/runner-hooks/job-completed.sh kills what a finished job left behind.
 
+[if] a finished job leaves a process alive [then] fail, [else stop].
+
 Linux only (reads /proc). The hook is deployed OUTSIDE the checkout on each
 runner host as ACTIONS_RUNNER_HOOK_JOB_COMPLETED; this pins the source it is
 deployed from.

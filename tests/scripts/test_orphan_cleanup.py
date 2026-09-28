@@ -1,5 +1,7 @@
 """Test-spawned servers never outlive their run; the reaper spares real services.
 
+[if] a test server outlives its owner run [then] fail, [else stop].
+
 Real processes only: every assertion here is about a live pid on this host.
 
 Regression lines:
