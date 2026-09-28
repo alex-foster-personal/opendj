@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -321,6 +322,26 @@ def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
         _wait_for(lambda: not _alive(holder), GONE_WITHIN_S, f"webServer {holder} to die with the runner ({sig.name})")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _playwright_configs() -> list[Path]:
+    return [FRONTEND / "playwright.config.ts", *sorted((FRONTEND / "tests" / "e2e").glob("playwright.*.config.ts"))]
+
+
+def test_every_playwright_webserver_command_is_guarded() -> None:
+    """The class, not an instance: a new config with a bare webServer command
+    would leak exactly like the 43 this change wrapped."""
+    configs = _playwright_configs()
+    assert len(configs) > 20, f"found only {len(configs)} configs: the glob is wrong, not the tree clean"
+    commands = 0
+    unguarded: list[str] = []
+    for config in configs:
+        for match in re.finditer(r"\bcommand:\s*(\S{0,40})", config.read_text()):
+            commands += 1
+            if not match.group(1).startswith("guardedWebServerCommand("):
+                unguarded.append(f"{config.name}: command: {match.group(1)}")
+    assert commands >= 40, f"only {commands} webServer commands found: the pattern stopped matching"
+    assert not unguarded, "unguarded webServer commands:\n" + "\n".join(unguarded)
 
 
 # ---------------------------------------------------------------- reaper

@@ -8,6 +8,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 import { resolveEndpoints, seedDataDir } from './library-jobs-e2e-endpoints';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -66,7 +67,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: `uv run --no-sync python -m apps.webui.server --host 127.0.0.1 --port ${endpoints.backendPort} --prod`,
+			command: guardedWebServerCommand('library-jobs-engine', `uv run --no-sync python -m apps.webui.server --host 127.0.0.1 --port ${endpoints.backendPort} --prod`),
 			cwd: REPOSITORY_ROOT,
 			url: `${endpoints.backendOrigin}/api/v1/health`,
 			reuseExistingServer: false,
@@ -74,7 +75,7 @@ export default defineConfig({
 			env: engineEnv
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.library-jobs.config.ts',
+			command: guardedWebServerCommand('library-jobs-vite', 'pnpm exec vite --config tests/e2e/vite.library-jobs.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${endpoints.frontendOrigin}/performance`,
 			reuseExistingServer: false,
