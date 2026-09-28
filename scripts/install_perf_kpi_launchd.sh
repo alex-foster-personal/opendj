@@ -3,15 +3,19 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=./perf_kpi_launchd_decide.sh
+source "$REPO_ROOT/scripts/perf_kpi_launchd_decide.sh"
 STATE_DIR="${MDT_PERF_KPI_STATE_DIR:-$HOME/.local/state/af-perf-kpi}"
 INSTALL=0
 HOST_LABEL="${MDT_PERF_KPI_MACHINE:-}"
+NIGHTLY_ONLY=0
 
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
     --state-dir) STATE_DIR="${2:?}"; shift 2 ;;
     --host-label) HOST_LABEL="${2:?}"; shift 2 ;;
+    --nightly-only) NIGHTLY_ONLY=1; shift ;;
     *) echo "[ERROR] unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -61,17 +65,44 @@ render() {
 
 render "$REPO_ROOT/ops/perf/com.af.perf-kpi-nightly.plist.template" \
   "$HOME/Library/LaunchAgents/com.af.perf-kpi-nightly.plist"
-render "$REPO_ROOT/ops/perf/com.af.perf-kpi-health.plist.template" \
-  "$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
+
+# --nightly-only: for a host with no live-review-preview service at the health leg's
+# target (no com.af.opendj-preview-engine listener, e.g. demon-llama), skip the health
+# unit entirely rather than install a job shaped to fail every 10 minutes with an
+# invalid restart. Both plist templates already stamp their own AF_SERVICE_ID in
+# EnvironmentVariables (process-identity attribution), unchanged by this flag.
+labels=(com.af.perf-kpi-nightly)
+if [[ "$NIGHTLY_ONLY" -ne 1 ]]; then
+  render "$REPO_ROOT/ops/perf/com.af.perf-kpi-health.plist.template" \
+    "$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
+  labels+=(com.af.perf-kpi-health)
+fi
 
 if [[ "$INSTALL" -ne 1 ]]; then
+  if [[ "$NIGHTLY_ONLY" -eq 1 ]]; then
+    # A health plist left by an earlier render would still load at the next login.
+    remove_stale_health_plist "$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist" || exit 1
+  fi
   echo "[OK] rendered perf KPI launchd plists (launchctl not touched)"
   exit 0
 fi
 
 uid="$(id -u)"
-for label in com.af.perf-kpi-nightly com.af.perf-kpi-health; do
+for label in "${labels[@]}"; do
   launchctl bootout "gui/$uid/$label" 2>/dev/null || true
   launchctl bootstrap "gui/$uid" "$HOME/Library/LaunchAgents/$label.plist"
 done
+if [[ "$NIGHTLY_ONLY" -eq 1 ]]; then
+  # A host moving from the plain install to --nightly-only still has the health agent
+  # loaded, and its plist in LaunchAgents is reloaded at every login. Unload and remove
+  # it, or the unit this flag exists to prevent keeps failing every 10 minutes.
+  # The unload/remove decision and its real launchctl calls live in
+  # cleanup_stale_health_agent (scripts/perf_kpi_launchd_decide.sh), which a
+  # macOS test drives directly against a throwaway agent -- the installer's
+  # own bootstrap loop above unconditionally touches the real
+  # com.af.perf-kpi-nightly label and so is never a safe thing to point at a
+  # fake target.
+  health_plist="$HOME/Library/LaunchAgents/com.af.perf-kpi-health.plist"
+  cleanup_stale_health_agent "$uid" "com.af.perf-kpi-health" "$health_plist" || exit 1
+fi
 echo "[OK] perf KPI launchd agents installed"
