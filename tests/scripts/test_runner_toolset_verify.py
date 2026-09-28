@@ -18,6 +18,8 @@ Regression lines:
   - if an apt package on an OLDER revision than the pin reports OK then broken
   - if a `provision: job` entry absent from the host fails the run then broken
   - if a pin followed by a prerelease or build suffix reports OK then broken
+  - if one runner job PATH lacking or drifting on a tool leaves the host OK, or
+    the report does not name that runner, then broken
 """
 
 from __future__ import annotations
@@ -103,6 +105,28 @@ def test_truncated_probe_is_unknown_even_with_records() -> None:
     """A probe cut off before END cannot vouch for anything, OK records included."""
     results = rtv.classify([_entry("a", "1")], 0, _record("a", 0, "1"), "")
     assert results[0].status == "UNKNOWN"
+
+
+def _two_runners(first: list[str], second: list[str]) -> list[str]:
+    src = f"{rtv.RECORD} PATHSRC"
+    return [f"{src} /opt/actions-runner", *first, f"{src} /opt/actions-runner-4", *second]
+
+
+@pytest.mark.parametrize(
+    ("second", "status", "named"),
+    [
+        ([_record("a", 0, "a 1")], "OK", False),
+        ([_record("a", 0, "a 2")], "MISMATCH", True),
+        ([_record("a", 1, "a: not found")], "MISSING", True),
+        ([], "UNKNOWN", False),
+    ],
+)
+def test_a_host_verdict_is_its_worst_runners(second: list[str], status: str, named: bool) -> None:
+    """Each runner job PATH is its own verdict: one runner short of a tool fails the
+    host and is named; a runner the probe never reached for an entry is UNKNOWN."""
+    [result] = _classify([_entry("a", "1")], _two_runners([_record("a", 0, "a 1")], second))
+    assert result.status == status, result
+    assert result.got.startswith("/opt/actions-runner-4: ") == named, result
 
 
 @pytest.mark.parametrize(

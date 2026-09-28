@@ -68,7 +68,7 @@ def _dirs_of(*tools: str) -> list[str]:
 
 def _probe_locally(
     entries: list[dict],
-    runner_dir: Path,
+    runner_dir: Path | None,
     login_path: str | None = None,
     env: dict[str, str] | None = None,
 ) -> tuple[list, str]:
@@ -78,7 +78,7 @@ def _probe_locally(
     runner user's real HOME, and rustup reads its default toolchain from there."""
     proc = subprocess.run(
         ["bash", "-s"],
-        input=rtv._probe_script(entries, str(runner_dir)),
+        input=rtv._probe_script(entries, str(runner_dir) if runner_dir else None),
         capture_output=True,
         text=True,
         timeout=120,
@@ -373,3 +373,137 @@ def test_a_readable_runner_path_is_the_path_every_check_uses(tmp_path: Path) -> 
     status = {r.name: (r.status, r.got) for r in results}
     assert status["bash"][0] == "OK", status
     assert status["elsewhere"][0] == "MISSING" and "PATH" in status["elsewhere"][1], status
+
+
+# ----- every configured runner on the host, not the first one found ---------------------
+
+
+def _runner_dir(
+    root: Path, name: str, path_dirs: list[str] | None, configured: bool = True
+) -> Path:
+    """A runner install dir: `.runner` marks it configured, `.path` is its job PATH."""
+    runner = root / name
+    runner.mkdir()
+    if configured:
+        (runner / ".runner").write_text("{}", encoding="utf-8")
+    if path_dirs is not None:
+        (runner / ".path").write_text(":".join(path_dirs), encoding="utf-8")
+    return runner
+
+
+def _discover_runners_under(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
+    """Point the verifier's own runner-dir globs at `root`, keeping their shape."""
+    globs = rtv.CFG_RUNNER_DIR_GLOBS.replace("/opt/", f"{root}/").replace("/home/*/", f"{root}/")
+    assert globs != rtv.CFG_RUNNER_DIR_GLOBS, rtv.CFG_RUNNER_DIR_GLOBS
+    monkeypatch.setattr(rtv, "CFG_RUNNER_DIR_GLOBS", globs)
+
+
+def _elsewhere_entry(job_dirs: list[str]) -> tuple[dict, str]:
+    """An entry whose provided executable sits only in a dir no job PATH holds."""
+    outside, outside_dir = _only_on_login_path(job_dirs)
+    entry = _entry("elsewhere", "1", kind="binary", provides=[outside])
+    entry["verify"] = "echo elsewhere 1"
+    return entry, outside_dir
+
+
+@pytest.mark.parametrize(
+    ("lacking", "complete"),
+    [("actions-runner", "actions-runner-2"), ("actions-runner-3", "actions-runner-2")],
+)
+def test_every_configured_runner_path_is_verified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lacking: str, complete: str
+) -> None:
+    """A tool on one runner's job PATH says nothing about another's: the host is
+    MISSING when any configured runner, suffixed or not, cannot resolve it."""
+    _discover_runners_under(monkeypatch, tmp_path)
+    job_dirs = _dirs_of(*PROBE_NEEDS)
+    entry, outside_dir = _elsewhere_entry(job_dirs)
+    bad = _runner_dir(tmp_path, lacking, job_dirs)
+    _runner_dir(tmp_path, complete, [outside_dir, *job_dirs])
+    results, stdout = _probe_locally([entry], None)
+    [result] = results
+    assert result.status == "MISSING" and str(bad) in result.got, (result, stdout)
+    assert rtv.exit_code(results) == 1
+
+
+def test_runners_sharing_a_path_are_probed_once_and_unconfigured_dirs_are_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Overshoot control: identical job PATHs give identical verdicts, so one probe
+    covers them, and a dir with no `.runner` is not a runner to verify."""
+    _discover_runners_under(monkeypatch, tmp_path)
+    job_dirs = _dirs_of(*PROBE_NEEDS)
+    entry, outside_dir = _elsewhere_entry(job_dirs)
+    first = _runner_dir(tmp_path, "actions-runner", [outside_dir, *job_dirs])
+    second = _runner_dir(tmp_path, "actions-runner-2", [outside_dir, *job_dirs])
+    _runner_dir(tmp_path, "actions-runner-cache", None, configured=False)
+    results, stdout = _probe_locally([_bash_entry(job_dirs), entry], None)
+    assert {r.name: r.status for r in results} == {"bash": "OK", "elsewhere": "OK"}, results
+    assert stdout.count(f"{rtv.RECORD} PATHSRC ") == 1, stdout
+    assert f"{rtv.RECORD} PATHSRC {first}" in stdout, stdout
+    assert f"{rtv.RECORD} ALSO {second} {first}" in stdout, stdout
+
+
+def test_a_configured_runner_without_a_path_makes_the_host_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One runner whose job PATH cannot be read cannot be vouched for, so the whole
+    run refuses (UNKNOWN) rather than verifying only the readable ones."""
+    _discover_runners_under(monkeypatch, tmp_path)
+    job_dirs = _dirs_of(*PROBE_NEEDS)
+    _runner_dir(tmp_path, "actions-runner", job_dirs)
+    unreadable = _runner_dir(tmp_path, "actions-runner-2", None)
+    results, stdout = _probe_locally([_bash_entry(job_dirs)], None)
+    assert {r.status for r in results} == {"UNKNOWN"}, results
+    assert str(unreadable) in results[0].got, results
+    assert f"{rtv.RECORD} END" not in stdout, stdout
+
+
+# ----- a Playwright browser is its payload, not its cache dir name ------------------------
+
+PLAYWRIGHT_DIR_RE = re.compile(r"ms-playwright/([\w-]+-\d+)")
+
+
+def _playwright_entries() -> list[tuple[dict, str]]:
+    """(entry, revision dir name) for every Playwright entry in the live manifest."""
+    entries = [e for e in load_manifest()["entries"] if e["kind"] == "playwright"]
+    assert entries, "no playwright entries in the manifest: the test checks nothing"
+    named = [(e, PLAYWRIGHT_DIR_RE.search(e["verify"])) for e in entries]
+    unnamed = [e["name"] for e, found in named if not found]
+    assert not unnamed, f"verify names no ms-playwright revision dir: {unnamed}"
+    return [(e, found.group(1)) for e, found in named if found]
+
+
+@pytest.mark.parametrize("state", ["interrupted-install", "payload-deleted"])
+def test_a_playwright_revision_dir_without_its_payload_is_missing(
+    tmp_path: Path, state: str
+) -> None:
+    """An interrupted install leaves the revision dir with no INSTALLATION_COMPLETE
+    marker; a later cleanup can leave the marker and delete the browser. Neither
+    can launch, so neither may verify OK on the dir name alone."""
+    home = tmp_path / "home"
+    entries = _playwright_entries()
+    for _, dirname in entries:
+        revision = home / ".cache" / "ms-playwright" / dirname
+        revision.mkdir(parents=True)
+        if state == "payload-deleted":
+            (revision / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
+            (revision / "DEPENDENCIES_VALIDATED").write_text("", encoding="utf-8")
+    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "ls", "test"))
+    results, _ = _probe_locally([e for e, _ in entries], runner, env={"HOME": str(home)})
+    assert {r.name: r.status for r in results} == {e["name"]: "MISSING" for e, _ in entries}, (
+        results
+    )
+
+
+def test_a_complete_playwright_install_verifies_ok(tmp_path: Path) -> None:
+    """Overshoot control on the real cache: a revision Playwright itself marked
+    INSTALLATION_COMPLETE, with its payload, verifies OK."""
+    cache = Path.home() / ".cache" / "ms-playwright"
+    entries = _playwright_entries()
+    absent = [d for _, d in entries if not (cache / d / "INSTALLATION_COMPLETE").is_file()]
+    if absent:
+        pytest.skip(f"UNAVAILABLE: no completed Playwright install here for {absent}")
+    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "ls", "test"))
+    results, _ = _probe_locally([e for e, _ in entries], runner)
+    assert {r.status for r in results} == {"OK"}, results

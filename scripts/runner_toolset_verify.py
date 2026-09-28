@@ -1,9 +1,11 @@
 """Verify a CI runner host against ci/runner-toolset.yml, as the runner user.
 
 Runs every manifest entry's `verify` command on the host, as the runner user,
-under the runner's own job PATH (`<runner-dir>/.path`), and checks each
-`provides` executable resolves on that PATH for kinds apt, binary and
-toolchain. Read-only: it installs, writes and restarts nothing.
+under each configured runner's own job PATH (`<runner-dir>/.path`, for every
+runner dir holding `.runner`; dirs sharing a `.path` are probed once), and
+checks each `provides` executable resolves on that PATH for kinds apt, binary
+and toolchain. The host verdict per entry is its worst runner's, naming that
+runner. Read-only: it installs, writes and restarts nothing.
 
 Per entry it prints one of:
   OK        verify exited 0 and its output carries the pinned version
@@ -37,6 +39,11 @@ Requirements:
     [if] a verify prints another version [then ⛔️] it reports OK.
     [if] a provided executable is absent from the runner PATH [then ⛔️] OK.
     [if] no readable runner .path exists [then ⛔️] any entry reports OK or MISSING.
+  ✔︎ ✅ 🎯 R3 every configured runner dir (holding `.runner`) the user owns is
+    verified under its own `.path`, and the host verdict is the worst runner's.
+    [if] one of several runners lacks a tool the others have [then ⛔️] OK.
+    [if] the unsuffixed `actions-runner` dir is skipped [then ⛔️] it is verified.
+    [if] one configured runner has no readable .path [then ⛔️] any entry reports OK.
     [if] a pinned tool reports the pin plus a `-nightly`/`-rc` suffix [then ⛔️] OK.
   ✔︎ ✅ R2 exit code follows the contract above.
     [if] one entry is UNKNOWN and the rest OK [then ⛔️] exit 0.
@@ -52,13 +59,17 @@ import re
 import shlex
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from scripts.runner_toolset_scan import load_manifest
 
 CFG_TIMEOUT_PER_ENTRY_S = 60
 CFG_SSH_TIMEOUT_S = 900
-CFG_RUNNER_DIR_GLOBS = "/opt/actions-runner-* /home/*/actions-runner-*"
+# A configured runner install is a dir holding `.runner`; a host may run many
+# (agentbox: actions-runner plus -2..-15; nucbox: plus -2..-30).
+CFG_RUNNER_DIR_GLOBS = (
+    "/opt/actions-runner /opt/actions-runner-* /home/*/actions-runner /home/*/actions-runner-*"
+)
 PATH_KINDS = {"apt", "binary", "toolchain"}
 RECORD = "@@RTV@@"
 
@@ -76,26 +87,52 @@ class Result:
 
 
 def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
-    """One bash script that runs every verify and emits a record per entry."""
+    """One bash script that runs every verify once per distinct runner job PATH.
+
+    Without `runner_dir` it verifies every configured runner dir the user owns:
+    `.path` is per runner install, so one runner's PATH vouches for no other.
+    Dirs whose `.path` is identical get identical verdicts and are probed once."""
+    given = shlex.quote(runner_dir) if runner_dir else "''"
     lines = [
         "set -u",
-        f"rd={shlex.quote(runner_dir) if runner_dir else ''}",
-        f'[ -n "$rd" ] || for d in {CFG_RUNNER_DIR_GLOBS}; do'
-        ' [ -O "$d" ] && [ -r "$d/.path" ] && rd=$d && break; done',
+        f"given={given}",
+        "rds=()",
+        'if [ -n "$given" ]; then rds=("$given"); else',
+        f"  for d in {CFG_RUNNER_DIR_GLOBS}; do",
+        '    [ -d "$d" ] && [ -O "$d" ] && [ -f "$d/.runner" ] || continue',
+        '    case " ${rds[*]:-} " in *" $d "*) ;; *) rds+=("$d") ;; esac',
+        "  done",
+        "fi",
         # The job PATH is a prerequisite: the invoking shell's PATH says nothing
         # about what a job resolves, so without it nothing is verified (UNKNOWN).
-        'if [ -z "$rd" ] || [ ! -r "$rd/.path" ] || [ ! -s "$rd/.path" ]; then',
-        f'  echo "no readable, non-empty runner .path (runner dir: ${{rd:-none found under'
-        f' {CFG_RUNNER_DIR_GLOBS}}}); refusing to verify against the login PATH" >&2',
+        'if [ "${#rds[@]}" -eq 0 ]; then',
+        '  echo "no configured runner dir (with .runner) owned by this user under'
+        f' {CFG_RUNNER_DIR_GLOBS}; refusing to verify against the login PATH" >&2',
         "  exit 96",
         "fi",
-        'export PATH="$(cat "$rd/.path")"',
-        f'echo "{RECORD} PATHSRC $rd"',
-        "cd ~ || exit 97",
+        'for rd in "${rds[@]}"; do',
+        '  if [ ! -r "$rd/.path" ] || [ ! -s "$rd/.path" ]; then',
+        '    echo "no readable, non-empty runner .path in $rd; refusing to verify'
+        ' against the login PATH" >&2',
+        "    exit 96",
+        "  fi",
+        "done",
+        "probed=()",
+        'for rd in "${rds[@]}"; do',
+        '  path="$(cat "$rd/.path")"',
+        "  same=''",
+        '  for p in "${probed[@]:-}"; do',
+        '    [ -n "$p" ] && [ "$(cat "$p/.path")" = "$path" ] && same=$p && break',
+        "  done",
+        f'  if [ -n "$same" ]; then echo "{RECORD} ALSO $rd $same"; continue; fi',
+        '  probed+=("$rd")',
+        '  export PATH="$path"',
+        f'  echo "{RECORD} PATHSRC $rd"',
+        "  cd ~ || exit 97",
     ]
     for entry in entries:
-        lines += _probe_lines(entry)
-    lines.append(f'echo "{RECORD} END"')
+        lines += ["  " + line for line in _probe_lines(entry)]
+    lines += ["done", f'echo "{RECORD} END"']
     return "\n".join(lines) + "\n"
 
 
@@ -218,33 +255,49 @@ def _leading(text: str, digits: bool) -> tuple[str, str]:
 
 @dataclass
 class _Records:
-    verified: dict[str, tuple[int, str]]
-    off_path: dict[str, list[str]]
-    complete: bool
+    """One job PATH's records: verify results and provided executables off PATH."""
+
+    verified: dict[str, tuple[int, str]] = field(default_factory=dict)
+    off_path: dict[str, list[str]] = field(default_factory=dict)
 
 
-def _parse_records(stdout: str) -> _Records:
-    records = _Records(verified={}, off_path={}, complete=False)
+@dataclass
+class _Probe:
+    """Records per runner dir whose job PATH was probed, in probe order."""
+
+    by_runner: dict[str, _Records] = field(default_factory=dict)
+    complete: bool = False
+
+
+def _parse_records(stdout: str) -> _Probe:
+    probe, current = _Probe(), ""
     for line in stdout.splitlines():
         parts = line.split(" ")
         if parts[0] != RECORD or len(parts) < 2:
             continue
-        if parts[1] == "V":
+        if parts[1] == "PATHSRC":
+            current = " ".join(parts[2:])
+            probe.by_runner.setdefault(current, _Records())
+        elif parts[1] == "V":
             payload = parts[4] if len(parts) > 4 else ""
             output = base64.b64decode(payload).decode(errors="replace")
-            records.verified[parts[2]] = (int(parts[3]), output)
+            probe.by_runner.setdefault(current, _Records()).verified[parts[2]] = (
+                int(parts[3]),
+                output,
+            )
         elif parts[1] == "P":
+            records = probe.by_runner.setdefault(current, _Records())
             records.off_path.setdefault(parts[2], []).append(parts[3])
         elif parts[1] == "END":
-            records.complete = True
-    return records
+            probe.complete = True
+    return probe
 
 
-def _classify_one(entry: dict, records: _Records, unreached: str) -> tuple[str, str]:
-    """(status, what was seen) for one entry."""
+def _classify_one(entry: dict, records: _Records) -> tuple[str, str] | None:
+    """(status, what was seen) for one entry under one job PATH; None if unreached."""
     name = entry["name"]
-    if name not in records.verified or not records.complete:
-        return "UNKNOWN", unreached
+    if name not in records.verified:
+        return None
     code, output = records.verified[name]
     first = output.strip().splitlines()[0] if output.strip() else "(no output)"
     if entry.get("provision") == "job":
@@ -260,13 +313,35 @@ def _classify_one(entry: dict, records: _Records, unreached: str) -> tuple[str, 
     return "MISMATCH", first
 
 
+# The verdict for a host is its worst runner's: one runner job PATH lacking a
+# tool fails every job scheduled onto that runner.
+SEVERITY = {"OK": 0, "INFO": 1, "UNKNOWN": 2, "MISMATCH": 3, "MISSING": 4}
+
+
+def _classify_host(entry: dict, probe: _Probe, unreached: str) -> tuple[str, str]:
+    """The worst verdict across every probed runner job PATH, naming the runner."""
+    if not probe.complete or not probe.by_runner:
+        return "UNKNOWN", unreached
+    verdicts = {
+        runner: _classify_one(entry, records) for runner, records in probe.by_runner.items()
+    }
+    reached = {runner: v for runner, v in verdicts.items() if v is not None}
+    if len(reached) < len(verdicts):
+        return "UNKNOWN", unreached
+    runner = max(reached, key=lambda r: SEVERITY[reached[r][0]])
+    status, got = reached[runner]
+    if len(reached) > 1 and status not in {"OK", "INFO"}:
+        return status, f"{runner}: {got}"
+    return status, got
+
+
 def classify(entries: list[dict], rc: int, stdout: str, stderr: str) -> list[Result]:
     """Turn the probe's records into one Result per entry."""
-    records = _parse_records(stdout)
+    probe = _parse_records(stdout)
     unreached = stderr.strip().splitlines()[-1] if stderr.strip() else f"probe exit {rc}, no record"
     results = []
     for entry in entries:
-        status, got = _classify_one(entry, records, unreached)
+        status, got = _classify_host(entry, probe, unreached)
         results.append(Result(entry["name"], entry["kind"], status, entry["version"], got))
     return results
 
@@ -316,7 +391,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--user", required=True, help="runner user, e.g. ghrunner")
     parser.add_argument(
         "--runner-dir",
-        help="runner dir whose .path is the job PATH (default: first one the user owns)",
+        help="verify only this runner dir's .path (default: every configured runner dir"
+        " the user owns)",
     )
     parser.add_argument("--only", help="comma-separated entry names")
     parser.add_argument("--json", action="store_true")
@@ -329,11 +405,16 @@ def main(argv: list[str] | None = None) -> int:
     script = _probe_script(entries, args.runner_dir)
     rc, stdout, stderr = _run_probe(script, None if args.local else args.host, args.user)
     results = classify(entries, rc, stdout, stderr)
-    path_src = next(
-        (ln.split(" ", 2)[2] for ln in stdout.splitlines() if ln.startswith(f"{RECORD} PATHSRC")),
-        "UNKNOWN",
-    )
-    header = {"host": args.host or "local", "user": args.user, "path_from": path_src}
+    probed = [
+        ln.split(" ", 2)[2] for ln in stdout.splitlines() if ln.startswith(f"{RECORD} PATHSRC")
+    ]
+    also = sum(ln.startswith(f"{RECORD} ALSO ") for ln in stdout.splitlines())
+    header = {
+        "host": args.host or "local",
+        "user": args.user,
+        "path_from": ",".join(probed) or "UNKNOWN",
+        "runner_dirs": str(len(probed) + also),
+    }
     _print_report(results, header, args.json)
     return exit_code(results)
 
