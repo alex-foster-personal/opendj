@@ -28,6 +28,7 @@ reproduced on the Air, Sun 27 Sep 2026:
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import sqlite3
 from collections.abc import Collection, Mapping, Sequence
@@ -45,8 +46,11 @@ from apps.sync_hub.protocol import (
     MEMBERSHIP_TABLE,
     RowChange,
     SyncDigest,
+    canonical_row,
+    lww_key,
     pk_columns,
     sync_digest,
+    table_columns,
 )
 from apps.sync_hub.transport import API_PREFIX, HubTransport
 
@@ -56,6 +60,21 @@ HubRows = dict[str, dict[tuple[str, ...], digest_diff.HubRowSample]]
 RowKey = tuple[str, tuple[str, ...]]
 
 log = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Evidence:
+    """Everything a retirement was proven against, re-checked under its lock."""
+
+    #: The whole persisted remap map when the proof began.
+    persisted: Mapping[str, str]
+    #: The settle's local digest, and the tables it found divergent.
+    measured: SyncDigest
+    divergent: Sequence[str]
+    #: The pairs the hub contradicts, and what the hub served for them.
+    stale: list[tuple[str, str]]
+    hub_rows: HubRows
+    bundle: Mapping[str, Any]
 
 
 # ----- NFC location twins -----------------------------------------------------
@@ -221,9 +240,8 @@ def retire_stale_remaps(
         return []
     hub_rows.update(_hub_rows_of(channel, machine_id, divergent, skip=hub_rows.keys()))
     bundle = _loser_bundles(channel, machine_id, [loser for loser, _ in stale])
-    refusal = _retire_if_every_row_is_theirs(
-        conn, hub_machine_id, (measured, divergent), stale, hub_rows, bundle
-    )
+    evidence = _Evidence(persisted, measured, divergent, stale, hub_rows, bundle)
+    refusal = _retire_if_every_row_is_theirs(conn, hub_machine_id, evidence)
     if refusal is not None:
         log.error(
             "kept %d stale identity remap(s) %s: %s. Retiring them would "
@@ -258,46 +276,102 @@ def _hub_rows_of(
 
 
 def _retire_if_every_row_is_theirs(
-    conn: sqlite3.Connection,
-    hub_machine_id: str,
-    settle: tuple[SyncDigest, Sequence[str]],
-    stale: list[tuple[str, str]],
-    hub_rows: HubRows,
-    bundle: Mapping[str, Any],
+    conn: sqlite3.Connection, hub_machine_id: str, evidence: _Evidence
 ) -> str | None:
-    """Under ONE write lock: prove the state is the one measured, then retire.
+    """Under ONE write lock: re-prove everything, then retire and repair.
 
     Returns why it refused, having written nothing, or ``None`` once the
     remaps are deleted and the bundle applied with the pull's own merge in
-    the same transaction. The proof, in order: every stale pair is still
-    persisted exactly as proven; the local digest still equals the one the
-    settle measured, so no local write in ANY table landed since the settle
-    compared it (the row walk covers only its divergent tables, while the
-    bundle can also carry rows of matching ones, such as a playlist holding
-    a loser); and every divergent row is the remaps' doing
-    (:func:`_claimed_loser_rows`). ``settle`` is that local digest and its
-    divergent tables.
+    the same transaction (:func:`_why_the_proof_fails` is the proof).
     """
-    measured, divergent = settle
-    owned = _hub_rows_owned_by(bundle, {loser for loser, _ in stale})
     with _transaction(conn, immediate=True):
+        refusal = _why_the_proof_fails(conn, evidence)
+        if refusal is not None:
+            return refusal
         remap = load_identity_remap(conn)
-        changed = [pair for pair in stale if remap.get(pair[0]) != pair[1]]
-        if changed:
-            return f"remap(s) {changed} changed after they were proven stale"
-        now = sync_digest(conn)
-        if now.overall != measured.overall:
-            moved = now.divergent_tables(measured)
-            return f"the local state moved in {list(moved)} after the settle measured it"
-        claims = _claimed_loser_rows(conn, divergent, stale, hub_rows)
-        unexplained = [row for row, claim in claims if claim not in owned]
-        if unexplained:
-            return _describe_unexplained(unexplained)
-        for loser, _survivor in stale:
+        for loser, _survivor in evidence.stale:
             _remove_remap_loser(conn, remap, loser)
-        engine.merge_machines(conn, _machines_from(bundle, "pull"), caller_id=hub_machine_id)
-        engine.spoke_apply(conn, _rows_from(bundle, "pull"))
+        engine.merge_machines(
+            conn, _machines_from(evidence.bundle, "pull"), caller_id=hub_machine_id
+        )
+        engine.spoke_apply(conn, _rows_from(evidence.bundle, "pull"))
     return None
+
+
+def _why_the_proof_fails(conn: sqlite3.Connection, evidence: _Evidence) -> str | None:
+    """Re-check, under the caller's write lock, everything the proof assumed.
+
+    In order: the whole persisted remap map is unchanged (survivor reach and
+    attribution follow its chains); the local digest still equals the
+    settle's, so no sync-eligible row in ANY table moved since it was
+    compared; no bundle row would replace a local row on an exact stamp tie
+    with other bytes, except the remap's own in-place move (this reaches the
+    rows the digest holds out, such as a loser this spoke still stores); and
+    every divergent row is the remaps' doing.
+    """
+    if load_identity_remap(conn) != evidence.persisted:
+        return "the persisted remaps changed after the proof began"
+    now = sync_digest(conn)
+    if now.overall != evidence.measured.overall:
+        moved = list(now.divergent_tables(evidence.measured))
+        return f"the local state moved in {moved} after the settle measured it"
+    losers_of = _losers_by_survivor(conn, evidence.stale)
+    clobbered = _tied_rows_the_bundle_would_replace(
+        conn, _rows_from(evidence.bundle, "pull"), losers_of
+    )
+    if clobbered:
+        examples = [digest_diff.format_pk(table, pk) for table, pk in clobbered[:5]]
+        return (
+            f"the bundle would replace {len(clobbered)} local row(s) at the same "
+            f"stamp with other bytes, a change that was never stamped: {examples}"
+        )
+    owned = _hub_rows_owned_by(evidence.bundle, {loser for loser, _ in evidence.stale})
+    claims = _claimed_loser_rows(conn, evidence.divergent, losers_of, evidence.hub_rows)
+    unexplained = [row for row, claim in claims if claim not in owned]
+    return _describe_unexplained(unexplained) if unexplained else None
+
+
+def _tied_rows_the_bundle_would_replace(
+    conn: sqlite3.Connection, rows: list[RowChange], losers_of: Mapping[str, list[str]]
+) -> list[RowKey]:
+    """Bundle rows whose apply would replace other local bytes on an exact tie.
+
+    The pull merge gives the hub an exact ``(updated_at, origin)`` tie, which
+    only loses a local change that was never stamped. The one tie it is
+    meant to win is the remap's own in-place move. Compared on the columns
+    both sides carry, so a schema newer on one side cannot fake a change.
+    """
+    clobbered: list[RowKey] = []
+    for row in rows:
+        local = _local_canonical_row(conn, row.table, row.pk)
+        if local is None or lww_key(local, table=row.table) != lww_key(row.values, table=row.table):
+            continue
+        shared = local.keys() & row.values.keys()
+        mine = {column: local[column] for column in shared}
+        theirs = {column: row.values[column] for column in shared}
+        if mine != theirs and not _is_an_in_place_move(mine, theirs, losers_of):
+            clobbered.append((row.table, row.pk))
+    return clobbered
+
+
+def _local_canonical_row(
+    conn: sqlite3.Connection, table: str, pk: tuple[str, ...]
+) -> dict[str, Any] | None:
+    """The stored row at ``pk``, sync-eligible or held out, as the digest sees it."""
+    columns = table_columns(conn, table)
+    where = " AND ".join(f"{column} = ?" for column in pk_columns(table))
+    row = conn.execute(f"SELECT {', '.join(columns)} FROM {table} WHERE {where}", pk).fetchone()
+    return None if row is None else canonical_row(table, columns, row)
+
+
+def _is_an_in_place_move(
+    local: Mapping[str, Any], hub: Mapping[str, Any], losers_of: Mapping[str, list[str]]
+) -> bool:
+    """Whether ``local`` is ``hub`` with only ``stable_id`` moved to a survivor."""
+    survivor = local.get("stable_id")
+    if not isinstance(survivor, str):
+        return False
+    return any({**local, "stable_id": loser} == hub for loser in losers_of.get(survivor, ()))
 
 
 def _describe_unexplained(unexplained: list[RowKey]) -> str:
@@ -346,7 +420,7 @@ def _hub_rows_owned_by(bundle: Mapping[str, Any], losers: Collection[str]) -> se
 def _claimed_loser_rows(
     conn: sqlite3.Connection,
     divergent: Sequence[str],
-    stale: list[tuple[str, str]],
+    losers_of: Mapping[str, list[str]],
     hub_rows: HubRows,
 ) -> list[tuple[RowKey, RowKey | None]]:
     """Every divergent row, paired with the loser hub row it would have to be.
@@ -357,7 +431,6 @@ def _claimed_loser_rows(
     ``None``. The survivor may be the pair's own or its chain's terminal
     (:func:`_survivor_reach`).
     """
-    losers_of = _losers_by_survivor(conn, stale)
     claims: list[tuple[RowKey, RowKey | None]] = []
     for table in divergent:
         by_pk = hub_rows[table]
