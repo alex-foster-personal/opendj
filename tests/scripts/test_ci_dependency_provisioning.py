@@ -77,8 +77,7 @@ def test_dependency_jobs_provision_venvs_with_uv() -> None:
         offenders = [
             line.lstrip()
             for line in lines
-            if line.lstrip().startswith(forbidden_installs)
-            and line.lstrip() not in allowed
+            if line.lstrip().startswith(forbidden_installs) and line.lstrip() not in allowed
         ]
         assert not offenders, (
             f"{workflow_path.name}: bare pip installs are forbidden outside an "
@@ -168,5 +167,5 @@ def test_audio_stack_marker_uses_real_guarded_imports() -> None:
     conftest = (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
 
     assert "def _can_import" in conftest
-    assert "importlib.util.find_spec(\"soundfile\")" not in conftest
-    assert "importlib.util.find_spec(\"librosa\")" not in conftest
+    assert 'importlib.util.find_spec("soundfile")' not in conftest
+    assert 'importlib.util.find_spec("librosa")' not in conftest

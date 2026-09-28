@@ -11,7 +11,7 @@ package the lock does not name. ADR: docs/decisions/ADR-NEW-ci-venvs-sync-from-p
 
 Usage:
     python -m scripts.ci_lock compile [--upgrade]   # regenerate every lock (network)
-    python -m scripts.ci_lock check                 # no network, no resolution
+    python -m scripts.ci_lock check [--repo-root P] # no network, no resolution
 
 Requirements (mini-PRD)
 - [if] `compile` runs [then] every lock in LOCKS is regenerated from its source
@@ -25,6 +25,10 @@ Requirements (mini-PRD)
 - [if] a lock or source file is missing, a source line is an option this
   parser does not model, or a requirement does not parse [then] `check` exits
   2 (could not measure), never 0, [else stop] ✔︎ ✅ 🎯
+- [if] a lock gains or loses a package that has no wheel (a VCS or sdist-only
+  entry) relative to SOURCE_BUILDS [then] `check` exits 1 naming it: those are
+  the only packages whose cold-cache install builds from source, with build
+  dependencies resolved from the index, [else stop] ✔︎ ✅ 🎯
 
 Acceptance tests (tests/scripts/test_ci_lock.py):
 - [if] requirements.txt gains, loses or re-pins a line and the lock is not
@@ -77,6 +81,11 @@ LOCKS = (
     Lock("requirements-docs.txt", "pylock.docs.toml"),
     Lock("ops/fleet/requirements-duplicate-writer.txt", "ops/fleet/pylock.duplicate-writer.toml"),
 )
+# Locked packages with no wheel. A warm cache holds their built wheel, so the
+# hot path stays offline; on a cold cache (new runner, bumped pin) uv builds
+# them with isolated build dependencies resolved from the index. Named here so
+# adding one is a reviewed decision rather than a silent widening of that path.
+SOURCE_BUILDS = frozenset({"madmom", "webrtcvad"})
 
 
 class Unmeasurable(Exception):
@@ -162,6 +171,11 @@ def lock_problems(lock: Lock, root: Path = REPO_ROOT) -> list[str]:
     if recorded != source_fingerprint(source):
         problems.append(f"{lock.output}: source fingerprint {recorded} is stale for {lock.source}")
     packages = doc.get("packages") or []
+    source_only = {canonicalize_name(p["name"]) for p in packages if not p.get("wheels")}
+    problems.extend(
+        f"{lock.output}: {name} has no wheel and is not in SOURCE_BUILDS"
+        for name in sorted(source_only - SOURCE_BUILDS)
+    )
     for line in requirement_lines(source):
         problems.extend(
             f"{lock.output}: {p}" for p in _requirement_problems(_parse(line), packages)
@@ -193,7 +207,12 @@ def main(argv: list[str] | None = None) -> int:
     compile_parser.add_argument(
         "--upgrade", action="store_true", help="re-pin everything to latest"
     )
-    sub.add_parser("check", help="verify every CI lock matches its source (no network)")
+    check_parser = sub.add_parser(
+        "check", help="verify every CI lock matches its source (no network)"
+    )
+    check_parser.add_argument(
+        "--repo-root", type=Path, default=REPO_ROOT, help="tree to check (default: this repo)"
+    )
     args = parser.parse_args(argv)
 
     if args.command == "compile":
@@ -203,7 +222,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "check":
         try:
-            problems = [p for lock in LOCKS for p in lock_problems(lock, REPO_ROOT)]
+            problems = [p for lock in LOCKS for p in lock_problems(lock, args.repo_root)]
+            locked = set()
+            for lock in LOCKS:
+                packages = _read_lock(args.repo_root / lock.output).get("packages") or []
+                locked |= {canonicalize_name(p["name"]) for p in packages if not p.get("wheels")}
+            problems.extend(
+                f"SOURCE_BUILDS names {name}, which no lock builds from source; remove it"
+                for name in sorted(SOURCE_BUILDS - locked)
+            )
         except Unmeasurable as exc:
             print(f"[ERROR] UNKNOWN, could not measure: {exc}", file=sys.stderr)
             return 2

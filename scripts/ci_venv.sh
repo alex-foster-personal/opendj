@@ -103,10 +103,14 @@ if [ -n "$lock" ]; then
   lock_sync=(uv pip sync --preview-features pylock --python "$venv/bin/python" "$lock")
   echo "[venv] syncing exactly from $lock (offline, warm cache)"
   if ! "${lock_sync[@]}" --offline; then
-    # A cold or pruned cache. The fetch below still never resolves: it downloads
-    # only the wheel files the lock names, verified by hash. It is announced so
-    # a runner that keeps missing is visible; UV_OFFLINE=1 makes it fail instead.
-    echo "::warning title=CI venv cache miss::the uv cache lacks wheels $lock pins; fetching them by locked URL and hash, no index resolution (issue #4252)" >&2
+    # A cold cache (new runner, bumped pin). The fetch below downloads the files
+    # the lock names, verified by hash, and never resolves the lock itself. The
+    # one exception is scripts/ci_lock.py SOURCE_BUILDS (no wheel): building
+    # them resolves their isolated build dependencies from the index, once per
+    # runner, after which the built wheel is cached and the offline sync above
+    # covers them. Announced so a runner that keeps missing is visible;
+    # UV_OFFLINE=1 makes a miss fail instead.
+    echo "::warning title=CI venv cache miss::the uv cache lacks files $lock pins; fetching them by locked URL and hash (a SOURCE_BUILDS package also resolves its build deps; issue #4252)" >&2
     "${lock_sync[@]}"
   fi
 fi

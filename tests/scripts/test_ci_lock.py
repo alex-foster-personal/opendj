@@ -28,13 +28,22 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import pytest
 
-from scripts import ci_lock
-from scripts.ci_lock import LOCKS, Lock, Unmeasurable, lock_problems, source_fingerprint
+from scripts.ci_lock import (
+    LOCKS,
+    SOURCE_BUILDS,
+    Lock,
+    Unmeasurable,
+    lock_problems,
+    requirement_lines,
+    source_fingerprint,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CI_LOCK = next(lock for lock in LOCKS if lock.output == "pylock.ci.toml")
@@ -61,6 +70,24 @@ def _edit(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+def _copy_every_lock(tmp_path: Path) -> Path:
+    """A disposable checkout holding every lock and every source the check reads."""
+    for lock in LOCKS:
+        _copy_lock_tree(tmp_path, lock)
+    return tmp_path
+
+
+def _check_cli(root: Path) -> subprocess.CompletedProcess:
+    """The real entry point, run as CI runs it, against a disposable tree."""
+    return subprocess.run(
+        [sys.executable, "-m", "scripts.ci_lock", "check", "--repo-root", str(root)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def _restamp(root: Path, lock: Lock) -> None:
     """Hand-update the fingerprint, as someone papering over drift would."""
     path = root / lock.output
@@ -80,9 +107,10 @@ def test_every_committed_lock_matches_its_source(lock: Lock) -> None:
     assert not problems, f"run `python -m scripts.ci_lock compile`: {problems}"
 
 
-def test_check_cli_reports_every_lock_fresh(capsys: pytest.CaptureFixture[str]) -> None:
-    assert ci_lock.main(["check"]) == 0, capsys.readouterr().err
-    assert f"{len(LOCKS)} CI locks match" in capsys.readouterr().out
+def test_check_cli_reports_every_lock_fresh() -> None:
+    result = _check_cli(REPO_ROOT)
+    assert result.returncode == 0, result.stderr
+    assert f"{len(LOCKS)} CI locks match" in result.stdout
 
 
 def test_pytest_lock_source_carries_the_observability_extra_verbatim() -> None:
@@ -90,7 +118,7 @@ def test_pytest_lock_source_carries_the_observability_extra_verbatim() -> None:
     extra = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
         "optional-dependencies"
     ]["observability"]
-    lines = ci_lock.requirement_lines(REPO_ROOT / CI_LOCK.source)
+    lines = requirement_lines(REPO_ROOT / CI_LOCK.source)
     assert extra and set(extra) <= set(lines), f"{CI_LOCK.source} lacks {extra}"
 
 
@@ -166,17 +194,66 @@ def test_unmodeled_option_line_is_unmeasurable(tmp_path: Path, line: str) -> Non
         lock_problems(CI_LOCK, root)
 
 
-def test_missing_lock_is_unmeasurable_and_the_cli_says_unknown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    root = _copy_lock_tree(tmp_path, CI_LOCK)
+def test_the_cli_checks_the_tree_it_is_given(tmp_path: Path) -> None:
+    """--repo-root must reach the drift comparison, not just the file reads."""
+    root = _copy_every_lock(tmp_path)
+    _edit(root / "requirements.txt", "rbox==0.1.7\n", "rbox==0.1.7\nnot-a-locked-package>=1\n")
+
+    result = _check_cli(root)
+
+    assert result.returncode == 1, result.stderr
+    assert "not-a-locked-package>=1: not in the lock" in result.stderr, result.stderr
+
+
+def test_missing_lock_is_unmeasurable_and_the_cli_says_unknown(tmp_path: Path) -> None:
+    root = _copy_every_lock(tmp_path)
+    control = _check_cli(root)
+    assert control.returncode == 0, f"control: the intact copy must pass\n{control.stderr}"
+
     (root / CI_LOCK.output).unlink()
     with pytest.raises(Unmeasurable, match="missing lock"):
         lock_problems(CI_LOCK, root)
-    monkeypatch.setattr(ci_lock, "REPO_ROOT", root)
-    monkeypatch.setattr(ci_lock, "LOCKS", (CI_LOCK,))
-    assert ci_lock.main(["check"]) == 2
-    assert "UNKNOWN" in capsys.readouterr().err
+    result = _check_cli(root)
+
+    assert result.returncode == 2, result.stderr
+    assert "UNKNOWN" in result.stderr and CI_LOCK.output in result.stderr, result.stderr
+
+
+# -----------------------------------------------------------------------------
+# source builds: the only cold-cache path that resolves, kept to a named set
+# -----------------------------------------------------------------------------
+def test_a_new_package_without_a_wheel_is_drift(tmp_path: Path) -> None:
+    root = _copy_lock_tree(tmp_path, CI_LOCK)
+    extra = (
+        '\n[[packages]]\nname = "sdist-only"\nversion = "1.0"\n'
+        'sdist = { url = "https://example.invalid/sdist-only-1.0.tar.gz", '
+        'hashes = { sha256 = "00" } }\n'
+    )
+    lock_text = (root / CI_LOCK.output).read_text(encoding="utf-8")
+    (root / CI_LOCK.output).write_text(lock_text.replace("\n[tool.", f"{extra}\n[tool.", 1))
+    assert "sdist-only" in (root / CI_LOCK.output).read_text(encoding="utf-8"), "control"
+
+    assert lock_problems(CI_LOCK, root) == [
+        "pylock.ci.toml: sdist-only has no wheel and is not in SOURCE_BUILDS"
+    ]
+
+
+def test_a_source_build_that_gains_a_wheel_must_leave_the_named_set(tmp_path: Path) -> None:
+    """Overshoot control: the named set may not outlive the packages it names."""
+    root = _copy_every_lock(tmp_path)
+    fake_wheel = 'wheels = [{ url = "https://example.invalid/x.whl", hashes = { sha256 = "00" } }]'
+    for lock in LOCKS:
+        path = root / lock.output
+        text = path.read_text(encoding="utf-8")
+        for name in SOURCE_BUILDS:
+            text = text.replace(f'name = "{name}"\n', f'name = "{name}"\n{fake_wheel}\n')
+        path.write_text(text, encoding="utf-8")
+
+    result = _check_cli(root)
+
+    assert result.returncode == 1, result.stderr
+    for name in SOURCE_BUILDS:
+        assert f"SOURCE_BUILDS names {name}" in result.stderr, result.stderr
 
 
 # -----------------------------------------------------------------------------
