@@ -42,6 +42,8 @@ ADDRESS_KEYS = frozenset({"repo", "targetBranch"})
 OPERATIONAL_KEYS = frozenset({"state"})
 # Lists whose order carries no meaning on Trunk's side.
 UNORDERED_KEYS = frozenset({"allowedBotSubmitters", "requiredStatuses"})
+# Success bodies that carry no data (measured Mon 28 Sep 2026: submitPullRequest returns `OK`).
+PLAIN_SUCCESS_BODIES = frozenset({b"", b"OK"})
 
 
 class TrunkApiError(RuntimeError):
@@ -99,10 +101,14 @@ def _post(endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.loads(response.read() or b"{}")
+            raw = response.read().strip()
     except urllib.error.HTTPError as error:
         detail = error.read()[:300].decode(errors="replace")
         raise TrunkApiError(f"POST {endpoint} -> HTTP {error.code}: {detail}") from None
+    # Write endpoints (submitPullRequest) answer a bare `OK`; any other body must be JSON.
+    if raw in PLAIN_SUCCESS_BODIES:
+        return {}
+    return json.loads(raw)
 
 
 def fetch_live(desired: dict[str, Any]) -> dict[str, Any]:

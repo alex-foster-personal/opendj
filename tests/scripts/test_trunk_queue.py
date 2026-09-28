@@ -102,6 +102,33 @@ def test_a_missing_token_never_reaches_the_network(monkeypatch: pytest.MonkeyPat
     assert trunk_queue.main(["diff"]) == 2, "a failed read must not exit like a clean diff"
 
 
+class _Response:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self) -> _Response:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body
+
+
+@pytest.mark.parametrize(
+    ("body", "parsed"),
+    [(b"OK", {}), (b"", {}), (b'{"state": "running"}', {"state": "running"})],
+)
+def test_a_plain_text_success_body_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch, body: bytes, parsed: dict[str, str]
+) -> None:
+    """Trunk answers submitPullRequest with a bare `OK`; only JSON bodies carry data."""
+    monkeypatch.setenv("TRUNK_API_TOKEN", "test-token")
+    monkeypatch.setattr(trunk_queue.urllib.request, "urlopen", lambda *a, **k: _Response(body))
+    assert trunk_queue._post("submitPullRequest", {}) == parsed
+
+
 # -----------------------------------------------------------------------------
 def test_every_required_status_is_a_pull_request_job() -> None:
     produced = _pull_request_check_names()
@@ -154,3 +181,10 @@ def test_the_scheduled_run_only_diffs() -> None:
     step = yaml.safe_load(CONFIG_WORKFLOW.read_text())["jobs"]["sync"]["steps"][-1]
     assert step["env"]["MODE"] == "${{ github.event_name == 'schedule' && 'diff' || 'apply' }}"
     assert step["run"] == 'python3 -m scripts.trunk_queue "$MODE"'
+
+
+def test_an_unexpected_non_json_body_still_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRUNK_API_TOKEN", "test-token")
+    monkeypatch.setattr(trunk_queue.urllib.request, "urlopen", lambda *a, **k: _Response(b"<html>"))
+    with pytest.raises(json.JSONDecodeError):
+        trunk_queue._post("getQueue", {})
