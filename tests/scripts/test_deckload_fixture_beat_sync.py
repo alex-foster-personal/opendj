@@ -72,7 +72,8 @@ def test_rescue_playback_fixture_writes_measured_librosa_downbeats(tmp_path: Pat
 
 @pytest.mark.requirement("LIBUX-18")
 def test_rescue_playback_fixture_is_idempotent_on_second_build(tmp_path: Path) -> None:
-    """[if] rescue build runs twice [then] row count stays eight with no filler rows, [else stop]."""
+    """[if] rescue build runs twice [then] row count stays eight with no filler rows,
+    [else stop]."""
     data_dir = tmp_path / "fixture-data"
     library_filenames = {track.filename for track in RESCUE_PLAYBACK_LIBRARY_TRACKS}
     first = build_rescue_playback(data_dir)
@@ -83,7 +84,7 @@ def test_rescue_playback_fixture_is_idempotent_on_second_build(tmp_path: Path) -
     second_ids = {stable_id for stable_id, _title, _path in second}
     assert first_ids == second_ids
     seen_paths: set[str] = set()
-    for stable_id, _title, file_path in second:
+    for _stable_id, _title, file_path in second:
         assert file_path is not None
         path = Path(file_path)
         assert path.is_file()

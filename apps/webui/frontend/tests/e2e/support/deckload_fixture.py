@@ -761,9 +761,9 @@ def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | N
             "[ERROR] rescue-playback could not match every ingested row to its generated file"
         )
     try:
-        for stable_id in bpm_by_stable_id:
+        for stable_id, bpm in bpm_by_stable_id.items():
             writer.set_field(
-                stable_id, "bpm", bpm_by_stable_id[stable_id],
+                stable_id, "bpm", bpm,
                 source="manual", modified_at=now, confidence=1.0,
             )
             writer.set_field(
