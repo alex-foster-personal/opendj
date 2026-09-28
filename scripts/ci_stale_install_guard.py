@@ -5,6 +5,12 @@ Run it WITH the interpreter under test (``<python> scripts/ci_stale_install_guar
 Stdlib only, so it runs on any CI interpreter (toolcache 3.11, system 3.12) before
 any project dependency is installed. Called by scripts/ci_runner_preflight.sh.
 
+Supersedes: nothing; no earlier check inspected a job's interpreter for a project
+install. It EXTENDS scripts/ci_runner_preflight.sh rather than replacing it: the
+preflight still names missing executables, then runs this guard for each of
+``python``/``python3`` on PATH. Every self-hosted job that launches Python calls
+the preflight first, pinned by tests/scripts/test_ci_workflow_stale_install_coverage.py.
+
 WHY (Mon 28 Sep 2026). The setup-python toolcache interpreter on agentbox held a
 job-installed copy of this project: music_dj_tools-1.0.1.dist-info plus 469
 ``apps/`` files and ``_rb_waveform_native.abi3.so``, written Fri 4 Sep 2026 22:44

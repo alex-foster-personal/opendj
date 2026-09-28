@@ -332,6 +332,14 @@ jobs:
           # archive entry out from under `uv sync` on 34275041870 the day before.
           enable-cache: ${{ runner.environment == 'github-hosted' }}
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that launches Python runs it
+      # first; tests/scripts/test_ci_workflow_stale_install_coverage.py enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       - name: System deps for pyrekordbox (SQLCipher)
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
@@ -958,6 +966,14 @@ jobs:
           # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
           # archive entry out from under `uv sync` on 34275041870 the day before.
           enable-cache: ${{ runner.environment == 'github-hosted' }}
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that launches Python runs it
+      # first; tests/scripts/test_ci_workflow_stale_install_coverage.py enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: System deps (SQLCipher for pyrekordbox, ffmpeg for the stems fixture)
         # tests.stems.seed_e2e_library shells out to ffmpeg to build its
