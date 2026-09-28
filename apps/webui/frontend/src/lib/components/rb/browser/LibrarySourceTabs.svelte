@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { COLUMN_VIEW_PATH, TREE_LIST_PATH } from '$lib/ui/icon-glyphs';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import {
 		playlistHistoryChrome,
@@ -44,6 +45,14 @@
 	function closeHistory(): void {
 		historyOpen = false;
 	}
+
+	const treeToggleTitle: string = $derived(
+		showPlaylistTools
+			? playlistTreeView === 'tree'
+				? 'Switch playlist sidebar to column browser'
+				: 'Switch playlist sidebar to tree list'
+			: 'Switch to Playlists to change tree or column layout'
+	);
 </script>
 
 <div class="source-toolbar" data-testid="library-source-tabs">
@@ -67,16 +76,20 @@
 			type="button"
 			class="icon-btn"
 			data-testid="playlist-tree-view-toggle"
-			title={showPlaylistTools
-				? playlistTreeView === 'tree'
-					? 'Switch playlist sidebar to column browser'
-					: 'Switch playlist sidebar to tree list'
-				: 'Switch to Playlists to change tree or column layout'}
+			title={treeToggleTitle}
+			aria-label={treeToggleTitle}
 			disabled={!showPlaylistTools}
 			aria-pressed={showPlaylistTools && playlistTreeView === 'column'}
 			onclick={toggleTreeColumn}
 		>
-			{playlistTreeView === 'tree' ? '▦' : '☰'}
+			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+				<path
+					d={playlistTreeView === 'tree' ? COLUMN_VIEW_PATH : TREE_LIST_PATH}
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+				/>
+			</svg>
 		</button>
 		<button
 			type="button"
@@ -183,6 +196,10 @@
 		font-size: 12px;
 		line-height: 1;
 		cursor: pointer;
+	}
+	.icon-btn svg {
+		display: block;
+		margin: auto;
 	}
 	.icon-btn:disabled {
 		opacity: 0.45;

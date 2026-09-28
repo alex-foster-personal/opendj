@@ -27,3 +27,15 @@ export const RESCAN_ARROW_PATH = 'M9.9 0.8 L9.9 3.6 L7.1 3.6 Z';
 
 /** Play / plays column header triangle. */
 export const PLAY_TRIANGLE_PATH = 'M4 3 L4 13 L12 8 Z';
+
+/** Playlist sidebar toggle target: the column browser (three panes). */
+export const COLUMN_VIEW_PATH = 'M3 4h18v16H3z M9 4v16 M15 4v16';
+
+/** Playlist sidebar toggle target: the tree list (stacked rows). */
+export const TREE_LIST_PATH = 'M4 6h16 M4 12h16 M4 18h16';
+
+/** Rename affordance (pencil). */
+export const PENCIL_PATH = 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z M14.5 5.5l4 4';
+
+/** Lyrics column vocal verdict (a single note). */
+export const MUSIC_NOTE_PATH = 'M9 18V5l11-2v13 M9 18a3 3 0 1 1-6 0a3 3 0 0 1 6 0z M20 16a3 3 0 1 1-6 0a3 3 0 0 1 6 0z';
