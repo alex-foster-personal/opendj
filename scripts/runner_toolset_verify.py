@@ -9,14 +9,17 @@ Per entry it prints one of:
   OK        verify exited 0 and its output carries the pinned version
   MISMATCH  verify exited 0 but the version differs (wanted vs got)
   MISSING   verify exited nonzero, or a provided executable is not on PATH
-  UNKNOWN   the probe could not run at all (ssh, sudo or timeout failure).
-            UNKNOWN is never OK.
+  UNKNOWN   the probe could not run at all (ssh, sudo or timeout failure, or
+            no readable runner `.path`: the login PATH is never a stand-in
+            for the job PATH). UNKNOWN is never OK.
   INFO      a `provision: job` entry the job installs itself on first use;
             reported for visibility, never a failure.
 
 Version matching (`match`, see ci/runner-toolset.yml): apt entries default to
 `min`, compared with dpkg's own ordering, so a newer Ubuntu security revision
 (`-4ubuntu3.3` over `-4ubuntu3.2`) is OK and an older one is a MISMATCH.
+`exact` and `prefix` compare the whole reported version token, so a
+prerelease or build suffix (`1.96.0-nightly`, `v22.23.2-rc.1`) is a MISMATCH.
 
 Exit codes (a stable contract; scripts/ci_runner_host_audit.sh calls this):
   0  every entry OK
@@ -33,6 +36,8 @@ Requirements:
     [if] ssh to the host fails [then ⛔️] any entry reports OK or MISSING.
     [if] a verify prints another version [then ⛔️] it reports OK.
     [if] a provided executable is absent from the runner PATH [then ⛔️] OK.
+    [if] no readable runner .path exists [then ⛔️] any entry reports OK or MISSING.
+    [if] a pinned tool reports the pin plus a `-nightly`/`-rc` suffix [then ⛔️] OK.
   ✔︎ ✅ R2 exit code follows the contract above.
     [if] one entry is UNKNOWN and the rest OK [then ⛔️] exit 0.
     [if] one entry is MISSING [then ⛔️] exit 0 or 2.
@@ -77,8 +82,15 @@ def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
         f"rd={shlex.quote(runner_dir) if runner_dir else ''}",
         f'[ -n "$rd" ] || for d in {CFG_RUNNER_DIR_GLOBS}; do'
         ' [ -O "$d" ] && [ -r "$d/.path" ] && rd=$d && break; done',
-        'if [ -n "$rd" ] && [ -r "$rd/.path" ]; then export PATH="$(cat "$rd/.path")"; fi',
-        f'echo "{RECORD} PATHSRC ${{rd:-login-shell}}"',
+        # The job PATH is a prerequisite: the invoking shell's PATH says nothing
+        # about what a job resolves, so without it nothing is verified (UNKNOWN).
+        'if [ -z "$rd" ] || [ ! -r "$rd/.path" ] || [ ! -s "$rd/.path" ]; then',
+        f'  echo "no readable, non-empty runner .path (runner dir: ${{rd:-none found under'
+        f' {CFG_RUNNER_DIR_GLOBS}}}); refusing to verify against the login PATH" >&2',
+        "  exit 96",
+        "fi",
+        'export PATH="$(cat "$rd/.path")"',
+        f'echo "{RECORD} PATHSRC $rd"',
         "cd ~ || exit 97",
     ]
     for entry in entries:
@@ -131,11 +143,18 @@ def default_match(entry: dict) -> str:
     return entry.get("match", "min" if entry["kind"] == "apt" else "exact")
 
 
+# What may follow a whole version token: anything but more version. A letter,
+# `-`, `+` or `~` starts a prerelease or build suffix (`1.96.0-nightly`,
+# `v22.23.2-rc.1`, `3.11.16rc1`), which is a different toolchain, not the pin.
+VERSION_END = r"(?![\w+~-]|\.\w)"
+
+
 def _version_matches(version: str, match: str, output: str) -> bool:
     if match == "exact":
-        return re.search(rf"(?<![\d.]){re.escape(version)}(?![\d])(?!\.\d)", output) is not None
+        return re.search(rf"(?<![\d.]){re.escape(version)}{VERSION_END}", output) is not None
     if match == "prefix":
-        return re.search(rf"(?<![\d.]){re.escape(version)}(\.\d+)*(?![\d.])", output) is not None
+        pattern = rf"(?<![\d.]){re.escape(version)}(\.\d+)*{VERSION_END}"
+        return re.search(pattern, output) is not None
     if match == "min":
         found = re.search(r"(?<![\w.])(?:\d+:)?\d[\w.+~:-]*", output)
         return found is not None and dpkg_compare(found.group(0), version) >= 0

@@ -5,6 +5,12 @@
 #
 # Decision record: docs/decisions/ADR-NEW-runner-toolset-manifest.md
 #
+# Supersedes: the per-item tool list in docs/ci-actions-cost-review-2026-08-16.md
+#   "Self-hosted runner provisioning" (now redirected here; its items stay only
+#   as the record of WHY each entry exists). The Ansible CI-host playbook's and
+#   the host audit's own tool lists live outside this repo and move to reading
+#   this file as a follow-up (.planning/debt/4250.md).
+#
 # Consumers (read this file, never a copy of it):
 #   - tests/scripts/test_runner_toolset_complete.py: scans workflows, the scripts
 #     and justfile/Makefile recipes they call, and tests/, and fails when CI uses
@@ -203,15 +209,24 @@ entries:
     needed_by: [rust, pytest]
     install: "as the runner user: rustup-init 1.29.1 (sha256-pinned) -y --no-modify-path --profile minimal; ~/.cargo/bin on <runner>/.path"
     verify: "rustup --version 2>/dev/null"
-  - name: rust
+  - name: rust-cargo
     kind: toolchain
     version: "1.96.0"
-    source: "repo:.github/workflows/ci.yml (dtolnay/rust-toolchain pinned at 1.96.0)"
-    provides: [cargo, rustc]
+    source: "repo:.github/workflows/*.yml (dtolnay/rust-toolchain toolchain input)"
+    provides: [cargo]
     needed_by: [rust, pytest]
     install: "as the runner user: rustup default 1.96.0"
-    verify: "cargo --version && rustc --version"
+    verify: "cargo --version"
     notes: "item 7: without cargo the wheel silently drops _rb_waveform_native (setuptools-rust optional=true); missing on megamac"
+  - name: rust-rustc
+    kind: toolchain
+    version: "1.96.0"
+    source: "repo:.github/workflows/*.yml (dtolnay/rust-toolchain toolchain input)"
+    provides: [rustc]
+    needed_by: [rust, pytest]
+    install: "installed with rust-cargo (rustup default 1.96.0)"
+    verify: "rustc --version"
+    notes: "its own entry so a stale compiler behind a pinned cargo is a MISMATCH: one pin vouches for one executable's output"
 
   #----- tool cache ($AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache) --------------
   - name: toolcache-python

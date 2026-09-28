@@ -19,10 +19,15 @@ Regression lines:
 from __future__ import annotations
 
 import base64
+import os
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
 from scripts import runner_toolset_verify as rtv
+from scripts.runner_toolset_scan import load_manifest
 
 
 def _entry(
@@ -170,3 +175,173 @@ def test_job_provisioned_entry_is_info_and_does_not_fail_the_run() -> None:
     [result] = _classify([entry], records)
     assert result.status == "INFO", result
     assert rtv.exit_code([result]) == 0
+
+
+# ----- exact and prefix pins name the WHOLE version, suffix included ------------------
+
+
+@pytest.mark.parametrize(
+    ("version", "match", "output"),
+    [
+        ("1.96.0", "exact", "rustc 1.96.0-nightly (17067e9ac 2026-08-01)"),
+        ("22.23.2", "exact", "v22.23.2-rc.1"),
+        ("1.96.0", "exact", "cargo 1.96.0+b1"),
+        ("1.58.0", "exact", "just 1.58.0beta"),
+        ("0.34.6", "exact", "0.34.6~rc1"),
+        ("3.11", "prefix", "3.11.16rc1"),
+        ("3.11", "prefix", "3.11.16+local"),
+    ],
+)
+def test_a_suffixed_version_is_a_mismatch(version: str, match: str, output: str) -> None:
+    """A prerelease or build suffix is a different toolchain, not the pinned one."""
+    [result] = _classify([_entry("t", version, match=match)], [_record("t", 0, output)])
+    assert result.status == "MISMATCH", result
+
+
+@pytest.mark.parametrize(
+    ("version", "output"),
+    [
+        ("1.96.0", "rustc 1.96.0 (17067e9ac 2026-08-01)"),
+        ("1.96.0", "cargo 1.96.0 (5ffbef321 2026-07-20)"),
+        ("22.23.2", "v22.23.2"),
+        ("2.100.0", "gh version 2.100.0 (2026-09-01)"),
+        ("1228", "/home/runner/.cache/ms-playwright/chromium-1228"),
+        ("9.1.1", "pytest 9.1.1"),
+        ("1.29.1", "rustup 1.29.1 (a1b2c3d4e 2026-06-01)"),
+    ],
+)
+def test_the_real_output_shapes_still_match_exactly(version: str, output: str) -> None:
+    """Overshoot control: the suffix rule must not reject a version followed by
+    the space, parenthesis or end of line every real verify prints."""
+    [result] = _classify([_entry("t", version)], [_record("t", 0, output)])
+    assert result.status == "OK", result
+
+
+def test_every_manifest_pin_matches_a_plain_rendering_of_itself() -> None:
+    """Overshoot control over the live manifest: each non-floor pin, printed the
+    way a `--version` prints it, must classify OK, so no real pin (a content
+    hash, a Playwright revision, a two-part prefix) is unmatchable."""
+    entries = [e for e in load_manifest()["entries"] if rtv.default_match(e) != "min"]
+    assert entries, "no exact/prefix entries in the manifest: the control tests nothing"
+    records = [_record(e["name"], 0, f"{e['name']} {e['version']}\n") for e in entries]
+    stripped = [{**e, "provision": "host"} for e in entries]
+    bad = [r for r in _classify(stripped, records) if r.status != "OK"]
+    assert not bad, bad
+
+
+# ----- the probe itself, run for real against test-local executables ----------------
+
+
+def _fake_tool(bindir: Path, name: str, prints: str) -> None:
+    path = bindir / name
+    path.write_text(f"#!/bin/sh\necho '{prints}'\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _host_path(bindir: Path) -> str:
+    """The job PATH a runner .path would hold: the fakes first, then what the
+    probe itself needs (bash, timeout, base64, head, cat)."""
+    needed = ("bash", "timeout", "base64", "head", "cat", "printf")
+    found = {tool: shutil.which(tool) for tool in needed}
+    assert all(found.values()), f"probe prerequisites absent on this host: {found}"
+    return ":".join([str(bindir), *sorted({str(Path(p).parent) for p in found.values() if p})])
+
+
+def _probe_locally(entries: list[dict], runner_dir: Path, home: Path) -> tuple[list, str]:
+    """Run the verifier's own probe script under bash, as this user, no sudo."""
+    proc = subprocess.run(
+        ["bash", "-s"],
+        input=rtv._probe_script(entries, str(runner_dir)),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={"PATH": os.environ["PATH"], "HOME": str(home)},
+        check=False,
+    )
+    return rtv.classify(entries, proc.returncode, proc.stdout, proc.stderr), proc.stdout
+
+
+def _runner_with_path(tmp_path: Path) -> tuple[Path, Path]:
+    bindir, runner = tmp_path / "bin", tmp_path / "actions-runner-1"
+    bindir.mkdir()
+    runner.mkdir()
+    (runner / ".path").write_text(_host_path(bindir), encoding="utf-8")
+    return bindir, runner
+
+
+def _rust_entries() -> tuple[str, str, list[dict]]:
+    """(cargo entry name, rustc entry name, both entries) from the live manifest."""
+    entries = load_manifest()["entries"]
+    by_exe = {exe: e for e in entries for exe in e.get("provides", [])}
+    cargo, rustc = by_exe["cargo"], by_exe["rustc"]
+    assert cargo["name"] != rustc["name"], (
+        f"cargo and rustc share entry {cargo['name']!r}: one version pin cannot vouch "
+        "for two executables' output"
+    )
+    return cargo["name"], rustc["name"], [cargo, rustc]
+
+
+def test_rustc_drift_is_caught_even_when_cargo_is_pinned(tmp_path: Path) -> None:
+    """The manifest's own Rust entries, verified on a host whose cargo is 1.96.0
+    and whose rustc is not. A combined verify matched anywhere would say OK."""
+    bindir, runner = _runner_with_path(tmp_path)
+    _fake_tool(bindir, "cargo", "cargo 1.96.0 (5ffbef321 2026-07-20)")
+    _fake_tool(bindir, "rustc", "rustc 1.92.0 (ded5c06cf 2025-12-08)")
+    cargo, rustc, entries = _rust_entries()
+    results, _ = _probe_locally(entries, runner, tmp_path)
+    status = {r.name: r.status for r in results}
+    assert status == {cargo: "OK", rustc: "MISMATCH"}, results
+    assert rtv.exit_code(results) == 1
+
+
+def test_cargo_drift_is_caught_even_when_rustc_is_pinned(tmp_path: Path) -> None:
+    bindir, runner = _runner_with_path(tmp_path)
+    _fake_tool(bindir, "cargo", "cargo 1.92.0 (5ffbef321 2025-12-08)")
+    _fake_tool(bindir, "rustc", "rustc 1.96.0 (17067e9ac 2026-08-01)")
+    cargo, rustc, entries = _rust_entries()
+    results, _ = _probe_locally(entries, runner, tmp_path)
+    assert {r.name: r.status for r in results} == {cargo: "MISMATCH", rustc: "OK"}, results
+    assert rtv.exit_code(results) == 1
+
+
+def test_a_pinned_rust_toolchain_reports_ok(tmp_path: Path) -> None:
+    """Overshoot control: splitting the check must not fail a correct host."""
+    bindir, runner = _runner_with_path(tmp_path)
+    _fake_tool(bindir, "cargo", "cargo 1.96.0 (5ffbef321 2026-07-20)")
+    _fake_tool(bindir, "rustc", "rustc 1.96.0 (17067e9ac 2026-08-01)")
+    results, _ = _probe_locally(_rust_entries()[2], runner, tmp_path)
+    assert {r.status for r in results} == {"OK"}, results
+    assert rtv.exit_code(results) == 0
+
+
+# ----- the job PATH is a prerequisite, never replaced by the login PATH ------------------
+
+
+@pytest.mark.parametrize("setup", ["no-runner-dir", "no-path-file", "empty-path-file"])
+def test_no_readable_runner_path_is_unknown_for_every_entry(tmp_path: Path, setup: str) -> None:
+    """Without the runner's .path the probe cannot know what a job resolves, so it
+    must not fall back to the invoking shell's PATH and vouch for anything."""
+    runner = tmp_path / "actions-runner-1"
+    if setup != "no-runner-dir":
+        runner.mkdir()
+    if setup == "empty-path-file":
+        (runner / ".path").write_text("", encoding="utf-8")
+    entries = [_entry("bash", "1", kind="binary", provides=["bash"])]
+    entries[0]["verify"] = "bash --version | head -1"
+    results, stdout = _probe_locally(entries, runner, tmp_path)
+    assert {r.status for r in results} == {"UNKNOWN"}, results
+    assert ".path" in results[0].got, results
+    assert rtv.exit_code(results) == 2
+    assert f"{rtv.RECORD} END" not in stdout, stdout
+
+
+def test_a_readable_runner_path_is_used_for_every_check(tmp_path: Path) -> None:
+    """Positive control: with a readable .path the probe runs to END under it, and a
+    tool present only on that PATH resolves."""
+    bindir, runner = _runner_with_path(tmp_path)
+    _fake_tool(bindir, "onlyonjobpath", "onlyonjobpath 4.5.6")
+    entry = _entry("t", "4.5.6", kind="binary", provides=["onlyonjobpath"])
+    entry["verify"] = "onlyonjobpath --version"
+    [result], stdout = _probe_locally([entry], runner, tmp_path)
+    assert f"{rtv.RECORD} PATHSRC {runner}" in stdout, stdout
+    assert result.status == "OK", result
