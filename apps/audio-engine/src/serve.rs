@@ -32,6 +32,12 @@ use crate::protocol::{self, Advance, Command, LoadSpec, ProtoError};
 /// State messages per second in the threaded modes.
 pub const STATE_HZ: u32 = 30;
 
+/// Slots in the command ring from the control side to the audio side.
+const CMD_SLOTS: usize = 1024;
+
+/// How long shutdown waits for the audio side to apply what is queued.
+const DRAIN_LIMIT: Duration = Duration::from_secs(2);
+
 fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *out, v)?;
     out.write_all(b"\n")?;
@@ -325,7 +331,7 @@ fn serve_threaded_from(
     clock: &'static str,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
 ) -> io::Result<()> {
-    let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(1024);
+    let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(CMD_SLOTS);
     let (res_tx, mut res_rx) = rtrb::RingBuffer::<AudioResult>::new(1024);
     let (state_tx, mut state_rx) = rtrb::RingBuffer::new(64);
     let stop = Arc::new(AtomicBool::new(false));
@@ -358,7 +364,10 @@ fn serve_threaded_from(
     })?;
 
     // Pump: results and snapshots out to stdout; retired tracks freed here.
-    let pump_stop = stop.clone();
+    // The pump stops only after the audio side has, so a result pushed by
+    // the audio side's last block is still written out.
+    let pump_stop = Arc::new(AtomicBool::new(false));
+    let pump_stop_flag = pump_stop.clone();
     let pump_out = out.clone();
     let pump_ids = ids.clone();
     let pump = std::thread::spawn(move || loop {
@@ -375,7 +384,7 @@ fn serve_threaded_from(
             let mut o = pump_out.lock().unwrap();
             let _ = send(&mut *o, &protocol::state_json(&snap, Some(host_ns)));
         }
-        if pump_stop.load(Ordering::Relaxed) && idle {
+        if pump_stop_flag.load(Ordering::Relaxed) && idle {
             break;
         }
         if idle {
@@ -424,10 +433,18 @@ fn serve_threaded_from(
             }
         }
     }
-    // Let the audio side apply what is already queued before stopping.
-    std::thread::sleep(Duration::from_millis(20));
+    // Let the audio side apply everything already queued before stopping,
+    // so every command sent before shutdown or EOF gets its result. A dead
+    // audio side never drains, so it is not waited on.
+    if !audio_failed {
+        let deadline = Instant::now() + DRAIN_LIMIT;
+        while control.cmd_tx.slots() < CMD_SLOTS && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
     stop.store(true, Ordering::Relaxed);
     let _ = audio_thread.join();
+    pump_stop.store(true, Ordering::Relaxed);
     let _ = pump.join();
     if audio_failed {
         return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));

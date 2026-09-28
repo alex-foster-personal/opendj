@@ -238,3 +238,29 @@ fn a_failed_load_refuses_the_commands_queued_behind_it() {
     drop(stdin);
     assert!(child.wait().unwrap().success());
 }
+
+/// Every command sent before stdin closes gets its result, even when the
+/// audio side is asleep between long blocks at that moment (~85 ms here).
+#[test]
+fn commands_sent_just_before_eof_still_get_results() {
+    for round in 0..5 {
+        let mut child = Command::new(BIN)
+            .args(["serve", "--clock", "wall", "--sample-rate", "12000", "--block", "1024"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let hello: Value = serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+        assert_eq!(hello["clock"], "wall");
+        writeln!(stdin, "{}", json!({"id": "last", "cmd": {"type": "crossfader", "value": 0.5}})).unwrap();
+        drop(stdin);
+        let got = lines.any(|l| {
+            let v: Value = serde_json::from_str(&l.unwrap()).unwrap();
+            v["type"] == "result" && v["id"] == "last" && v["ok"] == true
+        });
+        assert!(got, "round {round}: no result for a command sent before EOF");
+        assert!(child.wait().unwrap().success());
+    }
+}
