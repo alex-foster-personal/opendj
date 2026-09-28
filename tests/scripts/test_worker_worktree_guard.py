@@ -99,9 +99,15 @@ def test_create_worktree_starts_at_explicit_origin_base(
 ) -> None:
     """[if] a worker worktree is created [then] HEAD equals origin/main, [else stop].
 
-    floor_gb=0 keeps the real disk probe in the path while making the test
-    independent of the host: tmp_path lives under RUNNER_TEMP, a 2G tmpfs on
-    the nucbox runners (#4099), which is below the 15G production floor.
+    This test is about the starting ref, not disk space, so it pins
+    `floor_gb=0`: `create_worker_worktree` -> the lifecycle guard's
+    `cmd_guard` reads `shutil.disk_usage` on the real HOST, not on anything
+    this test controls, and a host with little real free space (nucbox
+    runners with RUNNER_TEMP on a small tmpfs, CI job 109075514456, run
+    36465719472) made this fail with "disk floor breached" despite the
+    worktree logic itself being correct. See
+    test_create_worktree_still_refuses_below_the_disk_floor below for the
+    control that proves this override does not disable the guard.
     """
     _, checkout = origin_repo
     target = tmp_path / "worker"
@@ -113,25 +119,38 @@ def test_create_worktree_starts_at_explicit_origin_base(
     assert _git(target, "branch", "--show-current").strip() == branch
 
 
-def test_create_worktree_refuses_below_disk_floor(
-    origin_repo: tuple[Path, Path], tmp_path: Path
+def test_create_worktree_still_refuses_below_the_disk_floor(
+    origin_repo: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """[if] measured free disk is below the floor [then] no worker worktree is
-    created, [else stop].
+    """[if] real free disk is below the floor [then] worktree creation still
+    refuses, [else stop].
 
-    Control for floor_gb=0 above: a floor far above the real free space must
-    refuse, so a guard that stopped consulting the disk would fail here.
+    Control for the floor_gb override above: proves the fix is "inject the
+    floor", not "disable the guard". It reads the REAL free space of this
+    host and sets the floor 1000G above it, so the live measurement path is
+    exercised with no monkeypatch, then asserts the refusal fires, names the
+    disk floor, and creates no worktree.
     """
     _, checkout = origin_repo
     target = tmp_path / "worker"
-    unreachable_floor_gb = worktree_lifecycle.free_gb(checkout) + 1_000_000
+    floor_above_real_free = worktree_lifecycle.free_gb(checkout) + 1000
 
-    with pytest.raises(guard.PreflightError, match="lifecycle guard refused"):
+    with pytest.raises(guard.PreflightError, match="worktree lifecycle guard refused"):
         guard.create_worker_worktree(
-            checkout, target, "af--floor-control", "origin/main", floor_gb=unreachable_floor_gb
+            checkout, target, "af--disk-floor-refusal", "origin/main",
+            floor_gb=floor_above_real_free,
         )
 
+    assert "disk floor breached:" in capsys.readouterr().err
     assert not target.exists()
+
+
+def test_create_cli_offers_no_disk_floor_override() -> None:
+    """[if] the worker `create` CLI is given --floor-gb [then] it is rejected,
+    [else stop]: production callers always get the lifecycle floor policy."""
+    with pytest.raises(SystemExit):
+        guard.main(["create", "--repo", ".", "--target", "x", "--branch", "b",
+                    "--base", "origin/main", "--floor-gb", "0"])
 
 
 def test_scope_check_refuses_large_branch(origin_repo: tuple[Path, Path]) -> None:
