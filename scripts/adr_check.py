@@ -297,6 +297,17 @@ def evaluate(
     )
 
 
+def evaluate_batch(members: list[int], *, fetch, list_pr_files, adr_dir: Path) -> Verdict:
+    """A Trunk batch passes only when every member passes on its OWN files and body, so one
+    member's declaration can never cover another member's gated change."""
+    for member in members:
+        verdict = evaluate(list_pr_files(member), fetch(member).get("body") or "", adr_dir)
+        if verdict.code != 0:
+            return Verdict(verdict.code, f"[adr-check] batch member #{member}: {verdict.message}")
+    shown = ", ".join(f"#{member}" for member in members)
+    return Verdict(0, f"[adr-check] OK -- every Trunk batch member passes ({shown})")
+
+
 def evaluate_tree_entries(entries: dict[str, bytes]) -> Verdict:
     """Duplicate and stale checks over a virtual ADR directory."""
     sizes = {name: len(content) for name, content in entries.items()}
@@ -467,26 +478,24 @@ def _resolve_body(
     body: str | None,
     fetch,
     repo_root: Path,
-) -> str:
+) -> tuple[str, list[int] | None]:
+    """The body to judge, plus the member PR numbers when the PR is a Trunk batch."""
     if body is not None:
-        return body
+        return body, None
     if args.body_file:
-        return Path(args.body_file).read_text(encoding="utf-8")
+        return Path(args.body_file).read_text(encoding="utf-8"), None
     pr_number = args.pr if args.pr is not None else current_pr_number(repo_root, args.repo)
     if pr_number is None:
-        return git_commit_body(args.base, repo_root)
+        return git_commit_body(args.base, repo_root), None
     pr = fetch(pr_number)
-    members = trunk_batch_members(pr)
-    if members is None:
-        return pr.get("body") or ""
-    # A Trunk batch carries every member's diff, so it carries every member's declaration.
-    return "\n".join(fetch(member).get("body") or "" for member in members)
+    return pr.get("body") or "", trunk_batch_members(pr)
 
 
 def main(
     argv: list[str] | None = None,
     *,
     fetch=pr_view,
+    list_pr_files=None,
     list_changed=None,
     changed: list[str] | None = None,
     body: str | None = None,
@@ -518,7 +527,7 @@ def main(
         return 2
 
     try:
-        text = _resolve_body(args, body=body, fetch=fetch, repo_root=repo_root)
+        text, members = _resolve_body(args, body=body, fetch=fetch, repo_root=repo_root)
     except Exception as exc:
         print(f"[adr-check] UNKNOWN: could not read PR/commit body ({exc})", file=sys.stderr)
         return 2
@@ -529,7 +538,19 @@ def main(
     if freshness is not None:
         return emit_gate_result(freshness.code, freshness.message)
 
-    verdict = evaluate(paths, text, decisions)
+    if members is None:
+        verdict = evaluate(paths, text, decisions)
+        return emit_gate_result(verdict.code, verdict.message)
+    try:
+        verdict = evaluate_batch(
+            members,
+            fetch=fetch,
+            list_pr_files=list_pr_files or (lambda pr: pr_files(pr, args.repo)),
+            adr_dir=decisions,
+        )
+    except Exception as exc:
+        print(f"[adr-check] UNKNOWN: could not read Trunk batch members ({exc})", file=sys.stderr)
+        return 2
     return emit_gate_result(verdict.code, verdict.message)
 
 
