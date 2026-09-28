@@ -25,6 +25,9 @@ Requirements (mini-PRD)
 - [if] a lock or source file is missing, a source line is an option this
   parser does not model, or a requirement does not parse [then] `check` exits
   2 (could not measure), never 0, [else stop] ✔︎ ✅ 🎯
+- [if] a locked sdist or wheel has no sha256, or a VCS entry has no
+  commit-id [then] `check` exits 1 naming it, so the lock stays hash-pinned
+  even when hand-edited under an unchanged source fingerprint, [else stop] ✔︎ ✅ 🎯
 - [if] a lock gains or loses a package that has no wheel (a VCS or sdist-only
   entry) relative to SOURCE_BUILDS [then] `check` exits 1 naming it: those are
   the only packages whose cold-cache install builds from source, with build
@@ -162,6 +165,25 @@ def _requirement_problems(req: Requirement, packages: list[dict]) -> list[str]:
     ]
 
 
+def _unpinned_artifacts(packages: list[dict]) -> list[str]:
+    """Every locked file without a sha256, and every VCS entry without a commit."""
+    problems: list[str] = []
+    for package in packages:
+        name = package["name"]
+        files = [("sdist", package["sdist"])] if "sdist" in package else []
+        files += [("wheel", wheel) for wheel in package.get("wheels") or []]
+        problems.extend(
+            f"{name} {kind} {entry.get('url')} has no sha256"
+            for kind, entry in files
+            if not (entry.get("hashes") or {}).get("sha256")
+        )
+        if "vcs" in package and not package["vcs"].get("commit-id"):
+            problems.append(f"{name} vcs has no commit-id")
+        if not files and "vcs" not in package:
+            problems.append(f"{name} has no sdist, wheel or vcs source")
+    return problems
+
+
 def lock_problems(lock: Lock, root: Path = REPO_ROOT) -> list[str]:
     """Every way a lock disagrees with its source; empty means fresh."""
     source = root / lock.source
@@ -171,6 +193,7 @@ def lock_problems(lock: Lock, root: Path = REPO_ROOT) -> list[str]:
     if recorded != source_fingerprint(source):
         problems.append(f"{lock.output}: source fingerprint {recorded} is stale for {lock.source}")
     packages = doc.get("packages") or []
+    problems.extend(f"{lock.output}: {p}" for p in _unpinned_artifacts(packages))
     source_only = {canonicalize_name(p["name"]) for p in packages if not p.get("wheels")}
     problems.extend(
         f"{lock.output}: {name} has no wheel and is not in SOURCE_BUILDS"

@@ -16,7 +16,7 @@ unchanged while new advisories land against them.
 | Manifest | Ecosystem | Why it matters |
 |---|---|---|
 | `uv.lock` | PyPI | Daemon runtime + dev tools |
-| `requirements.txt` | PyPI | CI installs from this (`ci.yml` runs `pip install -r requirements.txt`), so it is a second source of truth that can drift from `uv.lock` |
+| `requirements.txt` | PyPI | Source of `pylock.ci.toml` and `pylock.release-check.toml` (via `requirements-*.in`, compiled by `scripts/ci_lock.py`), which self-hosted CI syncs. It is a second source of truth that can drift from `uv.lock` |
 | `ops/quality/requirements.txt`, `requirements-docs.txt` | PyPI | CI tooling, docs build |
 | `pylock.ci.toml`, `pylock.release-check.toml`, `pylock.docs.toml`, `ops/fleet/pylock.duplicate-writer.toml` | PyPI | The exact, hash-pinned packages self-hosted CI syncs (`scripts/ci_lock.py`), transitive versions included |
 | `apps/webui/frontend/pnpm-lock.yaml` | npm | UI (prod) + Vite/Storybook toolchain (dev) |

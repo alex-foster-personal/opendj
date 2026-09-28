@@ -238,6 +238,37 @@ def test_a_new_package_without_a_wheel_is_drift(tmp_path: Path) -> None:
     ]
 
 
+def test_an_artifact_without_a_sha256_is_drift(tmp_path: Path) -> None:
+    """[if] a locked file loses its sha256 [then] check names it, [else stop]."""
+    root = _copy_lock_tree(tmp_path, CI_LOCK)
+    path = root / CI_LOCK.output
+    text = path.read_text(encoding="utf-8")
+    hashed = re.search(r'(wheels = \[\{ url = "[^"]+aiohappyeyeballs[^"]+")[^\n]*\}\]', text)
+    assert hashed, "control: the fixture wheel line must exist"
+    path.write_text(text.replace(hashed.group(0), hashed.group(1) + " }]", 1), encoding="utf-8")
+
+    assert lock_problems(CI_LOCK, root) == [
+        "pylock.ci.toml: aiohappyeyeballs wheel "
+        + re.search(r'url = "([^"]+)"', hashed.group(1)).group(1)
+        + " has no sha256"
+    ]
+
+
+def test_a_vcs_entry_without_a_commit_is_drift(tmp_path: Path) -> None:
+    root = _copy_lock_tree(tmp_path, CI_LOCK)
+    _edit(root / CI_LOCK.output, f', commit-id = "{MADMOM_SHA}"', "")
+
+    problems = lock_problems(CI_LOCK, root)
+
+    assert "pylock.ci.toml: madmom vcs has no commit-id" in problems, problems
+
+
+def test_every_committed_lock_hashes_every_artifact() -> None:
+    """Control for the two above: the real locks pass, so the check is not always-red."""
+    for lock in LOCKS:
+        assert not [p for p in lock_problems(lock) if "sha256" in p or "commit-id" in p], lock
+
+
 def test_a_source_build_that_gains_a_wheel_must_leave_the_named_set(tmp_path: Path) -> None:
     """Overshoot control: the named set may not outlive the packages it names."""
     root = _copy_every_lock(tmp_path)
