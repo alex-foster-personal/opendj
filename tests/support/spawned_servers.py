@@ -31,12 +31,14 @@ import os
 import signal
 import subprocess
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
 import pytest
+
+from scripts.server_owner_guard import process_start_time
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "server_owner_guard.py"
@@ -141,11 +143,33 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         )
 
 
+class PidsToKill(list[int]):
+    """pids to SIGKILL at teardown, each pinned to the start time it had when
+    added, so a pid recycled since then is never signalled."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.identities: dict[int, str | None] = {}
+
+    def append(self, pid: int) -> None:
+        self.identities[pid] = process_start_time(pid)
+        super().append(pid)
+
+    def extend(self, pids: Iterable[int]) -> None:
+        for pid in pids:
+            self.append(pid)
+
+    def kill_all(self) -> None:
+        for pid in self:
+            identity = self.identities[pid]
+            if identity is not None and process_start_time(pid) == identity:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL)
+
+
 @pytest.fixture
-def cleanup_pids() -> Iterator[list[int]]:
+def cleanup_pids() -> Iterator[PidsToKill]:
     """Belt and braces: whatever a test leaves alive by FAILING is killed here."""
-    pids: list[int] = []
+    pids = PidsToKill()
     yield pids
-    for pid in pids:
-        with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, signal.SIGKILL)
+    pids.kill_all()

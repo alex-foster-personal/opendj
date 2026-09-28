@@ -3,7 +3,8 @@
 [if] a test server outlives its owner run [then] fail, [else stop].
 
 Real processes only: every assertion here is about a live pid on this host.
-The census and reaper are covered in ``test_orphan_reaper.py``.
+The census and reaper are covered in ``test_orphan_reaper.py``; the guard's
+owner-death deadline and spawn window in ``test_server_owner_guard.py``.
 
 Regression lines:
   - if a spawned server is alive after its fixture tears down then broken
@@ -17,8 +18,7 @@ Regression lines:
   - if a server the guarded child backgrounded outlives the child, or the guard's
     status differs from the child's then broken
   - if the guard starts while not leading its process group then broken
-  - if a server that ignores SIGTERM is alive 5.0 s after its owner died then broken
-  - if a server that handles SIGTERM gets no grace to finish shutting down then broken
+  - if cleanup_pids SIGKILLs a pid whose start time changed since it was added then broken
 """
 
 from __future__ import annotations
@@ -40,8 +40,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.process_probes import GONE_WITHIN_S, alive, wait_for
-from tests.support.spawned_servers import SpawnedServer, spawn_test_server
+from tests.support.process_probes import (
+    GONE_WITHIN_S,
+    SERVER_CODE,
+    alive,
+    server_argv,
+    wait_for,
+)
+from tests.support.spawned_servers import PidsToKill, SpawnedServer, spawn_test_server
 
 pytestmark = pytest.mark.requirement("DEVOPS-17")
 
@@ -49,30 +55,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = REPO_ROOT / "apps" / "webui" / "frontend"
 PLAYWRIGHT_BIN = FRONTEND / "node_modules" / ".bin" / "playwright"
 
-# A server that proves it started (pidfile) and reports what it inherited.
-SERVER_CODE = textwrap.dedent(
-    """
-    import json, os, sys, time
-    out = sys.argv[1]
-    tmp = out + ".tmp"
-    with open(tmp, "w") as fh:
-        json.dump({"pid": os.getpid(), "af_service_id": os.environ.get("AF_SERVICE_ID")}, fh)
-    os.replace(tmp, out)
-    time.sleep(600)
-    """
-)
-
-
 # ---------------------------------------------------------------- helpers
 
 
 def _read_server_info(info_path: Path, timeout_s: float = 30.0) -> dict:
     wait_for(info_path.exists, timeout_s, f"server to write {info_path}")
     return json.loads(info_path.read_text())
-
-
-def _server_argv(info_path: Path, title: str = "server") -> list[str]:
-    return [sys.executable, "-c", SERVER_CODE, str(info_path), title]
 
 
 def _free_port() -> int:
@@ -178,7 +166,7 @@ def test_server_is_gone_after_pytest_is_sigkilled(tmp_path: Path, cleanup_pids: 
 
 def test_server_carries_its_testing_service_id(tmp_path: Path, cleanup_pids: list[int]) -> None:
     info = tmp_path / "server.json"
-    server: SpawnedServer = spawn_test_server("idcheck", _server_argv(info))
+    server: SpawnedServer = spawn_test_server("idcheck", server_argv(info))
     try:
         data = _read_server_info(info)
         cleanup_pids.append(data["pid"])
@@ -190,7 +178,7 @@ def test_server_carries_its_testing_service_id(tmp_path: Path, cleanup_pids: lis
 
 def test_sigterm_to_the_guard_kills_the_server(tmp_path: Path, cleanup_pids: list[int]) -> None:
     info = tmp_path / "server.json"
-    server = spawn_test_server("sigterm", _server_argv(info))
+    server = spawn_test_server("sigterm", server_argv(info))
     data = _read_server_info(info)
     cleanup_pids.append(data["pid"])
     os.kill(server.pid, signal.SIGTERM)  # the guard only, not its group
@@ -198,93 +186,22 @@ def test_sigterm_to_the_guard_kills_the_server(tmp_path: Path, cleanup_pids: lis
     server.stop()
 
 
-# A server that reports its pid once its SIGTERM behavior is installed, so the
-# owner is only killed after the behavior under test is live.
-TERM_IGNORING_CODE = textwrap.dedent(
-    """
-    import os, signal, sys, time
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    open(sys.argv[1], "w").write(str(os.getpid()))
-    time.sleep(600)
-    """
-)
-# Needs COOPERATIVE_CLEANUP_S after SIGTERM to shut down, then records that it did.
-COOPERATIVE_CLEANUP_S = 1.0
-COOPERATIVE_CODE = textwrap.dedent(
-    f"""
-    import os, signal, sys, time
-    def _shutdown(_signum, _frame):
-        time.sleep({COOPERATIVE_CLEANUP_S})
-        open(sys.argv[1] + ".graceful", "w").write("done")
-        os._exit(0)
-    signal.signal(signal.SIGTERM, _shutdown)
-    open(sys.argv[1], "w").write(str(os.getpid()))
-    time.sleep(600)
-    """
-)
-
-
-def _seconds_from_owner_death_to_server_gone(
-    server_code: str, pid_file: Path, cleanup_pids: list[int]
-) -> float:
-    """Guard ``server_code`` for a real owner, SIGKILL the owner, and time how
-    long the server outlives it. The clock starts BEFORE the kill, so the
-    figure can only overstate the real interval."""
-    owner = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
-    cleanup_pids.append(owner.pid)
-    guard = subprocess.Popen(
-        [
-            sys.executable,
-            str(REPO_ROOT / "scripts" / "server_owner_guard.py"),
-            "--owner-pid",
-            str(owner.pid),
-            "--name",
-            "deadline",
-            "--",
-            sys.executable,
-            "-c",
-            server_code,
-            str(pid_file),
-        ],
-        start_new_session=True,
-    )
-    cleanup_pids.append(guard.pid)
-    wait_for(lambda: pid_file.exists() and pid_file.read_text() != "", 30, "server to start")
-    server = int(pid_file.read_text())
-    cleanup_pids.append(server)
-    assert alive(server), "positive control: the server must be running before the kill"
-    killed_at = time.monotonic()
-    owner.kill()
-    owner.wait(timeout=10)
-    while alive(server):
-        assert time.monotonic() - killed_at < 30, f"server {server} never died"
-        time.sleep(0.02)
-    gone_after = time.monotonic() - killed_at
-    guard.wait(timeout=30)
-    return gone_after
-
-
-def test_a_server_that_ignores_sigterm_is_gone_within_the_bound_of_owner_death(
-    tmp_path: Path, cleanup_pids: list[int]
-) -> None:
-    gone_after = _seconds_from_owner_death_to_server_gone(
-        TERM_IGNORING_CODE, tmp_path / "server.pid", cleanup_pids
-    )
-    assert gone_after <= GONE_WITHIN_S, (
-        f"a TERM-ignoring server outlived its owner by {gone_after:.2f} s (bound {GONE_WITHIN_S} s)"
-    )
-
-
-def test_a_server_that_handles_sigterm_gets_to_finish_its_shutdown(
-    tmp_path: Path, cleanup_pids: list[int]
-) -> None:
-    """The control for the bound above: escalating to SIGKILL early (or only)
-    would satisfy that test and break every server's graceful shutdown."""
-    pid_file = tmp_path / "server.pid"
-    gone_after = _seconds_from_owner_death_to_server_gone(COOPERATIVE_CODE, pid_file, cleanup_pids)
-    graceful = pid_file.with_name(pid_file.name + ".graceful")
-    assert graceful.exists(), "the server was killed before its SIGTERM shutdown could finish"
-    assert COOPERATIVE_CLEANUP_S <= gone_after <= GONE_WITHIN_S, gone_after
+def test_cleanup_pids_never_kills_a_pid_whose_start_time_changed() -> None:
+    """A recycled pid carries a different start time than the one recorded."""
+    stale = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    current = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    try:
+        pids = PidsToKill()
+        pids.extend([stale.pid, current.pid])
+        pids.identities[stale.pid] = "a start time from before the pid was recycled"
+        pids.kill_all()
+        assert current.wait(timeout=10) == -signal.SIGKILL, "control: the pinned pid must die"
+        time.sleep(0.2)
+        assert stale.poll() is None, "cleanup_pids killed a pid whose start time changed"
+    finally:
+        for proc in (stale, current):
+            proc.kill()
+            proc.wait(timeout=10)
 
 
 def test_guard_refuses_an_owner_that_is_not_running(tmp_path: Path) -> None:
@@ -300,7 +217,7 @@ def test_guard_refuses_an_owner_that_is_not_running(tmp_path: Path) -> None:
             "--name",
             "unowned",
             "--",
-            *_server_argv(info),
+            *server_argv(info),
         ],
         capture_output=True,
         text=True,
@@ -356,7 +273,7 @@ def test_a_server_the_child_backgrounded_dies_when_the_child_exits(
 def test_the_guard_refuses_to_start_unless_it_leads_its_group(tmp_path: Path) -> None:
     """Without leadership a group signal would hit the CALLER (here, pytest)."""
     info = tmp_path / "server.json"
-    result = _run_guard(_server_argv(info), new_session=False)
+    result = _run_guard(server_argv(info), new_session=False)
     assert result.returncode != 0
     assert "must lead its process group" in result.stderr
     time.sleep(0.5)

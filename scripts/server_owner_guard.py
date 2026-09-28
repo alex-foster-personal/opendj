@@ -43,6 +43,9 @@ Requirements (mini-PRD):
   ✔︎ the owner-death bound holds even for a server that ignores SIGTERM
     - [if] a child that ignores SIGTERM is alive 5 s after its owner died [then ⛔️]
     - [if] a child that handles SIGTERM gets no grace to finish shutting down [then ⛔️]
+    - [if] a wrapper exits on SIGTERM and its descendant is killed mid-shutdown [then ⛔️]
+    - [if] the guard lingers once its whole group has exited [then ⛔️]
+    - [if] a signal arriving just after the child is spawned leaks the child [then ⛔️]
   ✔︎ the guarded server dies with its guard
     - [if] the guard gets SIGTERM and the server survives [then ⛔️]
   ✔︎ nothing the child backgrounded outlives the child
@@ -129,23 +132,27 @@ def _log(message: str) -> None:
 
 
 def _kill_own_group(reason: str, kill_by: float) -> None:
-    """TERM the guard's whole group, then KILL it (the guard included) no later
-    than ``kill_by``, an absolute ``time.monotonic()`` deadline: a member that
-    ignores SIGTERM must not stretch the owner-death bound."""
+    """TERM the guard's whole group, wait for EVERY other member to exit, then
+    KILL whatever is left (the guard included) no later than ``kill_by``, an
+    absolute ``time.monotonic()`` deadline: a member that ignores SIGTERM must
+    not stretch the owner-death bound. The group is polled, not the guard's
+    children: a wrapper (``sh -c``, ``uv run``) exits on TERM at once while the
+    server below it is still shutting down."""
     pgid = os.getpgrp()
     signal.signal(signal.SIGTERM, signal.SIG_IGN)  # survive our own TERM long enough to escalate
     os.killpg(pgid, signal.SIGTERM)
     _log(f"{reason}; sent SIGTERM to group {pgid}")
     while (remaining := kill_by - time.monotonic()) > 0:
         try:
-            if os.waitpid(-1, os.WNOHANG) == (0, 0):
-                time.sleep(min(CFG.POLL_S, remaining))
-        except ChildProcessError:
-            break  # every child of ours is reaped; others in the group get the KILL below
+            if not _live_group_members_but_me(timeout_s=remaining):
+                break
+        except subprocess.TimeoutExpired:
+            break  # the probe itself used up the deadline: KILL now
+        time.sleep(max(0.0, min(CFG.POLL_S, kill_by - time.monotonic())))
     os.killpg(pgid, signal.SIGKILL)
 
 
-def _live_group_members_but_me() -> list[int]:
+def _live_group_members_but_me(timeout_s: float | None = None) -> list[int]:
     """Live (non-zombie) members of the guard's group, the guard excluded."""
     pgid, me = os.getpgrp(), os.getpid()
     out = subprocess.run(
@@ -155,6 +162,7 @@ def _live_group_members_but_me() -> list[int]:
         check=True,
         env={**os.environ, "LC_ALL": "C"},
         process_group=0,  # else the probe lists ITSELF as a leftover, forever
+        timeout=timeout_s,
     ).stdout
     rows = [line.split() for line in out.splitlines()]
     return [
@@ -216,14 +224,16 @@ def main(argv: list[str] | None = None) -> int:
         "AF_SERVICE_ID": testing_service_id(args.name),
         "OPENDJ_TEST_OWNER_PID": str(args.owner_pid),
     }
-    child = subprocess.Popen(command, env=env)
 
     def _on_signal(signum: int, _frame: object) -> None:
         kill_by = time.monotonic() + CFG.OWNER_DEATH_BOUND_S - CFG.DEADLINE_MARGIN_S
         _kill_own_group(f"{args.name}: got signal {signum}", kill_by)
 
+    # BEFORE the spawn: a default-action TERM landing just after Popen returned
+    # would kill the guard and leave the child running in the group.
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _on_signal)
+    child = subprocess.Popen(command, env=env)
 
     while True:
         status = child.poll()

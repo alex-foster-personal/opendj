@@ -12,10 +12,28 @@ import sys
 import textwrap
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from scripts.server_owner_guard import process_start_time
 
 GONE_WITHIN_S = 5.0
+
+# A server that proves it started (pidfile) and reports what it inherited.
+SERVER_CODE = textwrap.dedent(
+    """
+    import json, os, sys, time
+    out = sys.argv[1]
+    tmp = out + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump({"pid": os.getpid(), "af_service_id": os.environ.get("AF_SERVICE_ID")}, fh)
+    os.replace(tmp, out)
+    time.sleep(600)
+    """
+)
+
+
+def server_argv(info_path: Path, title: str = "server") -> list[str]:
+    return [sys.executable, "-c", SERVER_CODE, str(info_path), title]
 
 
 def alive(pid: int) -> bool:
