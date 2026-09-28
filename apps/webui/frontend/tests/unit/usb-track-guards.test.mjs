@@ -303,7 +303,7 @@ test('[if] a stick load fails with a USB code [then] the toast headline is plain
 		[new harness.RbApiError(404, 'USB_TRACK_NOT_FOUND', 'no such track'), "This track is no longer in the stick's rekordbox export"]
 	];
 	for (const [cause, headline] of cases) {
-		harness.reportDeckLoadFailure(2, `${STICK_ID}: ${cause.message}`, cause, {});
+		harness.reportDeckLoadFailure(2, `${STICK_ID}: ${cause.message}`, cause, {}, {});
 		const toast = harness.toasts.at(-1);
 		assert.equal(toast.headline, headline);
 		assert.equal(toast.message, `Deck 2 load failed - ${STICK_ID}: ${cause.message}`, 'the technical text is kept for detail');
@@ -314,7 +314,7 @@ test('[if] a stick load fails with a USB code [then] the toast headline is plain
 		new Error('USB_STICK_NOT_MOUNTED'),
 		{ code: 'toString' }
 	]) {
-		harness.reportDeckLoadFailure(2, 'Night Ride: gone', cause, {});
+		harness.reportDeckLoadFailure(2, 'Night Ride: gone', cause, {}, {});
 		const headline = harness.toasts.at(-1).headline;
 		assert.ok(
 			!cases.some(([, words]) => words === headline),
