@@ -7,6 +7,8 @@ from apps.open_dj.schema_loader import load_schema
 from apps.open_dj.validate import validate_document
 
 
+# REQ: OPEN-03
+# REQ: OPEN-03a
 @pytest.mark.requirement("OPEN-01")
 def test_schema_itself_is_valid_draft_2020_12() -> None:
     """Schema compiles under Draft202012Validator.check_schema."""

@@ -97,13 +97,17 @@ describe('planned explainers', () => {
 		assert.match(topbar, /plannedTitle\(/);
 	});
 
-	test('the planned two-track AutoPlay option remains inert while IPC can report its status', () => {
+	test('5ccbce4970bb: the planned two-track AutoPlay option remains inert while IPC can report its status', () => {
 		const topbar = readFileSync(
 			fileURLToPath(new URL('../../src/lib/components/rb/TopBar.svelte', import.meta.url)),
 			'utf8'
 		);
 		assert.match(topbar, /class="ap-row ap-two-track rb-inert"/);
-		assert.match(topbar, /disabled/);
+		assert.match(
+			topbar,
+			/class="ap-row ap-two-track rb-inert"[\s\S]*?\bdisabled\b[\s\S]*?Two-track AutoPlay/
+		);
+		assert.match(topbar, /ap-planned/);
 		assert.match(topbar, /plannedTitle\('autoplay-two-track'\)/);
 		assert.match(mod.PLANNED_CONTROLS['autoplay-two-track'], /second automatic track/i);
 	});

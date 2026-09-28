@@ -33,7 +33,7 @@ def _run_main(
 
     monkeypatch.setattr(pr_ci_coverage, "_open_prs", lambda: open_prs)
     monkeypatch.setattr(pr_ci_coverage, "_recently_merged_prs", lambda _cutoff: [])
-    monkeypatch.setattr(pr_ci_coverage, "_changed_files", lambda _n: [NON_DOCS_FILE])
+    monkeypatch.setattr(pr_ci_coverage, "_changed_files", lambda _n, _h: [NON_DOCS_FILE])
     monkeypatch.setattr(
         pr_ci_coverage,
         "_has_actions_run_at_head",
@@ -108,7 +108,7 @@ def test_dirty_merge_state_skips_actions_lookup(monkeypatch: pytest.MonkeyPatch)
         called = True
         return False
 
-    monkeypatch.setattr(pr_ci_coverage, "_changed_files", lambda _n: [NON_DOCS_FILE])
+    monkeypatch.setattr(pr_ci_coverage, "_changed_files", lambda _n, _h: [NON_DOCS_FILE])
     monkeypatch.setattr(pr_ci_coverage, "_has_actions_run_at_head", fail_if_called)
     inspection = pr_ci_coverage._inspect_pr((492, DIRTY_HEAD, "dirty"))
     assert inspection[4] is True

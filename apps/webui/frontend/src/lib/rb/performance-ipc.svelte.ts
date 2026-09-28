@@ -205,7 +205,8 @@ export type PerformanceCommand =
 			stable_id: string;
 			refuseIfMaster?: boolean;
 			stems?: boolean;
-			// Caller shows its own failure toast (Trackify skip); deck_errors still update.
+			// Caller shows its own failure toast (Trackify skip): mutes this dispatcher's
+			// toast AND the engine's (#4036); deck_errors and the server report remain.
 			suppressCommandErrorToast?: boolean;
 	  }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
@@ -1961,8 +1962,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// releases on its own ceiling if a load never settles.
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
-			const loadOptions = command.stems === undefined ? undefined : { stems: command.stems };
-			await engine.load(command.deck, command.stable_id, loadOptions);
+			await engine.load(command.deck, command.stable_id, {
+				stems: command.stems,
+				suppressFailureToast: command.suppressCommandErrorToast
+			});
 		} finally {
 			deckLoadSettled();
 		}

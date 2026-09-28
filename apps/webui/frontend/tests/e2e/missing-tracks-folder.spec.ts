@@ -109,7 +109,7 @@ async function stubPerformanceApis(
 						// fails fast when any runtime policy key is missing.
 						group: 'Runtime policy',
 						items: [
-							{ key: 'hide_broken_playlist_min_available_ratio', value: 0.3, tbd: false },
+							{ key: 'hide_broken_playlist_min_available_tracks', value: 4, tbd: false },
 							{ key: 'anlz_points_default', value: 38400, tbd: false },
 							{ key: 'anlz_points_min', value: 100, tbd: false },
 							{ key: 'anlz_points_max', value: 38400, tbd: false },

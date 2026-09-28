@@ -76,7 +76,7 @@ from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
-from apps.shared.paths import STATE_DB
+from apps.shared.state import db as state_db
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
@@ -261,13 +261,14 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
     assert_ready()
     stems = stem_storage()
     ensure_stem_storage(stems)
+    state_db_path = _create_state_store(cfg)
 
     return legacy_create_app(
-        backend=make_backend(),
+        backend=make_backend(state_db_path),
         bind_host=cfg.host,
         hostname=os.environ.get("MUSIC_DJ_HOSTNAME"),
         syncthing_status_fn=probe_syncthing_status,
-        state_db_path=str(STATE_DB),
+        state_db_path=str(state_db_path),
         port=cfg.port,
         stem_roots=stems.roots,
         mount_frontend=False,
@@ -298,6 +299,29 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,
     )
+
+
+def _create_state_store(cfg: EngineConfig) -> Path:
+    """Create and migrate ``state.db`` BEFORE a backend is chosen (#3965).
+
+    ``make_backend`` picks by file presence: SqliteBackend when ``state.db``
+    exists, InMemoryBackend when it does not. On a first run nothing had
+    created it yet, so the engine bound an in-memory library for the life of
+    the process. The first folder import then wrote its rows to sqlite,
+    readiness (which reads sqlite directly) counted them, and ``/tracks`` and
+    ``/health`` served an empty library until the app was relaunched. The
+    availability worker created the file a moment after boot anyway, too
+    late, and a readiness request racing that creation read a half-migrated
+    schema and 500'd.
+
+    The engine is the long-lived store owner, so an in-memory library is
+    never its right answer: anything written to one is lost at exit. This
+    writes no rows. An empty, fully migrated store is what every later
+    reader and the import worker expect to find.
+    """
+    path = cfg.state_db
+    state_db.open_rw(path).close()
+    return path
 
 
 def _drop_api_routes(app: FastAPI, prefix: str) -> int:

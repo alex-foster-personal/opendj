@@ -26,6 +26,7 @@ before(async () => {
 	ql = await loadTypeScriptModule('src/lib/player/transport/quantized-launch.ts');
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 planQuantizedLaunch arms on the next shared master beat 1', () => {
 	const plan = ql.planQuantizedLaunch({
 		nowContextTimeSec: 10,
@@ -43,6 +44,7 @@ test('LATENCY-02 planQuantizedLaunch arms on the next shared master beat 1', () 
 	assert.ok(plan.launchAtContextSec > 10.19, 'launch waits for the next master beat 1');
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 planQuantizedLaunch skips a beat 1 inside the processor lead', () => {
 	const extendedMaster = [
 		...MASTER_BEATS,
@@ -65,6 +67,7 @@ test('LATENCY-02 planQuantizedLaunch skips a beat 1 inside the processor lead', 
 	assert.ok(plan.launchAtContextSec >= 12, 'too-close beat 1 is skipped for the following downbeat');
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 planQuantizedLaunch refuses without a playing master or trusted grid', () => {
 	const noMaster = ql.planQuantizedLaunch({
 		nowContextTimeSec: 10,

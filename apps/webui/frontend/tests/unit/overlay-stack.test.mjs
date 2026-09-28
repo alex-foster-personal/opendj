@@ -102,3 +102,10 @@ test('feedback dock stays above boot preflight and quit confirm (#3981)', () => 
 	assert.ok(z.feedbackDock > z.preflightBoot);
 	assert.ok(z.feedbackDock > z.brandLaunch);
 });
+
+test('feedback pin bubble paints above dock and root modals (#3981)', () => {
+	const z = stack.OVERLAY_Z_INDEX;
+	assert.ok(z.feedbackPinBubble > z.feedbackDock);
+	assert.ok(z.feedbackPinBubble > z.settings);
+	assert.ok(z.feedbackDock > z.settings);
+});

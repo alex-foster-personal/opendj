@@ -9,12 +9,23 @@
 # ]
 #
 # [tool.uv.sources]
-# torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
-# torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+# torch = [
+#   { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+#   { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+# ]
+# torchaudio = [
+#   { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+#   { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+# ]
 #
 # [[tool.uv.index]]
 # name = "pytorch-cpu"
 # url = "https://download.pytorch.org/whl/cpu"
+# explicit = true
+#
+# [[tool.uv.index]]
+# name = "pytorch-cu126"
+# url = "https://download.pytorch.org/whl/cu126"
 # explicit = true
 # ///
 """Deezer S-KEY (ICASSP 2025) as a candidate for nav1-key-r0 (issue #1478).
@@ -33,6 +44,16 @@ so two runs claiming the same producer version could silently differ. The
 pinned torch/torchaudio/onnxscript versions are what `uv` actually resolves
 together with the pinned skey commit (not chosen independently), and all
 three plus skey_revision are stamped into every output payload.
+
+WINDOWS NEEDS ITS OWN CUDA INDEX, cu126: without an explicit override,
+`torch`/`torchaudio` resolve to whatever default PyPI publishes for win32,
+which on a CUDA-equipped Windows box is CPU-only -- never the acceleration
+that box actually has (mirroring apps/analysis_beatgrid/beat_this_runner.py's
+own linux pytorch-cpu pin, in the opposite direction). `pytorch-cu126`
+carries torch==2.7.1 and torchaudio==2.7.1 win_amd64 wheels at the exact
+pinned versions (confirmed against the index directly, not inferred);
+`pytorch-cu124` does not and was never committed here. `uv lock --script`
+resolves cleanly with this header and no requires-python cap.
 
 DEVICE: `auto` here means "prefer a real accelerator", mirroring
 apps/analysis_beatgrid/beat_this_runner.py's convention. CPU is the
