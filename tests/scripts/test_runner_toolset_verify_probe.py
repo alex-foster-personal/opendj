@@ -23,8 +23,8 @@ Regression lines:
   - if a runner's stale .path is verified when its `.env` PATH= (which the
     Listener loads and which wins) is set, or runners are deduplicated on .path
     rather than on that effective job PATH, then broken
-  - if a Playwright revision dir left by an interrupted install (no
-    INSTALLATION_COMPLETE) or missing its executable reports OK then broken
+
+The Playwright payload tests live in test_runner_toolset_verify_playwright.py.
 """
 
 from __future__ import annotations
@@ -510,65 +510,3 @@ def test_runners_are_deduplicated_on_their_effective_job_path(
     assert [r.status for r in results] == ["OK"], results
     assert stdout.count(f"{rtv.RECORD} PATHSRC ") == 1, stdout
     assert f"{rtv.RECORD} ALSO {second} {first}" in stdout, stdout
-
-
-# ----- a Playwright browser is its payload, not its cache dir name ------------------------
-
-PLAYWRIGHT_DIR_RE = re.compile(r"ms-playwright/([\w-]+-\d+)")
-
-
-def _playwright_entries() -> list[tuple[dict, str]]:
-    """(entry, revision dir name) for every Playwright entry in the live manifest."""
-    entries = [e for e in load_manifest()["entries"] if e["kind"] == "playwright"]
-    assert entries, "no playwright entries in the manifest: the test checks nothing"
-    named = [(e, PLAYWRIGHT_DIR_RE.search(e["verify"])) for e in entries]
-    unnamed = [e["name"] for e, found in named if not found]
-    assert not unnamed, f"verify names no ms-playwright revision dir: {unnamed}"
-    return [(e, found.group(1)) for e, found in named if found]
-
-
-@pytest.mark.parametrize("state", ["interrupted-install", "payload-deleted"])
-def test_a_playwright_revision_dir_without_its_payload_is_missing(
-    tmp_path: Path, state: str
-) -> None:
-    """An interrupted install leaves the revision dir with no INSTALLATION_COMPLETE
-    marker; a later cleanup can leave the marker and delete the browser. Neither
-    can launch, so neither may verify OK on the dir name alone."""
-    home = tmp_path / "home"
-    entries = _playwright_entries()
-    for _, dirname in entries:
-        revision = home / ".cache" / "ms-playwright" / dirname
-        revision.mkdir(parents=True)
-        if state == "payload-deleted":
-            (revision / "INSTALLATION_COMPLETE").write_text("", encoding="utf-8")
-            (revision / "DEPENDENCIES_VALIDATED").write_text("", encoding="utf-8")
-    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "ls", "test"))
-    results, _ = _probe_locally([e for e, _ in entries], runner, env={"HOME": str(home)})
-    assert {r.name: r.status for r in results} == {e["name"]: "MISSING" for e, _ in entries}, (
-        results
-    )
-
-
-def test_a_complete_playwright_install_verifies_ok_and_its_marker_is_what_counts(
-    tmp_path: Path,
-) -> None:
-    """On the real cache: a revision Playwright itself marked INSTALLATION_COMPLETE
-    verifies OK (the overshoot control), and the same real payload without that
-    marker, as an install interrupted after unpacking leaves it, is MISSING."""
-    cache = Path.home() / ".cache" / "ms-playwright"
-    entries = _playwright_entries()
-    absent = [d for _, d in entries if not (cache / d / "INSTALLATION_COMPLETE").is_file()]
-    if absent:
-        pytest.skip(f"UNAVAILABLE: no completed Playwright install here for {absent}")
-    runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "ls", "test"))
-    results, _ = _probe_locally([e for e, _ in entries], runner)
-    assert {r.status for r in results} == {"OK"}, results
-    home = tmp_path / "home"
-    for _, dirname in entries:
-        unmarked = home / ".cache" / "ms-playwright" / dirname
-        unmarked.mkdir(parents=True)
-        for part in (cache / dirname).iterdir():
-            if part.name != "INSTALLATION_COMPLETE":
-                (unmarked / part.name).symlink_to(part)
-    results, _ = _probe_locally([e for e, _ in entries], runner, env={"HOME": str(home)})
-    assert {r.status for r in results} == {"MISSING"}, results
