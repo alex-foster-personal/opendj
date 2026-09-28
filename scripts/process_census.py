@@ -219,13 +219,19 @@ def _read_envs_darwin(procs: dict[int, Proc]) -> None:
     # -E appends the environment after the command; -ax deliberately means ALL
     # processes here (with -p it would silently override the pid list). macOS
     # shows env only for this user's processes and hides it for SIP binaries.
+    # argv and env share that one field, so only the text AFTER the command
+    # captured by the snapshot is env: `KEY=value` words in a process's own
+    # argv or retitled name must never read as its environment. A command
+    # that changed between the two ps calls leaves the env unreadable.
     for line in _run(["ps", "-axEww", "-o", "pid=,command="]).splitlines():
         pid_s, _, text = line.strip().partition(" ")
         if not pid_s.isdigit() or int(pid_s) not in procs:
             continue
-        pairs = re.findall(r"(?:^|\s)([A-Z][A-Z0-9_]*)=(\S*)", text)
-        procs[int(pid_s)].env, procs[int(pid_s)].env_markers = _filter_env(pairs)
-        procs[int(pid_s)].env_readable = bool(pairs)
+        proc = procs[int(pid_s)]
+        env_text = text[len(proc.command) :] if text.startswith(proc.command) else ""
+        pairs = re.findall(r"(?:^|\s)([A-Z][A-Z0-9_]*)=(\S*)", env_text)
+        proc.env, proc.env_markers = _filter_env(pairs)
+        proc.env_readable = bool(pairs)
 
 
 def _read_cwds_darwin(procs: dict[int, Proc], pids: list[int]) -> None:
@@ -349,7 +355,12 @@ def _looks_test_spawned(proc: Proc) -> bool:
 
 
 def _in_scope(proc: Proc) -> bool:
-    return _looks_test_spawned(proc) or CFG.TEST_SERVICE_MARKER in proc.env.get("AF_SERVICE_ID", "")
+    """A test-shaped command, a `.test.` service id, or a CI runner's job markers."""
+    return (
+        _looks_test_spawned(proc)
+        or CFG.TEST_SERVICE_MARKER in proc.env.get("AF_SERVICE_ID", "")
+        or any(key in proc.env for key in CFG.RUNNER_ENV_KEYS)
+    )
 
 
 def _ancestry(procs: dict[int, Proc], pid: int) -> list[int]:

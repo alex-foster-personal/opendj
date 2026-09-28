@@ -18,7 +18,10 @@ Regression lines:
     of a running test is, then broken
   - if a real orphan whose own id merely mentions codex is not a service then broken
   - if a real process adopted by a Linux subreaper is not classified orphaned then broken
-  - if a real retitled service (env unreadable on macOS) is reaped then broken
+  - if a real retitled service (env unreadable on macOS) is reaped, or env-shaped
+    words in its title are read as its environment then broken
+  - if a real orphan carrying only CI runner markers is out of the census, or a
+    real unmarked orphan is in it then broken
 """
 
 from __future__ import annotations
@@ -140,16 +143,20 @@ def test_reaper_kills_orphaned_test_servers_and_spares_a_real_service(
     )
 
 
+# The new title carries env-SHAPED words on purpose: on macOS argv and env
+# share one ps field, and these must never be read as the process's env.
 RETITLE_CODE = (
     "import setproctitle, time; "
-    "setproctitle.setproctitle('uvicorn apps.engine_core retitled-control'); time.sleep(600)"
+    "setproctitle.setproctitle('uvicorn apps.engine_core retitled-control "
+    "AF_SERVICE_ID=com.opendj.test.spoofed CLAUDECODE=1'); time.sleep(600)"
 )
 
 
 def test_a_retitled_service_survives_reap(cleanup_pids: list[int]) -> None:
     """Real process: a daemonized service that rewrites its title, run from a
     checkout with an agent marker. On macOS its env is unreadable (unreadable-
-    orphan); where it stays readable its own id makes it a service. Never reaped."""
+    orphan), and the `.test.` id written INTO its title is not its env; where the
+    env stays readable its own id makes it a service. Never reaped."""
     service = orphan(
         [sys.executable, "-c", RETITLE_CODE],
         {
@@ -301,3 +308,24 @@ def test_the_census_orphans_a_real_subreaper_adoptee(
     )
     row = _classify_live([adoptee])[adoptee]
     assert (row.tree, row.verdict, row.root_pid) == ("orphaned", "reapable", adoptee), row
+
+
+def test_a_runner_marked_orphan_is_in_scope_and_an_unmarked_one_is_not(
+    cleanup_pids: list[int],
+) -> None:
+    """A CI job's leftover need not look like a test: its runner markers alone
+    bring it into scope. The control, an orphan with neither, stays out."""
+    clean = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/")}
+    runner_marked = orphan(
+        [sys.executable, "-c", SLEEP_600, "custom-job-leftover"],
+        {**clean, "GITHUB_RUN_ID": "1", "RUNNER_NAME": "control-runner"},
+        "/",
+    )
+    unmarked = orphan([sys.executable, "-c", SLEEP_600, "custom-unmarked"], clean, "/")
+    cleanup_pids.extend([runner_marked, unmarked])
+    wait_for(lambda: alive(runner_marked) and alive(unmarked), 10, "real processes to start")
+    rows = {r.pid: r for r in classify(snapshot())}
+    assert runner_marked in rows, "a runner-marked orphan is out of the census scope"
+    row = rows[runner_marked]
+    assert (row.tree, row.attribution, row.verdict) == ("orphaned", "runner", "reapable"), row
+    assert unmarked not in rows, f"an orphan with no test or runner marker is in scope: {unmarked}"
