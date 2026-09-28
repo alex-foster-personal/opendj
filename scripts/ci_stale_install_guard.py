@@ -8,8 +8,9 @@ any project dependency is installed. Called by scripts/ci_runner_preflight.sh.
 Supersedes: nothing; no earlier check inspected a job's interpreter for a project
 install. It EXTENDS scripts/ci_runner_preflight.sh rather than replacing it: the
 preflight still names missing executables, then runs this guard for each of
-``python``/``python3`` on PATH. Every self-hosted job that launches Python calls
-the preflight first, pinned by tests/scripts/test_ci_workflow_stale_install_coverage.py.
+``python``/``python3`` on PATH. Every self-hosted job that checks out the repo
+calls the preflight after each setup-python/setup-uv step, pinned by
+tests/scripts/test_ci_workflow_stale_install_coverage.py.
 
 WHY (Mon 28 Sep 2026). The setup-python toolcache interpreter on agentbox held a
 job-installed copy of this project: music_dj_tools-1.0.1.dist-info plus 469
