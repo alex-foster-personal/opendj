@@ -18,9 +18,10 @@ Requirements:
   ✔︎ apply never sends ``state`` and proves the result by re-reading
     - [if] the desired file contains a ``state`` key [then ⛔️ accepted silently]
     - [if] the live read after apply still differs [then ⛔️ exit 0]
-  ✔︎ a missing token or an HTTP error fails loudly, never as "no drift"
+  ✔︎ a missing token, an HTTP error or an unreachable API fails loudly (exit 2), never as drift
     - [if] TRUNK_API_TOKEN is unset [then ⛔️ any API call is attempted]
     - [if] Trunk answers 403 [then ⛔️ printed as a clean diff]
+    - [if] the connection is refused [then ⛔️ exit 1, the drift code]
 """
 
 from __future__ import annotations
@@ -88,6 +89,14 @@ def _token() -> str:
     return token
 
 
+def parse_body(raw: bytes) -> dict[str, Any]:
+    """Write endpoints (submitPullRequest) answer a bare `OK`; any other body must be JSON."""
+    body = raw.strip()
+    if body in PLAIN_SUCCESS_BODIES:
+        return {}
+    return json.loads(body)
+
+
 def _post(endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
         f"{API_BASE}/{endpoint}",
@@ -101,14 +110,14 @@ def _post(endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            raw = response.read().strip()
+            raw = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read()[:300].decode(errors="replace")
         raise TrunkApiError(f"POST {endpoint} -> HTTP {error.code}: {detail}") from None
-    # Write endpoints (submitPullRequest) answer a bare `OK`; any other body must be JSON.
-    if raw in PLAIN_SUCCESS_BODIES:
-        return {}
-    return json.loads(raw)
+    except (urllib.error.URLError, TimeoutError) as error:
+        # DNS, refused connection, TLS or timeout: the queue state is unmeasured, not drifted.
+        raise TrunkApiError(f"POST {endpoint} -> Trunk API unreachable: {error}") from None
+    return parse_body(raw)
 
 
 def fetch_live(desired: dict[str, Any]) -> dict[str, Any]:

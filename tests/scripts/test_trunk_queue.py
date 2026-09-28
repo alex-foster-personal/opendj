@@ -9,6 +9,8 @@ Regression lines:
   - if the merge method drifts from merge_commit then queue merges differ from the step-7 lane merge
   - if Trunk's status check is enabled while ci_wait does not know its app then every waiter raises
   - if a missing token reaches the network then an unauthenticated call reads like a result
+  - if an unreachable API exits 1 then an outage reads as drift
+  - if a manual dispatch can name a branch ref then branch code runs with the org token
   - if the config workflow gains a PR trigger then branch code runs with the org token in scope
   - if the scheduled run applies instead of diffing then a deliberate UI change is silently reverted
 """
@@ -17,7 +19,10 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -92,41 +97,55 @@ def test_the_config_cannot_carry_the_queue_run_state(tmp_path: Path) -> None:
     assert "state" not in DESIRED
 
 
-def test_a_missing_token_never_reaches_the_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[object] = []
-    monkeypatch.delenv("TRUNK_API_TOKEN", raising=False)
-    monkeypatch.setattr(trunk_queue.urllib.request, "urlopen", lambda *a, **k: calls.append(a))
-    with pytest.raises(trunk_queue.TrunkApiError, match="TRUNK_API_TOKEN"):
-        trunk_queue.fetch_live(DESIRED)
-    assert calls == []
-    assert trunk_queue.main(["diff"]) == 2, "a failed read must not exit like a clean diff"
+def _run_cli(*args: str, token: str | None) -> subprocess.CompletedProcess[str]:
+    """The real CLI and the real transport, pointed at a proxy port nothing listens on.
+
+    No network access is patched out: urllib honors HTTPS_PROXY, so any request that is actually
+    attempted fails as a refused connection, which the CLI must report as unreachable.
+    """
+    env = {
+        k: v for k, v in os.environ.items() if k not in {"TRUNK_API_TOKEN", "NO_PROXY", "no_proxy"}
+    }
+    env["HTTPS_PROXY"] = env["https_proxy"] = "http://127.0.0.1:9"
+    if token is not None:
+        env["TRUNK_API_TOKEN"] = token
+    return subprocess.run(
+        [sys.executable, "-m", "scripts.trunk_queue", *args],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
-class _Response:
-    def __init__(self, body: bytes) -> None:
-        self.body = body
+def test_a_missing_token_never_reaches_the_network() -> None:
+    result = _run_cli("diff", token=None)
+    assert result.returncode == 2, "a failed read must not exit like a clean diff (0) or drift (1)"
+    assert "TRUNK_API_TOKEN is not set" in result.stderr
+    assert "unreachable" not in result.stderr, "the token check must come before any request"
 
-    def __enter__(self) -> _Response:
-        return self
 
-    def __exit__(self, *exc: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return self.body
+def test_an_unreachable_api_is_unmeasured_not_drift() -> None:
+    """Control for the test above: with a token, the same CLI does attempt the request."""
+    result = _run_cli("diff", token="not-a-real-token")
+    assert result.returncode == 2, result.stderr
+    assert "Trunk API unreachable" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize(
     ("body", "parsed"),
-    [(b"OK", {}), (b"", {}), (b'{"state": "running"}', {"state": "running"})],
+    [(b"OK", {}), (b"OK\n", {}), (b"", {}), (b'{"state": "running"}', {"state": "running"})],
 )
-def test_a_plain_text_success_body_is_not_an_error(
-    monkeypatch: pytest.MonkeyPatch, body: bytes, parsed: dict[str, str]
-) -> None:
+def test_a_plain_text_success_body_is_not_an_error(body: bytes, parsed: dict[str, str]) -> None:
     """Trunk answers submitPullRequest with a bare `OK`; only JSON bodies carry data."""
-    monkeypatch.setenv("TRUNK_API_TOKEN", "test-token")
-    monkeypatch.setattr(trunk_queue.urllib.request, "urlopen", lambda *a, **k: _Response(body))
-    assert trunk_queue._post("submitPullRequest", {}) == parsed
+    assert trunk_queue.parse_body(body) == parsed
+
+
+def test_an_unexpected_non_json_body_still_fails_loudly() -> None:
+    with pytest.raises(json.JSONDecodeError):
+        trunk_queue.parse_body(b"<html>")
 
 
 # -----------------------------------------------------------------------------
@@ -177,14 +196,13 @@ def test_the_config_workflow_never_runs_branch_code_with_the_token() -> None:
     assert holders == [f"{CONFIG_WORKFLOW.name}:sync"], holders
 
 
+def test_only_mains_reviewed_code_can_hold_the_token() -> None:
+    """`gh workflow run --ref <branch>` would otherwise run branch code with the org token."""
+    job = yaml.safe_load(CONFIG_WORKFLOW.read_text())["jobs"]["sync"]
+    assert job["if"] == "github.ref == 'refs/heads/main'"
+
+
 def test_the_scheduled_run_only_diffs() -> None:
     step = yaml.safe_load(CONFIG_WORKFLOW.read_text())["jobs"]["sync"]["steps"][-1]
     assert step["env"]["MODE"] == "${{ github.event_name == 'schedule' && 'diff' || 'apply' }}"
     assert step["run"] == 'python3 -m scripts.trunk_queue "$MODE"'
-
-
-def test_an_unexpected_non_json_body_still_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TRUNK_API_TOKEN", "test-token")
-    monkeypatch.setattr(trunk_queue.urllib.request, "urlopen", lambda *a, **k: _Response(b"<html>"))
-    with pytest.raises(json.JSONDecodeError):
-        trunk_queue._post("getQueue", {})

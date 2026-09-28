@@ -6,8 +6,9 @@ name: Trunk queue config
 # The queue's run state (paused/running) is never part of the file or the apply.
 #
 # The token shares a job with a checkout, which the pull_request lanes never allow. It is
-# safe here because this workflow has no pull_request trigger: only main's own reviewed
-# code runs with it. tests/scripts/test_trunk_queue.py pins that.
+# safe here because this workflow has no pull_request trigger and the job runs only on
+# refs/heads/main: only main's own reviewed code runs with it. tests/scripts/test_trunk_queue.py
+# pins both.
 on:
   push:
     branches: [main]
@@ -29,6 +30,9 @@ concurrency:
 jobs:
   sync:
     name: trunk queue config
+    # A manual dispatch can name any ref (`gh workflow run --ref <branch>`), which would run that
+    # branch's unreviewed code with the token. Only main's reviewed code may hold it.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
