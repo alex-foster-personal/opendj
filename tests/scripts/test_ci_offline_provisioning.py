@@ -65,7 +65,10 @@ DISTRIBUTIONS = {"alpha": ["beta"], "beta": [], "stray": []}
 # The annotation title ci_venv.sh emits when the warm-cache sync cannot complete.
 CACHE_MISS = "CI venv cache miss"
 
-pytestmark = pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not on PATH")
+pytestmark = [
+    pytest.mark.skipif(shutil.which("uv") is None, reason="uv is not on PATH"),
+    pytest.mark.requirement("INFRA-12"),
+]
 
 
 # -----------------------------------------------------------------------------

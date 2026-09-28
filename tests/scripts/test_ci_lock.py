@@ -39,6 +39,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CI_LOCK = next(lock for lock in LOCKS if lock.output == "pylock.ci.toml")
 MADMOM_SHA = "27f032e8947204902c675e5e341a3faf5dc86dae"
 
+pytestmark = pytest.mark.requirement("INFRA-12")
+
 
 # -----------------------------------------------------------------------------
 # helpers
