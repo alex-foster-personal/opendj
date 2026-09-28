@@ -30,10 +30,8 @@
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
 	import { resolveDeckStripPreview } from '$lib/rb/deck-strip-preview';
-	import {
-		ensureAnlzPrefetch,
-		getAnlzEntry
-	} from '$lib/components/rb/wave/anlz-cache.svelte';
+	import { getAnlzEntry } from '$lib/components/rb/wave/anlz-cache.svelte';
+	import { prefetchDeckStripAnlz } from './strip-anlz-prefetch';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
 	import { decodePreviewStrip } from '$lib/rb/api-rb';
 	import { shouldShowNativeGridMarker } from './strip-native-grid';
@@ -140,9 +138,10 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
+	// Untracked warm-up: a tracked ensureAnlzPrefetch re-runs this effect on
+	// its own LRU retouch forever (see strip-anlz-prefetch.ts).
 	$effect(() => {
-		const sid = deck.stable_id;
-		if (sid !== null) ensureAnlzPrefetch(sid);
+		prefetchDeckStripAnlz(deck.stable_id);
 	});
 
 	const stripPreview = $derived.by(() => {
