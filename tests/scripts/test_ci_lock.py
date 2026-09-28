@@ -243,14 +243,12 @@ def test_an_artifact_without_a_sha256_is_drift(tmp_path: Path) -> None:
     root = _copy_lock_tree(tmp_path, CI_LOCK)
     path = root / CI_LOCK.output
     text = path.read_text(encoding="utf-8")
-    hashed = re.search(r'(wheels = \[\{ url = "[^"]+aiohappyeyeballs[^"]+")[^\n]*\}\]', text)
+    hashed = re.search(r'(wheels = \[\{ url = "([^"]+aiohappyeyeballs[^"]+)")[^\n]*\}\]', text)
     assert hashed, "control: the fixture wheel line must exist"
     path.write_text(text.replace(hashed.group(0), hashed.group(1) + " }]", 1), encoding="utf-8")
 
     assert lock_problems(CI_LOCK, root) == [
-        "pylock.ci.toml: aiohappyeyeballs wheel "
-        + re.search(r'url = "([^"]+)"', hashed.group(1)).group(1)
-        + " has no sha256"
+        f"pylock.ci.toml: aiohappyeyeballs wheel {hashed.group(2)} has no sha256"
     ]
 
 
