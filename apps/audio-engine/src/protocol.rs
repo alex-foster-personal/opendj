@@ -217,7 +217,25 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             Ok(Command::Load(LoadSpec { deck, path, beats: beats(o, ty)?, bpm }))
         }
         "unload" => apply(EngineCmd::Unload { deck: deck_of(o, ty)? }),
-        "play" => apply(EngineCmd::Play { deck: deck_of(o, ty)?, playing: boolean(o, ty, "playing")? }),
+        "play" => {
+            let deck = deck_of(o, ty)?;
+            let playing = boolean(o, ty, "playing")?;
+            // The page arms a quantized or scheduled launch from these; playing
+            // at once instead would start audio off the grid, so refuse them.
+            if o.get("quantize").is_some_and(|q| q != &Value::Bool(false)) {
+                return Err(ProtoError::new(
+                    ErrorCode::NotImplemented,
+                    "play.quantize: quantized launch is not scheduled by this engine yet; send play without it",
+                ));
+            }
+            if o.get("start_at_context_sec").is_some_and(|t| !t.is_null()) {
+                return Err(ProtoError::new(
+                    ErrorCode::NotImplemented,
+                    "play.start_at_context_sec: scheduled launch is not implemented by this engine yet",
+                ));
+            }
+            apply(EngineCmd::Play { deck, playing })
+        }
         "cue" => apply(EngineCmd::Cue { deck: deck_of(o, ty)? }),
         "seek" => apply(EngineCmd::Seek { deck: deck_of(o, ty)?, position_ms: num(o, ty, "position_ms")? }),
         "loop" => {
@@ -425,6 +443,17 @@ mod tests {
         assert!(e.message.contains("eq.value"), "{}", e.message);
         let e = cmd(json!({"type": "master_tempo", "deck": 1, "enabled": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);
+        let e = cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": true})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::NotImplemented);
+        assert!(e.message.contains("quantize"), "{}", e.message);
+        let e = cmd(json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": 12.5})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::NotImplemented);
+        assert!(e.message.contains("start_at_context_sec"), "{}", e.message);
+        // Control: the unscheduled forms the page also sends still play.
+        assert!(matches!(
+            cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": false, "start_at_context_sec": null})),
+            Ok(Command::Apply(EngineCmd::Play { playing: true, .. }))
+        ));
         let e = cmd(json!({"type": "play", "deck": 5, "playing": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
         let e = cmd(json!({"type": "load", "deck": 1, "stable_id": "abc"})).unwrap_err();

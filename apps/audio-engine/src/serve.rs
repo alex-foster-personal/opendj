@@ -37,6 +37,9 @@ const CMD_SLOTS: usize = 1024;
 
 /// How long shutdown waits for the audio side to apply what is queued.
 const DRAIN_LIMIT: Duration = Duration::from_secs(2);
+/// How long shutdown waits for loads still decoding; after that they and the
+/// work queued behind them are refused, so each still gets a result.
+const LOAD_DRAIN_LIMIT: Duration = Duration::from_secs(5);
 
 fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *out, v)?;
@@ -176,6 +179,8 @@ struct Control {
     next_seq: u64,
     /// Per deck: Some while a load is decoding, holding work queued behind it.
     waiting: [Option<VecDeque<Queued>>; MAX_DECKS],
+    /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
+    loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
 }
 
@@ -237,6 +242,7 @@ impl Control {
         }
         let seq = self.seq(id);
         self.waiting[deck as usize - 1] = Some(VecDeque::new());
+        self.loading[deck as usize - 1] = Some(seq);
         let tx = self.msg_tx.clone();
         std::thread::spawn(move || {
             let result = crate::decode::decode_file(std::path::Path::new(&spec.path))
@@ -246,6 +252,7 @@ impl Control {
     }
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
+        self.loading[deck as usize - 1] = None;
         // True when the load will not reach the engine.
         let dropped = match result {
             Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
@@ -269,6 +276,27 @@ impl Control {
             match item {
                 Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
                 Queued::Load(id, spec) => self.load(id, spec),
+            }
+        }
+    }
+
+    fn loads_pending(&self) -> bool {
+        self.waiting.iter().any(Option::is_some)
+    }
+
+    /// Shutdown gave up on the loads still decoding: refuse each of them and
+    /// everything queued behind them, so no command is left without a result.
+    fn refuse_pending(&mut self) {
+        for d in 0..MAX_DECKS {
+            if let Some(seq) = self.loading[d].take() {
+                let id = self.ids.lock().unwrap().remove(&seq).flatten();
+                self.reply(
+                    id.as_deref(),
+                    Err(ProtoError::new(ErrorCode::Invalid, "the engine shut down before this load finished")),
+                );
+            }
+            if let Some(q) = self.waiting[d].take() {
+                self.refuse_queued(q);
             }
         }
     }
@@ -414,6 +442,7 @@ fn serve_threaded_from(
         msg_tx,
         next_seq: 0,
         waiting: Default::default(),
+        loading: [None; MAX_DECKS],
         state_req,
     };
     let mut audio_failed = false;
@@ -433,6 +462,26 @@ fn serve_threaded_from(
             }
         }
     }
+    // Loads still decoding hold their own result and the work parked behind
+    // them. Finish them (which releases that work to the mailbox), bounded;
+    // whatever is still pending after that is refused. A dead audio side
+    // would never apply any of it, so it is refused at once.
+    if !audio_failed {
+        let deadline = Instant::now() + LOAD_DRAIN_LIMIT;
+        while control.loads_pending() {
+            match msg_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(Msg::Decoded { seq, deck, result }) => control.finish_load(seq, deck, result),
+                Ok(Msg::AudioExited) => {
+                    audio_failed = true;
+                    break;
+                }
+                // Nothing sent after shutdown or EOF is taken.
+                Ok(Msg::Line(_) | Msg::Eof) => {}
+                Err(_) => break,
+            }
+        }
+    }
+    control.refuse_pending();
     // Let the audio side apply everything already queued before stopping,
     // so every command sent before shutdown or EOF gets its result. A dead
     // audio side never drains, so it is not waited on.

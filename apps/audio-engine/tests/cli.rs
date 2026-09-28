@@ -264,3 +264,51 @@ fn commands_sent_just_before_eof_still_get_results() {
         assert!(child.wait().unwrap().success());
     }
 }
+
+/// A load still decoding when stdin closes finishes before the engine exits,
+/// and the command parked behind it runs; one that never finishes is refused
+/// once shutdown stops waiting, along with what is parked behind it.
+#[cfg(unix)]
+#[test]
+fn loads_in_flight_at_eof_still_get_results() {
+    let d = temp_dir("cli-load-at-eof");
+    let wav = write_wav(&d, "b.wav", 44100, &sine(44100, 440.0, 2.0));
+    let wav_bytes = std::fs::read(&wav).unwrap();
+    for finishes in [true, false] {
+        let fifo = d.join(format!("slow-{finishes}.wav"));
+        assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let mut child = Command::new(BIN)
+            .args(["serve", "--clock", "wall"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        writeln!(stdin, "{}", json!({"id": "slow", "cmd": {"type": "load", "deck": 1, "path": fifo.to_str().unwrap()}}))
+            .unwrap();
+        writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+        drop(stdin);
+        if finishes {
+            // Give the engine time to see EOF while the decode is still open.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            // On its own thread: if the engine has already gone, opening the
+            // FIFO blocks forever, and the missing results below must fail.
+            let (fifo, bytes) = (fifo.clone(), wav_bytes.clone());
+            std::thread::spawn(move || std::fs::write(&fifo, &bytes));
+        }
+        let results: Vec<Value> = lines
+            .map(|l| serde_json::from_str::<Value>(&l.unwrap()).unwrap())
+            .filter(|v| v["type"] == "result")
+            .collect();
+        let of = |id: &str| results.iter().find(|v| v["id"] == id).cloned();
+        let slow = of("slow").unwrap_or_else(|| panic!("finishes={finishes}: no result for the load: {results:?}"));
+        let queued = of("queued").unwrap_or_else(|| panic!("finishes={finishes}: no result for the play: {results:?}"));
+        assert_eq!(slow["ok"], finishes, "{slow}");
+        assert_eq!(queued["ok"], finishes, "{queued}");
+        if !finishes {
+            assert!(slow["error"]["message"].as_str().unwrap().contains("shut down"), "{slow}");
+        }
+        assert!(child.wait().unwrap().success());
+    }
+}

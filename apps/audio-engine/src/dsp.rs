@@ -25,6 +25,11 @@ impl Coeffs {
 
     pub fn lowshelf(sr: f64, f0: f64, gain_db: f64) -> Coeffs {
         let a = 10f64.powf(gain_db / 40.0);
+        // Web Audio clamps the corner to Nyquist; there the whole band is below
+        // it, so the shelf is a flat A^2 (Chromium `SetLowShelfParams`).
+        if f0 >= sr / 2.0 {
+            return Coeffs { b0: a * a, ..Coeffs::IDENTITY };
+        }
         let w0 = 2.0 * std::f64::consts::PI * f0 / sr;
         let (sin, cos) = w0.sin_cos();
         // S = 1: alpha = sin(w0)/2 * sqrt((A + 1/A)(1/S - 1) + 2) = sin(w0)/2 * sqrt(2)
@@ -42,6 +47,12 @@ impl Coeffs {
 
     pub fn highshelf(sr: f64, f0: f64, gain_db: f64) -> Coeffs {
         let a = 10f64.powf(gain_db / 40.0);
+        // A corner at or above Nyquist (e.g. 5 kHz at 8 kHz) leaves nothing to
+        // shelve: Web Audio clamps it there and the filter is flat 1. Without
+        // this, sin(w0) goes negative and the poles leave the unit circle.
+        if f0 >= sr / 2.0 {
+            return Coeffs::IDENTITY;
+        }
         let w0 = 2.0 * std::f64::consts::PI * f0 / sr;
         let (sin, cos) = w0.sin_cos();
         let alpha = sin / 2.0 * 2f64.sqrt();
@@ -58,6 +69,10 @@ impl Coeffs {
 
     pub fn peaking(sr: f64, f0: f64, q: f64, gain_db: f64) -> Coeffs {
         let a = 10f64.powf(gain_db / 40.0);
+        // Same Nyquist clamp: a peak at or above it is flat 1 in Web Audio.
+        if f0 >= sr / 2.0 {
+            return Coeffs::IDENTITY;
+        }
         let w0 = 2.0 * std::f64::consts::PI * f0 / sr;
         let (sin, cos) = w0.sin_cos();
         let alpha = sin / (2.0 * q);
@@ -200,6 +215,31 @@ mod tests {
         let hi = Coeffs::highshelf(sr, 5000.0, 6.0);
         assert!((db(gain_at(hi, sr, 20000.0)) - 6.0).abs() < 0.5);
         assert!(db(gain_at(hi, sr, 50.0)).abs() < 0.1);
+    }
+
+    fn stable(c: Coeffs) -> bool {
+        // Both poles inside the unit circle (the stability triangle).
+        c.a2.abs() < 1.0 && c.a1.abs() < 1.0 + c.a2
+    }
+
+    #[test]
+    fn corners_at_or_above_nyquist_stay_stable_and_flat() {
+        // 8 kHz is the lowest rate the CLI accepts; its Nyquist is below the
+        // 5 kHz high-shelf corner.
+        let sr = 8000.0;
+        for g in [-26.0, 6.0] {
+            let hi = Coeffs::highshelf(sr, 5000.0, g);
+            assert!(stable(hi), "{hi:?}");
+            assert_eq!(hi, Coeffs::IDENTITY);
+            let pk = Coeffs::peaking(sr, 4000.0, 1.0, g);
+            assert_eq!(pk, Coeffs::IDENTITY);
+            let lo = Coeffs::lowshelf(sr, 4000.0, g);
+            assert!((db(gain_at(lo, sr, 1000.0)) - g).abs() < 1e-9, "{lo:?}");
+        }
+        // Control: below Nyquist the shelf still shelves, stably.
+        let hi = Coeffs::highshelf(sr, 3000.0, 6.0);
+        assert!(stable(hi), "{hi:?}");
+        assert!(db(gain_at(hi, sr, 3900.0)) > 5.0);
     }
 
     #[test]
