@@ -1,6 +1,11 @@
+/* WaveRow's layout rules, @imported by WaveRow.svelte's <style>. Svelte does
+   NOT scope an imported stylesheet: Vite inlines it as global CSS. Every rule
+   here is therefore rooted at the component's own .rb-waverow element (and
+   the seek canvas has its own class), or it restyles the whole app.
+   tests/unit/waverow-chrome-css-scope.test.mjs holds that line. */
 /* Deliberately loud and deliberately not a toast: a stalled clock is a
    condition that persists, and it belongs on the deck it applies to. */
-.clock-stalled {
+.rb-waverow .clock-stalled {
 	position: absolute;
 	top: 2px;
 	right: 4px;
@@ -24,7 +29,7 @@
 		background 50ms ease-out,
 		box-shadow 50ms ease-out;
 }
-.wave-col {
+.rb-waverow .wave-col {
 	display: flex;
 	flex-direction: column;
 	flex: 1;
@@ -36,13 +41,13 @@
 	background: color-mix(in srgb, rgba(255, 255, 255, 0.08) 50%, var(--rb-bg));
 	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
-.canvas-wrap {
+.rb-waverow .canvas-wrap {
 	position: relative;
 	flex: 1 1 var(--rb-waverow-h);
 	min-height: var(--rb-waverow-h);
 	min-width: 0;
 }
-canvas {
+.rb-waverow .wave-seek-canvas {
 	position: absolute;
 	inset: 0;
 	width: 100%;
@@ -52,7 +57,7 @@ canvas {
 	outline: none;
 	touch-action: none;
 }
-.anlz-state {
+.rb-waverow .anlz-state {
 	position: absolute;
 	left: 50%;
 	top: 50%;

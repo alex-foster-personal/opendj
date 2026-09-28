@@ -517,6 +517,7 @@ estimated from the render clock and may run ahead of what you hear."
 				</span>
 			{/if}
 			<canvas
+				class="wave-seek-canvas"
 				bind:this={canvasEl}
 				role="slider"
 				aria-label="deck {deckId} waveform seek"
