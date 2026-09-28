@@ -57,11 +57,14 @@
 #            so verify reports INFO instead and never fails on it.
 # observed   (optional) the reference host's value where it differs from, or
 #            is looser than, `version`.
-# source     `repo:<path>` or `agentbox` (the reference host, measured as the
-#            runner user `ghrunner` on Mon 28 Sep 2026).
+# source     `repo:<glob>[,<glob>...]` or `agentbox` (the reference host,
+#            measured as the runner user `ghrunner` on Mon 28 Sep 2026). A
+#            workflow-backed source names both `*.yml` and `*.yaml`: GitHub
+#            runs either.
 # install    how to install it, as root unless it says otherwise.
 # verify     a bash command run AS THE RUNNER USER with the runner's own job
-#            PATH (<runner-dir>/.path). Exit 0 and print the version when
+#            PATH (<runner-dir>/.env PATH=, else <runner-dir>/.path, as the
+#            runner Listener resolves it). Exit 0 and print the version when
 #            present; exit nonzero when absent or broken.
 # provides   executables this entry supplies to jobs. The completeness test
 #            reads this. For kinds apt, binary and toolchain they must also
@@ -214,7 +217,7 @@ entries:
   - name: rust-cargo
     kind: toolchain
     version: "1.96.0"
-    source: "repo:.github/workflows/*.yml (dtolnay/rust-toolchain toolchain input)"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (dtolnay/rust-toolchain toolchain input)"
     provides: [cargo]
     needed_by: [rust, pytest]
     install: "as the runner user: rustup default 1.96.0"
@@ -223,7 +226,7 @@ entries:
   - name: rust-rustc
     kind: toolchain
     version: "1.96.0"
-    source: "repo:.github/workflows/*.yml (dtolnay/rust-toolchain toolchain input)"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (dtolnay/rust-toolchain toolchain input)"
     provides: [rustc]
     needed_by: [rust, pytest]
     install: "installed with rust-cargo (rustup default 1.96.0)"
@@ -236,7 +239,7 @@ entries:
     version: "3.11"
     match: prefix
     observed: "3.11.16"
-    source: "repo:.github/workflows/*.yml (actions/setup-python python-version \"3.11\")"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (actions/setup-python python-version \"3.11\")"
     provides: []
     needed_by: [pytest, e2e, release-check]
     install: "let actions/setup-python populate /opt/hostedtoolcache/Python/3.11.*/x64 on first run, or unpack the matching actions/python-versions release"
@@ -245,7 +248,7 @@ entries:
   - name: toolcache-node
     kind: toolcache
     version: "22.14.0"
-    source: "repo:.github/workflows/*.yml (actions/setup-node node-version)"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (actions/setup-node node-version)"
     provides: []
     needed_by: [e2e, frontend]
     install: "let actions/setup-node populate /opt/hostedtoolcache/node/22.14.0/x64"

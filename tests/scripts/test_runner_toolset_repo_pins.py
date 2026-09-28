@@ -14,6 +14,9 @@ Regression lines:
     suffix) goes red then broken
   - if the cargo-audit install is unpinned, or pinned through an unset variable,
     and the test stays green then broken
+  - if a `.yaml` workflow pins another version than the manifest and the test
+    stays green, or a workflow-backed source names `*.yml` without `*.yaml`,
+    then broken
 """
 
 from __future__ import annotations
@@ -149,7 +152,7 @@ def repo_pin_mismatches(entries: list[dict], root: Path) -> list[str]:
             continue
         name, pattern = entry["name"], entry["source"].removeprefix("repo:").split(" ")[0]
         paths, derive, expected = (
-            sorted(root.glob(pattern)),
+            sorted({path for glob in pattern.split(",") for path in root.glob(glob)}),
             REPO_PINS.get(name),
             _expected_pin(entry),
         )
@@ -291,3 +294,43 @@ def test_an_equivalent_repo_pin_stays_green(
     with a different version is the same pin, not drift."""
     _write(tmp_path, rel, text)
     assert repo_pin_mismatches([_entry_named(manifest, name)], tmp_path) == []
+
+
+WORKFLOW_ACTIONS = {
+    "rust-cargo": ("dtolnay/rust-toolchain", "toolchain", "1.97.0"),
+    "rust-rustc": ("dtolnay/rust-toolchain", "toolchain", "1.97.0"),
+    "toolcache-python": ("actions/setup-python", "python-version", "3.12"),
+    "toolcache-node": ("actions/setup-node", "node-version", "24.1.0"),
+}
+
+
+def _workflow_globbed(entry: dict) -> list[str]:
+    """The source's globs that pick workflows by wildcard (not one named file)."""
+    pattern = str(entry["source"]).removeprefix("repo:").split(" ")[0]
+    return [glob for glob in pattern.split(",") if glob.startswith(".github/workflows/*")]
+
+
+def test_every_workflow_backed_source_reads_both_workflow_extensions(manifest: dict) -> None:
+    """GitHub runs `.github/workflows/*.yml` and `*.yaml`, so a source that globs
+    workflows must read both, or a `.yaml` workflow's pin is never compared."""
+    globbed = {e["name"]: _workflow_globbed(e) for e in manifest["entries"]}
+    globbed = {name: globs for name, globs in globbed.items() if globs}
+    assert set(globbed) == set(WORKFLOW_ACTIONS), set(globbed) ^ set(WORKFLOW_ACTIONS)
+    wanted = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    short = {name: globs for name, globs in globbed.items() if sorted(globs) != sorted(wanted)}
+    assert not short, short
+
+
+@pytest.mark.parametrize("name", sorted(WORKFLOW_ACTIONS))
+def test_a_yaml_workflow_pinning_another_version_goes_red(
+    manifest: dict, tmp_path: Path, name: str
+) -> None:
+    """A `.yml` workflow agreeing with the manifest does not vouch for a `.yaml`
+    one that pins something else."""
+    action, key, bumped = WORKFLOW_ACTIONS[name]
+    entry = _entry_named(manifest, name)
+    _write(tmp_path, ".github/workflows/a.yml", _workflow(action, key, str(entry["version"])))
+    assert repo_pin_mismatches([entry], tmp_path) == []
+    _write(tmp_path, ".github/workflows/b.yaml", _workflow(action, key, bumped))
+    problems = repo_pin_mismatches([entry], tmp_path)
+    assert problems and bumped in problems[0], problems
