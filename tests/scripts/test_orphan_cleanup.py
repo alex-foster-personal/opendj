@@ -17,6 +17,8 @@ Regression lines:
   - if a server the guarded child backgrounded outlives the child, or the guard's
     status differs from the child's then broken
   - if the guard starts while not leading its process group then broken
+  - if a server that ignores SIGTERM is alive 5.0 s after its owner died then broken
+  - if a server that handles SIGTERM gets no grace to finish shutting down then broken
 """
 
 from __future__ import annotations
@@ -194,6 +196,95 @@ def test_sigterm_to_the_guard_kills_the_server(tmp_path: Path, cleanup_pids: lis
     os.kill(server.pid, signal.SIGTERM)  # the guard only, not its group
     wait_for(lambda: not alive(data["pid"]), GONE_WITHIN_S, "server to die with its guard")
     server.stop()
+
+
+# A server that reports its pid once its SIGTERM behavior is installed, so the
+# owner is only killed after the behavior under test is live.
+TERM_IGNORING_CODE = textwrap.dedent(
+    """
+    import os, signal, sys, time
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    open(sys.argv[1], "w").write(str(os.getpid()))
+    time.sleep(600)
+    """
+)
+# Needs COOPERATIVE_CLEANUP_S after SIGTERM to shut down, then records that it did.
+COOPERATIVE_CLEANUP_S = 1.0
+COOPERATIVE_CODE = textwrap.dedent(
+    f"""
+    import os, signal, sys, time
+    def _shutdown(_signum, _frame):
+        time.sleep({COOPERATIVE_CLEANUP_S})
+        open(sys.argv[1] + ".graceful", "w").write("done")
+        os._exit(0)
+    signal.signal(signal.SIGTERM, _shutdown)
+    open(sys.argv[1], "w").write(str(os.getpid()))
+    time.sleep(600)
+    """
+)
+
+
+def _seconds_from_owner_death_to_server_gone(
+    server_code: str, pid_file: Path, cleanup_pids: list[int]
+) -> float:
+    """Guard ``server_code`` for a real owner, SIGKILL the owner, and time how
+    long the server outlives it. The clock starts BEFORE the kill, so the
+    figure can only overstate the real interval."""
+    owner = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    cleanup_pids.append(owner.pid)
+    guard = subprocess.Popen(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "server_owner_guard.py"),
+            "--owner-pid",
+            str(owner.pid),
+            "--name",
+            "deadline",
+            "--",
+            sys.executable,
+            "-c",
+            server_code,
+            str(pid_file),
+        ],
+        start_new_session=True,
+    )
+    cleanup_pids.append(guard.pid)
+    wait_for(lambda: pid_file.exists() and pid_file.read_text() != "", 30, "server to start")
+    server = int(pid_file.read_text())
+    cleanup_pids.append(server)
+    assert alive(server), "positive control: the server must be running before the kill"
+    killed_at = time.monotonic()
+    owner.kill()
+    owner.wait(timeout=10)
+    while alive(server):
+        assert time.monotonic() - killed_at < 30, f"server {server} never died"
+        time.sleep(0.02)
+    gone_after = time.monotonic() - killed_at
+    guard.wait(timeout=30)
+    return gone_after
+
+
+def test_a_server_that_ignores_sigterm_is_gone_within_the_bound_of_owner_death(
+    tmp_path: Path, cleanup_pids: list[int]
+) -> None:
+    gone_after = _seconds_from_owner_death_to_server_gone(
+        TERM_IGNORING_CODE, tmp_path / "server.pid", cleanup_pids
+    )
+    assert gone_after <= GONE_WITHIN_S, (
+        f"a TERM-ignoring server outlived its owner by {gone_after:.2f} s (bound {GONE_WITHIN_S} s)"
+    )
+
+
+def test_a_server_that_handles_sigterm_gets_to_finish_its_shutdown(
+    tmp_path: Path, cleanup_pids: list[int]
+) -> None:
+    """The control for the bound above: escalating to SIGKILL early (or only)
+    would satisfy that test and break every server's graceful shutdown."""
+    pid_file = tmp_path / "server.pid"
+    gone_after = _seconds_from_owner_death_to_server_gone(COOPERATIVE_CODE, pid_file, cleanup_pids)
+    graceful = pid_file.with_name(pid_file.name + ".graceful")
+    assert graceful.exists(), "the server was killed before its SIGTERM shutdown could finish"
+    assert COOPERATIVE_CLEANUP_S <= gone_after <= GONE_WITHIN_S, gone_after
 
 
 def test_guard_refuses_an_owner_that_is_not_running(tmp_path: Path) -> None:

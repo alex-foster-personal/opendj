@@ -40,6 +40,9 @@ Requirements (mini-PRD):
   ✔︎ the guarded server dies when the owner dies
     - [if] the owner is SIGKILLed and the server is still alive 5 s later [then ⛔️]
     - [if] the owner pid is recycled (start time differs) and the server survives [then ⛔️]
+  ✔︎ the owner-death bound holds even for a server that ignores SIGTERM
+    - [if] a child that ignores SIGTERM is alive 5 s after its owner died [then ⛔️]
+    - [if] a child that handles SIGTERM gets no grace to finish shutting down [then ⛔️]
   ✔︎ the guarded server dies with its guard
     - [if] the guard gets SIGTERM and the server survives [then ⛔️]
   ✔︎ nothing the child backgrounded outlives the child
@@ -69,7 +72,12 @@ from pathlib import Path
 class CFG:
     REPO_ROOT = Path(__file__).resolve().parents[1]
     POLL_S = 0.25
-    TERM_GRACE_S = 5.0
+    # DEVOPS-17: a guarded server is gone within this long of its owner's death.
+    OWNER_DEATH_BOUND_S = 5.0
+    # Kept inside that bound for the final SIGKILL's delivery and a slow probe.
+    DEADLINE_MARGIN_S = 0.5
+    # TERM-to-KILL grace for what a finished child left behind (no owner died).
+    LEFTOVER_TERM_GRACE_S = 5.0
     TEST_SERVICE_INFIX = ".test."
 
 
@@ -120,17 +128,18 @@ def _log(message: str) -> None:
         print(f"[server-owner-guard] {message}", file=sys.stderr, flush=True)
 
 
-def _kill_own_group(reason: str) -> None:
-    """TERM the guard's whole group, wait, then KILL it (the guard included)."""
+def _kill_own_group(reason: str, kill_by: float) -> None:
+    """TERM the guard's whole group, then KILL it (the guard included) no later
+    than ``kill_by``, an absolute ``time.monotonic()`` deadline: a member that
+    ignores SIGTERM must not stretch the owner-death bound."""
     pgid = os.getpgrp()
     signal.signal(signal.SIGTERM, signal.SIG_IGN)  # survive our own TERM long enough to escalate
     os.killpg(pgid, signal.SIGTERM)
     _log(f"{reason}; sent SIGTERM to group {pgid}")
-    deadline = time.monotonic() + CFG.TERM_GRACE_S
-    while time.monotonic() < deadline:
+    while (remaining := kill_by - time.monotonic()) > 0:
         try:
             if os.waitpid(-1, os.WNOHANG) == (0, 0):
-                time.sleep(CFG.POLL_S)
+                time.sleep(min(CFG.POLL_S, remaining))
         except ChildProcessError:
             break  # every child of ours is reaped; others in the group get the KILL below
     os.killpg(pgid, signal.SIGKILL)
@@ -166,7 +175,7 @@ def _kill_group_leftovers(reason: str) -> None:
             with contextlib.suppress(ProcessLookupError):
                 os.kill(pid, sig)
         _log(f"{reason}; sent {sig.name} to leftover(s) {leftovers}")
-        deadline = time.monotonic() + CFG.TERM_GRACE_S
+        deadline = time.monotonic() + CFG.LEFTOVER_TERM_GRACE_S
         while time.monotonic() < deadline and _live_group_members_but_me():
             time.sleep(CFG.POLL_S)
     survivors = _live_group_members_but_me()
@@ -195,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{os.getpid()}): exec it from the webServer shell, or start it with "
             "start_new_session, so its group signals reach only the server"
         )
+    owner_seen_alive_at = time.monotonic()
     owner_identity = process_start_time(args.owner_pid)
     if owner_identity is None:
         raise SystemExit(
@@ -209,7 +219,8 @@ def main(argv: list[str] | None = None) -> int:
     child = subprocess.Popen(command, env=env)
 
     def _on_signal(signum: int, _frame: object) -> None:
-        _kill_own_group(f"{args.name}: got signal {signum}")
+        kill_by = time.monotonic() + CFG.OWNER_DEATH_BOUND_S - CFG.DEADLINE_MARGIN_S
+        _kill_own_group(f"{args.name}: got signal {signum}", kill_by)
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _on_signal)
@@ -219,9 +230,15 @@ def main(argv: list[str] | None = None) -> int:
         if status is not None:
             _kill_group_leftovers(f"{args.name}: child exited with status {status}")
             return status
+        probe_started_at = time.monotonic()
         if process_start_time(args.owner_pid) != owner_identity:
-            _kill_own_group(f"{args.name}: owner pid {args.owner_pid} is gone")
+            # The owner died after the last probe that saw it alive STARTED, so
+            # this deadline falls inside the bound measured from its real death,
+            # however late the poll noticed it.
+            kill_by = owner_seen_alive_at + CFG.OWNER_DEATH_BOUND_S - CFG.DEADLINE_MARGIN_S
+            _kill_own_group(f"{args.name}: owner pid {args.owner_pid} is gone", kill_by)
             return 1
+        owner_seen_alive_at = probe_started_at
         time.sleep(CFG.POLL_S)
 
 
