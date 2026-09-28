@@ -89,7 +89,9 @@ class Result:
 # ----- remote probe -----------------------------------------------------------
 
 
-def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
+def _probe_script(
+    entries: list[dict], runner_dir: str | None, runner_dir_globs: str = CFG_RUNNER_DIR_GLOBS
+) -> str:
     """One bash script that runs every verify once per distinct runner job PATH.
 
     Without `runner_dir` it verifies every configured runner dir the user owns:
@@ -97,14 +99,15 @@ def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
     A runner's job PATH is resolved as its Listener does: `.env`'s `PATH=` when
     set (the Listener loads `.env` and that wins), else `.path` (which runsvc.sh
     only exports as a fallback). Runners with the same effective PATH get
-    identical verdicts and are probed once."""
+    identical verdicts and are probed once. `runner_dir_globs` (space-separated
+    shell globs) is where runner dirs are looked for; `--runner-dir-globs`."""
     given = shlex.quote(runner_dir) if runner_dir else "''"
     lines = [
         "set -u",
         f"given={given}",
         "rds=()",
         'if [ -n "$given" ]; then rds=("$given"); else',
-        f"  for d in {CFG_RUNNER_DIR_GLOBS}; do",
+        f"  for d in {runner_dir_globs}; do",
         '    [ -d "$d" ] && [ -O "$d" ] && [ -f "$d/.runner" ] || continue',
         '    case " ${rds[*]:-} " in *" $d "*) ;; *) rds+=("$d") ;; esac',
         "  done",
@@ -113,7 +116,7 @@ def _probe_script(entries: list[dict], runner_dir: str | None) -> str:
         # about what a job resolves, so without it nothing is verified (UNKNOWN).
         'if [ "${#rds[@]}" -eq 0 ]; then',
         '  echo "no configured runner dir (with .runner) owned by this user under'
-        f' {CFG_RUNNER_DIR_GLOBS}; refusing to verify against the login PATH" >&2',
+        f' {runner_dir_globs}; refusing to verify against the login PATH" >&2',
         "  exit 96",
         "fi",
         # Same resolution as ci-hosts' runner-conformance.sh: .env PATH= wins.
@@ -413,6 +416,12 @@ def main(argv: list[str] | None = None) -> int:
         help="verify only this runner dir's .path (default: every configured runner dir"
         " the user owns)",
     )
+    parser.add_argument(
+        "--runner-dir-globs",
+        default=CFG_RUNNER_DIR_GLOBS,
+        help="space-separated shell globs where runner dirs are looked for"
+        f" (default: {CFG_RUNNER_DIR_GLOBS})",
+    )
     parser.add_argument("--only", help="comma-separated entry names")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -421,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, TypeError, ValueError) as exc:
         print(f"[ERROR] manifest: {exc}", file=sys.stderr)
         return 2
-    script = _probe_script(entries, args.runner_dir)
+    script = _probe_script(entries, args.runner_dir, args.runner_dir_globs)
     rc, stdout, stderr = _run_probe(script, None if args.local else args.host, args.user)
     results = classify(entries, rc, stdout, stderr)
     probed = [

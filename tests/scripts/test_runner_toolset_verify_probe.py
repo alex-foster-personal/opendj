@@ -74,6 +74,7 @@ def _probe_locally(
     runner_dir: Path | None,
     login_path: str | None = None,
     env: dict[str, str] | None = None,
+    runner_dir_globs: str = rtv.CFG_RUNNER_DIR_GLOBS,
 ) -> tuple[list, str]:
     """Run the verifier's own probe script under bash, as this user, no sudo.
 
@@ -81,7 +82,7 @@ def _probe_locally(
     runner user's real HOME, and rustup reads its default toolchain from there."""
     proc = subprocess.run(
         ["bash", "-s"],
-        input=rtv._probe_script(entries, str(runner_dir) if runner_dir else None),
+        input=rtv._probe_script(entries, str(runner_dir) if runner_dir else None, runner_dir_globs),
         capture_output=True,
         text=True,
         timeout=120,
@@ -402,11 +403,11 @@ def _runner_dir(
     return runner
 
 
-def _discover_runners_under(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
-    """Point the verifier's own runner-dir globs at `root`, keeping their shape."""
+def _globs_under(root: Path) -> str:
+    """The verifier's default runner-dir globs rebased onto `root`, same shape."""
     globs = rtv.CFG_RUNNER_DIR_GLOBS.replace("/opt/", f"{root}/").replace("/home/*/", f"{root}/")
     assert globs != rtv.CFG_RUNNER_DIR_GLOBS, rtv.CFG_RUNNER_DIR_GLOBS
-    monkeypatch.setattr(rtv, "CFG_RUNNER_DIR_GLOBS", globs)
+    return globs
 
 
 def _elsewhere_entry(job_dirs: list[str]) -> tuple[dict, str]:
@@ -422,33 +423,33 @@ def _elsewhere_entry(job_dirs: list[str]) -> tuple[dict, str]:
     [("actions-runner", "actions-runner-2"), ("actions-runner-3", "actions-runner-2")],
 )
 def test_every_configured_runner_path_is_verified(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lacking: str, complete: str
+    tmp_path: Path, lacking: str, complete: str
 ) -> None:
     """A tool on one runner's job PATH says nothing about another's: the host is
     MISSING when any configured runner, suffixed or not, cannot resolve it."""
-    _discover_runners_under(monkeypatch, tmp_path)
     job_dirs = _dirs_of(*PROBE_NEEDS)
     entry, outside_dir = _elsewhere_entry(job_dirs)
     bad = _runner_dir(tmp_path, lacking, job_dirs)
     _runner_dir(tmp_path, complete, [outside_dir, *job_dirs])
-    results, stdout = _probe_locally([entry], None)
+    results, stdout = _probe_locally([entry], None, runner_dir_globs=_globs_under(tmp_path))
     [result] = results
     assert result.status == "MISSING" and str(bad) in result.got, (result, stdout)
     assert rtv.exit_code(results) == 1
 
 
 def test_runners_sharing_a_path_are_probed_once_and_unconfigured_dirs_are_ignored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """Overshoot control: identical job PATHs give identical verdicts, so one probe
     covers them, and a dir with no `.runner` is not a runner to verify."""
-    _discover_runners_under(monkeypatch, tmp_path)
     job_dirs = _dirs_of(*PROBE_NEEDS)
     entry, outside_dir = _elsewhere_entry(job_dirs)
     first = _runner_dir(tmp_path, "actions-runner", [outside_dir, *job_dirs])
     second = _runner_dir(tmp_path, "actions-runner-2", [outside_dir, *job_dirs])
     _runner_dir(tmp_path, "actions-runner-cache", None, configured=False)
-    results, stdout = _probe_locally([_bash_entry(job_dirs), entry], None)
+    results, stdout = _probe_locally(
+        [_bash_entry(job_dirs), entry], None, runner_dir_globs=_globs_under(tmp_path)
+    )
     assert {r.name: r.status for r in results} == {"bash": "OK", "elsewhere": "OK"}, results
     assert stdout.count(f"{rtv.RECORD} PATHSRC ") == 1, stdout
     assert f"{rtv.RECORD} PATHSRC {first}" in stdout, stdout
@@ -456,15 +457,16 @@ def test_runners_sharing_a_path_are_probed_once_and_unconfigured_dirs_are_ignore
 
 
 def test_a_configured_runner_without_a_path_makes_the_host_unknown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """One runner whose job PATH cannot be read cannot be vouched for, so the whole
     run refuses (UNKNOWN) rather than verifying only the readable ones."""
-    _discover_runners_under(monkeypatch, tmp_path)
     job_dirs = _dirs_of(*PROBE_NEEDS)
     _runner_dir(tmp_path, "actions-runner", job_dirs)
     unreadable = _runner_dir(tmp_path, "actions-runner-2", None)
-    results, stdout = _probe_locally([_bash_entry(job_dirs)], None)
+    results, stdout = _probe_locally(
+        [_bash_entry(job_dirs)], None, runner_dir_globs=_globs_under(tmp_path)
+    )
     assert {r.status for r in results} == {"UNKNOWN"}, results
     assert str(unreadable) in results[0].got, results
     assert f"{rtv.RECORD} END" not in stdout, stdout
@@ -494,18 +496,17 @@ def test_the_env_path_is_the_job_path_and_wins_over_the_path_file(
 
 
 def test_runners_are_deduplicated_on_their_effective_job_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """Two runners whose `.path` files differ but whose `.env` PATH is the same run
     jobs under one PATH, so they are one probe, not two."""
-    _discover_runners_under(monkeypatch, tmp_path)
     job_dirs = _dirs_of(*PROBE_NEEDS)
     entry, outside_dir = _elsewhere_entry(job_dirs)
     effective = [outside_dir, *job_dirs]
     first = _runner_dir(tmp_path, "actions-runner", job_dirs, env_path_dirs=effective)
     stale = [*job_dirs, "/nowhere"]
     second = _runner_dir(tmp_path, "actions-runner-2", stale, env_path_dirs=effective)
-    results, stdout = _probe_locally([entry], None)
+    results, stdout = _probe_locally([entry], None, runner_dir_globs=_globs_under(tmp_path))
     assert [r.status for r in results] == ["OK"], results
     assert stdout.count(f"{rtv.RECORD} PATHSRC ") == 1, stdout
     assert f"{rtv.RECORD} ALSO {second} {first}" in stdout, stdout
