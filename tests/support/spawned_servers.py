@@ -60,7 +60,11 @@ class SpawnedServer:
         return self.proc.pid
 
     def stop(self) -> None:
-        """Kill the whole group; raise if anything in it is still running."""
+        """SIGTERM the GUARD, which forwards it to the group exactly once; then
+        SIGKILL the whole group if anything outlives the grace. Never a group
+        TERM: the guard re-sends it, and a server that reads a second TERM as
+        "force quit" (uvicorn does) would lose its graceful shutdown. Raise if
+        anything in the group is still running."""
         # Lazy on purpose: the root conftest loads this plugin in EVERY pytest
         # run, including pytest-only toolchains without psutil (ci.yml quality
         # job). Only a run that actually spawned a server reaches this line.
@@ -71,11 +75,13 @@ class SpawnedServer:
         )
 
         _LIVE.pop(self.pgid, None)
-        for sig, grace in ((signal.SIGTERM, TERM_GRACE_S), (signal.SIGKILL, KILL_GRACE_S)):
-            if signal_group(self.pgid, sig) is not None:
-                break  # already gone, or only zombies left (macOS answers EPERM then)
-            if wait_group_gone(self.pgid, grace):
-                break
+        guard_running = self.proc.poll() is None
+        if guard_running:
+            self.proc.send_signal(signal.SIGTERM)
+        # With no guard left to forward a TERM, go straight to the group KILL.
+        term_worked = guard_running and wait_group_gone(self.pgid, TERM_GRACE_S)
+        if not term_worked and signal_group(self.pgid, signal.SIGKILL) is None:
+            wait_group_gone(self.pgid, KILL_GRACE_S)
         if self.proc.poll() is None:
             self.proc.wait(timeout=KILL_GRACE_S)
         if group_has_live_member(self.pgid):

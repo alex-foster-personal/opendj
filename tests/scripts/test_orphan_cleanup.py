@@ -19,6 +19,10 @@ Regression lines:
     status differs from the child's then broken
   - if the guard starts while not leading its process group then broken
   - if cleanup_pids SIGKILLs a pid whose start time changed since it was added then broken
+  - if a server stopped through SpawnedServer.stop receives SIGTERM more than once, or
+    gets no graceful shutdown, then broken
+  - if a guarded Playwright webServer sets gracefulShutdown (a group signal the guard
+    would repeat) then broken
 """
 
 from __future__ import annotations
@@ -374,6 +378,40 @@ def test_every_playwright_webserver_command_is_guarded() -> None:
                 unguarded.append(f"{config.name}: command: {match.group(1)}")
     assert commands >= 40, f"only {commands} webServer commands found: the pattern stopped matching"
     assert not unguarded, "unguarded webServer commands:\n" + "\n".join(unguarded)
+    # Playwright's gracefulShutdown signals the whole group, and the guard
+    # forwards that signal again: a guarded server would get it twice.
+    graceful = [c.name for c in configs if "gracefulShutdown" in c.read_text()]
+    assert not graceful, f"guarded webServers must not set gracefulShutdown: {graceful}"
+
+
+# Counts every SIGTERM it receives; after the first it shuts down for 1 s (a
+# second TERM in that window is counted), then records the count and exits 0.
+TERM_COUNTING_CODE = textwrap.dedent(
+    """
+    import os, signal, sys, time
+    out = sys.argv[1]
+    terms = []
+    signal.signal(signal.SIGTERM, lambda *_: terms.append(time.monotonic()))
+    open(out, "w").write(str(os.getpid()))
+    while not terms:
+        time.sleep(0.01)
+    time.sleep(1.0)
+    open(out + ".terms", "w").write(str(len(terms)))
+    """
+)
+
+
+def test_a_stopped_server_gets_exactly_one_sigterm_and_its_graceful_shutdown(
+    tmp_path: Path, cleanup_pids: list[int]
+) -> None:
+    pid_file = tmp_path / "server.pid"
+    server = spawn_test_server("oneterm", [sys.executable, "-c", TERM_COUNTING_CODE, str(pid_file)])
+    wait_for(lambda: pid_file.exists() and pid_file.read_text() != "", 30, "server to start")
+    cleanup_pids.append(int(pid_file.read_text()))
+    server.stop()
+    terms = pid_file.with_name(pid_file.name + ".terms")
+    assert terms.exists(), "the server was killed before its graceful shutdown finished"
+    assert terms.read_text() == "1", f"the server received {terms.read_text()} SIGTERMs, not 1"
 
 
 # A pytest-only toolchain (ci.yml's quality job runs `uv run --isolated

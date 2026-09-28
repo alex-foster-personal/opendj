@@ -31,6 +31,12 @@ start otherwise, so a group signal can never reach a caller's own processes:
 Playwright's detached webServer shell ``exec``s the guard, and pytest starts it
 with ``start_new_session``.
 
+Signal the GUARD, never the group: the guard forwards SIGTERM to the group
+exactly once, so a group-wide TERM would reach the server twice, and a server
+that reads a second TERM as "force quit" (uvicorn does) loses its graceful
+shutdown. ``SpawnedServer.stop`` signals the guard; Playwright SIGKILLs the
+group, which is why no guarded webServer may set ``gracefulShutdown``.
+
 Callers:
   - Playwright: ``guardedWebServerCommand`` in
     ``apps/webui/frontend/tests/e2e/support/guarded-web-server.ts``.
