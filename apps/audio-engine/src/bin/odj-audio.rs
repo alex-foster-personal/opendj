@@ -20,6 +20,7 @@ use odj_audio::offline::{render_plan_files_with, session_loader, RenderOptions, 
 use odj_audio::plan::{parse_plan, Action, Plan};
 use odj_audio::{protocol, serve, wav};
 use serde_json::json;
+use same_file::Handle;
 use sha2::{Digest, Sha256};
 
 const USAGE: &str = "usage:
@@ -101,8 +102,9 @@ fn resolved(p: &Path) -> PathBuf {
 /// both exist, the same file on disk (a hard link has its own spelling but
 /// is the file it links to, so writing it truncates that file; a spelling
 /// in another case or Unicode form is the same file on a volume that folds
-/// it). Only Unix exposes a stable file identity on stable Rust; elsewhere
-/// a hard link is told apart by spelling alone.
+/// it). On Unix that is device and inode, read without opening either
+/// file; elsewhere `same_file` opens both and compares volume serial and
+/// file index (Windows).
 ///
 /// Two outputs that do not exist yet have no identity to compare, so this
 /// cannot tell whether the volume folds their spellings into one file;
@@ -117,6 +119,10 @@ fn same_file(a: &Path, b: &Path) -> bool {
         if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
             return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino());
         }
+    }
+    #[cfg(not(unix))]
+    if a.exists() && b.exists() {
+        return same_file::is_same_file(a, b).unwrap_or(false);
     }
     false
 }
@@ -142,9 +148,10 @@ fn writes_of(plan: &Plan, out: &Path, decks_out: Option<&Path>) -> Vec<(PathBuf,
 /// are one file. The volume itself answers, so spellings that differ only
 /// in case or Unicode form count as one file exactly where the volume folds
 /// them, and nowhere else. On refusal everything created here is removed
-/// again, so a refused render leaves nothing behind. Unix only: elsewhere
-/// there is no file identity to compare, and the name checks stand alone.
-fn claim_outputs(writes: &[(PathBuf, String)]) -> Result<Vec<File>, String> {
+/// again, so a refused render leaves nothing behind. The identity compared
+/// is the open handle's (device and inode on Unix, volume serial and file
+/// index on Windows), through `same_file`.
+fn claim_outputs(writes: &[(PathBuf, String)]) -> Result<Vec<Handle>, String> {
     let mut made_files: Vec<PathBuf> = Vec::new();
     let mut made_dirs: Vec<PathBuf> = Vec::new();
     let undo = |files: &[PathBuf], dirs: &[PathBuf]| {
@@ -155,7 +162,7 @@ fn claim_outputs(writes: &[(PathBuf, String)]) -> Result<Vec<File>, String> {
             let _ = std::fs::remove_dir(d);
         }
     };
-    let mut opened: Vec<File> = Vec::new();
+    let mut opened: Vec<Handle> = Vec::new();
     for (p, what) in writes {
         let claimed = (|| {
             if let Some(parent) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
@@ -181,18 +188,16 @@ fn claim_outputs(writes: &[(PathBuf, String)]) -> Result<Vec<File>, String> {
                 // Through a symlink the file made is its target.
                 made_files.push(std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()));
             }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::MetadataExt;
-                let id = |f: &File| f.metadata().map(|m| (m.dev(), m.ino())).ok();
-                if let Some(j) = opened.iter().position(|g| id(g).is_some() && id(g) == id(&f)) {
-                    return Err(format!("{what} and {} are both {}; give them different paths", writes[j].1, p.display()));
-                }
+            // Device and inode on Unix, volume serial and file index on
+            // Windows: what the volume opened, however it was spelled.
+            let h = Handle::from_file(f).map_err(|e| format!("cannot identify {}: {e}", p.display()))?;
+            if let Some(j) = opened.iter().position(|g| *g == h) {
+                return Err(format!("{what} and {} are both {}; give them different paths", writes[j].1, p.display()));
             }
-            Ok(f)
+            Ok(h)
         })();
         match claimed {
-            Ok(f) => opened.push(f),
+            Ok(h) => opened.push(h),
             Err(e) => {
                 drop(opened);
                 undo(&made_files, &made_dirs);
@@ -241,8 +246,8 @@ fn render(mut args: Args) -> Result<(), String> {
     let opts = RenderOptions { deck_outputs: decks_out.is_some() };
     let out = render_plan_files_with(&plan, &base, opts).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
     let writes = writes_of(&plan, &out_path, decks_out.as_deref());
-    let mut files: Vec<(PathBuf, File)> = writes.iter().map(|(p, _)| p.clone()).zip(claim_outputs(&writes)?).collect();
-    let mut take = |p: &Path| -> Result<File, String> {
+    let mut files: Vec<(PathBuf, Handle)> = writes.iter().map(|(p, _)| p.clone()).zip(claim_outputs(&writes)?).collect();
+    let mut take = |p: &Path| -> Result<Handle, String> {
         let i = files.iter().position(|(q, _)| q == p).ok_or_else(|| format!("{} was not claimed", p.display()))?;
         Ok(files.swap_remove(i).1)
     };
@@ -310,7 +315,8 @@ fn render(mut args: Args) -> Result<(), String> {
 
 /// Write a claimed output: it was opened without truncating, so a file the
 /// render replaces is emptied here, only once every output is known apart.
-fn write_wav(file: File, path: &Path, sr: u32, pcm: &[f32]) -> Result<(), String> {
+fn write_wav(handle: Handle, path: &Path, sr: u32, pcm: &[f32]) -> Result<(), String> {
+    let file = handle.as_file();
     file.set_len(0).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     wav::write_f32(&mut BufWriter::new(file), sr, pcm).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }

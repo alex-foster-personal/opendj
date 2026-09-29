@@ -370,6 +370,9 @@ enum Queued {
     /// An `engine_state` sent after the work ahead of it here: it is asked
     /// of the audio side only once this has passed on every deck it waits on.
     Fence(u64),
+    /// The deck's decoded load, by its seq, waiting for room in the mailbox
+    /// that other decks' traffic has taken.
+    Ready(u64, EngineCmd),
 }
 
 /// The control half: owns the command ring's producer, the per-deck load
@@ -380,7 +383,9 @@ struct Control {
     out: Out,
     msg_tx: mpsc::Sender<Msg>,
     next_seq: u64,
-    /// Per deck: Some while a load is decoding, holding work queued behind it.
+    /// Per deck: Some while a load is decoding, holding work queued behind
+    /// it, and after it decodes for as long as that work waits for room in
+    /// the mailbox (released in order as the audio side drains it).
     waiting: [Option<VecDeque<Queued>>; MAX_DECKS],
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
@@ -476,8 +481,14 @@ impl Control {
             Some(Queued::Load(id, spec)) => (id, spec),
             _ => return,
         };
+        self.start_load(id, spec, VecDeque::new());
+    }
+
+    /// Decode `spec` off this thread, with `behind` parked behind it.
+    fn start_load(&mut self, id: Option<Value>, spec: LoadSpec, behind: VecDeque<Queued>) {
+        let deck = spec.deck;
         let seq = self.seq(id);
-        self.waiting[deck as usize - 1] = Some(VecDeque::new());
+        self.waiting[deck as usize - 1] = Some(behind);
         self.loading[deck as usize - 1] = Some(seq);
         let tx = self.msg_tx.clone();
         let tracks = self.tracks.clone();
@@ -491,34 +502,64 @@ impl Control {
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
         self.loading[deck as usize - 1] = None;
-        // True when the load will not reach the engine.
-        let dropped = match result {
-            Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
+        let mut q = self.waiting[deck as usize - 1].take().unwrap_or_default();
+        match result {
+            Ok(track) => {
+                q.push_front(Queued::Ready(seq, EngineCmd::Load { deck, track }));
+                self.release(deck, q);
+            }
             Err(e) => {
                 let id = self.ids.lock().unwrap().remove(&seq).flatten();
                 self.reply(id.as_ref(), Err(e));
-                true
+                // The work queued behind it would run against the previous
+                // track. Fail it instead: every command after the failed load
+                // is refused.
+                self.refuse_queued(q);
             }
-        };
-        let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
-        if dropped {
-            // The load failed to decode or never reached the engine, so the
-            // work queued behind it would run against the previous track.
-            // Fail it instead: every command after the failed load is refused.
-            self.refuse_queued(q);
-            return;
         }
-        // Release this deck's queue in order. A queued load re-arms the wait,
-        // and everything after it stays parked behind that load.
-        for item in q {
+    }
+
+    /// Send a deck's decoded load and the work behind it to the audio side,
+    /// in order, as far as the mailbox has room. Everything accepted is
+    /// kept: what does not fit stays parked (new work for the deck parks
+    /// behind it) and goes once the audio side has drained room for it. A
+    /// queued load re-arms the wait, with everything after it behind it.
+    fn release(&mut self, deck: DeckId, mut q: VecDeque<Queued>) {
+        while let Some(item) = q.pop_front() {
             match item {
-                Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
-                Queued::Load(id, spec) => self.load(id, spec),
-                // Behind a load this release re-armed, it waits again.
-                Queued::Fence(f) => {
-                    if let Some(Queued::Fence(f)) = self.park(deck, Queued::Fence(f)) {
-                        self.fence_passed(f);
-                    }
+                Queued::Ready(..) | Queued::Cmd(..) if self.cmd_tx.slots() == 0 => {
+                    q.push_front(item);
+                    break;
+                }
+                Queued::Ready(seq, cmd) => {
+                    let _ = self.push_seq(seq, cmd);
+                }
+                Queued::Cmd(id, cmd) => {
+                    let seq = self.seq(id);
+                    let _ = self.push_seq(seq, cmd);
+                }
+                Queued::Load(id, spec) => {
+                    self.start_load(id, spec, q);
+                    return;
+                }
+                // Everything ahead of it on this deck is in the mailbox.
+                Queued::Fence(f) => self.fence_passed(f),
+            }
+        }
+        self.waiting[deck as usize - 1] = if q.is_empty() { None } else { Some(q) };
+    }
+
+    /// Whether any deck's decoded work waits for room in the mailbox.
+    fn staged(&self) -> bool {
+        (0..MAX_DECKS).any(|d| self.loading[d].is_none() && self.waiting[d].is_some())
+    }
+
+    /// Send on what waits for room, now that the audio side may have drained.
+    fn release_staged(&mut self) {
+        for d in 0..MAX_DECKS {
+            if self.loading[d].is_none() {
+                if let Some(q) = self.waiting[d].take() {
+                    self.release(d as DeckId + 1, q);
                 }
             }
         }
@@ -560,6 +601,12 @@ impl Control {
         for item in q {
             let id = match item {
                 Queued::Cmd(id, _) | Queued::Load(id, _) => id,
+                // Only shutdown refuses a decoded load: it never ran.
+                Queued::Ready(seq, _) => {
+                    let id = self.ids.lock().unwrap().remove(&seq).flatten();
+                    self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")));
+                    continue;
+                }
                 // The work ahead of it is done with, failed or not: the state
                 // after that is the one asked for.
                 Queued::Fence(f) => {
@@ -769,7 +816,22 @@ fn serve_threaded_from(
     };
     let mut audio_failed = false;
     let mut output_closed = false;
-    while let Ok(msg) = msg_rx.recv() {
+    loop {
+        // Work that waits for room in the mailbox goes as the audio side
+        // drains, so while any does the loop wakes to send it on.
+        control.release_staged();
+        let msg = if control.staged() {
+            match msg_rx.recv_timeout(Duration::from_millis(1)) {
+                Ok(msg) => msg,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        } else {
+            match msg_rx.recv() {
+                Ok(msg) => msg,
+                Err(_) => break,
+            }
+        };
         match msg {
             Msg::Line(l) => {
                 let go_on = control.handle_line(&l, clock);
@@ -804,8 +866,13 @@ fn serve_threaded_from(
     // output closed nothing is waited for.
     if !audio_failed && !output_closed {
         let deadline = Instant::now() + LOAD_DRAIN_LIMIT;
-        while control.loads_pending() {
-            match msg_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        while control.loads_pending() && Instant::now() < deadline {
+            control.release_staged();
+            if !control.loads_pending() {
+                break;
+            }
+            let wait = deadline.saturating_duration_since(Instant::now());
+            match msg_rx.recv_timeout(if control.staged() { wait.min(Duration::from_millis(1)) } else { wait }) {
                 Ok(Msg::Decoded { seq, deck, result }) => control.finish_load(seq, deck, result),
                 Ok(Msg::AudioExited) => {
                     audio_failed = true;
@@ -817,7 +884,8 @@ fn serve_threaded_from(
                 }
                 // Nothing sent after shutdown or EOF is taken.
                 Ok(Msg::Line(_) | Msg::TooLong | Msg::Eof) => {}
-                Err(_) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         }
     }
@@ -1114,6 +1182,128 @@ mod tests {
         // Control: the one past the bound is still refused, at once.
         assert_eq!(full.len(), 1, "{full:?}");
         assert_eq!(full[0]["id"], QUEUE_SLOTS);
+    }
+
+    #[test]
+    fn work_accepted_behind_a_load_waits_for_room_the_mailbox_does_not_have() {
+        // Codex on 2c2fe0ab: other decks' traffic already in the mailbox
+        // when a load finished left no room for everything accepted behind
+        // it, and the last of it was refused then, after being accepted.
+        // Now what does not fit waits, in order, and goes as the audio side
+        // drains. Here the mailbox is full of crossfader moves, so even the
+        // load itself waits, with 500 commands behind it.
+        let (mut c, mut cmd_rx, out) = control();
+        let line = |c: &mut Control, v: Value| assert!(c.handle_line(&v.to_string(), "wall"));
+        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}));
+        let parked = 500;
+        for i in 0..parked {
+            line(&mut c, serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}));
+        }
+        for _ in 0..CMD_SLOTS {
+            line(&mut c, serde_json::json!({"cmd": {"type": "crossfader", "value": 0.5}}));
+        }
+        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        assert!(c.staged(), "the decoded load did not wait for room");
+        // Sent while the deck's work waits: it goes after that work, and an
+        // `engine_state` waits for all of it.
+        line(&mut c, serde_json::json!({"id": "late", "cmd": {"type": "fader", "deck": 1, "value": 0.25}}));
+        line(&mut c, serde_json::json!({"id": "state", "cmd": {"type": "engine_state"}}));
+        let mut order = Vec::new();
+        let mut rounds = 0;
+        while c.staged() {
+            // The audio side drains a block's worth, then the control side
+            // sends on what now fits.
+            for _ in 0..100 {
+                if let Ok((seq, cmd)) = cmd_rx.pop() {
+                    order.push((seq, matches!(cmd, EngineCmd::Load { .. }), matches!(cmd, EngineCmd::Fader { .. })));
+                }
+            }
+            assert!(!c.state_req.load(Ordering::Acquire) || !c.staged(), "the state was asked before the work ahead of it went");
+            c.release_staged();
+            rounds += 1;
+            assert!(rounds < 100, "the staged work never drained");
+        }
+        order.extend(std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(seq, cmd)| (seq, matches!(cmd, EngineCmd::Load { .. }), matches!(cmd, EngineCmd::Fader { .. }))));
+        assert!(c.state_req.load(Ordering::Acquire), "the state was never asked");
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        assert!(!text.contains("mailbox is full"), "accepted work was refused:\n{text}");
+        // The load, then every parked fader and the late one, in order.
+        let deck: Vec<&(u64, bool, bool)> = order.iter().filter(|(_, load, fader)| *load || *fader).collect();
+        assert_eq!(deck.len(), 1 + parked + 1);
+        assert!(deck[0].1, "the load did not go first");
+        assert!(deck.windows(2).all(|w| w[0].0 < w[1].0), "the deck's work went out of order");
+        let ids = c.ids.lock().unwrap();
+        assert!(ids.values().any(|id| id.as_ref() == Some(&Value::from("late"))), "the late command never reached the mailbox");
+    }
+
+    #[test]
+    fn a_threaded_engine_sends_waiting_work_on_as_the_mailbox_drains() {
+        // The same case end to end: the control loop wakes by itself to send
+        // on work that waits for room, with no further input to wake it; and
+        // when stdin closes first, the shutdown drain sends it on too rather
+        // than refuse work it accepted.
+        let d = std::env::temp_dir().join(format!("odj-staged-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let wav = d.join("a.wav");
+        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&wav).unwrap()), 48000, &[0.0; 9600]).unwrap();
+        for close_first in [false, true] {
+            let (reader, mut writer) = io::pipe().unwrap();
+            let out = Captured::default();
+            let go = Arc::new(AtomicBool::new(false));
+            let (tx, rx) = mpsc::channel();
+            let (o, g) = (out.clone(), go.clone());
+            std::thread::spawn(move || {
+                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", move |mut side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        if g.load(Ordering::Relaxed) {
+                            side.process(64);
+                        }
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                });
+                let _ = tx.send(r);
+            });
+            // The mailbox fills while the audio side is held, then the load
+            // decodes into no room, with work parked behind it.
+            for _ in 0..CMD_SLOTS {
+                writeln!(writer, r#"{{"cmd": {{"type": "crossfader", "value": 0.5}}}}"#).unwrap();
+            }
+            writeln!(writer, r#"{{"id": "load", "cmd": {{"type": "load", "deck": 1, "path": {}}}}}"#, Value::from(wav.display().to_string())).unwrap();
+            for i in 0..200 {
+                writeln!(writer, r#"{{"id": {i}, "cmd": {{"type": "fader", "deck": 1, "value": 0.5}}}}"#).unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            let writer = if close_first {
+                drop(writer);
+                std::thread::sleep(Duration::from_millis(100));
+                None
+            } else {
+                Some(writer)
+            };
+            let started = Instant::now();
+            go.store(true, Ordering::Relaxed);
+            let results = || -> Vec<Value> {
+                let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+                text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
+            };
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !results().iter().any(|v| v["id"] == 199) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let took = started.elapsed();
+            let got = results();
+            drop(writer);
+            let stopping = Instant::now();
+            rx.recv_timeout(Duration::from_secs(10)).expect("serve hung").unwrap();
+            let stopped_in = stopping.elapsed();
+            let case = if close_first { "stdin closed first" } else { "stdin open" };
+            assert!(got.iter().any(|v| v["id"] == 199), "{case}: the parked work never went");
+            assert!(got.iter().filter(|v| v["id"] == "load" || v["id"].is_u64()).all(|v| v["ok"] == true), "{case}: {got:?}");
+            assert!(took < LOAD_DRAIN_LIMIT / 2, "{case}: the parked work took {took:?}");
+            // With nothing left waiting, stopping does not sit out the limit.
+            assert!(stopped_in < LOAD_DRAIN_LIMIT / 2, "{case}: stopping took {stopped_in:?}");
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
