@@ -106,6 +106,50 @@ fn invalid(msg: String) -> ProtoError {
     ProtoError::new(ErrorCode::Invalid, msg)
 }
 
+/// Refuse any field outside `allowed`, as the page's `_exactKeys` does: a
+/// misspelled or newer option ignored here would play something the sender
+/// did not ask for, where the page would have refused the command.
+pub fn exact_keys(o: &Obj, what: &str, allowed: &[&str]) -> Result<(), ProtoError> {
+    let unexpected: Vec<&str> = o.keys().map(String::as_str).filter(|k| !allowed.contains(k)).collect();
+    if unexpected.is_empty() {
+        Ok(())
+    } else {
+        Err(invalid(format!("{what} has unexpected fields: {}", unexpected.join(", "))))
+    }
+}
+
+/// The fields each engine command may carry: the page's `_exactKeys` set for
+/// its `PerformanceCommand`, plus this protocol's own (a load's `path`, tag
+/// `bpm` and grid). `suppressCommandErrorToast` and `persist` only steer the
+/// page's toast and saved settings, so they are accepted and change nothing
+/// here.
+fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
+    Some(match ty {
+        "load" => &[
+            "type", "deck", "path", "stable_id", "refuseIfMaster", "stems", "suppressCommandErrorToast", "bpm",
+            "beatgrid", "beatgrid_ms",
+        ],
+        "unload" => &["type", "deck", "refuseIfMaster"],
+        "play" => &["type", "deck", "playing", "quantize", "start_at_context_sec"],
+        "cue" => &["type", "deck"],
+        "quantize" | "master_tempo" => &["type", "deck", "enabled"],
+        "quantize_grid" | "beat_jump" => &["type", "deck", "beats"],
+        "seek" => &["type", "deck", "position_ms"],
+        "loop" => &["type", "deck", "loop"],
+        "beat_loop" => &["type", "deck", "beats", "start_ms"],
+        "tempo" => &["type", "deck", "ratio"],
+        "pitch_range" => &["type", "deck", "range"],
+        "trim" | "filter" | "fader" => &["type", "deck", "value"],
+        "eq" => &["type", "deck", "band", "value"],
+        "assign" => &["type", "deck", "assign"],
+        "crossfader" | "master_volume" => &["type", "value"],
+        "master_mute" => &["type", "muted", "persist"],
+        "engine_advance" => &["type", "ms", "frames"],
+        "engine_state" | "engine_shutdown" => &["type"],
+        _ => return None,
+    })
+}
+
 fn field<'a>(o: &'a Obj, ty: &str, name: &str) -> Result<&'a Value, ProtoError> {
     o.get(name).ok_or_else(|| invalid(format!("{ty}.{name} is required")))
 }
@@ -194,6 +238,7 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
         let mut prev_n = 0;
         for (i, b) in arr.iter().enumerate() {
             let b = b.as_object().ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}] must be an object")))?;
+            exact_keys(b, &format!("{ty}.beatgrid[{i}]"), &["n", "time_ms"])?;
             let time_ms = num(b, ty, "time_ms")?;
             let n = match b.get("n") {
                 None | Some(Value::Null) => (i % 4) as u64 + 1,
@@ -260,6 +305,9 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         .get("type")
         .and_then(Value::as_str)
         .ok_or_else(|| invalid("cmd.type must be a string".into()))?;
+    if let Some(keys) = command_keys(ty) {
+        exact_keys(o, ty, keys)?;
+    }
     let apply = |c: EngineCmd| Ok(Command::Apply(c));
     match ty {
         "load" => {
@@ -329,7 +377,10 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             let deck = deck_of(o, ty)?;
             let bounds = match field(o, ty, "loop")? {
                 Value::Null => None,
-                Value::Object(l) => Some((num(l, "loop.loop", "in_ms")?, num(l, "loop.loop", "out_ms")?)),
+                Value::Object(l) => {
+                    exact_keys(l, "loop.loop", &["in_ms", "out_ms"])?;
+                    Some((num(l, "loop.loop", "in_ms")?, num(l, "loop.loop", "out_ms")?))
+                }
                 _ => return Err(invalid("loop.loop must be {in_ms, out_ms} or null".into())),
             };
             apply(EngineCmd::Loop { deck, bounds_ms: bounds })
@@ -371,7 +422,12 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         }
         "crossfader" => apply(EngineCmd::Crossfader { value: unit(o, ty, "value")? }),
         "master_volume" => apply(EngineCmd::MasterVolume { value: unit(o, ty, "value")? }),
-        "master_mute" => apply(EngineCmd::MasterMute { muted: boolean(o, ty, "muted")? }),
+        "master_mute" => {
+            if o.get("persist").is_some_and(|p| !p.is_boolean()) {
+                return Err(invalid("master_mute.persist must be true or false".into()));
+            }
+            apply(EngineCmd::MasterMute { muted: boolean(o, ty, "muted")? })
+        }
         "engine_advance" => {
             let given = |k: &str| o.get(k).is_some_and(|v| !v.is_null());
             if given("ms") && given("frames") {
@@ -409,6 +465,13 @@ pub fn parse_knob(o: &Obj) -> Result<KnobTarget, ProtoError> {
         .get("type")
         .and_then(Value::as_str)
         .ok_or_else(|| invalid("ramp.type must be a string".into()))?;
+    // A ramp names its knob beside its own `to` and `over`.
+    let keys: &[&str] = match ty {
+        "eq" => &["type", "deck", "band", "to", "over"],
+        "crossfader" | "master_volume" => &["type", "to", "over"],
+        _ => &["type", "deck", "to", "over"],
+    };
+    exact_keys(o, "ramp", keys)?;
     Ok(match ty {
         "crossfader" => KnobTarget::Crossfader,
         "master_volume" => KnobTarget::MasterVolume,
@@ -435,6 +498,11 @@ pub fn parse_line(line: &str) -> (Option<String>, Result<Command, ProtoError>) {
     let Some(cmd) = v.get("cmd") else {
         return (id, Err(invalid("message needs a cmd object".into())));
     };
+    if let Some(o) = v.as_object() {
+        if let Err(e) = exact_keys(o, "message", &["id", "cmd"]) {
+            return (id, Err(e));
+        }
+    }
     (id, parse_command(cmd))
 }
 
@@ -794,6 +862,45 @@ mod tests {
             assert!(matches!(cmd(c.clone()), Ok(Command::Advance(_))), "{c}");
         }
         assert!(matches!(cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 400]})), Ok(Command::Load(_))));
+    }
+
+    #[test]
+    fn a_field_the_page_would_refuse_is_refused() {
+        // Codex's case: a misspelled launch option was ignored and the deck
+        // started at once, where the page's `_exactKeys` refuses it.
+        let e = cmd(json!({"type": "play", "deck": 1, "playing": true, "quantise": true})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+        assert!(e.message.contains("unexpected fields: quantise"), "{}", e.message);
+        // Every command, and the objects nested in one.
+        for c in [
+            json!({"type": "seek", "deck": 1, "position_ms": 10, "quantize": false}),
+            json!({"type": "fader", "deck": 1, "value": 0.5, "ramp_ms": 100}),
+            json!({"type": "crossfader", "value": 0.5, "deck": 1}),
+            json!({"type": "engine_state", "verbose": true}),
+            json!({"type": "loop", "deck": 1, "loop": {"in_ms": 0, "out_ms": 500, "beats": 1}}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"n": 2, "time_ms": 500, "bpm": 120}]}),
+        ] {
+            let e = cmd(c.clone()).unwrap_err();
+            assert!(e.message.contains("unexpected fields"), "{c}: {}", e.message);
+        }
+        let (id, r) = parse_line(r#"{"id": "x", "cmd": {"type": "engine_state"}, "urgent": true}"#);
+        assert_eq!(id.as_deref(), Some("x"));
+        assert!(r.unwrap_err().message.contains("unexpected fields: urgent"));
+        // Controls: each command with every field it may carry is accepted,
+        // including the page-only ones that steer only the page.
+        for c in [
+            json!({"type": "play", "deck": 1, "playing": true, "quantize": false, "start_at_context_sec": null}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "stable_id": "s", "refuseIfMaster": false, "stems": false, "suppressCommandErrorToast": true, "bpm": 120, "beatgrid_ms": [0, 500]}),
+            json!({"type": "master_mute", "muted": true, "persist": true}),
+            json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": 0}),
+            json!({"type": "eq", "deck": 1, "band": "low", "value": 0.5}),
+            json!({"type": "loop", "deck": 1, "loop": {"in_ms": 0, "out_ms": 500}}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"time_ms": 500}]}),
+        ] {
+            assert!(cmd(c.clone()).is_ok(), "{c}: {:?}", cmd(c.clone()).err().map(|e| e.message));
+        }
+        assert!(parse_line(r#"{"id": 1, "cmd": {"type": "engine_state"}}"#).1.is_ok());
+        assert!(cmd(json!({"type": "master_mute", "muted": true, "persist": 1})).is_err());
     }
 
     #[test]

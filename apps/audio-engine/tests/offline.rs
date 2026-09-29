@@ -497,6 +497,32 @@ fn a_time_or_length_naming_two_places_is_refused() {
 }
 
 #[test]
+fn a_plan_field_nothing_reads_is_refused() {
+    // The same rule as a command's fields (the page's `_exactKeys`): a
+    // misspelled plan, event, time, ramp or length field is refused, not
+    // ignored while the plan renders something else.
+    let load = json!({"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}});
+    let ramp = |r: Value| json!({"end": {"ms": 1000}, "events": [load.clone(), {"at": {"ms": 10}, "ramp": r}]});
+    for (plan, field) in [
+        (json!({"end": {"ms": 1000}, "events": [], "sample_rte": 44100}), "sample_rte"),
+        (json!({"end": {"ms": 1000}, "events": [{"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}, "note": "x"}]}), "note"),
+        (json!({"end": {"ms": 1000, "deck": 1, "bars": 2}, "events": []}), "bars"),
+        (ramp(json!({"type": "crossfader", "to": 1.0, "over": {"ms": 100}, "curve": "exp"})), "curve"),
+        (ramp(json!({"type": "crossfader", "deck": 1, "to": 1.0, "over": {"ms": 100}})), "deck"),
+        (ramp(json!({"type": "fader", "deck": 1, "to": 1.0, "over": {"ms": 100, "bar": 1}})), "bar"),
+    ] {
+        let e = parse_plan(&plan).unwrap_err();
+        assert!(e.message.contains(&format!("unexpected fields: {field}")), "{plan}: {}", e.message);
+    }
+    // Controls: every field each object may carry parses.
+    let full = json!({"sample_rate": 44100, "block_frames": 256, "max_ms": 5000, "end": {"deck": 1, "bar": 2}, "events": [
+        load.clone(),
+        {"at": {"deck": 1, "beat": 4}, "ramp": {"type": "eq", "deck": 1, "band": "low", "to": 0.2, "over": {"deck": 1, "bars": 1}}},
+        {"at": {"frame": 480}, "ramp": {"type": "master_volume", "to": 0.5, "over": {"frames": 480}}}]});
+    assert!(parse_plan(&full).is_ok(), "{:?}", parse_plan(&full).err().map(|e| e.message));
+}
+
+#[test]
 fn a_direct_knob_command_ends_a_ramp_on_that_knob() {
     let d = temp_dir("ramp-yield");
     write_wav(&d, "a.wav", 48000, &sine(48000, 1000.0, 10.0));

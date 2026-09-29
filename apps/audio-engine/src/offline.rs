@@ -313,14 +313,19 @@ fn fail(event: usize, e: ProtoError) -> ProtoError {
     ProtoError::new(e.code, format!("events[{event}]: {}", e.message))
 }
 
-/// The most frames a render may run: `max_ms`, and never more than one WAV
-/// file holds, shared between the `held` buffers it keeps (the mix, plus one
-/// per deck output). Everything rendered is held until it is written, so a
-/// render longer than its file could never be written and is not attempted,
-/// and what a render retains stays under what one WAV file holds (4 GiB)
-/// however many deck outputs it returns.
-fn render_ceiling(max_ms: f64, sr: u32, held: u64) -> u64 {
-    at_frame_of_ms(max_ms, sr).min(crate::wav::MAX_F32_FRAMES / held.max(1))
+/// Everything a render holds at once, in stereo f32 frames: every distinct
+/// decoded track (all are decoded up front and kept until the render ends)
+/// and every buffer it renders. One WAV file's worth, just under 4 GiB.
+const RENDER_BUDGET_FRAMES: u64 = crate::wav::MAX_F32_FRAMES;
+
+/// The most frames a render may run: `max_ms`, and never more than its
+/// memory budget leaves once `source_frames` of decoded audio are held,
+/// shared between the `held` buffers it renders (the mix, plus one per deck
+/// output). Everything rendered is held until it is written, so no buffer
+/// outgrows one WAV file, and what a render retains, sources included,
+/// stays within the budget however many tracks and deck outputs it has.
+fn render_ceiling(max_ms: f64, sr: u32, held: u64, source_frames: u64, budget: u64) -> u64 {
+    at_frame_of_ms(max_ms, sr).min(budget.saturating_sub(source_frames) / held.max(1))
 }
 
 /// Render `plan`, resolving each `load` through `load`.
@@ -333,8 +338,17 @@ pub fn render_plan(
 
 pub fn render_plan_with(
     plan: &Plan,
+    load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
+    opts: RenderOptions,
+) -> Result<RenderOutput, ProtoError> {
+    render_within(plan, load, opts, RENDER_BUDGET_FRAMES)
+}
+
+fn render_within(
+    plan: &Plan,
     mut load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
     opts: RenderOptions,
+    budget: u64,
 ) -> Result<RenderOutput, ProtoError> {
     let sr = plan.sample_rate;
     let mut loads_deck = [false; MAX_DECKS];
@@ -344,38 +358,81 @@ pub fn render_plan_with(
         }
     }
     let deck_buffers = if opts.deck_outputs { loads_deck.iter().filter(|&&l| l).count() as u64 } else { 0 };
-    let max_frames = render_ceiling(plan.max_ms, sr, 1 + deck_buffers);
-    let max_ms_held = max_frames as f64 * 1000.0 / sr as f64;
-    let limit = if deck_buffers == 0 {
-        format!("max_ms, or what one WAV file holds at {sr} Hz")
-    } else {
-        format!("max_ms, or what one WAV file holds at {sr} Hz shared by the mix and {deck_buffers} deck outputs")
-    };
-    // An absolute end (in ms or frames) past the ceiling is known too far
-    // before anything is decoded or held.
+    let held = 1 + deck_buffers;
     let end_frame = match plan.end {
         At::Frame(f) => Some(f),
         At::Ms(ms) => Some(at_frame_of_ms(ms, sr)),
         At::Deck { .. } => None,
     };
-    if let Some(end) = end_frame.filter(|&f| f > max_frames) {
-        return Err(ProtoError::new(
+    // The longest render allowed with `source_frames` of decoded audio held,
+    // how long that is, and what limits it, for the messages below.
+    let ceiling = |source_frames: u64| {
+        let max_frames = render_ceiling(plan.max_ms, sr, held, source_frames, budget);
+        let buffers = if deck_buffers == 0 {
+            String::new()
+        } else {
+            format!(" shared by the mix and {deck_buffers} deck outputs")
+        };
+        let sources = if source_frames == 0 {
+            String::new()
+        } else {
+            format!(" after {source_frames} frames of decoded tracks")
+        };
+        let limit = format!("max_ms, or what one WAV file holds at {sr} Hz{sources}{buffers}");
+        (max_frames, max_frames as f64 * 1000.0 / sr as f64, limit)
+    };
+    let past = |end: u64, (max_frames, max_ms_held, limit): &(u64, f64, String)| {
+        ProtoError::new(
             ErrorCode::Invalid,
             format!(
                 "plan.end at frame {end} is past the longest render allowed ({max_frames} frames, {max_ms_held:.0} ms: {limit})"
             ),
-        ));
+        )
+    };
+    // An absolute end (in ms or frames) past the ceiling is known too far
+    // before anything is decoded or held.
+    let before = ceiling(0);
+    if let Some(end) = end_frame.filter(|&f| f > before.0) {
+        return Err(past(end, &before));
     }
     // Decode everything up front, so decode time is reported apart from render
-    // time and the render loop itself never waits on IO.
+    // time and the render loop itself never waits on IO. Every distinct track
+    // stays held until the render ends, so each counts against the budget as
+    // it arrives, and the decoding stops at the one that leaves no room.
     let decode_start = Instant::now();
     let mut loaded: HashMap<usize, Arc<Track>> = HashMap::new();
+    let mut sources: Vec<*const f32> = Vec::new();
+    let mut source_frames = 0u64;
     for (i, ev) in plan.events.iter().enumerate() {
         if let Action::Cmd(Command::Load(spec)) = &ev.action {
-            loaded.insert(i, load(spec).map_err(|e| fail(i, e))?);
+            let track = load(spec).map_err(|e| fail(i, e))?;
+            // Tracks decoded from one file share their samples; count them once.
+            let samples = track.pcm.as_ptr();
+            if !sources.contains(&samples) {
+                sources.push(samples);
+                source_frames += track.frames as u64;
+                let now = ceiling(source_frames);
+                if now.0 == 0 {
+                    return Err(fail(
+                        i,
+                        ProtoError::new(
+                            ErrorCode::Invalid,
+                            format!(
+                                "the decoded tracks so far ({source_frames} frames) leave no room to render within what one WAV file holds ({budget} frames)"
+                            ),
+                        ),
+                    ));
+                }
+                if let Some(end) = end_frame.filter(|&f| f > now.0) {
+                    return Err(fail(i, past(end, &now)));
+                }
+            }
+            loaded.insert(i, track);
         }
     }
+    drop(sources);
     let decode_wall_s = decode_start.elapsed().as_secs_f64();
+    let (max_frames, max_ms_held, limit) = ceiling(source_frames);
 
     let mut engine = Engine::new(sr);
     let mut pending: Vec<usize> = (0..plan.events.len()).collect();
@@ -625,14 +682,14 @@ mod tests {
 
     #[test]
     fn a_render_never_runs_past_what_its_wav_file_holds() {
-        let max = crate::wav::MAX_F32_FRAMES;
+        let max = RENDER_BUDGET_FRAMES;
         // The default 4 h ceiling is more than a WAV file holds at 48 kHz
         // (about 3.1 h), so the file's limit is the ceiling there.
-        assert_eq!(render_ceiling(crate::plan::DEFAULT_MAX_MS, 48000, 1), max);
-        assert_eq!(render_ceiling(1e300, 384000, 1), max);
+        assert_eq!(render_ceiling(crate::plan::DEFAULT_MAX_MS, 48000, 1, 0, max), max);
+        assert_eq!(render_ceiling(1e300, 384000, 1, 0, max), max);
         // Control: a max_ms inside the limit is the ceiling itself.
-        assert_eq!(render_ceiling(3_600_000.0, 48000, 1), 3600 * 48000);
-        assert_eq!(render_ceiling(4.0 * 3_600_000.0, 8000, 1), 4 * 3600 * 8000);
+        assert_eq!(render_ceiling(3_600_000.0, 48000, 1, 0, max), 3600 * 48000);
+        assert_eq!(render_ceiling(4.0 * 3_600_000.0, 8000, 1, 0, max), 4 * 3600 * 8000);
     }
 
     /// A plan loading decks 1 and 2 that ends at absolute frame `end`.
@@ -652,8 +709,8 @@ mod tests {
         // Codex's case: four deck outputs each as long as a WAV file holds
         // would retain about 20 GiB. The mix and every deck output now share
         // one file's worth, so with two decks each gets a third.
-        let max = crate::wav::MAX_F32_FRAMES;
-        assert_eq!(render_ceiling(1e300, 48000, 5), max / 5);
+        let max = RENDER_BUDGET_FRAMES;
+        assert_eq!(render_ceiling(1e300, 48000, 5, 0, max), max / 5);
         // The loader answers only once the plan is past the preflight, so an
         // error from it means the render was allowed to start.
         let reached = |_: &LoadSpec| -> Result<Arc<Track>, ProtoError> { Err(ProtoError::new(ErrorCode::Io, "reached decode")) };
@@ -666,5 +723,63 @@ mod tests {
         assert!(e.message.contains("reached decode"), "{}", e.message);
         let Err(e) = render_plan_with(&two_deck_plan(max / 3 + 1), reached, RenderOptions::default()) else { panic!() };
         assert!(e.message.contains("reached decode"), "{}", e.message);
+    }
+
+    /// A loader handing out in-memory tracks of `frames` frames by path, one
+    /// shared sample buffer per path, counting how many loads it answered.
+    fn memory_loader(frames: usize, calls: &std::cell::Cell<usize>) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> + '_ {
+        let mut cache: HashMap<String, Arc<[f32]>> = HashMap::new();
+        move |spec: &LoadSpec| {
+            calls.set(calls.get() + 1);
+            let pcm = cache.entry(spec.path.clone()).or_insert_with(|| vec![0.0f32; frames * 2].into()).clone();
+            Ok(Arc::new(Track::new(48000, pcm, vec![], None)))
+        }
+    }
+
+    fn plan_of(end: serde_json::Value, paths: &[&str]) -> Plan {
+        let events: Vec<_> = paths
+            .iter()
+            .enumerate()
+            .map(|(i, p)| serde_json::json!({"at": {"ms": 0}, "cmd": {"type": "load", "deck": i + 1, "path": p}}))
+            .collect();
+        crate::plan::parse_plan(&serde_json::json!({"end": end, "events": events})).unwrap()
+    }
+
+    #[test]
+    fn decoded_tracks_count_against_the_render_budget() {
+        // Codex's case: the ceiling counted only the rendered buffers while
+        // every decoded track stays held too, so a long track plus a long mix
+        // could retain twice the budget. Here the budget is 48000 frames and
+        // each track 20000.
+        let budget = 48000;
+        let calls = std::cell::Cell::new(0);
+        let run = |end: u64, paths: &[&str], opts: RenderOptions| {
+            calls.set(0);
+            render_within(&plan_of(serde_json::json!({"frame": end}), paths), memory_loader(20000, &calls), opts, budget)
+        };
+        let e = run(28001, &["a"], RenderOptions::default()).err().unwrap();
+        assert!(e.message.contains("past the longest render allowed (28000 frames") && e.message.contains("20000 frames of decoded tracks"), "{}", e.message);
+        assert_eq!(run(28000, &["a"], RenderOptions::default()).unwrap().frames, 28000);
+        // One file loaded twice holds one copy, so it counts once.
+        assert_eq!(run(28000, &["a", "a"], RenderOptions::default()).unwrap().frames, 28000);
+        // Two files hold two.
+        assert!(run(8001, &["a", "b"], RenderOptions::default()).is_err());
+        assert_eq!(run(8000, &["a", "b"], RenderOptions::default()).unwrap().frames, 8000);
+        // Deck outputs share what the sources leave.
+        let decks = RenderOptions { deck_outputs: true };
+        assert!(run(14001, &["a"], decks).is_err());
+        assert_eq!(run(14000, &["a"], decks).unwrap().frames, 14000);
+        // Tracks that fill the budget stop the decoding at the one that does,
+        // before the rest are decoded.
+        let e = run(1, &["a", "b", "c", "d"], RenderOptions::default()).err().unwrap();
+        assert!(e.message.starts_with("events[2]") && e.message.contains("leave no room"), "{}", e.message);
+        assert_eq!(calls.get(), 3);
+        // A deck-relative end is bounded by the same ceiling while rendering.
+        let playing = crate::plan::parse_plan(&serde_json::json!({"end": {"deck": 1, "position_ms": 10000}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a"}},
+            {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}}]}))
+        .unwrap();
+        let e = render_within(&playing, memory_loader(1_000_000, &calls), RenderOptions::default(), 1_010_000).err().unwrap();
+        assert!(e.message.contains("not reached within") && e.message.contains("1000000 frames of decoded tracks"), "{}", e.message);
     }
 }

@@ -20,7 +20,7 @@
 use serde_json::{Map, Value};
 
 use crate::engine::{DeckId, KnobTarget};
-use crate::protocol::{self, deck_of, Command, ProtoError};
+use crate::protocol::{self, deck_of, exact_keys, Command, ProtoError};
 use crate::engine::ErrorCode;
 
 pub const DEFAULT_SAMPLE_RATE: u32 = 48000;
@@ -113,6 +113,7 @@ fn at_most_one(o: &Map<String, Value>, what: &str, keys: &[&str]) -> Result<(), 
 
 fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
     let o = obj(v, what)?;
+    exact_keys(o, what, &["deck", "bar", "beat", "position_ms", "frame", "ms"])?;
     at_most_one(o, what, &["bar", "beat", "position_ms", "frame", "ms"])?;
     if o.contains_key("deck") {
         let deck = deck_of(o, what)?;
@@ -149,6 +150,7 @@ fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
 
 fn parse_over(v: &Value, what: &str) -> Result<Over, ProtoError> {
     let o = obj(v, what)?;
+    exact_keys(o, what, &["deck", "beats", "bars", "ms", "frames"])?;
     at_most_one(o, what, &["beats", "bars", "ms", "frames"])?;
     let positive = |x: f64, k: &str| {
         if x > 0.0 {
@@ -178,6 +180,7 @@ fn parse_over(v: &Value, what: &str) -> Result<Over, ProtoError> {
 
 pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
     let o = obj(v, "plan")?;
+    exact_keys(o, "plan", &["sample_rate", "block_frames", "max_ms", "end", "events"])?;
     let sample_rate = match o.get("sample_rate") {
         None => DEFAULT_SAMPLE_RATE,
         Some(s) => s
@@ -203,6 +206,7 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
     for (i, e) in raw.iter().enumerate() {
         let what = format!("events[{i}]");
         let eo = obj(e, &what)?;
+        exact_keys(eo, &what, &["at", "cmd", "ramp"])?;
         let at = parse_at(eo.get("at").ok_or_else(|| invalid(format!("{what}.at is required")))?, &format!("{what}.at"))?;
         let action = match (eo.get("cmd"), eo.get("ramp")) {
             (Some(c), None) => {
