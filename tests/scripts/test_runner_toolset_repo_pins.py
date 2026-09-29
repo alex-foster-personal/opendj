@@ -17,6 +17,8 @@ Regression lines:
   - if a `.yaml` workflow pins another version than the manifest and the test
     stays green, or a workflow-backed source names `*.yml` without `*.yaml`,
     then broken
+  - if a setup action step that omits its version input stays green because
+    another step pins the manifest version then broken
 """
 
 from __future__ import annotations
@@ -51,14 +53,19 @@ def _workflow_steps(paths: list[Path]) -> list[dict]:
 
 
 def _action_input(action: str, key: str) -> Callable[[list[Path]], set[str]]:
-    """Every `with: <key>` of a workflow step that uses `<action>@...`."""
+    """Every `with: <key>` of a workflow step that uses `<action>@...`. A step that
+    omits the key yields an `unpinned:` value, which can never equal a pin: the
+    action then picks a PATH or default toolchain, whatever other steps pin."""
 
     def derive(paths: list[Path]) -> set[str]:
         values: set[str] = set()
         for step in _workflow_steps(paths):
-            if str(step.get("uses", "")).split("@")[0] == action:
+            uses = str(step.get("uses", ""))
+            if uses.split("@", maxsplit=1)[0] == action:
                 value = (step.get("with") or {}).get(key)
-                values |= {str(value).removeprefix("v")} if value is not None else set()
+                values.add(
+                    str(value).removeprefix("v") if value is not None else f"unpinned: {uses}"
+                )
         return values
 
     return derive
@@ -334,3 +341,32 @@ def test_a_yaml_workflow_pinning_another_version_goes_red(
     _write(tmp_path, ".github/workflows/b.yaml", _workflow(action, key, bumped))
     problems = repo_pin_mismatches([entry], tmp_path)
     assert problems and bumped in problems[0], problems
+
+
+ACTION_INPUTS = {
+    **{name: (action, key) for name, (action, key, _) in WORKFLOW_ACTIONS.items()},
+    "toolcache-sccache": ("mozilla-actions/sccache-action", "version"),
+}
+
+
+@pytest.mark.parametrize("pinned_twice", [False, True], ids=["one-unpinned", "control"])
+@pytest.mark.parametrize("name", sorted(ACTION_INPUTS))
+def test_a_setup_step_without_its_version_input_goes_red(
+    manifest: dict, tmp_path: Path, name: str, pinned_twice: bool
+) -> None:
+    """One step pinning the manifest version does not vouch for another step of the
+    same action that omits the input and so resolves a default toolchain."""
+    action, key = ACTION_INPUTS[name]
+    entry = _entry_named(manifest, name)
+    pin = _expected_pin(entry)
+    assert pin, entry
+    first_glob = str(entry["source"]).removeprefix("repo:").split(" ")[0].split(",")[0]
+    pinned = {"uses": f"{action}@abc", "with": {key: pin}}
+    second = pinned if pinned_twice else {"uses": f"{action}@abc"}
+    steps = {"jobs": {"j": {"steps": [pinned, second]}}}
+    _write(tmp_path, first_glob.replace("*", "a"), yaml.safe_dump(steps))
+    problems = repo_pin_mismatches([entry], tmp_path)
+    if pinned_twice:
+        assert problems == [], problems
+    else:
+        assert len(problems) == 1 and "unpinned" in problems[0], problems

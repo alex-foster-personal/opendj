@@ -5,12 +5,16 @@ under each configured runner's own job PATH (for every runner dir holding
 `.runner`: its `.env` `PATH=` when set, which the Listener loads and which
 wins, else `<runner-dir>/.path`; runners sharing a job PATH are probed once), and
 checks each `provides` executable resolves on that PATH for kinds apt, binary
-and toolchain. The host verdict per entry is its worst runner's, naming that
+and toolchain. For kind apt, dpkg-query vouches only for the package, so each
+executable's resolved file must also be owned by one of the entry's `owners`
+(default: the entry itself); a shadowing or alternative binary is a MISMATCH.
+The host verdict per entry is its worst runner's, naming that
 runner. Read-only: it installs, writes and restarts nothing.
 
 Per entry it prints one of:
   OK        verify exited 0 and its output carries the pinned version
-  MISMATCH  verify exited 0 but the version differs (wanted vs got)
+  MISMATCH  verify exited 0 but the version differs (wanted vs got), or an apt
+            executable resolves to a file another package (or none) owns
   MISSING   verify exited nonzero, or a provided executable is not on PATH
   UNKNOWN   the probe could not run at all (ssh, sudo or timeout failure, or
             no readable runner `.path`: the login PATH is never a stand-in
@@ -48,6 +52,10 @@ Requirements:
       [then ⛔️] any entry reports OK.
     [if] a runner's .env sets PATH= [then ⛔️] its .path is what gets verified.
     [if] a pinned tool reports the pin plus a `-nightly`/`-rc` suffix [then ⛔️] OK.
+  ✔︎ ✅ 🎯 R4 an apt entry's executables are the ones its package installed.
+    [if] the PATH-resolved executable belongs to another package [then ⛔️] OK.
+    [if] it belongs to no package (a /usr/local or home-dir binary) [then ⛔️] OK.
+    [if] an apt executable leaves no ownership record [then ⛔️] OK.
   ✔︎ ✅ R2 exit code follows the contract above.
     [if] one entry is UNKNOWN and the rest OK [then ⛔️] exit 0.
     [if] one entry is MISSING [then ⛔️] exit 0 or 2.
@@ -57,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fnmatch
 import json
 import re
 import shlex
@@ -119,6 +128,23 @@ def _probe_script(
         f' {runner_dir_globs}; refusing to verify against the login PATH" >&2',
         "  exit 96",
         "fi",
+        # The dpkg package owning the file an executable resolves to: symlinks and
+        # alternatives followed; a merged-/usr path is recorded under /bin or /sbin.
+        "owner_of() {",
+        # `unmeasured` when the lookup itself cannot run: never a verdict about it.
+        '  r="$(readlink -f "$1")" || { printf \'unmeasured %s\' "$1"; return; }',
+        '  o=""',
+        '  for f in "$r" "${r#/usr}"; do',
+        '    out="$(dpkg-query -S "$f" 2>/dev/null)"; rc=$?',
+        '    [ "$rc" -gt 1 ] && { printf \'unmeasured %s\' "$r"; return; }',
+        "    while IFS= read -r line; do",
+        '      case "$line" in "diversion by "*|"") ;; *) o="$line"; break ;; esac',
+        '    done <<< "$out"',
+        '    [ -n "$o" ] && break',
+        "  done",
+        '  o="${o%%: /*}"; o="${o// /}"',
+        '  printf \'%s %s\' "${o:--}" "$r"',
+        "}",
         # Same resolution as ci-hosts' runner-conformance.sh: .env PATH= wins.
         "job_path() {",
         '  p="$(grep -m1 \'^PATH=\' "$1/.env" 2>/dev/null | cut -d= -f2-)"',
@@ -167,8 +193,16 @@ def _probe_lines(entry: dict) -> list[str]:
         f'echo "{RECORD} V {name} $rc $(printf %s "$out" | head -c 2000 | base64 -w0)"'
     )
     on_path = entry.get("provides", []) if entry["kind"] in PATH_KINDS else []
+    if entry["kind"] != "apt":
+        return [run] + [
+            f'command -v {shlex.quote(exe)} >/dev/null 2>&1 || echo "{RECORD} P {name} {exe}"'
+            for exe in on_path
+        ]
     return [run] + [
-        f'command -v {shlex.quote(exe)} >/dev/null 2>&1 || echo "{RECORD} P {name} {exe}"'
+        f"if p=$(command -v {shlex.quote(exe)}); then"
+        f' case "$p" in /*) echo "{RECORD} O {name} {exe} $(owner_of "$p")" ;;'
+        f' *) echo "{RECORD} O {name} {exe} builtin $p" ;; esac;'
+        f' else echo "{RECORD} P {name} {exe}"; fi'
         for exe in on_path
     ]
 
@@ -281,6 +315,8 @@ class _Records:
 
     verified: dict[str, tuple[int, str]] = field(default_factory=dict)
     off_path: dict[str, list[str]] = field(default_factory=dict)
+    # entry -> exe -> (comma-separated owning packages or `-`/`builtin`, resolved path)
+    owned: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -310,6 +346,9 @@ def _parse_records(stdout: str) -> _Probe:
         elif parts[1] == "P":
             records = probe.by_runner.setdefault(current, _Records())
             records.off_path.setdefault(parts[2], []).append(parts[3])
+        elif parts[1] == "O" and len(parts) >= 5:
+            records = probe.by_runner.setdefault(current, _Records())
+            records.owned.setdefault(parts[2], {})[parts[3]] = (parts[4], " ".join(parts[5:]))
         elif parts[1] == "END":
             probe.complete = True
     return probe
@@ -330,9 +369,34 @@ def _classify_one(entry: dict, records: _Records) -> tuple[str, str] | None:
         return "MISSING", f"verify exit {code}: {first}"
     if name in records.off_path:
         return "MISSING", f"not on runner PATH: {', '.join(records.off_path[name])}"
+    if entry["kind"] == "apt" and (foreign := _foreign_executables(entry, records)):
+        return foreign
     if _version_matches(entry["version"], default_match(entry), output):
         return "OK", first
     return "MISMATCH", first
+
+
+_OWNER_TEXT = {"-": "no package owns it", "builtin": "a shell builtin, no file"}
+
+
+def _foreign_executables(entry: dict, records: _Records) -> tuple[str, str] | None:
+    """An apt entry's executables must resolve to files one of its `owners` owns."""
+    owners = entry.get("owners", [entry["name"]])
+    seen = records.owned.get(entry["name"], {})
+    unrecorded = [exe for exe in entry.get("provides", []) if exe not in seen]
+    unmeasured = [exe for exe, (packages, _) in seen.items() if packages == "unmeasured"]
+    if unrecorded or unmeasured:
+        return "UNKNOWN", f"package ownership not measured for {', '.join(unrecorded + unmeasured)}"
+    foreign = [
+        f"{exe} runs {path} ({_OWNER_TEXT.get(packages, 'owned by ' + packages)})"
+        for exe, (packages, path) in seen.items()
+        if not any(
+            fnmatch.fnmatchcase(package.split(":")[0], pattern)
+            for package in packages.split(",")
+            for pattern in owners
+        )
+    ]
+    return ("MISMATCH", f"{'; '.join(foreign)}, not {'/'.join(owners)}") if foreign else None
 
 
 # The verdict for a host is its worst runner's: one runner job PATH lacking a

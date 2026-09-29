@@ -24,7 +24,8 @@ Regression lines:
     Listener loads and which wins) is set, or runners are deduplicated on .path
     rather than on that effective job PATH, then broken
 
-The Playwright payload tests live in test_runner_toolset_verify_playwright.py.
+The Playwright payload tests live in test_runner_toolset_verify_playwright.py, and
+the apt package-ownership probe tests in test_runner_toolset_verify_ownership.py.
 """
 
 from __future__ import annotations

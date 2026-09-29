@@ -20,6 +20,10 @@ Regression lines:
   - if a pin followed by a prerelease or build suffix reports OK then broken
   - if one runner job PATH lacking or drifting on a tool leaves the host OK, or
     the report does not name that runner, then broken
+  - if an apt executable that resolves to a file another package owns, no package
+    owns, or that is a shell builtin reports OK, or one with no ownership record
+    reports anything but UNKNOWN, or an ownership lookup that could not run
+    reports a verdict, then broken
 """
 
 from __future__ import annotations
@@ -251,3 +255,41 @@ def test_every_manifest_pin_matches_a_plain_rendering_of_itself() -> None:
     stripped = [{**e, "provision": "host"} for e in entries]
     bad = [r for r in _classify(stripped, records) if r.status != "OK"]
     assert not bad, bad
+
+
+@pytest.mark.parametrize(
+    ("owned", "owners", "status"),
+    [
+        ("git /usr/bin/git", None, "OK"),
+        ("tar /usr/bin/tar", None, "MISMATCH"),
+        ("- /usr/local/bin/git", None, "MISMATCH"),
+        ("builtin git", None, "MISMATCH"),
+        ("git:amd64 /usr/bin/git", None, "OK"),
+        ("gcc-13-x86-64-linux-gnu /usr/bin/x86_64-linux-gnu-gcc-13", ["gcc-*-*-linux-gnu"], "OK"),
+        ("gcc-13-x86-64-linux-gnu /usr/bin/x86_64-linux-gnu-gcc-13", None, "MISMATCH"),
+    ],
+)
+def test_an_apt_executable_must_resolve_to_a_file_its_package_owns(
+    owned: str, owners: list[str] | None, status: str
+) -> None:
+    """dpkg-query vouches for the package, not for the executable a job runs."""
+    entry = {**_entry("git", "1:2.43.0", match="min", provides=["git"])}
+    if owners:
+        entry["owners"] = owners
+    records = [_record("git", 0, "ii 1:2.43.0-1ubuntu7.3"), f"{rtv.RECORD} O git git {owned}"]
+    [result] = _classify([entry], records)
+    assert result.status == status, result
+
+
+def test_an_apt_executable_with_no_ownership_record_is_unknown() -> None:
+    entry = _entry("git", "1:2.43.0", match="min", provides=["git"])
+    [result] = _classify([entry], [_record("git", 0, "ii 1:2.43.0-1ubuntu7.3")])
+    assert result.status == "UNKNOWN" and "ownership" in result.got, result
+
+
+def test_an_ownership_lookup_that_could_not_run_is_unknown_not_a_verdict() -> None:
+    """dpkg-query missing or failing on the job PATH is a failed measurement."""
+    entry = _entry("git", "1:2.43.0", match="min", provides=["git"])
+    records = [_record("git", 0, "ii 1:2.43.0"), f"{rtv.RECORD} O git git unmeasured /usr/bin/git"]
+    [result] = _classify([entry], records)
+    assert result.status == "UNKNOWN" and "not measured" in result.got, result
