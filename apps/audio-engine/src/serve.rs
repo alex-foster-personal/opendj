@@ -253,6 +253,9 @@ enum Sink {
 pub struct Hub {
     clients: Mutex<HashMap<ClientId, Sink>>,
     next: AtomicU32,
+    /// Set by the stdio write that fails, before the lock is let go, so no
+    /// thread can take the lock after that write and still see it clear.
+    closed: Arc<AtomicBool>,
 }
 
 impl Hub {
@@ -261,7 +264,13 @@ impl Hub {
     pub fn new(stdio: Box<dyn Write + Send>) -> Hub {
         let mut clients = HashMap::new();
         clients.insert(STDIO, Sink::Stdio(stdio));
-        Hub { clients: Mutex::new(clients), next: AtomicU32::new(STDIO + 1) }
+        Hub { clients: Mutex::new(clients), next: AtomicU32::new(STDIO + 1), closed: Arc::default() }
+    }
+
+    /// Set once a stdio write has failed. The control loop reads it before
+    /// each line it applies.
+    pub fn closed(&self) -> Arc<AtomicBool> {
+        self.closed.clone()
     }
 
     /// Register a socket client. `None` when `MAX_WS_CLIENTS` are connected.
@@ -285,10 +294,16 @@ impl Hub {
         self.clients.lock().unwrap().len() - 1
     }
 
-    fn deliver(c: &mut HashMap<ClientId, Sink>, id: ClientId, v: &Value) -> io::Result<()> {
+    fn deliver(&self, c: &mut HashMap<ClientId, Sink>, id: ClientId, v: &Value) -> io::Result<()> {
         match c.get_mut(&id) {
             None => Ok(()),
-            Some(Sink::Stdio(o)) => send(o, v),
+            Some(Sink::Stdio(o)) => {
+                let r = send(o, v);
+                if r.is_err() {
+                    self.closed.store(true, Ordering::Release);
+                }
+                r
+            }
             Some(Sink::Socket(tx)) => {
                 // Dropping the sender is what tells the socket thread to close.
                 if tx.try_send(v.to_string()).is_err() {
@@ -301,7 +316,7 @@ impl Hub {
 
     /// Send one message to one client. A client that has gone is skipped.
     pub fn send_to(&self, id: ClientId, v: &Value) -> io::Result<()> {
-        Self::deliver(&mut self.clients.lock().unwrap(), id, v)
+        self.deliver(&mut self.clients.lock().unwrap(), id, v)
     }
 
     /// Send one message to every client; the stdio write's failure, if any.
@@ -310,7 +325,7 @@ impl Hub {
         let ids: Vec<ClientId> = c.keys().copied().collect();
         let mut stdio = Ok(());
         for id in ids {
-            let r = Self::deliver(&mut c, id, v);
+            let r = self.deliver(&mut c, id, v);
             if id == STDIO {
                 stdio = r;
             }
@@ -1294,7 +1309,7 @@ fn serve_threaded_with(
     let pump_hub = hub.clone();
     let pump_ids = ids.clone();
     let pump_tx = msg_tx.clone();
-    let closed = Arc::new(AtomicBool::new(false));
+    let closed = hub.closed();
     let pump_closed = closed.clone();
     let pump = std::thread::spawn(move || {
         // Once a write fails the engine is stopping; the pump keeps draining
@@ -1765,6 +1780,7 @@ mod tests {
         let (mut c, _cmd_rx, _out) = control();
         let seen = Arc::new(Mutex::new(Vec::new()));
         c.hub = Arc::new(Hub::new(Box::new(SeesRequest(c.state_req.clone(), seen.clone()))));
+        c.closed = c.hub.closed();
         assert!(c.handle_line(&serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(), "wall"));
         assert_eq!(*seen.lock().unwrap(), vec![false], "the request was visible before its ok was written");
         // Control: it is made once the ok is out.
@@ -1869,10 +1885,12 @@ mod tests {
         let out = Captured::default();
         let (msg_tx, msg_rx) = mpsc::channel();
         std::mem::forget(msg_rx);
+        let hub = Arc::new(Hub::new(Box::new(out.clone())));
         let control = Control {
             cmd_tx,
             ids: Arc::default(),
-            hub: Arc::new(Hub::new(Box::new(out.clone()))),
+            closed: hub.closed(),
+            hub,
             msg_tx,
             next_seq: 0,
             waiting: Default::default(),
@@ -1892,7 +1910,6 @@ mod tests {
             load_used: Arc::default(),
             pcm_used: Arc::default(),
             pcm_budget: PCM_BYTES,
-            closed: Arc::default(),
         };
         (control, cmd_rx, out)
     }
@@ -2296,12 +2313,16 @@ mod tests {
         assert!(hub.send_to(id, &v).is_ok());
         assert!(hub.send_to(id, &v).is_ok(), "a stalled socket's result stopped the engine");
         assert_eq!((hub.socket_clients(), rx.try_iter().count()), (0, 1));
+        assert!(!hub.closed().load(Ordering::Acquire), "a stalled socket closed the output");
         // Control: stdio failing is the error that stops the engine, with a
         // socket beside it, and that socket still gets the line.
         let hub = Hub::new(Box::new(Dead));
         let (tx, rx) = mpsc::sync_channel(4);
         let id = hub.add_socket(tx).unwrap();
+        assert!(!hub.closed().load(Ordering::Acquire));
         assert!(hub.broadcast(&v).is_err());
+        // Set by the failing write itself, while it still holds the lock.
+        assert!(hub.closed().load(Ordering::Acquire), "stdio failed and the output is not marked closed");
         assert!(hub.send_to(STDIO, &v).is_err());
         assert!(hub.send_to(id, &v).is_ok());
         assert_eq!(rx.try_iter().count(), 2);
