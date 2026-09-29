@@ -146,6 +146,22 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         "master_mute" => &["type", "muted", "persist"],
         "engine_advance" => &["type", "ms", "frames"],
         "engine_state" | "engine_shutdown" => &["type"],
+        // Commands this build does not do yet still carry the page's fields,
+        // so a malformed one is refused as the page refuses it, not reported
+        // as merely not implemented.
+        "key_nudge" => &["type", "deck", "semitones"],
+        "key_sync" | "stem_eq_mode" | "slip" | "beat_sync" | "channel_cue" => &["type", "deck", "enabled"],
+        "stem_mute" => &["type", "deck", "stem", "muted"],
+        "stem_solo" => &["type", "deck", "stem", "solo"],
+        "stem_gain" => &["type", "deck", "stem", "value"],
+        "sync_mode" => &["type", "deck", "mode"],
+        "master" => &["type", "deck", "lock"],
+        "hot_cue_trigger" => &["type", "deck", "slot"],
+        "headphone_mix" | "headphone_level" | "head_delay_ms" => &["type", "value"],
+        "output_mode" => &["type", "mode"],
+        "headphone_output_select" | "headphone_master_select" => &["type", "device_id"],
+        "preview_cue" => &["type", "stable_id", "ratio", "bpm"],
+        "preview_stop" => &["type"],
         _ => return None,
     })
 }
@@ -296,6 +312,84 @@ fn refuse_if_master(o: &Obj, ty: &str) -> Result<(), ProtoError> {
         )),
         Some(_) => Err(invalid(format!("{ty}.refuseIfMaster must be true or false"))),
     }
+}
+
+/// A string field that must be one of `allowed`.
+fn one_of(o: &Obj, ty: &str, name: &str, allowed: &[&str]) -> Result<(), ProtoError> {
+    let v = string(o, ty, name)?;
+    if !allowed.contains(&v) {
+        return Err(invalid(format!("{ty}.{name} must be one of {}, got {v}", allowed.join(", "))));
+    }
+    Ok(())
+}
+
+fn non_empty(o: &Obj, ty: &str, name: &str) -> Result<(), ProtoError> {
+    if string(o, ty, name)?.trim().is_empty() {
+        return Err(invalid(format!("{ty}.{name} must be a non-empty string")));
+    }
+    Ok(())
+}
+
+/// The page parser's field checks for a command this build does not do yet
+/// (`performance-ipc.svelte.ts` `_parseCommand`): a command the page would
+/// refuse is `invalid` here too, and only a well-formed one is
+/// `not_implemented`. Keys are checked by `command_keys` before this runs.
+fn check_later(o: &Obj, ty: &str) -> Result<(), ProtoError> {
+    const STEMS: &[&str] = &["vocal", "instrumental", "drums"];
+    match ty {
+        "key_nudge" => {
+            deck_of(o, ty)?;
+            let s = num(o, ty, "semitones")?;
+            if s != -1.0 && s != 1.0 {
+                return Err(invalid(format!("{ty}.semitones must be -1 or 1, got {s}")));
+            }
+        }
+        "key_sync" | "stem_eq_mode" | "slip" | "beat_sync" | "channel_cue" => {
+            deck_of(o, ty)?;
+            boolean(o, ty, "enabled")?;
+        }
+        "stem_mute" | "stem_solo" | "stem_gain" => {
+            deck_of(o, ty)?;
+            one_of(o, ty, "stem", STEMS)?;
+            match ty {
+                "stem_mute" => drop(boolean(o, ty, "muted")?),
+                "stem_solo" => drop(boolean(o, ty, "solo")?),
+                _ => drop(unit(o, ty, "value")?),
+            }
+        }
+        "sync_mode" => {
+            deck_of(o, ty)?;
+            one_of(o, ty, "mode", &["beat", "bar"])?;
+        }
+        "master" => {
+            deck_of(o, ty)?;
+            if o.contains_key("lock") {
+                boolean(o, ty, "lock")?;
+            }
+        }
+        "hot_cue_trigger" => {
+            deck_of(o, ty)?;
+            one_of(o, ty, "slot", &["A", "B", "C", "D", "E", "F", "G", "H"])?;
+        }
+        "headphone_mix" | "headphone_level" => drop(unit(o, ty, "value")?),
+        "head_delay_ms" => {
+            let v = num(o, ty, "value")?;
+            if !(0.0..=500.0).contains(&v) {
+                return Err(invalid(format!("{ty}.value must be within 0..500, got {v}")));
+            }
+        }
+        "output_mode" => one_of(o, ty, "mode", &["practice", "two_outputs", "split_cable"])?,
+        "headphone_output_select" | "headphone_master_select" => non_empty(o, ty, "device_id")?,
+        "preview_cue" => {
+            non_empty(o, ty, "stable_id")?;
+            unit(o, ty, "ratio")?;
+            if o.contains_key("bpm") && !o.get("bpm").and_then(Value::as_f64).is_some_and(|b| b > 0.0) {
+                return Err(invalid(format!("{ty}.bpm must be a positive number when given")));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Parse one command object (`{"type": ...}`).
@@ -449,6 +543,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         "engine_shutdown" => Ok(Command::Shutdown),
         other => {
             if let Some((_, why)) = LATER.iter().find(|(t, _)| *t == other) {
+                check_later(o, other)?;
                 return Err(ProtoError::new(ErrorCode::NotImplemented, format!("{other}: {why}")));
             }
             Err(ProtoError::new(
@@ -632,8 +727,71 @@ mod tests {
     }
 
     #[test]
+    fn a_command_not_built_yet_is_checked_as_the_page_checks_it() {
+        // Codex's case: a deferred command skipped every field check, so a
+        // misspelled or malformed one came back not_implemented, a different
+        // answer from the page's. Each is now checked as the page's parser
+        // checks it; only a well-formed one is not_implemented.
+        let good = [
+            json!({"type": "key_nudge", "deck": 1, "semitones": -1}),
+            json!({"type": "key_sync", "deck": 1, "enabled": true}),
+            json!({"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true}),
+            json!({"type": "stem_solo", "deck": 2, "stem": "drums", "solo": false}),
+            json!({"type": "stem_gain", "deck": 3, "stem": "instrumental", "value": 0.5}),
+            json!({"type": "stem_eq_mode", "deck": 1, "enabled": false}),
+            json!({"type": "slip", "deck": 1, "enabled": true}),
+            json!({"type": "beat_sync", "deck": 1, "enabled": true}),
+            json!({"type": "sync_mode", "deck": 1, "mode": "bar"}),
+            json!({"type": "master", "deck": 1}),
+            json!({"type": "hot_cue_trigger", "deck": 4, "slot": "H"}),
+            json!({"type": "channel_cue", "deck": 1, "enabled": true}),
+            json!({"type": "headphone_mix", "value": 0}),
+            json!({"type": "headphone_level", "value": 1}),
+            json!({"type": "head_delay_ms", "value": 500}),
+            json!({"type": "output_mode", "mode": "split_cable"}),
+            json!({"type": "headphone_output_select", "device_id": "d"}),
+            json!({"type": "headphone_master_select", "device_id": "d"}),
+            json!({"type": "preview_cue", "stable_id": "s", "ratio": 0.25}),
+            json!({"type": "preview_stop"}),
+        ];
+        // Every deferred command is covered here, and has a field list.
+        for (t, _) in LATER {
+            assert!(good.iter().any(|g| g["type"] == *t), "{t} has no well-formed case");
+            assert!(command_keys(t).is_some(), "{t} has no field list");
+        }
+        for g in &good {
+            assert_eq!(cmd(g.clone()).unwrap_err().code, ErrorCode::NotImplemented, "{g}");
+        }
+        // Optional fields the page takes are taken too.
+        for g in [json!({"type": "master", "deck": 1, "lock": true}), json!({"type": "preview_cue", "stable_id": "s", "ratio": 1, "bpm": 124})] {
+            assert_eq!(cmd(g.clone()).unwrap_err().code, ErrorCode::NotImplemented, "{g}");
+        }
+        for bad in [
+            json!({"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true, "quantise": true}),
+            json!({"type": "stem_mute", "deck": 1, "stem": "vocals", "muted": true}),
+            json!({"type": "stem_mute", "deck": 1, "stem": "vocal"}),
+            json!({"type": "stem_gain", "deck": 1, "stem": "drums", "value": 1.5}),
+            json!({"type": "key_nudge", "deck": 1, "semitones": 2}),
+            json!({"type": "key_sync", "deck": 5, "enabled": true}),
+            json!({"type": "slip", "deck": 1, "enabled": "yes"}),
+            json!({"type": "sync_mode", "deck": 1, "mode": "phase"}),
+            json!({"type": "master", "deck": 1, "lock": 1}),
+            json!({"type": "hot_cue_trigger", "deck": 1, "slot": "I"}),
+            json!({"type": "headphone_mix", "value": -0.1}),
+            json!({"type": "head_delay_ms", "value": 501}),
+            json!({"type": "output_mode", "mode": "mono"}),
+            json!({"type": "headphone_output_select", "device_id": "  "}),
+            json!({"type": "preview_cue", "stable_id": "s", "ratio": 0.5, "bpm": 0}),
+            json!({"type": "preview_cue", "ratio": 0.5}),
+            json!({"type": "preview_stop", "deck": 1}),
+        ] {
+            assert_eq!(cmd(bad.clone()).unwrap_err().code, ErrorCode::Invalid, "{bad}");
+        }
+    }
+
+    #[test]
     fn refusals_name_their_reason() {
-        let e = cmd(json!({"type": "stem_mute", "deck": 1, "stem": "vocals", "muted": true})).unwrap_err();
+        let e = cmd(json!({"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);
         let e = cmd(json!({"type": "browser_select_playlist", "playlist_id": "x"})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Unsupported);

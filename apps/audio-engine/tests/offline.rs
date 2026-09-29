@@ -352,6 +352,20 @@ fn a_session_lets_go_of_a_track_no_deck_holds() {
     assert!(std::sync::Arc::ptr_eq(&b.pcm, &c.pcm), "a held file decoded again");
     drop((b, c));
     assert!(samples.upgrade().is_none(), "the loader kept samples no deck holds");
+    // Codex's case: decks 1 and 2 on one file, deck 2 unloaded, then deck 3
+    // loads it. Deck 1 still holds the samples, so deck 3 shares them rather
+    // than decode a second copy, whichever deck loaded last.
+    let (one, two) = (load(&spec(1)).unwrap(), load(&spec(2)).unwrap());
+    drop(two);
+    let three = load(&spec(3)).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&one.pcm, &three.pcm), "deck 3 decoded a second copy");
+    // And when the first deck lets go, the newest still anchors the sharing.
+    drop(one);
+    let four = load(&spec(4)).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&three.pcm, &four.pcm), "deck 4 decoded a second copy");
+    let samples = std::sync::Arc::downgrade(&three.pcm);
+    drop((three, four));
+    assert!(samples.upgrade().is_none(), "the loader kept samples no deck holds");
     // Loading it again decodes it again.
     let again = load(&spec(1)).unwrap();
     assert_eq!(again.frames, 48000);

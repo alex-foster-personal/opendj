@@ -161,19 +161,24 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
     }
 }
 
-/// Loads tracks for a live session, where loads never end: two decks on one
-/// file share its samples while either holds them, but nothing is kept for a
-/// file no deck holds any more, so memory follows the tracks loaded now, not
-/// every track the session has visited. The cache keeps only a `Weak` to
-/// each track, which frees the samples with the last deck's `Arc`, and
-/// forgets dead entries on every load.
+/// Loads tracks for a live session, where loads never end: decks on one
+/// file share its samples while any of them holds them, but nothing is kept
+/// for a file no deck holds any more, so memory follows the tracks loaded
+/// now, not every track the session has visited. The cache keeps a `Weak` to
+/// every track loaded from a file, since any one of them may be the last to
+/// hold its samples; a dead `Weak<Track>` keeps only the small `Track`
+/// allocation, never the samples, and dead ones are dropped on every load.
 pub fn session_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
-    let mut cache: HashMap<PathBuf, Weak<Track>> = HashMap::new();
+    let mut cache: HashMap<PathBuf, Vec<Weak<Track>>> = HashMap::new();
     move |spec: &LoadSpec| {
-        cache.retain(|_, t| t.strong_count() > 0);
+        cache.retain(|_, held| {
+            held.retain(|t| t.strong_count() > 0);
+            !held.is_empty()
+        });
         let path = base.join(&spec.path);
         let key = path.canonicalize().unwrap_or_else(|_| path.clone());
-        let (sr, pcm) = match cache.get(&key).and_then(Weak::upgrade) {
+        let live = cache.get(&key).and_then(|held| held.iter().find_map(Weak::upgrade));
+        let (sr, pcm) = match live {
             Some(t) => (t.sample_rate, t.pcm.clone()),
             None => {
                 let d = decode_file_within(&path, u64::MAX)?;
@@ -181,7 +186,7 @@ pub fn session_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Trac
             }
         };
         let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm));
-        cache.insert(key, Arc::downgrade(&track));
+        cache.entry(key).or_default().push(Arc::downgrade(&track));
         Ok(track)
     }
 }

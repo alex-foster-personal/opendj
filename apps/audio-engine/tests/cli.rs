@@ -295,7 +295,7 @@ fn fake_clock_session_over_pipes() {
     assert_eq!(next()["ok"], true);
     assert_eq!(next()["frame"], 48000, "a refused advance renders nothing");
 
-    say(json!({"id": "s", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocals", "muted": true}}));
+    say(json!({"id": "s", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true}}));
     let r = next();
     assert_eq!(r["ok"], false);
     assert_eq!(r["error"]["code"], "not_implemented");
