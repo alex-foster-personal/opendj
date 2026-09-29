@@ -75,7 +75,6 @@ jobs:
       vendors: ${{ steps.gate.outputs.vendors }}
       labels: ${{ steps.gate.outputs.labels }}
     steps:
-      # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         timeout-minutes: 2
         with:
@@ -106,61 +105,14 @@ jobs:
     runs-on: ${{ fromJSON(needs.budget-gate.outputs.labels)[matrix.vendor] }}
     timeout-minutes: 30
     env:
-      # The job venv IS `.venv`, the path `uv run` treats as the project
-      # environment. Tests spawn `uv run --with modal ...` (apps/stems/job.py)
-      # against the repo root, and a plain `uv run` SYNCS that environment to
-      # uv.lock first: it pruned pytest, librosa and soundfile out from under
-      # the running suite (trunk red Fri 4 Sep 2026 after #1106 moved the venv
-      # here). UV_NO_SYNC makes every child `uv run` use `.venv` as provisioned.
       UV_NO_SYNC: "1"
-      # One native thread per process. Shards share a host with fifteen
-      # other runners, and on trunk e9ed11ecf (Fri 4 Sep 2026) `ps` on nucbox
-      # showed `apps.analysis.run --backend librosa` subprocesses spawned by
-      # the suite at 400-650 percent CPU each: OpenBLAS and numba fan every
-      # call across all 32 threads, sixteen runners do it at once, and the
-      # same shard then took 636 s there against 314 s on a quieter host.
-      # The tests measure behavior, not wall time; one thread each is the
-      # standard setting for a shared CI host. Pinned by
-      # tests/scripts/test_ci_thread_caps.py.
       OMP_NUM_THREADS: "1"
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       NUMBA_NUM_THREADS: "1"
+    # A copy of ci.yml's `test` job. The rationale comments for each step live there;
+    # tests/scripts/test_runner_canary_workflow.py pins the copy to it.
     steps:
-      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
-      # checkout cleans the tree as the runner user, so one root-owned file in
-      # it fails the unlink with EACCES, dies at step 2, and skips every test
-      # step after it -- a red carrying no test evidence. The runner user has
-      # NOPASSWD sudo (e2e.yml documents it). This runs as root, so it is
-      # bounded three ways, and each bound is load-bearing. A mount point
-      # beneath the workspace fails the step outright: `-xdev` alone is not
-      # enough, because a bind mount from elsewhere on the SAME filesystem
-      # keeps the same st_dev and is traversed regardless (measured on the
-      # runner host, Fri 5 Sep 2026). `-xdev` then stops a cross-filesystem
-      # mount appearing after that check. The workspace path is escaped the way
-      # mountinfo escapes field 5 and handed to awk through ENVIRON, NOT `-v`:
-      # `-v` processes escape sequences, so it decodes \040 straight back to a
-      # space and undoes the escaping it was given. `chown -h` acts on a symlink
-      # itself rather than its referent, so a link pointing out of the tree cannot
-      # drag the repair outside. One `find` expression drives the count and
-      # the repair, so the number reported is the set acted on.
-      #
-      # The counts come from `find`, not from `chown -c`: GNU coreutils prints
-      # that report on stdout but uutils prints it on stderr, so a piped count
-      # reads 0 forever on a uutils host and the log would claim the step found
-      # nothing when it had just repaired thousands of files. `remaining` is
-      # the proof the repair landed, and a non-zero one fails here rather than
-      # letting checkout die at the next step with a worse message.
-      #
-      # It also NAMES the offending entries -- owner, UTC mtime, path -- and
-      # names them BEFORE the chown, because the repair destroys the very
-      # evidence that identifies the writer. #1338 could say 957 to 1130 files
-      # per runner but not which process wrote them, and cost a forensic
-      # session for want of exactly this. The listing goes to a file rather
-      # than into `head` down a pipe: under `pipefail` a SIGPIPE'd `find`
-      # fails the step. TZ reaches `find` through `env` because sudo here is
-      # `env_reset` with no SETENV, so `sudo TZ=UTC find` is refused outright,
-      # and an mtime printed in local time under a `Z` suffix is a lie.
       - name: Reclaim workspace ownership before checkout
         timeout-minutes: 1
         run: |
@@ -210,14 +162,11 @@ jobs:
             fi
           fi
 
-      # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         timeout-minutes: 2
         with:
           persist-credentials: false
-          # Progress-tree provenance validates historical feature commit SHAs.
           fetch-depth: 0
-          # false on purpose: the next step cleans all but the dependency trees.
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
@@ -226,46 +175,20 @@ jobs:
 
       - name: Setup Python
         timeout-minutes: 1
-        # SHA-pinned to the v5 tag commit (resolved 2026-04-17).
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          # The project uses modern `X | Y` type syntax and `from __future__
-          # import annotations` throughout, so 3.11 is enough. Python 3.14 is
-          # what the dev machine runs but 3.11 is the stable target for CI
-          # because tflite-runtime (pulled in transitively by openwakeword)
-          # only publishes Linux wheels up to cp311.
           python-version: "3.11"
 
       - name: Setup uv for isolated dependency contracts
         timeout-minutes: 1
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
 
-      # Stale-install guard (PR #4251): fail if this job's interpreter can import
-      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
-      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
-      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
-      # enforces that.
       - name: Stale-install guard - the interpreter imports only this checkout
         timeout-minutes: 1
         run: scripts/ci_runner_preflight.sh python
 
       - name: Provision isolated Python test environment
         timeout-minutes: 2
-        # modal is deliberately absent from requirements.txt and the `dev`
-        # extra (see pyproject.toml): every call site is `uv run --with modal`.
-        # It is locked in via requirements-ci.in as a CI *test-environment* tool, not a package
-        # dependency, because tests/vocals/test_envelope.py and
-        # test_farm_scheduling.py import it at module scope and abort
-        # collection without it. Those aborts drop their markers, so the
-        # uploaded coverage-matrix artifact would silently understate coverage
-        # and get stamped PARTIAL RUN by the reqs plugin.
-        #
-        # The project itself is NOT installed into this venv. The serial lane
-        # used to get `apps` on site-packages as a side effect of `make
-        # waveform-native-verify` reinstalling the built wheel into .venv
-        # (Makefile), which the `contracts` job now does instead; tests that
-        # spawn a fresh interpreter must import from the tree (cwd or `-m`),
-        # and PR #1143 fixed the one that did not.
         run: |
           # Exact sync from a hash-pinned lock: zero index requests on a warm cache
           # (issue #4252). requirements-ci.in adds modal and the pyproject
@@ -273,118 +196,23 @@ jobs:
           scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
 
       - name: System deps for pyrekordbox (SQLCipher) and Mach-O classification
-        # 4 min: a cold install took 65-68 s (PR #1784 run, nucbox-wsl-19 and -25, Thu 10 Sep
-        # 2026; 3-29 s warm), and every shard queues on the host-wide `packages` lock. The
-        # lock wait is capped at 150 s here (default 900 s) so wait + cold run < this bound
-        # and a stuck holder reports through the lock's own error, not a bare step timeout.
         timeout-minutes: 4
         env:
           MDT_CI_HOST_LOCK_TIMEOUT_S: "150"
-        # Provision the interpreter first. The reqs and OpenAPI sentinels run
-        # with `!cancelled()` to report after a prior failure, so they still
-        # need their explicit interpreter when host provisioning fails.
-        #
-        # pyrekordbox pulls sqlcipher3 which links against libsqlcipher at
-        # runtime. Ubuntu noble (24.04) dropped the transitional
-        # libsqlcipher0 package; libsqlcipher-dev now ships the runtime
-        # shared library (libsqlcipher.so) as well and is sufficient.
-        #
-        # `file` is DECLARED here rather than assumed: the GitHub-hosted
-        # ubuntu images ship it, a self-hosted box need not, and agentbox did
-        # not. tests/scripts/test_engine_payload_macho.py and
-        # test_appstore_requirements.py shell out to it to tell a Mach-O
-        # binary from a script, so its absence took out 8 tests with a bare
-        # FileNotFoundError on the first self-hosted run of this lane.
-        #
-        # `just`: tests/scripts/test_entrypoint_module_guard.py (#1363) drives the
-        # justfile recipes for real; agentbox had no `just` and trunk e6fbb1fa6 went
-        # red on shard 2 (Sun 6 Sep 2026) while nucbox, which has it, stayed green.
-        #
-        # `bubblewrap` (bwrap): scripts/ci_fixer_sandbox.py (#1056) refuses to
-        # run a credential-free recheck without it, by design, and
-        # tests/scripts/test_ci_fixer.py drives it for real. agentbox did not
-        # have it; two trunk runs went red on shard 3 (Fri 4 Sep 2026). The
-        # host also needs unprivileged user namespaces allowed for bwrap
-        # (Ubuntu 24.04 restricts them; agentbox carries an AppArmor profile
-        # at /etc/apparmor.d/bwrap for that).
-        #
-        # Shards share a host, so this goes through the named host lock:
-        # dpkg's own lock does not queue, and the loser exits non-zero.
-        #
-        # `env -C /` because a `run:` step's cwd is GITHUB_WORKSPACE, so
-        # without it this is a ROOT process holding the persistent workspace
-        # as its working directory (caught live on agentbox, pid 1226650,
-        # Sun 6 Sep 2026). apt provably writes nothing there -- reinstalling
-        # a python3 package in a workspace-shaped tree, py3compile triggers
-        # and all, left 0 foreign entries -- so this is prophylaxis against a
-        # future maintainer script, not the repair path. NOT an invariant
-        # either: Playwright's own `install --with-deps` sudo-apts with the
-        # frontend directory as cwd and takes no such flag, which is why the
-        # pre-checkout hygiene step stays the backstop (#1338).
         run: |
           scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
 
       - name: Runner preflight - host binaries the suite shells out to
         timeout-minutes: 1
-        # Name the missing binary at second five rather than minute four:
-        # `file`, `bwrap` (#1056), the Tauri toolchain (93e11a47f) and `just`
-        # (#1363) each reddened a trunk shard as a bare FileNotFoundError when
-        # its test landed on the host that lacked it, green on the PR because
-        # that shard had landed on the other host. The list is pinned by
-        # tests/scripts/test_ci_shard_binary_preflight.py; provisioning lives in
-        # docs/ci-actions-cost-review-2026-08-16.md item 7.
         run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
 
       - name: The interpreter must run without a borrowed LD_LIBRARY_PATH
         timeout-minutes: 1
-        # TRIPWIRE, not a fix. actions/setup-python installs an interpreter
-        # whose RUNPATH is baked to the HOSTED tool-cache path
-        # (/opt/hostedtoolcache/Python/<v>/x64/lib). On a self-hosted runner
-        # whose tool cache lives somewhere else, that RUNPATH misses and
-        # libpython is reachable ONLY through the LD_LIBRARY_PATH the action
-        # exports into the job environment.
-        #
-        # Every test that launches a subprocess under a deliberately
-        # controlled environment then loses it and gets exit 127 instead of
-        # the behavior it is asserting on. That single cause produced 46 of
-        # the 65 failures on the first self-hosted run of this lane
-        # (tests/scripts/autoreposync_uv.py, test_paths_data_dir_override.py,
-        # the provenance CLI suites), and none of them named it: they
-        # reported missing interpreters, refused stores and uv resolve
-        # failures. Fixing the interpreter is right; fixing 40 env dicts to
-        # smuggle a loader path through is not.
-        #
-        # The fix belongs on the RUNNER - AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
-        # in <runner-root>/.env, which is what actions/setup-python documents
-        # for self-hosted runners, so the tool cache lands where the RUNPATH
-        # already points. Deliberately NOT set from this workflow: on a runner
-        # that cannot write /opt, setting it would break setup-python outright
-        # rather than degrade. See "Self-hosted runner provisioning" in
-        # docs/ci-actions-cost-review-2026-08-16.md.
-        #
-        # `env -i` reproduces the scrubbed environment those tests build, so a
-        # runner that loses the setting fails HERE, in one step, naming the
-        # cause - rather than ten minutes later as dozens of unrelated-looking
-        # test failures.
         run: |
           env -i PATH=/usr/bin:/bin .venv/bin/python -c 'print("interpreter is self-contained")'
 
       - name: Keep the numba JIT cache across jobs on this runner
         timeout-minutes: 1
-        # librosa's numba artifacts live beside its source by default, and this
-        # job recreated `.venv` every run, so every job paid a 25-45 s cold
-        # compile in the warm-up step (measured Tue 8 Sep 2026: 41-46 s on
-        # every shard, 0.3 s once the cache survives venv recreation). One
-        # directory per RUNNER: a runner runs one job at a time, so the
-        # warm-up below is the only cold writer it ever sees, and the stamp
-        # next to it is what lets the warm-up prove the cache is still what
-        # that serial writer left. Hosted runners get a fresh HOME per job
-        # and simply compile once, as before.
-        # Keyed by the toolchain too (python, numba, llvmlite, librosa, numpy
-        # versions, printed by the module that owns the cache): an upgrade
-        # lands in an empty directory and compiles once under the lock,
-        # instead of numba rejecting stale artifacts at first use in whatever
-        # processes got there first, concurrently and cold.
         run: |
           identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
           dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
@@ -393,36 +221,7 @@ jobs:
           { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
 
       - name: Warm the numba JIT cache before the suite (#1316)
-        # 3 minutes, not 1. The budget below assumes a cold compile costs
-        # ~25-45 s, which held on agentbox and does not hold on nucbox-wsl:
-        # that host is I/O bound, not CPU bound, and measured 64.28 s cold on
-        # Thu 10 Sep 2026 (run 34528996758, shard 3). The step had already
-        # printed `artifacts=78` -- the cache was WARM and correct -- when the
-        # 1-minute cap killed it and took the whole shard, and trunk, red. A
-        # cap that fires on success is measuring the host, not the hang it was
-        # added to bound. 3 minutes still bounds a real hang; the warm path is
-        # ~0.3 s, so the extra headroom is never spent on a healthy run.
         timeout-minutes: 3
-        # librosa's `@numba.guvectorize(..., cache=True)` hot paths compile on
-        # first call into `.nbi`/`.nbc` artifacts beside the librosa source.
-        # Two processes meeting a COLD cache interleave those writes and every
-        # later process that loads the result dies at a NULL instruction
-        # pointer, with no traceback and no Python exception (issue #1316).
-        # `apps.analysis.run` warms in the parent before it creates a pool, so
-        # this step is belt and braces - but it moves the one-off compile out
-        # of whichever test happens to touch analysis first, where it looks
-        # like an unrelated timeout, and it costs nothing on a cache that is
-        # already what a previous warm-up left.
-        #
-        # `--purge-if-stale`, not `--purge`: the cache now persists per runner
-        # (step above), so a purge on every job would buy a cold ~25-45 s
-        # compile each time to insure against a state a single serial writer
-        # cannot produce. The stamp is the witness: a cache the last serial
-        # warm-up left untouched is kept and the step takes ~0.3 s; a cache
-        # without a matching stamp (killed writer, racing writer, librosa
-        # upgrade) is purged before anything loads it, which is the only
-        # repair for a poisoned cache, since loading it is what segfaults.
-        # Pinned by tests/scripts/test_ci_jit_warmup.py.
         run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
 
       # CANARY DIFFERENCE (the only one inside a step): MDT_PYTEST_TIMEOUT_S is 1440 here,
@@ -434,94 +233,7 @@ jobs:
       # and scripts/runner_canary_report.py counts a started job cancelled at the cap
       # as an infra failure rather than dropping it.
       - name: Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)
-        # `id` is read by the CI Insights step below as
-        # steps.pytest-shard.outcome, which is how a SILENT FAILURE is caught:
-        # a runner that died with a clean-looking JUnit report. Renaming this
-        # id without updating that step turns the check into one that cannot
-        # fire; tests/scripts/test_ci_mergify_insights.py pins the pair.
         id: pytest-shard
-        # FAST LANE (the maintainer's call, Fri 28 Aug 2026): PR latency was ~8 min and
-        # the pytest-with-coverage step was 352s of it. Measured locally on
-        # the same tree (Apple M-series, serial, no coverage): full suite
-        # 4107 tests in 208.7s, of which ~99s sat in 8 tests across four
-        # product-edge suites (analysis backends, vocal farm workers, USB
-        # export flows, model training). Those four suites and coverage move
-        # to .github/workflows/full-ci.yml (workflow_dispatch only); this
-        # lane keeps everything else so a typical webui/server PR still gets
-        # real verification in a fraction of the time.
-        #
-        # Deliberately SINGLE PROCESS within a shard, unlike the local gate.
-        # `-n auto` was tried here and measured, and it lost: this step ran
-        # 273s / 279s / 289s serial across three `main` runs, and 295s under
-        # `-n auto` on the same tree. Every worker re-pays the cold import
-        # cost. `-n` stays out until somebody measures a win; parallelism
-        # comes from the shard matrix instead, one runner per shard.
-        #
-        # --collect-floor DOES belong here: it costs nothing and it is what
-        # stops a run that silently lost tests reading as a smaller green
-        # suite. Raise it, never lower it. The floor is scoped to THIS lane's
-        # collection (full-ci.yml keeps the full-suite floor of 3700) and is
-        # asserted on the FULL collection before pytest-split deselects the
-        # other shards, so a shard that imported less of the tree still fails.
-        #
-        # --durations=25 is the instrument for the next round: the self-hosted
-        # lane runs 3x slower than the hosted one did (700-1050s against
-        # 273-289s) with the hosts at low load, and the slow tests have to be
-        # named before that can be fixed.
-        #
-        # tests/quality/test_frontend_typing_gate.py and
-        # tests/quality/test_frontend_typing_directives.py (split off it,
-        # Issue #724) are excluded here: their `any`/directive detection
-        # shells out to apps/webui/frontend/scripts/ts-any-scan.mjs, which
-        # imports the `typescript` package. This job never installs frontend
-        # node_modules (that is the whole point of a fast lane), so both run
-        # in the `quality` job below instead, which already installs them
-        # for knip. Excluding them here must never mean they run nowhere;
-        # they are a hard PR gate in that job, not deferred to on-demand
-        # full-ci.
-        #
-        # --store-durations --clean-durations rewrites .test_durations with
-        # THIS shard's tests only, measured on the runner that just ran them;
-        # the upload below is what a rebalance reads (union the five shard
-        # artifacts, commit the result). The local Mac run the file was first
-        # recorded from over-weighted sleep-bound tests badly: on PR #1143 the
-        # 28 "slowest" tests ran in 45 s while another shard took 404 s.
-        #
-        # --splitting-algorithm least_duration (Mon 14 Sep 2026, trunk runs
-        # 34798615886 / 34803649465, shard 1 SIGKILLed twice at 1440 s while
-        # still at 90% then 77% progress -- exit 137, and dmesg/journalctl on
-        # nucbox carried no oom-killer entry for either window, so this was
-        # the shard's own MDT_PYTEST_TIMEOUT_S wrapper, not a kernel OOM kill).
-        # tests/cloudsync (subprocess hub servers, real sqlite writes, a
-        # launchd/systemd script test) is far heavier than its committed
-        # duration said and alphabetically contiguous, so pytest-split's
-        # default duration_based_chunks put nearly all of it (699 of ~770
-        # tests) in shard 1 every time. Correcting the durations alone did not
-        # move that: it walks tests in order and cuts each boundary the first
-        # time the running total crosses i/5 of the suite total, so shard 1's
-        # own share of the correction grew its own 1/5 target by the same
-        # motion and the cut landed on the identical test both before and
-        # after (measured: 773.55s -> 835.10s estimated, 699 cloudsync tests
-        # both times). least_duration greedily assigns each test to whichever
-        # group currently holds the least cumulative duration instead, which
-        # the plugin's own README calls the more balanced algorithm. Dry-run
-        # (pytest --collect-only) against the corrected .test_durations: all
-        # five groups landed at 625.65s each, against 835.10 / 625.74 / 625.86
-        # / 631.00 / 410.53s under duration_based_chunks, and tests/cloudsync
-        # spread to 102-169 tests per shard instead of 699 in one.
-        # tests/scripts/test_ci_shard_matrix.py pins the flag.
-        #
-        # `--ignore=tests/perf/test_library_playlist_switch_bench.py` in both
-        # pytest lanes: that test is a full Playwright bench (frontend build,
-        # `pnpm exec playwright test`, a real engine, 10 samples, a 600 s test
-        # timeout plus a 240 s webServer timeout). Once #3742 made it runnable
-        # it ran inside shard 3 on PR #3732 at ac3ed20d from 20:09:53Z until the
-        # shard's 1380 s wall budget killed the whole shard at 34% progress
-        # (exit 124, the bench fixture, engine and node still alive in the
-        # job-completed hook). This lane installs no frontend node_modules and
-        # no browsers, so it is the wrong host whatever the duration. The bench
-        # runs in e2e.yml's `extended` job, which has all three.
-        # tests/scripts/test_ci_playlist_bench_lane.py pins both halves.
         run: |
           set -uo pipefail
           # Remove any report left by an EARLIER run on this persistent
