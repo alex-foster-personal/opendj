@@ -63,9 +63,13 @@ test('stageTimer records a stage that throws, then rethrows', async () => {
 });
 
 test('stageTimer on its default clock records a whole, non-negative ms', async () => {
-	// The production path: no clock passed. No duration bound, so no host can flake it.
+	// The production path: no clock passed. The real 10 ms wait gives a clock that
+	// ran backwards room to read clearly negative; the assertion bounds only the
+	// sign, never the duration, so a host whose timer fires early or late cannot
+	// flake it (the 13-vs-20 ms failure above was a duration bound).
 	const stages = {};
 	const time = stageTimer(stages);
-	assert.equal(await time('decode', Promise.resolve('pcm')), 'pcm');
+	const work = new Promise((resolve) => setTimeout(() => resolve('pcm'), 10));
+	assert.equal(await time('decode', work), 'pcm');
 	assert.ok(Number.isInteger(stages.decode) && stages.decode >= 0, `got ${stages.decode}`);
 });
