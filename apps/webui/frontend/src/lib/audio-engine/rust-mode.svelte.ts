@@ -324,7 +324,7 @@ export async function ensureRustEngine(): Promise<AudioEngineClient> {
 			await c.connect();
 			// A restarted engine counts frames from zero again.
 			lastState = null;
-			for (const k of Object.keys(loadFences) as unknown as DeckId[]) {
+			for (const k of [1, 2, 3, 4] as DeckId[]) {
 				if (loadFences[k] !== Infinity) loadFences[k] = -1;
 			}
 			c.onState(mirrorEngineState);
@@ -376,7 +376,7 @@ export async function executeInRustEngine(command: PerformanceCommand): Promise<
 		await _decide(command);
 		return true;
 	}
-	await _send(command as unknown as EngineCommand);
+	await _send(command);
 	applyAcknowledged(command);
 	if (command.type === 'unload') {
 		_cancelArmedJump(command.deck);
@@ -385,7 +385,7 @@ export async function executeInRustEngine(command: PerformanceCommand): Promise<
 	return true;
 }
 
-function _send(cmd: EngineCommand): Promise<unknown> {
+function _send(cmd: EngineCommand | PerformanceCommand): Promise<unknown> {
 	if (client === null) throw new Error('the Rust audio engine is not connected');
 	return client.send(cmd);
 }
@@ -704,7 +704,7 @@ async function _decide(command: PerformanceCommand): Promise<void> {
 			// Quantized and scheduled launches go to the engine, which refuses
 			// them by name rather than starting off the grid.
 			if (command.quantize === true || command.start_at_context_sec !== undefined) {
-				await _send(command as unknown as EngineCommand);
+				await _send(command);
 				return;
 			}
 			return command.playing ? _play(command.deck) : _pause(command.deck);

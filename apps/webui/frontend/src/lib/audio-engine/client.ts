@@ -270,14 +270,14 @@ export class AudioEngineClient {
 	}
 
 	private onMessage(msg: Record<string, unknown>): void {
-		if (msg.type === 'state') {
-			this.state = msg as unknown as EngineState;
+		if (isState(msg)) {
+			this.state = msg;
 			this.stateReceivedAt = this.opts.now();
 			for (const fn of this.listeners) fn(this.state);
 			return;
 		}
-		if (msg.type === 'result') {
-			const r = msg as unknown as EngineResult;
+		if (isResult(msg)) {
+			const r = msg;
 			const p = r.id === null ? undefined : this.pending.get(r.id);
 			if (!p) return;
 			this.pending.delete(r.id as string);
@@ -297,6 +297,15 @@ export class AudioEngineClient {
 			this.pending.delete(id);
 		}
 	}
+}
+
+// The engine is the only writer of these lines; `type` names the shape.
+function isState(msg: object): msg is EngineState {
+	return (msg as { type?: unknown }).type === 'state';
+}
+
+function isResult(msg: object): msg is EngineResult {
+	return (msg as { type?: unknown }).type === 'result';
 }
 
 function parse(data: unknown): Record<string, unknown> | null {
