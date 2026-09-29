@@ -99,35 +99,108 @@ fn resolved(p: &Path) -> PathBuf {
 
 /// Whether two paths name one file: the same resolved spelling, or, where
 /// both exist, the same file on disk (a hard link has its own spelling but
-/// is the file it links to, so writing it truncates that file).
+/// is the file it links to, so writing it truncates that file; a spelling
+/// in another case or Unicode form is the same file on a volume that folds
+/// it). Only Unix exposes a stable file identity on stable Rust; elsewhere
+/// a hard link is told apart by spelling alone.
 ///
-/// Two spellings that differ only in case are one file on a case-insensitive
-/// volume (the macOS and Windows default). Where both exist on Unix the
-/// file identity already answers that. Where neither exists yet (two outputs)
-/// nothing on disk says how the volume folds case, so they count as one
-/// file: refusing `Deck1.wav` beside `deck1.wav` on a case-sensitive volume
-/// costs a rename, while writing both on a case-insensitive one loses a
-/// file. Where only one exists, a case-insensitive volume would have found
-/// the other too, so they are two files. Only Unix exposes a stable file
-/// identity on stable Rust; elsewhere spellings are compared, case-folded.
-/// The fold is Unicode lowercase; it does not normalize (a precomposed and a
-/// decomposed accent still compare as two names).
+/// Two outputs that do not exist yet have no identity to compare, so this
+/// cannot tell whether the volume folds their spellings into one file;
+/// `claim_outputs` asks the volume itself before anything is written.
 fn same_file(a: &Path, b: &Path) -> bool {
-    let (ra, rb) = (resolved(a), resolved(b));
-    if ra == rb {
+    if resolved(a) == resolved(b) {
         return true;
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        match (std::fs::metadata(a), std::fs::metadata(b)) {
-            (Ok(ma), Ok(mb)) => return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino()),
-            (Ok(_), Err(_)) | (Err(_), Ok(_)) => return false,
-            (Err(_), Err(_)) => {}
+        if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
+            return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino());
         }
     }
-    let fold = |p: &Path| p.to_string_lossy().to_lowercase();
-    fold(&ra) == fold(&rb)
+    false
+}
+
+/// The files a render writes, each with what it is: the mix, then one per
+/// deck the plan loads when `decks_out` is given.
+fn writes_of(plan: &Plan, out: &Path, decks_out: Option<&Path>) -> Vec<(PathBuf, String)> {
+    let mut writes = vec![(out.to_path_buf(), "--out".to_string())];
+    for ev in &plan.events {
+        if let Action::Cmd(protocol::Command::Load(spec)) = &ev.action {
+            // A deck loaded more than once still writes one file.
+            let what = format!("deck {}'s output", spec.deck);
+            if let Some(dir) = decks_out.filter(|_| !writes.iter().any(|(_, w)| w == &what)) {
+                writes.push((dir.join(format!("deck{}.wav", spec.deck)), what));
+            }
+        }
+    }
+    writes
+}
+
+/// Open every output before any is written, creating the ones (and the
+/// directories) that do not exist yet, and refuse the render if two of them
+/// are one file. The volume itself answers, so spellings that differ only
+/// in case or Unicode form count as one file exactly where the volume folds
+/// them, and nowhere else. On refusal everything created here is removed
+/// again, so a refused render leaves nothing behind. Unix only: elsewhere
+/// there is no file identity to compare, and the name checks stand alone.
+fn claim_outputs(writes: &[(PathBuf, String)]) -> Result<Vec<File>, String> {
+    let mut made_files: Vec<PathBuf> = Vec::new();
+    let mut made_dirs: Vec<PathBuf> = Vec::new();
+    let undo = |files: &[PathBuf], dirs: &[PathBuf]| {
+        for f in files.iter().rev() {
+            let _ = std::fs::remove_file(f);
+        }
+        for d in dirs.iter().rev() {
+            let _ = std::fs::remove_dir(d);
+        }
+    };
+    let mut opened: Vec<File> = Vec::new();
+    for (p, what) in writes {
+        let claimed = (|| {
+            if let Some(parent) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
+                let mut missing: Vec<&Path> = parent.ancestors().take_while(|a| !a.as_os_str().is_empty() && !a.exists()).collect();
+                missing.reverse();
+                for d in missing {
+                    // `missing/..` exists once `missing` is made.
+                    if d.exists() {
+                        continue;
+                    }
+                    std::fs::create_dir(d).map_err(|e| format!("cannot create {}: {e}", d.display()))?;
+                    made_dirs.push(d.to_path_buf());
+                }
+            }
+            let existed = std::fs::metadata(p).is_ok();
+            let f = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(p)
+                .map_err(|e| format!("cannot create {}: {e}", p.display()))?;
+            if !existed {
+                // Through a symlink the file made is its target.
+                made_files.push(std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()));
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let id = |f: &File| f.metadata().map(|m| (m.dev(), m.ino())).ok();
+                if let Some(j) = opened.iter().position(|g| id(g).is_some() && id(g) == id(&f)) {
+                    return Err(format!("{what} and {} are both {}; give them different paths", writes[j].1, p.display()));
+                }
+            }
+            Ok(f)
+        })();
+        match claimed {
+            Ok(f) => opened.push(f),
+            Err(e) => {
+                drop(opened);
+                undo(&made_files, &made_dirs);
+                return Err(e);
+            }
+        }
+    }
+    Ok(opened)
 }
 
 /// Refuse a render that would write one file twice, or over a file it
@@ -136,16 +209,11 @@ fn same_file(a: &Path, b: &Path) -> bool {
 /// still reported the mix, and an output over the plan or a track would
 /// destroy the input.
 fn check_paths(plan_path: &Path, base: &Path, plan: &Plan, out: &Path, decks_out: Option<&Path>) -> Result<(), String> {
-    let mut writes = vec![(out.to_path_buf(), "--out".to_string())];
+    let writes = writes_of(plan, out, decks_out);
     let mut reads = vec![plan_path.to_path_buf()];
     for ev in &plan.events {
         if let Action::Cmd(protocol::Command::Load(spec)) = &ev.action {
             reads.push(base.join(&spec.path));
-            // A deck loaded more than once still writes one file.
-            let what = format!("deck {}'s output", spec.deck);
-            if let Some(dir) = decks_out.filter(|_| !writes.iter().any(|(_, w)| w == &what)) {
-                writes.push((dir.join(format!("deck{}.wav", spec.deck)), what));
-            }
         }
     }
     for (i, (w, what)) in writes.iter().enumerate() {
@@ -172,13 +240,18 @@ fn render(mut args: Args) -> Result<(), String> {
     check_paths(&plan_path, &base, &plan, &out_path, decks_out.as_deref())?;
     let opts = RenderOptions { deck_outputs: decks_out.is_some() };
     let out = render_plan_files_with(&plan, &base, opts).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
-    write_wav(&out_path, out.sample_rate, &out.pcm)?;
+    let writes = writes_of(&plan, &out_path, decks_out.as_deref());
+    let mut files: Vec<(PathBuf, File)> = writes.iter().map(|(p, _)| p.clone()).zip(claim_outputs(&writes)?).collect();
+    let mut take = |p: &Path| -> Result<File, String> {
+        let i = files.iter().position(|(q, _)| q == p).ok_or_else(|| format!("{} was not claimed", p.display()))?;
+        Ok(files.swap_remove(i).1)
+    };
+    write_wav(take(&out_path)?, &out_path, out.sample_rate, &out.pcm)?;
     let mut deck_files = Vec::new();
     if let Some(dir) = &decks_out {
-        std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
         for d in &out.decks {
             let p = dir.join(format!("deck{}.wav", d.deck));
-            write_wav(&p, out.sample_rate, &d.pcm)?;
+            write_wav(take(&p)?, &p, out.sample_rate, &d.pcm)?;
             deck_files.push(json!({"deck": d.deck, "out": p.display().to_string(), "sha256": d.sha256}));
         }
     }
@@ -235,9 +308,11 @@ fn render(mut args: Args) -> Result<(), String> {
     Ok(())
 }
 
-fn write_wav(path: &Path, sr: u32, pcm: &[f32]) -> Result<(), String> {
-    let file = File::create(path).map_err(|e| format!("cannot create {}: {e}", path.display()))?;
-    wav::write_f32(&mut BufWriter::new(file), sr, pcm).map_err(|e| e.to_string())
+/// Write a claimed output: it was opened without truncating, so a file the
+/// render replaces is emptied here, only once every output is known apart.
+fn write_wav(file: File, path: &Path, sr: u32, pcm: &[f32]) -> Result<(), String> {
+    file.set_len(0).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    wav::write_f32(&mut BufWriter::new(file), sr, pcm).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 fn serve_cmd(mut args: Args) -> Result<(), String> {
@@ -340,5 +415,61 @@ fn main() -> ExitCode {
     match r {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => fail(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("odj-claim-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn w(p: PathBuf, what: &str) -> (PathBuf, String) {
+        (p, what.to_string())
+    }
+
+    // Two spellings the names cannot tell apart but the volume can: a
+    // directory alias stands in for a volume folding case or Unicode form,
+    // which a Linux test volume does not. The volume's answer refuses them,
+    // and what the claim made is gone again.
+    #[cfg(unix)]
+    #[test]
+    fn outputs_the_volume_holds_as_one_file_are_refused_and_nothing_is_left() {
+        let d = dir("alias");
+        std::fs::create_dir_all(d.join("real")).unwrap();
+        std::os::unix::fs::symlink(d.join("real"), d.join("link")).unwrap();
+        std::fs::write(d.join("keep.wav"), b"old").unwrap();
+        let writes = [
+            w(d.join("keep.wav"), "--keep"),
+            w(d.join("new").join("sub").join("a.wav"), "--out"),
+            w(d.join("real").join("x.wav"), "deck 1's output"),
+            w(d.join("link").join("x.wav"), "deck 2's output"),
+        ];
+        let err = claim_outputs(&writes).unwrap_err();
+        assert!(err.contains("deck 2's output and deck 1's output are both"), "{err}");
+        assert!(!d.join("real").join("x.wav").exists(), "a file the claim made was left");
+        assert!(!d.join("new").exists(), "a directory the claim made was left");
+        // Control: a file that was there before is neither removed nor emptied.
+        assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    // Control: distinct outputs are all claimed, one handle each, in order,
+    // and an existing file keeps its bytes until it is written.
+    #[test]
+    fn distinct_outputs_are_all_claimed() {
+        let d = dir("distinct");
+        std::fs::write(d.join("keep.wav"), b"old").unwrap();
+        let writes = [w(d.join("keep.wav"), "--out"), w(d.join("n").join("deck1.wav"), "deck 1's output"), w(d.join("n").join("deck2.wav"), "deck 2's output")];
+        let files = claim_outputs(&writes).unwrap();
+        assert_eq!(files.len(), 3);
+        assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
+        assert!(d.join("n").join("deck1.wav").exists() && d.join("n").join("deck2.wav").exists());
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

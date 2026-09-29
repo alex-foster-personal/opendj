@@ -47,9 +47,11 @@ const DRAIN_LIMIT: Duration = Duration::from_secs(2);
 /// work queued behind them are refused, so each still gets a result.
 const LOAD_DRAIN_LIMIT: Duration = Duration::from_secs(5);
 
-/// The most work one deck may park behind its pending load, the same bound
-/// as the mailbox: past it a command is refused as the mailbox refuses one.
-const QUEUE_SLOTS: usize = CMD_SLOTS;
+/// The most work one deck may park behind its pending load: the mailbox's
+/// bound less the slot the load itself takes when it finishes, so an empty
+/// mailbox takes the load and everything parked behind it. Past it a
+/// command is refused as the mailbox refuses one.
+const QUEUE_SLOTS: usize = CMD_SLOTS - 1;
 
 /// The longest line read from stdin, its newline aside. A load's beatgrid is
 /// the largest thing a command carries, at tens of bytes a beat, so this
@@ -737,7 +739,12 @@ fn serve_threaded_from(
                     reader_room.take(l.len());
                     Msg::Line(l)
                 }
-                Ok(ReadLine::TooLong) => Msg::TooLong,
+                // Its refusal is a reply the control side still has to
+                // write, so it takes a slot like any line.
+                Ok(ReadLine::TooLong) => {
+                    reader_room.take(0);
+                    Msg::TooLong
+                }
                 Ok(ReadLine::Eof) | Err(_) => break,
             };
             if reader_tx.send(msg).is_err() {
@@ -771,7 +778,10 @@ fn serve_threaded_from(
                     break;
                 }
             }
-            Msg::TooLong => control.reply(None, Err(too_long())),
+            Msg::TooLong => {
+                control.reply(None, Err(too_long()));
+                in_flight.give_back(0);
+            }
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
@@ -1077,6 +1087,33 @@ mod tests {
     }
 
     #[test]
+    fn everything_parked_behind_a_load_fits_the_mailbox_with_the_load() {
+        // Codex on b68a0857: the queue took as many commands as the mailbox
+        // holds, so with the audio side not draining, the load itself took
+        // a slot and the last parked command was refused on release.
+        let (mut c, mut cmd_rx, out) = control();
+        let line = |c: &mut Control, v: Value| assert!(c.handle_line(&v.to_string(), "wall"));
+        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}));
+        for i in 0..=QUEUE_SLOTS {
+            line(&mut c, serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}}));
+        }
+        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        let sent = std::iter::from_fn(|| cmd_rx.pop().ok()).count();
+        // The load and every parked command fill the mailbox, to the slot:
+        // one fewer would refuse a command the mailbox had room for.
+        assert_eq!(sent, CMD_SLOTS, "the load and every parked command reach the mailbox");
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        let full: Vec<Value> = text
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .filter(|v| v["error"]["message"].as_str().is_some_and(|m| m.contains("mailbox is full")))
+            .collect();
+        // Control: the one past the bound is still refused, at once.
+        assert_eq!(full.len(), 1, "{full:?}");
+        assert_eq!(full[0]["id"], QUEUE_SLOTS);
+    }
+
+    #[test]
     fn a_full_result_ring_holds_commands_back_instead_of_dropping_results() {
         let (mut side, mut cmd_tx, mut res_rx) = side(2);
         for seq in 0..5 {
@@ -1211,11 +1248,12 @@ mod tests {
         }
     }
 
-    /// Endless lines of `len` bytes (newline included), whole lines only,
-    /// counting each as it is handed out; ends at a line boundary once
-    /// `end` is set, and never hands out more than `cap` lines.
+    /// Endless lines, line `i` being `len_of(i)` bytes (newline included),
+    /// whole lines only, counting each as it is started; ends at a line
+    /// boundary once `end` is set, and never starts more than `cap` lines.
     struct Lines {
-        len: usize,
+        len_of: fn(usize) -> usize,
+        cur: usize,
         at: usize,
         made: Arc<std::sync::atomic::AtomicUsize>,
         end: Arc<AtomicBool>,
@@ -1232,13 +1270,16 @@ mod tests {
                 if self.end.load(SeqCst) {
                     return Ok(0);
                 }
-                self.made.fetch_add(1, SeqCst);
+                self.cur = (self.len_of)(self.made.fetch_add(1, SeqCst));
             }
-            let n = b.len().min(self.len - self.at);
-            for (i, c) in b[..n].iter_mut().enumerate() {
-                *c = if self.at + i == self.len - 1 { b'\n' } else { b'x' };
+            let n = b.len().min(self.cur - self.at);
+            b[..n].fill(b'x');
+            if self.at + n == self.cur {
+                b[n - 1] = b'\n';
+                self.at = 0;
+            } else {
+                self.at += n;
             }
-            self.at = (self.at + n) % self.len;
             Ok(n)
         }
     }
@@ -1268,10 +1309,21 @@ mod tests {
         // Codex on 7124cb2e: the reader handed the control side every line
         // it could read, without limit, while the control side was stuck
         // writing to a stdout nobody read. By lines, and by bytes.
-        for (len, cap, bound) in [(9, 200_000, LINE_SLOTS + 1 + 8192 / 9 + 1), (1 << 20, 100, LINE_BYTES / (1 << 20) + 2)] {
+        // And (Codex on b68a0857) by the refusals of lines past the limit,
+        // which the control side writes too: once short lines fill every
+        // slot, an oversized line waits for one as well.
+        // (name, length of line i, lines on offer, most lines read)
+        type Case = (&'static str, fn(usize) -> usize, usize, usize);
+        let cases: [Case; 3] = [
+            ("9-byte", |_| 9, 200_000, LINE_SLOTS + 1 + 8192 / 9 + 1),
+            ("1 MiB", |_| 1 << 20, 100, LINE_BYTES / (1 << 20) + 2),
+            // A length counts the newline: one byte past the limit is + 2.
+            ("oversized", |i| if i < LINE_SLOTS { 9 } else { MAX_LINE_BYTES + 2 }, LINE_SLOTS + 20, LINE_SLOTS + 2),
+        ];
+        for (len, len_of, cap, bound) in cases {
             let made = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let end = Arc::new(AtomicBool::new(false));
-            let input = io::BufReader::with_capacity(8192, Lines { len, at: 0, made: made.clone(), end: end.clone(), cap });
+            let input = io::BufReader::with_capacity(8192, Lines { len_of, cur: 0, at: 0, made: made.clone(), end: end.clone(), cap });
             let out = Stalled::default();
             let (tx, rx) = mpsc::channel();
             let o = out.clone();
@@ -1295,7 +1347,7 @@ mod tests {
                 }
             };
             let held = settled();
-            assert!(held <= bound, "{len}-byte lines: read {held} lines with the output stalled (bound {bound})");
+            assert!(held <= bound, "{len} lines: read {held} lines with the output stalled (bound {bound})");
             // Control: once the output moves, reading resumes and every
             // line gets its result.
             out.open.store(true, Ordering::SeqCst);
@@ -1306,8 +1358,8 @@ mod tests {
             end.store(true, Ordering::SeqCst);
             rx.recv_timeout(Duration::from_secs(20)).expect("serve hung").unwrap();
             let lines = out.text.0.lock().unwrap().iter().filter(|&&c| c == b'\n').count();
-            assert!(made.load(Ordering::SeqCst) > held || held == cap, "{len}-byte lines: reading never resumed");
-            assert_eq!(lines, 1 + made.load(Ordering::SeqCst), "{len}-byte lines: one result per line");
+            assert!(made.load(Ordering::SeqCst) > held || held == cap, "{len} lines: reading never resumed");
+            assert_eq!(lines, 1 + made.load(Ordering::SeqCst), "{len} lines: one result per line");
         }
     }
 

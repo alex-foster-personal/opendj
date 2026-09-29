@@ -128,29 +128,50 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         let o = run(d.join("copy.wav"), None);
         assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
         assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+        // Control: an existing output longer than the render is replaced
+        // whole, not written over its head (outputs are opened without
+        // truncating until every one is known apart).
+        let o = run(d.join("fresh.wav"), None);
+        assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+        let fresh = std::fs::read(d.join("fresh.wav")).unwrap();
+        std::fs::write(d.join("long.wav"), vec![7u8; fresh.len() + 4096]).unwrap();
+        let o = run(d.join("long.wav"), None);
+        assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(std::fs::read(d.join("long.wav")).unwrap() == fresh, "the old file's tail survived the render");
     }
-    // Codex on 2f28895b: on a case-insensitive volume `Deck1.wav` is deck 1's
-    // file. Before either exists nothing says how the volume folds case, so
-    // they are refused as one file, a directory spelled in another case too.
+    // Codex on 2f28895b and b68a0857: on a volume that folds case (or
+    // Unicode form) `Deck1.wav` is deck 1's file. No rule on names can know
+    // how a volume folds, so the render asks the volume: it opens every
+    // output before writing any and refuses two that are one file. Probe this
+    // volume the same way to know which answer is right here.
+    std::fs::write(d.join("probe-case"), b"").unwrap();
+    let folds = d.join("PROBE-CASE").exists();
     let ci = d.join("ci");
     for out in [ci.join("Deck1.wav"), ci.join("DECK1.WAV"), d.join("CI").join("deck1.wav")] {
         let o = run(out.clone(), Some(ci.clone()));
-        assert!(!o.status.success(), "{}", out.display());
-        assert!(String::from_utf8_lossy(&o.stderr).contains("deck 1's output and --out are both"), "{}", String::from_utf8_lossy(&o.stderr));
-        assert!(!ci.exists() && !d.join("CI").exists(), "something was written");
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(o.status.success(), !folds, "{} folds {folds}: {err}", out.display());
+        if folds {
+            assert!(err.contains("deck 1's output and --out are both"), "{err}");
+            assert!(!ci.exists(), "a refused render left files behind");
+        } else {
+            assert!(out.exists() && ci.join("deck1.wav").exists(), "{}", out.display());
+            let _ = std::fs::remove_dir_all(&ci);
+            let _ = std::fs::remove_dir_all(d.join("CI"));
+        }
     }
-    // Once deck 1's file exists the volume answers: a case-sensitive one has
-    // no `Deck1.wav`, so it is a file of its own and renders; a
-    // case-insensitive one finds deck 1's file under it and still refuses.
+    // Once deck 1's file exists the answer is the same, and again with both
+    // files there: two existing files are told apart by what they are on
+    // disk, not by their names.
     std::fs::create_dir_all(&ci).unwrap();
     std::fs::write(ci.join("deck1.wav"), b"old").unwrap();
-    let folds = ci.join("DECK1.WAV").exists();
-    let o = run(ci.join("Deck1.wav"), Some(ci.clone()));
-    assert_eq!(o.status.success(), !folds, "folds {folds}, stderr: {}", String::from_utf8_lossy(&o.stderr));
-    // And again with both files there: two existing files are told apart by
-    // what they are on disk, not by their names folded.
-    let o = run(ci.join("Deck1.wav"), Some(ci.clone()));
-    assert_eq!(o.status.success(), !folds, "folds {folds}, stderr: {}", String::from_utf8_lossy(&o.stderr));
+    for _ in 0..2 {
+        let o = run(ci.join("Deck1.wav"), Some(ci.clone()));
+        assert_eq!(o.status.success(), !folds, "folds {folds}, stderr: {}", String::from_utf8_lossy(&o.stderr));
+    }
+    if folds {
+        assert_eq!(std::fs::read(ci.join("deck1.wav")).unwrap(), b"old", "a refused render wrote");
+    }
     // Control: a name that differs in more than case is its own file.
     let o = run(ci.join("deck1-mix.wav"), Some(ci.clone()));
     assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
