@@ -76,7 +76,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
 from scripts.runner_canary_rows import (
     BASELINE_JOB,
@@ -112,7 +112,7 @@ def _complete(
     run_rows: list[ShardRow] | None,
     shard_count: int,
     outcomes: Iterable[str] = (*VERDICTS, "infra"),
-) -> bool:
+) -> TypeGuard[list[ShardRow]]:
     return (
         run_rows is not None
         and sorted(r.shard for r in run_rows) == list(range(1, shard_count + 1))
