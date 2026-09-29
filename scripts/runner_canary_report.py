@@ -14,7 +14,10 @@ it reports:
   failure before or without the pytest step, a pytest step that failed on its own
   wall-budget TIMEOUT (read from its check-run annotation), a `timed_out`, and, once the
   budget gate has handed the job to the vendor, ANY cancel, skip or job that never started.
-  A never-started job also counts as an infinite start latency. Only a run whose gate never
+  A never-started job also counts as an infinite start latency, and so does every shard a
+  gate-passed run owed (its gate's planned-vendor annotation, times `shard_count`) that
+  GitHub returned no job for; a gate-passed run whose planned vendors cannot be read is
+  UNKNOWN. Only a run whose gate never
   passed (superseded in the concurrency queue, or refused) is identifiably ours and left
   out; a job still in flight makes the verdict UNKNOWN;
 - outcome agreement: the share of shard pairs with a test verdict on both sides that agree,
@@ -44,6 +47,9 @@ Requirements (mini-PRD)
 - [if] no known-red SHA came back red on the vendor [then] UNKNOWN, or FAIL when it came back
   green, [else stop] ✔︎ ✅ 🎯
 - [if] 20+ pairs meet every bar with a red control [then] PASS, [else stop] ✔︎ ✅ 🎯
+- [if] a gate-passed run lacks a job for a shard its gate planned [then] that shard is an
+  infra failure with infinite start latency (pending while the run is still going), and a
+  run whose planned vendors cannot be read is UNKNOWN, [else stop] ✔︎ ✅ 🎯
 - [if] a GitHub read fails [then] exit 3 UNKNOWN, [else stop] ✔︎ ✅ 🎯
 - [if] a vendor shard never started, or was cancelled after the gate passed [then] it is
   infra and a start-latency breach; [if] the run's gate never passed [then] it is excluded,
@@ -77,6 +83,10 @@ VENDOR_JOB = re.compile(r"canary: pytest (?P<vendor>[a-z0-9-]+) \(shard (?P<shar
 BASELINE_JOB = re.compile(r"pytest fast lane \(shard (?P<shard>\d+) of \d+\)")
 BASELINE_SIDE = "self-hosted"
 GATE_JOB = "canary: budget gate"
+# The annotation a passing budget gate leaves on its own job, naming the vendors whose shards
+# the run owes (scripts/runner_canary_budget.py GateDecision.planned_vendors_notice; the two
+# spellings are pinned equal by tests/scripts/test_runner_canary_report.py).
+PLANNED_VENDORS_TITLE = "runner-canary planned vendors"
 #: The title the shard's own wall-budget wrapper writes on exit 124 or 137 (ci.yml and the
 #: canary share the step). It is the only field that separates a TIMEOUT from a test red:
 #: both fail the pytest step.
@@ -108,6 +118,7 @@ class ShardRow:
     started_at: datetime | None
     completed_at: datetime | None
     never_started: bool = False
+    missing: bool = False  # owed by a gate-passed run, but GitHub returned no job for it
 
 
 def _ts(value: str | None) -> datetime | None:
@@ -157,11 +168,71 @@ def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: in
     return "dropped"
 
 
-def _gate_passed(run: dict[str, Any]) -> bool:
+def _gate_job(run: dict[str, Any]) -> dict[str, Any] | None:
     gates = [j for j in run["jobs"] if j.get("name") == GATE_JOB and j.get("run_attempt", 1) == 1]
-    if not gates:
+    return gates[0] if gates else None
+
+
+def _gate_passed(run: dict[str, Any]) -> bool:
+    gate = _gate_job(run)
+    if gate is None:
         raise ReadFailed(f"canary run {run['id']} has vendor shards but no budget gate job")
-    return gates[0].get("conclusion") == "success"
+    return gate.get("conclusion") == "success"
+
+
+def planned_vendors(run: dict[str, Any]) -> list[str]:
+    """The vendors a gate-passed run owes shards for, read from the gate's own annotation.
+    Without it the owed set cannot be reconstructed, which is UNKNOWN, never zero."""
+    gate = _gate_job(run)
+    annotations = gate.get("annotations") if gate is not None else None
+    if annotations is None:
+        raise ReadFailed(
+            f"canary run {run['id']}: the budget gate passed but its annotations were not "
+            "read, so the vendor shards it owes are unknown"
+        )
+    notes = [a for a in annotations if a.get("title") == PLANNED_VENDORS_TITLE]
+    if len(notes) != 1:
+        raise ReadFailed(
+            f"canary run {run['id']}: the budget gate passed with {len(notes)} "
+            f"{PLANNED_VENDORS_TITLE!r} annotations, not 1, so the vendor shards it owes "
+            "are unknown"
+        )
+    return [v for v in (notes[0].get("message") or "").split(",") if v]
+
+
+def missing_shard_rows(
+    run: dict[str, Any], observed: list[ShardRow], shard_count: int
+) -> list[ShardRow]:
+    """Every shard a gate-passed run owes that GitHub returned no job for. Once the run has
+    finished, each is a lost job: infra, never started, so it waits forever (Sol P1 on
+    b9db90801). While the run is still going, a job not yet created is pending."""
+    planned = planned_vendors(run)
+    stray = sorted({r.vendor for r in observed} - set(planned))
+    if stray:
+        raise ReadFailed(
+            f"canary run {run['id']} has shards for {stray}, which its budget gate did not plan"
+        )
+    seen = {(r.vendor, r.shard) for r in observed}
+    created = _ts(run["created_at"])
+    outcome: Outcome = "infra" if run["status"] == "completed" else "pending"
+    return [
+        ShardRow(
+            vendor=vendor,
+            sha=run["head_sha"],
+            shard=shard,
+            outcome=outcome,
+            run_id=run["id"],
+            run_created_at=created,
+            created_at=created,
+            started_at=None,
+            completed_at=None,
+            never_started=True,
+            missing=True,
+        )
+        for vendor in planned
+        for shard in range(1, shard_count + 1)
+        if (vendor, shard) not in seen
+    ]
 
 
 def vendor_outcome(job: dict[str, Any], gate_passed: bool, base: Outcome) -> Outcome:
@@ -183,11 +254,18 @@ def shard_jobs(
     side: Literal["vendor", "baseline"],
     pytest_step_name: str,
     timeout_minutes: int,
+    shard_count: int,
 ) -> list[ShardRow]:
-    """Attempt-1 shard rows from runs carrying a `jobs` list, for one side of the pairing."""
+    """Attempt-1 shard rows from runs carrying a `jobs` list, for one side of the pairing.
+
+    On the vendor side, a gate-passed run also yields a row for every shard it owed that
+    GitHub returned no job for, so a lost matrix job is counted, never a smaller denominator.
+    (The baseline side needs no such rows: a baseline SHA short of a shard never pairs.)
+    """
     pattern = VENDOR_JOB if side == "vendor" else BASELINE_JOB
-    rows = []
+    rows: list[ShardRow] = []
     for run in runs:
+        run_rows: list[ShardRow] = []
         gate_passed: bool | None = None
         for job in run["jobs"]:
             match = pattern.fullmatch(job.get("name", ""))
@@ -197,7 +275,7 @@ def shard_jobs(
             if side == "vendor":
                 gate_passed = _gate_passed(run) if gate_passed is None else gate_passed
                 outcome = vendor_outcome(job, gate_passed, outcome)
-            rows.append(
+            run_rows.append(
                 ShardRow(
                     vendor=match.group("vendor") if side == "vendor" else BASELINE_SIDE,
                     sha=run["head_sha"],
@@ -211,6 +289,9 @@ def shard_jobs(
                     never_started=_never_started(job),
                 )
             )
+        if side == "vendor" and _gate_job(run) is not None and _gate_passed(run):
+            run_rows += missing_shard_rows(run, run_rows, shard_count)
+        rows += run_rows
     return rows
 
 
@@ -229,7 +310,7 @@ def _complete(run_rows: list[ShardRow] | None, shard_count: int) -> bool:
     return (
         run_rows is not None
         and sorted(r.shard for r in run_rows) == list(range(1, shard_count + 1))
-        and all(r.outcome in ("green", "red", "infra") for r in run_rows)
+        and all(r.outcome in ("green", "red", "infra") and not r.missing for r in run_rows)
     )
 
 
@@ -428,8 +509,9 @@ def _gh_lines(path: str, jq: str) -> list[dict[str, Any]]:
 
 
 def _with_jobs(repo: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Each run's jobs, and each FAILED shard job's check-run annotations, which carry the
-    only mark that separates a wall-budget TIMEOUT from a test red."""
+    """Each run's jobs, each FAILED shard job's check-run annotations (the only mark that
+    separates a wall-budget TIMEOUT from a test red), and each PASSED gate's annotations
+    (the vendors whose shards the run owes)."""
     for run in runs:
         run["jobs"] = _gh_lines(
             f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=all&per_page=100", ".jobs[]"
@@ -438,7 +520,9 @@ def _with_jobs(repo: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             is_shard = VENDOR_JOB.fullmatch(job.get("name", "")) or BASELINE_JOB.fullmatch(
                 job.get("name", "")
             )
-            if is_shard and job.get("conclusion") == "failure":
+            # A passing gate's annotation names the vendor shards the run owes.
+            is_passed_gate = job.get("name") == GATE_JOB and job.get("conclusion") == "success"
+            if (is_shard and job.get("conclusion") == "failure") or is_passed_gate:
                 job["annotations"] = _gh_lines(
                     f"repos/{repo}/check-runs/{job['id']}/annotations?per_page=100", ".[]"
                 )
@@ -466,6 +550,7 @@ def vendor_rows_from_targets(
                 side="vendor",
                 pytest_step_name=config["pytest_step_name"],
                 timeout_minutes=config["shard_timeout_minutes"],
+                shard_count=config["shard_count"],
             )
             if row.vendor in config["vendors"]
             and config["vendors"][row.vendor]["target_repo"] == repo
@@ -543,6 +628,7 @@ def main(argv: list[str] | None = None) -> int:
             side="baseline",
             pytest_step_name=config["pytest_step_name"],
             timeout_minutes=60,
+            shard_count=config["shard_count"],
         )
     except ReadFailed as exc:
         print(f"UNKNOWN: the GitHub read failed, so nothing was measured: {exc}")

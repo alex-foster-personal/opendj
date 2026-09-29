@@ -64,6 +64,7 @@ HTTP_TIMEOUT_S = 30
 #: before the 1st can still have a job running this month.
 MAX_RUN_LIFETIME = timedelta(days=35)
 CANARY_WORKFLOW_FILE = "runner-canary.yml"
+PLANNED_VENDORS_TITLE = "runner-canary planned vendors"
 
 
 class BudgetGateError(Exception):
@@ -311,6 +312,12 @@ class GateDecision:
     def github_output_lines(self) -> list[str]:
         return [f"vendors={json.dumps(self.vendors)}", f"labels={json.dumps(self.labels)}"]
 
+    def planned_vendors_notice(self) -> str:
+        """A workflow command GitHub stores as an annotation on this gate job. The report
+        reads it back to know which vendor shards the run owes, so a matrix job GitHub never
+        created still counts (scripts/runner_canary_report.py PLANNED_VENDORS_TITLE)."""
+        return f"::notice title={PLANNED_VENDORS_TITLE}::{','.join(self.vendors)}"
+
 
 def select_vendors(
     *, owner: str, repository: str, enabled_raw: str, requested: str, config: CanaryConfig
@@ -518,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
             f"[budget] {budget.vendor}: {budget.used_minutes:g} of {budget.free_minutes} "
             f"free minutes used in {now:%Y-%m}; refuse at {budget.limit_minutes:g}"
         )
+    print(decision.planned_vendors_notice())
     with open(output_path, "a", encoding="utf-8") as fh:
         fh.write("\n".join(decision.github_output_lines()) + "\n")
     _write_summary(decision, f"{now:%Y-%m}")
