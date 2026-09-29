@@ -38,13 +38,13 @@ import sqlite3
 from collections.abc import Iterable
 
 from apps.sync_hub.engine_identity_map import PersistedRemap, effective_identity_remap
+from apps.sync_hub.protocol_common import table_columns
 from apps.sync_hub.sync_set import (
     IdentityRow,
     identity_keys,
     identity_remap_from_rows,
     identity_row_select,
 )
-from apps.sync_hub.protocol_common import table_columns
 
 # ----- config -------------------------------------------------------------------
 
@@ -152,12 +152,16 @@ class IdentityLoserVerdicts:
     def _odd_rows(self) -> list[tuple[int, IdentityRow]]:
         """Rows with a hash no prefix range can find: read once per walk."""
         if self._odd_hash_rows is None:
-            rows: dict[int, IdentityRow] = {}
-            for column in self._hash_column_names():
-                for bound in (f"{column} < ?", f"{column} > ?"):
-                    edge = CFG.PRINTABLE_LOW if "<" in bound else CFG.PRINTABLE_HIGH
-                    for rowid, row in self._rows_with_rowid(f" AND {bound}", (edge,)):
-                        rows[rowid] = row
+            bounds = [
+                (f" AND {column} {op} ?", (edge,))
+                for column in self._hash_column_names()
+                for op, edge in (("<", CFG.PRINTABLE_LOW), (">", CFG.PRINTABLE_HIGH))
+            ]
+            rows = {
+                rowid: row
+                for where, params in bounds
+                for rowid, row in self._rows_with_rowid(where, params)
+            }
             self._odd_hash_rows = [(rowid, rows[rowid]) for rowid in sorted(rows)]
         return self._odd_hash_rows
 
