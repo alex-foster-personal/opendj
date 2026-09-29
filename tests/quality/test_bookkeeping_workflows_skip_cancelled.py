@@ -137,6 +137,9 @@ def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
     hold_env = census["env"]
     names = {name for name in hold_env["WATCHED_WORKFLOWS"].split(",") if name}
     assert names == set(RECORDED_WORKFLOWS), "the hold watches exactly what the pass records"
+    assert workflow[True]["workflow_dispatch"]["inputs"]["reconcile"]["default"] is True, (
+        "a bare dispatch is the release catch-up, and must see re-runs of older runs"
+    )
 
 
 def test_trunk_job_verdict_skips_cancelled_triggering_run() -> None:
@@ -166,6 +169,10 @@ def test_ci_cost_guard_batch_lists_every_completion_including_cancelled() -> Non
     assert "conclusion" not in price["run"]
     mark = next(step for step in steps if step.get("id") == "mark")
     assert "--workflow-file ci-cost-guard.yml" in mark["run"]
+    alert = next(step for step in steps if step.get("name") == "Open cost alert issues")
+    assert "exit 1" not in alert["run"], (
+        "an alert must not fail the pass, or a new offender every cadence pins the mark"
+    )
 
 
 def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:

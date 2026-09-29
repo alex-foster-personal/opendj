@@ -28,13 +28,13 @@ run-name: ${{ (github.event.schedule == '23 3 * * *' || inputs.reconcile) && 'CI
 on:
   schedule:
     - cron: "*/15 * * * *"
-    # Daily reconcile pass: the plain pass plus every run created up to 30 days
-    # before the reconcile mark (see the reconcile mark step).
+    # Daily reconcile pass: the plain pass plus the re-runs of runs created up to
+    # RECONCILE_HORIZON_DAYS before the reconcile mark (see the reconcile mark step).
     - cron: "23 3 * * *"
   workflow_dispatch:
     inputs:
       reconcile:
-        description: "Run a reconcile pass (also lists runs created up to 30 days back)"
+        description: "Run a reconcile pass (also lists re-runs of runs created up to 7 days back)"
         type: boolean
         default: false
 
@@ -316,9 +316,12 @@ jobs:
             --report-dir ci-cost-reports
 
       # One issue per offending run, never two: the title carries the run id
-      # and an existing open or closed issue with it is the dedupe. The step
-      # fails visibly only when it opened something new.
-      - name: Open cost alert issues and fail visibly
+      # and an existing open or closed issue with it is the dedupe. The issue and
+      # an error annotation are the alert; the pass itself stays green, because the
+      # mark is the last SUCCESSFUL pass, and a new offender every cadence would
+      # otherwise pin the mark and grow the window until the job times out
+      # (Codex P1 on #3844).
+      - name: Open cost alert issues
         if: steps.guard.outputs.alerts != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -337,7 +340,7 @@ jobs:
             echo "::error title=$title::See the generated issue and job summary for the cost breakdown."
             opened=$((opened + 1))
           done < <(python3 -c 'import json,sys; [print(a["run_id"], a["title"], a["report_file"], sep="\t") for a in json.load(open(sys.argv[1]))]' "$ALERTS_FILE")
-          [ "$opened" -eq 0 ] || exit 1
+          echo "[guard] opened=$opened alert issue(s)"
 
       # Last, so the pass's own work always lands first.
       - name: Fail while the census holds the mark

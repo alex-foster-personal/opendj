@@ -26,15 +26,18 @@ on:
   schedule:
     # Offset from ci-cost-guard.yml's */15 so the two passes never queue together.
     - cron: "7-59/15 * * * *"
-    # Daily reconcile pass: the plain pass plus every run created up to 30 days
-    # before the reconcile mark (see the reconcile mark step).
+    # Daily reconcile pass: the plain pass plus the re-runs of runs created up to
+    # RECONCILE_HORIZON_DAYS before the reconcile mark (see the reconcile mark step).
     - cron: "41 4 * * *"
   workflow_dispatch:
     inputs:
       reconcile:
-        description: "Run a reconcile pass (also lists runs created up to 30 days back)"
+        description: "Run a reconcile pass (also lists re-runs of runs created up to 7 days back)"
         type: boolean
-        default: false
+        # A bare dispatch is the release catch-up, and a re-run of a run older than
+        # the lookback is invisible to a plain pass, so it reconciles unless told
+        # not to (Codex P1 on #3844).
+        default: true
 
 permissions:
   actions: read
@@ -57,7 +60,7 @@ jobs:
   append:
     name: Append suite results
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
-    # A reconcile pass lists 30 days of runs (about 150 calls) on top of the plain pass.
+    # A reconcile pass lists 7 days of runs (about 55 pages, 5 min) on top of the plain pass.
     timeout-minutes: 10
     env:
       # At least two cadences, so a late or failed pass loses nothing.
