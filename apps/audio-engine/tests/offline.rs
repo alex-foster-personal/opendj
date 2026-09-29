@@ -335,6 +335,34 @@ fn a_tempo_ramp_records_every_step_it_applies() {
 }
 
 #[test]
+fn a_session_lets_go_of_a_track_no_deck_holds() {
+    // Codex's case: a long session that loads many files held every one it
+    // had ever decoded. The session loader shares a file while a deck holds
+    // it, and keeps nothing once none does.
+    let d = temp_dir("session-pcm");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
+    let mut load = odj_audio::offline::session_loader(d.clone());
+    let spec = |deck| LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
+    let (a, b) = (load(&spec(1)).unwrap(), load(&spec(2)).unwrap());
+    assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");
+    let samples = std::sync::Arc::downgrade(&a.pcm);
+    drop(a);
+    // Control: one deck still holding it keeps it shared.
+    let c = load(&spec(3)).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&b.pcm, &c.pcm), "a held file decoded again");
+    drop((b, c));
+    assert!(samples.upgrade().is_none(), "the loader kept samples no deck holds");
+    // Loading it again decodes it again.
+    let again = load(&spec(1)).unwrap();
+    assert_eq!(again.frames, 48000);
+    // Control: the offline loader, whose render is finite, keeps each file
+    // decoded once for the whole render.
+    let mut offline = odj_audio::offline::file_loader(d.clone());
+    let kept = std::sync::Arc::downgrade(&offline(&spec(1), u64::MAX).unwrap().pcm);
+    assert!(kept.upgrade().is_some(), "the offline loader dropped a decoded file");
+}
+
+#[test]
 fn loads_of_one_file_share_its_samples() {
     let d = temp_dir("shared-pcm");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));

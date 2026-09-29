@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Instant;
 
 use sha2::{Digest, Sha256};
@@ -158,6 +158,31 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
         };
         // Every load of one file shares the cached samples; nothing is copied.
         Ok(Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm)))
+    }
+}
+
+/// Loads tracks for a live session, where loads never end: two decks on one
+/// file share its samples while either holds them, but nothing is kept for a
+/// file no deck holds any more, so memory follows the tracks loaded now, not
+/// every track the session has visited. The cache keeps only a `Weak` to
+/// each track, which frees the samples with the last deck's `Arc`, and
+/// forgets dead entries on every load.
+pub fn session_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
+    let mut cache: HashMap<PathBuf, Weak<Track>> = HashMap::new();
+    move |spec: &LoadSpec| {
+        cache.retain(|_, t| t.strong_count() > 0);
+        let path = base.join(&spec.path);
+        let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let (sr, pcm) = match cache.get(&key).and_then(Weak::upgrade) {
+            Some(t) => (t.sample_rate, t.pcm.clone()),
+            None => {
+                let d = decode_file_within(&path, u64::MAX)?;
+                (d.sample_rate, Arc::<[f32]>::from(d.pcm))
+            }
+        };
+        let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm));
+        cache.insert(key, Arc::downgrade(&track));
+        Ok(track)
     }
 }
 

@@ -476,7 +476,14 @@ impl Deck {
     pub fn cue(&mut self) -> Result<(), EngineError> {
         let t = self.track()?.clone();
         if self.playing {
-            self.pos = self.cue.unwrap_or(0.0);
+            let to = self.cue.unwrap_or(0.0);
+            // A pause near the end can snap the cue to a grid beat past the
+            // audio; the page's playing press refuses that target
+            // (`normalizeScheduledTransportEntrySec`) and keeps playing.
+            if to > t.frames as f64 {
+                return Err(EngineError::new(ErrorCode::Invalid, "the cue point is past the end of the track"));
+            }
+            self.pos = to;
             self.playing = false;
         } else if let Some(c) = self.cue {
             self.seek(t.frames_to_ms(c))?;
@@ -1009,6 +1016,37 @@ mod tests {
         // Leaving the loop forgets its length.
         d.seek(5000.0).unwrap();
         assert_eq!((d.looping, d.loop_beats), (None, None));
+    }
+
+    #[test]
+    fn a_playing_cue_press_refuses_a_cue_past_the_end() {
+        // Codex's case: a 6.9 s track whose grid runs on to 7.5 s. Pausing at
+        // 6.8 s snaps the cue to the 7 s beat, past the audio; a later CUE
+        // press while playing is refused and changes nothing.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 6.9, grid_120(4))));
+        d.pos = 6.8 * 48000.0;
+        d.play(true).unwrap();
+        d.play(false).unwrap();
+        assert_eq!(d.cue, Some(7.0 * 48000.0));
+        d.play(true).unwrap();
+        let e = d.cue().unwrap_err();
+        assert!(e.message.contains("cue point is past the end"), "{}", e.message);
+        assert_eq!((d.pos, d.playing), (6.8 * 48000.0, true));
+        // Control: a cue inside the track, including exactly at its end, is
+        // returned to and paused on.
+        for (at, cue) in [(6.0, 6.0), (6.2, 6.0)] {
+            d.pos = at * 48000.0;
+            d.play(false).unwrap();
+            assert_eq!(d.cue, Some(cue * 48000.0));
+            d.play(true).unwrap();
+            d.cue().unwrap();
+            assert_eq!((d.pos, d.playing), (cue * 48000.0, false));
+        }
+        d.cue = Some(6.9 * 48000.0);
+        d.play(true).unwrap();
+        d.cue().unwrap();
+        assert_eq!((d.pos, d.playing), (6.9 * 48000.0, false));
     }
 
     #[test]

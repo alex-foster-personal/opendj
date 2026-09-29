@@ -15,7 +15,8 @@ use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use odj_audio::offline::{file_loader, render_plan_files_with, RenderOptions, Solo};
+use odj_audio::engine::ErrorCode;
+use odj_audio::offline::{render_plan_files_with, session_loader, RenderOptions, Solo};
 use odj_audio::plan::{parse_plan, Action, Plan};
 use odj_audio::{protocol, serve, wav};
 use serde_json::json;
@@ -58,23 +59,39 @@ fn fail(msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(2)
 }
 
-/// One spelling per file, for comparing paths that may not exist yet: its
-/// nearest existing ancestor resolved by the filesystem (symlinks and all),
-/// then the components below it that do not exist yet, with `.` and `..`
-/// applied by hand. Nothing below that ancestor exists, so none of it can be
-/// a symlink for `..` to see through.
+/// One spelling per file, for comparing paths that may not exist yet: the
+/// absolute path walked one component at a time as the filesystem walks it,
+/// following every symlink met on the way (a dangling one too, since
+/// `File::create` follows it and creates its target), with `.` skipped and
+/// `..` applied to what the walk has resolved so far. Components that do not
+/// exist are kept as spelled.
 fn resolved(p: &Path) -> PathBuf {
+    use std::path::Component;
     let abs = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
-    let Some((base, mut out)) = abs.ancestors().find_map(|a| a.canonicalize().ok().map(|c| (a, c))) else {
-        return abs;
-    };
-    for part in abs.strip_prefix(base).map(Path::components).into_iter().flatten() {
-        match part {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
+    let mut todo: Vec<PathBuf> = abs.components().rev().map(|c| PathBuf::from(c.as_os_str())).collect();
+    let mut out = PathBuf::new();
+    // Past this many links the filesystem gives up too (ELOOP); keep the
+    // spelling rather than loop.
+    let mut links = 0;
+    while let Some(part) = todo.pop() {
+        match part.components().next() {
+            Some(Component::Prefix(_) | Component::RootDir) => out.push(&part),
+            Some(Component::ParentDir) => {
                 out.pop();
             }
-            other => out.push(other),
+            Some(Component::Normal(name)) => {
+                let next = out.join(name);
+                match std::fs::read_link(&next) {
+                    Ok(target) if links < 40 => {
+                        links += 1;
+                        // A relative target is read from the link's directory,
+                        // which is `out`; an absolute one restarts at its root.
+                        todo.extend(target.components().rev().map(|c| PathBuf::from(c.as_os_str())));
+                    }
+                    _ => out = next,
+                }
+            }
+            Some(Component::CurDir) | None => {}
         }
     }
     out
@@ -237,9 +254,24 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
         "fake" => {
             let sr = sr.unwrap_or(48000);
             let mut rec = Vec::new();
-            // A live session has no render budget: tracks load whole.
-            let mut files = file_loader(std::env::current_dir().map_err(|e| e.to_string())?);
-            let loader = move |spec: &odj_audio::protocol::LoadSpec| files(spec, u64::MAX);
+            // A live session has no render budget: tracks load whole, and a
+            // track no deck holds is let go.
+            let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+            let mut files = session_loader(cwd.clone());
+            let record_to = record.clone();
+            let loader = move |spec: &odj_audio::protocol::LoadSpec| {
+                // The recording is written over its path when the session
+                // ends, so a track read from that file would be destroyed.
+                if let Some(r) = &record_to {
+                    if same_file(&cwd.join(&spec.path), r) {
+                        return Err(protocol::ProtoError::new(
+                            ErrorCode::Invalid,
+                            format!("{} is the --record file, which this session overwrites when it ends", spec.path),
+                        ));
+                    }
+                }
+                files(spec)
+            };
             let sink = if record.is_some() { Some(&mut rec) } else { None };
             serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink).map_err(|e| e.to_string())?;
             if let Some(p) = record {

@@ -102,6 +102,27 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         assert!(!o.status.success());
         assert!(String::from_utf8_lossy(&o.stderr).contains("are both"), "{}", String::from_utf8_lossy(&o.stderr));
         assert_eq!(std::fs::read(d.join("hl-mix.wav")).unwrap(), b"old", "something was written");
+        // Codex's case: a dangling symlink is followed by the write, which
+        // creates its target, so `--out mix.wav -> deck1.wav` beside the deck
+        // outputs is deck 1's file before either exists.
+        std::fs::create_dir_all(d.join("sl")).unwrap();
+        std::os::unix::fs::symlink("deck1.wav", d.join("sl").join("mix.wav")).unwrap();
+        let o = run(d.join("sl").join("mix.wav"), Some(d.join("sl")));
+        assert!(!o.status.success());
+        assert!(String::from_utf8_lossy(&o.stderr).contains("are both"), "{}", String::from_utf8_lossy(&o.stderr));
+        assert!(!d.join("sl").join("deck1.wav").exists(), "something was written");
+        // A link met part-way through a path resolves too: `..` after a
+        // directory link leaves the link's target, not the link's directory.
+        std::fs::create_dir_all(d.join("sl").join("real").join("inner")).unwrap();
+        std::os::unix::fs::symlink(d.join("sl").join("real").join("inner"), d.join("sl").join("dirlink")).unwrap();
+        let o = run(d.join("sl").join("dirlink").join("..").join("deck1.wav"), Some(d.join("sl").join("real")));
+        assert!(!o.status.success());
+        assert!(String::from_utf8_lossy(&o.stderr).contains("are both"), "{}", String::from_utf8_lossy(&o.stderr));
+        // Control: a dangling symlink to a file of its own renders through it.
+        std::os::unix::fs::symlink("elsewhere.wav", d.join("sl").join("mix2.wav")).unwrap();
+        let o = run(d.join("sl").join("mix2.wav"), Some(d.join("sl")));
+        assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+        assert!(d.join("sl").join("elsewhere.wav").exists() && d.join("sl").join("deck1.wav").exists());
         // Control: a copy is a file of its own, and is overwritten.
         std::fs::copy(d.join("a.wav"), d.join("copy.wav")).unwrap();
         let o = run(d.join("copy.wav"), None);
@@ -172,6 +193,54 @@ fn render_fails_loudly_on_a_bad_plan() {
     let o = Command::new(BIN).args(["render", "--plan"]).arg(d.join("plan.json")).args(["--out", "/dev/null"]).output().unwrap();
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("eq.value"));
+}
+
+#[test]
+fn a_session_refuses_to_load_the_file_it_records_to() {
+    // Codex's case: `--record a.wav` with a.wav loaded would decode a.wav and
+    // then truncate it with the recording when the session ends.
+    let d = temp_dir("cli-record");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 0.5));
+    write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 0.5));
+    #[cfg(unix)]
+    std::fs::hard_link(d.join("a.wav"), d.join("linked.wav")).unwrap();
+    let a_before = std::fs::read(d.join("a.wav")).unwrap();
+    let mut child = Command::new(BIN)
+        .args(["serve", "--clock", "fake", "--record", "a.wav"])
+        .current_dir(&d)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    assert_eq!(next()["type"], "hello");
+    let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
+    let mut paths = vec!["a.wav", "./a.wav"];
+    if cfg!(unix) {
+        paths.push("linked.wav");
+    }
+    for path in paths {
+        say(json!({"id": path, "cmd": {"type": "load", "deck": 1, "path": path}}));
+        let r = next();
+        assert_eq!(r["ok"], false, "{path}: {r}");
+        assert!(r["error"]["message"].as_str().unwrap().contains("--record file"), "{path}: {r}");
+    }
+    assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+    // Control: another file loads and plays into the recording.
+    say(json!({"id": "b", "cmd": {"type": "load", "deck": 1, "path": "b.wav"}}));
+    assert_eq!(next()["ok"], true);
+    say(json!({"id": "p", "cmd": {"type": "play", "deck": 1, "playing": true}}));
+    assert_eq!(next()["ok"], true);
+    say(json!({"id": "a", "cmd": {"type": "engine_advance", "ms": 100}}));
+    assert_eq!(next()["ok"], true);
+    next();
+    say(json!({"id": "q", "cmd": {"type": "engine_shutdown"}}));
+    assert_eq!(next()["ok"], true);
+    assert!(child.wait().unwrap().success());
+    let rec = odj_audio::decode::decode_file(&d.join("a.wav")).unwrap();
+    assert_eq!(rec.pcm.len(), 4800 * 2, "the recording was written where asked");
 }
 
 #[test]
