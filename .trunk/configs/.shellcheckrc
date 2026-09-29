@@ -1,0 +1,9 @@
+# Default shellcheck rule set (no `enable=all`): the optional checks produced
+# ~2,600 style hits (SC2250 braces, SC2292 [[ ]]) in a 35-file sample.
+# The repo's hard shell gate is `just shell-lint` (scripts/shell_construct_lint.py).
+source-path=SCRIPTDIR
+disable=SC2154
+
+# If you're having issues with shellcheck following source, disable the errors via:
+# disable=SC1090
+# disable=SC1091

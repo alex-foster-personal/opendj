@@ -27,6 +27,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -102,7 +103,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: HEALTHY_BACKEND_COMMAND,
+			command: guardedWebServerCommand('preflight-gate-engine', HEALTHY_BACKEND_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: `http://127.0.0.1:${PREFLIGHT_GATE_HEALTHY_API_PORT}/api/v1/health`,
 			reuseExistingServer: false,
@@ -110,7 +111,7 @@ export default defineConfig({
 			env: { ...process.env, MDT_DATA_DIR: HEALTHY_DATA_DIR, MDT_LIBRARY_MODE: 'local' }
 		},
 		{
-			command: viteCommand(),
+			command: guardedWebServerCommand('preflight-gate-vite', viteCommand()),
 			cwd: FRONTEND_ROOT,
 			url: `${PREFLIGHT_GATE_HEALTHY_ORIGIN}/`,
 			reuseExistingServer: false,
@@ -122,7 +123,7 @@ export default defineConfig({
 			}
 		},
 		{
-			command: brokenBackendCommand(PREFLIGHT_GATE_BROKEN_API_PORT, BROKEN_DATA_DIR),
+			command: guardedWebServerCommand('preflight-gate-engine-2', brokenBackendCommand(PREFLIGHT_GATE_BROKEN_API_PORT, BROKEN_DATA_DIR)),
 			cwd: REPOSITORY_ROOT,
 			url: `http://127.0.0.1:${PREFLIGHT_GATE_BROKEN_API_PORT}/api/v1/health`,
 			reuseExistingServer: false,
@@ -130,7 +131,7 @@ export default defineConfig({
 			env: { ...process.env, MDT_DATA_DIR: BROKEN_DATA_DIR, MDT_LIBRARY_MODE: 'local' }
 		},
 		{
-			command: viteCommand(),
+			command: guardedWebServerCommand('preflight-gate-vite-2', viteCommand()),
 			cwd: FRONTEND_ROOT,
 			url: `${PREFLIGHT_GATE_BROKEN_ORIGIN}/`,
 			reuseExistingServer: false,
