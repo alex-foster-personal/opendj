@@ -29,6 +29,9 @@ Regression one-liners:
   - if redo of an add restores different rows or order_keys than undo removed then broken
   - if undo proceeds after an added row was already removed then broken
   - if a peer write can land between the neighbor read and the insert then broken
+  - if an appended key is longer than the key before it then broken
+  - if an add before an empty or overlong legacy key fails or misplaces the row then broken
+  - if a move before an empty legacy key lands anywhere but first then broken
 """
 
 from __future__ import annotations
@@ -379,3 +382,76 @@ def test_a_concurrent_write_cannot_land_between_the_neighbor_read_and_the_insert
     assert peer_outcomes[0].startswith("refused: database is locked"), peer_outcomes
     members = _live_stable_ids(store, playlist_id)
     assert members[10:] == [_sid(10), _sid(LARGE + 3), _sid(11)]
+
+
+# ---------------------------------------------------------------------------
+# order_key space: bounded keys, and renumber instead of failing when a gap is empty
+
+
+def _raw_keys(store: PlaylistStore, playlist_id: str) -> list[str | None]:
+    return [
+        row[0]
+        for row in store._conn.execute(
+            f"SELECT order_key FROM playlist_memberships WHERE playlist_id = ? "
+            f"AND deleted_at IS NULL ORDER BY {MEMBERSHIP_ORDER_BY}",
+            (playlist_id,),
+        )
+    ]
+
+
+def _set_key(store: PlaylistStore, playlist_id: str, index: int, key: str) -> None:
+    item_id = _load_live_members(store._conn, playlist_id)[index].item_id
+    store._conn.execute(
+        "UPDATE playlist_memberships SET order_key = ? WHERE item_id = ?", (key, item_id),
+    )
+    store._conn.commit()
+
+
+def test_appended_keys_stay_as_short_as_the_last_key(store: PlaylistStore) -> None:
+    """[if] 200 tracks are appended one by one [then] every key stays 8 chars, [else stop]."""
+    playlist_id = _playlist(store, SMALL)
+    for i in range(200):
+        store.add_memberships(playlist_id, [_sid(i % SMALL)])
+    keys = _raw_keys(store, playlist_id)
+    assert len(keys) == SMALL + 200
+    assert {len(k or "") for k in keys} == {8}, sorted({len(k or "") for k in keys})
+
+
+@pytest.mark.parametrize(
+    ("legacy_index", "legacy_key", "position"),
+    [(3, "", 0), (4, "01000004" + "V" * 100, None)],
+    ids=["empty-key-at-head", "overlong-key-at-tail"],
+)
+def test_an_add_next_to_a_legacy_key_renumbers_and_lands_in_place(
+    store: PlaylistStore, legacy_index: int, legacy_key: str, position: int | None,
+) -> None:
+    """[if] no key fits beside a legacy key [then] the add renumbers and lands, [else stop]."""
+    playlist_id = _playlist(store, 5)
+    _set_key(store, playlist_id, legacy_index, legacy_key)
+    before = _live_stable_ids(store, playlist_id)
+    assert before[0 if position == 0 else -1] == _sid(legacy_index), "seed did not take"
+
+    result = store.add_memberships(playlist_id, [_sid(LARGE + 3)], position=position)
+
+    expected = [_sid(LARGE + 3), *before] if position == 0 else [*before, _sid(LARGE + 3)]
+    assert _live_stable_ids(store, playlist_id) == expected
+    keys = _raw_keys(store, playlist_id)
+    assert all(k is not None and len(k) == 8 for k in keys), keys
+    assert keys == sorted(keys) and len(set(keys)) == len(keys), keys
+    assert result.added[0].order_key == keys[0 if position == 0 else -1]
+
+
+def test_a_move_before_an_empty_legacy_key_lands_first(store: PlaylistStore) -> None:
+    """[if] a row moves before an empty-keyed first row [then] it lands first, [else stop]."""
+    playlist_id = _playlist(store, 5)
+    _set_key(store, playlist_id, 3, "")
+    members = _load_live_members(store._conn, playlist_id)
+    assert members[0].stable_id == _sid(3), "seed did not take"
+    store.move_memberships(
+        playlist_id,
+        range_start=members[4].item_id,
+        range_length=1,
+        before_item_id=members[0].item_id,
+        expected_etag=store._load(playlist_id).etag,
+    )
+    assert _live_stable_ids(store, playlist_id) == [_sid(4), _sid(3), _sid(0), _sid(1), _sid(2)]

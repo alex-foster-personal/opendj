@@ -17,7 +17,7 @@ from contextlib import AbstractContextManager
 from typing import Any, Protocol
 
 from .events import EventBus, FakeEventBus
-from .order_key import from_index
+from .order_key import renumbered_keys
 from .sync_stamp import Stamp
 from .types import Event
 from .writer_common import (
@@ -151,6 +151,7 @@ class _PlaylistWriterMixin:
                 "DELETE FROM playlist_memberships WHERE playlist_id = ?",
                 (playlist_id,),
             )
+            keys = renumbered_keys(len(stable_ids))
             for position, sid in enumerate(stable_ids):
                 member_stamp = self._stamp(
                     MEMBERSHIPS_TABLE, (playlist_id, position), now,
@@ -164,7 +165,7 @@ class _PlaylistWriterMixin:
                         sid,
                         position,
                         uuid.uuid4().hex,
-                        from_index(position),
+                        keys[position],
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
                     ),

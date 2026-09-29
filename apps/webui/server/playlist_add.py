@@ -25,7 +25,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from apps.shared.state.order_key import between
+from apps.shared.state.order_key import PrecisionExhausted, allocate_keys, renumbered_keys
 from apps.shared.state.writer import StateWriter
 
 from .backend import BackendError, NotFoundError
@@ -139,8 +139,12 @@ def _load_live_members(
 
 
 def _effective_order_key(order_key: str | None, position: int) -> str:
-    """A legacy row with no order_key sorts by its zero-padded position."""
-    return order_key or f"{position:08d}"
+    """A legacy row with no order_key sorts by its zero-padded position.
+
+    Only NULL falls back, exactly as SQL's COALESCE does: an empty key sorts
+    first there, so treating it as missing here would misplace inserts.
+    """
+    return order_key if order_key is not None else f"{position:08d}"
 
 
 def _reject_over_cap(items: list) -> None:
@@ -214,18 +218,40 @@ def _already_present(
     ]
 
 
-def _members_to_insert(
+def _new_members(stable_ids: list[str], keys: list[str]) -> list[AddedMember]:
+    return [
+        AddedMember(uuid.uuid4().hex, sid, key)
+        for sid, key in zip(stable_ids, keys, strict=True)
+    ]
+
+
+def _renumber_around_insert(
+    writer: StateWriter,
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    position: int | None,
     stable_ids: list[str],
-    left_key: str | None,
-    right_key: str | None,
 ) -> list[AddedMember]:
-    added: list[AddedMember] = []
-    prev = left_key
-    for sid in stable_ids:
-        order_key = between(prev, right_key)
-        added.append(AddedMember(uuid.uuid4().hex, sid, order_key))
-        prev = order_key
-    return added
+    """Rewrite every live key, leaving a gap for the new rows. O(members).
+
+    Runs only when the gap has no key left (a legacy empty or overlong key, or
+    a run of inserts at one point); the rewritten keys then leave room again.
+    """
+    item_ids = [
+        row[0]
+        for row in conn.execute(
+            f"SELECT item_id FROM playlist_memberships "
+            f"WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY {MEMBERSHIP_ORDER_BY}",
+            (playlist_id,),
+        )
+    ]
+    at = len(item_ids) if position is None else position
+    keys = renumbered_keys(len(item_ids) + len(stable_ids))
+    kept = keys[:at] + keys[at + len(stable_ids):]
+    writer.update_playlist_membership_order_keys(
+        playlist_id, list(zip(item_ids, kept, strict=True)), renumbered=True,
+    )
+    return _new_members(stable_ids, keys[at:at + len(stable_ids)])
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +293,10 @@ def add_memberships(
                 return AddResult(row=header, added=[])
 
         left_key, right_key = _neighbor_order_keys(conn, playlist_id, position)
-        added = _members_to_insert(stable_ids, left_key, right_key)
+        try:
+            added = _new_members(stable_ids, allocate_keys(left_key, right_key, len(stable_ids)))
+        except PrecisionExhausted:
+            added = _renumber_around_insert(writer, conn, playlist_id, position, stable_ids)
         writer.insert_playlist_memberships(
             playlist_id,
             [(m.item_id, m.stable_id, m.order_key) for m in added],

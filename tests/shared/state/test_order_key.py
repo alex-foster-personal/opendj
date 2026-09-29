@@ -5,13 +5,17 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pytest
 
 from apps.shared.state.order_key import (
+    KEY_BASE,
     PrecisionExhausted,
     allocate_keys,
     between,
     from_index,
+    renumbered_keys,
 )
 
 pytestmark = pytest.mark.requirement("LIBM-20")
@@ -41,8 +45,55 @@ def test_between_append_after_last() -> None:
 
 
 def test_between_insert_before_first() -> None:
-    key = between(None, "00000000")
-    assert key < "00000000"
+    key = between(None, "00000001")
+    assert "" < key < "00000001"
+
+
+@pytest.mark.requirement("LIBM-132")
+@pytest.mark.parametrize("floor", ["00000000", "0", ""])
+def test_no_key_is_minted_below_a_floor_key(floor: str) -> None:
+    """[if] nothing sorts below the right bound [then] it raises, never mints '', [else stop]."""
+    with pytest.raises(PrecisionExhausted):
+        between(None, floor)
+
+
+@pytest.mark.requirement("LIBM-132")
+def test_ten_thousand_appends_keep_keys_at_eight_characters() -> None:
+    """[if] 10,000 rows are appended one by one [then] no key grows past 8 chars, [else stop]."""
+    keys = allocate_keys(None, None, 10_000)
+    assert keys[0] == from_index(KEY_BASE)
+    assert all(a < b for a, b in pairwise(keys))
+    assert max(len(k) for k in keys) == 8, max(len(k) for k in keys)
+
+
+@pytest.mark.requirement("LIBM-132")
+def test_ten_thousand_head_inserts_keep_keys_at_eight_characters() -> None:
+    """[if] 10,000 rows are inserted at the head [then] no key grows past 8 chars, [else stop]."""
+    keys = [between(None, None)]
+    for _ in range(10_000):
+        keys.append(between(None, keys[-1]))
+    assert all(a > b for a, b in pairwise(keys))
+    assert {len(k) for k in keys} == {8}
+
+
+@pytest.mark.requirement("LIBM-132")
+@pytest.mark.parametrize(
+    ("left", "right"), [("0100001", "01000011"), ("", "01000000"), ("01", "01V")],
+)
+def test_a_key_between_a_prefix_and_its_extension_sorts_between_them(
+    left: str, right: str,
+) -> None:
+    """[if] left is a prefix of right [then] the new key sorts strictly between, [else stop]."""
+    key = between(left, right)
+    assert left < key < right, (left, key, right)
+
+
+@pytest.mark.requirement("LIBM-132")
+def test_renumbered_keys_leave_room_before_the_first() -> None:
+    """[if] a playlist is renumbered [then] a key still fits before its first row, [else stop]."""
+    keys = renumbered_keys(3)
+    assert keys == [from_index(KEY_BASE + i) for i in range(3)]
+    assert between(None, keys[0]) < keys[0]
 
 
 def test_fifty_inserts_at_same_point_stay_unique_and_sorted() -> None:
