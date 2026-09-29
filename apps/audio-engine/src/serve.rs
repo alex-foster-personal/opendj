@@ -45,11 +45,95 @@ const CMD_SLOTS: usize = 1024;
 const DRAIN_LIMIT: Duration = Duration::from_secs(2);
 /// How long shutdown waits for loads still decoding; after that they and the
 /// work queued behind them are refused, so each still gets a result.
+const LOAD_DRAIN_LIMIT: Duration = Duration::from_secs(5);
+
 /// The most work one deck may park behind its pending load, the same bound
 /// as the mailbox: past it a command is refused as the mailbox refuses one.
 const QUEUE_SLOTS: usize = CMD_SLOTS;
 
-const LOAD_DRAIN_LIMIT: Duration = Duration::from_secs(5);
+/// The longest line read from stdin, its newline aside. A load's beatgrid is
+/// the largest thing a command carries, at tens of bytes a beat, so this
+/// holds hundreds of thousands of beats; a longer line is skipped without
+/// being held whole, and refused.
+pub const MAX_LINE_BYTES: usize = 8 << 20;
+
+/// On the threaded clocks, how many lines, and how many bytes of them, the
+/// stdin reader may hand the control side before it has handled them. Past
+/// either the reader stops reading, so a supervisor writing faster than the
+/// engine takes commands is held back by its pipe, not by this process's
+/// memory.
+const LINE_SLOTS: usize = CMD_SLOTS;
+const LINE_BYTES: usize = 4 * MAX_LINE_BYTES;
+
+/// One line from stdin, read within `MAX_LINE_BYTES`.
+enum ReadLine {
+    Line(String),
+    TooLong,
+    Eof,
+}
+
+fn read_line(input: &mut impl BufRead, buf: &mut Vec<u8>) -> io::Result<ReadLine> {
+    buf.clear();
+    let n = io::Read::take(&mut *input, MAX_LINE_BYTES as u64 + 1).read_until(b'\n', buf)?;
+    if n == 0 {
+        return Ok(ReadLine::Eof);
+    }
+    if buf.last() == Some(&b'\n') {
+        buf.pop();
+        if buf.last() == Some(&b'\r') {
+            buf.pop();
+        }
+    } else if buf.len() > MAX_LINE_BYTES {
+        // Skip the rest of the line a buffer at a time, holding none of it.
+        loop {
+            let (done, used) = {
+                let b = input.fill_buf()?;
+                match b.iter().position(|&c| c == b'\n') {
+                    _ if b.is_empty() => (true, 0),
+                    Some(i) => (true, i + 1),
+                    None => (false, b.len()),
+                }
+            };
+            input.consume(used);
+            if done {
+                return Ok(ReadLine::TooLong);
+            }
+        }
+    }
+    String::from_utf8(std::mem::take(buf))
+        .map(ReadLine::Line)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+fn too_long() -> ProtoError {
+    ProtoError::new(ErrorCode::Invalid, format!("a line longer than {MAX_LINE_BYTES} bytes was skipped"))
+}
+
+/// Lines the reader has handed over and the control side not yet handled.
+#[derive(Default)]
+struct InFlight {
+    held: Mutex<(usize, usize)>,
+    room: std::sync::Condvar,
+}
+
+impl InFlight {
+    /// Wait until a line of `len` bytes fits (one line always fits alone).
+    fn take(&self, len: usize) {
+        let mut held = self.held.lock().unwrap();
+        while held.0 >= LINE_SLOTS || (held.0 > 0 && held.1 + len > LINE_BYTES) {
+            held = self.room.wait(held).unwrap();
+        }
+        held.0 += 1;
+        held.1 += len;
+    }
+
+    fn give_back(&self, len: usize) {
+        let mut held = self.held.lock().unwrap();
+        held.0 -= 1;
+        held.1 -= len;
+        self.room.notify_one();
+    }
+}
 
 fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *out, v)?;
@@ -69,8 +153,17 @@ pub fn serve_fake(
     let mut engine = Engine::new(sample_rate);
     let mut scratch = vec![0.0f32; MAX_BLOCK * 2];
     send(&mut out, &protocol::hello_json("fake", sample_rate))?;
-    for line in input.lines() {
-        let line = line?;
+    let mut input = input;
+    let mut buf = Vec::new();
+    loop {
+        let line = match read_line(&mut input, &mut buf)? {
+            ReadLine::Line(l) => l,
+            ReadLine::TooLong => {
+                send(&mut out, &protocol::result_json(None, &Err(too_long())))?;
+                continue;
+            }
+            ReadLine::Eof => break,
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -170,6 +263,10 @@ pub struct AudioSide {
     /// already rendered. Zero on the wall clock.
     ahead_ns: u64,
     scratch: Vec<f32>,
+    /// Runs after a block renders, before its state request is settled: the
+    /// moment a request arriving mid-block used to be lost.
+    #[cfg(test)]
+    mid_block: Option<fn(&AtomicBool)>,
 }
 
 impl AudioSide {
@@ -183,6 +280,12 @@ impl AudioSide {
     }
 
     pub fn process(&mut self, frames: usize) -> &[f32] {
+        // Take a state request before this block's commands: every command
+        // the control side sent before asking is in the ring by then, so
+        // this block's state reflects them. A request that arrives later in
+        // the block stays armed for the next one, never answered by a state
+        // that predates it.
+        let mut requested = self.state_req.swap(false, Ordering::Acquire);
         // Take a command only while its result has a slot to go to: a result
         // dropped here would free a retired track on this thread. With the
         // result ring full, the rest wait in the command ring until the pump
@@ -192,6 +295,12 @@ impl AudioSide {
             let r = self.engine.apply(cmd);
             let pushed = self.res_tx.push((seq, r));
             debug_assert!(pushed.is_ok(), "a slot was checked free and this is the only producer");
+        }
+        // Commands held back by a full result ring may have been sent before
+        // the request: leave it for a block that has applied them.
+        if requested && !self.cmd_rx.is_empty() {
+            self.state_req.store(true, Ordering::Relaxed);
+            requested = false;
         }
         let n = frames.min(self.scratch.len() / 2);
         let now_ns = self.epoch.elapsed().as_nanos() as u64 + self.ahead_ns;
@@ -218,7 +327,11 @@ impl AudioSide {
         // that wants one) goes out at the end of the block, once. With the
         // state ring full (stdout slow) the request stays armed for the next
         // block, so an `engine_state` answered ok always gets its state.
-        if self.state_req.swap(false, Ordering::Relaxed) && !published_at_end && !self.publish(now_ns, n) {
+        #[cfg(test)]
+        if let Some(hook) = self.mid_block {
+            hook(&self.state_req);
+        }
+        if requested && !published_at_end && !self.publish(now_ns, n) {
             self.state_req.store(true, Ordering::Relaxed);
         }
         &self.scratch[..n * 2]
@@ -236,6 +349,8 @@ impl AudioSide {
 
 enum Msg {
     Line(String),
+    /// A line past `MAX_LINE_BYTES`, skipped by the reader.
+    TooLong,
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
     Eof,
     /// The audio side returned. Before `stop` is set that means it failed to
@@ -437,7 +552,9 @@ impl Control {
                 )),
             ),
             Ok(Command::State) => {
-                self.state_req.store(true, Ordering::Relaxed);
+                // Release: the commands pushed before this are visible to
+                // the audio side once it sees the request.
+                self.state_req.store(true, Ordering::Release);
                 self.reply(id.as_ref(), Ok(()));
             }
             Ok(Command::Shutdown) => {
@@ -493,6 +610,8 @@ fn serve_threaded_from(
         epoch,
         ahead_ns: 0,
         scratch: vec![0.0; MAX_BLOCK * 2 * 8],
+        #[cfg(test)]
+        mid_block: None,
     };
     let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
     let audio_stop = stop.clone();
@@ -544,15 +663,22 @@ fn serve_threaded_from(
     });
 
     let reader_tx = msg_tx.clone();
+    let in_flight = Arc::new(InFlight::default());
+    let reader_room = in_flight.clone();
+    let mut input = input;
     std::thread::spawn(move || {
-        for line in input.lines() {
-            match line {
-                Ok(l) => {
-                    if reader_tx.send(Msg::Line(l)).is_err() {
-                        return;
-                    }
+        let mut buf = Vec::new();
+        loop {
+            let msg = match read_line(&mut input, &mut buf) {
+                Ok(ReadLine::Line(l)) => {
+                    reader_room.take(l.len());
+                    Msg::Line(l)
                 }
-                Err(_) => break,
+                Ok(ReadLine::TooLong) => Msg::TooLong,
+                Ok(ReadLine::Eof) | Err(_) => break,
+            };
+            if reader_tx.send(msg).is_err() {
+                return;
             }
         }
         let _ = reader_tx.send(Msg::Eof);
@@ -574,10 +700,13 @@ fn serve_threaded_from(
     while let Ok(msg) = msg_rx.recv() {
         match msg {
             Msg::Line(l) => {
-                if !control.handle_line(&l, clock) {
+                let go_on = control.handle_line(&l, clock);
+                in_flight.give_back(l.len());
+                if !go_on {
                     break;
                 }
             }
+            Msg::TooLong => control.reply(None, Err(too_long())),
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
@@ -612,7 +741,7 @@ fn serve_threaded_from(
                     break;
                 }
                 // Nothing sent after shutdown or EOF is taken.
-                Ok(Msg::Line(_) | Msg::Eof) => {}
+                Ok(Msg::Line(_) | Msg::TooLong | Msg::Eof) => {}
                 Err(_) => break,
             }
         }
@@ -695,6 +824,7 @@ mod tests {
             epoch: Instant::now(),
             ahead_ns: 0,
             scratch: vec![0.0; MAX_BLOCK * 2 * 8],
+            mid_block: None,
         };
         (side, cmd_tx, res_rx, state_rx)
     }
@@ -776,6 +906,46 @@ mod tests {
         drain(&mut states);
         side.process(50);
         assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![150]);
+    }
+
+    #[test]
+    fn a_state_request_arriving_mid_block_waits_for_the_next_block() {
+        // Codex on 7124cb2e: a request set after the block's periodic state
+        // was cleared by that state, which predates it and the commands
+        // before it.
+        let (mut side, _cmd, _res, mut states) = side_at(8000, 100, 4);
+        side.mid_block = Some(|r| r.store(true, Ordering::Release));
+        side.process(100);
+        side.mid_block = None;
+        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![100], "the periodic state");
+        assert!(side.state_req.load(Ordering::Relaxed), "a state from before the request answered it");
+        side.process(50);
+        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![150]);
+        // Control: a request there before the block is answered by the
+        // block's periodic state, not by a second one.
+        side.state_req.store(true, Ordering::Release);
+        side.process(100);
+        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![250]);
+        assert!(!side.state_req.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_state_request_waits_for_the_commands_sent_before_it() {
+        // A command held back by a full result ring may have been sent
+        // before the request, so the state waits for the block that applies it.
+        let (mut side, mut cmd_tx, mut res_rx, mut states) = side_at(8000, u64::MAX, 1);
+        for muted in [false, true] {
+            cmd_tx.push((muted as u64, EngineCmd::MasterMute { muted })).unwrap();
+        }
+        side.state_req.store(true, Ordering::Release);
+        side.process(64);
+        assert!(drain(&mut states).is_empty(), "a state went out with a command before it still waiting");
+        assert!(res_rx.pop().unwrap().1.is_ok());
+        side.process(64);
+        let got: Vec<_> = std::iter::from_fn(|| states.pop().ok()).collect();
+        assert_eq!(got.len(), 1);
+        assert!(got[0].0.master_muted, "the state is from before the second command");
+        assert_eq!(got[0].0.frame, 128);
     }
 
     #[test]
@@ -911,6 +1081,152 @@ mod tests {
             assert!(audio_stopped.load(Ordering::Relaxed), "{line}: the audio side was left running");
             drop(writer);
         }
+    }
+
+    /// Endless lines of `len` bytes (newline included), whole lines only,
+    /// counting each as it is handed out; ends at a line boundary once
+    /// `end` is set, and never hands out more than `cap` lines.
+    struct Lines {
+        len: usize,
+        at: usize,
+        made: Arc<std::sync::atomic::AtomicUsize>,
+        end: Arc<AtomicBool>,
+        cap: usize,
+    }
+
+    impl io::Read for Lines {
+        fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+            use std::sync::atomic::Ordering::SeqCst;
+            if self.at == 0 {
+                while !self.end.load(SeqCst) && self.made.load(SeqCst) >= self.cap {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                if self.end.load(SeqCst) {
+                    return Ok(0);
+                }
+                self.made.fetch_add(1, SeqCst);
+            }
+            let n = b.len().min(self.len - self.at);
+            for (i, c) in b[..n].iter_mut().enumerate() {
+                *c = if self.at + i == self.len - 1 { b'\n' } else { b'x' };
+            }
+            self.at = (self.at + n) % self.len;
+            Ok(n)
+        }
+    }
+
+    /// Output whose writes stall after its first line (the hello) until
+    /// `open` is set, as a pipe nobody reads does.
+    #[derive(Clone, Default)]
+    struct Stalled {
+        text: Captured,
+        open: Arc<AtomicBool>,
+    }
+
+    impl Write for Stalled {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            while self.text.0.lock().unwrap().contains(&b'\n') && !self.open.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            self.text.write(b)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_stalled_session_stops_reading_stdin() {
+        // Codex on 7124cb2e: the reader handed the control side every line
+        // it could read, without limit, while the control side was stuck
+        // writing to a stdout nobody read. By lines, and by bytes.
+        for (len, cap, bound) in [(9, 200_000, LINE_SLOTS + 1 + 8192 / 9 + 1), (1 << 20, 100, LINE_BYTES / (1 << 20) + 2)] {
+            let made = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let end = Arc::new(AtomicBool::new(false));
+            let input = io::BufReader::with_capacity(8192, Lines { len, at: 0, made: made.clone(), end: end.clone(), cap });
+            let out = Stalled::default();
+            let (tx, rx) = mpsc::channel();
+            let o = out.clone();
+            std::thread::spawn(move || {
+                let r = serve_threaded_from(input, o, 48000, "wall", |_side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                });
+                let _ = tx.send(r);
+            });
+            let settled = || {
+                let mut last = usize::MAX;
+                loop {
+                    std::thread::sleep(Duration::from_millis(200));
+                    let now = made.load(Ordering::SeqCst);
+                    if now == last {
+                        return now;
+                    }
+                    last = now;
+                }
+            };
+            let held = settled();
+            assert!(held <= bound, "{len}-byte lines: read {held} lines with the output stalled (bound {bound})");
+            // Control: once the output moves, reading resumes and every
+            // line gets its result.
+            out.open.store(true, Ordering::SeqCst);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while made.load(Ordering::SeqCst) < held + 5.min(cap - held) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            end.store(true, Ordering::SeqCst);
+            rx.recv_timeout(Duration::from_secs(20)).expect("serve hung").unwrap();
+            let lines = out.text.0.lock().unwrap().iter().filter(|&&c| c == b'\n').count();
+            assert!(made.load(Ordering::SeqCst) > held || held == cap, "{len}-byte lines: reading never resumed");
+            assert_eq!(lines, 1 + made.load(Ordering::SeqCst), "{len}-byte lines: one result per line");
+        }
+    }
+
+    #[test]
+    fn a_line_past_the_limit_is_skipped_and_refused() {
+        // A line is held whole only up to MAX_LINE_BYTES; past that it is
+        // skipped and refused, and the next line is read as usual. The
+        // fake clock and the threaded ones read alike.
+        let mut input = Vec::new();
+        input.extend(std::iter::repeat_n(b'x', MAX_LINE_BYTES + 1));
+        input.push(b'\n');
+        // Control: a line of exactly the limit is read whole (leading
+        // whitespace is valid JSON).
+        let at_limit = r#"{"id": "max", "cmd": {"type": "crossfader", "value": 0.5}}"#;
+        input.extend(std::iter::repeat_n(b' ', MAX_LINE_BYTES - at_limit.len()));
+        input.extend_from_slice(at_limit.as_bytes());
+        input.push(b'\n');
+        // A CRLF line ends as a LF one does.
+        input.extend_from_slice(br#"{"id": "after", "cmd": {"type": "crossfader", "value": 0.5}}"#);
+        input.extend_from_slice(b"\r\n");
+        // One at the end with no newline is refused too.
+        input.extend(std::iter::repeat_n(b'x', MAX_LINE_BYTES + 5));
+        let check = |text: &str| {
+            let results: Vec<Value> = text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect();
+            assert_eq!(results.len(), 4, "{results:?}");
+            // The threaded clocks write results from two threads, so their
+            // order is not the lines' order.
+            let skipped = results.iter().filter(|r| r["id"].is_null()).collect::<Vec<_>>();
+            assert_eq!(skipped.len(), 2, "{results:?}");
+            assert!(skipped.iter().all(|r| r["error"]["message"].as_str().unwrap().contains("longer than")), "{skipped:?}");
+            for id in ["max", "after"] {
+                let r = results.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
+                assert_eq!(r["ok"], true, "{r}");
+            }
+        };
+        let mut out = Vec::new();
+        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None).unwrap();
+        check(&String::from_utf8(out).unwrap());
+        let out = Captured::default();
+        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", |mut side, stop| {
+            while !stop.load(Ordering::Relaxed) {
+                side.process(64);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+        .unwrap();
+        check(&String::from_utf8(out.0.lock().unwrap().clone()).unwrap());
     }
 
     #[cfg(unix)]
