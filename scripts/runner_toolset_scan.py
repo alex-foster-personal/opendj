@@ -321,6 +321,18 @@ def _args_inline_program(name: str, args: list[str], where: str, ctx: _Ctx) -> N
     scan(program, source, int(line) - 1, ctx)
 
 
+def _args_command_string(name: str, args: list[str], where: str, ctx: _Ctx) -> None:
+    """bash runs `trap 'cmd' SIG` and `eval 'cmd'` strings; trap -, -p, -l, SIG do not."""
+    if name == "eval":
+        program = " ".join(args)
+    elif len(args) < 2 or args[0] in {"-", "-p", "-l"}:
+        return
+    else:
+        program = args[0]
+    source, line = where.rsplit(":", 1)
+    scan_shell(program, source, int(line) - 1, ctx)
+
+
 def _args_recipes(name: str, args: list[str], _where: str, ctx: _Ctx) -> None:
     """`just RECIPE ...` runs one recipe; `make T1 T2` runs every target named."""
     idx = 0
@@ -362,6 +374,8 @@ ARGUMENT_HANDLERS: dict[str, Callable[[str, list[str], str, _Ctx], None]] = {
     "sh": _args_inline_program,
     "python": _args_inline_program,
     "python3": _args_inline_program,
+    "trap": _args_command_string,
+    "eval": _args_command_string,
     "just": _args_recipes,
     "make": _args_recipes,
     "ci_runner_preflight.sh": _args_executables,
