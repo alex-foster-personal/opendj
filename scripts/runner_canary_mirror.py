@@ -11,7 +11,7 @@ Targets:
     --target source   the source repository itself (`source_repository`), through this
                       checkout's own `origin` and git's own credentials: Avrea and Tenki.
 
-Usage (from a checkout of the source repository; main is fetched fresh from its origin):
+Usage (from a checkout of the source repository; main is cloned fresh from its origin):
     CANARY_MIRROR_PUSH_TOKEN=... python3 scripts/runner_canary_mirror.py <sha> \\
         --target mirror --config ci/runner-canary.json
     python3 scripts/runner_canary_mirror.py <sha> --target source --config ci/runner-canary.json
@@ -42,19 +42,18 @@ Requirements (mini-PRD)
 - [if] any git url rewrite rule (`insteadOf` or `pushInsteadOf`, any config scope) matches
   the URL about to be contacted, on either target [then] exit 1 and push nothing: the
   checked URL must be the destination, [else stop] ✔︎ ✅ 🎯
-- [if] any git call but the source target's own push (the provenance fetch, merge-base,
-  config reads, the mirror's ls-remote and push) would start a hook or another program
-  the checkout or git config names [then] it does not: hooks, askpass, fsmonitor, gpg and
-  ext:: are off for every such call, and credential helpers too for the credentialed
-  ones, so no hook can repoint the fetched main; the source push keeps its hooks, [else
-  stop] ✔︎ ✅ 🎯
+- [if] any git call but the source target's own push (the provenance clone, config reads,
+  the mirror's ls-remote and push) would start a hook or another program git config names
+  [then] it does not: hooks, askpass, fsmonitor, gpg and ext:: are off for every such
+  call, and credential helpers too for the credentialed ones; the source push keeps its
+  hooks, [else stop] ✔︎ ✅ 🎯
 - [if] anything the script prints or raises would carry URL userinfo, an Authorization
   value, or the mirror token or its base64 [then] it is redacted, host and path still
   shown, [else stop] ✔︎ ✅ 🎯
-- [if] the SHA is malformed or not an ancestor of the SOURCE repository's main, fetched
-  fresh from origin's one fetch URL (which must be the source and match no rewrite rule),
-  never read from a local ref [then] exit 1,
-  [else stop] ✔︎ ✅ 🎯
+- [if] the SHA is malformed or not on the SOURCE repository's main, cloned from origin's one
+  fetch URL (which must be the source and match no rewrite rule) into a scratch repository
+  the checkout's config cannot reach, never read from a local ref [then] exit 1, [else
+  stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
   the first branch pushed to an empty repository becomes its default, and the default
   branch is where every `schedule` and `workflow_run` workflow runs, [else stop] ✔︎ ✅ 🎯
@@ -71,14 +70,12 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 TOKEN_ENV = "CANARY_MIRROR_PUSH_TOKEN"
 REPO_ENV = "CANARY_MIRROR_REPO"
-# main is fetched fresh from the validated source into this private ref, never read from the
-# checkout's own refs/remotes/origin/main, which any local update-ref can point anywhere.
 SOURCE_MAIN_BRANCH = "refs/heads/main"
-SOURCE_MAIN_REF = "refs/runner-canary/source-main"
 CANARY_PREFIX = "canary/"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 REWRITE_RULES_RE = r"^url\..*\.(push)?insteadof$"
@@ -316,38 +313,34 @@ def origin_fetch_url() -> str:
     return urls[0]
 
 
-def fetch_source_main(url: str) -> None:
-    """Fetch the source's main into SOURCE_MAIN_REF from exactly `url`, with git's own
-    credentials, never touching FETCH_HEAD (a pointer other agents share)."""
-    fetched = _git(
-        [
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--no-write-fetch-head",
-            url,
-            f"+{SOURCE_MAIN_BRANCH}:{SOURCE_MAIN_REF}",
-        ]
-    )
-    if fetched.returncode != 0:
-        raise MirrorRefused(
-            f"cannot fetch main from {url}: git fetch exit {fetched.returncode}: "
-            f"{fetched.stderr.strip()}"
-        )
+def source_main_commits(url: str) -> set[str]:
+    """Every commit on the source's main, from a commits-only clone of `url` into a scratch
+    repository, never the checkout's own refs/remotes/origin/main (Codex P1 on c445557c4).
+    The checkout's config, hooks and refs cannot reach the scratch repository, so a
+    `core.sshCommand`, proxy or hook set there cannot serve another repository's main
+    (Codex P1 on b6303e8f0). The operator's global config, credentials and ssh, still
+    applies."""
+    with tempfile.TemporaryDirectory(prefix="runner-canary-") as scratch:
+        clone = ["clone", "-q", "--bare", "--template=", "--filter=tree:0", "--no-tags"]
+        cloned = _git(["-C", scratch, *clone, "--single-branch", "--branch", "main", url, "."])
+        if cloned.returncode != 0:
+            raise MirrorRefused(
+                f"cannot fetch main from {url}: git clone exit {cloned.returncode}: "
+                f"{cloned.stderr.strip()}"
+            )
+        listed = _git(["-C", scratch, "rev-list", SOURCE_MAIN_BRANCH])
+        if listed.returncode != 0:
+            raise MirrorRefused(f"cannot list main cloned from {url}: {listed.stderr.strip()}")
+        return set(listed.stdout.split())
 
 
 def require_on_source_main(sha: str, config: dict) -> None:
     """`sha` must be on the SOURCE repository's main, proved from the source itself: origin's
-    fetch URL must be the source and match no rewrite rule, and main is fetched from it
-    fresh. A local refs/remotes/origin/main proves nothing, since a fetch from another
-    repository or a bare update-ref can point it anywhere (Codex P1 on c445557c4)."""
+    fetch URL must be the source and match no rewrite rule, and main is cloned from it."""
     url = origin_fetch_url()
     require_origin_is_source(url, config, "fetch URL")
     require_no_rewrite(url)
-    fetch_source_main(url)
-    if _git(["cat-file", "-e", f"{sha}^{{commit}}"]).returncode != 0:
-        raise MirrorRefused(f"{sha} is not a commit on the source repository's main")
-    if _git(["merge-base", "--is-ancestor", sha, SOURCE_MAIN_REF]).returncode != 0:
+    if sha not in source_main_commits(url):
         raise MirrorRefused(
             f"{sha} is not on the source repository's main; only main SHAs are mirrored"
         )

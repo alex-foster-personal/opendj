@@ -218,7 +218,7 @@ def test_source_target_children_never_see_the_mirror_credential(world) -> None:
     # Controls: every spawn site ran through the shim, the push included.
     argvs = [argv for argv, _ in calls]
     assert any(a.startswith("config ") for a in argvs), argvs
-    assert any(a.startswith("merge-base ") for a in argvs), argvs
+    assert any(" rev-list " in f" {a} " for a in argvs), argvs
     assert any(a.startswith("push ") for a in argvs), argvs
     for argv, env in calls:
         assert "CANARY_MIRROR_PUSH_TOKEN" not in env, argv
@@ -391,6 +391,9 @@ def test_the_committed_mirror_url_is_https_so_no_ssh_program_runs() -> None:
 # ----- no configured program runs before the source push -----------------------------
 
 
+HOOKED_REF = "refs/runner-canary/source-main"  # where round 7 fetched main in the checkout
+
+
 def _repointing_hook(world: World, to: str) -> None:
     """A `reference-transaction` hook that, once the private main ref is committed, points
     it at `to`: Codex's reproduction on 27840126b, with a real hook in the real checkout."""
@@ -399,8 +402,8 @@ def _repointing_hook(world: World, to: str) -> None:
         "#!/bin/sh\n"
         '[ "$1" = committed ] || exit 0\n'
         '[ -n "$REPOINTED" ] && exit 0\n'
-        f"grep -q ' {mirror_script.SOURCE_MAIN_REF}$' || exit 0\n"
-        f"REPOINTED=1 git update-ref {mirror_script.SOURCE_MAIN_REF} {to}\n"
+        f"grep -q ' {HOOKED_REF}$' || exit 0\n"
+        f"REPOINTED=1 git update-ref {HOOKED_REF} {to}\n"
     )
     hook.chmod(0o755)
 
@@ -413,7 +416,7 @@ def test_a_hook_cannot_repoint_the_fetched_main_to_an_off_main_commit(world, tar
     _repointing_hook(world, world["off_main"])
     # Control: git itself runs the hook on that fetch, so the attack is live in this checkout.
     source_url = repo_url(world, CONFIG["source_repository"])
-    refspec = f"+refs/heads/main:{mirror_script.SOURCE_MAIN_REF}"
+    refspec = f"+refs/heads/main:{HOOKED_REF}"
     git(
         world["source"],
         "fetch",
@@ -423,14 +426,63 @@ def test_a_hook_cannot_repoint_the_fetched_main_to_an_off_main_commit(world, tar
         refspec,
         env=world["env"],
     )
-    ref = git(world["source"], "rev-parse", mirror_script.SOURCE_MAIN_REF, env=world["env"])
+    ref = git(world["source"], "rev-parse", HOOKED_REF, env=world["env"])
     assert ref == world["off_main"], "control: the hook repoints the ref under plain git"
-    git(world["source"], "update-ref", "-d", mirror_script.SOURCE_MAIN_REF, env=world["env"])
+    git(world["source"], "update-ref", "-d", HOOKED_REF, env=world["env"])
     result = run_mirror_script(world, world["off_main"], target=target)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "is not on the source repository's main" in result.stdout
     assert canary_refs(world["mirror"], world) == []
     assert canary_refs(world["real"], world) == []
+
+
+SSH_SPELLING = "ssh://git@source.invalid/{repo}.git"
+
+
+@pytest.mark.parametrize("owner", ["checkout", "operator"])
+def test_only_the_operators_config_routes_the_provenance_clone(world, owner: str) -> None:
+    """Codex P1 on b6303e8f0: origin at an accepted ssh spelling, and a `core.sshCommand`
+    in the CHECKOUT serving another repository's main, passed an off-main SHA. Opposite
+    direction: the operator's global config still routes the clone (credentials, ssh)."""
+    bootstrap_default_branch(world)
+    source = CONFIG["source_repository"]
+    templates = [*world["config"]["remote_url_templates"], SSH_SPELLING]
+    world["config_path"].write_text(
+        json.dumps({**world["config"], "remote_url_templates": templates})
+    )
+    git(
+        world["source"],
+        "remote",
+        "set-url",
+        "origin",
+        SSH_SPELLING.format(repo=source),
+        env=world["env"],
+    )
+    if owner == "checkout":
+        _, served = impostor_repo(world)
+        git(world["source"], "push", "-q", str(served), f"{world['off_main']}:refs/heads/main")
+        scope, sha = world["source"] / ".git" / "config", world["off_main"]
+    elif owner == "operator":
+        served, scope, sha = (
+            world["real"],
+            Path(world["env"]["GIT_CONFIG_GLOBAL"]),
+            world["on_main"],
+        )
+    for key, value in (
+        ("core.sshCommand", f"sh -c 'exec git upload-pack {served}' --"),
+        ("ssh.variant", "simple"),
+    ):
+        git(world["source"], "config", "-f", str(scope), key, value, env=world["env"])
+    served_main = git(world["source"], "ls-remote", "origin", "refs/heads/main", env=world["env"])
+    assert served_main.startswith(sha), "control: plain git reaches `served` through ssh"
+    result = run_mirror_script(world, sha)
+    landed = canary_refs(world["mirror"], world)
+    if owner == "checkout":
+        assert result.returncode == 1 and "cannot fetch main" in result.stdout, result.stdout
+        assert landed == []
+    elif owner == "operator":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert landed == [f"refs/heads/canary/{sha}"]
 
 
 @pytest.mark.parametrize("target", ["mirror", "source"])
@@ -445,7 +497,7 @@ def test_every_git_call_but_the_source_push_switches_configured_programs_off(
     result = run_mirror_script(world, world["on_main"], target=target)
     assert result.returncode == 0, result.stdout + result.stderr
     calls = _invocations(log, raw=True)
-    assert any(" fetch " in f" {a} " for a, _ in calls), "control: the provenance fetch ran"
+    assert any(" clone " in f" {a} " for a, _ in calls), "control: the provenance clone ran"
     hooks_off = f"core.hooksPath={os.devnull}"
     for argv, _ in calls:
         is_source_push = target == "source" and _without_switches(argv).startswith("push ")
