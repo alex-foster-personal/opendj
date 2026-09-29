@@ -40,9 +40,12 @@ env:
 
 jobs:
   gate:
-    # Trunk merge-queue drafts (trunk-merge/*) have no PR body of their own, so body validation
-    # skips them, but their tree is exactly what lands on main: they run the merged-tree check
-    # instead (PR #4227). The split lives on the two steps at the end, not on this job.
+    # Trunk's own merge-queue drafts have no PR body, so body validation skips them, but their
+    # tree is exactly what lands on main: they run the merged-tree check instead (PR #4227).
+    # The split lives on the two steps at the end, not on this job. A draft counts as Trunk's
+    # only when the branch is trunk-merge/*, the author is the Trunk App (REST login
+    # trunk-io[bot], e.g. draft #4355) and the head lives in this repository; a branch name
+    # alone is caller-controlled (Codex r4120216186).
     name: adr check
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
@@ -124,7 +127,7 @@ jobs:
         run: scripts/ci_runner_preflight.sh python
 
       - name: ADR check (issue #1489)
-        if: ${{ !startsWith(github.head_ref, 'trunk-merge/') }}
+        if: ${{ !(startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
         # No venv: scripts.adr_check is stdlib only. It reads THIS PR's
         # docs/decisions/ for whether an id exists, and the PR body plus
         # the PR file list via gh. Exit 1 = gated path, no valid ADR line.
@@ -135,7 +138,7 @@ jobs:
           python -m scripts.adr_check --pr "${{ github.event.pull_request.number }}"
 
       - name: ADR merged-tree check on Trunk queue drafts (PR #4227)
-        if: ${{ startsWith(github.head_ref, 'trunk-merge/') }}
+        if: ${{ startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository }}
         # The batch tree about to land on main: duplicate numeric ids, duplicate
         # placeholders and stale renumber paths. Git only, no PR body and no gh.
         # Exit 2 = the gate could not measure, which is never a pass.

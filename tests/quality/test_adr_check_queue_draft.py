@@ -9,6 +9,7 @@ repositories in tmp_path.
 Regression lines:
   - if a trunk-merge/* draft skips the merged-tree ADR check then a duplicate ADR id lands on main
   - if an ordinary PR stops getting body validation then a gated change merges with no ADR line
+  - if a trunk-merge/* branch Trunk did not open skips body validation then any PR can bypass it
 
 -Claude
 """
@@ -23,41 +24,33 @@ import pytest
 import yaml
 
 from scripts import adr_check
+from tests.quality.gha_conditions import (
+    GENUINE_DRAFT,
+    ORDINARY_PR,
+    SPOOFED_BRANCH,
+    SPOOFED_FORK,
+    PrEvent,
+    condition_holds,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GATE = REPO_ROOT / ".github" / "workflows" / "adr-check.yml"
 GATE_MODULE = "scripts.adr_check"
 PR_NUMBER_EXPR = "${{ github.event.pull_request.number }}"
-# The only step/job conditions this model understands; any other form fails loud.
-CONDITION_RUNS_ON_DRAFT = {
-    "${{ startsWith(github.head_ref, 'trunk-merge/') }}": True,
-    "${{ !startsWith(github.head_ref, 'trunk-merge/') }}": False,
-}
-QUEUE_DRAFT_REF = "trunk-merge/pr-4227/0b1c2d3e"
-ORDINARY_PR_REF = "af--some-feature"
 ADR_DIR = "docs/decisions"
 GATED_PATH = "apps/cloud/service.py"
 
 
 # -----------------------------------------------------------------------------
-def _condition_holds(condition: str | None, head_ref: str) -> bool:
-    if condition is None:
-        return True
-    if condition not in CONDITION_RUNS_ON_DRAFT:
-        raise AssertionError(f"unmodelled condition in {GATE.name}: {condition!r}")
-    is_draft = head_ref.startswith("trunk-merge/")
-    return is_draft == CONDITION_RUNS_ON_DRAFT[condition]
-
-
-def _gate_argvs_for(head_ref: str) -> list[list[str]]:
-    """The scripts.adr_check argument lists the workflow would run for this head ref."""
+def _gate_argvs_for(event: PrEvent) -> list[list[str]]:
+    """The scripts.adr_check argument lists the workflow would run for this PR event."""
     job = yaml.safe_load(GATE.read_text())["jobs"]["gate"]
-    if not _condition_holds(job.get("if"), head_ref):
+    if not condition_holds(job.get("if"), event):
         return []
     argvs: list[list[str]] = []
     for step in job["steps"]:
         run = str(step.get("run", ""))
-        if GATE_MODULE not in run or not _condition_holds(step.get("if"), head_ref):
+        if GATE_MODULE not in run or not condition_holds(step.get("if"), event):
             continue
         tokens = shlex.split(run.replace(PR_NUMBER_EXPR, "4227"))
         argvs.append(tokens[tokens.index(GATE_MODULE) + 1 :])
@@ -104,7 +97,7 @@ def _run_gate(argv: list[str], repo: Path, **kwargs) -> int:
 
 # -----------------------------------------------------------------------------
 def test_queue_draft_runs_exactly_the_merged_tree_check() -> None:
-    argvs = _gate_argvs_for(QUEUE_DRAFT_REF)
+    argvs = _gate_argvs_for(GENUINE_DRAFT)
     assert len(argvs) == 1, f"a queue draft must run one ADR check, got {argvs}"
     assert "--merge-base" in argvs[0], f"a queue draft must check the merged tree: {argvs[0]}"
     assert "--pr" not in argvs[0], "a queue draft has no PR body to validate"
@@ -113,7 +106,7 @@ def test_queue_draft_runs_exactly_the_merged_tree_check() -> None:
 def test_queue_draft_catches_a_duplicate_adr_id_in_the_batch_tree(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (argv,) = _gate_argvs_for(QUEUE_DRAFT_REF)
+    (argv,) = _gate_argvs_for(GENUINE_DRAFT)
     repo = _repo_with_batch(tmp_path, _adr("0002", "batch"))
     assert _run_gate(argv, repo) == 1
     err = capsys.readouterr().err
@@ -122,12 +115,18 @@ def test_queue_draft_catches_a_duplicate_adr_id_in_the_batch_tree(
 
 def test_queue_draft_with_a_clean_batch_tree_passes(tmp_path: Path) -> None:
     """Control: the red above is the duplicate id, not a broken invocation."""
-    (argv,) = _gate_argvs_for(QUEUE_DRAFT_REF)
+    (argv,) = _gate_argvs_for(GENUINE_DRAFT)
     assert _run_gate(argv, _repo_with_batch(tmp_path, _adr("0003", "batch"))) == 0
 
 
-def test_ordinary_pr_runs_exactly_the_body_validation() -> None:
-    argvs = _gate_argvs_for(ORDINARY_PR_REF)
+@pytest.mark.parametrize(
+    "event",
+    [ORDINARY_PR, SPOOFED_BRANCH, SPOOFED_FORK],
+    ids=lambda e: f"{e.head_ref}@{e.author}@{e.head_repo}",
+)
+def test_every_non_trunk_pr_runs_exactly_the_body_validation(event: PrEvent) -> None:
+    """A trunk-merge/* branch Trunk did not open from this repo is an ordinary PR."""
+    argvs = _gate_argvs_for(event)
     assert len(argvs) == 1, f"an ordinary PR must run one ADR check, got {argvs}"
     assert argvs[0][:2] == ["--pr", "4227"], f"an ordinary PR must validate its body: {argvs[0]}"
     assert "--merge-base" not in argvs[0]
@@ -140,7 +139,7 @@ def test_ordinary_pr_runs_exactly_the_body_validation() -> None:
 def test_ordinary_pr_body_validation_still_bites(
     tmp_path: Path, body: str, expected_rc: int
 ) -> None:
-    (argv,) = _gate_argvs_for(ORDINARY_PR_REF)
+    (argv,) = _gate_argvs_for(ORDINARY_PR)
     repo = _repo_with_batch(tmp_path, _adr("0003", "feature"))
     rc = _run_gate(argv, repo, fetch=lambda _pr: {"body": body}, changed=[GATED_PATH])
     assert rc == expected_rc
