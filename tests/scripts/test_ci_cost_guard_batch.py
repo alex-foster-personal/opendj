@@ -12,7 +12,7 @@ id, which is what makes re-pricing an overlap harmless.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -24,6 +24,7 @@ from scripts.ci_run_batch import (
     created_slices,
     fetch_completed_runs,
     last_successful_pass_start,
+    parse_time,
     runs_held_back,
 )
 
@@ -164,11 +165,44 @@ def test_listing_dedupes_the_inclusive_slice_boundary() -> None:
     assert len(runs) == len({run["id"] for run in runs}) == 299
 
 
-def test_listing_fails_closed_when_a_slice_reaches_the_result_cap() -> None:
-    now = datetime(2026, 9, 22, 1, 0, tzinfo=UTC)
+def _repo(created: list[datetime]) -> Callable[[str], dict]:
+    """A fake GET that behaves like GitHub's filtered listing: the runs created inside the
+    `created=A..B` range (inclusive), newest first, 100 per page, and nothing past the
+    1,000th result however many match."""
+
+    def get_json(url: str) -> dict:
+        query = re.search(r"&page=(\d+)&created=([0-9TZ:-]+)\.\.([0-9TZ:-]+)", url)
+        assert query, url
+        page = int(query.group(1))
+        start, stop = (parse_time(query.group(k)) for k in (2, 3))
+        matching = sorted(
+            (index for index, when in enumerate(created) if start <= when <= stop),
+            reverse=True,
+        )[:RESULT_CAP]
+        return {"workflow_runs": [{"id": i} for i in matching[(page - 1) * 100 : page * 100]]}
+
+    return get_json
+
+
+def test_a_saturated_slice_is_split_until_every_run_is_listed() -> None:
+    """if an hour holding more than 1,000 runs fails every pass then evidence stays stale
+    for good (Sol P1 on #3844): the slice is bisected instead"""
+    start = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
+    created = [start + timedelta(seconds=index * 1.44) for index in range(2500)]
+    now = start + timedelta(hours=1)
+    runs = fetch_completed_runs(
+        "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_repo(created)
+    )
+    assert {run["id"] for run in runs} == set(range(2500))
+
+
+def test_a_slice_still_saturated_at_one_second_fails_closed() -> None:
+    start = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
+    created = [start + timedelta(seconds=30)] * RESULT_CAP
     with pytest.raises(RuntimeError, match=str(RESULT_CAP)):
         fetch_completed_runs(
-            "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_pages(RESULT_CAP)
+            "o/r", "2026-09-22T00:00:00Z", "t", "test",
+            now=start + timedelta(hours=1), get_json=_repo(created),
         )
 
 
@@ -179,7 +213,7 @@ def _started(index: int) -> str:
     return f"2026-09-{29 - (index // 12):02d}T{12 - index % 12:02d}:00:00Z"
 
 
-def _passes(conclusions: list[str | None], this_run: int = 1) -> Callable[[str], dict]:
+def _passes(conclusions: Sequence[str | None], this_run: int = 1) -> Callable[[str], dict]:
     """Newest-first passes of the follower, 100 per page; pass i started i hours before
     12:00 on Tue 29 Sep, and id 1 is this pass. A None conclusion is still in flight."""
     runs = [
@@ -196,7 +230,9 @@ def _passes(conclusions: list[str | None], this_run: int = 1) -> Callable[[str],
         # if the history query carries a status (or any capped) filter then GitHub stops it
         # at 1,000 results and the true last success can sit past the end
         assert "status=" not in url and "created=" not in url and "per_page=100" in url, url
-        page = int(re.search(r"[?&]page=(\d+)", url).group(1))
+        query = re.search(r"[?&]page=(\d+)", url)
+        assert query, url
+        page = int(query.group(1))
         return {"workflow_runs": runs[(page - 1) * 100 : page * 100]}
 
     return get

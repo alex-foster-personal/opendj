@@ -14,7 +14,7 @@ The floor makes two passes overlap even if a pass is late; every follower must
 make re-applying an overlap harmless on its own terms.
 
     python3 -m scripts.ci_run_batch mark --repository o/r --workflow-file f.yml --this-run N
-    python3 -m scripts.ci_run_batch hold --repository o/r --watched "CI,E2E" --lookback-hours 6
+    python3 -m scripts.ci_run_batch census --repository o/r --watched "CI,E2E" --lookback-hours 6
 """
 
 from __future__ import annotations
@@ -96,33 +96,47 @@ def fetch_completed_runs(
     over a window wider than that silently drops the oldest runs, and with them
     a long-running completion the mark will step past (Codex P1 on #3844). So
     the window is listed one creation slice at a time, and a slice that reaches
-    the cap fails closed: a red pass re-reads the window, a lost record never
-    comes back. The boundary second belongs to both slices; runs are deduped
-    by id.
+    the cap is bisected and listed again, down to one second (Sol P1 on #3844:
+    a fixed slice that saturates would fail every pass from then on). Only a
+    one-second slice holding 1,000 runs fails the pass. Boundary seconds belong
+    to both neighbours; runs are deduped by id.
     """
     fetch = get_json or (lambda url: _get_json(url, token, agent))
     seen: dict[int, dict[str, Any]] = {}
-    for start, stop in created_slices(created_since, now or datetime.now(UTC), slice_width):
-        listed = 0
-        page = 1
-        while True:
-            payload = fetch(
-                f"https://api.github.com/repos/{repository}/actions/runs"
-                f"?status=completed&per_page=100&page={page}&created={start}..{stop}"
+    pending = list(reversed(created_slices(created_since, now or datetime.now(UTC), slice_width)))
+    while pending:
+        start, stop = pending.pop()
+        listed = _list_creation_slice(repository, start, stop, fetch)
+        if len(listed) < RESULT_CAP:
+            seen.update((int(run["id"]), run) for run in listed)
+            continue
+        width = parse_time(stop) - parse_time(start)
+        if width <= timedelta(seconds=1):
+            raise RuntimeError(
+                f"creation slice {start}..{stop} holds {RESULT_CAP} runs, GitHub's result "
+                "cap, and cannot be narrowed further; the listing would be truncated"
             )
-            batch = payload.get("workflow_runs") or []
-            listed += len(batch)
-            for run in batch:
-                seen[int(run["id"])] = run
-            if listed >= RESULT_CAP:
-                raise RuntimeError(
-                    f"creation slice {start}..{stop} reached GitHub's {RESULT_CAP}-result "
-                    "cap; the listing is truncated, narrow the slice"
-                )
-            if len(batch) < 100:
-                break
-            page += 1
+        middle = iso(parse_time(start) + timedelta(seconds=width.total_seconds() // 2))
+        pending.extend([(middle, stop), (start, middle)])
     return list(seen.values())
+
+
+def _list_creation_slice(
+    repository: str, start: str, stop: str, fetch: Callable[[str], dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Every page of one creation slice, stopping at the cap."""
+    listed: list[dict[str, Any]] = []
+    page = 1
+    while len(listed) < RESULT_CAP:
+        batch = fetch(
+            f"https://api.github.com/repos/{repository}/actions/runs"
+            f"?status=completed&per_page=100&page={page}&created={start}..{stop}"
+        ).get("workflow_runs") or []
+        listed.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return listed
 
 
 def last_successful_pass_start(
@@ -203,7 +217,9 @@ def runs_held_back(
     its floor; a pass that succeeded now would move the mark past that run's completion
     for good (Codex P1 on #3844: a job queued on a saturated pool is bounded by no
     timeout). A pass that finds one fails instead, the mark stays put, and the window
-    keeps the run in view until it completes.
+    keeps the run in view until it completes. The census is taken BEFORE the completed
+    listing: a run that completes between the two is then in one or the other, never in
+    neither (Codex and Sol P1s on #3844).
     """
     cutoff = now - lookback
     return sorted(
@@ -223,10 +239,12 @@ def main(argv: list[str] | None = None) -> int:
     mark.add_argument("--repository", required=True)
     mark.add_argument("--workflow-file", required=True)
     mark.add_argument("--this-run", type=int, required=True)
-    hold = commands.add_parser("hold", help="fail while a watched run outlives the lookback")
-    hold.add_argument("--repository", required=True)
-    hold.add_argument("--watched", required=True, help="comma-separated workflow names")
-    hold.add_argument("--lookback-hours", type=int, required=True)
+    census = commands.add_parser(
+        "census", help="count watched runs in flight since before the lookback (held=N)"
+    )
+    census.add_argument("--repository", required=True)
+    census.add_argument("--watched", required=True, help="comma-separated workflow names")
+    census.add_argument("--lookback-hours", type=int, required=True)
     args = parser.parse_args(argv)
     token = os.environ["GITHUB_TOKEN"]
     if args.command == "mark":
@@ -235,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(start)
         return 0
-    if args.command == "hold":
+    if args.command == "census":
         watched = {name.strip() for name in args.watched.split(",") if name.strip()}
         inflight = fetch_inflight_runs(args.repository, token, "ci-run-batch")
         held = runs_held_back(
@@ -245,10 +263,14 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"::error::run {run['id']} ({run['name']}, {run['status']}) was created "
                 f"{run['created_at']}, before the {args.lookback_hours}h lookback; this pass "
-                "fails so the mark stays and the next pass still lists it"
+                "will fail so the mark stays and the next pass still lists it"
             )
-        print(f"[hold] in_flight={len(inflight)} held={len(held)}")
-        return 1 if held else 0
+        print(f"[census] in_flight={len(inflight)} held={len(held)}")
+        output_file = os.environ.get("GITHUB_OUTPUT", "")
+        if output_file:
+            with open(output_file, "a", encoding="utf-8") as handle:
+                handle.write(f"held={len(held)}\n")
+        return 0
     raise AssertionError(f"unhandled command {args.command}")
 
 

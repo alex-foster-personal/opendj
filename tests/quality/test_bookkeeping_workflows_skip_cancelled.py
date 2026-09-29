@@ -50,7 +50,11 @@ def _cadence_minutes(cron: str) -> int:
 
 
 def _assert_batch_pass(
-    workflow: dict, job_name: str, workflow_file: str, lookback_floor_min: int
+    workflow: dict,
+    job_name: str,
+    workflow_file: str,
+    lookback_floor_min: int,
+    listing_step_id: str,
 ) -> None:
     """One scheduled pass, the mark read from GitHub's record of this workflow, overlap
     of at least two cadences, one concurrency group with no expression in it."""
@@ -62,11 +66,18 @@ def _assert_batch_pass(
     assert f"--workflow-file {workflow_file}" in mark["run"]
     assert "per_page" not in mark["run"] and "failure" not in mark["run"]
     # if the pass can succeed while a watched run older than the lookback is in flight
-    # then the mark steps past that run's completion and it is never listed again
-    hold = steps[-1]
-    assert "scripts.ci_run_batch hold" in hold["run"], "the hold is the pass's last step"
-    assert '--lookback-hours "$LOOKBACK_HOURS"' in hold["run"]
-    assert "if" not in hold and "continue-on-error" not in hold
+    # then the mark steps past that run's completion and it is never listed again; and if
+    # the census runs after the listing, a run completing between the two is in neither
+    ids = [step.get("id") for step in steps]
+    census = steps[ids.index("census")]
+    assert "scripts.ci_run_batch census" in census["run"]
+    assert '--lookback-hours "$LOOKBACK_HOURS"' in census["run"]
+    assert ids.index("census") < ids.index(listing_step_id), "census before the listing"
+    verdict = steps[-1]
+    assert "steps.census.outputs.held" in str(verdict.get("env")), "the last step reads it"
+    assert '[ "$HELD" = "0" ]' in verdict["run"]
+    for step in (census, verdict):
+        assert "if" not in step and "continue-on-error" not in step
     cadence = _cadence_minutes(workflow[True]["schedule"][0]["cron"])
     env = workflow["jobs"][job_name]["env"]
     assert int(env["OVERLAP_MINUTES"]) >= 2 * cadence
@@ -87,8 +98,9 @@ def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
     batch = next(step for step in job["steps"] if step.get("id") == "batch")
     assert "scripts.stable_evidence_batch" in batch["run"]
     assert "conclusion" not in batch["run"]
-    _assert_batch_pass(workflow, "append", "stable-evidence.yml", 240)
-    hold_env = workflow["jobs"]["append"]["steps"][-1]["env"]
+    _assert_batch_pass(workflow, "append", "stable-evidence.yml", 240, "batch")
+    census = next(s for s in workflow["jobs"]["append"]["steps"] if s.get("id") == "census")
+    hold_env = census["env"]
     names = {name for name in hold_env["WATCHED_WORKFLOWS"].split(",") if name}
     assert names == set(RECORDED_WORKFLOWS), "the hold watches exactly what the pass records"
 
@@ -130,4 +142,4 @@ def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:
     longest watched workflow timeout, or a run created before the mark and
     completed after it is never priced. E2E's extended job alone can run 45 + 30 min.
     """
-    _assert_batch_pass(_workflow(CI_COST_GUARD), "assess", "ci-cost-guard.yml", 120)
+    _assert_batch_pass(_workflow(CI_COST_GUARD), "assess", "ci-cost-guard.yml", 120, "guard")

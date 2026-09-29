@@ -141,6 +141,22 @@ jobs:
           echo "[mark] previous successful pass started at: ${previous:-none, using the overlap floor}"
           echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
 
+      # BEFORE the listing: a watched run still in flight that was created before the
+      # lookback would fall out of every later listing, so the pass must not move the
+      # mark past it. Taken first, a run completing mid-pass is in the census or in the
+      # listing, never in neither. One CI run spanned 6.0 h from creation to completion
+      # on Mon 28 Sep 2026. This step only counts; the pass's last step fails on it.
+      - name: Count recorded runs in flight since before the lookback
+        id: census
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WATCHED_WORKFLOWS: "CI,Full CI (on-demand),E2E,macOS Packaging"
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_run_batch census --repository "$REPOSITORY" \
+            --watched "$WATCHED_WORKFLOWS" --lookback-hours "$LOOKBACK_HOURS"
+
       - name: Append every recorded completion since the mark
         id: batch
         env:
@@ -158,16 +174,9 @@ jobs:
             --lookback-hours "$LOOKBACK_HOURS" \
             --written-by github-actions
 
-      # Last, so the pass's own work always lands first. A watched run still in flight that
-      # was created before the lookback would fall out of every later listing, so this pass
-      # fails instead of succeeding: the mark stays, and the next pass still lists it.
-      # One CI run spanned 6.0 h from creation to completion on Mon 28 Sep 2026.
-      - name: Hold the mark while a recorded run outlives the lookback
+      # Last, so the pass's own work always lands first.
+      - name: Fail while the census holds the mark
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          WATCHED_WORKFLOWS: "CI,Full CI (on-demand),E2E,macOS Packaging"
+          HELD: ${{ steps.census.outputs.held }}
         run: |
-          set -euo pipefail
-          python3 -m scripts.ci_run_batch hold --repository "$REPOSITORY" \
-            --watched "$WATCHED_WORKFLOWS" --lookback-hours "$LOOKBACK_HOURS"
+          [ "$HELD" = "0" ] || { echo "::error::held=${HELD:-unmeasured}; the mark stays until those runs complete"; exit 1; }
