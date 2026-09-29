@@ -45,6 +45,10 @@ const CMD_SLOTS: usize = 1024;
 const DRAIN_LIMIT: Duration = Duration::from_secs(2);
 /// How long shutdown waits for loads still decoding; after that they and the
 /// work queued behind them are refused, so each still gets a result.
+/// The most work one deck may park behind its pending load, the same bound
+/// as the mailbox: past it a command is refused as the mailbox refuses one.
+const QUEUE_SLOTS: usize = CMD_SLOTS;
+
 const LOAD_DRAIN_LIMIT: Duration = Duration::from_secs(5);
 
 fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
@@ -196,6 +200,8 @@ impl AudioSide {
         // than the interval (1024 frames at 8 kHz, a large device buffer)
         // publishes once per interval it spans, each at its own frame.
         let mut done = 0;
+        // Whether a state went out at the end of this block (not merely was
+        // due: a full ring drops it).
         let mut published_at_end = false;
         while done < n {
             let to_boundary = self.frames_per_state.saturating_sub(self.frames_since_state).max(1);
@@ -205,24 +211,26 @@ impl AudioSide {
             self.frames_since_state += chunk as u64;
             published_at_end = false;
             if self.frames_since_state >= self.frames_per_state {
-                self.publish(now_ns, done);
-                published_at_end = true;
+                published_at_end = self.publish(now_ns, done);
             }
         }
         // A state the control side asked for (after a load or a command
-        // that wants one) goes out at the end of the block, once.
-        if self.state_req.swap(false, Ordering::Relaxed) && !published_at_end {
-            self.publish(now_ns, n);
+        // that wants one) goes out at the end of the block, once. With the
+        // state ring full (stdout slow) the request stays armed for the next
+        // block, so an `engine_state` answered ok always gets its state.
+        if self.state_req.swap(false, Ordering::Relaxed) && !published_at_end && !self.publish(now_ns, n) {
+            self.state_req.store(true, Ordering::Relaxed);
         }
         &self.scratch[..n * 2]
     }
 
     /// Publish the engine's state as of `frames_in` frames into this block,
     /// heard at `now_ns` (now plus the clock's lead) plus those frames.
-    fn publish(&mut self, now_ns: u64, frames_in: usize) {
+    /// False when the state ring is full and the state was dropped.
+    fn publish(&mut self, now_ns: u64, frames_in: usize) -> bool {
         self.frames_since_state = 0;
         let in_ns = frames_in as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
-        let _ = self.state_tx.push((self.engine.snapshot(), now_ns + in_ns));
+        self.state_tx.push((self.engine.snapshot(), now_ns + in_ns)).is_ok()
     }
 }
 
@@ -233,6 +241,9 @@ enum Msg {
     /// The audio side returned. Before `stop` is set that means it failed to
     /// start or died, e.g. the output device would not open.
     AudioExited,
+    /// A write to the output failed: whoever reads results and state is gone,
+    /// so nothing the engine does can be reported any more.
+    OutputClosed,
 }
 
 /// Work parked behind a deck's pending load.
@@ -261,7 +272,9 @@ struct Control {
 impl Control {
     fn reply(&self, id: Option<&Value>, res: Result<(), ProtoError>) {
         let mut o = self.out.lock().unwrap();
-        let _ = send(&mut *o, &protocol::result_json(id, &res));
+        if send(&mut *o, &protocol::result_json(id, &res)).is_err() {
+            let _ = self.msg_tx.send(Msg::OutputClosed);
+        }
     }
 
     fn seq(&mut self, id: Option<Value>) -> u64 {
@@ -294,27 +307,43 @@ impl Control {
         }
     }
 
-    fn queue_for(&mut self, deck: DeckId) -> Option<&mut VecDeque<Queued>> {
-        self.waiting[deck as usize - 1].as_mut()
+    /// Park `item` behind the deck's pending load, if it has one. Returns
+    /// the item back when the deck has no load pending, so it runs now.
+    fn park(&mut self, deck: DeckId, item: Queued) -> Option<Queued> {
+        let Some(q) = self.waiting[deck as usize - 1].as_mut() else { return Some(item) };
+        if q.len() < QUEUE_SLOTS {
+            q.push_back(item);
+        } else {
+            let (Queued::Cmd(id, _) | Queued::Load(id, _)) = item;
+            self.reply(
+                id.as_ref(),
+                Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    format!("engine mailbox is full ({QUEUE_SLOTS} commands wait on deck {deck}'s load); command dropped"),
+                )),
+            );
+        }
+        None
     }
 
     fn dispatch(&mut self, id: Option<Value>, cmd: EngineCmd) {
-        if let Some(d) = Self::deck_of(&cmd) {
-            if let Some(q) = self.queue_for(d) {
-                q.push_back(Queued::Cmd(id, cmd));
-                return;
-            }
-        }
+        let (id, cmd) = match Self::deck_of(&cmd) {
+            Some(d) => match self.park(d, Queued::Cmd(id, cmd)) {
+                Some(Queued::Cmd(id, cmd)) => (id, cmd),
+                _ => return,
+            },
+            None => (id, cmd),
+        };
         let seq = self.seq(id);
         let _ = self.push_seq(seq, cmd);
     }
 
     fn load(&mut self, id: Option<Value>, spec: LoadSpec) {
         let deck = spec.deck;
-        if let Some(q) = self.queue_for(deck) {
-            q.push_back(Queued::Load(id, spec));
-            return;
-        }
+        let (id, spec) = match self.park(deck, Queued::Load(id, spec)) {
+            Some(Queued::Load(id, spec)) => (id, spec),
+            _ => return,
+        };
         let seq = self.seq(id);
         self.waiting[deck as usize - 1] = Some(VecDeque::new());
         self.loading[deck as usize - 1] = Some(seq);
@@ -480,26 +509,37 @@ fn serve_threaded_from(
     let pump_stop_flag = pump_stop.clone();
     let pump_out = out.clone();
     let pump_ids = ids.clone();
-    let pump = std::thread::spawn(move || loop {
-        let mut idle = true;
-        while let Ok((seq, r)) = res_rx.pop() {
-            idle = false;
-            let id = pump_ids.lock().unwrap().remove(&seq).flatten();
-            let res = r.map(drop).map_err(ProtoError::from);
-            let mut o = pump_out.lock().unwrap();
-            let _ = send(&mut *o, &protocol::result_json(id.as_ref(), &res));
-        }
-        while let Ok((snap, heard_ns)) = state_rx.pop() {
-            idle = false;
-            let mut o = pump_out.lock().unwrap();
-            let host = HostTime { heard_ns, sent_ns: epoch.elapsed().as_nanos() as u64 };
-            let _ = send(&mut *o, &protocol::state_json(&snap, Some(host)));
-        }
-        if pump_stop_flag.load(Ordering::Relaxed) && idle {
-            break;
-        }
-        if idle {
-            std::thread::sleep(Duration::from_millis(2));
+    let pump_tx = msg_tx.clone();
+    let pump = std::thread::spawn(move || {
+        // Once a write fails the engine is stopping; the pump keeps draining
+        // (retired tracks are still freed here, off the audio thread) but
+        // writes nothing more.
+        let mut closed = false;
+        let mut write = |v: &Value| {
+            if !closed && send(&mut *pump_out.lock().unwrap(), v).is_err() {
+                closed = true;
+                let _ = pump_tx.send(Msg::OutputClosed);
+            }
+        };
+        loop {
+            let mut idle = true;
+            while let Ok((seq, r)) = res_rx.pop() {
+                idle = false;
+                let id = pump_ids.lock().unwrap().remove(&seq).flatten();
+                let res = r.map(drop).map_err(ProtoError::from);
+                write(&protocol::result_json(id.as_ref(), &res));
+            }
+            while let Ok((snap, heard_ns)) = state_rx.pop() {
+                idle = false;
+                let host = HostTime { heard_ns, sent_ns: epoch.elapsed().as_nanos() as u64 };
+                write(&protocol::state_json(&snap, Some(host)));
+            }
+            if pump_stop_flag.load(Ordering::Relaxed) && idle {
+                break;
+            }
+            if idle {
+                std::thread::sleep(Duration::from_millis(2));
+            }
         }
     });
 
@@ -530,6 +570,7 @@ fn serve_threaded_from(
         tracks: Arc::default(),
     };
     let mut audio_failed = false;
+    let mut output_closed = false;
     while let Ok(msg) = msg_rx.recv() {
         match msg {
             Msg::Line(l) => {
@@ -544,19 +585,30 @@ fn serve_threaded_from(
                 audio_failed = true;
                 break;
             }
+            // Nobody hears results any more: stop rather than keep playing
+            // and applying commands whose outcome is thrown away.
+            Msg::OutputClosed => {
+                output_closed = true;
+                break;
+            }
         }
     }
     // Loads still decoding hold their own result and the work parked behind
     // them. Finish them (which releases that work to the mailbox), bounded;
     // whatever is still pending after that is refused. A dead audio side
-    // would never apply any of it, so it is refused at once.
-    if !audio_failed {
+    // would never apply any of it, so it is refused at once, and with the
+    // output closed nothing is waited for.
+    if !audio_failed && !output_closed {
         let deadline = Instant::now() + LOAD_DRAIN_LIMIT;
         while control.loads_pending() {
             match msg_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                 Ok(Msg::Decoded { seq, deck, result }) => control.finish_load(seq, deck, result),
                 Ok(Msg::AudioExited) => {
                     audio_failed = true;
+                    break;
+                }
+                Ok(Msg::OutputClosed) => {
+                    output_closed = true;
                     break;
                 }
                 // Nothing sent after shutdown or EOF is taken.
@@ -568,8 +620,9 @@ fn serve_threaded_from(
     control.refuse_pending();
     // Let the audio side apply everything already queued before stopping,
     // so every command sent before shutdown or EOF gets its result. A dead
-    // audio side never drains, so it is not waited on.
-    if !audio_failed {
+    // audio side never drains, so it is not waited on, and neither is one
+    // whose results nobody reads.
+    if !audio_failed && !output_closed {
         let deadline = Instant::now() + DRAIN_LIMIT;
         while control.cmd_tx.slots() < CMD_SLOTS && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(1));
@@ -590,6 +643,9 @@ fn serve_threaded_from(
     }
     if audio_failed {
         return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));
+    }
+    if output_closed {
+        return Err(io::Error::new(io::ErrorKind::BrokenPipe, "the output closed, so the engine stopped"));
     }
     Ok(())
 }
@@ -694,6 +750,35 @@ mod tests {
     }
 
     #[test]
+    fn a_requested_state_waits_for_room_in_a_full_state_ring() {
+        // Codex on 00209c94: with stdout slow and the state ring full, the
+        // requested state was dropped and the request cleared, so an
+        // `engine_state` answered ok never got its state.
+        let (mut side, _cmd, _res, mut states) = side_at(8000, u64::MAX, 4);
+        while side.state_tx.push((side.engine.snapshot(), 0)).is_ok() {}
+        side.state_req.store(true, Ordering::Relaxed);
+        side.process(100);
+        assert!(side.state_req.load(Ordering::Relaxed), "the request was cleared with its state dropped");
+        assert_eq!(drain(&mut states).len(), 64);
+        // The ring drained, the next block sends it, and then it is spent.
+        side.process(100);
+        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![200]);
+        assert!(!side.state_req.load(Ordering::Relaxed));
+        side.process(100);
+        assert!(drain(&mut states).is_empty(), "the request outlived its state");
+        // Likewise when the block's own periodic state is the one dropped.
+        let per = 100;
+        let (mut side, _cmd, _res, mut states) = side_at(8000, per, 4);
+        while side.state_tx.push((side.engine.snapshot(), 0)).is_ok() {}
+        side.state_req.store(true, Ordering::Relaxed);
+        side.process(100);
+        assert!(side.state_req.load(Ordering::Relaxed), "a dropped periodic state satisfied the request");
+        drain(&mut states);
+        side.process(50);
+        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![150]);
+    }
+
+    #[test]
     fn a_full_result_ring_holds_commands_back_instead_of_dropping_results() {
         let (mut side, mut cmd_tx, mut res_rx) = side(2);
         for seq in 0..5 {
@@ -768,6 +853,122 @@ mod tests {
             .unwrap_or_else(|| panic!("no result for the stranded command:\n{text}"));
         assert_eq!(result["ok"], false, "{result}");
         assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
+    }
+
+    /// Output that works until `fail` is set, then refuses every write, as
+    /// stdout does once its reader has gone.
+    #[derive(Clone, Default)]
+    struct Closable {
+        text: Captured,
+        fail: Arc<AtomicBool>,
+    }
+
+    impl Write for Closable {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.fail.load(Ordering::Relaxed) {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            self.text.write(b)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_closed_output_stops_the_engine() {
+        // Codex on 00209c94: with stdout's reader gone and stdin still open,
+        // the engine kept applying commands and dropping every result.
+        // Either writer may meet the closed output first: the pump (a result
+        // or a state from a running audio side) or the control side (a reply
+        // it writes itself, here to a malformed line).
+        for (line, audio_runs) in [(r#"{"id": 1, "cmd": {"type": "crossfader", "value": 0.5}}"#, true), ("not json", false)] {
+            let (reader, mut writer) = io::pipe().unwrap();
+            let out = Closable::default();
+            let (tx, rx) = mpsc::channel();
+            let (o, audio_stopped) = (out.clone(), Arc::new(AtomicBool::new(false)));
+            let stopped = audio_stopped.clone();
+            std::thread::spawn(move || {
+                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", move |mut side, stop| {
+                    while !stop.load(Ordering::Relaxed) {
+                        if audio_runs {
+                            side.process(64);
+                        }
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    stopped.store(true, Ordering::Relaxed);
+                });
+                let _ = tx.send(r);
+            });
+            // Control: a working output keeps a session with stdin open going.
+            writeln!(writer, "{line}").unwrap();
+            assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "{line}: serve ended with its output working");
+            assert!(String::from_utf8(out.text.0.lock().unwrap().clone()).unwrap().contains(r#""type":"result""#));
+            out.fail.store(true, Ordering::Relaxed);
+            writeln!(writer, "{line}").unwrap();
+            let r = rx.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|_| panic!("{line}: serve kept running with its output closed"));
+            assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe, "{line}");
+            assert!(audio_stopped.load(Ordering::Relaxed), "{line}: the audio side was left running");
+            drop(writer);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn work_parked_behind_a_pending_load_is_bounded_like_the_mailbox() {
+        // Codex on 00209c94: commands for a deck whose load is still decoding
+        // queued without limit. The load reads a FIFO nobody writes to yet,
+        // so it stays pending until the test lets it fail.
+        let dir = std::env::temp_dir().join(format!("odj-serve-parked-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("slow.wav");
+        let _ = std::fs::remove_file(&fifo);
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let (reader, mut writer) = io::pipe().unwrap();
+        let out = Captured::default();
+        let (tx, rx) = mpsc::channel();
+        let o = out.clone();
+        std::thread::spawn(move || {
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", |mut side, stop| {
+                while !stop.load(Ordering::Relaxed) {
+                    side.process(64);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            });
+            let _ = tx.send(r);
+        });
+        let results = || -> Vec<Value> {
+            let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+            text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
+        };
+        writeln!(writer, "{}", serde_json::json!({"id": "load", "cmd": {"type": "load", "deck": 1, "path": fifo}})).unwrap();
+        let extra = 50;
+        for i in 0..QUEUE_SLOTS + extra {
+            writeln!(writer, "{}", serde_json::json!({"id": i, "cmd": {"type": "fader", "deck": 1, "value": 0.5}})).unwrap();
+        }
+        // Past the bound, each is refused at once, while the load still waits.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while results().len() < extra && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let early = results();
+        assert_eq!(early.len(), extra, "{early:?}");
+        for r in &early {
+            let i = r["id"].as_u64().unwrap() as usize;
+            assert!(i >= QUEUE_SLOTS, "{r}");
+            assert!(r["error"]["message"].as_str().unwrap().contains("engine mailbox is full"), "{r}");
+        }
+        // Control: the first QUEUE_SLOTS stayed parked, and when the load
+        // fails (the FIFO opened and closed with nothing in it) each of them
+        // is refused as waiting on it, not as a full mailbox.
+        drop(std::fs::OpenOptions::new().write(true).open(&fifo).unwrap());
+        drop(writer);
+        rx.recv_timeout(Duration::from_secs(20)).expect("serve hung").unwrap();
+        let all = results();
+        assert_eq!(all.len(), QUEUE_SLOTS + extra + 1, "one result per command");
+        let waited = all.iter().filter(|r| r["error"]["message"].as_str().is_some_and(|m| m.contains("waited on failed"))).count();
+        assert_eq!(waited, QUEUE_SLOTS);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
