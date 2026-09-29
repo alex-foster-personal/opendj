@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 8
+SCHEMA_VERSION: int = 9
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -322,6 +322,30 @@ _SYNC_INFRA: tuple[str, ...] = (
     # idx_local_changelog_table.
     "CREATE INDEX IF NOT EXISTS idx_hub_changelog_table "
     "ON hub_changelog(table_name, row_pk)",
+)
+
+
+# ==========================================================================
+# DOMAIN: CloudSync per-table write tokens (legacy v20, issue #4396)
+# Legacy source: apps/shared/state/migrations_v20.py. Its own rung, not an
+# append to _SYNC_INFRA/_V1: an install already stamped at v1 never re-runs
+# rung 1 (see the _V2 docstring below), so appending here would leave the
+# table absent on every pre-existing consolidated install.
+#
+# Only the table is mirrored, not the write-token TRIGGERS
+# (apps.shared.state.migrations_v20.EXPECTED_TRIGGERS) or their seed INSERTs:
+# the table/index equivalence gate (tests/engine_core/test_store_schema.py)
+# this module is checked against does not compare triggers, and unlike this
+# domain's CREATE TABLE the trigger CREATEs and seed INSERTs are not safely
+# re-runnable on an already-adopted DB (no CREATE TRIGGER IF NOT EXISTS twin
+# here, and a seed INSERT would collide with rows the legacy ladder already
+# wrote). They stay out of this dormant consolidation target until it
+# actually needs them.
+# ==========================================================================
+
+_SYNC_WRITE_TOKENS: tuple[str, ...] = (
+    "CREATE TABLE IF NOT EXISTS sync_write_tokens ( table_name TEXT PRIMARY "
+    "KEY, token BLOB NOT NULL ) WITHOUT ROWID",
 )
 
 
@@ -1077,6 +1101,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "settings": _SETTINGS,
     "dedup": _DEDUP,
     "launcher": _LAUNCHER,
+    "sync_write_tokens": _SYNC_WRITE_TOKENS,
 }
 """Every DURABLE consolidated domain -> its DDL statements, in creation order.
 
@@ -1111,6 +1136,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "dedup": "apps/dedup/schema.py",
     "caches": "apps/shared/fingerprints.py + apps/shared/hashing.py",
     "launcher": "apps/launcher/scripts/bootstrap_db.py",
+    "sync_write_tokens": "apps/shared/state/migrations_v20.py",
 }
 """Domain -> the legacy file its DDL was lifted from, verbatim.
 
@@ -1173,6 +1199,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),
     "launcher": ("tracks_fts", "tracks_frecency"),
+    "sync_write_tokens": ("sync_write_tokens",),
 }
 """Durable domain -> the tables it owns. ``schema_meta`` is excluded on
 purpose: it is migration infrastructure, created by the runner, not domain
@@ -1200,7 +1227,7 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 _POST_V1_DOMAINS: frozenset[str] = frozenset(
     {
         "native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback",
-        "path_index",
+        "path_index", "sync_write_tokens",
     }
 )
 
@@ -1269,7 +1296,14 @@ _V8: list[str] = [
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v7 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8]
+_V9: list[str] = list(_SYNC_WRITE_TOKENS)
+"""8 -> 9: sync_write_tokens, the CloudSync digest gate's per-table write
+token (legacy ladder v20, issue #4396).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v8 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
