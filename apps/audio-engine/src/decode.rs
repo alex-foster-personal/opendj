@@ -58,6 +58,9 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
     let mut pcm: Vec<f32> = Vec::new();
     let mut scratch: Vec<f32> = Vec::new();
     let mut sample_rate = 0u32;
+    // Silence stands in for a corrupt packet only around real audio: a file
+    // none of whose packets decode is undecodable, not a silent track.
+    let mut decoded_any = false;
     loop {
         let packet = match end_or_packet(format.next_packet()) {
             Ok(Some(p)) => p,
@@ -86,6 +89,7 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
             }
             Err(e) => return Err(dec_err("decode error in", &e)),
         };
+        decoded_any = true;
         let spec = buf.spec();
         lock_rate(&mut sample_rate, spec.rate()).map_err(|m| ProtoError::new(ErrorCode::Decode, format!("{m} in {}", path.display())))?;
         let ch = spec.channels().count();
@@ -101,6 +105,9 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
             pcm.push(l);
             pcm.push(r);
         }
+    }
+    if !decoded_any {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
     }
     if sample_rate == 0 || pcm.is_empty() {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));

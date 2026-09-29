@@ -331,11 +331,17 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             };
             apply(EngineCmd::Loop { deck, bounds_ms: bounds })
         }
-        "beat_loop" => apply(EngineCmd::BeatLoop {
-            deck: deck_of(o, ty)?,
-            beats: beat_count(o, ty, false)?,
-            start_ms: opt_num(o, ty, "start_ms")?,
-        }),
+        "beat_loop" => {
+            let deck = deck_of(o, ty)?;
+            let beats = beat_count(o, ty, false)?;
+            // As the page's parser: an anchor before the track is refused,
+            // not taken as the first beat.
+            let start_ms = opt_num(o, ty, "start_ms")?;
+            if let Some(s) = start_ms.filter(|s| *s < 0.0) {
+                return Err(invalid(format!("beat_loop.start_ms must be >= 0, got {s}")));
+            }
+            apply(EngineCmd::BeatLoop { deck, beats, start_ms })
+        }
         "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: beat_count(o, ty, true)? }),
         "tempo" => apply(EngineCmd::Tempo { deck: deck_of(o, ty)?, ratio: num(o, ty, "ratio")? }),
         "pitch_range" => apply(EngineCmd::PitchRange { deck: deck_of(o, ty)?, range: num(o, ty, "range")? }),
@@ -582,6 +588,16 @@ mod tests {
             let e = cmd(json!({"type": ty, "deck": 1, "beats": beats})).unwrap_err();
             assert_eq!(e.code, ErrorCode::Invalid, "{ty} {beats}");
             assert!(e.message.contains(&format!("{ty}.beats")), "{}", e.message);
+        }
+        // An anchor before the track is refused, as the page's parser does;
+        // 0 and no anchor are fine (controls).
+        let e = cmd(json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": -0.5})).unwrap_err();
+        assert!(e.message.contains("beat_loop.start_ms"), "{}", e.message);
+        for start in [json!(0), Value::Null] {
+            assert!(
+                matches!(cmd(json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": start})), Ok(Command::Apply(EngineCmd::BeatLoop { .. }))),
+                "{start}"
+            );
         }
         // Control: the bound itself still reaches the engine, either way.
         assert!(matches!(
