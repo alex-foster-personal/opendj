@@ -32,6 +32,7 @@ import json
 import re
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from scripts.review_gh import TriageError, _gh
@@ -126,10 +127,7 @@ class Finding:
             f"(https://img.shields.io/badge/{self.severity}-{color}?style=flat)"
         )
         return (
-            f"{badge}\n"
-            f"{self.verdict} {self.severity}: {self.title}\n\n"
-            f"{self.detail}\n\n"
-            f"{marker}\n"
+            f"{badge}\n{self.verdict} {self.severity}: {self.title}\n\n{self.detail}\n\n{marker}\n"
         )
 
 
@@ -274,14 +272,42 @@ def diff_of(pr: str) -> str:
 # diff (ci.yml "Contract drift - openapi.json" and "Contract drift - TS
 # client"), so nothing here is unread by a mechanical check; it is only
 # unread by the LLM reviewers, which is what this set exists to declare.
-GENERATED_DATA_PATHS: frozenset[str] = frozenset({
-    ".test_durations",
-    "apps/webui/openapi.json",
-    "apps/webui/frontend/src/lib/api-types.ts",
-})
-_FILE_HEADER = re.compile(
-    r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$'
+GENERATED_DATA_PATHS: frozenset[str] = frozenset(
+    {
+        ".test_durations",
+        "apps/webui/openapi.json",
+        "apps/webui/frontend/src/lib/api-types.ts",
+    }
 )
+# Files generated only BETWEEN markers, mapped to the test for one changed line of that
+# generated output. docs/perf/performance-register.md renders its flag table from
+# docs/perf/register.d/ fragments, and `python -m scripts.perf_register --check` pins that
+# block byte for byte, but the aspect register and prose around it are hand-written and no
+# check reads them. So its section is dropped only when EVERY changed line is flag-table
+# output; one hand-written line keeps the whole section reviewed. The fragments themselves,
+# 0000-before-fragments.md included, are hand-written rows and are never skipped.
+_PERF_FLAG_ROW = re.compile(r"^\| (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2} \d{4} \|")
+_PERF_FLAG_TABLE_LINES = frozenset(
+    {
+        "| Date | Agent / PR | Aspect | Flag | Triage |",
+        "|------|------------|--------|------|--------|",
+        "<!-- END GENERATED -->",
+    }
+)
+
+
+def _is_perf_flag_table_line(text: str) -> bool:
+    return (
+        bool(_PERF_FLAG_ROW.match(text))
+        or text in _PERF_FLAG_TABLE_LINES
+        or text.startswith("<!-- BEGIN GENERATED: rows from docs/perf/register.d/")
+    )
+
+
+GENERATED_BLOCK_PATHS: dict[str, Callable[[str], bool]] = {
+    "docs/perf/performance-register.md": _is_perf_flag_table_line,
+}
+_FILE_HEADER = re.compile(r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$')
 _FILE_HEADER_QUOTED = re.compile(r'^diff --git "a/([^"]+)" "b/([^"]+)"$')
 
 
@@ -303,9 +329,7 @@ def reviewed_paths_in_diff(diff: str) -> frozenset[str]:
             continue
         parsed = _parse_file_header(line)
         if not parsed:
-            raise TriageError(
-                f"unparsed diff header (refusing to guess skip state): {line!r}"
-            )
+            raise TriageError(f"unparsed diff header (refusing to guess skip state): {line!r}")
         paths.add(parsed[1])
     return frozenset(paths)
 
@@ -330,9 +354,13 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
     skipped_paths: set[str] = set()
     section: list[str] = []
     skipping = False
+    block_line: Callable[[str], bool] | None = None
 
     def flush() -> None:
         nonlocal section, skipping
+        if section and block_line is not None and _only_generated_changes(section, block_line):
+            skipping = True
+            skipped_paths.add(section_path)
         if section and not skipping:
             kept.extend(section)
         section = []
@@ -342,15 +370,12 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
             flush()
             parsed = _parse_file_header(line)
             if not parsed:
-                raise TriageError(
-                    f"unparsed diff header (refusing to guess skip state): {line!r}"
-                )
+                raise TriageError(f"unparsed diff header (refusing to guess skip state): {line!r}")
             a_path, b_path = parsed
             section = [line]
-            skipping = (
-                a_path == b_path
-                and b_path in GENERATED_DATA_PATHS
-            )
+            section_path = b_path
+            skipping = a_path == b_path and b_path in GENERATED_DATA_PATHS
+            block_line = GENERATED_BLOCK_PATHS.get(b_path) if a_path == b_path else None
             if skipping:
                 skipped_paths.add(b_path)
         else:
@@ -358,6 +383,15 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
 
     flush()
     return "\n".join(kept), frozenset(skipped_paths)
+
+
+def _only_generated_changes(section: list[str], is_generated: Callable[[str], bool]) -> bool:
+    """True when the section has hunks and every changed line in them is generated output."""
+    hunks = section[
+        next((i for i, line in enumerate(section) if line.startswith("@@")), len(section)) :
+    ]
+    changed = [line[1:] for line in hunks if line[:1] in ("+", "-")]
+    return bool(changed) and all(is_generated(text) for text in changed)
 
 
 def reviewable_diff(pr: str) -> tuple[str, list[str]]:
@@ -372,7 +406,7 @@ def unreviewed_note(dropped: list[str]) -> list[str]:
     return [
         "",
         f"Not reviewed: {names}, generated data that CI validates mechanically "
-        "(scripts/review_lane.py GENERATED_DATA_PATHS).",
+        "(scripts/review_lane.py GENERATED_DATA_PATHS, GENERATED_BLOCK_PATHS).",
     ]
 
 
