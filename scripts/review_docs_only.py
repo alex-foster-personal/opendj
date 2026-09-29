@@ -25,23 +25,26 @@ this module parses ci.yml directly through
 "Is this PR docs-only" is defined as "would CI's own pull_request trigger
 fire for these files", which is definitionally the question ci.yml answers,
 so the two cannot drift the way two independently maintained lists could.
+
+Since issue #4168 ci.yml triggers on every pull request and scopes the run from
+its own `scope` job, so the list itself lives in `scripts/ci_pr_scope.py`.
+`WorkflowCatalog` reads it from there for ci.yml, which keeps this module's
+answer identical to what that job decides.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from scripts.ci_wait_workflows import (
-    WorkflowCatalog,
-    default_workflows_dir,
-    workflow_would_run_for_files,
-)
+from scripts.ci_pr_scope import workflow_would_run_for_files
+from scripts.ci_wait_workflows import WorkflowCatalog, default_workflows_dir
 
-#: The workflow whose `pull_request.paths` filter defines "docs-only" for the
-#: whole repo. If this file stops declaring a `paths:` filter (e.g. someone
-#: switches it to `paths-ignore`, which `WorkflowCatalog` also parses but this
-#: module does not read), `_ci_pull_request_paths` raises rather than silently
-#: treating every PR as requiring CI or as docs-only.
+#: The workflow whose pull-request `paths` scope defines "docs-only" for the
+#: whole repo (its in-run scope in `scripts/ci_pr_scope.py`, surfaced by
+#: `WorkflowCatalog`). If that scope stops being a `paths` list (e.g. someone
+#: switches it to `paths-ignore`, which this module does not read),
+#: `_ci_pull_request_paths` raises rather than silently treating every PR as
+#: requiring CI or as docs-only.
 CI_WORKFLOW_FILE = "ci.yml"
 
 

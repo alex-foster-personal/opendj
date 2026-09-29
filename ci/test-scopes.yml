@@ -15,6 +15,9 @@ full_triggers:
   - "pyproject.toml"
   - "uv.lock"
   - "requirements.txt"
+  # The CI venv is synced from these locks (scripts/ci_lock.py, issue #4252).
+  - "requirements-*.in"
+  - "pylock.*.toml"
   - "justfile"
   - "conftest.py"
   - "**/conftest.py"

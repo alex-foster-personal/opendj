@@ -133,8 +133,9 @@ def open_rw(
     later opens constant-time.
 
     After migrations and machine-id backfill,
-    :func:`apps.database.regenerate_agents_md_if_writable` regenerates
-    ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs
+    :func:`apps.shared.state.agents_md_cache.regenerate_agents_md_cached`
+    regenerates ``<state_dir>/AGENTS.md`` when the state directory is
+    writable and the sidecar is not already current for this schema; a docs
     gap on an owned table
     (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
     still fails the open. Leftover tables that are not in
@@ -160,8 +161,9 @@ def open_rw(
         if apply_schema:
             _schema.apply_migrations(conn)
             _sync_stamp.backfill_local_machine_id(conn)
-            from apps.database import regenerate_agents_md_if_writable
-            regenerate_agents_md_if_writable(
+            from apps.shared.state.agents_md_cache import regenerate_agents_md_cached
+
+            regenerate_agents_md_cached(
                 conn,
                 target.parent,
                 owned_tables=_schema.ALL_KNOWN_TABLES,
