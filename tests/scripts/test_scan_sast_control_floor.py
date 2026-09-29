@@ -36,6 +36,7 @@ from tests.scripts.sast_control_fixtures import (
 
 SECSCAN = ROOT / "scripts" / "security" / "secscan.py"
 
+
 # ----- helpers -----------------------------------------------------------------------------------
 def _fixture_repo(tmp_path: Path, extra_tracked: dict[str, str] | None = None) -> Path:
     """The shared scan repo plus any extra tracked files, then a docs-only diff on top.
