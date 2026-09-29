@@ -133,13 +133,40 @@ test('performance: drag library row onto deck loads track and Space toggles play
 	expect(pageErrors, 'drag and Space must not surface page or console errors').toEqual([]);
 });
 
-test('performance: Space on library with no loaded deck does not scroll the table', async ({ page }) => {
+function assertAllDecksUnloadedAndStopped(
+	decks: Record<number, { stable_id: string | null; playing: boolean }>
+): void {
+	for (const deck of Object.values(decks)) {
+		expect(deck.stable_id, 'deck must be unloaded before Space no-op check').toBeNull();
+		expect(deck.playing, 'deck must be stopped before Space no-op check').toBe(false);
+	}
+}
+
+test('performance: Space on library with no loaded deck does not scroll the table', async ({
+	page
+}) => {
 	await page.goto('/performance');
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
+		timeout: 60_000
+	});
 	const tableWrap = page.locator('.table-wrap');
 	await expect(tableWrap).toBeVisible({ timeout: 60_000 });
-	await tableWrap.click();
+
+	const trackRow = page.locator(`${TRACK_ROW}[tabindex="0"]`).first();
+	await expect(trackRow).toBeVisible({ timeout: 60_000 });
+
+	const beforeSpace = await page.evaluate(() => window.musicDjToolsPerformance!.query());
+	assertAllDecksUnloadedAndStopped(beforeSpace.decks);
+
+	await trackRow.focus();
+	await expect(trackRow).toBeFocused();
+
 	const scrollBefore = await tableWrap.evaluate((el) => el.scrollTop);
 	await page.keyboard.press('Space');
-	const scrollAfter = await tableWrap.evaluate((el) => el.scrollTop);
-	expect(scrollAfter).toEqual(scrollBefore);
+	await expect
+		.poll(async () => tableWrap.evaluate((el) => el.scrollTop), { timeout: 5_000 })
+		.toBe(scrollBefore);
+
+	const afterSpace = await page.evaluate(() => window.musicDjToolsPerformance!.query());
+	assertAllDecksUnloadedAndStopped(afterSpace.decks);
 });

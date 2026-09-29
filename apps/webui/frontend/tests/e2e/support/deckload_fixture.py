@@ -794,6 +794,7 @@ def _ensure_rescue_artwork_embedded(audio_dir: Path) -> None:
     command = [
         "uv",
         "run",
+        "--no-sync",
         "--extra",
         "tags",
         "python",
