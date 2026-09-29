@@ -157,6 +157,22 @@ fn plan_errors_name_the_event() {
         {"at": {"ms": 300}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
     let out = render_plan_files(&parse_plan(&later).unwrap(), &d).unwrap();
     assert_eq!(out.frames, 48000 * 800 / 1000);
+    // But an event due only after the render budget ends cannot fire in it,
+    // so it does not keep a stuck render going to max_ms either (Codex's
+    // case: the play at frame u64::MAX).
+    for at in [json!({"frame": u64::MAX}), json!({"ms": 2001})] {
+        let beyond = json!({"end": {"deck": 1, "position_ms": 1000}, "max_ms": 2000, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+            {"at": at, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
+        let e = render_plan_files(&parse_plan(&beyond).unwrap(), &d).err().unwrap();
+        assert!(e.message.contains("never be reached: at 0 ms"), "{at}: {}", e.message);
+    }
+    // Control: an event due exactly at the budget still fires on that frame,
+    // and here it moves the deck onto the end.
+    let edge = json!({"end": {"deck": 1, "position_ms": 1000}, "max_ms": 500, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 500}, "cmd": {"type": "seek", "deck": 1, "position_ms": 1000}}]});
+    assert_eq!(render_plan_files(&parse_plan(&edge).unwrap(), &d).unwrap().frames, 24000);
     // And max_ms still bounds an end that is reachable, just too far away.
     let far = json!({"end": {"ms": 2000}, "max_ms": 500, "events": [
         {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});

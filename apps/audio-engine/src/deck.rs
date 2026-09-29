@@ -35,7 +35,8 @@ pub struct Track {
     pub beats: Vec<Beat>,
     /// Frame index (into `beats`) of every downbeat, precomputed for bar lookups.
     downbeats: Vec<usize>,
-    /// Tag BPM, used for beat math only when there is no grid.
+    /// Tag BPM, used only when there is no grid: for plan beat and bar
+    /// times and the tempo readout. Beat loops and jumps need a real grid.
     pub bpm: Option<f64>,
 }
 
@@ -622,7 +623,8 @@ impl Deck {
     /// On a real grid the loop spans whole grid beats, as the page's
     /// `engageBeatLoop` does: it starts on the beat nearest `start_ms`, or,
     /// with no `start_ms`, on the preceding downbeat for a 4-beat loop and on
-    /// the nearest beat otherwise. With only a tag BPM it starts where asked.
+    /// the nearest beat otherwise. With no real grid it is refused, as the
+    /// page's `requireBeatGrid` refuses it: a tag BPM is not a grid.
     pub fn beat_loop(&mut self, beats: f64, start_ms: Option<f64>) -> Result<(), EngineError> {
         // Whole beats on every track, as the page's command parser requires,
         // whether or not a grid is loaded.
@@ -633,12 +635,10 @@ impl Deck {
             ));
         }
         let t = self.track()?.clone();
-        let here = start_ms.unwrap_or_else(|| t.frames_to_ms(self.pos));
         if !t.has_grid() {
-            let idx = t.beat_index_at(here).ok_or(no_grid())?;
-            let end = t.beat_time_ms(idx + beats).ok_or(no_grid())?;
-            return self.engage_beat_loop(beats, here, end);
+            return Err(requires_grid());
         }
+        let here = start_ms.unwrap_or_else(|| t.frames_to_ms(self.pos));
         let start = if start_ms.is_none() && beats == 4.0 {
             t.downbeat_at_or_before(here)
                 .ok_or(EngineError::new(ErrorCode::NoBeatgrid, "no downbeat at or before the playhead"))?
@@ -662,55 +662,36 @@ impl Deck {
             ));
         }
         let t = self.track()?.clone();
+        // The page refuses a jump with no real grid (`requireBeatGrid`); a
+        // tag BPM is not a grid, so neither does this engine count on one.
+        if !t.has_grid() {
+            return Err(requires_grid());
+        }
         let now = t.frames_to_ms(self.pos);
-        if t.has_grid() {
-            // Whole beats from the nearest real beat, clamped to the grid and
-            // to its last beat inside the audio (`beatJumpTargetMs`).
-            let last = t.beats.len() as i64 - 1;
-            let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
-            let dur = t.duration_ms();
-            // A grid with no beat inside the decoded audio has nowhere to
-            // land; the page refuses it too (`beatJumpTargetWithinDurationMs`).
-            let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).ok_or_else(|| {
-                EngineError::new(ErrorCode::Invalid, "beat jump: no grid beat at or before the end of the decoded audio")
-            })?;
-            let target = t.beats[i].time_ms.clamp(0.0, dur);
-            let Some((a, b)) = self.looping else {
-                self.pos = t.ms_to_frames(target);
-                return Ok(());
-            };
-            // An engaged loop moves by whole grid beats, keeping any manual
-            // offset of its ends from their beats, and the playhead stays
-            // inside it (`shiftLiveBeatLoopRangeMs`,
-            // `targetWithinShiftedLiveLoopMs`). A shift that does not fit is
-            // refused whole, as the page does, and nothing moves.
-            let (lo, hi) = shift_live_loop(&t, t.frames_to_ms(a), t.frames_to_ms(b), beats as i64)?;
-            let to = target_within_loop(&t, target, lo, hi)?;
-            self.looping = Some((t.ms_to_frames(lo), t.ms_to_frames(hi)));
-            self.pos = t.ms_to_frames(to);
+        // Whole beats from the nearest real beat, clamped to the grid and
+        // to its last beat inside the audio (`beatJumpTargetMs`).
+        let last = t.beats.len() as i64 - 1;
+        let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
+        let dur = t.duration_ms();
+        // A grid with no beat inside the decoded audio has nowhere to
+        // land; the page refuses it too (`beatJumpTargetWithinDurationMs`).
+        let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).ok_or_else(|| {
+            EngineError::new(ErrorCode::Invalid, "beat jump: no grid beat at or before the end of the decoded audio")
+        })?;
+        let target = t.beats[i].time_ms.clamp(0.0, dur);
+        let Some((a, b)) = self.looping else {
+            self.pos = t.ms_to_frames(target);
             return Ok(());
-        }
-        // Tag BPM only: no grid to shift the loop along, so it moves with the
-        // playhead and is kept inside the track at its own length.
-        let idx = t.beat_index_at(now).ok_or(no_grid())?;
-        let target = t.beat_time_ms(idx + beats).ok_or(no_grid())?.clamp(0.0, t.duration_ms());
-        let delta = t.ms_to_frames(target) - self.pos;
-        self.pos = t.ms_to_frames(target);
-        if let Some((a, b)) = self.looping {
-            // Keep the moved loop inside the track at its own length: a jump
-            // near either end would otherwise push a bound past 0 or the end.
-            let end = t.frames as f64;
-            let len = (b - a).min(end);
-            let a = (a + delta).clamp(0.0, end - len);
-            self.looping = Some((a, a + len));
-            // Keep the playhead in [a, a + len): at the loop-out point itself
-            // the end-of-track check would stop a loop that ends at the end.
-            if self.pos < a {
-                self.pos = a;
-            } else if self.pos >= a + len {
-                self.pos = a + (self.pos - (a + len)) % len;
-            }
-        }
+        };
+        // An engaged loop moves by whole grid beats, keeping any manual
+        // offset of its ends from their beats, and the playhead stays
+        // inside it (`shiftLiveBeatLoopRangeMs`,
+        // `targetWithinShiftedLiveLoopMs`). A shift that does not fit is
+        // refused whole, as the page does, and nothing moves.
+        let (lo, hi) = shift_live_loop(&t, t.frames_to_ms(a), t.frames_to_ms(b), beats as i64)?;
+        let to = target_within_loop(&t, target, lo, hi)?;
+        self.looping = Some((t.ms_to_frames(lo), t.ms_to_frames(hi)));
+        self.pos = t.ms_to_frames(to);
         Ok(())
     }
 
@@ -895,8 +876,10 @@ fn target_within_loop(t: &Track, target: f64, lo: f64, hi: f64) -> Result<f64, E
     k.checked_sub(1).map(|k| t.beats[k].time_ms).filter(|&ms| ms >= lo).ok_or(no_beat)
 }
 
-fn no_grid() -> EngineError {
-    EngineError::new(ErrorCode::NoBeatgrid, "the track has no beatgrid or bpm to count beats on")
+/// A beat loop or jump on a deck with no real grid, which the page refuses
+/// too (`requireBeatGrid`).
+fn requires_grid() -> EngineError {
+    EngineError::new(ErrorCode::NoBeatgrid, "the deck has no real beat grid; a tag BPM is not one")
 }
 
 /// 4-point, 3rd-order Hermite interpolation of interleaved stereo at a
@@ -1030,9 +1013,9 @@ mod tests {
 
     #[test]
     fn a_beat_loop_past_the_end_of_the_audio_is_refused_not_shortened() {
-        // Tag BPM only (120, 500 ms beats) on a 10 s track.
+        // A 120 BPM grid (500 ms beats) running to 12 s over a 10 s track.
         let mut d = Deck::new(48000.0);
-        d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 10], vec![], Some(120.0))));
+        d.load(Arc::new(silent(48000, 10.0, grid_120(6))));
         let e = d.beat_loop(4.0, Some(8500.0)).unwrap_err();
         assert!(e.message.contains("past the end"), "{}", e.message);
         assert_eq!((d.looping, d.loop_beats), (None, None));
@@ -1049,7 +1032,8 @@ mod tests {
 
     #[test]
     fn beat_counts_are_whole_with_or_without_a_grid() {
-        // Tag BPM only: no grid to snap to, and still whole beats only.
+        // Whole beats only, and a bad count is Invalid before any grid check:
+        // on a tag BPM with no grid the count is still what is wrong.
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 10], vec![], Some(120.0))));
         for bad in [0.5, 1.5, 0.0, -1.0] {
@@ -1058,8 +1042,17 @@ mod tests {
         for bad in [0.5, -2.5, 0.0] {
             assert_eq!(d.beat_jump(bad).unwrap_err().code, ErrorCode::Invalid, "jump {bad}");
         }
+        // And on a real grid.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(5))));
+        for bad in [0.5, 1.5, 0.0, -1.0] {
+            assert_eq!(d.beat_loop(bad, Some(1000.0)).unwrap_err().code, ErrorCode::Invalid, "loop {bad}");
+        }
+        for bad in [0.5, -2.5, 0.0] {
+            assert_eq!(d.beat_jump(bad).unwrap_err().code, ErrorCode::Invalid, "jump {bad}");
+        }
         assert_eq!(d.looping, None);
-        // Control: whole counts still work on the tag BPM, negative jumps too.
+        // Control: whole counts work on the grid, negative jumps too.
         d.beat_loop(2.0, Some(1000.0)).unwrap();
         assert_eq!(d.looping, Some((48000.0, 96000.0)));
         d.set_loop(None).unwrap();
@@ -1483,30 +1476,27 @@ mod tests {
     }
 
     #[test]
-    fn a_tag_bpm_loop_moved_by_a_jump_stays_inside_the_track() {
-        // No grid, 120 BPM tag, 20 s.
+    fn a_beat_loop_or_jump_needs_a_real_grid_not_a_tag_bpm() {
+        // The page refuses both with no real grid (`requireBeatGrid`), so a
+        // tag BPM must not stand in for one here: the same command would
+        // move one engine and not the other.
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 20], vec![], Some(120.0))));
-        // Loop [1 s, 2 s] with the playhead at 1.5 s; jumping back 4 beats
-        // clamps the playhead to 0, which would drag the loop to [-0.5 s, 0.5 s].
+        d.set_quantize(false);
         d.set_loop(Some((1000.0, 2000.0))).unwrap();
         d.seek(1500.0).unwrap();
-        d.beat_jump(-4.0).unwrap();
-        assert_eq!(d.looping, Some((0.0, 48000.0)));
-        assert!(d.pos >= 0.0 && d.pos < 48000.0, "pos {}", d.pos);
-        // Near the end: loop [18 s, 19 s], playhead 18.5 s, jump forward 4 beats.
-        d.set_loop(Some((18000.0, 19000.0))).unwrap();
-        d.seek(18500.0).unwrap();
+        assert_eq!(d.beat_jump(-4.0).unwrap_err().code, ErrorCode::NoBeatgrid);
+        assert_eq!(d.beat_loop(4.0, Some(3000.0)).unwrap_err().code, ErrorCode::NoBeatgrid);
+        assert_eq!(d.beat_loop(4.0, None).unwrap_err().code, ErrorCode::NoBeatgrid);
+        // Nothing moved.
+        assert_eq!((d.looping, d.pos, d.loop_beats), (Some((48000.0, 96000.0)), 72000.0, None));
+        // Control: the same commands on a real grid over the same audio work.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 20.0, grid_120(10))));
+        d.beat_loop(4.0, Some(3000.0)).unwrap();
+        assert_eq!(d.looping, Some((144000.0, 240000.0)));
         d.beat_jump(4.0).unwrap();
-        assert_eq!(d.looping, Some((912000.0, 960000.0)));
-        assert!(d.pos >= 912000.0 && d.pos < 960000.0, "pos {}", d.pos);
-        // The deck keeps looping there rather than stopping at the track end.
-        d.play(true).unwrap();
-        let mut buf = vec![0.0f32; 480 * 2];
-        for _ in 0..200 {
-            d.render_add(&mut buf, 48000.0);
-            assert!(d.playing, "stopped at pos {}", d.pos);
-        }
+        assert_eq!(d.looping, Some((240000.0, 336000.0)));
     }
 
     #[test]
@@ -1682,13 +1672,13 @@ mod tests {
     }
 
     #[test]
-    fn beat_math_without_a_grid_needs_a_bpm() {
+    fn a_beat_jump_without_a_grid_is_refused_with_or_without_a_bpm() {
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 10.0, vec![])));
         assert_eq!(d.beat_jump(1.0).unwrap_err().code, ErrorCode::NoBeatgrid);
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(Track::new(48000, vec![0.0; 960000], vec![], Some(120.0))));
-        d.beat_jump(2.0).unwrap();
-        assert_eq!(d.pos, 48000.0);
+        assert_eq!(d.beat_jump(2.0).unwrap_err().code, ErrorCode::NoBeatgrid);
+        assert_eq!(d.pos, 0.0);
     }
 }

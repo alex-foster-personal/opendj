@@ -534,13 +534,13 @@ pub fn render_plan_with(
             break;
         }
         // Nothing left can change the engine: every pending event waits on a
-        // deck that cannot get there, no ramp is running, and the end cannot
-        // arrive from this state either. Say so now, rather than render (and
-        // hold in memory) silence all the way to max_ms.
-        if end_in.is_none()
-            && ramps.is_empty()
-            && pending.iter().all(|&idx| due_in(plan.events[idx].at, &engine, now).is_none())
-        {
+        // deck that cannot get there or falls due after the render budget
+        // ends, no ramp is running, and the end cannot arrive from this state
+        // either. Say so now, rather than render (and hold in memory) silence
+        // all the way to max_ms. An event due exactly at the budget still
+        // fires: events fire before the budget check on their frame.
+        let can_fire = |at| due_in(at, &engine, now).is_some_and(|d| now.saturating_add(d) <= max_frames);
+        if end_in.is_none() && ramps.is_empty() && !pending.iter().any(|&idx| can_fire(plan.events[idx].at)) {
             return Err(ProtoError::new(
                 ErrorCode::Invalid,
                 format!(
