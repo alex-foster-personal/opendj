@@ -20,21 +20,22 @@ it reports:
   UNKNOWN. Only a run whose gate never
   passed (superseded in the concurrency queue, or refused) is identifiably ours and left
   out; a job still in flight makes the verdict UNKNOWN;
-- outcome agreement: the share of shard pairs with a test verdict on both sides that agree,
-  over paired commits only, as is the push-to-verdict ratio.
+- outcome agreement: the share of shard pairs that agree, over paired commits only, as is
+  the push-to-verdict ratio.
 
 Verdicts, per vendor (decision record: docs/decisions/ADR-NEW-runner-canary.md):
 - FAIL when a known-red SHA comes back green on the vendor (the canary cannot go red), or
   when at least `min_paired_commits` pairs exist, a known-red SHA came back red on the
   vendor, and a bar in ci/runner-canary.json is missed;
 - UNKNOWN when fewer than `min_paired_commits` (20) commits are paired, when no known-red
-  SHA is configured, or when a known-red SHA was not run on the vendor or is not red on
-  self-hosted, even if a bar is missed: a canary not yet shown to go red has not measured
+  SHA is configured, or when a known-red SHA was not run on the vendor or has no complete,
+  red self-hosted run, even if a bar is missed: a canary not yet shown to go red has not measured
   anything, a miss included (Sol P2 on 27840126b). UNKNOWN is never a pass;
 - PASS otherwise.
 
-A paired commit has all shards on BOTH sides with a non-dropped outcome, from attempt 1 of
-the earliest run for that SHA on each side: push-to-verdict is the FIRST verdict.
+A paired commit has a test verdict (green or red) on every shard on BOTH sides, from attempt
+1 of the earliest run for that SHA on each side: push-to-verdict is the FIRST verdict. An
+infra shard on either side unpairs the commit (Codex P1 on b6303e8f0).
 
 Usage:
     python -m scripts.runner_canary_report --config ci/runner-canary.json \\
@@ -56,8 +57,8 @@ Requirements (mini-PRD)
 - [if] a vendor shard never started, or was cancelled after the gate passed [then] it is
   infra and a start-latency breach; [if] the run's gate never passed [then] it is excluded,
   [else stop] ✔︎ ✅ 🎯
-- [if] a pytest step failed on its TIMEOUT annotation [then] infra, never a test red,
-  [else stop] ✔︎ ✅ 🎯
+- [if] a pytest step failed with any exit but pytest's 1 (a TIMEOUT's 124, say) [then] infra,
+  never a test red; none or two recorded exit codes are UNKNOWN, [else stop] ✔︎ ✅ 🎯
 - [if] an infra failure or slow start lands on a commit with no complete baseline [then]
   it still counts in the operational rates, and never in the ratio or agreement, [else
   stop] ✔︎ ✅ 🎯
@@ -102,11 +103,20 @@ def _first_run_by_sha(rows: Iterable[ShardRow]) -> dict[str, list[ShardRow]]:
     return first
 
 
-def _complete(run_rows: list[ShardRow] | None, shard_count: int) -> bool:
+#: A test verdict. A comparative pair needs one on every shard of both runs (Codex P1 on
+#: b6303e8f0): an infra shard has no verdict to agree with, and its wall time is no latency.
+VERDICTS = ("green", "red")
+
+
+def _complete(
+    run_rows: list[ShardRow] | None,
+    shard_count: int,
+    outcomes: Iterable[str] = (*VERDICTS, "infra"),
+) -> bool:
     return (
         run_rows is not None
         and sorted(r.shard for r in run_rows) == list(range(1, shard_count + 1))
-        and all(r.outcome in ("green", "red", "infra") and not r.missing for r in run_rows)
+        and all(r.outcome in outcomes and not r.missing for r in run_rows)
     )
 
 
@@ -143,17 +153,20 @@ class VendorReport:
     reasons: list[str] = field(default_factory=list)
 
 
-def _control_state(sha: str, vendor_runs: dict, baseline_runs: dict) -> tuple[str, str]:
-    """(state, reason) for one known-red SHA: ok / green / not-run / invalid."""
+def _control_state(
+    sha: str, vendor_runs: dict, baseline_runs: dict, shard_count: int
+) -> tuple[str, str]:
+    """(state, reason) for one known-red SHA: ok / green / not-run / invalid. Its self-hosted
+    run must be complete and red (Sol P2 on b6303e8f0)."""
     baseline = baseline_runs.get(sha)
-    if not baseline or not any(r.outcome == "red" for r in baseline):
+    if not _complete(baseline, shard_count) or not any(r.outcome == "red" for r in baseline):
         return "invalid", f"known-red {sha[:12]} is not red on self-hosted, so it is no control"
     vendor = vendor_runs.get(sha)
     if not vendor:
         return "not-run", f"known-red {sha[:12]} was not run on this vendor"
     if any(r.outcome == "red" for r in vendor):
         return "ok", ""
-    if all(r.outcome == "green" for r in vendor) and _complete(vendor, len(baseline)):
+    if all(r.outcome == "green" for r in vendor) and _complete(vendor, shard_count):
         return "green", f"known-red {sha[:12]} came back GREEN: this canary cannot go red"
     return "not-run", f"known-red {sha[:12]} has no test verdict on this vendor (infra or dropped)"
 
@@ -205,10 +218,8 @@ def _measure_against_baseline(
             sorted(baseline_runs[s], key=lambda r: r.shard),
             strict=True,
         )
-        if v.outcome in ("green", "red") and b.outcome in ("green", "red")
     ]
-    if verdict_pairs:
-        report.outcome_agreement = sum(v == b for v, b in verdict_pairs) / len(verdict_pairs)
+    report.outcome_agreement = sum(v == b for v, b in verdict_pairs) / len(verdict_pairs)
 
 
 def _bar_findings(report: VendorReport, bars: dict[str, float]) -> tuple[list[str], list[str]]:
@@ -263,15 +274,15 @@ def evaluate_vendor(
     paired = sorted(
         sha
         for sha in vendor_runs
-        if _complete(vendor_runs[sha], shard_count)
-        and _complete(baseline_runs.get(sha), shard_count)
+        if _complete(vendor_runs[sha], shard_count, VERDICTS)
+        and _complete(baseline_runs.get(sha), shard_count, VERDICTS)
     )
     report.paired_commits = len(paired)
     if paired:
         _measure_against_baseline(report, vendor_runs, baseline_runs, paired)
     failed, unknown = _bar_findings(report, bars)
     control_green, control_unknown = _control_findings(
-        [_control_state(sha, vendor_runs, baseline_runs) for sha in known_red_shas]
+        [_control_state(sha, vendor_runs, baseline_runs, shard_count) for sha in known_red_shas]
     )
     unknown += control_unknown
     if in_flight:
