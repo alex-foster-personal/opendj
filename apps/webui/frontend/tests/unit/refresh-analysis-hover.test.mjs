@@ -47,11 +47,18 @@ test('every failed click records its own outcome, and each click starts from a c
 	for (const outcome of ["'Already running'", "'WIP - not working: no ingestion steps enabled'", '`WIP - not working: ${e.message}`']) {
 		assert.ok(failure.includes(`clickFeedback = ${outcome}`), outcome);
 	}
-	// Opened the way a hover opens it (polling included), and only when not
-	// already open: tests/e2e/refresh-analysis-keyboard-409.spec.ts drives the
-	// real 409 from the keyboard and the mouse (Codex P2 4130152643).
-	assert.match(failure, /if \(!hovered\) void onEnter\(\);/, 'a failed click opens the popover that shows it');
-	assert.doesNotMatch(failure, /hovered = true;/, 'opening without onEnter starts no polling');
+	assert.doesNotMatch(click, /hovered = true;/, 'opening without onEnter starts no polling');
+});
+
+// Codex P2 4130152643 and 4130407830: every click, started (202) or refused,
+// opens the popover the way a hover does (polling included), and only when
+// not already open. The open is the click's last statement, after the whole
+// try/catch, never inside one branch. tests/e2e/refresh-analysis-keyboard-409.spec.ts
+// drives a real 202 and a real 409 from the keyboard, and a 409 from the mouse.
+test('every click opens the popover once, after the try/catch, whatever the outcome', () => {
+	const click = refresh.slice(refresh.indexOf('async function onClick()'), refresh.indexOf('onDestroy('));
+	assert.equal((click.match(/void onEnter\(\)/g) ?? []).length, 1);
+	assert.match(click, /\n\t\t\}\n(?:\t\t\/\/[^\n]*\n)*\t\tif \(!hovered\) void onEnter\(\);\n\t\}\s*$/);
 });
 
 test('a keyboard-opened popover closes without a mouse: blur and Escape', () => {

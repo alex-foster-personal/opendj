@@ -8,7 +8,7 @@
 	 * Hover: popover with the live coverage numbers, the analyze-on-import
 	 * queue (locally imported tracks, no rekordbox twin), per-step progress
 	 * bar and the job log tail. Polls status at 1Hz while running or hovered.
-	 * A failed click opens the same popover (keyboard included); blur or
+	 * Every click opens the same popover (keyboard included); blur or
 	 * Escape closes it for a user with no mouse to move away.
 	 * As stable_ids complete they get jobProgress badges so the library
 	 * updates without a reload.
@@ -108,8 +108,8 @@
 		_syncTimer();
 	}
 
-	// A keyboard user opens the popover only through a failed click (below)
-	// and has no mouseleave to close it, so leaving the button closes it: focus
+	// A keyboard user opens the popover only by clicking (below) and has no
+	// mouseleave to close it, so leaving the button closes it: focus
 	// moving elsewhere, or Escape. The mouse still over it keeps it open.
 	function onBlur(): void {
 		if (hovered && wrapEl?.matches(':hover') !== true) onLeave();
@@ -125,7 +125,6 @@
 			status = await startIngestRefresh();
 			badged.clear();
 			pushToast(`Refresh started: ${status.steps.join(', ')}`, 'info');
-			_syncTimer();
 		} catch (e) {
 			if (e instanceof RbApiError && e.status === 409) {
 				clickFeedback = 'Already running';
@@ -140,13 +139,13 @@
 				clickFeedback = `WIP - not working: ${e instanceof Error ? e.message : String(e)}`;
 				pushToast(`Refresh failed to start: ${e instanceof Error ? e.message : e}`, 'error');
 			}
-			// Open the popover that shows why, as a hover would: poll the status
-			// (a 409's running job shows live progress) and fetch the coverage.
-			// Activated from the keyboard there was no mouseenter, so nothing
-			// else starts them (Codex P2 4130152643). Already open means the
-			// mouse's onEnter already ran them; a second call would fetch twice.
-			if (!hovered) void onEnter();
 		}
+		// Every click, started or refused, opens the popover as a hover would:
+		// it polls the status (the run's live progress) and fetches coverage.
+		// From the keyboard there was no mouseenter, so nothing else starts them
+		// (Codex P2 4130152643, 4130407830). Already open means the mouse's
+		// onEnter ran them and its timer is live; a second call would fetch twice.
+		if (!hovered) void onEnter();
 	}
 
 	onDestroy(() => {

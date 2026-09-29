@@ -1,10 +1,11 @@
 /**
- * Refresh analysis activated from the keyboard while a refresh already runs
- * (CHROME-10, Codex P2 4130152643 on PR #3896).
+ * Refresh analysis activated from the keyboard (CHROME-10, Codex P2
+ * 4130152643 and 4130407830 on PR #3896).
  *
- * The failed click opened the popover (hovered = true) but only mouseenter
+ * A failed click opened the popover (hovered = true) but only mouseenter
  * started the status polling, so a keyboard user got "Already running" and no
- * live progress. Nothing but the pointer could close it either.
+ * live progress; a click that started a run opened nothing at all. Nothing
+ * but the pointer could close it either.
  *
  * Root suite, real engine: the 409 is the engine's own answer to a second
  * POST /api/v1/ingest/refresh while the job this test starts is still running
@@ -15,6 +16,7 @@
  * Counted on the wire: GET /ingest/config is fetched only when the popover
  * opens (onEnter), GET /ingest/refresh/status only by its polling.
  *
+ * [if] a keyboard click that starts a run (202) opens no polled popover [then] stop.
  * [if] a keyboard 409 opens the popover without polling [then] stop.
  * [if] the popover closes (Escape, blur, or the mouse leaving) and polling goes
  *   on once the job is over [then] stop.
@@ -99,7 +101,7 @@ async function clickInto409(
 	throw new Error('no attempt reached the engine while its refresh was running');
 }
 
-test.describe('refresh analysis 409 from the keyboard', () => {
+test.describe('refresh analysis clicked from the keyboard', () => {
 	test.setTimeout(180_000);
 	let savedEnabled: Record<string, boolean> | null = null;
 
@@ -114,6 +116,32 @@ test.describe('refresh analysis 409 from the keyboard', () => {
 	test.afterEach(async ({ request }) => {
 		await waitIdle(request);
 		if (savedEnabled !== null) await request.put(CONFIG, { data: { enabled: savedEnabled } });
+	});
+
+	test('a keyboard click that starts a run opens the popover with polled progress', async ({ page, request }) => {
+		await page.goto('/performance');
+		const wire = watchWire(page);
+		const btn = page.getByTestId('refresh-analysis');
+		await expect(btn).toBeVisible({ timeout: 30_000 });
+		await btn.focus();
+		await waitIdle(request);
+		await btn.press('Enter');
+		await expect.poll(() => wire.posts.length, { timeout: 10_000 }).toBe(1);
+		expect(wire.posts[0], 'the engine started this run for the page').toBe(202);
+		expect(await btn.evaluate((el) => el.parentElement?.matches(':hover')), 'no pointer involved').toBe(false);
+
+		const pop = page.getByTestId('refresh-analysis-pop');
+		await expect(pop).toBeVisible();
+		await expect(page.getByTestId('refresh-click-feedback')).toHaveCount(0);
+		// The POST answered "running"; a terminal phase reaches the popover
+		// only through its polling, so this is the live progress.
+		await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 30_000 });
+		expect(wire.status.length).toBeGreaterThanOrEqual(1);
+		expect(wire.config.length, 'opened once, as a hover opens it').toBe(1);
+
+		await btn.press('Escape');
+		await expect(pop).toBeHidden();
+		await expectPollingStops(page, request, wire);
 	});
 
 	test('the popover a keyboard 409 opens polls live progress, and Escape stops it', async ({ page, request }) => {
