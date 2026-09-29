@@ -69,6 +69,41 @@ impl Track {
         self.beats.len() >= 2
     }
 
+    /// The quantize point nearest `ms` on a `grid`-beat grid, as the page's
+    /// `quantizeToNearestGridBeat` picks it: any grid beat for 1, a downbeat
+    /// for 4, every other downbeat from the first for 8. With no downbeats
+    /// it falls back to any beat, and 8 with one downbeat uses that one. The
+    /// earlier point wins a tie. Needs a non-empty grid; allocates nothing.
+    pub fn quantize_ms(&self, ms: f64, grid: u8) -> f64 {
+        if grid == 1 || self.downbeats.is_empty() {
+            return self.beats[self.nearest_beat(ms)].time_ms;
+        }
+        let step = if grid == 8 && self.downbeats.len() > 1 { 2 } else { 1 };
+        let n = self.downbeats.len().div_ceil(step);
+        let at = |j: usize| self.beats[self.downbeats[j * step]].time_ms;
+        // First point at or after ms, by bisection over the selected points.
+        let (mut lo, mut hi) = (0, n);
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if at(mid) < ms {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo == 0 {
+            return at(0);
+        }
+        if lo == n {
+            return at(n - 1);
+        }
+        if ms - at(lo - 1) <= at(lo) - ms {
+            at(lo - 1)
+        } else {
+            at(lo)
+        }
+    }
+
     /// Index of the grid beat nearest `ms`, the earlier one on a tie
     /// (`beat-sync-math.ts` `_nearestBeatIndex`). Needs a non-empty grid.
     pub fn nearest_beat(&self, ms: f64) -> usize {
@@ -179,6 +214,13 @@ pub struct Deck {
     pub pos: f64,
     pub playing: bool,
     pub cue: Option<f64>,
+    /// The page's per-deck Quantize toggle and grid (`quantize_enabled`,
+    /// `quantize_grid_beats`, on and 1 by default). The engine applies it
+    /// where it resolves a position itself: the cue a pause or a paused CUE
+    /// press stores, and a paused CUE jump. Seeks and loop bounds arrive
+    /// already snapped by the page adapter.
+    pub quantize: bool,
+    pub quantize_grid: u8,
     pub tempo: f64,
     pub pitch_range: f64,
     /// Loop bounds in source frames.
@@ -352,6 +394,8 @@ impl Deck {
             pos: 0.0,
             playing: false,
             cue: None,
+            quantize: true,
+            quantize_grid: 1,
             tempo: 1.0,
             pitch_range: 16.0,
             looping: None,
@@ -395,7 +439,8 @@ impl Deck {
         self.track.take()
     }
 
-    /// Pause stores the cue at the pause position; play at the end restarts
+    /// Pause stores the cue at the pause position (snapped when Quantize is
+    /// on, as the page's pause does); play at the end restarts
     /// from 0 (`audio-engine.svelte.ts` CUE and transport semantics).
     pub fn play(&mut self, playing: bool) -> Result<(), EngineError> {
         let frames = self.track()?.frames as f64;
@@ -404,7 +449,7 @@ impl Deck {
                 self.pos = 0.0;
             }
         } else if self.playing {
-            self.cue = Some(self.pos);
+            self.cue = Some(self.quantized(self.pos));
         }
         self.playing = playing;
         Ok(())
@@ -420,11 +465,35 @@ impl Deck {
             self.move_to(self.cue.unwrap_or(0.0));
             self.playing = false;
         } else if let Some(c) = self.cue {
-            self.move_to(c);
+            let to = self.quantized(c);
+            self.move_to(to);
         } else {
-            self.cue = Some(self.pos);
+            self.cue = Some(self.quantized(self.pos));
         }
         Ok(())
+    }
+
+    pub fn set_quantize(&mut self, on: bool) {
+        self.quantize = on;
+    }
+
+    /// 1, 4 or 8 beats. The page's 'phase' grid is refused before it gets
+    /// here, as the page refuses it.
+    pub fn set_quantize_grid(&mut self, beats: u8) -> Result<(), EngineError> {
+        if !matches!(beats, 1 | 4 | 8) {
+            return Err(EngineError::new(ErrorCode::Invalid, "quantize grid must be 1, 4 or 8 beats"));
+        }
+        self.quantize_grid = beats;
+        Ok(())
+    }
+
+    /// `frames` snapped to the quantize grid when Quantize is on and the
+    /// track has a grid (the page's `effectiveQuantize`); unchanged otherwise.
+    fn quantized(&self, frames: f64) -> f64 {
+        match self.track.as_ref() {
+            Some(t) if self.quantize && t.has_grid() => t.ms_to_frames(t.quantize_ms(t.frames_to_ms(frames), self.quantize_grid)),
+            _ => frames,
+        }
     }
 
     /// Seek to an exact position. Quantize is the caller's: the page's
@@ -770,11 +839,12 @@ fn no_grid() -> EngineError {
 /// 4-point, 3rd-order Hermite interpolation of interleaved stereo at a
 /// fractional frame position, with edge frames clamped.
 ///
-/// Inside an engaged loop `[a, b)` the audio is periodic: a tap past either
-/// end reads the frame one loop length back into the loop (in whole frames,
-/// so a loop whose length is fractional wraps its taps on the nearest one),
-/// as Web Audio's looping source wraps its read index. Otherwise the frames
-/// around a wrap would interpolate with audio from outside the loop.
+/// Inside an engaged loop `[a, b)` the audio is periodic: a tap outside the
+/// whole frames the loop holds (`ceil(a)` up to `ceil(b) - 1`) reads the
+/// frame that many frames back in from the other end, as Web Audio's looping
+/// source wraps its read index. Wrapping by the count of whole frames rather
+/// than the fractional length keeps every tap inside `[a, b)`; otherwise the
+/// frames around a wrap would interpolate with audio from outside the loop.
 #[inline]
 fn hermite(pcm: &[f32], frames: usize, pos: f64, looping: Option<(f64, f64)>) -> (f64, f64) {
     let i = pos.floor();
@@ -784,7 +854,10 @@ fn hermite(pcm: &[f32], frames: usize, pos: f64, looping: Option<(f64, f64)>) ->
     let mut k = [i - 1, i, i + 1, i + 2];
     if let Some((a, b)) = looping {
         if b > a && pos >= a && pos < b {
-            let (first, period) = (a.ceil() as isize, ((b - a).round() as isize).max(1));
+            let (first, end) = (a.ceil() as isize, b.ceil() as isize);
+            // A loop shorter than a frame may hold no whole frame: it then
+            // reads the one it starts in.
+            let (first, period) = if end > first { (first, end - first) } else { (a.floor() as isize, 1) };
             if k[0] < first || k[3] >= first + period {
                 for k in k.iter_mut() {
                     *k = first + (*k - first).rem_euclid(period);
@@ -977,20 +1050,86 @@ mod tests {
     }
 
     #[test]
+    fn cue_placement_follows_the_pages_quantize() {
+        // 120 BPM grid: beats every 500 ms, downbeats at 0, 2, 4 and 6 s.
+        let t = Arc::new(silent(48000, 10.0, grid_120(4)));
+        let paused_at = |ms: f64, setup: &dyn Fn(&mut Deck)| {
+            let mut d = Deck::new(48000.0);
+            d.load(t.clone());
+            setup(&mut d);
+            d.seek(ms).unwrap();
+            d
+        };
+        let cue_ms = |d: &Deck| t.frames_to_ms(d.cue.unwrap());
+        let none = |_: &mut Deck| {};
+        // Quantize is on at grid 1 by default, as on the page: the first
+        // paused CUE stores the nearest beat and leaves the playhead alone.
+        let mut d = paused_at(1300.0, &none);
+        d.cue().unwrap();
+        assert_eq!(cue_ms(&d), 1500.0);
+        assert_eq!(t.frames_to_ms(d.pos), 1300.0);
+        // A tie goes to the earlier beat.
+        let mut d = paused_at(1250.0, &none);
+        d.cue().unwrap();
+        assert_eq!(cue_ms(&d), 1000.0);
+        // Pausing stores the snapped cue too.
+        let mut d = paused_at(2600.0, &none);
+        d.play(true).unwrap();
+        d.play(false).unwrap();
+        assert_eq!(cue_ms(&d), 2500.0);
+        // Grid 4 snaps to downbeats; grid 8 to every other one from the first.
+        // Ties go to the earlier point here too.
+        for (grid, at, want) in [(4, 3100.0, 4000.0), (4, 2100.0, 2000.0), (4, 3000.0, 2000.0), (8, 2100.0, 4000.0), (8, 1900.0, 0.0), (8, 2000.0, 0.0)] {
+            let mut d = paused_at(at, &|d: &mut Deck| d.set_quantize_grid(grid).unwrap());
+            d.cue().unwrap();
+            assert_eq!(cue_ms(&d), want, "grid {grid} at {at}");
+        }
+        // Controls: Quantize off, or no grid to snap to, stores the playhead.
+        let mut d = paused_at(1300.0, &|d: &mut Deck| d.set_quantize(false));
+        d.cue().unwrap();
+        assert_eq!(cue_ms(&d), 1300.0);
+        let mut bpm_only = Deck::new(48000.0);
+        bpm_only.load(Arc::new(Track::new(48000, vec![0.0; 480000 * 2], vec![], Some(120.0))));
+        bpm_only.seek(1300.0).unwrap();
+        bpm_only.cue().unwrap();
+        assert_eq!(bpm_only.cue, Some(1300.0 * 48.0));
+        // A cue set with Quantize off is snapped when a paused CUE jumps to
+        // it with Quantize on, as the page's quantizedSeek does.
+        d.set_quantize(true);
+        d.seek(5000.0).unwrap();
+        d.cue().unwrap();
+        assert_eq!(t.frames_to_ms(d.pos), 1500.0);
+        // Control: CUE while playing returns to the stored cue as it is,
+        // unsnapped, as the page's playing press does.
+        let mut d = paused_at(1300.0, &|d: &mut Deck| d.set_quantize(false));
+        d.cue().unwrap();
+        d.set_quantize(true);
+        d.seek(5000.0).unwrap();
+        d.play(true).unwrap();
+        d.cue().unwrap();
+        assert_eq!(t.frames_to_ms(d.pos), 1300.0);
+        assert_eq!(d.set_quantize_grid(2).unwrap_err().code, ErrorCode::Invalid);
+    }
+
+    #[test]
     fn a_loop_interpolates_only_audio_inside_it() {
         // A 44.1 kHz track played at 48 kHz, so every read is fractional:
-        // silence, then 1.0 from 500 to 600 ms, then silence. Looping exactly
-        // that span must hear 1.0 throughout, across every wrap.
+        // silence, then 1.0 over the whole frames a loop holds, then silence.
+        // Looping it must hear 1.0 throughout, across every wrap. The loop's
+        // ends are given in frames and converted to ms for set_loop.
         let sr = 44100;
-        let mut pcm = vec![0.0f32; sr as usize * 2];
-        pcm[22050 * 2..26460 * 2].fill(1.0);
-        let track = Arc::new(Track::new(sr, pcm, vec![], None));
-        let render = |looped: bool| {
+        let track_for = |ones: std::ops::Range<usize>| {
+            let mut pcm = vec![0.0f32; sr as usize * 2];
+            pcm[ones.start * 2..ones.end * 2].fill(1.0);
+            Arc::new(Track::new(sr, pcm, vec![], None))
+        };
+        let ms = |frames: f64| frames * 1000.0 / sr as f64;
+        let render = |track: &Arc<Track>, bounds: Option<(f64, f64)>| {
             let mut d = Deck::new(48000.0);
             d.load(track.clone());
             d.seek(510.0).unwrap();
-            if looped {
-                d.set_loop(Some((500.0, 600.0))).unwrap();
+            if let Some((a, b)) = bounds {
+                d.set_loop(Some((ms(a), ms(b)))).unwrap();
             }
             d.play(true).unwrap();
             // 300 ms: three wraps, or straight past the span's end.
@@ -1002,15 +1141,22 @@ mod tests {
             let (lo, hi) = b.iter().fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
             hi - lo
         };
-        let looped = render(true);
-        assert!(spread(&looped) < 1e-6, "the loop heard audio from outside it: spread {}", spread(&looped));
+        // A whole-frame loop, and one whose ends fall between frames with a
+        // fractional length that rounds up past the frames it holds (4409.6
+        // frames, holding 4409).
+        let whole = track_for(22050..26460);
+        let looped = render(&whole, Some((22050.0, 26460.0)));
+        assert!(spread(&looped) < 1e-6, "whole-frame loop heard outside itself: spread {}", spread(&looped));
+        let fractional = track_for(22051..26460);
+        let looped = render(&fractional, Some((22050.2, 26459.8)));
+        assert!(spread(&looped) < 1e-6, "fractional loop heard outside itself: spread {}", spread(&looped));
         // Control: the same span played through without a loop does reach
         // the silence after it, so the measure can see a leak.
-        assert!(spread(&render(false)) > 0.5);
+        assert!(spread(&render(&whole, None)) > 0.5);
         // And a loop still ahead of the playhead leaves the audio before it
         // alone: the first 400 ms are the track's silence, not the loop's.
         let mut d = Deck::new(48000.0);
-        d.load(track.clone());
+        d.load(whole.clone());
         d.set_loop(Some((500.0, 600.0))).unwrap();
         d.play(true).unwrap();
         let mut buf = vec![0.0f32; 19200 * 2];

@@ -88,8 +88,6 @@ const LATER: &[(&str, &str)] = &[
     ("beat_sync", "beat sync is not built yet"),
     ("sync_mode", "beat sync is not built yet"),
     ("master", "master election is not built yet"),
-    ("quantize", "quantized launch is not built yet"),
-    ("quantize_grid", "quantized launch is not built yet"),
     ("hot_cue_trigger", "hot cues are not built yet"),
     ("channel_cue", "the headphone cue bus arrives with device output (plan 20-06)"),
     ("headphone_mix", "the headphone cue bus arrives with device output (plan 20-06)"),
@@ -268,6 +266,20 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             apply(EngineCmd::Play { deck, playing })
         }
         "cue" => apply(EngineCmd::Cue { deck: deck_of(o, ty)? }),
+        "quantize" => apply(EngineCmd::Quantize { deck: deck_of(o, ty)?, enabled: boolean(o, ty, "enabled")? }),
+        "quantize_grid" => {
+            let deck = deck_of(o, ty)?;
+            match field(o, ty, "beats")? {
+                Value::String(p) if p == "phase" => Err(ProtoError::new(
+                    ErrorCode::NotImplemented,
+                    "quantize_grid.beats 'phase' is not implemented, as on the page",
+                )),
+                v => match v.as_u64() {
+                    Some(b @ (1 | 4 | 8)) => apply(EngineCmd::QuantizeGrid { deck, beats: b as u8 }),
+                    _ => Err(invalid("quantize_grid.beats must be 1, 4 or 8".into())),
+                },
+            }
+        }
         "seek" => apply(EngineCmd::Seek { deck: deck_of(o, ty)?, position_ms: num(o, ty, "position_ms")? }),
         "loop" => {
             let deck = deck_of(o, ty)?;
@@ -446,6 +458,7 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>) -> Value {
                 "fader": d.fader,
                 "assign": d.assign.as_str(),
                 "pitch_range": d.pitch_range,
+                "quantize": {"enabled": d.quantize, "grid_beats": d.quantize_grid},
             })
         })
         .collect();
@@ -588,6 +601,38 @@ mod tests {
         // A loop set by bounds has no beat length; no loop is null.
         assert_eq!(v["decks"][1]["loop"]["beat_length"], Value::Null);
         assert_eq!(v["decks"][2]["loop"], Value::Null);
+    }
+
+    #[test]
+    fn quantize_state_is_the_decks_and_phase_is_refused() {
+        assert!(matches!(
+            cmd(json!({"type": "quantize", "deck": 2, "enabled": false})).unwrap(),
+            Command::Apply(EngineCmd::Quantize { deck: 2, enabled: false })
+        ));
+        for b in [1, 4, 8] {
+            assert!(matches!(
+                cmd(json!({"type": "quantize_grid", "deck": 1, "beats": b})).unwrap(),
+                Command::Apply(EngineCmd::QuantizeGrid { deck: 1, beats }) if beats as u64 == b
+            ));
+        }
+        let e = cmd(json!({"type": "quantize_grid", "deck": 1, "beats": "phase"})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::NotImplemented);
+        for bad in [json!(2), json!(0), json!("4"), json!(4.5)] {
+            let e = cmd(json!({"type": "quantize_grid", "deck": 1, "beats": bad})).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid, "{bad}");
+        }
+        let mut s = Snapshot {
+            frame: 0,
+            sample_rate: 48000,
+            decks: Default::default(),
+            crossfader: 0.5,
+            master_volume: 1.0,
+            master_muted: false,
+        };
+        s.decks[0].quantize = true;
+        s.decks[0].quantize_grid = 4;
+        let v = state_json(&s, None);
+        assert_eq!(v["decks"][0]["quantize"], json!({"enabled": true, "grid_beats": 4}));
     }
 
     #[test]
