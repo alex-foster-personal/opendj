@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::decode_file;
+use crate::decode::decode_at;
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -124,16 +124,16 @@ struct ActiveRamp {
     event: usize,
 }
 
-/// Loads every track the plan names, decoding each distinct file once.
-/// Relative paths resolve against `base`.
-pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
+/// Loads every track the plan names, decoding each distinct file once and
+/// resampling it to `sample_rate`. Relative paths resolve against `base`.
+pub fn file_loader(base: PathBuf, sample_rate: u32) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
     let mut cache: HashMap<PathBuf, (u32, Arc<[f32]>)> = HashMap::new();
     move |spec: &LoadSpec| {
         let path = base.join(&spec.path);
         let (sr, pcm) = match cache.get(&path) {
             Some((sr, pcm)) => (*sr, pcm.clone()),
             None => {
-                let d = decode_file(&path)?;
+                let d = decode_at(&path, sample_rate)?;
                 let pcm: Arc<[f32]> = d.pcm.into();
                 cache.insert(path.clone(), (d.sample_rate, pcm.clone()));
                 (d.sample_rate, pcm)
@@ -145,11 +145,11 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>,
 }
 
 pub fn render_plan_files(plan: &Plan, base: &Path) -> Result<RenderOutput, ProtoError> {
-    render_plan(plan, file_loader(base.to_path_buf()))
+    render_plan(plan, file_loader(base.to_path_buf(), plan.sample_rate))
 }
 
 pub fn render_plan_files_with(plan: &Plan, base: &Path, opts: RenderOptions) -> Result<RenderOutput, ProtoError> {
-    render_plan_with(plan, file_loader(base.to_path_buf()), opts)
+    render_plan_with(plan, file_loader(base.to_path_buf(), plan.sample_rate), opts)
 }
 
 fn sha256_hex(pcm: &[f32]) -> String {

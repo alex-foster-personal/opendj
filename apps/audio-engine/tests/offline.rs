@@ -267,7 +267,7 @@ fn a_tempo_ramp_records_every_step_it_applies() {
 fn loads_of_one_file_share_its_samples() {
     let d = temp_dir("shared-pcm");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
-    let mut load = odj_audio::offline::file_loader(d.clone());
+    let mut load = odj_audio::offline::file_loader(d.clone(), 48000);
     let spec = |deck| odj_audio::protocol::LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
     let (a, b) = (load(&spec(1)).unwrap(), load(&spec(2)).unwrap());
     assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");

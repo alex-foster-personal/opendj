@@ -182,6 +182,8 @@ struct Control {
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
+    /// The engine's rate; loads are resampled to it off the audio thread.
+    sample_rate: u32,
 }
 
 impl Control {
@@ -244,8 +246,9 @@ impl Control {
         self.waiting[deck as usize - 1] = Some(VecDeque::new());
         self.loading[deck as usize - 1] = Some(seq);
         let tx = self.msg_tx.clone();
+        let sr = self.sample_rate;
         std::thread::spawn(move || {
-            let result = crate::decode::decode_file(std::path::Path::new(&spec.path))
+            let result = crate::decode::decode_at(std::path::Path::new(&spec.path), sr)
                 .map(|d| Arc::new(Track::new(d.sample_rate, d.pcm, spec.beats, spec.bpm)));
             let _ = tx.send(Msg::Decoded { seq, deck, result });
         });
@@ -444,6 +447,7 @@ fn serve_threaded_from(
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
         state_req,
+        sample_rate,
     };
     let mut audio_failed = false;
     while let Ok(msg) = msg_rx.recv() {

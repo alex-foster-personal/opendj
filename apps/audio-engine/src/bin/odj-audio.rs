@@ -166,7 +166,7 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
         "fake" => {
             let sr = sr.unwrap_or(48000);
             let mut rec = Vec::new();
-            let loader = file_loader(std::env::current_dir().map_err(|e| e.to_string())?);
+            let loader = file_loader(std::env::current_dir().map_err(|e| e.to_string())?, sr);
             let sink = if record.is_some() { Some(&mut rec) } else { None };
             serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink).map_err(|e| e.to_string())?;
             if let Some(p) = record {
