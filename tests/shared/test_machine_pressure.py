@@ -30,6 +30,7 @@ from apps.shared.machine_pressure import (
 from scripts.diagnostics.probe_process_family import (
     opendj_process_name as probe_opendj_process_name,
 )
+from tests.sleep_spy import spy_on_own_thread_sleep
 
 FULL_SAMPLE: dict[str, Any] = {
     "physical_memory_mb": 16384.0,
@@ -390,7 +391,8 @@ def test_sampler_does_not_sleep_to_build_churn(monkeypatch: pytest.MonkeyPatch) 
     def fail_sleep(_seconds: float) -> None:
         raise AssertionError("time.sleep must not run on the request path")
 
-    monkeypatch.setattr("time.sleep", fail_sleep)
+    # Thread-scoped: a leaked background thread's sleep is not the request path.
+    spy_on_own_thread_sleep(monkeypatch, fail_sleep)
     cache = MachinePressureCache()
     sampler, _ = _counting_sampler({"load_average_1m": 1.0})
     snapshot = {
