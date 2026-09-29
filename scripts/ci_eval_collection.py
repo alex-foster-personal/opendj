@@ -86,12 +86,12 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
                 workflow_rows.append({"workflow": expected, "status": "missing", "cost_usd": 0.0})
                 continue
             if len(selected) > 1:
-                anomalies.append(f"PR #{pr['number']}: duplicate workflow {expected} runs ({len(selected)})")  # noqa: E501
+                anomalies.append(f"PR #{pr['number']}: duplicate workflow {expected} runs ({len(selected)})")
             run = max(selected, key=lambda row: row.get("createdAt") or "")
-            priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})  # noqa: E501
+            priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})
             if run.get("status") == "completed":
                 if priced["total_cost"] > 1.0:
-                    anomalies.append(f"PR #{pr['number']}: {expected} estimated at ${priced['total_cost']:.3f}")  # noqa: E501
+                    anomalies.append(f"PR #{pr['number']}: {expected} estimated at ${priced['total_cost']:.3f}")
                 if priced["unknown_jobs"]:
                     anomalies.append(f"PR #{pr['number']}: {expected} has unpriced runner jobs")
             workflow_rows.append({
@@ -106,7 +106,7 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
     )
     monitored_completed = [
         row for row in campaign_runs
-        if row.get("workflowName") in campaign["expected_workflows"] and row.get("status") == "completed"  # noqa: E501
+        if row.get("workflowName") in campaign["expected_workflows"] and row.get("status") == "completed"
     ]
     # The cost guard is a scheduled batch pass (Tue 22 Sep 2026, #2196): one
     # pass prices every watched completion since the previous pass, so coverage
@@ -126,8 +126,8 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
     complete = direct_complete and guard_coverage_complete
     run_rows = []
     for run in sorted(campaign_runs, key=lambda row: row.get("createdAt") or ""):
-        priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})  # noqa: E501
-        run_rows.append({**run, "cost_usd": priced["total_cost"], "jobs": priced["jobs"], "unknown_jobs": priced["unknown_jobs"]})  # noqa: E501
+        priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})
+        run_rows.append({**run, "cost_usd": priced["total_cost"], "jobs": priced["jobs"], "unknown_jobs": priced["unknown_jobs"]})
     return {
         "schema_version": 1, "run_id": campaign["run_id"],
         "source_repository": campaign["source_repository"], "source_ref": campaign["source_ref"],
@@ -146,7 +146,7 @@ def render_campaign_report(result: dict[str, Any]) -> str:
         f"- Source: `{result['source_repository']}@{result['source_ref']}`",
         f"- Disposable target: `{result['target_repository']}`",
         f"- Complete: **{str(result['complete']).lower()}**",
-        f"- Estimated gross campaign cost, including baseline and guard runs: **${result['estimated_gross_cost_usd']:.3f}**",  # noqa: E501
+        f"- Estimated gross campaign cost, including baseline and guard runs: **${result['estimated_gross_cost_usd']:.3f}**",
         f"- Completed monitored runs: **{result.get('monitored_runs_completed', 0)}**",
         f"- Completed Cost Guard runs: **{result.get('cost_guard_runs_completed', 0)}**", "",
         "| PR | Workflow | Status | Result | Estimated cost |",
