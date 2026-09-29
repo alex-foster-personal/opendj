@@ -379,3 +379,24 @@ fn ramp_endpoints_are_checked_before_rendering() {
     let e = render_plan_files(&parse_plan(&plan(Some(8), 1.09)).unwrap(), &d).err().unwrap();
     assert!(e.message.contains("pitch range"), "{}", e.message);
 }
+
+#[test]
+fn a_ramp_longer_than_any_render_is_refused() {
+    let d = temp_dir("ramp-long");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 2.0));
+    let max = odj_audio::wav::MAX_F32_FRAMES;
+    let plan = |over: Value| {
+        json!({"end": {"ms": 200}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}},
+            {"at": {"ms": 100}, "ramp": {"type": "fader", "deck": 1, "to": 0.0, "over": over}}]})
+    };
+    // Starting after frame 0, these would overflow the ramp's end frame.
+    for over in [json!({"frames": u64::MAX}), json!({"ms": 1e300}), json!({"beats": 1e300, "deck": 1}), json!({"frames": max + 1})] {
+        let e = render_plan_files(&parse_plan(&plan(over.clone())).unwrap(), &d).err().unwrap();
+        assert!(e.message.starts_with("events[1]") && e.message.contains("longer than any render"), "{over}: {}", e.message);
+    }
+    // Control: the longest ramp a render could finish is accepted, and the
+    // render ends at plan.end with it barely started.
+    let out = render_plan_files(&parse_plan(&plan(json!({"frames": max}))).unwrap(), &d).unwrap();
+    assert_eq!(out.frames, 9600);
+}

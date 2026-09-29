@@ -427,6 +427,21 @@ pub fn render_plan_with(
                                 at_frame_of_ms(track_ms / d.tempo, sr).max(1)
                             }
                         };
+                        // No render runs past what one WAV file holds, so no
+                        // ramp longer than that can land. Refusing it keeps
+                        // its end frame (start + len) from overflowing.
+                        if len > crate::wav::MAX_F32_FRAMES {
+                            return Err(fail(
+                                idx,
+                                ProtoError::new(
+                                    ErrorCode::Invalid,
+                                    format!(
+                                        "ramp.over is {len} frames, longer than any render can run ({} frames, what one WAV file holds)",
+                                        crate::wav::MAX_F32_FRAMES
+                                    ),
+                                ),
+                            ));
+                        }
                         // A newer ramp on the same knob replaces the older one.
                         ramps.retain(|a| a.target != r.target);
                         ramps.push(ActiveRamp { target: r.target, from, to: r.to, start: now, len, next: now, event: idx });
