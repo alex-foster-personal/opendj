@@ -2,8 +2,8 @@
  * Orchestrates Google sign-in after /api/v1/auth/login returns the consent URL.
  */
 
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { detectSurface, type ShellScope } from '$lib/rb/usage-heartbeat';
+import { openExternal } from '$lib/shell/native-shell';
 import { auth, refreshUser } from '$lib/auth.svelte';
 import { pushToast } from '$lib/stores.svelte';
 import {
@@ -20,7 +20,7 @@ import {
 function defaultNavigationDeps(): SignInNavigationDeps {
 	return {
 		detectSurface,
-		openUrl,
+		openUrl: (url) => openExternal(url),
 		assignLocation: (url) => {
 			window.location.href = url;
 		},
