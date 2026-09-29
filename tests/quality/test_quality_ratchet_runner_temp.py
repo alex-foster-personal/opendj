@@ -24,23 +24,22 @@ RUNNER_TEMP = "${{ runner.temp }}"
 
 
 def _quality_gate_steps() -> list[tuple[str, dict]]:
-    found: list[tuple[str, dict]] = []
-    for path in sorted(WORKFLOWS.glob("*.yml")):
-        workflow = yaml.safe_load(path.read_text()) or {}
-        for job_id, job in (workflow.get("jobs") or {}).items():
-            for step in job.get("steps") or []:
-                if "scripts.quality_gate" in (step.get("run") or ""):
-                    found.append((f"{path.name}:{job_id}:{step.get('name')}", step))
-    return found
+    return [
+        (f"{path.name}:{job_id}:{step.get('name')}", step)
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+        for job_id, job in ((yaml.safe_load(path.read_text()) or {}).get("jobs") or {}).items()
+        for step in job.get("steps") or []
+        if "scripts.quality_gate" in (step.get("run") or "")
+    ]
 
 
 def test_quality_ratchet_steps_exist() -> None:
-    """[if] no workflow step runs scripts.quality_gate [then] broken, the TMPDIR check below proves nothing."""
+    """[if] no workflow step runs scripts.quality_gate [then] broken, TMPDIR check is vacuous."""
     assert _quality_gate_steps(), "found no workflow step running scripts.quality_gate"
 
 
 def test_quality_ratchet_tmpdir_is_runner_temp() -> None:
-    """[if] a quality_gate step leaves TMPDIR off runner.temp [then] broken, a killed job leaks its tempdirs forever."""
+    """[if] a quality_gate step leaves TMPDIR off runner.temp [then] broken, kills leak tmp."""
     wrong = [
         f"{where}: TMPDIR={step.get('env', {}).get('TMPDIR')!r}"
         for where, step in _quality_gate_steps()
