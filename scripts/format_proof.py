@@ -9,18 +9,21 @@ layout, and only works if the SHA blame is told about is the one main contains.
 
 Requirements (mini-PRD):
   prove  ✔︎
-    Every .py file the range modifies parses on both sides and has an equal AST
-    once docstrings get the PEP 257 trim (Black's safety check strips every line,
-    which is looser: it would pass a change to a doctest's relative indentation).
-    Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...) keeps its
-    text, its order and the statement it annotates. Only its line, its trailing
-    space and the one space ruff adds after `#` may change.
+    Every .py file the range modifies decodes by its own cookie (so a cookie moved in
+    or out of reach is judged by what the bytes then MEAN), parses on both sides and
+    has an equal AST once docstrings get the PEP 257 trim (Black's safety check strips
+    every line, which is looser: it would pass a change to a doctest's relative
+    indentation). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
+    keeps its text, its order, how many statements begin before it and the innermost
+    statement around it. Only its line, its trailing space and the one space ruff
+    adds after `#` may change. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
-      [if] a comment is added, removed, reworded, reordered or moved to another statement [then ⛔️] exit 1
+      [if] a comment is added, removed, reworded, reordered, or moved past or out of a statement [then ⛔️] exit 1
+      [if] a shebang moves off byte 0 or onto it [then ⛔️] exit 1
       [if] the range adds, deletes or renames a file, or changes a file's mode [then ⛔️] exit 1
       [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
-      [if] a file does not parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
+      [if] a file does not decode or parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
     Every listed SHA is a commit, an ancestor of HEAD, and has a style(format): subject.
       [if] a line is not a full 40-hex SHA or a comment [then ⛔️] exit 1
@@ -31,16 +34,20 @@ What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
 docstring positions are normalized (tests/quality/test_format_proof.py pins that).
 A proof over zero files would read as success, so it exits 2 instead. A comment's
-LINE is not compared, because every re-wrap above it moves it; its STATEMENT is, so a
-noqa or type-ignore moved to another statement fails even when a count-based ratchet
-would net to zero. Whether a pragma still covers its finding after a re-wrap inside one
-statement is not an AST property: the part's ruff and mypy ratchet runs decide that.
+LINE is not compared, because every re-wrap above it moves it; its place among the
+statements is, because a formatter never reorders tokens. So a noqa or type-ignore
+moved to another statement fails even when a count-based ratchet would net to zero,
+and so does a whole-module type-ignore moved below the module's first line of code.
+Whether a pragma still covers its finding after a re-wrap inside one statement is not
+an AST property: the part's ruff and mypy ratchet runs decide that. Reading both sides
+as utf-8 would pass a cookie moved out of reach, so each side decodes as Python would.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import inspect
 import io
 import re
@@ -91,8 +98,9 @@ def _changed_entries(repo: Path, base: str, head: str) -> list[tuple[str, str, s
     return entries
 
 
-def _blob(repo: Path, rev: str, path: str) -> str:
-    return _git(repo, "show", f"{rev}:{path}").stdout
+def _blob(repo: Path, rev: str, path: str) -> bytes:
+    """Raw bytes: only Python's own decode knows which of a file's lines its cookie may sit on."""
+    return subprocess.run(["git", "-C", str(repo), "show", f"{rev}:{path}"], capture_output=True, check=True).stdout
 
 
 # ----- AST comparison -------------------------------------------------------
@@ -123,26 +131,29 @@ def _raw_dump(source: str) -> str:
     return ast.dump(ast.parse(source))
 
 
-def _statement_spans(tree: ast.Module) -> list[tuple[int, int, int]]:
-    """(first line, last line, depth) of every statement, in an order two equal ASTs share."""
-    spans: list[tuple[int, int, int]] = []
+def _statement_spans(tree: ast.Module) -> list[tuple[int, int, int, int]]:
+    """(first line, last line, depth, column) of every statement, decorators included, in an order two equal
+    ASTs share."""
+    spans: list[tuple[int, int, int, int]] = []
     stack: list[tuple[ast.AST, int]] = [(tree, 0)]
     while stack:
         node, depth = stack.pop()
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.stmt):
-                spans.append((child.lineno, child.end_lineno or child.lineno, depth))
+                first = min([child.lineno, *(dec.lineno for dec in getattr(child, "decorator_list", []))])
+                spans.append((first, child.end_lineno or child.lineno, depth, child.col_offset))
             stack.append((child, depth + 1))
     return spans
 
 
-def _anchor(line: int, spans: list[tuple[int, int, int]]) -> int:
-    """The statement a comment on `line` annotates: the deepest one spanning it, else the next one down."""
-    holding = [i for i, (first, last, _) in enumerate(spans) if first <= line <= last]
-    if holding:
-        return max(holding, key=lambda i: (spans[i][2], spans[i][0] - spans[i][1]))
-    below = [i for i, (first, _, _) in enumerate(spans) if first > line]
-    return min(below, key=lambda i: spans[i][0]) if below else -1
+def _anchor(line: int, spans: list[tuple[int, int, int, int]]) -> tuple[int, int]:
+    """Where a comment on `line` sits: how many statements begin at or before it, and the innermost one spanning
+    it (the last to begin, when a semicolon puts two on its line), else -1. A formatter never reorders tokens, so
+    a re-wrap keeps both, while a comment moved past a statement or out of one changes one of them."""
+    started = sum(1 for first, _, _, _ in spans if first <= line)
+    holding = [i for i, (first, last, _, _) in enumerate(spans) if first <= line <= last]
+    innermost = max(holding, key=lambda i: (spans[i][2], spans[i][0], spans[i][3])) if holding else -1
+    return started, innermost
 
 
 def _normalize_comment(text: str) -> str:
@@ -157,13 +168,18 @@ def _normalize_comment(text: str) -> str:
     return "#" + body
 
 
-def _comments(source: str) -> list[tuple[int, str]]:
-    """Every comment in order, as (statement index, normalized text): its line is layout, its words are not."""
+def _comments(source: str) -> list[tuple[tuple[int, int], str]]:
+    """Every comment in order, as (anchor, normalized text): its line is layout, its words and place are not."""
     spans = _statement_spans(ast.parse(source))
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     return [
         (_anchor(tok.start[0], spans), _normalize_comment(tok.string)) for tok in tokens if tok.type == tokenize.COMMENT
     ]
+
+
+def _runs_a_shebang(data: bytes) -> bool:
+    """The kernel reads a shebang only at byte 0, so its POSITION is semantics. Its words are a comment's."""
+    return data.startswith(b"#!")
 
 
 # ----- commands -------------------------------------------------------------
@@ -183,13 +199,18 @@ def prove(repo: Path, base: str, head: str) -> Result:
         return Result(2, lines=["[format-proof] UNKNOWN no .py file changed in the range; nothing was proven"])
     result = Result(0, files_checked=len(py_paths))
     for path in py_paths:
-        before, after = _blob(repo, base, path), _blob(repo, head, path)
+        data_before, data_after = _blob(repo, base, path), _blob(repo, head, path)
+        if _runs_a_shebang(data_before) != _runs_a_shebang(data_after):
+            result.exit_code = 1
+            result.lines.append(f"[format-proof] FAIL {path}: the shebang moved on or off byte 0, where it runs")
+            continue
         try:
+            before, after = importlib.util.decode_source(data_before), importlib.util.decode_source(data_after)
             raw_equal = _raw_dump(before) == _raw_dump(after)
             (dump_before, _), (dump_after, _) = _normalized_dump(before), _normalized_dump(after)
             comments_equal = _comments(before) == _comments(after)
-        except SyntaxError as exc:
-            return Result(2, lines=[f"[format-proof] UNKNOWN {path} does not parse: {exc.msg} line {exc.lineno}"])
+        except (SyntaxError, UnicodeDecodeError) as exc:
+            return Result(2, lines=[f"[format-proof] UNKNOWN {path} does not decode or parse: {exc}"])
         if dump_before != dump_after:
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: AST differs, this is not a format-only change")

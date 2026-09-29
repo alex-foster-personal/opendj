@@ -27,6 +27,12 @@ Regression lines:
   - if prove passes a comment that was added, removed, reworded or reordered then broken
   - if prove fails a re-wrap that keeps a noqa on its statement, or the ratified `#---` to `# ---` then broken
   - if prove passes a whitespace edit ruff never makes (`# no sec` to `# nosec`, a shebang re-spaced) then broken
+  - if prove passes a comment moved past a sibling, across a decorator, or into a module's first statement then broken
+  - if prove fails a semicolon split that keeps the trailing comment on the last statement then broken
+  - if prove passes a shebang moved off or onto byte 0 then broken
+  - if prove passes a cookie moved out of reach that changes what the bytes decode to then broken
+  - if prove fails a cookie moved into reach of an ASCII file, a dropped BOM, or a shebang's trailing space then broken
+  - if prove crashes on or fails a latin-1 file re-wrapped under its own cookie then broken
   - if prove passes a changed docstring relative indentation (a doctest) then broken
   - if prove fails a docstring that was only re-indented as a whole then broken
   - if prove passes a chmod-only change then broken
@@ -52,10 +58,13 @@ def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
 
 
-def _commit(repo: Path, files: dict[str, str], subject: str) -> str:
-    for rel, text in files.items():
+def _commit(repo: Path, files: dict[str, str | bytes], subject: str) -> str:
+    for rel, content in files.items():
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
-        (repo / rel).write_text(text)
+        if isinstance(content, bytes):
+            (repo / rel).write_bytes(content)
+        elif isinstance(content, str):
+            (repo / rel).write_text(content)
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", subject)
     return _git(repo, "rev-parse", "HEAD")
@@ -187,7 +196,6 @@ def test_prove_rejects_a_mode_change(repo: Path) -> None:
         ("x = 1  # old words\n", "x = 1  # new words\n"),
         ("x = 1  # first\n# second\ny = 2\n", "x = 1  # second\n# first\ny = 2\n"),
         ("x = run()  # no sec B602\n", "x = run()  # nosec B602\n"),
-        ("#!/usr/bin/env python3\nx = 1\n", "# !/usr/bin/env python3\nx = 1\n"),
         ("#!/usr/bin/env python3\nx = 1\n", "#!/usr/bin/env  python3\nx = 1\n"),
     ],
     ids=[
@@ -199,7 +207,6 @@ def test_prove_rejects_a_mode_change(repo: Path) -> None:
         "prose-reworded",
         "comments-reordered",
         "directive-inner-space",
-        "shebang-broken",
         "shebang-respaced",
     ],
 )
@@ -230,6 +237,94 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
 )
 def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:
     """Opposite-direction control: a comment's line and spacing are layout; only its statement and words count."""
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "def f():\n    a = 1\n    # note\n    b = 2\n    c = 3\n",
+            "def f():\n    a = 1\n    b = 2\n    # note\n    c = 3\n",
+        ),
+        ("# type: ignore\nx = (\n    1\n)\n", "x = (  # type: ignore\n    1\n)\n"),
+        ("x = foo(\n    a,\n    # c\n)\ny = 1\n", "x = foo(\n    a,\n)\n# c\ny = 1\n"),
+        ("@dec\n# c\ndef f():\n    pass\n", "# c\n@dec\ndef f():\n    pass\n"),
+    ],
+    ids=[
+        "past-a-sibling-statement",
+        "module-ignore-into-first-statement",
+        "out-of-its-statement",
+        "across-a-decorator",
+    ],
+)
+def test_prove_rejects_a_comment_moved_among_statements(repo: Path, before: str, after: str) -> None:
+    """A formatter never reorders tokens, so a comment keeps the statements before it and the one around it.
+    A whole-module type-ignore only works above the first statement, and a block comment names what follows."""
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 1
+    assert any("comment" in line for line in result.lines), result.lines
+
+
+def test_prove_control_a_semicolon_split_keeps_the_trailing_comment(repo: Path) -> None:
+    """Opposite-direction control: `x = 1; y = 2  # c` annotates y, and ruff's split leaves it there."""
+    base = _commit(repo, {"m.py": "x = 1; y = 2  # c\n"}, "init")
+    head = _commit(repo, {"m.py": "x = 1\ny = 2  # c\n"}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (b"#!/usr/bin/env python3\nx = 1\n", b"\n#!/usr/bin/env python3\nx = 1\n"),
+        (b"\n#!/usr/bin/env python3\nx=1\n", b"#!/usr/bin/env python3\nx = 1\n"),
+        (b"#!/usr/bin/env python3\nx = 1\n", b"# !/usr/bin/env python3\nx = 1\n"),
+    ],
+    ids=["shebang-off-byte-0", "shebang-onto-byte-0", "shebang-broken"],
+)
+def test_prove_rejects_a_shebang_that_stops_or_starts_running(repo: Path, before: bytes, after: bytes) -> None:
+    """The kernel reads a shebang only at byte 0, so a move that keeps its words and statement still changes how
+    the file runs. ruff 0.16.3 makes the second move itself, by dropping the blank lines above it."""
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 1
+    assert any("shebang" in line for line in result.lines), result.lines
+
+
+def test_prove_decodes_each_side_by_its_own_cookie(repo: Path) -> None:
+    """Python honors a coding cookie only on line 1 or 2. Moved out of reach, the same bytes decode to another
+    string, which only a per-side decode can see: a utf-8 read of both sides finds them equal."""
+    before = b'# -*- coding: latin-1 -*-\nx = "\xc3\xa9"\n'
+    after = b'\n\n# -*- coding: latin-1 -*-\nx = "\xc3\xa9"\n'
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 1
+    assert any("AST differs" in line for line in result.lines), result.lines
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (b"\n\n# -*- coding: latin-1 -*-\nx=1\n", b"# -*- coding: latin-1 -*-\nx = 1\n"),
+        (b"\xef\xbb\xbfx=1\n", b"x = 1\n"),
+        (b"#!/usr/bin/env python3 \nx=1\n", b"#!/usr/bin/env python3\nx = 1\n"),
+        (b'# -*- coding: latin-1 -*-\nx="\xe9"\n', b'# -*- coding: latin-1 -*-\nx = "\xe9"\n'),
+    ],
+    ids=["ascii-file-cookie-reaches-line-1", "bom-dropped", "shebang-trailing-space", "latin-1-file-rewrapped"],
+)
+def test_prove_control_a_position_change_that_changes_nothing_still_proves(
+    repo: Path, before: bytes, after: bytes
+) -> None:
+    """Opposite-direction control, from ruff 0.16.3's real output: what counts is the program each side DECODES
+    to and the shebang's words, not the cookie's line, the encoding's name or a BOM Python strips anyway."""
     base = _commit(repo, {"m.py": before}, "init")
     head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
     result = format_proof.prove(repo, base, head)
