@@ -55,6 +55,12 @@ from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
+from apps.analysis_beatgrid.grid_fit import (
+    GRID_FIT_LINE,
+    GRID_FIT_MODES,
+    GRID_FIT_RAW,
+    fit_grid,
+)
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
 
 #: A tempo fit that produced no straight line at all. `estimate_bpm` returns
@@ -231,7 +237,7 @@ def _stamp_activations(result: Mapping[str, Any], payload: dict[str, Any]) -> No
 
 
 def build_beatgrid_lane(
-    result: Mapping[str, Any], *, threshold: float
+    result: Mapping[str, Any], *, threshold: float, grid_fit: str = GRID_FIT_RAW
 ) -> BeatgridLane:
     """One `beat_this_runner.py` result into one lane block.
 
@@ -240,6 +246,10 @@ def build_beatgrid_lane(
     from the one its peak picker used would reject downstream what the producer
     accepted upstream (the reasoning is `cli.analyze`'s, and it holds here).
     """
+    if grid_fit not in GRID_FIT_MODES:
+        raise LanePayloadError(f"grid_fit must be one of {GRID_FIT_MODES}, got {grid_fit!r}")
+    if grid_fit == GRID_FIT_LINE:
+        return _build_line_lane(result, threshold=threshold)
     checked = _pulse_and_phase(result, threshold=threshold)
     if isinstance(checked, BeatgridLane):
         return checked
@@ -276,6 +286,90 @@ def build_beatgrid_lane(
     return BeatgridLane(
         status="ok", reason=None, confidence=tempo.confidence, payload=payload
     )
+
+
+def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> BeatgridLane:
+    """`grid_fit="line"`: serve the fitted line instead of the model's peaks.
+
+    Same guard chain up to the tempo fit (runner error, pulse, octave policy),
+    then `grid_fit.fit_grid` replaces both the raw beats and `lock_bar_phase`.
+    Per-beat BPM is the line's own (rounded) tempo, so the deck's local tempo
+    and the beat spacing it plays against are the same number by construction.
+    """
+    error = result.get("error")
+    if error:
+        return _failed(f"{REASON_RUNNER_ERROR}: {error}")
+    for key in ("beats", "downbeats"):
+        if key not in result:
+            raise LanePayloadError(f"runner result carries no `{key}` key; got {sorted(result)}")
+    beats = [float(t) for t in result["beats"]]
+    downbeats = [float(t) for t in result["downbeats"]]
+    pulse = evaluate_pulse(beats, result.get("activation_peak"), downbeats, threshold=threshold)
+    if pulse.no_trackable_pulse:
+        assert pulse.reason is not None
+        return _failed(pulse.reason)
+    tempo = estimate_bpm(beats)
+    if tempo is None:
+        return _failed(REASON_NO_TEMPO_FIT)
+
+    # The grid stays at the model's metrical level, as raw mode's beats do.
+    # Re-rendering it at the octave policy's multiple was measured (round 4,
+    # `line_round_offset_octave`) to halve 163-175 BPM tracks that rekordbox
+    # keeps whole, so the published tempo here is the line's own.
+    fit = fit_grid(beats, downbeats)
+    if fit.reason is not None:
+        return _failed(fit.reason)
+    if _cadence_breaks(fit.beat_numbers, BAR_BEATS):
+        raise LanePayloadError("grid_fit produced a cadence break; programmer error")
+
+    line_bpm = [round(line.bpm, 2) for line in fit.lines]
+    first_downbeat = next(t for t, n in zip(fit.beats, fit.beat_numbers, strict=True) if n == 1)
+    markers = []
+    for i in range(1, len(fit.lines)):
+        owned = zip(fit.beats, fit.beat_lines, strict=True)
+        at = next((t for t, owner in owned if owner == i), None)
+        if at is None:
+            continue
+        markers.append({
+            "at_s": round(at, 5),
+            "bpm_before": line_bpm[i - 1],
+            "bpm_after": line_bpm[i],
+            "confidence": tempo.confidence,
+        })
+    payload: dict[str, Any] = {
+        "beats": [
+            {"t": round(t, 5), "n": n, "bpm": line_bpm[owner]}
+            for t, n, owner in zip(fit.beats, fit.beat_numbers, fit.beat_lines, strict=True)
+        ],
+        "bpm": line_bpm[0] if len(line_bpm) == 1 else round(tempo.bpm, 2),
+        "bpm_confidence": tempo.confidence,
+        "octave_reason": (
+            "grid_fit_model_level" if tempo.octave_multiple != 1 else tempo.octave_reason
+        ),
+        "first_downbeat_s": round(first_downbeat, 5),
+        "tempo_changes": markers,
+        "static_grid_untrusted": False,
+        "grid_fit": {
+            "mode": GRID_FIT_LINE,
+            "offset_s": fit.offset_s,
+            "octave_policy_multiple": tempo.octave_multiple,
+            "segments": [
+                {
+                    "bpm": line_bpm[i],
+                    "bpm_fitted": round(line.bpm_fitted, 4),
+                    "round_step": line.round_step,
+                    "n_inliers": line.n_inliers,
+                    "n_outliers": line.n_outliers,
+                    "residual_rms_ms": round(line.residual_rms_s * 1000.0, 2),
+                }
+                for i, line in enumerate(fit.lines)
+            ],
+        },
+    }
+    if fit.phase_agreement is not None:
+        payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
+    _stamp_activations(result, payload)
+    return BeatgridLane(status="ok", reason=None, confidence=tempo.confidence, payload=payload)
 
 
 __all__ = [
