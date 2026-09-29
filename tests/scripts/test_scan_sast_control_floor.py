@@ -14,6 +14,8 @@ semgrep scanned 4, and every run read UNKNOWN blaming the rules.
   naming it, with or without the file floor holding
 - if the semgrep JSON has no "time" block while --expect-file is given then UNKNOWN,
   never a silent skip of the check
+- if --expected-scannable > 0 and semgrep scanned nothing and found nothing then an
+  --expect-file path still makes it UNKNOWN, never the empty-result exit 0
 """
 
 from __future__ import annotations
@@ -160,7 +162,12 @@ EXPECTED = [f"{CONTROL_DIR}/{name}" for name in ("a.py", "b.py", "c.ts", "d.rs")
 
 
 def _summary(
-    tmp_path: Path, scanned: list[str], min_files: int, *, with_time: bool = True
+    tmp_path: Path,
+    scanned: list[str],
+    min_files: int,
+    *,
+    with_time: bool = True,
+    expected_scannable: int = 0,
 ) -> tuple[int, str]:
     scan = tmp_path / "control.json"
     doc: dict[str, object] = {"results": [], "errors": [], "paths": {"scanned": scanned}}
@@ -179,6 +186,7 @@ def _summary(
             "--min-files",
             str(min_files),
             *expect_args,
+            *(["--expected-scannable", str(expected_scannable)] if expected_scannable else []),
         ],
         capture_output=True,
         text=True,
@@ -212,3 +220,11 @@ def test_summary_without_time_block_cannot_skip_expect_file(tmp_path: Path) -> N
     rc, stderr = _summary(tmp_path, EXPECTED, min_files=4, with_time=False)
     assert rc == 2, stderr
     assert "--expect-file could not be checked" in stderr, stderr
+
+
+def test_empty_scan_success_cannot_bypass_expect_file(tmp_path: Path) -> None:
+    """[if] 0 scanned, no results, but expected files named [then] UNKNOWN naming them."""
+    rc, stderr = _summary(tmp_path, [], min_files=0, expected_scannable=1)
+    assert rc == 2, stderr
+    assert f"control files not scanned: {', '.join(EXPECTED)}" in stderr, stderr
+

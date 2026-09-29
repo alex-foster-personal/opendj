@@ -20,7 +20,8 @@ Acceptance (one assertion each, exercised by `just security-scan`):
   even when an ignored path changed in the same diff.
 - [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules [then] exit 2 (UNKNOWN).
 - [if] semgrep-summary has --expected-scannable > 0, rules loaded, scanned 0 files, no errors,
-  and no results [then] exit 0 (baseline excluded unchanged files; no new findings).
+  no results, and no --expect-file path missing [then] exit 0 (baseline excluded unchanged
+  files; no new findings).
 - [if] semgrep-summary has --expected-scannable > 0, scanned 0 files, and errors or results
   [then] exit 2 (UNKNOWN), not a pass.
 - [if] semgrep scanned files but loaded 0 rules [then] exit 2.
@@ -363,6 +364,9 @@ def _semgrep_rules_gate(
         return _unknown(no_time) if args.expect_file else None
     scanned_paths = doc.get("paths", {}).get("scanned", [])
     scanned = len(scanned_paths)
+    # Computed before any success path, so no early exit 0 can bypass --expect-file.
+    not_scanned = _expected_files_not_scanned(args.expect_file, scanned_paths)
+    named = f"; control files not scanned: {', '.join(not_scanned)}" if not_scanned else ""
     print(f"semgrep loaded {rules} rules, scanned {scanned} files")
     expected = args.expected_scannable
     if expected is not None and expected > 0:
@@ -377,17 +381,15 @@ def _semgrep_rules_gate(
                 f"semgrep expected {expected} scannable file(s) but loaded 0 rules {detail}"
             )
         if scanned == 0:
-            if not errors and not results:
+            if not errors and not results and not not_scanned:
                 _emit(args, args.title, [], 0)
                 return 0
             return _unknown(
                 f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
-                f"and scanned {scanned} files"
+                f"and scanned {scanned} files{named}"
             )
     if rules < args.min_rules:
         return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
-    not_scanned = _expected_files_not_scanned(args.expect_file, scanned_paths)
-    named = f"; control files not scanned: {', '.join(not_scanned)}" if not_scanned else ""
     if scanned < args.min_files:
         return _unknown(
             f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor{named}"
