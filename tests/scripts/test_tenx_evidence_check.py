@@ -77,3 +77,15 @@ def test_ratio_must_lead_with_number() -> None:
 def test_fenced_sections_fail() -> None:
     body = "```\n" + GOOD + "```\n"
     assert not check("10xHunter-- x", body).ok, "if sections inside a code fence pass then broken"
+
+
+def test_ratio_equal_to_floor_fails() -> None:
+    body = GOOD.replace("10.8x", "9x")
+    assert not check("10xHunter-- x", body).ok, "if Ratio: 9x passes then broken"
+
+
+def test_indented_or_unclosed_fence_fails() -> None:
+    indented = "   ```markdown\n" + GOOD + "   ```\n"
+    unclosed = "```markdown\n" + GOOD
+    assert not check("10xHunter-- x", indented).ok, "if an indented fence passes then broken"
+    assert not check("10xHunter-- x", unclosed).ok, "if an unclosed fence passes then broken"

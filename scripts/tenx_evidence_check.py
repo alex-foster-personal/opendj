@@ -57,16 +57,27 @@ def _ratio(value: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
+def _strip_fences(body: str) -> str:
+    """Drop fenced code blocks (CommonMark: indent <= 3, unclosed runs to end)."""
+    kept: list[str] = []
+    fence: str | None = None
+    for line in body.splitlines():
+        opener = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence is None and opener:
+            fence = opener.group(1)
+        elif fence is not None and re.match(rf"^ {{0,3}}{fence[0]}{{{len(fence)},}}\s*$", line):
+            fence = None
+        elif fence is None:
+            kept.append(line)
+    return "\n".join(kept)
+
+
 # ----- check
 def check(title: str, body: str) -> Verdict:
     if not title.startswith(TITLE_PREFIX):
         return Verdict(True, [])
-    body = re.sub(
-        r"<!--.*?-->", "", body, flags=re.S
-    )  # the template's commented placeholders are not evidence
-    body = re.sub(
-        r"^(```|~~~).*?^\1[^\n]*$", "", body, flags=re.S | re.M
-    )  # fenced text is not a rendered section
+    # The template's commented placeholders and fenced text are not rendered evidence.
+    body = _strip_fences(re.sub(r"<!--.*?-->", "", body, flags=re.S))
     problems: list[str] = []
     evidence = _section(body, "10x Evidence")
     if evidence is None:
@@ -81,8 +92,8 @@ def check(title: str, body: str) -> Verdict:
         ratio = _ratio(ratio_text) if ratio_text else None
         if ratio_text and ratio is None:
             problems.append(f"Ratio '{ratio_text}' has no '<number>x' value")
-        elif ratio is not None and ratio < MIN_RATIO:
-            problems.append(f"Ratio {ratio}x is below the {MIN_RATIO:g}x gate")
+        elif ratio is not None and ratio <= MIN_RATIO:
+            problems.append(f"Ratio {ratio}x is not above the {MIN_RATIO:g}x gate")
     workings = _section(body, "10x Workings")
     if workings is None:
         problems.append("missing '## 10x Workings' section")
