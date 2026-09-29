@@ -13,6 +13,7 @@ use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
+use symphonia::core::units::TimeBase;
 
 use crate::engine::ErrorCode;
 use crate::protocol::ProtoError;
@@ -43,11 +44,13 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         .default_track(TrackType::Audio)
         .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio track in {}", path.display())))?;
     let track_id = track.id;
+    let time_base = track.time_base;
     let params = track
         .codec_params
         .as_ref()
         .and_then(|p| p.audio())
         .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio codec parameters in {}", path.display())))?;
+    let codec_rate = params.sample_rate;
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|e| dec_err("unsupported codec in", &e))?;
@@ -56,10 +59,9 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
     let mut scratch: Vec<f32> = Vec::new();
     let mut sample_rate = 0u32;
     loop {
-        let packet = match format.next_packet() {
+        let packet = match end_or_packet(format.next_packet()) {
             Ok(Some(p)) => p,
             Ok(None) => break,
-            Err(SymError::ResetRequired) => break,
             Err(e) => return Err(dec_err("read error in", &e)),
         };
         if packet.track_id != track_id {
@@ -67,9 +69,21 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         }
         let buf = match decoder.decode(&packet) {
             Ok(b) => b,
-            // A corrupt packet is skipped, as every player does; anything
-            // else stops the decode with an error rather than a short track.
-            Err(SymError::DecodeError(_)) => continue,
+            // A corrupt packet plays as silence for exactly its own length,
+            // so everything after it (beatgrid, cues, loops) stays where the
+            // file puts it. When that length cannot be known, the load fails
+            // rather than come back shorter than the file.
+            Err(SymError::DecodeError(e)) => {
+                let rate = if sample_rate != 0 { Some(sample_rate) } else { codec_rate };
+                let frames = packet_frames(packet.dur.get(), time_base, rate).ok_or_else(|| {
+                    dec_err("corrupt packet of unknown length in", &e)
+                })?;
+                pcm.resize(pcm.len() + frames * 2, 0.0);
+                if sample_rate == 0 {
+                    sample_rate = rate.unwrap_or(0);
+                }
+                continue;
+            }
             Err(e) => return Err(dec_err("decode error in", &e)),
         };
         let spec = buf.spec();
@@ -92,4 +106,62 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
     Ok(Decoded { sample_rate, pcm })
+}
+
+/// `Ok(None)` is the end of the stream. A reset part-way through (a chained
+/// stream whose tracks or codec change) is an ERROR, not the end: reading it
+/// as the end would load a truncated track as a success, and one decoder at
+/// one sample rate cannot follow the change anyway.
+fn end_or_packet<T>(next: Result<Option<T>, SymError>) -> Result<Option<T>, String> {
+    match next {
+        Ok(p) => Ok(p),
+        Err(SymError::ResetRequired) => {
+            Err("the stream changes part-way through (chained stream); refusing a truncated decode".into())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Frames at `rate` spanned by a packet `dur` ticks long in `time_base`.
+/// None when either is unknown, the packet claims no length, or the length
+/// is implausible for one packet (over 10 s), so a bogus header cannot make
+/// the decode allocate unbounded silence.
+fn packet_frames(dur: u64, time_base: Option<TimeBase>, rate: Option<u32>) -> Option<usize> {
+    let (tb, rate) = (time_base?, rate?);
+    if dur == 0 || rate == 0 {
+        return None;
+    }
+    let frames = u128::from(dur) * u128::from(tb.numer.get()) * u128::from(rate) / u128::from(tb.denom.get());
+    (frames > 0 && frames <= u128::from(rate) * 10).then_some(frames as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tb(numer: u32, denom: u32) -> Option<TimeBase> {
+        TimeBase::try_new(numer, denom)
+    }
+
+    #[test]
+    fn a_corrupt_packet_keeps_its_length_when_the_length_is_known() {
+        // An MP3 frame: 1152 ticks of 1/44100 s is 1152 frames at 44.1 kHz.
+        assert_eq!(packet_frames(1152, tb(1, 44100), Some(44100)), Some(1152));
+        // A millisecond time base (e.g. Matroska) still lands on frames.
+        assert_eq!(packet_frames(24, tb(1, 1000), Some(48000)), Some(1152));
+        // Unknown length: the caller fails the load instead.
+        assert_eq!(packet_frames(0, tb(1, 44100), Some(44100)), None);
+        assert_eq!(packet_frames(1152, None, Some(44100)), None);
+        assert_eq!(packet_frames(1152, tb(1, 44100), None), None);
+        // A bogus header claiming an hour-long packet is refused too.
+        assert_eq!(packet_frames(3600, tb(1, 1), Some(44100)), None);
+    }
+
+    #[test]
+    fn a_reset_part_way_through_is_an_error_not_the_end() {
+        assert!(end_or_packet::<()>(Err(SymError::ResetRequired)).is_err());
+        // Control: the real end of the stream still ends it cleanly.
+        assert_eq!(end_or_packet::<()>(Ok(None)), Ok(None));
+        assert_eq!(end_or_packet(Ok(Some(7))), Ok(Some(7)));
+    }
 }

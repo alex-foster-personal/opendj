@@ -255,17 +255,39 @@ impl AudioSide {
             debug_assert!(pushed.is_ok(), "a slot was checked free and this is the only producer");
         }
         let n = frames.min(self.scratch.len() / 2);
-        self.engine.render(&mut self.scratch[..n * 2]);
-        self.frames_since_state += n as u64;
-        if self.frames_since_state >= self.frames_per_state || self.state_req.swap(false, Ordering::Relaxed) {
-            self.frames_since_state = 0;
-            // The snapshot's position is the end of this block, heard at
-            // now + ahead + the block's own length.
-            let block_ns = n as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
-            let host_ns = self.epoch.elapsed().as_nanos() as u64 + self.ahead_ns + block_ns;
-            let _ = self.state_tx.push((self.engine.snapshot(), host_ns));
+        let now_ns = self.epoch.elapsed().as_nanos() as u64 + self.ahead_ns;
+        // Render up to each state boundary and publish there, so the feed
+        // keeps its STATE_HZ cadence whatever the block size: a block longer
+        // than the interval (1024 frames at 8 kHz, a large device buffer)
+        // publishes once per interval it spans, each at its own frame.
+        let mut done = 0;
+        let mut published_at_end = false;
+        while done < n {
+            let to_boundary = self.frames_per_state.saturating_sub(self.frames_since_state).max(1);
+            let chunk = ((n - done) as u64).min(to_boundary) as usize;
+            self.engine.render(&mut self.scratch[done * 2..(done + chunk) * 2]);
+            done += chunk;
+            self.frames_since_state += chunk as u64;
+            published_at_end = false;
+            if self.frames_since_state >= self.frames_per_state {
+                self.publish(now_ns, done);
+                published_at_end = true;
+            }
+        }
+        // A state the control side asked for (after a load or a command
+        // that wants one) goes out at the end of the block, once.
+        if self.state_req.swap(false, Ordering::Relaxed) && !published_at_end {
+            self.publish(now_ns, n);
         }
         &self.scratch[..n * 2]
+    }
+
+    /// Publish the engine's state as of `frames_in` frames into this block,
+    /// heard at `now_ns` (now plus the clock's lead) plus those frames.
+    fn publish(&mut self, now_ns: u64, frames_in: usize) {
+        self.frames_since_state = 0;
+        let in_ns = frames_in as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
+        let _ = self.state_tx.push((self.engine.snapshot(), now_ns + in_ns));
     }
 }
 
@@ -696,22 +718,80 @@ mod tests {
     use super::*;
 
     fn side(res_slots: usize) -> (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>) {
+        let (side, cmd_tx, res_rx, _state_rx) = side_at(48000, u64::MAX, res_slots);
+        (side, cmd_tx, res_rx)
+    }
+
+    type SideParts =
+        (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>, rtrb::Consumer<(Snapshot, u64)>);
+
+    fn side_at(sample_rate: u32, frames_per_state: u64, res_slots: usize) -> SideParts {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(16);
         let (res_tx, res_rx) = rtrb::RingBuffer::new(res_slots);
-        let (state_tx, _state_rx) = rtrb::RingBuffer::new(4);
+        let (state_tx, state_rx) = rtrb::RingBuffer::new(64);
         let side = AudioSide {
-            engine: Engine::new(48000),
+            engine: Engine::new(sample_rate),
             cmd_rx,
             res_tx,
             state_tx,
             state_req: Arc::new(AtomicBool::new(false)),
-            frames_per_state: u64::MAX,
+            frames_per_state,
             frames_since_state: 0,
             epoch: Instant::now(),
             ahead_ns: 0,
-            scratch: vec![0.0; MAX_BLOCK * 2],
+            scratch: vec![0.0; MAX_BLOCK * 2 * 8],
         };
-        (side, cmd_tx, res_rx)
+        (side, cmd_tx, res_rx, state_rx)
+    }
+
+    fn drain(rx: &mut rtrb::Consumer<(Snapshot, u64)>) -> Vec<(u64, u64)> {
+        let mut v = Vec::new();
+        while let Ok((s, ns)) = rx.pop() {
+            v.push((s.frame, ns));
+        }
+        v
+    }
+
+    #[test]
+    fn state_keeps_its_cadence_when_blocks_are_longer_than_the_interval() {
+        // `serve --clock wall --sample-rate 8000 --block 1024`: 128 ms blocks
+        // against a 266-frame (about 33 ms) state interval.
+        let per = (8000 / STATE_HZ) as u64;
+        let (mut side, _cmd, _res, mut states) = side_at(8000, per, 4);
+        // Within one block, each state is heard one interval after the last.
+        side.process(1024);
+        let first = drain(&mut states);
+        assert_eq!(first.iter().map(|s| s.0).collect::<Vec<_>>(), vec![per, 2 * per, 3 * per]);
+        let step = per * 1_000_000_000 / 8000;
+        assert!(first.windows(2).all(|w| w[1].1 - w[0].1 == step), "{first:?}");
+        for _ in 1..10 {
+            side.process(1024);
+        }
+        let got: Vec<_> = first.into_iter().chain(drain(&mut states)).collect();
+        assert_eq!(got.len() as u64, 10 * 1024 / per, "{got:?}");
+        // Each at its own boundary frame.
+        for (k, &(frame, _)) in got.iter().enumerate() {
+            assert_eq!(frame, (k as u64 + 1) * per);
+        }
+        // Control: blocks shorter than the interval still publish once per
+        // interval, not once per block.
+        let (mut side, _cmd, _res, mut states) = side_at(8000, per, 4);
+        for _ in 0..40 {
+            side.process(64);
+        }
+        let got = drain(&mut states);
+        assert_eq!(got.len() as u64, 40 * 64 / per, "{got:?}");
+        assert!(got.iter().all(|&(f, _)| f % per == 0), "{got:?}");
+    }
+
+    #[test]
+    fn a_requested_state_goes_out_once_at_the_end_of_the_block() {
+        let (mut side, _cmd, _res, mut states) = side_at(8000, u64::MAX, 4);
+        side.state_req.store(true, Ordering::Relaxed);
+        side.process(100);
+        assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![100]);
+        side.process(100);
+        assert!(drain(&mut states).is_empty(), "the request was consumed");
     }
 
     #[test]
@@ -803,7 +883,8 @@ mod tests {
         let (mut side, _cmd_tx, _res_rx) = side(4);
         let (state_tx, mut state_rx) = rtrb::RingBuffer::new(4);
         side.state_tx = state_tx;
-        side.frames_per_state = 1;
+        // One state per 480-frame block, published at the block's end.
+        side.frames_per_state = 480;
         let t0 = side.epoch.elapsed().as_nanos() as u64;
         side.set_ahead_ns(50_000_000);
         side.process(480);

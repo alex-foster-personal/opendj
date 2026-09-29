@@ -22,6 +22,11 @@ pub struct Beat {
 /// as not heard, for the render timeline.
 pub const AUDIBLE_GAIN: f64 = 1e-3;
 
+/// Largest beat count a beat loop or beat jump takes, either way. Far past
+/// any track (65536 beats is over 4 hours at 250 BPM) and small enough that
+/// beat-index arithmetic on it cannot overflow or saturate.
+pub const MAX_BEATS: f64 = 65536.0;
+
 /// A decoded track. Immutable once built, shared into the audio thread as an
 /// `Arc` and handed back out when replaced, so it is never freed there.
 #[derive(Debug)]
@@ -186,6 +191,10 @@ pub struct Deck {
     pub pitch_range: f64,
     /// Loop bounds in source frames.
     pub looping: Option<(f64, f64)>,
+    /// Whole-grid-beat length of the engaged loop when `beat_loop` made it,
+    /// None for a loop set by bounds. The page's `LoopState.beat_length`:
+    /// its loop-size readout and a repeated beat loop's restart both key on it.
+    pub loop_beats: Option<f64>,
     // Knob values as the sender set them, for the state feed and for ramps.
     pub trim: f64,
     pub eq: [f64; 3],
@@ -348,6 +357,7 @@ impl Deck {
             tempo: 1.0,
             pitch_range: 16.0,
             looping: None,
+            loop_beats: None,
             trim: 0.5,
             eq: [0.5; 3],
             filter: 0.5,
@@ -375,7 +385,7 @@ impl Deck {
         self.pos = 0.0;
         self.cue = None;
         self.playing = false;
-        self.looping = None;
+        self.clear_loop();
         self.track.replace(track)
     }
 
@@ -383,7 +393,7 @@ impl Deck {
         self.playing = false;
         self.pos = 0.0;
         self.cue = None;
-        self.looping = None;
+        self.clear_loop();
         self.track.take()
     }
 
@@ -437,7 +447,7 @@ impl Deck {
     fn move_to(&mut self, to: f64) {
         if let Some((a, b)) = self.looping {
             if to < a || to >= b {
-                self.looping = None;
+                self.clear_loop();
             }
         }
         self.pos = to;
@@ -445,7 +455,7 @@ impl Deck {
 
     pub fn set_loop(&mut self, bounds_ms: Option<(f64, f64)>) -> Result<(), EngineError> {
         let Some((in_ms, out_ms)) = bounds_ms else {
-            self.looping = None;
+            self.clear_loop();
             return Ok(());
         };
         let t = self.track()?;
@@ -458,6 +468,36 @@ impl Deck {
         }
         let out_ms = out_ms.min(dur);
         self.looping = Some((t.ms_to_frames(in_ms), t.ms_to_frames(out_ms)));
+        self.loop_beats = None;
+        Ok(())
+    }
+
+    fn clear_loop(&mut self) {
+        self.looping = None;
+        self.loop_beats = None;
+    }
+
+    /// Engage `(in_ms, out_ms)` as a `beats`-long beat loop. Reissuing the
+    /// loop that is already engaged, same length and same bounds, is a
+    /// RESTART, as the page's `engageBeatLoop` does: the playhead goes back
+    /// to loop-in, playing or paused. Anything else engages the new loop and
+    /// leaves the playhead where it is.
+    ///
+    /// A beat loop that would run past the end of the audio is refused, not
+    /// clamped: `set_loop` would shorten it silently while the deck still
+    /// reported the full beat length.
+    fn engage_beat_loop(&mut self, beats: f64, in_ms: f64, out_ms: f64) -> Result<(), EngineError> {
+        if out_ms > self.track()?.duration_ms() {
+            return Err(EngineError::new(ErrorCode::Invalid, "the beat loop runs past the end of the track"));
+        }
+        let before = self.looping.zip(self.loop_beats);
+        self.set_loop(Some((in_ms, out_ms)))?;
+        self.loop_beats = Some(beats);
+        if let (Some(((a, b), n)), Some(now)) = (before, self.looping) {
+            if n == beats && (a, b) == now {
+                self.pos = a;
+            }
+        }
         Ok(())
     }
 
@@ -466,18 +506,20 @@ impl Deck {
     /// with no `start_ms`, on the preceding downbeat for a 4-beat loop and on
     /// the nearest beat otherwise. With only a tag BPM it starts where asked.
     pub fn beat_loop(&mut self, beats: f64, start_ms: Option<f64>) -> Result<(), EngineError> {
-        if !(beats.is_finite() && beats > 0.0) {
-            return Err(EngineError::new(ErrorCode::Invalid, "beat loop length must be positive"));
+        // Whole beats on every track, as the page's command parser requires,
+        // whether or not a grid is loaded.
+        if !(beats.is_finite() && beats > 0.0 && beats <= MAX_BEATS && beats.fract() == 0.0) {
+            return Err(EngineError::new(
+                ErrorCode::Invalid,
+                "beat loop length must be a whole number of beats, 1 to 65536",
+            ));
         }
         let t = self.track()?.clone();
         let here = start_ms.unwrap_or_else(|| t.frames_to_ms(self.pos));
         if !t.has_grid() {
             let idx = t.beat_index_at(here).ok_or(no_grid())?;
             let end = t.beat_time_ms(idx + beats).ok_or(no_grid())?;
-            return self.set_loop(Some((here, end)));
-        }
-        if beats.fract() != 0.0 {
-            return Err(EngineError::new(ErrorCode::Invalid, "a loop on a beatgrid spans whole beats"));
+            return self.engage_beat_loop(beats, here, end);
         }
         let start = if start_ms.is_none() && beats == 4.0 {
             t.downbeat_at_or_before(here)
@@ -489,23 +531,23 @@ impl Deck {
         if end >= t.beats.len() {
             return Err(EngineError::new(ErrorCode::Invalid, "the loop runs past the last beat of the grid"));
         }
-        self.set_loop(Some((t.beats[start].time_ms, t.beats[end].time_ms)))
+        self.engage_beat_loop(beats, t.beats[start].time_ms, t.beats[end].time_ms)
     }
 
     /// Jump by `beats` along the grid. A jump inside an active loop moves the
     /// loop with it, as rekordbox does, so the playhead stays inside it.
     pub fn beat_jump(&mut self, beats: f64) -> Result<(), EngineError> {
-        if !beats.is_finite() {
-            return Err(EngineError::new(ErrorCode::Invalid, "beat jump must be finite"));
+        if !(beats.is_finite() && beats != 0.0 && beats.abs() <= MAX_BEATS && beats.fract() == 0.0) {
+            return Err(EngineError::new(
+                ErrorCode::Invalid,
+                "beat jump must be a non-zero whole number of beats, at most 65536 either way",
+            ));
         }
         let t = self.track()?.clone();
         let now = t.frames_to_ms(self.pos);
         let target = if t.has_grid() {
             // Whole beats from the nearest real beat, clamped to the grid and
             // to its last beat inside the audio (`beatJumpTargetMs`).
-            if beats.fract() != 0.0 || beats == 0.0 {
-                return Err(EngineError::new(ErrorCode::Invalid, "a beat jump on a beatgrid is a non-zero whole number"));
-            }
             let last = t.beats.len() as i64 - 1;
             let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
             let dur = t.duration_ms();
@@ -731,6 +773,107 @@ mod tests {
         d.cue().unwrap();
         assert!(!d.playing);
         assert_eq!(d.pos, 48000.0);
+    }
+
+    #[test]
+    fn reissuing_the_engaged_beat_loop_restarts_it_at_loop_in() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        d.beat_loop(4.0, Some(1000.0)).unwrap();
+        assert_eq!(d.loop_beats, Some(4.0));
+        d.seek(2200.0).unwrap();
+        // Paused: the same loop again puts the playhead back at loop-in.
+        d.beat_loop(4.0, Some(1000.0)).unwrap();
+        assert_eq!((d.looping, d.pos), (Some((48000.0, 144000.0)), 48000.0));
+        // Playing: the same.
+        d.seek(2200.0).unwrap();
+        d.play(true).unwrap();
+        d.beat_loop(4.0, Some(1000.0)).unwrap();
+        assert_eq!(d.pos, 48000.0);
+        assert!(d.playing);
+    }
+
+    #[test]
+    fn a_different_beat_loop_engages_without_moving_the_playhead() {
+        // Control for the restart: only the SAME engaged loop restarts.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        d.beat_loop(4.0, Some(1000.0)).unwrap();
+        d.seek(1200.0).unwrap();
+        // Same start, other length: a new loop, the playhead stays.
+        d.beat_loop(2.0, Some(1000.0)).unwrap();
+        assert_eq!((d.looping, d.pos, d.loop_beats), (Some((48000.0, 96000.0)), 57600.0, Some(2.0)));
+        // A bounds loop over the same range as a beat loop is not a beat
+        // loop, so the beat loop over it engages fresh rather than restarts.
+        d.set_loop(Some((1000.0, 2000.0))).unwrap();
+        assert_eq!(d.loop_beats, None);
+        d.beat_loop(2.0, Some(1000.0)).unwrap();
+        assert_eq!((d.pos, d.loop_beats), (57600.0, Some(2.0)));
+        // Leaving the loop forgets its length.
+        d.seek(5000.0).unwrap();
+        assert_eq!((d.looping, d.loop_beats), (None, None));
+    }
+
+    #[test]
+    fn a_beat_loop_past_the_end_of_the_audio_is_refused_not_shortened() {
+        // Tag BPM only (120, 500 ms beats) on a 10 s track.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 10], vec![], Some(120.0))));
+        let e = d.beat_loop(4.0, Some(8500.0)).unwrap_err();
+        assert!(e.message.contains("past the end"), "{}", e.message);
+        assert_eq!((d.looping, d.loop_beats), (None, None));
+        // Control: a loop ending exactly at the end still engages at full length.
+        d.beat_loop(4.0, Some(8000.0)).unwrap();
+        assert_eq!((d.looping, d.loop_beats), (Some((384000.0, 480000.0)), Some(4.0)));
+        // On a grid whose beats run past the audio, the same rule.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 7.0, grid_120(4))));
+        assert!(d.beat_loop(2.0, Some(6500.0)).is_err(), "ends on the 7.5 s beat");
+        d.beat_loop(2.0, Some(6000.0)).unwrap();
+        assert_eq!((d.looping, d.loop_beats), (Some((288000.0, 336000.0)), Some(2.0)));
+    }
+
+    #[test]
+    fn beat_counts_are_whole_with_or_without_a_grid() {
+        // Tag BPM only: no grid to snap to, and still whole beats only.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 10], vec![], Some(120.0))));
+        for bad in [0.5, 1.5, 0.0, -1.0] {
+            assert_eq!(d.beat_loop(bad, Some(1000.0)).unwrap_err().code, ErrorCode::Invalid, "loop {bad}");
+        }
+        for bad in [0.5, -2.5, 0.0] {
+            assert_eq!(d.beat_jump(bad).unwrap_err().code, ErrorCode::Invalid, "jump {bad}");
+        }
+        assert_eq!(d.looping, None);
+        // Control: whole counts still work on the tag BPM, negative jumps too.
+        d.beat_loop(2.0, Some(1000.0)).unwrap();
+        assert_eq!(d.looping, Some((48000.0, 96000.0)));
+        d.set_loop(None).unwrap();
+        d.seek(4000.0).unwrap();
+        d.beat_jump(-2.0).unwrap();
+        assert_eq!(d.pos, 3000.0 * 48.0);
+    }
+
+    #[test]
+    fn huge_beat_counts_are_refused_not_overflowed() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        // Off beat 0, so an unbounded count would overflow the beat index
+        // (a saturated cast plus 4) rather than merely run past the grid.
+        d.seek(2000.0).unwrap();
+        for beats in [1e300, MAX_BEATS + 1.0, 9.3e18] {
+            assert_eq!(d.beat_loop(beats, None).unwrap_err().code, ErrorCode::Invalid, "{beats}");
+            assert_eq!(d.beat_jump(beats).unwrap_err().code, ErrorCode::Invalid, "{beats}");
+            assert_eq!(d.beat_jump(-beats).unwrap_err().code, ErrorCode::Invalid, "-{beats}");
+        }
+        // Control: the bound itself is accepted. The jump clamps to the last
+        // grid beat (7.5 s); the loop is refused only for running past it.
+        let err = d.beat_loop(MAX_BEATS, None).unwrap_err();
+        assert!(err.message.contains("past the last beat"), "{}", err.message);
+        d.beat_jump(MAX_BEATS).unwrap();
+        assert_eq!(d.pos, 7500.0 * 48.0);
+        d.beat_jump(-MAX_BEATS).unwrap();
+        assert_eq!(d.pos, 0.0);
     }
 
     #[test]
