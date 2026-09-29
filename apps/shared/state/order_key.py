@@ -68,15 +68,15 @@ def between(left: str | None, right: str | None) -> str:
     """
     if left is not None and right is not None and left >= right:
         raise ValueError(f"left must be < right: {left!r} >= {right!r}")
-    if left is None and right is None:
-        return from_index(KEY_BASE)
-    if right is None:
-        return _increment(left)
     if left is None:
+        if right is None:
+            return from_index(KEY_BASE)
         below = _decrement(right) if right else None
         if below is None:
             raise PrecisionExhausted(f"no key sorts before {right!r}")
         return below
+    if right is None:
+        return _increment(left)
     common = 0
     while (
         common < len(left)

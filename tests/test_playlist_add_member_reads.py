@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -127,10 +128,16 @@ def _last_edit_payload(store: PlaylistStore) -> dict:
 # growth
 
 
+@dataclass(frozen=True)
+class AddCase:
+    position: int | None
+    forbid_duplicates: bool
+
+
 CASES = {
-    "append": {"position": None, "forbid_duplicates": False},
-    "head": {"position": 0, "forbid_duplicates": False},
-    "append-forbid-duplicates": {"position": None, "forbid_duplicates": True},
+    "append": AddCase(position=None, forbid_duplicates=False),
+    "head": AddCase(position=0, forbid_duplicates=False),
+    "append-forbid-duplicates": AddCase(position=None, forbid_duplicates=True),
 }
 
 
@@ -140,11 +147,11 @@ def test_add_executes_the_same_sqlite_work_at_4000_members_as_at_40(
 ) -> None:
     """[if] one add at 4,000 members [then] sqlite does the work it does at 40, [else stop]."""
     spec = CASES[case]
-    small = _playlist(store, SMALL, forbid_duplicates=spec["forbid_duplicates"])
-    large = _playlist(store, LARGE, forbid_duplicates=spec["forbid_duplicates"])
+    small = _playlist(store, SMALL, forbid_duplicates=spec.forbid_duplicates)
+    large = _playlist(store, LARGE, forbid_duplicates=spec.forbid_duplicates)
 
     def _add(playlist_id: str, sid: str) -> Callable[[], object]:
-        return lambda: store.add_memberships(playlist_id, [sid], position=spec["position"])
+        return lambda: store.add_memberships(playlist_id, [sid], position=spec.position)
 
     small_steps = _vm_steps(store, _add(small, _sid(LARGE + 1)))
     large_steps = _vm_steps(store, _add(large, _sid(LARGE + 1)))
@@ -168,13 +175,13 @@ def test_add_materializes_the_same_rows_at_4000_members_as_at_40(
 ) -> None:
     """[if] one add at 4,000 members [then] Python sees as many rows as at 40, [else stop]."""
     spec = CASES[case]
-    small = _playlist(store, SMALL, forbid_duplicates=spec["forbid_duplicates"])
-    large = _playlist(store, LARGE, forbid_duplicates=spec["forbid_duplicates"])
+    small = _playlist(store, SMALL, forbid_duplicates=spec.forbid_duplicates)
+    large = _playlist(store, LARGE, forbid_duplicates=spec.forbid_duplicates)
     small_rows = _rows_materialized(
-        store, lambda: store.add_memberships(small, [_sid(LARGE + 2)], position=spec["position"]),
+        store, lambda: store.add_memberships(small, [_sid(LARGE + 2)], position=spec.position),
     )
     large_rows = _rows_materialized(
-        store, lambda: store.add_memberships(large, [_sid(LARGE + 2)], position=spec["position"]),
+        store, lambda: store.add_memberships(large, [_sid(LARGE + 2)], position=spec.position),
     )
     assert small_rows > 0, "counter saw no rows: the instrument is not attached"
     assert large_rows == small_rows, (small_rows, large_rows)
@@ -435,8 +442,9 @@ def test_an_add_next_to_a_legacy_key_renumbers_and_lands_in_place(
 
     expected = [_sid(LARGE + 3), *before] if position == 0 else [*before, _sid(LARGE + 3)]
     assert _live_stable_ids(store, playlist_id) == expected
-    keys = _raw_keys(store, playlist_id)
-    assert all(k is not None and len(k) == 8 for k in keys), keys
+    raw = _raw_keys(store, playlist_id)
+    keys = [k for k in raw if k is not None]
+    assert len(keys) == len(raw) and all(len(k) == 8 for k in keys), raw
     assert keys == sorted(keys) and len(set(keys)) == len(keys), keys
     assert result.added[0].order_key == keys[0 if position == 0 else -1]
 
