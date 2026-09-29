@@ -378,6 +378,26 @@ fn ramp_endpoints_are_checked_before_rendering() {
     assert_eq!(out.frames, 48000);
     let e = render_plan_files(&parse_plan(&plan(Some(8), 1.09)).unwrap(), &d).err().unwrap();
     assert!(e.message.contains("pitch range"), "{}", e.message);
+
+    // Codex's case: a pitch range narrowed under a running tempo ramp, while
+    // the tempo so far still fits, fails on the pitch_range event itself,
+    // before the ramp crosses the new edge. The range 16 ramp to 1.12 is at
+    // about 1.02 when the range drops to 8 at 300 ms.
+    let narrowed = |after: f64, range: u32| {
+        json!({"end": {"ms": 1000}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+            {"at": {"ms": 0}, "cmd": {"type": "pitch_range", "deck": 1, "range": 16}},
+            {"at": {"ms": 200}, "ramp": {"type": "tempo", "deck": 1, "to": after, "over": {"ms": 500}}},
+            {"at": {"ms": 300}, "cmd": {"type": "pitch_range", "deck": 1, "range": range}}]})
+    };
+    let e = render_plan_files(&parse_plan(&narrowed(1.12, 8)).unwrap(), &d).err().unwrap();
+    assert!(e.message.starts_with("events[3]: pitch_range") && e.message.contains("events[2]"), "{}", e.message);
+    // Controls: a narrower range the ramp's target still fits renders to the
+    // end, and so does widening it.
+    for (to, range) in [(1.08, 8), (1.12, 100)] {
+        let out = render_plan_files(&parse_plan(&narrowed(to, range)).unwrap(), &d).unwrap();
+        assert_eq!(out.frames, 48000, "to {to} range {range}");
+    }
 }
 
 #[test]

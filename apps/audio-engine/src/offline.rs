@@ -414,6 +414,28 @@ pub fn render_plan_with(
                         engine.apply(cmd).map_err(|e| fail(idx, e.into()))?;
                     }
                     Action::Cmd(Command::Apply(cmd)) => {
+                        // Narrowing the pitch range under a tempo ramp would
+                        // fail the ramp at the step that crosses the new edge,
+                        // blamed on the ramp. The ramp's steps run from where
+                        // the tempo is now (inside the new range, or the
+                        // command itself fails) to its target, so checking
+                        // the target is enough, and fails here, on this event.
+                        if let EngineCmd::PitchRange { deck, range } = *cmd {
+                            if let Some(r) = ramps.iter().find(|r| r.target == KnobTarget::Tempo(deck)) {
+                                if (r.to - 1.0).abs() > range / 100.0 + 1e-9 {
+                                    return Err(fail(
+                                        idx,
+                                        ProtoError::new(
+                                            ErrorCode::Invalid,
+                                            format!(
+                                                "pitch_range +/-{range}% cuts off the tempo ramp of events[{}], still heading to {}",
+                                                r.event, r.to
+                                            ),
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
                         yield_ramp(&mut ramps, cmd);
                         engine.apply(cmd.clone()).map_err(|e| fail(idx, e.into()))?;
                     }
