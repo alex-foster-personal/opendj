@@ -6,8 +6,8 @@ through the checkout's own `origin`, for Avrea and Tenki.
 
 Driven for real in the world tests/scripts/runner_canary_mirror_world.py builds. This file
 holds the happy path, the refusals, provenance and the default-branch guards; what the
-credential may reach, url rewrite rules and redaction live in
-tests/scripts/test_runner_canary_mirror_isolation.py.
+credential may reach and url rewrite rules live in test_runner_canary_mirror_isolation.py,
+redaction in test_runner_canary_mirror_redaction.py.
 
 Regression lines:
   - if a missing push token does anything but exit non-zero naming CANARY_MIRROR_PUSH_TOKEN

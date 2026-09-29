@@ -5,9 +5,9 @@ out as `<remotes>/<owner>/<name>.git`, with a copy of ci/runner-canary.json whos
 involved (the script refuses those), so the script's own URL construction, auth header,
 preflight and push all run unmodified. Nothing touches GitHub.
 
-Shared by tests/scripts/test_runner_canary_mirror.py and
-tests/scripts/test_runner_canary_mirror_isolation.py, which each register `make_world` as
-their `world` fixture.
+Shared by tests/scripts/test_runner_canary_mirror.py, test_runner_canary_mirror_isolation.py
+and test_runner_canary_mirror_redaction.py, which each register `make_world` as their
+`world` fixture.
 """
 
 from __future__ import annotations
