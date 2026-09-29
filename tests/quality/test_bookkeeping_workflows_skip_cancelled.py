@@ -54,12 +54,11 @@ def _assert_batch_pass(
     of at least two cadences, one concurrency group with no expression in it."""
     steps = workflow["jobs"][job_name]["steps"]
     mark = next(step for step in steps if step.get("id") == "mark")
-    assert f"workflows/{workflow_file}/runs" in mark["run"]
-    assert "run_started_at" in mark["run"]
-    # if a failed pass advances the mark then two failures in a row skip completions
-    assert "success" in mark["run"] and "failure" not in mark["run"], (
-        "only a successful pass may advance the mark"
-    )
+    # if a failed pass advances the mark, or the search stops at a fixed window, then a run
+    # of failed passes skips completions; the tested reader pages the whole history
+    assert "scripts.ci_run_batch mark" in mark["run"], "the mark comes from the tested reader"
+    assert f"--workflow-file {workflow_file}" in mark["run"]
+    assert "per_page" not in mark["run"] and "failure" not in mark["run"]
     cadence = _cadence_minutes(workflow[True]["schedule"][0]["cron"])
     env = workflow["jobs"][job_name]["env"]
     assert int(env["OVERLAP_MINUTES"]) >= 2 * cadence
@@ -109,8 +108,7 @@ def test_ci_cost_guard_batch_lists_every_completion_including_cancelled() -> Non
     assert "--batch" in price["run"]
     assert "conclusion" not in price["run"]
     mark = next(step for step in steps if step.get("id") == "mark")
-    assert "workflows/ci-cost-guard.yml/runs" in mark["run"]
-    assert "run_started_at" in mark["run"]
+    assert "--workflow-file ci-cost-guard.yml" in mark["run"]
 
 
 def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:

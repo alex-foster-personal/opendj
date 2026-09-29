@@ -9,14 +9,19 @@ whatever the completion rate. The pieces every such follower shares live here:
 the mark, its floor, and the paginated listing.
 
 The mark lives nowhere but GitHub's own record of the follower's runs
-(`run_started_at` of its last completed pass). The floor makes two passes
-overlap even if a pass is late; every follower must make re-applying an
-overlap harmless on its own terms.
+(`run_started_at` of its last SUCCESSFUL pass, `last_successful_pass_start`).
+The floor makes two passes overlap even if a pass is late; every follower must
+make re-applying an overlap harmless on its own terms.
+
+    python3 -m scripts.ci_run_batch mark --repository o/r --workflow-file f.yml --this-run N
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -118,3 +123,68 @@ def fetch_completed_runs(
                 break
             page += 1
     return list(seen.values())
+
+
+MARK_MAX_PAGES = 10
+
+
+def last_successful_pass_start(
+    repository: str,
+    workflow_file: str,
+    this_run: int,
+    *,
+    token: str = "",
+    agent: str = "ci-run-batch",
+    max_pages: int = MARK_MAX_PAGES,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> str:
+    """The start of the follower's last successful pass, paging back through its history.
+
+    A failed pass may have written none of its batch, so it never moves the mark; and the
+    search is not a fixed window, because a run of failures longer than the window would
+    otherwise fall back to the floor and skip what they missed (Codex P1s on #3844). With no
+    success in reach, the mark is the oldest pass seen, which covers everything since; with
+    no passes at all it is empty and the caller uses the floor. The `status=success` filter
+    is not used: on Tue 29 Sep 2026 `per_page=1` with it returned a pass from Mon 14 Sep.
+    """
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    oldest = ""
+    for page in range(1, max_pages + 1):
+        runs = fetch(
+            f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_file}"
+            f"/runs?status=completed&per_page=100&page={page}"
+        ).get("workflow_runs") or []
+        for run in runs:
+            if int(run["id"]) == this_run:
+                continue
+            if run["conclusion"] == "success":
+                return str(run["run_started_at"])
+            oldest = str(run["run_started_at"])
+        if len(runs) < 100:
+            return oldest
+    print(
+        f"::warning::no successful {workflow_file} pass in the last {max_pages * 100}; "
+        f"covering since the oldest seen, {oldest}",
+        file=sys.stderr,
+    )
+    return oldest
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    mark = commands.add_parser("mark", help="print the last successful pass's start")
+    mark.add_argument("--repository", required=True)
+    mark.add_argument("--workflow-file", required=True)
+    mark.add_argument("--this-run", type=int, required=True)
+    args = parser.parse_args(argv)
+    token = os.environ["GITHUB_TOKEN"]
+    start = last_successful_pass_start(
+        args.repository, args.workflow_file, args.this_run, token=token
+    )
+    print(start)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -18,7 +18,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from scripts.ci_cost_guard import render_batch_summary, select_batch_runs
-from scripts.ci_run_batch import RESULT_CAP, batch_since, created_slices, fetch_completed_runs
+from scripts.ci_run_batch import (
+    RESULT_CAP,
+    batch_since,
+    created_slices,
+    fetch_completed_runs,
+    last_successful_pass_start,
+)
 
 pytestmark = pytest.mark.requirement("OPS-36")
 
@@ -163,3 +169,52 @@ def test_listing_fails_closed_when_a_slice_reaches_the_result_cap() -> None:
         fetch_completed_runs(
             "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_pages(RESULT_CAP)
         )
+
+
+# ----- the mark: the last SUCCESSFUL pass, however far back (Codex P1s on #3844) -----
+
+
+def _started(index: int) -> str:
+    return f"2026-09-{29 - (index // 12):02d}T{12 - index % 12:02d}:00:00Z"
+
+
+def _passes(conclusions: list[str], this_run: int = 1) -> Callable[[str], dict]:
+    """Newest-first completed passes of the follower, 100 per page; pass i started i hours
+    before 12:00 on Tue 29 Sep, and id 1 is this pass."""
+    runs = [
+        {"id": this_run + index, "conclusion": conclusion, "run_started_at": _started(index)}
+        for index, conclusion in enumerate(conclusions)
+    ]
+
+    def get(url: str) -> dict:
+        page = int(re.search(r"[?&]page=(\d+)", url).group(1))
+        assert "status=completed" in url and "per_page=100" in url, url
+        return {"workflow_runs": runs[(page - 1) * 100 : page * 100]}
+
+    return get
+
+
+def test_mark_skips_failed_passes_and_this_run() -> None:
+    get = _passes(["success", "failure", "failure", "success"])
+    assert last_successful_pass_start("o/r", "f.yml", 1, get_json=get) == "2026-09-29T09:00:00Z"
+
+
+def test_mark_searches_past_the_first_page() -> None:
+    get = _passes(["failure"] * 150 + ["success"])
+    start = last_successful_pass_start("o/r", "f.yml", 999, get_json=get)
+    assert start == _started(150)
+
+
+def test_mark_with_no_success_anywhere_covers_since_the_oldest_pass() -> None:
+    get = _passes(["failure"] * 3)
+    assert last_successful_pass_start("o/r", "f.yml", 999, get_json=get) == "2026-09-29T10:00:00Z"
+
+
+def test_mark_with_no_passes_at_all_is_empty() -> None:
+    assert last_successful_pass_start("o/r", "f.yml", 1, get_json=_passes([])) == ""
+
+
+def test_mark_stops_at_the_page_cap_and_covers_since_the_oldest_seen() -> None:
+    get = _passes(["failure"] * 250)
+    start = last_successful_pass_start("o/r", "f.yml", 999, get_json=get, max_pages=2)
+    assert start == _started(199)
