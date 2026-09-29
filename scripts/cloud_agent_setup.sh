@@ -40,13 +40,15 @@ export PATH="$HOME/.local/bin:$PATH"
 # --- system packages (Linux) ------------------------------------------------
 # libsqlcipher-dev and just mirror the apt step in .github/workflows/ci.yml.
 # pkg-config + libasound2-dev: cpal's ALSA backend (apps/audio-engine
-# `--features device`). libdbus-1-dev: libdbus-sys in the desktop shells.
+# `--features device`). clang + libclang-dev: bindgen, which the
+# signalsmith-stretch crate in apps/audio-engine runs at build time.
+# libdbus-1-dev: libdbus-sys in the desktop shells.
 # gh: the REST smoke test below, whenever the runner sets a GitHub token.
 # xvfb + libnss3 libgbm1 libgtk-3-0t64 libxss1: run the Electron shell
 # (apps/desktop/electron) headless under `xvfb-run`.
 # ODJ_CLOUD_TAURI=1 adds the WebKitGTK stack the Tauri shell compiles against;
 # it is several hundred MB, so it is opt-in.
-APT_PACKAGES="ca-certificates curl git libsqlcipher-dev just pkg-config libasound2-dev libdbus-1-dev gh xvfb libnss3 libgbm1 libgtk-3-0t64 libxss1"
+APT_PACKAGES="ca-certificates curl git libsqlcipher-dev just pkg-config libasound2-dev clang libclang-dev libdbus-1-dev gh xvfb libnss3 libgbm1 libgtk-3-0t64 libxss1"
 if [ "${ODJ_CLOUD_TAURI:-0}" = "1" ]; then
   APT_PACKAGES="$APT_PACKAGES libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev"
 fi
