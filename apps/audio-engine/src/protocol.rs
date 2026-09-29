@@ -256,8 +256,8 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         "key_nudge" => {
             let deck = deck_of(o, ty)?;
             let semitones = match num(o, ty, "semitones")? {
-                v if v == 1.0 => 1,
-                v if v == -1.0 => -1,
+                1.0 => 1,
+                -1.0 => -1,
                 v => return Err(invalid(format!("key_nudge.semitones must be -1 or 1, got {v}"))),
             };
             apply(EngineCmd::KeyNudge { deck, semitones })

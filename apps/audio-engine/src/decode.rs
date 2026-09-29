@@ -66,12 +66,12 @@ pub fn resample(d: Decoded, to: u32) -> Result<Decoded, String> {
         let (_, got) = r.process_into_buffer(&inp, &mut out, None).map_err(|e| e.to_string())?;
         let from_i = skip.min(got);
         skip -= from_i;
-        for i in from_i..got {
+        for (l, r) in out[0][from_i..got].iter().zip(&out[1][from_i..got]) {
             if pcm.len() == want * 2 {
                 break;
             }
-            pcm.push(out[0][i]);
-            pcm.push(out[1][i]);
+            pcm.push(*l);
+            pcm.push(*r);
         }
     }
     Ok(Decoded { sample_rate: to, pcm })

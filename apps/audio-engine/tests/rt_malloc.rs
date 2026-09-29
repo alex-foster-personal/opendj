@@ -9,6 +9,9 @@
 //! allocates inside the window.
 
 #![cfg(all(target_os = "linux", target_env = "gnu"))]
+// The interposed allocator functions are called only by libc's callers,
+// under the C contracts of malloc(3); there is nothing further to document.
+#![allow(clippy::missing_safety_doc)]
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
