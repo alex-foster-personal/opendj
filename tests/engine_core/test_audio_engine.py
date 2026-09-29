@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator
@@ -276,20 +278,44 @@ def test_route_503_names_the_missing_binary(tmp_path: Path) -> None:
 
 
 # ----- the real engine -----------------------------------------------------------
-def _real_binary() -> Path | None:
-    try:
-        return resolve_binary(os.environ, platform_paths.PROJECT_ROOT).path
-    except AudioEngineError:
-        return None
+@pytest.fixture(scope="module")
+def real_engine_env() -> dict[str, str]:
+    """The environment for a supervisor running odj-audio built from THIS checkout.
+
+    Rebuilt every run (cargo does nothing when it is fresh) and pinned with
+    ``ODJ_AUDIO_BIN``: without that the supervisor takes the newest binary under
+    ``apps/audio-engine/target``, which on a self-hosted CI runner can be a
+    leftover from another branch's job, so the test would exercise someone
+    else's engine.
+    """
+    if shutil.which("cargo") is None:
+        pytest.skip("UNAVAILABLE: no cargo here, so odj-audio cannot be built from this checkout")
+    crate = platform_paths.PROJECT_ROOT / "apps" / "audio-engine"
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--quiet",
+            "--bin",
+            "odj-audio",
+            "--manifest-path",
+            str(crate / "Cargo.toml"),
+        ],
+        check=True,
+    )
+    built = (
+        crate / "target" / "debug" / ("odj-audio.exe" if sys.platform == "win32" else "odj-audio")
+    )
+    env = {**os.environ, BIN_ENV: str(built)}
+    assert resolve_binary(env, platform_paths.PROJECT_ROOT).path == built
+    return env
 
 
-@pytest.mark.skipif(
-    _real_binary() is None,
-    reason="no odj-audio build; cargo build --manifest-path apps/audio-engine/Cargo.toml",
-)
-def test_the_real_engine_takes_commands_over_the_published_socket() -> None:
+def test_the_real_engine_takes_commands_over_the_published_socket(
+    real_engine_env: dict[str, str],
+) -> None:
     websockets = pytest.importorskip("websockets.sync.client")
-    sup = AudioEngineSupervisor(environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT)
+    sup = AudioEngineSupervisor(environ=real_engine_env, repo_root=platform_paths.PROJECT_ROOT)
     try:
         client = _app(sup)
         assert client.post(f"{AUDIO_ENGINE_PATH}/start", json={"clock": "wall"}).status_code == 200
@@ -532,11 +558,9 @@ def test_load_route_sends_the_file_and_the_grid_the_page_sees(
     )
 
 
-@pytest.mark.skipif(
-    _real_binary() is None,
-    reason="no odj-audio build; cargo build --manifest-path apps/audio-engine/Cargo.toml",
-)
-def test_the_real_engine_loads_a_file_sent_on_stdio(tmp_path: Path) -> None:
+def test_the_real_engine_loads_a_file_sent_on_stdio(
+    tmp_path: Path, real_engine_env: dict[str, str]
+) -> None:
     import math
     import struct
     import wave
@@ -551,7 +575,7 @@ def test_the_real_engine_loads_a_file_sent_on_stdio(tmp_path: Path) -> None:
             for v in (int(8000 * math.sin(2 * math.pi * 440 * i / 48000)) for i in range(48000))
         )
         w.writeframes(frames)
-    sup = AudioEngineSupervisor(environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT)
+    sup = AudioEngineSupervisor(environ=real_engine_env, repo_root=platform_paths.PROJECT_ROOT)
     try:
         sup.start("wall")
         _wait_for(lambda: sup.status()["state"] == "running")
