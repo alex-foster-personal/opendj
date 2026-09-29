@@ -12,6 +12,8 @@ semgrep scanned 4, and every run read UNKNOWN blaming the rules.
 - if a tracked control file is one semgrep does not scan then UNKNOWN naming it
 - if semgrep-summary --expect-file names a path absent from paths.scanned then UNKNOWN
   naming it, with or without the file floor holding
+- if the semgrep JSON has no "time" block while --expect-file is given then UNKNOWN,
+  never a silent skip of the check
 """
 
 from __future__ import annotations
@@ -27,19 +29,14 @@ import pytest
 from tests.scripts.sast_control_fixtures import (
     CONTROL_DIR,
     ROOT,
+    SEMGREP_BIN,
     git,
     init_scan_repo,
+    needs_scanners,
     tracked_control_files,
 )
 
-SEMGREP_BIN = ROOT / ".tmp" / "security" / "bin"
 SECSCAN = ROOT / "scripts" / "security" / "secscan.py"
-
-needs_scanners = pytest.mark.skipif(
-    not ((SEMGREP_BIN / "semgrep").exists() and (SEMGREP_BIN / "uv").exists()),
-    reason="semgrep or uv not installed in .tmp/security/bin",
-)
-
 
 # ----- helpers -----------------------------------------------------------------------------------
 def _fixture_repo(tmp_path: Path, extra_tracked: dict[str, str] | None = None) -> Path:
@@ -126,7 +123,7 @@ def test_tracked_control_file_semgrep_did_not_scan_is_named(tmp_path: Path) -> N
     assert proc.returncode == 2, proc.stderr or proc.stdout
     assert f"control files not scanned: {unscannable}" in proc.stderr
     assert "\tUNKNOWN\t" in summary and unscannable in summary, summary
-    assert "rules failed to load" not in summary, summary
+    assert "control unmeasured:" in summary, summary
 
 
 @needs_scanners
@@ -163,14 +160,13 @@ def test_unmerged_control_file_does_not_raise_the_control_floor(tmp_path: Path) 
 EXPECTED = [f"{CONTROL_DIR}/{name}" for name in ("a.py", "b.py", "c.ts", "d.rs")]
 
 
-def _summary(tmp_path: Path, scanned: list[str], min_files: int) -> tuple[int, str]:
+def _summary(
+    tmp_path: Path, scanned: list[str], min_files: int, *, with_time: bool = True
+) -> tuple[int, str]:
     scan = tmp_path / "control.json"
-    doc = {
-        "results": [],
-        "errors": [],
-        "time": {"rules": [{"id": "r0"}]},
-        "paths": {"scanned": scanned},
-    }
+    doc: dict[str, object] = {"results": [], "errors": [], "paths": {"scanned": scanned}}
+    if with_time:
+        doc["time"] = {"rules": [{"id": "r0"}]}
     scan.write_text(json.dumps(doc), encoding="utf-8")
     expect_args = [arg for path in EXPECTED for arg in ("--expect-file", path)]
     proc = subprocess.run(
@@ -210,3 +206,10 @@ def test_summary_passes_when_every_expected_file_was_scanned(tmp_path: Path) -> 
     """[if] every expected file is in paths.scanned [then] exit 0: the flag can say yes."""
     rc, stderr = _summary(tmp_path, list(EXPECTED), min_files=4)
     assert rc == 0, stderr
+
+
+def test_summary_without_time_block_cannot_skip_expect_file(tmp_path: Path) -> None:
+    """[if] --expect-file is given but the JSON has no "time" block [then] UNKNOWN, not exit 0."""
+    rc, stderr = _summary(tmp_path, EXPECTED, min_files=4, with_time=False)
+    assert rc == 2, stderr
+    assert '--expect-file could not be checked' in stderr, stderr

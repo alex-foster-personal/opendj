@@ -6,11 +6,8 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
 
-from tests.scripts.sast_control_fixtures import ROOT, init_scan_repo
-
-SEMGREP_BIN = ROOT / ".tmp" / "security" / "bin"
+from tests.scripts.sast_control_fixtures import SEMGREP_BIN, init_scan_repo, needs_scanners
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -56,8 +53,7 @@ def _commit_pair(repo: Path, rel: str, first: str, second: str) -> tuple[str, st
     return base, head
 
 
-@pytest.mark.skipif(not (SEMGREP_BIN / "semgrep").exists(), reason="semgrep not installed")
-@pytest.mark.skipif(not (SEMGREP_BIN / "uv").exists(), reason="uv not installed")
+@needs_scanners
 def test_docs_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     repo = init_scan_repo(tmp_path)
     base, head = _commit_pair(repo, "docs/foo.md", "# one\n", "# two\n")
@@ -70,8 +66,7 @@ def test_docs_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     assert "no scannable file changed" in summary
 
 
-@pytest.mark.skipif(not (SEMGREP_BIN / "semgrep").exists(), reason="semgrep not installed")
-@pytest.mark.skipif(not (SEMGREP_BIN / "uv").exists(), reason="uv not installed")
+@needs_scanners
 def test_tests_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     """[if] the PR changes only a tests/ file [then] SKIP, never UNKNOWN, [else stop].
 
@@ -91,8 +86,7 @@ def test_tests_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     assert "no scannable file changed" in summary
 
 
-@pytest.mark.skipif(not (SEMGREP_BIN / "semgrep").exists(), reason="semgrep not installed")
-@pytest.mark.skipif(not (SEMGREP_BIN / "uv").exists(), reason="uv not installed")
+@needs_scanners
 def test_scannable_pr_still_runs_the_scan(tmp_path: Path) -> None:
     """[if] the PR changes a file outside the ignore list [then] a real scan row, [else stop].
 

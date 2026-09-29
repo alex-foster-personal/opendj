@@ -9,13 +9,26 @@ reports it as a control file semgrep did not scan.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 CONTROL_DIR = "tests/fixtures/security/sast-control"
 SCANNER_SCRIPTS = ("scan_sast.sh", "lib.sh", "secscan.py")
+SEMGREP_BIN = ROOT / ".tmp" / "security" / "bin"
+# security.yml sets this after installing the pinned scanners, so there a missing
+# binary fails the end-to-end tests instead of skipping them into a silent pass.
+E2E_REQUIRED_ENV = "SECURITY_E2E_REQUIRED"
+
+needs_scanners = pytest.mark.skipif(
+    not ((SEMGREP_BIN / "semgrep").exists() and (SEMGREP_BIN / "uv").exists())
+    and os.environ.get(E2E_REQUIRED_ENV) != "1",
+    reason=f"semgrep or uv not installed in .tmp/security/bin (set {E2E_REQUIRED_ENV}=1 to fail instead)",
+)
 
 
 def git(repo: Path, *args: str) -> str:
