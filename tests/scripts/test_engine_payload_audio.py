@@ -23,6 +23,7 @@ from scripts.build_engine_payload import (
     PayloadBuildError,
     verify_audio_engine,
 )
+from tests.rust_build_env import build_audio_engine
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -90,20 +91,8 @@ def test_anything_else_is_refused(tmp_path: Path, stdout: str, why: str) -> None
 
 def test_the_real_engine_reports_its_build() -> None:
     """The gate reads a field the real binary prints, not one only fakes carry."""
-    crate = REPO_ROOT / "apps/audio-engine"
     # Rebuilt every run so a stale binary from before the field can't answer.
-    subprocess.run(
-        [
-            "cargo",
-            "build",
-            "--quiet",
-            "--bin",
-            "odj-audio",
-            "--manifest-path",
-            str(crate / "Cargo.toml"),
-        ],
-        check=True,
-    )
+    built = build_audio_engine(REPO_ROOT / "apps/audio-engine")
     # The default build has no device feature, and says so (False, not absent).
     with pytest.raises(PayloadBuildError, match="device=False"):
-        verify_audio_engine(crate / "target/debug/odj-audio")
+        verify_audio_engine(built)

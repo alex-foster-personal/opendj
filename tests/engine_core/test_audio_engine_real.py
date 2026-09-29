@@ -9,11 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import subprocess
-import sys
 import time
-from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -27,58 +23,20 @@ from apps.engine_core.audio_engine import (
 from apps.engine_core.audio_engine_api import AUDIO_ENGINE_PATH
 from apps.shared import platform_paths
 from tests.engine_core.test_audio_engine import _app, _wait_for
+from tests.rust_build_env import build_audio_engine
 
 
 # ----- the real engine -----------------------------------------------------------
-def _bindgen_env(environ: Mapping[str, str]) -> dict[str, str]:
-    """``environ`` with gcc's builtin headers added for bindgen, as ci.yml's cargo step does.
-
-    signalsmith-stretch runs bindgen, and the CI runners' libclang ships without
-    its resource headers ('stddef.h' file not found). Appended, so flags already
-    set are kept; left alone where gcc has no include dir to give.
-    """
-    env = dict(environ)
-    gcc = shutil.which("gcc")
-    if gcc is None:
-        return env
-    include = subprocess.run(
-        [gcc, "-print-file-name=include"], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    if include and Path(include).is_absolute() and Path(include).is_dir():
-        extra = env.get("BINDGEN_EXTRA_CLANG_ARGS", "")
-        env["BINDGEN_EXTRA_CLANG_ARGS"] = f"{extra} -I{include}".strip()
-    return env
-
-
 @pytest.fixture(scope="module")
 def real_engine_env() -> dict[str, str]:
     """The environment for a supervisor running odj-audio built from THIS checkout.
 
-    Rebuilt every run (cargo does nothing when it is fresh) and pinned with
-    ``ODJ_AUDIO_BIN``: without that the supervisor takes the newest binary under
-    ``apps/audio-engine/target``, which on a self-hosted CI runner can be a
-    leftover from another branch's job, so the test would exercise someone
-    else's engine.
+    Rebuilt every run and pinned with ``ODJ_AUDIO_BIN``: without that the
+    supervisor takes the newest binary under ``apps/audio-engine/target``, which
+    on a self-hosted CI runner can be a leftover from another branch's job, so
+    the test would exercise someone else's engine.
     """
-    if shutil.which("cargo") is None:
-        pytest.skip("UNAVAILABLE: no cargo here, so odj-audio cannot be built from this checkout")
-    crate = platform_paths.PROJECT_ROOT / "apps" / "audio-engine"
-    subprocess.run(
-        [
-            "cargo",
-            "build",
-            "--quiet",
-            "--bin",
-            "odj-audio",
-            "--manifest-path",
-            str(crate / "Cargo.toml"),
-        ],
-        check=True,
-        env=_bindgen_env(os.environ),
-    )
-    built = (
-        crate / "target" / "debug" / ("odj-audio.exe" if sys.platform == "win32" else "odj-audio")
-    )
+    built = build_audio_engine(platform_paths.PROJECT_ROOT / "apps" / "audio-engine")
     env = {**os.environ, BIN_ENV: str(built)}
     assert resolve_binary(env, platform_paths.PROJECT_ROOT).path == built
     return env
