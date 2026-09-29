@@ -29,8 +29,10 @@ pub const MAX_BEATS: f64 = 65536.0;
 pub struct Track {
     pub sample_rate: u32,
     /// Interleaved stereo f32 at the file's own sample rate.
-    /// Shared, so tracks decoded from one file hold one copy.
-    pub pcm: Arc<[f32]>,
+    /// Shared, so tracks decoded from one file hold one copy. A `Vec` behind
+    /// the `Arc`, so the decoder's buffer is shared as it is: turning it into
+    /// an `Arc<[f32]>` would copy it, holding two whole copies for a moment.
+    pub pcm: Arc<Vec<f32>>,
     pub frames: usize,
     pub beats: Vec<Beat>,
     /// Frame index (into `beats`) of every downbeat, precomputed for bar lookups.
@@ -41,7 +43,7 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn new(sample_rate: u32, pcm: impl Into<Arc<[f32]>>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+    pub fn new(sample_rate: u32, pcm: impl Into<Arc<Vec<f32>>>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
         let pcm = pcm.into();
         assert!(pcm.len().is_multiple_of(2), "pcm must be interleaved stereo");
         let frames = pcm.len() / 2;

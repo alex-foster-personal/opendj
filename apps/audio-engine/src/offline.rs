@@ -140,7 +140,7 @@ fn yield_ramp(ramps: &mut Vec<ActiveRamp>, cmd: &EngineCmd) {
 /// frames a newly decoded file may hold; a file already decoded shares its
 /// samples and costs nothing more, so it is never refused for room.
 pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> {
-    let mut cache: HashMap<FileKey, (u32, Arc<[f32]>)> = HashMap::new();
+    let mut cache: HashMap<FileKey, (u32, Arc<Vec<f32>>)> = HashMap::new();
     move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
         let key = FileKey::of(&path);
@@ -148,7 +148,7 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
             Some((sr, pcm)) => (*sr, pcm.clone()),
             None => {
                 let d = decode_file_within(&path, room)?;
-                let pcm: Arc<[f32]> = d.pcm.into();
+                let pcm = Arc::new(d.pcm);
                 cache.insert(key, (d.sample_rate, pcm.clone()));
                 (d.sample_rate, pcm)
             }
@@ -240,7 +240,7 @@ impl TrackCache {
             Some(t) => (t.sample_rate, t.pcm.clone()),
             None => {
                 let d = decode_file_within(path, u64::MAX)?;
-                (d.sample_rate, Arc::<[f32]>::from(d.pcm))
+                (d.sample_rate, Arc::new(d.pcm))
             }
         };
         let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm));
@@ -896,7 +896,7 @@ mod tests {
     /// It ignores the room it is given, so the render's own checks are what
     /// a test of it sees.
     fn memory_loader(frames: usize, calls: &std::cell::Cell<usize>) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> + '_ {
-        let mut cache: HashMap<String, Arc<[f32]>> = HashMap::new();
+        let mut cache: HashMap<String, Arc<Vec<f32>>> = HashMap::new();
         move |spec: &LoadSpec, _room: u64| {
             calls.set(calls.get() + 1);
             let pcm = cache.entry(spec.path.clone()).or_insert_with(|| vec![0.0f32; frames * 2].into()).clone();

@@ -365,6 +365,9 @@ enum Msg {
 enum Queued {
     Cmd(Option<Value>, EngineCmd),
     Load(Option<Value>, LoadSpec),
+    /// An `engine_state` sent after the work ahead of it here: it is asked
+    /// of the audio side only once this has passed on every deck it waits on.
+    Fence(u64),
 }
 
 /// The control half: owns the command ring's producer, the per-deck load
@@ -382,6 +385,10 @@ struct Control {
     state_req: Arc<AtomicBool>,
     /// Decoded tracks, shared by the load threads.
     tracks: Arc<TrackCache>,
+    /// Per `engine_state` waiting on pending loads: how many decks' fences
+    /// have yet to pass.
+    fences: HashMap<u64, usize>,
+    next_fence: u64,
 }
 
 impl Control {
@@ -429,7 +436,15 @@ impl Control {
         if q.len() < QUEUE_SLOTS {
             q.push_back(item);
         } else {
-            let (Queued::Cmd(id, _) | Queued::Load(id, _)) = item;
+            let (Queued::Cmd(id, _) | Queued::Load(id, _)) = item else {
+                // A fence is only re-parked behind a load released from a
+                // queue that held it, which leaves room; were it ever full,
+                // asking now is later than asked, never earlier.
+                if let Queued::Fence(f) = item {
+                    self.fence_passed(f);
+                }
+                return None;
+            };
             self.reply(
                 id.as_ref(),
                 Err(ProtoError::new(
@@ -497,6 +512,12 @@ impl Control {
             match item {
                 Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
                 Queued::Load(id, spec) => self.load(id, spec),
+                // Behind a load this release re-armed, it waits again.
+                Queued::Fence(f) => {
+                    if let Some(Queued::Fence(f)) = self.park(deck, Queued::Fence(f)) {
+                        self.fence_passed(f);
+                    }
+                }
             }
         }
     }
@@ -522,10 +543,27 @@ impl Control {
         }
     }
 
-    fn refuse_queued(&self, q: VecDeque<Queued>) {
+    /// One deck's work ahead of state request `f` has gone to the audio
+    /// side (or failed); once every deck's has, the request is made.
+    fn fence_passed(&mut self, f: u64) {
+        let Some(left) = self.fences.get_mut(&f) else { return };
+        *left -= 1;
+        if *left == 0 {
+            self.fences.remove(&f);
+            self.state_req.store(true, Ordering::Release);
+        }
+    }
+
+    fn refuse_queued(&mut self, q: VecDeque<Queued>) {
         for item in q {
             let id = match item {
                 Queued::Cmd(id, _) | Queued::Load(id, _) => id,
+                // The work ahead of it is done with, failed or not: the state
+                // after that is the one asked for.
+                Queued::Fence(f) => {
+                    self.fence_passed(f);
+                    continue;
+                }
             };
             self.reply(
                 id.as_ref(),
@@ -552,9 +590,34 @@ impl Control {
                 )),
             ),
             Ok(Command::State) => {
-                // Release: the commands pushed before this are visible to
-                // the audio side once it sees the request.
-                self.state_req.store(true, Ordering::Release);
+                // Commands sent before this that wait on a deck's load are
+                // not in the mailbox yet, so the request waits behind them,
+                // on every such deck, and is made once they have gone ahead.
+                let pending: Vec<usize> = (0..MAX_DECKS).filter(|&d| self.waiting[d].is_some()).collect();
+                if pending.iter().any(|&d| self.waiting[d].as_ref().is_some_and(|q| q.len() >= QUEUE_SLOTS)) {
+                    self.reply(
+                        id.as_ref(),
+                        Err(ProtoError::new(
+                            ErrorCode::Invalid,
+                            format!("engine mailbox is full ({QUEUE_SLOTS} commands wait on a deck's load); command dropped"),
+                        )),
+                    );
+                    return true;
+                }
+                if pending.is_empty() {
+                    // Release: the commands pushed before this are visible
+                    // to the audio side once it sees the request.
+                    self.state_req.store(true, Ordering::Release);
+                } else {
+                    let f = self.next_fence;
+                    self.next_fence += 1;
+                    self.fences.insert(f, pending.len());
+                    for d in pending {
+                        if let Some(q) = self.waiting[d].as_mut() {
+                            q.push_back(Queued::Fence(f));
+                        }
+                    }
+                }
                 self.reply(id.as_ref(), Ok(()));
             }
             Ok(Command::Shutdown) => {
@@ -694,6 +757,8 @@ fn serve_threaded_from(
         loading: [None; MAX_DECKS],
         state_req,
         tracks: Arc::default(),
+        fences: HashMap::new(),
+        next_fence: 0,
     };
     let mut audio_failed = false;
     let mut output_closed = false;
@@ -946,6 +1011,69 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert!(got[0].0.master_muted, "the state is from before the second command");
         assert_eq!(got[0].0.frame, 128);
+    }
+
+    /// A control side with its own mailbox, reading nothing from the load
+    /// threads it starts, so a test settles each load itself.
+    fn control() -> (Control, rtrb::Consumer<(u64, EngineCmd)>, Captured) {
+        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(CMD_SLOTS);
+        let out = Captured::default();
+        let (msg_tx, msg_rx) = mpsc::channel();
+        std::mem::forget(msg_rx);
+        let control = Control {
+            cmd_tx,
+            ids: Arc::default(),
+            out: Arc::new(Mutex::new(Box::new(out.clone()))),
+            msg_tx,
+            next_seq: 0,
+            waiting: Default::default(),
+            loading: [None; MAX_DECKS],
+            state_req: Arc::new(AtomicBool::new(false)),
+            tracks: Arc::default(),
+            fences: HashMap::new(),
+            next_fence: 0,
+        };
+        (control, cmd_rx, out)
+    }
+
+    fn silent_track() -> Result<Arc<Track>, ProtoError> {
+        Ok(Arc::new(Track::new(48000, vec![0.0; 9600], vec![], None)))
+    }
+
+    #[test]
+    fn a_state_request_waits_behind_work_parked_on_a_pending_load() {
+        // Codex on 0f81c719: `load` (slow), `play` on that deck, then
+        // `engine_state`: the play was parked behind the load, not in the
+        // mailbox, so the state went out before either had happened.
+        let (mut c, mut cmd_rx, _out) = control();
+        let line = |c: &mut Control, v: Value| assert!(c.handle_line(&v.to_string(), "wall"));
+        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 1, "path": "nope-1.wav"}}));
+        line(&mut c, serde_json::json!({"cmd": {"type": "play", "deck": 1, "playing": true}}));
+        line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
+        assert!(!c.state_req.load(Ordering::Acquire), "the state was asked for ahead of the parked play");
+        c.finish_load(c.loading[0].unwrap(), 1, silent_track());
+        assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
+        let sent: Vec<_> = std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(_, cmd)| cmd).collect();
+        assert!(matches!(sent[..], [EngineCmd::Load { .. }, EngineCmd::Play { .. }]), "{sent:?}");
+        // A load that fails lets it through (the state after that is the
+        // one asked for), and a second load queued behind the first holds
+        // it again.
+        c.state_req.store(false, Ordering::Relaxed);
+        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-2.wav"}}));
+        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 2, "path": "nope-3.wav"}}));
+        line(&mut c, serde_json::json!({"cmd": {"type": "load", "deck": 3, "path": "nope-4.wav"}}));
+        line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
+        c.finish_load(c.loading[2].unwrap(), 3, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's loads still ahead of it");
+        c.finish_load(c.loading[1].unwrap(), 2, silent_track());
+        assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's second load still ahead of it");
+        c.finish_load(c.loading[1].unwrap(), 2, silent_track());
+        assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
+        // Control: with nothing pending it is asked for at once.
+        c.state_req.store(false, Ordering::Relaxed);
+        line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
+        assert!(c.state_req.load(Ordering::Acquire));
+        assert!(c.fences.is_empty());
     }
 
     #[test]
