@@ -122,6 +122,27 @@ pub enum EngineCmd {
 /// the caller, off the audio thread.
 pub type Retired = Option<Arc<Track>>;
 
+/// A refused command. A refused load hands its track back in `track`, so the
+/// caller frees it off the audio thread just like a retired one.
+#[derive(Debug)]
+pub struct Rejected {
+    pub error: EngineError,
+    pub track: Retired,
+}
+
+impl From<EngineError> for Rejected {
+    fn from(error: EngineError) -> Rejected {
+        Rejected { error, track: None }
+    }
+}
+
+impl std::ops::Deref for Rejected {
+    type Target = EngineError;
+    fn deref(&self) -> &EngineError {
+        &self.error
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DeckSnapshot {
     pub loaded: bool,
@@ -131,12 +152,15 @@ pub struct DeckSnapshot {
     pub tempo: f64,
     pub master_tempo: bool,
     pub key_shift: i32,
-    pub cue_ms: f64,
+    /// None until a cue point is set (first CUE while paused, or a pause).
+    pub cue_ms: Option<f64>,
     pub loop_ms: Option<(f64, f64)>,
     pub trim: f64,
     pub eq: [f64; 3],
     pub filter: f64,
     pub fader: f64,
+    pub assign: Assign,
+    pub pitch_range: f64,
 }
 
 /// Fixed-size engine state for the state feed. Copy, so publishing it from the
@@ -208,10 +232,16 @@ impl Engine {
     }
 
     /// Apply one command at the current frame.
-    pub fn apply(&mut self, cmd: EngineCmd) -> Result<Retired, EngineError> {
+    pub fn apply(&mut self, cmd: EngineCmd) -> Result<Retired, Rejected> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, track } => return Ok(self.deck_mut(deck)?.load(track)),
+            // A refused load gives its track back rather than dropping it here.
+            Load { deck, track } => {
+                return match self.deck_mut(deck) {
+                    Ok(d) => Ok(d.load(track)),
+                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                }
+            }
             Unload { deck } => return Ok(self.deck_mut(deck)?.unload()),
             Play { deck, playing } => self.deck_mut(deck)?.play(playing)?,
             Cue { deck } => self.deck_mut(deck)?.cue()?,
@@ -324,6 +354,8 @@ impl Engine {
                     tempo: d.tempo,
                     master_tempo: d.master_tempo,
                     key_shift: d.key_shift,
+                    assign: d.assign,
+                    pitch_range: d.pitch_range,
                     trim: d.trim,
                     eq: d.eq,
                     filter: d.filter,
@@ -340,7 +372,9 @@ impl Engine {
                 tempo: d.tempo,
                 master_tempo: d.master_tempo,
                 key_shift: d.key_shift,
-                cue_ms: t.frames_to_ms(d.cue),
+                cue_ms: d.cue.map(|c| t.frames_to_ms(c)),
+                assign: d.assign,
+                pitch_range: d.pitch_range,
                 loop_ms: d.looping.map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b))),
                 trim: d.trim,
                 eq: d.eq,
@@ -667,6 +701,19 @@ mod tests {
         assert_eq!(e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap_err().code, ErrorCode::NoTrack);
         assert_eq!(e.apply(EngineCmd::Fader { deck: 5, value: 0.5 }).unwrap_err().code, ErrorCode::Invalid);
         assert_eq!(e.apply(EngineCmd::Fader { deck: 0, value: 0.5 }).unwrap_err().code, ErrorCode::Invalid);
+        // A refused load hands its track back instead of dropping it here.
+        let t = Arc::new(Track::new(48000, vec![0.0f32; 96], vec![], None));
+        let r = e.apply(EngineCmd::Load { deck: 5, track: t.clone() }).unwrap_err();
+        assert_eq!(r.code, ErrorCode::Invalid);
+        assert!(r.track.as_ref().is_some_and(|x| Arc::ptr_eq(x, &t)));
+        // Control: a good load keeps it on the deck.
+        assert!(e.apply(EngineCmd::Load { deck: 1, track: t.clone() }).unwrap().is_none());
+        // Persistent deck controls show in the state feed.
+        e.apply(EngineCmd::Assign { deck: 2, assign: Assign::B }).unwrap();
+        e.apply(EngineCmd::PitchRange { deck: 2, range: 8.0 }).unwrap();
+        let s = e.snapshot();
+        assert_eq!((s.decks[1].assign, s.decks[1].pitch_range), (Assign::B, 8.0));
+        assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::Thru, None));
     }
 
     #[test]

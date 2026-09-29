@@ -65,6 +65,31 @@ impl Track {
         self.beats.len() >= 2
     }
 
+    /// Index of the grid beat nearest `ms`, the earlier one on a tie
+    /// (`beat-sync-math.ts` `_nearestBeatIndex`). Needs a non-empty grid.
+    pub fn nearest_beat(&self, ms: f64) -> usize {
+        let b = &self.beats;
+        let later = b.partition_point(|x| x.time_ms < ms);
+        if later == 0 {
+            return 0;
+        }
+        if later == b.len() {
+            return b.len() - 1;
+        }
+        if ms - b[later - 1].time_ms <= b[later].time_ms - ms {
+            later - 1
+        } else {
+            later
+        }
+    }
+
+    /// Index of the last downbeat at or before `ms` (`precedingDownbeatMs`).
+    pub fn downbeat_at_or_before(&self, ms: f64) -> Option<usize> {
+        let upto = self.beats.partition_point(|x| x.time_ms <= ms);
+        let k = self.downbeats.partition_point(|&i| i < upto);
+        k.checked_sub(1).map(|k| self.downbeats[k])
+    }
+
     /// Fractional beat index at `ms`, extrapolating past either end of the
     /// grid with its first or last interval.
     pub fn beat_index_at(&self, ms: f64) -> Option<f64> {
@@ -149,7 +174,7 @@ pub struct Deck {
     /// Playhead in source frames of the loaded track.
     pub pos: f64,
     pub playing: bool,
-    pub cue: f64,
+    pub cue: Option<f64>,
     pub tempo: f64,
     pub pitch_range: f64,
     /// Loop bounds in source frames.
@@ -334,7 +359,7 @@ impl Deck {
             track: None,
             pos: 0.0,
             playing: false,
-            cue: 0.0,
+            cue: None,
             tempo: 1.0,
             pitch_range: 16.0,
             looping: None,
@@ -372,7 +397,7 @@ impl Deck {
         self.key_shift = 0;
         self.stretch_warm = false;
         self.pos = 0.0;
-        self.cue = 0.0;
+        self.cue = None;
         self.playing = false;
         self.looping = None;
         self.track.replace(track)
@@ -383,7 +408,7 @@ impl Deck {
         self.stretch_warm = false;
         self.playing = false;
         self.pos = 0.0;
-        self.cue = 0.0;
+        self.cue = None;
         self.looping = None;
         self.track.take()
     }
@@ -397,19 +422,26 @@ impl Deck {
                 self.pos = 0.0;
             }
         } else if self.playing {
-            self.cue = self.pos;
+            self.cue = Some(self.pos);
         }
         self.playing = playing;
         Ok(())
     }
 
-    /// CUE while playing returns to the cue point and pauses; while paused it
-    /// jumps the playhead to the cue point.
+    /// CUE while playing returns to the cue point (the start when none is
+    /// set) and pauses. While paused, the first press sets the cue where the
+    /// playhead is without moving; later presses jump to it
+    /// (`audio-engine.svelte.ts` `pressCue`).
     pub fn cue(&mut self) -> Result<(), EngineError> {
         self.track()?;
-        self.pos = self.cue;
-        self.playing = false;
-        self.stretch_warm = false;
+        if self.playing {
+            self.move_to(self.cue.unwrap_or(0.0));
+            self.playing = false;
+        } else if let Some(c) = self.cue {
+            self.move_to(c);
+        } else {
+            self.cue = Some(self.pos);
+        }
         Ok(())
     }
 
@@ -418,9 +450,21 @@ impl Deck {
         if !ms.is_finite() || ms < 0.0 || ms > t.duration_ms() {
             return Err(EngineError::new(ErrorCode::Invalid, "seek position must be within the track"));
         }
-        self.pos = t.ms_to_frames(ms);
-        self.stretch_warm = false;
+        let to = t.ms_to_frames(ms);
+        self.move_to(to);
         Ok(())
+    }
+
+    /// Put the playhead at `to`. Landing outside an engaged loop exits it, as
+    /// rekordbox and the page do (`quantizedSeek`); inside, the loop stays.
+    fn move_to(&mut self, to: f64) {
+        if let Some((a, b)) = self.looping {
+            if to < a || to >= b {
+                self.looping = None;
+            }
+        }
+        self.pos = to;
+        self.stretch_warm = false;
     }
 
     pub fn set_loop(&mut self, bounds_ms: Option<(f64, f64)>) -> Result<(), EngineError> {
@@ -441,15 +485,35 @@ impl Deck {
         Ok(())
     }
 
+    /// On a real grid the loop spans whole grid beats, as the page's
+    /// `engageBeatLoop` does: it starts on the beat nearest `start_ms`, or,
+    /// with no `start_ms`, on the preceding downbeat for a 4-beat loop and on
+    /// the nearest beat otherwise. With only a tag BPM it starts where asked.
     pub fn beat_loop(&mut self, beats: f64, start_ms: Option<f64>) -> Result<(), EngineError> {
         if !(beats.is_finite() && beats > 0.0) {
             return Err(EngineError::new(ErrorCode::Invalid, "beat loop length must be positive"));
         }
         let t = self.track()?.clone();
-        let start = start_ms.unwrap_or_else(|| t.frames_to_ms(self.pos));
-        let idx = t.beat_index_at(start).ok_or(no_grid())?;
-        let end = t.beat_time_ms(idx + beats).ok_or(no_grid())?;
-        self.set_loop(Some((start, end)))
+        let here = start_ms.unwrap_or_else(|| t.frames_to_ms(self.pos));
+        if !t.has_grid() {
+            let idx = t.beat_index_at(here).ok_or(no_grid())?;
+            let end = t.beat_time_ms(idx + beats).ok_or(no_grid())?;
+            return self.set_loop(Some((here, end)));
+        }
+        if beats.fract() != 0.0 {
+            return Err(EngineError::new(ErrorCode::Invalid, "a loop on a beatgrid spans whole beats"));
+        }
+        let start = if start_ms.is_none() && beats == 4.0 {
+            t.downbeat_at_or_before(here)
+                .ok_or(EngineError::new(ErrorCode::NoBeatgrid, "no downbeat at or before the playhead"))?
+        } else {
+            t.nearest_beat(here)
+        };
+        let end = start + beats as usize;
+        if end >= t.beats.len() {
+            return Err(EngineError::new(ErrorCode::Invalid, "the loop runs past the last beat of the grid"));
+        }
+        self.set_loop(Some((t.beats[start].time_ms, t.beats[end].time_ms)))
     }
 
     /// Jump by `beats` along the grid. A jump inside an active loop moves the
@@ -460,9 +524,21 @@ impl Deck {
         }
         let t = self.track()?.clone();
         let now = t.frames_to_ms(self.pos);
-        let idx = t.beat_index_at(now).ok_or(no_grid())?;
-        let target = t.beat_time_ms(idx + beats).ok_or(no_grid())?;
-        let target = target.clamp(0.0, t.duration_ms());
+        let target = if t.has_grid() {
+            // Whole beats from the nearest real beat, clamped to the grid and
+            // to its last beat inside the audio (`beatJumpTargetMs`).
+            if beats.fract() != 0.0 || beats == 0.0 {
+                return Err(EngineError::new(ErrorCode::Invalid, "a beat jump on a beatgrid is a non-zero whole number"));
+            }
+            let last = t.beats.len() as i64 - 1;
+            let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
+            let dur = t.duration_ms();
+            let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).unwrap_or(0);
+            t.beats[i].time_ms.clamp(0.0, dur)
+        } else {
+            let idx = t.beat_index_at(now).ok_or(no_grid())?;
+            t.beat_time_ms(idx + beats).ok_or(no_grid())?.clamp(0.0, t.duration_ms())
+        };
         let delta = t.ms_to_frames(target) - self.pos;
         self.pos = t.ms_to_frames(target);
         self.stretch_warm = false;
@@ -816,7 +892,7 @@ mod tests {
         d.render_add(&mut buf, 48000.0);
         // Pausing stores the cue where it paused.
         d.play(false).unwrap();
-        assert_eq!(d.cue, 48000.0);
+        assert_eq!(d.cue, Some(48000.0));
         d.seek(5000.0).unwrap();
         // CUE while paused jumps back to the cue point.
         d.cue().unwrap();
@@ -885,6 +961,68 @@ mod tests {
         d.beat_jump(2.0).unwrap();
         assert_eq!(d.looping, Some((240000.0, 336000.0)));
         assert_eq!(d.pos, 288000.0);
+    }
+
+    #[test]
+    fn the_first_cue_press_while_paused_sets_the_cue_without_moving() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        d.seek(3000.0).unwrap();
+        d.cue().unwrap();
+        assert_eq!((d.cue, d.pos), (Some(144000.0), 144000.0), "first press sets, stays");
+        d.seek(5000.0).unwrap();
+        d.cue().unwrap();
+        assert_eq!(d.pos, 144000.0, "a later press jumps to the cue");
+        // Control: with no cue set, CUE while playing returns to the start.
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        d.seek(2000.0).unwrap();
+        d.playing = true;
+        d.cue().unwrap();
+        assert_eq!((d.pos, d.playing, d.cue), (0.0, false, None));
+    }
+
+    #[test]
+    fn a_seek_outside_the_loop_exits_it() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        d.set_loop(Some((1000.0, 3000.0))).unwrap();
+        // Control: inside the loop, the loop stays.
+        d.seek(2000.0).unwrap();
+        assert_eq!(d.looping, Some((48000.0, 144000.0)));
+        // At the out point (exclusive) and before the in point, it exits.
+        d.seek(3000.0).unwrap();
+        assert_eq!((d.looping, d.pos), (None, 144000.0));
+        d.set_loop(Some((1000.0, 3000.0))).unwrap();
+        d.seek(500.0).unwrap();
+        assert_eq!(d.looping, None);
+    }
+
+    #[test]
+    fn beat_loops_and_jumps_land_on_real_grid_beats() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        // Mid-beat at 2.8 s: a 4-beat loop starts on the preceding downbeat
+        // (2.0 s), a 2-beat loop on the nearest beat (3.0 s).
+        d.seek(2800.0).unwrap();
+        d.beat_loop(4.0, None).unwrap();
+        assert_eq!(d.looping, Some((96000.0, 192000.0)));
+        d.set_loop(None).unwrap();
+        d.beat_loop(2.0, None).unwrap();
+        assert_eq!(d.looping, Some((144000.0, 192000.0)));
+        d.set_loop(None).unwrap();
+        // An explicit start snaps to its nearest beat too.
+        d.beat_loop(1.0, Some(1240.0)).unwrap();
+        assert_eq!(d.looping, Some((48000.0, 72000.0)));
+        d.set_loop(None).unwrap();
+        assert!(d.beat_loop(0.5, None).is_err(), "sub-beat loops are refused on a grid");
+        // A +4 jump from mid-beat (2.8 s, nearest beat 3.0 s) lands on 5.0 s.
+        d.seek(2800.0).unwrap();
+        d.beat_jump(4.0).unwrap();
+        assert_eq!(d.pos, 240000.0);
+        // Past the last beat (7.5 s) it clamps to that beat, not beyond.
+        d.beat_jump(16.0).unwrap();
+        assert_eq!(d.pos, 360000.0);
+        assert!(d.beat_jump(0.5).is_err());
     }
 
     #[test]

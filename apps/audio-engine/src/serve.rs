@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::deck::Track;
-use crate::engine::{DeckId, Engine, EngineCmd, EngineError, ErrorCode, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
+use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
 use crate::protocol::{self, Advance, Command, LoadSpec, ProtoError};
 
 /// State messages per second in the threaded modes.
@@ -110,7 +110,7 @@ pub fn serve_fake(
 }
 
 /// What the audio side sends back for each command.
-type AudioResult = (u64, Result<Retired, EngineError>);
+type AudioResult = (u64, Result<Retired, Rejected>);
 
 /// The half of the engine that lives on the audio thread. Everything it
 /// touches in `process` is preallocated.

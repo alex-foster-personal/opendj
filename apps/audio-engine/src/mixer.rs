@@ -48,10 +48,11 @@ pub fn trim_gain_from_knob(value: f64) -> f64 {
 }
 
 /// Crossfader assignment of one channel.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Assign {
     A,
     B,
+    #[default]
     Thru,
 }
 
