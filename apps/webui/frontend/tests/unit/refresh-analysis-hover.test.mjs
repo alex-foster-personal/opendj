@@ -47,7 +47,20 @@ test('every failed click records its own outcome, and each click starts from a c
 	for (const outcome of ["'Already running'", "'WIP - not working: no ingestion steps enabled'", '`WIP - not working: ${e.message}`']) {
 		assert.ok(failure.includes(`clickFeedback = ${outcome}`), outcome);
 	}
-	assert.match(failure, /hovered = true;/, 'a failed click opens the popover that shows it');
+	// Opened the way a hover opens it (polling included), and only when not
+	// already open: tests/e2e/refresh-analysis-keyboard-409.spec.ts drives the
+	// real 409 from the keyboard and the mouse (Codex P2 4130152643).
+	assert.match(failure, /if \(!hovered\) void onEnter\(\);/, 'a failed click opens the popover that shows it');
+	assert.doesNotMatch(failure, /hovered = true;/, 'opening without onEnter starts no polling');
+});
+
+test('a keyboard-opened popover closes without a mouse: blur and Escape', () => {
+	const buttonStart = refresh.lastIndexOf('<button', refresh.indexOf('data-testid="refresh-analysis"'));
+	const button = refresh.slice(buttonStart, refresh.indexOf('>', refresh.indexOf('data-testid="refresh-analysis"')));
+	assert.match(button, /onblur=\{onBlur\}/);
+	assert.match(button, /onkeydown=\{onKeydown\}/);
+	assert.match(refresh, /function onBlur\(\): void \{\s*if \(hovered && wrapEl\?\.matches\(':hover'\) !== true\) onLeave\(\);/);
+	assert.match(refresh, /if \(e\.key === 'Escape' && hovered\) onLeave\(\);/);
 });
 
 test('a real running status still renders its progress bar alongside any click result (control)', () => {

@@ -63,6 +63,7 @@ import {
 	midiEnabledPersisted,
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
+import { syncDiskPrefs } from '$lib/rb/prefs-hydrate';
 
 // How a MIDI runtime load failure reaches the user. app-init wires the error
 // toast in at boot (toastMidiLoadFailure), so this first-paint module does not
@@ -88,7 +89,11 @@ async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 	} catch (exc: unknown) {
 		// Nothing acted on the saved choice, so it must not read "on": restore
 		// off (persistMidiEnabled bumps the tick the toggle reads) and say why.
+		// The disk half too: its usual writer lives in the module that failed
+		// to load, and a disk-backed "on" left behind would be hydrated back on
+		// the next page load, undoing an "off" the user just chose.
 		persistMidiEnabled(false);
+		void syncDiskPrefs({ midi_enabled: false });
 		_reportMidiLoadFailure(exc);
 	}
 }

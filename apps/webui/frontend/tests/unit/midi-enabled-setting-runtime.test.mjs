@@ -178,6 +178,12 @@ test('only the load-failure catch restores off; a settled apply leaves the choic
 	assert.doesNotMatch(tryBody, /persistMidiEnabled/, 'a successful apply must not overwrite the choice');
 	assert.match(catchBody, /persistMidiEnabled\(false\);/);
 	assert.match(catchBody, /_reportMidiLoadFailure\(exc\);/);
+	// The disk half (Codex P2 4130152647): the usual writer is in the chunk
+	// that failed, so the catch writes "off" itself, never the attempted value.
+	// Driven end to end in tests/e2e/midi-setting-disk-on-failed-load.spec.ts.
+	assert.match(catchBody, /void syncDiskPrefs\(\{ midi_enabled: false \}\);/);
+	assert.doesNotMatch(catchBody, /midi_enabled: enabled/);
+	assert.doesNotMatch(tryBody, /syncDiskPrefs/, 'a loaded runtime writes disk through its own chain');
 });
 
 // Quality gate frontend.max_fan_in: apply.ts reports through a reporter that
