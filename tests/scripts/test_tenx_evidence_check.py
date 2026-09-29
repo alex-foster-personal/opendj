@@ -22,33 +22,51 @@ def test_ordinary_pr_passes_untouched() -> None:
 
 
 def test_complete_body_passes() -> None:
-    assert check("10xHunter-- drop mergeable", GOOD).ok, "if a complete 10xHunter body fails then broken"
+    assert check("10xHunter-- drop mergeable", GOOD).ok, (
+        "if a complete 10xHunter body fails then broken"
+    )
 
 
 def test_missing_evidence_fails() -> None:
-    body = GOOD.split("## 10x Evidence")[0] + "## 10x Workings" + GOOD.split("## 10x Workings")[1]
-    assert not check("10xHunter-- x", body).ok, "if a 10xHunter PR with no Evidence section passes then broken"
+    body = (
+        GOOD.split("## 10x Evidence", maxsplit=1)[0]
+        + "## 10x Workings"
+        + GOOD.split("## 10x Workings")[1]
+    )
+    assert not check("10xHunter-- x", body).ok, (
+        "if a 10xHunter PR with no Evidence section passes then broken"
+    )
 
 
 def test_missing_after_fails() -> None:
     body = "\n".join(ln for ln in GOOD.splitlines() if "After:" not in ln)
-    assert not check("10xHunter-- x", body).ok, "if an Evidence section missing After: passes then broken"
+    assert not check("10xHunter-- x", body).ok, (
+        "if an Evidence section missing After: passes then broken"
+    )
 
 
 def test_ratio_below_gate_fails() -> None:
-    assert not check("10xHunter-- x", GOOD.replace("10.8x", "3x")).ok, "if Ratio: 3x passes then broken"
+    assert not check("10xHunter-- x", GOOD.replace("10.8x", "3x")).ok, (
+        "if Ratio: 3x passes then broken"
+    )
 
 
 def test_workings_card_only_fails() -> None:
-    body = GOOD.replace("- 13.5 / 1.25 = 10.8. The floor is the listing without per-PR mergeability.\n", "")
-    assert not check("10xHunter-- x", body).ok, "if a Workings section holding only the card link passes then broken"
+    body = GOOD.replace(
+        "- 13.5 / 1.25 = 10.8. The floor is the listing without per-PR mergeability.\n", ""
+    )
+    assert not check("10xHunter-- x", body).ok, (
+        "if a Workings section holding only the card link passes then broken"
+    )
 
 
 def test_untouched_template_fails() -> None:
     from pathlib import Path
 
     template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text()
-    assert not check("10xHunter-- x", template).ok, "if the untouched PR template passes then broken"
+    assert not check("10xHunter-- x", template).ok, (
+        "if the untouched PR template passes then broken"
+    )
 
 
 def test_ratio_must_lead_with_number() -> None:

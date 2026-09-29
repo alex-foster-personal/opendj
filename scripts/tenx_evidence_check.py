@@ -61,16 +61,22 @@ def _ratio(value: str) -> float | None:
 def check(title: str, body: str) -> Verdict:
     if not title.startswith(TITLE_PREFIX):
         return Verdict(True, [])
-    body = re.sub(r"<!--.*?-->", "", body, flags=re.S)  # the template's commented placeholders are not evidence
-    body = re.sub(r"^(```|~~~).*?^\1[^\n]*$", "", body, flags=re.S | re.M)  # fenced text is not a rendered section
+    body = re.sub(
+        r"<!--.*?-->", "", body, flags=re.S
+    )  # the template's commented placeholders are not evidence
+    body = re.sub(
+        r"^(```|~~~).*?^\1[^\n]*$", "", body, flags=re.S | re.M
+    )  # fenced text is not a rendered section
     problems: list[str] = []
     evidence = _section(body, "10x Evidence")
     if evidence is None:
         problems.append("missing '## 10x Evidence' section")
     elif evidence is not None:
-        for key in EVIDENCE_KEYS:
-            if _field(evidence, key) is None:
-                problems.append(f"10x Evidence has no '{key}:' line")
+        problems.extend(
+            f"10x Evidence has no '{key}:' line"
+            for key in EVIDENCE_KEYS
+            if _field(evidence, key) is None
+        )
         ratio_text = _field(evidence, "Ratio")
         ratio = _ratio(ratio_text) if ratio_text else None
         if ratio_text and ratio is None:
@@ -83,7 +89,11 @@ def check(title: str, body: str) -> Verdict:
     elif workings is not None:
         if _field(workings, "Card") is None:
             problems.append("10x Workings has no 'Card:' line linking the hunt card")
-        lines = [ln for ln in workings.splitlines() if ln.strip() and not re.match(r"^\s*[-*]?\s*\**Card\**\s*:", ln)]
+        lines = [
+            ln
+            for ln in workings.splitlines()
+            if ln.strip() and not re.match(r"^\s*[-*]?\s*\**Card\**\s*:", ln)
+        ]
         if not lines:
             problems.append("10x Workings shows no working beyond the card link")
     return Verdict(not problems, problems)
