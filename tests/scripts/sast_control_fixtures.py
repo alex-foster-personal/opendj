@@ -27,7 +27,7 @@ def git(repo: Path, *args: str) -> str:
 
 def tracked_control_files() -> list[str]:
     """The real repo's tracked control files, so a stray file in ROOT never leaks in."""
-    files = git(ROOT, "ls-files", "--", CONTROL_DIR).splitlines()
+    files = git(ROOT, "ls-files", "--deduplicate", "--", CONTROL_DIR).splitlines()
     assert len(files) >= 4, f"expected the tracked control set under {CONTROL_DIR}, got {files}"
     return files
 
