@@ -89,3 +89,18 @@ def test_indented_or_unclosed_fence_fails() -> None:
     unclosed = "```markdown\n" + GOOD
     assert not check("10xHunter-- x", indented).ok, "if an indented fence passes then broken"
     assert not check("10xHunter-- x", unclosed).ok, "if an unclosed fence passes then broken"
+
+
+def test_unterminated_html_comment_fails() -> None:
+    assert not check("10xHunter-- x", "<!--\n" + GOOD).ok, (
+        "if an unclosed comment passes then broken"
+    )
+
+
+def test_template_keeps_standard_sections() -> None:
+    from pathlib import Path
+
+    template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text()
+    assert "ADR" in template and "## 10x Evidence" in template, (
+        "if the PR template loses sections then broken"
+    )
