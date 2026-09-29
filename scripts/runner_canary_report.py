@@ -70,7 +70,7 @@ import statistics
 import subprocess
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -308,12 +308,19 @@ def _gh_lines(path: str, jq: str) -> list[dict[str, Any]]:
         raise ReadFailed(f"gh api {path} returned non-JSON: {exc}") from exc
 
 
-def _with_jobs(repo: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+#: One GitHub read: (request path, jq selector) -> the selected records.
+Reader = Callable[[str, str], list[dict[str, Any]]]
+
+
+def _with_jobs(
+    repo: str, runs: list[dict[str, Any]], read: Reader = _gh_lines
+) -> list[dict[str, Any]]:
     """Each run's jobs, each FAILED shard job's check-run annotations (the only mark that
     separates a wall-budget TIMEOUT from a test red), and each PASSED gate's annotations
-    (the vendors whose shards the run owes)."""
+    (the vendors whose shards the run owes). `read` is `gh api`; the tests replay captured
+    responses through it by request path."""
     for run in runs:
-        run["jobs"] = _gh_lines(
+        run["jobs"] = read(
             f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=all&per_page=100", ".jobs[]"
         )
         for job in run["jobs"]:
@@ -323,7 +330,7 @@ def _with_jobs(repo: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             # A passing gate's annotation names the vendor shards the run owes.
             is_passed_gate = job.get("name") == GATE_JOB and job.get("conclusion") == "success"
             if (is_shard and job.get("conclusion") == "failure") or is_passed_gate:
-                job["annotations"] = _gh_lines(
+                job["annotations"] = read(
                     f"repos/{repo}/check-runs/{job['id']}/annotations?per_page=100", ".[]"
                 )
     return runs
