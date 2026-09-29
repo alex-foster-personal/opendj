@@ -233,3 +233,16 @@ def test_an_unknown_track_is_still_skipped_and_warned_about(
         assert "never-heard-of is not here yet" in caplog.text
     finally:
         conn.close()
+
+
+def test_a_schema_mismatch_still_raises_when_the_known_columns_are_unchanged(
+    tmp_path: Path,
+) -> None:
+    print("if an unchanged-looking bundle skips the schema check, then broken")
+    conn = _hub_with_bundle(tmp_path, SMALL_BUNDLE)
+    try:
+        incoming = [{**member, "unexpected_column": 1} for member in _stored_bundle(conn)]
+        with pytest.raises(engine_apply.SyncSchemaMismatch, match="unexpected_column"):
+            engine_apply._replace_members(conn, PLAYLIST, incoming)
+    finally:
+        conn.close()
