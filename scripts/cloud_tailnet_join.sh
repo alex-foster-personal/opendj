@@ -29,6 +29,14 @@ export PATH="$BIN_DIR:$PATH"
 
 _ts() { tailscale --socket="$SOCKET" "$@"; }
 
+# The environment-level setup script (fleet-af cloud/environment-setup.sh)
+# may already have joined; a second tailscaled would be a second node.
+if command -v tailscale >/dev/null 2>&1 \
+  && tailscale --socket=/root/.cloud-env/tailscaled.sock status >/dev/null 2>&1; then
+  _log "already joined by the environment setup script; leaving it alone"
+  exit 0
+fi
+
 if command -v tailscale >/dev/null 2>&1 && _ts status >/dev/null 2>&1; then
   _log "already joined: $(_ts status --self --peers=false | head -1)"
   exit 0
