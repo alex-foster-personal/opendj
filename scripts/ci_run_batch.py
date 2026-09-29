@@ -14,7 +14,8 @@ The floor makes two passes overlap even if a pass is late; every follower must
 make re-applying an overlap harmless on its own terms.
 
     python3 -m scripts.ci_run_batch mark --repository o/r --workflow-file f.yml --this-run N
-    python3 -m scripts.ci_run_batch mark ... --display-title "X reconcile" --overlap-hours 48
+    python3 -m scripts.ci_run_batch mark ... --display-title "X reconcile" \
+        --search-hours 72 --overlap-hours 48
     python3 -m scripts.ci_run_batch census --repository o/r --watched "CI,E2E" --lookback-hours 6
 """
 
@@ -271,6 +272,7 @@ def last_successful_pass_start(
     this_run: int,
     *,
     display_title: str | None = None,
+    not_before: str | None = None,
     token: str = "",
     agent: str = "ci-run-batch",
     get_json: Callable[[str], dict[str, Any]] | None = None,
@@ -280,7 +282,12 @@ def last_successful_pass_start(
     With `display_title`, only passes with that title count: a reconcile pass
     (`run-name` set by its workflow) keeps its own mark, while the plain pass mark
     counts every pass, reconcile ones included, since a reconcile pass is a plain
-    pass plus its reconcile listing.
+    pass plus its reconcile listing. With `not_before`, the search stops at passes
+    created before it and returns "" if it found no success, so the caller falls back
+    to `not_before` itself: before the first reconcile succeeds, an unbounded search
+    read all 11,493 passes of stable-evidence.yml and outran the job's timeout, and a
+    reconcile that never succeeds never writes the mark it searches for (live run
+    36562208010 on #3844).
 
     A failed pass may have written none of its batch, so it never moves the mark, and the
     search has no fixed window: a run of failures longer than any window would otherwise
@@ -302,6 +309,8 @@ def last_successful_pass_start(
             or []
         )
         for run in runs:
+            if not_before is not None and str(run["created_at"]) < not_before:
+                return ""
             if int(run["id"]) == this_run or run.get("status") != "completed":
                 continue
             if display_title is not None and run.get("display_title") != display_title:
@@ -393,6 +402,12 @@ def main(argv: list[str] | None = None) -> int:
     mark.add_argument("--this-run", type=int, required=True)
     mark.add_argument("--display-title", default=None, help="count only passes with this title")
     mark.add_argument(
+        "--search-hours",
+        type=int,
+        default=None,
+        help="search only passes created this recently; with no success, the mark is the bound",
+    )
+    mark.add_argument(
         "--overlap-hours",
         type=int,
         default=None,
@@ -407,17 +422,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     token = os.environ["GITHUB_TOKEN"]
     if args.command == "mark":
+        now = datetime.now(UTC)
+        not_before = (
+            iso(now - timedelta(hours=args.search_hours)) if args.search_hours is not None else None
+        )
         start = last_successful_pass_start(
             args.repository,
             args.workflow_file,
             args.this_run,
             display_title=args.display_title,
+            not_before=not_before,
             token=token,
         )
         if args.overlap_hours is not None:
-            start = batch_since(
-                start or None, datetime.now(UTC), timedelta(hours=args.overlap_hours)
-            )
+            start = batch_since(start or not_before, now, timedelta(hours=args.overlap_hours))
         print(start)
         return 0
     if args.command == "census":

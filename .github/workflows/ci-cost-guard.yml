@@ -125,6 +125,7 @@ jobs:
       RECONCILE: ${{ github.event.schedule == '23 3 * * *' || inputs.reconcile == true }}
       RECONCILE_TITLE: "CI Cost Guard reconcile"
       RECONCILE_OVERLAP_HOURS: "48"
+      RECONCILE_SEARCH_HOURS: "72"
       THRESHOLD_USD: "0.30"
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
@@ -247,7 +248,9 @@ jobs:
       # days to Tue 29 Sep 2026 started their latest attempt more than 3 h after
       # creation, the oldest 143.6 h (Codex P1 on #3844). Once a day the pass also
       # lists the re-runs among runs created from GitHub's 30-day re-run limit
-      # before the reconcile mark. That mark counts reconcile passes only and is
+      # before the reconcile mark. That mark counts reconcile passes only, searched
+      # RECONCILE_SEARCH_HOURS back (an unbounded search read 11,493 passes and
+      # outran the timeout before the first reconcile ever succeeded), and is
       # floored RECONCILE_OVERLAP_HOURS back, so one missed day loses nothing.
       - name: Read the reconcile mark
         id: reconcile
@@ -260,7 +263,8 @@ jobs:
           set -euo pipefail
           since=$(python3 -m scripts.ci_run_batch mark --repository "$REPOSITORY" \
             --workflow-file ci-cost-guard.yml --this-run "$THIS_RUN" \
-            --display-title "$RECONCILE_TITLE" --overlap-hours "$RECONCILE_OVERLAP_HOURS")
+            --display-title "$RECONCILE_TITLE" --overlap-hours "$RECONCILE_OVERLAP_HOURS" \
+            --search-hours "$RECONCILE_SEARCH_HOURS")
           echo "[mark] reconcile pass since: $since"
           echo "since=$since" >> "$GITHUB_OUTPUT"
 

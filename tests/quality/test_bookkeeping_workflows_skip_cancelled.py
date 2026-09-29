@@ -85,6 +85,38 @@ def _assert_batch_pass(
     concurrency = workflow["concurrency"]
     assert concurrency["cancel-in-progress"] is False
     assert "${{" not in str(concurrency["group"]), "one pass at a time, one group"
+    _assert_daily_reconcile(workflow, steps, env, workflow_file, listing_step_id)
+
+
+def _assert_daily_reconcile(
+    workflow: dict, steps: list[dict], env: dict, workflow_file: str, listing_step_id: str
+) -> None:
+    """if a re-run of a run created before the lookback is never listed then its
+    completion is lost; once a day the pass lists them, titled apart so the title finds
+    its own mark, with a bounded search and an overlap of at least a day."""
+    crons = [entry["cron"] for entry in workflow[True]["schedule"]]
+    assert len(crons) == 2, "the plain cadence, then the daily reconcile"
+    minute, hour, *rest = crons[1].split()
+    assert minute.isdigit() and hour.isdigit() and rest == ["*", "*", "*"], "daily"
+    title = env["RECONCILE_TITLE"]
+    assert f"github.event.schedule == '{crons[1]}'" in workflow["run-name"]
+    assert f"'{title}'" in workflow["run-name"], "run-name gives reconcile passes the title"
+    assert f"github.event.schedule == '{crons[1]}'" in env["RECONCILE"]
+    assert workflow[True]["workflow_dispatch"]["inputs"]["reconcile"]["type"] == "boolean"
+    ids = [step.get("id") for step in steps]
+    reconcile = steps[ids.index("reconcile")]
+    assert reconcile["if"] == "env.RECONCILE == 'true'"
+    for flag in (
+        f"--workflow-file {workflow_file}",
+        '--display-title "$RECONCILE_TITLE"',
+        '--search-hours "$RECONCILE_SEARCH_HOURS"',
+        '--overlap-hours "$RECONCILE_OVERLAP_HOURS"',
+    ):
+        assert flag in reconcile["run"], flag
+    assert int(env["RECONCILE_SEARCH_HOURS"]) > int(env["RECONCILE_OVERLAP_HOURS"]) >= 24
+    listing = steps[ids.index(listing_step_id)]
+    assert "steps.reconcile.outputs.since" in str(listing["env"])
+    assert '--reconcile-since "$RECONCILE_SINCE"' in listing["run"]
 
 
 def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
