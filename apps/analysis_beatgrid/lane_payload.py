@@ -334,13 +334,16 @@ def _line_diagnostics(
 ) -> dict:
     """The `grid_fit` block: how each served segment was fitted and rounded.
 
-    `mode` is what was asked for; `fitter` is which fitter chose the lines,
-    which differs when `const_regions` found no steady span and handed the
-    track to the line fitter.
+    `mode` is what was asked for. In `const_regions` mode `fitter` says which
+    fitter chose the lines, since it differs when no steady span was found
+    and the track went to the line fitter. `line` mode's block is left exactly
+    as NATIVE-16 defined it.
     """
+    block: dict[str, Any] = {"mode": mode}
+    if mode == GRID_FIT_CONST_REGIONS:
+        block["fitter"] = fit.fitter
     return {
-        "mode": mode,
-        "fitter": fit.fitter,
+        **block,
         "offset_s": fit.offset_s,
         "octave_policy_multiple": octave_multiple,
         "segments": [
