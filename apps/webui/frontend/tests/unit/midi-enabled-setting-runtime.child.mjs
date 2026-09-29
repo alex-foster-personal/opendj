@@ -41,6 +41,10 @@ try {
 	const webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	const choice = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-enabled-choice.ts');
 	const stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
+	// The page's own wiring (startAppInstruments): the failure toast reaches
+	// apply.ts through this reporter, since apply.ts does not import stores.
+	const appInit = await vite.ssrLoadModule('/src/lib/rb/app-init.ts');
+	apply.setMidiLoadFailureReporter(appInit.toastMidiLoadFailure);
 	const loadFailureToasts = () =>
 		stores.toasts.filter((t) => t.message === 'MIDI could not load, so it stays off').length;
 
@@ -126,7 +130,8 @@ try {
 // the error toast below are that real failure's outcome, not a simulated one.
 localStorage.clear();
 const rune = await loadRuneModule(`
-import { applySettingChange, readSettingValue } from '$lib/settings/apply';
+import { applySettingChange, readSettingValue, setMidiLoadFailureReporter } from '$lib/settings/apply';
+import { toastMidiLoadFailure } from '$lib/rb/app-init';
 import { hydrateMidiEnabledFromDisk, midiEnabledPersisted } from '$lib/components/rb/midi/midi-enabled-choice';
 import { dismissToast, toasts } from '$lib/stores.svelte';
 export function watchMidiSetting() {
@@ -144,8 +149,10 @@ export function errorToasts() {
 export function dismissAll() {
 	for (const t of [...toasts]) dismissToast(t.logId);
 }
-export { applySettingChange, hydrateMidiEnabledFromDisk, midiEnabledPersisted };
+export { applySettingChange, hydrateMidiEnabledFromDisk, midiEnabledPersisted, setMidiLoadFailureReporter, toastMidiLoadFailure };
 `);
+// As startAppInstruments wires it on every page.
+rune.setMidiLoadFailureReporter(rune.toastMidiLoadFailure);
 const settle = () => new Promise((r) => setTimeout(r, 20));
 const watch = rune.watchMidiSetting();
 await settle();
@@ -161,5 +168,19 @@ await settle();
 watch.stop();
 results.displayReactivity = { seen: watch.seen };
 results.failedRuntimeLoad = { persistedRightAfterToggle, persistedAfterFailedLoad, toastsAfterFailedLoad };
+
+// 8. Control: with the reporter unwired (app-init's teardown), the same real
+// failure still restores off but raises no toast, so the toast above came
+// through the reporter and nowhere else.
+rune.setMidiLoadFailureReporter(null);
+rune.applySettingChange('rb.midi_enabled', true);
+const unwiredPersistedRightAfterToggle = rune.midiEnabledPersisted();
+for (let i = 0; i < 400 && rune.midiEnabledPersisted(); i += 1) await settle();
+results.unwiredFailedRuntimeLoad = {
+	persistedRightAfterToggle: unwiredPersistedRightAfterToggle,
+	persistedAfterFailedLoad: rune.midiEnabledPersisted(),
+	toastsAfterFailedLoad: rune.errorToasts()
+};
+rune.dismissAll();
 
 process.stdout.write(`RESULT ${JSON.stringify(results)}\n`);

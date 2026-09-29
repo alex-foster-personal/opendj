@@ -63,7 +63,18 @@ import {
 	midiEnabledPersisted,
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
-import { pushToast } from '$lib/stores.svelte';
+
+// How a MIDI runtime load failure reaches the user. app-init wires the error
+// toast in at boot (toastMidiLoadFailure), so this first-paint module does not
+// import stores.svelte, the app's highest fan-in module (quality gate
+// frontend.max_fan_in). Until then the failure is still logged, never dropped.
+const _logMidiLoadFailure = (exc: unknown): void => console.error('[midi] MIDI could not load', exc);
+let _reportMidiLoadFailure = _logMidiLoadFailure;
+
+/** null restores the log-only default (app-init's teardown). */
+export function setMidiLoadFailureReporter(report: ((exc: unknown) => void) | null): void {
+	_reportMidiLoadFailure = report ?? _logMidiLoadFailure;
+}
 
 /** The rb.midi_enabled runtime half lives in midi-ui-state, which is loaded on
  * demand here rather than charging the MIDI runtime to first paint. It persists
@@ -78,7 +89,7 @@ async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 		// Nothing acted on the saved choice, so it must not read "on": restore
 		// off (persistMidiEnabled bumps the tick the toggle reads) and say why.
 		persistMidiEnabled(false);
-		pushToast('MIDI could not load, so it stays off', 'error', undefined, exc);
+		_reportMidiLoadFailure(exc);
 	}
 }
 

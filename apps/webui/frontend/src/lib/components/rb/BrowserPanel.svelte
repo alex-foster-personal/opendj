@@ -3562,11 +3562,10 @@
 				type="button"
 				class="tray-preview"
 				class:active={previewCue.playing}
+				disabled={!previewCue.playing}
 				aria-label={previewCue.playing ? 'Stop library preview' : 'Library preview cue'}
-				title={previewCue.playing ? 'Stop library preview' : 'Library preview cue (click a mini-waveform)'}
-				onclick={() => {
-					if (previewCue.playing) void stopPreviewCue();
-				}}
+				title={previewCue.playing ? 'Stop library preview' : 'No preview playing: click a mini-waveform to start one'}
+				onclick={() => void stopPreviewCue()}
 			>
 				Preview
 			</button>
@@ -3915,6 +3914,10 @@
 		font-size: 10px;
 		padding: 2px 8px;
 		cursor: pointer;
+	}
+	.tray-preview:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.tray-preview.active {
 		color: var(--rb-accent);

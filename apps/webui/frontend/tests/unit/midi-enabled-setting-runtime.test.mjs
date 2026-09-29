@@ -76,7 +76,7 @@ before(() => {
 
 test('the child really ran without WebMIDI, against real storage (instrument check)', () => {
 	for (const [name, snap] of Object.entries(results)) {
-		if (name === 'displayReactivity' || name === 'failedRuntimeLoad') continue; // not snapshots
+		if (['displayReactivity', 'failedRuntimeLoad', 'unwiredFailedRuntimeLoad'].includes(name)) continue; // not snapshots
 		assert.equal(snap.navigatorHasWebMidi, false, `${name}: this file asserts the no-WebMIDI branch`);
 	}
 	// Real storage both ways: an opt-in written was read back before the request cleared it.
@@ -177,7 +177,28 @@ test('only the load-failure catch restores off; a settled apply leaves the choic
 	const catchBody = fn.slice(fn.indexOf('} catch'));
 	assert.doesNotMatch(tryBody, /persistMidiEnabled/, 'a successful apply must not overwrite the choice');
 	assert.match(catchBody, /persistMidiEnabled\(false\);/);
-	assert.match(catchBody, /pushToast\([^)]*'error'[^)]*exc\)/);
+	assert.match(catchBody, /_reportMidiLoadFailure\(exc\);/);
+});
+
+// Quality gate frontend.max_fan_in: apply.ts reports through a reporter that
+// app-init wires, instead of importing stores.svelte (the highest fan-in hub).
+test('apply.ts stays off stores.svelte, and app-init wires the failure toast into it', () => {
+	assert.doesNotMatch(read('src/lib/settings/apply.ts'), /from '\$lib\/stores\.svelte'/);
+	const init = read('src/lib/rb/app-init.ts');
+	const start = init.slice(init.indexOf('export function startAppInstruments('));
+	assert.match(start, /setMidiLoadFailureReporter\(toastMidiLoadFailure\);/);
+	assert.match(start, /setMidiLoadFailureReporter\(null\);/, 'teardown must unwire it');
+	assert.match(
+		body(init, 'export function toastMidiLoadFailure(exc: unknown)'),
+		/pushToast\('MIDI could not load, so it stays off', 'error', undefined, exc\)/
+	);
+});
+
+test('control: an unwired reporter still restores off, and raises no toast', () => {
+	const s = results.unwiredFailedRuntimeLoad;
+	assert.equal(s.persistedRightAfterToggle, true);
+	assert.equal(s.persistedAfterFailedLoad, false);
+	assert.deepEqual(s.toastsAfterFailedLoad, []);
 });
 
 test('every write of the choice goes through persistMidiEnabled, which signals the display', () => {
