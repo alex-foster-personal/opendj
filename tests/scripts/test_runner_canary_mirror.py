@@ -35,7 +35,11 @@ Regression lines:
     stderr or a refusal's text (the origin URL, a rewrite rule, git's own echoed output,
     a timed-out argv) then broken; and if redaction hides the host and path too then
     broken (opposite direction: the operator must still see WHERE)
-  - if a SHA that is not on origin/main can be mirrored then broken
+  - if a SHA that is not on the SOURCE repository's main can be mirrored then broken: main
+    is fetched fresh from origin's fetch URL, which must be the source, be one URL, and
+    match no rewrite rule, so a forged or foreign local origin/main proves nothing (Codex
+    P1 on c445557c4), on both targets; and if a checkout with no local origin/main cannot
+    mirror a real main SHA, or the script overwrites FETCH_HEAD, then broken
   - if an EMPTY mirror is pushed to then broken: the first branch pushed becomes the
     default branch, which arms every `schedule` and `workflow_run` workflow in the mirror
   - if a mirror whose default branch is a canary branch is pushed to then broken (same)
@@ -248,16 +252,120 @@ def test_a_sha_not_on_origin_main_is_refused(world) -> None:
     _bootstrap_default_branch(world)
     result = _run(world, world["off_main"])
     assert result.returncode == 1
-    assert "not on refs/remotes/origin/main" in result.stdout + result.stderr
+    assert "not on the source repository's main" in result.stdout + result.stderr
     assert set(_mirror_refs(world)) == {"refs/heads/main"}
 
 
-def test_a_missing_origin_main_ref_is_refused_with_the_fix(world) -> None:
+# ----- provenance: main is read from the source itself, never from a local ref ------
+
+
+def _impostor_with_side_history(world: dict[str, object]) -> str:
+    """An impostor repository whose main holds the off-main commit, as a fetch from it
+    would leave refs/remotes/origin/main."""
+    impostor_url, impostor = _impostor(world)
+    _git(
+        world["source"],
+        "push",
+        "-q",
+        f"file://{impostor}",
+        f"{world['off_main']}:refs/heads/main",
+        env=world["env"],
+    )
+    return impostor_url
+
+
+def test_a_forged_local_origin_main_does_not_make_a_sha_mirrorable(world) -> None:
+    """Codex P1 on c445557c4: ancestry was proved against whatever the LOCAL
+    refs/remotes/origin/main referenced, which any update-ref can point anywhere."""
+    _bootstrap_default_branch(world)
+    _git(
+        world["source"],
+        "update-ref",
+        "refs/remotes/origin/main",
+        world["off_main"],
+        env=world["env"],
+    )
+    result = _run(world, world["off_main"])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "not on the source repository's main" in result.stdout
+    assert _canary_refs(Path(str(world["mirror"])), world) == []
+
+
+def test_the_mirror_target_refuses_a_checkout_whose_origin_is_not_the_source(world) -> None:
+    """The mirror path never checked origin, so another repository's commits (workflow
+    code included) could be pushed to the mirror and run there."""
+    _bootstrap_default_branch(world)
+    impostor_url = _impostor_with_side_history(world)
+    _git(world["source"], "remote", "set-url", "origin", impostor_url, env=world["env"])
+    _git(
+        world["source"],
+        "update-ref",
+        "refs/remotes/origin/main",
+        world["off_main"],
+        env=world["env"],
+    )
+    result = _run(world, world["off_main"])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "fetch URL" in result.stdout and "not the source repository" in result.stdout
+    assert _canary_refs(Path(str(world["mirror"])), world) == []
+
+
+def test_the_source_target_refuses_a_fetch_url_that_is_not_the_source(world) -> None:
+    """A valid source pushurl does not vouch for where origin/main was fetched from."""
+    impostor_url = _impostor_with_side_history(world)
+    _git(world["source"], "remote", "set-url", "origin", impostor_url, env=world["env"])
+    source_url = _url(world, CONFIG["source_repository"])
+    _git(world["source"], "remote", "set-url", "--push", "origin", source_url, env=world["env"])
+    _git(
+        world["source"],
+        "update-ref",
+        "refs/remotes/origin/main",
+        world["off_main"],
+        env=world["env"],
+    )
+    result = _run(world, world["off_main"], target="source")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "fetch URL" in result.stdout and "not the source repository" in result.stdout
+    assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
+
+
+def test_a_rewrite_of_the_origin_fetch_url_is_refused(world) -> None:
+    """The fetch URL is a contacted URL too: a rewrite would fetch main from elsewhere."""
+    _bootstrap_default_branch(world)
+    impostor_url = _impostor_with_side_history(world)
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    source_url = _url(world, CONFIG["source_repository"])
+    gitconfig.write_text(
+        gitconfig.read_text() + f'[url "{impostor_url}"]\n\tinsteadOf = {source_url}\n'
+    )
+    result = _run(world, world["off_main"])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "would rewrite" in result.stdout
+    assert _canary_refs(Path(str(world["mirror"])), world) == []
+
+
+def test_more_than_one_origin_fetch_url_is_refused(world) -> None:
+    _bootstrap_default_branch(world)
+    source_url = _url(world, CONFIG["source_repository"])
+    _git(world["source"], "config", "--add", "remote.origin.url", source_url, env=world["env"])
+    result = _run(world, world["on_main"])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "fetch URLs" in result.stdout
+
+
+def test_no_local_origin_main_is_needed_because_main_is_fetched_fresh(world) -> None:
+    """Opposite direction: provenance comes from the source, so a checkout with no (or a
+    stale) local origin/main still mirrors a real main SHA, and FETCH_HEAD is left alone."""
     _bootstrap_default_branch(world)
     _git(world["source"], "update-ref", "-d", "refs/remotes/origin/main", env=world["env"])
+    fetch_head = Path(str(world["source"])) / ".git" / "FETCH_HEAD"
+    fetch_head.write_text("another agent's fetch\n")
     result = _run(world, world["on_main"])
-    assert result.returncode == 1
-    assert "git fetch origin main" in result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _canary_refs(Path(str(world["mirror"])), world) == [
+        f"refs/heads/canary/{world['on_main']}"
+    ]
+    assert fetch_head.read_text() == "another agent's fetch\n"
 
 
 def test_the_retired_mirror_override_is_refused_by_name_not_ignored(world) -> None:
@@ -295,7 +403,7 @@ def test_source_target_refuses_an_origin_that_is_not_the_source_repository(world
     _git(world["source"], "remote", "set-url", "origin", impostor_url, env=world["env"])
     result = _run(world, world["on_main"], target="source")
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "origin is" in result.stdout and "not the source repository" in result.stdout
+    assert "origin's" in result.stdout and "not the source repository" in result.stdout
     assert _git(impostor, "for-each-ref", env=world["env"]) == ""
     assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
 
@@ -635,7 +743,9 @@ def test_a_credentialed_call_starts_no_credential_helper_or_askpass(
         gitconfig.read_text()
         + f"[credential]\n\thelper = {helper}\n[core]\n\taskPass = {askpass}\n"
     )
-    config = {**world["config"], "remote_url_templates": [f"{challenging_server}{{repo}}.git"]}
+    # The challenge URL builds the mirror URL; the file spellings keep origin a valid source.
+    templates = [f"{challenging_server}{{repo}}.git", *world["config"]["remote_url_templates"]]
+    config = {**world["config"], "remote_url_templates": templates}
     Path(str(world["config_path"])).write_text(json.dumps(config))
     probe_env = {**world["env"], "GIT_ASKPASS": str(env_askpass)}
     # Control: plain git, challenged at that URL, does start the helper and askpass.
@@ -731,7 +841,10 @@ def _token_in_mirror_url(world: dict[str, object]) -> str:
     """Point the mirror template at the same bare repositories, with the token as userinfo."""
     remotes = world["remotes"]
     template = f"file://x-access-token:{TOKEN}@localhost{remotes}/{{repo}}.git"
-    config = {**world["config"], "remote_url_templates": [template]}
+    config = {
+        **world["config"],
+        "remote_url_templates": [template, *world["config"]["remote_url_templates"]],
+    }
     Path(str(world["config_path"])).write_text(json.dumps(config))
     return f"localhost{remotes}/{CONFIG['mirror_repository']}.git"
 
@@ -786,7 +899,7 @@ def test_a_timed_out_git_call_raises_a_redacted_refusal_not_its_argv(monkeypatch
 def test_source_target_refuses_a_sha_not_on_main(world) -> None:
     result = _run(world, world["off_main"], target="source")
     assert result.returncode == 1
-    assert "not on refs/remotes/origin/main" in result.stdout
+    assert "not on the source repository's main" in result.stdout
     assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
 
 

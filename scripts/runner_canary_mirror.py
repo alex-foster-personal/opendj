@@ -11,8 +11,7 @@ Targets:
     --target source   the source repository itself (`source_repository`), through this
                       checkout's own `origin` and git's own credentials: Avrea and Tenki.
 
-Usage (from a checkout that has fetched main):
-    git fetch origin main
+Usage (from a checkout of the source repository; main is fetched fresh from its origin):
     CANARY_MIRROR_PUSH_TOKEN=... python3 scripts/runner_canary_mirror.py <sha> \\
         --target mirror --config ci/runner-canary.json
     python3 scripts/runner_canary_mirror.py <sha> --target source --config ci/runner-canary.json
@@ -48,7 +47,9 @@ Requirements (mini-PRD)
 - [if] anything the script prints or raises would carry URL userinfo, an Authorization
   value, or the mirror token or its base64 [then] it is redacted, host and path still
   shown, [else stop] ✔︎ ✅ 🎯
-- [if] the SHA is malformed or not an ancestor of refs/remotes/origin/main [then] exit 1,
+- [if] the SHA is malformed or not an ancestor of the SOURCE repository's main, fetched
+  fresh from origin's one fetch URL (which must be the source and match no rewrite rule),
+  never read from a local ref [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
   the first branch pushed to an empty repository becomes its default, and the default
@@ -70,7 +71,10 @@ from pathlib import Path
 
 TOKEN_ENV = "CANARY_MIRROR_PUSH_TOKEN"
 REPO_ENV = "CANARY_MIRROR_REPO"
-MAIN_REF = "refs/remotes/origin/main"
+# main is fetched fresh from the validated source into this private ref, never read from the
+# checkout's own refs/remotes/origin/main, which any local update-ref can point anywhere.
+SOURCE_MAIN_BRANCH = "refs/heads/main"
+SOURCE_MAIN_REF = "refs/runner-canary/source-main"
 CANARY_PREFIX = "canary/"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 REWRITE_RULES_RE = r"^url\..*\.(push)?insteadof$"
@@ -135,11 +139,11 @@ def remote_urls_of(repo: str, config: dict) -> list[str]:
     return [template.format(repo=repo) for template in config["remote_url_templates"]]
 
 
-def require_origin_is_source(origin_url: str, config: dict) -> None:
+def require_origin_is_source(origin_url: str, config: dict, what: str) -> None:
     spellings = {url.lower() for url in remote_urls_of(config["source_repository"], config)}
     if origin_url.strip().lower() not in spellings:
         raise MirrorRefused(
-            f"origin is {origin_url!r}, not the source repository "
+            f"origin's {what} is {origin_url!r}, not the source repository "
             f"{config['source_repository']!r}; run from a checkout of it"
         )
 
@@ -277,17 +281,52 @@ def require_no_rewrite(url: str) -> None:
         )
 
 
-def require_on_main(sha: str) -> None:
-    if _git(["rev-parse", "--verify", "--quiet", MAIN_REF]).returncode != 0:
+def origin_fetch_url() -> str:
+    """The one URL `git fetch origin` would read from. More than one is refused."""
+    urls = _git(["config", "--get-all", "remote.origin.url"]).stdout.split()
+    if len(urls) != 1:
         raise MirrorRefused(
-            f"{MAIN_REF} is missing in this checkout; run `git fetch origin main` first"
+            f"origin has {len(urls)} fetch URLs {urls}; exactly one, the source repository, "
+            "is required"
         )
+    return urls[0]
+
+
+def fetch_source_main(url: str) -> None:
+    """Fetch the source's main into SOURCE_MAIN_REF from exactly `url`, with git's own
+    credentials, never touching FETCH_HEAD (a pointer other agents share)."""
+    fetched = _git(
+        [
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--no-write-fetch-head",
+            url,
+            f"+{SOURCE_MAIN_BRANCH}:{SOURCE_MAIN_REF}",
+        ]
+    )
+    if fetched.returncode != 0:
+        raise MirrorRefused(
+            f"cannot fetch main from {url}: git fetch exit {fetched.returncode}: "
+            f"{fetched.stderr.strip()}"
+        )
+
+
+def require_on_source_main(sha: str, config: dict) -> None:
+    """`sha` must be on the SOURCE repository's main, proved from the source itself: origin's
+    fetch URL must be the source and match no rewrite rule, and main is fetched from it
+    fresh. A local refs/remotes/origin/main proves nothing, since a fetch from another
+    repository or a bare update-ref can point it anywhere (Codex P1 on c445557c4)."""
+    url = origin_fetch_url()
+    require_origin_is_source(url, config, "fetch URL")
+    require_no_rewrite(url)
+    fetch_source_main(url)
     if _git(["cat-file", "-e", f"{sha}^{{commit}}"]).returncode != 0:
+        raise MirrorRefused(f"{sha} is not a commit on the source repository's main")
+    if _git(["merge-base", "--is-ancestor", sha, SOURCE_MAIN_REF]).returncode != 0:
         raise MirrorRefused(
-            f"{sha} is not a commit in this checkout; run `git fetch origin main` first"
+            f"{sha} is not on the source repository's main; only main SHAs are mirrored"
         )
-    if _git(["merge-base", "--is-ancestor", sha, MAIN_REF]).returncode != 0:
-        raise MirrorRefused(f"{sha} is not on {MAIN_REF}; only main SHAs are mirrored")
 
 
 def read_default_branch(repo: str, url: str, auth: dict[str, str]) -> str | None:
@@ -341,7 +380,7 @@ def origin_push_url() -> str:
 
 def _source_destination(config: dict) -> tuple[str, str, dict[str, str]]:
     push_url = origin_push_url()
-    require_origin_is_source(push_url, config)
+    require_origin_is_source(push_url, config, "push URL")
     # Push to the URL just checked, not to the name `origin`, so the address git uses is
     # the address that was validated. No auth header: git's own credentials, never the
     # mirror's (child_env strips the token from every child).
@@ -368,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
         repo, url, auth = _destination(args.target, config)
         require_no_rewrite(url)
         sha = validate_sha(args.sha)
-        require_on_main(sha)
+        require_on_source_main(sha, config)
         check_default_branch(read_default_branch(repo, url, auth), repo)
         say(f"[canary] target {args.target} = {repo}; pushing {sha} to canary/{sha}")
         ref = push_canary_ref(repo, url, sha, auth)
