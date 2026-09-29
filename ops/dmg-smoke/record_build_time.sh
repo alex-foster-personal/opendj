@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Supersedes: the justfile `dmg` recipe's inline `_record_build_time` EXIT
+# trap logic (the format-string construction and the `ops/logs/ship-dmg.log`
+# append it did directly). The trap now delegates to this script instead of
+# duplicating that logic inline (review round 2, P1: "add beside" is a
+# defect -- see docs/conventions/supersession.md).
+#
 # The ONE place that computes a `phase=build_total` verdict and appends it to
 # ops/logs/ship-dmg.log. Extracted from the justfile `dmg` recipe's
 # `_record_build_time` EXIT trap so there is exactly one executable writer:
