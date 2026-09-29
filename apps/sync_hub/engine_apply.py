@@ -6,6 +6,7 @@ here is private to how one batch of offered rows gets merged.
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from collections.abc import Sequence
@@ -378,6 +379,9 @@ def _replace_members(
         f"INSERT INTO {MEMBERSHIP_TABLE} ({', '.join(columns)}) "
         f"VALUES ({', '.join('?' for _ in columns)})"
     )
+    stored_tracks = _stored_track_ids(
+        conn, [str(member.get("stable_id") or "") for member in members]
+    )
     for member in members:
         offered = set(member)
         if offered != set(columns):
@@ -393,11 +397,7 @@ def _replace_members(
                 f"a row belonging to {member['playlist_id']!r}"
             )
         track_id = str(member.get("stable_id") or "")
-        track_row = conn.execute(
-            "SELECT 1 FROM tracks WHERE stable_id = ? LIMIT 1",
-            (track_id,),
-        ).fetchone()
-        if track_row is None:
+        if track_id not in stored_tracks:
             log.warning(
                 "%s: playlist %s pos %r skipped; track %s is not here yet",
                 MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
@@ -410,6 +410,21 @@ def _replace_members(
                 f"{MEMBERSHIP_TABLE}: playlist {playlist_id} position "
                 f"{member.get('position')!r} violates a constraint ({exc})"
             ) from exc
+
+
+def _stored_track_ids(conn: sqlite3.Connection, track_ids: Sequence[str]) -> frozenset[str]:
+    """Which of ``track_ids`` a ``tracks`` row stores, in one read.
+
+    A bundle checked each member with its own point read: 10,042 statements
+    per replace of the 10,000-track fixture's playlist (LIBM-120 L6).
+    """
+    return frozenset(
+        str(row[0])
+        for row in conn.execute(
+            "SELECT stable_id FROM tracks WHERE stable_id IN (SELECT value FROM json_each(?))",
+            (json.dumps(list(track_ids)),),
+        )
+    )
 
 
 def _apply(

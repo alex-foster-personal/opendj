@@ -93,6 +93,19 @@ class IdentityLoserVerdicts:
         self._decide_component_of(stable_id)
         return self._verdicts[stable_id]
 
+    def expect(self, count: int) -> None:
+        """A caller is about to ask ``count`` more verdicts.
+
+        When that would cross the cutover anyway, elect the library now
+        instead of deciding the first rows one component at a time: a
+        10,042-member bundle asks for every one of its tracks at once.
+        """
+        if (
+            self._library_losers is None
+            and len(self._verdicts) + count >= CFG.ELECT_LIBRARY_AFTER_VERDICTS
+        ):
+            self._library_losers = frozenset(effective_identity_remap(self._conn))
+
     # ----- component --------------------------------------------------------
 
     def _decide_component_of(self, stable_id: str) -> None:
