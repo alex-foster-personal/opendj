@@ -7,8 +7,9 @@ Mon 21 Sep to Mon 28 Sep 2026 the nightly failed 8 of 8 runs on agentbox with
 ``.venv/bin/pytest: No such file`` (PERF-UI-05 step) and ``No module named 'pytest'``
 (library-wheel fixture). This pins the whole class, not that one line.
 
-[if] a job runs pytest [and] any `uv sync` in that job lacks `--extra dev` or
-`--all-extras` [then] broken, [else stop].
+[if] a pytest job runs a `uv sync` without the dev extra [then] broken, [else stop].
+
+"Without the dev extra" means neither `--extra dev` nor `--all-extras`.
 
 Regression lines:
   - if the e2e extended job's `uv sync` loses `--extra dev` then broken, naming e2e.yml
@@ -156,7 +157,7 @@ def test_every_job_that_runs_pytest_syncs_the_dev_extra() -> None:
 
 
 def test_positive_control_finds_the_extended_jobs_pytest_step_and_uv_sync() -> None:
-    """[if] the scanner finds no pytest step in the real extended job [then] it parses nothing."""
+    """[if] no pytest step is found in the real extended job [then] blind, [else stop]."""
     commands = _job_commands(_load(E2E)["jobs"]["extended"])
     pytest_commands = [command for command in commands if _runs_pytest(command)]
     assert any(".venv/bin/pytest" in c for c in pytest_commands), "no pytest step found"
@@ -165,14 +166,14 @@ def test_positive_control_finds_the_extended_jobs_pytest_step_and_uv_sync() -> N
 
 
 def test_the_guard_goes_red_on_e2e_yml_with_the_fix_reverted() -> None:
-    """[if] the extended job's bare uv sync goes unflagged [then] the guard is blind."""
+    """[if] the reverted extended job goes unflagged [then] the guard is blind, [else stop]."""
     violations = _violations(_extended_with_bare_sync(), E2E.name)
     assert len(violations) == 1, violations
     assert "e2e.yml" in violations[0] and "'extended'" in violations[0], violations
 
 
 def test_a_bare_uv_sync_in_a_job_without_pytest_stays_green() -> None:
-    """[if] a job with no pytest is flagged for a bare sync [then] the guard overshoots."""
+    """[if] a no-pytest job is flagged for a bare sync [then] it overshoots, [else stop]."""
     unrelated = {"jobs": {"lint": {"steps": [{"run": "uv sync"}, {"run": "uv run ruff check ."}]}}}
     assert _violations(unrelated, "synthetic.yml") == []
     # Real negative control: e2e.yml's gate job syncs without dev and runs no pytest.
@@ -216,7 +217,7 @@ def test_each_dev_installing_sync_form_is_accepted(sync: str) -> None:
 
 
 def test_non_command_mentions_are_not_read_as_commands() -> None:
-    """[if] quoted text, comments or a pytest-named path count as commands [then] false reds."""
+    """[if] quoted text or comments count as commands [then] false reds, [else stop]."""
     run = (
         'test -x .venv/bin/python || { echo "[ERROR] missing after uv sync"; exit 1; }\n'
         "# uv sync is run above; pytest lanes live in ci.yml\n"
@@ -228,7 +229,7 @@ def test_non_command_mentions_are_not_read_as_commands() -> None:
 
 
 def test_args_do_not_leak_from_the_next_line_into_a_uv_sync() -> None:
-    """[if] a later line's `--extra dev` satisfies an earlier bare sync [then] a miss."""
+    """[if] a later line's `--extra dev` satisfies a bare sync [then] a miss, [else stop]."""
     run = "uv sync\nuv run --extra dev pytest tests"
     job = {"jobs": {"j": {"steps": [{"run": run}]}}}
     assert len(_violations(job, "synthetic.yml")) == 1
