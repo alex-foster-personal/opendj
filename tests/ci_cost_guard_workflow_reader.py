@@ -25,6 +25,7 @@ from pathlib import Path
 import yaml
 
 from scripts.ci_cost_guard import infer_standard_sku
+from tests.scripts.ci_runner_routes import MERGE_QUEUE_DISJUNCT
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
@@ -110,6 +111,10 @@ TRUNK_RUNNER_GUARD_PREFIXES = (
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
     "&& vars.CI_RUNS_ON_TRUNK",
 )
+#: The guarded CI_RUNS_ON_MERGE_QUEUE disjunct (ADR-NEW-trunk-queue-drafts-use-a-reserved-
+#: runner-pool) on every job on a Trunk draft's required path. It selects a self-hosted pool
+#: too, so it prices at the hosted fallback like the guards above.
+MERGE_QUEUE_RUNNER_GUARD_PREFIX = MERGE_QUEUE_DISJUNCT
 _JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")
 _VARS_DISJUNCT = re.compile(r"^vars\.[A-Z0-9_]+$")
 
@@ -180,12 +185,16 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
     )
     for disjunct in disjuncts[:-1]:
         trimmed = disjunct.strip()
-        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX or trimmed in TRUNK_RUNNER_GUARD_PREFIXES:
+        if trimmed in (
+            MAIN_FIX_RUNNER_GUARD_PREFIX,
+            MERGE_QUEUE_RUNNER_GUARD_PREFIX,
+            *TRUNK_RUNNER_GUARD_PREFIXES,
+        ):
             continue
         assert _VARS_DISJUNCT.fullmatch(trimmed), (
             f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
             f"price: disjunct {disjunct!r} is neither vars.* nor the ADR-0041 "
-            "main-fix guard prefix nor a CI_RUNS_ON_TRUNK guard prefix"
+            "main-fix guard prefix nor a CI_RUNS_ON_TRUNK or CI_RUNS_ON_MERGE_QUEUE guard prefix"
         )
     fallback = json.loads(literal_match.group(1))
     return [fallback] if isinstance(fallback, str) else list(fallback)
