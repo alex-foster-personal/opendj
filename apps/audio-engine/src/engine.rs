@@ -103,6 +103,8 @@ pub enum EngineCmd {
     Unload { deck: DeckId },
     Play { deck: DeckId, playing: bool },
     Cue { deck: DeckId },
+    Quantize { deck: DeckId, enabled: bool },
+    QuantizeGrid { deck: DeckId, beats: u8 },
     Seek { deck: DeckId, position_ms: f64 },
     Loop { deck: DeckId, bounds_ms: Option<(f64, f64)> },
     BeatLoop { deck: DeckId, beats: f64, start_ms: Option<f64> },
@@ -158,12 +160,17 @@ pub struct DeckSnapshot {
     /// None until a cue point is set (first CUE while paused, or a pause).
     pub cue_ms: Option<f64>,
     pub loop_ms: Option<(f64, f64)>,
+    /// Beat length of the engaged loop when it is a beat loop, None for a
+    /// loop set by bounds (the page's `LoopState.beat_length`).
+    pub loop_beats: Option<f64>,
     pub trim: f64,
     pub eq: [f64; 3],
     pub filter: f64,
     pub fader: f64,
     pub assign: Assign,
     pub pitch_range: f64,
+    pub quantize: bool,
+    pub quantize_grid: u8,
 }
 
 /// Fixed-size engine state for the state feed. Copy, so publishing it from the
@@ -185,7 +192,10 @@ pub struct Engine {
     master_volume: f64,
     master_muted: bool,
     master_gain: Smoothed,
-    mute_gain: Smoothed,
+    /// Set outright, never smoothed: the page assigns its mute node's gain
+    /// exactly 0 or 1 (`master-mute.svelte.ts`), so a mute is silent from its
+    /// first frame.
+    mute_gain: f64,
     frame: u64,
 }
 
@@ -199,9 +209,16 @@ impl Engine {
             master_volume: 1.0,
             master_muted: false,
             master_gain: Smoothed::new(1.0, sr, mixer::PARAM_SMOOTH_S),
-            mute_gain: Smoothed::new(1.0, sr, mixer::PARAM_SMOOTH_S),
+            mute_gain: 1.0,
             frame: 0,
         };
+        // The page's default assign matrix (`_defaultChannel`): odd decks on
+        // A, even decks on B. The strips start at the gain that gives, with
+        // no glide in from THRU.
+        for (i, d) in e.decks.iter_mut().enumerate() {
+            d.assign = if i % 2 == 0 { Assign::A } else { Assign::B };
+            d.snap_xf_gain(mixer::xf_gain(d.assign, e.crossfader));
+        }
         e.apply_crossfader();
         e
     }
@@ -262,6 +279,8 @@ impl Engine {
             Unload { deck } => return Ok(self.deck_mut(deck)?.unload()),
             Play { deck, playing } => self.deck_mut(deck)?.play(playing)?,
             Cue { deck } => self.deck_mut(deck)?.cue()?,
+            Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
+            QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
             Seek { deck, position_ms } => self.deck_mut(deck)?.seek(position_ms)?,
             Loop { deck, bounds_ms } => self.deck_mut(deck)?.set_loop(bounds_ms)?,
             BeatLoop { deck, beats, start_ms } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
@@ -302,7 +321,7 @@ impl Engine {
             }
             MasterMute { muted } => {
                 self.master_muted = muted;
-                self.mute_gain.set(if muted { 0.0 } else { 1.0 });
+                self.mute_gain = if muted { 0.0 } else { 1.0 };
             }
         }
         Ok(None)
@@ -356,7 +375,7 @@ impl Engine {
     /// Master gain and the frame count, shared by both render paths.
     fn finish_block(&mut self, out: &mut [f32]) {
         for o in out.chunks_exact_mut(2) {
-            let g = (self.master_gain.tick() * self.mute_gain.tick()) as f32;
+            let g = (self.master_gain.tick() * self.mute_gain) as f32;
             o[0] *= g;
             o[1] *= g;
         }
@@ -373,6 +392,8 @@ impl Engine {
                     key_shift: d.key_shift,
                     assign: d.assign,
                     pitch_range: d.pitch_range,
+                    quantize: d.quantize,
+                    quantize_grid: d.quantize_grid,
                     trim: d.trim,
                     eq: d.eq,
                     filter: d.filter,
@@ -392,7 +413,10 @@ impl Engine {
                 cue_ms: d.cue.map(|c| t.frames_to_ms(c)),
                 assign: d.assign,
                 pitch_range: d.pitch_range,
+                quantize: d.quantize,
+                quantize_grid: d.quantize_grid,
                 loop_ms: d.looping.map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b))),
+                loop_beats: d.looping.and(d.loop_beats),
                 trim: d.trim,
                 eq: d.eq,
                 filter: d.filter,
@@ -446,6 +470,22 @@ impl KnobTarget {
             KnobTarget::Fader(deck) => EngineCmd::Fader { deck, value },
             KnobTarget::Tempo(deck) => EngineCmd::Tempo { deck, ratio: value },
         }
+    }
+
+    /// The knob a command sets outright, if any: what a ramp on it must yield
+    /// to. A load or unload sets its deck's tempo back to 1, so it counts as
+    /// setting the tempo.
+    pub fn set_by(cmd: &EngineCmd) -> Option<KnobTarget> {
+        Some(match *cmd {
+            EngineCmd::Crossfader { .. } => KnobTarget::Crossfader,
+            EngineCmd::MasterVolume { .. } => KnobTarget::MasterVolume,
+            EngineCmd::Trim { deck, .. } => KnobTarget::Trim(deck),
+            EngineCmd::Eq { deck, band, .. } => KnobTarget::Eq(deck, band),
+            EngineCmd::Filter { deck, .. } => KnobTarget::Filter(deck),
+            EngineCmd::Fader { deck, .. } => KnobTarget::Fader(deck),
+            EngineCmd::Tempo { deck, .. } | EngineCmd::Load { deck, .. } | EngineCmd::Unload { deck } => KnobTarget::Tempo(deck),
+            _ => return None,
+        })
     }
 }
 
@@ -656,8 +696,9 @@ mod tests {
         let mut buf = vec![0.0f32; 48000 * 2];
         flat.render(&mut buf);
         let reference = rms_db(&buf[48000..]);
-        // Flat EQ, unity trim and fader: a 0.5-amplitude sine is -9.03 dBFS.
-        assert!((reference - (-9.0309)).abs() < 0.1, "flat measured {reference}");
+        // Flat EQ, unity trim and fader: a 0.5-amplitude sine is -9.03 dBFS,
+        // less the equal-power crossfader's 3.01 dB at center (deck 1 is on A).
+        assert!((reference - (-9.0309 - 3.0103)).abs() < 0.1, "flat measured {reference}");
 
         let mut cut = playing_tone(100.0, 48000);
         cut.apply(EngineCmd::Eq { deck: 1, band: EqBand::Low, value: 0.0 }).unwrap();
@@ -683,6 +724,36 @@ mod tests {
     }
 
     #[test]
+    fn master_mute_is_a_hard_switch_like_the_pages() {
+        let mut e = playing_tone(1000.0, 48000);
+        let mut buf = vec![0.0f32; 4800 * 2];
+        e.render(&mut buf);
+        // Muted mid-play: the very first frame is silent, as the page's
+        // gain.value = 0 is, rather than gliding down over the next 200 ms.
+        e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
+        let mut one = vec![0.0f32; 2];
+        e.render(&mut one);
+        assert_eq!(one, [0.0, 0.0]);
+        // Unmuted: full level from the first frame back, no glide in.
+        e.render(&mut buf);
+        e.apply(EngineCmd::MasterMute { muted: false }).unwrap();
+        let mut with = vec![0.0f32; 480 * 2];
+        e.render(&mut with);
+        let mut reference = playing_tone(1000.0, 48000);
+        let mut skip = vec![0.0f32; (4800 + 1 + 4800) * 2];
+        reference.render(&mut skip);
+        let mut without = vec![0.0f32; 480 * 2];
+        reference.render(&mut without);
+        assert_eq!(with, without, "unmute glided in");
+        // Control: master volume still glides like the page's setTargetAtTime,
+        // so snapping everything is not what passes this test.
+        e.apply(EngineCmd::MasterVolume { value: 0.0 }).unwrap();
+        let mut tail = vec![0.0f32; 48 * 2];
+        e.render(&mut tail);
+        assert!(tail.iter().any(|&x| x != 0.0), "master volume snapped");
+    }
+
+    #[test]
     fn a_deck_starts_from_where_its_knobs_are_not_where_they_were() {
         // Crossfade a stopped deck out, then start it. Web Audio keeps an idle
         // channel's parameters moving, so its first frames are already
@@ -699,11 +770,13 @@ mod tests {
         let mut first = vec![0.0f32; 480 * 2];
         e.render(&mut first);
         assert!(peak(&first) < 1e-6, "deck blipped in at {}", peak(&first));
-        // Control, the other direction: an untouched deck is at full level
-        // from its first frames, so idling does not fade decks down.
+        // Control, the other direction: an untouched deck is at its full
+        // level (0.5 through the centered crossfader) from its first frames,
+        // so idling does not fade decks down.
         let mut u = playing_tone(1000.0, 48000);
         u.render(&mut first);
-        assert!(peak(&first) > 0.45, "untouched deck started at {}", peak(&first));
+        let full = 0.5 * mixer::xf_gain(Assign::A, 0.5) as f32;
+        assert!(peak(&first) > full * 0.99, "untouched deck started at {}, full is {full}", peak(&first));
         // And a stopped deck goes exactly silent once its tails are over.
         u.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
         u.render(&mut buf);
@@ -730,7 +803,44 @@ mod tests {
         e.apply(EngineCmd::PitchRange { deck: 2, range: 8.0 }).unwrap();
         let s = e.snapshot();
         assert_eq!((s.decks[1].assign, s.decks[1].pitch_range), (Assign::B, 8.0));
-        assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::Thru, None));
+        assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::A, None));
+    }
+
+    #[test]
+    fn the_snapshot_says_whether_the_loop_is_a_beat_loop() {
+        let mut e = Engine::new(48000);
+        let grid = (0..20).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0 }).collect();
+        let t = Arc::new(Track::new(48000, vec![0.0f32; 48000 * 2 * 10], grid, Some(120.0)));
+        e.apply(EngineCmd::Load { deck: 1, track: t }).unwrap();
+        e.apply(EngineCmd::BeatLoop { deck: 1, beats: 4.0, start_ms: Some(1000.0) }).unwrap();
+        let d = e.snapshot().decks[0];
+        assert_eq!((d.loop_ms, d.loop_beats), (Some((1000.0, 3000.0)), Some(4.0)));
+        e.apply(EngineCmd::Loop { deck: 1, bounds_ms: Some((1000.0, 3000.0)) }).unwrap();
+        assert_eq!(e.snapshot().decks[0].loop_beats, None);
+    }
+
+    #[test]
+    fn decks_start_on_the_pages_crossfader_sides() {
+        let mut e = Engine::new(48000);
+        let sides: Vec<_> = e.snapshot().decks.iter().map(|d| d.assign).collect();
+        assert_eq!(sides, vec![Assign::A, Assign::B, Assign::A, Assign::B]);
+        // So the crossfader works with no assign sent: hard to A silences
+        // deck 2 and leaves deck 1 at full level.
+        for deck in [1, 2] {
+            e.apply(EngineCmd::Load { deck, track: Arc::new(tone(48000, 440.0, 1.0)) }).unwrap();
+            e.apply(EngineCmd::Play { deck, playing: true }).unwrap();
+        }
+        e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
+        let mut buf = vec![0.0f32; 4800 * 2];
+        e.render(&mut buf);
+        assert!((e.decks[0].level_gain() - 1.0).abs() < 1e-3, "{}", e.decks[0].level_gain());
+        assert!(e.decks[1].level_gain() < 1e-3, "{}", e.decks[1].level_gain());
+        // At rest in the middle, a fresh engine starts at the equal-power
+        // gain rather than gliding down to it from THRU's 1.0.
+        let e = Engine::new(48000);
+        let mid = mixer::xf_gain(Assign::A, 0.5);
+        assert!(mid < 0.99, "{mid}");
+        assert_eq!(e.decks[0].level_gain(), mid);
     }
 
     #[test]

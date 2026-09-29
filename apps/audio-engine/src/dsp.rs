@@ -86,9 +86,25 @@ impl Coeffs {
         )
     }
 
+    /// All-stop: nothing passes.
+    pub const ZERO: Coeffs = Coeffs { b0: 0.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
+
     /// Web Audio reads lowpass/highpass Q in dB: alpha = sin(w0) / (2 * 10^(Q/20)).
+    ///
+    /// The corner is clamped to [0, Nyquist] with both ends handled exactly,
+    /// as Chromium does (`Biquad::SetLowpassParams`): at Nyquist a lowpass
+    /// passes everything, at 0 nothing. The cookbook formula at w0 = pi puts
+    /// a double pole on z = -1, which grows without bound from any leftover
+    /// filter state; the exact forms have no poles, so a state carried in
+    /// from the previous coefficients drains in two samples.
     pub fn lowpass(sr: f64, f0: f64, q_db: f64) -> Coeffs {
-        let w0 = 2.0 * std::f64::consts::PI * f0.min(sr / 2.0) / sr;
+        if f0 >= sr / 2.0 {
+            return Coeffs::IDENTITY;
+        }
+        if f0 <= 0.0 {
+            return Coeffs::ZERO;
+        }
+        let w0 = 2.0 * std::f64::consts::PI * f0 / sr;
         let (sin, cos) = w0.sin_cos();
         let alpha = sin / (2.0 * 10f64.powf(q_db / 20.0));
         Coeffs::normalized(
@@ -101,8 +117,16 @@ impl Coeffs {
         )
     }
 
+    /// Highpass mirrors `lowpass`'s ends (`Biquad::SetHighpassParams`): at
+    /// Nyquist it passes nothing, at 0 everything.
     pub fn highpass(sr: f64, f0: f64, q_db: f64) -> Coeffs {
-        let w0 = 2.0 * std::f64::consts::PI * f0.min(sr / 2.0) / sr;
+        if f0 >= sr / 2.0 {
+            return Coeffs::ZERO;
+        }
+        if f0 <= 0.0 {
+            return Coeffs::IDENTITY;
+        }
+        let w0 = 2.0 * std::f64::consts::PI * f0 / sr;
         let (sin, cos) = w0.sin_cos();
         let alpha = sin / (2.0 * 10f64.powf(q_db / 20.0));
         Coeffs::normalized(
@@ -302,6 +326,49 @@ mod tests {
         let hi = Coeffs::highshelf(sr, 3000.0, 6.0);
         assert!(stable(hi), "{hi:?}");
         assert!(db(gain_at(hi, sr, 3900.0)) > 5.0);
+        // And just under it the clamp has not kicked in early.
+        for c in [Coeffs::highshelf(sr, 3900.0, 6.0), Coeffs::peaking(sr, 3900.0, 1.0, 6.0)] {
+            assert!(stable(c), "{c:?}");
+            assert_ne!(c, Coeffs::IDENTITY);
+        }
+    }
+
+    #[test]
+    fn filters_clamped_to_nyquist_have_no_marginal_poles() {
+        let sr = 8000.0;
+        let q = crate::mixer::FILTER_Q;
+        assert_eq!(Coeffs::lowpass(sr, 20000.0, q), Coeffs::IDENTITY);
+        assert_eq!(Coeffs::lowpass(sr, 4000.0, q), Coeffs::IDENTITY);
+        assert_eq!(Coeffs::highpass(sr, 6300.0, q), Coeffs::ZERO);
+        assert_eq!(Coeffs::lowpass(sr, 0.0, q), Coeffs::ZERO);
+        assert_eq!(Coeffs::highpass(sr, 0.0, q), Coeffs::IDENTITY);
+        // Control: just under Nyquist the cookbook form still applies, stably.
+        for c in [Coeffs::lowpass(sr, 3900.0, q), Coeffs::highpass(sr, 3900.0, q)] {
+            assert!(stable(c), "{c:?}");
+            assert_ne!(c, Coeffs::IDENTITY);
+            assert_ne!(c, Coeffs::ZERO);
+        }
+        // Crossing Nyquist with state in the filter, as a FILTER knob turned
+        // clockwise at 8 kHz does: the carried state drains, it never grows.
+        for (below, above) in [
+            (Coeffs::highpass(sr, 3000.0, q), Coeffs::highpass(sr, 6300.0, q)),
+            (Coeffs::lowpass(sr, 3000.0, q), Coeffs::lowpass(sr, 20000.0, q)),
+        ] {
+            let mut f = StereoBiquad::new(below);
+            let mut x = 0.3;
+            for _ in 0..4000 {
+                x = -x; // Nyquist-rate input charges the state hardest.
+                f.process(0, x);
+            }
+            f.c = above;
+            let mut last = 0.0f64;
+            for i in 0..100_000 {
+                let y = f.process(0, 0.0);
+                assert!(y.is_finite(), "non-finite at {i}");
+                last = y;
+            }
+            assert_eq!(last, 0.0, "{above:?}");
+        }
     }
 
     #[test]
@@ -334,6 +401,45 @@ mod tests {
         assert!((db(gain_at(lp, sr, 1000.0)) - 0.707).abs() < 0.01, "{}", db(gain_at(lp, sr, 1000.0)));
         let hp = Coeffs::highpass(sr, 1000.0, 0.707);
         assert!((db(gain_at(hp, sr, 1000.0)) - 0.707).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_linear_ramp_lands_exactly_on_time() {
+        // 10 ms at 48 kHz is 480 frames: halfway at 240, exact at 480.
+        let mut r = LinearRamp::new(0.0, 48000.0, 0.01);
+        assert!(r.settled());
+        r.set(-26.0);
+        for _ in 0..240 {
+            r.tick();
+        }
+        assert!((r.value - -13.0).abs() < 1e-12, "{}", r.value);
+        assert!(!r.settled());
+        for _ in 0..240 {
+            r.tick();
+        }
+        assert_eq!(r.value, -26.0);
+        assert!(r.settled());
+        // A new target mid-ramp starts from where the value is, not from the
+        // old start or the old target.
+        r.set(0.0);
+        for _ in 0..120 {
+            r.tick();
+        }
+        r.set(6.0);
+        let from = r.value;
+        assert!((from - -19.5).abs() < 1e-12, "{from}");
+        for _ in 0..480 {
+            r.tick();
+        }
+        assert_eq!(r.value, 6.0);
+        // Control: the one-pole smoother is still only about 63% there at
+        // 10 ms, which is the difference the ramp exists for.
+        let mut sm = Smoothed::new(0.0, 48000.0, 0.01);
+        sm.set(-26.0);
+        for _ in 0..480 {
+            sm.tick();
+        }
+        assert!((sm.value / -26.0 - 0.632).abs() < 0.01, "{}", sm.value);
     }
 
     #[test]

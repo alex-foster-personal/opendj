@@ -755,11 +755,13 @@ dependencies = [
  "cpal",
  "rtrb",
  "rubato",
+ "same-file",
  "serde",
  "serde_json",
  "sha2",
  "signalsmith-stretch",
  "symphonia",
+ "windows-sys",
 ]
 
 [[package]]

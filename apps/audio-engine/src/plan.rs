@@ -20,7 +20,7 @@
 use serde_json::{Map, Value};
 
 use crate::engine::{DeckId, KnobTarget};
-use crate::protocol::{self, deck_of, Command, ProtoError};
+use crate::protocol::{self, deck_of, exact_keys, Command, ProtoError};
 use crate::engine::ErrorCode;
 
 pub const DEFAULT_SAMPLE_RATE: u32 = 48000;
@@ -101,16 +101,38 @@ fn finite(o: &Map<String, Value>, what: &str, key: &str) -> Result<Option<f64>, 
     }
 }
 
+/// Refuse a time or length that names more than one of `keys`: taking one
+/// and ignoring the rest would render the plan at a place it did not mean.
+fn at_most_one(o: &Map<String, Value>, what: &str, keys: &[&str]) -> Result<(), ProtoError> {
+    let given: Vec<&str> = keys.iter().copied().filter(|k| o.contains_key(*k)).collect();
+    if given.len() > 1 {
+        return Err(invalid(format!("{what} gives {}; give exactly one", given.join(" and "))));
+    }
+    Ok(())
+}
+
 fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
     let o = obj(v, what)?;
+    exact_keys(o, what, &["deck", "bar", "beat", "position_ms", "frame", "ms"])?;
+    at_most_one(o, what, &["bar", "beat", "position_ms", "frame", "ms"])?;
     if o.contains_key("deck") {
         let deck = deck_of(o, what)?;
+        // Bars count from 1, beats from 0 and track time from 0: anything
+        // lower names a place before the grid or the track, which a deck's
+        // playhead is always already past, so it would fire at once.
+        let at_least = |x: f64, min: f64, key: &str| {
+            if x >= min {
+                Ok(x)
+            } else {
+                Err(invalid(format!("{what}.{key} must be at least {min}, got {x}")))
+            }
+        };
         let pos = if let Some(b) = finite(o, what, "bar")? {
-            DeckPos::Bar(b)
+            DeckPos::Bar(at_least(b, 1.0, "bar")?)
         } else if let Some(b) = finite(o, what, "beat")? {
-            DeckPos::Beat(b)
+            DeckPos::Beat(at_least(b, 0.0, "beat")?)
         } else if let Some(ms) = finite(o, what, "position_ms")? {
-            DeckPos::Ms(ms)
+            DeckPos::Ms(at_least(ms, 0.0, "position_ms")?)
         } else {
             return Err(invalid(format!("{what} with a deck needs bar, beat or position_ms")));
         };
@@ -128,6 +150,16 @@ fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
 
 fn parse_over(v: &Value, what: &str) -> Result<Over, ProtoError> {
     let o = obj(v, what)?;
+    exact_keys(o, what, &["deck", "beats", "bars", "ms", "frames"])?;
+    at_most_one(o, what, &["beats", "bars", "ms", "frames"])?;
+    // A deck says whose grid counts beats or bars. An absolute length is the
+    // same on every deck, so a deck beside one means nothing and is refused
+    // rather than read as if it changed the ramp.
+    if o.contains_key("deck") {
+        if let Some(k) = ["ms", "frames"].into_iter().find(|k| o.contains_key(*k)) {
+            return Err(invalid(format!("{what}.deck goes only with beats or bars, not {k}")));
+        }
+    }
     let positive = |x: f64, k: &str| {
         if x > 0.0 {
             Ok(x)
@@ -156,6 +188,7 @@ fn parse_over(v: &Value, what: &str) -> Result<Over, ProtoError> {
 
 pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
     let o = obj(v, "plan")?;
+    exact_keys(o, "plan", &["sample_rate", "block_frames", "max_ms", "end", "events"])?;
     let sample_rate = match o.get("sample_rate") {
         None => DEFAULT_SAMPLE_RATE,
         Some(s) => s
@@ -171,7 +204,11 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
             .ok_or_else(|| invalid(format!("plan.block_frames must be 1..{}", crate::engine::MAX_BLOCK)))?
             as usize,
     };
-    let max_ms = finite(o, "plan", "max_ms")?.unwrap_or(DEFAULT_MAX_MS);
+    let max_ms = match finite(o, "plan", "max_ms")? {
+        None => DEFAULT_MAX_MS,
+        Some(ms) if ms >= 0.0 => ms,
+        Some(ms) => return Err(invalid(format!("plan.max_ms must not be negative, got {ms}"))),
+    };
     let end = parse_at(o.get("end").ok_or_else(|| invalid("plan.end is required".into()))?, "plan.end")?;
     let raw = o
         .get("events")
@@ -181,6 +218,7 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
     for (i, e) in raw.iter().enumerate() {
         let what = format!("events[{i}]");
         let eo = obj(e, &what)?;
+        exact_keys(eo, &what, &["at", "cmd", "ramp"])?;
         let at = parse_at(eo.get("at").ok_or_else(|| invalid(format!("{what}.at is required")))?, &format!("{what}.at"))?;
         let action = match (eo.get("cmd"), eo.get("ramp")) {
             (Some(c), None) => {
@@ -195,6 +233,7 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
                 let target = protocol::parse_knob(ro).map_err(|e| ProtoError::new(e.code, format!("{what}.ramp: {}", e.message)))?;
                 let to = finite(ro, &format!("{what}.ramp"), "to")?
                     .ok_or_else(|| invalid(format!("{what}.ramp.to is required")))?;
+                check_ramp_to(target, to).map_err(|m| invalid(format!("{what}.ramp.to {m}")))?;
                 let over = parse_over(
                     ro.get("over").ok_or_else(|| invalid(format!("{what}.ramp.over is required")))?,
                     &format!("{what}.ramp.over"),
@@ -206,4 +245,20 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
         events.push(Event { at, action });
     }
     Ok(Plan { sample_rate, block_frames, max_ms, end, events })
+}
+
+/// A ramp's end value must be one its knob accepts, checked when the plan is
+/// read: every step of a ramp lies between where it starts (a value the knob
+/// already holds) and this, so a bad endpoint would otherwise fail part-way
+/// through a render. A tempo also has to fit the deck's pitch range when the
+/// ramp starts; that is checked then, since the range can change in a plan.
+fn check_ramp_to(target: KnobTarget, to: f64) -> Result<(), String> {
+    match target {
+        KnobTarget::Tempo(_) if !(to > 0.0 && to <= 2.0) => {
+            Err(format!("must be a tempo ratio within 0..2 (the widest pitch range), got {to}"))
+        }
+        KnobTarget::Tempo(_) => Ok(()),
+        _ if !(0.0..=1.0).contains(&to) => Err(format!("must be within 0..1 for this knob, got {to}")),
+        _ => Ok(()),
+    }
 }

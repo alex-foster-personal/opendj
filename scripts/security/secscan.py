@@ -41,7 +41,7 @@ from pathlib import Path
 
 UNKNOWN_EXIT = 2
 LOCKFILE_PATTERN = re.compile(
-    r"(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|pylock\.toml|[^/]*requirements[^/]*\.txt"
+    r"(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|pylock(\.[^/]+)?\.toml|[^/]*requirements[^/]*\.txt"
     r"|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum|Gemfile\.lock)$"
 )
 CONTROL_PREFIX = "tests/fixtures/security/"

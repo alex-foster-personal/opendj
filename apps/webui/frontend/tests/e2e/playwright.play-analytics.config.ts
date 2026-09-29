@@ -1,10 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'play-analytics.spec.ts',
 	fullyParallel: false,
@@ -15,14 +18,14 @@ export default defineConfig({
 	webServer: [
 		{
 			command:
-				'uv run --no-sync --python 3.11 python -m tests.play_analytics.e2e_server --db .tmp/play-analytics-e2e.db --port 9414',
+				guardedWebServerCommand('play-analytics-engine', 'uv run --no-sync --python 3.11 python -m tests.play_analytics.e2e_server --db .tmp/play-analytics-e2e.db --port 9414'),
 			cwd: REPOSITORY_ROOT,
 			url: 'http://127.0.0.1:9414/health',
 			reuseExistingServer: false,
 			timeout: 60_000
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.play-analytics.config.ts',
+			command: guardedWebServerCommand('play-analytics-vite', 'pnpm exec vite --config tests/e2e/vite.play-analytics.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: 'http://127.0.0.1:5214/play-analytics',
 			reuseExistingServer: false,
