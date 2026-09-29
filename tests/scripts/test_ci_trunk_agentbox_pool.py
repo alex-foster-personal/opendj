@@ -89,13 +89,14 @@ class Event:
     head_ref: str = ""
     author: str = "a-human"
     head_repo: str = REPOSITORY
+    repository: str = REPOSITORY
 
     def context(self) -> dict[str, Any]:
         event: dict[str, Any] = {}
         github: dict[str, Any] = {
             "event_name": self.name,
             "ref": self.ref,
-            "repository": REPOSITORY,
+            "repository": self.repository,
             "event": event,
         }
         if self.name == "pull_request":
