@@ -53,7 +53,7 @@ from typing import Any, Literal
 
 from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
-from apps.analysis_beatgrid.bpm import estimate_bpm
+from apps.analysis_beatgrid.bpm import REASON_GENRE_FAMILY, estimate_bpm
 from apps.analysis_beatgrid.flags import evaluate_pulse
 from apps.analysis_beatgrid.grid_fit import (
     GRID_FIT_LINE,
@@ -62,6 +62,11 @@ from apps.analysis_beatgrid.grid_fit import (
     fit_grid,
 )
 from apps.analysis_beatgrid.tempo_change import detect_tempo_changes
+from apps.analysis_beatgrid.tempo_family import (
+    TempoFamily,
+    fold_half_time,
+    tempo_family_for_genre,
+)
 
 #: A tempo fit that produced no straight line at all. `estimate_bpm` returns
 #: None rather than guessing, and this is the reason that absence is published
@@ -167,7 +172,7 @@ class _PulseCheck:
 
 
 def _pulse_and_phase(
-    result: Mapping[str, Any], *, threshold: float
+    result: Mapping[str, Any], *, threshold: float, family: TempoFamily | None = None
 ) -> _PulseCheck | BeatgridLane:
     """The early guard chain, split out so its branches are counted apart from
     payload assembly (`build_beatgrid_lane` otherwise trips the CC ceiling).
@@ -200,7 +205,7 @@ def _pulse_and_phase(
         assert pulse.reason is not None  # evaluate_pulse names every failure
         return _failed(pulse.reason)
 
-    tempo = estimate_bpm(beats)
+    tempo = estimate_bpm(beats, family=family)
     if tempo is None:
         return _failed(REASON_NO_TEMPO_FIT)
 
@@ -236,8 +241,22 @@ def _stamp_activations(result: Mapping[str, Any], payload: dict[str, Any]) -> No
         )
 
 
+def _tempo_family_block(genre: str | None, family: TempoFamily | None, tempo: Any) -> dict:
+    """The `tempo_family` block: which genre hint was offered and whether it decided."""
+    return {
+        "genre": genre,
+        "family": family.name if family is not None else None,
+        "range_bpm": [family.min_bpm, family.max_bpm] if family is not None else None,
+        "applied": tempo.octave_reason == REASON_GENRE_FAMILY,
+    }
+
+
 def build_beatgrid_lane(
-    result: Mapping[str, Any], *, threshold: float, grid_fit: str = GRID_FIT_RAW
+    result: Mapping[str, Any],
+    *,
+    threshold: float,
+    grid_fit: str = GRID_FIT_RAW,
+    genre: str | None = None,
 ) -> BeatgridLane:
     """One `beat_this_runner.py` result into one lane block.
 
@@ -245,12 +264,19 @@ def build_beatgrid_lane(
     is required: judging a run's activation peak against a different threshold
     from the one its peak picker used would reject downstream what the producer
     accepted upstream (the reasoning is `cli.analyze`'s, and it holds here).
+
+    ``genre`` is the track's own genre tag (the user's metadata, never
+    rekordbox's analysis). When it names a fast-genre tempo family
+    (`tempo_family.py`), the octave policy publishes the octave inside that
+    family's range, and the payload's `tempo_family` block records the hint and
+    whether it decided.
     """
     if grid_fit not in GRID_FIT_MODES:
         raise LanePayloadError(f"grid_fit must be one of {GRID_FIT_MODES}, got {grid_fit!r}")
+    family = tempo_family_for_genre(genre)
     if grid_fit == GRID_FIT_LINE:
-        return _build_line_lane(result, threshold=threshold)
-    checked = _pulse_and_phase(result, threshold=threshold)
+        return _build_line_lane(result, threshold=threshold, genre=genre, family=family)
+    checked = _pulse_and_phase(result, threshold=threshold, family=family)
     if isinstance(checked, BeatgridLane):
         return checked
     beats, tempo, phase = checked.beats, checked.tempo, checked.phase
@@ -282,6 +308,8 @@ def build_beatgrid_lane(
     if phase.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(phase.phase_agreement, 4)
         payload["n_phase_disagreements"] = phase.n_phase_disagreements
+    if genre is not None:
+        payload["tempo_family"] = _tempo_family_block(genre, family, tempo)
     _stamp_activations(result, payload)
     return BeatgridLane(
         status="ok", reason=None, confidence=tempo.confidence, payload=payload
@@ -289,9 +317,15 @@ def build_beatgrid_lane(
 
 
 def _line_guards(
-    result: Mapping[str, Any], *, threshold: float
-) -> tuple[list[float], list[float], Any] | BeatgridLane:
-    """The raw builder's guard chain up to the tempo fit, for line mode."""
+    result: Mapping[str, Any], *, threshold: float, family: TempoFamily | None
+) -> tuple[list[float], list[float], Any, int] | BeatgridLane:
+    """The raw builder's guard chain up to the tempo fit, for line mode.
+
+    The pulse is judged on the model's own beats; the tempo is fitted on them
+    after `fold_half_time`, so a half-time section cannot read as a 2:1 tempo
+    change (round 4 tempo-family bench: fixed F 0.837 -> 0.847, 8 fewer
+    failed grids). Returns the folded beats and how many were filled in.
+    """
     error = result.get("error")
     if error:
         return _failed(f"{REASON_RUNNER_ERROR}: {error}")
@@ -304,10 +338,11 @@ def _line_guards(
     if pulse.no_trackable_pulse:
         assert pulse.reason is not None
         return _failed(pulse.reason)
-    tempo = estimate_bpm(beats)
+    folded = fold_half_time(beats)
+    tempo = estimate_bpm(folded.beats, family=family)
     if tempo is None:
         return _failed(REASON_NO_TEMPO_FIT)
-    return beats, downbeats, tempo
+    return folded.beats, downbeats, tempo, folded.n_filled
 
 
 def _line_markers(fit: Any, line_bpm: Sequence[float], confidence: float) -> list[dict]:
@@ -347,7 +382,13 @@ def _line_diagnostics(fit: Any, line_bpm: Sequence[float], octave_multiple: floa
     }
 
 
-def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> BeatgridLane:
+def _build_line_lane(
+    result: Mapping[str, Any],
+    *,
+    threshold: float,
+    genre: str | None = None,
+    family: TempoFamily | None = None,
+) -> BeatgridLane:
     """`grid_fit="line"`: serve the fitted line instead of the model's peaks.
 
     Same guard chain up to the tempo fit (runner error, pulse, octave policy),
@@ -355,16 +396,18 @@ def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> Beatgrid
     Per-beat BPM is the line's own (rounded) tempo, so the deck's local tempo
     and the beat spacing it plays against are the same number by construction.
     """
-    guarded = _line_guards(result, threshold=threshold)
+    guarded = _line_guards(result, threshold=threshold, family=family)
     if isinstance(guarded, BeatgridLane):
         return guarded
-    beats, downbeats, tempo = guarded
+    beats, downbeats, tempo, n_filled = guarded
 
-    # The grid stays at the model's metrical level, as raw mode's beats do.
-    # Re-rendering it at the octave policy's multiple was measured (round 4,
-    # `line_round_offset_octave`) to halve 163-175 BPM tracks that rekordbox
-    # keeps whole, so the published tempo here is the line's own.
-    fit = fit_grid(beats, downbeats)
+    # Rendered at the octave policy's metrical level. Round 4 measured this
+    # halving 163-175 BPM tracks (`line_round_offset_octave`) while the policy
+    # broke two-octave ties toward 112 BPM; the policy now keeps the model's
+    # own level in that case, so the multiple is 1 unless the model's level is
+    # outside [70, 180] or a genre tempo family picked another octave
+    # (`ops/beatbench/round-4-tempo-family`, row `tf_fold_policy`).
+    fit = fit_grid(beats, downbeats, octave_multiple=tempo.octave_multiple)
     if fit.reason is not None:
         return _failed(fit.reason)
     if _cadence_breaks(fit.beat_numbers, BAR_BEATS):
@@ -380,14 +423,17 @@ def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> Beatgrid
         ],
         "bpm": round(tempo.bpm, 2) if multi else line_bpm[0],
         "bpm_confidence": tempo.confidence,
-        "octave_reason": (
-            "grid_fit_model_level" if tempo.octave_multiple != 1 else tempo.octave_reason
-        ),
+        "octave_reason": tempo.octave_reason,
         "first_downbeat_s": round(first_downbeat, 5),
         "tempo_changes": _line_markers(fit, line_bpm, tempo.confidence),
         "static_grid_untrusted": False,
-        "grid_fit": _line_diagnostics(fit, line_bpm, tempo.octave_multiple),
+        "grid_fit": {
+            **_line_diagnostics(fit, line_bpm, tempo.octave_multiple),
+            "n_half_time_filled": n_filled,
+        },
     }
+    if genre is not None:
+        payload["tempo_family"] = _tempo_family_block(genre, family, tempo)
     if fit.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
     _stamp_activations(result, payload)
