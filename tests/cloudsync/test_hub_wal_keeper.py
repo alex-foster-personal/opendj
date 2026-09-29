@@ -88,3 +88,27 @@ def test_one_keeper_per_database(hub_app: FastAPI, tmp_path: Path) -> None:
     list(_wal_after_each_sync(hub_app, tmp_path / "spoke"))
     keepers = hub_wal_keeper.wal_keepers(hub_app.state)
     assert list(keepers) == [str(Path(hub_app.state.state_db_path).resolve())]
+
+
+def _leave_wal(app: FastAPI) -> str:
+    probe = sqlite3.connect(app.state.state_db_path)
+    try:
+        return str(probe.execute("PRAGMA journal_mode = DELETE").fetchone()[0])
+    finally:
+        probe.close()
+
+
+def test_a_keeper_is_why_the_database_is_not_exclusive(hub_app: FastAPI, tmp_path: Path) -> None:
+    """The keeper's one cost, pinned so nobody meets it as a surprise: while it
+    is open, nothing else can take the database to itself."""
+    with TestClient(hub_app) as http:
+        client.run_sync(
+            tmp_path / "spoke", "http://hub.invalid", transport=TestClientTransport(http),
+            name="spoke",
+        )
+        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+            _leave_wal(hub_app)
+        assert hub_wal_keeper.close_wal_keepers(hub_app.state) == 1
+        assert _leave_wal(hub_app) == "delete"
+        assert hub_wal_keeper.wal_keepers(hub_app.state) == {}
+
