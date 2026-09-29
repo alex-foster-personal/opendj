@@ -29,16 +29,21 @@ Requirements (mini-PRD):
       [if] a changed .py path is a symlink or a submodule, not a regular file [then ⛔️] exit 2 UNKNOWN
       [if] a file does not decode or parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
-    Every listed SHA names a commit object itself, is an ancestor of HEAD, and has a style(format): subject.
+    Every listed SHA names a commit object itself, is an ancestor of HEAD, has a style(format): subject, and has
+    one parent against which `prove` passes: the subject is a claim, the proof is what blame may rely on.
+      [if] a listed commit changes code or a comment against its parent [then ⛔️] exit 1
+      [if] a listed commit is a merge or a root commit [then ⛔️] exit 1
+      [if] a listed commit also changes a file prove cannot read [then ⛔️] exit 2 UNKNOWN
       [if] a line is not a full 40-hex SHA or a comment [then ⛔️] exit 1
       [if] a SHA names a tag or other object that only peels to a commit [then ⛔️] exit 1
       [if] a SHA is not an ancestor of HEAD (squash or rebase merge) [then ⛔️] exit 1
-      [if] the clone is shallow and cannot see a SHA [then ⛔️] exit 2 UNKNOWN
+      [if] the clone is shallow and cannot see a SHA or its parent [then ⛔️] exit 2 UNKNOWN
 
 What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
 docstring positions are normalized (tests/quality/test_format_proof.py pins that).
-A proof over zero files would read as success, so it exits 2 instead. A comment's
+A proof over zero files would read as success, so it exits 2 instead. A style(format):
+subject is only a claim, so ignore-revs proves every listed commit again. A comment's
 LINE is not compared, because every re-wrap above it moves it; its place in the tree
 is, counted in nodes and in the tokens ruff never adds or drops. So a noqa or type-ignore
 moved to another statement or argument fails even when a count-based ratchet would net
@@ -279,6 +284,39 @@ def prove(repo: Path, base: str, head: str) -> Result:
     return result
 
 
+def _identity_verdict(repo: Path, sha: str, shallow: bool) -> tuple[int, list[str]]:
+    """(0, []) when a listed SHA is a commit in HEAD whose subject claims format-only, else (1 or 2, why)."""
+    kind = _git(repo, "cat-file", "-t", sha, check=False)
+    if kind.returncode != 0 and shallow:
+        return 2, [f"[ignore-revs] UNKNOWN {sha} not visible in this shallow clone"]
+    if kind.returncode != 0:
+        return 1, [f"[ignore-revs] FAIL {sha} is not a commit in this repository"]
+    if kind.stdout.strip() != "commit":
+        # Not `<sha>^{commit}`: that peels a tag, and blame skips only the commit's own SHA.
+        return 1, [f"[ignore-revs] FAIL {sha} is a {kind.stdout.strip()} object, not a commit"]
+    if _git(repo, "merge-base", "--is-ancestor", sha, "HEAD", check=False).returncode != 0:
+        return 1, [f"[ignore-revs] FAIL {sha} is not an ancestor of HEAD (squash or rebase merge?)"]
+    subject = _git(repo, "log", "-1", "--format=%s", sha).stdout.strip()
+    if not subject.startswith(CFG.FORMAT_SUBJECT_PREFIX):
+        return 1, [f"[ignore-revs] FAIL {sha} subject is not {CFG.FORMAT_SUBJECT_PREFIX}: {subject!r}"]
+    return 0, []
+
+
+def _proof_verdict(repo: Path, sha: str, shallow: bool) -> tuple[int, list[str]]:
+    """(0, []) when a listed commit has one parent and `prove` passes against it: the subject is only a claim."""
+    parents = _git(repo, "rev-list", "--parents", "-n", "1", sha).stdout.split()[1:]
+    if not parents and shallow:
+        return 2, [f"[ignore-revs] UNKNOWN {sha}: this shallow clone cuts off its parent"]
+    if len(parents) != 1:
+        return 1, [f"[ignore-revs] FAIL {sha} has {len(parents)} parents, so no single diff proves it"]
+    proof = prove(repo, parents[0], sha)
+    if proof.exit_code == 1:
+        return 1, [f"[ignore-revs] FAIL {sha} is not format-only against its parent:", *proof.lines]
+    if proof.exit_code == 2:
+        return 2, [f"[ignore-revs] UNKNOWN {sha} cannot be proven format-only against its parent:", *proof.lines]
+    return 0, []
+
+
 def check_ignore_revs(repo: Path, path: Path) -> Result:
     shas: list[str] = []
     for number, raw in enumerate(path.read_text().splitlines(), start=1):
@@ -290,29 +328,21 @@ def check_ignore_revs(repo: Path, path: Path) -> Result:
         shas.append(line)
     shallow = _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     result = Result(0, files_checked=len(shas))
+    unknown: list[str] = []
     for sha in shas:
-        kind = _git(repo, "cat-file", "-t", sha, check=False)
-        if kind.returncode != 0:
-            if shallow:
-                return Result(2, lines=[f"[ignore-revs] UNKNOWN {sha} not visible in this shallow clone"])
+        verdict, lines = _identity_verdict(repo, sha, shallow)
+        if verdict == 0:
+            verdict, lines = _proof_verdict(repo, sha, shallow)
+        if verdict == 1:
             result.exit_code = 1
-            result.lines.append(f"[ignore-revs] FAIL {sha} is not a commit in this repository")
-            continue
-        if kind.stdout.strip() != "commit":
-            # Not `<sha>^{commit}`: that peels a tag, and blame skips only the commit's own SHA.
-            result.exit_code = 1
-            result.lines.append(f"[ignore-revs] FAIL {sha} is a {kind.stdout.strip()} object, not a commit")
-            continue
-        if _git(repo, "merge-base", "--is-ancestor", sha, "HEAD", check=False).returncode != 0:
-            result.exit_code = 1
-            result.lines.append(f"[ignore-revs] FAIL {sha} is not an ancestor of HEAD (squash or rebase merge?)")
-            continue
-        subject = _git(repo, "log", "-1", "--format=%s", sha).stdout.strip()
-        if not subject.startswith(CFG.FORMAT_SUBJECT_PREFIX):
-            result.exit_code = 1
-            result.lines.append(f"[ignore-revs] FAIL {sha} subject is not {CFG.FORMAT_SUBJECT_PREFIX}: {subject!r}")
+            result.lines.extend(lines)
+        elif verdict == 2:
+            unknown.extend(lines)
+    if result.exit_code == 0 and unknown:
+        result.exit_code = 2
+        result.lines.extend(unknown)
     if result.exit_code == 0:
-        result.lines.append(f"[ignore-revs] OK {len(shas)} format-only commit(s) listed, all ancestors of HEAD")
+        result.lines.append(f"[ignore-revs] OK {len(shas)} listed commit(s), each in HEAD and proven format-only")
     return result
 
 

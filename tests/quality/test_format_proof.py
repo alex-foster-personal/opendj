@@ -49,7 +49,10 @@ Regression lines:
   - if ignore-revs passes a SHA that is not an ancestor of HEAD then broken
   - if ignore-revs passes a listed commit whose subject is not style(format): then broken
   - if ignore-revs passes an abbreviated SHA, a SHA that is not a commit, or an annotated tag's SHA, then broken
-  - if ignore-revs reports a pass in a shallow clone that cannot see a listed SHA then broken
+  - if ignore-revs reports a pass in a shallow clone that cannot see a listed SHA or its parent then broken
+  - if ignore-revs passes a listed style(format): commit that changed a value then broken
+  - if ignore-revs passes a listed merge commit then broken
+  - if ignore-revs reports a listed commit's non-Python change as anything but UNKNOWN then broken
 """
 
 from __future__ import annotations
@@ -532,6 +535,50 @@ def test_ignore_revs_is_unknown_in_a_shallow_clone(repo: Path, tmp_path: Path) -
     shallow = tmp_path / "shallow"
     subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{repo}", str(shallow)], check=True)
     assert format_proof.check_ignore_revs(shallow, _ignore_file(shallow, fmt)).exit_code == 2
+
+
+def test_ignore_revs_rejects_a_listed_commit_that_is_not_format_only(repo: Path) -> None:
+    """The subject is a claim: a real edit committed as style(format): must not be hidden from blame."""
+    _commit(repo, {"m.py": "x=1\n"}, "init")
+    edit = _commit(repo, {"m.py": "x = 2\n"}, "style(format): ruff@0.16.3 m")
+    result = format_proof.check_ignore_revs(repo, _ignore_file(repo, edit))
+    assert result.exit_code == 1
+    assert any("m.py" in line and "AST differs" in line for line in result.lines), result.lines
+
+
+def test_ignore_revs_rejects_a_merge_commit(repo: Path) -> None:
+    """A merge has no single diff to prove, even when the branch it merges is a pure reformat."""
+    _commit(repo, {"m.py": "x=1\n"}, "init")
+    _git(repo, "checkout", "-q", "-b", "side")
+    _commit(repo, {"m.py": "x = 1\n"}, "style(format): ruff@0.16.3 m")
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, {"n.py": "y = 1\n"}, "feat: n")
+    identity = ["-c", "user.email=t@example.com", "-c", "user.name=t"]
+    _git(repo, *identity, "merge", "-q", "--no-ff", "-m", "style(format): merge", "side")
+    merge = _git(repo, "rev-parse", "HEAD")
+    result = format_proof.check_ignore_revs(repo, _ignore_file(repo, merge))
+    assert result.exit_code == 1
+    assert any("2 parents" in line for line in result.lines), result.lines
+
+
+def test_ignore_revs_is_unknown_when_a_listed_commit_changes_a_non_python_file(repo: Path) -> None:
+    _commit(repo, {"m.py": "x=1\n", "a.toml": "a = 1\n"}, "init")
+    fmt = _commit(repo, {"m.py": "x = 1\n", "a.toml": "a = 2\n"}, "style(format): ruff@0.16.3 m")
+    result = format_proof.check_ignore_revs(repo, _ignore_file(repo, fmt))
+    assert result.exit_code == 2, result.lines
+    assert any("a.toml" in line for line in result.lines), result.lines
+
+
+def test_ignore_revs_is_unknown_when_a_shallow_clone_cuts_off_the_parent(repo: Path, tmp_path: Path) -> None:
+    """At depth 2 the format commit is the shallow boundary, so it shows no parent; that is not a root commit."""
+    _commit(repo, {"m.py": "x=1\n"}, "init")
+    fmt = _commit(repo, {"m.py": "x = 1\n"}, "style(format): ruff@0.16.3 m")
+    _commit(repo, {"n.py": "y = 1\n"}, "feat: n")
+    shallow = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "-q", "--depth", "2", f"file://{repo}", str(shallow)], check=True)
+    result = format_proof.check_ignore_revs(shallow, _ignore_file(shallow, fmt))
+    assert result.exit_code == 2, result.lines
+    assert any("parent" in line for line in result.lines), result.lines
 
 
 def test_ignore_revs_accepts_an_empty_list(repo: Path) -> None:
