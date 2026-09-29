@@ -1265,15 +1265,22 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Provision duplicate-writer venv
+        # Synced from the hash-pinned lock, never resolved (issue #4252). A
+        # separate step, so a provisioning failure cannot read as a verdict.
+        run: scripts/ci_venv.sh 3.11 --lock ops/fleet/pylock.duplicate-writer.toml
+
       - name: Duplicate-writer check
         run: |
           set -uo pipefail
-          pip install --quiet pyyaml
           # NOT `... || true` followed by `$?`: after a pipeline or an
           # `|| true`, `$?` reads 0 and the verdict is lost. scripts/
           # shell_construct_lint.py bans that construct for exactly this
           # reason. if/else captures the real code.
-          if python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
+          if .venv/bin/python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
             code=0
           else
             code=$?
@@ -1410,8 +1417,19 @@ jobs:
           cargo --version
 
       - name: Ensure cargo-audit
+        # Pinned: ci/runner-toolset.yml's cargo-audit entry declares this version
+        # and tests/scripts/test_runner_toolset_complete.py checks the two agree.
+        # A runner already carrying another version is replaced, never trusted.
+        env:
+          CARGO_AUDIT_VERSION: "0.22.2"
         run: |
-          command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
+          set -euo pipefail
+          have="$(cargo audit --version 2>/dev/null | awk '{print $NF}' || true)"
+          if [ "$have" != "$CARGO_AUDIT_VERSION" ]; then
+            echo "cargo-audit ${have:-absent} is not the pinned ${CARGO_AUDIT_VERSION}: installing it"
+            cargo install cargo-audit --locked --force --version "$CARGO_AUDIT_VERSION"
+          fi
+          cargo audit --version
 
       - name: Install JS lockfile trees for pnpm audit
         run: |

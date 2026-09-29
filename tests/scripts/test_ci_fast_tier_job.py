@@ -84,9 +84,13 @@ def test_fast_job_is_pull_request_only_with_four_legs() -> None:
     test_main_control_workflow.py pins the input that keeps the full lane out).
     """
     job = _jobs()["fast"]
+    # Gated on the in-run scope decision first (issue #4168): a docs-only pull
+    # request must not occupy a pytest runner now that ci.yml triggers on it.
+    assert job["needs"] == "scope"
     assert job["if"] == (
-        "github.event_name == 'pull_request' || "
-        "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast')"
+        "needs.scope.outputs.in_scope == 'true' && "
+        "(github.event_name == 'pull_request' || "
+        "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast'))"
     )
     assert job["strategy"]["matrix"]["leg"] == [1, 2, 3, 4]
     assert job["strategy"]["fail-fast"] is False, "legs must all report; the cancel step decides"

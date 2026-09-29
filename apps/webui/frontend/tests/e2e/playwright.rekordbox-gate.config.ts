@@ -23,6 +23,8 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ORIGIN = `http://127.0.0.1:${REKORDBOX_GATE_E2E_PORT}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: [
 		'rekordbox-writeback-disabled.spec.ts',
