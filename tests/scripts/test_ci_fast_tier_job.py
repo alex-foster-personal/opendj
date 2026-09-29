@@ -33,7 +33,10 @@ pytestmark = pytest.mark.requirement("INFRA-03")
 
 CI: Path = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 FAST_RUNS_ON = (
-    "${{ fromJSON(vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
+    "${{ fromJSON((github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
+    "&& vars.CI_RUNS_ON_TRUNK || "
+    "vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
     "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
 )
 
@@ -176,12 +179,15 @@ def test_affected_canary_is_gone() -> None:
     assert "affected-canary" not in CI.read_text(encoding="utf-8")
 
 
-# Re-measured Mon 21 Sep 2026 over 117 green fast-tier legs on the agentbox pool
-# (the 300 most recent completed ci.yml runs): the leg step takes a median 341 s,
-# p90 439 s and up to 470 s, and legs the 480 s budget killed were at 94% progress
-# with no failing test (#3701 leg 1, run 35664438305). 720 s is 1.5x the measured
-# maximum; a budget under it re-introduces the budget-kill with nothing to name.
-MIN_FAST_WALL_BUDGET_S = 720
+# Re-measured Tue 22 Sep 2026 over every fast-tier leg since 12:00Z Mon 21 Sep
+# (863 legs). Job wall on agentbox runners: 231 green legs, median 372 s, p90 468 s,
+# max 519 s. On the nucbox-wsl runners, which share one host: 18 green legs, median
+# 499 s, p90 662 s, max 708 s, and the 720 s budget killed a leg at 93% with no
+# failing test (#3740 leg 3, run 35718455313). Before them, Mon 21 Sep over 117
+# agentbox legs: step median 341 s, p90 439 s, max 470 s, and the 480 s budget killed
+# #3701 leg 1 at 94%. 1080 s is 1.5x the nucbox-wsl maximum; a budget under it
+# re-introduces the budget-kill with nothing to name.
+MIN_FAST_WALL_BUDGET_S = 1080
 # Provisioning ahead of pytest measured ~2 min warm, more cold, on the same runs.
 MIN_FAST_PRE_PYTEST_RESERVE_S = 240
 

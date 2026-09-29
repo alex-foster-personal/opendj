@@ -127,19 +127,20 @@ struct ActiveRamp {
 /// Loads every track the plan names, decoding each distinct file once.
 /// Relative paths resolve against `base`.
 pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
-    let mut cache: HashMap<PathBuf, (u32, Arc<Vec<f32>>)> = HashMap::new();
+    let mut cache: HashMap<PathBuf, (u32, Arc<[f32]>)> = HashMap::new();
     move |spec: &LoadSpec| {
         let path = base.join(&spec.path);
         let (sr, pcm) = match cache.get(&path) {
             Some((sr, pcm)) => (*sr, pcm.clone()),
             None => {
                 let d = decode_file(&path)?;
-                let pcm = Arc::new(d.pcm);
+                let pcm: Arc<[f32]> = d.pcm.into();
                 cache.insert(path.clone(), (d.sample_rate, pcm.clone()));
                 (d.sample_rate, pcm)
             }
         };
-        Ok(Arc::new(Track::new(sr, (*pcm).clone(), spec.beats.clone(), spec.bpm)))
+        // Every load of one file shares the cached samples; nothing is copied.
+        Ok(Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm)))
     }
 }
 
@@ -399,6 +400,7 @@ pub fn render_plan_with(
         }
 
         // Ramp steps due now.
+        let mut tempo_stepped = false;
         let mut k = 0;
         while k < ramps.len() {
             let r = &mut ramps[k];
@@ -411,6 +413,7 @@ pub fn render_plan_with(
                     r.next = (now + RAMP_STEP_FRAMES).min(r.start + r.len);
                 }
                 engine.apply(target.command(v)).map_err(|e| fail(event, e.into()))?;
+                tempo_stepped |= matches!(target, KnobTarget::Tempo(_));
                 if done {
                     ramps.remove(k);
                     continue;
@@ -419,7 +422,9 @@ pub fn render_plan_with(
             k += 1;
         }
 
-        if now.is_multiple_of(tl_step) || fired.len() > fired_before {
+        // A tempo ramp step is recorded on its own frame, so the tempo series
+        // matches the varispeed the audio actually got.
+        if now.is_multiple_of(tl_step) || fired.len() > fired_before || tempo_stepped {
             observer.observe(&engine, now);
         }
 

@@ -172,6 +172,7 @@ test('an unparseable timestamp renders nothing rather than "Invalid Date"', () =
 	assert.equal(mod.formatStamp(''), null);
 });
 
+// REQ: INSTALL-18
 test('build age reads in whole days and hours, never minutes', () => {
 	const now = new Date('2026-09-14T06:30:00Z');
 	assert.equal(mod.formatAge('2026-09-13T01:00:00Z', now), '1d 5h');
@@ -180,6 +181,7 @@ test('build age reads in whole days and hours, never minutes', () => {
 	assert.equal(mod.formatAge('2026-09-14T06:00:00Z', now), '<1h');
 });
 
+// REQ: INSTALL-18
 test('a build stamped in the future or unparseable has no age, never a negative one', () => {
 	const now = new Date('2026-09-14T06:30:00Z');
 	assert.equal(mod.formatAge('2026-09-14T07:30:00Z', now), null);
@@ -279,6 +281,19 @@ test('the component carries no build-time literal of its own', async () => {
 	assert.match(source, /evidenceStamp/);
 });
 
+// REQ: INSTALL-18
+test('compact .when reads the engine built_at as age ago and ticks once a minute', async () => {
+	const { readFileSync } = await import('node:fs');
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
+		'utf8'
+	);
+	assert.match(source, /setInterval\(\(\) => \(now = new Date\(\)\), 60_000\)/);
+	assert.match(source, /engineAge !== null \? `\$\{engineAge\} ago` : engineStamp\.local/);
+	assert.match(source, /class="when"[\s\S]*engineAge/);
+	assert.doesNotMatch(source, /class="when"[\s\S]*evidenceAge/);
+});
+
 // ----- where this app is --------------------------------------------------
 test('an engine-served page reports its own origin as the engine', () => {
 	const state = mod.engineBaseUrl({ origin: 'http://127.0.0.1:56146' }, '');
@@ -375,7 +390,9 @@ test('the chip is a tray citizen, not a floating overlay', async () => {
 	assert.match(source, /bottom:\s*100%/);
 });
 
-test('the foldout states the address, selectable, with a copy control', async () => {
+// requirement: INSTALL-29
+// [if] foldout open with engine url ok [then] link and copy-all controls exist, [else stop].
+test('the foldout states the address as a link with copy-all controls', async () => {
 	const { readFileSync } = await import('node:fs');
 	const source = readFileSync(
 		new URL('../../src/lib/components/rb/BuildIdentity.svelte', import.meta.url),
@@ -384,10 +401,45 @@ test('the foldout states the address, selectable, with a copy control', async ()
 	assert.match(source, /engineBaseUrl\(\)/);
 	assert.match(source, /explainEngineUrl/);
 	assert.match(source, /user-select:\s*all/);
-	assert.match(source, /class="copy"/);
-	assert.match(source, /clipboard\.writeText/);
-	// A copy that silently did nothing is worse than no copy button.
-	assert.match(source, /copy refused/);
+	assert.match(source, /<a[\s\S]*class="url"/);
+	assert.match(source, /copy all details/);
+	assert.match(source, /Copy build identity to clipboard/);
+	assert.match(source, /copyBuildIdentityToClipboard/);
+});
+
+// requirement: INSTALL-29
+// [if] writeText rejects [then] copy note is copy refused fault, [else stop].
+test('copyBuildIdentityToClipboard surfaces clipboard write failure', async () => {
+	const note = await mod.copyBuildIdentityToClipboard(
+		{
+			shell: { kind: 'absent', reason: 'browser' },
+			engine: { kind: 'ok', value: ENGINE_OK },
+			engineUrl: { kind: 'ok', url: 'http://127.0.0.1:56146', source: 'served' },
+			drift: 'unknown',
+			updateSummary: null
+		},
+		{
+			writeText: async () => {
+				throw new Error('NotAllowedError: no user gesture');
+			}
+		}
+	);
+	assert.match(note, /^copy refused: NotAllowedError: no user gesture$/);
+});
+
+// requirement: INSTALL-29
+// [if] copy-all runs [then] report includes url drift and git_sha, [else stop].
+test('formatBuildIdentityReport includes url drift and engine git_sha', () => {
+	const report = mod.formatBuildIdentityReport({
+		shell: { kind: 'absent', reason: 'browser' },
+		engine: { kind: 'ok', value: ENGINE_OK },
+		engineUrl: { kind: 'ok', url: 'http://127.0.0.1:56146', source: 'served' },
+		drift: 'unknown',
+		updateSummary: null
+	});
+	assert.match(report, /^url: http:\/\/127\.0\.0\.1:56146/m);
+	assert.match(report, /drift: unknown/);
+	assert.match(report, /git_sha: 81eebe75c0ffee0000000000000000000000abcd/);
 });
 
 test('the version block names itself and distinguishes Chrome from the packaged app', async () => {

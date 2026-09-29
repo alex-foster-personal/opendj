@@ -21,7 +21,7 @@ import { CLOUDSYNC_UI_HUB_URL, CLOUDSYNC_UI_ORIGIN } from './playwright.cloudsyn
 const SPOKE_NAME = 'e2e-cloudsync-spoke';
 
 async function chip(page: Page) {
-	return page.getByRole('link', { name: 'CloudSync status' });
+	return page.getByRole('button', { name: 'CloudSync status' });
 }
 
 test('config, Sync now, journal row, fleet, then a live heartbeat lights the chip', async ({

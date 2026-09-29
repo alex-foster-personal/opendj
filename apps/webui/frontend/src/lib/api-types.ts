@@ -675,6 +675,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio-interference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audio Interference */
+        get: operations["audio_interference_api_v1_audio_interference_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audio/output-health": {
         parameters: {
             query?: never;
@@ -5252,6 +5269,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library Revision
+         * @description Return a cheap revision probe for clients holding library snapshots.
+         */
+        get: operations["get_library_revision_api_v1_tracks_revision_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}": {
         parameters: {
             query?: never;
@@ -6490,6 +6527,28 @@ export interface components {
              */
             clock: "wall" | "device";
         };
+        /** AudioInterferenceItemOut */
+        AudioInterferenceItemOut: {
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Matched */
+            matched: string;
+            /** Why */
+            why: string;
+        };
+        /** AudioInterferenceOut */
+        AudioInterferenceOut: {
+            /** Detected */
+            detected: components["schemas"]["AudioInterferenceItemOut"][];
+            /** Error */
+            error?: string | null;
+            /** Supported */
+            supported: boolean;
+        };
         /** AudioOutputHealthOut */
         AudioOutputHealthOut: {
             /** Checked At */
@@ -7139,10 +7198,12 @@ export interface components {
          * BuildInfoOut
          * @description The identity contract the UI and any agent read.
          *
-         *     ``built_at_kind`` exists because the two sources measure different
-         *     moments: a payload knows when it was packaged, a checkout only knows when
-         *     HEAD was committed. Labelling which one is on screen costs one field and
-         *     removes a whole class of "why does this say yesterday" confusion.
+         *     ``built_at_kind`` exists because the sources measure different moments: a
+         *     payload knows when it was packaged; a repo checkout stamps the running
+         *     engine's start instant at identity resolution (``engine-start``). The
+         *     legacy ``head-commit`` literal remains on the wire for older readers only.
+         *     Labelling which moment is on screen removes "why does this say yesterday"
+         *     confusion.
          */
         BuildInfoOut: {
             /** App Version */
@@ -7151,7 +7212,7 @@ export interface components {
              * Built At Kind
              * @enum {string}
              */
-            built_at_kind: "payload-build" | "head-commit";
+            built_at_kind: "payload-build" | "head-commit" | "engine-start";
             /** Built At Utc */
             built_at_utc: string;
             /** Bundle Identifier */
@@ -7378,8 +7439,12 @@ export interface components {
         };
         /** ClientErrorOut */
         ClientErrorOut: {
+            /** Error Id */
+            error_id?: string | null;
             /** Event Id */
             event_id: string;
+            /** Sentry Event Id */
+            sentry_event_id?: string | null;
             /** Stored */
             stored: boolean;
         };
@@ -7761,6 +7826,8 @@ export interface components {
             agent_kind?: string | null;
             /** Agent Note */
             agent_note?: string | null;
+            /** Agent Snapshot At */
+            agent_snapshot_at?: string | null;
             /** Anchor */
             anchor: string | null;
             attachment?: components["schemas"]["AttachmentOut"] | null;
@@ -8948,6 +9015,42 @@ export interface components {
             sample?: string[];
         };
         /**
+         * FolderWatchOut
+         * @description LIBM-128: the continuous folder-rescan scheduler's own status.
+         *
+         *     ``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not
+         *     run in this process (no lifespan, or not yet its first cycle) -- a
+         *     genuinely different fact from a scheduler that ran and found nothing,
+         *     which is ``warning=None`` with a real ``last_cycle_at``.
+         */
+        FolderWatchOut: {
+            /**
+             * Consecutive Failures
+             * @default 0
+             */
+            consecutive_failures: number;
+            /** Interval S */
+            interval_s: number;
+            /** Last Cycle At */
+            last_cycle_at?: string | null;
+            /** Running */
+            running: boolean;
+            /**
+             * Tracks Added Last Cycle
+             * @default 0
+             */
+            tracks_added_last_cycle: number;
+            /**
+             * Tracks Removed Last Cycle
+             * @default 0
+             */
+            tracks_removed_last_cycle: number;
+            /** Unreadable Roots */
+            unreadable_roots?: string[];
+            /** Warning */
+            warning?: string | null;
+        };
+        /**
          * GateErrorBody
          * @description The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).
          */
@@ -9046,8 +9149,32 @@ export interface components {
             master_latency_ms: number | null;
             /** Offset Ms */
             offset_ms: number | null;
+            probe: components["schemas"]["HeadphoneCalibrationProbeOut"] | null;
             /** Step */
             step: string;
+            /** Verify Residual Ms */
+            verify_residual_ms: number | null;
+        };
+        /**
+         * HeadphoneCalibrationProbeOut
+         * @description CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.
+         *
+         *     The ear-cup step is interactive, so this is the feedback an agent needs to
+         *     drive it the way the operator does, watching `best` climb toward `threshold`.
+         */
+        HeadphoneCalibrationProbeOut: {
+            /** Best */
+            best: number;
+            /** Bus */
+            bus: string;
+            /** Gain */
+            gain: number;
+            /** Lag Ms */
+            lag_ms: number | null;
+            /** Peak */
+            peak: number | null;
+            /** Threshold */
+            threshold: number;
         };
         /** HeadphoneOutputDeviceOut */
         HeadphoneOutputDeviceOut: {
@@ -11762,7 +11889,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "failed" | "missing";
+            status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Value */
             value: unknown;
         };
@@ -12437,6 +12564,13 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected";
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
@@ -12492,14 +12626,14 @@ export interface components {
              * Key Status
              * @enum {string}
              */
-            key_status: "ok" | "failed" | "missing";
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Loudness Reason */
             loudness_reason: string | null;
             /**
              * Loudness Status
              * @enum {string}
              */
-            loudness_status: "ok" | "failed" | "missing";
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /** Match Context */
             match_context: string;
@@ -12613,6 +12747,7 @@ export interface components {
             dismissed: boolean;
             /** Folder Stages */
             folder_stages: string[];
+            folder_watch?: components["schemas"]["FolderWatchOut"] | null;
             /** Last Import */
             last_import?: (components["schemas"]["LastImportOut"] | components["schemas"]["FolderLastImportOut"]) | null;
             /** Library Empty */
@@ -13610,6 +13745,11 @@ export interface components {
             /** Title */
             title?: string;
         };
+        /** TrackLibraryRevisionOut */
+        TrackLibraryRevisionOut: {
+            /** Revision */
+            revision: string;
+        };
         /** TrackLifecycleOut */
         TrackLifecycleOut: {
             /** Deleted At */
@@ -13873,6 +14013,13 @@ export interface components {
             artwork_status: "ok" | "no_image_path" | "unresolved" | "file_missing";
             /** Bpm */
             bpm: number | null;
+            /** Bpm Reason */
+            bpm_reason?: string | null;
+            /**
+             * Bpm Status
+             * @enum {string}
+             */
+            bpm_status: "ok" | "failed" | "missing" | "available-not-selected";
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Comments */
             comments: string | null;
@@ -13928,14 +14075,14 @@ export interface components {
              * Key Status
              * @enum {string}
              */
-            key_status: "ok" | "failed" | "missing";
+            key_status: "ok" | "failed" | "missing" | "available-not-selected";
             /** Loudness Reason */
             loudness_reason: string | null;
             /**
              * Loudness Status
              * @enum {string}
              */
-            loudness_status: "ok" | "failed" | "missing";
+            loudness_status: "ok" | "failed" | "missing" | "available-not-selected";
             lyrics?: components["schemas"]["LyricsRowSummaryOut"] | null;
             /**
              * Play Count
@@ -14015,6 +14162,11 @@ export interface components {
             auto_play_maximize_reach: boolean;
             auto_sync?: components["schemas"]["AutoSyncOut"];
             /**
+             * Available Offline Filter
+             * @default false
+             */
+            available_offline_filter: boolean;
+            /**
              * Beat Sync Max
              * @default true
              */
@@ -14023,6 +14175,17 @@ export interface components {
             confirm?: {
                 [key: string]: unknown;
             };
+            /**
+             * Deck Right Mirror
+             * @default false
+             */
+            deck_right_mirror: boolean;
+            /**
+             * Gig Helper
+             * @default unset
+             * @enum {string}
+             */
+            gig_helper: "unset" | "off" | "on";
             /**
              * Hide Broken Links
              * @default false
@@ -14098,6 +14261,12 @@ export interface components {
              */
             perf_tier: "auto" | "low" | "standard" | "high";
             /**
+             * Playlist Tree View
+             * @default tree
+             * @enum {string}
+             */
+            playlist_tree_view: "tree" | "column";
+            /**
              * Remixes Filter
              * @default false
              */
@@ -14142,12 +14311,18 @@ export interface components {
             /** Auto Play Maximize Reach */
             auto_play_maximize_reach?: boolean | null;
             auto_sync?: components["schemas"]["AutoSyncOut"] | null;
+            /** Available Offline Filter */
+            available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
             } | null;
+            /** Deck Right Mirror */
+            deck_right_mirror?: boolean | null;
+            /** Gig Helper */
+            gig_helper?: ("unset" | "off" | "on") | null;
             /** Hide Broken Links */
             hide_broken_links?: boolean | null;
             /** Hide Todo Settings */
@@ -14177,6 +14352,8 @@ export interface components {
             next_only_filter?: boolean | null;
             /** Perf Tier */
             perf_tier?: ("auto" | "low" | "standard" | "high") | null;
+            /** Playlist Tree View */
+            playlist_tree_view?: ("tree" | "column") | null;
             /** Remixes Filter */
             remixes_filter?: boolean | null;
             /** Show Agent Pins */
@@ -16010,6 +16187,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AudioEngineOut"];
+                };
+            };
+        };
+    };
+    audio_interference_api_v1_audio_interference_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioInterferenceOut"];
                 };
             };
         };
@@ -24222,6 +24419,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QualityRungOut"][];
+                };
+            };
+        };
+    };
+    get_library_revision_api_v1_tracks_revision_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackLibraryRevisionOut"];
                 };
             };
         };

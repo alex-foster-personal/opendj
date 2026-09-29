@@ -46,6 +46,11 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
             }
         };
         let channels = config.channels as usize;
+        // A stream error (the device went away) ends the audio side, which
+        // ends serve with an error instead of acknowledging commands for an
+        // engine that no longer makes sound.
+        let failed = Arc::new(AtomicBool::new(false));
+        let failed_cb = failed.clone();
         let stream = device.build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
@@ -67,7 +72,10 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
                     done += got;
                 }
             },
-            |err| eprintln!("odj-audio: stream error: {err}"),
+            move |err| {
+                eprintln!("odj-audio: stream error: {err}");
+                failed_cb.store(true, Ordering::Relaxed);
+            },
             None,
         );
         let stream = match stream {
@@ -82,6 +90,9 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
             return;
         }
         while !stop.load(Ordering::Relaxed) {
+            if failed.load(Ordering::Relaxed) {
+                return;
+            }
             std::thread::sleep(Duration::from_millis(20));
         }
     }

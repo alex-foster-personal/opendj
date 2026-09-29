@@ -39,6 +39,7 @@ function row(stable_id, title = null, artist = null) {
 	return { stable_id, key: '8A', bpm: 124, file_exists: false, title, artist };
 }
 
+// REQ: PLAY-08
 describe('describeAutoPlayStall', () => {
 	it('names the cause and the count for a spent, unplayable playlist', () => {
 		const stall = mod.describeAutoPlayStall({
@@ -173,7 +174,7 @@ describe('describeAutoPlayStall', () => {
 			source_stable_id: 'src-1',
 			blocked: []
 		});
-		assert.match(stall.headline, /no deck has been playing for 5 seconds/);
+		assert.match(stall.headline, /no deck has been playing for 30 seconds/);
 		assert.match(stall.resume, /Press play on a loaded deck/);
 	});
 

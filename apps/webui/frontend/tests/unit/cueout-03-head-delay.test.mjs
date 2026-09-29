@@ -61,7 +61,7 @@ test('monitor graph wires DelayNode after level with hard delayTime set', async 
 		readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8')
 	]);
 	assert.match(hpSrc, /level\.connect\(delay\)/);
-	assert.match(hpSrc, /delay\.connect\(destination\)/);
+	assert.match(hpSrc, /delay\.connect\(bridgeInput\)/);
 	assert.match(hpSrc, /createDelay\(HEAD_DELAY_MAX_MS \/ 1000\)/);
 	assert.match(hpSrc, /delayTime\.setValueAtTime/);
 	assert.doesNotMatch(hpSrc, /nodes\.delay\.delayTime\.setTargetAtTime/);
@@ -125,7 +125,9 @@ test('Bluetooth warning helpers and HeadphoneCluster wiring', async () => {
 
 	const clusterSrc = await readFile('src/lib/components/rb/mixer/HeadphoneCluster.svelte', 'utf8');
 	assert.match(clusterSrc, /data-two-outputs-warning/);
-	assert.match(clusterSrc, /aria-label="head delay milliseconds"/);
+	assert.match(clusterSrc, /data-performance-control="head-delay"/);
+	assert.match(clusterSrc, /aria-label="increase head delay"/);
+	assert.match(clusterSrc, /aria-label="decrease head delay"/);
 	assert.match(clusterSrc, /twoOutputsWarning\(/);
 	assert.match(clusterSrc, /ondelay/);
 });

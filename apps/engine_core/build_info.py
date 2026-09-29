@@ -101,10 +101,12 @@ class BuildInfoUnavailable(RuntimeError):
 class BuildInfoOut(BaseModel):
     """The identity contract the UI and any agent read.
 
-    ``built_at_kind`` exists because the two sources measure different
-    moments: a payload knows when it was packaged, a checkout only knows when
-    HEAD was committed. Labelling which one is on screen costs one field and
-    removes a whole class of "why does this say yesterday" confusion.
+    ``built_at_kind`` exists because the sources measure different moments: a
+    payload knows when it was packaged; a repo checkout stamps the running
+    engine's start instant at identity resolution (``engine-start``). The
+    legacy ``head-commit`` literal remains on the wire for older readers only.
+    Labelling which moment is on screen removes "why does this say yesterday"
+    confusion.
     """
 
     source: Literal["payload", "repo"]
@@ -114,7 +116,7 @@ class BuildInfoOut(BaseModel):
     git_branch: str
     git_dirty: bool
     built_at_utc: str
-    built_at_kind: Literal["payload-build", "head-commit"]
+    built_at_kind: Literal["payload-build", "head-commit", "engine-start"]
     lane_label: str | None = None
     product_name: str | None = None
     bundle_identifier: str | None = None
@@ -269,10 +271,8 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
         git_sha_full=sha_full,
         git_branch=_git(repo_root, "rev-parse", "--abbrev-ref", "HEAD"),
         git_dirty=_git(repo_root, "status", "--porcelain") != "",
-        built_at_utc=head_time_as_utc(
-            _git(repo_root, "log", "-1", f"--format={HEAD_TIME_FORMAT}")
-        ),
-        built_at_kind="head-commit",
+        built_at_utc=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        built_at_kind="engine-start",
         app_version=_tauri_app_version(repo_root),
     )
 

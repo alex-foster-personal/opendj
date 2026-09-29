@@ -75,6 +75,7 @@ def _insert_identified_track(
     updated_at: str,
     origin: str,
     content_hash: str | None = None,
+    audio_hash: str | None = None,
     isrc: str | None = None,
     file_path: str | None = None,
     tier: str = "inferred",
@@ -84,10 +85,10 @@ def _insert_identified_track(
     conn.execute(
         """
         INSERT INTO tracks(
-            stable_id, stable_id_tier, title, isrc, file_path, content_hash,
+            stable_id, stable_id_tier, title, isrc, file_path, content_hash, audio_hash,
             created_at, updated_at, origin_device_id, deleted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             stable_id,
@@ -96,6 +97,7 @@ def _insert_identified_track(
             isrc,
             file_path,
             content_hash,
+            audio_hash,
             _T0,
             stamped,
             origin,
@@ -111,6 +113,7 @@ def _incoming_track(
     title: str,
     updated_at: str,
     content_hash: str | None = None,
+    audio_hash: str | None = None,
     isrc: str | None = None,
     file_path: str | None = None,
     tier: str = "inferred",
@@ -127,6 +130,7 @@ def _incoming_track(
             isrc=isrc,
             file_path=file_path,
             content_hash=content_hash,
+            audio_hash=audio_hash,
             created_at=_T0,
             updated_at=updated_at,
             origin_device_id=_DEV_B,
@@ -305,6 +309,27 @@ def test_same_content_hash_different_stable_id_collapses_to_one_track(
             (_INCOMING_PK, "/Silver/a.mp3"),
             (_INCOMING_PK, "/Air/a.mp3"),
         }, "both machines' locations must sit on the survivor"
+    finally:
+        conn.close()
+
+
+def test_same_audio_hash_different_content_hash_collapses_to_one_track(
+    tmp_path: Path,
+) -> None:
+    """Retagged copies merge on audio_hash while content_hash stays distinct."""
+    conn = _open_hub(tmp_path)
+    try:
+        _insert_identified_track(
+            conn, _STORED_PK, title="before", content_hash=_HASH_A,
+            audio_hash="c" * 64, updated_at=_T0, origin=_DEV_A,
+        )
+        conn.commit()
+        result = engine.hub_apply(conn, [_incoming_track(
+            conn, _INCOMING_PK, title="after", content_hash=_HASH_B,
+            audio_hash="c" * 64, updated_at=_T1,
+        )])
+        assert result.quarantined == 0
+        assert _track_ids(conn) == {_INCOMING_PK}
     finally:
         conn.close()
 

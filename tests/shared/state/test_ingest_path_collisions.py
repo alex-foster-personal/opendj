@@ -1,7 +1,12 @@
-"""NATIVE-13 path-collision refusal during folder and rekordbox ingest.
+"""NATIVE-15 path-collision refusal during folder and rekordbox ingest.
 
-[if] ingest would create colliding paths [then] assert_no_path_collisions refuses before state is written, [else stop].
-[if] ingest sees colliding paths for different recordings [then] import refuses with PathCollisionError, [else stop].
+Split from NATIVE-13 Thu 24 Sep 2026 (claude-review, PR #3829): NATIVE-13 moved
+to v1.1 for an unrelated reason (the Windows parity gate has never run), but
+this guard is a macOS (APFS, NFD filenames) data-loss guard already shipped in
+v1, so it now has its own v1 id rather than moving out with NATIVE-13.
+
+[if] ingest would create colliding paths [then] the guard refuses first, [else stop].
+[if] ingest sees colliding paths for different recordings [then] import refuses, [else stop].
 """
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ from apps.shared.state.ingest.path_collisions import (
 from apps.shared.state.writer import StateWriter
 from tests.shared.state.test_ingest_rekordbox import _counts
 
-pytestmark = pytest.mark.requirement("NATIVE-13")
+pytestmark = pytest.mark.requirement("NATIVE-15")
 
 
 def _write_wav(path: Path, seconds: float = 0.05) -> Path:

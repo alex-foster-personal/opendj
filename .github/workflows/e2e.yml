@@ -332,6 +332,15 @@ jobs:
           # archive entry out from under `uv sync` on 34275041870 the day before.
           enable-cache: ${{ runner.environment == 'github-hosted' }}
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       - name: System deps for pyrekordbox (SQLCipher)
         # The engine imports pyrekordbox, which links libsqlcipher at runtime.
         # Ubuntu noble ships the runtime .so inside libsqlcipher-dev.
@@ -733,14 +742,25 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-gate-failures
-          # The engine's own logs from the Root suite's fixture data dir travel
-          # with the Playwright output: twice on Sat 5 Sep 2026 the suite failed
-          # on "apps.analysis.run exited 5" and the traceback lived only here,
+          # The engine's own logs from each suite's fixture data dir travel with
+          # the Playwright output: twice on Sat 5 Sep 2026 the suite failed on
+          # "apps.analysis.run exited 5" and the traceback lived only here,
           # cleaned by the next checkout before anyone read it.
+          #
+          # The glob is `*-data` rather than the one Root dir it was written for.
+          # Every suite in this job seeds its own dir (deckload-data,
+          # autoplay-stall-gate-data, comment-hotkey-gate-data,
+          # hotcue-mapping-gate-data, lyrics-words-data, preflight-gate-*-data),
+          # and only Root's were kept, so a failure in any other suite uploaded a
+          # trace with no server side to read against it. Measured on issue #3477
+          # (webkit loses its browser mid-suite): the two failures on Tue 22 Sep
+          # 2026, one on `main` and one on PR #3548, are both deckload-smoke, and
+          # both artifacts carry Root's logs while deckload-data's -- the ones
+          # covering the dead page -- were discarded with the checkout.
           path: |
             apps/webui/frontend/test-results/**
             apps/webui/frontend/playwright-report/**
-            apps/webui/frontend/tests/e2e/fixtures/root-playwright-data/logs/**
+            apps/webui/frontend/tests/e2e/fixtures/*-data/logs/**
           if-no-files-found: ignore
           retention-days: 2
 
@@ -947,6 +967,15 @@ jobs:
           # /home/ghrunner/.cache/uv"), and a sibling's prune is what tore an
           # archive entry out from under `uv sync` on 34275041870 the day before.
           enable-cache: ${{ runner.environment == 'github-hosted' }}
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: System deps (SQLCipher for pyrekordbox, ffmpeg for the stems fixture)
         # tests.stems.seed_e2e_library shells out to ffmpeg to build its

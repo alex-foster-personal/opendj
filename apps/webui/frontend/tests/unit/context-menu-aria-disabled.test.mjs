@@ -112,6 +112,7 @@ test('source: onclick calls activate and Enter/Space on aria-disabled are swallo
 	assert.match(source, /event\.preventDefault\(\)/);
 });
 
+// REQ: DECKUX-18
 test('source: arrow keys walk all menuitems without skipping aria-disabled', () => {
 	const source = readFileSync(MENU_PATH, 'utf8');
 	// #2416 (08b04b55e) added checkable rows; the walk must cover both roles
@@ -128,6 +129,7 @@ test('source: arrow keys walk all menuitems without skipping aria-disabled', () 
 	assert.match(source, /event\.key === 'End'/);
 });
 
+// REQ: DECKUX-18
 test('source: arrow keys are ignored after focus leaves the menu', () => {
 	const source = readFileSync(MENU_PATH, 'utf8');
 	const keydown = source.slice(source.indexOf('function onKeydown'));

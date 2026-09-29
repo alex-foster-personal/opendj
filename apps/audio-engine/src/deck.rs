@@ -24,7 +24,8 @@ pub const AUDIBLE_GAIN: f64 = 1e-3;
 pub struct Track {
     pub sample_rate: u32,
     /// Interleaved stereo f32 at the file's own sample rate.
-    pub pcm: Vec<f32>,
+    /// Shared, so tracks decoded from one file hold one copy.
+    pub pcm: Arc<[f32]>,
     pub frames: usize,
     pub beats: Vec<Beat>,
     /// Frame index (into `beats`) of every downbeat, precomputed for bar lookups.
@@ -34,7 +35,8 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn new(sample_rate: u32, pcm: Vec<f32>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+    pub fn new(sample_rate: u32, pcm: impl Into<Arc<[f32]>>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+        let pcm = pcm.into();
         assert!(pcm.len().is_multiple_of(2), "pcm must be interleaved stereo");
         let frames = pcm.len() / 2;
         let downbeats = beats
@@ -428,7 +430,19 @@ impl Deck {
         let delta = t.ms_to_frames(target) - self.pos;
         self.pos = t.ms_to_frames(target);
         if let Some((a, b)) = self.looping {
-            self.looping = Some((a + delta, b + delta));
+            // Keep the moved loop inside the track at its own length: a jump
+            // near either end would otherwise push a bound past 0 or the end.
+            let end = t.frames as f64;
+            let len = (b - a).min(end);
+            let a = (a + delta).clamp(0.0, end - len);
+            self.looping = Some((a, a + len));
+            // Keep the playhead in [a, a + len): at the loop-out point itself
+            // the end-of-track check would stop a loop that ends at the end.
+            if self.pos < a {
+                self.pos = a;
+            } else if self.pos >= a + len {
+                self.pos = a + (self.pos - (a + len)) % len;
+            }
         }
         Ok(())
     }
@@ -447,6 +461,14 @@ impl Deck {
     pub fn set_pitch_range(&mut self, range: f64) -> Result<(), EngineError> {
         if range != 8.0 && range != 16.0 && range != 100.0 {
             return Err(EngineError::new(ErrorCode::Invalid, "pitch range must be 8, 16 or 100"));
+        }
+        // As the page engine: refuse a range the current tempo does not fit,
+        // rather than clamp the tempo silently.
+        if (self.tempo - 1.0).abs() > range / 100.0 + 1e-9 {
+            return Err(EngineError::new(
+                ErrorCode::Invalid,
+                "the current tempo is outside that pitch range; reset the tempo first",
+            ));
         }
         self.pitch_range = range;
         Ok(())
@@ -647,6 +669,69 @@ mod tests {
         d.beat_jump(4.0).unwrap();
         assert_eq!(d.pos, 96000.0);
         assert_eq!(d.looping, Some((96000.0, 192000.0)));
+    }
+
+    #[test]
+    fn beat_jump_keeps_a_moved_loop_inside_the_track() {
+        // 20 s at 120 bpm: 40 beats of 24000 frames.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 20.0, grid_120(10))));
+        // Loop [1 s, 2 s] with the playhead at 1.5 s; jumping back 4 beats
+        // clamps the playhead to 0, which would drag the loop to [-0.5 s, 0.5 s].
+        d.set_loop(Some((1000.0, 2000.0))).unwrap();
+        d.seek(1500.0).unwrap();
+        d.beat_jump(-4.0).unwrap();
+        assert_eq!(d.looping, Some((0.0, 48000.0)));
+        assert!(d.pos >= 0.0 && d.pos < 48000.0, "pos {}", d.pos);
+        // Near the end: loop [18 s, 19 s], playhead 18.5 s, jump forward 4 beats.
+        d.set_loop(Some((18000.0, 19000.0))).unwrap();
+        d.seek(18500.0).unwrap();
+        d.beat_jump(4.0).unwrap();
+        assert_eq!(d.looping, Some((912000.0, 960000.0)));
+        assert!(d.pos >= 912000.0 && d.pos < 960000.0, "pos {}", d.pos);
+        // The deck keeps looping there rather than stopping at the track end.
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; 480 * 2];
+        for _ in 0..200 {
+            d.render_add(&mut buf, 48000.0);
+            assert!(d.playing, "stopped at pos {}", d.pos);
+        }
+        d.play(false).unwrap();
+        // Control: a jump that stays inside the track moves the loop unchanged.
+        d.set_loop(Some((4000.0, 6000.0))).unwrap();
+        d.seek(5000.0).unwrap();
+        d.beat_jump(2.0).unwrap();
+        assert_eq!(d.looping, Some((240000.0, 336000.0)));
+        assert_eq!(d.pos, 288000.0);
+    }
+
+    #[test]
+    fn a_loop_ending_at_the_track_end_wraps() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 4.0, grid_120(2))));
+        d.set_loop(Some((3000.0, 4000.0))).unwrap();
+        assert_eq!(d.looping, Some((144000.0, 192000.0)));
+        d.seek(3000.0).unwrap();
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; 480 * 2];
+        for _ in 0..500 {
+            d.render_add(&mut buf, 48000.0);
+            assert!(d.playing, "an end-of-track loop stopped at pos {}", d.pos);
+            assert!(d.pos >= 144000.0 && d.pos < 192000.0, "pos {}", d.pos);
+        }
+    }
+
+    #[test]
+    fn pitch_range_refuses_a_range_the_tempo_does_not_fit() {
+        let mut d = Deck::new(48000.0);
+        d.set_pitch_range(16.0).unwrap();
+        d.set_tempo(1.12).unwrap();
+        assert!(d.set_pitch_range(8.0).is_err());
+        assert_eq!(d.pitch_range, 16.0);
+        // Control: a range the tempo fits is taken.
+        d.set_tempo(1.05).unwrap();
+        d.set_pitch_range(8.0).unwrap();
+        assert_eq!(d.pitch_range, 8.0);
     }
 
     #[test]

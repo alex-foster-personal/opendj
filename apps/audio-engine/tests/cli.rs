@@ -191,3 +191,126 @@ fn wall_clock_refuses_advance_and_reports_state() {
     drop(stdin); // EOF: the engine exits when its supervisor goes away.
     assert!(child.wait().unwrap().success());
 }
+
+/// A load that fails to decode refuses the commands queued behind it rather
+/// than running them against the deck's previous track. A FIFO holds the
+/// decode open, so the queued command is deterministically behind the load.
+#[cfg(unix)]
+#[test]
+fn a_failed_load_refuses_the_commands_queued_behind_it() {
+    let d = temp_dir("cli-failed-load");
+    let good = write_wav(&d, "a.wav", 44100, &sine(44100, 440.0, 5.0));
+    let fifo = d.join("slow.wav");
+    assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+    let mut child = Command::new(BIN)
+        .args(["serve", "--clock", "wall"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut result_for = |id: &str| -> Value {
+        for line in lines.by_ref() {
+            let v: Value = serde_json::from_str(&line.unwrap()).unwrap();
+            if v["type"] == "result" && v["id"] == id {
+                return v;
+            }
+        }
+        panic!("no result for {id}");
+    };
+    let load = |id: &str, path: &std::path::Path| {
+        json!({"id": id, "cmd": {"type": "load", "deck": 1, "path": path.to_str().unwrap()}})
+    };
+    writeln!(stdin, "{}", load("good", &good)).unwrap();
+    assert_eq!(result_for("good")["ok"], true);
+
+    writeln!(stdin, "{}", load("bad", &fifo)).unwrap();
+    writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+    // Feed the decoder bytes that are not audio, then close: the load fails.
+    std::fs::write(&fifo, b"not audio at all").unwrap();
+    assert_eq!(result_for("bad")["ok"], false);
+    let queued = result_for("queued");
+    assert_eq!(queued["ok"], false, "{queued}");
+    assert!(queued["error"]["message"].as_str().unwrap().contains("waited on failed"), "{queued}");
+
+    // Control: with nothing pending, the same command runs on the old track.
+    writeln!(stdin, "{}", json!({"id": "direct", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+    assert_eq!(result_for("direct")["ok"], true);
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
+}
+
+/// Every command sent before stdin closes gets its result, even when the
+/// audio side is asleep between long blocks at that moment (~85 ms here).
+#[test]
+fn commands_sent_just_before_eof_still_get_results() {
+    for round in 0..5 {
+        let mut child = Command::new(BIN)
+            .args(["serve", "--clock", "wall", "--sample-rate", "12000", "--block", "1024"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let hello: Value = serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
+        assert_eq!(hello["clock"], "wall");
+        writeln!(stdin, "{}", json!({"id": "last", "cmd": {"type": "crossfader", "value": 0.5}})).unwrap();
+        drop(stdin);
+        let got = lines.any(|l| {
+            let v: Value = serde_json::from_str(&l.unwrap()).unwrap();
+            v["type"] == "result" && v["id"] == "last" && v["ok"] == true
+        });
+        assert!(got, "round {round}: no result for a command sent before EOF");
+        assert!(child.wait().unwrap().success());
+    }
+}
+
+/// A load still decoding when stdin closes finishes before the engine exits,
+/// and the command parked behind it runs; one that never finishes is refused
+/// once shutdown stops waiting, along with what is parked behind it.
+#[cfg(unix)]
+#[test]
+fn loads_in_flight_at_eof_still_get_results() {
+    let d = temp_dir("cli-load-at-eof");
+    let wav = write_wav(&d, "b.wav", 44100, &sine(44100, 440.0, 2.0));
+    let wav_bytes = std::fs::read(&wav).unwrap();
+    for finishes in [true, false] {
+        let fifo = d.join(format!("slow-{finishes}.wav"));
+        assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let mut child = Command::new(BIN)
+            .args(["serve", "--clock", "wall"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        writeln!(stdin, "{}", json!({"id": "slow", "cmd": {"type": "load", "deck": 1, "path": fifo.to_str().unwrap()}}))
+            .unwrap();
+        writeln!(stdin, "{}", json!({"id": "queued", "cmd": {"type": "play", "deck": 1, "playing": true}})).unwrap();
+        drop(stdin);
+        if finishes {
+            // Give the engine time to see EOF while the decode is still open.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            // On its own thread: if the engine has already gone, opening the
+            // FIFO blocks forever, and the missing results below must fail.
+            let (fifo, bytes) = (fifo.clone(), wav_bytes.clone());
+            std::thread::spawn(move || std::fs::write(&fifo, &bytes));
+        }
+        let results: Vec<Value> = lines
+            .map(|l| serde_json::from_str::<Value>(&l.unwrap()).unwrap())
+            .filter(|v| v["type"] == "result")
+            .collect();
+        let of = |id: &str| results.iter().find(|v| v["id"] == id).cloned();
+        let slow = of("slow").unwrap_or_else(|| panic!("finishes={finishes}: no result for the load: {results:?}"));
+        let queued = of("queued").unwrap_or_else(|| panic!("finishes={finishes}: no result for the play: {results:?}"));
+        assert_eq!(slow["ok"], finishes, "{slow}");
+        assert_eq!(queued["ok"], finishes, "{queued}");
+        if !finishes {
+            assert!(slow["error"]["message"].as_str().unwrap().contains("shut down"), "{slow}");
+        }
+        assert!(child.wait().unwrap().success());
+    }
+}

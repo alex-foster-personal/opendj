@@ -230,3 +230,49 @@ fn tempo_points_follow_tempo_commands() {
     let bpm = 120.0 * 1.04;
     assert_eq!(pts, vec![(1, 0, 1.0, Some(120.0)), (2, 0, 1.0, Some(120.0)), (2, 480000, 1.04, Some(bpm))]);
 }
+
+#[test]
+fn a_tempo_ramp_records_every_step_it_applies() {
+    let d = temp_dir("tempo-ramp");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 5.0));
+    let plan = json!({
+        "end": {"ms": 2000},
+        "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}},
+            {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}},
+            {"at": {"ms": 500}, "ramp": {"type": "tempo", "deck": 1, "to": 1.08, "over": {"ms": 1000}}}
+        ]
+    });
+    let out = render_plan_files(&parse_plan(&plan).unwrap(), &d).unwrap();
+    let ramp: Vec<(u64, f64)> = out.tempo.iter().filter(|t| t.frame >= 24000).map(|t| (t.frame, t.tempo)).collect();
+    // The ramp runs from frame 24000 to 72000 in 32-frame steps; every step
+    // after the first (which sets the starting 1.0) changes the ratio, so each
+    // must appear, 32 frames apart, ending on 1.08 at the ramp's end.
+    assert_eq!(ramp.len(), 48000 / 32, "{:?}", &ramp[..ramp.len().min(8)]);
+    assert!(ramp.windows(2).all(|w| w[1].0 - w[0].0 == 32 && w[1].1 > w[0].1));
+    assert_eq!(*ramp.last().unwrap(), (72000, 1.08));
+    // Control: a knob ramp on the same plan adds no tempo points.
+    let knob = json!({
+        "end": {"ms": 2000},
+        "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}},
+            {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}},
+            {"at": {"ms": 500}, "ramp": {"type": "fader", "deck": 1, "to": 0.5, "over": {"ms": 1000}}}
+        ]
+    });
+    assert_eq!(render_plan_files(&parse_plan(&knob).unwrap(), &d).unwrap().tempo.len(), 1);
+}
+
+#[test]
+fn loads_of_one_file_share_its_samples() {
+    let d = temp_dir("shared-pcm");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
+    let mut load = odj_audio::offline::file_loader(d.clone());
+    let spec = |deck| odj_audio::protocol::LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
+    let (a, b) = (load(&spec(1)).unwrap(), load(&spec(2)).unwrap());
+    assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");
+    // Control: a different file gets its own samples.
+    write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 1.0));
+    let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None }).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&a.pcm, &c.pcm));
+}

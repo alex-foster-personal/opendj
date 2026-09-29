@@ -126,7 +126,7 @@ function _headline(reason: AutoPlayStallReason, blockedTotal: number): string {
 			// queue nothing after this track and the set ends when it does.
 			return 'AutoPlay stopped: the next track is playing but could not be made master';
 		case 'no-deck-playing':
-			return 'AutoPlay stopped: no deck has been playing for 5 seconds';
+			return 'AutoPlay stopped: no deck has been playing for 30 seconds';
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`unhandled AutoPlay stall reason: ${String(_exhaustive)}`);

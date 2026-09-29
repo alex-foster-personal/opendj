@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 7
+SCHEMA_VERSION: int = 8
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1259,7 +1259,17 @@ _V7: list[str] = list(_PATH_INDEX)
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v6 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7]
+_V8: list[str] = [
+    "ALTER TABLE tracks ADD COLUMN audio_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_audio_hash ON tracks(audio_hash) "
+    "WHERE audio_hash IS NOT NULL",
+]
+"""7 -> 8: tag-independent audio identity on tracks (legacy ladder v19, issue #3864).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v7 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
@@ -1668,6 +1678,17 @@ def _create_all(conn: sqlite3.Connection, statements: list[str]) -> None:
         conn.execute(stmt)
 
 
+def _adoption_ddl(conn: sqlite3.Connection) -> list[str]:
+    """Return ladder DDL with an already-present v8 column add removed."""
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    if "audio_hash" not in columns:
+        return ALL_DDL
+    return [
+        stmt for stmt in ALL_DDL
+        if stmt != "ALTER TABLE tracks ADD COLUMN audio_hash TEXT"
+    ]
+
+
 def _rollback_without_masking(
     conn: sqlite3.Connection, original: BaseException
 ) -> None:
@@ -1708,7 +1729,7 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     (:func:`_assert_adoptable` + :func:`_audit_existing_shapes`).
     """
     was_missing = missing_tables(conn)
-    _create_all(conn, ALL_DDL)
+    _create_all(conn, _adoption_ddl(conn))
     for stmt in _ADOPTION_BACKFILL:
         conn.execute(stmt)
     return was_missing

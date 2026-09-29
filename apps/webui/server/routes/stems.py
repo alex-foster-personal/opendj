@@ -9,6 +9,7 @@ part GET still 404s when there is no file to stream.
 
 from __future__ import annotations
 
+import logging
 import os
 import stat
 import threading
@@ -45,6 +46,8 @@ from apps.stems.artifacts import (
 from apps.webui.server.routes.sync_hub_route_errors import raise_sync_hub_unreachable
 
 router = APIRouter(prefix="/tracks", tags=["stems"])
+
+log = logging.getLogger(__name__)
 
 #: How long the PART route waits for an in-flight hydration before answering
 #: "still fetching" instead of the bytes. The MANIFEST route never waits at
@@ -280,6 +283,7 @@ def _run_hydration(
     except StemSourceError as exc:
         with _INFLIGHT_LOCK:
             _LAST_HYDRATE_ERROR[stable_id] = _HydrateError(exc.code, exc.message)
+        _log_hydration_failure(stable_id, exc.code, exc.message)
         return stem_hydration.HydrationOutcome(
             stable_id=stable_id,
             status="error",
@@ -291,6 +295,7 @@ def _run_hydration(
                 "STEM_BUNDLE_HYDRATION_FAILED",
                 str(exc),
             )
+        _log_hydration_failure(stable_id, "STEM_BUNDLE_HYDRATION_FAILED", str(exc))
         raise
     with _INFLIGHT_LOCK:
         if outcome.status == "error":
@@ -308,7 +313,40 @@ def _run_hydration(
             )
         else:
             _LAST_HYDRATE_ERROR.pop(stable_id, None)
+    if outcome.status == "error":
+        _log_hydration_failure(
+            stable_id, "STEM_BUNDLE_HYDRATION_FAILED", outcome.reason or "hydration failed"
+        )
+    elif outcome.status == "hub_error":
+        _log_hydration_failure(
+            stable_id, hub_exc.code, outcome.reason or "hub transport failure"
+        )
     return outcome
+
+
+def _log_hydration_failure(stable_id: str, code: str, reason: str) -> None:
+    """Report an indexed bundle that could not be fetched.
+
+    The manifest route already answers this loud (502), but an HTTP error
+    never becomes a Sentry event (``failed_request_status_codes=set()``), and
+    the deck that asked may be mid-set, where the client report is held back.
+    ERROR reaches the error sink and Sentry through the engine warning log;
+    an unreachable hub stays WARNING, because a laptop offline at a venue is
+    an expected state, not a defect.
+    """
+    exc = StemSourceError(code, reason)
+    level = (
+        logging.WARNING
+        if hub_transport_failure_kind(exc) == "unreachable"
+        else logging.ERROR
+    )
+    log.log(
+        level,
+        "stem-hydration: indexed bundle could not be fetched [%s] stable_id=%s: %s",
+        code,
+        stable_id,
+        reason,
+    )
 
 
 def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:

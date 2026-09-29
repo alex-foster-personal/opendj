@@ -141,6 +141,7 @@ class LyricsFetchService:
             return FetchResult(outcome="cached", lyrics=lyrics)
         vocals_sha256 = vocals_sha256_for_track(self.data_dir, track.stable_id)
         if vocals_sha256 is None:
+            _refuse_before_stem_index_loaded(self.data_dir)
             write_verdict(
                 self.data_dir,
                 FetchVerdict(
@@ -239,6 +240,35 @@ class LyricsFetchService:
 
 
 LyricsService = LyricsFetchService
+
+
+LYRICS_STEM_INDEX_NOT_LOADED = "LYRICS_STEM_INDEX_NOT_LOADED"
+
+
+def _refuse_before_stem_index_loaded(data_dir: Path) -> None:
+    """Refuse to record ``no_source`` while this spoke has no stem index yet.
+
+    An absent index cache reads as ``{}``, so every track looks "not in the
+    index" and would get a ``no_source`` verdict with ``vocals_sha256=None``.
+    :func:`apps.lyrics.fetch_verdicts.is_terminal_fresh` treats that verdict
+    as final while the sha stays ``None``, so a lyrics run that races the
+    boot-time index refresh (or runs while the hub is down) skipped those
+    tracks for good on the Air. Raising the retryable
+    :class:`LyricsAsrFetchError` writes no verdict: the job item fails loud
+    and the next run asks again. A machine with no hydration transport at all
+    (local mode) never gets an index, so there ``no_source`` stays the answer.
+    """
+    if stem_index.local_index_cache_path(data_dir).is_file():
+        return
+    from apps.cloud.stem_source import resolve_stem_hydration_source
+
+    if resolve_stem_hydration_source(data_dir) is None:
+        return
+    raise LyricsAsrFetchError(
+        LYRICS_STEM_INDEX_NOT_LOADED,
+        "the stem bundle index has not been fetched from the hub yet, so this "
+        "track's vocals cannot be looked up; retry once the index is loaded",
+    )
 
 
 def vocals_sha256_for_track(data_dir: Path, stable_id: str) -> str | None:

@@ -280,6 +280,7 @@
 	.bauble.pilled {
 		width: auto;
 		max-width: 100%;
+		min-width: 0;
 		padding-right: 8px;
 		border-radius: 999px;
 		display: inline-flex;
@@ -298,6 +299,7 @@
 		font-family: var(--rb-font, inherit);
 		font-size: 10px;
 		line-height: 1;
+		min-width: 0;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;

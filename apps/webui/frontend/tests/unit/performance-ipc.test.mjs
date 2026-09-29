@@ -62,7 +62,7 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'practice' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'two_outputs' }), ['headphone']);
 	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'output_mode', mode: 'split_cable' }), ['headphone']);
-	assert.equal(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), null);
+	assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), ['headphone']);
 	assert.deepEqual(
 		ipc.performanceCommandQueueScopes({ type: 'analysis_source', feature: 'beatgrid', source: 'own' }),
 		[1, 2, 3, 4, 'sync']
@@ -76,6 +76,31 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	assert.equal(
 		ipc.performanceCommandQueueScopes({ type: 'pairing_snapshot_remove_eq_adjuster', deck: 1, band: 'low' }),
 		null
+	);
+});
+
+test('load suppressCommandErrorToast parses through parsePerformanceCommandForTest', () => {
+	const cmd = ipc.parsePerformanceCommandForTest({
+		type: 'load',
+		deck: 1,
+		stable_id: 'track-a',
+		suppressCommandErrorToast: true
+	});
+	assert.deepEqual(cmd, {
+		type: 'load',
+		deck: 1,
+		stable_id: 'track-a',
+		suppressCommandErrorToast: true
+	});
+	assert.throws(
+		() =>
+			ipc.parsePerformanceCommandForTest({
+				type: 'load',
+				deck: 1,
+				stable_id: 'track-a',
+				extra: true
+			}),
+		/unexpected fields/
 	);
 });
 
@@ -999,6 +1024,8 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 				cue_latency_ms: null,
 				master_latency_ms: null,
 				offset_ms: null,
+				verify_residual_ms: null,
+				probe: null,
 				error: null
 			},
 			outputs: [],
@@ -1402,6 +1429,7 @@ test('queryPerformanceState reports the analysis source selection, as a snapshot
 	);
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed', async () => {
 	globalThis.window = {};
 	ipc.resetQuantizedLaunchArmedForTest();

@@ -191,8 +191,13 @@ def register_machine(
     data_dir: Path,
     name: str | None = None,
     now: str | None = None,
+    is_hub: bool | None = None,
 ) -> MachineIdentity:
     """Upsert this machine into ``machines`` and return what was written.
+
+    ``is_hub`` defaults to the process environment (``MDT_IS_HUB``); a
+    provisioning CLI that registers a hub it does not itself run passes it
+    explicitly rather than mutating its own environment.
 
     ``first_seen`` is stamped once and never rewritten; ``last_seen`` moves
     on every call, so this doubles as the liveness heartbeat. Idempotent.
@@ -212,7 +217,7 @@ def register_machine(
         machine_id=get_or_create_machine_id(data_dir),
         name=name if name is not None else default_machine_name(),
         platform=detect_platform(),
-        is_hub=is_hub_from_env(),
+        is_hub=is_hub_from_env() if is_hub is None else is_hub,
         data_root=str(Path(data_dir)),
     )
     stamp = now or sync_stamp.canonical_now()

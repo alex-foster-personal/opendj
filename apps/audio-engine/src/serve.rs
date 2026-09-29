@@ -39,6 +39,15 @@ use crate::protocol::{self, Advance, Command, LoadSpec, ProtoError};
 /// State messages per second in the threaded modes.
 pub const STATE_HZ: u32 = 30;
 
+/// Slots in the command ring from the control side to the audio side.
+const CMD_SLOTS: usize = 1024;
+
+/// How long shutdown waits for the audio side to apply what is queued.
+const DRAIN_LIMIT: Duration = Duration::from_secs(2);
+/// How long shutdown waits for loads still decoding; after that they and the
+/// work queued behind them are refused, so each still gets a result.
+const LOAD_DRAIN_LIMIT: Duration = Duration::from_secs(5);
+
 fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
     serde_json::to_writer(&mut *out, v)?;
     out.write_all(b"\n")?;
@@ -223,12 +232,15 @@ impl AudioSide {
     /// commands, publishing a snapshot when one is due. Returns the rendered
     /// interleaved stereo.
     pub fn process(&mut self, frames: usize) -> &[f32] {
-        while let Ok((seq, cmd)) = self.cmd_rx.pop() {
+        // Take a command only while its result has a slot to go to: a result
+        // dropped here would free a retired track on this thread. With the
+        // result ring full, the rest wait in the command ring until the pump
+        // drains it, so nothing is lost and nothing is freed here.
+        while self.res_tx.slots() > 0 {
+            let Ok((seq, cmd)) = self.cmd_rx.pop() else { break };
             let r = self.engine.apply(cmd);
-            // A full result ring would drop the result (and free a retired
-            // track here); the pump drains it every few ms, far faster than
-            // any sender fills 1024 slots.
-            let _ = self.res_tx.push((seq, r));
+            let pushed = self.res_tx.push((seq, r));
+            debug_assert!(pushed.is_ok(), "a slot was checked free and this is the only producer");
         }
         let n = frames.min(self.scratch.len() / 2);
         self.engine.render(&mut self.scratch[..n * 2]);
@@ -246,6 +258,9 @@ pub(crate) enum Msg {
     Line(ClientId, String),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
     Eof,
+    /// The audio side returned. Before `stop` is set that means it failed to
+    /// start or died, e.g. the output device would not open.
+    AudioExited,
 }
 
 /// Where a result goes: the sending client and the command's own id.
@@ -267,6 +282,8 @@ struct Control {
     next_seq: u64,
     /// Per deck: Some while a load is decoding, holding work queued behind it.
     waiting: [Option<VecDeque<Queued>>; MAX_DECKS],
+    /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
+    loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
 }
 
@@ -282,12 +299,16 @@ impl Control {
         seq
     }
 
-    fn push_seq(&mut self, seq: u64, cmd: EngineCmd) {
+    /// Enqueue for the audio side; false (and an error reply) when the
+    /// mailbox is full and the command was dropped.
+    fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
         if self.cmd_tx.push((seq, cmd)).is_err() {
             if let Some(origin) = self.ids.lock().unwrap().remove(&seq) {
                 self.reply(&origin, Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             }
+            return false;
         }
+        true
     }
 
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
@@ -313,7 +334,7 @@ impl Control {
             }
         }
         let seq = self.seq(origin);
-        self.push_seq(seq, cmd);
+        let _ = self.push_seq(seq, cmd);
     }
 
     fn load(&mut self, origin: Origin, spec: LoadSpec) {
@@ -324,6 +345,7 @@ impl Control {
         }
         let seq = self.seq(origin);
         self.waiting[deck as usize - 1] = Some(VecDeque::new());
+        self.loading[deck as usize - 1] = Some(seq);
         let tx = self.msg_tx.clone();
         std::thread::spawn(move || {
             let result = crate::decode::decode_file(std::path::Path::new(&spec.path))
@@ -333,23 +355,76 @@ impl Control {
     }
 
     fn finish_load(&mut self, seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError>) {
-        match result {
-            Ok(track) => self.push_seq(seq, EngineCmd::Load { deck, track }),
+        self.loading[deck as usize - 1] = None;
+        // True when the load will not reach the engine.
+        let dropped = match result {
+            Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
             Err(e) => {
                 if let Some(origin) = self.ids.lock().unwrap().remove(&seq) {
                     self.reply(&origin, Err(e));
                 }
+                true
             }
+        };
+        let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
+        if dropped {
+            // The load failed to decode or never reached the engine, so the
+            // work queued behind it would run against the previous track.
+            // Fail it instead: every command after the failed load is refused.
+            self.refuse_queued(q);
+            return;
         }
         // Release this deck's queue in order. A queued load re-arms the wait,
         // and everything after it stays parked behind that load.
-        let q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         for item in q {
             match item {
                 Queued::Cmd(origin, cmd) => self.dispatch(origin, cmd),
                 Queued::Load(origin, spec) => self.load(origin, spec),
             }
         }
+    }
+
+    fn loads_pending(&self) -> bool {
+        self.waiting.iter().any(Option::is_some)
+    }
+
+    /// Shutdown gave up on the loads still decoding: refuse each of them and
+    /// everything queued behind them, so no command is left without a result.
+    fn refuse_pending(&mut self) {
+        for d in 0..MAX_DECKS {
+            if let Some(seq) = self.loading[d].take() {
+                if let Some(origin) = self.ids.lock().unwrap().remove(&seq) {
+                    self.reply(
+                        &origin,
+                        Err(ProtoError::new(ErrorCode::Invalid, "the engine shut down before this load finished")),
+                    );
+                }
+            }
+            if let Some(q) = self.waiting[d].take() {
+                self.refuse_queued(q);
+            }
+        }
+    }
+
+    fn refuse_queued(&self, q: VecDeque<Queued>) {
+        for item in q {
+            let origin = match item {
+                Queued::Cmd(origin, _) | Queued::Load(origin, _) => origin,
+            };
+            self.reply(
+                &origin,
+                Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on failed; command dropped")),
+            );
+        }
+    }
+
+    /// Answer a line that arrived after shutdown began.
+    fn refuse_line(&self, client: ClientId, line: &str) {
+        if line.trim().is_empty() {
+            return;
+        }
+        let (id, _) = protocol::parse_line(line);
+        self.reply(&(client, id), Err(ProtoError::new(ErrorCode::Invalid, "the engine is shutting down")));
     }
 
     fn handle_line(&mut self, client: ClientId, line: &str, clock: &str) -> bool {
@@ -406,7 +481,17 @@ pub fn serve_threaded(
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
     ws: Option<WsListen>,
 ) -> io::Result<()> {
-    let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(1024);
+    serve_threaded_from(io::BufReader::new(io::stdin()), sample_rate, clock, run_audio, ws)
+}
+
+fn serve_threaded_from(
+    input: impl BufRead + Send + 'static,
+    sample_rate: u32,
+    clock: &'static str,
+    run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
+    ws: Option<WsListen>,
+) -> io::Result<()> {
+    let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(CMD_SLOTS);
     let (res_tx, mut res_rx) = rtrb::RingBuffer::<AudioResult>::new(1024);
     let (state_tx, mut state_rx) = rtrb::RingBuffer::new(64);
     let stop = Arc::new(AtomicBool::new(false));
@@ -448,13 +533,17 @@ pub fn serve_threaded(
         scratch: vec![0.0; MAX_BLOCK * 2 * 8],
     };
     let audio_stop = stop.clone();
-    let audio_thread = std::thread::Builder::new()
-        .name("odj-audio".into())
-        .spawn(move || run_audio(audio, audio_stop))?;
+    let exit_tx = msg_tx.clone();
+    let audio_thread = std::thread::Builder::new().name("odj-audio".into()).spawn(move || {
+        run_audio(audio, audio_stop);
+        let _ = exit_tx.send(Msg::AudioExited);
+    })?;
 
     // Pump: results to their sender, snapshots to everyone; retired tracks
-    // freed here.
-    let pump_stop = stop.clone();
+    // freed here. The pump stops only after the audio side has, so a result
+    // pushed by the audio side's last block is still sent.
+    let pump_stop = Arc::new(AtomicBool::new(false));
+    let pump_stop_flag = pump_stop.clone();
     let pump_hub = hub.clone();
     let pump_ids = ids.clone();
     let pump = std::thread::spawn(move || loop {
@@ -470,7 +559,7 @@ pub fn serve_threaded(
             idle = false;
             pump_hub.broadcast(&protocol::state_json(&snap, Some(host_ns)));
         }
-        if pump_stop.load(Ordering::Relaxed) && idle {
+        if pump_stop_flag.load(Ordering::Relaxed) && idle {
             break;
         }
         if idle {
@@ -480,7 +569,7 @@ pub fn serve_threaded(
 
     let reader_tx = msg_tx.clone();
     std::thread::spawn(move || {
-        for line in io::stdin().lock().lines() {
+        for line in input.lines() {
             match line {
                 Ok(l) => {
                     if reader_tx.send(Msg::Line(STDIO, l)).is_err() {
@@ -500,8 +589,10 @@ pub fn serve_threaded(
         msg_tx,
         next_seq: 0,
         waiting: Default::default(),
+        loading: [None; MAX_DECKS],
         state_req,
     };
+    let mut audio_failed = false;
     while let Ok(msg) = msg_rx.recv() {
         match msg {
             Msg::Line(client, l) => {
@@ -512,13 +603,50 @@ pub fn serve_threaded(
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
+            Msg::AudioExited => {
+                audio_failed = true;
+                break;
+            }
         }
     }
-    // Let the audio side apply what is already queued before stopping.
-    std::thread::sleep(Duration::from_millis(20));
+    // Loads still decoding hold their own result and the work parked behind
+    // them. Finish them (which releases that work to the mailbox), bounded;
+    // whatever is still pending after that is refused. A dead audio side
+    // would never apply any of it, so it is refused at once.
+    if !audio_failed {
+        let deadline = Instant::now() + LOAD_DRAIN_LIMIT;
+        while control.loads_pending() {
+            match msg_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(Msg::Decoded { seq, deck, result }) => control.finish_load(seq, deck, result),
+                Ok(Msg::AudioExited) => {
+                    audio_failed = true;
+                    break;
+                }
+                // Nothing sent after shutdown or EOF is taken, but a socket
+                // client still gets a result for it.
+                Ok(Msg::Line(client, l)) => control.refuse_line(client, &l),
+                Ok(Msg::Eof) => {}
+                Err(_) => break,
+            }
+        }
+    }
+    control.refuse_pending();
+    // Let the audio side apply everything already queued before stopping,
+    // so every command sent before shutdown or EOF gets its result. A dead
+    // audio side never drains, so it is not waited on.
+    if !audio_failed {
+        let deadline = Instant::now() + DRAIN_LIMIT;
+        while control.cmd_tx.slots() < CMD_SLOTS && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
     stop.store(true, Ordering::Relaxed);
     let _ = audio_thread.join();
+    pump_stop.store(true, Ordering::Relaxed);
     let _ = pump.join();
+    if audio_failed {
+        return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));
+    }
     Ok(())
 }
 
@@ -537,5 +665,64 @@ pub fn run_wall(block_frames: usize) -> impl FnOnce(AudioSide, Arc<AtomicBool>) 
                 std::thread::sleep(due - now);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn side(res_slots: usize) -> (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>) {
+        let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(16);
+        let (res_tx, res_rx) = rtrb::RingBuffer::new(res_slots);
+        let (state_tx, _state_rx) = rtrb::RingBuffer::new(4);
+        let side = AudioSide {
+            engine: Engine::new(48000),
+            cmd_rx,
+            res_tx,
+            state_tx,
+            state_req: Arc::new(AtomicBool::new(false)),
+            frames_per_state: u64::MAX,
+            frames_since_state: 0,
+            epoch: Instant::now(),
+            scratch: vec![0.0; MAX_BLOCK * 2],
+        };
+        (side, cmd_tx, res_rx)
+    }
+
+    #[test]
+    fn a_full_result_ring_holds_commands_back_instead_of_dropping_results() {
+        let (mut side, mut cmd_tx, mut res_rx) = side(2);
+        for seq in 0..5 {
+            cmd_tx.push((seq, EngineCmd::MasterMute { muted: seq % 2 == 0 })).unwrap();
+        }
+        side.process(64);
+        // Two slots, two results; the other three stay queued, not lost.
+        assert_eq!(res_rx.slots(), 2);
+        assert_eq!(cmd_tx.slots(), 16 - 3);
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            while let Ok((seq, r)) = res_rx.pop() {
+                assert!(r.is_ok());
+                seen.push(seq);
+            }
+            side.process(64);
+        }
+        assert_eq!(seen, vec![0, 1, 2, 3, 4]);
+        assert_eq!(cmd_tx.slots(), 16);
+    }
+
+    #[test]
+    fn an_audio_side_that_fails_to_start_ends_serve_with_an_error() {
+        // As the device clock does when the output stream will not open: the
+        // audio side returns before shutdown. serve must end, not wait forever.
+        // stdin held open with nothing on it, as a live supervisor's is.
+        let (reader, _writer) = io::pipe().unwrap();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), 48000, "wall", |_side, _stop| {}, None));
+        });
+        let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
+        assert!(r.is_err());
     }
 }

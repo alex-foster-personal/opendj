@@ -94,6 +94,7 @@ test('BrowserPanel routes keystrokes through the filter debounce', () => {
 	);
 });
 
+// REQ: PERF-UI-05
 test('TrackTable row artwork stays thumbnail-sized', () => {
 	const src = source('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(src, /artworkUrl\(row\.stable_id, 's'\)/);
@@ -149,10 +150,10 @@ test('BrowserPanel renders reconciled playable counts without delaying initial p
 	assert.match(src, /allTracksCount=\{allTracksNonBrokenCount\}/);
 
 	const tree = source('src/lib/components/rb/browser/PlaylistTree.svelte');
-	assert.match(tree, /playable tracks, \$\{node\.broken_count\} broken tracks/);
-	assert.match(tree, /loading playable and broken track counts/);
-	assert.match(tree, /playable count unavailable:/);
-	assert.match(tree, /\$\{node\.track_count - node\.broken_count\} playable tracks/);
+	assert.match(tree, /non-broken tracks, \$\{node\.broken_count\} broken tracks/);
+	assert.match(tree, /loading non-broken and broken track counts/);
+	assert.match(tree, /non-broken count unavailable:/);
+	assert.match(tree, /\$\{node\.track_count - node\.broken_count\} non-broken tracks/);
 	assert.match(tree, /title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}/);
 });
 
@@ -162,11 +163,11 @@ test('BrowserPanel sources mostly-broken policy from runtime-policy and hydrates
 	assert.match(src, /hydrateRuntimePolicy/);
 	assert.match(src, /playlistMostlyBroken/);
 	assert.doesNotMatch(src, /const HIDE_BROKEN_PLAYLIST_MIN_AVAILABLE_RATIO/);
-	const policy = source('src/lib/rb/runtime-policy.svelte.ts');
+	const filter = source('src/lib/rb/playlist-broken-filter.ts');
 	assert.match(
-		policy,
-		/if \(p\.track_count === 0\) return p\.available_count === 0;/,
-		'empty playlists must no longer escape the broken-link filter'
+		filter,
+		/return availableCount < minVisibleTracks;/,
+		'empty playlists are hidden when playable count is below the server floor'
 	);
 });
 
@@ -193,8 +194,7 @@ test('BrowserPanel keeps a playlist inside its create grace visible while broken
 });
 
 test('BrowserPanel tooltip states the real playlist threshold from runtime policy', () => {
-	// r3929355481: the tooltip claimed only playlists with no playable tracks
-	// vanish, but the predicate hides anything under the server min-available ratio.
+	// r3929355481: the tooltip must match the predicate (min playable-track count).
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /formatHideBrokenCheckboxTooltip\(\)/);
 	const policy = source('src/lib/rb/runtime-policy.svelte.ts');

@@ -7,6 +7,7 @@
 	 */
 	import { getDeckState, peekDeckMeterReading } from '$lib/rb/audio-engine.svelte';
 	import { deckHoverUi, setHoveredDeck } from '$lib/rb/deck-hover.svelte';
+	import { clickSelect, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import type { DeckId } from '$lib/rb/deck-slots';
 	import { METER_FLOOR_DBFS } from '$lib/rb/meter-math';
 	import type { EqBand } from '$lib/rb/mixer-types';
@@ -98,14 +99,18 @@
 	const playing = $derived(deck.playing);
 	const looped = $derived(deck.loop !== null && deck.loop.engaged);
 	const focused = $derived(deckHoverUi.deckId === deckId);
+	const selected = $derived(isSelected(deckId));
 
-	/** Halfway between TRIM's former 21px and the 30px EQ dials. MORE only -
+	function handleStripClick(event: MouseEvent): void {
+		clickSelect(deckId, event.shiftKey);
+	}
+
+	/** Pin 4eebbc65a699 / MIXUX-03: TRIM at 70% of the 30px EQ dial. MORE only -
 	 * pin 246b0f5's LESS mode uses the smaller LESS_TRIM_SIZE below. */
-	const TRIM_SIZE = 25.5;
-	/** FILTER stays visually larger than the EQ stack, matching the mixer
-	 * layout contract. The exact number is main's, not this branch's 39:
+	const TRIM_SIZE = 21;
+	/** Pin 4eebbc65a699 / MIXUX-03: FILTER slot at 130% of the 30px EQ dial.
 	 * channel-strip-less-floor.test.mjs derives the MORE floor from it. */
-	const FILTER_SLOT_SIZE = 35.1;
+	const FILTER_SLOT_SIZE = 39;
 
 	// ------------------------------------------------------- level calibration (#1475)
 
@@ -256,7 +261,9 @@
 	class:secondary
 	class:less
 	class:deck-focus={focused}
+	class:selected={selected}
 	data-mixer-channel={deckId}
+	onclick={handleStripClick}
 	data-stem-eq-mode={stemEqMode}
 	role="group"
 	aria-label={`channel ${deckId}`}
@@ -391,7 +398,7 @@
 		/* Bottom pad opened up so STEM is not crowded against the strip's
 		   lower border. The fader is `flex: 1 1 auto`, so the space comes out
 		   of the channel level slider exactly as pin 8cd32a28c36d asks. */
-		padding: 2px 2px 4px;
+		padding: 2px 2px 6px;
 		border-radius: 2px;
 	}
 	/* Pin 2917b0eca218: "channel slider and butons just below it should
@@ -446,8 +453,14 @@
 		transition:
 			background 50ms ease-out,
 			box-shadow 50ms ease-out;
-		background: color-mix(in srgb, rgba(255, 255, 255, 0.1) 40%, var(--rb-panel-raised, #1a1e25));
-		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+		background: var(--rb-deck-hover-bg);
+		box-shadow: var(--rb-deck-hover-inset);
+	}
+	.strip.selected {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
+	}
+	.strip.selected.deck-focus {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.13);
 	}
 	.strip-head {
 		display: flex;
@@ -565,13 +578,14 @@
 	}
 	.fader-slot {
 		flex: 1 1 auto;
-		min-height: 64px;
+		/* Pin 8cd32a28c36d: reclaim vertical budget for STEM separation below. */
+		min-height: 58px;
 		width: 100%;
 		display: flex;
 		justify-content: center;
 		align-items: stretch;
 		margin-top: 0;
-		margin-bottom: 4px;
+		margin-bottom: 2px;
 	}
 	.strip.less .fader-slot {
 		grid-area: fader;
@@ -589,15 +603,15 @@
 		padding: 0;
 		cursor: pointer;
 		font-family: var(--rb-font);
-		/* 2px read as STEM touching the fader above it (pin 8cd32a28c36d). */
-		margin-top: 2px;
+		/* Pin 8cd32a28c36d: clearer gap above the STEM row (was 2px). */
+		margin-top: 4px;
 	}
 	.stem-label.enabled {
 		color: var(--rb-accent);
 	}
 	.strip.less .stem-label {
 		grid-area: stemlabel;
-		margin-top: 2px;
+		margin-top: 4px;
 	}
 	.stem-slot :global(.stems) {
 		flex-direction: column;
