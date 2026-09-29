@@ -3554,7 +3554,13 @@
 				class="tray-midi"
 				aria-label="Open audio I/O and MIDI"
 				title="Open audio I/O view (MIDI connect)"
-				onclick={() => openIoView()}
+				onclick={() => {
+					// Same entry as the mixer's I/O button: acquire the audio devices
+					// inside this click's user gesture (selectAudioOutput needs it,
+					// and device labels stay locked without it), then open the view.
+					void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
+					openIoView();
+				}}
 			>
 				MIDI
 			</button>

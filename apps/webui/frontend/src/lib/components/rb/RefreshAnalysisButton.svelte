@@ -12,8 +12,30 @@
 	 * Escape closes it for a user with no mouse to move away.
 	 * As stable_ids complete they get jobProgress badges so the library
 	 * updates without a reload.
+	 *
+	 * The popover markup lives in RefreshAnalysisPopover.svelte and is fetched
+	 * by the first open (hover or click), the pattern MidiPanelLoader and
+	 * TrackRowPopovers use: it only exists after that, so it stays out of the
+	 * /performance initial chunks. This file keeps the button, the polling and
+	 * all state, and passes what the popover shows down as props.
+	 *
+	 * Requirements (mini-PRD):
+	 *   ✔︎ The popover module is not imported until `hovered` is first true.
+	 *     [if] any module statically imports RefreshAnalysisPopover [then] ⛔️
+	 *   ✔︎ The popover renders only while `hovered` holds, so a dismissal
+	 *     (mouseleave, blur, Escape) while the module is still loading stays
+	 *     made when it arrives.
+	 *     [if] the popover renders on load without checking `hovered` [then] ⛔️
+	 *   ✔︎ A failed fetch is shown inline, where the popover would be, with the
+	 *     error text and a Close, never a silent nothing.
+	 *     [if] the import rejects and the hover shows nothing [then] ⛔️
+	 *   ✔︎ A failed fetch is recovered by a fresh document on the user's click
+	 *     (Reload), never by re-importing in this one: the browser keeps the
+	 *     failed fetch in its module map (see MidiPanelLoader), so the popover
+	 *     is fetched once per document and a later open shows the same error.
+	 *     [if] the error promises a retry on the next open, or reloads unasked [then] ⛔️
 	 */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, type Component } from 'svelte';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import {
 		getAnalysisQueue,
@@ -27,6 +49,7 @@
 		type RefreshStatus
 	} from '$lib/rb/api-ingest';
 	import { RbApiError } from '$lib/rb/api-rb-error';
+	import { refreshSnapshotApplies } from '$lib/rb/refresh-status-order';
 	import { jobProgress } from '$lib/rb/job-progress.svelte';
 	import { pushToast } from '$lib/stores.svelte';
 
@@ -42,9 +65,31 @@
 	const badged = new Set<string>();
 
 	const running = $derived(status?.running === true);
-	const pct = $derived.by(() => {
-		if (status === null || status.step_total === 0) return 0;
-		return Math.min(1, status.step_done / status.step_total);
+
+	type PopoverProps = {
+		wrapEl: HTMLSpanElement | undefined;
+		status: RefreshStatus | null;
+		coverage: IngestCoverage | null;
+		config: IngestConfig | null;
+		queue: AnalysisQueue | null;
+		fetchError: string | null;
+		clickFeedback: string | null;
+	};
+	let Popover: Component<PopoverProps> | null = $state(null);
+	let popoverLoadError: string | null = $state(null);
+	let popoverRequested = false;
+
+	$effect(() => {
+		if (!hovered || popoverRequested) return;
+		popoverRequested = true;
+		import('./RefreshAnalysisPopover.svelte')
+			.then((m) => {
+				Popover = m.default;
+			})
+			.catch((exc: unknown) => {
+				console.error('[refresh-analysis] popover failed to load', exc);
+				popoverLoadError = exc instanceof Error ? exc.message : String(exc);
+			});
 	});
 
 	function _applyBadges(s: RefreshStatus): void {
@@ -57,21 +102,12 @@
 	}
 
 	async function _poll(): Promise<void> {
+		// Still the shown snapshot when the answer lands = asked after it arrived.
+		const asked = status;
 		try {
 			const s = await getIngestRefreshStatus();
-			// Responses can arrive out of order, so an older snapshot than the one
-			// shown is dropped. A GET answered before the POST started a run would
-			// put the idle status back and the run would stop being followed
-			// (Codex P2 4130868861); two overlapping polls could apply a run's end
-			// and then an earlier running snapshot of it, restarting the polling
-			// and toasting twice (4131292228). The engine's own stamps order every
-			// snapshot: a run's end (finished_at) comes after its start, and the
-			// single job slot starts a run only after the last one ended, so
-			// `finished_at ?? started_at` never goes back. The `!` are deliberate:
-			// `<` reads a null stamp (no run yet, or nothing shown yet) as 0, and
-			// nothing is older than 0.
-			const at = (x: typeof s | null) => x && (x.finished_at ?? x.started_at);
-			if (at(s)! < at(status)!) return;
+			// Out-of-order answers and a restarted backend: refresh-status-order.ts.
+			if (!refreshSnapshotApplies(status, s, asked === status)) return;
 			const wasRunning = status?.running === true;
 			status = s;
 			fetchError = null;
@@ -192,60 +228,18 @@
 		</svg>
 	</button>
 
-	{#if hovered}
+	{#if hovered && Popover !== null}
+		<Popover {wrapEl} {status} {coverage} {config} {queue} {fetchError} {clickFeedback} />
+	{:else if hovered && popoverLoadError !== null}
 		<div
-			class="pop"
-			data-testid="refresh-analysis-pop"
+			class="pop-load-error"
+			role="alert"
+			data-testid="refresh-analysis-pop-load-error"
 			use:triggerFloatingAction={{ getTrigger: () => wrapEl ?? null, preferred: 'below', gap: 4 }}
 		>
-			<div class="pop-title">Refresh analysis</div>
-			<!-- The latest click's own outcome renders first, whatever the hover
-			     fetch or a previous run left behind (Codex P2, PR #3896). -->
-			{#if clickFeedback !== null}
-				<div class="pop-phase" data-testid="refresh-click-feedback">{clickFeedback}</div>
-			{/if}
-			{#if fetchError !== null}
-				<div class="pop-err">{fetchError}</div>
-			{:else}
-				{#if coverage !== null}
-					<div class="pop-cov" title="tracks with a materialised file missing each artifact; unreachable = broken links, fix via /fix-links">
-						missing - analysis {coverage.missing.analysis} · stems {coverage.missing.stems} ·
-						vocals {coverage.missing.vocals} · unreachable {coverage.unreachable}
-					</div>
-				{/if}
-				{#if queue !== null}
-					<div
-						class="pop-queue"
-						data-testid="analysis-queue-line"
-						title="tracks imported locally with no rekordbox twin; the daemon analyzes these on import so the deck gets tempo, key, energy and auto-cue proposals, and auto is the reconcile loop that drives it. The shipped backend measures no downbeats, so these tracks have no fallback beatgrid"
-					>
-						local (no rekordbox) - {queue.pending} pending · {queue.analyzed} analyzed ·
-						{queue.unreachable} unreachable of {queue.unmapped} · auto
-						{queue.auto.enabled ? 'on' : 'off'}
-					</div>
-				{/if}
-				{#if config !== null}
-					<div class="pop-steps">
-						runs: {config.steps.filter((s) => s.enabled).map((s) => s.id).join(', ') || 'none enabled'}
-					</div>
-				{/if}
-				{#if status !== null && status.phase !== 'idle'}
-					<div class="pop-phase">
-						{status.phase}{status.current_step !== null ? ` - ${status.current_step}` : ''}
-						{#if status.step_total > 0}
-							({status.step_done}/{status.step_total})
-						{/if}
-					</div>
-					<div class="bar" title={`${status.step_done}/${status.step_total} items in current step`}>
-						<div class="bar-fill" style={`width:${Math.round(pct * 100)}%`}></div>
-					</div>
-					{#if status.log_tail.length > 0}
-						<pre class="pop-log">{status.log_tail.slice(-8).join('\n')}</pre>
-					{/if}
-				{:else if clickFeedback === null}
-					<div class="pop-phase">idle - click to run the enabled steps over every missing track</div>
-				{/if}
-			{/if}
+			<span>Refresh analysis popover failed to load: {popoverLoadError}</span>
+			<button type="button" onclick={() => location.reload()}>Reload</button>
+			<button type="button" onclick={onLeave}>Close</button>
 		</div>
 	{/if}
 </span>
@@ -282,54 +276,26 @@
 			transform: rotate(360deg);
 		}
 	}
-	.pop {
+	.pop-load-error {
 		position: fixed;
 		z-index: 60;
-		width: 340px;
-		padding: 8px 10px;
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		max-width: 340px;
+		padding: 6px 10px;
 		background: #14171b;
-		border: 1px solid #2a2f36;
+		border: 1px solid #e5484d;
 		border-radius: 4px;
-		font-size: 11px;
-		color: #c8cfd6;
-		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-	}
-	.pop-title {
-		font-weight: 600;
-		margin-bottom: 4px;
-		color: #e8edf2;
-	}
-	.pop-cov,
-	.pop-queue,
-	.pop-steps,
-	.pop-phase {
-		margin-bottom: 4px;
-	}
-	.pop-err {
 		color: #e5484d;
+		font-size: 11px;
+		overflow-wrap: anywhere;
 	}
-	.bar {
-		height: 5px;
-		background: #242a31;
-		border-radius: 3px;
-		overflow: hidden;
-		margin-bottom: 5px;
-	}
-	.bar-fill {
-		height: 100%;
-		background: #4cc9f0;
-		transition: width 400ms linear;
-	}
-	.pop-log {
-		max-height: 110px;
-		overflow-y: auto;
-		margin: 0;
-		padding: 5px 6px;
-		background: #0d0f12;
-		border-radius: 3px;
-		font-size: 10px;
-		line-height: 1.35;
-		white-space: pre-wrap;
-		word-break: break-all;
+	.pop-load-error button {
+		background: transparent;
+		border: 1px solid #2a2f36;
+		color: #c8cfd6;
+		font-size: 11px;
+		cursor: pointer;
 	}
 </style>

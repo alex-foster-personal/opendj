@@ -25,6 +25,24 @@ test('tray MIDI opens the I/O view', () => {
 	assert.match(panel, /openIoView\(\)/);
 });
 
+test('tray MIDI acquires audio devices in its click before opening I/O, like the mixer I/O button', () => {
+	// [if] the tray entry opens I/O [then] it dispatches headphone_output_acquire
+	// inside the same click first (the chooser needs the user gesture, and
+	// device labels stay locked without it), [else stop] (Codex P2 4132045422).
+	const at = panel.indexOf('class="tray-midi"');
+	const button = panel.slice(at, panel.indexOf('</button>', at));
+	assert.match(
+		button,
+		/onclick=\{\(\) => \{[\s\S]*?runPerformanceCommandFromUi\(\{ type: 'headphone_output_acquire' \}\);\s*openIoView\(\);\s*\}\}/
+	);
+	// Control: the mixer's I/O button dispatches the same command.
+	const mixer = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/Mixer.svelte', import.meta.url)),
+		'utf8'
+	);
+	assert.match(mixer, /runPerformanceCommandFromUi\(\{ type: 'headphone_output_acquire' \}\)/);
+});
+
 test('openIoView pins the headphone I/O menu without auto-opening MIDI drawer', () => {
 	const ioSurface = readFileSync(
 		fileURLToPath(new URL('../../src/lib/rb/io-surface.svelte.ts', import.meta.url)),
