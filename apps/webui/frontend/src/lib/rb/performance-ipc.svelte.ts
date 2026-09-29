@@ -1898,7 +1898,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	_recordPerformanceCommand(command);
 	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
 	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
-	if (await executeInRustEngine(command)) return;
+	if (await executeInRustEngine(command, pushToast)) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
