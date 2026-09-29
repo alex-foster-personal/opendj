@@ -1538,6 +1538,21 @@ def _link_node_modules(base_fe: Path) -> None:
         link.symlink_to(FRONTEND / "node_modules", target_is_directory=True)
 
 
+#: pnpm 11 runs `pnpm install` before `pnpm exec` whenever the lockfile disagrees
+#: with node_modules (verify-deps-before-run). In the merge-base run the lockfile
+#: is main's and node_modules is THIS run's, linked in, so that install rewrote the
+#: real install's links relative to the throwaway tree, and all 24 dangled once the
+#: tree was removed (agbox3-3, Tue 29 Sep 2026; a later job on the runner then hit
+#: MODULE_NOT_FOUND). pnpm 11 reads `pnpm_config_*` from the environment and
+#: ignores `npm_config_*` (both measured with pnpm 11.9.0).
+BASE_RUN_PNPM_ENV = {"pnpm_config_verify_deps_before_run": "false"}
+
+
+def _base_run_env() -> dict[str, str]:
+    """The ambient environment, with pnpm barred from installing through the link."""
+    return {**os.environ, **BASE_RUN_PNPM_ENV}
+
+
 def _unlink_node_modules(base_fe: Path) -> None:
     """Drop the link before git or rmtree walk the throwaway tree.
 
@@ -1591,7 +1606,8 @@ def _measure_owners_at_base(
         if "frontend" in owners:
             # knip and svelte-kit resolve against a node_modules install, which
             # a git worktree does not carry. Reuse this run's install read-only
-            # instead of running pnpm install on a throwaway tree.
+            # instead of running pnpm install on a throwaway tree; read-only is
+            # enforced by `_base_run_env` below, not assumed.
             base_fe = base_dir / "apps" / "webui" / "frontend"
             if (FRONTEND / "node_modules").is_dir():
                 _link_node_modules(base_fe)
@@ -1600,7 +1616,9 @@ def _measure_owners_at_base(
             sys.executable, "-m", "scripts.quality_gate",
             "--only", ",".join(owners), "--json", str(out_json),
         ]
-        proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            cmd, cwd=base_dir, capture_output=True, text=True, check=False, env=_base_run_env()
+        )
         if not out_json.exists():
             # Base's own gate can abort before --json (mypy follow-import into
             # ops/agentic_testing/coach.py is the live case). Overlay this
@@ -1608,7 +1626,9 @@ def _measure_owners_at_base(
             # can still inherit. The tree being measured stays the merge-base.
             dest = base_dir / "scripts" / "quality_gate.py"
             dest.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
-            proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+            proc = subprocess.run(
+                cmd, cwd=base_dir, capture_output=True, text=True, check=False, env=_base_run_env()
+            )
         if not out_json.exists():
             return None, (
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "
