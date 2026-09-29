@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { claimAndCheckWebuiDevConfigOnce } from './webui-port-config';
+import { guardedWebServerCommand } from './tests/e2e/support/guarded-web-server';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const FIXTURE_DATA_DIR = join(
@@ -128,7 +129,7 @@ export default defineConfig({
 	timeout: 30_000,
 	webServer: [
 		{
-			command: SERVER_COMMAND,
+			command: guardedWebServerCommand('root-engine', SERVER_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: `http://127.0.0.1:${ports.backendPort}/api/v1/health`,
 			reuseExistingServer: false,
@@ -147,7 +148,7 @@ export default defineConfig({
 			// 127.0.0.1 -- every test in every suite then died on
 			// ERR_CONNECTION_REFUSED while `port` reported the server up. Bind the
 			// exact address the tests connect to, so the two can never disagree.
-			command: `pnpm dev --host 127.0.0.1`,
+			command: guardedWebServerCommand('root-vite', `pnpm dev --host 127.0.0.1`),
 			cwd: fileURLToPath(new URL('./', import.meta.url)),
 			url: `http://127.0.0.1:${ports.frontendPort}`,
 			reuseExistingServer: false,
