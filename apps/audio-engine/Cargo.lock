@@ -618,11 +618,13 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "rtrb",
+ "same-file",
  "serde",
  "serde_json",
  "sha2",
  "symphonia",
  "tungstenite",
+ "windows-sys",
 ]
 
 [[package]]

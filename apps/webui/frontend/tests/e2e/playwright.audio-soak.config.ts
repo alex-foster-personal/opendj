@@ -42,6 +42,7 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -102,6 +103,8 @@ export const SOAK_OVERRUN_SLACK_MS = 300_000;
 const TEST_TIMEOUT_MS = SOAK_DURATION_MS + SOAK_OVERRUN_SLACK_MS + 120_000;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'audio-soak.spec.ts',
 	fullyParallel: false,
@@ -112,7 +115,7 @@ export default defineConfig({
 	expect: { timeout: 30_000 },
 	reporter: [['list']],
 	webServer: {
-		command: `pnpm build && python3 -m http.server ${AUDIO_SOAK_PORT} --bind 127.0.0.1 --directory build`,
+		command: guardedWebServerCommand('audio-soak-static', `pnpm build && python3 -m http.server ${AUDIO_SOAK_PORT} --bind 127.0.0.1 --directory build`),
 		cwd: FRONTEND_ROOT,
 		url: `${AUDIO_SOAK_ORIGIN}/index.html`,
 		reuseExistingServer: false,

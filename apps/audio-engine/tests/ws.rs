@@ -143,7 +143,7 @@ fn sockets_and_stdio_share_one_mailbox() {
     assert!(seen.iter().all(|v| v["id"] != "s1" && v["id"] != "a1"), "socket B got another client's result");
 
     // Refusals name their reason over the socket exactly as on stdio.
-    say(&mut b, json!({"id": "b1", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocals", "muted": true}}));
+    say(&mut b, json!({"id": "b1", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true}}));
     let r = until(&mut b, 100, |v| v["id"] == "b1").pop().unwrap();
     assert_eq!(r["error"]["code"], "not_implemented");
     // Several lines in one frame are several commands.

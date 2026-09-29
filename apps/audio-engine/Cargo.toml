@@ -26,10 +26,18 @@ serde_json = "1"
 symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "wav", "aiff", "pcm", "aac", "alac", "isomp4", "ogg", "vorbis"] }
 rtrb = "0.4"
 sha2 = "0.10"
+# File identity for output collision checks, on Windows too (volume serial
+# and file index), where std exposes none on stable.
+same-file = "1"
 cpal = { version = "0.18", optional = true }
 # Loopback WebSocket for the renderer and agents (plan 20-02). Blocking std
 # I/O on per-client threads, so no async runtime enters the engine.
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+
+# The change time of a file on Windows (for the decode cache's key), which
+# std reads only on nightly. Already in the tree through same-file.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [profile.release]
 opt-level = 3

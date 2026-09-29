@@ -202,7 +202,7 @@ fn run(
             }
             Ok(Message::Binary(_)) => {
                 let e = ProtoError::new(ErrorCode::Invalid, "protocol v1 is JSON text; binary frames are refused");
-                hub.send_to(id, &protocol::result_json(None, &Err(e)));
+                let _ = hub.send_to(id, &protocol::result_json(None, &Err(e)));
             }
             Ok(Message::Close(_)) => return,
             // Pings are answered by tungstenite on the next flush.
