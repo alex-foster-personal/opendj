@@ -23,6 +23,7 @@ from apps.analysis.store import open_conn
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.cache import LyricLine, Lyrics
 from apps.stems.selection import MANIFEST_NAME
+from tests.sleep_spy import record_own_thread_sleeps
 
 
 def _seed(db: Path, ids: list[str]) -> None:
@@ -316,23 +317,44 @@ def test_unknown_runner_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         runner_from_environ()
 
 
-def test_dry_runner_still_skips_fresh_bundle(
+def test_dry_runner_holds_on_its_own_thread_when_not_fresh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import time
-
+    """Positive control for the skip test below: with no fresh bundle the dry
+    runner DOES sleep its hold on the calling thread, so the spy both fires
+    and sees it."""
     from apps.analysis import queue_user_runner
 
     monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
     monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "10")
-    sleep_called: list[float] = []
-    original_sleep = time.sleep
+    sleep_called = record_own_thread_sleeps(monkeypatch)
+    db = tmp_path / "state.db"
+    _seed(db, ["stale"])
+    conn = _conn(db)
+    _enqueue(conn, "stems", ["stale"], tmp_path)
+    outcome = queue_user_runner.tick_lane(
+        conn,
+        "stems",
+        runner_id="dry",
+        stems_root=tmp_path / "stems",
+        data_dir=tmp_path,
+    )
+    assert outcome == "ran"
+    assert sleep_called == [10.0]
+    settled = user.list_lane(conn, "stems", include_settled=True)
+    assert settled[0].state == "done"
+    conn.close()
 
-    def spy_sleep(seconds: float) -> None:
-        sleep_called.append(seconds)
-        original_sleep(0)
 
-    monkeypatch.setattr(time, "sleep", spy_sleep)
+def test_dry_runner_still_skips_fresh_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apps.analysis import queue_user_runner
+
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "10")
+    # Thread-scoped: a leaked background thread's time.sleep must not count.
+    sleep_called = record_own_thread_sleeps(monkeypatch)
     db = tmp_path / "state.db"
     _seed(db, ["fresh"])
     conn = _conn(db)
