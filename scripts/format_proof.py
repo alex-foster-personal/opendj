@@ -26,6 +26,7 @@ Requirements (mini-PRD):
       [if] a shebang moves off byte 0 or onto it [then ⛔️] exit 1
       [if] the range adds, deletes or renames a file, or changes a file's mode [then ⛔️] exit 1
       [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
+      [if] a changed .py path is a symlink or a submodule, not a regular file [then ⛔️] exit 2 UNKNOWN
       [if] a file does not decode or parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
     Every listed SHA names a commit object itself, is an ancestor of HEAD, and has a style(format): subject.
@@ -95,6 +96,8 @@ class CFG:
         ast.SetComp,
         ast.DictComp,
     )
+    # A symlink's blob is its target and a gitlink's is a commit, so only these entries hold Python source.
+    REGULAR_FILE_MODES: frozenset[str] = frozenset({"100644", "100755"})
     # The only operator tokens ruff adds or drops: parentheses, trailing commas, and the `;` it splits statements at.
     MOVABLE_OPERATORS: frozenset[str] = frozenset({"(", ")", ",", ";"})
     DOCSTRING_OWNERS: tuple[type[ast.Module], type[ast.ClassDef], type[ast.FunctionDef], type[ast.AsyncFunctionDef]] = (
@@ -233,10 +236,15 @@ def prove(repo: Path, base: str, head: str) -> Result:
     mode_changed = [f"{path} {old} -> {new}" for _, path, old, new in entries if old != new]
     if mode_changed:
         return Result(1, lines=[f"[format-proof] FAIL not format-only, file mode changed: {x}" for x in mode_changed])
-    py_paths = [path for _, path, _, _ in entries if path.endswith(".py")]
-    not_python = [path for _, path, _, _ in entries if not path.endswith(".py")]
+    py_paths = [path for _, path, _, mode in entries if path.endswith(".py") and mode in CFG.REGULAR_FILE_MODES]
+    provable = set(py_paths)
+    unprovable = [
+        f"[format-proof] UNKNOWN {path} (mode {mode}): not a regular .py file, so no AST can prove it"
+        for _, path, _, mode in entries
+        if path not in provable
+    ]
     if not py_paths:
-        return Result(2, lines=["[format-proof] UNKNOWN no .py file changed in the range; nothing was proven"])
+        return Result(2, lines=["[format-proof] UNKNOWN no regular .py file changed; nothing was proven", *unprovable])
     result = Result(0, files_checked=len(py_paths))
     for path in py_paths:
         data_before, data_after = _blob(repo, base, path), _blob(repo, head, path)
@@ -259,9 +267,9 @@ def prove(repo: Path, base: str, head: str) -> Result:
             result.lines.append(f"[format-proof] FAIL {path}: a comment was added, removed, reworded or moved")
         elif not raw_equal:
             result.docstring_normalized += 1
-    if result.exit_code == 0 and not_python:
+    if result.exit_code == 0 and unprovable:
         result.exit_code = 2
-        result.lines.extend(f"[format-proof] UNKNOWN {path}: not Python, so no AST can prove it" for path in not_python)
+        result.lines.extend(unprovable)
     if result.exit_code == 0:
         result.lines.append(
             f"[format-proof] OK {result.files_checked} .py files AST-equal "

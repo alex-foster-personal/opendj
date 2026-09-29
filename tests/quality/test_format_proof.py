@@ -21,6 +21,7 @@ Regression lines:
   - if prove reports a pass when a file does not parse, or when no Python changed, then broken
   - if prove passes a commit that added, deleted or renamed a file then broken
   - if prove passes a range that also edits a file that is not Python then broken
+  - if prove passes a symlink or submodule named .py, or fails a reformatted executable .py file, then broken
   - if prove passes a changed `# type:` comment or a changed or removed type-ignore then broken
   - if prove fails a re-wrap that only moves a type-ignore to another line then broken
   - if prove passes a type-ignore or noqa moved to ANOTHER statement then broken
@@ -75,6 +76,19 @@ def _commit(repo: Path, files: dict[str, str | bytes], subject: str) -> str:
         elif isinstance(content, str):
             (repo / rel).write_text(content)
     _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", subject)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _blob_sha(repo: Path, content: str) -> str:
+    command = ["git", "-C", str(repo), "hash-object", "-w", "--stdin"]
+    return subprocess.run(command, input=content, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def _commit_entries(repo: Path, entries: dict[str, tuple[str, str]], subject: str) -> str:
+    """Commit {path: (mode, object)} through the index: a working tree cannot make every mode on every OS."""
+    for rel, (mode, object_sha) in entries.items():
+        _git(repo, "update-index", "--add", "--cacheinfo", f"{mode},{object_sha},{rel}")
     _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", subject)
     return _git(repo, "rev-parse", "HEAD")
 
@@ -153,6 +167,32 @@ def test_prove_is_unknown_when_a_non_python_file_also_changed(repo: Path) -> Non
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 2
     assert any("pyproject.toml" in line for line in result.lines)
+
+
+@pytest.mark.parametrize(
+    ("mode", "before", "after"),
+    [("120000", "a", "(a)"), ("160000", "1" * 40, "2" * 40)],
+    ids=["symlink", "gitlink"],
+)
+def test_prove_is_unknown_when_a_py_path_is_not_a_regular_file(repo: Path, mode: str, before: str, after: str) -> None:
+    """A symlink's targets `a` and `(a)` parse to one AST yet name different files, and a gitlink is a submodule
+    commit. Neither is Python source, so a real reformat beside one cannot make the range proven."""
+    objects = (before, after) if mode == "160000" else (_blob_sha(repo, before), _blob_sha(repo, after))
+    base = _commit_entries(repo, {"n.py": ("100644", _blob_sha(repo, "x=1\n")), "m.py": (mode, objects[0])}, "init")
+    head = _commit_entries(
+        repo, {"n.py": ("100644", _blob_sha(repo, "x = 1\n")), "m.py": (mode, objects[1])}, "style(format): ruff m"
+    )
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 2, result.lines
+    assert any("m.py" in line and "not a regular .py file" in line for line in result.lines), result.lines
+
+
+def test_prove_control_an_executable_py_file_still_proves(repo: Path) -> None:
+    """Opposite-direction control: mode 100755 is a regular file too, and every script with a shebang has it."""
+    base = _commit_entries(repo, {"m.py": ("100755", _blob_sha(repo, UNFORMATTED))}, "init")
+    head = _commit_entries(repo, {"m.py": ("100755", _blob_sha(repo, REFORMATTED))}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
 
 
 def test_prove_still_fails_a_python_edit_beside_a_non_python_file(repo: Path) -> None:
