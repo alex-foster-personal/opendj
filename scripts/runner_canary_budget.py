@@ -25,8 +25,9 @@ Requirements (mini-PRD)
   [then] exit 1 naming vendor, used, free and month, [else stop] ✔︎ ✅ 🎯
 - [if] every requested vendor is under 80% [then] exit 0 and the outputs name exactly the
   requested vendors and their labels, [else stop] ✔︎ ✅ 🎯
-- [if] the billing read errors, is paginated short, or exceeds the listing cap [then] exit 2
-  UNKNOWN with no outputs, [else stop] ✔︎ ✅ 🎯
+- [if] the billing read errors, is paginated short, exceeds the listing cap, or holds a job
+  with no labels list or, unskipped, no started_at [then] exit 2 UNKNOWN with no outputs,
+  [else stop] ✔︎ ✅ 🎯
 - [if] a job ran at any moment this month, even from a run created last month [then] it
   counts in full; [if] it finished before the 1st [then] it counts nothing, [else stop]
   ✔︎ ✅ 🎯
@@ -241,12 +242,16 @@ def billed_basis_minutes(job: dict[str, Any], vendor: Vendor, now: datetime) -> 
     That is right under either rule, and a straddling shard (30 minutes at most) is charged
     to both months, which errs toward refusing.
     """
-    started = job.get("started_at")
     # A skipped job never had a runner. GitHub still stamps it, and stamps it BACKWARDS
     # (completed_at one second before started_at, measured on the source repository's
     # jobs API, Tue 29 Sep 2026: 13 of 13 skipped jobs in a 3-minute window).
-    if not started or job.get("conclusion") == "skipped":
+    if job.get("conclusion") == "skipped":
         return 0
+    started = job.get("started_at")
+    if not isinstance(started, str):  # Sol P1 on b6303e8f0: unknown, never zero
+        raise BillingUnreadable(
+            f"job {job.get('id')} has no started_at, so its minutes are unknown"
+        )
     start = _parse_ts(started)
     completed = job.get("completed_at")
     end = _parse_ts(completed) if completed else now
@@ -257,6 +262,14 @@ def billed_basis_minutes(job: dict[str, Any], vendor: Vendor, now: datetime) -> 
         return 0
     minutes = max(1, math.ceil(seconds / 60))
     return minutes * vendor.vcpu / vendor.free_minutes_vcpu_basis
+
+
+def _labels(job: dict[str, Any]) -> list[str]:
+    """A job's runner labels. Without them, whose minutes it holds is unknown (Sol P1)."""
+    labels = job.get("labels")
+    if not isinstance(labels, list):
+        raise BillingUnreadable(f"job {job.get('id')} has no labels list, so its vendor is unknown")
+    return labels
 
 
 @dataclass(frozen=True)
@@ -285,9 +298,7 @@ def evaluate_budgets(
             raise BillingUnreadable(f"{name}'s target {vendor.target_repo} was not read")
         jobs = jobs_by_repo[vendor.target_repo]
         used = sum(
-            billed_basis_minutes(job, vendor, now)
-            for job in jobs
-            if vendor.label in (job.get("labels") or [])
+            billed_basis_minutes(job, vendor, now) for job in jobs if vendor.label in _labels(job)
         )
         budgets.append(
             VendorBudget(
