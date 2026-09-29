@@ -18,7 +18,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from scripts.ci_run_batch import batch_since, created_floor, fetch_completed_runs
+from scripts.ci_run_batch import (
+    batch_since,
+    created_floor,
+    fetch_completed_runs,
+    reconcile_listing,
+)
 from scripts.stable_evidence import (
     append_suite,
     default_evidence_dir,
@@ -54,8 +59,14 @@ def select_suite_runs(runs: Iterable[dict[str, Any]], since: str) -> list[dict[s
     between the two leaves the older result in the file (Codex P1 on #3844).
     A re-run of the same run id is a later completion of that id and wins.
     """
-    chosen = [r for r in runs if _is_recordable(r) and str(r.get("updated_at") or "") >= since]
-    chosen.sort(key=lambda r: (str(r.get("updated_at")), int(r["id"])))
+    return newest_per_suite(
+        r for r in runs if _is_recordable(r) and str(r.get("updated_at") or "") >= since
+    )
+
+
+def newest_per_suite(runs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The newest completion per sha and suite, oldest first."""
+    chosen = sorted(runs, key=lambda r: (str(r.get("updated_at")), int(r["id"])))
     newest: dict[tuple[str, str], dict[str, Any]] = {}
     for run in chosen:
         newest[(str(run["head_sha"]), suite_for_workflow(str(run["name"])))] = run
@@ -102,6 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--previous-started", default="")
     parser.add_argument("--overlap-minutes", type=int, default=30)
     parser.add_argument("--lookback-hours", type=int, default=6)
+    parser.add_argument(
+        "--reconcile-since", default="", help="the reconcile mark; empty on a plain pass"
+    )
     parser.add_argument("--written-by", default="github-actions")
     parser.add_argument("--evidence-dir", default=None)
     args = parser.parse_args(argv)
@@ -111,16 +125,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     created_since = created_floor(since, timedelta(hours=args.lookback_hours))
     listed = fetch_completed_runs(
-        args.repository, created_since, args.token, "stable-evidence",
+        args.repository,
+        created_since,
+        args.token,
+        "stable-evidence",
         workflow_names=RECORDED_WORKFLOWS,
     )
-    chosen = select_suite_runs(listed, since)
+    reconciled = reconcile_listing(
+        args.repository,
+        args.reconcile_since,
+        created_since,
+        args.token,
+        "stable-evidence",
+        workflow_names=RECORDED_WORKFLOWS,
+    )
+    chosen = newest_per_suite(
+        select_suite_runs(listed, since) + select_suite_runs(reconciled, args.reconcile_since)
+    )
     evidence_dir = Path(args.evidence_dir) if args.evidence_dir else default_evidence_dir()
     written = append_suite_runs(evidence_dir, chosen, args.written_by)
     for run, path in written:
         print(f"[OK] run {run['id']} {run['name']} {run['conclusion']} -> {path}", file=sys.stderr)
     print(
-        f"[OK] since={since} listed={len(listed)} recordable={len(chosen)} written={len(written)}",
+        f"[OK] since={since} listed={len(listed)} reconcile_since={args.reconcile_since or '-'} "
+        f"reconciled={len(reconciled)} recordable={len(chosen)} written={len(written)}",
         file=sys.stderr,
     )
     output_file = os.environ.get("GITHUB_OUTPUT", "")

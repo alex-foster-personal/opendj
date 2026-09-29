@@ -26,6 +26,7 @@ from scripts.ci_run_batch import (
     fetch_completed_runs,
     headers,
     parse_time,
+    reconcile_listing,
 )
 
 
@@ -292,23 +293,42 @@ def run_batch(args: argparse.Namespace) -> int:
     runs = fetch_completed_runs(
         args.repository, created_since, args.token, "ci-cost-guard", workflow_names=watched
     )
+    reconciled = reconcile_listing(
+        args.repository,
+        args.reconcile_since,
+        created_since,
+        args.token,
+        "ci-cost-guard",
+        workflow_names=watched,
+    )
+    selected = {
+        str(run["id"]): run
+        for listing, mark in ((runs, since), (reconciled, args.reconcile_since))
+        if mark
+        for run in select_batch_runs(listing, watched, e2e_events, mark)
+    }
     priced: list[dict[str, Any]] = []
-    for run in select_batch_runs(runs, watched, e2e_events, since):
+    for run in selected.values():
         attempt = str(run.get("run_attempt") or 1)
         jobs = fetch_jobs(args.repository, str(run["id"]), attempt, args.token)
         report, result = render_markdown(
-            workflow_name=run["name"], run_url=run["html_url"], run_id=str(run["id"]),
-            threshold=args.threshold, jobs=jobs,
+            workflow_name=run["name"],
+            run_url=run["html_url"],
+            run_id=str(run["id"]),
+            threshold=args.threshold,
+            jobs=jobs,
         )
         report_file = args.report_dir / f"ci-cost-report-{run['id']}.md"
         report_file.write_text(report, encoding="utf-8")
-        priced.append({
-            "run": run,
-            "total_cost": result["total_cost"],
-            "over_threshold": result["over_threshold"],
-            "unknown_jobs": result["unknown_jobs"],
-            "report_file": str(report_file),
-        })
+        priced.append(
+            {
+                "run": run,
+                "total_cost": result["total_cost"],
+                "over_threshold": result["over_threshold"],
+                "unknown_jobs": result["unknown_jobs"],
+                "report_file": str(report_file),
+            }
+        )
     summary, alerts = render_batch_summary(priced, args.threshold, since)
     print(summary)
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "")
@@ -345,6 +365,9 @@ def main() -> int:
     parser.add_argument("--previous-started", default="", help="run_started_at of the last pass")
     parser.add_argument("--overlap-minutes", type=int, default=30)
     parser.add_argument("--lookback-hours", type=int, default=3)
+    parser.add_argument(
+        "--reconcile-since", default="", help="the reconcile mark; empty on a plain pass"
+    )
     parser.add_argument("--report-dir", type=Path, default=Path("."))
     parser.add_argument("--threshold", type=float, default=1.0)
     parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))

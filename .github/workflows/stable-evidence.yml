@@ -1,4 +1,6 @@
 name: Stable evidence
+# A reconcile pass carries its own title, which is how it finds its own mark.
+run-name: ${{ (github.event.schedule == '41 4 * * *' || inputs.reconcile) && 'Stable evidence reconcile' || 'Stable evidence' }}
 
 # OPS-18. Merge-append each completed CI / Full CI / E2E / macOS Packaging
 # run's conclusion onto ops/stable/<head_sha>.json on the runner.
@@ -24,7 +26,15 @@ on:
   schedule:
     # Offset from ci-cost-guard.yml's */15 so the two passes never queue together.
     - cron: "7-59/15 * * * *"
+    # Daily reconcile pass: the plain pass plus every run created up to 30 days
+    # before the reconcile mark (see the reconcile mark step).
+    - cron: "41 4 * * *"
   workflow_dispatch:
+    inputs:
+      reconcile:
+        description: "Run a reconcile pass (also lists runs created up to 30 days back)"
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -55,6 +65,11 @@ jobs:
       # before a cancel (Fri 11 Sep 2026), so a run created this long before
       # the mark and completed after it is still listed.
       LOOKBACK_HOURS: "6"
+      # A reconcile pass: the daily cron, or a dispatch with reconcile ticked. The
+      # title must match run-name's reconcile title above.
+      RECONCILE: ${{ github.event.schedule == '41 4 * * *' || inputs.reconcile == true }}
+      RECONCILE_TITLE: "Stable evidence reconcile"
+      RECONCILE_OVERLAP_HOURS: "48"
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
       - name: Reclaim workspace ownership before checkout
@@ -141,6 +156,28 @@ jobs:
           echo "[mark] previous successful pass started at: ${previous:-none, using the overlap floor}"
           echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
 
+      # A re-run keeps its run's created_at, so a run re-run long after creation is
+      # below every plain pass's creation floor: 25 of 5,123 watched runs in the 7
+      # days to Tue 29 Sep 2026 started their latest attempt more than 3 h after
+      # creation, the oldest 143.6 h (Codex P1 on #3844). Once a day the pass also
+      # lists the re-runs among runs created from GitHub's 30-day re-run limit
+      # before the reconcile mark. That mark counts reconcile passes only and is
+      # floored RECONCILE_OVERLAP_HOURS back, so one missed day loses nothing.
+      - name: Read the reconcile mark
+        id: reconcile
+        if: env.RECONCILE == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          THIS_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          since=$(python3 -m scripts.ci_run_batch mark --repository "$REPOSITORY" \
+            --workflow-file stable-evidence.yml --this-run "$THIS_RUN" \
+            --display-title "$RECONCILE_TITLE" --overlap-hours "$RECONCILE_OVERLAP_HOURS")
+          echo "[mark] reconcile pass since: $since"
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+
       # BEFORE the listing: a watched run still in flight that was created before the
       # lookback would fall out of every later listing, so the pass must not move the
       # mark past it. Taken first, a run completing mid-pass is in the census or in the
@@ -163,6 +200,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           PREVIOUS_STARTED: ${{ steps.mark.outputs.previous_started }}
+          RECONCILE_SINCE: ${{ steps.reconcile.outputs.since }}
         run: |
           set -euo pipefail
           export OPENDJ_STABLE_EVIDENCE_DIR="${OPENDJ_STABLE_EVIDENCE_DIR:-$HOME/jobs/state/stable-evidence}"
@@ -170,6 +208,7 @@ jobs:
           python3 -m scripts.stable_evidence_batch \
             --repository "$REPOSITORY" \
             --previous-started "$PREVIOUS_STARTED" \
+            --reconcile-since "$RECONCILE_SINCE" \
             --overlap-minutes "$OVERLAP_MINUTES" \
             --lookback-hours "$LOOKBACK_HOURS" \
             --written-by github-actions
