@@ -291,6 +291,8 @@ def list_tracks(
                 file_availability=row["file_availability"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),
+                is_streaming=row["is_streaming"],
+                streaming_provider=row["streaming_provider"],
                 has_remote_copy=bool(row["has_remote_copy"]),
                 cloud_transfer=row["cloud_transfer"],
                 quality=row["quality"],

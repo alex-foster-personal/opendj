@@ -854,8 +854,9 @@
 	</button>
 
 	<CloudSyncStatusChip />
+	<!-- Labeled signed out too: it is the only sign-in control on this route (AUTH-02). -->
 	<TopBarAccountCluster bind:signedIn>
-		<UserBauble size={20} showLabel={signedIn} />
+		<UserBauble size={20} showLabel />
 	</TopBarAccountCluster>
 	{#if showClock}
 		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->

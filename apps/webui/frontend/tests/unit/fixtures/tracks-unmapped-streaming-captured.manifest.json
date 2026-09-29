@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "capture": {
+    "kind": "webui-tracks-listing-items",
+    "source": "GET /api/v1/tracks?limit=50 (items array, next_cursor null) from create_app over SqliteBackend",
+    "captured_on": "2026-09-29",
+    "scenario": "The same five rows with NO rekordbox mapping as playlist-unmapped-streaming-captured.json, read through the All Tracks listing (TrackListItemOut) instead of playlist detail: tidal:, soundcloud: and https:// streaming URIs, a present local file, and a spotify: URI whose audio is present through a local track_location. Seeded by tests/webui/test_unmapped_streaming_provider.py helpers (Codex P2 on PR #3896, comment 4129520596, CHROME-02).",
+    "immutable": "Do not regenerate or rewrite this capture to make a test pass. Re-capture and independently review any source change."
+  },
+  "files": {
+    "tracks-unmapped-streaming-captured.json": {
+      "bytes": 14972,
+      "sha256": "3cdbd9dd89574ee2c3b014d7974b15f1441d89acf7be7ab2e305fe7e42047544"
+    }
+  }
+}

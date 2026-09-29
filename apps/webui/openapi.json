@@ -20063,6 +20063,10 @@
             "title": "Is Remote",
             "type": "boolean"
           },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
           "key": {
             "anyOf": [
               {
@@ -20172,6 +20176,23 @@
             "title": "Stems Available",
             "type": "boolean"
           },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -20224,6 +20245,7 @@
           "preview_max",
           "file_availability",
           "file_exists",
+          "is_streaming",
           "has_remote_copy",
           "quality",
           "vocals",

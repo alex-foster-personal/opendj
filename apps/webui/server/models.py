@@ -182,6 +182,10 @@ class TrackListItemOut(TrackOut):
     # LIBUX-07: our own audio in non-local storage, not streaming and not
     # awaiting-volume. False (the default) is the honest common case.
     is_remote: bool = False
+    # CHROME-02: same facts TrackRowOut carries, so All Tracks and search
+    # classify an unmapped streaming row without an rb-meta FolderPath.
+    is_streaming: bool
+    streaming_provider: Literal["spotify", "tidal", "soundcloud", "unknown"] | None = None
     # LIBUX-13: a durable remote object is recorded even when local audio
     # also exists. Unlike is_remote, this does not collapse local+cloud.
     has_remote_copy: bool

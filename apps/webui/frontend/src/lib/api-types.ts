@@ -13695,6 +13695,8 @@ export interface components {
              * @default false
              */
             is_remote: boolean;
+            /** Is Streaming */
+            is_streaming: boolean;
             /** Key */
             key?: string | null;
             /** Last Played At */
@@ -13731,6 +13733,8 @@ export interface components {
             };
             /** Stems Available */
             stems_available: boolean;
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /**
              * Tags
              * @default []

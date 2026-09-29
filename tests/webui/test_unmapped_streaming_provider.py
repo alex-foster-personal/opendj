@@ -9,7 +9,9 @@ back to the generic cloud icon.
 provider, [else stop].
 [if] a local file row is listed [then] it carries no provider, [else stop].
 
-Real SQLite fixtures through the real app and the real row builder; the only
+Real SQLite fixtures through the real app and the real row builder, on every listing
+endpoint the browser renders rows from (playlist detail, /tracks, /tracks?q=
+and /search); the only
 override is pointing config at those fixture databases, as the neighboring
 test_pathless_local_not_streaming.py does.
 """
@@ -38,6 +40,7 @@ UNMAPPED_LOCAL = "d" * 40
 # A stale streaming URI whose audio IS present locally: not streaming, so no provider.
 UNMAPPED_URI_PRESENT = "e" * 40
 PLAYLIST_ID = "pl-unmapped-streaming"
+ALL_IDS = {UNMAPPED_TIDAL, UNMAPPED_SOUNDCLOUD, UNMAPPED_HTTP, UNMAPPED_LOCAL, UNMAPPED_URI_PRESENT}
 
 
 def _make_master_plain_db(path: Path) -> None:
@@ -130,10 +133,32 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
         yield test_client
 
 
-def _rows(client: TestClient) -> dict[str, dict]:
-    response = client.get(f"/api/v1/playlists/{PLAYLIST_ID}")
+# Every listing wire shape the browser renders rows from. The playlist detail
+# and search build TrackRowOut(**row); /tracks (All Tracks, and its q= search)
+# copies fields one by one into TrackListItemOut, which is where Codex found
+# the provider dropped (comment 4129520596).
+LISTINGS = {
+    "playlist": (f"/api/v1/playlists/{PLAYLIST_ID}", "tracks"),
+    "tracks": ("/api/v1/tracks?limit=50", "items"),
+    "tracks-q": ("/api/v1/tracks?q=track&limit=50", "items"),
+    "search": ("/api/v1/search?q=track&limit=50", "items"),
+}
+
+
+@pytest.fixture(params=sorted(LISTINGS))
+def listing(request: pytest.FixtureRequest) -> str:
+    return request.param
+
+
+def _rows(client: TestClient, listing: str) -> dict[str, dict]:
+    url, key = LISTINGS[listing]
+    response = client.get(url)
     assert response.status_code == 200, response.text
-    return {row["stable_id"]: row for row in response.json()["tracks"]}
+    rows = {row["stable_id"]: row for row in response.json()[key]}
+    # Presence, not absence: every fixture row must come back, or a test
+    # below could pass on a row the endpoint never returned.
+    assert set(rows) >= ALL_IDS, f"{listing} returned {sorted(rows)}"
+    return rows
 
 
 @pytest.mark.parametrize(
@@ -141,27 +166,29 @@ def _rows(client: TestClient) -> dict[str, dict]:
     [(UNMAPPED_TIDAL, "tidal"), (UNMAPPED_SOUNDCLOUD, "soundcloud"), (UNMAPPED_HTTP, "unknown")],
 )
 def test_unmapped_streaming_row_carries_its_provider(
-    client: TestClient, stable_id: str, provider: str
+    client: TestClient, listing: str, stable_id: str, provider: str
 ) -> None:
-    """if an unmapped streaming row loses its provider then broken"""
-    row = _rows(client)[stable_id]
+    """if an unmapped streaming row loses its provider on any listing then broken"""
+    row = _rows(client, listing)[stable_id]
     assert row["has_rb_mapping"] is False, "the case under test is an UNMAPPED row"
     assert row["is_streaming"] is True
     assert row["streaming_provider"] == provider
 
 
-def test_local_row_carries_no_provider(client: TestClient) -> None:
+def test_local_row_carries_no_provider(client: TestClient, listing: str) -> None:
     """control: a present local file is not streaming and names no provider"""
-    row = _rows(client)[UNMAPPED_LOCAL]
+    row = _rows(client, listing)[UNMAPPED_LOCAL]
     assert row["has_rb_mapping"] is False
     assert row["file_exists"] is True
     assert row["is_streaming"] is False
     assert row["streaming_provider"] is None
 
 
-def test_present_audio_behind_a_streaming_uri_names_no_provider(client: TestClient) -> None:
+def test_present_audio_behind_a_streaming_uri_names_no_provider(
+    client: TestClient, listing: str
+) -> None:
     """control: the provider follows is_streaming, not the bare URI prefix"""
-    row = _rows(client)[UNMAPPED_URI_PRESENT]
+    row = _rows(client, listing)[UNMAPPED_URI_PRESENT]
     assert row["has_rb_mapping"] is False
     assert row["file_exists"] is True
     assert row["is_streaming"] is False
@@ -181,6 +208,8 @@ def test_present_audio_behind_a_streaming_uri_names_no_provider(client: TestClie
         (None, None),
     ],
 )
-def test_streaming_provider_parses_the_shared_prefix_set(path: str | None, provider: str | None) -> None:
+def test_streaming_provider_parses_the_shared_prefix_set(
+    path: str | None, provider: str | None
+) -> None:
     """if a non-streaming path names a provider, or a streaming URI names none, then broken"""
     assert platform_paths.streaming_provider(path) == provider

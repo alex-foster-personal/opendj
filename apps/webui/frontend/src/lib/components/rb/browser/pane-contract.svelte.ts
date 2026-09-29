@@ -100,9 +100,9 @@ export interface BrowserRow extends Pick<
 	/** Spotify-unmatched placeholder (light green row). True when the
 	 * row is a synthetic spotify-pending track or wire spotify_pending. */
 	spotify_pending?: boolean;
-	/** Inline streaming provider (playlist rows); the only provider source for
+	/** Inline streaming provider (playlist and /tracks rows); the only source for
 	 * a row with no rekordbox mapping, whose rb_meta never loads. */
-	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null | undefined;
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;

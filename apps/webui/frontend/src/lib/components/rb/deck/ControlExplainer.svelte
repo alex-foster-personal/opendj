@@ -219,7 +219,13 @@
 	onDestroy(_close);
 
 	$effect(() => {
-		if (!programmaticOpen) return;
+		// The parent unpinned it (openMidiDrawer -> closeIoView): close here too.
+		// Writes only, not _close(): no second onProgrammaticClose, and no read
+		// that would rerun this on a hover or click pin and close that as well.
+		if (!programmaticOpen) {
+			pinned = open = false;
+			return;
+		}
 		pinned = true;
 		void _openNow();
 	});

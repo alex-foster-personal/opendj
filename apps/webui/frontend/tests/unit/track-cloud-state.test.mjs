@@ -163,20 +163,24 @@ test('the Spotify glyph draws three dark sound-wave arcs inside the green disk, 
 // Codex P2 on PR #3896: a streaming row with NO rekordbox mapping (djay-only,
 // locally imported) never loads rb_meta, so rb_meta.folder_path is null and
 // the provider was lost. The row carries streaming_provider inline now. The
-// rows here are a CAPTURED real server response (manifest beside it), mapped
-// through the real playlist-row mapper, not hand-built.
+// rows here are CAPTURED real server responses (manifests beside them), one
+// per listing wire shape, mapped through the real mapper for that shape:
+// playlist detail through rowFromPlaylistWire, All Tracks and its search
+// (GET /tracks, Codex comment 4129520596) through rowFromListWire.
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
-const UNMAPPED_MANIFEST = fileURLToPath(
-	new URL('./fixtures/playlist-unmapped-streaming-captured.manifest.json', import.meta.url)
-);
+const LISTINGS = {
+	playlist: ['playlist-unmapped-streaming-captured', 'rowFromPlaylistWire'],
+	tracks: ['tracks-unmapped-streaming-captured', 'rowFromListWire']
+};
 
-async function unmappedRows() {
+async function unmappedRows(listing = 'playlist') {
+	const [name, mapper] = LISTINGS[listing];
 	const { verifiedFixtureText } = await import('./verified-fixture.mjs');
 	const wire = await vite.ssrLoadModule('/src/lib/components/rb/browser/browser-row-wire.ts');
-	const captured = JSON.parse(
-		verifiedFixtureText(FIXTURES, UNMAPPED_MANIFEST, 'playlist-unmapped-streaming-captured.json')
-	);
-	return captured.map((w, i) => wire.rowFromPlaylistWire(w, i + 1));
+	const manifest = fileURLToPath(new URL(`./fixtures/${name}.manifest.json`, import.meta.url));
+	const captured = JSON.parse(verifiedFixtureText(FIXTURES, manifest, `${name}.json`));
+	assert.equal(captured.length, 5, `${listing}: all five captured rows`);
+	return captured.map((w, i) => wire[mapper](w, i + 1));
 }
 
 /** Exactly what TrackTable passes for a row whose rb_meta never loads. */
@@ -192,28 +196,43 @@ function viewFor(row) {
 	});
 }
 
-test('unmapped Tidal and SoundCloud rows render their own provider, not the generic cloud', async () => {
-	const rows = await unmappedRows();
-	const byId = Object.fromEntries(rows.map((r) => [r.stable_id[0], r]));
-	for (const [id, provider] of [['a', 'tidal'], ['b', 'soundcloud']]) {
-		const row = byId[id];
-		assert.equal(row.has_rb_mapping, false, 'the case under test is an unmapped row');
-		assert.equal(row.rb_meta, null);
-		const view = viewFor(row);
-		assert.equal(view.kind, 'streaming');
-		assert.equal(view.provider, provider);
-	}
-});
+for (const listing of Object.keys(LISTINGS)) {
+	test(`${listing}: unmapped Tidal and SoundCloud rows render their own provider, not the generic cloud`, async () => {
+		const rows = await unmappedRows(listing);
+		const byId = Object.fromEntries(rows.map((r) => [r.stable_id[0], r]));
+		for (const [id, provider] of [['a', 'tidal'], ['b', 'soundcloud']]) {
+			const row = byId[id];
+			assert.equal(row.has_rb_mapping, false, 'the case under test is an unmapped row');
+			assert.equal(row.rb_meta, null);
+			assert.equal(row.is_streaming, true, 'the row itself says streaming, no rb-meta needed');
+			const view = viewFor(row);
+			assert.equal(view.kind, 'streaming');
+			assert.equal(view.provider, provider);
+		}
+	});
 
-test('an unmapped https stream stays unknown and local rows stay off streaming (control)', async () => {
-	const rows = await unmappedRows();
-	const byId = Object.fromEntries(rows.map((r) => [r.stable_id[0], r]));
-	assert.equal(viewFor(byId.c).provider, 'unknown');
-	for (const id of ['d', 'e']) {
-		const view = viewFor(byId[id]);
-		assert.notEqual(view.kind, 'streaming', `row ${id} has present local audio`);
-		assert.equal(view.provider, null);
-	}
+	test(`${listing}: an unmapped https stream stays unknown and local rows stay off streaming (control)`, async () => {
+		const rows = await unmappedRows(listing);
+		const byId = Object.fromEntries(rows.map((r) => [r.stable_id[0], r]));
+		assert.equal(viewFor(byId.c).provider, 'unknown');
+		for (const id of ['d', 'e']) {
+			assert.equal(byId[id].is_streaming, false, `row ${id} is a definite false, not unknown`);
+			const view = viewFor(byId[id]);
+			assert.notEqual(view.kind, 'streaming', `row ${id} has present local audio`);
+			assert.equal(view.provider, null);
+		}
+	});
+}
+
+test('ColumnBrowser carries the listing is_streaming instead of a blanket unknown', () => {
+	// Same /tracks rows, mapped inline in the component: a null here made a
+	// streaming row look loadable in the column view (Codex 4129520596 class).
+	const src = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/ColumnBrowser.svelte', import.meta.url)),
+		'utf8'
+	);
+	const mapped = src.slice(src.indexOf('rows = items.map('), src.indexOf('}));', src.indexOf('rows = items.map(')));
+	assert.match(mapped, /\bis_streaming: t\.is_streaming\b/);
 });
 
 test('without an inline provider, a mapped row still reads it from rb_meta.folder_path (control)', () => {
