@@ -19,6 +19,10 @@ default = []
 # Real audio output through cpal (CoreAudio, WASAPI, ALSA). Off by default so
 # Linux CI builds without ALSA headers; the fake and wall clocks need no device.
 device = ["dep:cpal"]
+# MIDI input read by the engine itself through midir (CoreMIDI, WinMM, ALSA).
+# Off by default for the same reason as `device`: Linux CI has no ALSA headers.
+# Decoding and dispatch (src/midi.rs) and the `midi_inject` seam need no feature.
+midi = ["dep:midir"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +37,8 @@ cpal = { version = "0.18", optional = true }
 # Loopback WebSocket for the renderer and agents (plan 20-02). Blocking std
 # I/O on per-client threads, so no async runtime enters the engine.
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+midir = { version = "0.11", optional = true }
+regex-lite = "0.1"
 
 # The change time of a file on Windows (for the decode cache's key), which
 # std reads only on nightly. Already in the tree through same-file.

@@ -209,3 +209,37 @@ fn the_socket_refuses_to_start_unsafely() {
     serve_fails(&["serve", "--clock", "fake", "--ws", "127.0.0.1:0"], Some(TOKEN), "wall and device");
     serve_fails(&["serve", "--clock", "wall", "--ws", "localhost"], Some(TOKEN), "HOST:PORT");
 }
+
+#[test]
+fn midi_page_lines_reach_every_client_and_the_result_only_its_sender() {
+    let mut e = start();
+    let mut a = connect(&e.url);
+    let mut b = connect(&e.url);
+    assert_eq!(next(&mut a)["type"], "hello");
+    assert_eq!(next(&mut b)["type"], "hello");
+
+    // Hot cue pad D on deck 2: a page action, which whichever client drives
+    // the page must see, so it goes to all of them like state does.
+    let action = json!({"type": "midi_action", "port": "DDJ-FLX4", "action": {"type": "deck_hot_cue", "deck": 2, "slot": "D"},
+                        "value": {"kind": "button", "pressed": true, "velocity": 127}});
+    say(
+        &mut a,
+        json!({"id": "hot", "cmd": {"type": "midi_inject", "port": "DDJ-FLX4", "bytes": [0x99, 0x03, 0x7f]}}),
+    );
+    let seen = until(&mut a, 8, |v| v["id"] == "hot");
+    assert!(seen.contains(&action), "sender: {seen:?}");
+    assert_eq!(seen.last().unwrap()["ok"], true);
+    until(&mut b, 8, |v| *v == action);
+    let from_stdio: Vec<Value> = (0..8)
+        .map_while(|_| e.stdout.recv_timeout(Duration::from_secs(10)).ok())
+        .take_while(|v| *v != action)
+        .collect();
+    assert!(from_stdio.iter().all(|v| v["id"] != "hot"), "stdio: {from_stdio:?}");
+
+    // Control: the result is the sender's alone. b's next reply is its own.
+    say(&mut b, json!({"id": "b1", "cmd": {"type": "crossfader", "value": 0.5}}));
+    let seen = until(&mut b, 8, |v| v["id"] == "b1");
+    assert!(seen.iter().all(|v| v["id"] != "hot"), "b saw a's result: {seen:?}");
+    drop(e.stdin.take());
+    let _ = e.child.wait();
+}
