@@ -273,7 +273,7 @@ fn band(o: &Obj, ty: &str) -> Result<EqBand, ProtoError> {
 }
 
 /// Beatgrid in either shape the repo already uses: the mirror's
-/// `beatgrid: [{n, time_ms}]` (n = beat in bar, 1 = downbeat) or a bare
+/// `beatgrid: [{n, time_ms, bpm?}]` (n = beat in bar, 1 = downbeat) or a bare
 /// `beatgrid_ms: [..]` with every 4th beat from the first taken as a downbeat.
 /// A grid that is sent must be one the page's `validateBeatGrid` accepts: at
 /// least two beats, times from 0 strictly increasing, and `n` counting
@@ -291,7 +291,7 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
         let mut prev_n = 0;
         for (i, b) in arr.iter().enumerate() {
             let b = b.as_object().ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}] must be an object")))?;
-            exact_keys(b, &format!("{ty}.beatgrid[{i}]"), &["n", "time_ms"])?;
+            exact_keys(b, &format!("{ty}.beatgrid[{i}]"), &["n", "time_ms", "bpm"])?;
             let time_ms = num(b, ty, "time_ms")?;
             // A missing n counts as its place from the first beat; a present
             // one must be a beat number, as the page's validateBeatGrid
@@ -309,7 +309,18 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
                 )));
             }
             prev_n = n;
-            out.push(Beat { time_ms, downbeat: n == 1 });
+            // The analyzer's tempo at this beat, when the grid carries one.
+            // Left out when there is none; `null` is refused like any other
+            // optional field sent with nothing in it.
+            let bpm = match b.get("bpm") {
+                None => None,
+                Some(v) => Some(
+                    v.as_f64()
+                        .filter(|v| v.is_finite() && *v > 0.0)
+                        .ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}].bpm must be a positive number")))?,
+                ),
+            };
+            out.push(Beat { time_ms, downbeat: n == 1, bpm });
         }
     } else if let Some(v) = o.get("beatgrid_ms") {
         let arr = v.as_array().ok_or_else(|| invalid(format!("{ty}.beatgrid_ms must be an array")))?;
@@ -319,7 +330,7 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
                 .as_f64()
                 .filter(|t| t.is_finite())
                 .ok_or_else(|| invalid(format!("{ty}.beatgrid_ms[{i}] must be a finite number")))?;
-            out.push(Beat { time_ms, downbeat: i % 4 == 0 });
+            out.push(Beat { time_ms, downbeat: i % 4 == 0, bpm: None });
         }
     }
     if (o.contains_key("beatgrid") || o.contains_key("beatgrid_ms")) && out.len() < 2 {
@@ -712,6 +723,13 @@ pub fn hello_json(clock: &str, sample_rate: u32) -> Value {
         "clock": clock,
         "sample_rate": sample_rate,
         "decks": MAX_DECKS,
+        // Whether this build can play to an output device (`--features device`),
+        // so a packager can prove it shipped the right build.
+        "device": cfg!(feature = "device"),
+        // Page commands this build refuses as `not_implemented`, so the page
+        // can gray out exactly those controls and light them when a build
+        // that has them connects.
+        "not_built": LATER.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
     })
 }
 
@@ -1139,10 +1157,21 @@ mod tests {
     fn beatgrids_parse_in_both_shapes() {
         let Command::Load(l) = cmd(json!({
             "type": "load", "deck": 1, "path": "a.wav",
-            "beatgrid": [{"n": 4, "time_ms": 0}, {"n": 1, "time_ms": 500}]
+            "beatgrid": [{"n": 4, "time_ms": 0, "bpm": 120.2}, {"n": 1, "time_ms": 500}]
         }))
         .unwrap() else { panic!() };
-        assert_eq!(l.beats, vec![Beat { time_ms: 0.0, downbeat: false }, Beat { time_ms: 500.0, downbeat: true }]);
+        assert_eq!(
+            l.beats,
+            vec![
+                Beat { time_ms: 0.0, downbeat: false, bpm: Some(120.2) },
+                Beat { time_ms: 500.0, downbeat: true, bpm: None }
+            ]
+        );
+        for bad in [json!(0), json!(-1), json!("fast"), json!(null)] {
+            let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0, "bpm": bad}]}))
+                .unwrap_err();
+            assert!(e.message.contains("bpm must be a positive number"), "{bad}: {}", e.message);
+        }
         let Command::Load(l) = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 500, 1000, 1500, 2000]})).unwrap() else {
             panic!()
         };
@@ -1243,7 +1272,9 @@ mod tests {
             json!({"type": "crossfader", "value": 0.5, "deck": 1}),
             json!({"type": "engine_state", "verbose": true}),
             json!({"type": "loop", "deck": 1, "loop": {"in_ms": 0, "out_ms": 500, "beats": 1}}),
-            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"n": 2, "time_ms": 500, "bpm": 120}]}),
+            // `bpm` is a beat's own field (the page's validateBeatGrid
+            // requires it), so the stray key here is one no beat carries.
+            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"n": 2, "time_ms": 500, "t": 0.5}]}),
         ] {
             let e = cmd(c.clone()).unwrap_err();
             assert!(e.message.contains("unexpected fields"), "{c}: {}", e.message);
@@ -1261,6 +1292,7 @@ mod tests {
             json!({"type": "eq", "deck": 1, "band": "low", "value": 0.5}),
             json!({"type": "loop", "deck": 1, "loop": {"in_ms": 0, "out_ms": 500}}),
             json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"time_ms": 500}]}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0, "bpm": 120}, {"n": 2, "time_ms": 500, "bpm": 120.5}]}),
         ] {
             assert!(cmd(c.clone()).is_ok(), "{c}: {:?}", cmd(c.clone()).err().map(|e| e.message));
         }

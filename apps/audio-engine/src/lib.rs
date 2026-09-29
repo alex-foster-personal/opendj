@@ -21,3 +21,4 @@ pub mod protocol;
 pub mod serve;
 pub mod stretch;
 pub mod wav;
+pub mod ws;
