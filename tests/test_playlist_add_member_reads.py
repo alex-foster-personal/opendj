@@ -20,11 +20,11 @@ Instruments, all on the store's REAL connection, none a mock:
 * ``EXPLAIN QUERY PLAN`` of every membership SELECT the add really ran.
 
 Regression one-liners:
-  - if an append or a head insert executes more sqlite instructions at 4,000 members than at 40 then broken
+  - if an append or head insert runs more sqlite steps at 4,000 members than at 40 then broken
   - if an add materializes more rows at 4,000 members than at 40 then broken
   - if the add_items history payload grows with the membership then broken
   - if any membership read of an add scans the table or sorts in a temp b-tree then broken
-  - if a positioned add lands anywhere but the requested index (legacy NULL order_keys included) then broken
+  - if a positioned add lands anywhere but the requested index (legacy NULL keys too) then broken
   - if undo of an add removes anything but the rows it inserted then broken
   - if redo of an add restores different rows or order_keys than undo removed then broken
   - if undo proceeds after an added row was already removed then broken
@@ -135,7 +135,7 @@ CASES = {
 def test_add_executes_the_same_sqlite_work_at_4000_members_as_at_40(
     store: PlaylistStore, case: str,
 ) -> None:
-    """[if] one track is added at 4,000 members [then] sqlite does no more work than at 40, [else stop]."""
+    """[if] one add at 4,000 members [then] sqlite does the work it does at 40, [else stop]."""
     spec = CASES[case]
     small = _playlist(store, SMALL, forbid_duplicates=spec["forbid_duplicates"])
     large = _playlist(store, LARGE, forbid_duplicates=spec["forbid_duplicates"])
@@ -163,7 +163,7 @@ def test_add_executes_the_same_sqlite_work_at_4000_members_as_at_40(
 def test_add_materializes_the_same_rows_at_4000_members_as_at_40(
     store: PlaylistStore, case: str,
 ) -> None:
-    """[if] one track is added at 4,000 members [then] Python sees as many rows as at 40, [else stop]."""
+    """[if] one add at 4,000 members [then] Python sees as many rows as at 40, [else stop]."""
     spec = CASES[case]
     small = _playlist(store, SMALL, forbid_duplicates=spec["forbid_duplicates"])
     large = _playlist(store, LARGE, forbid_duplicates=spec["forbid_duplicates"])
@@ -239,7 +239,7 @@ def test_every_membership_read_of_an_add_seeks_an_index(store: PlaylistStore) ->
 
 
 def test_positioned_add_lands_at_every_index(store: PlaylistStore) -> None:
-    """[if] a position is given [then] the track lands exactly there, legacy keys included, [else stop]."""
+    """[if] a position is given [then] the track lands exactly there, [else stop]."""
     playlist_id = _playlist(store, 12)
     # Legacy rows with no order_key sort by their zero-padded position.
     store._conn.execute(
@@ -258,10 +258,11 @@ def test_positioned_add_lands_at_every_index(store: PlaylistStore) -> None:
 
 
 def test_position_past_the_end_is_refused_without_writing(store: PlaylistStore) -> None:
-    """[if] position exceeds the member count [then] the add fails and writes nothing, [else stop]."""
+    """[if] position exceeds the member count [then] the add writes nothing, [else stop]."""
     playlist_id = _playlist(store, 3)
     before = _live_stable_ids(store, playlist_id)
-    with pytest.raises(BackendError, match="position out of range: 5 \\(playlist has 3 live members\\)"):
+    refusal = "position out of range: 5 \\(playlist has 3 live members\\)"
+    with pytest.raises(BackendError, match=refusal):
         store.add_memberships(playlist_id, [_sid(LARGE + 1)], position=5)
     assert _live_stable_ids(store, playlist_id) == before
     # Control: position == count is a legal append.
@@ -291,7 +292,7 @@ def test_undo_removes_only_the_added_rows_and_redo_restores_them(store: Playlist
 
 
 def test_undo_survives_an_unrecorded_write_to_other_members(store: PlaylistStore) -> None:
-    """[if] another member changes outside history after an add [then] undo still removes the add, [else stop]."""
+    """[if] another member changes outside history [then] undo still works, [else stop]."""
     playlist_id = _playlist(store, 5)
     result = store.add_memberships(playlist_id, [_sid(LARGE + 1)])
     # remove_memberships(record_edit=False) is how sync and transfer write.
@@ -305,15 +306,17 @@ def test_undo_survives_an_unrecorded_write_to_other_members(store: PlaylistStore
 
 
 def test_undo_refuses_when_an_added_row_is_already_gone(store: PlaylistStore) -> None:
-    """[if] an added row was removed outside history [then] undo is a conflict and writes nothing, [else stop]."""
+    """[if] an added row is already gone [then] undo conflicts and writes nothing, [else stop]."""
     playlist_id = _playlist(store, 5)
     result = store.add_memberships(playlist_id, [_sid(LARGE + 1), _sid(LARGE + 2)])
     store.remove_memberships(playlist_id, [result.added[0].item_id], record_edit=False)
     before = [(m.item_id, m.order_key) for m in _load_live_members(store._conn, playlist_id)]
     with pytest.raises(ConflictError):
         store.undo()
-    assert [(m.item_id, m.order_key) for m in _load_live_members(store._conn, playlist_id)] == before
-    assert store.history()["cursor"] == len(store.history()["entries"]), "cursor moved on a refused undo"
+    after = [(m.item_id, m.order_key) for m in _load_live_members(store._conn, playlist_id)]
+    assert after == before
+    history = store.history()
+    assert history["cursor"] == len(history["entries"]), "cursor moved on a refused undo"
 
 
 def test_redo_refuses_when_an_added_row_is_live_again(store: PlaylistStore) -> None:

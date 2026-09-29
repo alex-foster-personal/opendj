@@ -8,7 +8,8 @@ etag = ``compute_etag(playlist_id, updated_at)``. Stale ``If-Match`` ->
 :class:`ConflictError` (409).
 
 Membership primitives: ``PUT .../tracks`` full replace; ``POST .../items:add``
-O(1) insert that reads and returns no existing member (LIBM-132); ``DELETE .../items/{item_id}`` O(1) remove; ``POST .../items:move``
+O(1) insert that reads and returns no existing member (LIBM-132);
+``DELETE .../items/{item_id}`` O(1) remove; ``POST .../items:move``
 O(k) slice reorder (LIBM-22). One store lock + rw connection per process.
 """
 from __future__ import annotations

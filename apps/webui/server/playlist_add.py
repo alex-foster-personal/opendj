@@ -176,13 +176,13 @@ def _neighbor_order_keys(
             (playlist_id,),
         ).fetchone()
         return (None if last is None else last[0]), None
-    elif position == 0:
+    if position == 0:
         first = conn.execute(
             select + f"ORDER BY {MEMBERSHIP_ORDER_BY} LIMIT 1",
             (playlist_id,),
         ).fetchone()
         return None, (None if first is None else first[0])
-    elif position > 0:
+    if position > 0:
         pair = conn.execute(
             select + f"ORDER BY {MEMBERSHIP_ORDER_BY} LIMIT 2 OFFSET ?",
             (playlist_id, position - 1),
@@ -304,7 +304,7 @@ def _count_added_rows(
     ).fetchone()[0]
 
 
-def undo_add(store: PlaylistStore, command: PlaylistEditCommand) -> PlaylistRow:  # type: ignore[name-defined]
+def undo_add(store: PlaylistStore, command: PlaylistEditCommand) -> PlaylistRow:
     """Tombstone exactly the rows the add inserted; 409 if any is gone or the playlist is."""
     item_ids = _added_item_ids(command)
     with store._writer.playlist_transaction():
@@ -317,8 +317,8 @@ def undo_add(store: PlaylistStore, command: PlaylistEditCommand) -> PlaylistRow:
         return store._load(command.playlist_id)
 
 
-def redo_add(store: PlaylistStore, command: PlaylistEditCommand) -> PlaylistRow:  # type: ignore[name-defined]
-    """Restore exactly the rows undo tombstoned; 409 if any is live again or the playlist is gone."""
+def redo_add(store: PlaylistStore, command: PlaylistEditCommand) -> PlaylistRow:
+    """Restore exactly the rows undo tombstoned; 409 if one is live or the playlist is gone."""
     item_ids = _added_item_ids(command)
     with store._writer.playlist_transaction():
         live = store._try_load_header(command.playlist_id)
