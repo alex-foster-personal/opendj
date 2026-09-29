@@ -210,6 +210,50 @@ impl Smoothed {
     }
 }
 
+/// Linear ramp matching Web Audio's `linearRampToValueAtTime` from the
+/// current value, as the page's `applyEqRamp` schedules it: the target is
+/// reached exactly `steps` frames after `set` and held there.
+#[derive(Clone, Copy, Debug)]
+pub struct Ramped {
+    pub value: f64,
+    pub target: f64,
+    start: f64,
+    step: u32,
+    steps: u32,
+}
+
+impl Ramped {
+    pub fn new(value: f64, sr: f64, ramp_s: f64) -> Ramped {
+        let steps = (ramp_s * sr).round().max(1.0) as u32;
+        Ramped { value, target: value, start: value, step: steps, steps }
+    }
+
+    /// Ramp from wherever the value is now to `target`, as `applyEqRamp`
+    /// does (cancel, hold the current value, ramp to the new one).
+    pub fn set(&mut self, target: f64) {
+        self.start = self.value;
+        self.target = target;
+        self.step = 0;
+    }
+
+    #[inline]
+    pub fn tick(&mut self) -> f64 {
+        if self.step < self.steps {
+            self.step += 1;
+            self.value = if self.step == self.steps {
+                self.target
+            } else {
+                self.start + (self.target - self.start) * self.step as f64 / self.steps as f64
+            };
+        }
+        self.value
+    }
+
+    pub fn settled(&self) -> bool {
+        self.step >= self.steps
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +383,45 @@ mod tests {
         assert!((db(gain_at(lp, sr, 1000.0)) - 0.707).abs() < 0.01, "{}", db(gain_at(lp, sr, 1000.0)));
         let hp = Coeffs::highpass(sr, 1000.0, 0.707);
         assert!((db(gain_at(hp, sr, 1000.0)) - 0.707).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_linear_ramp_lands_exactly_on_time() {
+        // 10 ms at 48 kHz is 480 frames: halfway at 240, exact at 480.
+        let mut r = Ramped::new(0.0, 48000.0, 0.01);
+        assert!(r.settled());
+        r.set(-26.0);
+        for _ in 0..240 {
+            r.tick();
+        }
+        assert!((r.value - -13.0).abs() < 1e-12, "{}", r.value);
+        assert!(!r.settled());
+        for _ in 0..240 {
+            r.tick();
+        }
+        assert_eq!(r.value, -26.0);
+        assert!(r.settled());
+        // A new target mid-ramp starts from where the value is, not from the
+        // old start or the old target.
+        r.set(0.0);
+        for _ in 0..120 {
+            r.tick();
+        }
+        r.set(6.0);
+        let from = r.value;
+        assert!((from - -19.5).abs() < 1e-12, "{from}");
+        for _ in 0..480 {
+            r.tick();
+        }
+        assert_eq!(r.value, 6.0);
+        // Control: the one-pole smoother is still only about 63% there at
+        // 10 ms, which is the difference the ramp exists for.
+        let mut sm = Smoothed::new(0.0, 48000.0, 0.01);
+        sm.set(-26.0);
+        for _ in 0..480 {
+            sm.tick();
+        }
+        assert!((sm.value / -26.0 - 0.632).abs() < 0.01, "{}", sm.value);
     }
 
     #[test]
