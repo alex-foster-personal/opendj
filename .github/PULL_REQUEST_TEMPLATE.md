@@ -24,3 +24,15 @@ or a top-level dependency file.
 
 ## Sign-off
 - [ ] I confirm DCO via `git commit -s`
+
+<!-- 10xHunter PRs only (title starts `10xHunter--`); delete otherwise. Checked by the "10x evidence" job.
+## 10x Evidence
+- Before: <measured value, command, host, n>
+- After: <measured value, same scorer and fixture>
+- Ratio: <number>x (gate: >= 9x)
+- Scorer: <exactly what was measured and how>
+
+## 10x Workings
+- Card: <link to cards/HUNT-*.md in maintainer/10x-hunter>
+- <the arithmetic from Before/After to Ratio, and the floor derivation>
+-->

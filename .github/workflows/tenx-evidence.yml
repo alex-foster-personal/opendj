@@ -1,0 +1,43 @@
+name: 10x Evidence
+
+# 10xHunter PRs (title prefix `10xHunter--`) claim a >9x improvement found by
+# the 10x Constraint Hunt. This gate makes the claim reviewable: the body must
+# carry a `## 10x Evidence` section (Before/After/Ratio/Scorer) and a
+# `## 10x Workings` section (Card link + arithmetic). Other PRs pass untouched.
+#
+# Own workflow for the same reason as adr-check.yml: it reads PR metadata, so
+# it must re-run on `edited`, which would be too costly to add to ci.yml.
+# Hosted runner: a 10-second stdlib-only body check needs none of the
+# self-hosted workspace hygiene, and hosted jobs are exempt from the
+# stale-install guard.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: tenx-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gate:
+    name: 10x evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: 10x evidence check
+        # Title and body go through env, never interpolated into the script.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/body.md"
+          python3 -m scripts.tenx_evidence_check --title "$PR_TITLE" --body-file "$RUNNER_TEMP/body.md"
