@@ -87,7 +87,8 @@ pub struct DeckOutput {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RenderOptions {
     /// Also return each loaded deck's own audio (memory: one more mix-sized
-    /// buffer per deck).
+    /// buffer per deck, so each deck output shortens the longest render the
+    /// same amount of memory allows; see `render_ceiling`).
     pub deck_outputs: bool,
 }
 
@@ -303,12 +304,13 @@ fn fail(event: usize, e: ProtoError) -> ProtoError {
 }
 
 /// The most frames a render may run: `max_ms`, and never more than one WAV
-/// file holds. Everything rendered is held until it is written, so a render
-/// longer than its file could never be written and is not attempted; this
-/// also bounds what a render retains, under 4 GiB for the mix and as much
-/// again per deck output.
-fn render_ceiling(max_ms: f64, sr: u32) -> u64 {
-    at_frame_of_ms(max_ms, sr).min(crate::wav::MAX_F32_FRAMES)
+/// file holds, shared between the `held` buffers it keeps (the mix, plus one
+/// per deck output). Everything rendered is held until it is written, so a
+/// render longer than its file could never be written and is not attempted,
+/// and what a render retains stays under what one WAV file holds (4 GiB)
+/// however many deck outputs it returns.
+fn render_ceiling(max_ms: f64, sr: u32, held: u64) -> u64 {
+    at_frame_of_ms(max_ms, sr).min(crate::wav::MAX_F32_FRAMES / held.max(1))
 }
 
 /// Render `plan`, resolving each `load` through `load`.
@@ -325,8 +327,20 @@ pub fn render_plan_with(
     opts: RenderOptions,
 ) -> Result<RenderOutput, ProtoError> {
     let sr = plan.sample_rate;
-    let max_frames = render_ceiling(plan.max_ms, sr);
+    let mut loads_deck = [false; MAX_DECKS];
+    for ev in &plan.events {
+        if let Action::Cmd(Command::Load(spec)) = &ev.action {
+            loads_deck[spec.deck as usize - 1] = true;
+        }
+    }
+    let deck_buffers = if opts.deck_outputs { loads_deck.iter().filter(|&&l| l).count() as u64 } else { 0 };
+    let max_frames = render_ceiling(plan.max_ms, sr, 1 + deck_buffers);
     let max_ms_held = max_frames as f64 * 1000.0 / sr as f64;
+    let limit = if deck_buffers == 0 {
+        format!("max_ms, or what one WAV file holds at {sr} Hz")
+    } else {
+        format!("max_ms, or what one WAV file holds at {sr} Hz shared by the mix and {deck_buffers} deck outputs")
+    };
     // An absolute end (in ms or frames) past the ceiling is known too far
     // before anything is decoded or held.
     let end_frame = match plan.end {
@@ -338,7 +352,7 @@ pub fn render_plan_with(
         return Err(ProtoError::new(
             ErrorCode::Invalid,
             format!(
-                "plan.end at frame {end} is past the longest render allowed ({max_frames} frames, {max_ms_held:.0} ms: max_ms, or what one WAV file holds at {sr} Hz)"
+                "plan.end at frame {end} is past the longest render allowed ({max_frames} frames, {max_ms_held:.0} ms: {limit})"
             ),
         ));
     }
@@ -346,11 +360,9 @@ pub fn render_plan_with(
     // time and the render loop itself never waits on IO.
     let decode_start = Instant::now();
     let mut loaded: HashMap<usize, Arc<Track>> = HashMap::new();
-    let mut loads_deck = [false; MAX_DECKS];
     for (i, ev) in plan.events.iter().enumerate() {
         if let Action::Cmd(Command::Load(spec)) = &ev.action {
             loaded.insert(i, load(spec).map_err(|e| fail(i, e))?);
-            loads_deck[spec.deck as usize - 1] = true;
         }
     }
     let decode_wall_s = decode_start.elapsed().as_secs_f64();
@@ -506,7 +518,7 @@ pub fn render_plan_with(
             return Err(ProtoError::new(
                 ErrorCode::Invalid,
                 format!(
-                    "plan.end was not reached within {max_ms_held:.0} ms (max_ms, or what one WAV file holds at {sr} Hz)"
+                    "plan.end was not reached within {max_ms_held:.0} ms ({limit})"
                 ),
             ));
         }
@@ -581,10 +593,43 @@ mod tests {
         let max = crate::wav::MAX_F32_FRAMES;
         // The default 4 h ceiling is more than a WAV file holds at 48 kHz
         // (about 3.1 h), so the file's limit is the ceiling there.
-        assert_eq!(render_ceiling(crate::plan::DEFAULT_MAX_MS, 48000), max);
-        assert_eq!(render_ceiling(1e300, 384000), max);
+        assert_eq!(render_ceiling(crate::plan::DEFAULT_MAX_MS, 48000, 1), max);
+        assert_eq!(render_ceiling(1e300, 384000, 1), max);
         // Control: a max_ms inside the limit is the ceiling itself.
-        assert_eq!(render_ceiling(3_600_000.0, 48000), 3600 * 48000);
-        assert_eq!(render_ceiling(4.0 * 3_600_000.0, 8000), 4 * 3600 * 8000);
+        assert_eq!(render_ceiling(3_600_000.0, 48000, 1), 3600 * 48000);
+        assert_eq!(render_ceiling(4.0 * 3_600_000.0, 8000, 1), 4 * 3600 * 8000);
+    }
+
+    /// A plan loading decks 1 and 2 that ends at absolute frame `end`.
+    fn two_deck_plan(end: u64) -> Plan {
+        crate::plan::parse_plan(&serde_json::json!({
+            "end": {"frame": end},
+            "events": [
+                {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+                {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 2, "path": "b.wav"}},
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn deck_outputs_share_one_wavs_worth_of_memory_with_the_mix() {
+        // Codex's case: four deck outputs each as long as a WAV file holds
+        // would retain about 20 GiB. The mix and every deck output now share
+        // one file's worth, so with two decks each gets a third.
+        let max = crate::wav::MAX_F32_FRAMES;
+        assert_eq!(render_ceiling(1e300, 48000, 5), max / 5);
+        // The loader answers only once the plan is past the preflight, so an
+        // error from it means the render was allowed to start.
+        let reached = |_: &LoadSpec| -> Result<Arc<Track>, ProtoError> { Err(ProtoError::new(ErrorCode::Io, "reached decode")) };
+        let with_decks = RenderOptions { deck_outputs: true };
+        let Err(e) = render_plan_with(&two_deck_plan(max / 3 + 1), reached, with_decks) else { panic!() };
+        assert!(e.message.contains("past the longest render allowed") && e.message.contains("2 deck outputs"), "{}", e.message);
+        // Controls: at the shared limit it starts, and without deck outputs
+        // the mix alone has the whole file.
+        let Err(e) = render_plan_with(&two_deck_plan(max / 3), reached, with_decks) else { panic!() };
+        assert!(e.message.contains("reached decode"), "{}", e.message);
+        let Err(e) = render_plan_with(&two_deck_plan(max / 3 + 1), reached, RenderOptions::default()) else { panic!() };
+        assert!(e.message.contains("reached decode"), "{}", e.message);
     }
 }

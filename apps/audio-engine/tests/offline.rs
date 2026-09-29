@@ -424,3 +424,38 @@ fn deck_positions_before_the_grid_or_track_are_refused() {
         assert!(parse_plan(&plan(json!({"ms": 0}), pos)).is_ok(), "{key} {ok}");
     }
 }
+
+#[test]
+fn a_time_or_length_naming_two_places_is_refused() {
+    let with = |at: Value, over: Value| {
+        parse_plan(&json!({"end": {"ms": 1000}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+            {"at": at, "ramp": {"type": "crossfader", "to": 1.0, "over": over}}]}))
+    };
+    let ok_over = json!({"ms": 100});
+    let ok_at = json!({"ms": 10});
+    // Codex's case: bar and beat together used to render at the bar and drop
+    // the beat. Every pair of time or length fields is refused the same way.
+    for at in [
+        json!({"deck": 1, "bar": 2, "beat": 100}),
+        json!({"deck": 1, "beat": 4, "position_ms": 900}),
+        json!({"deck": 1, "bar": 2, "ms": 5}),
+        json!({"frame": 480, "ms": 10}),
+    ] {
+        let e = with(at.clone(), ok_over.clone()).unwrap_err();
+        assert!(e.message.contains("give exactly one"), "{at}: {}", e.message);
+    }
+    for over in [json!({"ms": 100, "frames": 4800}), json!({"deck": 1, "beats": 4, "bars": 1})] {
+        let e = with(ok_at.clone(), over.clone()).unwrap_err();
+        assert!(e.message.contains("give exactly one"), "{over}: {}", e.message);
+    }
+    let e = parse_plan(&json!({"end": {"deck": 1, "bar": 3, "beat": 1}, "events": []})).unwrap_err();
+    assert!(e.message.starts_with("plan.end"), "{}", e.message);
+    // Controls: each field alone still parses.
+    for at in [json!({"deck": 1, "bar": 2}), json!({"deck": 1, "beat": 4}), json!({"deck": 1, "position_ms": 900}), json!({"frame": 480}), json!({"ms": 10})] {
+        assert!(with(at.clone(), ok_over.clone()).is_ok(), "{at}");
+    }
+    for over in [json!({"ms": 100}), json!({"frames": 4800}), json!({"deck": 1, "beats": 4}), json!({"deck": 1, "bars": 1})] {
+        assert!(with(ok_at.clone(), over.clone()).is_ok(), "{over}");
+    }
+}

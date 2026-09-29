@@ -101,8 +101,19 @@ fn finite(o: &Map<String, Value>, what: &str, key: &str) -> Result<Option<f64>, 
     }
 }
 
+/// Refuse a time or length that names more than one of `keys`: taking one
+/// and ignoring the rest would render the plan at a place it did not mean.
+fn at_most_one(o: &Map<String, Value>, what: &str, keys: &[&str]) -> Result<(), ProtoError> {
+    let given: Vec<&str> = keys.iter().copied().filter(|k| o.contains_key(*k)).collect();
+    if given.len() > 1 {
+        return Err(invalid(format!("{what} gives {}; give exactly one", given.join(" and "))));
+    }
+    Ok(())
+}
+
 fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
     let o = obj(v, what)?;
+    at_most_one(o, what, &["bar", "beat", "position_ms", "frame", "ms"])?;
     if o.contains_key("deck") {
         let deck = deck_of(o, what)?;
         // Bars count from 1, beats from 0 and track time from 0: anything
@@ -138,6 +149,7 @@ fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
 
 fn parse_over(v: &Value, what: &str) -> Result<Over, ProtoError> {
     let o = obj(v, what)?;
+    at_most_one(o, what, &["beats", "bars", "ms", "frames"])?;
     let positive = |x: f64, k: &str| {
         if x > 0.0 {
             Ok(x)

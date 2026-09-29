@@ -667,7 +667,11 @@ impl Deck {
             let last = t.beats.len() as i64 - 1;
             let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
             let dur = t.duration_ms();
-            let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).unwrap_or(0);
+            // A grid with no beat inside the decoded audio has nowhere to
+            // land; the page refuses it too (`beatJumpTargetWithinDurationMs`).
+            let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).ok_or_else(|| {
+                EngineError::new(ErrorCode::Invalid, "beat jump: no grid beat at or before the end of the decoded audio")
+            })?;
             let target = t.beats[i].time_ms.clamp(0.0, dur);
             let Some((a, b)) = self.looping else {
                 self.pos = t.ms_to_frames(target);
@@ -1510,6 +1514,21 @@ mod tests {
         d.beat_jump(16.0).unwrap();
         assert_eq!(d.pos, 360000.0);
         assert!(d.beat_jump(0.5).is_err());
+        // Codex's case: a 500 ms track whose grid starts after its audio ends
+        // has no beat to land on; the jump is refused and nothing moves,
+        // where it used to land on the track end.
+        let mut d = Deck::new(48000.0);
+        let late = vec![Beat { time_ms: 1000.0, downbeat: true }, Beat { time_ms: 1500.0, downbeat: false }];
+        d.load(Arc::new(silent(48000, 0.5, late)));
+        let e = d.beat_jump(1.0).unwrap_err();
+        assert!(e.message.contains("no grid beat"), "{}", e.message);
+        assert_eq!(d.pos, 0.0);
+        // Control: one beat inside the audio is enough to land on.
+        let mut d = Deck::new(48000.0);
+        let one_in = vec![Beat { time_ms: 400.0, downbeat: true }, Beat { time_ms: 1500.0, downbeat: false }];
+        d.load(Arc::new(silent(48000, 0.5, one_in)));
+        d.beat_jump(1.0).unwrap();
+        assert_eq!(d.pos, 400.0 * 48.0);
     }
 
     #[test]
