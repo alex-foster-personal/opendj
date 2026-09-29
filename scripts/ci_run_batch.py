@@ -201,32 +201,38 @@ def fetch_inflight_runs(
     token: str,
     agent: str,
     *,
+    workflow_names: Iterable[str],
     created_before: str,
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Every run not yet completed that was created before `created_before`.
+    """Every run of the named workflows not yet completed and created before
+    `created_before`.
 
-    One page per status, for the same reason the completed listing is one page per
-    slice: paging a set that changes under the reader can skip a member. Only runs
-    older than the cutoff matter to the census, and those are few; a status that fills
-    a page fails the pass rather than reading a second one.
+    One page per workflow and status, for the same reason the completed listing is one
+    page per slice: paging a set that changes under the reader can skip a member. Only
+    watched runs older than the cutoff matter to the census, and those are few; a page
+    that fills fails the pass rather than reading a second one. Listing per watched
+    workflow keeps old runs of unwatched workflows from filling that page (Sol P1 on
+    #3844: a repo-wide page full of them would wedge every pass).
     """
     fetch = get_json or (lambda url: _get_json(url, token, agent))
+    base = f"https://api.github.com/repos/{repository}/actions/workflows"
     seen: dict[str, dict[str, Any]] = {}
-    for status in INFLIGHT_STATUSES:
-        batch = (
-            fetch(
-                f"https://api.github.com/repos/{repository}/actions/runs"
-                f"?status={status}&per_page={PAGE_SIZE}&created=<{created_before}"
-            ).get("workflow_runs")
-            or []
-        )
-        if len(batch) >= PAGE_SIZE:
-            raise RuntimeError(
-                f"{PAGE_SIZE} or more {status} runs were created before {created_before}; "
-                "the census would need a second page"
+    for name, workflow_id in sorted(_workflow_ids(base, set(workflow_names), fetch).items()):
+        for status in INFLIGHT_STATUSES:
+            batch = (
+                fetch(
+                    f"{base}/{workflow_id}/runs"
+                    f"?status={status}&per_page={PAGE_SIZE}&created=<{created_before}"
+                ).get("workflow_runs")
+                or []
             )
-        seen.update((str(run["id"]), run) for run in batch)
+            if len(batch) >= PAGE_SIZE:
+                raise RuntimeError(
+                    f"{PAGE_SIZE} or more {status} runs of {name!r} were created before "
+                    f"{created_before}; the census would need a second page"
+                )
+            seen.update((str(run["id"]), run) for run in batch)
     return list(seen.values())
 
 
@@ -280,7 +286,11 @@ def main(argv: list[str] | None = None) -> int:
         now = datetime.now(UTC)
         lookback = timedelta(hours=args.lookback_hours)
         inflight = fetch_inflight_runs(
-            args.repository, token, "ci-run-batch", created_before=iso(now - lookback)
+            args.repository,
+            token,
+            "ci-run-batch",
+            workflow_names=watched,
+            created_before=iso(now - lookback),
         )
         held = runs_held_back(inflight, watched, now, lookback)
         for run in held:

@@ -19,6 +19,7 @@ import pytest
 
 from scripts.ci_cost_guard import render_batch_summary, select_batch_runs
 from scripts.ci_run_batch import (
+    INFLIGHT_STATUSES,
     batch_since,
     created_slices,
     fetch_completed_runs,
@@ -169,8 +170,13 @@ START = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
 def _list(created: dict[str, list[datetime]], names: set[str]) -> tuple[list[dict], list[str]]:
     get, requested = _github(created)
     runs = fetch_completed_runs(
-        "o/r", "2026-09-22T00:00:00Z", "t", "test",
-        workflow_names=names, now=START + timedelta(hours=2), get_json=get,
+        "o/r",
+        "2026-09-22T00:00:00Z",
+        "t",
+        "test",
+        workflow_names=names,
+        now=START + timedelta(hours=2),
+        get_json=get,
     )
     return runs, requested
 
@@ -287,24 +293,74 @@ def test_no_in_flight_straggler_lets_the_pass_advance() -> None:
     assert runs_held_back(inflight, {"CI"}, NOW, timedelta(hours=6)) == []
 
 
-def test_the_census_reads_one_page_of_old_runs_per_status() -> None:
+def _census_github(runs_per_page: int) -> tuple[list[str], Callable[[str], dict]]:
     requested: list[str] = []
 
     def get(url: str) -> dict:
         requested.append(url)
-        return {"workflow_runs": [_inflight(1, "CI", "2026-09-29T05:00:00Z")]}
+        if "/actions/workflows?" in url:
+            return {"workflows": [{"id": 10, "name": "CI"}, {"id": 20, "name": "Nightly"}]}
+        return {
+            "workflow_runs": [
+                _inflight(k, "CI", "2026-09-29T05:00:00Z") for k in range(1, runs_per_page + 1)
+            ]
+        }
 
+    return requested, get
+
+
+def test_the_census_reads_one_page_per_watched_workflow_and_status() -> None:
+    requested, get = _census_github(1)
     runs = fetch_inflight_runs(
-        "o/r", "t", "test", created_before="2026-09-29T06:00:00Z", get_json=get
+        "o/r",
+        "t",
+        "test",
+        workflow_names=["CI"],
+        created_before="2026-09-29T06:00:00Z",
+        get_json=get,
     )
     assert [run["id"] for run in runs] == [1]
-    assert all("created=<2026-09-29T06:00:00Z" in url for url in requested)
-    assert not any(re.search(r"[?&]page=", url) for url in requested)
+    run_urls = [url for url in requested if "/runs?" in url]
+    assert len(run_urls) == len(INFLIGHT_STATUSES)
+    assert all("/actions/workflows/10/runs?" in url for url in run_urls)
+    assert all("created=<2026-09-29T06:00:00Z" in url for url in run_urls)
+    assert not any(re.search(r"[?&]page=", url) for url in run_urls)
+
+
+def test_the_census_never_reads_the_repo_wide_listing() -> None:
+    requested, get = _census_github(1)
+    fetch_inflight_runs(
+        "o/r",
+        "t",
+        "test",
+        workflow_names=["CI"],
+        created_before="2026-09-29T06:00:00Z",
+        get_json=get,
+    )
+    assert not any("/actions/runs?" in url for url in requested)
 
 
 def test_a_census_status_that_fills_a_page_fails_closed() -> None:
-    def get(url: str) -> dict:
-        return {"workflow_runs": [_inflight(k, "CI", "2026-09-29T05:00:00Z") for k in range(100)]}
-
+    _, get = _census_github(100)
     with pytest.raises(RuntimeError, match="second page"):
-        fetch_inflight_runs("o/r", "t", "test", created_before="2026-09-29T06:00:00Z", get_json=get)
+        fetch_inflight_runs(
+            "o/r",
+            "t",
+            "test",
+            workflow_names=["CI"],
+            created_before="2026-09-29T06:00:00Z",
+            get_json=get,
+        )
+
+
+def test_a_census_name_with_no_workflow_fails() -> None:
+    _, get = _census_github(1)
+    with pytest.raises(RuntimeError, match="exactly one workflow"):
+        fetch_inflight_runs(
+            "o/r",
+            "t",
+            "test",
+            workflow_names=["CI", "Gone"],
+            created_before="2026-09-29T06:00:00Z",
+            get_json=get,
+        )
