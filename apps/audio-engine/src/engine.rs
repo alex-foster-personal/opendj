@@ -151,6 +151,9 @@ pub struct DeckSnapshot {
     /// None until a cue point is set (first CUE while paused, or a pause).
     pub cue_ms: Option<f64>,
     pub loop_ms: Option<(f64, f64)>,
+    /// Beat length of the engaged loop when it is a beat loop, None for a
+    /// loop set by bounds (the page's `LoopState.beat_length`).
+    pub loop_beats: Option<f64>,
     pub trim: f64,
     pub eq: [f64; 3],
     pub filter: f64,
@@ -366,6 +369,7 @@ impl Engine {
                 assign: d.assign,
                 pitch_range: d.pitch_range,
                 loop_ms: d.looping.map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b))),
+                loop_beats: d.looping.and(d.loop_beats),
                 trim: d.trim,
                 eq: d.eq,
                 filter: d.filter,
@@ -569,6 +573,18 @@ mod tests {
         let s = e.snapshot();
         assert_eq!((s.decks[1].assign, s.decks[1].pitch_range), (Assign::B, 8.0));
         assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::Thru, None));
+    }
+
+    #[test]
+    fn the_snapshot_says_whether_the_loop_is_a_beat_loop() {
+        let mut e = Engine::new(48000);
+        let t = Arc::new(Track::new(48000, vec![0.0f32; 48000 * 2 * 10], vec![], Some(120.0)));
+        e.apply(EngineCmd::Load { deck: 1, track: t }).unwrap();
+        e.apply(EngineCmd::BeatLoop { deck: 1, beats: 4.0, start_ms: Some(1000.0) }).unwrap();
+        let d = e.snapshot().decks[0];
+        assert_eq!((d.loop_ms, d.loop_beats), (Some((1000.0, 3000.0)), Some(4.0)));
+        e.apply(EngineCmd::Loop { deck: 1, bounds_ms: Some((1000.0, 3000.0)) }).unwrap();
+        assert_eq!(e.snapshot().decks[0].loop_beats, None);
     }
 
     #[test]

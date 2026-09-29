@@ -56,10 +56,9 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
     let mut scratch: Vec<f32> = Vec::new();
     let mut sample_rate = 0u32;
     loop {
-        let packet = match format.next_packet() {
+        let packet = match end_or_packet(format.next_packet()) {
             Ok(Some(p)) => p,
             Ok(None) => break,
-            Err(SymError::ResetRequired) => break,
             Err(e) => return Err(dec_err("read error in", &e)),
         };
         if packet.track_id != track_id {
@@ -92,4 +91,31 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
     Ok(Decoded { sample_rate, pcm })
+}
+
+/// `Ok(None)` is the end of the stream. A reset part-way through (a chained
+/// stream whose tracks or codec change) is an ERROR, not the end: reading it
+/// as the end would load a truncated track as a success, and one decoder at
+/// one sample rate cannot follow the change anyway.
+fn end_or_packet<T>(next: Result<Option<T>, SymError>) -> Result<Option<T>, String> {
+    match next {
+        Ok(p) => Ok(p),
+        Err(SymError::ResetRequired) => {
+            Err("the stream changes part-way through (chained stream); refusing a truncated decode".into())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reset_part_way_through_is_an_error_not_the_end() {
+        assert!(end_or_packet::<()>(Err(SymError::ResetRequired)).is_err());
+        // Control: the real end of the stream still ends it cleanly.
+        assert_eq!(end_or_packet::<()>(Ok(None)), Ok(None));
+        assert_eq!(end_or_packet(Ok(Some(7))), Ok(Some(7)));
+    }
 }

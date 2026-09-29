@@ -15,7 +15,7 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::deck::Beat;
+use crate::deck::{Beat, MAX_BEATS};
 use crate::engine::{DeckId, EngineCmd, EqBand, ErrorCode, KnobTarget, Snapshot, MAX_DECKS};
 use crate::mixer::Assign;
 
@@ -118,6 +118,17 @@ fn num(o: &Obj, ty: &str, name: &str) -> Result<f64, ProtoError> {
         .ok_or_else(|| invalid(format!("{ty}.{name} must be a number")))?;
     if !v.is_finite() {
         return Err(invalid(format!("{ty}.{name} must be finite")));
+    }
+    Ok(v)
+}
+
+/// A beat loop's length or a beat jump's distance. Bounded here, before the
+/// command reaches the engine, so beat-index arithmetic on it can neither
+/// saturate a cast nor overflow; the deck refuses the same range again.
+fn beat_count(o: &Obj, ty: &str) -> Result<f64, ProtoError> {
+    let v = num(o, ty, "beats")?;
+    if v.abs() > MAX_BEATS {
+        return Err(invalid(format!("{ty}.beats must be at most {MAX_BEATS} either way, got {v}")));
     }
     Ok(v)
 }
@@ -255,10 +266,10 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         }
         "beat_loop" => apply(EngineCmd::BeatLoop {
             deck: deck_of(o, ty)?,
-            beats: num(o, ty, "beats")?,
+            beats: beat_count(o, ty)?,
             start_ms: opt_num(o, ty, "start_ms")?,
         }),
-        "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: num(o, ty, "beats")? }),
+        "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: beat_count(o, ty)? }),
         "tempo" => apply(EngineCmd::Tempo { deck: deck_of(o, ty)?, ratio: num(o, ty, "ratio")? }),
         "pitch_range" => apply(EngineCmd::PitchRange { deck: deck_of(o, ty)?, range: num(o, ty, "range")? }),
         "master_tempo" => {
@@ -391,7 +402,15 @@ pub fn state_json(s: &Snapshot, host_time_ns: Option<u64>) -> Value {
                 "rate": if d.playing { d.tempo } else { 0.0 },
                 "tempo": d.tempo,
                 "cue_ms": d.cue_ms,
-                "loop": d.loop_ms.map(|(a, b)| json!({"in_ms": a, "out_ms": b})),
+                // The page's LoopState: null when no loop is engaged, so
+                // `engaged` is always true here and `beat_length` is null for
+                // a loop set by bounds.
+                "loop": d.loop_ms.map(|(a, b)| json!({
+                    "in_ms": a,
+                    "out_ms": b,
+                    "engaged": true,
+                    "beat_length": d.loop_beats,
+                })),
                 "trim": d.trim,
                 "eq": {"low": d.eq[0], "mid": d.eq[1], "high": d.eq[2]},
                 "filter": d.filter,
@@ -470,6 +489,47 @@ mod tests {
         assert!(e.message.contains("stable_id"), "{}", e.message);
         let e = cmd(json!({"type": "eq", "deck": 1, "band": "sub", "value": 0.5})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn beat_counts_are_bounded_before_dispatch() {
+        for (ty, beats) in [("beat_loop", 1e300), ("beat_loop", 65537.0), ("beat_jump", -1e19), ("beat_jump", 65537.0)] {
+            let e = cmd(json!({"type": ty, "deck": 1, "beats": beats})).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid, "{ty} {beats}");
+            assert!(e.message.contains(&format!("{ty}.beats")), "{}", e.message);
+        }
+        // Control: the bound itself still reaches the engine, either way.
+        assert!(matches!(
+            cmd(json!({"type": "beat_jump", "deck": 1, "beats": -65536})),
+            Ok(Command::Apply(EngineCmd::BeatJump { beats, .. })) if beats == -65536.0
+        ));
+        assert!(matches!(
+            cmd(json!({"type": "beat_loop", "deck": 1, "beats": 65536})),
+            Ok(Command::Apply(EngineCmd::BeatLoop { beats, .. })) if beats == 65536.0
+        ));
+    }
+
+    #[test]
+    fn the_state_feed_carries_the_loop_as_the_page_holds_it() {
+        let mut s = Snapshot {
+            frame: 0,
+            sample_rate: 48000,
+            decks: Default::default(),
+            crossfader: 0.5,
+            master_volume: 1.0,
+            master_muted: false,
+        };
+        s.decks[0].loop_ms = Some((1000.0, 3000.0));
+        s.decks[0].loop_beats = Some(4.0);
+        s.decks[1].loop_ms = Some((500.0, 900.0));
+        let v = state_json(&s, None);
+        assert_eq!(
+            v["decks"][0]["loop"],
+            json!({"in_ms": 1000.0, "out_ms": 3000.0, "engaged": true, "beat_length": 4.0})
+        );
+        // A loop set by bounds has no beat length; no loop is null.
+        assert_eq!(v["decks"][1]["loop"]["beat_length"], Value::Null);
+        assert_eq!(v["decks"][2]["loop"], Value::Null);
     }
 
     #[test]
