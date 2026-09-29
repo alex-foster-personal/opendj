@@ -81,5 +81,10 @@ same-repo branches, with a read-only token.
 - [if] `tests/fixtures/security/sast-control/` (a file with one known-bad pattern per
   custom rule, excluded from normal runs) produces zero Semgrep findings in the control
   step [then] fail: the rules or the parser are broken.
+- [if] the control directory holds untracked files (a `__pycache__` written by pytest)
+  [then] the control still passes: its file floor and semgrep targets are the git-tracked
+  list (`git ls-files`), never a filesystem walk.
+- [if] a tracked control file is missing from the working tree or semgrep does not scan it
+  [then] UNKNOWN, and the message names that file.
 - [if] a PR adds `subprocess.run(cmd, shell=True)` under `apps/` [then] the PR fails.
 - [if] the ruff `S` count on a PR exceeds the ratchet baseline [then] the PR fails.
