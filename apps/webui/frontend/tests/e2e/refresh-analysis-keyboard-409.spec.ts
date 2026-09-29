@@ -29,6 +29,11 @@
  *   POST is pending comes back when the POST settles [then] stop. The POST is
  *   held with page.route and then continued to the real engine, unchanged.
  *   The started run still polls while it lasts (its done toast proves it).
+ * [if] a status GET the engine answered before the run started, delivered to
+ *   the page after the POST settled, puts the idle status back and the run
+ *   stops being followed [then] stop (Codex P2 4130868861). The GET's real
+ *   answer is only delayed by page.route (route.fetch, then fulfill with that
+ *   same response), never rewritten.
  * [if] the popover closes (Escape, blur, or the mouse leaving) and polling goes
  *   on once the job is over [then] stop.
  * control [if] a hovered mouse click's 409 opens it a second time or runs a
@@ -100,6 +105,15 @@ async function expectPollingStops(page: Page, request: APIRequestContext, wire: 
 	expect(wire.status.length, 'closed and idle: no timer left running').toBe(closedAt);
 }
 
+/** Make the page's own library sweep launch a real CLI (the vocals step runs
+ * its from-stems CLI whatever the target count), so the POST reliably answers
+ * with the run still going. An analysis-only sweep has no targets once an
+ * earlier spec analyzed the fixture and can be over before the POST answers. */
+async function sweepRunsCli(request: APIRequestContext): Promise<void> {
+	const put = await request.put(CONFIG, { data: { enabled: { analysis: false, stems: false, vocals: true } } });
+	expect(put.ok()).toBe(true);
+}
+
 /** Hold the page's refresh POST until release(), then send it on to the real
  * engine unchanged. Nothing is fulfilled or rewritten here. */
 async function holdRefreshPost(
@@ -130,17 +144,13 @@ async function expectStaysDismissed(page: Page, request: APIRequestContext, wire
 	const started = (await (await answered).json()) as { running: boolean };
 	await expect.poll(() => wire.posts.length, { timeout: 10_000 }).toBe(1);
 	expect(wire.posts[0], 'the held POST reached the real engine and started a run').toBe(202);
+	expect(started.running, 'the sweep runs a CLI, so it is still going when the POST answers').toBe(true);
 	await page.waitForTimeout(1_500);
 	await expect(pop).toBeHidden();
 	expect(wire.config.length, 'nothing opened the popover again').toBe(1);
-	// A run the engine reported running is still followed while it lasts: its
-	// done toast comes only from the status polling. A library sweep with no
-	// targets can already be over when the POST answers (seen on CI after an
-	// earlier spec analyzed the fixture); then there is nothing to follow.
-	test.info().annotations.push({ type: 'post-answered-running', description: String(started.running) });
-	if (started.running) {
-		await expect(page.getByText(/^Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
-	}
+	// The run is still followed while it lasts: its done toast comes only
+	// from the status polling.
+	await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
 	await expect(pop).toBeHidden();
 	await expectPollingStops(page, request, wire);
 }
@@ -221,6 +231,7 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 	});
 
 	test('Escape while the POST is pending keeps the popover dismissed after it settles', async ({ page, request }) => {
+		await sweepRunsCli(request);
 		await page.goto('/performance');
 		const wire = watchWire(page);
 		const held = await holdRefreshPost(page);
@@ -238,6 +249,7 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 	});
 
 	test('the mouse leaving while the POST is pending keeps the popover dismissed', async ({ page, request }) => {
+		await sweepRunsCli(request);
 		await page.goto('/performance');
 		const wire = watchWire(page);
 		const held = await holdRefreshPost(page);
@@ -252,6 +264,64 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		await page.mouse.move(0, 0);
 		await expect(pop).toBeHidden();
 		await expectStaysDismissed(page, request, wire, held.release);
+	});
+
+	test('a status GET sent before the POST and answered after it does not undo the run', async ({ page, request }) => {
+		await sweepRunsCli(request);
+		await page.goto('/performance');
+		const wire = watchWire(page);
+		const btn = page.getByTestId('refresh-analysis');
+		await expect(btn).toBeVisible({ timeout: 30_000 });
+		await btn.focus();
+		await waitIdle(request);
+		// The popover's first status GET is sent to the real engine at once and
+		// its real answer kept; the POST is held until that answer exists, so the
+		// engine really answered the GET before the run started. The answer is
+		// delivered to the page, unchanged, only after the POST has settled.
+		const post = await holdRefreshPost(page);
+		let gotStale = (): void => {};
+		const staleReady = new Promise<void>((r) => (gotStale = r));
+		let deliver = (): void => {};
+		const delivered = new Promise<void>((r) => (deliver = r));
+		let fulfilled = (): void => {};
+		const staleDelivered = new Promise<void>((r) => (fulfilled = r));
+		let staleBody: { running?: boolean } = {};
+		let first = true;
+		await page.route(
+			(url) => url.pathname === STATUS,
+			async (route) => {
+				if (!first) return route.continue();
+				first = false;
+				const response = await route.fetch();
+				staleBody = (await response.json()) as { running?: boolean };
+				gotStale();
+				await delivered;
+				await route.fulfill({ response });
+				fulfilled();
+			}
+		);
+		await btn.press('Enter');
+		await staleReady;
+		expect(staleBody.running, 'the held answer is the pre-start idle one').toBe(false);
+		const answered = page.waitForResponse(
+			(r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh'
+		);
+		post.release();
+		const started = (await (await answered).json()) as { running: boolean };
+		expect(started.running, 'the POST started a run that is still going').toBe(true);
+		// Dismissed with the run going: only the run keeps the polling alive now.
+		await btn.press('Escape');
+		await expect(page.getByTestId('refresh-analysis-pop')).toBeHidden();
+		deliver();
+		await staleDelivered;
+		// Still followed: the page polls again after the stale answer landed. Had
+		// it put the idle status back, the dismissed popover's timer would have
+		// stopped right there and nothing would poll. (A done toast alone cannot
+		// tell: the stale snapshot of the previous run can raise one too.)
+		const afterStale = wire.status.length;
+		await expect.poll(() => wire.status.length, { timeout: 5_000 }).toBeGreaterThan(afterStale);
+		await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+		await expectPollingStops(page, request, wire);
 	});
 
 	test('the popover a keyboard 409 opens polls live progress, and Escape stops it', async ({ page, request }) => {

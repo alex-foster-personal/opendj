@@ -15,7 +15,7 @@
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import { RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
 	import { closeIoView, ioSurface } from '$lib/rb/io-surface.svelte';
-	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { toggleMidiPanel, midiUi, midiEnabledPersisted } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import Knob from './Knob.svelte';
@@ -163,13 +163,16 @@
 	// MIDI status moved here with MIDI connect (CHROME-07): the entry keeps the
 	// gray / amber / green / red reading the top-bar MIDI label used to carry.
 	// Logic lives in midi-format.ts (pure, unit-tested); this is the plumbing.
+	// Turning MIDI off keeps the browser's grant and empties the device list, so
+	// the persisted choice tells an explicit off (gray) from a lost device (red).
 	const midiMappedCount = $derived(midiState.devices.filter((d) => d.mapVendor !== null).length);
+	const midiOn = $derived(midiEnabledPersisted());
 	const midiStatus = $derived(
-		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
+		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0, midiOn)
 	);
 	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
 	const midiTitle = $derived(
-		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
+		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length, midiOn)
 	);
 
 	// Both MIDI entries open the drawer and unpin the I/O view: the pinned I/O
@@ -257,17 +260,13 @@
 	>
 		<button
 			type="button"
-			class="hp-btn midi-btn"
-			class:st-grey={midiStatus === 'grey'}
-			class:st-green={midiStatus === 'green'}
-			class:st-amber={midiStatus === 'amber'}
-			class:st-red={midiStatus === 'red'}
+			class="hp-btn midi-btn st-{midiStatus}"
 			aria-label="Open MIDI panel"
 			aria-expanded={midiUi.panelOpen}
 			onclick={openMidiDrawer}
 			>MIDI{#if midiGlyph !== 'none'}<svg class="midi-glyph" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"
 					><path
-						d={midiGlyph === 'tick' ? 'M2 6.2 L5 9.2 L10 3' : 'M3 3 L9 9 M9 3 L3 9'}
+						d={midiGlyph === 'tick' ? 'M2 6.2 5 9.2 10 3' : 'M3 3l6 6m0-6-6 6'}
 						fill="none"
 						stroke="currentColor"
 						stroke-width="1.6"
@@ -411,11 +410,7 @@
 		>
 			<button
 				type="button"
-				class="hp-btn midi-btn io-midi"
-				class:st-grey={midiStatus === 'grey'}
-				class:st-green={midiStatus === 'green'}
-				class:st-amber={midiStatus === 'amber'}
-				class:st-red={midiStatus === 'red'}
+				class="hp-btn midi-btn io-midi st-{midiStatus}"
 				aria-label="Open MIDI panel from audio I/O"
 				aria-expanded={midiUi.panelOpen}
 				onclick={openMidiDrawer}>MIDI</button

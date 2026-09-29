@@ -8,6 +8,7 @@
 //   if describeSource(null) doesn't say 'undecoded' then broken
 //   if midiLabelStatus(granted, no mapped device) is green then broken
 //   if midiLabelStatus with requestPending isn't amber then broken
+//   if midiLabelStatus(granted, MIDI turned off) is red then broken
 //   if requestMidiAccess failure leaves midiUi.lastError null then broken
 //   if two toggleMidiPanel calls don't restore panelOpen then broken
 
@@ -107,18 +108,28 @@ test('formatLogTs renders seconds since page load and rejects bad input', () => 
 // -------------------------------------------------------- label status logic
 
 test('midiLabelStatus: amber while a request is pending, above all else', () => {
-	assert.equal(fmt.midiLabelStatus('prompt', true, false), 'amber');
-	assert.equal(fmt.midiLabelStatus('granted', true, true), 'amber');
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, false), 'amber');
+	assert.equal(fmt.midiLabelStatus('granted', true, true, true), 'amber');
 });
 
 test('midiLabelStatus: green when granted with a mapped device, red without', () => {
-	assert.equal(fmt.midiLabelStatus('granted', false, true), 'green');
+	assert.equal(fmt.midiLabelStatus('granted', false, true, true), 'green');
 	// granted but no mapped device = access was granted then the controller
 	// disconnected (or nothing recognised is plugged in) -> red X.
-	assert.equal(fmt.midiLabelStatus('granted', false, false), 'red');
-	assert.equal(fmt.midiLabelStatus('prompt', false, false), 'grey');
-	assert.equal(fmt.midiLabelStatus('denied', false, false), 'grey');
-	assert.equal(fmt.midiLabelStatus('unsupported', false, false), 'grey');
+	assert.equal(fmt.midiLabelStatus('granted', false, false, true), 'red');
+	assert.equal(fmt.midiLabelStatus('prompt', false, false, true), 'grey');
+	assert.equal(fmt.midiLabelStatus('denied', false, false, true), 'grey');
+	assert.equal(fmt.midiLabelStatus('unsupported', false, false, true), 'grey');
+});
+
+test('midiLabelStatus: granted but turned off is gray, not a lost device (Codex P2, PR #3896)', () => {
+	// releaseMidiInputs() keeps the grant and empties the device list.
+	assert.equal(fmt.midiLabelStatus('granted', false, false, false), 'grey');
+	assert.equal(fmt.midiLabelStatus('granted', false, true, false), 'grey');
+	// Control: the same empty list with MIDI on is still a lost device.
+	assert.equal(fmt.midiLabelStatus('granted', false, false, true), 'red');
+	// A request in flight stays amber whatever the stored choice says.
+	assert.equal(fmt.midiLabelStatus('granted', true, false, false), 'amber');
 });
 
 test('midiLabelGlyph: tick for green, cross for red, none otherwise', () => {
@@ -129,16 +140,25 @@ test('midiLabelGlyph: tick for green, cross for red, none otherwise', () => {
 });
 
 test('midiLabelTitle: granted with zero mapped devices reads as disconnected', () => {
-	assert.match(fmt.midiLabelTitle('granted', false, 0, 0), /granted but no mapped controller/);
-	assert.match(fmt.midiLabelTitle('granted', false, 0, 1), /granted but no mapped controller/);
+	assert.match(fmt.midiLabelTitle('granted', false, 0, 0, true), /granted but no mapped controller/);
+	assert.match(fmt.midiLabelTitle('granted', false, 0, 1, true), /granted but no mapped controller/);
+});
+
+test('midiLabelTitle: granted but turned off says so and points at Settings', () => {
+	const off = fmt.midiLabelTitle('granted', false, 0, 0, false);
+	assert.match(off, /off - turn it on in Settings/);
+	assert.doesNotMatch(off, /reconnect/);
+	// Control: the other permission states read the same whatever the choice.
+	assert.match(fmt.midiLabelTitle('denied', false, 0, 0, false), /denied/);
+	assert.match(fmt.midiLabelTitle('prompt', false, 0, 0, false), /request access/);
 });
 
 test('midiLabelTitle names every permission state', () => {
-	assert.match(fmt.midiLabelTitle('unsupported', false, 0, 0), /not supported/);
-	assert.match(fmt.midiLabelTitle('denied', false, 0, 0), /denied/);
-	assert.match(fmt.midiLabelTitle('prompt', false, 0, 0), /request access/);
-	assert.match(fmt.midiLabelTitle('granted', false, 1, 2), /1 mapped \/ 2 connected/);
-	assert.match(fmt.midiLabelTitle('granted', true, 0, 0), /pending/);
+	assert.match(fmt.midiLabelTitle('unsupported', false, 0, 0, true), /not supported/);
+	assert.match(fmt.midiLabelTitle('denied', false, 0, 0, true), /denied/);
+	assert.match(fmt.midiLabelTitle('prompt', false, 0, 0, true), /request access/);
+	assert.match(fmt.midiLabelTitle('granted', false, 1, 2, true), /1 mapped \/ 2 connected/);
+	assert.match(fmt.midiLabelTitle('granted', true, 0, 0, true), /pending/);
 });
 
 // ---------------------------------------------------- decoded trace labels

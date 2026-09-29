@@ -59,6 +59,15 @@
 	async function _poll(): Promise<void> {
 		try {
 			const s = await getIngestRefreshStatus();
+			// A snapshot of an older run (or of no run) than the one already shown
+			// is stale: a GET the engine answered before the POST started a run,
+			// delivered after it, would put the idle status back and the run would
+			// stop being followed (Codex P2 4130868861). The engine's own start
+			// stamp orders them, whatever order the responses arrive in. The `!`
+			// are deliberate: `<` reads a null stamp (no run) as 0 and a missing
+			// one (nothing shown yet) as NaN, which never compares less, so only
+			// an older run or no run is dropped.
+			if (s.started_at! < status?.started_at!) return;
 			const wasRunning = status?.running === true;
 			status = s;
 			fetchError = null;
@@ -112,7 +121,7 @@
 	// mouseleave to close it, so leaving the button closes it: focus
 	// moving elsewhere, or Escape. The mouse still over it keeps it open.
 	function onBlur(): void {
-		if (hovered && wrapEl?.matches(':hover') !== true) onLeave();
+		if (hovered && !wrapEl?.matches(':hover')) onLeave();
 	}
 
 	function onKeydown(e: KeyboardEvent): void {

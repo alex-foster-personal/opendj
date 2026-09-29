@@ -44,9 +44,15 @@ test('the I/O view MIDI entry keeps the status the top-bar MIDI label used to sh
 		fileURLToPath(new URL('../../src/lib/components/rb/mixer/HeadphoneCluster.svelte', import.meta.url)),
 		'utf8'
 	);
-	assert.match(cluster, /midiLabelStatus\(midiState\.permission, midiUi\.requestPending, midiMappedCount > 0\)/);
+	assert.match(cluster, /midiLabelStatus\(midiState\.permission, midiUi\.requestPending, midiMappedCount > 0, midiOn\)/);
+	// An explicit off must read the persisted choice, not a constant (Codex P2, PR #3896).
+	assert.match(cluster, /const midiOn = \$derived\(midiEnabledPersisted\(\)\)/);
+	assert.match(cluster, /midiLabelTitle\([^)]*, midiOn\)/);
+	// Both entries carry the derived status as their class (st-grey, st-green,
+	// st-amber, st-red), and each of the four has its own rule.
+	assert.equal((cluster.match(/class="hp-btn midi-btn[^"]* st-\{midiStatus\}"/g) ?? []).length, 2);
 	for (const status of ['grey', 'green', 'amber', 'red']) {
-		assert.match(cluster, new RegExp(`class:st-${status}=\\{midiStatus === '${status}'\\}`));
+		assert.match(cluster, new RegExp(`\\.midi-btn\\.st-${status} \\{`));
 	}
 	assert.match(cluster, /bullets=\{\[midiTitle, /, 'the MIDI explainer must say why the color is what it is');
 	assert.match(cluster, /midiGlyph === 'tick'/);

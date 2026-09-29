@@ -34,6 +34,8 @@
  *   persists then the controller comes back on against the user's choice
  * - if disabling rewrites midiState.permission then the panel lies about
  *   what the browser granted
+ * - if the MIDI entry ignores the off choice then turning MIDI off shows a
+ *   red cross and "reconnect your device" for a device nobody lost
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -76,7 +78,7 @@ before(() => {
 
 test('the child really ran without WebMIDI, against real storage (instrument check)', () => {
 	for (const [name, snap] of Object.entries(results)) {
-		if (['displayReactivity', 'failedRuntimeLoad', 'unwiredFailedRuntimeLoad'].includes(name)) continue; // not snapshots
+		if (['displayReactivity', 'failedRuntimeLoad', 'unwiredFailedRuntimeLoad', 'labelAfterOff'].includes(name)) continue; // not snapshots
 		assert.equal(snap.navigatorHasWebMidi, false, `${name}: this file asserts the no-WebMIDI branch`);
 	}
 	// Real storage both ways: an opt-in written was read back before the request cleared it.
@@ -138,6 +140,23 @@ test('disabling from settings leaves the permission state as the browser reporte
 	assert.equal(s.permission, 'unsupported', 'disable must not rewrite permission');
 	assert.equal(s.glueAttached, false);
 	assert.equal(s.persisted, false);
+});
+
+// Codex P2 4130868874: turning MIDI off empties the device list but keeps the
+// grant, and the I/O MIDI entry read that as a lost device (red, a cross,
+// "reconnect your device").
+test('MIDI turned off from settings reads gray with an off tooltip; opted in with nothing mapped stays red', () => {
+	const { optedIn, turnedOff, devices } = results.labelAfterOff;
+	// Control: the opt-in read back through real storage, no request in flight.
+	assert.equal(optedIn.on, true);
+	assert.equal(optedIn.pending, false);
+	assert.equal(optedIn.status, 'red', 'a lost device while MIDI is on must stay red');
+	assert.match(optedIn.title, /reconnect your device/);
+	assert.equal(turnedOff.on, false, 'the real settings path persisted the off choice');
+	assert.equal(turnedOff.pending, false);
+	assert.equal(devices, 0);
+	assert.equal(turnedOff.status, 'grey');
+	assert.match(turnedOff.title, /^MIDI: off - turn it on in Settings$/);
 });
 
 test('the settings MIDI toggle re-renders on toggle, on a failed runtime load clearing it, and on a disk hydrate', () => {

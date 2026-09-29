@@ -41,6 +41,7 @@ try {
 	const webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	const choice = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-enabled-choice.ts');
 	const stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
+	const fmt = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-format.ts');
 	// The page's own wiring (startAppInstruments): the failure toast reaches
 	// apply.ts through this reporter, since apply.ts does not import stores.
 	const appInit = await vite.ssrLoadModule('/src/lib/rb/app-init.ts');
@@ -117,6 +118,31 @@ try {
 	const settingRightAfterDisable = apply.readSettingValue('rb.midi_enabled');
 	await new Promise((r) => setTimeout(r, 50));
 	results.disableFromSettings = { ...snapshot(), settingRightAfterDisable };
+
+	// 9. The I/O MIDI entry's color after the user turns MIDI off (Codex P2,
+	// PR #3896). HeadphoneCluster feeds midiEnabledPersisted() into the real
+	// derivation below. 'granted' is the one input no headless host can
+	// produce (header of the parent test): it is supplied, while the choice
+	// and the emptied device list come from the real store and the real
+	// settings path. An opt-in with nothing mapped is a lost device (red);
+	// the same state after settings turns MIDI off is gray, not a fault.
+	const label = () => {
+		const on = choice.midiEnabledPersisted();
+		const n = webmidi.midiState.devices.length;
+		return {
+			on,
+			pending: uiState.midiUi.requestPending,
+			status: fmt.midiLabelStatus('granted', uiState.midiUi.requestPending, false, on),
+			title: fmt.midiLabelTitle('granted', uiState.midiUi.requestPending, 0, n, on)
+		};
+	};
+	localStorage.clear();
+	localStorage.setItem(choice.MIDI_ENABLED_KEY, '1');
+	const optedIn = label();
+	apply.applySettingChange('rb.midi_enabled', false);
+	await until(() => !choice.midiEnabledPersisted(), 'the off choice to persist');
+	await new Promise((r) => setTimeout(r, 50));
+	results.labelAfterOff = { optedIn, turnedOff: label(), devices: webmidi.midiState.devices.length };
 } finally {
 	await vite.close();
 }
