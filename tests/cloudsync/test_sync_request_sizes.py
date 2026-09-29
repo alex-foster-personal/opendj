@@ -18,11 +18,14 @@ Controls:
   for identity verdicts: the page stays under the cutover, or every page
   pays a library scan (the round 2 finding, back through the page size);
 * the probe for that must see the election when a page does cross it;
-* ``PULL_LIMIT`` stays within what the hub serves (``MAX_PULL_LIMIT``).
+* ``PULL_LIMIT`` stays within what the hub serves (``MAX_PULL_LIMIT``);
+* a push body of ``PUSH_BATCH_ROWS`` track rows 200 bytes wider than the
+  10k fixture's (580 B each) stays under a 1 MiB proxy default.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from pathlib import Path
@@ -44,6 +47,8 @@ pytestmark = pytest.mark.requirement("LIBM-120")
 SMALL_LIBRARY = 300
 LARGE_LIBRARY = 1_200
 ROWS_PER_REQUEST = 1_000
+PROXY_BODY_LIMIT_BYTES = 1_048_576
+WIDER_TITLE = "w" * 200
 
 
 # ----- fixtures -----------------------------------------------------------------
@@ -145,14 +150,37 @@ def test_first_sync_requests_grow_by_one_per_thousand_rows(
         f"{rows} rows took {push_requests} push requests; at most {allowed} "
         f"({ROWS_PER_REQUEST} rows per request, LIBM-120 L6)"
     )
-    # The reader drains every writer row, plus the hub's own few.
-    assert pull_requests <= allowed + 1, (
-        f"{rows} rows took {pull_requests} pull pages; at most {allowed + 1} (LIBM-120 L6)"
+    assert pull_requests <= allowed, (
+        f"{rows} rows took {pull_requests} pull pages; at most {allowed} (LIBM-120 L6)"
     )
 
 
 def test_the_pull_limit_is_one_the_hub_serves() -> None:
     assert 0 < client.PULL_LIMIT <= service.MAX_PULL_LIMIT
+
+
+def test_a_full_push_body_stays_under_a_proxy_default(tmp_path: Path) -> None:
+    print("if one push request of wide track rows exceeds a 1 MiB proxy body limit, then broken")
+    conn = _open_hub(tmp_path / "body")
+    try:
+        rows = [
+            protocol.RowChange(
+                table=change.table,
+                pk=change.pk,
+                values={**change.values, "title": f"{WIDER_TITLE}{index}"},
+            )
+            for index, change in enumerate(_new_tracks(conn, client.PUSH_BATCH_ROWS))
+        ]
+    finally:
+        conn.close()
+    body = json.dumps(
+        {"rows": [row.to_wire() for row in rows], "machine_id": "m" * 32},
+        separators=(",", ":"),
+    ).encode()
+    assert len(body) < PROXY_BODY_LIMIT_BYTES, (
+        f"{client.PUSH_BATCH_ROWS} rows make a {len(body):,}-byte push body, over "
+        f"{PROXY_BODY_LIMIT_BYTES:,}: a proxy with a default body limit refuses every push"
+    )
 
 
 # ----- overshoot controls -------------------------------------------------------
