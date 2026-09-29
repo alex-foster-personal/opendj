@@ -34,13 +34,19 @@
  *   stops being followed [then] stop (Codex P2 4130868861). The GET's real
  *   answer is only delayed by page.route (route.fetch, then fulfill with that
  *   same response), never rewritten.
+ * [if] a running status of a run, answered before that run's end reached the
+ *   page and delivered after it (two polls in flight at once), is applied: the
+ *   run is followed again and its end toasts a second time [then] stop (Codex
+ *   P2 4131292228). The held answer is the engine's own, delayed, not rewritten.
+ * control [if] a newer running status of the run already shown is dropped
+ *   (progress frozen until the run ends) [then] stop: the ordering overshot.
  * [if] the popover closes (Escape, blur, or the mouse leaving) and polling goes
  *   on once the job is over [then] stop.
  * control [if] a hovered mouse click's 409 opens it a second time or runs a
  *   second timer [then] stop.
  */
 // requirement: CHROME-10
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Route } from '@playwright/test';
 
 const STATUS = '/api/v1/ingest/refresh/status';
 const CONFIG = '/api/v1/ingest/config';
@@ -264,6 +270,163 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		await page.mouse.move(0, 0);
 		await expect(pop).toBeHidden();
 		await expectStaysDismissed(page, request, wire, held.release);
+	});
+
+	test('an earlier running status of a run, delivered after its end, neither revives it nor toasts twice', async ({
+		page,
+		request
+	}) => {
+		type Snap = { running: boolean; started_at: number | null; finished_at: number | null };
+		type Parked = { route: Route; sent: number };
+		const toasts = () => page.evaluate(() => (window as unknown as { __refreshToasts: number }).__refreshToasts);
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			await page.goto('/performance');
+			const wire = watchWire(page);
+			const btn = page.getByTestId('refresh-analysis');
+			await expect(btn).toBeVisible({ timeout: 30_000 });
+			// Every toast the page inserts, counted as it appears: one that has
+			// already auto-dismissed still counts.
+			await page.evaluate(() => {
+				const w = window as unknown as { __refreshToasts: number };
+				w.__refreshToasts = 0;
+				const seen = new WeakSet<Node>();
+				new MutationObserver((records) => {
+					for (const r of records)
+						for (const n of r.addedNodes)
+							if (!seen.has(n) && /Refresh (done|failed):/.test(n.textContent ?? '')) {
+								seen.add(n);
+								w.__refreshToasts += 1;
+							}
+				}).observe(document.body, { childList: true, subtree: true });
+			});
+			await waitIdle(request);
+
+			// Park every status request the page sends (the request leg is slow),
+			// until passThrough, after which each goes straight to the engine.
+			const parked: Parked[] = [];
+			let passThrough = false;
+			const matcher = (url: URL): boolean => url.pathname === STATUS;
+			await page.route(matcher, async (route) => {
+				if (passThrough) return route.continue();
+				parked.push({ route, sent: Date.now() });
+			});
+			await btn.hover(); // onEnter polls now, then every second while hovered
+			await expect.poll(() => parked.length, { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+			const ran = await startCliRun(request);
+			// Two of the page's polls reach the engine together while the run is
+			// going: both are its own answers for this run.
+			const [first, second] = parked.splice(0, 2);
+			const [r1, r2] = await Promise.all([first.route.fetch(), second.route.fetch()]);
+			const [a, b] = [(await r1.json()) as Snap, (await r2.json()) as Snap];
+			if (!ran || !a.running || !b.running || a.started_at !== b.started_at) {
+				console.log(`[refresh-overlap] attempt ${attempt} missed: ran ${ran}, answers running ${a.running}/${b.running}`);
+				await first.route.fulfill({ response: r1 });
+				await second.route.fulfill({ response: r2 });
+				passThrough = true;
+				for (const p of parked.splice(0)) await p.route.continue();
+				await page.unroute(matcher);
+				await page.mouse.move(0, 0);
+				await waitIdle(request);
+				continue;
+			}
+			await first.route.fulfill({ response: r1 }); // the page follows the run
+			passThrough = true;
+			for (const p of parked.splice(0)) await p.route.continue();
+			await waitIdle(request);
+			// The run's end reaches the page by its polling: one toast.
+			await expect.poll(toasts, { timeout: 30_000 }).toBe(1);
+			const endedAt = ((await (await request.get(STATUS)).json()) as Snap).finished_at;
+			expect(endedAt, 'the run the page followed has ended').not.toBeNull();
+
+			// Now the other overlapping poll's answer arrives: an earlier running
+			// status of that same run.
+			const polls = wire.status.length;
+			await second.route.fulfill({ response: r2 });
+			await expect.poll(() => wire.status.length, { timeout: 5_000 }).toBeGreaterThan(polls + 1);
+			await page.waitForTimeout(1_500);
+			expect(await toasts(), 'the stale running status revived the run and its end toasted again').toBe(1);
+			await expect(btn).not.toHaveClass(/running/);
+
+			await page.unroute(matcher);
+			await page.mouse.move(0, 0);
+			await expectPollingStops(page, request, wire);
+			return;
+		}
+		throw new Error('no attempt got two running answers of one run from the engine');
+	});
+
+	test('control: a newer running status of the same run still applies, so progress keeps updating', async ({
+		page,
+		request
+	}) => {
+		// The overshoot of the ordering above is dropping a snapshot of the run
+		// already shown; mid-run progress (log, step count, badges) would then
+		// freeze until the run ends.
+		type Snap = { running: boolean; started_at: number | null; log_tail: string[] };
+		await sweepRunsCli(request);
+		for (let attempt = 1; attempt <= 3; attempt++) {
+			await page.goto('/performance');
+			const wire = watchWire(page);
+			const btn = page.getByTestId('refresh-analysis');
+			await expect(btn).toBeVisible({ timeout: 30_000 });
+			const parked: Route[] = [];
+			let passThrough = false;
+			const matcher = (url: URL): boolean => url.pathname === STATUS;
+			await page.route(matcher, async (route) => {
+				if (passThrough) return route.continue();
+				parked.push(route);
+			});
+			const release = async (): Promise<void> => {
+				passThrough = true;
+				for (const r of parked.splice(0)) await r.continue();
+			};
+			await btn.focus();
+			await waitIdle(request);
+			const answered = page.waitForResponse(
+				(r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh'
+			);
+			await btn.press('Enter'); // opens (its poll is parked) and POSTs
+			const started = (await (await answered).json()) as Snap;
+			await expect.poll(() => parked.length, { timeout: 5_000 }).toBeGreaterThanOrEqual(1);
+			// Wait for the engine's log for this run to grow past what the POST
+			// carried, then let one parked poll reach it.
+			let grown = false;
+			for (let i = 0; i < 200 && !grown; i++) {
+				const now = (await (await request.get(STATUS)).json()) as Snap;
+				if (!now.running) break;
+				grown = now.log_tail.length > started.log_tail.length;
+			}
+			const route = parked.shift()!;
+			const res = await route.fetch();
+			const newer = (await res.json()) as Snap;
+			const line = newer.log_tail.at(-1) ?? '';
+			if (
+				!started.running ||
+				!grown ||
+				!newer.running ||
+				newer.started_at !== started.started_at ||
+				started.log_tail.includes(line)
+			) {
+				console.log(`[refresh-progress] attempt ${attempt} missed: log grew ${grown}, newer running ${newer.running}`);
+				await route.fulfill({ response: res });
+				await release();
+				await page.unroute(matcher);
+				await waitIdle(request);
+				continue;
+			}
+			await route.fulfill({ response: res });
+			// Every later poll is still parked, so only that answer can show it.
+			await expect(page.getByTestId('refresh-analysis-pop').locator('.pop-log')).toContainText(line, {
+				timeout: 2_000
+			});
+			await release();
+			await page.unroute(matcher);
+			await expect(page.getByText(/Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+			await btn.press('Escape');
+			await expectPollingStops(page, request, wire);
+			return;
+		}
+		throw new Error('no attempt saw the engine log grow within a running refresh');
 	});
 
 	test('a status GET sent before the POST and answered after it does not undo the run', async ({ page, request }) => {

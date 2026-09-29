@@ -85,12 +85,15 @@ test('a real running status still renders its progress bar alongside any click r
 	assert.doesNotMatch(popover.slice(0, statusAt), /\{#if clickFeedback === null\}/);
 });
 
-// Codex P2 4130868861: a status GET sent before the POST and answered after it
-// put the idle snapshot back. The engine's own start stamp orders snapshots:
-// null (no run) coerces to 0 and a first-ever status (undefined) to NaN, which
-// compares false, so only an older run or no run is dropped. Driven end to end
-// in tests/e2e/refresh-analysis-keyboard-409.spec.ts.
+// Codex P2 4130868861 and 4131292228: a status answer delivered out of order
+// (the pre-start idle one after the POST, or a running one after its run's
+// end) must not replace a newer one. A null key (no run, or nothing shown yet)
+// compares as 0. Driven end to end in
+// tests/e2e/refresh-analysis-keyboard-409.spec.ts, with the overshoot control.
 test('a polled snapshot older than the one shown is dropped before it is applied', () => {
 	const poll = refresh.slice(refresh.indexOf('async function _poll()'), refresh.indexOf('function _syncTimer()'));
-	assert.match(poll, /const s = await getIngestRefreshStatus\(\);[\s\S]*?if \(s\.started_at! < status\?\.started_at!\) return;\s*const wasRunning = status\?\.running === true;\s*status = s;/);
+	// The ordering key is the engine's own end stamp, else its start stamp
+	// (Codex P2 4130868861 and 4131292228), compared before anything applies.
+	assert.match(poll, /const at = \(x: typeof s \| null\) => x && \(x\.finished_at \?\? x\.started_at\);/);
+	assert.match(poll, /const s = await getIngestRefreshStatus\(\);[\s\S]*?if \(at\(s\)! < at\(status\)!\) return;\s*const wasRunning = status\?\.running === true;\s*status = s;/);
 });

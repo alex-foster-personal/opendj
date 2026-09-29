@@ -59,15 +59,19 @@
 	async function _poll(): Promise<void> {
 		try {
 			const s = await getIngestRefreshStatus();
-			// A snapshot of an older run (or of no run) than the one already shown
-			// is stale: a GET the engine answered before the POST started a run,
-			// delivered after it, would put the idle status back and the run would
-			// stop being followed (Codex P2 4130868861). The engine's own start
-			// stamp orders them, whatever order the responses arrive in. The `!`
-			// are deliberate: `<` reads a null stamp (no run) as 0 and a missing
-			// one (nothing shown yet) as NaN, which never compares less, so only
-			// an older run or no run is dropped.
-			if (s.started_at! < status?.started_at!) return;
+			// Responses can arrive out of order, so an older snapshot than the one
+			// shown is dropped. A GET answered before the POST started a run would
+			// put the idle status back and the run would stop being followed
+			// (Codex P2 4130868861); two overlapping polls could apply a run's end
+			// and then an earlier running snapshot of it, restarting the polling
+			// and toasting twice (4131292228). The engine's own stamps order every
+			// snapshot: a run's end (finished_at) comes after its start, and the
+			// single job slot starts a run only after the last one ended, so
+			// `finished_at ?? started_at` never goes back. The `!` are deliberate:
+			// `<` reads a null stamp (no run yet, or nothing shown yet) as 0, and
+			// nothing is older than 0.
+			const at = (x: typeof s | null) => x && (x.finished_at ?? x.started_at);
+			if (at(s)! < at(status)!) return;
 			const wasRunning = status?.running === true;
 			status = s;
 			fetchError = null;

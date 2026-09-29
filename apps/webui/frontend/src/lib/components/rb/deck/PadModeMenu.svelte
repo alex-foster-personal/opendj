@@ -48,7 +48,7 @@
 		data-testid={`hot-cue-menu-deck-${deckId}`}
 		onclick={() => (open = !open)}
 	>
-		HOT CUE <span class="caret">&#9662;</span>
+		HOT CUE
 	</button>
 	{#if open}
 		<div
@@ -81,8 +81,18 @@
 		height: 18px;
 		box-sizing: border-box;
 	}
-	.caret {
-		color: var(--rb-text-dim);
+	/* CHROME-01: the caret is a CSS border triangle, never a text glyph. */
+	.dropdown::after {
+		content: '';
+		display: inline-block;
+		width: 0;
+		height: 0;
+		/* the gap the space before a glyph used to leave */
+		margin-left: 5px;
+		vertical-align: middle;
+		border-left: 3px solid transparent;
+		border-right: 3px solid transparent;
+		border-top: 4px solid var(--rb-text-dim);
 	}
 	.pad-menu-wrap {
 		position: relative;

@@ -22,7 +22,7 @@
 		closeLogPopout,
 		floatMidiPanel,
 		midiUi,
-		requestMidiAccess,
+		applyMidiEnabledSetting,
 		setMidiPanelWidthMode,
 		toggleMidiPanel,
 		toggleMidiPanelExpanded
@@ -134,7 +134,7 @@
 					<button
 						class="perm-request"
 						disabled={midiUi.requestPending}
-						onclick={() => void requestMidiAccess()}
+						onclick={() => void applyMidiEnabledSetting(true)}
 					>
 						{midiUi.requestPending ? 'Waiting for browser prompt...' : 'Request MIDI access'}
 					</button>

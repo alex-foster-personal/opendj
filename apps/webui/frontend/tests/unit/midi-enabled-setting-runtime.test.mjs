@@ -36,6 +36,8 @@
  *   what the browser granted
  * - if the MIDI entry ignores the off choice then turning MIDI off shows a
  *   red cross and "reconnect your device" for a device nobody lost
+ * - if a pending prompt outranks the off choice then MIDI turned off still
+ *   reads amber "permission request pending"
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -115,6 +117,28 @@ test('turning MIDI off while its request is pending ends fully off', () => {
 	assert.equal(s.glueAttached, false);
 	assert.equal(s.persisted, false);
 	assert.equal(s.setting, false);
+});
+
+// Codex P2 4131292220: turning MIDI off while the browser prompt is pending
+// left the entry amber, "permission request pending", for a request the off
+// had already superseded.
+test('turning MIDI off while its prompt is pending reads off at once; on and pending reads amber', () => {
+	const { labelPendingOn: on, labelPendingOff: off } = results.disableWhilePending;
+	// Control: the same pending request with MIDI on.
+	assert.deepEqual([on.on, on.pending, on.status], [true, true, 'amber']);
+	assert.match(on.title, /pending/);
+	// The off landed inside the pending window, so this is the case under test.
+	assert.deepEqual([off.on, off.pending, off.status], [false, true, 'grey']);
+	assert.equal(off.title, 'MIDI: off - turn it on in Settings');
+});
+
+test('the MIDI panel requests access by turning MIDI on, so its pending prompt reads amber', () => {
+	const panel = read('src/lib/components/rb/MidiPanel.svelte');
+	assert.match(panel, /onclick=\{\(\) => void applyMidiEnabledSetting\(true\)\}/);
+	assert.doesNotMatch(panel, /requestMidiAccess/, 'a bare request persists nothing until the grant');
+	// applyMidiEnabledSetting persists the choice before it requests access.
+	const applyFn = body(uiStateSrc, 'export async function applyMidiEnabledSetting(enabled: boolean)');
+	assert.match(applyFn, /setMidiEnabledChoice\(true\);\s*await maybeAutoEnableMidi\(\);/);
 });
 
 test('off and on again while a request is pending settles without a stuck request', () => {

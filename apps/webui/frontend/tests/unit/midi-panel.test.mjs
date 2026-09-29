@@ -7,8 +7,9 @@
 //   if formatBytes(0x90,60,127) isn't '90 3C 7F' then broken
 //   if describeSource(null) doesn't say 'undecoded' then broken
 //   if midiLabelStatus(granted, no mapped device) is green then broken
-//   if midiLabelStatus with requestPending isn't amber then broken
+//   if midiLabelStatus with requestPending and MIDI on isn't amber then broken
 //   if midiLabelStatus(granted, MIDI turned off) is red then broken
+//   if midiLabelStatus(pending prompt, MIDI turned off) is amber then broken
 //   if requestMidiAccess failure leaves midiUi.lastError null then broken
 //   if two toggleMidiPanel calls don't restore panelOpen then broken
 
@@ -107,9 +108,21 @@ test('formatLogTs renders seconds since page load and rejects bad input', () => 
 
 // -------------------------------------------------------- label status logic
 
-test('midiLabelStatus: amber while a request is pending, above all else', () => {
-	assert.equal(fmt.midiLabelStatus('prompt', true, false, false), 'amber');
+test('midiLabelStatus: amber while a request for MIDI turned on is pending', () => {
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, true), 'amber');
 	assert.equal(fmt.midiLabelStatus('granted', true, true, true), 'amber');
+	assert.equal(fmt.midiLabelStatus('denied', true, false, true), 'amber');
+});
+
+test('midiLabelStatus: turning MIDI off wins over a pending prompt (Codex P2 4131292220)', () => {
+	// The prompt still open belongs to a superseded request (disableMidi bumped
+	// the generation), so its late grant attaches nothing: MIDI is off.
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, false), 'grey');
+	assert.equal(fmt.midiLabelStatus('granted', true, true, false), 'grey');
+	assert.equal(fmt.midiLabelTitle('prompt', true, 0, 0, false), 'MIDI: off - turn it on in Settings');
+	// Control: the same pending prompt with MIDI on is still amber and says so.
+	assert.equal(fmt.midiLabelStatus('prompt', true, false, true), 'amber');
+	assert.match(fmt.midiLabelTitle('prompt', true, 0, 0, true), /pending/);
 });
 
 test('midiLabelStatus: green when granted with a mapped device, red without', () => {
@@ -128,8 +141,8 @@ test('midiLabelStatus: granted but turned off is gray, not a lost device (Codex 
 	assert.equal(fmt.midiLabelStatus('granted', false, true, false), 'grey');
 	// Control: the same empty list with MIDI on is still a lost device.
 	assert.equal(fmt.midiLabelStatus('granted', false, false, true), 'red');
-	// A request in flight stays amber whatever the stored choice says.
-	assert.equal(fmt.midiLabelStatus('granted', true, false, false), 'amber');
+	// Off wins even over a request still in flight.
+	assert.equal(fmt.midiLabelStatus('granted', true, false, false), 'grey');
 });
 
 test('midiLabelGlyph: tick for green, cross for red, none otherwise', () => {

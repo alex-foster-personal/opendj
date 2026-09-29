@@ -16,9 +16,11 @@
  *   ✔︎ 🎯 midiLabelStatus: single source of truth for the TopBar label
  *     colour. green = granted AND >=1 mapped device; amber = permission
  *     request in flight; grey = everything else, including MIDI the user
- *     turned off (the rb.midi_enabled choice) while the grant still stands.
+ *     turned off (the rb.midi_enabled choice) while the grant still stands
+ *     or while its superseded permission prompt is still open.
  *     [if] granted with only UNMAPPED devices shows green [then ⛔️] broken
  *     [if] granted but turned off shows red [then ⛔️] broken (Codex P2, PR #3896)
+ *     [if] turned off while its prompt is pending shows amber [then ⛔️] broken
  */
 
 import type { DeviceMap, MidiAction, MidiSource } from '$lib/rb/midi/midi-types';
@@ -62,10 +64,13 @@ export function formatLogTs(tsMs: number): string {
 // ------------------------------------------------------- label status logic
 
 /** TopBar MIDI label colour + glyph (unit spec):
- * grey  = unsupported / denied / idle-prompt (MIDI not enabled yet), or
- *         granted but turned off by the user: releaseMidiInputs() keeps the
- *         browser's grant and empties the device list, which is not a lost device
- * amber = a permission request is currently in flight (prompt pending)
+ * grey  = unsupported / denied / idle-prompt (MIDI not enabled yet), or turned
+ *         off by the user, which wins over everything else: releaseMidiInputs()
+ *         keeps the browser's grant and empties the device list, which is not a
+ *         lost device, and a prompt still open when MIDI was turned off belongs
+ *         to a superseded request whose late grant attaches nothing (Codex P2
+ *         4131292220)
+ * amber = a permission request for MIDI the user turned on is in flight
  * green = granted AND at least one connected device matched a DeviceMap (tick)
  * red   = granted but NO mapped device bound - access was granted and the
  *         controller then disconnected (or nothing recognised is plugged in);
@@ -76,8 +81,9 @@ export function midiLabelStatus(
 	hasMappedDevice: boolean,
 	enabled: boolean
 ): MidiLabelStatus {
+	if (!enabled) return 'grey';
 	if (requestPending) return 'amber';
-	if (permission === 'granted' && enabled) return hasMappedDevice ? 'green' : 'red';
+	if (permission === 'granted') return hasMappedDevice ? 'green' : 'red';
 	return 'grey';
 }
 
@@ -93,12 +99,12 @@ export function midiLabelTitle(
 	deviceCount: number,
 	enabled: boolean
 ): string {
+	if (!enabled && (requestPending || permission === 'granted')) return 'MIDI: off - turn it on in Settings';
 	if (requestPending) return 'MIDI: permission request pending in the browser';
 	if (permission === 'unsupported') return 'MIDI: WebMIDI not supported in this browser (use Chrome or Edge)';
 	if (permission === 'denied') return 'MIDI: permission denied - re-enable in browser site settings';
 	if (permission === 'prompt') return 'MIDI: click to open the panel and request access';
 	if (permission === 'granted') {
-		if (!enabled) return 'MIDI: off - turn it on in Settings';
 		if (mappedDeviceCount === 0) {
 			return 'MIDI: access granted but no mapped controller connected - reconnect your device';
 		}

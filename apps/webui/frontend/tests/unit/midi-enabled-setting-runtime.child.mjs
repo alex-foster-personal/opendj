@@ -60,6 +60,20 @@ try {
 		glueAttached: webmidi._actionHandlerRegisteredForTests()
 	});
 
+	/** The MIDI entry's label as HeadphoneCluster derives it, every input read
+	 * from the real modules (no device is mapped in Node). */
+	const liveLabel = () => {
+		const on = choice.midiEnabledPersisted();
+		const { permission } = webmidi.midiState;
+		const { requestPending } = uiState.midiUi;
+		return {
+			on,
+			pending: requestPending,
+			status: fmt.midiLabelStatus(permission, requestPending, false, on),
+			title: fmt.midiLabelTitle(permission, requestPending, 0, webmidi.midiState.devices.length, on)
+		};
+	};
+
 	/** applySettingChange fires its runtime half without awaiting it (the
 	 * module loads on demand), so wait for the state it must reach. */
 	async function until(predicate, what) {
@@ -93,9 +107,14 @@ try {
 	localStorage.clear();
 	const enabling = uiState.applyMidiEnabledSetting(true);
 	const pendingAtDisable = uiState.midiUi.requestPending;
-	await uiState.applyMidiEnabledSetting(false);
+	const labelPendingOn = liveLabel();
+	// Not awaited yet: the off lands while the prompt is still pending (Codex
+	// P2 4131292220), and the label is read inside that window.
+	const disabling = uiState.applyMidiEnabledSetting(false);
+	const labelPendingOff = liveLabel();
+	await disabling;
 	await enabling;
-	results.disableWhilePending = { ...snapshot(), pendingAtDisable };
+	results.disableWhilePending = { ...snapshot(), pendingAtDisable, labelPendingOn, labelPendingOff };
 
 	// 4. Off and on again while the first request is still pending.
 	localStorage.clear();
