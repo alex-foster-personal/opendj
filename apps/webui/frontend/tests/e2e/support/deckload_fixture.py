@@ -41,9 +41,12 @@ regenerates a stale fixture dir instead of silently measuring old audio.
 response to real `feedback_mark`/pin/archive commands the specs dispatch, not
 cached content keyed by revision, so every call here wipes it unconditionally
 rather than gating it on `FIXTURE_REVISION`. Every call happens at config
-import time, before any spec's test body runs (Playwright imports this
-config once for the main process and once per worker, all during suite
-bootstrap), so this can never discard a mutation a still-running test wrote.
+import time in the Playwright MAIN process, before webServer boots the engine
+and before any spec's test body runs, so this can never discard a mutation a
+still-running test wrote. Workers also import the config, but only after the
+engine is live on this data dir, so a config must not call this builder from a
+worker (`TEST_WORKER_INDEX` set): a write here beside the live engine's own
+commits fails with "database is locked" (job 109106840542).
 Left alone, an interrupted `performance-feedback-card-dismiss.spec.ts` run
 (killed after it seeds a pin, before its `finally` archives it) would leave
 that pin behind forever, and the next run's `button.fb-pin[title^=...]`
