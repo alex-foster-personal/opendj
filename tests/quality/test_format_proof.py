@@ -28,6 +28,9 @@ Regression lines:
   - if prove fails a re-wrap that keeps a noqa on its statement, or the ratified `#---` to `# ---` then broken
   - if prove passes a whitespace edit ruff never makes (`# no sec` to `# nosec`, a shebang re-spaced) then broken
   - if prove passes a comment moved past a sibling, across a decorator, or into a module's first statement then broken
+  - if prove passes a header pragma moved into the body, or any end-of-line comment made own-line, then broken
+  - if prove passes a comment moved past a name inside one statement (a per-argument type comment) then broken
+  - if prove fails ruff joining strings, dropping parentheses or adding commas around a comment then broken
   - if prove fails a semicolon split that keeps the trailing comment on the last statement then broken
   - if prove passes a shebang moved off or onto byte 0 then broken
   - if prove passes a cookie moved out of reach that changes what the bytes decode to then broken
@@ -226,6 +229,9 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
         ("x = 1  #noqa:F841\n", "x = 1  # noqa:F841\n"),
         ("x = 1  # note   \n", "x = 1  # note\n"),
         ("#!/usr/bin/env python3\nx=1\n", "#!/usr/bin/env python3\nx = 1\n"),
+        ('x = ("a"\n     "b")  # c\n', 'x = "ab"  # c\n'),
+        ("if (a):  # c\n    pass\n", "if a:  # c\n    pass\n"),
+        ("def f(a,  # type: int\n      b):\n    pass\n", "def f(\n    a,  # type: int\n    b,\n):\n    pass\n"),
     ],
     ids=[
         "noqa-rewrap-same-statement",
@@ -233,6 +239,9 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
         "directive-respaced",
         "trailing-space",
         "shebang-kept",
+        "implicit-strings-joined",
+        "parentheses-dropped",
+        "per-argument-comment-expanded",
     ],
 )
 def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:
@@ -253,17 +262,27 @@ def test_prove_control_layout_around_comments_still_proves(repo: Path, before: s
         ("# type: ignore\nx = (\n    1\n)\n", "x = (  # type: ignore\n    1\n)\n"),
         ("x = foo(\n    a,\n    # c\n)\ny = 1\n", "x = foo(\n    a,\n)\n# c\ny = 1\n"),
         ("@dec\n# c\ndef f():\n    pass\n", "# c\n@dec\ndef f():\n    pass\n"),
+        ("if cond:  # pragma: no cover\n    y = 1\n", "if cond:\n    # pragma: no cover\n    y = 1\n"),
+        ("x = [  # c\n    1,\n]\n", "x = [\n    # c\n    1,\n]\n"),
+        ("x = foo(a,  # type: int\n        b)\n", "x = foo(a,\n        b)  # type: int\n"),
+        ('# type: ignore\n"""Doc."""\nx = 1\n', '"""Doc."""\n# type: ignore\nx = 1\n'),
     ],
     ids=[
         "past-a-sibling-statement",
         "module-ignore-into-first-statement",
         "out-of-its-statement",
         "across-a-decorator",
+        "header-pragma-into-the-body",
+        "end-of-line-to-own-line",
+        "past-a-name-inside-its-statement",
+        "module-ignore-below-the-docstring",
     ],
 )
 def test_prove_rejects_a_comment_moved_among_statements(repo: Path, before: str, after: str) -> None:
-    """A formatter never reorders tokens, so a comment keeps the statements before it and the one around it.
-    A whole-module type-ignore only works above the first statement, and a block comment names what follows."""
+    """A formatter never reorders tokens, so a comment keeps the statements before it and the one around it, and
+    ruff keeps an end-of-line comment at the end of a line. A whole-module type-ignore only works above the first
+    statement, even a docstring, which holds no name to count, and coverage reads `if cond:  # pragma: no cover` as
+    the whole block but ignores a comment-only line."""
     base = _commit(repo, {"m.py": before}, "init")
     head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
     result = format_proof.prove(repo, base, head)

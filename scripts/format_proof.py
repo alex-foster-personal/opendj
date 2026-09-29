@@ -14,12 +14,15 @@ Requirements (mini-PRD):
     has an equal AST once docstrings get the PEP 257 trim (Black's safety check strips
     every line, which is looser: it would pass a change to a doctest's relative
     indentation). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
-    keeps its text, its order, how many statements begin before it and the innermost
-    statement around it. Only its line, its trailing space and the one space ruff
-    adds after `#` may change. A shebang stays on byte 0, or stays off it.
+    keeps its text, its order, how many statements and how many names and numbers
+    come before it, the innermost statement around it, and whether code precedes it
+    on its line. Only its line, its trailing space and the one space ruff adds after
+    `#` may change. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
-      [if] a comment is added, removed, reworded, reordered, or moved past or out of a statement [then ⛔️] exit 1
+      [if] a comment is added, removed, reworded, reordered, or moved past a name or a statement [then ⛔️] exit 1
+      [if] a comment moves out of its statement, across a decorator, or past a docstring [then ⛔️] exit 1
+      [if] an end-of-line comment moves onto its own line, e.g. a block header's pragma into the body [then ⛔️] exit 1
       [if] a shebang moves off byte 0 or onto it [then ⛔️] exit 1
       [if] the range adds, deletes or renames a file, or changes a file's mode [then ⛔️] exit 1
       [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
@@ -133,16 +136,14 @@ def _raw_dump(source: str) -> str:
 
 
 def _statement_spans(tree: ast.Module) -> list[tuple[int, int, int, int]]:
-    """(first line, last line, depth, column) of every statement, decorators included, in an order two equal
-    ASTs share."""
+    """(first line, last line, depth, column) of every statement, in an order two equal ASTs share."""
     spans: list[tuple[int, int, int, int]] = []
     stack: list[tuple[ast.AST, int]] = [(tree, 0)]
     while stack:
         node, depth = stack.pop()
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.stmt):
-                first = min([child.lineno, *(dec.lineno for dec in getattr(child, "decorator_list", []))])
-                spans.append((first, child.end_lineno or child.lineno, depth, child.col_offset))
+                spans.append((child.lineno, child.end_lineno or child.lineno, depth, child.col_offset))
             stack.append((child, depth + 1))
     return spans
 
@@ -169,13 +170,23 @@ def _normalize_comment(text: str) -> str:
     return "#" + body
 
 
-def _comments(source: str) -> list[tuple[tuple[int, int], str]]:
-    """Every comment in order, as (anchor, normalized text): its line is layout, its words and place are not."""
+def _comments(source: str) -> list[tuple[tuple[int, int], int, bool, str]]:
+    """Every comment in order, as (anchor, names before it, own line, normalized text): its line is layout, its words
+    and place are not. ruff adds and drops parentheses, commas and string pieces but never a name or a number, so the
+    count of those before a comment pins it inside a statement too. ruff also keeps an end-of-line comment at the end
+    of a line, and coverage reads `if x:  # pragma: no cover` as the whole block but a comment-only line as nothing."""
     spans = _statement_spans(ast.parse(source))
-    tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-    return [
-        (_anchor(tok.start[0], spans), _normalize_comment(tok.string)) for tok in tokens if tok.type == tokenize.COMMENT
-    ]
+    found: list[tuple[tuple[int, int], int, bool, str]] = []
+    names = 0
+    prev_row = 0  # A comment is own-line when the token before it ended on an earlier row: only code can end on its.
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type == tokenize.COMMENT:
+            own_line = prev_row != tok.start[0]
+            found.append((_anchor(tok.start[0], spans), names, own_line, _normalize_comment(tok.string)))
+        elif tok.type in (tokenize.NAME, tokenize.NUMBER):
+            names += 1
+        prev_row = tok.end[0]
+    return found
 
 
 def _runs_a_shebang(data: bytes) -> bool:
