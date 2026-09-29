@@ -444,6 +444,22 @@ impl KnobTarget {
             KnobTarget::Tempo(deck) => EngineCmd::Tempo { deck, ratio: value },
         }
     }
+
+    /// The knob a command sets outright, if any: what a ramp on it must yield
+    /// to. A load or unload sets its deck's tempo back to 1, so it counts as
+    /// setting the tempo.
+    pub fn set_by(cmd: &EngineCmd) -> Option<KnobTarget> {
+        Some(match *cmd {
+            EngineCmd::Crossfader { .. } => KnobTarget::Crossfader,
+            EngineCmd::MasterVolume { .. } => KnobTarget::MasterVolume,
+            EngineCmd::Trim { deck, .. } => KnobTarget::Trim(deck),
+            EngineCmd::Eq { deck, band, .. } => KnobTarget::Eq(deck, band),
+            EngineCmd::Filter { deck, .. } => KnobTarget::Filter(deck),
+            EngineCmd::Fader { deck, .. } => KnobTarget::Fader(deck),
+            EngineCmd::Tempo { deck, .. } | EngineCmd::Load { deck, .. } | EngineCmd::Unload { deck } => KnobTarget::Tempo(deck),
+            _ => return None,
+        })
+    }
 }
 
 #[cfg(test)]

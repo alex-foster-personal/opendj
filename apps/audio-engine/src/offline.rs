@@ -125,6 +125,16 @@ struct ActiveRamp {
     event: usize,
 }
 
+/// A command that sets a knob outright ends any ramp on that knob, so the
+/// value it sets stays set, in plan order, as a newer ramp replaces an older
+/// one; otherwise the ramp's next step would overwrite it and carry on toward
+/// its old target.
+fn yield_ramp(ramps: &mut Vec<ActiveRamp>, cmd: &EngineCmd) {
+    if let Some(t) = KnobTarget::set_by(cmd) {
+        ramps.retain(|r| r.target != t);
+    }
+}
+
 /// Loads every track the plan names, decoding each distinct file once.
 /// Relative paths resolve against `base`.
 pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
@@ -399,9 +409,12 @@ pub fn render_plan_with(
                 match &ev.action {
                     Action::Cmd(Command::Load(spec)) => {
                         let track = loaded.remove(&idx).expect("decoded above");
-                        engine.apply(EngineCmd::Load { deck: spec.deck, track }).map_err(|e| fail(idx, e.into()))?;
+                        let cmd = EngineCmd::Load { deck: spec.deck, track };
+                        yield_ramp(&mut ramps, &cmd);
+                        engine.apply(cmd).map_err(|e| fail(idx, e.into()))?;
                     }
                     Action::Cmd(Command::Apply(cmd)) => {
+                        yield_ramp(&mut ramps, cmd);
                         engine.apply(cmd.clone()).map_err(|e| fail(idx, e.into()))?;
                     }
                     Action::Cmd(Command::NoOp) => {}

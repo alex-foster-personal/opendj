@@ -459,3 +459,46 @@ fn a_time_or_length_naming_two_places_is_refused() {
         assert!(with(ok_at.clone(), over.clone()).is_ok(), "{over}");
     }
 }
+
+#[test]
+fn a_direct_knob_command_ends_a_ramp_on_that_knob() {
+    let d = temp_dir("ramp-yield");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 1000.0, 10.0));
+    let render = |events: Vec<Value>| {
+        let mut all = vec![
+            json!({"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}),
+            json!({"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}}),
+        ];
+        all.extend(events);
+        render_plan_files(&parse_plan(&json!({"end": {"ms": 2000}, "events": all})).unwrap(), &d).unwrap()
+    };
+    let xf = odj_audio::mixer::xf_gain(odj_audio::mixer::Assign::A, 0.5) as f32;
+    let peak = |out: &odj_audio::offline::RenderOutput, a: usize, b: usize| {
+        out.pcm[a * 2..b * 2].iter().fold(0.0f32, |m, &x| m.max(x.abs())) / (0.5 * xf)
+    };
+    let ramp = json!({"at": {"ms": 0}, "ramp": {"type": "fader", "deck": 1, "to": 0.0, "over": {"ms": 1000}}});
+    let direct = |ms: u64| json!({"at": {"ms": ms}, "cmd": {"type": "fader", "deck": 1, "value": 0.9}});
+    // Codex's case: the fader set to 0.9 halfway through a ramp to 0 stays
+    // at 0.9; the ramp no longer carries it on down.
+    let out = render(vec![ramp.clone(), direct(500)]);
+    assert!((peak(&out, 33600, 36000) - 0.9).abs() < 0.02, "after the command {}", peak(&out, 33600, 36000));
+    assert!((peak(&out, 72000, 96000) - 0.9).abs() < 0.02, "long after {}", peak(&out, 72000, 96000));
+    // On the same frame, plan order decides: the command after the ramp wins.
+    let out = render(vec![ramp.clone(), direct(0)]);
+    assert!((peak(&out, 72000, 96000) - 0.9).abs() < 0.02, "{}", peak(&out, 72000, 96000));
+    // Controls: a ramp after the command still runs to its end, and a
+    // command on another knob leaves the ramp alone.
+    let out = render(vec![direct(0), ramp.clone()]);
+    assert!(peak(&out, 72000, 96000) < 1e-6, "{}", peak(&out, 72000, 96000));
+    let other = json!({"at": {"ms": 500}, "cmd": {"type": "trim", "deck": 1, "value": 0.25}});
+    let out = render(vec![ramp.clone(), other]);
+    assert!(peak(&out, 72000, 96000) < 1e-6, "{}", peak(&out, 72000, 96000));
+    // A load resets the deck's tempo to 1, as on the page, so it ends a tempo
+    // ramp on that deck too: the tempo stays 1 after it.
+    let out = render(vec![
+        json!({"at": {"ms": 0}, "ramp": {"type": "tempo", "deck": 1, "to": 1.08, "over": {"ms": 1000}}}),
+        json!({"at": {"ms": 500}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}),
+    ]);
+    let last = out.tempo.iter().rfind(|t| t.deck == 1).unwrap();
+    assert_eq!((last.frame, last.tempo), (24000, 1.0));
+}

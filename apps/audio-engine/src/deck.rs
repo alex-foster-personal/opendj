@@ -838,6 +838,14 @@ impl Deck {
                     self.run = 0;
                 }
             }
+            // The last frame has played: the deck stops now, not when the
+            // next frame is asked for, so the state published after this
+            // buffer says so. A loop has wrapped by here and plays on.
+            if self.pos >= end {
+                self.pos = end;
+                self.playing = false;
+                break;
+            }
         }
         if done > 0 {
             self.strip.idle_run = 0;
@@ -1529,6 +1537,28 @@ mod tests {
         d.load(Arc::new(silent(48000, 0.5, one_in)));
         d.beat_jump(1.0).unwrap();
         assert_eq!(d.pos, 400.0 * 48.0);
+    }
+
+    #[test]
+    fn a_deck_stops_on_the_buffer_that_plays_its_last_frame() {
+        // Codex's case: a one-frame track in a one-frame buffer. The state
+        // read after that buffer says stopped, at the end.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.5, 0.5], vec![], None)));
+        d.play(true).unwrap();
+        let mut one = [0.0f32; 2];
+        d.render_add(&mut one, 48000.0);
+        assert_ne!(one, [0.0, 0.0], "the last frame must still play");
+        assert_eq!((d.playing, d.pos), (false, 1.0));
+        // Control: one frame short of the end it is still playing, and stops
+        // on the buffer that plays the last one.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.5; 4], vec![], None)));
+        d.play(true).unwrap();
+        d.render_add(&mut one, 48000.0);
+        assert_eq!((d.playing, d.pos), (true, 1.0));
+        d.render_add(&mut one, 48000.0);
+        assert_eq!((d.playing, d.pos), (false, 2.0));
     }
 
     #[test]
