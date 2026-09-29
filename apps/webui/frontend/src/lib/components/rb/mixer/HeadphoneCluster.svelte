@@ -397,6 +397,28 @@
 				</select>
 			</label>
 		</ControlExplainer>
+		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI
+		     connect has to live inside this view, not beside it. -->
+		<ControlExplainer
+			title="MIDI"
+			bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}
+			showDelayMs={40}
+			placement="right"
+		>
+			<button
+				type="button"
+				class="hp-btn midi-btn io-midi"
+				class:st-grey={midiStatus === 'grey'}
+				class:st-green={midiStatus === 'green'}
+				class:st-amber={midiStatus === 'amber'}
+				class:st-red={midiStatus === 'red'}
+				aria-label="Open MIDI panel from audio I/O"
+				aria-expanded={midiUi.panelOpen}
+				onclick={() => {
+					if (!midiUi.panelOpen) toggleMidiPanel();
+				}}>MIDI</button
+			>
+		</ControlExplainer>
 	</div>
 {/snippet}
 

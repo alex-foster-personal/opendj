@@ -23,8 +23,15 @@ before(async () => {
 test('every device picker in the output menu opens its explainer to the right', () => {
 	const menu = cluster.slice(cluster.indexOf('{#snippet outputMenu()}'), cluster.indexOf('{/snippet}', cluster.indexOf('{#snippet outputMenu()}')));
 	const tags = [...menu.matchAll(/<ControlExplainer[^>]*>/g)].map((m) => m[0]);
-	assert.equal(tags.length, 3, 'expected MASTER / MAIN, HEADPHONE CUE and AUDIO IN');
+	assert.equal(tags.length, 4, 'expected MASTER / MAIN, HEADPHONE CUE, AUDIO IN and MIDI');
 	for (const tag of tags) assert.match(tag, /placement="right"/);
+});
+
+test('the I/O view the tray opens carries its own MIDI panel entry (CHROME-07)', () => {
+	const start = cluster.indexOf('{#snippet outputMenu()}');
+	const menu = cluster.slice(start, cluster.indexOf('{/snippet}', start));
+	assert.match(menu, /aria-label="Open MIDI panel from audio I\/O"/);
+	assert.match(menu, /onclick=\{\(\) => \{\s*if \(!midiUi\.panelOpen\) toggleMidiPanel\(\);/);
 });
 
 test('ControlExplainer accepts right placement and anchors to the real trigger rect', () => {

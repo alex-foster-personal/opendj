@@ -50,7 +50,8 @@
 			onclick={(e) => _click(e, n)}
 			ondblclick={(e) => e.stopPropagation()}
 		>
-			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+			<!-- 1em follows .rb-star font-size, which the rating cell shrinks via --rb-star-size. -->
+			<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
 				<path
 					d={_lit(n) ? STAR_FILLED_PATH : STAR_OUTLINE_PATH}
 					fill={_lit(n) ? 'currentColor' : 'none'}

@@ -2616,7 +2616,8 @@
 	.cloud-state-wrap {
 		position: relative;
 		display: inline-flex;
-		width: 18px;
+		/* Grows to hold the minor-issue square beside the cloud (CHROME-03). */
+		min-width: 18px;
 		height: 18px;
 		align-items: flex-start;
 		justify-content: center;
