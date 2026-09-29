@@ -411,6 +411,9 @@ impl Deck {
         Ok(())
     }
 
+    /// Seek to an exact position. Quantize is the caller's: the page's
+    /// Quantize toggle and grid size are UI state, so the page adapter snaps
+    /// the target (`quantizedSeekDecisionMs`) before sending it here.
     pub fn seek(&mut self, ms: f64) -> Result<(), EngineError> {
         let t = self.track()?;
         if !ms.is_finite() || ms < 0.0 || ms > t.duration_ms() {
