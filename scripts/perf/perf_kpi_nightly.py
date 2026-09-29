@@ -116,9 +116,9 @@ def measure_track(
     return results
 
 
-def nightly_capture_id(now: dt.datetime) -> str:
-    """One id per run, to the second (PR #4473): `perf-kpi-<date>` repeated per UTC day."""
-    return f"perf-kpi-{now.strftime('%Y%m%dT%H%M%SZ')}"
+def nightly_capture_id(now: dt.datetime, machine: str) -> str:
+    """One id per run and host (PRs #4473, #4474): a date or bare second can repeat."""
+    return f"perf-kpi-{now.strftime('%Y%m%dT%H%M%S.%fZ')}-{machine}"
 
 
 def build_ledger_rows(
@@ -537,7 +537,7 @@ def _append_and_judge(
     today = now.date()
     rows = build_ledger_rows(
         config,
-        capture_id=nightly_capture_id(now),
+        capture_id=nightly_capture_id(now, config.machine),
         git_sha=git_sha,
         today=today,
         measurements=measurements,
