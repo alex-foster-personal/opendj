@@ -18,7 +18,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -66,6 +66,50 @@ pub const MAX_LINE_BYTES: usize = 8 << 20;
 /// memory.
 const LINE_SLOTS: usize = CMD_SLOTS;
 const LINE_BYTES: usize = 4 * MAX_LINE_BYTES;
+
+/// On the threaded clocks, how many bytes of load payload (paths, and
+/// beatgrids with the decoded track's copy of them) the engine holds for
+/// loads it has accepted and the audio side has not yet taken. The mailbox
+/// and the queues behind pending loads bound commands by count, and a load
+/// is the one command whose size a line sets, so this bounds what they
+/// hold. Past it a load is refused, unless nothing else is held, so any
+/// load a line can carry still goes alone. Real grids are tens of KiB.
+const LOAD_BYTES: usize = 64 << 20;
+
+/// What `LOAD_BYTES` counts for one load: its path, its grid, and the
+/// decoded track's copy of the grid with its downbeat index (at most one
+/// entry a beat).
+fn load_bytes(spec: &LoadSpec) -> usize {
+    use crate::deck::Beat;
+    spec.path.len() + spec.beats.len() * (2 * std::mem::size_of::<Beat>() + std::mem::size_of::<usize>())
+}
+
+/// A load's share of `LOAD_BYTES`, given back when it is dropped: with the
+/// load's result, or with the load wherever it is refused.
+struct Charge {
+    bytes: usize,
+    used: Arc<AtomicUsize>,
+}
+
+impl Drop for Charge {
+    fn drop(&mut self) {
+        self.used.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
+
+/// A command the audio side has yet to answer, by seq: the id its result
+/// carries and, for a load, the payload it holds until then.
+struct Pending {
+    id: Option<Value>,
+    hold: Option<Charge>,
+}
+
+type Ids = Arc<Mutex<HashMap<u64, Pending>>>;
+
+/// Take `seq`'s id, giving back what it held.
+fn take_id(ids: &Mutex<HashMap<u64, Pending>>, seq: u64) -> Option<Value> {
+    ids.lock().unwrap().remove(&seq).and_then(|p| p.id)
+}
 
 /// One line from stdin, read within `MAX_LINE_BYTES`.
 enum ReadLine {
@@ -366,7 +410,7 @@ enum Msg {
 /// Work parked behind a deck's pending load.
 enum Queued {
     Cmd(Option<Value>, EngineCmd),
-    Load(Option<Value>, LoadSpec),
+    Load(Option<Value>, LoadSpec, Charge),
     /// An `engine_state` sent after the work ahead of it here: it is asked
     /// of the audio side only once this has passed on every deck it waits on.
     Fence(u64),
@@ -379,7 +423,7 @@ enum Queued {
 /// queues and the id bookkeeping. Runs on the main thread.
 struct Control {
     cmd_tx: rtrb::Producer<(u64, EngineCmd)>,
-    ids: Arc<Mutex<HashMap<u64, Option<Value>>>>,
+    ids: Ids,
     out: Out,
     msg_tx: mpsc::Sender<Msg>,
     next_seq: u64,
@@ -396,6 +440,8 @@ struct Control {
     /// have yet to pass.
     fences: HashMap<u64, usize>,
     next_fence: u64,
+    /// Bytes of `LOAD_BYTES` held now.
+    load_used: Arc<AtomicUsize>,
 }
 
 impl Control {
@@ -409,7 +455,7 @@ impl Control {
     fn seq(&mut self, id: Option<Value>) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.ids.lock().unwrap().insert(seq, id);
+        self.ids.lock().unwrap().insert(seq, Pending { id, hold: None });
         seq
     }
 
@@ -417,7 +463,7 @@ impl Control {
     /// mailbox is full and the command was dropped.
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
         if self.cmd_tx.push((seq, cmd)).is_err() {
-            let id = self.ids.lock().unwrap().remove(&seq).flatten();
+            let id = take_id(&self.ids, seq);
             self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             return false;
         }
@@ -443,7 +489,7 @@ impl Control {
         if q.len() < QUEUE_SLOTS {
             q.push_back(item);
         } else {
-            let (Queued::Cmd(id, _) | Queued::Load(id, _)) = item else {
+            let (Queued::Cmd(id, _) | Queued::Load(id, ..)) = item else {
                 // A fence is only re-parked behind a load released from a
                 // queue that held it, which leaves room; were it ever full,
                 // asking now is later than asked, never earlier.
@@ -477,17 +523,38 @@ impl Control {
 
     fn load(&mut self, id: Option<Value>, spec: LoadSpec) {
         let deck = spec.deck;
-        let (id, spec) = match self.park(deck, Queued::Load(id, spec)) {
-            Some(Queued::Load(id, spec)) => (id, spec),
+        let bytes = load_bytes(&spec);
+        let used = self.load_used.load(Ordering::Acquire);
+        if used > 0 && used + bytes > LOAD_BYTES {
+            self.reply(
+                id.as_ref(),
+                Err(ProtoError::new(
+                    ErrorCode::Invalid,
+                    format!(
+                        "engine is full: loads not yet taken by the audio side hold {used} bytes of paths and beatgrids, \
+                         and this one's {bytes} would pass {LOAD_BYTES}; command dropped"
+                    ),
+                )),
+            );
+            return;
+        }
+        self.load_used.fetch_add(bytes, Ordering::AcqRel);
+        let charge = Charge { bytes, used: self.load_used.clone() };
+        let (id, spec, charge) = match self.park(deck, Queued::Load(id, spec, charge)) {
+            Some(Queued::Load(id, spec, charge)) => (id, spec, charge),
             _ => return,
         };
-        self.start_load(id, spec, VecDeque::new());
+        self.start_load(id, spec, charge, VecDeque::new());
     }
 
     /// Decode `spec` off this thread, with `behind` parked behind it.
-    fn start_load(&mut self, id: Option<Value>, spec: LoadSpec, behind: VecDeque<Queued>) {
+    fn start_load(&mut self, id: Option<Value>, spec: LoadSpec, charge: Charge, behind: VecDeque<Queued>) {
         let deck = spec.deck;
         let seq = self.seq(id);
+        // Held until the load's result is out, decoded or not.
+        if let Some(p) = self.ids.lock().unwrap().get_mut(&seq) {
+            p.hold = Some(charge);
+        }
         self.waiting[deck as usize - 1] = Some(behind);
         self.loading[deck as usize - 1] = Some(seq);
         let tx = self.msg_tx.clone();
@@ -509,7 +576,7 @@ impl Control {
                 self.release(deck, q);
             }
             Err(e) => {
-                let id = self.ids.lock().unwrap().remove(&seq).flatten();
+                let id = take_id(&self.ids, seq);
                 self.reply(id.as_ref(), Err(e));
                 // The work queued behind it would run against the previous
                 // track. Fail it instead: every command after the failed load
@@ -538,8 +605,8 @@ impl Control {
                     let seq = self.seq(id);
                     let _ = self.push_seq(seq, cmd);
                 }
-                Queued::Load(id, spec) => {
-                    self.start_load(id, spec, q);
+                Queued::Load(id, spec, charge) => {
+                    self.start_load(id, spec, charge, q);
                     return;
                 }
                 // Everything ahead of it on this deck is in the mailbox.
@@ -574,7 +641,7 @@ impl Control {
     fn refuse_pending(&mut self) {
         for d in 0..MAX_DECKS {
             if let Some(seq) = self.loading[d].take() {
-                let id = self.ids.lock().unwrap().remove(&seq).flatten();
+                let id = take_id(&self.ids, seq);
                 self.reply(
                     id.as_ref(),
                     Err(ProtoError::new(ErrorCode::Invalid, "the engine shut down before this load finished")),
@@ -600,10 +667,10 @@ impl Control {
     fn refuse_queued(&mut self, q: VecDeque<Queued>) {
         for item in q {
             let id = match item {
-                Queued::Cmd(id, _) | Queued::Load(id, _) => id,
+                Queued::Cmd(id, _) | Queued::Load(id, ..) => id,
                 // Only shutdown refuses a decoded load: it never ran.
                 Queued::Ready(seq, _) => {
-                    let id = self.ids.lock().unwrap().remove(&seq).flatten();
+                    let id = take_id(&self.ids, seq);
                     self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")));
                     continue;
                 }
@@ -701,7 +768,7 @@ fn serve_threaded_from(
     let stop = Arc::new(AtomicBool::new(false));
     let state_req = Arc::new(AtomicBool::new(false));
     let out: Out = Arc::new(Mutex::new(Box::new(output)));
-    let ids: Arc<Mutex<HashMap<u64, Option<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let ids: Ids = Arc::new(Mutex::new(HashMap::new()));
 
     {
         let mut o = out.lock().unwrap();
@@ -756,7 +823,7 @@ fn serve_threaded_from(
             let mut idle = true;
             while let Ok((seq, r)) = res_rx.pop() {
                 idle = false;
-                let id = pump_ids.lock().unwrap().remove(&seq).flatten();
+                let id = take_id(&pump_ids, seq);
                 let res = r.map(drop).map_err(ProtoError::from);
                 write(&protocol::result_json(id.as_ref(), &res));
             }
@@ -813,6 +880,7 @@ fn serve_threaded_from(
         tracks: Arc::default(),
         fences: HashMap::new(),
         next_fence: 0,
+        load_used: Arc::default(),
     };
     let mut audio_failed = false;
     let mut output_closed = false;
@@ -909,7 +977,7 @@ fn serve_threaded_from(
     let _ = pump.join();
     // Anything still without a result never ran: its audio side died with
     // it in the mailbox, or the drain gave up. Refuse each one by its id.
-    let unanswered: Vec<Option<Value>> = control.ids.lock().unwrap().drain().map(|(_, id)| id).collect();
+    let unanswered: Vec<Option<Value>> = control.ids.lock().unwrap().drain().map(|(_, p)| p.id).collect();
     for id in unanswered {
         control.reply(
             id.as_ref(),
@@ -1136,6 +1204,7 @@ mod tests {
             tracks: Arc::default(),
             fences: HashMap::new(),
             next_fence: 0,
+            load_used: Arc::default(),
         };
         (control, cmd_rx, out)
     }
@@ -1208,6 +1277,76 @@ mod tests {
     }
 
     #[test]
+    fn loads_held_for_the_audio_side_are_bounded_by_bytes_not_only_count() {
+        // Codex on 6d03ee97: loads parked behind a pending decode were
+        // bounded only by count, so 1023 of them with 8 MiB beatgrids held
+        // GiB. Every load now holds its payload against `LOAD_BYTES` from
+        // acceptance until its result is out.
+        use crate::deck::Beat;
+        let per_beat = 2 * std::mem::size_of::<Beat>() + std::mem::size_of::<usize>();
+        let spec = |deck: DeckId, path: String, beats: usize| LoadSpec {
+            deck,
+            path,
+            beats: (0..beats).map(|i| Beat { time_ms: i as f64, downbeat: i % 4 == 0 }).collect(),
+            bpm: None,
+        };
+        let big = || spec(1, "nope.wav".into(), LOAD_BYTES / 3 / per_beat);
+        let each = load_bytes(&big());
+        assert!(each > LOAD_BYTES / 4, "the grid is not charged");
+        let (mut c, mut cmd_rx, out) = control();
+        let used = |c: &Control| c.load_used.load(Ordering::Acquire);
+        c.load(Some("decoding".into()), big());
+        for i in 0..4 {
+            c.load(Some(i.into()), big());
+        }
+        // Three fit: the one decoding and two parked. The rest are refused
+        // at once, before they are held.
+        assert_eq!(used(&c), 3 * each);
+        assert_eq!(c.waiting[0].as_ref().map(VecDeque::len), Some(2));
+        let full = |out: &Captured| -> Vec<Value> {
+            let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+            text.lines()
+                .map(|l| serde_json::from_str::<Value>(l).unwrap())
+                .filter(|v| v["error"]["message"].as_str().is_some_and(|m| m.contains("engine is full")))
+                .map(|v| v["id"].clone())
+                .collect()
+        };
+        assert_eq!(full(&out), [2, 3]);
+        // To the byte: a load that fits the room left goes, on another deck
+        // too, and one byte more is refused.
+        let room = LOAD_BYTES - used(&c);
+        c.load(Some("over".into()), spec(2, "x".repeat(room + 1), 0));
+        c.load(Some("fits".into()), spec(2, "x".repeat(room), 0));
+        assert_eq!(full(&out), [Value::from(2), Value::from(3), Value::from("over")]);
+        assert!(c.loading[1].is_some(), "a load that fits was refused");
+        assert_eq!(used(&c), LOAD_BYTES);
+        // A decoded load holds its payload until its result is out, not
+        // just until it is in the mailbox.
+        let first = c.loading[0].unwrap();
+        c.finish_load(first, 1, silent_track());
+        assert_eq!(used(&c), LOAD_BYTES, "given back before the audio side took it");
+        assert!(take_id(&c.ids, first).is_some());
+        assert_eq!(used(&c), LOAD_BYTES - each);
+        // A failed decode gives back its own and what was parked behind it,
+        // and at shutdown the rest; nothing is held for good.
+        c.finish_load(c.loading[0].unwrap(), 1, Err(ProtoError::new(ErrorCode::Decode, "bad")));
+        assert_eq!(used(&c), room);
+        c.refuse_pending();
+        while let Ok((seq, _)) = cmd_rx.pop() {
+            take_id(&c.ids, seq);
+        }
+        assert_eq!(used(&c), 0);
+        // Control: a load too big for the budget still goes when nothing
+        // else is held, so any load a line can carry is taken alone; the
+        // next is refused while it is held.
+        let (mut c, _cmd_rx, out) = control();
+        c.load(Some("alone".into()), spec(1, "x".repeat(LOAD_BYTES + 1), 0));
+        assert!(c.loading[0].is_some(), "a lone load was refused");
+        c.load(Some("next".into()), spec(2, "y.wav".into(), 0));
+        assert_eq!(full(&out), [Value::from("next")]);
+    }
+
+    #[test]
     fn work_accepted_behind_a_load_waits_for_room_the_mailbox_does_not_have() {
         // Codex on 2c2fe0ab: other decks' traffic already in the mailbox
         // when a load finished left no room for everything accepted behind
@@ -1256,7 +1395,7 @@ mod tests {
         assert!(deck[0].1, "the load did not go first");
         assert!(deck.windows(2).all(|w| w[0].0 < w[1].0), "the deck's work went out of order");
         let ids = c.ids.lock().unwrap();
-        assert!(ids.values().any(|id| id.as_ref() == Some(&Value::from("late"))), "the late command never reached the mailbox");
+        assert!(ids.values().any(|p| p.id.as_ref() == Some(&Value::from("late"))), "the late command never reached the mailbox");
     }
 
     #[test]

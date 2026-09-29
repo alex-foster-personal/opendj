@@ -21,6 +21,12 @@ use crate::mixer::Assign;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
+/// The longest string id, in bytes. An id is held until its command's
+/// result is out, and the engine holds as many commands as its mailbox and
+/// load queues take, so an id is kept short; a longer one is refused with a
+/// null id, as an id of the wrong type is.
+pub const MAX_ID_BYTES: usize = 256;
+
 /// A protocol error with an owned message. Only built off the audio thread.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProtoError {
@@ -264,9 +270,11 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
     if o.contains_key("beatgrid") && o.contains_key("beatgrid_ms") {
         return Err(invalid(format!("{ty} gives beatgrid and beatgrid_ms; give exactly one")));
     }
+    // Sized to the grid: a load is charged what its grid holds.
     let mut out = Vec::new();
     if let Some(v) = o.get("beatgrid") {
         let arr = v.as_array().ok_or_else(|| invalid(format!("{ty}.beatgrid must be an array")))?;
+        out.reserve_exact(arr.len());
         let mut prev_n = 0;
         for (i, b) in arr.iter().enumerate() {
             let b = b.as_object().ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}] must be an object")))?;
@@ -292,6 +300,7 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
         }
     } else if let Some(v) = o.get("beatgrid_ms") {
         let arr = v.as_array().ok_or_else(|| invalid(format!("{ty}.beatgrid_ms must be an array")))?;
+        out.reserve_exact(arr.len());
         for (i, t) in arr.iter().enumerate() {
             let time_ms = t
                 .as_f64()
@@ -619,6 +628,9 @@ pub fn parse_line(line: &str) -> (Option<Value>, Result<Command, ProtoError>) {
         Err(e) => return (None, Err(invalid(format!("not JSON: {e}")))),
     };
     let id = match v.get("id") {
+        Some(Value::String(s)) if s.len() > MAX_ID_BYTES => {
+            return (None, Err(invalid(format!("id is {} bytes; at most {MAX_ID_BYTES}", s.len()))));
+        }
         Some(id @ (Value::String(_) | Value::Number(_))) => Some(id.clone()),
         None | Some(Value::Null) => None,
         Some(other) => return (None, Err(invalid(format!("id must be a string or a number, not {other}")))),
@@ -1168,6 +1180,30 @@ mod tests {
         assert!(matches!(c, Ok(Command::State)));
         let (id, c) = parse_line("not json");
         assert!(id.is_none() && c.is_err());
+    }
+
+    #[test]
+    fn an_id_is_held_short_and_a_grid_is_held_at_its_size() {
+        // Codex on 6d03ee97: the engine holds a command's id until its
+        // result is out, for as many commands as it queues, so an id's size
+        // is bounded, as a load's grid is by the bytes it is charged.
+        let line = |id: Value| json!({"id": id, "cmd": {"type": "engine_state"}}).to_string();
+        let (id, c) = parse_line(&line(json!("x".repeat(MAX_ID_BYTES))));
+        assert!(c.is_ok(), "an id at the bound is refused");
+        assert_eq!(id.and_then(|v| v.as_str().map(str::len)), Some(MAX_ID_BYTES));
+        let (id, c) = parse_line(&line(json!("x".repeat(MAX_ID_BYTES + 1))));
+        assert!(id.is_none(), "a refused id is echoed");
+        assert!(c.unwrap_err().message.contains(&format!("at most {MAX_ID_BYTES}")));
+        // A number is fixed-size, however it is spelled.
+        assert!(parse_line(&line(json!(u64::MAX))).1.is_ok());
+        for key in ["beatgrid_ms", "beatgrid"] {
+            let grid: Vec<Value> = (0..5)
+                .map(|i| if key == "beatgrid" { json!({"time_ms": i * 500}) } else { json!(i * 500) })
+                .collect();
+            let (_, c) = parse_line(&json!({"cmd": {"type": "load", "deck": 1, "path": "a.wav", key: grid}}).to_string());
+            let Ok(Command::Load(spec)) = c else { panic!("{c:?}") };
+            assert_eq!((spec.beats.len(), spec.beats.capacity()), (5, 5), "{key}");
+        }
     }
 
     #[test]
