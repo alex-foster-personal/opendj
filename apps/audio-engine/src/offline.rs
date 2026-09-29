@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::{decode_open_within, reserve_within, SourceId};
+use crate::decode::{decode_open_at, reserve_within, SourceId};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -104,6 +104,9 @@ pub struct RenderOutput {
     pub timeline: Vec<Segment>,
     pub overlaps: Vec<Overlap>,
     pub tempo: Vec<TempoPoint>,
+    /// True when any deck had Master Tempo on at any point: then a tempo
+    /// change on that deck did not move its pitch.
+    pub master_tempo: bool,
     /// Empty unless `RenderOptions::deck_outputs`.
     pub decks: Vec<DeckOutput>,
     /// Every file the tracks were decoded from, as opened: what an output
@@ -146,6 +149,15 @@ type CachedFile = (u32, Arc<Vec<f32>>, Option<SourceId>);
 /// frames a newly decoded file may hold; a file already decoded shares its
 /// samples and costs nothing more, so it is never refused for room.
 pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> {
+    file_loader_at(base, None)
+}
+
+/// As `file_loader`, resampling each file to `sample_rate` when given, so
+/// the engine plays it at its own rate (the page resamples at decode too).
+pub fn file_loader_at(
+    base: PathBuf,
+    sample_rate: Option<u32>,
+) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> {
     let mut cache: HashMap<FileKey, CachedFile> = HashMap::new();
     move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
@@ -153,7 +165,7 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
         let (sr, pcm, source) = match cache.get(&key) {
             Some((sr, pcm, source)) => (*sr, pcm.clone(), source.clone()),
             None => {
-                let d = decode_open_within(file, &path, room)?;
+                let d = decode_open_at(file, &path, sample_rate, room)?;
                 let pcm = Arc::new(d.pcm);
                 cache.insert(key, (d.sample_rate, pcm.clone(), d.source.clone()));
                 (d.sample_rate, pcm, d.source)
@@ -299,12 +311,19 @@ fn change_time(f: &std::fs::File) -> Option<(i64, i64)> {
 #[derive(Default)]
 pub struct TrackCache {
     files: Mutex<HashMap<FileKey, Holders>>,
+    /// The rate every track is resampled to; None keeps each file's own.
+    sample_rate: Option<u32>,
 }
 
 /// Every track loaded from one file, locked while that file decodes.
 type Holders = Arc<Mutex<Vec<Weak<Track>>>>;
 
 impl TrackCache {
+    /// A cache whose tracks play at `sample_rate`.
+    pub fn at(sample_rate: u32) -> TrackCache {
+        TrackCache { sample_rate: Some(sample_rate), ..TrackCache::default() }
+    }
+
     pub fn load(&self, path: &Path, spec: &LoadSpec) -> Result<Arc<Track>, ProtoError> {
         let (opened, key) = open_keyed(path)?;
         let file = {
@@ -325,7 +344,7 @@ impl TrackCache {
         let (sr, pcm, source) = match held.iter().find_map(Weak::upgrade) {
             Some(t) => (t.sample_rate, t.pcm.clone(), t.source.clone()),
             None => {
-                let d = decode_open_within(opened, path, u64::MAX)?;
+                let d = decode_open_at(opened, path, self.sample_rate, u64::MAX)?;
                 (d.sample_rate, Arc::new(d.pcm), d.source)
             }
         };
@@ -338,16 +357,21 @@ impl TrackCache {
 /// Loads tracks for the fake-clock session through a `TrackCache`, relative
 /// paths resolving against `base`.
 pub fn session_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
-    let cache = TrackCache::default();
+    session_loader_at(base, None)
+}
+
+/// As `session_loader`, resampling each file to `sample_rate` when given.
+pub fn session_loader_at(base: PathBuf, sample_rate: Option<u32>) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
+    let cache = TrackCache { sample_rate, ..TrackCache::default() };
     move |spec: &LoadSpec| cache.load(&base.join(&spec.path), spec)
 }
 
 pub fn render_plan_files(plan: &Plan, base: &Path) -> Result<RenderOutput, ProtoError> {
-    render_plan(plan, file_loader(base.to_path_buf()))
+    render_plan(plan, file_loader_at(base.to_path_buf(), Some(plan.sample_rate)))
 }
 
 pub fn render_plan_files_with(plan: &Plan, base: &Path, opts: RenderOptions) -> Result<RenderOutput, ProtoError> {
-    render_plan_with(plan, file_loader(base.to_path_buf()), opts)
+    render_plan_with(plan, file_loader_at(base.to_path_buf(), Some(plan.sample_rate)), opts)
 }
 
 fn sha256_hex(pcm: &[f32]) -> String {
@@ -689,6 +713,7 @@ fn render_within(
     let mut engine = Engine::new(sr);
     let mut pending: Vec<usize> = (0..plan.events.len()).collect();
     let mut ramps: Vec<ActiveRamp> = Vec::new();
+    let mut master_tempo = false;
     let mut fired = Vec::new();
     let mut pcm: Vec<f32> = Vec::new();
     let tl_step = (sr as u64 * TIMELINE_STEP_MS as u64 / 1000).max(1);
@@ -723,7 +748,12 @@ fn render_within(
                         yield_ramp(&mut ramps, &cmd);
                         engine.apply(cmd).map_err(|e| fail(idx, e.into()))?;
                     }
+                    Action::Cmd(Command::Regrid(spec)) => {
+                        let track = engine.regridded(spec.deck, spec.beats.clone(), spec.bpm).map_err(|e| fail(idx, e.into()))?;
+                        engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map_err(|e| fail(idx, e.into()))?;
+                    }
                     Action::Cmd(Command::Apply(cmd)) => {
+                        master_tempo |= matches!(cmd, EngineCmd::MasterTempo { enabled: true, .. });
                         // Narrowing the pitch range under a tempo ramp would
                         // fail the ramp at the step that crosses the new edge,
                         // blamed on the ramp. The ramp's steps run from where
@@ -749,7 +779,6 @@ fn render_within(
                         yield_ramp(&mut ramps, cmd);
                         engine.apply(cmd.clone()).map_err(|e| fail(idx, e.into()))?;
                     }
-                    Action::Cmd(Command::NoOp) => {}
                     Action::Cmd(_) => unreachable!("rejected by parse_plan"),
                     Action::Ramp(r) => {
                         let from = engine
@@ -931,6 +960,7 @@ fn render_within(
         timeline,
         overlaps,
         tempo,
+        master_tempo,
         decks,
         reads,
     })

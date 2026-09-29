@@ -140,36 +140,52 @@ impl Coeffs {
     }
 }
 
-/// A stereo biquad in transposed direct form II.
+/// A stereo biquad in direct form I, the form Chromium runs whenever a
+/// parameter is automated (`platform/audio/biquad.cc`, `Biquad::Process`).
+/// With coefficients that change every frame the form matters: the state of a
+/// direct form I filter is its past inputs and outputs, which stay valid when
+/// the coefficients move, while a transposed form's state is built from the
+/// old coefficients. Measured against Chromium on a filter move, transposed
+/// direct form II with per-frame coefficients is off by about 20 dB in the
+/// first 5 ms; this form lands on the decoder floor.
 #[derive(Clone, Copy, Debug)]
 pub struct StereoBiquad {
     pub c: Coeffs,
-    z1: [f64; 2],
-    z2: [f64; 2],
+    /// Per channel: x[n-1], x[n-2], y[n-1], y[n-2].
+    h: [[f64; 4]; 2],
 }
 
 impl StereoBiquad {
     pub fn new(c: Coeffs) -> StereoBiquad {
-        StereoBiquad { c, z1: [0.0; 2], z2: [0.0; 2] }
+        StereoBiquad { c, h: [[0.0; 4]; 2] }
     }
 
     #[inline]
     pub fn process(&mut self, ch: usize, x: f64) -> f64 {
         let c = &self.c;
-        let y = c.b0 * x + self.z1[ch];
-        self.z1[ch] = c.b1 * x - c.a1 * y + self.z2[ch];
-        self.z2[ch] = c.b2 * x - c.a2 * y;
+        let [x1, x2, y1, y2] = self.h[ch];
+        let y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+        self.h[ch] = [x, x1, y, y1];
         y
     }
 
     pub fn reset(&mut self) {
-        self.z1 = [0.0; 2];
-        self.z2 = [0.0; 2];
+        self.h = [[0.0; 4]; 2];
     }
 }
 
 /// One-pole smoother matching Web Audio's `setTargetAtTime`:
 /// v(t) = target + (v0 - target) * e^(-t / tau), sampled per frame.
+///
+/// `tick` returns the value for the current frame and then advances, so the
+/// frame a change lands on still plays v0 and the glide starts one frame
+/// later. That is `setTargetAtTime`'s own shape (e^0 = 1 at its start time),
+/// and measured against Chromium it is worth about 45 dB on a filter move.
+///
+/// This follows the spec, not Chromium 141 in full: a STEREO BiquadFilterNode
+/// there advances a `setTargetAtTime` frequency glide twice per render quantum
+/// from the second quantum after the event, so the page's filter settles about
+/// twice as fast. Mono nodes and gain params step once per frame, as here.
 #[derive(Clone, Copy, Debug)]
 pub struct Smoothed {
     pub value: f64,
@@ -194,6 +210,7 @@ impl Smoothed {
 
     #[inline]
     pub fn tick(&mut self) -> f64 {
+        let out = self.value;
         if self.value != self.target {
             self.value += (self.target - self.value) * self.k;
             // Settle exactly, so a smoother at rest costs nothing and the
@@ -202,7 +219,7 @@ impl Smoothed {
                 self.value = self.target;
             }
         }
-        self.value
+        out
     }
 
     pub fn settled(&self) -> bool {
@@ -210,47 +227,48 @@ impl Smoothed {
     }
 }
 
-/// Linear ramp matching Web Audio's `linearRampToValueAtTime` from the
-/// current value, as the page's `applyEqRamp` schedules it: the target is
-/// reached exactly `steps` frames after `set` and held there.
+/// A linear glide over a fixed number of frames, restarted from wherever the
+/// value is whenever the target changes. This is the page's EQ law
+/// (`player/eq-apply.ts`: `setValueAtTime(current)` then
+/// `linearRampToValueAtTime(target, now + 10 ms)`), and like `Smoothed` it
+/// plays the start value on the frame the change lands on.
 #[derive(Clone, Copy, Debug)]
-pub struct Ramped {
+pub struct LinearRamp {
     pub value: f64,
     pub target: f64,
     start: f64,
-    step: u32,
-    steps: u32,
+    len: u32,
+    done: u32,
 }
 
-impl Ramped {
-    pub fn new(value: f64, sr: f64, ramp_s: f64) -> Ramped {
-        let steps = (ramp_s * sr).round().max(1.0) as u32;
-        Ramped { value, target: value, start: value, step: steps, steps }
+impl LinearRamp {
+    pub fn new(value: f64, sr: f64, ramp_s: f64) -> LinearRamp {
+        let len = (ramp_s * sr).round().max(1.0) as u32;
+        LinearRamp { value, target: value, start: value, len, done: len }
     }
 
-    /// Ramp from wherever the value is now to `target`, as `applyEqRamp`
-    /// does (cancel, hold the current value, ramp to the new one).
     pub fn set(&mut self, target: f64) {
-        self.start = self.value;
         self.target = target;
-        self.step = 0;
+        self.start = self.value;
+        self.done = if target == self.value { self.len } else { 0 };
     }
 
     #[inline]
     pub fn tick(&mut self) -> f64 {
-        if self.step < self.steps {
-            self.step += 1;
-            self.value = if self.step == self.steps {
+        let out = self.value;
+        if self.done < self.len {
+            self.done += 1;
+            self.value = if self.done == self.len {
                 self.target
             } else {
-                self.start + (self.target - self.start) * self.step as f64 / self.steps as f64
+                self.start + (self.target - self.start) * (self.done as f64 / self.len as f64)
             };
         }
-        self.value
+        out
     }
 
     pub fn settled(&self) -> bool {
-        self.step >= self.steps
+        self.done == self.len
     }
 }
 
@@ -388,7 +406,7 @@ mod tests {
     #[test]
     fn a_linear_ramp_lands_exactly_on_time() {
         // 10 ms at 48 kHz is 480 frames: halfway at 240, exact at 480.
-        let mut r = Ramped::new(0.0, 48000.0, 0.01);
+        let mut r = LinearRamp::new(0.0, 48000.0, 0.01);
         assert!(r.settled());
         r.set(-26.0);
         for _ in 0..240 {
@@ -429,15 +447,47 @@ mod tests {
         let sr = 48000.0;
         let mut s = Smoothed::new(0.0, sr, 0.01);
         s.set(1.0);
+        // The frame the change lands on still plays the start value, as
+        // setTargetAtTime does at its start time; frame k is 1 - e^(-k/(tau sr)).
+        assert_eq!(s.tick(), 0.0);
         let mut v = 0.0;
         for _ in 0..480 {
             v = s.tick();
         }
-        // One time-constant later the value is 1 - 1/e of the way there.
-        assert!((v - (1.0 - (-1.0f64).exp())).abs() < 1e-3, "{v}");
+        assert!((v - (1.0 - (-1.0f64).exp())).abs() < 1e-9, "{v}");
         for _ in 0..48000 {
             s.tick();
         }
         assert!(s.settled());
+    }
+
+    #[test]
+    fn linear_ramp_matches_linear_ramp_to_value_at_time() {
+        let sr = 48000.0;
+        let mut r = LinearRamp::new(-26.0, sr, 0.01);
+        assert!(r.settled());
+        r.set(6.0);
+        let got: Vec<f64> = (0..482).map(|_| r.tick()).collect();
+        assert_eq!(got[0], -26.0);
+        assert!((got[240] + 10.0).abs() < 1e-12, "{}", got[240]);
+        assert_eq!(got[480], 6.0);
+        assert_eq!(got[481], 6.0);
+        assert!(r.settled());
+        // Retargeting mid-ramp restarts from the current value over a full
+        // ramp, as cancelScheduledValues + setValueAtTime(current) does.
+        r.set(0.0);
+        for _ in 0..240 {
+            r.tick();
+        }
+        r.set(6.0);
+        assert_eq!(r.tick(), 3.0);
+        for k in 1..480 {
+            assert!((r.tick() - (3.0 + 3.0 * k as f64 / 480.0)).abs() < 1e-12);
+        }
+        assert!(r.settled());
+        assert_eq!(r.tick(), 6.0);
+        // Control: setting the value it already has does not start a ramp.
+        r.set(6.0);
+        assert!(r.settled());
     }
 }

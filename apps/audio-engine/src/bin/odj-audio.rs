@@ -24,7 +24,7 @@ use std::process::ExitCode;
 
 use odj_audio::decode::SourceId;
 use odj_audio::engine::ErrorCode;
-use odj_audio::offline::{render_plan_files_with, session_loader, RenderOptions, Solo};
+use odj_audio::offline::{render_plan_files_with, session_loader_at, RenderOptions, Solo};
 use odj_audio::plan::{parse_plan, Action, Plan};
 use odj_audio::midi::{MapSet, Router};
 use odj_audio::{protocol, serve, wav};
@@ -417,8 +417,8 @@ fn render(mut args: Args) -> Result<(), String> {
         "render_wall_s": out.render_wall_s,
         "realtime_factor": out.realtime_factor(),
         "fired": fired,
-        // v1 plays varispeed only: a tempo change moves pitch with it.
-        "master_tempo": false,
+        // False: every tempo change in this render moved pitch with it.
+        "master_tempo": out.master_tempo,
         "tempo": tempo,
         "timeline": timeline,
         "overlaps": overlaps,
@@ -494,7 +494,7 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             // A live session has no render budget: tracks load whole, and a
             // track no deck holds is let go.
             let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-            let mut files = session_loader(cwd.clone());
+            let mut files = session_loader_at(cwd.clone(), Some(sr));
             let record_to = record.clone();
             // Every track the session read, by path and as opened, kept off
             // when the recording is written: a path swapped or relinked during

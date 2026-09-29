@@ -37,6 +37,8 @@ cpal = { version = "0.18", optional = true }
 # Loopback WebSocket for the renderer and agents (plan 20-02). Blocking std
 # I/O on per-client threads, so no async runtime enters the engine.
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+rubato = "0.16"
+signalsmith-stretch = "0.1.3"
 midir = { version = "0.11", optional = true }
 regex-lite = "0.1"
 
