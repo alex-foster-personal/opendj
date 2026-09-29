@@ -25,8 +25,9 @@ Requirements (mini-PRD):
       [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
       [if] a file does not decode or parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
-    Every listed SHA is a commit, an ancestor of HEAD, and has a style(format): subject.
+    Every listed SHA names a commit object itself, is an ancestor of HEAD, and has a style(format): subject.
       [if] a line is not a full 40-hex SHA or a comment [then ⛔️] exit 1
+      [if] a SHA names a tag or other object that only peels to a commit [then ⛔️] exit 1
       [if] a SHA is not an ancestor of HEAD (squash or rebase merge) [then ⛔️] exit 1
       [if] the clone is shallow and cannot see a SHA [then ⛔️] exit 2 UNKNOWN
 
@@ -243,11 +244,17 @@ def check_ignore_revs(repo: Path, path: Path) -> Result:
     shallow = _git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
     result = Result(0, files_checked=len(shas))
     for sha in shas:
-        if _git(repo, "cat-file", "-e", f"{sha}^{{commit}}", check=False).returncode != 0:
+        kind = _git(repo, "cat-file", "-t", sha, check=False)
+        if kind.returncode != 0:
             if shallow:
                 return Result(2, lines=[f"[ignore-revs] UNKNOWN {sha} not visible in this shallow clone"])
             result.exit_code = 1
             result.lines.append(f"[ignore-revs] FAIL {sha} is not a commit in this repository")
+            continue
+        if kind.stdout.strip() != "commit":
+            # Not `<sha>^{commit}`: that peels a tag, and blame skips only the commit's own SHA.
+            result.exit_code = 1
+            result.lines.append(f"[ignore-revs] FAIL {sha} is a {kind.stdout.strip()} object, not a commit")
             continue
         if _git(repo, "merge-base", "--is-ancestor", sha, "HEAD", check=False).returncode != 0:
             result.exit_code = 1

@@ -38,7 +38,7 @@ Regression lines:
   - if prove passes a chmod-only change then broken
   - if ignore-revs passes a SHA that is not an ancestor of HEAD then broken
   - if ignore-revs passes a listed commit whose subject is not style(format): then broken
-  - if ignore-revs passes an abbreviated SHA, or a SHA that is not a commit, then broken
+  - if ignore-revs passes an abbreviated SHA, a SHA that is not a commit, or an annotated tag's SHA, then broken
   - if ignore-revs reports a pass in a shallow clone that cannot see a listed SHA then broken
 """
 
@@ -401,6 +401,18 @@ def test_ignore_revs_rejects_an_abbreviated_sha(repo: Path) -> None:
 def test_ignore_revs_rejects_a_sha_that_is_not_a_commit(repo: Path) -> None:
     _commit(repo, {"m.py": "x=1\n"}, "init")
     assert format_proof.check_ignore_revs(repo, _ignore_file(repo, "0" * 40)).exit_code == 1
+
+
+def test_ignore_revs_rejects_an_annotated_tag_on_a_format_commit(repo: Path) -> None:
+    """git peels `<sha>^{commit}`, so a tag object pointing at a real format commit would pass that probe."""
+    _commit(repo, {"m.py": "x=1\n"}, "init")
+    fmt = _commit(repo, {"m.py": "x = 1\n"}, "style(format): ruff@0.16.3 m")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "tag", "-a", "-m", "part", "part-1", fmt)
+    tag_object = _git(repo, "rev-parse", "part-1")
+    assert tag_object != fmt
+    result = format_proof.check_ignore_revs(repo, _ignore_file(repo, tag_object))
+    assert result.exit_code == 1
+    assert any("tag" in line for line in result.lines), result.lines
 
 
 def test_ignore_revs_is_unknown_in_a_shallow_clone(repo: Path, tmp_path: Path) -> None:
