@@ -105,7 +105,10 @@ def _job_runs_on_every_pull_request(job: dict[str, Any]) -> bool:
         or ("''" if tok.startswith("inputs.") else tok)
         for tok in tokens
     )
-    return _evaluate_condition(ast.parse(python, mode="eval").body) is True
+    try:
+        return _evaluate_condition(ast.parse(python, mode="eval").body) is True
+    except (SyntaxError, ValueError):
+        return False  # not an expression this can evaluate: unproven, so the job does not count
 
 
 def _evaluate_condition(node: ast.expr) -> object:
@@ -294,6 +297,8 @@ def test_every_required_status_runs_on_every_pull_request_docs_only_included() -
         ({"if": "needs.scope.outputs.in_scope == 'true'", "needs": "scope"}, False),
         ({"if": "github.event_name == 'push'"}, False),
         ({"if": "always() && vars.CI_RUNS_ON_LINUX != ''", "needs": "scope"}, False),
+        ({"if": "always() &&"}, False),  # every token known, but not an expression: SyntaxError
+        ({"if": "()"}, False),  # parses, but as a construct the walker rejects: ValueError
     ],
 )
 def test_the_every_pull_request_evaluator(job: dict[str, Any], runs: bool) -> None:
