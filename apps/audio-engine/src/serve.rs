@@ -1094,6 +1094,29 @@ mod tests {
         assert_eq!(got[0].0.frame, 128);
     }
 
+    #[test]
+    fn state_requests_made_before_a_block_share_the_one_state_that_follows_them_all() {
+        // Codex on cfd11b0c: two `engine_state`s before a block takes the
+        // request get one state. That state answers both: a state carries no
+        // request id, and it is taken after both requests and after every
+        // command sent before either, which is all either asked for.
+        let (mut side, mut cmd_tx, _res_rx, mut states) = side_at(8000, u64::MAX, 16);
+        side.state_req.store(true, Ordering::Release);
+        cmd_tx.push((0, EngineCmd::MasterMute { muted: true })).unwrap();
+        side.state_req.store(true, Ordering::Release);
+        side.process(64);
+        let got: Vec<_> = std::iter::from_fn(|| states.pop().ok()).collect();
+        assert_eq!(got.len(), 1);
+        assert!(got[0].0.master_muted, "the state predates a command sent before the second request");
+        // Control: a request after that block gets a state of its own, and a
+        // block with none asked publishes none.
+        side.state_req.store(true, Ordering::Release);
+        side.process(64);
+        assert_eq!(drain(&mut states).len(), 1);
+        side.process(64);
+        assert!(drain(&mut states).is_empty());
+    }
+
     /// A control side with its own mailbox, reading nothing from the load
     /// threads it starts, so a test settles each load itself.
     fn control() -> (Control, rtrb::Consumer<(u64, EngineCmd)>, Captured) {
