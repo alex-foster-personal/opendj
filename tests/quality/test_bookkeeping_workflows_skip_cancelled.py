@@ -56,6 +56,10 @@ def _assert_batch_pass(
     mark = next(step for step in steps if step.get("id") == "mark")
     assert f"workflows/{workflow_file}/runs" in mark["run"]
     assert "run_started_at" in mark["run"]
+    # if a failed pass advances the mark then two failures in a row skip completions
+    assert "success" in mark["run"] and "failure" not in mark["run"], (
+        "only a successful pass may advance the mark"
+    )
     cadence = _cadence_minutes(workflow[True]["schedule"][0]["cron"])
     env = workflow["jobs"][job_name]["env"]
     assert int(env["OVERLAP_MINUTES"]) >= 2 * cadence

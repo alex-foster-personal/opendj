@@ -10,11 +10,12 @@ name: CI Cost Guard
 # queued job; only fewer jobs help, and one job per cadence is fewer.
 #
 # The high-water mark is stored nowhere but GitHub's own record of this
-# workflow: the `run_started_at` of the last completed pass, read back below.
+# workflow: the `run_started_at` of the last SUCCESSFUL pass, read back below.
 # Two passes always overlap by at least the floor, and an overlap is harmless
 # because an alert issue's title carries the run id and the step below refuses
 # to open a second one for the same run. A pass that fails mid-way (API error)
-# is covered by the next one, which starts from the pass before it.
+# does not move the mark, so however many fail in a row, the next success
+# starts from the last pass that finished its batch.
 #
 # Alert latency is one cadence at most. The guard's own file previously said
 # why it never runs inside the observed run: a job inside CI would execute the
@@ -221,7 +222,7 @@ jobs:
         run: |
           set -euo pipefail
           previous="$(gh api "repos/$REPOSITORY/actions/workflows/ci-cost-guard.yml/runs?status=completed&per_page=5" \
-            --jq "[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber)) | select(.conclusion == \"success\" or .conclusion == \"failure\")][0].run_started_at // empty")"
+            --jq "[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber)) | select(.conclusion == \"success\")][0].run_started_at // empty")"
           echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
           echo "[guard] previous pass started at: ${previous:-none, using the overlap floor}"
 

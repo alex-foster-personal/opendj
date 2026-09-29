@@ -125,7 +125,10 @@ jobs:
         timeout-minutes: 1
         run: scripts/ci_runner_preflight.sh python3 gh
 
-      - name: Read the high-water mark from the last completed pass
+      # Only a successful pass advances the mark. A failed pass may have written
+      # part of its batch or none of it; counting it would let two failures in a
+      # row move the mark past completions no pass recorded.
+      - name: Read the high-water mark from the last successful pass
         id: mark
         env:
           GH_TOKEN: ${{ github.token }}
@@ -134,8 +137,8 @@ jobs:
         run: |
           set -euo pipefail
           previous=$(gh api "repos/$REPOSITORY/actions/workflows/stable-evidence.yml/runs?status=completed&per_page=5" \
-            --jq '[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber)) | select(.conclusion == "success" or .conclusion == "failure")][0].run_started_at // empty')
-          echo "[mark] previous completed pass started at: ${previous:-none, using the overlap floor}"
+            --jq '[.workflow_runs[] | select(.id != ($THIS_RUN|tonumber)) | select(.conclusion == "success")][0].run_started_at // empty')
+          echo "[mark] previous successful pass started at: ${previous:-none, using the overlap floor}"
           echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
 
       - name: Append every recorded completion since the mark
