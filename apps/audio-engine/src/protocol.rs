@@ -666,6 +666,12 @@ pub fn hello_json(clock: &str, sample_rate: u32) -> Value {
     })
 }
 
+/// The `ok` for an `engine_state`: `state_seq` numbers the request, and the
+/// state that answers it is the first whose own `state_seq` is at least this.
+pub fn state_ok_json(id: Option<&Value>, state_seq: u64) -> Value {
+    json!({"type": "result", "id": id, "ok": true, "state_seq": state_seq})
+}
+
 pub fn result_json(id: Option<&Value>, res: &Result<(), ProtoError>) -> Value {
     match res {
         Ok(()) => json!({"type": "result", "id": id, "ok": true}),
@@ -699,7 +705,12 @@ pub struct HostTime {
 /// receipt, which is off only by the pipe's transit time, and so tracks the
 /// audio rather than the render cursor without sharing the engine's clock.
 /// All three are null on the fake clock, where wall time means nothing.
-pub fn state_json(s: &Snapshot, host: Option<HostTime>) -> Value {
+///
+/// `state_seq` is the last `engine_state` whose preceding commands this state
+/// reflects, numbered as its `ok` numbered it (0 before any). States carry no
+/// request id and may be written after a later request's `ok`, so a receiver
+/// waiting on request `n` takes the first state with `state_seq >= n`.
+pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value {
     let decks: Vec<Value> = s
         .decks
         .iter()
@@ -741,6 +752,7 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>) -> Value {
         "host_time_ns": host.map(|h| h.heard_ns),
         "sent_ns": host.map(|h| h.sent_ns),
         "heard_in_ns": host.map(|h| h.heard_ns as i64 - h.sent_ns as i64),
+        "state_seq": state_seq,
         "decks": decks,
         "mixer": {"crossfader": s.crossfader, "master_volume": s.master_volume},
         "master": {"muted": s.master_muted},
@@ -997,7 +1009,7 @@ mod tests {
         s.decks[0].loop_ms = Some((1000.0, 3000.0));
         s.decks[0].loop_beats = Some(4.0);
         s.decks[1].loop_ms = Some((500.0, 900.0));
-        let v = state_json(&s, None);
+        let v = state_json(&s, None, 0);
         assert_eq!(
             v["decks"][0]["loop"],
             json!({"in_ms": 1000.0, "out_ms": 3000.0, "engaged": true, "beat_length": 4.0})
@@ -1035,7 +1047,7 @@ mod tests {
         };
         s.decks[0].quantize = true;
         s.decks[0].quantize_grid = 4;
-        let v = state_json(&s, None);
+        let v = state_json(&s, None, 0);
         assert_eq!(v["decks"][0]["quantize"], json!({"enabled": true, "grid_beats": 4}));
     }
 
@@ -1049,15 +1061,15 @@ mod tests {
             master_volume: 1.0,
             master_muted: false,
         };
-        let v = state_json(&s, Some(HostTime { heard_ns: 5_060_000_000, sent_ns: 5_000_000_000 }));
+        let v = state_json(&s, Some(HostTime { heard_ns: 5_060_000_000, sent_ns: 5_000_000_000 }), 0);
         assert_eq!(v["host_time_ns"], 5_060_000_000u64);
         assert_eq!(v["sent_ns"], 5_000_000_000u64);
         assert_eq!(v["heard_in_ns"], 60_000_000);
         // A line written after its position was heard says so.
-        let v = state_json(&s, Some(HostTime { heard_ns: 100, sent_ns: 250 }));
+        let v = state_json(&s, Some(HostTime { heard_ns: 100, sent_ns: 250 }), 0);
         assert_eq!(v["heard_in_ns"], -150);
         // Control: the fake clock has no host time at all.
-        let v = state_json(&s, None);
+        let v = state_json(&s, None, 0);
         for k in ["host_time_ns", "sent_ns", "heard_in_ns"] {
             assert_eq!(v[k], Value::Null, "{k}");
         }

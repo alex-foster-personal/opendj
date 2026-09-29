@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::{decode_file_within, reserve_within};
+use crate::decode::{decode_file_within, reserve_within, SourceId};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -106,6 +106,9 @@ pub struct RenderOutput {
     pub tempo: Vec<TempoPoint>,
     /// Empty unless `RenderOptions::deck_outputs`.
     pub decks: Vec<DeckOutput>,
+    /// Every file the tracks were decoded from, as opened: what an output
+    /// must not be, whatever their paths name by the time it is written.
+    pub reads: Vec<SourceId>,
 }
 
 impl RenderOutput {
@@ -135,26 +138,29 @@ fn yield_ramp(ramps: &mut Vec<ActiveRamp>, cmd: &EngineCmd) {
     }
 }
 
+/// One decoded file: its sample rate, its samples, and the file as opened.
+type CachedFile = (u32, Arc<Vec<f32>>, Option<SourceId>);
+
 /// Loads every track the plan names, decoding each distinct file once.
 /// Relative paths resolve against `base`. The second argument is the most
 /// frames a newly decoded file may hold; a file already decoded shares its
 /// samples and costs nothing more, so it is never refused for room.
 pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> {
-    let mut cache: HashMap<FileKey, (u32, Arc<Vec<f32>>)> = HashMap::new();
+    let mut cache: HashMap<FileKey, CachedFile> = HashMap::new();
     move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
         let key = FileKey::of(&path);
-        let (sr, pcm) = match cache.get(&key) {
-            Some((sr, pcm)) => (*sr, pcm.clone()),
+        let (sr, pcm, source) = match cache.get(&key) {
+            Some((sr, pcm, source)) => (*sr, pcm.clone(), source.clone()),
             None => {
                 let d = decode_file_within(&path, room)?;
                 let pcm = Arc::new(d.pcm);
-                cache.insert(key, (d.sample_rate, pcm.clone()));
-                (d.sample_rate, pcm)
+                cache.insert(key, (d.sample_rate, pcm.clone(), d.source.clone()));
+                (d.sample_rate, pcm, d.source)
             }
         };
         // Every load of one file shares the cached samples; nothing is copied.
-        Ok(Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm)))
+        Ok(Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm).with_source(source)))
     }
 }
 
@@ -244,14 +250,14 @@ impl TrackCache {
         // then finds the first one's track.
         let mut held = file.lock().unwrap_or_else(|e| e.into_inner());
         held.retain(|t| t.strong_count() > 0);
-        let (sr, pcm) = match held.iter().find_map(Weak::upgrade) {
-            Some(t) => (t.sample_rate, t.pcm.clone()),
+        let (sr, pcm, source) = match held.iter().find_map(Weak::upgrade) {
+            Some(t) => (t.sample_rate, t.pcm.clone(), t.source.clone()),
             None => {
                 let d = decode_file_within(path, u64::MAX)?;
-                (d.sample_rate, Arc::new(d.pcm))
+                (d.sample_rate, Arc::new(d.pcm), d.source)
             }
         };
-        let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm));
+        let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm).with_source(source));
         held.push(Arc::downgrade(&track));
         Ok(track)
     }
@@ -563,6 +569,7 @@ fn render_within(
     let decode_start = Instant::now();
     let mut loaded: HashMap<usize, Arc<Track>> = HashMap::new();
     let mut sources: Vec<*const f32> = Vec::new();
+    let mut reads: Vec<SourceId> = Vec::new();
     let mut source_frames = 0u64;
     for (i, ev) in plan.events.iter().enumerate() {
         if let Action::Cmd(Command::Load(spec)) = &ev.action {
@@ -573,6 +580,9 @@ fn render_within(
             let needed = held.saturating_mul(end_frame.unwrap_or(1).max(1));
             let room = budget.saturating_sub(source_frames).saturating_sub(needed);
             let track = load(spec, room).map_err(|e| fail(i, e))?;
+            if let Some(s) = track.source.as_ref().filter(|s| !reads.contains(s)) {
+                reads.push(s.clone());
+            }
             // Tracks decoded from one file share their samples; count them once.
             let samples = track.pcm.as_ptr();
             if !sources.contains(&samples) {
@@ -849,6 +859,7 @@ fn render_within(
         overlaps,
         tempo,
         decks,
+        reads,
     })
 }
 
@@ -905,6 +916,31 @@ mod tests {
         cache.load(&a, &spec).unwrap();
         assert_eq!(cache.files.lock().unwrap().len(), 2, "a file a deck holds was forgotten");
         drop(held_b);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_track_shared_from_either_cache_names_the_file_it_was_decoded_from() {
+        // A second load of one file shares the first one's samples; it must
+        // share what they were read from too, or a caller asking the track
+        // it was handed would find nothing read.
+        let d = std::env::temp_dir().join(format!("odj-cache-source-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("a.wav");
+        let mut f = std::io::BufWriter::new(std::fs::File::create(&p).unwrap());
+        crate::wav::write_f32(&mut f, 48000, &[0.0; 960]).unwrap();
+        drop(f);
+        let id = SourceId::of(&std::fs::File::open(&p).unwrap()).unwrap();
+        let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+        let cache = TrackCache::default();
+        let first = cache.load(&p, &spec).unwrap();
+        let second = cache.load(&p, &spec).unwrap();
+        assert!(Arc::ptr_eq(&first.pcm, &second.pcm), "the second load was not a cache hit");
+        assert_eq!((first.source.as_ref(), second.source.as_ref()), (Some(&id), Some(&id)));
+        let mut load = file_loader(d.clone());
+        let (first, second) = (load(&spec, u64::MAX).unwrap(), load(&spec, u64::MAX).unwrap());
+        assert!(Arc::ptr_eq(&first.pcm, &second.pcm), "the second load was not a cache hit");
+        assert_eq!((first.source.as_ref(), second.source.as_ref()), (Some(&id), Some(&id)));
         let _ = std::fs::remove_dir_all(&d);
     }
 

@@ -22,6 +22,32 @@ pub struct Decoded {
     pub sample_rate: u32,
     /// Interleaved stereo.
     pub pcm: Vec<f32>,
+    /// The file the samples were read from, as opened.
+    pub source: Option<SourceId>,
+}
+
+/// A file as the volume knows it, taken from the open file itself, so it
+/// still names what was read after its path is renamed or replaced: device
+/// and inode on Unix; elsewhere the open handle (volume serial and file
+/// index), kept open for as long as the id is held. On Unix a file deleted
+/// since may have its inode reused, which can only make a later comparison
+/// say "the same file" of a new one: a refusal, never an overwrite.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceId(#[cfg(unix)] (u64, u64), #[cfg(not(unix))] std::sync::Arc<same_file::Handle>);
+
+impl SourceId {
+    pub fn of(file: &File) -> std::io::Result<SourceId> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let m = file.metadata()?;
+            Ok(SourceId((m.dev(), m.ino())))
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(SourceId(std::sync::Arc::new(same_file::Handle::from_file(file.try_clone()?)?)))
+        }
+    }
 }
 
 /// Make room for `extra` more samples in `v`, growing it geometrically as
@@ -65,6 +91,8 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
 pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
     let file = File::open(path)
         .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot open {}: {e}", path.display())))?;
+    // Taken from the file the samples come from, not from its path again.
+    let source = SourceId::of(&file).ok();
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -153,7 +181,7 @@ pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, Proto
     if sample_rate == 0 || pcm.is_empty() {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
-    Ok(Decoded { sample_rate, pcm })
+    Ok(Decoded { sample_rate, pcm, source })
 }
 
 /// The first rate decoded is the track's rate. A later buffer at another

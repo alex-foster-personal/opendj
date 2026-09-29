@@ -40,6 +40,8 @@ pub struct Track {
     /// Tag BPM, used only when there is no grid: for plan beat and bar
     /// times and the tempo readout. Beat loops and jumps need a real grid.
     pub bpm: Option<f64>,
+    /// The file the samples were decoded from, as opened, when known.
+    pub source: Option<crate::decode::SourceId>,
 }
 
 impl Track {
@@ -53,7 +55,12 @@ impl Track {
             .filter(|(_, b)| b.downbeat)
             .map(|(i, _)| i)
             .collect();
-        Track { sample_rate, pcm, frames, beats, downbeats, bpm }
+        Track { sample_rate, pcm, frames, beats, downbeats, bpm, source: None }
+    }
+
+    pub fn with_source(mut self, source: Option<crate::decode::SourceId>) -> Track {
+        self.source = source;
+        self
     }
 
     pub fn duration_ms(&self) -> f64 {

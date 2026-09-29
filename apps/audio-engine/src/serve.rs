@@ -18,7 +18,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, Write};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -209,6 +209,8 @@ pub fn serve_fake(
     send(&mut out, &protocol::hello_json("fake", sample_rate))?;
     let mut input = input;
     let mut buf = Vec::new();
+    // `engine_state`s answered so far; each state that follows one answers it.
+    let mut state_seq = 0u64;
     loop {
         let line = match read_line(&mut input, &mut buf)? {
             ReadLine::Line(l) => l,
@@ -223,6 +225,7 @@ pub fn serve_fake(
         }
         let (id, parsed) = protocol::parse_line(&line);
         let mut then_state = false;
+        let mut asked = false;
         let mut stop = false;
         let res: Result<(), ProtoError> = parsed.and_then(|cmd| match cmd {
             Command::Load(spec) => {
@@ -247,6 +250,7 @@ pub fn serve_fake(
             }
             Command::State => {
                 then_state = true;
+                asked = true;
                 Ok(())
             }
             Command::Shutdown => {
@@ -254,9 +258,14 @@ pub fn serve_fake(
                 Ok(())
             }
         });
-        send(&mut out, &protocol::result_json(id.as_ref(), &res))?;
+        if asked {
+            state_seq += 1;
+            send(&mut out, &protocol::state_ok_json(id.as_ref(), state_seq))?;
+        } else {
+            send(&mut out, &protocol::result_json(id.as_ref(), &res))?;
+        }
         if then_state {
-            send(&mut out, &protocol::state_json(&engine.snapshot(), None))?;
+            send(&mut out, &protocol::state_json(&engine.snapshot(), None, state_seq))?;
         }
         if stop {
             break;
@@ -301,14 +310,22 @@ type Out = Arc<Mutex<Box<dyn Write + Send>>>;
 /// What the audio side sends back for each command.
 type AudioResult = (u64, Result<Retired, Rejected>);
 
+/// A published state: the snapshot, when it is heard, and its `state_seq`.
+type StateMsg = (Snapshot, u64, u64);
+
 /// The half of the engine that lives on the audio thread. Everything it
 /// touches in `process` is preallocated.
 pub struct AudioSide {
     engine: Engine,
     cmd_rx: rtrb::Consumer<(u64, EngineCmd)>,
     res_tx: rtrb::Producer<AudioResult>,
-    state_tx: rtrb::Producer<(Snapshot, u64)>,
+    state_tx: rtrb::Producer<StateMsg>,
     state_req: Arc<AtomicBool>,
+    /// The last `engine_state` asked of this side, set before `state_req`.
+    state_asked: Arc<AtomicU64>,
+    /// The last `engine_state` a block has taken, with every command sent
+    /// before it applied: what each state published since reflects.
+    answered: u64,
     frames_per_state: u64,
     frames_since_state: u64,
     epoch: Instant,
@@ -320,7 +337,7 @@ pub struct AudioSide {
     /// Runs after a block renders, before its state request is settled: the
     /// moment a request arriving mid-block used to be lost.
     #[cfg(test)]
-    mid_block: Option<fn(&AtomicBool)>,
+    mid_block: Option<fn(&AtomicBool, &AtomicU64)>,
 }
 
 impl AudioSide {
@@ -340,6 +357,10 @@ impl AudioSide {
         // the block stays armed for the next one, never answered by a state
         // that predates it.
         let mut requested = self.state_req.swap(false, Ordering::Acquire);
+        // Read with the request: the control side numbers a request before
+        // making it, so this is that request's number or a later one's, and
+        // any commands sent before that one are in the ring by now too.
+        let asked = self.state_asked.load(Ordering::Acquire);
         // Take a command only while its result has a slot to go to: a result
         // dropped here would free a retired track on this thread. With the
         // result ring full, the rest wait in the command ring until the pump
@@ -355,6 +376,12 @@ impl AudioSide {
         if requested && !self.cmd_rx.is_empty() {
             self.state_req.store(true, Ordering::Relaxed);
             requested = false;
+        } else if requested {
+            // Every state from here on reflects the request, periodic ones
+            // included. A block that has not taken it (held back above, or
+            // asked mid-block) publishes the number before, so a stale state
+            // is never taken for the answer.
+            self.answered = self.answered.max(asked);
         }
         let n = frames.min(self.scratch.len() / 2);
         let now_ns = self.epoch.elapsed().as_nanos() as u64 + self.ahead_ns;
@@ -383,7 +410,7 @@ impl AudioSide {
         // block, so an `engine_state` answered ok always gets its state.
         #[cfg(test)]
         if let Some(hook) = self.mid_block {
-            hook(&self.state_req);
+            hook(&self.state_req, &self.state_asked);
         }
         if requested && !published_at_end && !self.publish(now_ns, n) {
             self.state_req.store(true, Ordering::Relaxed);
@@ -397,7 +424,7 @@ impl AudioSide {
     fn publish(&mut self, now_ns: u64, frames_in: usize) -> bool {
         self.frames_since_state = 0;
         let in_ns = frames_in as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
-        self.state_tx.push((self.engine.snapshot(), now_ns + in_ns)).is_ok()
+        self.state_tx.push((self.engine.snapshot(), now_ns + in_ns, self.answered)).is_ok()
     }
 }
 
@@ -444,12 +471,15 @@ struct Control {
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
+    /// The last `engine_state` asked of the audio side, by its `state_seq`.
+    state_asked: Arc<AtomicU64>,
     /// Decoded tracks, shared by the load threads.
     tracks: Arc<TrackCache>,
-    /// Per `engine_state` waiting on pending loads: how many decks' fences
-    /// have yet to pass.
+    /// Per `engine_state` waiting on pending loads, by its `state_seq`: how
+    /// many decks' fences have yet to pass.
     fences: HashMap<u64, usize>,
-    next_fence: u64,
+    /// The last `state_seq` given out.
+    state_seq: u64,
     /// Bytes of `LOAD_BYTES` held now.
     load_used: Arc<AtomicUsize>,
     /// Set by whichever write to the output fails first.
@@ -458,8 +488,12 @@ struct Control {
 
 impl Control {
     fn reply(&self, id: Option<&Value>, res: Result<(), ProtoError>) {
+        self.write(&protocol::result_json(id, &res));
+    }
+
+    fn write(&self, v: &Value) {
         let mut o = self.out.lock().unwrap();
-        if send(&mut *o, &protocol::result_json(id, &res)).is_err() {
+        if send(&mut *o, v).is_err() {
             self.closed.store(true, Ordering::Release);
             let _ = self.msg_tx.send(Msg::OutputClosed);
         }
@@ -673,8 +707,17 @@ impl Control {
         *left -= 1;
         if *left == 0 {
             self.fences.remove(&f);
-            self.state_req.store(true, Ordering::Release);
+            self.ask_state(f);
         }
+    }
+
+    /// Ask the audio side for state request `n`: numbered first, so a block
+    /// that sees the request reads its number (or a later one's) with it.
+    /// Release: the commands pushed before this are visible to the audio
+    /// side once it sees the request.
+    fn ask_state(&self, n: u64) {
+        self.state_asked.fetch_max(n, Ordering::Release);
+        self.state_req.store(true, Ordering::Release);
     }
 
     fn refuse_queued(&mut self, q: VecDeque<Queued>) {
@@ -733,21 +776,19 @@ impl Control {
                     );
                     return true;
                 }
+                self.state_seq += 1;
+                let n = self.state_seq;
                 if pending.is_empty() {
-                    // Release: the commands pushed before this are visible
-                    // to the audio side once it sees the request.
-                    self.state_req.store(true, Ordering::Release);
+                    self.ask_state(n);
                 } else {
-                    let f = self.next_fence;
-                    self.next_fence += 1;
-                    self.fences.insert(f, pending.len());
+                    self.fences.insert(n, pending.len());
                     for d in pending {
                         if let Some(q) = self.waiting[d].as_mut() {
-                            q.push_back(Queued::Fence(f));
+                            q.push_back(Queued::Fence(n));
                         }
                     }
                 }
-                self.reply(id.as_ref(), Ok(()));
+                self.write(&protocol::state_ok_json(id.as_ref(), n));
             }
             Ok(Command::Shutdown) => {
                 self.reply(id.as_ref(), Ok(()));
@@ -780,6 +821,7 @@ fn serve_threaded_from(
     let (state_tx, mut state_rx) = rtrb::RingBuffer::new(64);
     let stop = Arc::new(AtomicBool::new(false));
     let state_req = Arc::new(AtomicBool::new(false));
+    let state_asked = Arc::new(AtomicU64::new(0));
     let out: Out = Arc::new(Mutex::new(Box::new(output)));
     let ids: Ids = Arc::new(Mutex::new(HashMap::new()));
 
@@ -797,6 +839,8 @@ fn serve_threaded_from(
         res_tx,
         state_tx,
         state_req: state_req.clone(),
+        state_asked: state_asked.clone(),
+        answered: 0,
         frames_per_state: (sample_rate / STATE_HZ) as u64,
         frames_since_state: 0,
         epoch,
@@ -843,10 +887,10 @@ fn serve_threaded_from(
                 let res = r.map(drop).map_err(ProtoError::from);
                 write(&protocol::result_json(id.as_ref(), &res));
             }
-            while let Ok((snap, heard_ns)) = state_rx.pop() {
+            while let Ok((snap, heard_ns, state_seq)) = state_rx.pop() {
                 idle = false;
                 let host = HostTime { heard_ns, sent_ns: epoch.elapsed().as_nanos() as u64 };
-                write(&protocol::state_json(&snap, Some(host)));
+                write(&protocol::state_json(&snap, Some(host), state_seq));
             }
             if pump_stop_flag.load(Ordering::Relaxed) && idle {
                 break;
@@ -893,9 +937,10 @@ fn serve_threaded_from(
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
         state_req,
+        state_asked,
         tracks: Arc::default(),
         fences: HashMap::new(),
-        next_fence: 0,
+        state_seq: 0,
         load_used: Arc::default(),
         closed,
     };
@@ -1052,7 +1097,7 @@ mod tests {
     }
 
     type SideParts =
-        (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>, rtrb::Consumer<(Snapshot, u64)>);
+        (AudioSide, rtrb::Producer<(u64, EngineCmd)>, rtrb::Consumer<AudioResult>, rtrb::Consumer<StateMsg>);
 
     fn side_at(sample_rate: u32, frames_per_state: u64, res_slots: usize) -> SideParts {
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(16);
@@ -1064,6 +1109,8 @@ mod tests {
             res_tx,
             state_tx,
             state_req: Arc::new(AtomicBool::new(false)),
+            state_asked: Arc::default(),
+            answered: 0,
             frames_per_state,
             frames_since_state: 0,
             epoch: Instant::now(),
@@ -1074,9 +1121,9 @@ mod tests {
         (side, cmd_tx, res_rx, state_rx)
     }
 
-    fn drain(rx: &mut rtrb::Consumer<(Snapshot, u64)>) -> Vec<(u64, u64)> {
+    fn drain(rx: &mut rtrb::Consumer<StateMsg>) -> Vec<(u64, u64)> {
         let mut v = Vec::new();
-        while let Ok((s, ns)) = rx.pop() {
+        while let Ok((s, ns, _)) = rx.pop() {
             v.push((s.frame, ns));
         }
         v
@@ -1130,7 +1177,7 @@ mod tests {
         // requested state was dropped and the request cleared, so an
         // `engine_state` answered ok never got its state.
         let (mut side, _cmd, _res, mut states) = side_at(8000, u64::MAX, 4);
-        while side.state_tx.push((side.engine.snapshot(), 0)).is_ok() {}
+        while side.state_tx.push((side.engine.snapshot(), 0, 0)).is_ok() {}
         side.state_req.store(true, Ordering::Relaxed);
         side.process(100);
         assert!(side.state_req.load(Ordering::Relaxed), "the request was cleared with its state dropped");
@@ -1144,7 +1191,7 @@ mod tests {
         // Likewise when the block's own periodic state is the one dropped.
         let per = 100;
         let (mut side, _cmd, _res, mut states) = side_at(8000, per, 4);
-        while side.state_tx.push((side.engine.snapshot(), 0)).is_ok() {}
+        while side.state_tx.push((side.engine.snapshot(), 0, 0)).is_ok() {}
         side.state_req.store(true, Ordering::Relaxed);
         side.process(100);
         assert!(side.state_req.load(Ordering::Relaxed), "a dropped periodic state satisfied the request");
@@ -1159,7 +1206,7 @@ mod tests {
         // was cleared by that state, which predates it and the commands
         // before it.
         let (mut side, _cmd, _res, mut states) = side_at(8000, 100, 4);
-        side.mid_block = Some(|r| r.store(true, Ordering::Release));
+        side.mid_block = Some(|r, _| r.store(true, Ordering::Release));
         side.process(100);
         side.mid_block = None;
         assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![100], "the periodic state");
@@ -1172,6 +1219,55 @@ mod tests {
         side.process(100);
         assert_eq!(drain(&mut states).iter().map(|s| s.0).collect::<Vec<_>>(), vec![250]);
         assert!(!side.state_req.load(Ordering::Relaxed));
+    }
+
+    fn states(rx: &mut rtrb::Consumer<StateMsg>) -> Vec<(u64, bool, u64)> {
+        std::iter::from_fn(|| rx.pop().ok()).map(|(s, _, n)| (s.frame, s.master_muted, n)).collect()
+    }
+
+    #[test]
+    fn a_periodic_state_before_the_commands_ahead_of_a_request_never_carries_its_number() {
+        // Codex on d07e4db1: with commands before the request held back by a
+        // full result ring, the request waits, but that block's periodic
+        // states still go out, after the request's `ok`, and nothing told
+        // them from its answer. A real state interval this time, not
+        // u64::MAX, which hid them.
+        let (mut side, mut cmd_tx, mut res_rx, mut rx) = side_at(8000, 50, 1);
+        for muted in [false, true] {
+            cmd_tx.push((muted as u64, EngineCmd::MasterMute { muted })).unwrap();
+        }
+        side.state_asked.store(1, Ordering::Release);
+        side.state_req.store(true, Ordering::Release);
+        side.process(100);
+        assert_eq!(states(&mut rx), vec![(50, false, 0), (100, false, 0)], "a state before the mute carries its number");
+        assert!(side.state_req.load(Ordering::Relaxed));
+        assert!(res_rx.pop().unwrap().1.is_ok());
+        // Control: the block that applies the mute answers it, and its
+        // periodic states carry the number too; the last one is the answer.
+        side.process(100);
+        assert_eq!(states(&mut rx), vec![(150, true, 1), (200, true, 1)]);
+        assert!(!side.state_req.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_request_made_mid_block_is_not_numbered_on_that_blocks_states() {
+        // Request 1 is taken as the block starts; request 2 arrives while it
+        // renders. The block's state answers 1 and must not claim 2.
+        let (mut side, _cmd, _res, mut rx) = side_at(8000, 100, 4);
+        side.state_asked.store(1, Ordering::Release);
+        side.state_req.store(true, Ordering::Release);
+        side.mid_block = Some(|r, n| {
+            n.fetch_max(2, Ordering::Release);
+            r.store(true, Ordering::Release);
+        });
+        side.process(100);
+        side.mid_block = None;
+        assert_eq!(states(&mut rx), vec![(100, false, 1)]);
+        side.process(50);
+        assert_eq!(states(&mut rx), vec![(150, false, 2)]);
+        // Control: with no request, the number stays where it was.
+        side.process(100);
+        assert_eq!(states(&mut rx), vec![(250, false, 2)]);
     }
 
     #[test]
@@ -1232,9 +1328,10 @@ mod tests {
             waiting: Default::default(),
             loading: [None; MAX_DECKS],
             state_req: Arc::new(AtomicBool::new(false)),
+            state_asked: Arc::default(),
             tracks: Arc::default(),
             fences: HashMap::new(),
-            next_fence: 0,
+            state_seq: 0,
             load_used: Arc::default(),
             closed: Arc::default(),
         };
@@ -1256,8 +1353,10 @@ mod tests {
         line(&mut c, serde_json::json!({"cmd": {"type": "play", "deck": 1, "playing": true}}));
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
         assert!(!c.state_req.load(Ordering::Acquire), "the state was asked for ahead of the parked play");
+        assert_eq!(c.state_asked.load(Ordering::Acquire), 0, "numbered ahead of the parked play");
         c.finish_load(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
+        assert_eq!(c.state_asked.load(Ordering::Acquire), 1, "asked for without its number");
         let sent: Vec<_> = std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(_, cmd)| cmd).collect();
         assert!(matches!(sent[..], [EngineCmd::Load { .. }, EngineCmd::Play { .. }]), "{sent:?}");
         // A load that fails lets it through (the state after that is the
@@ -1274,11 +1373,22 @@ mod tests {
         assert!(!c.state_req.load(Ordering::Acquire), "asked for with deck 2's second load still ahead of it");
         c.finish_load(c.loading[1].unwrap(), 2, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
+        assert_eq!(c.state_asked.load(Ordering::Acquire), 2);
         // Control: with nothing pending it is asked for at once.
         c.state_req.store(false, Ordering::Relaxed);
         line(&mut c, serde_json::json!({"cmd": {"type": "engine_state"}}));
         assert!(c.state_req.load(Ordering::Acquire));
         assert!(c.fences.is_empty());
+        assert_eq!(c.state_asked.load(Ordering::Acquire), 3);
+        // Each `ok` carries the number its state will carry, fenced or not.
+        let text = String::from_utf8(_out.0.lock().unwrap().clone()).unwrap();
+        let seqs: Vec<Value> = text
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .filter(|v| v.get("state_seq").is_some())
+            .map(|v| v["state_seq"].clone())
+            .collect();
+        assert_eq!(seqs, vec![1, 2, 3]);
     }
 
     #[test]
@@ -2131,7 +2241,7 @@ mod tests {
         let t0 = side.epoch.elapsed().as_nanos() as u64;
         side.set_ahead_ns(50_000_000);
         side.process(480);
-        let (_, host_ns) = state_rx.pop().unwrap();
+        let (_, host_ns, _) = state_rx.pop().unwrap();
         // 50 ms of device latency plus the 10 ms block just rendered.
         let lead = host_ns - t0;
         assert!((60_000_000..70_000_000).contains(&lead), "lead {lead} ns");
@@ -2139,7 +2249,7 @@ mod tests {
         side.set_ahead_ns(0);
         let t1 = side.epoch.elapsed().as_nanos() as u64;
         side.process(480);
-        let (_, host_ns) = state_rx.pop().unwrap();
+        let (_, host_ns, _) = state_rx.pop().unwrap();
         assert!((10_000_000..20_000_000).contains(&(host_ns - t1)), "lead {} ns", host_ns - t1);
     }
 }

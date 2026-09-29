@@ -327,6 +327,42 @@ fn a_recording_is_not_written_over_a_track_its_path_became_during_the_session() 
 }
 
 #[test]
+fn a_recording_is_not_written_over_a_track_renamed_away_during_the_session() {
+    // Codex on d07e4db1: only the loaded paths were asked again, so a track
+    // renamed away and replaced at its path, with the recording then linked
+    // to the file that was loaded, was emptied.
+    let d = temp_dir("cli-record-renamed");
+    write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 0.5));
+    let b_before = std::fs::read(d.join("b.wav")).unwrap();
+    let mut child = Command::new(BIN)
+        .args(["serve", "--clock", "fake", "--record", "rec.wav"])
+        .current_dir(&d)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    assert_eq!(next()["type"], "hello");
+    let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
+    say(json!({"id": "b", "cmd": {"type": "load", "deck": 1, "path": "b.wav"}}));
+    assert_eq!(next()["ok"], true);
+    say(json!({"id": "a", "cmd": {"type": "engine_advance", "ms": 100}}));
+    assert_eq!(next()["ok"], true);
+    std::fs::rename(d.join("b.wav"), d.join("b-old.wav")).unwrap();
+    write_wav(&d, "b.wav", 48000, &sine(48000, 440.0, 0.5));
+    std::fs::hard_link(d.join("b-old.wav"), d.join("rec.wav")).unwrap();
+    drop(stdin);
+    let o = child.wait_with_output().unwrap();
+    assert!(!o.status.success(), "the recording was written over the track that was loaded");
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("since renamed or replaced"), "{err}");
+    assert_eq!(std::fs::read(d.join("b-old.wav")).unwrap(), b_before, "the loaded track was changed");
+}
+
+#[test]
 fn fake_clock_session_over_pipes() {
     let d = temp_dir("cli-serve");
     write_wav(&d, "a.wav", 44100, &sine(44100, 440.0, 5.0));
@@ -375,8 +411,10 @@ fn fake_clock_session_over_pipes() {
         assert_eq!(r["error"]["code"], "invalid", "{adv}: {r}");
     }
     say(json!({"id": "st", "cmd": {"type": "engine_state"}}));
-    assert_eq!(next()["ok"], true);
-    assert_eq!(next()["frame"], 48000, "a refused advance renders nothing");
+    assert_eq!(next()["state_seq"], 1, "the first engine_state is numbered 1");
+    let st = next();
+    assert_eq!(st["frame"], 48000, "a refused advance renders nothing");
+    assert_eq!(st["state_seq"], 1, "the state that answers it carries its number");
 
     say(json!({"id": "s", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true}}));
     let r = next();
@@ -385,8 +423,8 @@ fn fake_clock_session_over_pipes() {
     // A numeric id comes back as the same number, and an id the engine
     // could not echo is refused without running the command.
     say(json!({"id": 7, "cmd": {"type": "engine_state"}}));
-    assert_eq!(next(), json!({"type": "result", "id": 7, "ok": true}));
-    next();
+    assert_eq!(next(), json!({"type": "result", "id": 7, "ok": true, "state_seq": 2}));
+    assert_eq!(next()["state_seq"], 2);
     say(json!({"id": true, "cmd": {"type": "engine_shutdown"}}));
     let r = next();
     assert_eq!((r["id"].clone(), r["ok"].clone()), (Value::Null, json!(false)), "{r}");
@@ -444,6 +482,46 @@ fn wall_clock_refuses_advance_and_reports_state() {
     // The wall clock moves: frames strictly increase between state messages.
     assert!(frames.windows(2).all(|w| w[1] > w[0]), "{frames:?}");
     drop(stdin); // EOF: the engine exits when its supervisor goes away.
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn each_engine_state_is_answered_by_the_first_state_carrying_its_number() {
+    // Codex on d07e4db1: states carry no request id and the periodic feed
+    // keeps flowing, so the answer to an `engine_state` is marked by number.
+    let mut child = Command::new(BIN)
+        .args(["serve", "--clock", "wall"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    assert_eq!(next()["type"], "hello");
+    let mut last_seq = 0;
+    for (k, x) in [0.25, 0.75, 0.5].into_iter().enumerate() {
+        writeln!(stdin, "{}", json!({"id": "x", "cmd": {"type": "crossfader", "value": x}})).unwrap();
+        writeln!(stdin, "{}", json!({"id": "s", "cmd": {"type": "engine_state"}})).unwrap();
+        let mut want = None;
+        loop {
+            let v = next();
+            if v["type"] == "state" {
+                let n = v["state_seq"].as_u64().unwrap();
+                assert!(n >= last_seq, "state_seq went back: {n} after {last_seq}");
+                last_seq = n;
+                if want.is_some_and(|w| n >= w) {
+                    assert_eq!(v["mixer"]["crossfader"], x, "the state carrying request {n} is from before it");
+                    break;
+                }
+            } else if v["id"] == "s" {
+                assert_eq!(v["ok"], true);
+                assert_eq!(v["state_seq"], k as u64 + 1, "{v}");
+                want = v["state_seq"].as_u64();
+            }
+        }
+    }
+    drop(stdin);
     assert!(child.wait().unwrap().success());
 }
 

@@ -55,6 +55,28 @@ fn same_plan_same_bytes_and_block_size_does_not_matter() {
 }
 
 #[test]
+fn a_render_keeps_the_files_it_read_once_each_as_opened() {
+    // Codex on d07e4db1: an output is kept off each file read, as opened,
+    // not only off what the paths name once the render is done.
+    use odj_audio::decode::SourceId;
+    let d = fixture_dir();
+    let id = |n: &str| SourceId::of(&std::fs::File::open(d.join(n)).unwrap()).unwrap();
+    let (a, b) = (id("a.wav"), id("b.wav"));
+    let mut p = two_deck_plan(256);
+    p["events"].as_array_mut().unwrap().push(json!(
+        {"at": {"deck": 1, "bar": 4}, "cmd": {"type": "load", "deck": 2, "path": "a.wav", "beatgrid": grid_120_json(80)}}
+    ));
+    let out = render_plan_files(&parse_plan(&p).unwrap(), &d).unwrap();
+    assert_eq!(out.reads, vec![a.clone(), b.clone()], "a file loaded twice is one read");
+    // Renamed away and replaced at its path, what was read is still a.wav
+    // as opened, and the file now at the path is not it.
+    std::fs::rename(d.join("a.wav"), d.join("a-old.wav")).unwrap();
+    std::fs::copy(d.join("b.wav"), d.join("a.wav")).unwrap();
+    assert_eq!(id("a-old.wav"), a);
+    assert!(!out.reads.contains(&id("a.wav")), "a file the render never read is held as read");
+}
+
+#[test]
 fn bar_events_fire_on_the_exact_frame() {
     let d = fixture_dir();
     let out = render_plan_files(&parse_plan(&two_deck_plan(256)).unwrap(), &d).unwrap();

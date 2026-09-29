@@ -14,6 +14,7 @@ use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use odj_audio::decode::SourceId;
 use odj_audio::engine::ErrorCode;
 use odj_audio::offline::{render_plan_files_with, session_loader, RenderOptions, Solo};
 use odj_audio::plan::{parse_plan, Action, Plan};
@@ -155,7 +156,7 @@ fn writes_of(plan: &Plan, out: &Path, decks_out: Option<&Path>) -> Vec<(PathBuf,
 /// or relinked while a long render ran would otherwise be emptied. Each
 /// output is compared as opened, so once claimed, what its path names later
 /// no longer matters: it is written through its handle.
-fn claim_outputs(writes: &[(PathBuf, String)], reads: &[PathBuf]) -> Result<Vec<Handle>, String> {
+fn claim_outputs(writes: &[(PathBuf, String)], reads: &Reads) -> Result<Vec<Handle>, String> {
     let mut made_files: Vec<PathBuf> = Vec::new();
     let mut made_dirs: Vec<PathBuf> = Vec::new();
     let undo = |files: &[PathBuf], dirs: &[PathBuf]| {
@@ -198,8 +199,8 @@ fn claim_outputs(writes: &[(PathBuf, String)], reads: &[PathBuf]) -> Result<Vec<
             if let Some(j) = opened.iter().position(|g| *g == h) {
                 return Err(format!("{what} and {} are both {}; give them different paths", writes[j].1, p.display()));
             }
-            if let Some(r) = read_as(&h, reads) {
-                return Err(format!("{what} {} would overwrite {}, which this run read; nothing was written", p.display(), r.display()));
+            if let Some(r) = reads.as_read(&h) {
+                return Err(format!("{what} {} would overwrite {r}; nothing was written", p.display()));
             }
             Ok(h)
         })();
@@ -215,10 +216,28 @@ fn claim_outputs(writes: &[(PathBuf, String)], reads: &[PathBuf]) -> Result<Vec<
     Ok(opened)
 }
 
-/// The read in `reads` that is now the file `h` holds open, if any. A read
-/// that no longer opens cannot be emptied through `h`.
-fn read_as<'a>(h: &Handle, reads: &'a [PathBuf]) -> Option<&'a PathBuf> {
-    reads.iter().find(|r| Handle::from_path(r).is_ok_and(|g| g == *h))
+/// What a run read, for its outputs to be kept off: each input's path, asked
+/// again as the outputs are claimed, and each file as it was opened, which
+/// stays what was read whatever its path names by then (renamed away, with
+/// another file put in its place).
+#[derive(Default)]
+struct Reads {
+    paths: Vec<PathBuf>,
+    files: Vec<SourceId>,
+}
+
+impl Reads {
+    /// What `h`, an output held open, would overwrite of what was read, if
+    /// anything. A path that no longer opens cannot be emptied through `h`.
+    fn as_read(&self, h: &Handle) -> Option<String> {
+        if let Some(r) = self.paths.iter().find(|r| Handle::from_path(r).is_ok_and(|g| g == *h)) {
+            return Some(format!("{}, which this run read", r.display()));
+        }
+        let id = SourceId::of(h.as_file()).ok()?;
+        self.files
+            .contains(&id)
+            .then(|| "a file this run read, since renamed or replaced at its path".to_string())
+    }
 }
 
 /// What a render reads: the plan and every track it loads.
@@ -230,6 +249,12 @@ fn reads_of(plan_path: &Path, base: &Path, plan: &Plan) -> Vec<PathBuf> {
         }
     }
     reads
+}
+
+/// What a render read, for `claim_outputs`: the plan and its tracks by path,
+/// and the plan file and each decoded track as they were opened.
+fn render_reads(plan_path: &Path, base: &Path, plan: &Plan, plan_file: Option<SourceId>, tracks: &[SourceId]) -> Reads {
+    Reads { paths: reads_of(plan_path, base, plan), files: plan_file.into_iter().chain(tracks.iter().cloned()).collect() }
 }
 
 /// Refuse a render that would write one file twice, or over a file it
@@ -257,7 +282,13 @@ fn render(mut args: Args) -> Result<(), String> {
     let out_path = PathBuf::from(args.take("--out")?.ok_or("render needs --out")?);
     let decks_out = args.take("--decks-out")?.map(PathBuf::from);
     args.done()?;
-    let text = std::fs::read_to_string(&plan_path).map_err(|e| format!("cannot read {}: {e}", plan_path.display()))?;
+    let (text, plan_file) = {
+        use std::io::Read;
+        let mut f = std::fs::File::open(&plan_path).map_err(|e| format!("cannot read {}: {e}", plan_path.display()))?;
+        let mut text = String::new();
+        f.read_to_string(&mut text).map_err(|e| format!("cannot read {}: {e}", plan_path.display()))?;
+        (text, SourceId::of(&f).ok())
+    };
     let value: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("{} is not JSON: {e}", plan_path.display()))?;
     let plan = parse_plan(&value).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
@@ -266,7 +297,7 @@ fn render(mut args: Args) -> Result<(), String> {
     let opts = RenderOptions { deck_outputs: decks_out.is_some() };
     let out = render_plan_files_with(&plan, &base, opts).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
     let writes = writes_of(&plan, &out_path, decks_out.as_deref());
-    let reads = reads_of(&plan_path, &base, &plan);
+    let reads = render_reads(&plan_path, &base, &plan, plan_file, &out.reads);
     let mut files: Vec<(PathBuf, Handle)> = writes.iter().map(|(p, _)| p.clone()).zip(claim_outputs(&writes, &reads)?).collect();
     let mut take = |p: &Path| -> Result<Handle, String> {
         let i = files.iter().position(|(q, _)| q == p).ok_or_else(|| format!("{} was not claimed", p.display()))?;
@@ -375,10 +406,10 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
             let mut files = session_loader(cwd.clone());
             let record_to = record.clone();
-            // Every track the session read, asked again before the recording
-            // is written: a path swapped or relinked during the session would
-            // otherwise be emptied.
-            let loaded = std::rc::Rc::new(std::cell::RefCell::new(Vec::<PathBuf>::new()));
+            // Every track the session read, by path and as opened, kept off
+            // when the recording is written: a path swapped or relinked during
+            // the session would otherwise be emptied.
+            let loaded = std::rc::Rc::new(std::cell::RefCell::new(Reads::default()));
             let read = loaded.clone();
             let loader = move |spec: &odj_audio::protocol::LoadSpec| {
                 // The recording is written over its path when the session
@@ -391,8 +422,13 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
                         ));
                     }
                 }
-                read.borrow_mut().push(cwd.join(&spec.path));
-                files(spec)
+                let track = files(spec)?;
+                let mut r = read.borrow_mut();
+                r.paths.push(cwd.join(&spec.path));
+                if let Some(s) = track.source.as_ref().filter(|s| !r.files.contains(s)) {
+                    r.files.push(s.clone());
+                }
+                Ok(track)
             };
             let sink = if record.is_some() { Some(&mut rec) } else { None };
             serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink).map_err(|e| e.to_string())?;
@@ -484,7 +520,7 @@ mod tests {
             w(d.join("real").join("x.wav"), "deck 1's output"),
             w(d.join("link").join("x.wav"), "deck 2's output"),
         ];
-        let err = claim_outputs(&writes, &[]).unwrap_err();
+        let err = claim_outputs(&writes, &Reads::default()).unwrap_err();
         assert!(err.contains("deck 2's output and deck 1's output are both"), "{err}");
         assert!(!d.join("real").join("x.wav").exists(), "a file the claim made was left");
         assert!(!d.join("new").exists(), "a directory the claim made was left");
@@ -501,7 +537,7 @@ mod tests {
         let d = dir("relinked");
         std::fs::write(d.join("track.wav"), b"track").unwrap();
         std::fs::write(d.join("plan.json"), b"plan").unwrap();
-        let reads = [d.join("plan.json"), d.join("track.wav"), d.join("gone.wav")];
+        let reads = Reads { paths: vec![d.join("plan.json"), d.join("track.wav"), d.join("gone.wav")], files: vec![] };
         // A hard link is the swap made while the render ran.
         std::fs::hard_link(d.join("track.wav"), d.join("out.wav")).unwrap();
         let err = claim_outputs(&[w(d.join("out.wav"), "--out")], &reads).unwrap_err();
@@ -524,6 +560,59 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    #[test]
+    fn an_output_linked_to_a_read_renamed_away_is_refused_and_left_whole() {
+        // Codex on d07e4db1: only the input paths were asked again, so a
+        // track renamed away and replaced at its path, with the output then
+        // linked to the file that was read, passed the claim and was emptied.
+        let d = dir("renamed");
+        std::fs::write(d.join("track.wav"), b"track").unwrap();
+        let read = SourceId::of(&std::fs::File::open(d.join("track.wav")).unwrap()).unwrap();
+        std::fs::rename(d.join("track.wav"), d.join("old.wav")).unwrap();
+        std::fs::write(d.join("track.wav"), b"new").unwrap();
+        std::fs::hard_link(d.join("old.wav"), d.join("out.wav")).unwrap();
+        let reads = Reads { paths: vec![d.join("track.wav")], files: vec![read] };
+        let err = claim_outputs(&[w(d.join("out.wav"), "--out")], &reads).unwrap_err();
+        assert!(err.contains("would overwrite a file this run read, since renamed or replaced"), "{err}");
+        assert_eq!(std::fs::read(d.join("old.wav")).unwrap(), b"track");
+        // Control: the path alone names the new file, so it cannot say this;
+        // and neither the new file nor a fresh output is taken for the read.
+        let by_path = Reads { paths: reads.paths.clone(), files: vec![] };
+        assert_eq!(claim_outputs(&[w(d.join("out.wav"), "--out")], &by_path).unwrap().len(), 1);
+        assert_eq!(claim_outputs(&[w(d.join("fresh.wav"), "--out")], &reads).unwrap().len(), 1);
+        std::fs::hard_link(d.join("track.wav"), d.join("now.wav")).unwrap();
+        let only_id = Reads { paths: vec![], files: reads.files.clone() };
+        assert_eq!(claim_outputs(&[w(d.join("now.wav"), "--out")], &only_id).unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_render_holds_its_plan_and_tracks_as_opened() {
+        let d = dir("render-reads");
+        std::fs::write(d.join("plan.json"), b"{}").unwrap();
+        std::fs::write(d.join("a.wav"), b"a").unwrap();
+        let id = |n: &str| SourceId::of(&std::fs::File::open(d.join(n)).unwrap()).unwrap();
+        let plan = parse_plan(&json!({"sample_rate": 48000, "end": {"ms": 10}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}
+        ]}))
+        .unwrap();
+        let r = render_reads(&d.join("plan.json"), &d, &plan, Some(id("plan.json")), &[id("a.wav")]);
+        assert_eq!(r.paths, vec![d.join("plan.json"), d.join("a.wav")]);
+        assert_eq!(r.files, vec![id("plan.json"), id("a.wav")]);
+        // The plan renamed away and replaced: an output linked to the plan
+        // that was read is refused, and one linked to its replacement is not.
+        std::fs::rename(d.join("plan.json"), d.join("plan-old.json")).unwrap();
+        std::fs::write(d.join("plan.json"), b"{}").unwrap();
+        std::fs::hard_link(d.join("plan-old.json"), d.join("out.wav")).unwrap();
+        let only_ids = Reads { paths: vec![], files: r.files.clone() };
+        let err = claim_outputs(&[w(d.join("out.wav"), "--out")], &only_ids).unwrap_err();
+        assert!(err.contains("since renamed or replaced"), "{err}");
+        assert_eq!(std::fs::read(d.join("plan-old.json")).unwrap(), b"{}");
+        std::fs::hard_link(d.join("plan.json"), d.join("out2.wav")).unwrap();
+        assert_eq!(claim_outputs(&[w(d.join("out2.wav"), "--out")], &only_ids).unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     // Control: distinct outputs are all claimed, one handle each, in order,
     // and an existing file keeps its bytes until it is written.
     #[test]
@@ -531,7 +620,7 @@ mod tests {
         let d = dir("distinct");
         std::fs::write(d.join("keep.wav"), b"old").unwrap();
         let writes = [w(d.join("keep.wav"), "--out"), w(d.join("n").join("deck1.wav"), "deck 1's output"), w(d.join("n").join("deck2.wav"), "deck 2's output")];
-        let files = claim_outputs(&writes, &[]).unwrap();
+        let files = claim_outputs(&writes, &Reads::default()).unwrap();
         assert_eq!(files.len(), 3);
         assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
         assert!(d.join("n").join("deck1.wav").exists() && d.join("n").join("deck2.wav").exists());
