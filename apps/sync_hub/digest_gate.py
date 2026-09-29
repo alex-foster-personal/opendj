@@ -14,7 +14,10 @@ The proof is a :class:`DigestInputs` read in the caller's transaction:
   row write, so a write that bypassed the changelog still moves the key. The
   changelog alone cannot prove "unchanged": it is appended by application
   code, and the digest exists precisely to catch the writes that code missed;
-* ``PRAGMA schema_version``, because the column list is part of each hash;
+* every ``sqlite_master`` definition, because the column list is part of
+  each hash. Not ``PRAGMA schema_version``: that cookie rolls back with its
+  transaction, so a rolled-back ``ALTER`` and a later committed one can
+  share a value while describing different schemas;
 * the whole ``sync_identity_remap`` table, which decides which ``tracks``
   rows are held and has no triggers of its own (it is created lazily).
 
@@ -25,6 +28,8 @@ stored only when the inputs read after the walk equal those read before it,
 so a writer landing mid-walk can never file a digest under the wrong key.
 
 The cache is per process and bounded; a restart walks once and refills it.
+:func:`stats` counts full walks and cache hits for the process, so the saving
+is observable in production and measurable in tests without replacing code.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
@@ -66,7 +71,7 @@ class DigestInputs:
     """Everything a digest walk reads, reduced to values cheap to compare."""
 
     changelog_seqs: tuple[int, int]
-    schema_cookie: int
+    schema: tuple[tuple[str | None, ...], ...]
     write_tokens: tuple[tuple[str, bytes], ...]
     identity_remap: tuple[tuple[object, ...], ...] | None
 
@@ -81,11 +86,19 @@ def _unprovable(reason: str) -> None:
         log.warning("CloudSync digest gate disabled, walking in full: %s", reason)
 
 
-def _trigger_fault(conn: sqlite3.Connection) -> str | None:
-    """Why the write-token triggers cannot be trusted, or None when intact."""
-    stored = dict(
-        conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger'").fetchall()
+def _schema(conn: sqlite3.Connection) -> tuple[tuple[str | None, ...], ...]:
+    """Every schema object's definition: rollback-safe, unlike the cookie."""
+    return tuple(
+        tuple(row)
+        for row in conn.execute(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+        )
     )
+
+
+def _trigger_fault(schema: tuple[tuple[str | None, ...], ...]) -> str | None:
+    """Why the write-token triggers cannot be trusted, or None when intact."""
+    stored = {name: sql for kind, name, _, sql in schema if kind == "trigger"}
     for name, sql in migrations_v20.EXPECTED_TRIGGERS.items():
         if stored.get(name) != sql:
             return f"trigger {name} is missing or altered"
@@ -95,9 +108,7 @@ def _trigger_fault(conn: sqlite3.Connection) -> str | None:
 def _write_tokens(conn: sqlite3.Connection) -> tuple[tuple[str, bytes], ...] | None:
     """One token per digested table, or None when any is absent."""
     tokens = dict(
-        conn.execute(
-            f"SELECT table_name, token FROM {migrations_v20.WRITE_TOKEN_TABLE}"
-        ).fetchall()
+        conn.execute(f"SELECT table_name, token FROM {migrations_v20.WRITE_TOKEN_TABLE}").fetchall()
     )
     if not set(sync_set.FK_ORDER) <= set(tokens):
         return None
@@ -114,9 +125,7 @@ def _identity_remap(conn: sqlite3.Connection) -> tuple[tuple[object, ...], ...] 
         return None
     return tuple(
         tuple(row)
-        for row in conn.execute(
-            f"SELECT * FROM {CFG.IDENTITY_REMAP_TABLE} ORDER BY loser_pk"
-        )
+        for row in conn.execute(f"SELECT * FROM {CFG.IDENTITY_REMAP_TABLE} ORDER BY loser_pk")
     )
 
 
@@ -126,14 +135,12 @@ def _max_seq(conn: sqlite3.Connection, table: str) -> int:
 
 def read_inputs(conn: sqlite3.Connection) -> DigestInputs | None:
     """The gate key for ``conn``'s current snapshot, or None when unprovable."""
-    tables = {
-        str(row[0])
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-    }
+    schema = _schema(conn)
+    tables = {name for kind, name, _, _ in schema if kind == "table"}
     if migrations_v20.WRITE_TOKEN_TABLE not in tables:
         _unprovable(f"{migrations_v20.WRITE_TOKEN_TABLE} is absent (schema below v20)")
         return None
-    fault = _trigger_fault(conn)
+    fault = _trigger_fault(schema)
     if fault is not None:
         _unprovable(fault)
         return None
@@ -143,7 +150,7 @@ def read_inputs(conn: sqlite3.Connection) -> DigestInputs | None:
         return None
     return DigestInputs(
         changelog_seqs=(_max_seq(conn, "local_changelog"), _max_seq(conn, "hub_changelog")),
-        schema_cookie=int(conn.execute("PRAGMA schema_version").fetchone()[0]),
+        schema=schema,
         write_tokens=tokens,
         identity_remap=_identity_remap(conn),
     )
@@ -152,8 +159,28 @@ def read_inputs(conn: sqlite3.Connection) -> DigestInputs | None:
 # ----- cache --------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class GateStats:
+    """Process totals: digests walked in full, and digests served from cache."""
+
+    walks: int
+    hits: int
+
+
 _cache: OrderedDict[DigestInputs, SyncDigest] = OrderedDict()
 _cache_lock = threading.Lock()
+_counts: Counter[str] = Counter()
+
+
+def stats() -> GateStats:
+    """How many digests this process walked and how many the gate served."""
+    with _cache_lock:
+        return GateStats(walks=_counts["walks"], hits=_counts["hits"])
+
+
+def _count(*, hit: bool) -> None:
+    with _cache_lock:
+        _counts["hits" if hit else "walks"] += 1
 
 
 def _lookup(key: DigestInputs) -> SyncDigest | None:
@@ -183,15 +210,15 @@ def _copy_at(digest: SyncDigest, seq: int) -> SyncDigest:
     )
 
 
-def gated_digest(
-    conn: sqlite3.Connection, seq: int, walk: Callable[[], SyncDigest]
-) -> SyncDigest:
+def gated_digest(conn: sqlite3.Connection, seq: int, walk: Callable[[], SyncDigest]) -> SyncDigest:
     """The cached digest when the inputs prove it current, else ``walk()``."""
     before = read_inputs(conn)
     if before is not None:
         cached = _lookup(before)
         if cached is not None:
+            _count(hit=True)
             return _copy_at(cached, seq)
+    _count(hit=False)
     digest = walk()
     if before is not None and read_inputs(conn) == before:
         _store(before, _copy_at(digest, seq))
@@ -205,4 +232,12 @@ def reset_for_tests() -> None:
     _warned.clear()
 
 
-__all__ = ["CFG", "DigestInputs", "gated_digest", "read_inputs", "reset_for_tests"]
+__all__ = [
+    "CFG",
+    "DigestInputs",
+    "GateStats",
+    "gated_digest",
+    "read_inputs",
+    "reset_for_tests",
+    "stats",
+]

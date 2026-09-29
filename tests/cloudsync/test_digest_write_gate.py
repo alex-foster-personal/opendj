@@ -5,9 +5,10 @@ changelog seqs, the schema cookie, the identity remap and every digested
 table's trigger-maintained write token are all unchanged. These tests prove
 both halves against the real hub router and real state DBs:
 
-* PRESENCE of the saving: a settled no-op sync walks zero tables, on either
-  side, counted on the real ``table_digest`` (a pass-through spy, so every
-  walk it counts really ran).
+* PRESENCE of the saving: a settled no-op sync walks zero digests and is
+  served from the gate on both sides, counted by the gate's own production
+  counters (:func:`apps.sync_hub.digest_gate.stats`), not by a replaced
+  function.
 * PRESENCE of detection (the overshoot control): a row changed BEHIND the
   changelog, a rolled-back write, a schema change and a remap change each
   still reach the digest, compared against an uncached walk.
@@ -15,16 +16,17 @@ both halves against the real hub router and real state DBs:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import migrations_v20
+from apps.shared.state.machine_identity import IS_HUB_ENV
 from apps.sync_hub import client, digest_gate, engine, protocol, service, sync_set
 from apps.sync_hub.engine_identity_map import REMAP_TABLE, ensure_identity_remap_table
 from tests.cloudsync.test_hub_sync import (
@@ -41,9 +43,14 @@ from tests.cloudsync.test_hub_sync import (
 
 
 @pytest.fixture(autouse=True)
-def _no_hub_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``MDT_IS_HUB`` from the developer's shell must not steer these tests."""
-    monkeypatch.delenv("MDT_IS_HUB", raising=False)
+def _no_hub_env() -> None:
+    """``MDT_IS_HUB`` must be unset by the caller; a shell that sets it fails loud.
+
+    Established outside the test process rather than mutated in it, so the
+    DBs these tests open take the spoke path because that is the environment.
+    """
+    if IS_HUB_ENV in os.environ:
+        pytest.fail(f"unset {IS_HUB_ENV} before running this suite: it steers migrations")
 
 
 @pytest.fixture
@@ -64,18 +71,19 @@ def hub(tmp_path: Path) -> Iterator[_TestClientTransport]:
         yield _TestClientTransport(http)
 
 
-@pytest.fixture
-def walks(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Every table the REAL ``table_digest`` walked, hub and spoke alike."""
-    seen: list[str] = []
-    real = protocol.table_digest
+class Since:
+    """Gate counters moved since construction, hub and spoke alike (one process)."""
 
-    def counting(conn: sqlite3.Connection, table: str, *args: Any) -> Any:
-        seen.append(table)
-        return real(conn, table, *args)
+    def __init__(self) -> None:
+        self._start = digest_gate.stats()
 
-    monkeypatch.setattr(protocol, "table_digest", counting)
-    return seen
+    @property
+    def walks(self) -> int:
+        return digest_gate.stats().walks - self._start.walks
+
+    @property
+    def hits(self) -> int:
+        return digest_gate.stats().hits - self._start.hits
 
 
 # ----- helpers ----------------------------------------------------------------
@@ -99,22 +107,24 @@ def _digest_is_honest(conn: sqlite3.Connection) -> protocol.SyncDigest:
 # ----- the saving -------------------------------------------------------------
 
 
-def test_noop_sync_after_a_settled_sync_walks_no_table(
-    spoke_a: Path, hub: _TestClientTransport, walks: list[str]
+def test_noop_sync_after_a_settled_sync_walks_no_digest(
+    spoke_a: Path, hub: _TestClientTransport
 ) -> None:
+    first = Since()
     _settled_pair(spoke_a, hub)
-    assert walks, "positive control: the first sync must walk tables through the spy"
-    walks.clear()
+    assert first.walks >= 2, "positive control: the first sync must walk both sides"
 
+    since = Since()
     noop = _sync(spoke_a, hub, "spoke-a")
 
     assert noop.timings is not None and noop.timings.kind == "noop"
     assert (noop.pushed, noop.pulled, noop.rounds) == (0, 0, 1)
-    assert walks == [], f"a no-op sync re-walked {len(walks)} table(s): {sorted(set(walks))}"
+    assert since.walks == 0, f"a no-op sync re-walked {since.walks} digest(s)"
+    assert since.hits >= 2, "both sides must be served by the gate, not skipped"
 
 
 def test_changelog_logged_edit_rewalks_and_still_converges(
-    spoke_a: Path, hub: _TestClientTransport, walks: list[str]
+    spoke_a: Path, hub: _TestClientTransport
 ) -> None:
     _settled_pair(spoke_a, hub)
     conn = _open(spoke_a)
@@ -122,12 +132,12 @@ def test_changelog_logged_edit_rewalks_and_still_converges(
         _set_track_title(conn, "trk-gate-1", title="edited", updated_at=_T1, origin=_DEV_A)
     finally:
         conn.close()
-    walks.clear()
+    since = Since()
 
     result = _sync(spoke_a, hub, "spoke-a")
 
     assert result.pushed == 1
-    assert set(sync_set.FK_ORDER) <= set(walks), "an edit must re-walk every table, both sides"
+    assert since.walks >= 2, "an edit must re-walk the digest on both sides"
 
 
 # ----- the overshoot controls ---------------------------------------------------
@@ -186,6 +196,30 @@ def test_schema_change_reaches_the_digest(spoke_a: Path) -> None:
     assert after.tables["track_fields"] != before.tables["track_fields"]
 
 
+def test_rolled_back_schema_change_never_lends_its_digest_to_a_later_one(
+    spoke_a: Path,
+) -> None:
+    """``PRAGMA schema_version`` rolls back, so two schemas can share one cookie."""
+    _seed_common_track((spoke_a,), "trk-gate-1")
+    conn = _open(spoke_a)
+    try:
+        _digest_is_honest(conn)
+        cookie_before = conn.execute("PRAGMA schema_version").fetchone()[0]
+        conn.execute("BEGIN")
+        conn.execute("ALTER TABLE track_fields ADD COLUMN first_probe TEXT")
+        protocol.sync_digest(conn)  # cached under the uncommitted schema
+        conn.execute("ROLLBACK")
+        conn.execute("ALTER TABLE track_fields ADD COLUMN second_probe INTEGER")
+        cookie_after = conn.execute("PRAGMA schema_version").fetchone()[0]
+        assert cookie_after == cookie_before + 1, (
+            "precondition: the committed ALTER reuses the rolled-back cookie"
+        )
+
+        _digest_is_honest(conn)
+    finally:
+        conn.close()
+
+
 def test_identity_remap_change_reaches_the_digest(spoke_a: Path) -> None:
     _seed_common_track((spoke_a,), "trk-gate-1")
     _seed_common_track((spoke_a,), "trk-gate-2")
@@ -203,21 +237,24 @@ def test_identity_remap_change_reaches_the_digest(spoke_a: Path) -> None:
     assert after.tables["tracks"] != before.tables["tracks"]
 
 
-def test_missing_trigger_disables_the_gate(spoke_a: Path, walks: list[str]) -> None:
+def test_missing_trigger_disables_the_gate(spoke_a: Path) -> None:
     """A table the gate cannot watch is always walked, never trusted."""
     _seed_common_track((spoke_a,), "trk-gate-1")
     conn = _open(spoke_a)
     try:
         protocol.sync_digest(conn)
-        walks.clear()
+        intact = Since()
         protocol.sync_digest(conn)
-        assert walks == [], "positive control: an intact gate must skip the second walk"
+        assert (intact.walks, intact.hits) == (0, 1), (
+            "positive control: an intact gate must serve the second digest"
+        )
         conn.execute(f"DROP TRIGGER {migrations_v20.trigger_name('track_fields', 'UPDATE')}")
+        broken = Since()
         protocol.sync_digest(conn)
         protocol.sync_digest(conn)
     finally:
         conn.close()
-    assert walks.count("tracks") == 2
+    assert (broken.walks, broken.hits) == (2, 0)
 
 
 # ----- the invariant the gate rests on ------------------------------------------
@@ -246,7 +283,7 @@ def test_gate_watches_every_table_the_digest_reads(spoke_a: Path) -> None:
     finally:
         conn.close()
     assert "tracks" in read, "positive control: the authorizer must see the walk"
-    # sqlite_master changes only by DDL, which moves PRAGMA schema_version.
+    # sqlite_master is itself part of the gate key (every definition, verbatim).
     watched = set(migrations_v20.WRITE_TOKEN_TABLES) | {REMAP_TABLE, "sqlite_master"}
     assert read <= watched, f"digest reads unwatched table(s): {sorted(read - watched)}"
 
