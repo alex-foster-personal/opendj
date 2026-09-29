@@ -234,6 +234,9 @@ entries:
     notes: "its own entry so a stale compiler behind a pinned cargo is a MISMATCH: one pin vouches for one executable's output"
 
   #----- tool cache ($AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache) --------------
+  # actions/tool-cache accepts <tool>/<version>/<arch> only beside its <arch>.complete
+  # marker, so every probe selects through the marker: a cache the action would
+  # ignore fails here instead of in the job (tests/scripts/test_runner_toolset_toolcache.py).
   - name: toolcache-python
     kind: toolcache
     version: "3.11"
@@ -243,7 +246,7 @@ entries:
     provides: []
     needed_by: [pytest, e2e, release-check]
     install: "let actions/setup-python populate /opt/hostedtoolcache/Python/3.11.*/x64 on first run, or unpack the matching actions/python-versions release"
-    verify: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64 | sort -V | tail -1) && \"$d/bin/python3\" -c 'import bz2, ctypes, lzma, sqlite3, ssl, sys; print(sys.version.split()[0])'"
+    verify: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64.complete | sort -V | tail -1) && d=${d%.complete} && \"$d/bin/python3\" -c 'import bz2, ctypes, lzma, sqlite3, ssl, sys; print(sys.version.split()[0])'"
     notes: "the stdlib imports catch a corrupt interpreter (agbox2/3). .python-version says 3.11.15 for local dev; CI resolves the newest 3.11 in the cache"
   - name: toolcache-node
     kind: toolcache
@@ -252,7 +255,7 @@ entries:
     provides: []
     needed_by: [e2e, frontend]
     install: "let actions/setup-node populate /opt/hostedtoolcache/node/22.14.0/x64"
-    verify: "/opt/hostedtoolcache/node/22.14.0/x64/bin/node --version"
+    verify: "ls /opt/hostedtoolcache/node/22.14.0/x64.complete >/dev/null && /opt/hostedtoolcache/node/22.14.0/x64/bin/node --version"
   - name: toolcache-uv
     kind: toolcache
     version: "0.12.19"
@@ -261,7 +264,7 @@ entries:
     provides: [uv]
     needed_by: [all]
     install: "let astral-sh/setup-uv populate /opt/hostedtoolcache/uv/<version>/x86_64"
-    verify: "\"$(ls -d /opt/hostedtoolcache/uv/*/x86_64 | sort -V | tail -1)/uv\" --version"
+    verify: "d=$(ls -d /opt/hostedtoolcache/uv/*/x86_64.complete | sort -V | tail -1) && \"${d%.complete}/uv\" --version"
     notes: "the workflows do not pin a uv version (setup-uv has no `version:` input), so each run resolves the latest release; this is a floor, not a pin"
   - name: toolcache-sccache
     kind: toolcache
@@ -270,7 +273,7 @@ entries:
     provides: [sccache]
     needed_by: [rust]
     install: "let mozilla-actions/sccache-action populate /opt/hostedtoolcache/sccache/0.17.0/x64"
-    verify: "/opt/hostedtoolcache/sccache/0.17.0/x64/sccache --version"
+    verify: "ls /opt/hostedtoolcache/sccache/0.17.0/x64.complete >/dev/null && /opt/hostedtoolcache/sccache/0.17.0/x64/sccache --version"
 
   #----- packages inside a toolcache interpreter ---------------------------
   - name: toolcache-python-pytest
@@ -280,8 +283,8 @@ entries:
     source: "repo:uv.lock (pytest)"
     provides: []
     needed_by: [pytest]
-    install: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64 | sort -V | tail -1) && \"$d/bin/python3\" -m pip install pytest==9.1.1"
-    verify: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64 | sort -V | tail -1) && \"$d/bin/python3\" -m pytest --version"
+    install: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64.complete | sort -V | tail -1) && d=${d%.complete} && \"$d/bin/python3\" -m pip install pytest==9.1.1"
+    verify: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64.complete | sort -V | tail -1) && d=${d%.complete} && \"$d/bin/python3\" -m pytest --version"
     notes: "tests/scripts/test_ci_fixer_e2e_dry_run.py runs a bare `python3 -m pytest`, which resolves to this interpreter. Removable once PR #4181 (sys.executable) merges"
 
   #----- Playwright browsers (repo pin: playwright 1.61.1 in pnpm-lock.yaml) ---

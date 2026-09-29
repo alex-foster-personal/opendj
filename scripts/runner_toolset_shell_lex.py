@@ -227,12 +227,12 @@ def is_redirect(tok: str) -> bool:
 
 FIND_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 # Every option the tool's own help shows with a <VALUE>. A missing one makes its
-# value the launched command. uv: `uv run --help`, identical in 0.12.4, 0.12.8 and
-# 0.12.19 (the fleet's versions, Tue 29 Sep 2026); the test compares only a uv
+# value the launched command. uv: `uv run --help`, identical in 0.12.4, 0.12.8, 0.12.19
+# and 0.12.20 (the fleet's versions, Tue 29 Sep 2026); the test compares only a uv
 # inside UV_RUN_VALUE_OPTIONS_VERIFIED. pnpm: `pnpm help exec`, the union of 11.9.0
 # (the packageManager pin), 11.22.0 and 12.6.0 (bifrost1's corepack default); the
 # test compares the pin, run through corepack. See test_runner_toolset_launchers.py.
-UV_RUN_VALUE_OPTIONS_VERIFIED = ("0.12.4", "0.12.19")
+UV_RUN_VALUE_OPTIONS_VERIFIED = ("0.12.4", "0.12.20")
 UV_RUN_VALUE_OPTIONS = frozenset(
     {"--allow-insecure-host", "--cache-dir", "--color", "--config-file", "--config-setting"}
     | {"--config-settings-package", "--default-index", "--directory", "--env-file"}
