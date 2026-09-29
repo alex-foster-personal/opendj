@@ -101,7 +101,7 @@ def parse_body(raw: bytes, *, endpoint: str) -> dict[str, Any]:
         return {}
     try:
         parsed = json.loads(body)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         raise TrunkApiError(f"POST {endpoint} -> 2xx body is not JSON: {body[:120]!r}") from None
     if not isinstance(parsed, dict):
         raise TrunkApiError(f"POST {endpoint} -> 2xx body is not a JSON object: {body[:120]!r}")

@@ -45,7 +45,7 @@ DESIRED = trunk_queue.load_desired()
 def _pull_request_check_names() -> set[str]:
     """Check-run names of every job in a workflow with a pull_request trigger, matrix-expanded."""
     names: set[str] = set()
-    for path in WORKFLOWS.glob("*.yml"):
+    for path in _workflow_files():
         workflow = yaml.safe_load(path.read_text())
         triggers = workflow.get(True) or workflow.get("on") or {}
         if "pull_request" not in triggers:
@@ -231,6 +231,13 @@ def test_a_read_without_a_json_object_is_unmeasured_not_drift(body: bytes) -> No
         trunk_queue.parse_body(body, endpoint="getQueue")
 
 
+@pytest.mark.parametrize("endpoint", ["getQueue", "updateQueue"])
+def test_an_undecodable_success_body_is_unmeasured_not_a_traceback(endpoint: str) -> None:
+    """Invalid bytes raise UnicodeDecodeError, not JSONDecodeError: exit 2, never drift's exit 1."""
+    with pytest.raises(trunk_queue.TrunkApiError, match="not JSON"):
+        trunk_queue.parse_body(b"\xff\xfe{", endpoint=endpoint)
+
+
 def test_a_read_with_a_json_object_is_data() -> None:
     """Control for the test above: a real queue read still parses."""
     parsed = trunk_queue.parse_body(b'{"state": "running"}', endpoint="getQueue")
@@ -323,14 +330,32 @@ def test_the_config_workflow_never_runs_branch_code_with_the_token() -> None:
     triggers = set(workflow.get(True) or workflow["on"])
     assert triggers == {"push", "schedule", "workflow_dispatch"}, triggers
     assert (workflow.get(True) or workflow["on"])["push"]["branches"] == ["main"]
-    holders = [
-        f"{path.name}:{job_id}"
-        for path in WORKFLOWS.glob("*.yml")
-        for job_id, job in yaml.safe_load(path.read_text())["jobs"].items()
-        if "secrets.TRUNK_API_TOKEN" in json.dumps(job)
-        and any(str(step.get("uses", "")).startswith("actions/checkout@") for step in job["steps"])
-    ]
-    assert holders == [f"{CONFIG_WORKFLOW.name}:sync"], holders
+
+
+def _workflow_files() -> list[Path]:
+    """Every workflow GitHub runs: both extensions, so a `.yaml` file cannot hide from a scan."""
+    return sorted([*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")])
+
+
+def _trunk_token_holders() -> list[str]:
+    """Every job, or workflow-level block, whose definition mentions the Trunk token at all."""
+    holders: list[str] = []
+    for path in _workflow_files():
+        workflow = yaml.safe_load(path.read_text())
+        outside_jobs = {key: value for key, value in workflow.items() if key != "jobs"}
+        if "TRUNK_API_TOKEN" in json.dumps(outside_jobs, default=str):
+            holders.append(f"{path.name}:<workflow>")
+        holders += [
+            f"{path.name}:{job_id}"
+            for job_id, job in workflow["jobs"].items()
+            if "TRUNK_API_TOKEN" in json.dumps(job, default=str)
+        ]
+    return holders
+
+
+def test_only_the_config_sync_job_references_the_trunk_token() -> None:
+    """With or without a checkout: branch-controlled commands must never see the token."""
+    assert _trunk_token_holders() == [f"{CONFIG_WORKFLOW.name}:sync"]
 
 
 def test_only_mains_reviewed_code_can_hold_the_token() -> None:
