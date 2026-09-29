@@ -1,0 +1,7 @@
+# Prettier friendly markdownlint config (all formatting rules disabled)
+extends: markdownlint/style/prettier
+# Style rules that fire constantly on agent-written prose and add no signal.
+MD033: false # inline HTML: docs embed <details>, <img>, <br>
+MD034: false # bare URLs
+MD041: false # first line must be a top-level heading
+MD060: false # table column alignment style
