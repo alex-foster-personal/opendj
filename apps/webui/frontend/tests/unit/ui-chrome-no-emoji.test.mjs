@@ -28,7 +28,18 @@ import { test } from 'node:test';
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SRC_ROOTS = ['src/lib', 'src/routes'];
 
-const BANNED_GLYPHS = ['✓', '✗', '⚡', '★', '☆', '▲', '▼', '▾', '↻', '✅', '🤖'];
+// ✎ is banned by name, not left to the emoji check: whether U+270E is
+// Extended_Pictographic depends on the runtime's Unicode data (Node 22.14,
+// Unicode 16: yes; Node 22.22, Unicode 17: no), so the verdict must not.
+const BANNED_GLYPHS = ['✓', '✗', '⚡', '★', '☆', '▲', '▼', '▾', '↻', '✎', '✅', '🤖'];
+
+/**
+ * Musical accidentals are TEXT in key names ("F♯m", "B♭"), not icons, and
+ * the runtime's Unicode data disagrees about them just as it does about ✎
+ * (U+266D/U+266F are Extended_Pictographic under Unicode 16, not under 17).
+ * They are never reported as emoji, on any runtime.
+ */
+const TEXT_SYMBOLS = new Set(['♭', '♮', '♯']);
 
 /**
  * A glyph can reach the page spelled as an HTML entity (`&#9662;`,
@@ -121,6 +132,7 @@ const KNOWN_DEBT = new Map([
 	['src/lib/components/rb/ToastStack.svelte', new Set(['▾'])],
 	['src/lib/components/rb/browser/AutoPlayWalkthrough.svelte', new Set(['😊', '🙃'])],
 	['src/lib/components/rb/browser/RecentlyDeletedFolder.svelte', new Set(['↻'])],
+	['src/lib/components/rb/deck/HotCueBank.svelte', new Set(['✎'])],
 	['src/lib/components/rb/deck/LoopCluster.svelte', new Set(['▾'])],
 	['src/routes/admin/LyricSourceOrder.svelte', new Set(['▲', '▼'])],
 	['src/routes/progress-tree/DepGraph.svelte', new Set(['⚠', '↗'])],
@@ -139,7 +151,7 @@ function stripComments(source) {
 function findEmojiCodepoints(source) {
 	const found = new Set();
 	for (const match of source.matchAll(EMOJI_CODEPOINT_RE_GLOBAL)) {
-		found.add(match[0]);
+		if (!TEXT_SYMBOLS.has(match[0])) found.add(match[0]);
 	}
 	return [...found];
 }
@@ -194,6 +206,17 @@ test('CHROME-01: KNOWN_DEBT grandfathers exactly the glyphs each file contains, 
 			assert.ok(source.includes(glyph), `KNOWN_DEBT for ${rel} lists ${glyph}, but the file no longer contains it -- shrink the entry`);
 		}
 	}
+});
+
+test('CHROME-01: the verdict on ✎ and on accidentals does not depend on the runtime Unicode data', () => {
+	// Real decoded sources: HotCueBank spells the pencil `&#9998;`, camelot.ts
+	// spells the accidentals `\u266f` / `\u266d` (both already on main).
+	assert.ok(scannable('src/lib/components/rb/deck/HotCueBank.svelte').includes('✎'));
+	assert.ok(BANNED_GLYPHS.includes('✎'), 'the pencil must be banned by name, whatever the runtime says');
+	const camelot = scannable('src/lib/player/key/camelot.ts');
+	assert.ok(camelot.includes('♯') && camelot.includes('♭'), 'control: the decoder must see the accidentals');
+	assert.deepEqual(findEmojiCodepoints(camelot), [], 'accidentals are key-name text, never emoji');
+	assert.deepEqual(findEmojiCodepoints('🎵 F♯m'), ['🎵'], 'control: a real emoji beside them still reports');
 });
 
 test('CHROME-01: emoji detector catches arbitrary pictographic codepoints', () => {
