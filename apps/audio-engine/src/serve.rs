@@ -323,6 +323,12 @@ pub struct AudioSide {
     state_req: Arc<AtomicBool>,
     /// The last `engine_state` asked of this side, set before `state_req`.
     state_asked: Arc<AtomicU64>,
+    /// How many commands had been sent when it was asked, set before
+    /// `state_asked`: the request waits for that many to be applied, and no
+    /// more, so traffic sent after it cannot hold it back.
+    state_fence: Arc<AtomicU64>,
+    /// Commands taken from the ring so far.
+    applied: u64,
     /// The last `engine_state` a block has taken, with every command sent
     /// before it applied: what each state published since reflects.
     answered: u64,
@@ -361,19 +367,22 @@ impl AudioSide {
         // making it, so this is that request's number or a later one's, and
         // any commands sent before that one are in the ring by now too.
         let asked = self.state_asked.load(Ordering::Acquire);
+        let fence = self.state_fence.load(Ordering::Acquire);
         // Take a command only while its result has a slot to go to: a result
         // dropped here would free a retired track on this thread. With the
         // result ring full, the rest wait in the command ring until the pump
         // drains it, so nothing is lost and nothing is freed here.
         while self.res_tx.slots() > 0 {
             let Ok((seq, cmd)) = self.cmd_rx.pop() else { break };
+            self.applied += 1;
             let r = self.engine.apply(cmd);
             let pushed = self.res_tx.push((seq, r));
             debug_assert!(pushed.is_ok(), "a slot was checked free and this is the only producer");
         }
         // Commands held back by a full result ring may have been sent before
-        // the request: leave it for a block that has applied them.
-        if requested && !self.cmd_rx.is_empty() {
+        // the request: leave it for a block that has applied them. Commands
+        // sent after it do not hold it back.
+        if requested && self.applied < fence {
             self.state_req.store(true, Ordering::Relaxed);
             requested = false;
         } else if requested {
@@ -473,6 +482,10 @@ struct Control {
     state_req: Arc<AtomicBool>,
     /// The last `engine_state` asked of the audio side, by its `state_seq`.
     state_asked: Arc<AtomicU64>,
+    /// How many commands were sent when it was asked.
+    state_fence: Arc<AtomicU64>,
+    /// Commands sent to the audio side so far.
+    pushed: u64,
     /// Decoded tracks, shared by the load threads.
     tracks: Arc<TrackCache>,
     /// Per `engine_state` waiting on pending loads, by its `state_seq`: how
@@ -514,6 +527,7 @@ impl Control {
             self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             return false;
         }
+        self.pushed += 1;
         true
     }
 
@@ -711,11 +725,13 @@ impl Control {
         }
     }
 
-    /// Ask the audio side for state request `n`: numbered first, so a block
-    /// that sees the request reads its number (or a later one's) with it.
+    /// Ask the audio side for state request `n`, fenced on every command sent
+    /// so far and numbered first, so a block that sees the request reads its
+    /// number and fence (or a later one's) with it.
     /// Release: the commands pushed before this are visible to the audio
     /// side once it sees the request.
     fn ask_state(&self, n: u64) {
+        self.state_fence.fetch_max(self.pushed, Ordering::Release);
         self.state_asked.fetch_max(n, Ordering::Release);
         self.state_req.store(true, Ordering::Release);
     }
@@ -822,6 +838,7 @@ fn serve_threaded_from(
     let stop = Arc::new(AtomicBool::new(false));
     let state_req = Arc::new(AtomicBool::new(false));
     let state_asked = Arc::new(AtomicU64::new(0));
+    let state_fence = Arc::new(AtomicU64::new(0));
     let out: Out = Arc::new(Mutex::new(Box::new(output)));
     let ids: Ids = Arc::new(Mutex::new(HashMap::new()));
 
@@ -840,6 +857,8 @@ fn serve_threaded_from(
         state_tx,
         state_req: state_req.clone(),
         state_asked: state_asked.clone(),
+        state_fence: state_fence.clone(),
+        applied: 0,
         answered: 0,
         frames_per_state: (sample_rate / STATE_HZ) as u64,
         frames_since_state: 0,
@@ -938,6 +957,8 @@ fn serve_threaded_from(
         loading: [None; MAX_DECKS],
         state_req,
         state_asked,
+        state_fence,
+        pushed: 0,
         tracks: Arc::default(),
         fences: HashMap::new(),
         state_seq: 0,
@@ -1110,6 +1131,8 @@ mod tests {
             state_tx,
             state_req: Arc::new(AtomicBool::new(false)),
             state_asked: Arc::default(),
+            state_fence: Arc::default(),
+            applied: 0,
             answered: 0,
             frames_per_state,
             frames_since_state: 0,
@@ -1236,6 +1259,7 @@ mod tests {
         for muted in [false, true] {
             cmd_tx.push((muted as u64, EngineCmd::MasterMute { muted })).unwrap();
         }
+        side.state_fence.store(2, Ordering::Release);
         side.state_asked.store(1, Ordering::Release);
         side.state_req.store(true, Ordering::Release);
         side.process(100);
@@ -1247,6 +1271,35 @@ mod tests {
         side.process(100);
         assert_eq!(states(&mut rx), vec![(150, true, 1), (200, true, 1)]);
         assert!(!side.state_req.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn traffic_sent_after_a_request_does_not_hold_it_back() {
+        // Codex on b87a0f49: the request waited for the whole ring to be
+        // empty, so commands sent after it, kept coming, held it back for
+        // good. It waits for the commands sent before it, and no more.
+        let (mut side, mut cmd_tx, mut res_rx, mut rx) = side_at(8000, 50, 1);
+        cmd_tx.push((0, EngineCmd::MasterMute { muted: true })).unwrap();
+        side.state_fence.store(1, Ordering::Release);
+        side.state_asked.store(1, Ordering::Release);
+        side.state_req.store(true, Ordering::Release);
+        // Sent after the request, and held by the full result ring block
+        // after block, as sustained traffic would keep the ring.
+        cmd_tx.push((1, EngineCmd::MasterMute { muted: false })).unwrap();
+        side.process(100);
+        assert_eq!(states(&mut rx), vec![(50, true, 1), (100, true, 1)], "the mute, applied, was not answered");
+        assert!(!side.state_req.load(Ordering::Relaxed));
+        assert!(!side.cmd_rx.is_empty(), "the later command was applied: the ring was not held");
+        // Control: a request sent after that command waits for it.
+        side.state_fence.store(2, Ordering::Release);
+        side.state_asked.store(2, Ordering::Release);
+        side.state_req.store(true, Ordering::Release);
+        side.process(100);
+        assert_eq!(states(&mut rx), vec![(150, true, 1), (200, true, 1)]);
+        assert!(side.state_req.load(Ordering::Relaxed));
+        assert!(res_rx.pop().unwrap().1.is_ok());
+        side.process(50);
+        assert_eq!(states(&mut rx), vec![(250, false, 2)], "answered before the unmute ahead of it");
     }
 
     #[test]
@@ -1278,6 +1331,7 @@ mod tests {
         for muted in [false, true] {
             cmd_tx.push((muted as u64, EngineCmd::MasterMute { muted })).unwrap();
         }
+        side.state_fence.store(2, Ordering::Release);
         side.state_req.store(true, Ordering::Release);
         side.process(64);
         assert!(drain(&mut states).is_empty(), "a state went out with a command before it still waiting");
@@ -1329,6 +1383,8 @@ mod tests {
             loading: [None; MAX_DECKS],
             state_req: Arc::new(AtomicBool::new(false)),
             state_asked: Arc::default(),
+            state_fence: Arc::default(),
+            pushed: 0,
             tracks: Arc::default(),
             fences: HashMap::new(),
             state_seq: 0,
@@ -1357,6 +1413,7 @@ mod tests {
         c.finish_load(c.loading[0].unwrap(), 1, silent_track());
         assert!(c.state_req.load(Ordering::Acquire), "the state was never asked for");
         assert_eq!(c.state_asked.load(Ordering::Acquire), 1, "asked for without its number");
+        assert_eq!(c.state_fence.load(Ordering::Acquire), 2, "fenced on other than the load and the play before it");
         let sent: Vec<_> = std::iter::from_fn(|| cmd_rx.pop().ok()).map(|(_, cmd)| cmd).collect();
         assert!(matches!(sent[..], [EngineCmd::Load { .. }, EngineCmd::Play { .. }]), "{sent:?}");
         // A load that fails lets it through (the state after that is the
