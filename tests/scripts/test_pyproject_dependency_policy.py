@@ -23,6 +23,11 @@ REQUIRED_RULES = (
     "[dependency-groups] (PEP 735)",
     "PEP 723",
     "uv export",
+    "uv run --locked",
+    # Transitional dual write until issue #4356 moves CI onto uv.lock; drop
+    # these two with that change, never before it.
+    "ALSO goes in\n#    requirements.txt",
+    "requirements-docs.txt",
 )
 REQUIRED_URLS = {
     "https://docs.astral.sh/uv/concepts/projects/sync/",
