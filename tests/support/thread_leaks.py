@@ -26,6 +26,7 @@ import time
 
 LEAK_GRACE_S: float = 2.0
 SENTRY_MONITOR_THREAD: str = "sentry.monitor"
+SENTRY_MONITOR_CLASS: tuple[str, str] = ("sentry_sdk.monitor", "Monitor")
 
 
 # ---------------------------------------------------------------- helpers
@@ -40,18 +41,25 @@ def _is_sentry_owned(thread: threading.Thread) -> bool:
     )
 
 
+def _is_sentry_monitor_object(obj: object) -> bool:
+    cls = type(obj)
+    return (cls.__module__, cls.__qualname__) == SENTRY_MONITOR_CLASS
+
+
 def _is_draining_sentry_monitor(thread: threading.Thread) -> bool:
     """True when ``thread`` is a sentry.monitor whose Monitor was killed.
 
     Reads the Monitor from the thread target's closure; a monitor thread whose
-    Monitor cannot be found is UNKNOWN and raises rather than guessing.
+    Monitor cannot be found is UNKNOWN and raises rather than guessing. Matches
+    the class by qualified name instead of importing it: the guard tears down
+    while a test's own ``builtins.__import__`` patch may still be installed.
     """
     if thread.name != SENTRY_MONITOR_THREAD:
         return False
-    from sentry_sdk.monitor import Monitor
-
     closure = getattr(getattr(thread, "_target", None), "__closure__", None) or ()
-    monitors = [cell.cell_contents for cell in closure if isinstance(cell.cell_contents, Monitor)]
+    monitors = [
+        cell.cell_contents for cell in closure if _is_sentry_monitor_object(cell.cell_contents)
+    ]
     if len(monitors) == 1:
         return monitors[0]._running is False
     if not thread.is_alive():
