@@ -15,7 +15,8 @@ Requirements (mini-PRD):
     every line, which is looser: it would pass a change to a doctest's relative
     indentation). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
     keeps its text, its order, how many AST nodes open and close before it, how many
-    names, keywords, numbers and operators precede it, and whether code precedes it on its line.
+    names, keywords, numbers and operators precede it, which piece of an implicitly
+    concatenated string it follows, and whether code precedes it on its line.
     Only its line, its trailing space and the one space ruff adds after `#` may
     change. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
@@ -103,6 +104,13 @@ class CFG:
     )
     # A symlink's blob is its target and a gitlink's is a commit, so only these entries hold Python source.
     REGULAR_FILE_MODES: frozenset[str] = frozenset({"100644", "100755"})
+    # An f-string or t-string is one string piece from its START token to its END token (Python 3.12 and later).
+    PIECE_OPENERS: frozenset[int] = frozenset(
+        number for number, name in tokenize.tok_name.items() if name in {"FSTRING_START", "TSTRING_START"}
+    )
+    PIECE_CLOSERS: frozenset[int] = frozenset(
+        number for number, name in tokenize.tok_name.items() if name in {"FSTRING_END", "TSTRING_END"}
+    )
     # The only operator tokens ruff adds or drops: parentheses, trailing commas, and the `;` it splits statements at.
     MOVABLE_OPERATORS: frozenset[str] = frozenset({"(", ")", ",", ";"})
     DOCSTRING_OWNERS: tuple[type[ast.Module], type[ast.ClassDef], type[ast.FunctionDef], type[ast.AsyncFunctionDef]] = (
@@ -200,7 +208,36 @@ def _is_fixed_token(tok: tokenize.TokenInfo) -> bool:
     return tok.type in (tokenize.NAME, tokenize.NUMBER)
 
 
-def _comments(source: str) -> list[tuple[tuple[int, int, int, bool], str]]:
+def _string_pieces_before_each_comment(tokens: list[tokenize.TokenInfo]) -> list[int]:
+    """Per comment, in order: how many pieces of an implicitly concatenated string precede it when it sits between
+    two of them, else 0. The pieces make one node, so its bounds cannot tell `"a"  # c` then `"b"` from `"a"` then
+    `"b"  # c`, and ruff joins pieces only when no comment sits between them, so this index is fixed."""
+    positions: list[int] = []
+    waiting: list[int] = []  # comments after a piece, until the next token shows whether another piece follows
+    run = depth = 0
+    for tok in tokens:
+        if tok.type == tokenize.COMMENT and depth:
+            positions.append(0)  # inside an f-string's replacement field, which 3.12 allows: not between pieces
+        elif tok.type == tokenize.COMMENT:
+            waiting.append(len(positions))
+            positions.append(run)
+        elif depth:
+            depth += (tok.type in CFG.PIECE_OPENERS) - (tok.type in CFG.PIECE_CLOSERS)
+        elif tok.type in (tokenize.NL, tokenize.INDENT, tokenize.DEDENT):
+            continue
+        elif tok.type == tokenize.STRING or tok.type in CFG.PIECE_OPENERS:
+            depth = int(tok.type in CFG.PIECE_OPENERS)
+            run += 1
+            waiting.clear()
+        else:
+            for index in waiting:
+                positions[index] = 0
+            waiting.clear()
+            run = 0
+    return positions
+
+
+def _comments(source: str) -> list[tuple[tuple[int, int, int, bool, int], str]]:
     """Every comment in order, as (place, normalized text): its line is layout, its words and place are not.
 
     Its place in the tree is how many AST nodes open and close before it, which counts statements, strings and `...`
@@ -209,15 +246,25 @@ def _comments(source: str) -> list[tuple[tuple[int, int, int, bool], str]]:
     `+`, since neither has a node. ruff does move a trailing operator past an end-of-line comment (`a +  # c` then
     `b` becomes `a  # c` then `+ b`), and that fails here, the safe side. ruff keeps an end-of-line comment at the end
     of a line, and coverage reads `if x:  # pragma: no cover` as the whole block but a comment-only line as nothing,
-    so that is part of it too."""
+    so that is part of it too. One node can span several string pieces, so the piece a comment follows counts too.
+    What is left uncounted is `( ) , ;`, which ruff adds and drops, and a comment moved across only those stays on
+    the same line of the same code."""
     starts, ends = _node_bounds(ast.parse(source))
-    found: list[tuple[tuple[int, int, int, bool], str]] = []
+    tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    pieces = iter(_string_pieces_before_each_comment(tokens))
+    found: list[tuple[tuple[int, int, int, bool, int], str]] = []
     fixed_tokens = 0
     prev_row = 0  # A comment is own-line when the token before it ended on an earlier row: only code can end on its.
-    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+    for tok in tokens:
         if tok.type == tokenize.COMMENT:
             row = tok.start[0]
-            place = (bisect.bisect_right(starts, row), bisect.bisect_right(ends, row), fixed_tokens, prev_row != row)
+            place = (
+                bisect.bisect_right(starts, row),
+                bisect.bisect_right(ends, row),
+                fixed_tokens,
+                prev_row != row,
+                next(pieces),
+            )
             found.append((place, _normalize_comment(tok.string)))
         elif _is_fixed_token(tok):
             fixed_tokens += 1

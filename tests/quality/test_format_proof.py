@@ -34,6 +34,8 @@ Regression lines:
   - if prove passes a comment moved between string args or `...` items, into a bracket or out of a call then broken
   - if prove passes a comment moved across an operator or keyword in one expression (`+`, `==`, `.`, `and`) then broken
   - if prove passes a comment moved into a parenthesized tuple, whose `(` is not counted, then broken
+  - if prove passes a comment moved between the pieces of one implicitly concatenated string then broken
+  - if prove fails ruff joining string pieces around a comment, or keeping one between them, then broken
   - if prove passes ruff moving a trailing operator past an end-of-line comment then broken: it is not provable
   - if prove fails ruff joining strings, dropping parentheses or adding commas around a comment then broken
   - if prove fails ruff adding a trailing comma between an item and its comment then broken
@@ -288,6 +290,9 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
             "try:\n    pass\nexcept E:\n    x = 1  # c\n",
         ),
         ("x = [\n    1,\n    2  # c\n]\n", "x = [\n    1,\n    2,  # c\n]\n"),
+        ('x = (\n    # c\n    "a"\n    "b"\n)\n', 'x = (\n    # c\n    "ab"\n)\n'),
+        ('x = ("a"  # c\n     "b")\n', 'x = (\n    "a"  # c\n    "b"\n)\n'),
+        ('a = ("x"\n     "y")\nb = (\n    "p"  # c\n    "q"\n)\n', 'a = "xy"\nb = (\n    "p"  # c\n    "q"\n)\n'),
     ],
     ids=[
         "noqa-rewrap-same-statement",
@@ -302,6 +307,9 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
         "commented-return-unparenthesized",
         "commented-value-in-a-handler-unparenthesized",
         "trailing-comma-added-before-a-comment",
+        "string-pieces-joined-below-a-comment",
+        "string-pieces-kept-around-a-comment",
+        "string-pieces-joined-above-a-kept-run",
     ],
 )
 def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:
@@ -336,6 +344,9 @@ def test_prove_control_layout_around_comments_still_proves(repo: Path, before: s
         ("x = (\n    a\n    # c\n    .b\n)\n", "x = (\n    a.\n    # c\n    b\n)\n"),
         ("x = (\n    a\n    # c\n    and b\n)\n", "x = (\n    a and\n    # c\n    b\n)\n"),
         ("x = [\n    # c\n    (\n        1,\n    ),\n]\n", "x = [\n    (\n        # c\n        1,\n    ),\n]\n"),
+        ('x = (\n    "a"  # noqa: E501\n    "b"\n    "c"\n)\n', 'x = (\n    "a"\n    "b"  # noqa: E501\n    "c"\n)\n'),
+        ('x = (\n    "a"\n    # c\n    "b"\n    "c"\n)\n', 'x = (\n    "a"\n    "b"\n    # c\n    "c"\n)\n'),
+        ('x = (\n    f"a"  # c\n    f"b"\n    "c"\n)\n', 'x = (\n    f"a"\n    f"b"  # c\n    "c"\n)\n'),
     ],
     ids=[
         "past-a-sibling-statement",
@@ -356,6 +367,9 @@ def test_prove_control_layout_around_comments_still_proves(repo: Path, before: s
         "across-an-attribute-dot",
         "across-a-keyword-operator",
         "into-a-parenthesized-tuple",
+        "between-string-pieces",
+        "own-line-between-string-pieces",
+        "between-f-string-pieces",
     ],
 )
 def test_prove_rejects_a_comment_moved_to_another_place_in_the_tree(repo: Path, before: str, after: str) -> None:
@@ -363,7 +377,8 @@ def test_prove_rejects_a_comment_moved_to_another_place_in_the_tree(repo: Path, 
     precede it (names, keywords, numbers, operators: `else:` and `+` have no node of their own), and whether it ends
     a line of code. Some cases cross exactly one of those: a node start (into-a-parenthesized-tuple, whose `(` ruff
     may drop), a node end (out-of-a-nested-call), a keyword (across-a-keyword-operator), an operator
-    (own-line-across-an-operator), a line end (header-pragma-into-the-body). A whole-module type-ignore only works
+    (own-line-across-an-operator), a string piece (between-string-pieces, which one node spans), a line end
+    (header-pragma-into-the-body). A whole-module type-ignore only works
     above the first statement, and coverage reads `if cond:  # pragma: no cover` as the whole block, a comment-only
     line as nothing."""
     base = _commit(repo, {"m.py": before}, "init")
