@@ -13,8 +13,8 @@ Requirements (mini-PRD):
     once docstrings get the PEP 257 trim (Black's safety check strips every line,
     which is looser: it would pass a change to a doctest's relative indentation).
     Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...) keeps its
-    words, its order and the statement it annotates. Only its line and spacing
-    may change.
+    text, its order and the statement it annotates. Only its line, its trailing
+    space and the one space ruff adds after `#` may change.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
       [if] a comment is added, removed, reworded, reordered or moved to another statement [then ⛔️] exit 1
@@ -145,12 +145,24 @@ def _anchor(line: int, spans: list[tuple[int, int, int]]) -> int:
     return min(below, key=lambda i: spans[i][0]) if below else -1
 
 
+def _normalize_comment(text: str) -> str:
+    """ruff format's comment rule, and nothing looser: trailing space goes, a leading no-break space becomes a
+    space, and `#x` gains one space unless x is ! : # or ' (shebangs, Sphinx, banners). Inner spacing is kept,
+    because `# no sec` and `# nosec` differ to the tools that read them."""
+    body = text.rstrip()[1:]
+    if body.startswith("\u00a0"):
+        body = " " + body[1:]
+    if body and not body.startswith((" ", "!", ":", "#", "'")):
+        body = " " + body
+    return "#" + body
+
+
 def _comments(source: str) -> list[tuple[int, str]]:
-    """Every comment in order, as (statement index, text without whitespace): its line and spacing are layout."""
+    """Every comment in order, as (statement index, normalized text): its line is layout, its words are not."""
     spans = _statement_spans(ast.parse(source))
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     return [
-        (_anchor(tok.start[0], spans), "".join(tok.string.split())) for tok in tokens if tok.type == tokenize.COMMENT
+        (_anchor(tok.start[0], spans), _normalize_comment(tok.string)) for tok in tokens if tok.type == tokenize.COMMENT
     ]
 
 

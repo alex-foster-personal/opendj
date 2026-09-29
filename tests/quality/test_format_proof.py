@@ -26,6 +26,7 @@ Regression lines:
   - if prove passes a type-ignore or noqa moved to ANOTHER statement then broken
   - if prove passes a comment that was added, removed, reworded or reordered then broken
   - if prove fails a re-wrap that keeps a noqa on its statement, or the ratified `#---` to `# ---` then broken
+  - if prove passes a whitespace edit ruff never makes (`# no sec` to `# nosec`, a shebang re-spaced) then broken
   - if prove passes a changed docstring relative indentation (a doctest) then broken
   - if prove fails a docstring that was only re-indented as a whole then broken
   - if prove passes a chmod-only change then broken
@@ -185,6 +186,9 @@ def test_prove_rejects_a_mode_change(repo: Path) -> None:
         ("x = run()  # nosec B602\n", "x = run()  # nosec B603\n"),
         ("x = 1  # old words\n", "x = 1  # new words\n"),
         ("x = 1  # first\n# second\ny = 2\n", "x = 1  # second\n# first\ny = 2\n"),
+        ("x = run()  # no sec B602\n", "x = run()  # nosec B602\n"),
+        ("#!/usr/bin/env python3\nx = 1\n", "# !/usr/bin/env python3\nx = 1\n"),
+        ("#!/usr/bin/env python3\nx = 1\n", "#!/usr/bin/env  python3\nx = 1\n"),
     ],
     ids=[
         "ignore-to-other-statement",
@@ -194,6 +198,9 @@ def test_prove_rejects_a_mode_change(repo: Path) -> None:
         "nosec-changed",
         "prose-reworded",
         "comments-reordered",
+        "directive-inner-space",
+        "shebang-broken",
+        "shebang-respaced",
     ],
 )
 def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> None:
@@ -209,9 +216,17 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
     [
         ("x = foo(a,\n        b)  # noqa: B008\n", "x = foo(a, b)  # noqa: B008\n"),
         ("#--- section\nx=1\n", "# --- section\nx = 1\n"),
-        ("x = 1  #noqa:F841\n", "x = 1  # noqa: F841\n"),
+        ("x = 1  #noqa:F841\n", "x = 1  # noqa:F841\n"),
+        ("x = 1  # note   \n", "x = 1  # note\n"),
+        ("#!/usr/bin/env python3\nx=1\n", "#!/usr/bin/env python3\nx = 1\n"),
     ],
-    ids=["noqa-rewrap-same-statement", "prose-comment-respaced", "directive-respaced"],
+    ids=[
+        "noqa-rewrap-same-statement",
+        "prose-comment-respaced",
+        "directive-respaced",
+        "trailing-space",
+        "shebang-kept",
+    ],
 )
 def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:
     """Opposite-direction control: a comment's line and spacing are layout; only its statement and words count."""
