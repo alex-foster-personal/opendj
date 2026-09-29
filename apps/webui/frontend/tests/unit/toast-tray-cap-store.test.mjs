@@ -79,7 +79,7 @@ afterEach(() => {
 	delete globalThis.window;
 });
 
-test('five pushed toasts yield at most three visible in policy slice', async () => {
+test('five pushed toasts yield at most three visible in policy slice', async (t) => {
 	const stores = await loadTypeScriptModule('src/lib/stores.svelte.ts', {
 		viteApiBase: API_BASE
 	});
@@ -87,6 +87,15 @@ test('five pushed toasts yield at most three visible in policy slice', async () 
 	for (let i = 0; i < 5; i += 1) {
 		stores.pushToast(`burst ${i}`, 'error', 120_000);
 	}
+	// pushToast(..., 120_000) arms a REAL 120 s dismissal timer per toast
+	// (stores.svelte.ts _armTimer). Left armed, the three uncapped toasts held
+	// the process open past the suite's 120 s --test-timeout, failing the file
+	// after every assertion had passed. Dismiss through the production path so
+	// the real handles are cleared the moment the test ends.
+	t.after(() => {
+		for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
+		assert.equal(stores.toasts.length, 0, 'every toast dismissed, no timer left armed');
+	});
 	const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
 	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
 	const visible = policy.selectVisibleToasts(stores.toasts);
