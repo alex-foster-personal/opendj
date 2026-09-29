@@ -496,3 +496,17 @@ def ok_health_json(tracks: int = 5, playlists: int = 3) -> str:
 
 def zero_health_json() -> str:
     return ok_health_json(tracks=0, playlists=0)
+
+
+def success_env() -> dict[str, str]:
+    """The extra_env baseline for a healthy attach: preflight passes,
+    /health reports nonzero tracks/playlists, and a live engine/app pid.
+    Shared by tests/scripts/test_dmg_smoke_run.py and
+    tests/scripts/test_dmg_smoke_build_timing.py (split out at the 600-line
+    file-size ratchet, review round 4, P1)."""
+    return {
+        "DMG_SMOKE_PREFLIGHT_JSON": ok_preflight_json(),
+        "DMG_SMOKE_HEALTH_JSON": ok_health_json(),
+        "DMG_SMOKE_ENGINE_PID": "4242",
+        "DMG_SMOKE_ENGINE_PORT": "9400",
+    }
