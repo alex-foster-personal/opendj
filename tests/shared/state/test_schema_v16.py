@@ -198,9 +198,10 @@ def test_second_open_rw_is_constant_time_on_large_database(
         (TRACK_FIELDS_STAMP_BACKFILL_MARKER,),
     ).fetchone()
     assert marker is not None
-    # Two one-shot markers are consulted on every open (v15 track_fields
-    # stamp backfill, v17 hub changelog stamp repair), each as one
-    # sqlite_master existence probe plus one PK lookup. Constant in the
-    # number of ladder steps, never in the number of rows.
-    assert len(backfill_queries) <= 4
+    # Three one-shot markers are consulted on every open (v15 track_fields
+    # stamp backfill, v17 hub changelog stamp repair, and the AGENTS.md
+    # regeneration cache added for issue #4015), each as one sqlite_master
+    # existence probe plus one PK lookup. Constant in the number of ladder
+    # steps plus cache checks, never in the number of rows.
+    assert len(backfill_queries) <= 6
     assert elapsed < 1.0

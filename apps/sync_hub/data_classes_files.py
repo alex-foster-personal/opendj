@@ -474,6 +474,7 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "junit-shard-*.xml",  # per-shard JUnit the fast lane uploads to Mergify CI Insights
         "htmlcov/",
         "coverage-matrix.md",
+        "/node_modules/",  # root npm install: @trunkio/launcher (npm run lint / fmt)
         "apps/webui/frontend/node_modules/",
         "apps/webui/frontend/build/",
         "apps/webui/frontend/.svelte-kit/",
