@@ -10,10 +10,23 @@ tests/test_ci_cost_guard_workflow_coverage.py.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from scripts.ci_cost_guard import infer_standard_sku, price_jobs, render_markdown
-from tests.ci_cost_guard_workflow_reader import event_set, runner_labels
+from tests.ci_cost_guard_workflow_reader import (
+    CANARY_CONFIG,
+    event_set,
+    matrix_runs,
+    runner_labels,
+)
+from tests.scripts.ci_runner_routes import CANARY_RUNS_ON, CANARY_VENDOR_MATRIX
+
+
+def _canary_vendors() -> dict:
+    return json.loads(CANARY_CONFIG.read_text())["vendors"]
+
 
 # ----- what the guard charges for a run it is handed ------------------------
 
@@ -163,6 +176,31 @@ def test_a_runs_on_expression_this_test_cannot_read_is_refused_not_guessed() -> 
     ):
         with pytest.raises(AssertionError, match="cannot"):
             runner_labels("test", unreadable)
+
+
+def test_the_runner_canary_label_map_prices_as_its_configured_vendor_labels() -> None:
+    """if the canary's runs-on stops resolving to self-hosted vendor labels then broken
+
+    ADR-NEW-runner-canary: third-party runners register as self-hosted, so GitHub bills
+    $0 for them. The widening is an EXACT match, so any fallback spliced into the
+    expression is unreadable again and refuses rather than pricing as free.
+    """
+    labels = runner_labels("pytest", CANARY_RUNS_ON)
+    assert labels[0] == "self-hosted"
+    assert set(labels[1:]) == {v["label"] for v in _canary_vendors().values()}
+    assert infer_standard_sku(labels).rate_usd_per_minute == 0
+    with_fallback = CANARY_RUNS_ON.replace(" }}", " || 'macos-latest' }}")
+    with pytest.raises(AssertionError, match="cannot"):
+        runner_labels("pytest", with_fallback)
+
+
+def test_the_runner_canary_matrix_counts_every_configured_vendor() -> None:
+    """if the vendor matrix expression prices as one run, or refuses, then broken"""
+    job = {"strategy": {"matrix": {"vendor": CANARY_VENDOR_MATRIX, "shard": [1, 2, 3, 4, 5]}}}
+    assert matrix_runs("pytest", job) == 5 * len(_canary_vendors())
+    other = {"strategy": {"matrix": {"vendor": "${{ fromJSON(inputs.vendors) }}"}}}
+    with pytest.raises(AssertionError, match="not a literal list"):
+        matrix_runs("pytest", other)
 
 
 def test_a_literal_runs_on_is_still_read_exactly_as_written() -> None:
