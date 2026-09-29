@@ -53,6 +53,8 @@ const projects =
 			];
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'kpi-s2-capture.spec.ts',
 	fullyParallel: false,
