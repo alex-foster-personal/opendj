@@ -121,10 +121,20 @@
 
 	async function onClick(): Promise<void> {
 		clickFeedback = null;
+		// Every click, started or refused, opens the popover as a hover would:
+		// it polls the status (the run's live progress) and fetches coverage.
+		// From the keyboard there was no mouseenter, so nothing else starts them
+		// (Codex P2 4130152643, 4130407830). Opened BEFORE the POST, so a blur,
+		// Escape or mouseleave while it is pending stays dismissed (4130581613).
+		// Already open means the mouse's onEnter ran them and its timer is live.
+		if (!hovered) void onEnter();
 		try {
 			status = await startIngestRefresh();
 			badged.clear();
 			pushToast(`Refresh started: ${status.steps.join(', ')}`, 'info');
+			// Poll while the run lasts even if the popover was dismissed while
+			// the POST was pending: the badges and the done toast come from it.
+			_syncTimer();
 		} catch (e) {
 			if (e instanceof RbApiError && e.status === 409) {
 				clickFeedback = 'Already running';
@@ -140,12 +150,6 @@
 				pushToast(`Refresh failed to start: ${e instanceof Error ? e.message : e}`, 'error');
 			}
 		}
-		// Every click, started or refused, opens the popover as a hover would:
-		// it polls the status (the run's live progress) and fetches coverage.
-		// From the keyboard there was no mouseenter, so nothing else starts them
-		// (Codex P2 4130152643, 4130407830). Already open means the mouse's
-		// onEnter ran them and its timer is live; a second call would fetch twice.
-		if (!hovered) void onEnter();
 	}
 
 	onDestroy(() => {

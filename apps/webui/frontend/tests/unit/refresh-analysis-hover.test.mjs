@@ -52,13 +52,18 @@ test('every failed click records its own outcome, and each click starts from a c
 
 // Codex P2 4130152643 and 4130407830: every click, started (202) or refused,
 // opens the popover the way a hover does (polling included), and only when
-// not already open. The open is the click's last statement, after the whole
-// try/catch, never inside one branch. tests/e2e/refresh-analysis-keyboard-409.spec.ts
-// drives a real 202 and a real 409 from the keyboard, and a 409 from the mouse.
-test('every click opens the popover once, after the try/catch, whatever the outcome', () => {
+// not already open. 4130581613: it opens BEFORE the POST is awaited, never
+// after it, so a dismissal while the POST is pending is not undone when it
+// settles. A started run still polls while it lasts (_syncTimer after the
+// POST), which is how its badges and done toast arrive. Driven for real in
+// tests/e2e/refresh-analysis-keyboard-409.spec.ts.
+test('every click opens the popover once, before the POST, whatever the outcome', () => {
 	const click = refresh.slice(refresh.indexOf('async function onClick()'), refresh.indexOf('onDestroy('));
 	assert.equal((click.match(/void onEnter\(\)/g) ?? []).length, 1);
-	assert.match(click, /\n\t\t\}\n(?:\t\t\/\/[^\n]*\n)*\t\tif \(!hovered\) void onEnter\(\);\n\t\}\s*$/);
+	const openAt = click.indexOf('if (!hovered) void onEnter();');
+	assert.ok(openAt > 0 && openAt < click.indexOf('await startIngestRefresh()'), 'opened before the POST');
+	const started = click.slice(click.indexOf('await startIngestRefresh()'), click.indexOf('} catch (e) {'));
+	assert.match(started, /_syncTimer\(\);/, 'a started run polls while it lasts');
 });
 
 test('a keyboard-opened popover closes without a mouse: blur and Escape', () => {

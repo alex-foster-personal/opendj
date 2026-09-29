@@ -1,23 +1,34 @@
 /**
  * Refresh analysis activated from the keyboard (CHROME-10, Codex P2
- * 4130152643 and 4130407830 on PR #3896).
+ * 4130152643, 4130407830 and 4130581613 on PR #3896).
  *
  * A failed click opened the popover (hovered = true) but only mouseenter
  * started the status polling, so a keyboard user got "Already running" and no
  * live progress; a click that started a run opened nothing at all. Nothing
  * but the pointer could close it either.
  *
- * Root suite, real engine: the 409 is the engine's own answer to a second
- * POST /api/v1/ingest/refresh while the job this test starts is still running
- * (a library sweep over the fixture's two tracks, a few hundred ms here). The
- * page's own POST is watched, so an attempt that lost that race (202) is
- * retried on a fresh page, never read as a 409.
+ * Root suite, real engine: the 409 is the engine's own answer to the page's
+ * POST /api/v1/ingest/refresh while another job holds the one refresh slot.
+ * That job is a real one-track analysis order (POST /analysis-queue/orders,
+ * the analysis grid's own API), so it always runs the real analysis CLI; a
+ * library sweep did not, because once an earlier spec has analyzed the
+ * fixture it has no targets and ends in milliseconds (CI run 36534163620:
+ * every attempt lost). The page's POST is fired first and held with
+ * page.route; the order is started; the hold is released only once the
+ * status endpoint reports the job running with its CLI launched, and the
+ * held POST then goes on to the engine unchanged. An attempt whose POST still
+ * got 202 is logged and retried, never read as a 409, and three misses fail
+ * loudly.
  *
  * Counted on the wire: GET /ingest/config is fetched only when the popover
  * opens (onEnter), GET /ingest/refresh/status only by its polling.
  *
  * [if] a keyboard click that starts a run (202) opens no polled popover [then] stop.
  * [if] a keyboard 409 opens the popover without polling [then] stop.
+ * [if] a popover dismissed (Escape, or the mouse leaving) while the click's
+ *   POST is pending comes back when the POST settles [then] stop. The POST is
+ *   held with page.route and then continued to the real engine, unchanged.
+ *   The started run still polls while it lasts (its done toast proves it).
  * [if] the popover closes (Escape, blur, or the mouse leaving) and polling goes
  *   on once the job is over [then] stop.
  * control [if] a hovered mouse click's 409 opens it a second time or runs a
@@ -57,11 +68,25 @@ async function waitIdle(request: APIRequestContext): Promise<void> {
 		.toBe(false);
 }
 
-/** Start a real refresh on the engine and report it running. */
-async function startRunning(request: APIRequestContext): Promise<void> {
+/** Order one real analysis CLI run on a fixture track, through the same
+ * single slot a refresh claims. True once the engine reports that job running
+ * with its CLI launched; false if it ended before that was seen. */
+async function startCliRun(request: APIRequestContext): Promise<boolean> {
 	await waitIdle(request);
-	const res = await request.post('/api/v1/ingest/refresh', { data: {} });
+	const tracks = (await (await request.get('/api/v1/tracks?limit=1')).json()) as {
+		items: { stable_id: string }[];
+	};
+	const sid = tracks.items[0]?.stable_id;
+	expect(sid, 'the fixture library has a track to analyze').toBeTruthy();
+	const res = await request.post(`/api/v1/analysis-queue/orders/${encodeURIComponent(sid)}/key`);
 	expect(res.status(), await res.text()).toBe(202);
+	const deadline = Date.now() + 30_000;
+	while (Date.now() < deadline) {
+		const s = (await (await request.get(STATUS)).json()) as { running: boolean; log_tail: string[] };
+		if (!s.running) return false;
+		if (s.log_tail.some((l) => l.includes('apps.analysis.run'))) return true;
+	}
+	throw new Error('the ordered analysis job neither launched its CLI nor ended in 30 s');
 }
 
 /** Closed, the popover's polling stops. The status poll also runs while the
@@ -75,27 +100,77 @@ async function expectPollingStops(page: Page, request: APIRequestContext, wire: 
 	expect(wire.status.length, 'closed and idle: no timer left running').toBe(closedAt);
 }
 
-/** Open /performance with a real running refresh, then activate the button
- * the way `activate` says, until the page's own POST is answered 409. */
+/** Hold the page's refresh POST until release(), then send it on to the real
+ * engine unchanged. Nothing is fulfilled or rewritten here. */
+async function holdRefreshPost(
+	page: Page
+): Promise<{ arrived: Promise<void>; release: () => void; stop: () => Promise<void> }> {
+	let release = (): void => {};
+	const gate = new Promise<void>((r) => (release = r));
+	let arrive = (): void => {};
+	const arrived = new Promise<void>((r) => (arrive = r));
+	const matcher = (url: URL): boolean => url.pathname === '/api/v1/ingest/refresh';
+	await page.route(matcher, async (route) => {
+		if (route.request().method() === 'POST') {
+			arrive();
+			await gate;
+		}
+		await route.continue();
+	});
+	return { arrived, release: () => release(), stop: () => page.unroute(matcher) };
+}
+
+/** A dismissal made while the POST was held stays made once it settles. */
+async function expectStaysDismissed(page: Page, request: APIRequestContext, wire: Wire, release: () => void) {
+	const pop = page.getByTestId('refresh-analysis-pop');
+	const answered = page.waitForResponse(
+		(r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/ingest/refresh'
+	);
+	release();
+	const started = (await (await answered).json()) as { running: boolean };
+	await expect.poll(() => wire.posts.length, { timeout: 10_000 }).toBe(1);
+	expect(wire.posts[0], 'the held POST reached the real engine and started a run').toBe(202);
+	await page.waitForTimeout(1_500);
+	await expect(pop).toBeHidden();
+	expect(wire.config.length, 'nothing opened the popover again').toBe(1);
+	// A run the engine reported running is still followed while it lasts: its
+	// done toast comes only from the status polling. A library sweep with no
+	// targets can already be over when the POST answers (seen on CI after an
+	// earlier spec analyzed the fixture); then there is nothing to follow.
+	test.info().annotations.push({ type: 'post-answered-running', description: String(started.running) });
+	if (started.running) {
+		await expect(page.getByText(/^Refresh (done|failed):/).first()).toBeVisible({ timeout: 30_000 });
+	}
+	await expect(pop).toBeHidden();
+	await expectPollingStops(page, request, wire);
+}
+
+/** Activate the button the way `activate` says, holding the page's POST until
+ * a real analysis job provably occupies the slot, so the engine answers 409. */
 async function clickInto409(
 	page: Page,
 	request: APIRequestContext,
 	activate: (btn: ReturnType<Page['getByTestId']>) => Promise<void>,
 	prepare: (btn: ReturnType<Page['getByTestId']>) => Promise<void>
 ): Promise<Wire> {
-	for (let attempt = 1; attempt <= 4; attempt++) {
+	for (let attempt = 1; attempt <= 3; attempt++) {
 		await page.goto('/performance');
 		const wire = watchWire(page);
 		const btn = page.getByTestId('refresh-analysis');
 		await expect(btn).toBeVisible({ timeout: 30_000 });
 		await prepare(btn);
-		await startRunning(request);
+		await waitIdle(request);
+		const held = await holdRefreshPost(page);
 		await activate(btn);
+		await held.arrived;
+		const running = await startCliRun(request);
+		held.release();
 		await expect.poll(() => wire.posts.length, { timeout: 10_000 }).toBe(1);
-		if (wire.posts[0] === 409) return wire;
-		// The engine finished before the page's POST landed and started a new
-		// run instead: not the case under test, so let it end and go again.
-		console.log(`[refresh-409] attempt ${attempt} lost the race: page POST got ${wire.posts[0]}`);
+		await held.stop();
+		if (running && wire.posts[0] === 409) return wire;
+		// The job ended before it was seen running, or before the released POST
+		// reached the engine: not the case under test, so log it and go again.
+		console.log(`[refresh-409] attempt ${attempt} missed: job seen running ${running}, page POST got ${wire.posts[0]}`);
 		await waitIdle(request);
 	}
 	throw new Error('no attempt reached the engine while its refresh was running');
@@ -133,15 +208,50 @@ test.describe('refresh analysis clicked from the keyboard', () => {
 		const pop = page.getByTestId('refresh-analysis-pop');
 		await expect(pop).toBeVisible();
 		await expect(page.getByTestId('refresh-click-feedback')).toHaveCount(0);
-		// The POST answered "running"; a terminal phase reaches the popover
-		// only through its polling, so this is the live progress.
+		// Live progress: the open popover keeps polling after the POST settled,
+		// and the run's terminal phase is what it shows.
+		const settledAt = wire.status.length;
+		await expect.poll(() => wire.status.length, { timeout: 5_000 }).toBeGreaterThan(settledAt);
 		await expect(pop.locator('.pop-phase')).toHaveText(/^\s*(done|error)\b/, { timeout: 30_000 });
-		expect(wire.status.length).toBeGreaterThanOrEqual(1);
 		expect(wire.config.length, 'opened once, as a hover opens it').toBe(1);
 
 		await btn.press('Escape');
 		await expect(pop).toBeHidden();
 		await expectPollingStops(page, request, wire);
+	});
+
+	test('Escape while the POST is pending keeps the popover dismissed after it settles', async ({ page, request }) => {
+		await page.goto('/performance');
+		const wire = watchWire(page);
+		const held = await holdRefreshPost(page);
+		const btn = page.getByTestId('refresh-analysis');
+		await expect(btn).toBeVisible({ timeout: 30_000 });
+		await btn.focus();
+		await waitIdle(request);
+		await btn.press('Enter');
+		await held.arrived;
+		const pop = page.getByTestId('refresh-analysis-pop');
+		await expect(pop, 'the click opened it before the POST settled').toBeVisible();
+		await btn.press('Escape');
+		await expect(pop).toBeHidden();
+		await expectStaysDismissed(page, request, wire, held.release);
+	});
+
+	test('the mouse leaving while the POST is pending keeps the popover dismissed', async ({ page, request }) => {
+		await page.goto('/performance');
+		const wire = watchWire(page);
+		const held = await holdRefreshPost(page);
+		const btn = page.getByTestId('refresh-analysis');
+		await expect(btn).toBeVisible({ timeout: 30_000 });
+		await waitIdle(request);
+		await btn.hover();
+		const pop = page.getByTestId('refresh-analysis-pop');
+		await expect(pop).toBeVisible();
+		await btn.click();
+		await held.arrived;
+		await page.mouse.move(0, 0);
+		await expect(pop).toBeHidden();
+		await expectStaysDismissed(page, request, wire, held.release);
 	});
 
 	test('the popover a keyboard 409 opens polls live progress, and Escape stops it', async ({ page, request }) => {

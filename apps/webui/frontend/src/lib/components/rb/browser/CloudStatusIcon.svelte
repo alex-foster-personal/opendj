@@ -32,13 +32,12 @@
 				<path class="spotify-arc" d="M4.5 8.5Q8 7.3 11.3 8.9" fill="none" stroke="#191414" stroke-width="1.15" stroke-linecap="round" />
 				<path class="spotify-arc" d="M5.1 10.7Q8 9.8 10.5 11" fill="none" stroke="#191414" stroke-width="0.95" stroke-linecap="round" />
 			{:else if view.provider === 'soundcloud'}
+				<!-- SoundCloud's mark: four bars rising left to right into a cloud
+				     with a flat base, a large bump and a smaller one on the right. -->
 				<path
-					d="M2 10h2l1-4 1.5 6 1-3 1 3h6"
-					fill="none"
-					stroke={providerColor}
-					stroke-width="1.2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
+					class="soundcloud"
+					d="M.6 9.4h1V12h-1zm1.6-1h1V12h-1zm1.6-1h1V12h-1zm1.6-1h1V12h-1zM7 12V5.2A4 4 0 0 1 13 7.5a2.25 2.25 0 0 1 0 4.5z"
+					fill={providerColor}
 				/>
 			{:else if view.provider === 'tidal'}
 				<!-- Tidal's four-diamond mark: three touching across the top, one
