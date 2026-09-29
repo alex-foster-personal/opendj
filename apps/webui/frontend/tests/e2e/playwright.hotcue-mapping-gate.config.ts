@@ -29,6 +29,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 import { HOTCUE_MAPPING_GATE_API_PORT, HOTCUE_MAPPING_GATE_FRONTEND_PORT } from './vite.hotcue-mapping-gate.config';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -54,6 +55,8 @@ const BACKEND_COMMAND = [
 ].join(' ');
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'hot-cue-mapping-gate.spec.ts',
 	fullyParallel: false,
@@ -65,7 +68,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: BACKEND_COMMAND,
+			command: guardedWebServerCommand('hotcue-mapping-gate-engine', BACKEND_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: `${API_ORIGIN}/api/v1/health`,
 			reuseExistingServer: false,
@@ -82,7 +85,7 @@ export default defineConfig({
 			}
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.hotcue-mapping-gate.config.ts',
+			command: guardedWebServerCommand('hotcue-mapping-gate-vite', 'pnpm exec vite --config tests/e2e/vite.hotcue-mapping-gate.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${FRONTEND_ORIGIN}/performance`,
 			reuseExistingServer: false,
