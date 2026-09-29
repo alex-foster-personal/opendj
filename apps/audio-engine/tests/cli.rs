@@ -116,6 +116,8 @@ fn fake_clock_session_over_pipes() {
     assert_eq!(hello["type"], "hello");
     assert_eq!(hello["protocol"], 1);
     assert_eq!(hello["clock"], "fake");
+    // The packager reads this to prove it shipped a device-output build.
+    assert_eq!(hello["device"], cfg!(feature = "device"));
 
     let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
     say(json!({"id": "l", "cmd": {"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}}));

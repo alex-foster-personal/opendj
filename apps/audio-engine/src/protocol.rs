@@ -326,6 +326,9 @@ pub fn hello_json(clock: &str, sample_rate: u32) -> Value {
         "clock": clock,
         "sample_rate": sample_rate,
         "decks": MAX_DECKS,
+        // Whether this build can play to an output device (`--features device`),
+        // so a packager can prove it shipped the right build.
+        "device": cfg!(feature = "device"),
     })
 }
 
