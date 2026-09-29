@@ -24,7 +24,8 @@ pub const AUDIBLE_GAIN: f64 = 1e-3;
 pub struct Track {
     pub sample_rate: u32,
     /// Interleaved stereo f32 at the file's own sample rate.
-    pub pcm: Vec<f32>,
+    /// Shared, so tracks decoded from one file hold one copy.
+    pub pcm: Arc<[f32]>,
     pub frames: usize,
     pub beats: Vec<Beat>,
     /// Frame index (into `beats`) of every downbeat, precomputed for bar lookups.
@@ -34,7 +35,8 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn new(sample_rate: u32, pcm: Vec<f32>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+    pub fn new(sample_rate: u32, pcm: impl Into<Arc<[f32]>>, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+        let pcm = pcm.into();
         assert!(pcm.len().is_multiple_of(2), "pcm must be interleaved stereo");
         let frames = pcm.len() / 2;
         let downbeats = beats
