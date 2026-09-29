@@ -43,6 +43,8 @@ def guard_watched() -> set[str]:
 def guard_e2e_priced_events() -> set[str]:
     """The events E2E is priced on, from E2E_PRICED_EVENTS on the job."""
     return {name.strip() for name in guard_job()["env"]["E2E_PRICED_EVENTS"].split(",")}
+
+
 MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
 MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
@@ -88,9 +90,7 @@ def workflow_docs() -> dict[str, dict]:
 RUNNER_SWITCH = re.compile(
     r"\$\{\{\s*fromJSON\(\s*vars\.[A-Z0-9_]+\s*\|\|\s*'(?P<fallback>.+?)'\s*\)\s*\}\}"
 )
-CHAINED_RUNNER_SWITCH = re.compile(
-    r"\$\{\{\s*fromJSON\(\s*(?P<inner>.*?)\)\s*\}\}"
-)
+CHAINED_RUNNER_SWITCH = re.compile(r"\$\{\{\s*fromJSON\(\s*(?P<inner>.*?)\)\s*\}\}")
 #: First disjunct of ci.yml job `test` runs-on (ADR-0041 main-fix reserve). Pinned
 #: in tests/scripts/test_ci_main_fix_runner_reserve.py EXPECTED_RUNS_ON.
 MAIN_FIX_RUNNER_GUARD_PREFIX = (
@@ -172,9 +172,7 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
             "price: inputs.* disjuncts are not readable here"
         )
     disjuncts = top_level_disjuncts(inner)
-    assert disjuncts, (
-        f"{job_id} runner expression {expr!r} has no disjuncts this reader can read"
-    )
+    assert disjuncts, f"{job_id} runner expression {expr!r} has no disjuncts this reader can read"
     literal_match = _JSON_LITERAL_DISJUNCT.fullmatch(disjuncts[-1])
     assert literal_match, (
         f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
@@ -364,17 +362,38 @@ def event_set(condition: str, variable: str) -> set[str]:
     return events
 
 
+#: Conditions that cannot narrow a job by event: a status function alone, or one
+#: comparison of an upstream job's output (the in-run scope decision, issue #4168).
+#: Neither names an event, so the job is priced on EVERY event, the widest answer,
+#: which keeps the reader fail-closed. Anything else still goes through `event_set`.
+_EVENT_BLIND_CONDITION = re.compile(
+    r"always\(\)|needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_]+ == '[A-Za-z0-9_-]+'"
+)
+
+
+def admits_every_event(condition: str) -> bool:
+    """True when `condition` is one of the event-blind shapes above."""
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    unwrapped = re.fullmatch(r"\$\{\{ (.+) \}\}", stripped)
+    return bool(_EVENT_BLIND_CONDITION.fullmatch(unwrapped.group(1) if unwrapped else stripped))
+
+
 def e2e_ceiling_on(event: str, doc: dict) -> float:
     """What an E2E run triggered by `event` can cost at worst.
 
-    Every job that would run on that event, priced. A job with no `if` runs on
-    every trigger the workflow declares; a gated one runs only on the events
-    its condition admits, read by the fail-closed parser above.
+    Every job that would run on that event, priced. A job with no `if`, or an
+    event-blind one, runs on every trigger the workflow declares; a gated one
+    runs only on the events its condition admits, read by the fail-closed
+    parser above.
     """
     total = 0.0
     for job_id, job in doc["jobs"].items():
         gate = job.get("if")
-        if gate is None or event in event_set(gate, "github.event_name"):
+        if (
+            gate is None
+            or admits_every_event(gate)
+            or event in event_set(gate, "github.event_name")
+        ):
             total += job_ceiling_usd(job_id, job)
     return total
 
