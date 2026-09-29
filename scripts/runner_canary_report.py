@@ -6,11 +6,14 @@ shard is paired with the self-hosted shard of the same SHA from the source repos
 
 - median push-to-verdict ratio: median(vendor verdict latency) / median(self-hosted), where
   a run's verdict latency is max(shard completed_at) - run created_at;
-- p95 start latency: nearest-rank p95 of started_at - created_at over vendor shard jobs;
-- infra failures per 100 shard jobs: a failure before or without the pytest step, a
-  `timed_out`, or a `cancelled` that ran to the job cap (a lost runner or provisioning
-  error, no test at fault); other CANCELLEDs are dropped, never counted as a pass;
-- outcome agreement: the share of shard pairs with a test verdict on both sides that agree.
+- p95 start latency: nearest-rank p95 of started_at - created_at over EVERY vendor shard
+  job (attempt 1 of every run), paired or not;
+- infra failures per 100 shard jobs, over every finished vendor shard job, paired or not: a
+  failure before or without the pytest step, a `timed_out`, or a `cancelled` that ran to
+  the job cap (a lost runner or provisioning error, no test at fault); other CANCELLEDs are
+  dropped, never counted as a pass;
+- outcome agreement: the share of shard pairs with a test verdict on both sides that agree,
+  over paired commits only, as is the push-to-verdict ratio.
 
 Verdicts, per vendor (decision record: docs/decisions/ADR-NEW-runner-canary.md):
 - FAIL when a known-red SHA comes back green on the vendor (the canary cannot go red), or
@@ -37,6 +40,9 @@ Requirements (mini-PRD)
   green, [else stop] ✔︎ ✅ 🎯
 - [if] 20+ pairs meet every bar with a red control [then] PASS, [else stop] ✔︎ ✅ 🎯
 - [if] a GitHub read fails [then] exit 3 UNKNOWN, [else stop] ✔︎ ✅ 🎯
+- [if] an infra failure or slow start lands on a commit with no complete baseline [then]
+  it still counts in the operational rates, and never in the ratio or agreement, [else
+  stop] ✔︎ ✅ 🎯
 """
 
 from __future__ import annotations
@@ -216,18 +222,31 @@ CEILING_BARS = (
 )
 
 
-def _measure(
+def _measure_operations(report: VendorReport, rows: list[ShardRow]) -> None:
+    """Start latency and infra rate over EVERY vendor shard job, paired or not.
+
+    A job whose commit has no complete self-hosted run is still a job the runner started
+    late or lost, so these rates never shrink to the paired subset. A dropped job (cancelled
+    short of the cap, or unfinished) has no outcome and stays out of the infra denominator.
+    """
+    report.p95_queue_wait_s = _p95(
+        [(r.started_at - r.created_at).total_seconds() for r in rows if r.started_at]
+    )
+    finished = [r for r in rows if r.outcome != "dropped"]
+    report.shard_jobs = len(finished)
+    if finished:
+        report.infra_failures_per_100 = (
+            100 * sum(r.outcome == "infra" for r in finished) / len(finished)
+        )
+
+
+def _measure_against_baseline(
     report: VendorReport, vendor_runs: dict, baseline_runs: dict, paired: list[str]
 ) -> None:
+    """Push-to-verdict ratio and outcome agreement, which need the self-hosted pair."""
     vendor_median = statistics.median(_verdict_latency_s(vendor_runs[s]) for s in paired)
     baseline_median = statistics.median(_verdict_latency_s(baseline_runs[s]) for s in paired)
     report.verdict_latency_ratio = vendor_median / baseline_median
-    jobs = [r for s in paired for r in vendor_runs[s]]
-    report.shard_jobs = len(jobs)
-    report.p95_queue_wait_s = _p95(
-        [(r.started_at - r.created_at).total_seconds() for r in jobs if r.started_at]
-    )
-    report.infra_failures_per_100 = 100 * sum(r.outcome == "infra" for r in jobs) / len(jobs)
     verdict_pairs = [
         (v.outcome, b.outcome)
         for s in paired
@@ -286,7 +305,9 @@ def evaluate_vendor(
     shard_count: int,
 ) -> VendorReport:
     report = VendorReport(vendor=vendor)
-    vendor_runs = _first_run_by_sha(r for r in vendor_rows if r.vendor == vendor)
+    own_rows = [r for r in vendor_rows if r.vendor == vendor]
+    _measure_operations(report, own_rows)
+    vendor_runs = _first_run_by_sha(own_rows)
     baseline_runs = _first_run_by_sha(baseline_rows)
     paired = sorted(
         sha
@@ -296,7 +317,7 @@ def evaluate_vendor(
     )
     report.paired_commits = len(paired)
     if paired:
-        _measure(report, vendor_runs, baseline_runs, paired)
+        _measure_against_baseline(report, vendor_runs, baseline_runs, paired)
     failed, unknown = _bar_findings(report, bars)
     control_green, control_unknown = _control_findings(
         [_control_state(sha, vendor_runs, baseline_runs) for sha in known_red_shas]
@@ -377,7 +398,7 @@ def _format(report: VendorReport) -> str:
         "| metric | value |",
         "|:--|--:|",
         f"| paired commits | {report.paired_commits} |",
-        f"| vendor shard jobs | {report.shard_jobs} |",
+        f"| vendor shard jobs (every finished one) | {report.shard_jobs} |",
         "| push-to-verdict ratio (vendor / self-hosted medians) | "
         f"{num(report.verdict_latency_ratio, '.3f')} |",
         f"| p95 start latency (s) | {num(report.p95_queue_wait_s, 'g')} |",
