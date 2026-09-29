@@ -189,7 +189,7 @@ Aligner = Callable[[np.ndarray, list[str], str], list[dict[str, Any]]]
 
 
 def _ctc_aligner(model_id: str) -> Aligner:
-    from ctc_forced_aligner import (
+    from ctc_forced_aligner import (  # type: ignore[import-not-found]  # PEP 723 dep only
         generate_emissions,
         get_alignments,
         get_spans,
@@ -225,7 +225,7 @@ def _ctc_aligner(model_id: str) -> Aligner:
 
 
 def _whisper_aligner(model_id: str) -> Aligner:
-    import stable_whisper
+    import stable_whisper  # type: ignore[import-not-found]  # PEP 723 dep only
 
     model = stable_whisper.load_model(model_id, device="cuda")
 
