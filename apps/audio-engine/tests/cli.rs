@@ -69,6 +69,13 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         assert!(err.contains("deck 1's output and --out are both"), "{err}");
         assert!(!d.join("decks").exists(), "something was written");
     }
+    // Codex's case: a directory spelled through one that does not exist yet
+    // (which the render would create) still names the same place.
+    std::fs::create_dir_all(d.join("out")).unwrap();
+    let o = run(d.join("out").join("deck1.wav"), Some(d.join("missing").join("..").join("out")));
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("are both"), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(!d.join("missing").exists() && !d.join("out").join("deck1.wav").exists(), "something was written");
     // An output over an input would destroy it: the plan, or a track.
     for (out, input) in [(d.join("plan.json"), "plan.json"), (d.join("a.wav"), "a.wav")] {
         let o = run(out, None);
@@ -77,6 +84,10 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         assert!(err.contains("would overwrite") && err.contains(input), "{err}");
     }
     assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+    // Control: a missing directory that does not lead back is elsewhere.
+    let o = run(d.join("out").join("deck1.wav"), Some(d.join("missing").join("..").join("elsewhere")));
+    assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+    assert!(d.join("elsewhere").join("deck1.wav").exists() && d.join("out").join("deck1.wav").exists());
     // Control: the mix beside the deck outputs, under its own name, renders.
     let o = run(d.join("mix.wav"), Some(d.clone()));
     assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));

@@ -58,17 +58,26 @@ fn fail(msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(2)
 }
 
-/// One spelling per file, for comparing paths that may not exist yet: the
-/// file itself when it exists, else its existing directory and its name.
+/// One spelling per file, for comparing paths that may not exist yet: its
+/// nearest existing ancestor resolved by the filesystem (symlinks and all),
+/// then the components below it that do not exist yet, with `.` and `..`
+/// applied by hand. Nothing below that ancestor exists, so none of it can be
+/// a symlink for `..` to see through.
 fn resolved(p: &Path) -> PathBuf {
-    if let Ok(c) = p.canonicalize() {
-        return c;
-    }
     let abs = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
-    match (abs.parent().and_then(|d| d.canonicalize().ok()), abs.file_name()) {
-        (Some(dir), Some(name)) => dir.join(name),
-        _ => abs,
+    let Some((base, mut out)) = abs.ancestors().find_map(|a| a.canonicalize().ok().map(|c| (a, c))) else {
+        return abs;
+    };
+    for part in abs.strip_prefix(base).map(Path::components).into_iter().flatten() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
     }
+    out
 }
 
 /// Refuse a render that would write one file twice, or over a file it

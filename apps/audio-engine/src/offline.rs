@@ -143,12 +143,16 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
     let mut cache: HashMap<PathBuf, (u32, Arc<[f32]>)> = HashMap::new();
     move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
-        let (sr, pcm) = match cache.get(&path) {
+        // One file reached by two spellings (`a.wav`, `sub/../a.wav`, a
+        // symlink) is one file: key the cache on where it really is. A path
+        // that does not resolve keeps its own spelling and fails to decode.
+        let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let (sr, pcm) = match cache.get(&key) {
             Some((sr, pcm)) => (*sr, pcm.clone()),
             None => {
                 let d = decode_file_within(&path, room)?;
                 let pcm: Arc<[f32]> = d.pcm.into();
-                cache.insert(path.clone(), (d.sample_rate, pcm.clone()));
+                cache.insert(key, (d.sample_rate, pcm.clone()));
                 (d.sample_rate, pcm)
             }
         };

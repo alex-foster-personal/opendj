@@ -346,6 +346,19 @@ fn loads_of_one_file_share_its_samples() {
     write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 1.0));
     let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None }, u64::MAX).unwrap();
     assert!(!std::sync::Arc::ptr_eq(&a.pcm, &c.pcm));
+    // Codex's case: the same file spelled another way, or through a
+    // symlink, is the same file and shares its samples too.
+    std::fs::create_dir_all(d.join("sub")).unwrap();
+    let alias = |path: &str| odj_audio::protocol::LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None };
+    let via_dotdot = load(&alias("sub/../a.wav"), u64::MAX).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&a.pcm, &via_dotdot.pcm), "sub/../a.wav decoded again");
+    #[cfg(unix)]
+    {
+        let _ = std::fs::remove_file(d.join("link.wav"));
+        std::os::unix::fs::symlink(d.join("a.wav"), d.join("link.wav")).unwrap();
+        let via_link = load(&alias("link.wav"), u64::MAX).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&a.pcm, &via_link.pcm), "a symlink to a.wav decoded again");
+    }
     // A cached file shares its samples, so it loads whatever room is left.
     assert!(load(&spec(4), 0).is_ok());
 }
