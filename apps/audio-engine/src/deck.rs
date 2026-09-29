@@ -423,18 +423,28 @@ impl Deck {
 
     /// Load a track: transport resets, the strip keeps its knob settings.
     /// Returns the track it replaced, for the caller to free off this thread.
+    /// A new track starts at unity tempo with no cue or loop, as the page's
+    /// `_clearLoadedTrackState` leaves it (`st.pitch = 1`). The pitch range,
+    /// Quantize and the channel strip carry over, as they do there.
     pub fn load(&mut self, track: Arc<Track>) -> Option<Arc<Track>> {
         self.pos = 0.0;
         self.cue = None;
         self.playing = false;
+        self.tempo = 1.0;
         self.clear_loop();
         self.track.replace(track)
     }
 
+    /// An emptied deck is the page's `_emptyDeckState`: unity tempo and
+    /// Quantize back to on at grid 1. The pitch range and the channel strip
+    /// live outside that state on the page and carry over.
     pub fn unload(&mut self) -> Option<Arc<Track>> {
         self.playing = false;
         self.pos = 0.0;
         self.cue = None;
+        self.tempo = 1.0;
+        self.quantize = true;
+        self.quantize_grid = 1;
         self.clear_loop();
         self.track.take()
     }
@@ -1047,6 +1057,26 @@ mod tests {
         let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * 48000.0)).exp();
         let want = from + (to - from) * k;
         assert!((d.strip.lp_hz.value - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.value);
+    }
+
+    #[test]
+    fn a_new_track_starts_at_unity_tempo_like_the_pages() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 2.0, vec![])));
+        d.set_pitch_range(8.0).unwrap();
+        d.set_tempo(1.05).unwrap();
+        d.set_quantize(false);
+        d.set_quantize_grid(4).unwrap();
+        d.set_trim(0.25);
+        // Loading over it: unity tempo; range, Quantize and strip kept.
+        d.load(Arc::new(silent(48000, 2.0, vec![])));
+        assert_eq!(d.tempo, 1.0);
+        assert_eq!((d.pitch_range, d.quantize, d.quantize_grid, d.trim), (8.0, false, 4, 0.25));
+        // Unloading: the page's empty deck, Quantize back on at grid 1.
+        d.set_tempo(0.95).unwrap();
+        d.unload();
+        assert_eq!((d.tempo, d.quantize, d.quantize_grid), (1.0, true, 1));
+        assert_eq!((d.pitch_range, d.trim), (8.0, 0.25));
     }
 
     #[test]

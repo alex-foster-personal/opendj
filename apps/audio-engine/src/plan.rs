@@ -105,12 +105,22 @@ fn parse_at(v: &Value, what: &str) -> Result<At, ProtoError> {
     let o = obj(v, what)?;
     if o.contains_key("deck") {
         let deck = deck_of(o, what)?;
+        // Bars count from 1, beats from 0 and track time from 0: anything
+        // lower names a place before the grid or the track, which a deck's
+        // playhead is always already past, so it would fire at once.
+        let at_least = |x: f64, min: f64, key: &str| {
+            if x >= min {
+                Ok(x)
+            } else {
+                Err(invalid(format!("{what}.{key} must be at least {min}, got {x}")))
+            }
+        };
         let pos = if let Some(b) = finite(o, what, "bar")? {
-            DeckPos::Bar(b)
+            DeckPos::Bar(at_least(b, 1.0, "bar")?)
         } else if let Some(b) = finite(o, what, "beat")? {
-            DeckPos::Beat(b)
+            DeckPos::Beat(at_least(b, 0.0, "beat")?)
         } else if let Some(ms) = finite(o, what, "position_ms")? {
-            DeckPos::Ms(ms)
+            DeckPos::Ms(at_least(ms, 0.0, "position_ms")?)
         } else {
             return Err(invalid(format!("{what} with a deck needs bar, beat or position_ms")));
         };

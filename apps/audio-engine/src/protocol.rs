@@ -208,6 +208,11 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
             out.push(Beat { time_ms, downbeat: i % 4 == 0 });
         }
     }
+    // The page's validateBeatGrid refuses a beat before the track starts; a
+    // grid point there would be a cue or a quantize target at a negative time.
+    if let Some((i, b)) = out.iter().enumerate().find(|(_, b)| b.time_ms < 0.0) {
+        return Err(invalid(format!("{ty} beatgrid times must not be negative (beat {i} at {} ms)", b.time_ms)));
+    }
     if out.windows(2).any(|w| w[1].time_ms <= w[0].time_ms) {
         return Err(invalid(format!("{ty} beatgrid times must strictly increase")));
     }
@@ -672,6 +677,15 @@ mod tests {
         };
         assert_eq!(l.beats.iter().filter(|b| b.downbeat).count(), 2);
         assert!(cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 500, 400]})).is_err());
+        // No grid point before the track starts, in either shape, as the
+        // page's validateBeatGrid; a grid starting at 0 is fine (control).
+        let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [-100, 400]})).unwrap_err();
+        assert!(e.message.contains("must not be negative"), "{}", e.message);
+        let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav",
+            "beatgrid": [{"n": 1, "time_ms": -0.5}, {"n": 2, "time_ms": 400}]}))
+        .unwrap_err();
+        assert!(e.message.contains("must not be negative"), "{}", e.message);
+        assert!(cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 400]})).is_ok());
         for n in [0, 5] {
             let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
             assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);

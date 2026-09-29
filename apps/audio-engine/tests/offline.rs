@@ -400,3 +400,27 @@ fn a_ramp_longer_than_any_render_is_refused() {
     let out = render_plan_files(&parse_plan(&plan(json!({"frames": max}))).unwrap(), &d).unwrap();
     assert_eq!(out.frames, 9600);
 }
+
+#[test]
+fn deck_positions_before_the_grid_or_track_are_refused() {
+    let plan = |at: Value, end: Value| {
+        json!({"end": end, "events": [{"at": at, "cmd": {"type": "play", "deck": 1, "playing": true}}]})
+    };
+    let ms = json!({"ms": 1000});
+    for (key, bad) in [("bar", 0.5), ("bar", -3.0), ("beat", -0.25), ("position_ms", -1.0)] {
+        let mut pos = json!({"deck": 1});
+        pos[key] = json!(bad);
+        // As an event's time and as the plan's end.
+        let e = parse_plan(&plan(pos.clone(), ms.clone())).unwrap_err();
+        assert!(e.message.contains(&format!("events[0].at.{key} must be at least")), "{key} {bad}: {}", e.message);
+        let e = parse_plan(&plan(json!({"ms": 0}), pos)).unwrap_err();
+        assert!(e.message.contains(&format!("plan.end.{key} must be at least")), "{key} {bad}: {}", e.message);
+    }
+    // Control: the first bar, the first beat and the track's start are fine.
+    for (key, ok) in [("bar", 1.0), ("beat", 0.0), ("position_ms", 0.0)] {
+        let mut pos = json!({"deck": 1});
+        pos[key] = json!(ok);
+        assert!(parse_plan(&plan(pos.clone(), ms.clone())).is_ok(), "{key} {ok}");
+        assert!(parse_plan(&plan(json!({"ms": 0}), pos)).is_ok(), "{key} {ok}");
+    }
+}
