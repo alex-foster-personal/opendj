@@ -474,7 +474,14 @@ impl Deck {
     /// RESTART, as the page's `engageBeatLoop` does: the playhead goes back
     /// to loop-in, playing or paused. Anything else engages the new loop and
     /// leaves the playhead where it is.
+    ///
+    /// A beat loop that would run past the end of the audio is refused, not
+    /// clamped: `set_loop` would shorten it silently while the deck still
+    /// reported the full beat length.
     fn engage_beat_loop(&mut self, beats: f64, in_ms: f64, out_ms: f64) -> Result<(), EngineError> {
+        if out_ms > self.track()?.duration_ms() {
+            return Err(EngineError::new(ErrorCode::Invalid, "the beat loop runs past the end of the track"));
+        }
         let before = self.looping.zip(self.loop_beats);
         self.set_loop(Some((in_ms, out_ms)))?;
         self.loop_beats = Some(beats);
@@ -795,6 +802,25 @@ mod tests {
         // Leaving the loop forgets its length.
         d.seek(5000.0).unwrap();
         assert_eq!((d.looping, d.loop_beats), (None, None));
+    }
+
+    #[test]
+    fn a_beat_loop_past_the_end_of_the_audio_is_refused_not_shortened() {
+        // Tag BPM only (120, 500 ms beats) on a 10 s track.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 10], vec![], Some(120.0))));
+        let e = d.beat_loop(4.0, Some(8500.0)).unwrap_err();
+        assert!(e.message.contains("past the end"), "{}", e.message);
+        assert_eq!((d.looping, d.loop_beats), (None, None));
+        // Control: a loop ending exactly at the end still engages at full length.
+        d.beat_loop(4.0, Some(8000.0)).unwrap();
+        assert_eq!((d.looping, d.loop_beats), (Some((384000.0, 480000.0)), Some(4.0)));
+        // On a grid whose beats run past the audio, the same rule.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 7.0, grid_120(4))));
+        assert!(d.beat_loop(2.0, Some(6500.0)).is_err(), "ends on the 7.5 s beat");
+        d.beat_loop(2.0, Some(6000.0)).unwrap();
+        assert_eq!((d.looping, d.loop_beats), (Some((288000.0, 336000.0)), Some(2.0)));
     }
 
     #[test]
