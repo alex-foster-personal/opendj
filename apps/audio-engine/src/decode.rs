@@ -24,9 +24,32 @@ pub struct Decoded {
     pub pcm: Vec<f32>,
 }
 
+/// Refuse `more` frames on top of the `held` samples when they would pass
+/// `max_frames`, before anything is allocated for them.
+fn check_room(held: usize, more: usize, max_frames: u64, path: &Path) -> Result<(), ProtoError> {
+    let frames = (held / 2) as u64 + more as u64;
+    if frames > max_frames {
+        return Err(ProtoError::new(
+            ErrorCode::Invalid,
+            format!(
+                "{} decodes past the {max_frames} frames left in the render's memory budget (one WAV file's worth)",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Decode `path`. Mono is duplicated to both sides; files with more than two
 /// channels keep their first two (front left and right).
 pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
+    decode_file_within(path, u64::MAX)
+}
+
+/// Decode `path`, holding at most `max_frames` frames: a file longer than
+/// that fails as soon as it passes the limit, before it is held whole, so a
+/// caller with a memory budget never allocates past it.
+pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
     let file = File::open(path)
         .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot open {}: {e}", path.display())))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -81,6 +104,7 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
                 let frames = packet_frames(packet.dur.get(), time_base, rate).ok_or_else(|| {
                     dec_err("corrupt packet of unknown length in", &e)
                 })?;
+                check_room(pcm.len(), frames, max_frames, path)?;
                 pcm.resize(pcm.len() + frames * 2, 0.0);
                 if sample_rate == 0 {
                     sample_rate = rate.unwrap_or(0);
@@ -98,6 +122,7 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         }
         scratch.resize(buf.samples_interleaved(), 0.0);
         buf.copy_to_slice_interleaved(&mut scratch[..]);
+        check_room(pcm.len(), buf.frames(), max_frames, path)?;
         pcm.reserve(buf.frames() * 2);
         for frame in scratch.chunks_exact(ch) {
             let l = frame[0];

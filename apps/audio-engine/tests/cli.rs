@@ -42,6 +42,48 @@ fn render_writes_a_wav_and_a_summary() {
 }
 
 #[test]
+fn render_refuses_outputs_that_collide_before_writing_anything() {
+    let d = temp_dir("cli-collide");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 1.0));
+    let a_before = std::fs::read(d.join("a.wav")).unwrap();
+    let plan = json!({"end": {"ms": 500}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}},
+        // A deck loaded twice still writes one file, so it collides with nothing.
+        {"at": {"ms": 100}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    std::fs::write(d.join("plan.json"), plan.to_string()).unwrap();
+    let run = |out: std::path::PathBuf, decks: Option<std::path::PathBuf>| {
+        let mut c = Command::new(BIN);
+        c.args(["render", "--plan"]).arg(d.join("plan.json")).arg("--out").arg(out);
+        if let Some(dir) = decks {
+            c.arg("--decks-out").arg(dir);
+        }
+        c.output().unwrap()
+    };
+    // Codex's case: the mix at DIR/deck1.wav would be replaced by deck 1,
+    // with the summary still naming it the mix. Spelled another way too.
+    for out in [d.join("decks").join("deck1.wav"), d.join("decks").join(".").join("deck1.wav")] {
+        let o = run(out.clone(), Some(d.join("decks")));
+        assert!(!o.status.success(), "{}", out.display());
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(err.contains("deck 1's output and --out are both"), "{err}");
+        assert!(!d.join("decks").exists(), "something was written");
+    }
+    // An output over an input would destroy it: the plan, or a track.
+    for (out, input) in [(d.join("plan.json"), "plan.json"), (d.join("a.wav"), "a.wav")] {
+        let o = run(out, None);
+        assert!(!o.status.success());
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(err.contains("would overwrite") && err.contains(input), "{err}");
+    }
+    assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+    // Control: the mix beside the deck outputs, under its own name, renders.
+    let o = run(d.join("mix.wav"), Some(d.clone()));
+    assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+    assert!(d.join("mix.wav").exists() && d.join("deck1.wav").exists());
+}
+
+#[test]
 fn render_reports_what_a_scorer_needs() {
     let d = temp_dir("cli-scorer");
     write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 5.0));

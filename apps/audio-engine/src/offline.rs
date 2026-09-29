@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::decode_file;
+use crate::decode::decode_file_within;
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -136,15 +136,17 @@ fn yield_ramp(ramps: &mut Vec<ActiveRamp>, cmd: &EngineCmd) {
 }
 
 /// Loads every track the plan names, decoding each distinct file once.
-/// Relative paths resolve against `base`.
-pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
+/// Relative paths resolve against `base`. The second argument is the most
+/// frames a newly decoded file may hold; a file already decoded shares its
+/// samples and costs nothing more, so it is never refused for room.
+pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> {
     let mut cache: HashMap<PathBuf, (u32, Arc<[f32]>)> = HashMap::new();
-    move |spec: &LoadSpec| {
+    move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
         let (sr, pcm) = match cache.get(&path) {
             Some((sr, pcm)) => (*sr, pcm.clone()),
             None => {
-                let d = decode_file(&path)?;
+                let d = decode_file_within(&path, room)?;
                 let pcm: Arc<[f32]> = d.pcm.into();
                 cache.insert(path.clone(), (d.sample_rate, pcm.clone()));
                 (d.sample_rate, pcm)
@@ -331,14 +333,14 @@ fn render_ceiling(max_ms: f64, sr: u32, held: u64, source_frames: u64, budget: u
 /// Render `plan`, resolving each `load` through `load`.
 pub fn render_plan(
     plan: &Plan,
-    load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
+    load: impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError>,
 ) -> Result<RenderOutput, ProtoError> {
     render_plan_with(plan, load, RenderOptions::default())
 }
 
 pub fn render_plan_with(
     plan: &Plan,
-    load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
+    load: impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError>,
     opts: RenderOptions,
 ) -> Result<RenderOutput, ProtoError> {
     render_within(plan, load, opts, RENDER_BUDGET_FRAMES)
@@ -346,7 +348,7 @@ pub fn render_plan_with(
 
 fn render_within(
     plan: &Plan,
-    mut load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
+    mut load: impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError>,
     opts: RenderOptions,
     budget: u64,
 ) -> Result<RenderOutput, ProtoError> {
@@ -405,7 +407,13 @@ fn render_within(
     let mut source_frames = 0u64;
     for (i, ev) in plan.events.iter().enumerate() {
         if let Action::Cmd(Command::Load(spec)) = &ev.action {
-            let track = load(spec).map_err(|e| fail(i, e))?;
+            // The most a new track may decode to and still leave the render
+            // room: at least one frame per rendered buffer, or the absolute
+            // end's worth. The loader stops decoding past it, so a track
+            // that does not fit is never held whole.
+            let needed = held.saturating_mul(end_frame.unwrap_or(1).max(1));
+            let room = budget.saturating_sub(source_frames).saturating_sub(needed);
+            let track = load(spec, room).map_err(|e| fail(i, e))?;
             // Tracks decoded from one file share their samples; count them once.
             let samples = track.pcm.as_ptr();
             if !sources.contains(&samples) {
@@ -713,7 +721,7 @@ mod tests {
         assert_eq!(render_ceiling(1e300, 48000, 5, 0, max), max / 5);
         // The loader answers only once the plan is past the preflight, so an
         // error from it means the render was allowed to start.
-        let reached = |_: &LoadSpec| -> Result<Arc<Track>, ProtoError> { Err(ProtoError::new(ErrorCode::Io, "reached decode")) };
+        let reached = |_: &LoadSpec, _: u64| -> Result<Arc<Track>, ProtoError> { Err(ProtoError::new(ErrorCode::Io, "reached decode")) };
         let with_decks = RenderOptions { deck_outputs: true };
         let Err(e) = render_plan_with(&two_deck_plan(max / 3 + 1), reached, with_decks) else { panic!() };
         assert!(e.message.contains("past the longest render allowed") && e.message.contains("2 deck outputs"), "{}", e.message);
@@ -727,9 +735,11 @@ mod tests {
 
     /// A loader handing out in-memory tracks of `frames` frames by path, one
     /// shared sample buffer per path, counting how many loads it answered.
-    fn memory_loader(frames: usize, calls: &std::cell::Cell<usize>) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> + '_ {
+    /// It ignores the room it is given, so the render's own checks are what
+    /// a test of it sees.
+    fn memory_loader(frames: usize, calls: &std::cell::Cell<usize>) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> + '_ {
         let mut cache: HashMap<String, Arc<[f32]>> = HashMap::new();
-        move |spec: &LoadSpec| {
+        move |spec: &LoadSpec, _room: u64| {
             calls.set(calls.get() + 1);
             let pcm = cache.entry(spec.path.clone()).or_insert_with(|| vec![0.0f32; frames * 2].into()).clone();
             Ok(Arc::new(Track::new(48000, pcm, vec![], None)))
@@ -781,5 +791,36 @@ mod tests {
         .unwrap();
         let e = render_within(&playing, memory_loader(1_000_000, &calls), RenderOptions::default(), 1_010_000).err().unwrap();
         assert!(e.message.contains("not reached within") && e.message.contains("1000000 frames of decoded tracks"), "{}", e.message);
+    }
+
+    #[test]
+    fn each_load_is_told_the_room_the_render_leaves() {
+        // Codex's case: the budget was checked only once a track had been
+        // decoded whole, so a long file after others could be held in full
+        // past the budget before being refused. Each load is now given the
+        // room left, and the file loader stops decoding past it.
+        let rooms = std::cell::RefCell::new(Vec::new());
+        let calls = std::cell::Cell::new(0);
+        let mut inner = memory_loader(20000, &calls);
+        let spy = |spec: &LoadSpec, room: u64| {
+            rooms.borrow_mut().push(room);
+            inner(spec, room)
+        };
+        let _ = render_within(&plan_of(serde_json::json!({"frame": 1000}), &["a", "a", "b"]), spy, RenderOptions::default(), 48000);
+        // 48000 less 1000 for the end; then less a's 20000 (twice, since a
+        // repeat is a cache hit that costs nothing more); then less b's.
+        assert_eq!(*rooms.borrow(), vec![47000, 27000, 27000]);
+        // With deck outputs and a deck-relative end, one frame per buffer.
+        rooms.borrow_mut().clear();
+        let mut inner = memory_loader(20000, &calls);
+        let spy = |spec: &LoadSpec, room: u64| {
+            rooms.borrow_mut().push(room);
+            inner(spec, room)
+        };
+        let deck_end = crate::plan::parse_plan(&serde_json::json!({"end": {"deck": 1, "position_ms": 0}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a"}}]}))
+        .unwrap();
+        let _ = render_within(&deck_end, spy, RenderOptions { deck_outputs: true }, 48000);
+        assert_eq!(*rooms.borrow(), vec![47998]);
     }
 }

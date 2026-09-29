@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use odj_audio::offline::{file_loader, render_plan_files_with, RenderOptions, Solo};
-use odj_audio::plan::parse_plan;
+use odj_audio::plan::{parse_plan, Action, Plan};
 use odj_audio::{protocol, serve, wav};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -58,6 +58,49 @@ fn fail(msg: impl std::fmt::Display) -> ExitCode {
     ExitCode::from(2)
 }
 
+/// One spelling per file, for comparing paths that may not exist yet: the
+/// file itself when it exists, else its existing directory and its name.
+fn resolved(p: &Path) -> PathBuf {
+    if let Ok(c) = p.canonicalize() {
+        return c;
+    }
+    let abs = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    match (abs.parent().and_then(|d| d.canonicalize().ok()), abs.file_name()) {
+        (Some(dir), Some(name)) => dir.join(name),
+        _ => abs,
+    }
+}
+
+/// Refuse a render that would write one file twice, or over a file it
+/// reads, before anything is rendered or written: `--out DIR/deck1.wav` with
+/// `--decks-out DIR` would replace the mix with deck 1 while the summary
+/// still reported the mix, and an output over the plan or a track would
+/// destroy the input.
+fn check_paths(plan_path: &Path, base: &Path, plan: &Plan, out: &Path, decks_out: Option<&Path>) -> Result<(), String> {
+    let mut writes = vec![(out.to_path_buf(), "--out".to_string())];
+    let mut reads = vec![plan_path.to_path_buf()];
+    for ev in &plan.events {
+        if let Action::Cmd(protocol::Command::Load(spec)) = &ev.action {
+            reads.push(base.join(&spec.path));
+            // A deck loaded more than once still writes one file.
+            let what = format!("deck {}'s output", spec.deck);
+            if let Some(dir) = decks_out.filter(|_| !writes.iter().any(|(_, w)| w == &what)) {
+                writes.push((dir.join(format!("deck{}.wav", spec.deck)), what));
+            }
+        }
+    }
+    for (i, (w, what)) in writes.iter().enumerate() {
+        let rw = resolved(w);
+        if let Some((_, other)) = writes[..i].iter().find(|(o, _)| resolved(o) == rw) {
+            return Err(format!("{what} and {other} are both {}; give them different paths", w.display()));
+        }
+        if let Some(r) = reads.iter().find(|r| resolved(r) == rw) {
+            return Err(format!("{what} {} would overwrite {}, which this render reads", w.display(), r.display()));
+        }
+    }
+    Ok(())
+}
+
 fn render(mut args: Args) -> Result<(), String> {
     let plan_path = PathBuf::from(args.take("--plan")?.ok_or("render needs --plan")?);
     let out_path = PathBuf::from(args.take("--out")?.ok_or("render needs --out")?);
@@ -68,6 +111,7 @@ fn render(mut args: Args) -> Result<(), String> {
         serde_json::from_str(&text).map_err(|e| format!("{} is not JSON: {e}", plan_path.display()))?;
     let plan = parse_plan(&value).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
     let base = plan_path.parent().map(Path::to_path_buf).unwrap_or_default();
+    check_paths(&plan_path, &base, &plan, &out_path, decks_out.as_deref())?;
     let opts = RenderOptions { deck_outputs: decks_out.is_some() };
     let out = render_plan_files_with(&plan, &base, opts).map_err(|e| format!("{}: {}", e.code.as_str(), e.message))?;
     write_wav(&out_path, out.sample_rate, &out.pcm)?;
@@ -166,7 +210,9 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
         "fake" => {
             let sr = sr.unwrap_or(48000);
             let mut rec = Vec::new();
-            let loader = file_loader(std::env::current_dir().map_err(|e| e.to_string())?);
+            // A live session has no render budget: tracks load whole.
+            let mut files = file_loader(std::env::current_dir().map_err(|e| e.to_string())?);
+            let loader = move |spec: &odj_audio::protocol::LoadSpec| files(spec, u64::MAX);
             let sink = if record.is_some() { Some(&mut rec) } else { None };
             serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink).map_err(|e| e.to_string())?;
             if let Some(p) = record {

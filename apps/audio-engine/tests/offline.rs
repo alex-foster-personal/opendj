@@ -2,6 +2,7 @@
 
 mod common;
 
+use odj_audio::protocol::LoadSpec;
 use odj_audio::offline::{render_plan_files, render_plan_files_with, RenderOptions, Solo};
 use odj_audio::plan::parse_plan;
 use serde_json::{json, Value};
@@ -339,12 +340,33 @@ fn loads_of_one_file_share_its_samples() {
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
     let mut load = odj_audio::offline::file_loader(d.clone());
     let spec = |deck| odj_audio::protocol::LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
-    let (a, b) = (load(&spec(1)).unwrap(), load(&spec(2)).unwrap());
+    let (a, b) = (load(&spec(1), u64::MAX).unwrap(), load(&spec(2), u64::MAX).unwrap());
     assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");
     // Control: a different file gets its own samples.
     write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 1.0));
-    let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None }).unwrap();
+    let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None }, u64::MAX).unwrap();
     assert!(!std::sync::Arc::ptr_eq(&a.pcm, &c.pcm));
+    // A cached file shares its samples, so it loads whatever room is left.
+    assert!(load(&spec(4), 0).is_ok());
+}
+
+#[test]
+fn a_file_longer_than_the_room_left_stops_decoding_there() {
+    let d = temp_dir("room");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
+    let spec = LoadSpec { deck: 1, path: "a.wav".into(), beats: vec![], bpm: None };
+    let e = odj_audio::offline::file_loader(d.clone())(&spec, 47999).unwrap_err();
+    assert!(e.message.contains("past the 47999 frames left"), "{}", e.message);
+    // Control: exactly enough room loads the whole file.
+    assert_eq!(odj_audio::offline::file_loader(d.clone())(&spec, 48000).unwrap().frames, 48000);
+    // And through a render: a plan whose end leaves too little room for the
+    // track fails on its load, from the decoder, before it is held whole.
+    // The end sits 1000 frames under the budget, one WAV file's worth.
+    let end = (u32::MAX as u64 - 36) / 8 - 1000;
+    let plan = json!({"end": {"frame": end}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    let e = render_plan_files(&parse_plan(&plan).unwrap(), &d).err().unwrap();
+    assert!(e.message.starts_with("events[0]") && e.message.contains("frames left in the render's memory budget"), "{}", e.message);
 }
 
 #[test]
