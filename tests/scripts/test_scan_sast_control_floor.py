@@ -101,7 +101,7 @@ def _summary_row(work: Path) -> str:
     return (work / "summary.tsv").read_text(encoding="utf-8")
 
 
-# ----- scan_sast.sh end to end (real semgrep) ------------------------------------------------------
+# ----- scan_sast.sh end to end (real semgrep) -------------------------------------------------
 @needs_scanners
 def test_stray_untracked_files_do_not_raise_the_control_floor(tmp_path: Path) -> None:
     """[if] a stray .pyc and .txt sit in the control dir [then] control passes, [else stop]."""
@@ -148,7 +148,7 @@ def test_tracked_control_file_semgrep_did_not_scan_is_named(tmp_path: Path) -> N
     assert "rules failed to load" not in summary, summary
 
 
-# ----- secscan semgrep-summary --expect-file --------------------------------------------------------
+# ----- secscan semgrep-summary --expect-file ---------------------------------------------------
 EXPECTED = [f"{CONTROL_DIR}/{name}" for name in ("a.py", "b.py", "c.ts", "d.rs")]
 
 
@@ -163,9 +163,20 @@ def _summary(tmp_path: Path, scanned: list[str], min_files: int) -> tuple[int, s
     scan.write_text(json.dumps(doc), encoding="utf-8")
     expect_args = [arg for path in EXPECTED for arg in ("--expect-file", path)]
     proc = subprocess.run(
-        [sys.executable, str(SECSCAN), "semgrep-summary", str(scan), "--min-rules", "1",
-         "--min-files", str(min_files), *expect_args],
-        capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            str(SECSCAN),
+            "semgrep-summary",
+            str(scan),
+            "--min-rules",
+            "1",
+            "--min-files",
+            str(min_files),
+            *expect_args,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return proc.returncode, proc.stderr
 
