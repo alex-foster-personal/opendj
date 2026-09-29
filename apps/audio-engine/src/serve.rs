@@ -411,7 +411,9 @@ enum Msg {
     /// start or died, e.g. the output device would not open.
     AudioExited,
     /// A write to the output failed: whoever reads results and state is gone,
-    /// so nothing the engine does can be reported any more.
+    /// so nothing the engine does can be reported any more. The writer sets
+    /// `Control::closed` first, which the control loop reads before each
+    /// message, since this one may be queued behind many lines.
     OutputClosed,
 }
 
@@ -450,12 +452,15 @@ struct Control {
     next_fence: u64,
     /// Bytes of `LOAD_BYTES` held now.
     load_used: Arc<AtomicUsize>,
+    /// Set by whichever write to the output fails first.
+    closed: Arc<AtomicBool>,
 }
 
 impl Control {
     fn reply(&self, id: Option<&Value>, res: Result<(), ProtoError>) {
         let mut o = self.out.lock().unwrap();
         if send(&mut *o, &protocol::result_json(id, &res)).is_err() {
+            self.closed.store(true, Ordering::Release);
             let _ = self.msg_tx.send(Msg::OutputClosed);
         }
     }
@@ -816,6 +821,8 @@ fn serve_threaded_from(
     let pump_out = out.clone();
     let pump_ids = ids.clone();
     let pump_tx = msg_tx.clone();
+    let closed = Arc::new(AtomicBool::new(false));
+    let pump_closed = closed.clone();
     let pump = std::thread::spawn(move || {
         // Once a write fails the engine is stopping; the pump keeps draining
         // (retired tracks are still freed here, off the audio thread) but
@@ -824,6 +831,7 @@ fn serve_threaded_from(
         let mut write = |v: &Value| {
             if !closed && send(&mut *pump_out.lock().unwrap(), v).is_err() {
                 closed = true;
+                pump_closed.store(true, Ordering::Release);
                 let _ = pump_tx.send(Msg::OutputClosed);
             }
         };
@@ -889,10 +897,21 @@ fn serve_threaded_from(
         fences: HashMap::new(),
         next_fence: 0,
         load_used: Arc::default(),
+        closed,
     };
     let mut audio_failed = false;
     let mut output_closed = false;
     loop {
+        // The output closing is noticed before the next line is handled,
+        // not after every line already read: its message may be queued
+        // behind a thousand of them, each of which would still change what
+        // plays with no one to hear the result. Lines left unhandled get
+        // no result, which no one could read anyway. A dead audio side is
+        // not hurried the same way: its lines are still answered, refused.
+        if control.closed.load(Ordering::Acquire) {
+            output_closed = true;
+            break;
+        }
         // Work that waits for room in the mailbox goes as the audio side
         // drains, so while any does the loop wakes to send it on.
         control.release_staged();
@@ -943,6 +962,10 @@ fn serve_threaded_from(
     if !audio_failed && !output_closed {
         let deadline = Instant::now() + LOAD_DRAIN_LIMIT;
         while control.loads_pending() && Instant::now() < deadline {
+            if control.closed.load(Ordering::Acquire) {
+                output_closed = true;
+                break;
+            }
             control.release_staged();
             if !control.loads_pending() {
                 break;
@@ -1213,6 +1236,7 @@ mod tests {
             fences: HashMap::new(),
             next_fence: 0,
             load_used: Arc::default(),
+            closed: Arc::default(),
         };
         (control, cmd_rx, out)
     }
@@ -1648,6 +1672,110 @@ mod tests {
             assert!(audio_stopped.load(Ordering::Relaxed), "{line}: the audio side was left running");
             drop(writer);
         }
+    }
+
+    /// Output that takes the hello, then holds the next write until the test
+    /// lets it go (saying when one is held), and fails it and every one
+    /// after: stdout whose reader dies while the engine is writing. With
+    /// `spared`, writes from the control thread (named so by the test)
+    /// always succeed, so only the pump meets the closed output.
+    #[derive(Clone)]
+    struct DiesMidWrite {
+        hello_done: Arc<AtomicBool>,
+        held: mpsc::Sender<()>,
+        go: Arc<Mutex<mpsc::Receiver<()>>>,
+        spared: bool,
+    }
+
+    impl Write for DiesMidWrite {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if self.spared && std::thread::current().name() == Some("serve-control") {
+                return Ok(b.len());
+            }
+            if !self.hello_done.load(Ordering::Relaxed) {
+                if b.contains(&b'\n') {
+                    self.hello_done.store(true, Ordering::Relaxed);
+                }
+                return Ok(b.len());
+            }
+            let _ = self.held.send(());
+            let _ = self.go.lock().unwrap().recv();
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn lines_already_read_are_not_applied_once_the_output_has_closed() {
+        // Codex on 257f6768: the closed output's notice was queued behind
+        // every line the reader had handed over (up to 1024), and each was
+        // still applied, changing what plays with nobody to hear a result.
+        // 300 master volume moves wait behind the write that fails.
+        let moves = "{\"cmd\": {\"type\": \"master_volume\", \"value\": 0.25}}\n".repeat(300);
+        // `first` goes in before the write is held; the rest once it is.
+        let run = |first: &str, rest: String, dies: Option<bool>| -> (io::Result<()>, f64) {
+            let (reader, mut writer) = io::pipe().unwrap();
+            let (held_tx, held_rx) = mpsc::channel();
+            let (go_tx, go_rx) = mpsc::channel();
+            let out: Box<dyn Write + Send> = match dies {
+                Some(spared) => Box::new(DiesMidWrite {
+                    hello_done: Arc::default(),
+                    held: held_tx,
+                    go: Arc::new(Mutex::new(go_rx)),
+                    spared,
+                }),
+                None => Box::new(Captured::default()),
+            };
+            let heard = Arc::new(Mutex::new(None));
+            let h = heard.clone();
+            let t = std::thread::Builder::new()
+                .name("serve-control".into())
+                .spawn(move || {
+                    serve_threaded_from(io::BufReader::new(reader), out, 48000, "wall", move |mut side, stop| {
+                        while !stop.load(Ordering::Relaxed) {
+                            side.process(64);
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                        // Whatever reached the mailbox is applied.
+                        side.process(64);
+                        *h.lock().unwrap() = Some(side.engine.snapshot().master_volume);
+                    })
+                })
+                .unwrap();
+            writer.write_all(first.as_bytes()).unwrap();
+            if dies.is_some() {
+                held_rx.recv_timeout(Duration::from_secs(10)).expect("no write was held");
+            }
+            writer.write_all(rest.as_bytes()).unwrap();
+            if dies.is_some() {
+                // The reader hands every line over while the write is held.
+                std::thread::sleep(Duration::from_millis(300));
+                let _ = go_tx.send(());
+            }
+            // Every write after that one fails at once.
+            drop(go_tx);
+            drop(writer);
+            let r = t.join().unwrap();
+            let v = heard.lock().unwrap().expect("the audio side never stopped");
+            (r, v)
+        };
+        // The control side meets it first, refusing a malformed line.
+        let (r, volume) = run("not json\n", moves.clone(), Some(false));
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        assert_ne!(volume, 0.25, "lines read before the output closed were applied after it");
+        // The pump meets it first, writing a result: it holds the output, so
+        // the control side waits on it to refuse the next line, and the moves
+        // pile up behind that. Only the pump's write fails here.
+        let first = "{\"id\": 1, \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}}\n";
+        let (r, volume) = run(first, format!("not json\n{moves}"), Some(true));
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        assert_ne!(volume, 0.25, "lines read before the pump met the closed output were applied after it");
+        // Control: with the output working, the same lines are applied.
+        let (r, volume) = run("not json\n", moves, None);
+        r.unwrap();
+        assert_eq!(volume, 0.25);
     }
 
     /// Endless lines, line `i` being `len_of(i)` bytes (newline included),
