@@ -82,6 +82,18 @@ def _get_json(url: str, token: str, agent: str) -> dict[str, Any]:
 PAGE_SIZE = 100
 
 
+def fetch_run(
+    repository: str,
+    run_id: str,
+    token: str,
+    agent: str,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """One workflow run by id."""
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    return fetch(f"https://api.github.com/repos/{repository}/actions/runs/{run_id}")
+
+
 def fetch_completed_runs(
     repository: str,
     created_since: str,

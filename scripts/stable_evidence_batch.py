@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -22,6 +22,7 @@ from scripts.ci_run_batch import (
     batch_since,
     created_floor,
     fetch_completed_runs,
+    fetch_run,
     reconcile_listing,
 )
 from scripts.stable_evidence import (
@@ -79,6 +80,34 @@ def _already_recorded(evidence_dir: Path, run: dict[str, Any], suite: str) -> bo
         return False
     record = (load_evidence(path).get("suites") or {}).get(suite)
     return record == {"run_id": str(run["id"]), "conclusion": str(run["conclusion"])}
+
+
+def drop_superseded_reruns(
+    evidence_dir: Path,
+    reruns: list[dict[str, Any]],
+    recorded_updated_at: Callable[[str], str],
+) -> list[dict[str, Any]]:
+    """The reconciled re-runs that would not overwrite a later completion.
+
+    A reconcile pass reaches back days, so a re-run it lists may have completed
+    BEFORE a different run of the same suite on the same sha that a plain pass has
+    since recorded; writing it would put the older result back. Where the file
+    records a different run, that run's completion time (one API read) decides. A
+    re-run of the recorded run itself is its own later completion and is kept.
+    """
+    kept: list[dict[str, Any]] = []
+    for run in reruns:
+        path = evidence_path(evidence_dir, str(run["head_sha"]))
+        suite = suite_for_workflow(str(run["name"]))
+        record = (load_evidence(path).get("suites") or {}).get(suite) if path.is_file() else None
+        if (
+            record
+            and str(record["run_id"]) != str(run["id"])
+            and recorded_updated_at(str(record["run_id"])) > str(run["updated_at"])
+        ):
+            continue
+        kept.append(run)
+    return kept
 
 
 def append_suite_runs(
@@ -145,10 +174,15 @@ def main(argv: list[str] | None = None) -> int:
         horizon=timedelta(days=args.reconcile_horizon_days or 0),
         workflow_names=RECORDED_WORKFLOWS,
     )
-    chosen = newest_per_suite(
-        select_suite_runs(listed, since) + select_suite_runs(reconciled, args.reconcile_since)
-    )
     evidence_dir = Path(args.evidence_dir) if args.evidence_dir else default_evidence_dir()
+    reruns = drop_superseded_reruns(
+        evidence_dir,
+        select_suite_runs(reconciled, args.reconcile_since),
+        lambda run_id: str(
+            fetch_run(args.repository, run_id, args.token, "stable-evidence")["updated_at"]
+        ),
+    )
+    chosen = newest_per_suite(select_suite_runs(listed, since) + reruns)
     written = append_suite_runs(evidence_dir, chosen, args.written_by)
     for run, path in written:
         print(f"[OK] run {run['id']} {run['name']} {run['conclusion']} -> {path}", file=sys.stderr)
