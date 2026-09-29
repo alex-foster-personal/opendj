@@ -19,6 +19,7 @@ Controls:
 * a failing hub fetch, and a failing local digest, must each propagate as
   themselves, and leave no worker thread behind.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -88,7 +89,9 @@ class _Rendezvous:
         self.hub_started = threading.Event()
         self.local_in_transaction: bool | None = None
 
-    def local(self, inner: Callable[..., protocol.SyncDigest]) -> Callable[..., protocol.SyncDigest]:
+    def local(
+        self, inner: Callable[..., protocol.SyncDigest]
+    ) -> Callable[..., protocol.SyncDigest]:
         def wrapped(conn: sqlite3.Connection, **kwargs: Any) -> protocol.SyncDigest:
             if conn is not self.spoke:
                 return inner(conn, **kwargs)
@@ -118,7 +121,9 @@ class _Rendezvous:
 
 def _install(monkeypatch: pytest.MonkeyPatch, meet: _Rendezvous) -> None:
     monkeypatch.setattr(client.protocol, "sync_digest", meet.local(protocol.sync_digest))
-    monkeypatch.setattr(client, "_fetch_hub_digest", meet.hub(client_transport_ops._fetch_hub_digest))
+    monkeypatch.setattr(
+        client, "_fetch_hub_digest", meet.hub(client_transport_ops._fetch_hub_digest)
+    )
 
 
 def _digest_workers() -> list[str]:
