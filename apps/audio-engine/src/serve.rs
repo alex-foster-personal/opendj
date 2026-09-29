@@ -102,7 +102,7 @@ pub fn serve_fake(
                 Ok(())
             }
         });
-        send(&mut out, &protocol::result_json(id.as_deref(), &res))?;
+        send(&mut out, &protocol::result_json(id.as_ref(), &res))?;
         if then_state {
             send(&mut out, &protocol::state_json(&engine.snapshot(), None))?;
         }
@@ -236,15 +236,15 @@ enum Msg {
 
 /// Work parked behind a deck's pending load.
 enum Queued {
-    Cmd(Option<String>, EngineCmd),
-    Load(Option<String>, LoadSpec),
+    Cmd(Option<Value>, EngineCmd),
+    Load(Option<Value>, LoadSpec),
 }
 
 /// The control half: owns the command ring's producer, the per-deck load
 /// queues and the id bookkeeping. Runs on the main thread.
 struct Control {
     cmd_tx: rtrb::Producer<(u64, EngineCmd)>,
-    ids: Arc<Mutex<HashMap<u64, Option<String>>>>,
+    ids: Arc<Mutex<HashMap<u64, Option<Value>>>>,
     out: Out,
     msg_tx: mpsc::Sender<Msg>,
     next_seq: u64,
@@ -256,12 +256,12 @@ struct Control {
 }
 
 impl Control {
-    fn reply(&self, id: Option<&str>, res: Result<(), ProtoError>) {
+    fn reply(&self, id: Option<&Value>, res: Result<(), ProtoError>) {
         let mut o = self.out.lock().unwrap();
         let _ = send(&mut *o, &protocol::result_json(id, &res));
     }
 
-    fn seq(&mut self, id: Option<String>) -> u64 {
+    fn seq(&mut self, id: Option<Value>) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
         self.ids.lock().unwrap().insert(seq, id);
@@ -273,7 +273,7 @@ impl Control {
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
         if self.cmd_tx.push((seq, cmd)).is_err() {
             let id = self.ids.lock().unwrap().remove(&seq).flatten();
-            self.reply(id.as_deref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
+            self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             return false;
         }
         true
@@ -295,7 +295,7 @@ impl Control {
         self.waiting[deck as usize - 1].as_mut()
     }
 
-    fn dispatch(&mut self, id: Option<String>, cmd: EngineCmd) {
+    fn dispatch(&mut self, id: Option<Value>, cmd: EngineCmd) {
         if let Some(d) = Self::deck_of(&cmd) {
             if let Some(q) = self.queue_for(d) {
                 q.push_back(Queued::Cmd(id, cmd));
@@ -306,7 +306,7 @@ impl Control {
         let _ = self.push_seq(seq, cmd);
     }
 
-    fn load(&mut self, id: Option<String>, spec: LoadSpec) {
+    fn load(&mut self, id: Option<Value>, spec: LoadSpec) {
         let deck = spec.deck;
         if let Some(q) = self.queue_for(deck) {
             q.push_back(Queued::Load(id, spec));
@@ -330,7 +330,7 @@ impl Control {
             Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
             Err(e) => {
                 let id = self.ids.lock().unwrap().remove(&seq).flatten();
-                self.reply(id.as_deref(), Err(e));
+                self.reply(id.as_ref(), Err(e));
                 true
             }
         };
@@ -363,7 +363,7 @@ impl Control {
             if let Some(seq) = self.loading[d].take() {
                 let id = self.ids.lock().unwrap().remove(&seq).flatten();
                 self.reply(
-                    id.as_deref(),
+                    id.as_ref(),
                     Err(ProtoError::new(ErrorCode::Invalid, "the engine shut down before this load finished")),
                 );
             }
@@ -379,7 +379,7 @@ impl Control {
                 Queued::Cmd(id, _) | Queued::Load(id, _) => id,
             };
             self.reply(
-                id.as_deref(),
+                id.as_ref(),
                 Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on failed; command dropped")),
             );
         }
@@ -391,12 +391,12 @@ impl Control {
         }
         let (id, parsed) = protocol::parse_line(line);
         match parsed {
-            Err(e) => self.reply(id.as_deref(), Err(e)),
+            Err(e) => self.reply(id.as_ref(), Err(e)),
             Ok(Command::Load(spec)) => self.load(id, spec),
             Ok(Command::Apply(c)) => self.dispatch(id, c),
-            Ok(Command::NoOp) => self.reply(id.as_deref(), Ok(())),
+            Ok(Command::NoOp) => self.reply(id.as_ref(), Ok(())),
             Ok(Command::Advance(_)) => self.reply(
-                id.as_deref(),
+                id.as_ref(),
                 Err(ProtoError::new(
                     ErrorCode::WrongClock,
                     format!("engine_advance needs the fake clock; this engine runs on the {clock} clock"),
@@ -404,10 +404,10 @@ impl Control {
             ),
             Ok(Command::State) => {
                 self.state_req.store(true, Ordering::Relaxed);
-                self.reply(id.as_deref(), Ok(()));
+                self.reply(id.as_ref(), Ok(()));
             }
             Ok(Command::Shutdown) => {
-                self.reply(id.as_deref(), Ok(()));
+                self.reply(id.as_ref(), Ok(()));
                 return false;
             }
         }
@@ -438,7 +438,7 @@ fn serve_threaded_from(
     let stop = Arc::new(AtomicBool::new(false));
     let state_req = Arc::new(AtomicBool::new(false));
     let out: Out = Arc::new(Mutex::new(Box::new(output)));
-    let ids: Arc<Mutex<HashMap<u64, Option<String>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let ids: Arc<Mutex<HashMap<u64, Option<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
 
     {
         let mut o = out.lock().unwrap();
@@ -482,7 +482,7 @@ fn serve_threaded_from(
             let id = pump_ids.lock().unwrap().remove(&seq).flatten();
             let res = r.map(drop).map_err(ProtoError::from);
             let mut o = pump_out.lock().unwrap();
-            let _ = send(&mut *o, &protocol::result_json(id.as_deref(), &res));
+            let _ = send(&mut *o, &protocol::result_json(id.as_ref(), &res));
         }
         while let Ok((snap, heard_ns)) = state_rx.pop() {
             idle = false;
@@ -575,10 +575,10 @@ fn serve_threaded_from(
     let _ = pump.join();
     // Anything still without a result never ran: its audio side died with
     // it in the mailbox, or the drain gave up. Refuse each one by its id.
-    let unanswered: Vec<Option<String>> = control.ids.lock().unwrap().drain().map(|(_, id)| id).collect();
+    let unanswered: Vec<Option<Value>> = control.ids.lock().unwrap().drain().map(|(_, id)| id).collect();
     for id in unanswered {
         control.reply(
-            id.as_deref(),
+            id.as_ref(),
             Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")),
         );
     }

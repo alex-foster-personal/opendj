@@ -4,7 +4,7 @@ mod common;
 
 use std::path::PathBuf;
 
-use odj_audio::decode::decode_file;
+use odj_audio::decode::{decode_file, decode_file_within};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::probe::Hint;
@@ -152,4 +152,20 @@ fn a_file_whose_every_packet_is_corrupt_does_not_load_as_silence() {
     let before = clean.pcm.len() - 2 * 2048 * 2;
     assert_eq!(got.pcm[..before], clean.pcm[..before]);
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn a_decode_holds_no_more_than_the_room_it_was_given() {
+    // Codex's case, on the decode side: the samples grew by doubling, so a
+    // track that fits its room could hold nearly twice it in spare capacity.
+    let d = common::temp_dir("decode-capacity");
+    let path = common::write_wav(&d, "a.wav", 48000, &common::sine(48000, 440.0, 2.5));
+    let got = decode_file_within(&path, 130_000).unwrap();
+    assert_eq!(got.pcm.len(), 240_000);
+    assert!(got.pcm.capacity() <= 260_000, "holds {} samples", got.pcm.capacity());
+    // Control: with no budget the same decode is free to grow past it, so
+    // the bound above is the room's doing.
+    let free = decode_file_within(&path, u64::MAX).unwrap();
+    assert_eq!(free.pcm, got.pcm);
+    assert!(free.pcm.capacity() > 260_000, "holds {} samples", free.pcm.capacity());
 }

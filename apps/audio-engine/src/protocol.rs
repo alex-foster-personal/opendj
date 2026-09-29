@@ -484,16 +484,20 @@ pub fn parse_knob(o: &Obj) -> Result<KnobTarget, ProtoError> {
     })
 }
 
-/// An inbound line: `{"id": ..., "cmd": {...}}`. The id is echoed on the result.
-pub fn parse_line(line: &str) -> (Option<String>, Result<Command, ProtoError>) {
+/// An inbound line: `{"id": ..., "cmd": {...}}`. The id is echoed on the
+/// result as the same JSON value it arrived as, so a client that matches `1`
+/// against its pending map finds `1`, not `"1"`. An id that is not a string
+/// or a number is refused before the command runs: it could not be echoed
+/// in a form the client would recognize.
+pub fn parse_line(line: &str) -> (Option<Value>, Result<Command, ProtoError>) {
     let v: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(e) => return (None, Err(invalid(format!("not JSON: {e}")))),
     };
     let id = match v.get("id") {
-        Some(Value::String(s)) => Some(s.clone()),
-        Some(Value::Number(n)) => Some(n.to_string()),
-        _ => None,
+        Some(id @ (Value::String(_) | Value::Number(_))) => Some(id.clone()),
+        None | Some(Value::Null) => None,
+        Some(other) => return (None, Err(invalid(format!("id must be a string or a number, not {other}")))),
     };
     let Some(cmd) = v.get("cmd") else {
         return (id, Err(invalid("message needs a cmd object".into())));
@@ -517,7 +521,7 @@ pub fn hello_json(clock: &str, sample_rate: u32) -> Value {
     })
 }
 
-pub fn result_json(id: Option<&str>, res: &Result<(), ProtoError>) -> Value {
+pub fn result_json(id: Option<&Value>, res: &Result<(), ProtoError>) -> Value {
     match res {
         Ok(()) => json!({"type": "result", "id": id, "ok": true}),
         Err(e) => json!({
@@ -884,7 +888,7 @@ mod tests {
             assert!(e.message.contains("unexpected fields"), "{c}: {}", e.message);
         }
         let (id, r) = parse_line(r#"{"id": "x", "cmd": {"type": "engine_state"}, "urgent": true}"#);
-        assert_eq!(id.as_deref(), Some("x"));
+        assert_eq!(id, Some(json!("x")));
         assert!(r.unwrap_err().message.contains("unexpected fields: urgent"));
         // Controls: each command with every field it may carry is accepted,
         // including the page-only ones that steer only the page.
@@ -940,9 +944,42 @@ mod tests {
     #[test]
     fn lines_echo_their_id() {
         let (id, c) = parse_line(r#"{"id": "c7", "cmd": {"type": "engine_state"}}"#);
-        assert_eq!(id.as_deref(), Some("c7"));
+        assert_eq!(id, Some(json!("c7")));
         assert!(matches!(c, Ok(Command::State)));
         let (id, c) = parse_line("not json");
         assert!(id.is_none() && c.is_err());
+    }
+
+    #[test]
+    fn a_numeric_id_is_echoed_as_a_number() {
+        // Codex's case: `{"id": 1}` came back as `"id": "1"`, which a client
+        // keyed on the number never matches.
+        for (line, want) in [
+            (r#"{"id": 1, "cmd": {"type": "engine_state"}}"#, json!(1)),
+            (r#"{"id": -2.5, "cmd": {"type": "engine_state"}}"#, json!(-2.5)),
+            (r#"{"id": "1", "cmd": {"type": "engine_state"}}"#, json!("1")),
+        ] {
+            let (id, c) = parse_line(line);
+            assert!(c.is_ok(), "{line}");
+            assert_eq!(id.as_ref(), Some(&want), "{line}");
+            assert_eq!(result_json(id.as_ref(), &Ok(()))["id"], want, "{line}");
+        }
+        // No id, or a null one, answers with a null id (control).
+        for line in [r#"{"cmd": {"type": "engine_state"}}"#, r#"{"id": null, "cmd": {"type": "engine_state"}}"#] {
+            let (id, c) = parse_line(line);
+            assert!(id.is_none() && c.is_ok(), "{line}");
+            assert_eq!(result_json(id.as_ref(), &Ok(()))["id"], Value::Null);
+        }
+        // An id that cannot be echoed as sent is refused before the command
+        // runs, not run with its id dropped.
+        for line in [
+            r#"{"id": true, "cmd": {"type": "engine_shutdown"}}"#,
+            r#"{"id": {"n": 1}, "cmd": {"type": "engine_shutdown"}}"#,
+            r#"{"id": [1], "cmd": {"type": "engine_shutdown"}}"#,
+        ] {
+            let (id, c) = parse_line(line);
+            assert!(id.is_none(), "{line}");
+            assert!(c.unwrap_err().message.contains("id must be a string or a number"), "{line}");
+        }
     }
 }

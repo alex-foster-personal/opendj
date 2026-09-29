@@ -84,6 +84,30 @@ fn render_refuses_outputs_that_collide_before_writing_anything() {
         assert!(err.contains("would overwrite") && err.contains(input), "{err}");
     }
     assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+    // Codex's case: a hard link is the file it links to under another
+    // spelling, so writing it would truncate the track mid-read, or write
+    // the mix and a deck output into one file.
+    #[cfg(unix)]
+    {
+        std::fs::hard_link(d.join("a.wav"), d.join("linked.wav")).unwrap();
+        let o = run(d.join("linked.wav"), None);
+        assert!(!o.status.success());
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(err.contains("would overwrite") && err.contains("a.wav"), "{err}");
+        assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+        std::fs::create_dir_all(d.join("hl")).unwrap();
+        std::fs::write(d.join("hl-mix.wav"), b"old").unwrap();
+        std::fs::hard_link(d.join("hl-mix.wav"), d.join("hl").join("deck1.wav")).unwrap();
+        let o = run(d.join("hl-mix.wav"), Some(d.join("hl")));
+        assert!(!o.status.success());
+        assert!(String::from_utf8_lossy(&o.stderr).contains("are both"), "{}", String::from_utf8_lossy(&o.stderr));
+        assert_eq!(std::fs::read(d.join("hl-mix.wav")).unwrap(), b"old", "something was written");
+        // Control: a copy is a file of its own, and is overwritten.
+        std::fs::copy(d.join("a.wav"), d.join("copy.wav")).unwrap();
+        let o = run(d.join("copy.wav"), None);
+        assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+        assert_eq!(std::fs::read(d.join("a.wav")).unwrap(), a_before);
+    }
     // Control: a missing directory that does not lead back is elsewhere.
     let o = run(d.join("out").join("deck1.wav"), Some(d.join("missing").join("..").join("elsewhere")));
     assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
@@ -206,6 +230,14 @@ fn fake_clock_session_over_pipes() {
     let r = next();
     assert_eq!(r["ok"], false);
     assert_eq!(r["error"]["code"], "not_implemented");
+    // A numeric id comes back as the same number, and an id the engine
+    // could not echo is refused without running the command.
+    say(json!({"id": 7, "cmd": {"type": "engine_state"}}));
+    assert_eq!(next(), json!({"type": "result", "id": 7, "ok": true}));
+    next();
+    say(json!({"id": true, "cmd": {"type": "engine_shutdown"}}));
+    let r = next();
+    assert_eq!((r["id"].clone(), r["ok"].clone()), (Value::Null, json!(false)), "{r}");
     say(json!({"id": "q", "cmd": {"type": "engine_shutdown"}}));
     assert_eq!(next()["ok"], true);
     assert!(child.wait().unwrap().success());

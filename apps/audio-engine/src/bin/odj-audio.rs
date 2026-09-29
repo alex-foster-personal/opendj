@@ -80,6 +80,25 @@ fn resolved(p: &Path) -> PathBuf {
     out
 }
 
+/// Whether two paths name one file: the same resolved spelling, or, where
+/// both exist, the same file on disk (a hard link has its own spelling but
+/// is the file it links to, so writing it truncates that file). Only Unix
+/// exposes a stable file identity on stable Rust; elsewhere a hard link is
+/// told apart by spelling alone.
+fn same_file(a: &Path, b: &Path) -> bool {
+    if resolved(a) == resolved(b) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
+            return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino());
+        }
+    }
+    false
+}
+
 /// Refuse a render that would write one file twice, or over a file it
 /// reads, before anything is rendered or written: `--out DIR/deck1.wav` with
 /// `--decks-out DIR` would replace the mix with deck 1 while the summary
@@ -99,11 +118,10 @@ fn check_paths(plan_path: &Path, base: &Path, plan: &Plan, out: &Path, decks_out
         }
     }
     for (i, (w, what)) in writes.iter().enumerate() {
-        let rw = resolved(w);
-        if let Some((_, other)) = writes[..i].iter().find(|(o, _)| resolved(o) == rw) {
+        if let Some((_, other)) = writes[..i].iter().find(|(o, _)| same_file(o, w)) {
             return Err(format!("{what} and {other} are both {}; give them different paths", w.display()));
         }
-        if let Some(r) = reads.iter().find(|r| resolved(r) == rw) {
+        if let Some(r) = reads.iter().find(|r| same_file(r, w)) {
             return Err(format!("{what} {} would overwrite {}, which this render reads", w.display(), r.display()));
         }
     }

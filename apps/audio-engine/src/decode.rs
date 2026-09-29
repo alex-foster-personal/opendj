@@ -24,6 +24,19 @@ pub struct Decoded {
     pub pcm: Vec<f32>,
 }
 
+/// Make room for `extra` more samples in `v`, growing it geometrically as
+/// `Vec` does but never past `limit` samples unless the samples themselves
+/// need more. A budget charged in frames is a budget of samples held, and a
+/// plain `Vec` may hold nearly twice what it contains: this keeps what it
+/// holds inside what the budget charged it.
+pub(crate) fn reserve_within(v: &mut Vec<f32>, extra: usize, limit: usize) {
+    let need = v.len().saturating_add(extra);
+    if need > v.capacity() {
+        let want = v.capacity().saturating_mul(2).min(limit).max(need);
+        v.reserve_exact(want - v.len());
+    }
+}
+
 /// Refuse `more` frames on top of the `held` samples when they would pass
 /// `max_frames`, before anything is allocated for them.
 fn check_room(held: usize, more: usize, max_frames: u64, path: &Path) -> Result<(), ProtoError> {
@@ -79,6 +92,8 @@ pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, Proto
         .map_err(|e| dec_err("unsupported codec in", &e))?;
 
     let mut pcm: Vec<f32> = Vec::new();
+    // What the budget allows the samples to hold, spare capacity included.
+    let limit = usize::try_from(max_frames.saturating_mul(2)).unwrap_or(usize::MAX);
     let mut scratch: Vec<f32> = Vec::new();
     let mut sample_rate = 0u32;
     // Silence stands in for a corrupt packet only around real audio: a file
@@ -105,6 +120,7 @@ pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, Proto
                     dec_err("corrupt packet of unknown length in", &e)
                 })?;
                 check_room(pcm.len(), frames, max_frames, path)?;
+                reserve_within(&mut pcm, frames * 2, limit);
                 pcm.resize(pcm.len() + frames * 2, 0.0);
                 if sample_rate == 0 {
                     sample_rate = rate.unwrap_or(0);
@@ -123,7 +139,7 @@ pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, Proto
         scratch.resize(buf.samples_interleaved(), 0.0);
         buf.copy_to_slice_interleaved(&mut scratch[..]);
         check_room(pcm.len(), buf.frames(), max_frames, path)?;
-        pcm.reserve(buf.frames() * 2);
+        reserve_within(&mut pcm, buf.frames() * 2, limit);
         for frame in scratch.chunks_exact(ch) {
             let l = frame[0];
             let r = if ch == 1 { frame[0] } else { frame[1] };

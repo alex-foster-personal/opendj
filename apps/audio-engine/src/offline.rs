@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::decode_file_within;
+use crate::decode::{decode_file_within, reserve_within};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -642,7 +642,11 @@ fn render_within(
         n = n.min(tl_step - now % tl_step);
         n = n.min(max_frames - now).max(1);
 
+        // Every buffer is charged max_frames frames of the budget, so none
+        // may hold more than that in spare capacity either.
+        let limit = max_frames as usize * 2;
         let start = pcm.len();
+        reserve_within(&mut pcm, n as usize * 2, limit);
         pcm.resize(start + n as usize * 2, 0.0);
         if opts.deck_outputs {
             for s in scratch.iter_mut() {
@@ -652,6 +656,7 @@ fn render_within(
             engine.render_split(&mut pcm[start..], &mut split);
             for i in 0..MAX_DECKS {
                 if loads_deck[i] {
+                    reserve_within(&mut deck_pcm[i], scratch[i].len(), limit);
                     deck_pcm[i].extend_from_slice(&scratch[i]);
                 }
             }
@@ -795,6 +800,38 @@ mod tests {
         .unwrap();
         let e = render_within(&playing, memory_loader(1_000_000, &calls), RenderOptions::default(), 1_010_000).err().unwrap();
         assert!(e.message.contains("not reached within") && e.message.contains("1000000 frames of decoded tracks"), "{}", e.message);
+    }
+
+    #[test]
+    fn rendered_buffers_hold_no_more_than_the_budget_charged_them() {
+        // Codex's case: the budget counted frames, but each buffer grew by
+        // doubling, so one could hold nearly twice what it was charged. Here
+        // the budget leaves 100000 frames to the mix, and doubling past
+        // 99000 frames would hold 262144 samples.
+        let calls = std::cell::Cell::new(0);
+        let out = render_within(&plan_of(serde_json::json!({"frame": 99000}), &["a"]), memory_loader(60000, &calls), RenderOptions::default(), 160000).unwrap();
+        assert_eq!(out.pcm.len(), 198000);
+        assert!(out.pcm.capacity() <= 200000, "the mix holds {} samples", out.pcm.capacity());
+        // Deck outputs are charged the same share as the mix.
+        let decks = RenderOptions { deck_outputs: true };
+        let out = render_within(&plan_of(serde_json::json!({"frame": 49000}), &["a"]), memory_loader(60000, &calls), decks, 160000).unwrap();
+        assert!(out.pcm.capacity() <= 100000, "the mix holds {} samples", out.pcm.capacity());
+        assert!(out.decks[0].pcm.capacity() <= 100000, "deck 1 holds {} samples", out.decks[0].pcm.capacity());
+        // Control: growth stays geometric below the limit, not one block at a
+        // time, so a long render does not copy itself once per block.
+        let mut v = Vec::new();
+        let mut grew = 0;
+        for _ in 0..1000 {
+            let cap = v.capacity();
+            reserve_within(&mut v, 64, usize::MAX);
+            v.resize(v.len() + 64, 0.0);
+            grew += usize::from(v.capacity() != cap);
+        }
+        assert!(grew <= 12, "grew {grew} times for 1000 appends");
+        // Samples the limit is too small for still get their room.
+        let mut v = vec![0.0f32; 10];
+        reserve_within(&mut v, 20, 15);
+        assert!(v.capacity() >= 30);
     }
 
     #[test]
