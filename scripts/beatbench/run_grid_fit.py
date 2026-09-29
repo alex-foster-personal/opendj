@@ -64,7 +64,7 @@ from apps.analysis_beatgrid.bar_phase import lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
 from apps.analysis_beatgrid.const_regions import MIN_COVERAGE, fit_const_regions
 from apps.analysis_beatgrid.grid_design import OFFSET_V2_TARGET_S
-from apps.analysis_beatgrid.grid_fit import DEFAULT_OFFSET_S, fit_grid
+from apps.analysis_beatgrid.grid_fit import DEFAULT_OFFSET_S, GridFit, fit_grid
 
 VARIANTS: dict[str, dict[str, Any]] = {
     "line": {"rounding": False, "offset_s": 0.0},
@@ -137,6 +137,32 @@ def served_raw(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fit(
+    beats: list[float],
+    downbeats: list[float],
+    *,
+    method: str,
+    rounding: bool,
+    offset_s: float,
+    octave_multiple: float,
+    const_options: dict[str, Any],
+) -> GridFit:
+    """The grid for one row by `method`: `line`, `const` or `piecewise`.
+    `const_options` go to `fit_const_regions` and are ignored for `line`."""
+    if method == "line":
+        return fit_grid(
+            beats, downbeats, rounding=rounding, offset_s=offset_s, octave_multiple=octave_multiple
+        )
+    return fit_const_regions(
+        beats,
+        downbeats,
+        rounding=rounding,
+        offset_s=offset_s,
+        piecewise=method == "piecewise",
+        **const_options,
+    )
+
+
 def fitted(
     row: dict[str, Any],
     *,
@@ -157,25 +183,19 @@ def fitted(
         if tempo is None:
             return _failed("no_tempo_fit")
         multiple = tempo.octave_multiple
-    if method == "line":
-        fit = fit_grid(
-            beats,
-            row.get("downbeats") or [],
-            rounding=rounding,
-            offset_s=offset_s,
-            octave_multiple=multiple,
-        )
-    else:
-        fit = fit_const_regions(
-            beats,
-            row.get("downbeats") or [],
-            rounding=rounding,
-            offset_s=offset_s,
-            min_coverage=min_coverage,
-            fallback_line=fallback_line,
-            piecewise=method == "piecewise",
-            least_squares=least_squares,
-        )
+    fit = _fit(
+        beats,
+        row.get("downbeats") or [],
+        method=method,
+        rounding=rounding,
+        offset_s=offset_s,
+        octave_multiple=multiple,
+        const_options={
+            "min_coverage": min_coverage,
+            "fallback_line": fallback_line,
+            "least_squares": least_squares,
+        },
+    )
     if fit.reason:
         return _failed(fit.reason)
     return {

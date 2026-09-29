@@ -146,7 +146,7 @@ def find_const_regions(
     regions at 25 ms; the extension step merges them back. `least_squares=True`
     fits each region's line over all its beats instead. Round 5 scored both:
     least squares finds a 16-beat region on 14 more of 337 fixtures, and once
-    gated by `MIN_COVERAGE` the two score within 0.5 points of each other on
+    gated by `MIN_COVERAGE` the two score within 1 point of each other on
     every fixed-tempo KPI, so the recipe as described is what is served.
     `start_s` and `end_s` are the LINE's times at the region's ends.
     """
@@ -202,16 +202,14 @@ def _try_merge(span: _Span, region: ConstRegion, before: bool, tolerance_s: floa
     start = region.start_s if before else span.start_s
     end = span.end_s if before else region.end_s
     new_period = (end - start) / n
-    # Where the old span's ends and the region's ends fall on the widened line.
-    points = (
-        (span.start_s, (span.start_s - start) / new_period),
-        (span.end_s, (span.end_s - start) / new_period),
-        (region.start_s, (region.start_s - start) / new_period),
-        (region.end_s, (region.end_s - start) / new_period),
-    )
-    for t, k in points:
-        if abs(t - (start + round(k) * new_period)) > tolerance_s:
-            return None
+    # Every member's ends, not just the outer ones, must still sit on the
+    # widened line: widening moves the period, which can push a region merged
+    # earlier off it.
+    for member in (*span.members, region):
+        for t in (member.start_s, member.end_s):
+            k = round((t - start) / new_period)
+            if abs(t - (start + k * new_period)) > tolerance_s:
+                return None
     # The region's own tempo must agree too, or a short region whose ends
     # happen to land on the line would drag a fill's tempo into the grid.
     if abs(region.period_s - new_period) * region.n_beats > tolerance_s:
@@ -312,6 +310,22 @@ def const_lines(
     return [_line_for_span(ts, span, rounding, tolerance_s, (ts[0], ts[-1]))]
 
 
+def _place_spans(
+    regions: Sequence[ConstRegion], order: Sequence[int], tolerance_s: float
+) -> list[_Span]:
+    """Extend each region in `order` within the gap the spans already placed
+    leave it, skipping a region an earlier span already covers; sorted by time."""
+    spans: list[_Span] = []
+    for i in order:
+        r = regions[i]
+        if any(s.start_s <= r.start_s < s.end_s or s.start_s < r.end_s <= s.end_s for s in spans):
+            continue
+        left = max((s.end_s for s in spans if s.end_s <= r.start_s), default=float("-inf"))
+        right = min((s.start_s for s in spans if s.start_s >= r.end_s), default=float("inf"))
+        spans.append(_extend(regions, i, tolerance_s, (left, right)))
+    return sorted(spans, key=lambda s: s.start_s)
+
+
 def piecewise_lines(
     beats: Sequence[float],
     *,
@@ -335,15 +349,7 @@ def piecewise_lines(
     )
     if not order:
         return None
-    spans: list[_Span] = []
-    for i in order:
-        r = regions[i]
-        if any(s.start_s <= r.start_s < s.end_s or s.start_s < r.end_s <= s.end_s for s in spans):
-            continue
-        left = max((s.end_s for s in spans if s.end_s <= r.start_s), default=float("-inf"))
-        right = min((s.start_s for s in spans if s.start_s >= r.end_s), default=float("inf"))
-        spans.append(_extend(regions, i, tolerance_s, (left, right)))
-    spans.sort(key=lambda s: s.start_s)
+    spans = _place_spans(regions, order, tolerance_s)
     lines: list[SegmentLine] = []
     for n, s in enumerate(spans):
         lo = ts[0] if n == 0 else 0.5 * (spans[n - 1].end_s + s.start_s)
