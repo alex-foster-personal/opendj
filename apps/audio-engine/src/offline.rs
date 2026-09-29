@@ -493,6 +493,7 @@ fn deck_moved_by(action: &Action) -> Option<DeckId> {
         Action::Cmd(Command::Apply(
             EngineCmd::Load { deck, .. }
             | EngineCmd::Play { deck, .. }
+            | EngineCmd::PlayToggle { deck }
             | EngineCmd::Cue { deck }
             | EngineCmd::Seek { deck, .. }
             | EngineCmd::Loop { deck, .. }

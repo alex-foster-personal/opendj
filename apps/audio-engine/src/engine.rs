@@ -102,6 +102,10 @@ pub enum EngineCmd {
     Regrid { deck: DeckId, track: Arc<Track> },
     Unload { deck: DeckId },
     Play { deck: DeckId, playing: bool },
+    /// Play if paused, pause if playing, decided when the engine applies it,
+    /// so a toggle queued behind another sender's play still flips the state
+    /// the engine actually has (a controller's PLAY button, plan 20-03).
+    PlayToggle { deck: DeckId },
     Cue { deck: DeckId },
     Quantize { deck: DeckId, enabled: bool },
     QuantizeGrid { deck: DeckId, beats: u8 },
@@ -110,6 +114,10 @@ pub enum EngineCmd {
     BeatLoop { deck: DeckId, beats: f64, start_ms: Option<f64> },
     BeatJump { deck: DeckId, beats: f64 },
     Tempo { deck: DeckId, ratio: f64 },
+    /// A tempo fader position, 0..1 bottom to top, read against the deck's
+    /// own pitch range when applied: 0 is -range, 0.5 is 1.0, 1 is +range
+    /// (the page's `pitchRatioFromFader`, plan 20-03).
+    TempoFader { deck: DeckId, value: f64 },
     PitchRange { deck: DeckId, range: f64 },
     MasterTempo { deck: DeckId, enabled: bool },
     KeyNudge { deck: DeckId, semitones: i32 },
@@ -121,6 +129,13 @@ pub enum EngineCmd {
     Crossfader { value: f64 },
     MasterVolume { value: f64 },
     MasterMute { muted: bool },
+}
+
+/// A tempo fader position (0..1) as a ratio within the deck's pitch range in
+/// percent, as the page's `pitchRatioFromFader` computes it: both ends land
+/// exactly on the range, never past it.
+pub fn tempo_from_fader(value01: f64, range_pct: f64) -> f64 {
+    1.0 + (value01 * 2.0 - 1.0) * (range_pct / 100.0)
 }
 
 /// What `apply` hands back: a track that left the engine and must be freed by
@@ -278,6 +293,11 @@ impl Engine {
             }
             Unload { deck } => return Ok(self.deck_mut(deck)?.unload()),
             Play { deck, playing } => self.deck_mut(deck)?.play(playing)?,
+            PlayToggle { deck } => {
+                let d = self.deck_mut(deck)?;
+                let playing = !d.playing;
+                d.play(playing)?
+            }
             Cue { deck } => self.deck_mut(deck)?.cue()?,
             Quantize { deck, enabled } => self.deck_mut(deck)?.set_quantize(enabled),
             QuantizeGrid { deck, beats } => self.deck_mut(deck)?.set_quantize_grid(beats)?,
@@ -286,6 +306,11 @@ impl Engine {
             BeatLoop { deck, beats, start_ms } => self.deck_mut(deck)?.beat_loop(beats, start_ms)?,
             BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
             Tempo { deck, ratio } => self.deck_mut(deck)?.set_tempo(ratio)?,
+            TempoFader { deck, value } => {
+                let v = mixer::check_unit(value)?;
+                let d = self.deck_mut(deck)?;
+                d.set_tempo(tempo_from_fader(v, d.pitch_range))?
+            }
             PitchRange { deck, range } => self.deck_mut(deck)?.set_pitch_range(range)?,
             MasterTempo { deck, enabled } => self.deck_mut(deck)?.set_master_tempo(enabled),
             KeyNudge { deck, semitones } => self.deck_mut(deck)?.nudge_key(semitones)?,
@@ -528,6 +553,47 @@ mod tests {
             }
         }
         n as f64 * sr / (last - first.unwrap()) as f64
+    }
+
+    #[test]
+    fn play_toggle_flips_the_state_the_engine_has_when_it_applies() {
+        let mut e = Engine::new(48000);
+        // No track: refused like play, not silently accepted.
+        assert_eq!(e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap_err().code, ErrorCode::NoTrack);
+        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 440.0, 2.0)) }).unwrap();
+        e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap();
+        assert!(e.snapshot().decks[0].playing);
+        // Another sender started it first: the toggle reads that and pauses,
+        // where a toggle decided by the sender's stale view would play again.
+        e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
+        e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+        e.apply(EngineCmd::PlayToggle { deck: 1 }).unwrap();
+        assert!(!e.snapshot().decks[0].playing);
+        // A pause by toggle sets the cue where it stopped, as play(false) does.
+        assert!(e.snapshot().decks[0].cue_ms.is_some());
+    }
+
+    #[test]
+    fn tempo_fader_reads_the_decks_own_pitch_range() {
+        let mut e = Engine::new(48000);
+        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 440.0, 2.0)) }).unwrap();
+        let tempo = |e: &Engine| e.snapshot().decks[0].tempo;
+        for (v, want) in [(0.0, 0.84), (0.5, 1.0), (1.0, 1.16)] {
+            e.apply(EngineCmd::TempoFader { deck: 1, value: v }).unwrap();
+            assert_eq!(tempo(&e), want, "fader {v} at 16%");
+        }
+        e.apply(EngineCmd::TempoFader { deck: 1, value: 0.5 }).unwrap();
+        e.apply(EngineCmd::PitchRange { deck: 1, range: 8.0 }).unwrap();
+        e.apply(EngineCmd::TempoFader { deck: 1, value: 1.0 }).unwrap();
+        assert_eq!(tempo(&e), 1.08, "the top of an 8% fader is +8%, not +16%");
+        // Out of 0..1 is refused as a fader value, naming that, rather than
+        // as the ratio it would have made; and it changes nothing.
+        for v in [1.01, -0.01, f64::NAN] {
+            let err = e.apply(EngineCmd::TempoFader { deck: 1, value: v }).unwrap_err();
+            assert_eq!(err.code, ErrorCode::Invalid);
+            assert!(err.message.contains("within 0..1"), "{v}: {}", err.message);
+        }
+        assert_eq!(tempo(&e), 1.08);
     }
 
     fn playing_tone(hz: f64, src_sr: u32) -> Engine {

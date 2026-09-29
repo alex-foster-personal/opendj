@@ -11,6 +11,9 @@ pub mod decode;
 pub mod device;
 pub mod dsp;
 pub mod engine;
+pub mod midi;
+#[cfg(feature = "midi")]
+pub mod midi_in;
 pub mod mixer;
 pub mod offline;
 pub mod plan;
