@@ -6,7 +6,7 @@
 # SSH is tunneled through `tailscale nc`.
 #
 # Environment:
-#   TS_AUTHKEY          ephemeral, pre-approved, tagged (tag:cloud-agent) key.
+#   TS_AUTHKEY          reusable, ephemeral, pre-approved, tagged (tag:cloud-agent) key.
 #                       Never echoed. Access is decided by the tailnet ACL.
 #   ODJ_TAILNET_HOSTNAME  node name, default cloud-agent-<short host id>
 #
