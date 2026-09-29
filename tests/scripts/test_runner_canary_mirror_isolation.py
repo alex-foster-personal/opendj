@@ -80,6 +80,28 @@ def test_source_target_refuses_a_push_rewrite_of_the_checked_url(world) -> None:
     assert set(refs_in(world, "real")) == {"refs/heads/main"}
 
 
+def test_source_target_checks_the_push_url_for_rewrites_not_only_the_fetch_url(world) -> None:
+    """The fetch URL is checked for rewrites on its way to reading main, which also covers
+    the push when both are one URL. Here they differ: the rule matches the push URL only,
+    so the only thing between git and the impostor is the destination's own check."""
+    impostor_url, impostor = impostor_repo(world)
+    fetch_url = repo_url(world, CONFIG["source_repository"], 1)
+    push_url = repo_url(world, CONFIG["source_repository"], 0)
+    assert not fetch_url.startswith(push_url), "the rule must not match the fetch URL"
+    env = world["env"]
+    git(world["source"], "remote", "set-url", "origin", fetch_url, env=env)
+    git(world["source"], "remote", "set-url", "--push", "origin", push_url, env=env)
+    git(world["source"], "config", f"url.{impostor_url}.insteadOf", push_url, env=env)
+    # Control: git itself resolves the push elsewhere, so a missing guard WOULD land there.
+    resolved = git(world["source"], "remote", "get-url", "--push", "origin", env=env)
+    assert resolved == impostor_url
+    result = run_mirror_script(world, world["on_main"], target="source")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "would rewrite" in result.stdout and push_url in result.stdout
+    assert git(impostor, "for-each-ref", env=env) == ""
+    assert set(refs_in(world, "real")) == {"refs/heads/main"}
+
+
 def test_mirror_target_refuses_a_rewrite_of_the_mirror_url(world) -> None:
     """Same class on the other target: a global-scope `insteadOf` would send the mirror's
     ls-remote and push, auth header included, to another repository."""
