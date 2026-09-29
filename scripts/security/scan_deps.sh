@@ -31,6 +31,7 @@ MANIFESTS=(
   scripts/security/semgrep-requirements.txt
   apps/webui/frontend/pnpm-lock.yaml
   apps/desktop/pnpm-lock.yaml
+  apps/desktop/electron/pnpm-lock.yaml
   apps/launcher/pnpm-lock.yaml
   apps/desktop/src-tauri/Cargo.lock
   apps/webui/server/native/waveform/Cargo.lock

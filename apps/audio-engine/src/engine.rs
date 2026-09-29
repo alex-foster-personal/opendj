@@ -527,7 +527,7 @@ mod tests {
             pcm.push(v);
             pcm.push(v);
         }
-        let beats = (0..(secs * 2.0) as usize).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0 }).collect();
+        let beats = (0..(secs * 2.0) as usize).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect();
         Track::new(sr, pcm, beats, None)
     }
 
@@ -875,7 +875,7 @@ mod tests {
     #[test]
     fn the_snapshot_says_whether_the_loop_is_a_beat_loop() {
         let mut e = Engine::new(48000);
-        let grid = (0..20).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0 }).collect();
+        let grid = (0..20).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect();
         let t = Arc::new(Track::new(48000, vec![0.0f32; 48000 * 2 * 10], grid, Some(120.0)));
         e.apply(EngineCmd::Load { deck: 1, track: t }).unwrap();
         e.apply(EngineCmd::BeatLoop { deck: 1, beats: 4.0, start_ms: Some(1000.0) }).unwrap();
@@ -919,7 +919,7 @@ mod tests {
     }
 
     fn grid(every_ms: f64, secs: f64) -> Vec<Beat> {
-        (0..(secs * 1000.0 / every_ms) as usize).map(|i| Beat { time_ms: i as f64 * every_ms, downbeat: i % 4 == 0 }).collect()
+        (0..(secs * 1000.0 / every_ms) as usize).map(|i| Beat { time_ms: i as f64 * every_ms, downbeat: i % 4 == 0, bpm: None }).collect()
     }
 
     #[test]
