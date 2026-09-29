@@ -16,17 +16,22 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+from tests.scripts.sast_control_fixtures import (
+    CONTROL_DIR,
+    ROOT,
+    git,
+    init_scan_repo,
+    tracked_control_files,
+)
+
 SEMGREP_BIN = ROOT / ".tmp" / "security" / "bin"
 SECSCAN = ROOT / "scripts" / "security" / "secscan.py"
-CONTROL_DIR = "tests/fixtures/security/sast-control"
 
 needs_scanners = pytest.mark.skipif(
     not ((SEMGREP_BIN / "semgrep").exists() and (SEMGREP_BIN / "uv").exists()),
@@ -35,46 +40,20 @@ needs_scanners = pytest.mark.skipif(
 
 
 # ----- helpers -----------------------------------------------------------------------------------
-def _git(repo: Path, *args: str) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    )
-    return proc.stdout
-
-
-def _tracked_control_files() -> list[str]:
-    """The real repo's tracked control files, so a stray file in ROOT never leaks in."""
-    files = _git(ROOT, "ls-files", "--", CONTROL_DIR).splitlines()
-    assert len(files) >= 4, f"expected the tracked control set under {CONTROL_DIR}, got {files}"
-    return files
-
-
 def _fixture_repo(tmp_path: Path, extra_tracked: dict[str, str] | None = None) -> Path:
-    """A throwaway repo with the scanner scripts, custom rules and tracked control files.
+    """The shared scan repo plus any extra tracked files, then a docs-only diff on top.
 
-    Commits a docs-only diff on top so `scan_sast.sh pr` runs the control and then SKIPs.
+    The docs-only diff makes `scan_sast.sh pr` run the control and then SKIP.
     """
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init")
-    _git(repo, "config", "user.email", "sast@test")
-    _git(repo, "config", "user.name", "sast test")
-    shutil.copytree(ROOT / "tools" / "semgrep", repo / "tools" / "semgrep")
-    for rel in _tracked_control_files():
-        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / rel, repo / rel)
+    repo = init_scan_repo(tmp_path)
     for rel, body in (extra_tracked or {}).items():
         (repo / rel).write_text(body, encoding="utf-8")
-    sec_scripts = repo / "scripts" / "security"
-    sec_scripts.mkdir(parents=True)
-    for name in ("scan_sast.sh", "lib.sh", "secscan.py"):
-        shutil.copy2(ROOT / "scripts" / "security" / name, sec_scripts / name)
     (repo / "docs").mkdir()
     (repo / "docs" / "foo.md").write_text("# one\n", encoding="utf-8")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-m", "init")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "init")
     (repo / "docs" / "foo.md").write_text("# two\n", encoding="utf-8")
-    _git(repo, "commit", "-am", "change")
+    git(repo, "commit", "-am", "change")
     return repo
 
 
@@ -85,8 +64,8 @@ def _run_pr_scan(repo: Path, work: Path) -> subprocess.CompletedProcess[str]:
         os.symlink(SEMGREP_BIN / tool, bin_dir / tool)
     env = os.environ.copy()
     env["SECURITY_WORK_DIR"] = str(work)
-    env["SECURITY_BASE_SHA"] = _git(repo, "rev-parse", "HEAD~1").strip()
-    env["SECURITY_HEAD_SHA"] = _git(repo, "rev-parse", "HEAD").strip()
+    env["SECURITY_BASE_SHA"] = git(repo, "rev-parse", "HEAD~1").strip()
+    env["SECURITY_HEAD_SHA"] = git(repo, "rev-parse", "HEAD").strip()
     return subprocess.run(
         ["bash", "scripts/security/scan_sast.sh", "pr"],
         cwd=repo,
@@ -117,7 +96,7 @@ def test_stray_untracked_files_do_not_raise_the_control_floor(tmp_path: Path) ->
     assert "UNKNOWN" not in summary, summary
     assert "\tSKIP\t" in summary, summary
     control_json = json.loads((work / "sast" / "control.json").read_text(encoding="utf-8"))
-    assert sorted(control_json["paths"]["scanned"]) == _tracked_control_files()
+    assert sorted(control_json["paths"]["scanned"]) == tracked_control_files()
 
 
 @needs_scanners
