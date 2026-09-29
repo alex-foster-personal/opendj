@@ -45,7 +45,7 @@ HARNESS = "\nprocess.stdout.write(JSON.stringify(handler(JSON.parse(process.argv
 
 
 # -----------------------------------------------------------------------------
-_ABSENT = object()
+_ABSENT: Any = object()
 
 
 def _event(new_status: str | None = None, **test_case: Any) -> dict[str, Any]:
@@ -66,6 +66,12 @@ def _event(new_status: str | None = None, **test_case: Any) -> dict[str, Any]:
         "cancel": False,
         "payload": payload,
     }
+
+
+def _type_table_keys(source: str, table: str) -> set[str]:
+    match = re.search(rf"const {table} = \{{([^}}]*)\}}", source)
+    assert match is not None, f"{table} is missing from the transform"
+    return set(re.findall(r"(\w+):", match[1]))
 
 
 def _run(webhook: dict[str, Any]) -> dict[str, Any]:
@@ -104,8 +110,7 @@ def test_the_transform_reads_only_fields_the_schema_requires() -> None:
 def test_every_field_the_transform_reads_is_type_checked_first() -> None:
     source = TRANSFORM.read_text()
     checked = {
-        table: set(re.findall(r"(\w+):", re.search(rf"const {table} = \{{([^}}]*)\}}", source)[1]))
-        for table in ("PAYLOAD_TYPES", "TEST_CASE_TYPES")
+        table: _type_table_keys(source, table) for table in ("PAYLOAD_TYPES", "TEST_CASE_TYPES")
     }
     assert set(re.findall(r"\bp\.(\w+)", source)) <= checked["PAYLOAD_TYPES"]
     assert set(re.findall(r"\bt\.(\w+)", source)) <= checked["TEST_CASE_TYPES"]
