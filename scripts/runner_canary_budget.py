@@ -21,6 +21,9 @@ Requirements (mini-PRD)
   requested vendors and their labels, [else stop] ✔︎ ✅ 🎯
 - [if] the billing read errors, is paginated short, or exceeds the listing cap [then] exit 2
   UNKNOWN with no outputs, [else stop] ✔︎ ✅ 🎯
+- [if] a job ran at any moment this month, even from a run created last month [then] it
+  counts in full; [if] it finished before the 1st [then] it counts nothing, [else stop]
+  ✔︎ ✅ 🎯
 - [if] a vendor is not in the enable list [then] it is absent from the outputs, and
   dispatching it by name is exit 1, [else stop] ✔︎ ✅ 🎯
 - [if] the enable list is empty, unset, malformed or names an unknown vendor [then] exit 1,
@@ -40,7 +43,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +51,11 @@ from typing import Any
 LISTING_CAP = 1000
 PER_PAGE = 100
 HTTP_TIMEOUT_S = 30
+#: GitHub cancels a workflow run 35 days after it is created, waiting and approval included
+#: (https://docs.github.com/en/actions/reference/limits), so a run created up to 35 days
+#: before the 1st can still have a job running this month.
+MAX_RUN_LIFETIME = timedelta(days=35)
+CANARY_WORKFLOW_FILE = "runner-canary.yml"
 
 
 class BudgetGateError(Exception):
@@ -169,8 +177,19 @@ def month_start(now: datetime) -> datetime:
     return datetime(now.year, now.month, 1, tzinfo=UTC)
 
 
+def listing_since(now: datetime) -> datetime:
+    """The oldest run creation date that can still hold a job running this month."""
+    return month_start(now) - MAX_RUN_LIFETIME
+
+
 def billed_basis_minutes(job: dict[str, Any], vendor: Vendor, now: datetime) -> float:
-    """One job's minutes against the free tier: whole minutes rounded up, vCPU-scaled."""
+    """One job's minutes against this month's free tier: rounded up, vCPU-scaled.
+
+    Neither GitHub's billing docs nor the vendor pages say whether a job bills in the month
+    it starts or the month it ends, so a job counts IN FULL against every month it ran in.
+    That is right under either rule, and a straddling shard (30 minutes at most) is charged
+    to both months, which errs toward refusing.
+    """
     started = job.get("started_at")
     # A skipped job never had a runner. GitHub still stamps it, and stamps it BACKWARDS
     # (completed_at one second before started_at, measured on the source repository's
@@ -183,6 +202,8 @@ def billed_basis_minutes(job: dict[str, Any], vendor: Vendor, now: datetime) -> 
     seconds = (end - start).total_seconds()
     if seconds < 0:
         raise BillingUnreadable(f"job ends before it starts: {started} -> {completed}")
+    if end < month_start(now):
+        return 0
     minutes = max(1, math.ceil(seconds / 60))
     return minutes * vendor.vcpu / vendor.free_minutes_vcpu_basis
 
@@ -311,14 +332,24 @@ def _get_json(url: str, token: str) -> dict[str, Any]:
         raise BillingUnreadable(f"GET {url} failed: {exc}") from exc
 
 
-def fetch_month_jobs(api_url: str, repo: str, token: str, since: datetime) -> list[dict[str, Any]]:
-    """Every job (all attempts) of every run in `repo` created on or after `since`."""
+def runs_listing_url(api_url: str, repo: str, now: datetime, page: int) -> str:
+    """One page of this workflow's runs that can hold a job running in `now`'s month."""
+    created = listing_since(now).strftime("%Y-%m-%d")
+    return (
+        f"{api_url.rstrip('/')}/repos/{repo}/actions/workflows/{CANARY_WORKFLOW_FILE}/runs"
+        f"?created=%3E%3D{created}&per_page={PER_PAGE}&page={page}"
+    )
+
+
+def fetch_month_jobs(api_url: str, repo: str, token: str, now: datetime) -> list[dict[str, Any]]:
+    """Every job (all attempts) of every canary run in `repo` that can bill this month.
+
+    Only this workflow's runs: no other workflow names a vendor label, which
+    tests/scripts/test_runner_canary_workflow.py pins.
+    """
     base = f"{api_url.rstrip('/')}/repos/{repo}/actions"
-    created = since.strftime("%Y-%m-%d")
     runs = collect_paginated(
-        lambda page: _get_json(
-            f"{base}/runs?created=%3E%3D{created}&per_page={PER_PAGE}&page={page}", token
-        ),
+        lambda page: _get_json(runs_listing_url(api_url, repo, now, page), token),
         "workflow_runs",
     )
     jobs: list[dict[str, Any]] = []
@@ -388,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"::error::budget gate: {exc}")
         return 1
     try:
-        jobs = fetch_month_jobs(api_url, repo, token, month_start(now))
+        jobs = fetch_month_jobs(api_url, repo, token, now)
         decision = gate_decision(
             owner=owner,
             enabled_raw=enabled_raw,
