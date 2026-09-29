@@ -138,6 +138,8 @@ const ENGINE_COMMAND = [
 ].join(' ');
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	// Named individually, never a glob: this directory holds a dozen suites
 	// with their own servers and real-library fixtures, and a pattern that
