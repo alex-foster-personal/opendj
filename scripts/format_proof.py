@@ -10,11 +10,15 @@ layout, and only works if the SHA blame is told about is the one main contains.
 Requirements (mini-PRD):
   prove  ✔︎
     Every .py file the range modifies parses on both sides and has an equal AST
-    once docstring whitespace is normalized (Black's safety-check equivalence).
-    The AST includes `# type:` comments and each `# type: ignore` tag.
+    once docstrings get the PEP 257 trim (Black's safety check strips every line,
+    which is looser: it would pass a change to a doctest's relative indentation).
+    Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...) keeps its
+    words, its order and the statement it annotates. Only its line and spacing
+    may change.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
-      [if] a `# type:` comment or a `# type: ignore` tag is added, removed or changed [then ⛔️] exit 1
-      [if] the range adds, deletes or renames a file [then ⛔️] exit 1, since that is not layout
+      [if] a docstring's relative indentation changes [then ⛔️] exit 1
+      [if] a comment is added, removed, reworded, reordered or moved to another statement [then ⛔️] exit 1
+      [if] the range adds, deletes or renames a file, or changes a file's mode [then ⛔️] exit 1
       [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
       [if] a file does not parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
@@ -26,18 +30,23 @@ Requirements (mini-PRD):
 What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
 docstring positions are normalized (tests/quality/test_format_proof.py pins that).
-A proof over zero files would read as success, so it exits 2 instead. A type-ignore's
-LINE is not compared, because every re-wrap above it moves it; whether it still covers
-its error is not an AST property, so the part's mypy ratchet run decides that.
+A proof over zero files would read as success, so it exits 2 instead. A comment's
+LINE is not compared, because every re-wrap above it moves it; its STATEMENT is, so a
+noqa or type-ignore moved to another statement fails even when a count-based ratchet
+would net to zero. Whether a pragma still covers its finding after a re-wrap inside one
+statement is not an AST property: the part's ruff and mypy ratchet runs decide that.
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
+import inspect
+import io
 import re
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -72,9 +81,14 @@ def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=check)
 
 
-def _changed_entries(repo: Path, base: str, head: str) -> list[tuple[str, str]]:
-    out = _git(repo, "diff", "--name-status", "--no-renames", base, head).stdout
-    return [(status, path) for status, path in (ln.split("\t", 1) for ln in out.splitlines() if ln)]
+def _changed_entries(repo: Path, base: str, head: str) -> list[tuple[str, str, str, str]]:
+    """(status, path, old mode, new mode) per changed file; a chmod-only change is status M."""
+    out = _git(repo, "diff", "--raw", "--no-renames", "--no-abbrev", base, head).stdout
+    entries: list[tuple[str, str, str, str]] = []
+    for meta, path in (ln.split("\t", 1) for ln in out.splitlines() if ln):
+        old_mode, new_mode, _, _, status = meta.lstrip(":").split()
+        entries.append((status, path, old_mode, new_mode))
+    return entries
 
 
 def _blob(repo: Path, rev: str, path: str) -> str:
@@ -85,20 +99,14 @@ def _blob(repo: Path, rev: str, path: str) -> str:
 
 
 def _normalize_docstring(text: str) -> str:
-    return "\n".join(line.strip() for line in text.splitlines()).strip()
-
-
-def _parse(source: str) -> ast.Module:
-    """Parse with type comments, so `# type:` annotations and type-ignore tags are compared."""
-    tree = ast.parse(source, type_comments=True)
-    for ignore in tree.type_ignores:
-        ignore.lineno = 0  # layout, not meaning: see the module docstring
-    return tree
+    """PEP 257 trim: the first line's indent, the common indent of the rest, trailing space and outer
+    blank lines are layout. RELATIVE indentation is kept, because doctests and code blocks read it."""
+    return inspect.cleandoc("\n".join(line.rstrip() for line in text.splitlines()))
 
 
 def _normalized_dump(source: str) -> tuple[str, int]:
     """AST dump with docstring whitespace normalized, and how many docstrings were touched."""
-    tree = _parse(source)
+    tree = ast.parse(source)
     touched = 0
     for node in ast.walk(tree):
         if not isinstance(node, CFG.DOCSTRING_OWNERS) or not node.body:
@@ -112,7 +120,38 @@ def _normalized_dump(source: str) -> tuple[str, int]:
 
 
 def _raw_dump(source: str) -> str:
-    return ast.dump(_parse(source))
+    return ast.dump(ast.parse(source))
+
+
+def _statement_spans(tree: ast.Module) -> list[tuple[int, int, int]]:
+    """(first line, last line, depth) of every statement, in an order two equal ASTs share."""
+    spans: list[tuple[int, int, int]] = []
+    stack: list[tuple[ast.AST, int]] = [(tree, 0)]
+    while stack:
+        node, depth = stack.pop()
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.stmt):
+                spans.append((child.lineno, child.end_lineno or child.lineno, depth))
+            stack.append((child, depth + 1))
+    return spans
+
+
+def _anchor(line: int, spans: list[tuple[int, int, int]]) -> int:
+    """The statement a comment on `line` annotates: the deepest one spanning it, else the next one down."""
+    holding = [i for i, (first, last, _) in enumerate(spans) if first <= line <= last]
+    if holding:
+        return max(holding, key=lambda i: (spans[i][2], spans[i][0] - spans[i][1]))
+    below = [i for i, (first, _, _) in enumerate(spans) if first > line]
+    return min(below, key=lambda i: spans[i][0]) if below else -1
+
+
+def _comments(source: str) -> list[tuple[int, str]]:
+    """Every comment in order, as (statement index, text without whitespace): its line and spacing are layout."""
+    spans = _statement_spans(ast.parse(source))
+    tokens = tokenize.generate_tokens(io.StringIO(source).readline)
+    return [
+        (_anchor(tok.start[0], spans), "".join(tok.string.split())) for tok in tokens if tok.type == tokenize.COMMENT
+    ]
 
 
 # ----- commands -------------------------------------------------------------
@@ -120,11 +159,14 @@ def _raw_dump(source: str) -> str:
 
 def prove(repo: Path, base: str, head: str) -> Result:
     entries = _changed_entries(repo, base, head)
-    not_modified = [f"{status} {path}" for status, path in entries if status != "M"]
+    not_modified = [f"{status} {path}" for status, path, _, _ in entries if status != "M"]
     if not_modified:
         return Result(1, lines=[f"[format-proof] FAIL not format-only, files added/deleted: {x}" for x in not_modified])
-    py_paths = [path for _, path in entries if path.endswith(".py")]
-    not_python = [path for _, path in entries if not path.endswith(".py")]
+    mode_changed = [f"{path} {old} -> {new}" for _, path, old, new in entries if old != new]
+    if mode_changed:
+        return Result(1, lines=[f"[format-proof] FAIL not format-only, file mode changed: {x}" for x in mode_changed])
+    py_paths = [path for _, path, _, _ in entries if path.endswith(".py")]
+    not_python = [path for _, path, _, _ in entries if not path.endswith(".py")]
     if not py_paths:
         return Result(2, lines=["[format-proof] UNKNOWN no .py file changed in the range; nothing was proven"])
     result = Result(0, files_checked=len(py_paths))
@@ -133,11 +175,15 @@ def prove(repo: Path, base: str, head: str) -> Result:
         try:
             raw_equal = _raw_dump(before) == _raw_dump(after)
             (dump_before, _), (dump_after, _) = _normalized_dump(before), _normalized_dump(after)
+            comments_equal = _comments(before) == _comments(after)
         except SyntaxError as exc:
             return Result(2, lines=[f"[format-proof] UNKNOWN {path} does not parse: {exc.msg} line {exc.lineno}"])
         if dump_before != dump_after:
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: AST differs, this is not a format-only change")
+        elif not comments_equal:
+            result.exit_code = 1
+            result.lines.append(f"[format-proof] FAIL {path}: a comment was added, removed, reworded or moved")
         elif not raw_equal:
             result.docstring_normalized += 1
     if result.exit_code == 0 and not_python:

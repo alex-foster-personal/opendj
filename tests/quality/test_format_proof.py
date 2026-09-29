@@ -23,6 +23,12 @@ Regression lines:
   - if prove passes a range that also edits a file that is not Python then broken
   - if prove passes a changed `# type:` comment or a changed or removed type-ignore then broken
   - if prove fails a re-wrap that only moves a type-ignore to another line then broken
+  - if prove passes a type-ignore or noqa moved to ANOTHER statement then broken
+  - if prove passes a comment that was added, removed, reworded or reordered then broken
+  - if prove fails a re-wrap that keeps a noqa on its statement, or the ratified `#---` to `# ---` then broken
+  - if prove passes a changed docstring relative indentation (a doctest) then broken
+  - if prove fails a docstring that was only re-indented as a whole then broken
+  - if prove passes a chmod-only change then broken
   - if ignore-revs passes a SHA that is not an ancestor of HEAD then broken
   - if ignore-revs passes a listed commit whose subject is not style(format): then broken
   - if ignore-revs passes an abbreviated SHA, or a SHA that is not a commit, then broken
@@ -155,6 +161,80 @@ def test_prove_control_a_rewrap_may_move_a_type_ignore_to_another_line(repo: Pat
     """Opposite-direction control: an ignore's LINE is layout, so a re-wrap above it still proves."""
     base = _commit(repo, {"m.py": IGNORE_BEFORE_REWRAP}, "init")
     head = _commit(repo, {"m.py": IGNORE_AFTER_REWRAP}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
+
+
+def test_prove_rejects_a_mode_change(repo: Path) -> None:
+    """A chmod-only change is status M with identical ASTs; dropping an executable bit is not layout."""
+    base = _commit(repo, {"m.py": "x = 1\n"}, "init")
+    _git(repo, "update-index", "--chmod=+x", "m.py")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "-m", "style(format): chmod")
+    result = format_proof.prove(repo, base, _git(repo, "rev-parse", "HEAD"))
+    assert result.exit_code == 1
+    assert any("mode changed" in line for line in result.lines)
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("a = f()  # type: ignore[x]\nb = g()\n", "a = f()\nb = g()  # type: ignore[x]\n"),
+        ("import os  # noqa: F401\nimport sys\n", "import os\nimport sys  # noqa: F401\n"),
+        ("x = 1\n", "x = 1  # noqa: F841\n"),
+        ("if x:  # pragma: no cover\n    y = 1\n", "if x:\n    y = 1\n"),
+        ("x = run()  # nosec B602\n", "x = run()  # nosec B603\n"),
+        ("x = 1  # old words\n", "x = 1  # new words\n"),
+        ("x = 1  # first\n# second\ny = 2\n", "x = 1  # second\n# first\ny = 2\n"),
+    ],
+    ids=[
+        "ignore-to-other-statement",
+        "noqa-to-other-statement",
+        "noqa-added",
+        "pragma-removed",
+        "nosec-changed",
+        "prose-reworded",
+        "comments-reordered",
+    ],
+)
+def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> None:
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 1
+    assert any("comment" in line for line in result.lines), result.lines
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("x = foo(a,\n        b)  # noqa: B008\n", "x = foo(a, b)  # noqa: B008\n"),
+        ("#--- section\nx=1\n", "# --- section\nx = 1\n"),
+        ("x = 1  #noqa:F841\n", "x = 1  # noqa: F841\n"),
+    ],
+    ids=["noqa-rewrap-same-statement", "prose-comment-respaced", "directive-respaced"],
+)
+def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:
+    """Opposite-direction control: a comment's line and spacing are layout; only its statement and words count."""
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
+
+
+def test_prove_rejects_a_changed_doctest_indentation(repo: Path) -> None:
+    before = 'def f():\n    """Doc.\n\n    >>> g()\n        1\n    """\n'
+    after = 'def f():\n    """Doc.\n\n    >>> g()\n    1\n    """\n'
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    assert format_proof.prove(repo, base, head).exit_code == 1
+
+
+def test_prove_control_a_docstring_reindented_as_a_whole_still_proves(repo: Path) -> None:
+    """Opposite-direction control: moving every line by the same amount keeps the relative indentation."""
+    before = 'class C:\n    def f(self):\n        """Doc.\n\n    >>> g()\n        1\n    """\n'
+    after = 'class C:\n    def f(self):\n        """Doc.\n\n        >>> g()\n            1\n        """\n'
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 0, result.lines
 
