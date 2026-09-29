@@ -29,7 +29,7 @@ use crate::deck::Track;
 use crate::midi::{self, MapSet, Routed, Router};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
 use crate::offline::TrackCache;
-use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError};
+use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError, RegridSpec};
 
 /// The longest single `engine_advance`, in seconds of audio. The session
 /// answers nothing else until an advance is rendered, so a longer one (or a
@@ -250,8 +250,11 @@ pub fn serve_fake(
                 let track = load(&spec)?;
                 engine.apply(EngineCmd::Load { deck: spec.deck, track }).map(drop).map_err(Into::into)
             }
+            Command::Regrid(spec) => {
+                let track = engine.regridded(spec.deck, spec.beats, spec.bpm)?;
+                engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map(drop).map_err(Into::into)
+            }
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
-            Command::NoOp => Ok(()),
             Command::Advance(a) => {
                 let recorded = record.as_deref().map(|r| r.len() as u64 / 2);
                 let mut left = advance_frames(a, sample_rate, recorded)?;
@@ -556,6 +559,9 @@ pub(crate) enum Msg {
 enum Queued {
     Cmd(Option<Value>, EngineCmd),
     Load(Option<Value>, LoadSpec, Charge),
+    /// A `set_beatgrid`, built from the deck's track once the work ahead of
+    /// it has gone, so it regrids whatever that work left on the deck.
+    Regrid(Option<Value>, RegridSpec),
     /// An `engine_state` sent after the work ahead of it here: it is asked
     /// of the audio side only once this has passed on every deck it waits on.
     Fence(u64),
@@ -592,6 +598,10 @@ struct Control {
     pushed: u64,
     /// Decoded tracks, shared by the load threads.
     tracks: Arc<TrackCache>,
+    /// Per deck: the track last sent to the engine, so `set_beatgrid` can
+    /// rebuild it with a new grid here instead of on the audio thread. The
+    /// engine refuses the swap if the deck holds other audio by then.
+    on_deck: [Option<Arc<Track>>; MAX_DECKS],
     /// Per `engine_state` waiting on pending loads, by its `state_seq`: how
     /// many decks' fences have yet to pass.
     fences: HashMap<u64, usize>,
@@ -652,10 +662,18 @@ impl Control {
     /// Enqueue for the audio side; false (and an error reply) when the
     /// mailbox is full and the command was dropped.
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
+        let holds = match &cmd {
+            EngineCmd::Load { deck, track } | EngineCmd::Regrid { deck, track } => Some((*deck, Some(track.clone()))),
+            EngineCmd::Unload { deck } => Some((*deck, None)),
+            _ => None,
+        };
         if self.cmd_tx.push((seq, cmd)).is_err() {
             let id = take_id(&self.ids, seq);
             self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             return false;
+        }
+        if let Some((deck, t)) = holds {
+            self.on_deck[deck as usize - 1] = t;
         }
         self.pushed += 1;
         true
@@ -664,10 +682,11 @@ impl Control {
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
+            Load { deck, .. } | Regrid { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
             | Seek { deck, .. } | TempoFader { deck, .. } | Quantize { deck, .. } | QuantizeGrid { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
-            | PitchRange { deck, .. } | Trim { deck, .. } | Eq { deck, .. } | Filter { deck, .. }
+            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. }
+            | Eq { deck, .. } | Filter { deck, .. }
             | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
             Crossfader { .. } | MasterVolume { .. } | MasterMute { .. } => None,
         }
@@ -680,7 +699,7 @@ impl Control {
         if q.len() < QUEUE_SLOTS {
             q.push_back(item);
         } else {
-            let (Queued::Cmd(id, _) | Queued::Load(id, ..)) = item else {
+            let (Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _)) = item else {
                 // A fence is only re-parked behind a load released from a
                 // queue that held it, which leaves room; were it ever full,
                 // asking now is later than asked, never earlier.
@@ -710,6 +729,26 @@ impl Control {
         };
         let seq = self.seq(id);
         let _ = self.push_seq(seq, cmd);
+    }
+
+    fn regrid(&mut self, id: Option<Value>, spec: RegridSpec) {
+        if let Some(Queued::Regrid(id, spec)) = self.park(spec.deck, Queued::Regrid(id, spec)) {
+            self.send_regrid(id, spec);
+        }
+    }
+
+    /// Build the deck's track with the new grid and send it on. The deck's
+    /// earlier work is in the mailbox by now, so this is the track it leaves.
+    fn send_regrid(&mut self, id: Option<Value>, spec: RegridSpec) {
+        let deck = spec.deck;
+        match &self.on_deck[deck as usize - 1] {
+            Some(t) => {
+                let track = Arc::new(t.with_grid(spec.beats, spec.bpm));
+                let seq = self.seq(id);
+                let _ = self.push_seq(seq, EngineCmd::Regrid { deck, track });
+            }
+            None => self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::NoTrack, "no track loaded on this deck"))),
+        }
     }
 
     fn load(&mut self, id: Option<Value>, spec: LoadSpec) {
@@ -797,7 +836,7 @@ impl Control {
     fn release(&mut self, deck: DeckId, mut q: VecDeque<Queued>) {
         while let Some(item) = q.pop_front() {
             match item {
-                Queued::Ready(..) | Queued::Cmd(..) if self.cmd_tx.slots() == 0 => {
+                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) if self.cmd_tx.slots() == 0 => {
                     q.push_front(item);
                     break;
                 }
@@ -814,6 +853,7 @@ impl Control {
                     let seq = self.seq(id);
                     let _ = self.push_seq(seq, cmd);
                 }
+                Queued::Regrid(id, spec) => self.send_regrid(id, spec),
                 Queued::Load(id, spec, charge) => {
                     self.start_load(id, spec, charge, q);
                     return;
@@ -896,7 +936,7 @@ impl Control {
     fn refuse_queued(&mut self, q: VecDeque<Queued>) {
         for item in q {
             let id = match item {
-                Queued::Cmd(id, _) | Queued::Load(id, ..) => id,
+                Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _) => id,
                 // Only shutdown refuses a decoded load: it never ran.
                 Queued::Ready(seq, _) => {
                     let id = take_id(&self.ids, seq);
@@ -925,8 +965,8 @@ impl Control {
         match parsed {
             Err(e) => self.reply(id.as_ref(), Err(e)),
             Ok(Command::Load(spec)) => self.load(id, spec),
+            Ok(Command::Regrid(spec)) => self.regrid(id, spec),
             Ok(Command::Apply(c)) => self.dispatch(id, c),
-            Ok(Command::NoOp) => self.reply(id.as_ref(), Ok(())),
             Ok(Command::Advance(_)) => self.reply(
                 id.as_ref(),
                 Err(ProtoError::new(
@@ -1147,7 +1187,8 @@ fn serve_threaded_from(
         state_fence,
         state_sent,
         pushed: 0,
-        tracks: Arc::default(),
+        tracks: Arc::new(TrackCache::at(sample_rate)),
+        on_deck: Default::default(),
         fences: HashMap::new(),
         state_seq: 0,
         load_used: Arc::default(),
@@ -1648,6 +1689,7 @@ mod tests {
             state_sent: Arc::default(),
             pushed: 0,
             tracks: Arc::default(),
+            on_deck: Default::default(),
             fences: HashMap::new(),
             state_seq: 0,
             load_used: Arc::default(),

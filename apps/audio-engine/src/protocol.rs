@@ -61,6 +61,14 @@ pub struct LoadSpec {
     pub bpm: Option<f64>,
 }
 
+/// A `set_beatgrid`: new analysis for the track a deck already holds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegridSpec {
+    pub deck: DeckId,
+    pub beats: Vec<Beat>,
+    pub bpm: Option<f64>,
+}
+
 /// How far a fake clock moves on `engine_advance`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Advance {
@@ -71,9 +79,9 @@ pub enum Advance {
 #[derive(Clone, Debug)]
 pub enum Command {
     Load(LoadSpec),
+    /// Needs the deck's current track, so it is built where that is known.
+    Regrid(RegridSpec),
     Apply(EngineCmd),
-    /// Accepted and changes nothing: the engine is already in that mode.
-    NoOp,
     /// Fake clock only: render this much time now, as fast as possible.
     Advance(Advance),
     /// Ask for one `state` message now.
@@ -88,8 +96,7 @@ pub enum Command {
 /// Page commands the engine will own in a later plan. Refused with
 /// `not_implemented` and the plan that brings them, never silently ignored.
 const LATER: &[(&str, &str)] = &[
-    ("key_nudge", "key shift needs the time-stretcher (plan 20-04)"),
-    ("key_sync", "key shift needs the time-stretcher (plan 20-04)"),
+    ("key_sync", "key sync needs both tracks' keys, which load does not carry yet"),
     ("stem_mute", "stems arrive in plan 20-04"),
     ("stem_solo", "stems arrive in plan 20-04"),
     ("stem_gain", "stems arrive in plan 20-04"),
@@ -139,10 +146,12 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
             "type", "deck", "path", "stable_id", "refuseIfMaster", "stems", "suppressCommandErrorToast", "bpm",
             "beatgrid", "beatgrid_ms",
         ],
+        "set_beatgrid" => &["type", "deck", "bpm", "beatgrid", "beatgrid_ms"],
         "unload" => &["type", "deck", "refuseIfMaster"],
         "play" => &["type", "deck", "playing", "quantize", "start_at_context_sec"],
         "cue" => &["type", "deck"],
         "quantize" | "master_tempo" => &["type", "deck", "enabled"],
+        "key_nudge" => &["type", "deck", "semitones"],
         "quantize_grid" | "beat_jump" => &["type", "deck", "beats"],
         "seek" => &["type", "deck", "position_ms"],
         "loop" => &["type", "deck", "loop"],
@@ -160,7 +169,6 @@ fn command_keys(ty: &str) -> Option<&'static [&'static str]> {
         // Commands this build does not do yet still carry the page's fields,
         // so a malformed one is refused as the page refuses it, not reported
         // as merely not implemented.
-        "key_nudge" => &["type", "deck", "semitones"],
         "key_sync" | "stem_eq_mode" | "slip" | "beat_sync" | "channel_cue" => &["type", "deck", "enabled"],
         "stem_mute" => &["type", "deck", "stem", "muted"],
         "stem_solo" => &["type", "deck", "stem", "solo"],
@@ -370,13 +378,6 @@ fn non_empty(o: &Obj, ty: &str, name: &str) -> Result<(), ProtoError> {
 fn check_later(o: &Obj, ty: &str) -> Result<(), ProtoError> {
     const STEMS: &[&str] = &["vocal", "instrumental", "drums"];
     match ty {
-        "key_nudge" => {
-            deck_of(o, ty)?;
-            let s = num(o, ty, "semitones")?;
-            if s != -1.0 && s != 1.0 {
-                return Err(invalid(format!("{ty}.semitones must be -1 or 1, got {s}")));
-            }
-        }
         "key_sync" | "stem_eq_mode" | "slip" | "beat_sync" | "channel_cue" => {
             deck_of(o, ty)?;
             boolean(o, ty, "enabled")?;
@@ -466,6 +467,23 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             }
             Ok(Command::Load(LoadSpec { deck, path, beats: beats(o, ty)?, bpm }))
         }
+        "set_beatgrid" => {
+            let deck = deck_of(o, ty)?;
+            // An absent grid is a malformed message, not a request to clear
+            // it; an empty array clears it on purpose. Any other grid must be
+            // one a load would take.
+            let given = ["beatgrid", "beatgrid_ms"].iter().filter_map(|k| o.get(*k)).collect::<Vec<_>>();
+            if given.is_empty() {
+                return Err(invalid("set_beatgrid needs beatgrid or beatgrid_ms (an empty array clears the grid)".into()));
+            }
+            let bpm = opt_num(o, ty, "bpm")?;
+            if bpm.is_some_and(|b| b <= 0.0) {
+                return Err(invalid("set_beatgrid.bpm must be positive".into()));
+            }
+            let clears = given.len() == 1 && given[0].as_array().is_some_and(Vec::is_empty);
+            let beats = if clears { Vec::new() } else { beats(o, ty)? };
+            Ok(Command::Regrid(RegridSpec { deck, beats, bpm }))
+        }
         "unload" => {
             let deck = deck_of(o, ty)?;
             refuse_if_master(o, ty)?;
@@ -545,16 +563,15 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: beat_count(o, ty, true)? }),
         "tempo" => apply(EngineCmd::Tempo { deck: deck_of(o, ty)?, ratio: num(o, ty, "ratio")? }),
         "pitch_range" => apply(EngineCmd::PitchRange { deck: deck_of(o, ty)?, range: num(o, ty, "range")? }),
-        "master_tempo" => {
-            deck_of(o, ty)?;
-            if boolean(o, ty, "enabled")? {
-                Err(ProtoError::new(
-                    ErrorCode::NotImplemented,
-                    "master_tempo (key lock) needs the time-stretcher (plan 20-04); this build plays varispeed only",
-                ))
-            } else {
-                Ok(Command::NoOp)
-            }
+        "master_tempo" => apply(EngineCmd::MasterTempo { deck: deck_of(o, ty)?, enabled: boolean(o, ty, "enabled")? }),
+        "key_nudge" => {
+            let deck = deck_of(o, ty)?;
+            let semitones = match num(o, ty, "semitones")? {
+                1.0 => 1,
+                -1.0 => -1,
+                v => return Err(invalid(format!("key_nudge.semitones must be -1 or 1, got {v}"))),
+            };
+            apply(EngineCmd::KeyNudge { deck, semitones })
         }
         "trim" => apply(EngineCmd::Trim { deck: deck_of(o, ty)?, value: unit(o, ty, "value")? }),
         "eq" => apply(EngineCmd::Eq { deck: deck_of(o, ty)?, band: band(o, ty)?, value: unit(o, ty, "value")? }),
@@ -756,6 +773,8 @@ pub fn state_json(s: &Snapshot, host: Option<HostTime>, state_seq: u64) -> Value
                 "duration_ms": d.duration_ms,
                 "rate": if d.playing { d.tempo } else { 0.0 },
                 "tempo": d.tempo,
+                "master_tempo": d.master_tempo,
+                "key_shift_semitones": d.key_shift,
                 "cue_ms": d.cue_ms,
                 // The page's LoopState: null when no loop is engaged, so
                 // `engaged` is always true here and `beat_length` is null for
@@ -817,7 +836,14 @@ mod tests {
             cmd(json!({"type": "loop", "deck": 1, "loop": {"in_ms": 1.0, "out_ms": 2.0}})),
             Ok(Command::Apply(EngineCmd::Loop { bounds_ms: Some((1.0, 2.0)), .. }))
         ));
-        assert!(matches!(cmd(json!({"type": "master_tempo", "deck": 1, "enabled": false})), Ok(Command::NoOp)));
+        assert!(matches!(
+            cmd(json!({"type": "master_tempo", "deck": 1, "enabled": true})),
+            Ok(Command::Apply(EngineCmd::MasterTempo { deck: 1, enabled: true }))
+        ));
+        assert!(matches!(
+            cmd(json!({"type": "key_nudge", "deck": 2, "semitones": -1})),
+            Ok(Command::Apply(EngineCmd::KeyNudge { deck: 2, semitones: -1 }))
+        ));
     }
 
     #[test]
@@ -827,7 +853,6 @@ mod tests {
         // answer from the page's. Each is now checked as the page's parser
         // checks it; only a well-formed one is not_implemented.
         let good = [
-            json!({"type": "key_nudge", "deck": 1, "semitones": -1}),
             json!({"type": "key_sync", "deck": 1, "enabled": true}),
             json!({"type": "stem_mute", "deck": 1, "stem": "vocal", "muted": true}),
             json!({"type": "stem_solo", "deck": 2, "stem": "drums", "solo": false}),
@@ -892,7 +917,10 @@ mod tests {
         let e = cmd(json!({"type": "eq", "deck": 1, "band": "low", "value": 1.2})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
         assert!(e.message.contains("eq.value"), "{}", e.message);
-        let e = cmd(json!({"type": "master_tempo", "deck": 1, "enabled": true})).unwrap_err();
+        // The page sends key nudges one semitone at a time.
+        let e = cmd(json!({"type": "key_nudge", "deck": 1, "semitones": 2})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+        let e = cmd(json!({"type": "key_sync", "deck": 1, "enabled": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);
         let e = cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);
@@ -1133,6 +1161,29 @@ mod tests {
             let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
             assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);
         }
+    }
+
+    #[test]
+    fn set_beatgrid_parses_and_needs_a_grid() {
+        let Command::Regrid(r) = cmd(json!({"type": "set_beatgrid", "deck": 2, "beatgrid_ms": [0, 400, 800], "bpm": 150})).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!((r.deck, r.beats.len(), r.bpm), (2, 3, Some(150.0)));
+        assert!(r.beats[0].downbeat && !r.beats[1].downbeat);
+        let Command::Regrid(r) = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid": []})).unwrap() else { panic!() };
+        assert!(r.beats.is_empty(), "an empty grid clears it");
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "bpm": 120})).unwrap_err();
+        assert!(e.message.contains("needs beatgrid"), "{}", e.message);
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid_ms": [0, 400, 300]})).unwrap_err();
+        assert!(e.message.contains("strictly increase"), "{}", e.message);
+        // Two beats or more, as a load needs; an empty array alone clears.
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid_ms": [0]})).unwrap_err();
+        assert!(e.message.contains("at least 2 beats"), "{}", e.message);
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid": [], "beatgrid_ms": []})).unwrap_err();
+        assert!(e.message.contains("give exactly one"), "{}", e.message);
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid_ms": [0, 400], "path": "a.wav"})).unwrap_err();
+        assert!(e.message.contains("unexpected fields: path"), "{}", e.message);
     }
 
     #[test]
