@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{Coeffs, Ramped, Smoothed, StereoBiquad};
+use crate::dsp::{Coeffs, LinearRamp, Smoothed, StereoBiquad};
 use crate::engine::{EngineError, ErrorCode};
 use crate::mixer::{self, Assign};
+use crate::stretch::{self, Stretcher, QUANTUM};
 
 /// One beat of a track's grid. `downbeat` marks the first beat of a bar, the
 /// same fact rekordbox's PQTZ grid carries as beat number 1.
@@ -61,6 +62,12 @@ impl Track {
     pub fn with_source(mut self, source: Option<crate::decode::SourceId>) -> Track {
         self.source = source;
         self
+    }
+
+    /// The same audio with another beatgrid. Shares the samples, so a
+    /// re-analysis never decodes the file again.
+    pub fn with_grid(&self, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+        Track::new(self.sample_rate, self.pcm.clone(), beats, bpm)
     }
 
     pub fn duration_ms(&self) -> f64 {
@@ -245,7 +252,21 @@ pub struct Deck {
     pub filter: f64,
     pub fader: f64,
     pub assign: Assign,
+    /// Master Tempo (key lock): tempo changes keep the pitch.
+    pub master_tempo: bool,
+    /// Key shift in semitones, -12..=12, reset by a load.
+    pub key_shift: i32,
     strip: Strip,
+    stretch: Stretcher,
+    /// The stretcher has been fed up to the playhead; cleared whenever it
+    /// stops being fed (pause, seek, leaving the stretch path).
+    stretch_warm: bool,
+    /// Frames left of a crossfade between varispeed and the stretcher, and
+    /// which way it goes.
+    path_fade: usize,
+    fading_to_stretch: bool,
+    /// Which path played the last frame.
+    was_stretching: bool,
     /// Position is computed as `anchor + step * run` rather than by adding
     /// `step` each frame, so it does not drift over a long set. Any outside
     /// change to `pos` or the step re-anchors on the next render.
@@ -258,9 +279,7 @@ pub struct Deck {
 struct Strip {
     sr: f64,
     trim: Smoothed,
-    /// EQ gains ramp linearly, as the page's `applyEqRamp` does; the
-    /// other parameters glide like its `setTargetAtTime`.
-    eq_db: [Ramped; 3],
+    eq_db: [LinearRamp; 3],
     eq: [StereoBiquad; 3],
     lp_hz: Smoothed,
     hp_hz: Smoothed,
@@ -271,8 +290,12 @@ struct Strip {
     hp_wet: Smoothed,
     fader: Smoothed,
     xf: Smoothed,
-    /// Frames until filter coefficients are next due for a recompute.
-    coeff_countdown: u32,
+    /// The parameter values each filter's coefficients were last built from.
+    /// While a parameter glides its filter is rebuilt every frame, as Web
+    /// Audio's a-rate biquad does; at rest nothing is recomputed.
+    eq_built: [f64; 3],
+    lp_built: f64,
+    hp_built: f64,
     /// Frames rendered since the deck last played a frame of its track.
     idle_run: u64,
     /// After this many idle frames the filter tails are over: state is zeroed
@@ -280,19 +303,15 @@ struct Strip {
     quiet_after: u64,
 }
 
-/// Coefficients glide with their parameters, recomputed every COEFF_INTERVAL
-/// frames (and on the frame a glide settles). A fixed, free-running interval
-/// keeps renders independent of the caller's block size.
-const COEFF_INTERVAL: u32 = 16;
-
 impl Strip {
     fn new(sr: f64) -> Strip {
         let s = |v: f64| Smoothed::new(v, sr, mixer::PARAM_SMOOTH_S);
+        let e = |v: f64| LinearRamp::new(v, sr, mixer::EQ_RAMP_S);
         let fp = mixer::filter_params(0.5);
         let mut strip = Strip {
             sr,
             trim: s(mixer::trim_gain_from_knob(0.5)),
-            eq_db: [Ramped::new(0.0, sr, mixer::PARAM_SMOOTH_S); 3],
+            eq_db: [e(0.0), e(0.0), e(0.0)],
             eq: [StereoBiquad::new(Coeffs::IDENTITY); 3],
             lp_hz: s(fp.lp_hz),
             hp_hz: s(fp.hp_hz),
@@ -303,34 +322,48 @@ impl Strip {
             hp_wet: s(fp.hp_wet),
             fader: s(1.0),
             xf: s(1.0),
-            coeff_countdown: 0,
+            eq_built: [f64::NAN; 3],
+            lp_built: f64::NAN,
+            hp_built: f64::NAN,
             // A new strip has never carried audio, so it starts quiet.
             idle_run: sr as u64,
             quiet_after: sr as u64,
         };
-        strip.recompute();
+        let db = [0.0; 3];
+        strip.build(db, fp.lp_hz, fp.hp_hz);
         strip
     }
 
-    fn recompute(&mut self) {
+    /// Rebuild the coefficients of each filter whose parameter moved.
+    #[inline]
+    fn build(&mut self, db: [f64; 3], lp_hz: f64, hp_hz: f64) {
         let sr = self.sr;
-        self.eq[0].c = Coeffs::lowshelf(sr, mixer::EQ_FREQ_LOW_HZ, self.eq_db[0].value);
-        self.eq[1].c = Coeffs::peaking(sr, mixer::EQ_FREQ_MID_HZ, mixer::EQ_MID_Q, self.eq_db[1].value);
-        self.eq[2].c = Coeffs::highshelf(sr, mixer::EQ_FREQ_HIGH_HZ, self.eq_db[2].value);
-        self.lp.c = Coeffs::lowpass(sr, self.lp_hz.value, mixer::FILTER_Q);
-        self.hp.c = Coeffs::highpass(sr, self.hp_hz.value, mixer::FILTER_Q);
-    }
-
-    fn coeffs_gliding(&self) -> bool {
-        !(self.eq_db[0].settled()
-            && self.eq_db[1].settled()
-            && self.eq_db[2].settled()
-            && self.lp_hz.settled()
-            && self.hp_hz.settled())
+        if db[0] != self.eq_built[0] {
+            self.eq[0].c = Coeffs::lowshelf(sr, mixer::EQ_FREQ_LOW_HZ, db[0]);
+            self.eq_built[0] = db[0];
+        }
+        if db[1] != self.eq_built[1] {
+            self.eq[1].c = Coeffs::peaking(sr, mixer::EQ_FREQ_MID_HZ, mixer::EQ_MID_Q, db[1]);
+            self.eq_built[1] = db[1];
+        }
+        if db[2] != self.eq_built[2] {
+            self.eq[2].c = Coeffs::highshelf(sr, mixer::EQ_FREQ_HIGH_HZ, db[2]);
+            self.eq_built[2] = db[2];
+        }
+        if lp_hz != self.lp_built {
+            self.lp.c = Coeffs::lowpass(sr, lp_hz, mixer::FILTER_Q);
+            self.lp_built = lp_hz;
+        }
+        if hp_hz != self.hp_built {
+            self.hp.c = Coeffs::highpass(sr, hp_hz, mixer::FILTER_Q);
+            self.hp_built = hp_hz;
+        }
     }
 
     fn at_rest(&self) -> bool {
-        !self.coeffs_gliding()
+        self.eq_db.iter().all(LinearRamp::settled)
+            && self.lp_hz.settled()
+            && self.hp_hz.settled()
             && self.trim.settled()
             && self.dry.settled()
             && self.lp_wet.settled()
@@ -360,26 +393,9 @@ impl Strip {
 
     #[inline]
     fn process(&mut self, l: f64, r: f64) -> (f64, f64) {
-        // The parameters behind the coefficients move every frame, like the
-        // page's; only the coefficients are held between recomputes, so they
-        // trail the ramp by under COEFF_INTERVAL frames and never run ahead
-        // of it. The frame a glide settles recomputes at once, so the target
-        // lands on time rather than at the next interval.
-        let due = self.coeff_countdown == 0;
-        if due {
-            self.coeff_countdown = COEFF_INTERVAL;
-        }
-        self.coeff_countdown -= 1;
-        if self.coeffs_gliding() {
-            for s in self.eq_db.iter_mut() {
-                s.tick();
-            }
-            self.lp_hz.tick();
-            self.hp_hz.tick();
-            if due || !self.coeffs_gliding() {
-                self.recompute();
-            }
-        }
+        let db = [self.eq_db[0].tick(), self.eq_db[1].tick(), self.eq_db[2].tick()];
+        let (lp_hz, hp_hz) = (self.lp_hz.tick(), self.hp_hz.tick());
+        self.build(db, lp_hz, hp_hz);
 
         let trim = self.trim.tick();
         let (mut l, mut r) = (l * trim, r * trim);
@@ -399,6 +415,13 @@ impl Strip {
 
 impl Deck {
     pub fn new(sr: f64) -> Deck {
+        Deck::in_slot(sr, 0)
+    }
+
+    /// A deck in mixer slot `slot` (0-based). The slot staggers when its
+    /// stretcher does its heavy block work, so decks started together do not
+    /// all spend it in the same audio callback.
+    pub fn in_slot(sr: f64, slot: usize) -> Deck {
         Deck {
             track: None,
             pos: 0.0,
@@ -415,7 +438,14 @@ impl Deck {
             filter: 0.5,
             fader: 1.0,
             assign: Assign::Thru,
+            master_tempo: false,
+            key_shift: 0,
             strip: Strip::new(sr),
+            stretch: Stretcher::new(sr, slot),
+            stretch_warm: false,
+            path_fade: 0,
+            fading_to_stretch: false,
+            was_stretching: false,
             anchor: 0.0,
             anchor_step: 0.0,
             run: 0,
@@ -437,6 +467,8 @@ impl Deck {
     /// `_clearLoadedTrackState` leaves it (`st.pitch = 1`). The pitch range,
     /// Quantize and the channel strip carry over, as they do there.
     pub fn load(&mut self, track: Arc<Track>) -> Option<Arc<Track>> {
+        self.key_shift = 0;
+        self.stretch_warm = false;
         self.pos = 0.0;
         self.cue = None;
         self.playing = false;
@@ -445,10 +477,27 @@ impl Deck {
         self.track.replace(track)
     }
 
+    /// Swap in the same audio with a new beatgrid (`Track::with_grid`).
+    /// Playhead, loop, cue, tempo and the strip are untouched; the next beat
+    /// math reads the new grid. Refused when the deck no longer holds that
+    /// audio, e.g. a load landed in between. Returns the replaced track, for
+    /// the caller to free off this thread.
+    pub fn regrid(&mut self, track: Arc<Track>) -> Result<Arc<Track>, (EngineError, Arc<Track>)> {
+        match &self.track {
+            Some(cur) if Arc::ptr_eq(&cur.pcm, &track.pcm) => Ok(self.track.replace(track).expect("checked above")),
+            _ => Err((
+                EngineError::new(ErrorCode::Invalid, "set_beatgrid: the deck no longer holds that track"),
+                track,
+            )),
+        }
+    }
+
     /// An emptied deck is the page's `_emptyDeckState`: unity tempo and
     /// Quantize back to on at grid 1. The pitch range and the channel strip
     /// live outside that state on the page and carry over.
     pub fn unload(&mut self) -> Option<Arc<Track>> {
+        self.key_shift = 0;
+        self.stretch_warm = false;
         self.playing = false;
         self.pos = 0.0;
         self.cue = None;
@@ -567,6 +616,7 @@ impl Deck {
             }
         }
         self.pos = to;
+        self.stretch_warm = false;
     }
 
     /// A manual in/out loop, its ends snapped to the quantize grid when
@@ -638,6 +688,7 @@ impl Deck {
         if let (Some(((a, b), n)), Some(now)) = (before, self.looping) {
             if n == beats && (a, b) == now {
                 self.pos = a;
+                self.stretch_warm = false;
             }
         }
         Ok(())
@@ -704,6 +755,7 @@ impl Deck {
         let target = t.beats[i].time_ms.clamp(0.0, dur);
         let Some((a, b)) = self.looping else {
             self.pos = t.ms_to_frames(target);
+            self.stretch_warm = false;
             return Ok(());
         };
         // An engaged loop moves by whole grid beats, keeping any manual
@@ -715,6 +767,7 @@ impl Deck {
         let to = target_within_loop(&t, target, lo, hi)?;
         self.looping = Some((t.ms_to_frames(lo), t.ms_to_frames(hi)));
         self.pos = t.ms_to_frames(to);
+        self.stretch_warm = false;
         Ok(())
     }
 
@@ -747,6 +800,27 @@ impl Deck {
         }
         self.pitch_range = range;
         Ok(())
+    }
+
+    pub fn set_master_tempo(&mut self, enabled: bool) {
+        self.master_tempo = enabled;
+    }
+
+    /// Move the key shift by `by` semitones, within -12..=12 as the page
+    /// allows (`_assertKeyShift`).
+    pub fn nudge_key(&mut self, by: i32) -> Result<(), EngineError> {
+        self.track()?;
+        let k = self.key_shift + by;
+        if !(-12..=12).contains(&k) {
+            return Err(EngineError::new(ErrorCode::Invalid, "key shift must stay within -12..12 semitones"));
+        }
+        self.key_shift = k;
+        Ok(())
+    }
+
+    /// Whether this deck plays through the stretcher.
+    pub fn stretching(&self) -> bool {
+        self.master_tempo || self.key_shift != 0
     }
 
     pub fn set_trim(&mut self, v: f64) {
@@ -816,6 +890,7 @@ impl Deck {
     fn render_track(&mut self, out: &mut [f32], engine_sr: f64) -> usize {
         let Some(track) = self.track.as_ref() else { return 0 };
         if !self.playing {
+            self.stretch_warm = false;
             return 0;
         }
         let mut done = 0;
@@ -828,13 +903,40 @@ impl Deck {
             self.anchor_step = step;
             self.run = 0;
         }
+        let stretching = self.master_tempo || self.key_shift != 0;
+        let semis = stretch::semitones(self.tempo, self.master_tempo, self.key_shift);
+        if stretching != self.was_stretching {
+            // Switching path mid-play crossfades over one quantum; starting
+            // from a pause needs none.
+            self.path_fade = if self.rendered_pos == self.pos { QUANTUM } else { 0 };
+            self.fading_to_stretch = stretching;
+            self.was_stretching = stretching;
+        }
+        let need_stretch = stretching || self.path_fade > 0;
+        if need_stretch && !self.stretch_warm {
+            self.stretch.prime(pcm, frames, self.pos, step, semis);
+            self.stretch_warm = true;
+        }
         for o in out.chunks_exact_mut(2) {
             if self.pos >= end {
                 self.pos = end;
                 self.playing = false;
                 break;
             }
-            let (l, r) = hermite(pcm, frames, self.pos, self.looping);
+            let (l, r) = if self.path_fade > 0 {
+                let (hl, hr) = hermite(pcm, frames, self.pos, self.looping);
+                let (sl, sr) = self.stretch.next(pcm, frames, self.pos, step, semis);
+                // g goes 1/Q .. 1 towards the new path over the fade.
+                let g = (QUANTUM - self.path_fade + 1) as f64 / QUANTUM as f64;
+                let g = if self.fading_to_stretch { g } else { 1.0 - g };
+                self.path_fade -= 1;
+                (hl * (1.0 - g) + sl as f64 * g, hr * (1.0 - g) + sr as f64 * g)
+            } else if stretching {
+                let (sl, sr) = self.stretch.next(pcm, frames, self.pos, step, semis);
+                (sl as f64, sr as f64)
+            } else {
+                hermite(pcm, frames, self.pos, self.looping)
+            };
             let (l, r) = self.strip.process(l, r);
             o[0] += l as f32;
             o[1] += r as f32;
@@ -856,6 +958,10 @@ impl Deck {
                 self.playing = false;
                 break;
             }
+        }
+        if !stretching && self.path_fade == 0 {
+            self.stretch_warm = false;
+            self.stretch.discard();
         }
         if done > 0 {
             self.strip.idle_run = 0;
@@ -964,6 +1070,98 @@ mod tests {
     fn silent(sr: u32, secs: f64, beats: Vec<Beat>) -> Track {
         let frames = (sr as f64 * secs) as usize;
         Track::new(sr, vec![0.0; frames * 2], beats, None)
+    }
+
+    /// Deterministic full-band test signal, stereo, at 48 kHz.
+    fn noise_track(frames: usize) -> Track {
+        let mut x: u64 = 0x9E3779B97F4A7C15;
+        let pcm: Vec<f32> = (0..frames * 2)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                ((x >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 0.5
+            })
+            .collect();
+        Track::new(48000, pcm, vec![], None)
+    }
+
+    /// Reference for one filter move, written from Web Audio's rules rather
+    /// than from the strip: `setTargetAtTime` holds v0 on its start frame,
+    /// an a-rate biquad takes new coefficients every frame, and Chromium runs
+    /// it in direct form I. Knob 0.5 -> `to` at frame `at`, left channel.
+    fn filter_move_reference(pcm: &[f32], at: usize, n: usize, to: f64) -> Vec<f64> {
+        let sr = 48000.0;
+        let (p0, p1) = (mixer::filter_params(0.5), mixer::filter_params(to));
+        let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * sr)).exp();
+        let (mut lp, mut hp, mut dry, mut lw, mut hw) = (p0.lp_hz, p0.hp_hz, p0.dry, p0.lp_wet, p0.hp_wet);
+        let (mut sl, mut sh) = ([0.0f64; 4], [0.0f64; 4]);
+        let df1 = |c: Coeffs, s: &mut [f64; 4], x: f64| {
+            let y = c.b0 * x + c.b1 * s[0] + c.b2 * s[1] - c.a1 * s[2] - c.a2 * s[3];
+            *s = [x, s[0], y, s[2]];
+            y
+        };
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let x = pcm[i * 2] as f64;
+            let yl = df1(Coeffs::lowpass(sr, lp, mixer::FILTER_Q), &mut sl, x);
+            let yh = df1(Coeffs::highpass(sr, hp, mixer::FILTER_Q), &mut sh, x);
+            out.push(dry * x + lw * yl + hw * yh);
+            if i >= at {
+                lp += (p1.lp_hz - lp) * k;
+                hp += (p1.hp_hz - hp) * k;
+                dry += (p1.dry - dry) * k;
+                lw += (p1.lp_wet - lw) * k;
+                hw += (p1.hp_wet - hw) * k;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_filter_move_follows_web_audio_frame_by_frame() {
+        // The null test against Chromium measured a 16-frame coefficient
+        // update at -20 dB and a glide starting one frame early at -40 dB on
+        // this move. Both are errors of 1e-3 or more on a 0.25 signal; the
+        // tolerance here is float rounding.
+        let (at, n) = (4800usize, 9600usize);
+        for to in [0.8, 0.2] {
+            let t = Arc::new(noise_track(n));
+            let want = filter_move_reference(&t.pcm, at, n, to);
+            let mut d = Deck::new(48000.0);
+            d.load(t.clone());
+            d.play(true).unwrap();
+            let mut buf = vec![0.0f32; n * 2];
+            // Uneven blocks, with the move landing inside one.
+            let (a, b) = buf.split_at_mut(at * 2 + 2 * 37);
+            let (a0, a1) = a.split_at_mut(at * 2);
+            d.render_add(a0, 48000.0);
+            d.set_filter(to);
+            d.render_add(a1, 48000.0);
+            d.render_add(b, 48000.0);
+            let worst = (0..n).map(|i| (buf[i * 2] as f64 - want[i]).abs()).fold(0.0, f64::max);
+            assert!(worst < 1e-6, "filter {to}: worst error {worst}");
+            // Control: the move changed the sound, so the match is not two
+            // copies of the dry signal.
+            let moved = (at + 480..n).map(|i| (buf[i * 2] - t.pcm[i * 2]).abs()).fold(0.0f32, f32::max);
+            assert!(moved > 0.01, "filter {to} left the signal unchanged");
+        }
+    }
+
+    #[test]
+    fn an_eq_move_is_a_10_ms_linear_ramp_in_db() {
+        // eq-apply.ts: the gain reaches its target in a straight line in dB
+        // after 480 frames. A one-pole glide (the old law) is 37% short at
+        // that point.
+        let mut d = Deck::new(48000.0);
+        d.set_eq(0, 0.0);
+        let s = &mut d.strip;
+        assert_eq!(s.eq_db[0].tick(), 0.0);
+        for k in 1..480 {
+            let v = s.eq_db[0].tick();
+            assert!((v - (-26.0 * k as f64 / 480.0)).abs() < 1e-9, "frame {k}: {v}");
+        }
+        assert_eq!(s.eq_db[0].tick(), -26.0);
     }
 
     #[test]
@@ -1127,24 +1325,25 @@ mod tests {
         d.set_eq(0, 0.0);
         let low = |db: f64| Coeffs::lowshelf(48000.0, mixer::EQ_FREQ_LOW_HZ, db).b0;
         let ramp_at = |frame: f64| mixer::EQ_MIN_DB * frame / 480.0;
-        // The first frame moves one frame's worth, not a whole coefficient
-        // interval's: nothing runs ahead of the page's ramp.
+        // As linearRampToValueAtTime, the frame the change lands on still
+        // plays the old value and the filter follows the ramp every frame,
+        // never ahead of it and never a coefficient interval behind.
         let mut buf = vec![0.0f32; 2];
         d.render_add(&mut buf, 48000.0);
         assert!((d.strip.eq_db[0].value - ramp_at(1.0)).abs() < 1e-12, "{}", d.strip.eq_db[0].value);
-        assert_eq!(d.strip.eq[0].c.b0, low(ramp_at(1.0)));
-        // Halfway through, exactly halfway to the -26 dB kill. The filter in
-        // use was computed at the last interval (frame 225 of the ramp), so
-        // it trails the ramp and never leads it.
+        assert_eq!(d.strip.eq[0].c.b0, low(0.0));
+        // Halfway through, exactly halfway to the -26 dB kill, with the
+        // filter one frame behind.
         let mut buf = vec![0.0f32; 239 * 2];
         d.render_add(&mut buf, 48000.0);
         assert!((d.strip.eq_db[0].value - -13.0).abs() < 1e-12, "{}", d.strip.eq_db[0].value);
-        assert_eq!(d.strip.eq[0].c.b0, low(ramp_at(225.0)));
-        // The frame the ramp lands (480, not on an interval) puts the target
-        // in the filter at once.
+        assert!((d.strip.eq[0].c.b0 - low(ramp_at(239.0))).abs() < 1e-12);
+        // The ramp lands at 480 frames, 10 ms, and the next frame plays it.
         let mut buf = vec![0.0f32; 240 * 2];
         d.render_add(&mut buf, 48000.0);
         assert_eq!(d.strip.eq_db[0].value, mixer::EQ_MIN_DB);
+        let mut buf = vec![0.0f32; 2];
+        d.render_add(&mut buf, 48000.0);
         assert_eq!(d.strip.eq[0].c.b0, low(mixer::EQ_MIN_DB));
     }
 
