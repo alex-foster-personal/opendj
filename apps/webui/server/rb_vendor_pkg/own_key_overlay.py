@@ -37,6 +37,7 @@ from .own_lane_store import (
     canonical_lane_result,
     effective_lane_source,
     state_conn_ro,
+    table_present,
 )
 
 #: The lane name as `apps.analysis.lanes` spells it, and as the record's lane
@@ -126,7 +127,11 @@ def _set_dynamic_key_hint(payload: dict[str, Any], *, present: bool) -> None:
 
 
 def apply_own_key_segments(
-    payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
+    payload: dict[str, Any],
+    stable_id: str,
+    state_db_path: Path | None = None,
+    *,
+    has_rb_mapping: bool | None = None,
 ) -> dict[str, Any]:
     """Add (or remove) `key_segments` per the effective source. Mutates `payload`.
 
@@ -139,14 +144,23 @@ def apply_own_key_segments(
     """
     conn = state_conn_ro(state_db_path)
     try:
-        if effective_lane_source(conn, OWN_KEY_LANE) != SOURCE_OWN:
+        if (
+            effective_lane_source(conn, OWN_KEY_LANE, has_rb_mapping=has_rb_mapping)
+            != SOURCE_OWN
+        ):
             payload.pop("key_segments", None)
             _set_dynamic_key_hint(payload, present=False)
             return payload
         result = canonical_lane_result(conn, stable_id, OWN_KEY_LANE)
+        # Same absent-schema rule as `canonical_lane_result`: no
+        # `analysis_canonical` means no lane was ever promoted, so nothing can
+        # be stale-but-unpromoted. Unguarded, an unmapped track (key lane now
+        # `own` by default, STANDALONE-06) 500'd `/anlz` on a state DB that
+        # has never run the analysis pipeline.
         stale_unpromoted = (
             result is None
             and conn is not None
+            and table_present(conn, "analysis_canonical")
             and key_lane_stale_but_unpromoted(conn, stable_id)
         )
     finally:

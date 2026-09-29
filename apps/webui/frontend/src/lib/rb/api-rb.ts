@@ -25,6 +25,7 @@ import type { HotCueSlot } from './hot-cue-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
+import { stemWorkSignal } from './stem-decode-policy';
 
 // Re-export the existing hand-written client (RECON-FRONTEND 3).
 export {
@@ -104,6 +105,14 @@ async function _fetchJson<T>(path: string, cache?: RequestCache): Promise<T> {
 	return (await r.json()) as T;
 }
 
+export async function fetchTrackifyLibraryRevision(): Promise<string> {
+	const payload = await _fetchJson<{ revision: unknown }>('/api/v1/tracks/revision', 'no-store');
+	if (typeof payload.revision !== 'string' || payload.revision === '') {
+		throw new Error('Trackify: library revision response is invalid');
+	}
+	return payload.revision;
+}
+
 /** The shared GET-JSON path (RbApiError on non-2xx), for route-lazy modules
  * that keep their endpoint helpers out of this first-paint module. */
 export { _fetchJson as fetchRbJson };
@@ -125,7 +134,10 @@ function _parseTrackLyrics(raw: unknown, stableId: string): TrackLyrics {
 			typeof value.start_ms !== 'number' ||
 			!Number.isInteger(value.start_ms) ||
 			value.start_ms < 0 ||
-			value.start_ms <= previousStartMs ||
+			// Equal stamps are valid LRC (two lines sung at once), and the
+			// server's cache reader accepts them (apps/lyrics/cache.py); only a
+			// line that starts BEFORE the previous one is out of order.
+			value.start_ms < previousStartMs ||
 			typeof value.text !== 'string' ||
 			!value.text.trim()
 		) {
@@ -376,9 +388,11 @@ export interface PlaylistTrackRowWire {
 	energy: number | null;
 	energy_source: 'mik' | null;
 	energy_reason: string;
-	key_status?: 'ok' | 'failed' | 'missing';
+	key_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	key_reason?: string | null;
-	loudness_status?: 'ok' | 'failed' | 'missing';
+	bpm_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
+	bpm_reason?: string | null;
+	loudness_status?: 'ok' | 'failed' | 'missing' | 'available-not-selected';
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
@@ -743,6 +757,14 @@ export async function fetchAnlzBypassingHttpCache(
 	return data;
 }
 
+/** GET /tracks/{sid} with `cache: 'reload'`, paired with
+ * `fetchAnlzBypassingHttpCache` on analysis-source switches: the openapi
+ * client's ordinary `getTrack` can otherwise replay a pre-switch row while
+ * `/anlz` already reflects the new lane. */
+export async function fetchTrackBypassingHttpCache(stable_id: string): Promise<Track> {
+	return _fetchJson<Track>(`/api/v1/tracks/${encodeURIComponent(stable_id)}`, 'reload');
+}
+
 /** GET /tracks/{sid}/rb-meta - vendor fields + file_exists/is_streaming flags. */
 export async function fetchRbMeta(stable_id: string): Promise<RbMeta> {
 	return _fetchJson<RbMeta>(`/api/v1/tracks/${encodeURIComponent(stable_id)}/rb-meta`);
@@ -907,7 +929,11 @@ export interface StemArtifactManifest {
 
 export type StemArtifactProbe =
 	| { status: 'ready'; manifest: StemArtifactManifest }
-	| { status: 'unavailable'; error: string };
+	| { status: 'unavailable'; error: string }
+	// The server has the bundle in its R2 index and just started fetching it
+	// (STEM_BUNDLE_HYDRATING). NOT settled: the same GET answers `ready` once
+	// the download lands, so a caller must re-ask, never read this as "no stems".
+	| { status: 'hydrating'; error: string };
 
 function _validateStemManifest(raw: unknown, stableId: string): StemArtifactManifest {
 	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -981,7 +1007,10 @@ export async function probeStemArtifact(stableId: string): Promise<StemArtifactP
 				'code' in raw ? String((raw as { code: unknown }).code) : 'STEM_BUNDLE_NOT_FOUND';
 			const message =
 				'message' in raw ? String((raw as { message: unknown }).message) : 'no stem bundle';
-			return { status: 'unavailable', error: `${code}: ${message}` };
+			const hydrating =
+				code === 'STEM_BUNDLE_HYDRATING' ||
+				('hydrating' in raw && (raw as { hydrating: unknown }).hydrating === true);
+			return { status: hydrating ? 'hydrating' : 'unavailable', error: `${code}: ${message}` };
 		}
 		return { status: 'ready', manifest: _validateStemManifest(raw, stableId) };
 	} catch (error) {
@@ -1008,7 +1037,7 @@ export async function fetchStemAudioArrayBuffers(
 ): Promise<Partial<Record<StemPartName, ArrayBuffer>>> {
 	const entries = await Promise.all(
 		STEM_LAYOUT_PART_NAMES[layout].map(async (part) => {
-			const response = await fetch(stemAudioUrl(stableId, part));
+			const response = await fetch(stemAudioUrl(stableId, part), { signal: stemWorkSignal() });
 			if (!response.ok) await _throwRbApiError(response);
 			return [part, await response.arrayBuffer()] as const;
 		})

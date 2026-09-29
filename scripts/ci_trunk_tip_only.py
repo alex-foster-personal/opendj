@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -68,6 +69,13 @@ GATING_WORKFLOW = "CI"
 # to supersede.
 BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
+
+# A moving queue is expected (see `_paginated_runs`), so one inconsistent multi-page
+# census is not yet a precondition failure: re-read up to this many times, sleeping
+# CENSUS_RETRY_SLEEP_SECONDS between attempts, and only fail closed once every
+# attempt disagreed.
+CENSUS_MAX_ATTEMPTS = 3
+CENSUS_RETRY_SLEEP_SECONDS = 1.5
 
 _NOT_YET_QUEUED_CANCEL_MARKERS = ("HTTP 409", "not been queued yet")
 
@@ -170,33 +178,55 @@ def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
 def _paginated_runs(
     path: str, fetch_json: Callable[[str], object] | None = None
 ) -> list[QueuedRun]:
-    """Every run the listing holds, or a PreconditionError: never a partial census.
+    """Every run the listing serves, paged until a page comes back short.
 
-    GitHub answers the count and each page from a queue that keeps moving, so a
-    run leaving or joining it between the two makes total_count disagree with what
-    paging collected. That is not a paging defect, and it was read as one: the
-    sweeper went red with every test job green on main runs 35730977563 (13:03Z),
-    35723785363, 35722075764 and 35721772426 (Tue 22 Sep 2026), 4 of its 11 red
-    runs in the last 30. A listing that disagrees with its own count is listed
-    ONCE more; the second one agreeing with its own count is the census, two that
-    do not are the error, naming both. `fetch_json` is the GitHub GET; a test hands
-    in captured real payloads keyed by the path this asks (no monkeypatching)."""
+    GitHub answers total_count from an index that lags the listing: measured live
+    at ~3 s for ten minutes on Tue 22 Sep 2026, 41 of 480 responses (8.5%) carried
+    a count their own runs did not add up to, and during a merge or cancel burst
+    the lag held across consecutive listings (15 over 14 twice; 18 over 17 then
+    20 over 15). Reading that as a paging defect made the sweeper red with every
+    test job green (main runs 35730977563, 35723785363, 35722075764 and
+    35721772426 that day, 4 of its 11 red runs in the last 30), and listing again
+    (#3825) did not cure it.
+
+    A SINGLE page shorter than PAGE_SIZE is complete by construction, so it is the
+    census and a disagreeing count is only a warning. Across MORE than one page a
+    disagreement can also mean the queue moved between page requests, and offset
+    paging then skips or repeats a run at the boundary; a skipped CI run whose SHA
+    should be retained would let a bookkeeping run sharing that SHA be cancelled.
+    A moving queue is expected, so one inconsistent multi-page read is re-read up
+    to CENSUS_MAX_ATTEMPTS times (sleeping CENSUS_RETRY_SLEEP_SECONDS between
+    attempts) before this stays fail-closed (PreconditionError, exit 10) -- only
+    a CONSISTENT read is ever accepted, never a fallback to the disagreeing one.
+    `fetch_json` is the GitHub GET; a test hands in captured real payloads keyed by
+    the path this asks (no monkeypatching)."""
     fetch = _gh_api_json if fetch_json is None else fetch_json
-    first_runs, first_total = _list_runs_once(path, fetch)
-    if len(first_runs) == first_total:
-        return first_runs
-    runs, total_count = _list_runs_once(path, fetch)
-    if len(runs) != total_count:
-        raise PreconditionError(
-            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs,"
-            f" twice (the first listing: total_count={first_total} against {len(first_runs)})"
-        )
-    return runs
+    attempts = 0
+    while True:
+        attempts += 1
+        runs, total_count, pages = _list_runs_once(path, fetch)
+        if len(runs) == total_count:
+            return runs
+        if pages == 1:
+            print(
+                f"[WARN] {path} reported total_count={total_count} but its single page holds"
+                f" {len(runs)} runs; the count lags the listing, the page is the census",
+                file=sys.stderr,
+            )
+            return runs
+        if attempts >= CENSUS_MAX_ATTEMPTS:
+            raise PreconditionError(
+                f"{path} reported total_count={total_count} but {pages} pages hold"
+                f" {len(runs)} runs; the queue moved between page requests on all"
+                f" {attempts} attempts, so this census could have skipped a run"
+            )
+        time.sleep(CENSUS_RETRY_SLEEP_SECONDS)
 
 
 def _list_runs_once(
     path: str, fetch_json: Callable[[str], object]
-) -> tuple[list[QueuedRun], int]:
+) -> tuple[list[QueuedRun], int, int]:
+    """The runs, the total_count page 1 reported, and how many pages were read."""
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
     total_count: int | None = None
@@ -210,13 +240,10 @@ def _list_runs_once(
             if not isinstance(total_count, int):
                 raise PreconditionError(f"{path} response has no integer total_count")
         page_items = payload["workflow_runs"]
-        if not page_items:
-            break
         runs.extend(_parse_queued_run(item) for item in page_items)
-        if len(runs) >= total_count:
-            break
+        if len(page_items) < PAGE_SIZE:
+            return runs, total_count, page
         page += 1
-    return runs, total_count
 
 
 def _retained_ci_push_run_ids(ci_push_runs: list[QueuedRun]) -> frozenset[int]:

@@ -177,14 +177,20 @@ export interface ToastReportInput {
 	headline: string;
 	/** Raw message written to the perf-event ring. */
 	message: string;
-	detail?: string;
-	clientEventId?: string;
-	serverEventId?: string;
-	errorId?: string;
-	sentryEventId?: string;
+	detail?: string | undefined;
+	classification?: string | undefined;
+	settingsSummary?: string | undefined;
+	hint?: string | undefined;
+	stack?: string | undefined;
+	clientEventId?: string | undefined;
+	serverEventId?: string | undefined;
+	errorId?: string | undefined;
+	sentryEventId?: string | undefined;
 	/** ISO 8601 UTC, and the SAME instant the log row carries. */
 	createdAt: string;
 	env: ToastEnvironment;
+	/** Optional context lines appended after the closed env block (deck/sync, caller context). */
+	extras?: Record<string, string> | undefined;
 }
 
 /**
@@ -201,6 +207,7 @@ export function buildToastReport(input: ToastReportInput): string {
 	const { env } = input;
 	const lines = [
 		`id: ${input.id}`,
+		...(input.classification !== undefined ? [`classification: ${input.classification}`] : []),
 		...(input.clientEventId !== undefined ? [`client_event_id: ${input.clientEventId}`] : []),
 		...(input.serverEventId !== undefined ? [`server_event_id: ${input.serverEventId}`] : []),
 		...(input.errorId !== undefined ? [`error_id: ${input.errorId}`] : []),
@@ -212,10 +219,16 @@ export function buildToastReport(input: ToastReportInput): string {
 		...(input.detail !== undefined && input.detail !== input.headline
 			? [`detail: ${input.detail}`]
 			: []),
+		...(input.settingsSummary !== undefined ? [`settings: ${input.settingsSummary}`] : []),
+		...(input.hint !== undefined ? [`hint: ${input.hint}`] : []),
+		...(input.stack !== undefined ? [`stack: ${input.stack}`] : []),
 		`machine: ${env.machine}`,
 		`user: ${env.user}`,
 		`client: ${env.client.name} ${env.client.version}`,
 		`page: ${env.url}`,
+		...(input.extras === undefined
+			? []
+			: Object.entries(input.extras).map(([key, value]) => `${key}: ${value}`)),
 		`find in logs: search ${input.id}`
 	];
 	return lines.join('\n');

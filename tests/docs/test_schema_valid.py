@@ -34,6 +34,7 @@ def test_spec_schema_file_exists_or_skipped() -> None:
         pytest.skip(f"Phase 15 schema not at {SCHEMA_PATH}; skipping until shipped")
 
 
+# REQ: OPEN-03b
 @pytest.mark.requirement("OPEN-03b")
 def test_spec_schema_is_draft_2020_12() -> None:
     if not SCHEMA_PATH.exists():
@@ -43,6 +44,7 @@ def test_spec_schema_is_draft_2020_12() -> None:
     assert data.get("$id", "").endswith("open-dj.schema.json")
 
 
+# REQ: OPEN-03b
 @pytest.mark.requirement("OPEN-03b")
 def test_spec_schema_passes_meta_schema() -> None:
     """The spec schema must itself be a valid JSON Schema 2020-12 document."""
@@ -80,6 +82,7 @@ def test_adapter_docs_exist() -> None:
     assert (adapters_dir / "traktor.md").exists()
 
 
+# REQ: OPEN-03b
 @pytest.mark.requirement("OPEN-03b")
 def test_licences_page_exists() -> None:
     """open-dj/LICENCES.md lists the licence posture Phase 16 ships under."""

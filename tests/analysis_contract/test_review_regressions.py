@@ -457,7 +457,9 @@ def test_a_combined_write_compensation_bumps_toggle_revision(tmp_path) -> None:
             assert prime.status_code == 200
 
             toggle_write = selection.write_toggle("beatgrid", "own")
-            assert toggle_write == selection.ToggleWrite(previous="unset", revision=1)
+            assert toggle_write == selection.ToggleWrite(
+                previous="unset", current="own", revision=1
+            )
 
             ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
             ro.execute("PRAGMA query_only = ON")
@@ -535,6 +537,113 @@ def test_a_combined_write_that_fails_never_clobbers_a_concurrent_agent_change(
                 "down, not clobber their newer value with this request's stale one"
             )
     finally:
+        selection.reset_toggles()
+
+
+def test_a_put_response_reports_its_own_write_not_a_concurrent_agents_later_one(
+    tmp_path,
+) -> None:
+    """A PUT's `lanes[lane]` row must describe the write THIS request made.
+
+    Reproduced first, against the webui unit suite: analysis-source.test.mjs
+    "a failed switch never clobbers a concurrent agent-driven HTTP change
+    during rollback" failed about 1 in 25 runs under load with "Missing
+    expected rejection". A trace of a failing run showed the switch's own
+    PUT answering `previous_toggle: rbx` (it displaced rbx and wrote own) but
+    `toggle: unset, effective: rbx`, the AGENT's later write, re-read by a
+    separate `source_state` call. The client adopted that as "no deck
+    disagrees", skipped the refresh that should have failed, and resolved.
+
+    Same real-concurrency shape as the test above: a second connection holds
+    `BEGIN EXCLUSIVE` so the combined PUT's default commit blocks AFTER its
+    toggle write, a thread lands an agent's toggle write inside that window,
+    and the lock is released so the PUT then succeeds.
+    """
+    path, conn = _bare_db(tmp_path)
+    conn.close()
+    app = _app_on(path)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            prime = client.put(
+                "/api/v1/analysis/source", json={"lane": "beatgrid", "default": "rbx"}
+            )
+            assert prime.status_code == 200
+
+            # Released from the agent thread once its write has landed.
+            locker = sqlite3.connect(str(path), timeout=0.1, check_same_thread=False)
+            locker.execute("BEGIN EXCLUSIVE")
+            agent_writes: list[selection.ToggleWrite | None] = []
+
+            def _concurrent_agent_then_release() -> None:
+                time.sleep(0.3)
+                agent_writes.append(selection.write_toggle("beatgrid", "unset"))
+                locker.rollback()
+                locker.close()
+
+            agent = threading.Thread(target=_concurrent_agent_then_release)
+            agent.start()
+            try:
+                resp = client.put(
+                    "/api/v1/analysis/source",
+                    json={"lane": "beatgrid", "toggle": "own", "default": "own"},
+                )
+            finally:
+                agent.join()
+            assert resp.status_code == 200, resp.text[:300]
+
+            # Precondition, not decoration: the agent's write must have
+            # displaced THIS request's `own`, i.e. landed after its toggle
+            # write and before its response. Anywhere else, this test proves
+            # nothing and must say so rather than pass.
+            (agent_write,) = agent_writes
+            assert agent_write is not None and agent_write.previous == "own", agent_write
+
+            assert resp.json()["previous_toggle"] == "unset"
+            assert resp.json()["lanes"]["beatgrid"] == {
+                "default": "own",
+                "toggle": "own",
+                "toggle_revision": agent_write.revision - 1,
+                "effective": "own",
+            }, "a PUT response must report its own write, not a concurrent agent's later one"
+
+            # Control: the agent's write really is live, so the row above was
+            # pinned to this request's write rather than read after the race.
+            after = client.get("/api/v1/analysis/source").json()["lanes"]["beatgrid"]
+            assert (after["toggle"], after["toggle_revision"]) == ("unset", agent_write.revision)
+    finally:
+        selection.reset_toggles()
+
+
+def test_source_state_pins_only_the_written_lane_and_otherwise_reports_live(
+    tmp_path,
+) -> None:
+    """`written` pins exactly one lane to the caller's own write; without it
+    (a GET), every lane is the live state, value and revision as one pair."""
+    _, conn = _bare_db(tmp_path)
+    try:
+        mine = selection.write_toggle("beatgrid", "own")
+        selection.write_toggle("key", "own")
+        agent = selection.write_toggle("beatgrid", "unset")
+        assert mine is not None and agent is not None
+
+        pinned = selection.source_state(conn, written=("beatgrid", mine))["lanes"]
+        assert pinned["beatgrid"] == {
+            "default": "rbx",
+            "toggle": "own",
+            "toggle_revision": mine.revision,
+            "effective": "own",
+        }
+        assert pinned["key"]["toggle"] == "own", "pinning one lane must not touch another"
+
+        live = selection.source_state(conn)["lanes"]["beatgrid"]
+        assert live == {
+            "default": "rbx",
+            "toggle": "unset",
+            "toggle_revision": agent.revision,
+            "effective": "rbx",
+        }, "a GET must keep reporting the live state, not any earlier write"
+    finally:
+        conn.close()
         selection.reset_toggles()
 
 

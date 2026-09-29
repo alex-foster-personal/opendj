@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from scripts import worker_worktree_guard as guard
+from scripts import worktree_lifecycle
 
 pytestmark = pytest.mark.requirement("OPS-41")
 
@@ -54,6 +55,37 @@ def test_preflight_refuses_primary_ahead_of_origin(origin_repo: tuple[Path, Path
         guard.assert_clean_origin_base(checkout, "origin/main")
 
 
+def test_preflight_refuses_dirty_working_tree(origin_repo: tuple[Path, Path]) -> None:
+    """[if] the primary checkout has uncommitted changes [then] worker preflight
+    refuses with a named reason, [else stop].
+
+    This is the half of R-1 that PR #3359's own tests never exercised: both
+    existing checks above cover "ahead of origin" and "source-local base", but
+    nothing dirtied the working tree without also committing. Mutation testing
+    (issue #3352 follow-on, PR #3927) confirmed disabling the dirty branch of
+    `assert_clean_origin_base` left every prior test green.
+    """
+    _, checkout = origin_repo
+    (checkout / "untracked.txt").write_text("uncommitted\n")
+
+    with pytest.raises(guard.PreflightError, match="dirty"):
+        guard.assert_clean_origin_base(checkout, "origin/main")
+
+
+def test_preflight_passes_clean_checkout_at_origin(origin_repo: tuple[Path, Path]) -> None:
+    """[if] the primary checkout is clean and exactly at origin/main [then]
+    preflight raises nothing, [else stop].
+
+    Overshoot control for the dirty-checkout test above: a guard that refuses
+    every checkout (or refuses on any file existing) would also make this test
+    fail, so a passing dirty-check needs this control alongside it, not instead
+    of it.
+    """
+    _, checkout = origin_repo
+
+    guard.assert_clean_origin_base(checkout, "origin/main")
+
+
 def test_preflight_refuses_source_local_base(origin_repo: tuple[Path, Path]) -> None:
     """[if] base is a local branch [then] worker preflight refuses, [else stop]."""
     _, checkout = origin_repo
@@ -65,15 +97,60 @@ def test_preflight_refuses_source_local_base(origin_repo: tuple[Path, Path]) -> 
 def test_create_worktree_starts_at_explicit_origin_base(
     origin_repo: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    """[if] a worker worktree is created [then] HEAD equals origin/main, [else stop]."""
+    """[if] a worker worktree is created [then] HEAD equals origin/main, [else stop].
+
+    This test is about the starting ref, not disk space, so it pins
+    `floor_gb=0`: `create_worker_worktree` -> the lifecycle guard's
+    `cmd_guard` reads `shutil.disk_usage` on the real HOST, not on anything
+    this test controls, and a host with little real free space (nucbox
+    runners with RUNNER_TEMP on a small tmpfs, CI job 109075514456, run
+    36465719472) made this fail with "disk floor breached" despite the
+    worktree logic itself being correct. See
+    test_create_worktree_still_refuses_below_the_disk_floor below for the
+    control that proves this override does not disable the guard.
+    """
     _, checkout = origin_repo
     target = tmp_path / "worker"
     branch = "af--issue-3352-guard-test"
 
-    guard.create_worker_worktree(checkout, target, branch, "origin/main")
+    guard.create_worker_worktree(checkout, target, branch, "origin/main", floor_gb=0)
 
     assert _git(target, "rev-parse", "HEAD") == _git(checkout, "rev-parse", "origin/main")
     assert _git(target, "branch", "--show-current").strip() == branch
+
+
+def test_create_worktree_still_refuses_below_the_disk_floor(
+    origin_repo: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """[if] real free disk is below the floor [then] worktree creation still
+    refuses, [else stop].
+
+    Control for the floor_gb override above: proves the fix is "inject the
+    floor", not "disable the guard". It reads the REAL free space of this
+    host and sets the floor 1000G above it, so the live measurement path is
+    exercised with no monkeypatch, then asserts the refusal fires, names the
+    disk floor, and creates no worktree.
+    """
+    _, checkout = origin_repo
+    target = tmp_path / "worker"
+    floor_above_real_free = worktree_lifecycle.free_gb(checkout) + 1000
+
+    with pytest.raises(guard.PreflightError, match="worktree lifecycle guard refused"):
+        guard.create_worker_worktree(
+            checkout, target, "af--disk-floor-refusal", "origin/main",
+            floor_gb=floor_above_real_free,
+        )
+
+    assert "disk floor breached:" in capsys.readouterr().err
+    assert not target.exists()
+
+
+def test_create_cli_offers_no_disk_floor_override() -> None:
+    """[if] the worker `create` CLI is given --floor-gb [then] it is rejected,
+    [else stop]: production callers always get the lifecycle floor policy."""
+    with pytest.raises(SystemExit):
+        guard.main(["create", "--repo", ".", "--target", "x", "--branch", "b",
+                    "--base", "origin/main", "--floor-gb", "0"])
 
 
 def test_scope_check_refuses_large_branch(origin_repo: tuple[Path, Path]) -> None:

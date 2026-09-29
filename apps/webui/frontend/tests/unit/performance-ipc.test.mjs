@@ -79,6 +79,31 @@ test('queue scopes isolate deck loads and coordinate only sync-sensitive command
 	);
 });
 
+test('load suppressCommandErrorToast parses through parsePerformanceCommandForTest', () => {
+	const cmd = ipc.parsePerformanceCommandForTest({
+		type: 'load',
+		deck: 1,
+		stable_id: 'track-a',
+		suppressCommandErrorToast: true
+	});
+	assert.deepEqual(cmd, {
+		type: 'load',
+		deck: 1,
+		stable_id: 'track-a',
+		suppressCommandErrorToast: true
+	});
+	assert.throws(
+		() =>
+			ipc.parsePerformanceCommandForTest({
+				type: 'load',
+				deck: 1,
+				stable_id: 'track-a',
+				extra: true
+			}),
+		/unexpected fields/
+	);
+});
+
 test('pairing snapshot freezes deck state, removes only real adjustments, and saves only the selected pair', async () => {
 	const originalFetch = globalThis.fetch;
 	const requests = [];
@@ -1404,6 +1429,7 @@ test('queryPerformanceState reports the analysis source selection, as a snapshot
 	);
 });
 
+// REQ: LATENCY-02
 test('LATENCY-02 play.quantize arms countdown and plain play cancels while armed', async () => {
 	globalThis.window = {};
 	ipc.resetQuantizedLaunchArmedForTest();

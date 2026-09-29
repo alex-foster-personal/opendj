@@ -38,7 +38,14 @@ psutil>=5.9
 # until the day fastapi vendors pydantic or pyrekordbox drops sqlalchemy, and
 # then it breaks somewhere with no obvious connection to either.
 pydantic>=2.0,<3
-sqlalchemy>=2.0,<3
+# <2.1 (Thu 24 Sep 2026): sqlalchemy 2.1.0 reached PyPI at 20:12Z with an sdist
+# and no cp311 wheels, CI's `uv pip install --upgrade` picked it, and uv 0.12.18
+# refuses to build it ("duplicate normalized extra name `mssql-pymssql`" in its
+# pyproject), so every pytest shard started after 20:12Z failed on every runner.
+# pyproject keeps `<3` (the wheel's promise); this is the stricter CI floor the
+# dependency contract allows. Lift it once 2.1 ships wheels AND pyrekordbox is
+# verified against 2.1.
+sqlalchemy>=2.0,<2.1
 # Pillow was not transitive at all: NOTHING pulled it in, so `import PIL`
 # simply failed in a requirements.txt-only environment. Verified on darwin:
 # `import apps.sync.usb.pioneer.agent_actuator` raised ModuleNotFoundError, and
@@ -48,6 +55,9 @@ sqlalchemy>=2.0,<3
 # pyobjc gap pyproject records: undeclared, and broken ON macOS, the platform
 # the tool exists for.
 Pillow>=12.3.0
+# FastAPI/Starlette use AnyIO directly. Keep the CI-only requirements resolver
+# at the same security floor as pyproject.toml and uv.lock.
+anyio>=4.15.1
 
 # --- Phase 6 -- analysis pipeline (META-01, META-02, META-04) ---
 # numpy floor matches pyproject's core `numpy>=1.26` (PyO3 waveform runtime,

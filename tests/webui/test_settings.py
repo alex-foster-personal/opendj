@@ -70,7 +70,7 @@ def test_settings_publish_runtime_policy_defaults(client):
     response = client.get("/api/v1/settings")
     assert response.status_code == 200
     items = _flatten(response.json())
-    assert items["hide_broken_playlist_min_available_ratio"]["value"] == 0.3
+    assert items["hide_broken_playlist_min_available_tracks"]["value"] == 4
     assert items["anlz_points_default"]["value"] == 38400
     assert items["anlz_points_min"]["value"] == 100
     assert items["anlz_points_max"]["value"] == 38400

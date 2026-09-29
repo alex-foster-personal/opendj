@@ -56,11 +56,29 @@ test('rowHasVocalLyrics demands MORE than 5 real lines', async () => {
 	assert.equal(c.rowHasVocalLyrics(_row({ lyrics: null })), false, 'no lyric data yet');
 });
 
+test('rowIsLocallyAvailable keeps only local-audio rows', async () => {
+	const c = await _loadContract();
+	assert.equal(
+		c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: false })),
+		true
+	);
+	assert.equal(
+		c.rowIsLocallyAvailable(_row({ file_exists: false, has_remote_copy: true })),
+		false
+	);
+	assert.equal(
+		c.rowIsLocallyAvailable(_row({ file_exists: true, is_streaming: true })),
+		false
+	);
+	assert.equal(c.rowIsLocallyAvailable(_row({ file_exists: null })), false);
+});
+
 test('both filter prefs default OFF and survive a round trip', async () => {
 	_fakeWindow();
 	const fresh = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
 	assert.equal(fresh.uiPrefs.remixes_filter, false);
 	assert.equal(fresh.uiPrefs.vocals_filter, false);
+	assert.equal(fresh.uiPrefs.available_offline_filter, false);
 	delete globalThis.window;
 
 	_fakeWindow(
@@ -88,7 +106,7 @@ test('both filters have settings agent parity: allowlist, read, apply, catalog',
 	const apply = await loadTypeScriptModule('src/lib/settings/apply.ts');
 	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
 
-	for (const key of ['remixes_filter', 'vocals_filter']) {
+	for (const key of ['remixes_filter', 'vocals_filter', 'available_offline_filter']) {
 		assert.ok(apply.ALLOWED_SETTING_KEYS.includes(key), `${key} missing from allowlist`);
 		assert.equal(apply.readSettingValue(key), false);
 		apply.applySettingChange(key, true);

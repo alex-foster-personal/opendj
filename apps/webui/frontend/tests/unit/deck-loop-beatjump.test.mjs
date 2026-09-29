@@ -549,14 +549,20 @@ test('LOOP and JUMP are visible headings in their requested left-to-right column
 	const jumpSource = await readFile('src/lib/components/rb/deck/BeatJump.svelte', 'utf8');
 	const loopSource = await readFile('src/lib/components/rb/deck/LoopCluster.svelte', 'utf8');
 	// The controls remain out of cue-flex, with LOOP left and JUMP right.
-	assert.match(
-		deckSource,
-		/<div class="loop-col">\s*<LoopCluster\b[\s\S]*?<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
+	const cueFlexOpen = deckSource.indexOf('<div class="cue-flex"');
+	const loopColOpen = deckSource.indexOf('<div class="loop-col">');
+	assert.ok(cueFlexOpen >= 0 && loopColOpen > cueFlexOpen, 'cue-flex region is present');
+	assert.doesNotMatch(deckSource.slice(cueFlexOpen, loopColOpen), /<BeatJump\b/);
+	const loopClusterPos = deckSource.indexOf('<LoopCluster', loopColOpen);
+	const beatJumpPos = deckSource.indexOf('<BeatJump', loopColOpen);
+	assert.ok(
+		loopClusterPos > loopColOpen && beatJumpPos > loopClusterPos,
+		'LoopCluster (LOOP) precedes BeatJump (JUMP) in loop-col'
 	);
-	const cueRegionStart = deckSource.indexOf('<div class="cue-flex">');
-	const cueRegionEnd = deckSource.indexOf('\n\t\t</div>', cueRegionStart);
-	assert.ok(cueRegionStart >= 0 && cueRegionEnd > cueRegionStart, 'cue-flex region is present');
-	assert.doesNotMatch(deckSource.slice(cueRegionStart, cueRegionEnd), /<BeatJump\b/);
+	assert.match(
+		deckSource.slice(beatJumpPos),
+		/^<BeatJump \{deck\} \{pending\} onJump=\{beatJump\} \/>/
+	);
 	assert.match(
 		deckSource,
 		/\.loop-col \{[\s\S]*?display: flex;[\s\S]*?flex-direction: row;[\s\S]*?align-items: flex-start;/
@@ -770,7 +776,7 @@ test('resizedLoopRangeMs throws rather than clipping when a resize does not fit 
 
 // -------------------------------------------------- SAFE loop-out wiring
 
-test('SAFE engages at loop out via playbackReachedSafetyLoopOut, not at natural end', async () => {
+test('pin 0d0803d33f02 SAFE engages at saved out not file end', async () => {
 	const engineSource = await readFile('src/lib/rb/audio-engine.svelte.ts', 'utf8');
 	const naturalEndBlock = engineSource.match(
 		/if \(naturalEndNeedsRevisionedStop[\s\S]*?\n\t\}/

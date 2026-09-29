@@ -7,9 +7,9 @@
 #
 # USAGE
 #   MDT_MACOS_SIGNING_IDENTITY=... MDT_MACOS_NOTARY_KEYCHAIN_PROFILE=... \
-#     scripts/install_dmg_smoke_launchd.sh
-#   scripts/install_dmg_smoke_launchd.sh --render-to FILE
-#   scripts/install_dmg_smoke_launchd.sh --install
+#     scripts/install_dmg_smoke_launchd.sh --host-label air
+#   scripts/install_dmg_smoke_launchd.sh --host-label air --render-to FILE
+#   scripts/install_dmg_smoke_launchd.sh --host-label air --install
 set -euo pipefail
 
 shopt -u patsub_replacement 2>/dev/null || true
@@ -21,12 +21,18 @@ LABEL="com.af.dmg-smoke"
 
 INSTALL=0
 RENDER_ONLY=""
+HOST_LABEL=""
 while (($#)); do
   case "$1" in
     --install) INSTALL=1; shift ;;
     --render-to)
       RENDER_ONLY="${2:-}"
       [ -n "$RENDER_ONLY" ] || { echo "[ERROR] --render-to needs a path" >&2; exit 2; }
+      shift 2
+      ;;
+    --host-label)
+      HOST_LABEL="${2:-}"
+      [ -n "$HOST_LABEL" ] || { echo "[ERROR] --host-label needs a value" >&2; exit 2; }
       shift 2
       ;;
     *)
@@ -38,6 +44,19 @@ done
 
 if [ "$INSTALL" = 1 ] && [ "$(uname -s)" != "Darwin" ]; then
   echo "[ERROR] --install is Darwin-only (this host is $(uname -s))" >&2
+  exit 2
+fi
+
+# Supersedes: the implicit "air" attribution in ops/dmg-smoke/run.sh
+# (`${MDT_DMG_SMOKE_HOST_LABEL:-air}`), deleted there; run.sh now requires the
+# variable this flag renders into the plist.
+# --host-label has no hidden default (claude-review, PR #3827, round 2, P2):
+# a silent "air" fallback would attribute a second Mac's dmg-smoke runs to
+# Air in the ledger/evidence with no error, exactly the corruption
+# perf_kpi_job's own --host-label review finding describes for the sibling
+# perf-kpi installer (see .planning/debt/3827.md).
+if [ -z "$HOST_LABEL" ]; then
+  echo "[ERROR] --host-label is required (e.g. --host-label air, --host-label silver)" >&2
   exit 2
 fi
 
@@ -77,6 +96,7 @@ rendered="$(cat "$TEMPLATE")"
 rendered=${rendered//__ABS_HOME__/$(xml_escape "$HOME")}
 rendered=${rendered//__MDT_MACOS_SIGNING_IDENTITY__/$(xml_escape "$MDT_MACOS_SIGNING_IDENTITY")}
 rendered=${rendered//__MDT_MACOS_NOTARY_KEYCHAIN_PROFILE__/$(xml_escape "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE")}
+rendered=${rendered//__MDT_DMG_SMOKE_HOST_LABEL__/$(xml_escape "$HOST_LABEL")}
 
 TARGET="${RENDER_ONLY:-$HOME/Library/LaunchAgents/com.af.dmg-smoke.plist}"
 mkdir -p "$(dirname "$TARGET")"

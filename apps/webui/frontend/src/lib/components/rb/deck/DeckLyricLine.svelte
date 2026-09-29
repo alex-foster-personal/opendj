@@ -45,8 +45,8 @@
 		/** Fetch or adapter failure, rendered as a real failure. */
 		error?: string | null;
 		positionSource: () => number | null;
-		/** 1 = current line only; 2 = current + inbound (space-gated by Deck). */
-		rows: 1 | 2;
+		/** 1 = current line only; 2-3 = current plus upcoming preview lines. */
+		rows: 1 | 2 | 3;
 	} = $props();
 
 	// Per-track derived structure, rebuilt only when the track changes.
@@ -107,6 +107,12 @@
 	);
 	const nextLine = $derived(
 		track !== null && nextLineIndex !== null ? track.lines[nextLineIndex] : null
+	);
+	const thirdLineIndex = $derived(
+		nextLineIndex === null ? null : nextLineIndex + 1 < (track?.lines.length ?? 0) ? nextLineIndex + 1 : null
+	);
+	const thirdLine = $derived(
+		track !== null && thirdLineIndex !== null ? track.lines[thirdLineIndex] : null
 	);
 	/** Words of the current line, rebuilt only on a line change. */
 	const lineWords = $derived(
@@ -247,9 +253,14 @@
 			{/key}
 		{/if}
 
-		{#if rows === 2}
+		{#if rows >= 2}
 			<div class="dkl-row dkl-next" title="the line coming up next">
 				{#if nextLine !== null}<span class="dkl-next-mark">&gt;</span>{nextLine.text}{/if}
+			</div>
+		{/if}
+		{#if rows === 3}
+			<div class="dkl-row dkl-next dkl-next2" title="the line after next">
+				{#if thirdLine !== null}<span class="dkl-next-mark">&gt;&gt;</span>{thirdLine.text}{/if}
 			</div>
 		{/if}
 	{/if}

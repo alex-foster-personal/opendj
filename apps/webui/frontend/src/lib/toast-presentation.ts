@@ -5,17 +5,19 @@
  * shows `headline` collapsed and keeps technical text in `detail`.
  */
 
+import type { ToastDiagnostic } from './toast-error-classification';
+
 export const TOAST_SOLUTION_URL_PLACEHOLDER = 'https://docs.opendj.app/errors/tbd';
 
 export interface ToastPresentation {
 	/** Short, human, shown collapsed. */
 	headline: string;
 	/** Technical / verbose; shown expanded only. */
-	detail?: string;
+	detail?: string | undefined;
 	/** Error-only hint with placeholder solutions URL. */
-	solutionHint?: string;
+	solutionHint?: string | undefined;
 	/** Feature area for bare exception mapping. */
-	feature?: string;
+	feature?: string | undefined;
 	/** Original message for perf rows and logs. */
 	rawMessage: string;
 }
@@ -83,14 +85,44 @@ function splitDeckLoadMessage(message: string): ToastPresentation | null {
 /**
  * Map a raw toast message into compact on-screen copy.
  */
+function applyDiagnostic(
+	presentation: ToastPresentation,
+	diagnostic?: ToastDiagnostic | undefined
+): ToastPresentation {
+	if (diagnostic === undefined) return presentation;
+	const feature = diagnostic.feature !== '' ? diagnostic.feature : presentation.feature;
+	const detailParts: string[] = [];
+	if (presentation.detail !== undefined && presentation.detail !== '') {
+		detailParts.push(presentation.detail);
+	}
+	if (diagnostic.settingsSummary !== undefined && diagnostic.settingsSummary !== '') {
+		detailParts.push(`Settings: ${diagnostic.settingsSummary}`);
+	}
+	if (diagnostic.hint !== undefined && diagnostic.hint !== '') {
+		detailParts.push(diagnostic.hint);
+	}
+	const detail = detailParts.length > 0 ? detailParts.join('\n') : presentation.detail;
+	let headline = presentation.headline;
+	if (
+		feature !== undefined &&
+		feature !== '' &&
+		!headline.toLowerCase().includes(feature.toLowerCase()) &&
+		headline.length < 72
+	) {
+		headline = `${feature}: ${headline}`;
+	}
+	return { ...presentation, feature, detail, headline };
+}
+
 export function formatToastPresentation(input: {
 	kind: 'info' | 'warn' | 'error';
 	message: string;
 	cause?: unknown;
-	feature?: string;
+	feature?: string | undefined;
+	diagnostic?: ToastDiagnostic | undefined;
 }): ToastPresentation {
 	const rawMessage = input.message;
-	const feature = inferFeature(rawMessage, input.feature);
+	const feature = inferFeature(rawMessage, input.feature ?? input.diagnostic?.feature);
 	const causeName =
 		input.cause instanceof Error && input.cause.name !== '' ? input.cause.name : undefined;
 	const causeMessage =
@@ -98,41 +130,50 @@ export function formatToastPresentation(input: {
 
 	const deckProcessor = splitDeckProcessorMessage(rawMessage);
 	if (deckProcessor !== null) {
-		return withSolutionHint(input.kind, deckProcessor);
+		return applyDiagnostic(withSolutionHint(input.kind, deckProcessor), input.diagnostic);
 	}
 
 	const deckLoad = splitDeckLoadMessage(rawMessage);
 	if (deckLoad !== null) {
-		return withSolutionHint(input.kind, deckLoad);
+		return applyDiagnostic(withSolutionHint(input.kind, deckLoad), input.diagnostic);
 	}
 
 	if (isBareExceptionText(rawMessage) || (causeName !== undefined && isBareExceptionText(causeName))) {
 		const detailParts = [rawMessage];
 		if (causeMessage !== undefined && causeMessage !== rawMessage) detailParts.push(causeMessage);
-		return withSolutionHint(input.kind, {
-			headline: humanHeadlineForBareException(feature),
-			detail: detailParts.join(': '),
-			feature,
-			rawMessage
-		});
+		return applyDiagnostic(
+			withSolutionHint(input.kind, {
+				headline: humanHeadlineForBareException(feature),
+				detail: detailParts.join(': '),
+				feature,
+				rawMessage
+			}),
+			input.diagnostic
+		);
 	}
 
 	// Long technical strings: keep a short headline, stash the rest for expand.
 	if (rawMessage.length > 96 && rawMessage.includes(' - ')) {
 		const splitAt = rawMessage.indexOf(' - ');
-		return withSolutionHint(input.kind, {
-			headline: rawMessage.slice(0, splitAt),
-			detail: rawMessage,
-			feature,
-			rawMessage
-		});
+		return applyDiagnostic(
+			withSolutionHint(input.kind, {
+				headline: rawMessage.slice(0, splitAt),
+				detail: rawMessage,
+				feature,
+				rawMessage
+			}),
+			input.diagnostic
+		);
 	}
 
-	return withSolutionHint(input.kind, {
-		headline: rawMessage,
-		feature,
-		rawMessage
-	});
+	return applyDiagnostic(
+		withSolutionHint(input.kind, {
+			headline: rawMessage,
+			feature,
+			rawMessage
+		}),
+		input.diagnostic
+	);
 }
 
 function withSolutionHint(

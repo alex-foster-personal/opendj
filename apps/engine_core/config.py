@@ -48,6 +48,11 @@ class EngineConfig:
         return self.state_dir / "jobs.db"
 
     @property
+    def state_db(self) -> Path:
+        """The library store this engine serves, created at boot (#3965)."""
+        return self.state_dir / "state.db"
+
+    @property
     def lock_path(self) -> Path:
         return self.data_dir / ".engine.lock"
 
@@ -115,8 +120,9 @@ def prepare_layout(cfg: EngineConfig) -> None:
     """Create ONLY what the chassis itself owns: the state dir for jobs.db
     and the logs dir for browser diagnostics.
 
-    Library data is never fabricated here -- an empty data dir stays empty
-    apart from the lock file, the jobs db and the logs dir.
+    Library data is never fabricated here. The library STORE is created a
+    step later, by the composition root, as an empty schema: see
+    ``apps.engine_core.app._create_state_store``.
 
     The logs dir is proved writable at BOOT rather than discovered to be
     unwritable by the first browser error at 3am. An engine that cannot

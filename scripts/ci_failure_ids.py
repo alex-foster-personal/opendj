@@ -62,7 +62,7 @@ RATCHET_JOBS = re.compile(r"quality ratchet")
 _RUNNER_PREFIX = re.compile(r"^[^\t]*\t[^\t]*\t")
 _TIMESTAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
-_PYTEST = re.compile(r"(?:FAILED|ERROR) tests/\S+")
+_PYTEST_START = re.compile(r"(?:FAILED|ERROR) tests/(?=\S)")
 _TAP = re.compile(r"not ok [0-9]+ - .*\S")
 _SPEC = re.compile(r"^ *✖ (.*[^ ]) \([0-9.]+m?s\)$")
 _PLAYWRIGHT_HEADER = re.compile(r"^ +[0-9]+ failed *$")
@@ -124,12 +124,47 @@ def _svelte_check_identities(lines: list[str]) -> set[str]:
     return found
 
 
+def _pytest_identities(line: str) -> list[str]:
+    """pytest short-summary identities, ended OUTSIDE the node id's parameters.
+
+    A parametrized node id may hold whitespace, and 378 of the ledger's 14,911 ids do
+    (`test_strip_energy_prefix[1979 - Remaster-1979 - Remaster]`). Ending the identity at
+    the first whitespace, as this did until Thu 24 Sep 2026, cut every one of those short,
+    so the same test read as two different identities depending on which side parsed it.
+    Outside `[...]` a node id holds no whitespace, so the identity ends at the first
+    whitespace at bracket depth zero: the reason text after ` - ` is still dropped, and a
+    ` - ` INSIDE the parameters is kept. An unbalanced `[` has no depth-zero end to find,
+    so that one identity falls back to the whitespace-bounded form rather than swallowing
+    the reason text.
+    """
+    found: list[str] = []
+    cursor = 0
+    while match := _PYTEST_START.search(line, cursor):
+        depth = 0
+        end = len(line)
+        for index in range(match.end(), len(line)):
+            char = line[index]
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+            elif char.isspace() and depth <= 0:
+                end = index
+                break
+        identity = line[match.start() : end]
+        if depth > 0:
+            identity = " ".join(identity.split(maxsplit=2)[:2])
+        found.append(identity)
+        cursor = end
+    return found
+
+
 def failed_identities(log: str) -> frozenset[str]:
     """Every failing test identity in one job log."""
     lines = [_strip_prefixes(line) for line in log.split("\n")]
     found: set[str] = set()
     for line in lines:
-        found.update(_PYTEST.findall(line))
+        found.update(_pytest_identities(line))
         if tap := _TAP.search(line):
             found.add(re.sub(r"^not ok [0-9]+ - ", "not ok - ", tap.group(0), count=1))
         if spec := _SPEC.search(line):

@@ -20,6 +20,10 @@
 	// remember their own playlist selection (only the active pane renders).
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
+		canAddPaneSlot,
+		MAX_PANE_SLOTS
+	} from './pane-tabs';
+	import {
 		decodePlaylistDrag,
 		PLAYLIST_DRAG_MIME,
 		type PlaylistDragPayload
@@ -32,7 +36,8 @@
 		ontogglesticky,
 		onreorder,
 		ondropplaylist,
-		onsaveas
+		onsaveas,
+		onaddpane
 	}: {
 		tabs: PaneTabInfo[];
 		active: number;
@@ -45,6 +50,8 @@
 		ondropplaylist: (payload: PlaylistDragPayload) => void;
 		/** Persist an ephemeral pane's rows as a real playlist. */
 		onsaveas: (index: number) => void;
+		/** Open another blank pane slot (up to MAX_PANE_SLOTS). */
+		onaddpane?: () => void;
 	} = $props();
 
 	/** Index of the tab being dragged; null when no tab drag is in flight. */
@@ -150,40 +157,41 @@
 					>
 						save as
 					</button>
+				{:else}
+					<!-- up/down stepper: crisp SVG chevrons (SCREENSHOT-SPEC 5c) -->
+					<span class="stepper">
+						<button
+							class="rb-inert"
+							disabled
+							title={plannedTitle('pane-prev-track')}
+							aria-label="previous track in pane"
+						>
+							<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
+								<path
+									d="M1 4 L4 1 L7 4"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.3"
+								/>
+							</svg>
+						</button>
+						<button
+							class="rb-inert"
+							disabled
+							title={plannedTitle('pane-next-track')}
+							aria-label="next track in pane"
+						>
+							<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
+								<path
+									d="M1 1 L4 4 L7 1"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.3"
+								/>
+							</svg>
+						</button>
+					</span>
 				{/if}
-				<!-- up/down stepper: crisp SVG chevrons (SCREENSHOT-SPEC 5c) -->
-				<span class="stepper">
-					<button
-						class="rb-inert"
-						disabled
-						title={plannedTitle('pane-prev-track')}
-						aria-label="previous track in pane"
-					>
-						<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
-							<path
-								d="M1 4 L4 1 L7 4"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.3"
-							/>
-						</svg>
-					</button>
-					<button
-						class="rb-inert"
-						disabled
-						title={plannedTitle('pane-next-track')}
-						aria-label="next track in pane"
-					>
-						<svg viewBox="0 0 8 5" width="8" height="5" aria-hidden="true">
-							<path
-								d="M1 1 L4 4 L7 1"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.3"
-							/>
-						</svg>
-					</button>
-				</span>
 			</div>
 		{:else}
 			<button
@@ -219,6 +227,11 @@
 			</button>
 		{/if}
 	{/each}
+	{#if onaddpane !== undefined && canAddPaneSlot(tabs.length)}
+		<button class="tab add-pane" type="button" onclick={() => onaddpane?.()} aria-label="Blank List (+)">
+			Blank List (+)
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -246,6 +259,12 @@
 		background: var(--rb-panel-raised);
 		color: var(--rb-text);
 		cursor: default;
+		max-height: 24px;
+		overflow: hidden;
+	}
+	.tab.add-pane {
+		color: var(--rb-text-dim);
+		font-size: var(--rb-fs-label);
 	}
 	.tab svg {
 		flex: none;
