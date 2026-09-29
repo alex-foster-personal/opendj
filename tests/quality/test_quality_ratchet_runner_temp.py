@@ -8,7 +8,7 @@ persistent self-hosted runner never tidies /tmp, so each kill leaked one
 on megamac-vm over 20 hours, which dropped it under ci_node_preflight's 10 GB
 floor and failed an unrelated PR's production frontend build there.
 
-A per-runner dir under `runner.workspace`, wiped at the start of the step,
+A per-runner dir beside the checkout (`github.workspace/..`), wiped at the start of the step,
 bounds the leak to one run per runner, whatever kills the job, and stays on
 the checkout's disk. `runner.temp` would also be emptied per job, but
 nucbox-wsl-10..14 mount it as a 2 GB tmpfs (codex review on #4442).
@@ -22,7 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github/workflows"
-SCRATCH = "${{ runner.workspace }}/quality-gate-tmp"
+SCRATCH = "${{ github.workspace }}/../quality-gate-tmp"
 WIPE = 'rm -rf "$TMPDIR" && mkdir -p "$TMPDIR"'
 
 
