@@ -27,6 +27,10 @@ Regression lines:
   - if the mirror credential, raw or as its git auth header, reaches ANY git child of a
     `--target source` push (and so its hooks and credential helpers) then broken; and if
     the mirror push itself stops carrying the auth header then broken (opposite direction)
+  - if a credentialed git call (the mirror's ls-remote or push) starts a checkout hook or
+    another configured program (a signing program, say) then broken, since it would inherit
+    the auth header; and if the source target's own push stops running the checkout's
+    hooks then broken (opposite direction)
   - if a SHA that is not on origin/main can be mirrored then broken
   - if an EMPTY mirror is pushed to then broken: the first branch pushed becomes the
     default branch, which arms every `schedule` and `workflow_run` workflow in the mirror
@@ -43,6 +47,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -513,6 +520,150 @@ def test_mirror_push_still_carries_the_auth_header_and_nothing_else_does(world) 
         assert ENCODED not in env, argv
     for argv, env in calls:
         assert "CANARY_MIRROR_PUSH_TOKEN" not in env, argv
+
+
+# ----- credentialed calls start no program the checkout or git config names -----------
+
+
+def _logging_program(path: Path, log: Path, exit_code: int = 0) -> Path:
+    """An executable that records its name and full environment, then exits `exit_code`."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'#!/bin/sh\n{{ echo "=== {path.name}"; env; }} >> "{log}"\nexit {exit_code}\n')
+    path.chmod(0o755)
+    return path
+
+
+def _read(log: Path) -> str:
+    return log.read_text() if log.exists() else ""
+
+
+def test_a_mirror_push_runs_no_checkout_hook_so_none_sees_the_credential(world) -> None:
+    """Codex P1 on b9db90801: the mirror push ran the checkout's pre-push hook, whose
+    environment held the auth header (the token in base64)."""
+    _bootstrap_default_branch(world)
+    log = Path(str(world["source"]) + "-hooks.log")
+    _logging_program(Path(str(world["source"])) / ".git" / "hooks" / "pre-push", log)
+    # Control: the hook is live, and an ordinary push from this checkout runs it.
+    scratch = _bare(world, "scratch/hook-control")
+    _git(world["source"], "push", "-q", f"file://{scratch}", "HEAD:refs/heads/x", env=world["env"])
+    assert "=== pre-push" in _read(log)
+    log.unlink()
+    result = _run(world, world["on_main"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _canary_refs(Path(str(world["mirror"])), world) == [
+        f"refs/heads/canary/{world['on_main']}"
+    ]
+    assert TOKEN not in _read(log) and ENCODED not in _read(log)
+    assert _read(log) == "", "no hook runs during a credentialed call"
+
+
+def test_a_mirror_push_starts_no_signing_program_the_checkout_configures(world) -> None:
+    """Same class, another program: `push.gpgSign` in the checkout's config makes git start
+    `gpg.program` for a receiver that takes push certificates, inside the credentialed push."""
+    _bootstrap_default_branch(world)
+    log = Path(str(world["source"]) + "-gpg.log")
+    fake_gpg = _logging_program(Path(str(world["source"]) + "-bin") / "gpg", log, exit_code=1)
+    _git(Path(str(world["mirror"])), "config", "receive.certNonceSeed", "seed", env=world["env"])
+    for key, value in (
+        ("push.gpgSign", "true"),
+        ("gpg.program", str(fake_gpg)),
+        ("user.signingKey", "k"),
+    ):
+        _git(world["source"], "config", key, value, env=world["env"])
+    # Control: git does start the program for a push from this checkout.
+    scratch = _bare(world, "scratch/gpg-control")
+    scratch_config = ["config", "receive.certNonceSeed", "seed"]
+    _git(scratch, *scratch_config, env=world["env"])
+    subprocess.run(
+        ["git", "push", "-q", f"file://{scratch}", "HEAD:refs/heads/x"],
+        cwd=world["source"],
+        env=world["env"],
+        capture_output=True,
+        check=False,
+    )
+    assert "=== gpg" in _read(log)
+    log.unlink()
+    result = _run(world, world["on_main"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _read(log) == ""
+
+
+class _AskForCredentials(BaseHTTPRequestHandler):
+    """Answers every request 401 with a Basic challenge, the reply that makes git ask its
+    credential helpers and askpass programs for a username and password."""
+
+    def do_GET(self) -> None:
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="canary"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args: object) -> None:
+        return
+
+
+@pytest.fixture()
+def challenging_server() -> Iterator[str]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _AskForCredentials)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_credentialed_call_starts_no_credential_helper_or_askpass(
+    world, challenging_server: str
+) -> None:
+    """Same class: a credential helper or askpass program named in git config, or in
+    GIT_ASKPASS, would be started inside the mirror's ls-remote and inherit the header."""
+    log = Path(str(world["source"]) + "-cred.log")
+    bin_dir = Path(str(world["source"]) + "-bin")
+    helper = _logging_program(bin_dir / "git-credential-canary-probe", log, exit_code=1)
+    askpass = _logging_program(bin_dir / "askpass-config", log, exit_code=1)
+    env_askpass = _logging_program(bin_dir / "askpass-env", log, exit_code=1)
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    gitconfig.write_text(
+        gitconfig.read_text()
+        + f"[credential]\n\thelper = {helper}\n[core]\n\taskPass = {askpass}\n"
+    )
+    config = {**world["config"], "remote_url_templates": [f"{challenging_server}{{repo}}.git"]}
+    Path(str(world["config_path"])).write_text(json.dumps(config))
+    probe_env = {**world["env"], "GIT_ASKPASS": str(env_askpass)}
+    # Control: plain git, challenged at that URL, does start the helper and askpass.
+    subprocess.run(
+        ["git", "ls-remote", f"{challenging_server}control.git"],
+        cwd=world["source"],
+        env=probe_env,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    assert "=== git-credential-canary-probe" in _read(log) and "=== askpass-env" in _read(log)
+    log.unlink()
+    result = _run(world, world["on_main"], GIT_ASKPASS=str(env_askpass))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "cannot read" in result.stdout  # the challenge refused it, and nothing answered
+    assert _read(log) == "", "no helper or askpass ran during a credentialed call"
+
+
+def test_the_source_push_keeps_the_checkouts_own_hooks(world) -> None:
+    """Opposite direction: the switches ride only on credentialed calls. The source target
+    pushes with git's own credentials, and the checkout's hooks still run for it."""
+    log = Path(str(world["source"]) + "-hooks.log")
+    _logging_program(Path(str(world["source"])) / ".git" / "hooks" / "pre-push", log)
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "=== pre-push" in _read(log)
+    assert TOKEN not in _read(log) and ENCODED not in _read(log)
+
+
+def test_the_committed_mirror_url_is_https_so_no_ssh_program_runs() -> None:
+    """The credentialed calls switch off hooks, helpers, askpass, fsmonitor, gpg and ext::,
+    but not ssh: that holds only while the URL the mirror push builds is https."""
+    assert CONFIG["remote_url_templates"][0].startswith("https://")
 
 
 def test_source_target_refuses_a_sha_not_on_main(world) -> None:

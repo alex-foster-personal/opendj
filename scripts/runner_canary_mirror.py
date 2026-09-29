@@ -22,7 +22,9 @@ Environment:
                               the mirror ONLY. Read from the environment, handed to git
                               through GIT_CONFIG_* variables, never argv, never printed,
                               and only on the mirror's network calls: it is stripped from
-                              every git child's environment, on either target.
+                              every git child's environment, on either target, and a call
+                              that carries it runs no hook, credential helper, askpass,
+                              fsmonitor, gpg or ext:: program.
     CANARY_MIRROR_REPO        RETIRED, and refused if set: an override could land a canary
                               branch in a repository whose budget gate starts at zero.
 
@@ -39,6 +41,10 @@ Requirements (mini-PRD)
 - [if] any git url rewrite rule (`insteadOf` or `pushInsteadOf`, any config scope) matches
   the URL about to be contacted, on either target [then] exit 1 and push nothing: the
   checked URL must be the destination, [else stop] ✔︎ ✅ 🎯
+- [if] a credentialed git call (the mirror's ls-remote or push) would start a hook or any
+  other program the checkout or git config names [then] it does not: hooks, credential
+  helpers, askpass, fsmonitor, gpg and ext:: are switched off for that call only, while
+  the source target's own push keeps its hooks, [else stop] ✔︎ ✅ 🎯
 - [if] the SHA is malformed or not an ancestor of refs/remotes/origin/main [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
@@ -66,6 +72,16 @@ CANARY_PREFIX = "canary/"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 REWRITE_RULES_RE = r"^url\..*\.(push)?insteadof$"
 TARGETS = ("mirror", "source")
+# Programs git could start during a credentialed call, each switched off there. The mirror
+# URL is https (`remote_url_templates[0]`, pinned by a test), so ssh never runs for it.
+CREDENTIALED_CALL_CONFIG = (
+    ("core.hooksPath", os.devnull),  # no hook of any kind: pre-push, reference-transaction...
+    ("credential.helper", ""),  # an empty value clears every configured helper
+    ("core.askPass", ""),
+    ("core.fsmonitor", "false"),
+    ("push.gpgSign", "false"),  # no gpg.program
+    ("protocol.ext.allow", "never"),  # no ext:: transport commands
+)
 GIT_TIMEOUT_S = 120
 
 
@@ -156,14 +172,26 @@ def check_default_branch(branch: str | None, repo: str) -> None:
 
 
 def auth_env(token: str) -> dict[str, str]:
-    """git config for the https auth header, carried in the environment, not argv."""
+    """The environment of a CREDENTIALED git call: the https auth header, carried in the
+    environment rather than argv, and with it every switch that stops git from starting a
+    program the checkout or the user's config names, since that program would inherit the
+    header (Codex P1 on b9db90801). Whatever carries the header carries the switches."""
     basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    return {
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}",
+    entries = [
+        ("http.https://github.com/.extraheader", f"AUTHORIZATION: basic {basic}"),
+        *CREDENTIALED_CALL_CONFIG,
+    ]
+    env = {
+        "GIT_CONFIG_COUNT": str(len(entries)),
         "GIT_TERMINAL_PROMPT": "0",
+        # Set and EMPTY: git runs no askpass program at all (an unset one falls back).
+        "GIT_ASKPASS": "",
+        "SSH_ASKPASS": "",
     }
+    for index, (key, value) in enumerate(entries):
+        env[f"GIT_CONFIG_KEY_{index}"] = key
+        env[f"GIT_CONFIG_VALUE_{index}"] = value
+    return env
 
 
 def child_env(auth: dict[str, str]) -> dict[str, str]:
@@ -243,7 +271,10 @@ def read_default_branch(repo: str, url: str, auth: dict[str, str]) -> str | None
 def push_canary_ref(repo: str, url: str, sha: str, auth: dict[str, str]) -> str:
     """Push `sha` to `canary/<sha>`, streaming git's own output. Returns the ref."""
     ref = f"refs/heads/{CANARY_PREFIX}{sha}"
-    pushed = _git(["push", url, f"{sha}:{ref}"], auth=auth, check=False, capture=False)
+    # A credentialed push adds --no-verify to core.hooksPath (auth_env), so pre-push is
+    # skipped even if that config were lost. The source push keeps its checkout's hooks.
+    no_verify = ["--no-verify"] if auth else []
+    pushed = _git(["push", *no_verify, url, f"{sha}:{ref}"], auth=auth, check=False, capture=False)
     if pushed.returncode != 0:
         raise MirrorRefused(f"git push to {repo} exited {pushed.returncode}")
     return ref
