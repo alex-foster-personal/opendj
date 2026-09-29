@@ -16,6 +16,9 @@ Regression lines:
     another configured program (a signing program, say) then broken, since it would inherit
     the auth header; and if the source target's own push stops running the checkout's
     hooks then broken (opposite direction)
+  - if ANY git call but the source target's own push (the provenance fetch above all) runs
+    a checkout hook then broken: a `reference-transaction` hook can repoint the fetched
+    main at an off-main commit, which is then mirrored (Codex P1 on 27840126b)
   - if URL userinfo, an Authorization value, or the token or its base64 reaches stdout,
     stderr or a refusal's text (the origin URL, a rewrite rule, git's own echoed output,
     a timed-out argv) then broken; and if redaction hides the host and path too then
@@ -190,10 +193,19 @@ def _log_every_git_child(world: World) -> Path:
     return log
 
 
-def _invocations(log: Path) -> list[tuple[str, str]]:
-    """(argv, environment) for every git child the script started."""
-    chunks = log.read_text().split("=== ")[1:]
-    return [(chunk.split("\n", 1)[0], chunk.split("\n", 1)[1]) for chunk in chunks]
+def _without_switches(argv: str) -> str:
+    """`argv` from its subcommand on: the leading `-c key=value` pairs dropped."""
+    words = argv.split(" ")
+    while words[:1] == ["-c"]:
+        words = words[2:]
+    return " ".join(words)
+
+
+def _invocations(log: Path, *, raw: bool = False) -> list[tuple[str, str]]:
+    """(argv, environment) for every git child the script started; argv from the
+    subcommand on unless `raw`."""
+    chunks = [chunk.split("\n", 1) for chunk in log.read_text().split("=== ")[1:]]
+    return [(argv if raw else _without_switches(argv), env) for argv, env in chunks]
 
 
 def test_source_target_children_never_see_the_mirror_credential(world) -> None:
@@ -376,6 +388,70 @@ def test_the_committed_mirror_url_is_https_so_no_ssh_program_runs() -> None:
     assert CONFIG["remote_url_templates"][0].startswith("https://")
 
 
+# ----- no configured program runs before the source push -----------------------------
+
+
+def _repointing_hook(world: World, to: str) -> None:
+    """A `reference-transaction` hook that, once the private main ref is committed, points
+    it at `to`: Codex's reproduction on 27840126b, with a real hook in the real checkout."""
+    hook = world["source"] / ".git" / "hooks" / "reference-transaction"
+    hook.write_text(
+        "#!/bin/sh\n"
+        '[ "$1" = committed ] || exit 0\n'
+        '[ -n "$REPOINTED" ] && exit 0\n'
+        f"grep -q ' {mirror_script.SOURCE_MAIN_REF}$' || exit 0\n"
+        f"REPOINTED=1 git update-ref {mirror_script.SOURCE_MAIN_REF} {to}\n"
+    )
+    hook.chmod(0o755)
+
+
+@pytest.mark.parametrize("target", ["mirror", "source"])
+def test_a_hook_cannot_repoint_the_fetched_main_to_an_off_main_commit(world, target: str) -> None:
+    """Codex P1 on 27840126b: a hook run by the provenance fetch rewrote the private main
+    ref after the validated fetch, so an off-main SHA passed merge-base and was pushed."""
+    bootstrap_default_branch(world)
+    _repointing_hook(world, world["off_main"])
+    # Control: git itself runs the hook on that fetch, so the attack is live in this checkout.
+    source_url = repo_url(world, CONFIG["source_repository"])
+    refspec = f"+refs/heads/main:{mirror_script.SOURCE_MAIN_REF}"
+    git(
+        world["source"],
+        "fetch",
+        "-q",
+        "--no-write-fetch-head",
+        source_url,
+        refspec,
+        env=world["env"],
+    )
+    ref = git(world["source"], "rev-parse", mirror_script.SOURCE_MAIN_REF, env=world["env"])
+    assert ref == world["off_main"], "control: the hook repoints the ref under plain git"
+    git(world["source"], "update-ref", "-d", mirror_script.SOURCE_MAIN_REF, env=world["env"])
+    result = run_mirror_script(world, world["off_main"], target=target)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "is not on the source repository's main" in result.stdout
+    assert canary_refs(world["mirror"], world) == []
+    assert canary_refs(world["real"], world) == []
+
+
+@pytest.mark.parametrize("target", ["mirror", "source"])
+def test_every_git_call_but_the_source_push_switches_configured_programs_off(
+    world, target: str
+) -> None:
+    """The class, not the instance: the switches are the default on every git child. The
+    source push is the one exception (so its checkout's hooks run); the mirror push carries
+    them too, beside the ones its auth environment adds."""
+    bootstrap_default_branch(world)
+    log = _log_every_git_child(world)
+    result = run_mirror_script(world, world["on_main"], target=target)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = _invocations(log, raw=True)
+    assert any(" fetch " in f" {a} " for a, _ in calls), "control: the provenance fetch ran"
+    hooks_off = f"core.hooksPath={os.devnull}"
+    for argv, _ in calls:
+        is_source_push = target == "source" and _without_switches(argv).startswith("push ")
+        assert (hooks_off in argv.split(" ")) != is_source_push, argv
+
+
 # ----- redaction: nothing printed or raised carries a credential ----------------------
 
 
@@ -420,10 +496,16 @@ def _echoing_git(world: World, fail: str) -> None:
     shim = shim_dir / "git"
     shim.write_text(
         "#!/bin/sh\n"
-        'case "$1" in ls-remote|push)\n'
+        # The subcommand is the first word after the leading `-c key=value` pairs.
+        'sub=""; skip=0\n'
+        'for a in "$@"; do\n'
+        '  if [ "$skip" = 1 ]; then skip=0; continue; fi\n'
+        '  case "$a" in -c) skip=1;; *) sub="$a"; break;; esac\n'
+        "done\n"
+        'case "$sub" in ls-remote|push)\n'
         '  for a in "$@"; do case "$a" in *://*) url="$a";; esac; done\n'
         "  echo \"fatal: unable to access '$url': sent $GIT_CONFIG_VALUE_0\" >&2\n"
-        f'  [ "$1" = "{fail}" ] && exit 128;;\n'
+        f'  [ "$sub" = "{fail}" ] && exit 128;;\n'
         "esac\n"
         f'exec "{real_git}" "$@"\n'
     )
