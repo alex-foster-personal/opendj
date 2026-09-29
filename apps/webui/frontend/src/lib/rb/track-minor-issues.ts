@@ -31,7 +31,9 @@ function _isStreaming(row: BrowserRow): boolean {
 export function minorIssuesFor(row: BrowserRow): MinorIssue[] {
 	const issues: MinorIssue[] = [];
 
-	if (row.has_remote_copy !== true && !_isStreaming(row)) {
+	// Only an explicit false is "not on CloudSync". Missing Tracks rows carry no
+	// remote-copy fact at all (BrokenTrackOut has none), and unknown is not no.
+	if (row.has_remote_copy === false && !_isStreaming(row)) {
 		issues.push({ id: 'not-on-cloud', label: 'Not on CloudSync' });
 	}
 

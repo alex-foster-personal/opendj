@@ -26,15 +26,8 @@
  */
 // requirement: CHROME-07
 import { expect, test, type Page } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-import { build } from 'esbuild';
-import { compile } from 'svelte/compiler';
-
-const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
+import { bundleSvelteHarness } from './support/svelte-harness-bundle';
 
 // The parent mirrors HeadphoneCluster: it owns the flag and clears it from
 // onProgrammaticClose. __harness only exposes that same flag to the test.
@@ -59,51 +52,10 @@ const HARNESS = `<script>
 </ControlExplainer>
 <button id="outside" type="button" style="position:fixed;right:8px;bottom:8px">outside</button>`;
 
-async function bundle(): Promise<string> {
-	const result = await build({
-		stdin: {
-			contents:
-				"import { mount } from 'svelte';\nimport Harness from 'virtual:harness.svelte';\nmount(Harness, { target: document.body });",
-			resolveDir: FRONTEND_ROOT,
-			loader: 'js'
-		},
-		absWorkingDir: FRONTEND_ROOT,
-		alias: { $lib: LIB_ROOT },
-		bundle: true,
-		conditions: ['browser'],
-		format: 'iife',
-		logLevel: 'silent',
-		platform: 'browser',
-		write: false,
-		plugins: [
-			{
-				name: 'svelte-client',
-				setup(b) {
-					b.onResolve({ filter: /^virtual:harness\.svelte$/ }, () => ({
-						path: 'harness.svelte',
-						namespace: 'harness'
-					}));
-					b.onLoad({ filter: /.*/, namespace: 'harness' }, () => ({
-						contents: compile(HARNESS, { filename: 'Harness.svelte', generate: 'client' }).js.code,
-						loader: 'js',
-						resolveDir: FRONTEND_ROOT
-					}));
-					b.onLoad({ filter: /\.svelte$/ }, async (args) => {
-						const source = await readFile(args.path, 'utf8');
-						const out = compile(source, { filename: args.path, generate: 'client', css: 'injected' });
-						return { contents: out.js.code, loader: 'js', resolveDir: dirname(args.path) };
-					});
-				}
-			}
-		]
-	});
-	return result.outputFiles[0].text;
-}
-
 let script = '';
 
 test.beforeAll(async () => {
-	script = await bundle();
+	script = await bundleSvelteHarness(HARNESS);
 });
 
 async function mountHarness(page: Page): Promise<void> {

@@ -3,8 +3,8 @@
 
 	let { view }: { view: TrackCloudView } = $props();
 
-	// Tidal has no distinct brand color here; it shares the same
-	// `currentColor` fallback every other/unrecognized provider takes.
+	// Tidal's mark is black and white, so its glyph takes a theme-aware color
+	// from the `.tidal` rule below instead of the dim column text.
 	const providerColor = $derived.by(() => {
 		if (view.provider === 'spotify') return '#35c04f';
 		if (view.provider === 'soundcloud') return '#ff5500';
@@ -41,7 +41,7 @@
 					stroke-linejoin="round"
 				/>
 			{:else if view.provider === 'tidal'}
-				<path d="M4 4l4 4-4 4M8 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" />
+				<path class="tidal" d="M4 4l4 4-4 4M8 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" />
 			{/if}
 		</svg>
 	{:else}
@@ -88,5 +88,11 @@
 	}
 	.on-cloud-not-local {
 		color: #e5484d;
+	}
+	.tidal {
+		color: #fff;
+	}
+	:global(html[data-theme='light']) .tidal {
+		color: #000;
 	}
 </style>

@@ -12,6 +12,8 @@
  *   if TopBar statically imports MidiPanel.svelte then broken
  *   if MidiPanelLoader imports MidiPanel.svelte other than by import() then broken
  *   if a failed MidiPanel import renders no role="alert" then broken
+ *   if TopBar imports the learn-log pop-out at all (it lives in MidiPanel) then broken
+ *   if MidiPanel's device-list or pop-out import has no .catch then broken
  *   if TrackTable statically imports RelocatePopover or TrackPlaylistsPopover then broken
  *   if TrackRowPopovers fetches either popover other than by import() then broken
  *   if a failed popover import renders no role="alert" then broken
@@ -27,6 +29,7 @@ const read = (rel) => fs.readFileSync(path.join(FRONTEND_ROOT, rel), 'utf8');
 
 const topBar = read('src/lib/components/rb/TopBar.svelte');
 const midiLoader = read('src/lib/components/rb/midi/MidiPanelLoader.svelte');
+const midiPanel = read('src/lib/components/rb/MidiPanel.svelte');
 const trackTable = read('src/lib/components/rb/browser/TrackTable.svelte');
 const rowPopovers = read('src/lib/components/rb/browser/TrackRowPopovers.svelte');
 
@@ -47,6 +50,20 @@ test('the MIDI drawer module is fetched by the open flip, and a failure is shown
 	assert.match(midiLoader, /\.catch\(/);
 	assert.match(midiLoader, /role="alert"/);
 	assert.match(midiLoader, /MIDI panel failed to load: \{loadError\}/);
+});
+
+// Codex P2 on PR #3896 (comment 4129741948). The browser behavior (error
+// shown, retried on the next open) is tests/e2e/midi-panel-lazy-load-errors.spec.ts;
+// this pins the shape that keeps the pop-out out of TopBar's boot chunk.
+test('the learn-log pop-out and device list load inside MidiPanel, each with a handled failure', () => {
+	assert.doesNotMatch(topBar, /MidiLearnLogPopout/);
+	for (const file of ['MidiDeviceList\\.svelte', 'MidiLearnLogPopout\\.svelte']) {
+		assert.doesNotMatch(midiPanel, staticImportOf(file));
+		assert.match(midiPanel, dynamicImportOf(file));
+	}
+	assert.equal((midiPanel.match(/\.catch\(/g) ?? []).length, 2);
+	assert.match(midiPanel, /Devices failed to load: \{deviceListError\}/);
+	assert.match(midiPanel, /Learn log pop-out failed to load: \{popoutError\}/);
 });
 
 test('TrackTable mounts the row popovers through the lazy wrapper, never statically', () => {

@@ -95,9 +95,8 @@
 	import JobsDrawer from '$lib/components/rb/JobsDrawer.svelte';
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import { jobsStore, toggleJobsDrawer } from '$lib/rb/jobs-store.svelte';
-	import type { Component } from 'svelte';
 	import MidiPanelLoader from '$lib/components/rb/midi/MidiPanelLoader.svelte';
-	import { maybeAutoEnableMidi, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { maybeAutoEnableMidi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import RefreshAnalysisButton from './RefreshAnalysisButton.svelte';
 	import MasterLevelMeter from './mixer/MasterLevelMeter.svelte';
 	import {
@@ -274,21 +273,6 @@
 	// also registers device maps + attaches the glue - so the invariant holds.
 	onMount(() => {
 		void maybeAutoEnableMidi();
-	});
-
-	// The pop-out is rare-use chrome nested inside already-rare-use chrome
-	// (its own trigger button lives inside the MIDI panel, criterion
-	// CHROME-07): loading it only once the panel is first opened keeps its
-	// bytes out of every /performance page load instead of the handful of
-	// sessions that actually open MIDI and then pop the log out.
-	let MidiLearnLogPopoutComponent: Component | null = $state(null);
-
-	$effect(() => {
-		if (midiUi.panelOpen && MidiLearnLogPopoutComponent === null) {
-			void import('$lib/components/rb/midi/MidiLearnLogPopout.svelte').then((m) => {
-				MidiLearnLogPopoutComponent = m.default;
-			});
-		}
 	});
 
 	$effect(() => {
@@ -872,12 +856,8 @@
 <!-- Jobs drawer: overlay, only visible while jobsStore.drawerOpen -->
 <JobsDrawer />
 
-<!-- MIDI learn-log pop-out: click-through floating overlay, opened from the
-     panel's "pop out" button. Only visible while midiUi.logPopoutOpen. Lazy,
-     loaded once the panel is first opened (see the $effect above). -->
-{#if MidiLearnLogPopoutComponent}
-	<MidiLearnLogPopoutComponent />
-{/if}
+<!-- The MIDI learn-log pop-out is hosted by MidiPanel (lazy, with the drawer),
+     so its failure shows an error there instead of nothing here. -->
 
 <style>
 	.rb-topbar {

@@ -19,6 +19,7 @@
 	import type { Component } from 'svelte';
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
 	import {
+		closeLogPopout,
 		floatMidiPanel,
 		midiUi,
 		requestMidiAccess,
@@ -47,14 +48,42 @@
 	// match, binding count, LED test) is the heavier of the panel's two
 	// sub-views, so it is the one deferred to a real network fetch, triggered
 	// by the same open flip that reveals it.
+	//
+	// The learn-log pop-out is rarer still (its trigger is inside this panel),
+	// so it loads here too. This component stays mounted once loaded, so the
+	// pop-out outlives the drawer closing. Both follow MidiPanelLoader's
+	// contract: a failed fetch shows its error in place, nothing is swallowed,
+	// and it is retried on the next open, not on every render.
 	let MidiDeviceListComponent: Component | null = $state(null);
+	let MidiLearnLogPopoutComponent: Component | null = $state(null);
+	let deviceListError: string | null = $state(null);
+	let popoutError: string | null = $state(null);
+	let deviceListLoading = false;
+	let popoutLoading = false;
+
+	function _failed(what: string, exc: unknown): string {
+		console.error(`[midi] ${what} failed to load`, exc);
+		return exc instanceof Error ? exc.message : String(exc);
+	}
 
 	$effect(() => {
-		if (midiUi.panelOpen && MidiDeviceListComponent === null) {
-			void import('$lib/components/rb/midi/MidiDeviceList.svelte').then((m) => {
-				MidiDeviceListComponent = m.default;
-			});
-		}
+		if (!midiUi.panelOpen || MidiDeviceListComponent !== null || deviceListLoading) return;
+		deviceListLoading = true;
+		deviceListError = null;
+		import('$lib/components/rb/midi/MidiDeviceList.svelte')
+			.then((m) => (MidiDeviceListComponent = m.default))
+			.catch((exc: unknown) => (deviceListError = _failed('device list', exc)))
+			.finally(() => (deviceListLoading = false));
+	});
+
+	$effect(() => {
+		if (!midiUi.panelOpen || MidiLearnLogPopoutComponent !== null || popoutLoading) return;
+		popoutLoading = true;
+		popoutError = null;
+		import('$lib/components/rb/midi/MidiLearnLogPopout.svelte')
+			.then((m) => (MidiLearnLogPopoutComponent = m.default))
+			.catch((exc: unknown) => (popoutError = _failed('learn log pop-out', exc)))
+			.finally(() => (popoutLoading = false));
 	});
 </script>
 
@@ -127,6 +156,8 @@
 			<h3 class="section-title">Devices ({midiState.devices.length})</h3>
 			{#if MidiDeviceListComponent}
 				<MidiDeviceListComponent />
+			{:else if deviceListError !== null}
+				<p class="perm-error" role="alert">Devices failed to load: {deviceListError}. Close and reopen MIDI to retry.</p>
 			{/if}
 		</section>
 
@@ -137,7 +168,30 @@
 	</div>
 {/if}
 
+{#if MidiLearnLogPopoutComponent}
+	<MidiLearnLogPopoutComponent />
+{:else if midiUi.logPopoutOpen && popoutError !== null}
+	<div class="popout-error rb-panel" role="alert">
+		<span>Learn log pop-out failed to load: {popoutError}. Close and reopen MIDI to retry.</span>
+		<button type="button" class="drawer-action" onclick={closeLogPopout}>Close</button>
+	</div>
+{/if}
+
 <style>
+	.popout-error {
+		position: fixed;
+		right: 12px;
+		bottom: 48px;
+		z-index: 60;
+		display: flex;
+		gap: 10px;
+		align-items: center;
+		max-width: 420px;
+		padding: 8px 12px;
+		border: 1px solid var(--rb-red);
+		color: var(--rb-text);
+		font-size: 12px;
+	}
 	.midi-backdrop {
 		position: fixed;
 		inset: 0;
