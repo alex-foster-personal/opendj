@@ -50,8 +50,6 @@ os.environ["MUSIC_DJ_AUTO_ANALYZE"] = "off"
 
 import pytest
 
-from tests.support.thread_leaks import leaked_threads
-
 # Register the reqs plugin (coverage-matrix.md writer + --live-db gate), and the
 # SMARTEST-CI tier plugins (specs/ci-fail-fast.md round 6a). They are registered
 # HERE and not with `-p` on the command line because `.venv/bin/pytest` (the
@@ -319,6 +317,8 @@ def _no_leaked_threads(request: pytest.FixtureRequest) -> Iterator[None]:
     modules marked ``no_leaked_threads``. Rules and the draining-monitor
     exemption: tests/support/thread_leaks.py.
     """
+    from tests.support.thread_leaks import leaked_threads
+
     baseline = set(threading.enumerate())
     yield
     leaks = leaked_threads(
