@@ -190,6 +190,23 @@ def _curl_shim() -> str:
 set -euo pipefail
 url="${@: -1}"
 if [[ "$url" == *"/api/v1/preflight" ]]; then
+  attempt=1
+  if [[ -n "${DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE:-}" ]]; then
+    prev="$(cat "$DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE" 2>/dev/null || echo 0)"
+    attempt=$((prev + 1))
+    printf '%s' "$attempt" > "$DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE"
+  fi
+  # Simulates the packaged app's engine port accepting the TCP connection but
+  # not answering yet (the TCC/Gatekeeper negotiation window): curl returns
+  # an empty body, exactly like the real `-m` timeout does after `|| true`
+  # discards its non-zero exit.
+  if [[ "${DMG_SMOKE_PREFLIGHT_NEVER_ANSWER:-0}" == "1" ]]; then
+    exit 0
+  fi
+  ready_after="${DMG_SMOKE_PREFLIGHT_READY_AFTER_ATTEMPTS:-0}"
+  if [[ "$ready_after" -gt 0 && "$attempt" -lt "$ready_after" ]]; then
+    exit 0
+  fi
   printf '%s' "${DMG_SMOKE_PREFLIGHT_JSON:?}"
   exit 0
 fi
@@ -350,6 +367,7 @@ def setup_layout(home: Path) -> dict[str, Path]:
     open_log = home / "open_log.txt"
     scratch_state = home / "scratch_running"
     build_root.mkdir(parents=True, exist_ok=True)
+    preflight_attempts_file = home / "preflight_attempts"
 
     return {
         "bin_dir": bin_dir,
@@ -361,6 +379,7 @@ def setup_layout(home: Path) -> dict[str, Path]:
         "open_called": open_called,
         "open_log": open_log,
         "scratch_state": scratch_state,
+        "preflight_attempts_file": preflight_attempts_file,
     }
 
 

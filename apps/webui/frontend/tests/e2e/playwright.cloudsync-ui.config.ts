@@ -66,6 +66,8 @@ function engineEnv(dataDir: string, isHub: '1' | '0'): Record<string, string> {
 }
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'cloudsync-ui.spec.ts',
 	fullyParallel: false,

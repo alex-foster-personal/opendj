@@ -28,6 +28,7 @@ def regenerate_agents_md_if_writable(
     state_dir: Path,
     *,
     owned_tables: frozenset[str] | None = None,
+    cache_marker: str | None = None,
 ) -> bool:
     """Regenerate ``<state_dir>/AGENTS.md`` from ``conn``, if ``state_dir`` is writable.
 
@@ -51,7 +52,10 @@ def regenerate_agents_md_if_writable(
     passes ``schema.ALL_KNOWN_TABLES`` so leftover tables that are not on
     the current ladder cannot abort the open, while foreign-authority
     tables stay in the sidecar. The CLI and tests that omit it keep the
-    strict every-live-table guard.
+    strict every-live-table guard. ``cache_marker`` is forwarded too; the
+    cache gate that computes it lives with its caller in
+    :mod:`apps.shared.state.agents_md_cache`, so this package never imports
+    ``apps.shared`` (that would make ``database <-> shared`` a package cycle).
     """
     if not os.access(state_dir, os.W_OK):
         return False
@@ -64,5 +68,7 @@ def regenerate_agents_md_if_writable(
     # avoids it.
     from apps.database.generate_agents_md import write_agents_md
 
-    write_agents_md(conn, state_dir / "AGENTS.md", owned_tables=owned_tables)
+    write_agents_md(
+        conn, state_dir / "AGENTS.md", owned_tables=owned_tables, cache_marker=cache_marker
+    )
     return True
