@@ -15,6 +15,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -39,7 +40,7 @@ export default defineConfig({
 	expect: { timeout: 10_000 },
 	webServer: [
 		{
-			command: ENGINE_COMMAND,
+			command: guardedWebServerCommand('library-wheel-engine', ENGINE_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: 'http://127.0.0.1:9428/api/v1/health',
 			reuseExistingServer: false,
@@ -52,7 +53,7 @@ export default defineConfig({
 			}
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.library-wheel.config.ts',
+			command: guardedWebServerCommand('library-wheel-vite', 'pnpm exec vite --config tests/e2e/vite.library-wheel.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: 'http://127.0.0.1:5228/library-wheel',
 			reuseExistingServer: false,

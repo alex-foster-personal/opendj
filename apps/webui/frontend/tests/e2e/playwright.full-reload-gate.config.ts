@@ -20,6 +20,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 import { FULL_RELOAD_GATE_FRONTEND_PORT } from './vite.full-reload-gate.config';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const FRONTEND_ORIGIN = `http://127.0.0.1:${FULL_RELOAD_GATE_FRONTEND_PORT}`;
@@ -35,7 +36,7 @@ export default defineConfig({
 	expect: { timeout: 10_000 },
 	reporter: [['list']],
 	webServer: {
-		command: `pnpm exec vite --config tests/e2e/vite.full-reload-gate.config.ts`,
+		command: guardedWebServerCommand('full-reload-gate-vite', `pnpm exec vite --config tests/e2e/vite.full-reload-gate.config.ts`),
 		cwd: FRONTEND_ROOT,
 		url: FRONTEND_ORIGIN,
 		reuseExistingServer: false,

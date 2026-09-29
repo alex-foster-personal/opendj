@@ -30,6 +30,7 @@ import {
 	AUTOPLAY_HUNT_API_PORT,
 	AUTOPLAY_HUNT_FRONTEND_PORT
 } from './vite.autoplay-error-hunt.config';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -150,7 +151,7 @@ export default defineConfig({
 	outputDir: HUNT_OUTPUT_DIR,
 	webServer: [
 		{
-			command: SERVER_COMMAND,
+			command: guardedWebServerCommand('autoplay-error-hunt-engine', SERVER_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: `${API_ORIGIN}/api/v1/health`,
 			reuseExistingServer: false,
@@ -164,7 +165,7 @@ export default defineConfig({
 			}
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.autoplay-error-hunt.config.ts',
+			command: guardedWebServerCommand('autoplay-error-hunt-vite', 'pnpm exec vite --config tests/e2e/vite.autoplay-error-hunt.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${FRONTEND_ORIGIN}/performance`,
 			reuseExistingServer: false,
