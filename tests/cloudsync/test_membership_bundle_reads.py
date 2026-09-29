@@ -181,8 +181,14 @@ def _random_bundle(
     _add_playlist(conn, [rng.choice(pool) for _ in range(rng.randint(40, 90))])
 
 
-def _verdicts(conn: sqlite3.Connection, walk: str) -> tuple[Any, ...]:
+def _verdicts(
+    conn: sqlite3.Connection, walk: str, predecided: dict[str, bool]
+) -> tuple[Any, ...]:
+    """Walk the bundle after the walk has already decided ``predecided`` tracks
+    (True: held), some of them against what their stored row alone says."""
     held = sync_set.HeldKeys(conn)
+    for pk, is_held in predecided.items():
+        (held.hold if is_held else held.release)("tracks", (pk,))
     result = _BUNDLE_WALKS[walk](conn, held)
     return (
         result,
@@ -209,10 +215,13 @@ def test_batched_verdicts_equal_per_member_verdicts(
             " WHERE rowid % 7 = 0"
         )
         _random_bundle(conn, rng, pks, travels=seed % 2 == 0)
-        batched = _verdicts(conn, walk)
+        # Freed only: a walk that held a member holds the bundle, and the
+        # travelling case below must stay travelling.
+        predecided = {pk: False for pk in rng.sample(pks, 20)}
+        batched = _verdicts(conn, walk, predecided)
         with monkeypatch.context() as per_member:
             _per_member_decisions(per_member)
-            expected = _verdicts(conn, walk)
+            expected = _verdicts(conn, walk, predecided)
     finally:
         conn.close()
     (result, held, free), (expected_result, expected_held, expected_free) = batched, expected
@@ -227,6 +236,48 @@ def test_batched_verdicts_equal_per_member_verdicts(
     assert _BUNDLE_HELD[walk](expected_result) == (seed % 2 == 1), "the fixture missed its case"
     if not _BUNDLE_HELD[walk](expected_result):
         assert (held, free) == (expected_held, expected_free)
+
+
+def _identity_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, members: int, elect_after: int
+) -> tuple[int, int]:
+    """(per-row component decisions, library elections) for one bundle walk."""
+    monkeypatch.setattr(identity_verdicts.CFG, "ELECT_LIBRARY_AFTER_VERDICTS", elect_after)
+    counts = {"component": 0, "library": 0}
+    decide = identity_verdicts.IdentityLoserVerdicts._decide_component_of
+    elect = identity_verdicts.effective_identity_remap
+
+    def _counted_decide(self: Any, stable_id: str) -> None:
+        counts["component"] += 1
+        decide(self, stable_id)
+
+    def _counted_elect(conn: sqlite3.Connection) -> Any:
+        counts["library"] += 1
+        return elect(conn)
+
+    verdicts = identity_verdicts.IdentityLoserVerdicts
+    monkeypatch.setattr(verdicts, "_decide_component_of", _counted_decide)
+    monkeypatch.setattr(identity_verdicts, "effective_identity_remap", _counted_elect)
+    conn = _hub_with_bundle(tmp_path, members)
+    try:
+        engine_changes._members_for_playlist(conn, PLAYLIST, sync_set.HeldKeys(conn))
+    finally:
+        conn.close()
+    return counts["component"], counts["library"]
+
+
+def test_a_bundle_past_the_cutover_elects_the_library_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _identity_work(tmp_path, monkeypatch, LARGE_BUNDLE, elect_after=50) == (0, 1)
+
+
+def test_a_bundle_under_the_cutover_still_decides_per_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Overshoot control: electing the library for every bundle is the per-page
+    election round 2 removed."""
+    assert _identity_work(tmp_path, monkeypatch, SMALL_BUNDLE, elect_after=50) == (SMALL_BUNDLE, 0)
 
 
 def test_replace_still_skips_a_member_whose_track_is_not_here(
