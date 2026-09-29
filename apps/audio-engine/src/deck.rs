@@ -498,8 +498,13 @@ impl Deck {
     /// with no `start_ms`, on the preceding downbeat for a 4-beat loop and on
     /// the nearest beat otherwise. With only a tag BPM it starts where asked.
     pub fn beat_loop(&mut self, beats: f64, start_ms: Option<f64>) -> Result<(), EngineError> {
-        if !(beats.is_finite() && beats > 0.0 && beats <= MAX_BEATS) {
-            return Err(EngineError::new(ErrorCode::Invalid, "beat loop length must be positive and at most 65536 beats"));
+        // Whole beats on every track, as the page's command parser requires,
+        // whether or not a grid is loaded.
+        if !(beats.is_finite() && beats > 0.0 && beats <= MAX_BEATS && beats.fract() == 0.0) {
+            return Err(EngineError::new(
+                ErrorCode::Invalid,
+                "beat loop length must be a whole number of beats, 1 to 65536",
+            ));
         }
         let t = self.track()?.clone();
         let here = start_ms.unwrap_or_else(|| t.frames_to_ms(self.pos));
@@ -507,9 +512,6 @@ impl Deck {
             let idx = t.beat_index_at(here).ok_or(no_grid())?;
             let end = t.beat_time_ms(idx + beats).ok_or(no_grid())?;
             return self.engage_beat_loop(beats, here, end);
-        }
-        if beats.fract() != 0.0 {
-            return Err(EngineError::new(ErrorCode::Invalid, "a loop on a beatgrid spans whole beats"));
         }
         let start = if start_ms.is_none() && beats == 4.0 {
             t.downbeat_at_or_before(here)
@@ -527,17 +529,17 @@ impl Deck {
     /// Jump by `beats` along the grid. A jump inside an active loop moves the
     /// loop with it, as rekordbox does, so the playhead stays inside it.
     pub fn beat_jump(&mut self, beats: f64) -> Result<(), EngineError> {
-        if !(beats.is_finite() && beats.abs() <= MAX_BEATS) {
-            return Err(EngineError::new(ErrorCode::Invalid, "beat jump must be finite and at most 65536 beats either way"));
+        if !(beats.is_finite() && beats != 0.0 && beats.abs() <= MAX_BEATS && beats.fract() == 0.0) {
+            return Err(EngineError::new(
+                ErrorCode::Invalid,
+                "beat jump must be a non-zero whole number of beats, at most 65536 either way",
+            ));
         }
         let t = self.track()?.clone();
         let now = t.frames_to_ms(self.pos);
         let target = if t.has_grid() {
             // Whole beats from the nearest real beat, clamped to the grid and
             // to its last beat inside the audio (`beatJumpTargetMs`).
-            if beats.fract() != 0.0 || beats == 0.0 {
-                return Err(EngineError::new(ErrorCode::Invalid, "a beat jump on a beatgrid is a non-zero whole number"));
-            }
             let last = t.beats.len() as i64 - 1;
             let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
             let dur = t.duration_ms();
@@ -821,6 +823,27 @@ mod tests {
         assert!(d.beat_loop(2.0, Some(6500.0)).is_err(), "ends on the 7.5 s beat");
         d.beat_loop(2.0, Some(6000.0)).unwrap();
         assert_eq!((d.looping, d.loop_beats), (Some((288000.0, 336000.0)), Some(2.0)));
+    }
+
+    #[test]
+    fn beat_counts_are_whole_with_or_without_a_grid() {
+        // Tag BPM only: no grid to snap to, and still whole beats only.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 10], vec![], Some(120.0))));
+        for bad in [0.5, 1.5, 0.0, -1.0] {
+            assert_eq!(d.beat_loop(bad, Some(1000.0)).unwrap_err().code, ErrorCode::Invalid, "loop {bad}");
+        }
+        for bad in [0.5, -2.5, 0.0] {
+            assert_eq!(d.beat_jump(bad).unwrap_err().code, ErrorCode::Invalid, "jump {bad}");
+        }
+        assert_eq!(d.looping, None);
+        // Control: whole counts still work on the tag BPM, negative jumps too.
+        d.beat_loop(2.0, Some(1000.0)).unwrap();
+        assert_eq!(d.looping, Some((48000.0, 96000.0)));
+        d.set_loop(None).unwrap();
+        d.seek(4000.0).unwrap();
+        d.beat_jump(-2.0).unwrap();
+        assert_eq!(d.pos, 3000.0 * 48.0);
     }
 
     #[test]

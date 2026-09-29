@@ -122,11 +122,17 @@ fn num(o: &Obj, ty: &str, name: &str) -> Result<f64, ProtoError> {
     Ok(v)
 }
 
-/// A beat loop's length or a beat jump's distance. Bounded here, before the
-/// command reaches the engine, so beat-index arithmetic on it can neither
+/// A beat loop's length (`signed` false: a positive whole number) or a beat
+/// jump's distance (`signed` true: a non-zero whole number), as the page's
+/// command parser requires, whatever track is loaded. Bounded here, before
+/// the command reaches the engine, so beat-index arithmetic on it can neither
 /// saturate a cast nor overflow; the deck refuses the same range again.
-fn beat_count(o: &Obj, ty: &str) -> Result<f64, ProtoError> {
+fn beat_count(o: &Obj, ty: &str, signed: bool) -> Result<f64, ProtoError> {
     let v = num(o, ty, "beats")?;
+    if v.fract() != 0.0 || v == 0.0 || (!signed && v < 0.0) {
+        let want = if signed { "a non-zero whole number" } else { "a positive whole number" };
+        return Err(invalid(format!("{ty}.beats must be {want}, got {v}")));
+    }
     if v.abs() > MAX_BEATS {
         return Err(invalid(format!("{ty}.beats must be at most {MAX_BEATS} either way, got {v}")));
     }
@@ -226,6 +232,14 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
                     "load needs a file path; the supervisor resolves stable_id to a path before sending".into(),
                 ));
             }
+            // Stems are plan 20-04. Refuse the stem-aware form rather than
+            // acknowledge it and load the plain mix file instead.
+            if o.get("stems").is_some_and(|s| s != &Value::Bool(false) && !s.is_null()) {
+                return Err(ProtoError::new(
+                    ErrorCode::NotImplemented,
+                    "load.stems: stem loading is not implemented by this engine yet (plan 20-04); send load without it",
+                ));
+            }
             let path = string(o, ty, "path")?.to_string();
             let bpm = opt_num(o, ty, "bpm")?;
             if bpm.is_some_and(|b| b <= 0.0) {
@@ -266,10 +280,10 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         }
         "beat_loop" => apply(EngineCmd::BeatLoop {
             deck: deck_of(o, ty)?,
-            beats: beat_count(o, ty)?,
+            beats: beat_count(o, ty, false)?,
             start_ms: opt_num(o, ty, "start_ms")?,
         }),
-        "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: beat_count(o, ty)? }),
+        "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: beat_count(o, ty, true)? }),
         "tempo" => apply(EngineCmd::Tempo { deck: deck_of(o, ty)?, ratio: num(o, ty, "ratio")? }),
         "pitch_range" => apply(EngineCmd::PitchRange { deck: deck_of(o, ty)?, range: num(o, ty, "range")? }),
         "master_tempo" => {
@@ -507,6 +521,33 @@ mod tests {
             cmd(json!({"type": "beat_loop", "deck": 1, "beats": 65536})),
             Ok(Command::Apply(EngineCmd::BeatLoop { beats, .. })) if beats == 65536.0
         ));
+    }
+
+    #[test]
+    fn beat_counts_must_be_whole_before_dispatch() {
+        for (ty, beats) in [("beat_loop", 0.5), ("beat_loop", 0.0), ("beat_loop", -4.0), ("beat_jump", 0.0), ("beat_jump", 1.5)] {
+            let e = cmd(json!({"type": ty, "deck": 1, "beats": beats})).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid, "{ty} {beats}");
+            assert!(e.message.contains("whole number"), "{}", e.message);
+        }
+        // Control: a negative whole jump is a real jump backwards.
+        assert!(matches!(
+            cmd(json!({"type": "beat_jump", "deck": 1, "beats": -4})),
+            Ok(Command::Apply(EngineCmd::BeatJump { beats, .. })) if beats == -4.0
+        ));
+    }
+
+    #[test]
+    fn a_stem_aware_load_is_refused_not_loaded_as_the_mix() {
+        let e = cmd(json!({"type": "load", "deck": 1, "path": "/x.wav", "stems": true})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::NotImplemented);
+        assert!(e.message.contains("load.stems"), "{}", e.message);
+        // Control: without stems, or with them off, it is an ordinary load.
+        for extra in [json!(false), Value::Null] {
+            let r = cmd(json!({"type": "load", "deck": 1, "path": "/x.wav", "stems": extra}));
+            assert!(matches!(r, Ok(Command::Load(_))), "{extra}");
+        }
+        assert!(matches!(cmd(json!({"type": "load", "deck": 1, "path": "/x.wav"})), Ok(Command::Load(_))));
     }
 
     #[test]
