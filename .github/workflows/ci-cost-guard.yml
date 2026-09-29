@@ -274,3 +274,16 @@ jobs:
             opened=$((opened + 1))
           done < <(python3 -c 'import json,sys; [print(a["run_id"], a["title"], a["report_file"], sep="\t") for a in json.load(open(sys.argv[1]))]' "$ALERTS_FILE")
           [ "$opened" -eq 0 ] || exit 1
+
+      # Last, so pricing and alerts always land first. A watched run still in flight that
+      # was created before the lookback would fall out of every later listing, so this pass
+      # fails instead of succeeding: the mark stays, and the next pass still lists it.
+      # One CI run spanned 6.0 h from creation to completion on Mon 28 Sep 2026.
+      - name: Hold the mark while a watched run outlives the lookback
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_run_batch hold --repository "$REPOSITORY" \
+            --watched "$WATCHED_WORKFLOWS" --lookback-hours "$LOOKBACK_HOURS"

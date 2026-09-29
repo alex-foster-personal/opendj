@@ -157,3 +157,17 @@ jobs:
             --overlap-minutes "$OVERLAP_MINUTES" \
             --lookback-hours "$LOOKBACK_HOURS" \
             --written-by github-actions
+
+      # Last, so the pass's own work always lands first. A watched run still in flight that
+      # was created before the lookback would fall out of every later listing, so this pass
+      # fails instead of succeeding: the mark stays, and the next pass still lists it.
+      # One CI run spanned 6.0 h from creation to completion on Mon 28 Sep 2026.
+      - name: Hold the mark while a recorded run outlives the lookback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WATCHED_WORKFLOWS: "CI,Full CI (on-demand),E2E,macOS Packaging"
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_run_batch hold --repository "$REPOSITORY" \
+            --watched "$WATCHED_WORKFLOWS" --lookback-hours "$LOOKBACK_HOURS"

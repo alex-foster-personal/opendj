@@ -24,6 +24,7 @@ from scripts.ci_run_batch import (
     created_slices,
     fetch_completed_runs,
     last_successful_pass_start,
+    runs_held_back,
 )
 
 pytestmark = pytest.mark.requirement("OPS-36")
@@ -178,43 +179,69 @@ def _started(index: int) -> str:
     return f"2026-09-{29 - (index // 12):02d}T{12 - index % 12:02d}:00:00Z"
 
 
-def _passes(conclusions: list[str], this_run: int = 1) -> Callable[[str], dict]:
-    """Newest-first completed passes of the follower, 100 per page; pass i started i hours
-    before 12:00 on Tue 29 Sep, and id 1 is this pass."""
+def _passes(conclusions: list[str | None], this_run: int = 1) -> Callable[[str], dict]:
+    """Newest-first passes of the follower, 100 per page; pass i started i hours before
+    12:00 on Tue 29 Sep, and id 1 is this pass. A None conclusion is still in flight."""
     runs = [
-        {"id": this_run + index, "conclusion": conclusion, "run_started_at": _started(index)}
+        {
+            "id": this_run + index,
+            "status": "in_progress" if conclusion is None else "completed",
+            "conclusion": conclusion,
+            "run_started_at": _started(index),
+        }
         for index, conclusion in enumerate(conclusions)
     ]
 
     def get(url: str) -> dict:
+        # if the history query carries a status (or any capped) filter then GitHub stops it
+        # at 1,000 results and the true last success can sit past the end
+        assert "status=" not in url and "created=" not in url and "per_page=100" in url, url
         page = int(re.search(r"[?&]page=(\d+)", url).group(1))
-        assert "status=completed" in url and "per_page=100" in url, url
         return {"workflow_runs": runs[(page - 1) * 100 : page * 100]}
 
     return get
 
 
-def test_mark_skips_failed_passes_and_this_run() -> None:
-    get = _passes(["success", "failure", "failure", "success"])
-    assert last_successful_pass_start("o/r", "f.yml", 1, get_json=get) == "2026-09-29T09:00:00Z"
+def test_mark_skips_failed_passes_in_flight_passes_and_this_run() -> None:
+    get = _passes(["success", None, "failure", "success"])
+    assert last_successful_pass_start("o/r", "f.yml", 1, get_json=get) == _started(3)
 
 
-def test_mark_searches_past_the_first_page() -> None:
-    get = _passes(["failure"] * 150 + ["success"])
-    start = last_successful_pass_start("o/r", "f.yml", 999, get_json=get)
-    assert start == _started(150)
+def test_mark_searches_the_whole_history_with_no_page_cap() -> None:
+    get = _passes(["failure"] * 1250 + ["success"])
+    assert last_successful_pass_start("o/r", "f.yml", 999, get_json=get) == _started(1250)
 
 
 def test_mark_with_no_success_anywhere_covers_since_the_oldest_pass() -> None:
     get = _passes(["failure"] * 3)
-    assert last_successful_pass_start("o/r", "f.yml", 999, get_json=get) == "2026-09-29T10:00:00Z"
+    assert last_successful_pass_start("o/r", "f.yml", 999, get_json=get) == _started(2)
 
 
 def test_mark_with_no_passes_at_all_is_empty() -> None:
     assert last_successful_pass_start("o/r", "f.yml", 1, get_json=_passes([])) == ""
 
 
-def test_mark_stops_at_the_page_cap_and_covers_since_the_oldest_seen() -> None:
-    get = _passes(["failure"] * 250)
-    start = last_successful_pass_start("o/r", "f.yml", 999, get_json=get, max_pages=2)
-    assert start == _started(199)
+# ----- the hold: a watched run older than the lookback keeps the mark where it is -----
+
+NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
+
+
+def _inflight(run_id: int, name: str, created: str) -> dict:
+    return {"id": run_id, "name": name, "status": "queued", "created_at": created}
+
+
+def test_a_watched_run_created_before_the_lookback_holds_the_mark() -> None:
+    """if a run queued longer than the lookback lets the pass succeed then its completion is
+    never listed again and is lost"""
+    inflight = [
+        _inflight(1, "CI", "2026-09-29T05:59:00Z"),
+        _inflight(2, "CI", "2026-09-29T06:01:00Z"),
+        _inflight(3, "Unwatched", "2026-09-28T00:00:00Z"),
+    ]
+    held = runs_held_back(inflight, {"CI"}, NOW, timedelta(hours=6))
+    assert [run["id"] for run in held] == [1]
+
+
+def test_no_in_flight_straggler_lets_the_pass_advance() -> None:
+    inflight = [_inflight(2, "CI", "2026-09-29T06:01:00Z")]
+    assert runs_held_back(inflight, {"CI"}, NOW, timedelta(hours=6)) == []

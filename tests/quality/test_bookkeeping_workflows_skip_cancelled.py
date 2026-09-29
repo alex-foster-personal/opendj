@@ -20,6 +20,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.stable_evidence_batch import RECORDED_WORKFLOWS
+
 REPO = Path(__file__).resolve().parents[2]
 STABLE_EVIDENCE = REPO / ".github" / "workflows" / "stable-evidence.yml"
 TRUNK_JOB_VERDICT = REPO / ".github" / "workflows" / "trunk-job-verdict.yml"
@@ -59,6 +61,12 @@ def _assert_batch_pass(
     assert "scripts.ci_run_batch mark" in mark["run"], "the mark comes from the tested reader"
     assert f"--workflow-file {workflow_file}" in mark["run"]
     assert "per_page" not in mark["run"] and "failure" not in mark["run"]
+    # if the pass can succeed while a watched run older than the lookback is in flight
+    # then the mark steps past that run's completion and it is never listed again
+    hold = steps[-1]
+    assert "scripts.ci_run_batch hold" in hold["run"], "the hold is the pass's last step"
+    assert '--lookback-hours "$LOOKBACK_HOURS"' in hold["run"]
+    assert "if" not in hold and "continue-on-error" not in hold
     cadence = _cadence_minutes(workflow[True]["schedule"][0]["cron"])
     env = workflow["jobs"][job_name]["env"]
     assert int(env["OVERLAP_MINUTES"]) >= 2 * cadence
@@ -80,6 +88,9 @@ def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
     assert "scripts.stable_evidence_batch" in batch["run"]
     assert "conclusion" not in batch["run"]
     _assert_batch_pass(workflow, "append", "stable-evidence.yml", 240)
+    hold_env = workflow["jobs"]["append"]["steps"][-1]["env"]
+    names = {name for name in hold_env["WATCHED_WORKFLOWS"].split(",") if name}
+    assert names == set(RECORDED_WORKFLOWS), "the hold watches exactly what the pass records"
 
 
 def test_trunk_job_verdict_skips_cancelled_triggering_run() -> None:

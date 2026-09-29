@@ -14,6 +14,7 @@ The floor makes two passes overlap even if a pass is late; every follower must
 make re-applying an overlap harmless on its own terms.
 
     python3 -m scripts.ci_run_batch mark --repository o/r --workflow-file f.yml --this-run N
+    python3 -m scripts.ci_run_batch hold --repository o/r --watched "CI,E2E" --lookback-hours 6
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -125,9 +125,6 @@ def fetch_completed_runs(
     return list(seen.values())
 
 
-MARK_MAX_PAGES = 10
-
-
 def last_successful_pass_start(
     repository: str,
     workflow_file: str,
@@ -135,39 +132,88 @@ def last_successful_pass_start(
     *,
     token: str = "",
     agent: str = "ci-run-batch",
-    max_pages: int = MARK_MAX_PAGES,
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> str:
-    """The start of the follower's last successful pass, paging back through its history.
+    """The start of the follower's last successful pass, however far back it is.
 
-    A failed pass may have written none of its batch, so it never moves the mark; and the
-    search is not a fixed window, because a run of failures longer than the window would
-    otherwise fall back to the floor and skip what they missed (Codex P1s on #3844). With no
-    success in reach, the mark is the oldest pass seen, which covers everything since; with
-    no passes at all it is empty and the caller uses the floor. The `status=success` filter
-    is not used: on Tue 29 Sep 2026 `per_page=1` with it returned a pass from Mon 14 Sep.
+    A failed pass may have written none of its batch, so it never moves the mark, and the
+    search has no fixed window: a run of failures longer than any window would otherwise
+    skip what they missed (Codex P1s on #3844). The listing carries no `status` or
+    `created` filter, because GitHub stops a filtered listing at 1,000 results; in-flight
+    runs are skipped here instead. With no success in the whole history the mark is the
+    oldest pass, which covers everything; with no passes at all it is empty and the caller
+    uses the floor. The job's timeout is what bounds the search.
     """
     fetch = get_json or (lambda url: _get_json(url, token, agent))
     oldest = ""
-    for page in range(1, max_pages + 1):
+    page = 1
+    while True:
         runs = fetch(
             f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_file}"
-            f"/runs?status=completed&per_page=100&page={page}"
+            f"/runs?per_page=100&page={page}"
         ).get("workflow_runs") or []
         for run in runs:
-            if int(run["id"]) == this_run:
+            if int(run["id"]) == this_run or run.get("status") != "completed":
                 continue
             if run["conclusion"] == "success":
                 return str(run["run_started_at"])
             oldest = str(run["run_started_at"])
         if len(runs) < 100:
             return oldest
-    print(
-        f"::warning::no successful {workflow_file} pass in the last {max_pages * 100}; "
-        f"covering since the oldest seen, {oldest}",
-        file=sys.stderr,
+        page += 1
+
+
+INFLIGHT_STATUSES = ("requested", "waiting", "pending", "queued", "in_progress")
+
+
+def fetch_inflight_runs(
+    repository: str,
+    token: str,
+    agent: str,
+    *,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Every run not yet completed, each status listed in full; fails closed at the cap."""
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    seen: dict[int, dict[str, Any]] = {}
+    for status in INFLIGHT_STATUSES:
+        listed = 0
+        page = 1
+        while True:
+            batch = fetch(
+                f"https://api.github.com/repos/{repository}/actions/runs"
+                f"?status={status}&per_page=100&page={page}"
+            ).get("workflow_runs") or []
+            listed += len(batch)
+            seen.update((int(run["id"]), run) for run in batch)
+            if listed >= RESULT_CAP:
+                raise RuntimeError(f"{status} runs reached GitHub's {RESULT_CAP}-result cap")
+            if len(batch) < 100:
+                break
+            page += 1
+    return list(seen.values())
+
+
+def runs_held_back(
+    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
+) -> list[dict[str, Any]]:
+    """Watched runs still in flight that were created before `now - lookback`.
+
+    The listing filters on created_at, so the next pass cannot see a run created before
+    its floor; a pass that succeeded now would move the mark past that run's completion
+    for good (Codex P1 on #3844: a job queued on a saturated pool is bounded by no
+    timeout). A pass that finds one fails instead, the mark stays put, and the window
+    keeps the run in view until it completes.
+    """
+    cutoff = now - lookback
+    return sorted(
+        (
+            run
+            for run in inflight
+            if run.get("name") in watched and parse_time(str(run["created_at"])) < cutoff
+        ),
+        key=lambda run: int(run["id"]),
     )
-    return oldest
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -177,13 +223,33 @@ def main(argv: list[str] | None = None) -> int:
     mark.add_argument("--repository", required=True)
     mark.add_argument("--workflow-file", required=True)
     mark.add_argument("--this-run", type=int, required=True)
+    hold = commands.add_parser("hold", help="fail while a watched run outlives the lookback")
+    hold.add_argument("--repository", required=True)
+    hold.add_argument("--watched", required=True, help="comma-separated workflow names")
+    hold.add_argument("--lookback-hours", type=int, required=True)
     args = parser.parse_args(argv)
     token = os.environ["GITHUB_TOKEN"]
-    start = last_successful_pass_start(
-        args.repository, args.workflow_file, args.this_run, token=token
-    )
-    print(start)
-    return 0
+    if args.command == "mark":
+        start = last_successful_pass_start(
+            args.repository, args.workflow_file, args.this_run, token=token
+        )
+        print(start)
+        return 0
+    if args.command == "hold":
+        watched = {name.strip() for name in args.watched.split(",") if name.strip()}
+        inflight = fetch_inflight_runs(args.repository, token, "ci-run-batch")
+        held = runs_held_back(
+            inflight, watched, datetime.now(UTC), timedelta(hours=args.lookback_hours)
+        )
+        for run in held:
+            print(
+                f"::error::run {run['id']} ({run['name']}, {run['status']}) was created "
+                f"{run['created_at']}, before the {args.lookback_hours}h lookback; this pass "
+                "fails so the mark stays and the next pass still lists it"
+            )
+        print(f"[hold] in_flight={len(inflight)} held={len(held)}")
+        return 1 if held else 0
+    raise AssertionError(f"unhandled command {args.command}")
 
 
 if __name__ == "__main__":
