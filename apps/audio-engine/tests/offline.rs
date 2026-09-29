@@ -100,12 +100,14 @@ fn a_ramp_lands_on_its_target() {
     });
     let out = render_plan_files(&parse_plan(&plan).unwrap(), &d).unwrap();
     let peak = |a: usize, b: usize| out.pcm[a * 2..b * 2].iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+    // Deck 1 starts on crossfader side A, centered: the equal-power 0.707.
+    let xf = odj_audio::mixer::xf_gain(odj_audio::mixer::Assign::A, 0.5) as f32;
     // Loud at the start (control), silent once the ramp and its smoothing end.
-    assert!(peak(0, 480) > 0.45, "start peak {}", peak(0, 480));
+    assert!(peak(0, 480) > 0.45 * xf, "start peak {}", peak(0, 480));
     assert!(peak(96000, 144000) < 1e-6, "tail peak {}", peak(96000, 144000));
     // Halfway through, the fader is near 0.5.
     let mid = peak(23000, 25000);
-    assert!((mid - 0.25).abs() < 0.02, "mid peak {mid}");
+    assert!((mid - 0.25 * xf).abs() < 0.02 * xf, "mid peak {mid}");
 }
 
 #[test]
@@ -133,9 +135,32 @@ fn plan_errors_name_the_event() {
     let missing = json!({"end": {"ms": 10}, "events": [{"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "nope.wav"}}]});
     let e = render_plan_files(&parse_plan(&missing).unwrap(), &d).err().unwrap();
     assert!(e.message.contains("nope.wav"), "{}", e.message);
-    let never = json!({"end": {"deck": 1, "bar": 3}, "max_ms": 500, "events": [
+    // An end nothing can reach fails at once, under the default 4 h max_ms,
+    // instead of rendering (and holding) silence all the way there.
+    let never = json!({"end": {"deck": 1, "bar": 3}, "events": [
         {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    let started = std::time::Instant::now();
     let e = render_plan_files(&parse_plan(&never).unwrap(), &d).err().unwrap();
+    assert!(e.message.contains("never be reached"), "{}", e.message);
+    assert!(started.elapsed().as_secs() < 10, "took {:?}", started.elapsed());
+    // A playing deck looping short of the end is stuck too.
+    let looping = json!({"end": {"deck": 1, "position_ms": 1500}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "loop", "deck": 1, "loop": {"in_ms": 0, "out_ms": 500}}},
+        {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
+    let e = render_plan_files(&parse_plan(&looping).unwrap(), &d).err().unwrap();
+    assert!(e.message.contains("never be reached"), "{}", e.message);
+    // Control: an event still to come keeps the render going (here it starts
+    // the deck that reaches the end), so waiting is not mistaken for stuck.
+    let later = json!({"end": {"deck": 1, "position_ms": 500}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 300}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
+    let out = render_plan_files(&parse_plan(&later).unwrap(), &d).unwrap();
+    assert_eq!(out.frames, 48000 * 800 / 1000);
+    // And max_ms still bounds an end that is reachable, just too far away.
+    let far = json!({"end": {"ms": 2000}, "max_ms": 500, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    let e = render_plan_files(&parse_plan(&far).unwrap(), &d).err().unwrap();
     assert!(e.message.contains("max_ms"), "{}", e.message);
 }
 

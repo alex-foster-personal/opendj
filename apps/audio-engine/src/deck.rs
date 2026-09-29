@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{Coeffs, Smoothed, StereoBiquad};
+use crate::dsp::{Coeffs, Ramped, Smoothed, StereoBiquad};
 use crate::engine::{EngineError, ErrorCode};
 use crate::mixer::{self, Assign};
 
@@ -214,7 +214,9 @@ pub struct Deck {
 struct Strip {
     sr: f64,
     trim: Smoothed,
-    eq_db: [Smoothed; 3],
+    /// EQ gains ramp linearly, as the page's `applyEqRamp` does; the
+    /// other parameters glide like its `setTargetAtTime`.
+    eq_db: [Ramped; 3],
     eq: [StereoBiquad; 3],
     lp_hz: Smoothed,
     hp_hz: Smoothed,
@@ -246,7 +248,7 @@ impl Strip {
         let mut strip = Strip {
             sr,
             trim: s(mixer::trim_gain_from_knob(0.5)),
-            eq_db: [s(0.0), s(0.0), s(0.0)],
+            eq_db: [Ramped::new(0.0, sr, mixer::PARAM_SMOOTH_S); 3],
             eq: [StereoBiquad::new(Coeffs::IDENTITY); 3],
             lp_hz: s(fp.lp_hz),
             hp_hz: s(fp.hp_hz),
@@ -545,18 +547,33 @@ impl Deck {
         }
         let t = self.track()?.clone();
         let now = t.frames_to_ms(self.pos);
-        let target = if t.has_grid() {
+        if t.has_grid() {
             // Whole beats from the nearest real beat, clamped to the grid and
             // to its last beat inside the audio (`beatJumpTargetMs`).
             let last = t.beats.len() as i64 - 1;
             let i = (t.nearest_beat(now) as i64 + beats as i64).clamp(0, last) as usize;
             let dur = t.duration_ms();
             let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).unwrap_or(0);
-            t.beats[i].time_ms.clamp(0.0, dur)
-        } else {
-            let idx = t.beat_index_at(now).ok_or(no_grid())?;
-            t.beat_time_ms(idx + beats).ok_or(no_grid())?.clamp(0.0, t.duration_ms())
-        };
+            let target = t.beats[i].time_ms.clamp(0.0, dur);
+            let Some((a, b)) = self.looping else {
+                self.pos = t.ms_to_frames(target);
+                return Ok(());
+            };
+            // An engaged loop moves by whole grid beats, keeping any manual
+            // offset of its ends from their beats, and the playhead stays
+            // inside it (`shiftLiveBeatLoopRangeMs`,
+            // `targetWithinShiftedLiveLoopMs`). A shift that does not fit is
+            // refused whole, as the page does, and nothing moves.
+            let (lo, hi) = shift_live_loop(&t, t.frames_to_ms(a), t.frames_to_ms(b), beats as i64)?;
+            let to = target_within_loop(&t, target, lo, hi)?;
+            self.looping = Some((t.ms_to_frames(lo), t.ms_to_frames(hi)));
+            self.pos = t.ms_to_frames(to);
+            return Ok(());
+        }
+        // Tag BPM only: no grid to shift the loop along, so it moves with the
+        // playhead and is kept inside the track at its own length.
+        let idx = t.beat_index_at(now).ok_or(no_grid())?;
+        let target = t.beat_time_ms(idx + beats).ok_or(no_grid())?.clamp(0.0, t.duration_ms());
         let delta = t.ms_to_frames(target) - self.pos;
         self.pos = t.ms_to_frames(target);
         if let Some((a, b)) = self.looping {
@@ -633,6 +650,12 @@ impl Deck {
         self.strip.xf.set(g);
     }
 
+    /// Start at crossfader gain `g` without a glide, for the engine's
+    /// initial state.
+    pub fn snap_xf_gain(&mut self, g: f64) {
+        self.strip.xf.snap(g);
+    }
+
     /// The smoothed trim x fader x crossfader gain, as it stands now. EQ and
     /// filter are left out on purpose: a deck with its lows killed is still
     /// in the mix.
@@ -704,6 +727,44 @@ impl Deck {
         self.rendered_pos = self.pos;
         done
     }
+}
+
+/// Shift loop `[in_ms, out_ms)` by `delta` grid beats: each end moves to the
+/// beat `delta` on from its nearest beat and keeps its offset from it.
+fn shift_live_loop(t: &Track, in_ms: f64, out_ms: f64, delta: i64) -> Result<(f64, f64), EngineError> {
+    let doesnt_fit = EngineError::new(ErrorCode::Invalid, "the loop does not fit on the grid after that jump");
+    let (i, o) = (t.nearest_beat(in_ms), t.nearest_beat(out_ms));
+    let len = o as i64 - i as i64;
+    let next_in = i as i64 + delta;
+    let next_out = next_in + len;
+    if len <= 0 || next_in < 0 || next_out >= t.beats.len() as i64 {
+        return Err(doesnt_fit);
+    }
+    let offset = |ms: f64, k: usize| ms - t.beats[k].time_ms;
+    let lo = t.beats[next_in as usize].time_ms + offset(in_ms, i);
+    let hi = t.beats[next_out as usize].time_ms + offset(out_ms, o);
+    if lo < 0.0 || hi <= lo {
+        return Err(doesnt_fit);
+    }
+    if hi > t.duration_ms() {
+        return Err(EngineError::new(ErrorCode::Invalid, "the loop would run past the end of the track after that jump"));
+    }
+    Ok((lo, hi))
+}
+
+/// Pull a jump target inside loop `[lo, hi)`: before it, to its first grid
+/// beat; at or past its end, to its last grid beat before the end.
+fn target_within_loop(t: &Track, target: f64, lo: f64, hi: f64) -> Result<f64, EngineError> {
+    let no_beat = EngineError::new(ErrorCode::Invalid, "the moved loop has no grid beat inside it");
+    if target >= lo && target < hi {
+        return Ok(target);
+    }
+    if target < lo {
+        let k = t.beats.partition_point(|b| b.time_ms < lo);
+        return t.beats.get(k).map(|b| b.time_ms).filter(|&ms| ms < hi).ok_or(no_beat);
+    }
+    let k = t.beats.partition_point(|b| b.time_ms < hi);
+    k.checked_sub(1).map(|k| t.beats[k].time_ms).filter(|&ms| ms >= lo).ok_or(no_beat)
 }
 
 fn no_grid() -> EngineError {
@@ -855,6 +916,22 @@ mod tests {
     }
 
     #[test]
+    fn an_eq_change_lands_in_10_ms_like_the_pages_ramp() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 1.0, vec![])));
+        d.play(true).unwrap();
+        d.set_eq(0, 0.0);
+        let mut buf = vec![0.0f32; 240 * 2];
+        d.render_add(&mut buf, 48000.0);
+        // Halfway through the ramp, halfway to the -26 dB kill (to the
+        // 16-frame coefficient step).
+        let half = d.strip.eq_db[0].value;
+        assert!((half - -13.0).abs() < 26.0 * 16.0 / 480.0, "{half}");
+        d.render_add(&mut buf, 48000.0);
+        assert_eq!(d.strip.eq_db[0].value, mixer::EQ_MIN_DB);
+    }
+
+    #[test]
     fn huge_beat_counts_are_refused_not_overflowed() {
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
@@ -903,10 +980,70 @@ mod tests {
     }
 
     #[test]
-    fn beat_jump_keeps_a_moved_loop_inside_the_track() {
-        // 20 s at 120 bpm: 40 beats of 24000 frames.
+    fn a_grid_loop_moves_by_whole_grid_beats() {
+        // Codex's case: 120 BPM grid, loop [1 s, 2 s], playhead 1.25 s, +2.
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 20.0, grid_120(10))));
+        d.set_loop(Some((1000.0, 2000.0))).unwrap();
+        d.seek(1250.0).unwrap();
+        d.beat_jump(2.0).unwrap();
+        assert_eq!(d.looping, Some((96000.0, 144000.0)), "[2 s, 3 s], on the grid");
+        assert_eq!(d.pos, 96000.0);
+        // A manual offset on either end is kept, not snapped away.
+        d.set_loop(Some((4100.0, 5050.0))).unwrap();
+        d.seek(4500.0).unwrap();
+        d.beat_jump(-2.0).unwrap();
+        assert_eq!(d.looping, Some((3100.0 * 48.0, 4050.0 * 48.0)));
+        assert_eq!(d.pos, 3500.0 * 48.0);
+        // Near the loop's end the nearest beat is its out point; the jump
+        // target lands on the moved out point and is pulled back inside, to
+        // the last beat before it.
+        d.set_loop(Some((1000.0, 2000.0))).unwrap();
+        d.seek(1900.0).unwrap();
+        d.beat_jump(2.0).unwrap();
+        assert_eq!((d.looping, d.pos), (Some((96000.0, 144000.0)), 2500.0 * 48.0));
+        // At 44.1 kHz on an off-round grid (128 BPM from 37.3 ms), a beat loop
+        // moved by a jump lands exactly on grid beats: converting its ends
+        // to frames and back leaves no offset behind.
+        let beats: Vec<Beat> =
+            (0..64).map(|i| Beat { time_ms: 37.3 + i as f64 * 468.75, downbeat: i % 4 == 0 }).collect();
+        let t = Arc::new(Track::new(44100, vec![0.0; 44100 * 2 * 40], beats, None));
+        let mut d = Deck::new(44100.0);
+        d.load(t.clone());
+        d.beat_loop(4.0, Some(t.beats[9].time_ms)).unwrap();
+        d.seek(t.beats[10].time_ms).unwrap();
+        d.beat_jump(3.0).unwrap();
+        assert_eq!(d.looping, Some((t.ms_to_frames(t.beats[12].time_ms), t.ms_to_frames(t.beats[16].time_ms))));
+    }
+
+    #[test]
+    fn a_grid_loop_that_would_leave_the_grid_is_refused_whole() {
+        // 20 s at 120 bpm: 40 beats, the last at 19.5 s.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 20.0, grid_120(10))));
+        // Loop [1 s, 2 s]: back 4 beats would start it before beat 0.
+        d.set_loop(Some((1000.0, 2000.0))).unwrap();
+        d.seek(1500.0).unwrap();
+        assert_eq!(d.beat_jump(-4.0).unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!((d.looping, d.pos), (Some((48000.0, 96000.0)), 72000.0), "nothing moved");
+        // Loop [18 s, 19 s]: forward 4 beats would end it past the last beat.
+        d.set_loop(Some((18000.0, 19000.0))).unwrap();
+        d.seek(18500.0).unwrap();
+        assert!(d.beat_jump(4.0).is_err());
+        assert_eq!((d.looping, d.pos), (Some((864000.0, 912000.0)), 888000.0));
+        // Control: a jump that fits moves the loop and the playhead together.
+        d.set_loop(Some((4000.0, 6000.0))).unwrap();
+        d.seek(5000.0).unwrap();
+        d.beat_jump(2.0).unwrap();
+        assert_eq!(d.looping, Some((240000.0, 336000.0)));
+        assert_eq!(d.pos, 288000.0);
+    }
+
+    #[test]
+    fn a_tag_bpm_loop_moved_by_a_jump_stays_inside_the_track() {
+        // No grid, 120 BPM tag, 20 s.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(Track::new(48000, vec![0.0; 48000 * 2 * 20], vec![], Some(120.0))));
         // Loop [1 s, 2 s] with the playhead at 1.5 s; jumping back 4 beats
         // clamps the playhead to 0, which would drag the loop to [-0.5 s, 0.5 s].
         d.set_loop(Some((1000.0, 2000.0))).unwrap();
@@ -927,13 +1064,6 @@ mod tests {
             d.render_add(&mut buf, 48000.0);
             assert!(d.playing, "stopped at pos {}", d.pos);
         }
-        d.play(false).unwrap();
-        // Control: a jump that stays inside the track moves the loop unchanged.
-        d.set_loop(Some((4000.0, 6000.0))).unwrap();
-        d.seek(5000.0).unwrap();
-        d.beat_jump(2.0).unwrap();
-        assert_eq!(d.looping, Some((240000.0, 336000.0)));
-        assert_eq!(d.pos, 288000.0);
     }
 
     #[test]

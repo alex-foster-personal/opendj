@@ -428,8 +428,25 @@ pub fn render_plan_with(
             observer.observe(&engine, now);
         }
 
-        if due_in(plan.end, &engine, now) == Some(0) {
+        let end_in = due_in(plan.end, &engine, now);
+        if end_in == Some(0) {
             break;
+        }
+        // Nothing left can change the engine: every pending event waits on a
+        // deck that cannot get there, no ramp is running, and the end cannot
+        // arrive from this state either. Say so now, rather than render (and
+        // hold in memory) silence all the way to max_ms.
+        if end_in.is_none()
+            && ramps.is_empty()
+            && pending.iter().all(|&idx| due_in(plan.events[idx].at, &engine, now).is_none())
+        {
+            return Err(ProtoError::new(
+                ErrorCode::Invalid,
+                format!(
+                    "plan.end can never be reached: at {} ms no deck is moving toward it and no event or ramp is left that could change that",
+                    now * 1000 / sr as u64
+                ),
+            ));
         }
         if now >= max_frames {
             return Err(ProtoError::new(
