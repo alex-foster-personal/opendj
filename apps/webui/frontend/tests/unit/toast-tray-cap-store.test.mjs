@@ -91,4 +91,11 @@ test('five pushed toasts yield at most three visible in policy slice', async () 
 	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
 	const visible = policy.selectVisibleToasts(stores.toasts);
 	assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
+	// Each armed toast holds a 120 s dismissal timer, which keeps the event
+	// loop alive for exactly the runner's 120 s --test-timeout, so the file is
+	// cancelled after every assertion passed. Dismiss them to release the timers.
+	for (const toast of [...stores.toasts]) {
+		assert.equal(stores.dismissToast(toast.logId), true, `dismiss ${toast.logId}`);
+	}
+	assert.equal(stores.toasts.length, 0);
 });
