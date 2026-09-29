@@ -54,8 +54,10 @@ from typing import Any, Literal
 from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
+from apps.analysis_beatgrid.const_regions import fit_const_regions
 from apps.analysis_beatgrid.flags import evaluate_pulse
 from apps.analysis_beatgrid.grid_fit import (
+    GRID_FIT_CONST_REGIONS,
     GRID_FIT_LINE,
     GRID_FIT_MODES,
     GRID_FIT_RAW,
@@ -248,8 +250,8 @@ def build_beatgrid_lane(
     """
     if grid_fit not in GRID_FIT_MODES:
         raise LanePayloadError(f"grid_fit must be one of {GRID_FIT_MODES}, got {grid_fit!r}")
-    if grid_fit == GRID_FIT_LINE:
-        return _build_line_lane(result, threshold=threshold)
+    if grid_fit in (GRID_FIT_LINE, GRID_FIT_CONST_REGIONS):
+        return _build_line_lane(result, threshold=threshold, mode=grid_fit)
     checked = _pulse_and_phase(result, threshold=threshold)
     if isinstance(checked, BeatgridLane):
         return checked
@@ -327,10 +329,18 @@ def _line_markers(fit: Any, line_bpm: Sequence[float], confidence: float) -> lis
     ]
 
 
-def _line_diagnostics(fit: Any, line_bpm: Sequence[float], octave_multiple: float) -> dict:
-    """The `grid_fit` block: how each served segment was fitted and rounded."""
+def _line_diagnostics(
+    fit: Any, line_bpm: Sequence[float], octave_multiple: float, mode: str
+) -> dict:
+    """The `grid_fit` block: how each served segment was fitted and rounded.
+
+    `mode` is what was asked for; `fitter` is which fitter chose the lines,
+    which differs when `const_regions` found no steady span and handed the
+    track to the line fitter.
+    """
     return {
-        "mode": GRID_FIT_LINE,
+        "mode": mode,
+        "fitter": fit.fitter,
         "offset_s": fit.offset_s,
         "octave_policy_multiple": octave_multiple,
         "segments": [
@@ -347,8 +357,13 @@ def _line_diagnostics(fit: Any, line_bpm: Sequence[float], octave_multiple: floa
     }
 
 
-def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> BeatgridLane:
+def _build_line_lane(
+    result: Mapping[str, Any], *, threshold: float, mode: str = GRID_FIT_LINE
+) -> BeatgridLane:
     """`grid_fit="line"`: serve the fitted line instead of the model's peaks.
+
+    `grid_fit="const_regions"` takes the same path with the line chosen by
+    `const_regions.fit_const_regions` (longest steady region, extended).
 
     Same guard chain up to the tempo fit (runner error, pulse, octave policy),
     then `grid_fit.fit_grid` replaces both the raw beats and `lock_bar_phase`.
@@ -364,7 +379,10 @@ def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> Beatgrid
     # Re-rendering it at the octave policy's multiple was measured (round 4,
     # `line_round_offset_octave`) to halve 163-175 BPM tracks that rekordbox
     # keeps whole, so the published tempo here is the line's own.
-    fit = fit_grid(beats, downbeats)
+    if mode == GRID_FIT_CONST_REGIONS:
+        fit = fit_const_regions(beats, downbeats)
+    else:
+        fit = fit_grid(beats, downbeats)
     if fit.reason is not None:
         return _failed(fit.reason)
     if _cadence_breaks(fit.beat_numbers, BAR_BEATS):
@@ -386,7 +404,7 @@ def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> Beatgrid
         "first_downbeat_s": round(first_downbeat, 5),
         "tempo_changes": _line_markers(fit, line_bpm, tempo.confidence),
         "static_grid_untrusted": False,
-        "grid_fit": _line_diagnostics(fit, line_bpm, tempo.octave_multiple),
+        "grid_fit": _line_diagnostics(fit, line_bpm, tempo.octave_multiple, mode),
     }
     if fit.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
