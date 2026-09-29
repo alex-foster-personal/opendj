@@ -387,8 +387,10 @@ pub fn result_json(id: Option<&str>, res: &Result<(), ProtoError>) -> Value {
 
 /// The state feed. `rate` is track milliseconds per engine millisecond, so a
 /// view can extrapolate `position_ms + rate * elapsed` between messages.
-/// `host_time_ns` is the sender's monotonic clock when the snapshot was taken,
-/// or null on the fake clock, where wall time means nothing.
+/// `host_time_ns` is the sender's monotonic clock at the moment the snapshot's
+/// position is heard: the device clock adds its output latency, so a view
+/// extrapolating from it tracks the audio rather than the render cursor. It
+/// is null on the fake clock, where wall time means nothing.
 pub fn state_json(s: &Snapshot, host_time_ns: Option<u64>) -> Value {
     let decks: Vec<Value> = s
         .decks
