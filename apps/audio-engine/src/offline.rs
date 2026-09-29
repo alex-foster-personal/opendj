@@ -302,6 +302,15 @@ fn fail(event: usize, e: ProtoError) -> ProtoError {
     ProtoError::new(e.code, format!("events[{event}]: {}", e.message))
 }
 
+/// The most frames a render may run: `max_ms`, and never more than one WAV
+/// file holds. Everything rendered is held until it is written, so a render
+/// longer than its file could never be written and is not attempted; this
+/// also bounds what a render retains, under 4 GiB for the mix and as much
+/// again per deck output.
+fn render_ceiling(max_ms: f64, sr: u32) -> u64 {
+    at_frame_of_ms(max_ms, sr).min(crate::wav::MAX_F32_FRAMES)
+}
+
 /// Render `plan`, resolving each `load` through `load`.
 pub fn render_plan(
     plan: &Plan,
@@ -316,6 +325,18 @@ pub fn render_plan_with(
     opts: RenderOptions,
 ) -> Result<RenderOutput, ProtoError> {
     let sr = plan.sample_rate;
+    let max_frames = render_ceiling(plan.max_ms, sr);
+    let max_ms_held = max_frames as f64 * 1000.0 / sr as f64;
+    if let At::Ms(end_ms) = plan.end {
+        if at_frame_of_ms(end_ms, sr) > max_frames {
+            return Err(ProtoError::new(
+                ErrorCode::Invalid,
+                format!(
+                    "plan.end at {end_ms} ms is past the longest render allowed ({max_ms_held:.0} ms: max_ms, or what one WAV file holds at {sr} Hz)"
+                ),
+            ));
+        }
+    }
     // Decode everything up front, so decode time is reported apart from render
     // time and the render loop itself never waits on IO.
     let decode_start = Instant::now();
@@ -334,7 +355,6 @@ pub fn render_plan_with(
     let mut ramps: Vec<ActiveRamp> = Vec::new();
     let mut fired = Vec::new();
     let mut pcm: Vec<f32> = Vec::new();
-    let max_frames = at_frame_of_ms(plan.max_ms, sr);
     let tl_step = (sr as u64 * TIMELINE_STEP_MS as u64 / 1000).max(1);
     let mut observer = Observer::new();
     let mut scratch: [Vec<f32>; MAX_DECKS] = Default::default();
@@ -451,7 +471,9 @@ pub fn render_plan_with(
         if now >= max_frames {
             return Err(ProtoError::new(
                 ErrorCode::Invalid,
-                format!("plan.end was not reached within max_ms ({} ms)", plan.max_ms),
+                format!(
+                    "plan.end was not reached within {max_ms_held:.0} ms (max_ms, or what one WAV file holds at {sr} Hz)"
+                ),
             ));
         }
 
@@ -514,4 +536,21 @@ pub fn render_plan_with(
         tempo,
         decks,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_render_never_runs_past_what_its_wav_file_holds() {
+        let max = crate::wav::MAX_F32_FRAMES;
+        // The default 4 h ceiling is more than a WAV file holds at 48 kHz
+        // (about 3.1 h), so the file's limit is the ceiling there.
+        assert_eq!(render_ceiling(crate::plan::DEFAULT_MAX_MS, 48000), max);
+        assert_eq!(render_ceiling(1e300, 384000), max);
+        // Control: a max_ms inside the limit is the ceiling itself.
+        assert_eq!(render_ceiling(3_600_000.0, 48000), 3600 * 48000);
+        assert_eq!(render_ceiling(4.0 * 3_600_000.0, 8000), 4 * 3600 * 8000);
+    }
 }

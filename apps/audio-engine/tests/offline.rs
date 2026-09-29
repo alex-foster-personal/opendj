@@ -162,6 +162,24 @@ fn plan_errors_name_the_event() {
         {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
     let e = render_plan_files(&parse_plan(&far).unwrap(), &d).err().unwrap();
     assert!(e.message.contains("max_ms"), "{}", e.message);
+    // An absolute end past the ceiling is known too far before rendering.
+    assert!(e.message.contains("is past the longest render"), "{}", e.message);
+    // Control: an end exactly at the ceiling is inside it.
+    let at = json!({"end": {"ms": 500}, "max_ms": 500, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    assert_eq!(render_plan_files(&parse_plan(&at).unwrap(), &d).unwrap().frames, 24000);
+    // A reachable end longer than one WAV file holds (4 h at 48 kHz, under
+    // the default max_ms) is refused before anything is decoded or held,
+    // deck outputs or not.
+    let huge = json!({"end": {"ms": 14_400_000}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
+    for opts in [RenderOptions::default(), with_decks()] {
+        let started = std::time::Instant::now();
+        let e = render_plan_files_with(&parse_plan(&huge).unwrap(), &d, opts).err().unwrap();
+        assert!(e.message.contains("WAV file holds"), "{}", e.message);
+        assert!(started.elapsed().as_secs() < 2, "took {:?}", started.elapsed());
+    }
 }
 
 // What a transition scorer reads from a render (plan 20-08): each deck's own

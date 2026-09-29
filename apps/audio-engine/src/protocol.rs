@@ -395,13 +395,28 @@ pub fn result_json(id: Option<&str>, res: &Result<(), ProtoError>) -> Value {
     }
 }
 
+/// When a threaded engine's snapshot is heard, on the engine's own monotonic
+/// clock. That clock's origin is private to the engine process, so the feed
+/// also carries `sent_ns`, the same clock read as the line is written: a
+/// receiver maps it onto its own clock with `heard_in_ns`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HostTime {
+    pub heard_ns: u64,
+    pub sent_ns: u64,
+}
+
 /// The state feed. `rate` is track milliseconds per engine millisecond, so a
 /// view can extrapolate `position_ms + rate * elapsed` between messages.
-/// `host_time_ns` is the sender's monotonic clock at the moment the snapshot's
-/// position is heard: the device clock adds its output latency, so a view
-/// extrapolating from it tracks the audio rather than the render cursor. It
-/// is null on the fake clock, where wall time means nothing.
-pub fn state_json(s: &Snapshot, host_time_ns: Option<u64>) -> Value {
+///
+/// `host_time_ns` is the engine's monotonic clock at the moment the
+/// snapshot's position is heard (the device clock adds its output latency),
+/// and `sent_ns` is that clock as the line was written. Their difference,
+/// `heard_in_ns`, is how long after the line was written its position is
+/// heard (negative once it has been): a receiver adds it to its own clock at
+/// receipt, which is off only by the pipe's transit time, and so tracks the
+/// audio rather than the render cursor without sharing the engine's clock.
+/// All three are null on the fake clock, where wall time means nothing.
+pub fn state_json(s: &Snapshot, host: Option<HostTime>) -> Value {
     let decks: Vec<Value> = s
         .decks
         .iter()
@@ -439,7 +454,9 @@ pub fn state_json(s: &Snapshot, host_time_ns: Option<u64>) -> Value {
         "frame": s.frame,
         "sample_rate": s.sample_rate,
         "engine_time_ns": (s.frame as u128 * 1_000_000_000u128 / s.sample_rate as u128) as u64,
-        "host_time_ns": host_time_ns,
+        "host_time_ns": host.map(|h| h.heard_ns),
+        "sent_ns": host.map(|h| h.sent_ns),
+        "heard_in_ns": host.map(|h| h.heard_ns as i64 - h.sent_ns as i64),
         "decks": decks,
         "mixer": {"crossfader": s.crossfader, "master_volume": s.master_volume},
         "master": {"muted": s.master_muted},
@@ -571,6 +588,30 @@ mod tests {
         // A loop set by bounds has no beat length; no loop is null.
         assert_eq!(v["decks"][1]["loop"]["beat_length"], Value::Null);
         assert_eq!(v["decks"][2]["loop"], Value::Null);
+    }
+
+    #[test]
+    fn the_state_feed_says_when_its_position_is_heard_relative_to_sending() {
+        let s = Snapshot {
+            frame: 0,
+            sample_rate: 48000,
+            decks: Default::default(),
+            crossfader: 0.5,
+            master_volume: 1.0,
+            master_muted: false,
+        };
+        let v = state_json(&s, Some(HostTime { heard_ns: 5_060_000_000, sent_ns: 5_000_000_000 }));
+        assert_eq!(v["host_time_ns"], 5_060_000_000u64);
+        assert_eq!(v["sent_ns"], 5_000_000_000u64);
+        assert_eq!(v["heard_in_ns"], 60_000_000);
+        // A line written after its position was heard says so.
+        let v = state_json(&s, Some(HostTime { heard_ns: 100, sent_ns: 250 }));
+        assert_eq!(v["heard_in_ns"], -150);
+        // Control: the fake clock has no host time at all.
+        let v = state_json(&s, None);
+        for k in ["host_time_ns", "sent_ns", "heard_in_ns"] {
+            assert_eq!(v[k], Value::Null, "{k}");
+        }
     }
 
     #[test]

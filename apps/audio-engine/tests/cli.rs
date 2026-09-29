@@ -135,6 +135,20 @@ fn fake_clock_session_over_pipes() {
     assert!((d1["position_ms"].as_f64().unwrap() - 1100.0).abs() < 1e-6, "{d1}");
     assert!((d1["rate"].as_f64().unwrap() - 1.1).abs() < 1e-12);
 
+    // An advance too long to finish is refused before rendering anything,
+    // whether asked in frames or in a huge but finite ms.
+    for adv in [json!({"frames": u64::MAX}), json!({"ms": 1e15}), json!({"frames": 3600 * 48000 + 1})] {
+        let mut c = json!({"type": "engine_advance"});
+        c.as_object_mut().unwrap().extend(adv.as_object().unwrap().clone());
+        say(json!({"id": "big", "cmd": c}));
+        let r = next();
+        assert_eq!(r["ok"], false, "{adv}: {r}");
+        assert_eq!(r["error"]["code"], "invalid", "{adv}: {r}");
+    }
+    say(json!({"id": "st", "cmd": {"type": "engine_state"}}));
+    assert_eq!(next()["ok"], true);
+    assert_eq!(next()["frame"], 48000, "a refused advance renders nothing");
+
     say(json!({"id": "s", "cmd": {"type": "stem_mute", "deck": 1, "stem": "vocals", "muted": true}}));
     let r = next();
     assert_eq!(r["ok"], false);
@@ -174,6 +188,12 @@ fn wall_clock_refuses_advance_and_reports_state() {
             }
             (Some("state"), _) => {
                 assert!(v["host_time_ns"].is_u64());
+                // Heard and sent on one clock: the mapping a receiver uses
+                // is their difference, and on the wall clock (no device
+                // latency) that is within a block or two of now.
+                let heard_in = v["heard_in_ns"].as_i64().unwrap();
+                assert_eq!(heard_in, v["host_time_ns"].as_i64().unwrap() - v["sent_ns"].as_i64().unwrap());
+                assert!(heard_in.abs() < 100_000_000, "heard_in_ns {heard_in}");
                 frames.push(v["frame"].as_u64().unwrap());
                 if saw_ok && frames.len() >= 4 {
                     assert_eq!(v["mixer"]["crossfader"], 0.25);

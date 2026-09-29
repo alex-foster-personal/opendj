@@ -3,6 +3,10 @@
 
 use std::io::{self, Write};
 
+/// The most stereo f32 frames one WAV file holds: its sizes are 32-bit, so
+/// the data chunk tops out just under 4 GiB (about 3.1 hours at 48 kHz).
+pub const MAX_F32_FRAMES: u64 = (u32::MAX as u64 - 36) / 8;
+
 fn header(w: &mut impl Write, format: u16, bits: u16, sr: u32, data_bytes: u32) -> io::Result<()> {
     let channels = 2u16;
     let block_align = channels * bits / 8;

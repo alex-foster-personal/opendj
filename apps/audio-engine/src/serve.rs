@@ -27,7 +27,12 @@ use serde_json::Value;
 
 use crate::deck::Track;
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
-use crate::protocol::{self, Advance, Command, LoadSpec, ProtoError};
+use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError};
+
+/// The longest single `engine_advance`, in seconds of audio. The session
+/// answers nothing else until an advance is rendered, so a longer one (or a
+/// frame count near u64::MAX) would hold it for good.
+pub const MAX_ADVANCE_S: u64 = 3600;
 
 /// State messages per second in the threaded modes.
 pub const STATE_HZ: u32 = 30;
@@ -75,10 +80,8 @@ pub fn serve_fake(
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
             Command::NoOp => Ok(()),
             Command::Advance(a) => {
-                let mut left = match a {
-                    Advance::Frames(f) => f,
-                    Advance::Ms(ms) => (ms * sample_rate as f64 / 1000.0).round() as u64,
-                };
+                let recorded = record.as_deref().map(|r| r.len() as u64 / 2);
+                let mut left = advance_frames(a, sample_rate, recorded)?;
                 while left > 0 {
                     let n = left.min(MAX_BLOCK as u64) as usize;
                     engine.render(&mut scratch[..n * 2]);
@@ -108,6 +111,36 @@ pub fn serve_fake(
         }
     }
     Ok(())
+}
+
+/// Frames an `engine_advance` renders, refused before any of them are when it
+/// runs past MAX_ADVANCE_S or would take a recording (`recorded` frames so
+/// far) past what its WAV file can hold.
+fn advance_frames(a: Advance, sample_rate: u32, recorded: Option<u64>) -> Result<u64, ProtoError> {
+    let limit = MAX_ADVANCE_S * sample_rate as u64;
+    let frames = match a {
+        Advance::Frames(f) => f,
+        // A huge ms saturates the cast to u64::MAX, which the bound refuses.
+        Advance::Ms(ms) => (ms * sample_rate as f64 / 1000.0).round() as u64,
+    };
+    if frames > limit {
+        return Err(ProtoError::new(
+            ErrorCode::Invalid,
+            format!("engine_advance may move at most {MAX_ADVANCE_S} s ({limit} frames) at a time"),
+        ));
+    }
+    if let Some(done) = recorded {
+        if done + frames > crate::wav::MAX_F32_FRAMES {
+            return Err(ProtoError::new(
+                ErrorCode::Invalid,
+                format!(
+                    "engine_advance would take the recording past {} frames, the most a WAV file holds",
+                    crate::wav::MAX_F32_FRAMES
+                ),
+            ));
+        }
+    }
+    Ok(frames)
 }
 
 /// Where results and state go: stdout in the binary, a buffer in tests.
@@ -411,6 +444,9 @@ fn serve_threaded_from(
         send(&mut *o, &protocol::hello_json(clock, sample_rate))?;
     }
 
+    // One clock for when state is heard and when it is sent, so the feed's
+    // heard_in_ns needs no clock shared with the receiver.
+    let epoch = Instant::now();
     let audio = AudioSide {
         engine: Engine::new(sample_rate),
         cmd_rx,
@@ -419,8 +455,8 @@ fn serve_threaded_from(
         state_req: state_req.clone(),
         frames_per_state: (sample_rate / STATE_HZ) as u64,
         frames_since_state: 0,
-        epoch: Instant::now(),
-            ahead_ns: 0,
+        epoch,
+        ahead_ns: 0,
         scratch: vec![0.0; MAX_BLOCK * 2 * 8],
     };
     let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
@@ -447,10 +483,11 @@ fn serve_threaded_from(
             let mut o = pump_out.lock().unwrap();
             let _ = send(&mut *o, &protocol::result_json(id.as_deref(), &res));
         }
-        while let Ok((snap, host_ns)) = state_rx.pop() {
+        while let Ok((snap, heard_ns)) = state_rx.pop() {
             idle = false;
             let mut o = pump_out.lock().unwrap();
-            let _ = send(&mut *o, &protocol::state_json(&snap, Some(host_ns)));
+            let host = HostTime { heard_ns, sent_ns: epoch.elapsed().as_nanos() as u64 };
+            let _ = send(&mut *o, &protocol::state_json(&snap, Some(host)));
         }
         if pump_stop_flag.load(Ordering::Relaxed) && idle {
             break;
@@ -724,6 +761,23 @@ mod tests {
             .unwrap_or_else(|| panic!("no result for the stranded command:\n{text}"));
         assert_eq!(result["ok"], false, "{result}");
         assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
+    }
+
+    #[test]
+    fn an_advance_is_bounded_before_it_renders() {
+        let hour = MAX_ADVANCE_S * 48000;
+        assert_eq!(advance_frames(Advance::Frames(hour), 48000, None).unwrap(), hour);
+        assert_eq!(advance_frames(Advance::Ms(MAX_ADVANCE_S as f64 * 1000.0), 48000, None).unwrap(), hour);
+        for a in [Advance::Frames(hour + 1), Advance::Frames(u64::MAX), Advance::Ms(1e300), Advance::Ms(3_600_001.0)] {
+            assert_eq!(advance_frames(a, 48000, None).unwrap_err().code, ErrorCode::Invalid, "{a:?}");
+        }
+        // A recording stops where its WAV file would: the last frame that
+        // fits is accepted, one more is not.
+        let max = crate::wav::MAX_F32_FRAMES;
+        assert_eq!(advance_frames(Advance::Frames(1000), 48000, Some(max - 1000)).unwrap(), 1000);
+        assert_eq!(advance_frames(Advance::Frames(1001), 48000, Some(max - 1000)).unwrap_err().code, ErrorCode::Invalid);
+        // Control: without a recording the same advance is fine.
+        assert_eq!(advance_frames(Advance::Frames(1001), 48000, None).unwrap(), 1001);
     }
 
     #[test]

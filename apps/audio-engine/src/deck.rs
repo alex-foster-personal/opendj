@@ -219,7 +219,7 @@ struct Strip {
     hp_wet: Smoothed,
     fader: Smoothed,
     xf: Smoothed,
-    /// Frames until filter coefficients are next recomputed while gliding.
+    /// Frames until filter coefficients are next due for a recompute.
     coeff_countdown: u32,
     /// Frames rendered since the deck last played a frame of its track.
     idle_run: u64,
@@ -228,9 +228,9 @@ struct Strip {
     quiet_after: u64,
 }
 
-/// Coefficients glide with their smoothed parameters, recomputed every
-/// COEFF_INTERVAL frames. A fixed interval keeps renders independent of the
-/// caller's block size.
+/// Coefficients glide with their parameters, recomputed every COEFF_INTERVAL
+/// frames (and on the frame a glide settles). A fixed, free-running interval
+/// keeps renders independent of the caller's block size.
 const COEFF_INTERVAL: u32 = 16;
 
 impl Strip {
@@ -308,22 +308,26 @@ impl Strip {
 
     #[inline]
     fn process(&mut self, l: f64, r: f64) -> (f64, f64) {
-        if self.coeff_countdown == 0 {
-            if self.coeffs_gliding() {
-                for s in self.eq_db.iter_mut() {
-                    for _ in 0..COEFF_INTERVAL {
-                        s.tick();
-                    }
-                }
-                for _ in 0..COEFF_INTERVAL {
-                    self.lp_hz.tick();
-                    self.hp_hz.tick();
-                }
-                self.recompute();
-            }
+        // The parameters behind the coefficients move every frame, like the
+        // page's; only the coefficients are held between recomputes, so they
+        // trail the ramp by under COEFF_INTERVAL frames and never run ahead
+        // of it. The frame a glide settles recomputes at once, so the target
+        // lands on time rather than at the next interval.
+        let due = self.coeff_countdown == 0;
+        if due {
             self.coeff_countdown = COEFF_INTERVAL;
         }
         self.coeff_countdown -= 1;
+        if self.coeffs_gliding() {
+            for s in self.eq_db.iter_mut() {
+                s.tick();
+            }
+            self.lp_hz.tick();
+            self.hp_hz.tick();
+            if due || !self.coeffs_gliding() {
+                self.recompute();
+            }
+        }
 
         let trim = self.trim.tick();
         let (mut l, mut r) = (l * trim, r * trim);
@@ -913,14 +917,43 @@ mod tests {
         d.load(Arc::new(silent(48000, 1.0, vec![])));
         d.play(true).unwrap();
         d.set_eq(0, 0.0);
+        let low = |db: f64| Coeffs::lowshelf(48000.0, mixer::EQ_FREQ_LOW_HZ, db).b0;
+        let ramp_at = |frame: f64| mixer::EQ_MIN_DB * frame / 480.0;
+        // The first frame moves one frame's worth, not a whole coefficient
+        // interval's: nothing runs ahead of the page's ramp.
+        let mut buf = vec![0.0f32; 2];
+        d.render_add(&mut buf, 48000.0);
+        assert!((d.strip.eq_db[0].value - ramp_at(1.0)).abs() < 1e-12, "{}", d.strip.eq_db[0].value);
+        assert_eq!(d.strip.eq[0].c.b0, low(ramp_at(1.0)));
+        // Halfway through, exactly halfway to the -26 dB kill. The filter in
+        // use was computed at the last interval (frame 225 of the ramp), so
+        // it trails the ramp and never leads it.
+        let mut buf = vec![0.0f32; 239 * 2];
+        d.render_add(&mut buf, 48000.0);
+        assert!((d.strip.eq_db[0].value - -13.0).abs() < 1e-12, "{}", d.strip.eq_db[0].value);
+        assert_eq!(d.strip.eq[0].c.b0, low(ramp_at(225.0)));
+        // The frame the ramp lands (480, not on an interval) puts the target
+        // in the filter at once.
         let mut buf = vec![0.0f32; 240 * 2];
         d.render_add(&mut buf, 48000.0);
-        // Halfway through the ramp, halfway to the -26 dB kill (to the
-        // 16-frame coefficient step).
-        let half = d.strip.eq_db[0].value;
-        assert!((half - -13.0).abs() < 26.0 * 16.0 / 480.0, "{half}");
-        d.render_add(&mut buf, 48000.0);
         assert_eq!(d.strip.eq_db[0].value, mixer::EQ_MIN_DB);
+        assert_eq!(d.strip.eq[0].c.b0, low(mixer::EQ_MIN_DB));
+    }
+
+    #[test]
+    fn a_filter_sweep_glides_frame_by_frame() {
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 1.0, vec![])));
+        d.play(true).unwrap();
+        let from = d.strip.lp_hz.value;
+        d.set_filter(0.25);
+        let to = d.strip.lp_hz.target;
+        let mut buf = vec![0.0f32; 2];
+        d.render_add(&mut buf, 48000.0);
+        // One frame of the one-pole glide, as setTargetAtTime makes it.
+        let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * 48000.0)).exp();
+        let want = from + (to - from) * k;
+        assert!((d.strip.lp_hz.value - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.value);
     }
 
     #[test]
