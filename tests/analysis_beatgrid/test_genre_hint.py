@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis.backends.own_beatgrid import GENRE_HINT_ENV, library_genre
+from apps.analysis.backends.genre_hint import GENRE_HINT_ENV, library_genre
 
 
 def _state_db(path: Path, rows: list[tuple[str, str]]) -> Path:

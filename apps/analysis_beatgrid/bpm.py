@@ -174,31 +174,42 @@ def choose_octave(
         return bpm, multiple, reason, not in_range
 
     if family is not None:
-        in_family = [(m, bpm) for m, bpm in candidates if family.contains(bpm)]
-        if in_family:
-            multiple, bpm = min(
-                in_family,
-                key=lambda mb: _log_distance(mb[1], math.sqrt(family.min_bpm * family.max_bpm)),
-            )
-            return bpm, multiple, REASON_GENRE_FAMILY, False
+        chosen = _family_octave(candidates, family)
+        if chosen is not None:
+            return chosen
+    return _band_octave(candidates, in_range)
 
+
+_Octave = tuple[float, float, str, bool]
+
+
+def _family_octave(
+    candidates: Sequence[tuple[float, float]], family: TempoFamily
+) -> _Octave | None:
+    """Rule 2: the octave inside the genre family's range, or None when none lands there."""
+    in_family = [(m, bpm) for m, bpm in candidates if family.contains(bpm)]
+    if not in_family:
+        return None
+    center = math.sqrt(family.min_bpm * family.max_bpm)
+    multiple, bpm = min(in_family, key=lambda mb: _log_distance(mb[1], center))
+    return bpm, multiple, REASON_GENRE_FAMILY, False
+
+
+def _band_octave(
+    candidates: Sequence[tuple[float, float]], in_range: Sequence[tuple[float, float]]
+) -> _Octave:
+    """Rules 3-6: the [70, 180] band, the model's own level, then the band center."""
     if len(in_range) == 1:
         multiple, bpm = in_range[0]
         return bpm, multiple, REASON_SINGLE_OCTAVE_IN_RANGE, False
-
     model_level = [(m, bpm) for m, bpm in in_range if m == 1.0]
-    if len(in_range) > 1 and model_level:
+    if model_level:
         multiple, bpm = model_level[0]
         return bpm, multiple, REASON_AMBIGUOUS_MODEL_LEVEL, True
-
-    if in_range:
-        center = math.sqrt(OCTAVE_RANGE_MIN_BPM * OCTAVE_RANGE_MAX_BPM)
-        multiple, bpm = min(in_range, key=lambda mb: _log_distance(mb[1], center))
-        return bpm, multiple, REASON_AMBIGUOUS_NEAREST_CENTER, True
-
     center = math.sqrt(OCTAVE_RANGE_MIN_BPM * OCTAVE_RANGE_MAX_BPM)
-    multiple, bpm = min(candidates, key=lambda mb: _log_distance(mb[1], center))
-    return bpm, multiple, REASON_NO_OCTAVE_IN_RANGE, True
+    reason = REASON_AMBIGUOUS_NEAREST_CENTER if in_range else REASON_NO_OCTAVE_IN_RANGE
+    multiple, bpm = min(in_range or candidates, key=lambda mb: _log_distance(mb[1], center))
+    return bpm, multiple, reason, True
 
 
 # ----- The public entry point ---------------------------------------------
