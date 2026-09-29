@@ -471,6 +471,56 @@ def hub_changes_since(
     )
 
 
+def _bundle_playlists_of(
+    conn: sqlite3.Connection,
+    stable_id: str,
+    held: sync_set.HeldKeys,
+    seen: set[tuple[str, tuple[str, ...]]],
+    changes: list[RowChange],
+) -> None:
+    """Append every playlist holding ``stable_id`` that is not bundled yet."""
+    playlist_ids = [
+        str(item[0])
+        for item in conn.execute(
+            "SELECT DISTINCT playlist_id FROM playlist_memberships "
+            "WHERE stable_id = ?",
+            (stable_id,),
+        )
+    ]
+    for playlist_id in playlist_ids:
+        # A playlist shared by several repaired tracks is bundled once:
+        # building its whole membership again only to drop it at the
+        # dedup cost ~4 s for 13 tracks in a 10k playlist (#4397).
+        if ("playlists", (playlist_id,)) in seen:
+            continue
+        playlist_spec = SPEC_BY_TABLE["playlists"]
+        playlist_columns = protocol.table_columns(conn, "playlists")
+        playlist_row = conn.execute(
+            f"SELECT {', '.join(playlist_columns)} FROM playlists "
+            f"WHERE playlist_id = ?",
+            (playlist_id,),
+        ).fetchone()
+        if playlist_row is None:
+            continue
+        playlist_change = _row_change(
+            conn,
+            "playlists",
+            playlist_columns,
+            playlist_spec,
+            playlist_row,
+            held,
+        )
+        if isinstance(playlist_change, HeldRow):
+            raise SyncApplyError(
+                f"hub cannot offer playlist {playlist_id!r} for identity "
+                f"repair while it is held on the hub."
+            )
+        playlist_key = (playlist_change.table, playlist_change.pk)
+        if playlist_key not in seen:
+            seen.add(playlist_key)
+            changes.append(playlist_change)
+
+
 def hub_track_bundles(
     conn: sqlite3.Connection, stable_ids: Sequence[str]
 ) -> list[RowChange]:
@@ -528,41 +578,7 @@ def hub_track_bundles(
                 if child_key not in seen:
                     seen.add(child_key)
                     changes.append(child)
-        playlist_ids = [
-            str(item[0])
-            for item in conn.execute(
-                "SELECT DISTINCT playlist_id FROM playlist_memberships "
-                "WHERE stable_id = ?",
-                (stable_id,),
-            )
-        ]
-        for playlist_id in playlist_ids:
-            playlist_spec = SPEC_BY_TABLE["playlists"]
-            playlist_columns = protocol.table_columns(conn, "playlists")
-            playlist_row = conn.execute(
-                f"SELECT {', '.join(playlist_columns)} FROM playlists "
-                f"WHERE playlist_id = ?",
-                (playlist_id,),
-            ).fetchone()
-            if playlist_row is None:
-                continue
-            playlist_change = _row_change(
-                conn,
-                "playlists",
-                playlist_columns,
-                playlist_spec,
-                playlist_row,
-                held,
-            )
-            if isinstance(playlist_change, HeldRow):
-                raise SyncApplyError(
-                    f"hub cannot offer playlist {playlist_id!r} for identity "
-                    f"repair while it is held on the hub."
-                )
-            playlist_key = (playlist_change.table, playlist_change.pk)
-            if playlist_key not in seen:
-                seen.add(playlist_key)
-                changes.append(playlist_change)
+        _bundle_playlists_of(conn, stable_id, held, seen, changes)
     changes.sort(
         key=lambda change: (apply_rank(change.table, source=HUB_CHANGELOG_TABLE), change.pk)
     )
