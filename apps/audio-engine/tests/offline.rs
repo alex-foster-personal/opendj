@@ -100,12 +100,14 @@ fn a_ramp_lands_on_its_target() {
     });
     let out = render_plan_files(&parse_plan(&plan).unwrap(), &d).unwrap();
     let peak = |a: usize, b: usize| out.pcm[a * 2..b * 2].iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+    // Deck 1 starts on crossfader side A, centered: the equal-power 0.707.
+    let xf = odj_audio::mixer::xf_gain(odj_audio::mixer::Assign::A, 0.5) as f32;
     // Loud at the start (control), silent once the ramp and its smoothing end.
-    assert!(peak(0, 480) > 0.45, "start peak {}", peak(0, 480));
+    assert!(peak(0, 480) > 0.45 * xf, "start peak {}", peak(0, 480));
     assert!(peak(96000, 144000) < 1e-6, "tail peak {}", peak(96000, 144000));
     // Halfway through, the fader is near 0.5.
     let mid = peak(23000, 25000);
-    assert!((mid - 0.25).abs() < 0.02, "mid peak {mid}");
+    assert!((mid - 0.25 * xf).abs() < 0.02 * xf, "mid peak {mid}");
 }
 
 #[test]

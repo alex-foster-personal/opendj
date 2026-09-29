@@ -625,6 +625,12 @@ impl Deck {
         self.strip.xf.set(g);
     }
 
+    /// Start at crossfader gain `g` without a glide, for the engine's
+    /// initial state.
+    pub fn snap_xf_gain(&mut self, g: f64) {
+        self.strip.xf.snap(g);
+    }
+
     /// The smoothed trim x fader x crossfader gain, as it stands now. EQ and
     /// filter are left out on purpose: a deck with its lows killed is still
     /// in the mix.

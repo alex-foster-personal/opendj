@@ -198,6 +198,13 @@ impl Engine {
             mute_gain: Smoothed::new(1.0, sr, mixer::PARAM_SMOOTH_S),
             frame: 0,
         };
+        // The page's default assign matrix (`_defaultChannel`): odd decks on
+        // A, even decks on B. The strips start at the gain that gives, with
+        // no glide in from THRU.
+        for (i, d) in e.decks.iter_mut().enumerate() {
+            d.assign = if i % 2 == 0 { Assign::A } else { Assign::B };
+            d.snap_xf_gain(mixer::xf_gain(d.assign, e.crossfader));
+        }
         e.apply_crossfader();
         e
     }
@@ -498,8 +505,9 @@ mod tests {
         let mut buf = vec![0.0f32; 48000 * 2];
         flat.render(&mut buf);
         let reference = rms_db(&buf[48000..]);
-        // Flat EQ, unity trim and fader: a 0.5-amplitude sine is -9.03 dBFS.
-        assert!((reference - (-9.0309)).abs() < 0.1, "flat measured {reference}");
+        // Flat EQ, unity trim and fader: a 0.5-amplitude sine is -9.03 dBFS,
+        // less the equal-power crossfader's 3.01 dB at center (deck 1 is on A).
+        assert!((reference - (-9.0309 - 3.0103)).abs() < 0.1, "flat measured {reference}");
 
         let mut cut = playing_tone(100.0, 48000);
         cut.apply(EngineCmd::Eq { deck: 1, band: EqBand::Low, value: 0.0 }).unwrap();
@@ -541,11 +549,13 @@ mod tests {
         let mut first = vec![0.0f32; 480 * 2];
         e.render(&mut first);
         assert!(peak(&first) < 1e-6, "deck blipped in at {}", peak(&first));
-        // Control, the other direction: an untouched deck is at full level
-        // from its first frames, so idling does not fade decks down.
+        // Control, the other direction: an untouched deck is at its full
+        // level (0.5 through the centered crossfader) from its first frames,
+        // so idling does not fade decks down.
         let mut u = playing_tone(1000.0, 48000);
         u.render(&mut first);
-        assert!(peak(&first) > 0.45, "untouched deck started at {}", peak(&first));
+        let full = 0.5 * mixer::xf_gain(Assign::A, 0.5) as f32;
+        assert!(peak(&first) > full * 0.99, "untouched deck started at {}, full is {full}", peak(&first));
         // And a stopped deck goes exactly silent once its tails are over.
         u.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
         u.render(&mut buf);
@@ -572,7 +582,7 @@ mod tests {
         e.apply(EngineCmd::PitchRange { deck: 2, range: 8.0 }).unwrap();
         let s = e.snapshot();
         assert_eq!((s.decks[1].assign, s.decks[1].pitch_range), (Assign::B, 8.0));
-        assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::Thru, None));
+        assert_eq!((s.decks[0].assign, s.decks[0].cue_ms), (Assign::A, None));
     }
 
     #[test]
@@ -585,6 +595,30 @@ mod tests {
         assert_eq!((d.loop_ms, d.loop_beats), (Some((1000.0, 3000.0)), Some(4.0)));
         e.apply(EngineCmd::Loop { deck: 1, bounds_ms: Some((1000.0, 3000.0)) }).unwrap();
         assert_eq!(e.snapshot().decks[0].loop_beats, None);
+    }
+
+    #[test]
+    fn decks_start_on_the_pages_crossfader_sides() {
+        let mut e = Engine::new(48000);
+        let sides: Vec<_> = e.snapshot().decks.iter().map(|d| d.assign).collect();
+        assert_eq!(sides, vec![Assign::A, Assign::B, Assign::A, Assign::B]);
+        // So the crossfader works with no assign sent: hard to A silences
+        // deck 2 and leaves deck 1 at full level.
+        for deck in [1, 2] {
+            e.apply(EngineCmd::Load { deck, track: Arc::new(tone(48000, 440.0, 1.0)) }).unwrap();
+            e.apply(EngineCmd::Play { deck, playing: true }).unwrap();
+        }
+        e.apply(EngineCmd::Crossfader { value: 0.0 }).unwrap();
+        let mut buf = vec![0.0f32; 4800 * 2];
+        e.render(&mut buf);
+        assert!((e.decks[0].level_gain() - 1.0).abs() < 1e-3, "{}", e.decks[0].level_gain());
+        assert!(e.decks[1].level_gain() < 1e-3, "{}", e.decks[1].level_gain());
+        // At rest in the middle, a fresh engine starts at the equal-power
+        // gain rather than gliding down to it from THRU's 1.0.
+        let e = Engine::new(48000);
+        let mid = mixer::xf_gain(Assign::A, 0.5);
+        assert!(mid < 0.99, "{mid}");
+        assert_eq!(e.decks[0].level_gain(), mid);
     }
 
     #[test]
