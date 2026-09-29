@@ -23,6 +23,7 @@ import {
 	requireLoopbackOrigin,
 	requireRealLibraryDataDir
 } from './savepoint-endpoints';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -84,7 +85,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: engineCmd,
+			command: guardedWebServerCommand('savepoint-engine', engineCmd),
 			cwd: REPOSITORY_ROOT,
 			url: `${api.origin}/api/v1/health`,
 			reuseExistingServer: false,
@@ -92,7 +93,7 @@ export default defineConfig({
 			env: { ...process.env, MDT_DATA_DIR: dataDir }
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.savepoint.config.ts',
+			command: guardedWebServerCommand('savepoint-vite', 'pnpm exec vite --config tests/e2e/vite.savepoint.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${frontend.origin}/performance`,
 			reuseExistingServer: false,

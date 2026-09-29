@@ -1071,7 +1071,7 @@ jobs:
           scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
-        run: uv sync
+        run: uv sync --extra dev
 
       - name: Runner preflight - node tools and disk
         # Fail here, naming the runner, rather than mid-install with a cryptic
