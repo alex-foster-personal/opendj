@@ -126,6 +126,11 @@ jobs:
       RECONCILE_TITLE: "CI Cost Guard reconcile"
       RECONCILE_OVERLAP_HOURS: "48"
       RECONCILE_SEARCH_HOURS: "72"
+      # How far before the reconcile mark a re-run's run may have been created. Each
+      # runs page is about 1.7 MB and 4.5 s, so this is the pass's cost: 30 days (the
+      # re-run limit) outran a 10-minute job. In the 7 days to Tue 29 Sep 2026 the
+      # latest re-run started 143.6 h after its run was created.
+      RECONCILE_HORIZON_DAYS: "7"
       THRESHOLD_USD: "0.30"
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
@@ -304,6 +309,7 @@ jobs:
             --e2e-events "$E2E_PRICED_EVENTS" \
             --previous-started "$PREVIOUS_STARTED" \
             --reconcile-since "$RECONCILE_SINCE" \
+            --reconcile-horizon-days "$RECONCILE_HORIZON_DAYS" \
             --overlap-minutes "$OVERLAP_MINUTES" \
             --lookback-hours "$LOOKBACK_HOURS" \
             --threshold "$THRESHOLD_USD" \

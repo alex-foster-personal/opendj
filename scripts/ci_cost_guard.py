@@ -298,7 +298,7 @@ def run_batch(args: argparse.Namespace) -> int:
         args.reconcile_since,
         created_since,
         args.token,
-        "ci-cost-guard",
+        horizon=timedelta(days=args.reconcile_horizon_days or 0),
         workflow_names=watched,
     )
     selected = {
@@ -367,6 +367,12 @@ def main() -> int:
     parser.add_argument("--lookback-hours", type=int, default=3)
     parser.add_argument(
         "--reconcile-since", default="", help="the reconcile mark; empty on a plain pass"
+    )
+    parser.add_argument(
+        "--reconcile-horizon-days",
+        type=int,
+        default=None,
+        help="how far before the reconcile mark a re-run's run may have been created",
     )
     parser.add_argument("--report-dir", type=Path, default=Path("."))
     parser.add_argument("--threshold", type=float, default=1.0)

@@ -116,6 +116,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reconcile-since", default="", help="the reconcile mark; empty on a plain pass"
     )
+    parser.add_argument(
+        "--reconcile-horizon-days",
+        type=int,
+        default=None,
+        help="how far before the reconcile mark a re-run's run may have been created",
+    )
     parser.add_argument("--written-by", default="github-actions")
     parser.add_argument("--evidence-dir", default=None)
     args = parser.parse_args(argv)
@@ -136,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         args.reconcile_since,
         created_since,
         args.token,
-        "stable-evidence",
+        horizon=timedelta(days=args.reconcile_horizon_days or 0),
         workflow_names=RECORDED_WORKFLOWS,
     )
     chosen = newest_per_suite(

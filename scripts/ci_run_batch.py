@@ -129,7 +129,8 @@ def fetch_completed_runs(
 
 # GitHub re-runs a run, or any of its jobs, "up to 30 days after its initial run"
 # (docs.github.com, Re-running workflows and jobs). A re-run keeps the run's id and
-# created_at, so past this age a run can no longer complete again.
+# created_at, so past this age a run can no longer complete again. A reconcile pass
+# lists a horizon no wider than this; its workflow sets how much narrower.
 RERUN_HORIZON = timedelta(days=30)
 # GitHub serves at most 1,000 results from a filtered runs listing.
 LISTING_CAP = 1000
@@ -185,27 +186,31 @@ def reconcile_listing(
     reconcile_since: str,
     created_before: str,
     token: str,
-    agent: str,
     *,
     workflow_names: Iterable[str],
+    horizon: timedelta,
     listing_cap: int = LISTING_CAP,
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """What a reconcile pass adds to the plain listing: the RE-RUNS among the runs
-    created from RERUN_HORIZON before the reconcile mark up to the plain listing's
-    floor. A first attempt that completes past the floor is the census's case (the
+    created from `horizon` before the reconcile mark up to the plain listing's
+    floor. Each page of a runs listing is about 1.7 MB and 4.5 s, so the horizon is
+    what a pass costs: 30 days outran a 10-minute job, and a re-run starting more
+    than `horizon` after its run was created is not recorded. A first attempt that completes past the floor is the census's case (the
     plain pass holds its mark until that run completes); a re-run is the case no
     plain pass can see, so re-runs are all a reconcile pass adds, about 20 a day,
     and its overlap can be days wide without re-pricing thousands of runs. Empty
     when the pass is not a reconcile pass (no mark)."""
     if not reconcile_since:
         return []
+    if not timedelta(0) < horizon <= RERUN_HORIZON:
+        raise ValueError(f"a reconcile horizon of {horizon} is outside GitHub's re-run limit")
     listed = fetch_runs_created_between(
         repository,
-        iso(parse_time(reconcile_since) - RERUN_HORIZON),
+        iso(parse_time(reconcile_since) - horizon),
         created_before,
         token,
-        agent,
+        "ci-run-batch-reconcile",
         workflow_names=workflow_names,
         listing_cap=listing_cap,
         get_json=get_json,

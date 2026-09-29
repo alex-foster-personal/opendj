@@ -117,6 +117,8 @@ def _assert_daily_reconcile(
     listing = steps[ids.index(listing_step_id)]
     assert "steps.reconcile.outputs.since" in str(listing["env"])
     assert '--reconcile-since "$RECONCILE_SINCE"' in listing["run"]
+    assert '--reconcile-horizon-days "$RECONCILE_HORIZON_DAYS"' in listing["run"]
+    assert 1 <= int(env["RECONCILE_HORIZON_DAYS"]) <= 30, "within GitHub's re-run limit"
 
 
 def test_stable_evidence_batch_selects_in_the_script_not_the_workflow() -> None:
