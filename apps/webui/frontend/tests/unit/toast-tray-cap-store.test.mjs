@@ -101,4 +101,5 @@ test('five pushed toasts yield at most three visible in policy slice', async (t)
 	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
 	const visible = policy.selectVisibleToasts(stores.toasts);
 	assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
+	for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 });

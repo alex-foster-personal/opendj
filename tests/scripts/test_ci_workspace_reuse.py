@@ -25,8 +25,10 @@ Acceptance tests:
   target dir [then] this fails [⛔️ if the churn silently comes back].
 - [if] a self-hosted job runs bare `uv venv` [then] this fails [⛔️ uv refuses
   to create over an existing venv, so a reused workspace would go red].
-- [if] a reused venv's install drops `--exact` or `--upgrade` [then] this fails
-  [⛔️ if a reused venv tests another branch's packages or stale versions].
+- [if] a reused venv is filled any way but `ci_venv.sh --lock <committed
+  pylock>` (an exact sync from a hash-pinned lock) [then] this fails [⛔️ if a
+  reused venv tests another branch's packages, or a job resolves against the
+  live index (issue #4252)].
 - [if] the venv's interpreter reports another version, or does not run
   [then] it is recreated from the requested interpreter.
 - [if] the venv's interpreter matches [then] it is kept, contents intact.
@@ -51,8 +53,8 @@ VENV_SCRIPT = REPO_ROOT / "scripts" / "ci_venv.sh"
 SELF_HOSTED_VAR_PREFIX = "vars.CI_RUNS_ON_"
 CHECKOUT_PREFIX = "actions/checkout@"
 CLEAN_STEP_RUN = "scripts/ci_clean_untracked.sh"
-EXACT_INSTALL = "uv pip install --exact --upgrade --python .venv/bin/python "
 PYTHON = "3.11"
+LOCK_SYNC_RE = re.compile(rf"^\s*scripts/ci_venv\.sh {re.escape(PYTHON)} --lock (\S+)\s*$", re.M)
 
 
 #-----------------------------------------------------------------------------
@@ -202,11 +204,13 @@ def test_every_reused_venv_is_installed_exactly() -> None:
         for s in steps
         if "scripts/ci_venv.sh" in str(s.get("run", ""))
     ]
-    # CONTROL: ci.yml (3 jobs), full-ci, docs and release-check provision this way.
-    assert len(provisioning) >= 6, provisioning
+    # CONTROL: ci.yml (4 jobs), full-ci, docs and release-check provision this way.
+    assert len(provisioning) >= 7, provisioning
     for w, j, run in provisioning:
-        assert f"scripts/ci_venv.sh {PYTHON}" in run, f"{w}:{j}"
-        assert EXACT_INSTALL in run, f"{w}:{j} must install with --exact --upgrade: {run}"
+        locks = LOCK_SYNC_RE.findall(run)
+        assert len(locks) == 1, f"{w}:{j} must provision with `ci_venv.sh {PYTHON} --lock`: {run}"
+        assert (REPO_ROOT / locks[0]).is_file(), f"{w}:{j} syncs an uncommitted lock: {locks[0]}"
+        assert "uv pip install" not in run, f"{w}:{j} must not resolve on top of the lock: {run}"
 
 
 #-----------------------------------------------------------------------------

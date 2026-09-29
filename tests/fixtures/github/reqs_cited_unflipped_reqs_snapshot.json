@@ -1,0 +1,30 @@
+{
+  "v1": {
+    "DEVOPS": {
+      "name": "Ops/DevOps",
+      "requirements": [
+        {
+          "id": "DEVOPS-01",
+          "desc": "snapshot fixture for tests/quality/test_periodic_checks_reqs_drift_row.py; not maintained against the live repo, see the sibling .md.",
+          "status": "shipped",
+          "phase": null,
+          "shipped_phase": null
+        },
+        {
+          "id": "DEVOPS-06",
+          "desc": "snapshot fixture for tests/quality/test_periodic_checks_reqs_drift_row.py; not maintained against the live repo, see the sibling .md.",
+          "status": "shipped",
+          "phase": null,
+          "shipped_phase": null
+        },
+        {
+          "id": "DEVOPS-07",
+          "desc": "snapshot fixture for tests/quality/test_periodic_checks_reqs_drift_row.py, pinned pending on purpose so the drift-row test always has one cited-but-pending id to find, independent of live reqs.json's own status. This is the id's real status as of the pr_list cassette's Wed 9 Sep 2026 capture date; DEVOPS-07 itself shipped later, Sat 26 Sep 2026. See the sibling .md.",
+          "status": "pending",
+          "phase": null,
+          "shipped_phase": null
+        }
+      ]
+    }
+  }
+}

@@ -35,6 +35,7 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -82,7 +83,7 @@ export default defineConfig({
 		// no transform of its own. `python3 -m http.server` is already the
 		// static server this repo's desktop-setup gate uses, so no dependency
 		// is added for this suite.
-		command: `pnpm build && python3 -m http.server ${STRETCH_ARTIFACT_PORT} --bind 127.0.0.1 --directory build`,
+		command: guardedWebServerCommand('stretch-artifact-static', `pnpm build && python3 -m http.server ${STRETCH_ARTIFACT_PORT} --bind 127.0.0.1 --directory build`),
 		cwd: FRONTEND_ROOT,
 		url: `${STRETCH_ARTIFACT_ORIGIN}/index.html`,
 		reuseExistingServer: false,
