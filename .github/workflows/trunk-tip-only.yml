@@ -1,55 +1,43 @@
-name: Debt file check
+name: trunk-tip-only
 
-# WHY THIS IS ITS OWN WORKFLOW AND NOT A STEP IN CI
-#
-# Same reason as adr-check.yml and reqs-flip-gate.yml: ci.yml's
-# `pull_request` `paths` filter excludes `**.md` and `.planning/**`, so a PR
-# that touches only `.planning/debt/<pr>.md` schedules NO ci.yml run at all.
-# `tests/scripts/test_debt_index.py` runs `scripts.debt_index` inside the
-# pytest lane, and that lane is exactly what such a PR skips.
-#
-# The consequence was measured, not theorised. Between Mon 14 and Tue 15 Sep
-# 2026 five malformed debt files reached main this way -- 2611.md, 2682.md,
-# 2684.md and 2685.md with no `Branch:` line, 2823.md with no `# PR #<n>`
-# heading. Each one turned debt-index-regen.yml red on main AND step 2 of
-# `just pre-push` (`python -m scripts.debt_index --check`) red for everyone
-# pushing anything, until it was fixed after the fact (811f881d0, #2791,
-# #2834). debt-index-regen.yml's own header says why it was first to see
-# them: post-merge regeneration was the earliest gate that existed.
-#
-# This workflow moves that verdict to where it costs one person 30 seconds
-# instead of blocking every push. It is deliberately NOT a re-include of
-# `.planning/debt/**` in ci.yml's paths filter: that would schedule the whole
-# fast pytest lane for a docs-only PR, which is the ceremony the filter was
-# written to avoid (the maintainer, Fri 28 Aug 2026). `.planning/REQUIREMENTS.md` is
-# re-included there because it is a CI input the lane itself consumes; a debt
-# file is not, and needs only this stdlib check.
+# Issue #2922 / ADR-0042 F6: cancel superseded queued CI and bookkeeping runs so
+# workflow_run followers do not starve PR CI on the self-hosted agentbox pool.
+# Never CI_RUNS_ON_LINUX: a sweeper queued behind the backlog it exists to
+# trim cannot trim it. Use the main-fix reserve; hosted fallback remains configured.
 
 on:
-  pull_request:
-    paths:
-      - ".planning/debt/**"
-      - ".planning/TECH-DEBT.md"
-      - ".github/workflows/debt-file-check.yml"
+  push:
+    branches: [main]
+  schedule:
+    # Backstop if a push-trigger miss leaves superseded bookkeeping queued.
+    - cron: "*/7 * * * *"
+  workflow_dispatch:
 
-concurrency:
-  group: debt-file-check-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-
-# Self-hosted runners are shared, so this workflow honours the same hygiene
-# contract as every other persistent-workspace workflow (issue #1338).
 env:
+  # Keep .pyc out of the reused self-hosted workspace (same ratchet as above).
   PYTHONDONTWRITEBYTECODE: "1"
 
+permissions:
+  actions: write
+  contents: read
+  # Listing open pull requests. Unspecified permissions are disabled, so without this the
+  # closed-PR sweep reads "Resource not accessible by integration" and cancels nothing.
+  pull-requests: read
+
+concurrency:
+  group: trunk-tip-only
+  cancel-in-progress: true
+
 jobs:
-  gate:
-    name: debt file check
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+  sweep:
+    name: Cancel superseded queued trunk runs
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_MAIN_FIX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338):
+      # the same block every self-hosted job carries, pinned identical by
+      # tests/quality/test_workspace_ownership_hygiene.py. On the hosted
+      # fallback the workspace is fresh and the step is a no-op scan.
       - name: Reclaim workspace ownership before checkout
         run: |
           set -euo pipefail
@@ -85,10 +73,7 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
-          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
-          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
-          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
-          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          # A cancelled checkout can leave locks; require no live workspace git.
           if [ -d "$ws/.git" ]; then
             live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
             if [ -z "$live" ]; then
@@ -98,22 +83,24 @@ jobs:
             fi
           fi
 
+      # Full history so origin/main is current enough for the ancestry guard
+      # (issue #3513). edited below re-runs body declarations; ancestry catches
+      # stale synthetic merge refs that predate trunk ADR fixes.
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        timeout-minutes: 2
         with:
           # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
           fetch-depth: 0
           persist-credentials: false
+          # false on purpose: the next step cleans all but the dependency trees.
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
-      - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.11"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
 
       # Stale-install guard (PR #4251): fail if this job's interpreter can import
       # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
@@ -122,17 +109,15 @@ jobs:
       # enforces that.
       - name: Stale-install guard - the interpreter imports only this checkout
         timeout-minutes: 1
-        run: scripts/ci_runner_preflight.sh python
+        run: scripts/ci_runner_preflight.sh python3
 
-      - name: Debt file metadata check
-        # No venv, no uv: scripts.debt_index imports only the standard
-        # library, exactly as debt-index-regen.yml relies on post-merge.
-        #
-        # `--check` and NOT `--require-current`: the committed
-        # `.planning/TECH-DEBT.md` is a main-side artifact that a PR never
-        # regenerates (issue #1415), so a branch's own new debt file is
-        # legitimately absent from the index. `--check` tolerates that and
-        # still fails on the malformed metadata this gate exists for.
-        run: |
-          set -euo pipefail
-          python -m scripts.debt_index --check
+      - name: Install Python deps into the project venv
+        run: uv sync --extra dev
+
+      - name: Preflight gh auth
+        run: scripts/ci_runner_preflight.sh gh
+
+      - name: Sweep superseded queued CI and bookkeeping runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-sync python -m scripts.ci_trunk_tip_only

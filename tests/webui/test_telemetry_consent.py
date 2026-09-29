@@ -21,8 +21,9 @@ from apps.shared.telemetry.consent import (
 )
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend
+from tests.support.sentry_client import close_sentry_client
 
-pytestmark = pytest.mark.requirement("OBS-05")
+pytestmark = [pytest.mark.requirement("OBS-05"), pytest.mark.no_leaked_threads]
 
 _LOOPBACK = "http://127.0.0.1"
 FRONTEND_DSN = "https://public@o0.ingest.de.sentry.io/43"
@@ -90,7 +91,7 @@ def test_accepting_stale_terms_is_a_409(client: TestClient) -> None:
 def _live_client(captured: list[dict]) -> None:  # type: ignore[type-arg]
     """A REAL SDK client on the fake DSN with a capturing transport, the same
     shape tests/shared/test_telemetry_gates.py boots; torn down by the caller
-    with ``sentry_sdk.init(dsn=None)``."""
+    with ``close_sentry_client()``."""
     from sentry_sdk.transport import Transport
 
     from apps.shared.telemetry import init_telemetry
@@ -120,8 +121,6 @@ def test_frontend_dsn_yields_a_replay_loader_url_only_while_this_boot_has_a_clie
     (Codex, #3737). Control in the same test: the very same engine WITH a
     client does hand out the URL, so the withholding is the gate under test.
     """
-    import sentry_sdk
-
     monkeypatch.setenv("SENTRY_FRONTEND_DSN", FRONTEND_DSN)
     client.put(
         "/api/v1/telemetry/consent",
@@ -145,4 +144,4 @@ def test_frontend_dsn_yields_a_replay_loader_url_only_while_this_boot_has_a_clie
         assert on["replay_session_sample_rate"] == 1.0
         assert on["replay_on_error_sample_rate"] == 1.0
     finally:
-        sentry_sdk.init(dsn=None)
+        close_sentry_client()
