@@ -14,9 +14,11 @@ runs no transaction after its first read, so it never pins the WAL and never
 blocks a checkpoint. This is the usual shape of a long-lived SQLite server:
 the process holds the database open, and requests borrow connections.
 
-The keeper is not closed explicitly. It is dropped with the app, and a process
-that exits with it open leaves a WAL the next open recovers, as after any
-crash.
+A keeper is dropped with the app, and a process that exits with it open
+leaves a WAL the next open recovers, as after any crash. Anything that needs
+the database to itself while the app lives (changing its journal mode, for
+one) calls :func:`close_wal_keepers` first: with a keeper open, SQLite
+answers it ``database is locked``.
 """
 
 from __future__ import annotations
@@ -62,9 +64,24 @@ def keep_wal_open(app_state: Any, db_path: Path) -> None:
         keepers[key] = keeper
 
 
+def close_wal_keepers(app_state: Any) -> int:
+    """Close every keeper ``app_state`` holds and return how many there were.
+
+    The next request reopens one, so this hands the database over only until
+    then.
+    """
+    with _LOCK:
+        keepers: dict[str, sqlite3.Connection] = getattr(app_state, CFG.STATE_ATTR, None) or {}
+        for keeper in keepers.values():
+            keeper.close()
+        closed = len(keepers)
+        keepers.clear()
+    return closed
+
+
 def wal_keepers(app_state: Any) -> dict[str, sqlite3.Connection]:
     """The keepers ``app_state`` holds, by resolved database path."""
     return dict(getattr(app_state, CFG.STATE_ATTR, None) or {})
 
 
-__all__ = ["CFG", "keep_wal_open", "wal_keepers"]
+__all__ = ["CFG", "close_wal_keepers", "keep_wal_open", "wal_keepers"]
