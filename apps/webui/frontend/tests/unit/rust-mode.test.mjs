@@ -137,3 +137,40 @@ test('knobs follow acknowledged commands; unload clears the deck', () => {
 	assert.equal(st.title, null);
 	assert.equal(st.position_ms, 0);
 });
+
+test('Settings > Audio engine chooses the next load, Web Audio by default', async () => {
+	const apply = await loadTypeScriptModule('src/lib/settings/apply.ts');
+	const catalog = await loadTypeScriptModule('src/lib/settings/catalog.ts');
+	const store = new Map();
+	const prior = globalThis.window;
+	globalThis.window = {
+		localStorage: {
+			getItem: (k) => (store.has(k) ? store.get(k) : null),
+			setItem: (k, v) => store.set(k, String(v))
+		}
+	};
+	try {
+		assert.ok(apply.ALLOWED_SETTING_KEYS.includes('audio_engine'));
+		const def = catalog.SETTINGS_CATALOG.find((d) => d.id === 'audio_engine');
+		assert.ok(def?.implemented, 'the row renders live');
+		assert.deepEqual(
+			def.control.options.map((o) => o.value),
+			['webaudio', 'rust']
+		);
+
+		assert.equal(apply.readSettingValue('audio_engine'), 'webaudio');
+		apply.applySettingChange('audio_engine', 'rust');
+		assert.equal(store.get(m.ENGINE_PREF_KEY), 'rust');
+		assert.equal(apply.readSettingValue('audio_engine'), 'rust');
+		apply.applySettingChange('audio_engine', 'webaudio');
+		assert.equal(apply.readSettingValue('audio_engine'), 'webaudio');
+
+		assert.throws(() => apply.applySettingChange('audio_engine', 'native'), /webaudio\|rust/);
+		assert.equal(store.get(m.ENGINE_PREF_KEY), 'webaudio', 'a refused value writes nothing');
+		// A corrupted stored value is loud, never quietly Web Audio.
+		store.set(m.ENGINE_PREF_KEY, 'bogus');
+		assert.throws(() => apply.readSettingValue('audio_engine'), /engine=bogus/);
+	} finally {
+		globalThis.window = prior;
+	}
+});

@@ -145,15 +145,37 @@ export function readEngineChoice(search: string, stored: string | null): EngineC
 	throw new Error(`engine=${v} is not one of webaudio, rust`);
 }
 
-/** Called once at page boot. */
-export function initRustMode(): void {
-	if (typeof window === 'undefined') return;
-	let stored: string | null = null;
+function _stored(): string | null {
 	try {
-		stored = window.localStorage?.getItem(ENGINE_PREF_KEY) ?? null;
+		return window.localStorage?.getItem(ENGINE_PREF_KEY) ?? null;
 	} catch {
 		// Storage can be blocked; the URL still works.
+		return null;
 	}
+}
+
+/** The engine the performance page uses on its next load (the setting). */
+export function storedEngineChoice(): EngineChoice {
+	if (typeof window === 'undefined') return 'webaudio';
+	return readEngineChoice('', _stored());
+}
+
+/** Choose the engine for the performance page's next load. A page already
+ * playing keeps its engine: switching mid-set would cut the audio. */
+export function setStoredEngineChoice(choice: EngineChoice): void {
+	if (choice !== 'webaudio' && choice !== 'rust') {
+		throw new Error(`audio_engine must be webaudio|rust, got ${String(choice)}`);
+	}
+	window.localStorage.setItem(ENGINE_PREF_KEY, choice);
+}
+
+let initialized = false;
+
+/** Read the choice for this page. Runs once; later calls are no-ops. */
+export function initRustMode(): void {
+	if (initialized || typeof window === 'undefined') return;
+	initialized = true;
+	const stored = _stored();
 	// Test stand-ins for window often carry no location.
 	const search = window.location?.search ?? '';
 	const params = new URLSearchParams(search);
@@ -276,17 +298,12 @@ export async function ensureRustEngine(): Promise<AudioEngineClient> {
 	return connecting;
 }
 
-let initialized = false;
-
 /**
  * Run `command` on the Rust engine when this mode owns it.
  * Returns false when the command is the page's own (the caller runs it as usual).
  */
 export async function executeInRustEngine(command: PerformanceCommand): Promise<boolean> {
-	if (!initialized) {
-		initialized = true;
-		initRustMode();
-	}
+	initRustMode();
 	if (!rustMode.enabled) return false;
 	const type = command.type;
 	if (WEB_AUDIO_ONLY.has(type)) {
