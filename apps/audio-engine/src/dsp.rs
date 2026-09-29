@@ -157,6 +157,11 @@ impl StereoBiquad {
 /// frame a change lands on still plays v0 and the glide starts one frame
 /// later. That is `setTargetAtTime`'s own shape (e^0 = 1 at its start time),
 /// and measured against Chromium it is worth about 45 dB on a filter move.
+///
+/// This follows the spec, not Chromium 141 in full: a STEREO BiquadFilterNode
+/// there advances a `setTargetAtTime` frequency glide twice per render quantum
+/// from the second quantum after the event, so the page's filter settles about
+/// twice as fast. Mono nodes and gain params step once per frame, as here.
 #[derive(Clone, Copy, Debug)]
 pub struct Smoothed {
     pub value: f64,
