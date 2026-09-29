@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{Coeffs, Smoothed, StereoBiquad};
+use crate::dsp::{Coeffs, LinearRamp, Smoothed, StereoBiquad};
 use crate::engine::{EngineError, ErrorCode};
 use crate::mixer::{self, Assign};
 
@@ -172,7 +172,7 @@ pub struct Deck {
 struct Strip {
     sr: f64,
     trim: Smoothed,
-    eq_db: [Smoothed; 3],
+    eq_db: [LinearRamp; 3],
     eq: [StereoBiquad; 3],
     lp_hz: Smoothed,
     hp_hz: Smoothed,
@@ -183,8 +183,12 @@ struct Strip {
     hp_wet: Smoothed,
     fader: Smoothed,
     xf: Smoothed,
-    /// Frames until filter coefficients are next recomputed while gliding.
-    coeff_countdown: u32,
+    /// The parameter values each filter's coefficients were last built from.
+    /// While a parameter glides its filter is rebuilt every frame, as Web
+    /// Audio's a-rate biquad does; at rest nothing is recomputed.
+    eq_built: [f64; 3],
+    lp_built: f64,
+    hp_built: f64,
     /// Frames rendered since the deck last played a frame of its track.
     idle_run: u64,
     /// After this many idle frames the filter tails are over: state is zeroed
@@ -192,19 +196,15 @@ struct Strip {
     quiet_after: u64,
 }
 
-/// Coefficients glide with their smoothed parameters, recomputed every
-/// COEFF_INTERVAL frames. A fixed interval keeps renders independent of the
-/// caller's block size.
-const COEFF_INTERVAL: u32 = 16;
-
 impl Strip {
     fn new(sr: f64) -> Strip {
         let s = |v: f64| Smoothed::new(v, sr, mixer::PARAM_SMOOTH_S);
+        let e = |v: f64| LinearRamp::new(v, sr, mixer::EQ_RAMP_S);
         let fp = mixer::filter_params(0.5);
         let mut strip = Strip {
             sr,
             trim: s(mixer::trim_gain_from_knob(0.5)),
-            eq_db: [s(0.0), s(0.0), s(0.0)],
+            eq_db: [e(0.0), e(0.0), e(0.0)],
             eq: [StereoBiquad::new(Coeffs::IDENTITY); 3],
             lp_hz: s(fp.lp_hz),
             hp_hz: s(fp.hp_hz),
@@ -215,34 +215,48 @@ impl Strip {
             hp_wet: s(fp.hp_wet),
             fader: s(1.0),
             xf: s(1.0),
-            coeff_countdown: 0,
+            eq_built: [f64::NAN; 3],
+            lp_built: f64::NAN,
+            hp_built: f64::NAN,
             // A new strip has never carried audio, so it starts quiet.
             idle_run: sr as u64,
             quiet_after: sr as u64,
         };
-        strip.recompute();
+        let db = [0.0; 3];
+        strip.build(db, fp.lp_hz, fp.hp_hz);
         strip
     }
 
-    fn recompute(&mut self) {
+    /// Rebuild the coefficients of each filter whose parameter moved.
+    #[inline]
+    fn build(&mut self, db: [f64; 3], lp_hz: f64, hp_hz: f64) {
         let sr = self.sr;
-        self.eq[0].c = Coeffs::lowshelf(sr, mixer::EQ_FREQ_LOW_HZ, self.eq_db[0].value);
-        self.eq[1].c = Coeffs::peaking(sr, mixer::EQ_FREQ_MID_HZ, mixer::EQ_MID_Q, self.eq_db[1].value);
-        self.eq[2].c = Coeffs::highshelf(sr, mixer::EQ_FREQ_HIGH_HZ, self.eq_db[2].value);
-        self.lp.c = Coeffs::lowpass(sr, self.lp_hz.value, mixer::FILTER_Q);
-        self.hp.c = Coeffs::highpass(sr, self.hp_hz.value, mixer::FILTER_Q);
-    }
-
-    fn coeffs_gliding(&self) -> bool {
-        !(self.eq_db[0].settled()
-            && self.eq_db[1].settled()
-            && self.eq_db[2].settled()
-            && self.lp_hz.settled()
-            && self.hp_hz.settled())
+        if db[0] != self.eq_built[0] {
+            self.eq[0].c = Coeffs::lowshelf(sr, mixer::EQ_FREQ_LOW_HZ, db[0]);
+            self.eq_built[0] = db[0];
+        }
+        if db[1] != self.eq_built[1] {
+            self.eq[1].c = Coeffs::peaking(sr, mixer::EQ_FREQ_MID_HZ, mixer::EQ_MID_Q, db[1]);
+            self.eq_built[1] = db[1];
+        }
+        if db[2] != self.eq_built[2] {
+            self.eq[2].c = Coeffs::highshelf(sr, mixer::EQ_FREQ_HIGH_HZ, db[2]);
+            self.eq_built[2] = db[2];
+        }
+        if lp_hz != self.lp_built {
+            self.lp.c = Coeffs::lowpass(sr, lp_hz, mixer::FILTER_Q);
+            self.lp_built = lp_hz;
+        }
+        if hp_hz != self.hp_built {
+            self.hp.c = Coeffs::highpass(sr, hp_hz, mixer::FILTER_Q);
+            self.hp_built = hp_hz;
+        }
     }
 
     fn at_rest(&self) -> bool {
-        !self.coeffs_gliding()
+        self.eq_db.iter().all(LinearRamp::settled)
+            && self.lp_hz.settled()
+            && self.hp_hz.settled()
             && self.trim.settled()
             && self.dry.settled()
             && self.lp_wet.settled()
@@ -272,22 +286,9 @@ impl Strip {
 
     #[inline]
     fn process(&mut self, l: f64, r: f64) -> (f64, f64) {
-        if self.coeff_countdown == 0 {
-            if self.coeffs_gliding() {
-                for s in self.eq_db.iter_mut() {
-                    for _ in 0..COEFF_INTERVAL {
-                        s.tick();
-                    }
-                }
-                for _ in 0..COEFF_INTERVAL {
-                    self.lp_hz.tick();
-                    self.hp_hz.tick();
-                }
-                self.recompute();
-            }
-            self.coeff_countdown = COEFF_INTERVAL;
-        }
-        self.coeff_countdown -= 1;
+        let db = [self.eq_db[0].tick(), self.eq_db[1].tick(), self.eq_db[2].tick()];
+        let (lp_hz, hp_hz) = (self.lp_hz.tick(), self.hp_hz.tick());
+        self.build(db, lp_hz, hp_hz);
 
         let trim = self.trim.tick();
         let (mut l, mut r) = (l * trim, r * trim);
@@ -611,6 +612,98 @@ mod tests {
     fn silent(sr: u32, secs: f64, beats: Vec<Beat>) -> Track {
         let frames = (sr as f64 * secs) as usize;
         Track::new(sr, vec![0.0; frames * 2], beats, None)
+    }
+
+    /// Deterministic full-band test signal, stereo, at 48 kHz.
+    fn noise_track(frames: usize) -> Track {
+        let mut x: u64 = 0x9E3779B97F4A7C15;
+        let pcm: Vec<f32> = (0..frames * 2)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                ((x >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 0.5
+            })
+            .collect();
+        Track::new(48000, pcm, vec![], None)
+    }
+
+    /// Reference for one filter move, written from Web Audio's rules rather
+    /// than from the strip: `setTargetAtTime` holds v0 on its start frame,
+    /// an a-rate biquad takes new coefficients every frame, and Chromium runs
+    /// it in direct form I. Knob 0.5 -> `to` at frame `at`, left channel.
+    fn filter_move_reference(pcm: &[f32], at: usize, n: usize, to: f64) -> Vec<f64> {
+        let sr = 48000.0;
+        let (p0, p1) = (mixer::filter_params(0.5), mixer::filter_params(to));
+        let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * sr)).exp();
+        let (mut lp, mut hp, mut dry, mut lw, mut hw) = (p0.lp_hz, p0.hp_hz, p0.dry, p0.lp_wet, p0.hp_wet);
+        let (mut sl, mut sh) = ([0.0f64; 4], [0.0f64; 4]);
+        let df1 = |c: Coeffs, s: &mut [f64; 4], x: f64| {
+            let y = c.b0 * x + c.b1 * s[0] + c.b2 * s[1] - c.a1 * s[2] - c.a2 * s[3];
+            *s = [x, s[0], y, s[2]];
+            y
+        };
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let x = pcm[i * 2] as f64;
+            let yl = df1(Coeffs::lowpass(sr, lp, mixer::FILTER_Q), &mut sl, x);
+            let yh = df1(Coeffs::highpass(sr, hp, mixer::FILTER_Q), &mut sh, x);
+            out.push(dry * x + lw * yl + hw * yh);
+            if i >= at {
+                lp += (p1.lp_hz - lp) * k;
+                hp += (p1.hp_hz - hp) * k;
+                dry += (p1.dry - dry) * k;
+                lw += (p1.lp_wet - lw) * k;
+                hw += (p1.hp_wet - hw) * k;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_filter_move_follows_web_audio_frame_by_frame() {
+        // The null test against Chromium measured a 16-frame coefficient
+        // update at -20 dB and a glide starting one frame early at -40 dB on
+        // this move. Both are errors of 1e-3 or more on a 0.25 signal; the
+        // tolerance here is float rounding.
+        let (at, n) = (4800usize, 9600usize);
+        for to in [0.8, 0.2] {
+            let t = Arc::new(noise_track(n));
+            let want = filter_move_reference(&t.pcm, at, n, to);
+            let mut d = Deck::new(48000.0);
+            d.load(t.clone());
+            d.play(true).unwrap();
+            let mut buf = vec![0.0f32; n * 2];
+            // Uneven blocks, with the move landing inside one.
+            let (a, b) = buf.split_at_mut(at * 2 + 2 * 37);
+            let (a0, a1) = a.split_at_mut(at * 2);
+            d.render_add(a0, 48000.0);
+            d.set_filter(to);
+            d.render_add(a1, 48000.0);
+            d.render_add(b, 48000.0);
+            let worst = (0..n).map(|i| (buf[i * 2] as f64 - want[i]).abs()).fold(0.0, f64::max);
+            assert!(worst < 1e-6, "filter {to}: worst error {worst}");
+            // Control: the move changed the sound, so the match is not two
+            // copies of the dry signal.
+            let moved = (at + 480..n).map(|i| (buf[i * 2] - t.pcm[i * 2]).abs()).fold(0.0f32, f32::max);
+            assert!(moved > 0.01, "filter {to} left the signal unchanged");
+        }
+    }
+
+    #[test]
+    fn an_eq_move_is_a_10_ms_linear_ramp_in_db() {
+        // eq-apply.ts: the gain reaches its target in a straight line in dB
+        // after 480 frames. A one-pole glide (the old law) is 37% short at
+        // that point.
+        let mut d = Deck::new(48000.0);
+        d.set_eq(0, 0.0);
+        let s = &mut d.strip;
+        assert_eq!(s.eq_db[0].tick(), 0.0);
+        for k in 1..480 {
+            let v = s.eq_db[0].tick();
+            assert!((v - (-26.0 * k as f64 / 480.0)).abs() < 1e-9, "frame {k}: {v}");
+        }
+        assert_eq!(s.eq_db[0].tick(), -26.0);
     }
 
     #[test]

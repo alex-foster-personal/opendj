@@ -28,8 +28,11 @@ pub const FILTER_HP_CEILING_HZ: f64 = 6300.0;
 /// Passed to Web Audio's `BiquadFilterNode.Q`, which for lowpass and highpass
 /// is read in dB (see `dsp::Biquad::lowpass`).
 pub const FILTER_Q: f64 = 0.707;
-/// Smoothing time-constant for every parameter change (anti-zipper).
+/// Smoothing time-constant for every parameter change except EQ (anti-zipper).
 pub const PARAM_SMOOTH_S: f64 = 0.01;
+/// EQ gain moves in a straight line in dB over this long, not exponentially
+/// (`player/eq-apply.ts`, called with `PARAM_SMOOTH_S` as its ramp length).
+pub const EQ_RAMP_S: f64 = 0.01;
 
 /// 0 -> EQ_MIN_DB, 0.5 -> 0 dB (flat), 1 -> EQ_MAX_DB. Piecewise linear.
 pub fn eq_db_from_knob(value: f64) -> f64 {
