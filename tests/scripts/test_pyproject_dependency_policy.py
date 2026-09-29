@@ -22,7 +22,7 @@ REQUIRED_RULES = (
     "uv sync --locked",
     "[dependency-groups] (PEP 735)",
     "PEP 723",
-    "uv export --locked",
+    "uv export --locked --no-emit-project",
     "uv run --locked",
     # Transitional dual write until issue #4356 moves CI onto uv.lock; drop
     # these two with that change, never before it.
