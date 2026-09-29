@@ -194,19 +194,36 @@ def test_a_missing_origin_main_ref_is_refused_with_the_fix(world) -> None:
     assert "git fetch origin main" in result.stdout + result.stderr
 
 
+def _route_to_bare_mirror(world: dict[str, object], repo: str) -> None:
+    """Point `https://github.com/<repo>.git` at the bare mirror, so a push there WOULD land.
+
+    Without this, a missing guard is masked: the unrewritten URL fails on the network and
+    the refusal reads green for the wrong reason (caught by mutation, Tue 29 Sep 2026).
+    """
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    gitconfig.write_text(
+        gitconfig.read_text()
+        + f'[url "file://{world["mirror"]}"]\n\tinsteadOf = https://github.com/{repo}.git\n'
+    )
+
+
 @pytest.mark.parametrize(
-    "override",
+    ("override", "refusal"),
     [
-        CONFIG["source_repository"],
-        "someone-else/music-dj-tools-canary",
-        "not-a-repo-slug",
+        (CONFIG["source_repository"], "is the source repository"),
+        ("someone-else/music-dj-tools-canary", "is not owned by the canary owner"),
+        ("not-a-repo-slug", "is not an owner/name slug"),
     ],
     ids=["source-repo", "other-owner", "malformed"],
 )
-def test_a_mirror_override_outside_the_canary_owner_is_refused(world, override: str) -> None:
+def test_a_mirror_override_outside_the_canary_owner_is_refused(
+    world, override: str, refusal: str
+) -> None:
     _bootstrap_default_branch(world)
+    _route_to_bare_mirror(world, override)
     result = _run(world, world["on_main"], CANARY_MIRROR_REPO=override)
     assert result.returncode == 1, result.stdout + result.stderr
+    assert refusal in result.stdout
     assert set(_mirror_refs(world)) == {"refs/heads/main"}
 
 
@@ -214,11 +231,7 @@ def test_an_override_inside_the_canary_owner_is_used_and_named(world) -> None:
     """Opposite direction: a legitimate override is honored, not refused with the rest."""
     _bootstrap_default_branch(world)
     alt = f"{CONFIG['mirror_owner']}/another-canary"
-    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    gitconfig.write_text(
-        gitconfig.read_text()
-        + f'[url "file://{world["mirror"]}"]\n\tinsteadOf = https://github.com/{alt}.git\n'
-    )
+    _route_to_bare_mirror(world, alt)
     result = _run(world, world["on_main"], CANARY_MIRROR_REPO=alt)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"{alt} (from CANARY_MIRROR_REPO)" in result.stdout
