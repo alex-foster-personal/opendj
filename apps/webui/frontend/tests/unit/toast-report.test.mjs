@@ -146,7 +146,11 @@ test('no user agent at all is an honest unknown', () => {
 const INPUT = {
 	id: 't-k3f9a2-7',
 	kind: 'error',
+	headline: 'Deck 2 could not be set as master',
 	message: 'Deck 2 could not be set as master',
+	clientEventId: 'client-uuid-1',
+	errorId: 'eid-abc',
+	sentryEventId: 'sentry-xyz',
 	createdAt: '2026-08-31T14:50:06.001Z',
 	env: {
 		machine: 'maintainer-macbook-air',
@@ -159,7 +163,11 @@ const INPUT = {
 test('the payload carries everything that was asked for', () => {
 	const text = report.buildToastReport(INPUT);
 	assert.match(text, /^id: t-k3f9a2-7$/m, 'the id is the reason the rest is findable');
+	assert.match(text, /^client_event_id: client-uuid-1$/m);
+	assert.match(text, /^error_id: eid-abc$/m);
+	assert.match(text, /^sentry_event_id: sentry-xyz$/m);
 	assert.match(text, /^when: 2026-08-31T14:50:06\.001Z$/m);
+	assert.match(text, /^headline: Deck 2 could not be set as master$/m);
 	assert.match(text, /^message: Deck 2 could not be set as master$/m);
 	assert.match(text, /^machine: maintainer-macbook-air$/m);
 	assert.match(text, /^user: maintainer$/m);
@@ -180,8 +188,12 @@ test('the payload carries nothing beyond the closed list', () => {
 		.map((line) => line.slice(0, line.indexOf(':')));
 	assert.deepEqual(keys, [
 		'id',
+		'client_event_id',
+		'error_id',
+		'sentry_event_id',
 		'when',
 		'kind',
+		'headline',
 		'message',
 		'machine',
 		'user',
@@ -189,6 +201,20 @@ test('the payload carries nothing beyond the closed list', () => {
 		'page',
 		'find in logs'
 	]);
+});
+
+test('extras append after page and before find-in-logs', () => {
+	const text = report.buildToastReport({
+		...INPUT,
+		extras: { ctx_source: 'toast', deck_1: 'stable=none bpm=? sync=off' }
+	});
+	const lines = text.split('\n');
+	const pageIdx = lines.findIndex((line) => line.startsWith('page:'));
+	const findIdx = lines.findIndex((line) => line.startsWith('find in logs:'));
+	assert.ok(pageIdx >= 0 && findIdx > pageIdx);
+	assert.equal(lines[pageIdx + 1], 'ctx_source: toast');
+	assert.equal(lines[pageIdx + 2], 'deck_1: stable=none bpm=? sync=off');
+	assert.equal(lines[findIdx], `find in logs: search ${INPUT.id}`);
 });
 
 //-----------------------------------------------------------------------------

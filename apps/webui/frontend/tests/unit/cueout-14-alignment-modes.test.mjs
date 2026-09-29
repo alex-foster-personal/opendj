@@ -29,18 +29,18 @@ function installFakeWindow() {
 	return store;
 }
 
-let cueAlign;
+let policy;
 let constants;
 
 before(async () => {
 	installFakeWindow();
-	cueAlign = await loadTypeScriptModule('src/lib/player/cue-align.svelte.ts');
+	policy = await loadTypeScriptModule('src/lib/player/cue-align-policy.ts');
 	constants = await loadTypeScriptModule('src/lib/player/constants.ts');
 });
 
 describe('deriveAlignment (the mode table from the spec)', () => {
 	test('hybrid, headphones 30 ms ahead: HEAD DELAY 30, room untouched', () => {
-		const plan = cueAlign.deriveAlignment('hybrid', -30);
+		const plan = policy.deriveAlignment('hybrid', -30);
 		assert.equal(plan.head_delay_ms, 30, 'if hybrid does not delay the phones for a negative offset then wired jack vs HDMI stays out of step - broken');
 		assert.equal(plan.master_delay_ms, 0);
 		assert.equal(plan.warning, null);
@@ -48,14 +48,14 @@ describe('deriveAlignment (the mode table from the spec)', () => {
 	});
 
 	test('hybrid, headphones 700 ms behind: room delayed 700, HEAD DELAY 0', () => {
-		const plan = cueAlign.deriveAlignment('hybrid', 700);
+		const plan = policy.deriveAlignment('hybrid', 700);
 		assert.equal(plan.master_delay_ms, 700, 'if hybrid does not delay the room for a positive offset then Bluetooth phones stay 700 ms behind - broken');
 		assert.equal(plan.head_delay_ms, 0);
 		assert.equal(plan.warning, null);
 	});
 
 	test('headphones_only, 700 ms behind: nothing delayed, warning names 700 ms', () => {
-		const plan = cueAlign.deriveAlignment('headphones_only', 700);
+		const plan = policy.deriveAlignment('headphones_only', 700);
 		assert.equal(plan.head_delay_ms, 0);
 		assert.equal(plan.master_delay_ms, 0);
 		assert.match(plan.warning, /700 ms behind/, 'if headphones_only delays nothing AND says nothing then the operator cannot tell why the phones lag - broken');
@@ -63,7 +63,7 @@ describe('deriveAlignment (the mode table from the spec)', () => {
 	});
 
 	test('delay_all, 2000 ms behind: master delay capped at 1500 and the plan says so', () => {
-		const plan = cueAlign.deriveAlignment('delay_all', 2000);
+		const plan = policy.deriveAlignment('delay_all', 2000);
 		assert.equal(plan.master_delay_ms, constants.MASTER_DELAY_MAX_MS);
 		assert.equal(plan.master_delay_ms, 1500);
 		assert.equal(plan.capped, true);
@@ -72,7 +72,7 @@ describe('deriveAlignment (the mode table from the spec)', () => {
 
 	test('headphones_only and delay_all both cap HEAD DELAY at 500 for a large negative offset', () => {
 		for (const mode of ['headphones_only', 'delay_all', 'hybrid']) {
-			const plan = cueAlign.deriveAlignment(mode, -900);
+			const plan = policy.deriveAlignment(mode, -900);
 			assert.equal(plan.head_delay_ms, constants.HEAD_DELAY_MAX_MS, `${mode} must cap at HEAD_DELAY_MAX_MS`);
 			assert.equal(plan.master_delay_ms, 0);
 			assert.equal(plan.capped, true);
@@ -80,8 +80,8 @@ describe('deriveAlignment (the mode table from the spec)', () => {
 	});
 
 	test('zero offset delays nothing in every mode', () => {
-		for (const mode of cueAlign.HEADPHONE_ALIGNMENT_MODES) {
-			assert.deepEqual(cueAlign.deriveAlignment(mode, 0), {
+		for (const mode of constants.HEADPHONE_ALIGNMENT_MODES) {
+			assert.deepEqual(policy.deriveAlignment(mode, 0), {
 				head_delay_ms: 0,
 				master_delay_ms: 0,
 				warning: null,
@@ -91,9 +91,9 @@ describe('deriveAlignment (the mode table from the spec)', () => {
 	});
 
 	test('an unknown mode or a non-finite offset throws rather than guessing', () => {
-		assert.throws(() => cueAlign.deriveAlignment('mixxx', 10), /alignment_mode must be headphones_only, delay_all, or hybrid/);
-		assert.throws(() => cueAlign.deriveAlignment('hybrid', Number.NaN), /offset/);
-		assert.throws(() => cueAlign.deriveAlignment('hybrid', '10'), /offset/);
+		assert.throws(() => policy.deriveAlignment('mixxx', 10), /alignment_mode must be headphones_only, delay_all, or hybrid/);
+		assert.throws(() => policy.deriveAlignment('hybrid', Number.NaN), /offset/);
+		assert.throws(() => policy.deriveAlignment('hybrid', '10'), /offset/);
 	});
 });
 
@@ -118,14 +118,14 @@ describe('constants', () => {
 describe('calibrate button gate', () => {
 	test('External Headphones (the Mac jack) in two_outputs is calibratable - the old label skip is gone', () => {
 		assert.equal(
-			cueAlign.calibrateButtonEnabled({ output_mode: 'two_outputs', selected_output_device_id: 'wired-jack' }),
+			policy.calibrateButtonEnabled({ output_mode: 'two_outputs', selected_output_device_id: 'wired-jack' }),
 			true,
 			'if the wired jack cannot be calibrated then the wired-vs-HDMI case the spec was written for is unreachable - broken'
 		);
-		assert.equal(cueAlign.calibrateButtonEnabled({ output_mode: 'two_outputs', selected_output_device_id: null }), false);
-		assert.equal(cueAlign.calibrateButtonEnabled({ output_mode: 'practice', selected_output_device_id: 'x' }), false);
-		assert.equal(cueAlign.calibrateButtonEnabled({ output_mode: 'split_cable', selected_output_device_id: 'x' }), false);
-		assert.throws(() => cueAlign.calibrateButtonEnabled({ output_mode: 'nope', selected_output_device_id: 'x' }), /output_mode/);
+		assert.equal(policy.calibrateButtonEnabled({ output_mode: 'two_outputs', selected_output_device_id: null }), false);
+		assert.equal(policy.calibrateButtonEnabled({ output_mode: 'practice', selected_output_device_id: 'x' }), false);
+		assert.equal(policy.calibrateButtonEnabled({ output_mode: 'split_cable', selected_output_device_id: 'x' }), false);
+		assert.throws(() => policy.calibrateButtonEnabled({ output_mode: 'nope', selected_output_device_id: 'x' }), /output_mode/);
 	});
 
 	test('headphones.ts no longer auto-calibrates on first select and no longer skips External Headphones', async () => {
@@ -203,7 +203,9 @@ describe('mixer config persistence (alignment_mode, master_delay_ms, last_calibr
 			cue_latency_ms: 900,
 			master_latency_ms: 200,
 			offset_ms: 700,
-			error: null
+			error: null,
+			verify_residual_ms: null,
+			probe: null
 		});
 	});
 });
@@ -263,8 +265,10 @@ describe('setters', () => {
 	test('the alignment IPC commands parse, scope and reject like head_delay_ms', async () => {
 		installFakeWindow();
 		const ipc = await loadTypeScriptModule('src/lib/rb/performance-ipc.svelte.ts');
-		assert.equal(ipc.performanceCommandQueueScopes({ type: 'headphone_alignment_mode', value: 'hybrid' }), null);
-		assert.equal(ipc.performanceCommandQueueScopes({ type: 'master_delay_ms', value: 40 }), null);
+		const delayScope = 'if a delay command is unscoped then it can move the delay nodes mid-verification and corrupt the stored offset - broken';
+		assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_alignment_mode', value: 'hybrid' }), ['headphone'], delayScope);
+		assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'master_delay_ms', value: 40 }), ['headphone'], delayScope);
+		assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'head_delay_ms', value: 40 }), ['headphone'], delayScope);
 		assert.deepEqual(ipc.performanceCommandQueueScopes({ type: 'headphone_calibrate' }), ['headphone']);
 		assert.equal(ipc.performanceCommandQueueScopes({ type: 'headphone_calibrate_abort' }), null,
 			'if abort queues behind the calibration it is meant to stop then it can never stop it - broken');

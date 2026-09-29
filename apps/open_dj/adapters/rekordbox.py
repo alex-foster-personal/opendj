@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from apps.open_dj import SCHEMA_VERSION
@@ -61,6 +62,14 @@ class RBTrackInput:
     ``(size_bytes, mtime, file_path)`` and marks the track with
     ``x_content_hash_mode = "inferred"``.
     """
+    updated_at: datetime | None = None
+    """The rekordbox DjmdContent row's own ``updated_at`` (StatsFull mixin,
+    ``onupdate=datetime.now`` -- rekordbox stamps this itself whenever the
+    row changes). This is the SOURCE timestamp for the ``bpm``/``key``/
+    ``rating`` provenance envelopes: it says when rekordbox last touched
+    the value, not when this tool happened to run an export. Required
+    whenever ``bpm``/``key``/``rating`` is set -- see ``_build_track``.
+    """
 
 
 @dataclass(slots=True)
@@ -75,7 +84,36 @@ class RBPlaylistInput:
 
 
 def from_rbtrack(rb) -> RBTrackInput:
-    """Convert an :class:`apps.shared.rekordbox_db.RBTrack` to the adapter input."""
+    """Convert an :class:`apps.shared.rekordbox_db.RBTrack` to the adapter input.
+
+    Rekordbox's own on-disk ``updated_at`` string carries an explicit
+    ``+00:00`` and IS true UTC (verified live: rekordbox's
+    ``djmdContent.updated_at`` stored ``2026-06-04 08:25:51.858 +00:00``).
+    But ``pyrekordbox.db6.tables.string_to_datetime`` parses that string,
+    then does ``dt.astimezone().replace(tzinfo=None)`` -- converting to
+    the READING process's *current* OS local zone and then stripping the
+    tzinfo. So ``rb.updated_at`` (what :func:`apps.shared.rekordbox_db
+    .iter_tracks` hands back) is a **naive datetime already expressed in
+    this process's local wall time**, not UTC (confirmed live on the same
+    row: raw ``08:25:51.858 +00:00`` UTC round-tripped through pyrekordbox
+    on a BST (+01:00) machine as naive ``09:25:51.858``). Passing that
+    straight to :func:`apps.open_dj.provenance.wrap`, which treats every
+    naive datetime as UTC, is off by the reader's UTC offset (an hour, in
+    BST) -- this is PR #4120 review finding Sol/PRRT_kwDOSEvNd86mb53D.
+
+    So the fix is the EXACT inverse of pyrekordbox's own operation, run in
+    THIS SAME PROCESS: ``naive.astimezone(UTC)``. Python interprets a naive
+    datetime passed to ``.astimezone()`` as OS local time, using the
+    platform's own local-time rules FOR THAT DATE -- so it is DST-correct
+    per row without ever consulting a timezone database, and it works
+    identically on macOS, Linux and Windows because it is calling into the
+    same OS facility pyrekordbox itself used to go the other way. There is
+    no ``source_tz`` to resolve or pass: converting in a different process
+    or on a different host than the one that did the original read would
+    be wrong (that process's local rules might differ), which is exactly
+    why this conversion happens here, at read time, in the same process
+    that called pyrekordbox.
+    """
     # pyrekordbox exposes many optional columns that ``RBTrack`` omits;
     # the live adapter bridge can be widened here without touching the
     # hot-path logic.
@@ -97,7 +135,50 @@ def from_rbtrack(rb) -> RBTrackInput:
         bpm=rb.bpm,
         rating=rb.rating,
         genre=rb.genre,
+        updated_at=_rb_updated_at_to_utc(rb.id, rb.updated_at),
     )
+
+
+def _rb_updated_at_to_utc(rb_id: str, raw_updated_at: datetime | None) -> datetime | None:
+    """Invert pyrekordbox's naive-local-time quirk and return aware UTC.
+
+    See :func:`from_rbtrack`'s docstring for why the value is
+    naive-but-actually-OS-local rather than naive-and-UTC, and why the fix
+    is ``raw.astimezone(UTC)`` run in this same process: that call asks
+    the OS "what UTC instant is this local wall-clock reading", using the
+    platform's own local-time rules for the datetime's own date (so it is
+    DST-correct per row), which is the exact inverse of the OS call
+    pyrekordbox made to produce ``raw`` in the first place. This call
+    itself preserves ``raw.fold``, but that does NOT make the repeated
+    autumn-DST hour round-trip correctly: pyrekordbox's own forward
+    conversion (``dt.astimezone()`` with no argument, going UTC ->
+    naive-local) does not compute ``fold`` correctly for the system-local
+    zone, so both instants of that repeated hour already arrive here as
+    the identical naive value with ``fold=0`` -- the information is lost
+    upstream, before this function runs, and no correctness here can
+    recover it. See ``tests/open_dj/test_rekordbox_clock.py``'s
+    ``TestAutumnDstFoldHourIsAnUpstreamPyrekordboxLimitation`` for the
+    live-verified proof and the one-hour-per-year, per-install exposure
+    this leaves.
+
+    Refuses (raises) rather than guesses when the value is already
+    timezone-aware: every live probe of pyrekordbox's ``DjmdContent
+    .updated_at`` returns naive datetimes (its ``string_to_datetime``
+    always strips tzinfo), so an aware value here means pyrekordbox's
+    behavior changed underneath this adapter and the naive-local
+    assumption may no longer hold.
+    """
+    if raw_updated_at is None:
+        return None
+    if raw_updated_at.tzinfo is not None:
+        raise RuntimeError(
+            f"track {rb_id}: pyrekordbox returned a timezone-aware "
+            f"updated_at ({raw_updated_at!r}); this adapter assumes the "
+            "naive-local-time quirk documented in pyrekordbox.db6.tables"
+            ".string_to_datetime and would double-convert if it guessed "
+            "here instead of failing."
+        )
+    return raw_updated_at.astimezone(UTC)
 
 
 # ---------------------------------------------------------------- core build
@@ -194,12 +275,7 @@ def _build_track(t: RBTrackInput, *, include_cues: bool) -> tuple[dict, int]:
         track["isrc"] = normalised
     if t.size_bytes is not None:
         track["size_bytes"] = int(t.size_bytes)
-    if t.bpm is not None:
-        track["bpm"] = wrap(float(t.bpm), source="rekordbox")
-    if t.key:
-        track["key"] = wrap(t.key, source="rekordbox")
-    if t.rating is not None:
-        track["rating"] = wrap(int(t.rating), source="rekordbox")
+    _apply_provenance_fields(track, t)
     if t.beatgrid:
         track["beatgrid"] = dict(t.beatgrid)
     if include_cues and t.cue_points:
@@ -210,6 +286,57 @@ def _build_track(t: RBTrackInput, *, include_cues: bool) -> tuple[dict, int]:
         track["x_content_hash_mode"] = "inferred"
     cues = len(track.get("cue_points", []))
     return track, cues
+
+
+def _apply_provenance_fields(track: dict, t: RBTrackInput) -> None:
+    """Wrap ``bpm``/``key``/``rating`` in a ``ProvenanceValue`` stamped
+    from the rekordbox row's own ``updated_at`` -- see ``RBTrackInput
+    .updated_at``'s docstring. Split out of ``_build_track`` to keep that
+    function's branching under the repo's cyclomatic-complexity ratchet.
+    """
+    if t.bpm is None and not t.key and t.rating is None:
+        return
+    source_modified_at = t.updated_at
+    if source_modified_at is None:
+        # RuntimeError, not ValueError: build_library() catches
+        # ValueError per-track to skip malformed rows and keep exporting
+        # the rest (see the `except ValueError` there). A missing
+        # provenance timestamp is a caller/config bug, not a per-track
+        # data-quality issue -- letting it collapse to a buried warning
+        # would silently ship a wrong-by-construction export (exactly
+        # the failure mode this fix exists to close).
+        raise RuntimeError(
+            f"track {t.rb_id}: bpm/key/rating is set but no updated_at "
+            "timestamp is available. Rekordbox's DjmdContent row always "
+            "carries one (StatsFull.updated_at) -- populate "
+            "RBTrackInput.updated_at from it rather than letting the "
+            "provenance envelope silently stamp the wall clock."
+        )
+    if source_modified_at.tzinfo is None:
+        # provenance.wrap() treats every naive datetime as UTC. A naive
+        # value reaching this point means some caller skipped
+        # ``from_rbtrack``'s UTC conversion (or the naive-local-time
+        # pyrekordbox quirk it exists to correct -- see that function's
+        # docstring) and would silently mislabel local time as UTC (PR
+        # #4120 review finding Sol/PRRT_kwDOSEvNd86mb53D). Refuse rather
+        # than guess which zone it is in.
+        raise RuntimeError(
+            f"track {t.rb_id}: updated_at ({source_modified_at!r}) is a "
+            "naive datetime. The rekordbox provenance path requires an "
+            "aware UTC datetime -- convert via from_rbtrack (which calls "
+            "the naive value's own .astimezone(UTC)) rather than passing "
+            "a naive value through."
+        )
+    if t.bpm is not None:
+        track["bpm"] = wrap(
+            float(t.bpm), source="rekordbox", modified_at=source_modified_at
+        )
+    if t.key:
+        track["key"] = wrap(t.key, source="rekordbox", modified_at=source_modified_at)
+    if t.rating is not None:
+        track["rating"] = wrap(
+            int(t.rating), source="rekordbox", modified_at=source_modified_at
+        )
 
 
 def _content_hash(t: RBTrackInput) -> tuple[str, bool]:
@@ -248,6 +375,13 @@ def export_library(
     """
     from apps.shared import rekordbox_db  # local import keeps core testable.
 
+    # No timezone to resolve here: from_rbtrack() inverts pyrekordbox's
+    # own naive-local-time conversion with that value's own
+    # .astimezone(UTC), which asks the OS for this process's local-time
+    # rules on the datetime's own date. That works identically on
+    # macOS, Linux and Windows (rekordbox itself runs on Windows), so
+    # there is no platform-specific zone lookup at this boundary. See
+    # from_rbtrack's docstring for the full reasoning.
     db = rekordbox_db.open_db(source_path)
     try:
         track_inputs = [from_rbtrack(t) for t in rekordbox_db.iter_tracks(db)]

@@ -230,6 +230,7 @@ test('the waveform track title paints the secondary text token, not the primary 
 	).toBe(measured.dim);
 });
 
+// REQ: A11Y-03
 test('the painted title clears the 4.5:1 AA floor against what is actually behind it', async ({
 	page,
 	request

@@ -45,7 +45,15 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
  * (not types.ts, which is a frozen contract between the original build
  * units). */
-export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
+export interface BrowserRow extends Pick<
+	TrackRow,
+	| 'key_status'
+	| 'key_reason'
+	| 'bpm_status'
+	| 'bpm_reason'
+	| 'loudness_status'
+	| 'loudness_reason'
+> {
 	stable_id: string;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
@@ -445,6 +453,12 @@ export function rowHasVocalLyrics(row: BrowserRow): boolean {
 	);
 }
 
+/** Available-offline filter: local audio present, not cloud-only or streaming. */
+export function rowIsLocallyAvailable(row: BrowserRow): boolean {
+	if (row.is_streaming === true || row.spotify_pending === true) return false;
+	return row.file_exists === true;
+}
+
 // ------------------------------------------------------- boot pane selection
 
 // Moved to ./boot-pane-selection (pure, runeless; the karaoke lyric column
@@ -573,7 +587,12 @@ export function applyDecodedStripAcrossPanes(
 // math, a distinct concern from the reactive PaneStore contract above).
 // Re-exported here so BrowserPanel.svelte and the existing tests keep one
 // import site for the pane vocabulary.
-export { reorderPanesInPlace, resolveNewTabIndex } from './pane-tabs';
+export {
+	MAX_PANE_SLOTS,
+	canAddPaneSlot,
+	reorderPanesInPlace,
+	resolveNewTabIndex
+} from './pane-tabs';
 
 // ---------------------------------------------- playlist deck-context tints
 // Pin 2ac3a0: the tint derivations + the tree's CURRENT fold control moved to

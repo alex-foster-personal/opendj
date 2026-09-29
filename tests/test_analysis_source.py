@@ -263,6 +263,7 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
     """
     [if] rekordbox is selected [then] the served beatgrid is left untouched, [else stop].
     """
+    _set_source(anlz_client, "rbx")
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
     body = r.json()

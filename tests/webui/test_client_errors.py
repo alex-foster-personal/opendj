@@ -41,7 +41,10 @@ def test_client_error_writes_full_details_to_separate_log(tmp_path: Path) -> Non
         response = client.post("/api/v1/client-errors", json=_payload())
 
     assert response.status_code == 202
-    assert response.json()["stored"] is True
+    body = response.json()
+    assert body["stored"] is True
+    assert body["error_id"].startswith("eid-")
+    assert "sentry_event_id" in body
     paths = list(tmp_path.glob("webui-client-errors-*.log"))
     assert len(paths) == 1
     records = paths[0].read_text(encoding="utf-8").splitlines()

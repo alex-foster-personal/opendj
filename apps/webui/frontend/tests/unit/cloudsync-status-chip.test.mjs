@@ -8,6 +8,7 @@ function source(relative) {
 }
 
 const CHIP = source('lib/components/CloudSyncStatusChip.svelte');
+const QUICK = source('lib/components/cloudsync/CloudSyncQuickActions.svelte');
 const VIEW = source('lib/components/cloudsync/cloudsync-view.ts');
 const TAB = source('lib/components/cloudsync/CloudSyncStatusTab.svelte');
 const LAYOUT = source('routes/+layout.svelte');
@@ -32,8 +33,11 @@ test('the chip carries an explanatory hover title derived from status', () => {
 	/** if the chip loses its hover title or its relative-time readout then broken */
 	assert.match(CHIP, /const title = \$derived\(chipTitle\(status, loadError\)\)/);
 	assert.match(CHIP, /title=\{title\}/);
-	assert.match(VIEW, /Click to open CloudSync\./);
+	assert.match(VIEW, /CHIP_QUICK_ACTIONS_CTA/);
 	assert.doesNotMatch(VIEW, /Click to open recent results\./);
+	assert.doesNotMatch(VIEW, /Click after it loads to see details/);
+	assert.doesNotMatch(VIEW, /Click to retry details/);
+	assert.match(VIEW, /still loading from the daemon\. \$\{CHIP_QUICK_ACTIONS_CTA\}/);
 	assert.match(VIEW, /last_push_at/);
 });
 
@@ -80,13 +84,26 @@ test('the status tab uses shared error presentation and technical details disclo
 	assert.match(VIEW, /HTTP 409/);
 });
 
-test('the chip is a link to /cloudsync instead of an in-place popover', () => {
-	/** if the chip becomes a dead badge or keeps an in-place popover then broken */
-	assert.match(CHIP, /href=\{CHIP_HREF\}/);
-	assert.match(VIEW, /export const CHIP_HREF = '\/cloudsync'/);
+// requirement: CSUI-02
+// [if] the CloudSync chip is activated [then] it opens quick actions without navigating, [else stop]
+test('the chip is a button trigger with an in-place quick-actions popover', () => {
+	assert.match(CHIP, /type="button"/);
+	assert.match(CHIP, /data-testid="cloudsync-status-chip"/);
+	assert.match(CHIP, /aria-haspopup="dialog"/);
+	assert.match(CHIP, /CloudSyncQuickActions/);
+	assert.doesNotMatch(CHIP, /<a[\s\S]*href=\{CHIP_HREF\}/);
 	assert.doesNotMatch(CHIP, /detailsOpen/);
 	assert.doesNotMatch(CHIP, /recent_results/);
-	assert.doesNotMatch(CHIP, /No sync attempts have completed yet\./);
+	assert.match(VIEW, /export const CHIP_HREF = '\/cloudsync'/);
+	assert.match(QUICK, /data-testid="cloudsync-quick-actions-popover"/);
+	assert.match(QUICK, /data-testid="cloudsync-quick-advanced"[\s\S]*href=\{CHIP_HREF\}/);
+	assert.match(QUICK, /runCloudSyncNow/);
+	assert.match(QUICK, /syncNowRequest/);
+	assert.match(QUICK, /forceSyncNowRequest/);
+	assert.match(QUICK, /fetchUiMirrorForGate/);
+	assert.match(CHIP, /onpointerdown=\{onWindowPointerDown\}/);
+	assert.match(CHIP, /event\.key !== 'Escape'/);
+	assert.match(CHIP, /onkeydown=\{onWindowKeydown\}/);
 });
 
 test('the chip uses compact single-line layout CSS for small screens', () => {

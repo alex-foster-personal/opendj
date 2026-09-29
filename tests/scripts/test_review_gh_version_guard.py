@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from typing import Any
 
 import pytest
 
@@ -146,6 +147,48 @@ def test_gh_calls_the_version_guard_before_invoking_the_subprocess(monkeypatch) 
 
     with pytest.raises(GhVersionError, match="test double"):
         _gh(["pr", "view", "1"])
+
+
+def test_gh_as_human_strips_gh_app_and_sets_allow_human(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] `_gh` is called with `as_human=True` and `GH_APP` is set [then] the
+    child env drops `GH_APP` and sets `GH_ALLOW_HUMAN=1`, [else stop]."""
+    import scripts.review_gh as review_gh_module
+
+    monkeypatch.setenv("GH_APP", "fleet-installation")
+    captured: dict[str, Any] = {}
+
+    def _fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        captured["env"] = kwargs.get("env")
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(review_gh_module, "require_gh_min_version", lambda: None)
+    monkeypatch.setattr(review_gh_module.subprocess, "run", _fake_run)
+
+    assert _gh(["pr", "view", "1"], as_human=True) == "ok"
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert "GH_APP" not in env
+    assert env.get("GH_ALLOW_HUMAN") == "1"
+
+
+def test_gh_default_does_not_strip_gh_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] `_gh` is called without `as_human` and `GH_APP` is set [then] no
+    `env` kwarg is passed (child inherits `os.environ` with `GH_APP` intact),
+    [else stop]."""
+    import scripts.review_gh as review_gh_module
+
+    monkeypatch.setenv("GH_APP", "fleet-installation")
+    captured: dict[str, Any] = {}
+
+    def _fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(review_gh_module, "require_gh_min_version", lambda: None)
+    monkeypatch.setattr(review_gh_module.subprocess, "run", _fake_run)
+
+    assert _gh(["pr", "view", "1"]) == "ok"
+    assert "env" not in captured
 
 
 def test_ci_wait_imports_the_same_gated_gh_review_gh_exports() -> None:

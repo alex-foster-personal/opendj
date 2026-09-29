@@ -16,8 +16,8 @@ Part of [security.md](security.md). Status: **spec, not wired** (Mon 14 Sep 2026
 |---|---|---|---|
 | pre-commit | staged secrets, Python patterns, workflow lint | gitleaks, ruff `S`, zizmor | yes (local; agents can skip, so CI repeats it) |
 | every PR | new vulns in changed lockfiles; secrets in PR commits; new SAST findings; workflow audit if `.github/**` changed | osv-scanner (PR mode), gitleaks, Semgrep CE `--baseline-commit`, Semgrep AppSec Platform `semgrep ci` (diff-aware, same-repo PRs), ruff `S` ratchet, zizmor | no (ADR-0043: report-only) |
-| **daily 06:17 UTC** | full dependency scan of `main`; full Semgrep AppSec Platform scan of `main` | osv-scanner, `semgrep ci` | no; osv files or updates the daily issue, Semgrep findings go to the platform dashboard |
-| weekly (Mon) | verified secrets across full history; AI review of high-risk paths; Renovate lockfile maintenance | trufflehog, `/security-review`, Renovate | no; adds to the weekly issue |
+| **daily 06:17 UTC** | full dependency scan of `main` | osv-scanner | no; osv files or updates the daily issue |
+| weekly (Mon) | verified secrets across full history; full Semgrep AppSec Platform scan of `main`; AI review of high-risk paths; Renovate lockfile maintenance | trufflehog, `semgrep ci`, `/security-review`, Renovate | no; adds to the weekly issue; Semgrep findings go to the platform dashboard. The weekly full scan is UNPROVEN: as of Tue 22 Sep 2026 it has never completed inside its 15-minute timeout, and a cancelled `semgrep` job is not written to the weekly issue (the report job reads only `scheduled`) |
 | per release (DMG) | signature, notarization, entitlements, updater signature | `codesign --verify --deep --strict`, `spctl -a -vv`, entitlements allowlist diff, minisign verify against the `tauri.conf.json` pubkey | yes, blocks the release |
 | quarterly | expired or expiring suppressions; tool version bumps | review of `osv-scanner.toml`, `.gitleaks.toml`, `.github/zizmor.yml` | n/a |
 
@@ -48,8 +48,14 @@ Findings, rules and policies live on the Semgrep AppSec Platform dashboard.
   (`agent-secrets`, project `general`, config `dev_personal`). The GitHub repo secret of
   the same name is the CI copy. Rotate in Doppler first, then
   `gh secret set SEMGREP_APP_TOKEN` from it.
-- **Where the token goes.** Only the daily 06:17 UTC schedule (a full scan of `main`) and
-  non-draft PRs whose head branch is in this repo. Fork and Dependabot PRs get no secrets,
+- **Where the token goes.** Only the weekly Monday 06:37 UTC schedule (a full scan of
+  `main`; `workflow_dispatch` with `cadence: weekly` on `main` reaches the same job) and non-draft
+  PRs whose head branch is in this repo. The full scan was daily until
+  ADR-NEW-semgrep-full-scan-weekly (Tue 22 Sep 2026): it never finished inside its
+  timeout, so it billed 16 hosted minutes a day and uploaded nothing. Moving it to weekly
+  changes the cron, not the scan: until a Monday run completes, the full scan of `main` is
+  unproven, and its cancellation shows only as a red run, not in the weekly issue (the
+  report job reads the `scheduled` job alone). Fork and Dependabot PRs get no secrets,
   so the job is skipped for them, not failed. The workflow never uses
   `pull_request_target`.
 - **No silent fallback.** An empty token fails the step with an explicit error. It never

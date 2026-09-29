@@ -12,8 +12,8 @@
  *   the item cannot open the existing pin draft
  * - if data-wave-surface markers leave WaveRow / StripWaveform then
  *   QuickDraw cannot tell a vocal surface from the rest of the deck
- * - if FeedbackWidget stops consuming takePendingPinDraft then the queued
- *   draft never becomes a bubble
+ * - if FeedbackPinLayer stops consuming takePendingPinDraft then the queued
+ *   draft never becomes a bubble (moved out of FeedbackWidget in FB-16, #3888)
  * - if .qd loses data-testid="quick-draw-menu" then the e2e cannot find it
  */
 
@@ -31,6 +31,7 @@ const helper = read('src/lib/components/rb/vocal-correction-menu.ts');
 const waveRow = read('src/lib/components/rb/wave/WaveRow.svelte');
 const strip = read('src/lib/components/rb/deck/StripWaveform.svelte');
 const widget = read('src/lib/components/rb/FeedbackWidget.svelte');
+const pinLayer = read('src/lib/components/rb/FeedbackPinLayer.svelte');
 
 test('QuickDraw offers Fix / add comment', () => {
 	assert.match(helper, /Fix \/ add comment/);
@@ -48,8 +49,8 @@ test('wavestack and strip surfaces carry data-wave-surface markers', () => {
 	assert.match(strip, /data-wave-surface="strip"/);
 });
 
-test('FeedbackWidget consumes takePendingPinDraft into the existing bubble', () => {
-	assert.match(widget, /takePendingPinDraft/);
+test('FeedbackPinLayer consumes takePendingPinDraft into the existing bubble', () => {
+	assert.match(pinLayer, /takePendingPinDraft/);
 });
 
 test('.qd has data-testid="quick-draw-menu" and the item uses quick-draw-vocal-fix', () => {
