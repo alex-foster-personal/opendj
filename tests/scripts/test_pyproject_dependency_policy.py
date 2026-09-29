@@ -22,11 +22,12 @@ REQUIRED_RULES = (
     "uv sync --locked",
     "[dependency-groups] (PEP 735)",
     "PEP 723",
-    "uv export",
+    "uv export --locked",
     "uv run --locked",
     # Transitional dual write until issue #4356 moves CI onto uv.lock; drop
     # these two with that change, never before it.
-    "ALSO goes in\n#    requirements.txt",
+    "ALSO goes in requirements.txt",
+    "do NOT regenerate them from uv.lock",
     "requirements-docs.txt",
 )
 REQUIRED_URLS = {
@@ -59,7 +60,9 @@ def test_pyproject_starts_with_the_policy_block() -> None:
 
 
 def test_policy_block_states_every_load_bearing_rule() -> None:
-    joined = "\n".join(_policy_block(PYPROJECT.read_text(encoding="utf-8")))
+    block = _policy_block(PYPROJECT.read_text(encoding="utf-8"))
+    # Compare prose, not layout: strip the comment marker and re-wrap.
+    joined = " ".join(" ".join(line.lstrip("#").split()) for line in block)
     missing = [rule for rule in REQUIRED_RULES if rule not in joined]
     assert not missing, f"policy block lost rule(s): {missing}"
 
