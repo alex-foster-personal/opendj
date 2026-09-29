@@ -109,8 +109,10 @@ TIMEOUT_ENV = "MDT_BEATGRID_TIMEOUT_S"
 
 #: Which grid the lane serves: `raw` (the model's peak times, the default until
 #: the grid-fit bench round is reviewed) or `line` (the fitted, BPM-rounded,
-#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`). A `line`
-#: record says so in its payload's `grid_fit` block.
+#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`) or
+#: `const_regions` (the same, with the line chosen by the constant-region
+#: recipe in `apps.analysis_beatgrid.const_regions`). A fitted record says
+#: which in its payload's `grid_fit` block.
 GRID_FIT_ENV = "MDT_BEATGRID_GRID_FIT"
 DEFAULT_TIMEOUT_S = 1800
 

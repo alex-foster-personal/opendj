@@ -43,6 +43,7 @@ scales the per-beat BPM and both sides of every marker.
 
 -Claude
 """
+
 from __future__ import annotations
 
 import itertools
@@ -54,8 +55,10 @@ from typing import Any, Literal
 from apps.analysis_beatgrid.activations import FPS as ACTIVATIONS_FPS
 from apps.analysis_beatgrid.bar_phase import BAR_BEATS, lock_bar_phase
 from apps.analysis_beatgrid.bpm import REASON_GENRE_FAMILY, estimate_bpm
+from apps.analysis_beatgrid.const_regions import fit_const_regions
 from apps.analysis_beatgrid.flags import evaluate_pulse
 from apps.analysis_beatgrid.grid_fit import (
+    GRID_FIT_CONST_REGIONS,
     GRID_FIT_LINE,
     GRID_FIT_MODES,
     GRID_FIT_RAW,
@@ -148,9 +151,7 @@ def _segment_bpm_per_beat(
     segment_index = 0
     for beat_index in range(n_beats):
         interval = min(beat_index, last_interval)
-        while (
-            segment_index + 1 < len(segments) and segments[segment_index][1] <= interval
-        ):
+        while segment_index + 1 < len(segments) and segments[segment_index][1] <= interval:
             segment_index += 1
         bpm = segments[segment_index][2] * octave_multiple
         if not math.isfinite(bpm) or bpm <= 0:
@@ -192,15 +193,11 @@ def _pulse_and_phase(
             # drift, and turning it into the same lane failure would persist a
             # `failed` record that `--only-missing` then declines to retry once
             # the protocol is fixed (Sol P1 BLOCKING, PR #1587).
-            raise LanePayloadError(
-                f"runner result carries no `{key}` key; got {sorted(result)}"
-            )
+            raise LanePayloadError(f"runner result carries no `{key}` key; got {sorted(result)}")
     beats: list[float] = [float(t) for t in result["beats"]]
     downbeats: list[float] = [float(t) for t in result["downbeats"]]
 
-    pulse = evaluate_pulse(
-        beats, result.get("activation_peak"), downbeats, threshold=threshold
-    )
+    pulse = evaluate_pulse(beats, result.get("activation_peak"), downbeats, threshold=threshold)
     if pulse.no_trackable_pulse:
         assert pulse.reason is not None  # evaluate_pulse names every failure
         return _failed(pulse.reason)
@@ -241,13 +238,19 @@ def _stamp_activations(result: Mapping[str, Any], payload: dict[str, Any]) -> No
         )
 
 
-def _tempo_family_block(genre: str | None, family: TempoFamily | None, tempo: Any) -> dict:
-    """The `tempo_family` block: which genre hint was offered and whether it decided."""
+def _tempo_family_block(
+    genre: str | None, family: TempoFamily | None, tempo: Any, *, rendered: bool = True
+) -> dict:
+    """The `tempo_family` block: which genre hint was offered and whether it decided.
+
+    `rendered` is False when the grid ignores the policy's octave
+    (`const_regions` mode), so a family can never read as applied there.
+    """
     return {
         "genre": genre,
         "family": family.name if family is not None else None,
         "range_bpm": [family.min_bpm, family.max_bpm] if family is not None else None,
-        "applied": tempo.octave_reason == REASON_GENRE_FAMILY,
+        "applied": rendered and tempo.octave_reason == REASON_GENRE_FAMILY,
     }
 
 
@@ -274,17 +277,17 @@ def build_beatgrid_lane(
     if grid_fit not in GRID_FIT_MODES:
         raise LanePayloadError(f"grid_fit must be one of {GRID_FIT_MODES}, got {grid_fit!r}")
     family = tempo_family_for_genre(genre)
-    if grid_fit == GRID_FIT_LINE:
-        return _build_line_lane(result, threshold=threshold, genre=genre, family=family)
+    if grid_fit in (GRID_FIT_LINE, GRID_FIT_CONST_REGIONS):
+        return _build_line_lane(
+            result, threshold=threshold, mode=grid_fit, genre=genre, family=family
+        )
     checked = _pulse_and_phase(result, threshold=threshold, family=family)
     if isinstance(checked, BeatgridLane):
         return checked
     beats, tempo, phase = checked.beats, checked.tempo, checked.phase
 
     changes = detect_tempo_changes(beats)
-    per_beat_bpm = _segment_bpm_per_beat(
-        len(beats), changes.segments, tempo.octave_multiple
-    )
+    per_beat_bpm = _segment_bpm_per_beat(len(beats), changes.segments, tempo.octave_multiple)
     payload: dict[str, Any] = {
         "beats": [
             {"t": round(t, 5), "n": n, "bpm": bpm}
@@ -311,9 +314,7 @@ def build_beatgrid_lane(
     if genre is not None:
         payload["tempo_family"] = _tempo_family_block(genre, family, tempo)
     _stamp_activations(result, payload)
-    return BeatgridLane(
-        status="ok", reason=None, confidence=tempo.confidence, payload=payload
-    )
+    return BeatgridLane(status="ok", reason=None, confidence=tempo.confidence, payload=payload)
 
 
 def _line_guards(
@@ -362,10 +363,21 @@ def _line_markers(fit: Any, line_bpm: Sequence[float], confidence: float) -> lis
     ]
 
 
-def _line_diagnostics(fit: Any, line_bpm: Sequence[float], octave_multiple: float) -> dict:
-    """The `grid_fit` block: how each served segment was fitted and rounded."""
+def _line_diagnostics(
+    fit: Any, line_bpm: Sequence[float], octave_multiple: float, mode: str
+) -> dict:
+    """The `grid_fit` block: how each served segment was fitted and rounded.
+
+    `mode` is what was asked for. In `const_regions` mode `fitter` says which
+    fitter chose the lines, since it differs when no steady span was found
+    and the track went to the line fitter. `line` mode's block is left exactly
+    as NATIVE-16 defined it.
+    """
+    block: dict[str, Any] = {"mode": mode}
+    if mode == GRID_FIT_CONST_REGIONS:
+        block["fitter"] = fit.fitter
     return {
-        "mode": GRID_FIT_LINE,
+        **block,
         "offset_s": fit.offset_s,
         "octave_policy_multiple": octave_multiple,
         "segments": [
@@ -386,10 +398,14 @@ def _build_line_lane(
     result: Mapping[str, Any],
     *,
     threshold: float,
+    mode: str = GRID_FIT_LINE,
     genre: str | None = None,
     family: TempoFamily | None = None,
 ) -> BeatgridLane:
     """`grid_fit="line"`: serve the fitted line instead of the model's peaks.
+
+    `grid_fit="const_regions"` takes the same path with the line chosen by
+    `const_regions.fit_const_regions` (longest steady region, extended).
 
     Same guard chain up to the tempo fit (runner error, pulse, octave policy),
     then `grid_fit.fit_grid` replaces both the raw beats and `lock_bar_phase`.
@@ -401,13 +417,20 @@ def _build_line_lane(
         return guarded
     beats, downbeats, tempo, n_filled = guarded
 
-    # Rendered at the octave policy's metrical level. Round 4 measured this
-    # halving 163-175 BPM tracks (`line_round_offset_octave`) while the policy
-    # broke two-octave ties toward 112 BPM; the policy now keeps the model's
-    # own level in that case, so the multiple is 1 unless the model's level is
-    # outside [70, 180] or a genre tempo family picked another octave
-    # (`ops/beatbench/round-4-tempo-family`, row `tf_fold_policy`).
-    fit = fit_grid(beats, downbeats, octave_multiple=tempo.octave_multiple)
+    # Line mode renders at the octave policy's metrical level. Round 4
+    # measured this halving 163-175 BPM tracks (`line_round_offset_octave`)
+    # while the policy broke two-octave ties toward 112 BPM; the policy now
+    # keeps the model's own level in that case, so the multiple is 1 unless
+    # the model's level is outside [70, 180] or a genre tempo family picked
+    # another octave (`ops/beatbench/round-4-tempo-family`, `tf_fold_policy`).
+    # `const_regions` takes no octave multiple and stays at the model's level,
+    # so its block records 1.0 and a family never counts as applied there.
+    if mode == GRID_FIT_CONST_REGIONS:
+        fit = fit_const_regions(beats, downbeats)
+        multiple = 1.0
+    else:
+        multiple = tempo.octave_multiple
+        fit = fit_grid(beats, downbeats, octave_multiple=multiple)
     if fit.reason is not None:
         return _failed(fit.reason)
     if _cadence_breaks(fit.beat_numbers, BAR_BEATS):
@@ -428,12 +451,14 @@ def _build_line_lane(
         "tempo_changes": _line_markers(fit, line_bpm, tempo.confidence),
         "static_grid_untrusted": False,
         "grid_fit": {
-            **_line_diagnostics(fit, line_bpm, tempo.octave_multiple),
+            **_line_diagnostics(fit, line_bpm, multiple, mode),
             "n_half_time_filled": n_filled,
         },
     }
     if genre is not None:
-        payload["tempo_family"] = _tempo_family_block(genre, family, tempo)
+        payload["tempo_family"] = _tempo_family_block(
+            genre, family, tempo, rendered=mode != GRID_FIT_CONST_REGIONS
+        )
     if fit.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
     _stamp_activations(result, payload)
