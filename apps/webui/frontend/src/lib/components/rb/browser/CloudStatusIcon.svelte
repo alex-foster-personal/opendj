@@ -24,7 +24,13 @@
 	{#if view.kind === 'streaming' && view.provider !== null && view.provider !== 'unknown'}
 		<svg class="provider-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 			{#if view.provider === 'spotify'}
-				<circle cx="8" cy="8" r="6" fill={providerColor} />
+				<!-- Hand-drawn Spotify mark: green disk with three dark sound-wave
+				     arcs, widest on top, so it reads as the provider and not as a
+				     status dot. -->
+				<circle cx="8" cy="8" r="7" fill={providerColor} />
+				<path class="spotify-arc" d="M3.9 6.2Q8 4.6 12.1 6.6" fill="none" stroke="#191414" stroke-width="1.4" stroke-linecap="round" />
+				<path class="spotify-arc" d="M4.5 8.5Q8 7.3 11.3 8.9" fill="none" stroke="#191414" stroke-width="1.15" stroke-linecap="round" />
+				<path class="spotify-arc" d="M5.1 10.7Q8 9.8 10.5 11" fill="none" stroke="#191414" stroke-width="0.95" stroke-linecap="round" />
 			{:else if view.provider === 'soundcloud'}
 				<path
 					d="M2 10h2l1-4 1.5 6 1-3 1 3h6"

@@ -64,15 +64,17 @@ import {
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
 
-/** The rb.midi_enabled disk sync (PUT /api/v1/ui-prefs) lives in midi-ui-state,
- * which is loaded on demand here rather than charging the MIDI runtime to first
- * paint. Destructured so knip still sees which export is used. */
-async function _syncMidiEnabledChoice(enabled: boolean): Promise<void> {
+/** The rb.midi_enabled runtime half lives in midi-ui-state, which is loaded on
+ * demand here rather than charging the MIDI runtime to first paint. It persists
+ * the choice (localStorage + PUT /api/v1/ui-prefs) and then acts on it: enable
+ * requests WebMIDI access, disable detaches the glue and input listeners.
+ * Destructured so knip still sees which export is used. */
+async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 	try {
-		const { setMidiEnabledChoice } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
-		setMidiEnabledChoice(enabled);
+		const { applyMidiEnabledSetting } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
+		await applyMidiEnabledSetting(enabled);
 	} catch (exc: unknown) {
-		console.error('[settings] rb.midi_enabled: MIDI state module failed to load', exc);
+		console.error('[settings] rb.midi_enabled: MIDI state module failed to load or apply', exc);
 	}
 }
 
@@ -392,7 +394,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			const enabled = _asBool(value, key);
 			// The local choice lands now, so readSettingValue() reflects it at once.
 			persistMidiEnabled(enabled);
-			void _syncMidiEnabledChoice(enabled);
+			void _applyMidiEnabledChoice(enabled);
 			return;
 		}
 		case 'gig_helper': {

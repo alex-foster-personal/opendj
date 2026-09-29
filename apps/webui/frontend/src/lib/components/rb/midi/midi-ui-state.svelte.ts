@@ -37,7 +37,7 @@
  *       registry is not reloaded [then ⛔️] broken
  */
 
-import { initMidi } from '$lib/rb/midi/webmidi.svelte';
+import { initMidi, releaseMidiInputs } from '$lib/rb/midi/webmidi.svelte';
 import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
 import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
 import { loadInstalledDeviceMaps } from '$lib/rb/midi/installed-maps';
@@ -263,6 +263,28 @@ export function detachMidiGlueForRouteUnmount(): void {
 	if (_detachMidiGlue === null) return;
 	_detachMidiGlue();
 	_detachMidiGlue = null;
+}
+
+/** Turn live MIDI off: stop the glue (action handler, LED effect, meter
+ * pump) and detach every input listener. Permission state is not touched:
+ * the browser still holds whatever grant it gave. */
+export function disableMidi(): void {
+	detachMidiGlueForRouteUnmount();
+	releaseMidiInputs();
+}
+
+/** The rb.midi_enabled setting, runtime-aware (settings/apply.ts). Enabling
+ * persists the choice and then goes through the same request path as the
+ * page-load auto-enable, so maps register, the glue attaches and access is
+ * requested; a denial clears the choice again (requestMidiAccess's catch).
+ * Disabling persists the choice and then tears the live MIDI runtime down. */
+export async function applyMidiEnabledSetting(enabled: boolean): Promise<void> {
+	setMidiEnabledChoice(enabled);
+	if (enabled) {
+		await maybeAutoEnableMidi();
+		return;
+	}
+	disableMidi();
 }
 
 /** TEST-ONLY: forget the one-time live-refresh arming (pair with

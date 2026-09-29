@@ -497,6 +497,26 @@ export async function initMidi(): Promise<void> {
 	_rescanPorts();
 }
 
+/** Stop listening to every MIDI input and drop the access handle: the user
+ * turned MIDI off (settings rb.midi_enabled=false). The permission is the
+ * browser's own fact and is left untouched; the device list empties because
+ * nothing is listening to those ports any more. A later initMidi() requests
+ * access again and rescans. No-op before initMidi(). */
+export function releaseMidiInputs(): void {
+	if (_access === null) return;
+	_access.onstatechange = null;
+	for (const dev of _resolved.values()) dev.input.onmidimessage = null;
+	_resolved.clear();
+	_ledQueues.clear();
+	if (_ledTimer !== null) {
+		clearInterval(_ledTimer);
+		_ledTimer = null;
+	}
+	_access = null;
+	midiState.devices = [];
+	midiState.shiftHeld = false;
+}
+
 /** Queue an LED write (Note On, velocity = colour/state - spike 2a: FLX10
  * pad RGB is Note-On velocity 1..127; Mixtour LEDs are plain Note On/Off).
  * Coalesced per (ch,note) and flushed every LED_THROTTLE_MS. */

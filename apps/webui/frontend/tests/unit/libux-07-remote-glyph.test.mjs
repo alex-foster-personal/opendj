@@ -63,7 +63,9 @@ test('every CloudSync glyph carries the production helper title', () => {
 });
 
 test('streaming rows take precedence over CloudSync storage state', () => {
-	const streamingAt = stateSource.indexOf('if (input.isStreaming)');
+	// Unmatched Spotify placeholders (spotifyPending) stream too, so they share
+	// the streaming branch that must come first.
+	const streamingAt = stateSource.indexOf('if (input.isStreaming || input.spotifyPending)');
 	const remoteAt = stateSource.indexOf('if (input.hasRemoteCopy');
 	assert.ok(streamingAt >= 0 && remoteAt > streamingAt);
 });
