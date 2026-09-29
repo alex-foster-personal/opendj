@@ -167,15 +167,15 @@ if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
   cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 else
   # No override: run the SAME executable ops/dmg-smoke's real `dmg` recipe
-  # runs (record_build_time.sh) against a copy of the real build budget, so
+  # runs (record_build_time.sh) against the REAL build budget directly, so
   # this fixture exercises the actual production timing writer rather than
   # a hand-duplicated or regex-derived copy of its format (PR #4481 review
   # round 2, P1: "factor the writer into an executable production path and
   # exercise that instead"). {DEFAULT_BUILD_SECONDS}s/rc={DEFAULT_BUILD_RC}
-  # is a synthetic (elapsed, outcome) pair; the write path is real.
-  mkdir -p "$build_root/ops"
-  [[ -f "$build_root/ops/build-budget.env" ]] || cp "$real_budget" "$build_root/ops/build-budget.env"
-  "$record_build_time" "$build_root" {DEFAULT_BUILD_SECONDS} {DEFAULT_BUILD_RC}
+  # is a synthetic (elapsed, outcome) pair; the write path is real. Budget
+  # path and log root are separate arguments (matching the justfile's own
+  # independent `_budget`/`_root`), so no copy of the budget file is needed.
+  "$record_build_time" "$real_budget" "$build_root" {DEFAULT_BUILD_SECONDS} {DEFAULT_BUILD_RC}
 fi
 exit 0
 """

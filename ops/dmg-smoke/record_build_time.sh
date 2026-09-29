@@ -11,11 +11,14 @@
 # (PR #4481 review round 2, P1: "factor the writer into an executable
 # production path and exercise that instead").
 #
-# Usage: record_build_time.sh <root> <elapsed_seconds> <rc>
-#   <root> must contain ops/build-budget.env (BUILD_TOTAL_SOFT_S/HARD_S) and
-#   is where ops/logs/ship-dmg.log is appended -- the real recipe's
-#   $BUILD_WORKTREE, or a test fixture's build_root with a copy of the same
-#   budget file.
+# Usage: record_build_time.sh <budget_path> <log_root> <elapsed_seconds> <rc>
+#   <budget_path> and <log_root> are separate on purpose, matching the
+#   recipe's own independent `_budget`/`_root` variables (only coincidentally
+#   the same directory in production): tests/scripts/test_build_budget.py's
+#   `_run_recorder` deliberately points <log_root> at a throwaway tmp_path
+#   while passing the real ops/build-budget.env as <budget_path> directly, to
+#   exercise this writer without needing a full checkout under tmp_path.
+#   <log_root> is where ops/logs/ship-dmg.log is appended.
 #
 # Exit 1 when the budget file is unreadable AND rc=0 (matching the justfile
 # trap's own contract: an unrecordable build is NOT a successful one). Exit 0
@@ -23,10 +26,10 @@
 # already failed; do not also fail the recording step).
 set -euo pipefail
 
-_root="$1"
-_elapsed="$2"
-_rc="$3"
-_budget="$_root/ops/build-budget.env"
+_budget="$1"
+_root="$2"
+_elapsed="$3"
+_rc="$4"
 
 if [ ! -r "$_budget" ]; then
     echo "[ERROR] $_budget unreadable: build time NOT recorded" >&2
