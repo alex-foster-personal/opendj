@@ -157,13 +157,15 @@ fn writes_of(plan: &Plan, out: &Path, decks_out: Option<&Path>) -> Vec<(PathBuf,
 /// output is compared as opened, so once claimed, what its path names later
 /// no longer matters: it is written through its handle.
 fn claim_outputs(writes: &[(PathBuf, String)], reads: &Reads) -> Result<Vec<Handle>, String> {
-    let mut made_files: Vec<PathBuf> = Vec::new();
-    let mut made_dirs: Vec<PathBuf> = Vec::new();
-    let undo = |files: &[PathBuf], dirs: &[PathBuf]| {
-        for f in files.iter().rev() {
+    let mut made_files: Vec<Made> = Vec::new();
+    let mut made_dirs: Vec<Made> = Vec::new();
+    // Each only while its path still names what this claim made: another
+    // run may have removed it and put its own in its place since.
+    let undo = |files: &[Made], dirs: &[Made]| {
+        for (f, _) in files.iter().rev().filter(|m| still_ours(m)) {
             let _ = std::fs::remove_file(f);
         }
-        for d in dirs.iter().rev() {
+        for (d, _) in dirs.iter().rev().filter(|m| still_ours(m)) {
             let _ = std::fs::remove_dir(d);
         }
     };
@@ -180,7 +182,7 @@ fn claim_outputs(writes: &[(PathBuf, String)], reads: &Reads) -> Result<Vec<Hand
                     #[cfg(test)]
                     BEFORE_CREATE.with(|h| h.get().map(|h| h(d)));
                     match std::fs::create_dir(d) {
-                        Ok(()) => made_dirs.push(d.to_path_buf()),
+                        Ok(()) => made_dirs.push((d.to_path_buf(), Handle::from_path(d).ok())),
                         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && d.is_dir() => {}
                         Err(e) => return Err(format!("cannot create {}: {e}", d.display())),
                     }
@@ -215,8 +217,8 @@ fn claim_outputs(writes: &[(PathBuf, String)], reads: &Reads) -> Result<Vec<Hand
 /// create), not a look beforehand: another run may create the same absent
 /// output in between, and a file it made is not this claim's to remove.
 /// A file created here is added to `made`, as the file itself: through a
-/// symlink, its target.
-fn create_or_open(p: &Path, made: &mut Vec<PathBuf>) -> Result<std::fs::File, String> {
+/// symlink, its target, with its identity taken from the file created.
+fn create_or_open(p: &Path, made: &mut Vec<Made>) -> Result<std::fs::File, String> {
     let cannot = |e: std::io::Error| format!("cannot create {}: {e}", p.display());
     let target = resolved(p);
     // A file removed between the two opens is absent again: try again, a
@@ -226,7 +228,7 @@ fn create_or_open(p: &Path, made: &mut Vec<PathBuf>) -> Result<std::fs::File, St
         BEFORE_CREATE.with(|h| h.get().map(|h| h(&target)));
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&target) {
             Ok(f) => {
-                made.push(target);
+                made.push((target, f.try_clone().ok().and_then(|g| Handle::from_file(g).ok())));
                 return Ok(f);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -240,6 +242,15 @@ fn create_or_open(p: &Path, made: &mut Vec<PathBuf>) -> Result<std::fs::File, St
         }
     }
     Err(format!("cannot create {}: it keeps being created and removed", p.display()))
+}
+
+/// A file or directory a claim created, and what it was as created (none
+/// when it could not be identified, and then it is never removed).
+type Made = (PathBuf, Option<Handle>);
+
+/// Whether the path still names what the claim created there.
+fn still_ours((path, made): &Made) -> bool {
+    made.as_ref().is_some_and(|m| Handle::from_path(path).is_ok_and(|h| h == *m))
 }
 
 #[cfg(test)]
@@ -685,6 +696,56 @@ mod tests {
         assert!(err.unwrap_err().contains("plan.json"), "a directory made first failed the claim");
         assert!(d.join("new").is_dir(), "the other run's directory was removed");
         assert!(!d.join("new").join("mix.wav").exists(), "a file the claim made was left");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_refused_claim_leaves_what_another_run_put_in_place_of_its_own() {
+        // Codex on bb0d2322: creation was decided atomically, but the undo
+        // removed by path, so an output this claim created, then replaced by
+        // another run, was removed as if it were still this claim's.
+        let d = dir("replaced");
+        std::fs::write(d.join("plan.json"), b"plan").unwrap();
+        let reads = Reads { paths: vec![d.join("plan.json")], files: vec![] };
+        let writes = [w(d.join("new").join("mix.wav"), "--out"), w(d.join("plan.json"), "deck 1's output")];
+        // Between the claim creating new/mix.wav and refusing plan.json,
+        // another run replaces both the file and the directory with its own.
+        BEFORE_CREATE.with(|h| {
+            h.set(Some(|p: &Path| {
+                if p.ends_with("plan.json") {
+                    let new = p.with_file_name("new");
+                    std::fs::remove_file(new.join("mix.wav")).unwrap();
+                    std::fs::remove_dir(&new).unwrap();
+                    std::fs::create_dir(&new).unwrap();
+                    std::fs::write(new.join("mix.wav"), b"theirs").unwrap();
+                }
+            }))
+        });
+        let err = claim_outputs(&writes, &reads);
+        BEFORE_CREATE.with(|h| h.set(None));
+        assert!(err.unwrap_err().contains("plan.json"));
+        assert_eq!(std::fs::read(d.join("new").join("mix.wav")).unwrap(), b"theirs", "the other run's file was removed");
+        // Its directory too, once empty: the claim did not make this one.
+        std::fs::remove_file(d.join("new").join("mix.wav")).unwrap();
+        BEFORE_CREATE.with(|h| {
+            h.set(Some(|p: &Path| {
+                if p.ends_with("plan.json") {
+                    let new = p.with_file_name("new");
+                    std::fs::remove_file(new.join("mix.wav")).unwrap();
+                    std::fs::remove_dir(&new).unwrap();
+                    std::fs::create_dir(&new).unwrap();
+                }
+            }))
+        });
+        std::fs::remove_dir(d.join("new")).unwrap();
+        let err = claim_outputs(&writes, &reads);
+        BEFORE_CREATE.with(|h| h.set(None));
+        assert!(err.is_err());
+        assert!(d.join("new").is_dir(), "the other run's directory was removed");
+        // Control: what the claim made and nobody replaced is removed.
+        std::fs::remove_dir(d.join("new")).unwrap();
+        assert!(claim_outputs(&writes, &reads).is_err());
+        assert!(!d.join("new").exists(), "what the claim made was left");
         let _ = std::fs::remove_dir_all(&d);
     }
 

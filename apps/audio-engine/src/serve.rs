@@ -329,6 +329,9 @@ pub struct AudioSide {
     state_fence: Arc<AtomicU64>,
     /// Commands taken from the ring so far.
     applied: u64,
+    /// The `state_seq` of the last state queued for the output: every
+    /// request up to it has its answer on the way, whatever the flag says.
+    state_sent: Arc<AtomicU64>,
     /// The last `engine_state` a block has taken, with every command sent
     /// before it applied: what each state published since reflects.
     answered: u64,
@@ -433,7 +436,11 @@ impl AudioSide {
     fn publish(&mut self, now_ns: u64, frames_in: usize) -> bool {
         self.frames_since_state = 0;
         let in_ns = frames_in as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
-        self.state_tx.push((self.engine.snapshot(), now_ns + in_ns, self.answered)).is_ok()
+        let queued = self.state_tx.push((self.engine.snapshot(), now_ns + in_ns, self.answered)).is_ok();
+        if queued {
+            self.state_sent.store(self.answered, Ordering::Release);
+        }
+        queued
     }
 }
 
@@ -484,6 +491,8 @@ struct Control {
     state_asked: Arc<AtomicU64>,
     /// How many commands were sent when it was asked.
     state_fence: Arc<AtomicU64>,
+    /// The last `state_seq` the audio side has queued a state for.
+    state_sent: Arc<AtomicU64>,
     /// Commands sent to the audio side so far.
     pushed: u64,
     /// Decoded tracks, shared by the load threads.
@@ -725,6 +734,15 @@ impl Control {
         }
     }
 
+    /// Whether the audio side still has work to finish before it may stop:
+    /// commands in the mailbox, or an `engine_state` asked for whose state is
+    /// not yet queued.
+    fn draining(&self) -> bool {
+        self.cmd_tx.slots() < CMD_SLOTS
+            || self.state_req.load(Ordering::Acquire)
+            || self.state_sent.load(Ordering::Acquire) < self.state_asked.load(Ordering::Acquire)
+    }
+
     /// Ask the audio side for state request `n`, fenced on every command sent
     /// so far and numbered first, so a block that sees the request reads its
     /// number and fence (or a later one's) with it.
@@ -842,6 +860,7 @@ fn serve_threaded_from(
     let state_req = Arc::new(AtomicBool::new(false));
     let state_asked = Arc::new(AtomicU64::new(0));
     let state_fence = Arc::new(AtomicU64::new(0));
+    let state_sent = Arc::new(AtomicU64::new(0));
     let out: Out = Arc::new(Mutex::new(Box::new(output)));
     let ids: Ids = Arc::new(Mutex::new(HashMap::new()));
 
@@ -862,6 +881,7 @@ fn serve_threaded_from(
         state_asked: state_asked.clone(),
         state_fence: state_fence.clone(),
         applied: 0,
+        state_sent: state_sent.clone(),
         answered: 0,
         frames_per_state: (sample_rate / STATE_HZ) as u64,
         frames_since_state: 0,
@@ -961,6 +981,7 @@ fn serve_threaded_from(
         state_req,
         state_asked,
         state_fence,
+        state_sent,
         pushed: 0,
         tracks: Arc::default(),
         fences: HashMap::new(),
@@ -1060,14 +1081,14 @@ fn serve_threaded_from(
     control.refuse_pending();
     // Let the audio side apply everything already queued before stopping,
     // so every command sent before shutdown or EOF gets its result, and
-    // answer an `engine_state` already acknowledged: its request stays set
-    // until a block has taken it and will publish it. A dead audio side
+    // answer an `engine_state` already acknowledged, until its state is
+    // queued for the output (not merely taken by a block, which may still
+    // find the state queue full and have to try again). A dead audio side
     // never drains, so it is not waited on, and neither is one whose
     // results nobody reads.
     if !audio_failed && !output_closed {
         let deadline = Instant::now() + DRAIN_LIMIT;
-        let busy = |c: &Control| c.cmd_tx.slots() < CMD_SLOTS || c.state_req.load(Ordering::Acquire);
-        while busy(&control) && Instant::now() < deadline {
+        while control.draining() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(1));
         }
     }
@@ -1136,6 +1157,7 @@ mod tests {
             state_asked: Arc::default(),
             state_fence: Arc::default(),
             applied: 0,
+            state_sent: Arc::default(),
             answered: 0,
             frames_per_state,
             frames_since_state: 0,
@@ -1332,6 +1354,33 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_waits_for_a_taken_request_until_its_state_is_queued() {
+        // Codex on bb0d2322: the drain ended once a block had taken the
+        // request (clearing its flag), but that block could still find the
+        // state queue full, re-arm, and never run again.
+        let (mut c, _cmd_rx, _out) = control();
+        assert!(!c.draining(), "an idle engine is kept from stopping");
+        assert!(c.handle_line(&serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(), "wall"));
+        assert!(c.draining());
+        // A block takes it: the flag clears, the state is not queued yet.
+        c.state_req.store(false, Ordering::Release);
+        assert!(c.draining(), "the drain ended with the request taken but its state not queued");
+        // Control: once a state carrying its number is queued, it may stop.
+        c.state_sent.store(1, Ordering::Release);
+        assert!(!c.draining());
+        // And the audio side marks a state sent only once it is in the queue.
+        let (mut side, _cmd, _res, mut rx) = side_at(8000, u64::MAX, 4);
+        while side.state_tx.push((side.engine.snapshot(), 0, 0)).is_ok() {}
+        side.state_asked.store(1, Ordering::Release);
+        side.state_req.store(true, Ordering::Release);
+        side.process(100);
+        assert_eq!(side.state_sent.load(Ordering::Acquire), 0, "a state that did not fit was counted sent");
+        drain(&mut rx);
+        side.process(100);
+        assert_eq!(side.state_sent.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
     fn a_request_made_mid_block_is_not_numbered_on_that_blocks_states() {
         // Request 1 is taken as the block starts; request 2 arrives while it
         // renders. The block's state answers 1 and must not claim 2.
@@ -1413,6 +1462,7 @@ mod tests {
             state_req: Arc::new(AtomicBool::new(false)),
             state_asked: Arc::default(),
             state_fence: Arc::default(),
+            state_sent: Arc::default(),
             pushed: 0,
             tracks: Arc::default(),
             fences: HashMap::new(),
