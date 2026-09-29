@@ -22,6 +22,7 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
 
@@ -38,6 +39,8 @@ export const SETUP_PAGE_ORIGIN = `http://127.0.0.1:${SETUP_PAGE_PORT}`;
 export const DEAD_ENGINE_ORIGIN = `http://127.0.0.1:${DEAD_ENGINE_PORT}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'desktop-setup.spec.ts',
 	fullyParallel: false,
@@ -51,7 +54,7 @@ export default defineConfig({
 		{
 			// A plain static server, because that is all the shipped page
 			// needs: no bundler, no framework, no engine.
-			command: `uv run --no-project python -m http.server ${SETUP_PAGE_PORT} --bind 127.0.0.1`,
+			command: guardedWebServerCommand('desktop-setup-static', `uv run --no-project python -m http.server ${SETUP_PAGE_PORT} --bind 127.0.0.1`),
 			cwd: `${REPOSITORY_ROOT}apps/desktop/setup`,
 			url: `${SETUP_PAGE_ORIGIN}/index.html`,
 			reuseExistingServer: false,

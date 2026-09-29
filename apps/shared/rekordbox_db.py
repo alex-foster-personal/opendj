@@ -15,6 +15,7 @@ import contextlib
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -208,6 +209,13 @@ class RBTrack:
     # defaults so existing RBTrack(...) callsites stay backward-compatible.
     isrc: str | None = None
     duration_s: float | None = None
+    # DjmdContent.updated_at (StatsFull mixin, onupdate=datetime.now on the
+    # live pyrekordbox row) -- the row's own last-modified stamp, used as
+    # the export adapter's provenance ``modified_at`` source (OPEN-02).
+    # Optional so callers that don't care about provenance timestamps
+    # (e.g. apps.reconcile.heal_icloud_paths) can keep constructing
+    # RBTrack without it.
+    updated_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -321,6 +329,16 @@ def iter_tracks(db: Rekordbox6Database) -> Iterator[RBTrack]:
             date_added=_date_to_str(t.DateCreated),
             isrc=isrc,
             duration_s=duration_s,
+            # StatsFull.updated_at is NOT NULL on every real DjmdContent
+            # row (pyrekordbox default=datetime.now, onupdate=datetime.now).
+            # ``getattr`` (matching the ``Length``/``ISRC`` columns above)
+            # because this function also accepts lightweight test doubles
+            # that don't model every column -- RBTrack.updated_at is
+            # Optional for exactly that reason. A track that reaches the
+            # open-dj export adapter without one and needs it (bpm/key/
+            # rating set) fails loudly there instead (RuntimeError), never
+            # silently here.
+            updated_at=getattr(t, "updated_at", None),
         )
 
 

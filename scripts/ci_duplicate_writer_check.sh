@@ -7,5 +7,5 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-scripts/ci_venv.sh 3.11 --requirements ops/fleet/requirements-duplicate-writer.txt
+scripts/ci_venv.sh 3.11 --lock ops/fleet/pylock.duplicate-writer.toml
 exec .venv/bin/python -m scripts.duplicate_writer_check "$@"

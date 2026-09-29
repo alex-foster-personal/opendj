@@ -26,29 +26,41 @@ def _write(path: Path, content: str, executable: bool = False) -> None:
 
 def _gh_shim(fixture_dir: Path, comment_file: Path) -> str:
     return textwrap.dedent(
-        f"""#!/usr/bin/env bash
+        rf"""#!/usr/bin/env bash
 set -euo pipefail
 comment_file="{comment_file}"
 fixture_dir="{fixture_dir}"
 _apply_jq() {{
   local payload="$1"
   if [[ -n "$jq_filter" ]]; then
-    printf '%s' "$payload" | jq -r "$jq_filter"
+    if [[ "$paginate" == "1" ]]; then
+      # Real gh applies --jq per page (not to a slurped array of pages), so
+      # the fixture's outer page-array is unwrapped one level here before
+      # the caller's filter runs against each page's own array of records.
+      printf '%s' "$payload" | jq -r ".[] as \$__page | (\$__page | ${{jq_filter}})"
+    else
+      printf '%s' "$payload" | jq -r "$jq_filter"
+    fi
   else
     printf '%s' "$payload"
   fi
 }}
 if [[ "$1" == "api" ]]; then
   shift
-  paginate=0 slurp=0 jq_filter=""
+  paginate=0 slurp=0 jq_filter="" template=""
   while (($#)); do
     case "$1" in
       --paginate) paginate=1; shift ;;
       --slurp) slurp=1; shift ;;
       --jq) jq_filter="$2"; shift 2 ;;
+      --template) template="$2"; shift 2 ;;
       *) endpoint="$1"; shift ;;
     esac
   done
+  if [[ "$slurp" == "1" ]] && {{ [[ -n "$jq_filter" ]] || [[ -n "$template" ]]; }}; then
+    echo "gh: the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+    exit 1
+  fi
   if [[ "$endpoint" == *"/commits/main" ]]; then
     _apply_jq "$(cat "$fixture_dir/commits_main.json")"
     exit 0
@@ -178,6 +190,23 @@ def _curl_shim() -> str:
 set -euo pipefail
 url="${@: -1}"
 if [[ "$url" == *"/api/v1/preflight" ]]; then
+  attempt=1
+  if [[ -n "${DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE:-}" ]]; then
+    prev="$(cat "$DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE" 2>/dev/null || echo 0)"
+    attempt=$((prev + 1))
+    printf '%s' "$attempt" > "$DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE"
+  fi
+  # Simulates the packaged app's engine port accepting the TCP connection but
+  # not answering yet (the TCC/Gatekeeper negotiation window): curl returns
+  # an empty body, exactly like the real `-m` timeout does after `|| true`
+  # discards its non-zero exit.
+  if [[ "${DMG_SMOKE_PREFLIGHT_NEVER_ANSWER:-0}" == "1" ]]; then
+    exit 0
+  fi
+  ready_after="${DMG_SMOKE_PREFLIGHT_READY_AFTER_ATTEMPTS:-0}"
+  if [[ "$ready_after" -gt 0 && "$attempt" -lt "$ready_after" ]]; then
+    exit 0
+  fi
   printf '%s' "${DMG_SMOKE_PREFLIGHT_JSON:?}"
   exit 0
 fi
@@ -338,6 +367,7 @@ def setup_layout(home: Path) -> dict[str, Path]:
     open_log = home / "open_log.txt"
     scratch_state = home / "scratch_running"
     build_root.mkdir(parents=True, exist_ok=True)
+    preflight_attempts_file = home / "preflight_attempts"
 
     return {
         "bin_dir": bin_dir,
@@ -349,6 +379,7 @@ def setup_layout(home: Path) -> dict[str, Path]:
         "open_called": open_called,
         "open_log": open_log,
         "scratch_state": scratch_state,
+        "preflight_attempts_file": preflight_attempts_file,
     }
 
 

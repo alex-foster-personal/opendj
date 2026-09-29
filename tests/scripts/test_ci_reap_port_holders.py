@@ -348,8 +348,11 @@ def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
         proc.wait(timeout=10)
 
 
+@pytest.mark.requirement("INFRA-08")
 def test_a_cross_uid_holder_is_waited_for_before_the_step_fails(tmp_path: Path) -> None:
-    """CONTROL: if a holder whose pid `ss` cannot report fails the step the
+    """[if] another uid holds the port [then] the step waits before failing, [else stop].
+
+    CONTROL: if a holder whose pid `ss` cannot report fails the step the
     moment it is seen, instead of after the bounded foreign-holder wait, then
     the retry path of issue #1613 is unreachable for the collision it exists
     for."""
