@@ -18,6 +18,8 @@ two lookups this issue names.
 [then] the index traded away the case-insensitive arm, broken.
 [if] matches come back in index order rather than stored (rowid) order
 [then] the seek changed what the scan returned, broken.
+[if] an identity repair of k tracks in one playlist reads its members k times
+[then] the repair bundle rebuilds the same playlist per track, broken.
 """
 from __future__ import annotations
 
@@ -30,7 +32,14 @@ import pytest
 
 from apps.sync_hub import engine, protocol
 from apps.sync_hub.engine_identity_queries import matches_by_hash, matches_by_isrc
-from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _T1
+from tests.cloudsync.test_hub_sync import (
+    _DEV_A,
+    _DEV_B,
+    _T0,
+    _T1,
+    _insert_playlist,
+    _set_members,
+)
 from tests.cloudsync.test_track_identity_collapse import _open_hub, _values
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-07")
@@ -194,3 +203,40 @@ def test_hash_matches_come_back_in_stored_order(tmp_path: Path) -> None:
     finally:
         conn.close()
     assert [match.pk for match in matches] == ["stored-3", "stored-9"]
+
+
+def _membership_reads(conn: sqlite3.Connection, stable_ids: Sequence[str]) -> int:
+    """Whole-playlist membership SELECTs one ``hub_track_bundles`` call issues."""
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+    try:
+        engine.hub_track_bundles(conn, stable_ids)
+    finally:
+        conn.set_trace_callback(None)
+    return sum(
+        "FROM playlist_memberships WHERE playlist_id" in sql for sql in statements
+    )
+
+
+def test_repair_bundle_reads_a_shared_playlist_once(tmp_path: Path) -> None:
+    """Identity repair bundles every track's playlists. On the 10k fixture the
+    13 duplicate tracks all sit in one 10,042-member playlist, and each built
+    that whole bundle again before the dedup threw it away: about 4 s."""
+    conn = _open_hub(tmp_path)
+    try:
+        _seed_library(conn, SMALL_LIBRARY)
+        _insert_playlist(conn, "pl-all", name="All", updated_at=_T0, origin=_DEV_A)
+        ids = tuple(f"stored-{i}" for i in range(SMALL_LIBRARY))
+        _set_members(conn, "pl-all", ids, updated_at=_T0, origin=_DEV_A)
+        conn.commit()
+        one = _membership_reads(conn, ids[:1])
+        ten = _membership_reads(conn, ids[:10])
+        bundles = engine.hub_track_bundles(conn, ids[:10])
+    finally:
+        conn.close()
+    assert (one, ten) == (1, 1), (
+        f"one track read the shared playlist's members {one}x, ten tracks {ten}x"
+    )
+    playlists = [change for change in bundles if change.table == "playlists"]
+    assert [change.pk for change in playlists] == [("pl-all",)]
+    assert playlists[0].members is not None and len(playlists[0].members) == SMALL_LIBRARY
