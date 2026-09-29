@@ -113,6 +113,9 @@ pub fn serve_fake(
     Ok(())
 }
 
+/// Where results and state go: stdout in the binary, a buffer in tests.
+type Out = Arc<Mutex<Box<dyn Write + Send>>>;
+
 /// What the audio side sends back for each command.
 type AudioResult = (u64, Result<Retired, Rejected>);
 
@@ -127,6 +130,10 @@ pub struct AudioSide {
     frames_per_state: u64,
     frames_since_state: u64,
     epoch: Instant,
+    /// How far past now the first frame of the next `process` call will be
+    /// heard: the device's output latency plus whatever of its buffer is
+    /// already rendered. Zero on the wall clock.
+    ahead_ns: u64,
     scratch: Vec<f32>,
 }
 
@@ -134,6 +141,12 @@ impl AudioSide {
     /// Render `frames` frames into `self.scratch` after applying queued
     /// commands, publishing a snapshot when one is due. Returns the rendered
     /// interleaved stereo.
+    /// Set before `process` by a clock whose output is heard later than it is
+    /// rendered, so state carries the time its position is actually heard.
+    pub fn set_ahead_ns(&mut self, ns: u64) {
+        self.ahead_ns = ns;
+    }
+
     pub fn process(&mut self, frames: usize) -> &[f32] {
         // Take a command only while its result has a slot to go to: a result
         // dropped here would free a retired track on this thread. With the
@@ -150,7 +163,10 @@ impl AudioSide {
         self.frames_since_state += n as u64;
         if self.frames_since_state >= self.frames_per_state || self.state_req.swap(false, Ordering::Relaxed) {
             self.frames_since_state = 0;
-            let host_ns = self.epoch.elapsed().as_nanos() as u64;
+            // The snapshot's position is the end of this block, heard at
+            // now + ahead + the block's own length.
+            let block_ns = n as u64 * 1_000_000_000 / self.engine.sample_rate() as u64;
+            let host_ns = self.epoch.elapsed().as_nanos() as u64 + self.ahead_ns + block_ns;
             let _ = self.state_tx.push((self.engine.snapshot(), host_ns));
         }
         &self.scratch[..n * 2]
@@ -178,7 +194,7 @@ enum Queued {
 struct Control {
     cmd_tx: rtrb::Producer<(u64, EngineCmd)>,
     ids: Arc<Mutex<HashMap<u64, Option<String>>>>,
-    out: Arc<Mutex<io::Stdout>>,
+    out: Out,
     msg_tx: mpsc::Sender<Msg>,
     next_seq: u64,
     /// Per deck: Some while a load is decoding, holding work queued behind it.
@@ -392,11 +408,12 @@ pub fn serve_threaded(
     clock: &'static str,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
 ) -> io::Result<()> {
-    serve_threaded_from(io::BufReader::new(io::stdin()), sample_rate, clock, run_audio)
+    serve_threaded_from(io::BufReader::new(io::stdin()), io::stdout(), sample_rate, clock, run_audio)
 }
 
 fn serve_threaded_from(
     input: impl BufRead + Send + 'static,
+    output: impl Write + Send + 'static,
     sample_rate: u32,
     clock: &'static str,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
@@ -406,7 +423,7 @@ fn serve_threaded_from(
     let (state_tx, mut state_rx) = rtrb::RingBuffer::new(64);
     let stop = Arc::new(AtomicBool::new(false));
     let state_req = Arc::new(AtomicBool::new(false));
-    let out = Arc::new(Mutex::new(io::stdout()));
+    let out: Out = Arc::new(Mutex::new(Box::new(output)));
     let ids: Arc<Mutex<HashMap<u64, Option<String>>>> = Arc::new(Mutex::new(HashMap::new()));
 
     {
@@ -423,6 +440,7 @@ fn serve_threaded_from(
         frames_per_state: (sample_rate / STATE_HZ) as u64,
         frames_since_state: 0,
         epoch: Instant::now(),
+            ahead_ns: 0,
         scratch: vec![0.0; MAX_BLOCK * 2 * 8],
     };
     let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
@@ -539,6 +557,15 @@ fn serve_threaded_from(
     let _ = audio_thread.join();
     pump_stop.store(true, Ordering::Relaxed);
     let _ = pump.join();
+    // Anything still without a result never ran: its audio side died with
+    // it in the mailbox, or the drain gave up. Refuse each one by its id.
+    let unanswered: Vec<Option<String>> = control.ids.lock().unwrap().drain().map(|(_, id)| id).collect();
+    for id in unanswered {
+        control.reply(
+            id.as_deref(),
+            Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")),
+        );
+    }
     if audio_failed {
         return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));
     }
@@ -580,6 +607,7 @@ mod tests {
             frames_per_state: u64::MAX,
             frames_since_state: 0,
             epoch: Instant::now(),
+            ahead_ns: 0,
             scratch: vec![0.0; MAX_BLOCK * 2],
         };
         (side, cmd_tx, res_rx)
@@ -615,9 +643,71 @@ mod tests {
         let (reader, _writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), 48000, "wall", |_side, _stop| {}));
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", |_side, _stop| {}));
         });
         let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
         assert!(r.is_err());
+    }
+
+    /// A shared buffer that tests read serve's output from.
+    #[derive(Clone, Default)]
+    struct Captured(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Captured {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn commands_left_in_the_mailbox_when_the_audio_side_dies_are_refused() {
+        // The command is taken into the mailbox, then the audio side dies
+        // without ever draining it. It still gets a result.
+        let (reader, mut writer) = io::pipe().unwrap();
+        let out = Captured::default();
+        let (tx, rx) = mpsc::channel();
+        let o = out.clone();
+        std::thread::spawn(move || {
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", |_side, _stop| {
+                std::thread::sleep(Duration::from_millis(300));
+            });
+            let _ = tx.send(r);
+        });
+        writeln!(writer, r#"{{"id": "stuck", "cmd": {{"type": "crossfader", "value": 0.5}}}}"#).unwrap();
+        let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
+        assert!(r.is_err());
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        let result = text
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .find(|v| v["type"] == "result" && v["id"] == "stuck")
+            .unwrap_or_else(|| panic!("no result for the stranded command:\n{text}"));
+        assert_eq!(result["ok"], false, "{result}");
+        assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
+    }
+
+    #[test]
+    fn state_is_stamped_with_when_its_position_is_heard() {
+        let (mut side, _cmd_tx, _res_rx) = side(4);
+        let (state_tx, mut state_rx) = rtrb::RingBuffer::new(4);
+        side.state_tx = state_tx;
+        side.frames_per_state = 1;
+        let t0 = side.epoch.elapsed().as_nanos() as u64;
+        side.set_ahead_ns(50_000_000);
+        side.process(480);
+        let (_, host_ns) = state_rx.pop().unwrap();
+        // 50 ms of device latency plus the 10 ms block just rendered.
+        let lead = host_ns - t0;
+        assert!((60_000_000..70_000_000).contains(&lead), "lead {lead} ns");
+        // Control: with nothing ahead, only the block's own length.
+        side.set_ahead_ns(0);
+        let t1 = side.epoch.elapsed().as_nanos() as u64;
+        side.process(480);
+        let (_, host_ns) = state_rx.pop().unwrap();
+        assert!((10_000_000..20_000_000).contains(&(host_ns - t1)), "lead {} ns", host_ns - t1);
     }
 }
