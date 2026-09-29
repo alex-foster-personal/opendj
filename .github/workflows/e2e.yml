@@ -179,6 +179,13 @@ jobs:
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout. Runs before the job's first python3;
+      # tests/scripts/test_ci_workflow_stale_install_coverage.py enforces it.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
       - name: Decide whether this change set is in e2e.yml's scope
         id: decide
         run: python3 -m scripts.ci_required_gate scope --workflow e2e.yml
@@ -1393,6 +1400,13 @@ jobs:
       - name: Remove untracked build debris, keeping dependency dirs
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout. Runs before the job's first python3;
+      # tests/scripts/test_ci_workflow_stale_install_coverage.py enforces it.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
 
       - name: Aggregate the gated jobs into one verdict
         env:
