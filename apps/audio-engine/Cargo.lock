@@ -525,6 +525,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "symphonia",
+ "windows-sys",
 ]
 
 [[package]]

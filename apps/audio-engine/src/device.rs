@@ -11,11 +11,21 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::serve::AudioSide;
 
-/// Sample rate and channel count of the default output device.
-pub fn default_output_format() -> Result<(u32, u16), String> {
+/// The default output device as probed at start: which device it is, and
+/// the rate the engine is built for. The stream opens this device, not
+/// whatever is the default by then.
+pub struct Probed {
+    pub id: cpal::DeviceId,
+    pub rate: u32,
+    pub channels: u16,
+}
+
+/// Probe the default output device.
+pub fn default_output() -> Result<Probed, String> {
     let device = cpal::default_host()
         .default_output_device()
         .ok_or_else(|| "no default output device".to_string())?;
+    let id = device.id().map_err(|e| format!("cannot identify the default output device: {e}"))?;
     let config = device.default_output_config().map_err(|e| e.to_string())?;
     if config.sample_format() != cpal::SampleFormat::F32 {
         return Err(format!(
@@ -23,7 +33,7 @@ pub fn default_output_format() -> Result<(u32, u16), String> {
             config.sample_format()
         ));
     }
-    Ok((config.sample_rate(), config.channels()))
+    Ok(Probed { id, rate: config.sample_rate(), channels: config.channels() })
 }
 
 /// Refuse a device opened at another rate than the engine was built for:
@@ -40,16 +50,19 @@ pub fn check_opened_rate(opened: u32, engine: u32) -> Result<(), String> {
     ))
 }
 
-/// Run the audio side inside the default output device's callback until
-/// `stop` is set, refusing a device that now runs at another rate than
-/// `engine_rate`. The stream is created on this thread because cpal streams
-/// are not `Send` on every platform.
-pub fn run_device(engine_rate: u32) -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static {
+/// Run the audio side inside the callback of the device probed at start
+/// until `stop` is set, refusing it if it is gone or now runs at another
+/// rate than the engine's. The stream is created on this thread because
+/// cpal streams are not `Send` on every platform, so the device is found
+/// again here by its id: not as the default, which may be another device
+/// by now (speakers where an interface was probed).
+pub fn run_device(probed: Probed) -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static {
+    let Probed { id, rate: engine_rate, .. } = probed;
     move |mut side: AudioSide, stop: Arc<AtomicBool>| {
-        let device = match cpal::default_host().default_output_device() {
+        let device = match cpal::default_host().device_by_id(&id) {
             Some(d) => d,
             None => {
-                eprintln!("odj-audio: no default output device");
+                eprintln!("odj-audio: the output device probed at start ({id}) is gone");
                 return;
             }
         };

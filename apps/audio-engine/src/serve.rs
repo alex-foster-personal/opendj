@@ -1108,7 +1108,10 @@ fn serve_threaded_from(
     if audio_failed {
         return Err(io::Error::other("the audio side stopped before shutdown (see stderr)"));
     }
-    if output_closed {
+    // A write that failed while the engine stopped (the reply to
+    // `engine_shutdown`, the pump's last states and results, or the refusals
+    // just above) is a lost result too.
+    if output_closed || control.closed.load(Ordering::Acquire) {
         return Err(io::Error::new(io::ErrorKind::BrokenPipe, "the output closed, so the engine stopped"));
     }
     Ok(())
@@ -1918,6 +1921,53 @@ mod tests {
             assert!(audio_stopped.load(Ordering::Relaxed), "{line}: the audio side was left running");
             drop(writer);
         }
+    }
+
+    /// Output that refuses the line containing `needle` (JSON is written in
+    /// pieces, so the line so far is what is matched), as stdout does when
+    /// its reader goes away just then.
+    struct FailsOn(&'static str, Captured, Vec<u8>);
+
+    impl Write for FailsOn {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            self.2.extend_from_slice(b);
+            if self.2.windows(self.0.len()).any(|w| w == self.0.as_bytes()) {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            if b.contains(&b'\n') {
+                self.2.clear();
+            }
+            self.1.write(b)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_result_lost_as_the_engine_stops_is_an_error() {
+        // Codex on 60b7a5a0: the reply to `engine_shutdown` failing ended the
+        // loop without the closed flag being read, so serve returned success
+        // with the acknowledgement never delivered. The same for a state the
+        // pump fails to write while the engine drains.
+        let run = |input: &'static str, needle: &'static str| {
+            let out = FailsOn(needle, Captured::default(), Vec::new());
+            serve_threaded_from(io::Cursor::new(input), out, 48000, "wall", |mut side, stop| {
+                while !stop.load(Ordering::Relaxed) {
+                    side.process(64);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            })
+        };
+        let bye = "{\"id\": \"bye\", \"cmd\": {\"type\": \"engine_shutdown\"}}\n";
+        let r = run(bye, "\"bye\"");
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe, "a lost shutdown reply reported success");
+        let asked = "{\"id\": \"s\", \"cmd\": {\"type\": \"engine_state\"}}\n{\"id\": \"bye\", \"cmd\": {\"type\": \"engine_shutdown\"}}\n";
+        let r = run(asked, "\"type\":\"state\"");
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::BrokenPipe, "a lost state while stopping reported success");
+        // Control: with every write delivered, the same sessions end well.
+        assert!(run(bye, "never written").is_ok());
+        assert!(run(asked, "never written").is_ok());
     }
 
     /// Output that takes the hello, then holds the next write until the test

@@ -491,13 +491,14 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
 
 #[cfg(feature = "device")]
 fn device(sr: Option<u32>) -> Result<(), String> {
-    let (rate, _channels) = odj_audio::device::default_output_format()?;
+    let probed = odj_audio::device::default_output()?;
+    let rate = probed.rate;
     if let Some(want) = sr {
         if want != rate {
             return Err(format!("the output device runs at {rate} Hz; --sample-rate {want} does not match"));
         }
     }
-    serve::serve_threaded(rate, "device", odj_audio::device::run_device(rate)).map_err(|e| e.to_string())
+    serve::serve_threaded(rate, "device", odj_audio::device::run_device(probed)).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "device"))]

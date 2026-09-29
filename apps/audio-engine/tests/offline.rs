@@ -498,8 +498,9 @@ fn a_hard_link_is_the_file_it_links_to() {
     assert_eq!(rewritten.frames, 24000);
     assert!(!std::sync::Arc::ptr_eq(&copy2.pcm, &rewritten.pcm));
     // Codex on 7a620cdd: also when the rewrite keeps the length and puts the
-    // modification time back, as `cp -p` or `rsync -t` does.
-    #[cfg(unix)]
+    // modification time back, as `cp -p` or `rsync -t` does (on Windows too
+    // since Codex on 60b7a5a0).
+    #[cfg(any(unix, windows))]
     {
         let old = std::fs::metadata(d.join("copy.wav")).unwrap();
         let kept = old.modified().unwrap();

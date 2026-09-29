@@ -174,11 +174,12 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
 /// Its length and modification time are part of it, so a file rewritten in
 /// place, or a new file that is handed a deleted one's inode while a deck
 /// still holds the old samples, decodes afresh instead of sharing them. On
-/// unix so is its change time, which every write moves and no tool can set
-/// back: a same-length rewrite whose modification time was kept (`cp -p`,
-/// `rsync -t`, `touch -r`) is a new file too. Two writes inside one tick of
-/// the volume's clock still look alike; elsewhere the change time is not
-/// read, so a kept modification time hides a same-length rewrite there.
+/// unix and Windows so is its change time, which every write moves and no
+/// tool can set back: a same-length rewrite whose modification time was kept
+/// (`cp -p`, `rsync -t`, `touch -r`, a restored timestamp) is a new file too.
+/// Two writes inside one tick of the volume's clock still look alike (a
+/// volume that keeps no change time, as exFAT, gives none, and there a kept
+/// modification time hides a same-length rewrite).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FileKey {
     id: FileId,
@@ -204,13 +205,37 @@ impl FileKey {
                     use std::os::unix::fs::MetadataExt;
                     (FileId::Inode { dev: m.dev(), ino: m.ino() }, Some((m.ctime(), m.ctime_nsec())))
                 };
-                #[cfg(not(unix))]
+                #[cfg(windows)]
+                let (id, changed) = (by_path(), change_time(path));
+                #[cfg(not(any(unix, windows)))]
                 let (id, changed) = (by_path(), None);
                 FileKey { id, len: m.len(), modified: m.modified().ok(), changed }
             }
             Err(_) => FileKey { id: by_path(), len: 0, modified: None, changed: None },
         }
     }
+}
+
+/// The file's change time (100 ns ticks), which Windows moves on every write
+/// and `SetFileTime` callers do not set back in practice; std reads it only
+/// on nightly.
+#[cfg(windows)]
+fn change_time(path: &Path) -> Option<(i64, i64)> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO};
+    let f = std::fs::File::open(path).ok()?;
+    let mut info = FILE_BASIC_INFO::default();
+    // SAFETY: the handle is open for the call, and the buffer is a
+    // FILE_BASIC_INFO of the size passed, as FileBasicInfo requires.
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            f.as_raw_handle() as _,
+            FileBasicInfo,
+            (&mut info as *mut FILE_BASIC_INFO).cast(),
+            std::mem::size_of::<FILE_BASIC_INFO>() as u32,
+        )
+    };
+    (ok != 0 && info.ChangeTime != 0).then_some((info.ChangeTime, 0))
 }
 
 /// Decoded tracks for a live engine, where loads never end: decks on one file
