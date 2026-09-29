@@ -11,8 +11,11 @@ Requirements (mini-PRD):
   prove  ✔︎
     Every .py file the range modifies parses on both sides and has an equal AST
     once docstring whitespace is normalized (Black's safety-check equivalence).
+    The AST includes `# type:` comments and each `# type: ignore` tag.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
+      [if] a `# type:` comment or a `# type: ignore` tag is added, removed or changed [then ⛔️] exit 1
       [if] the range adds, deletes or renames a file [then ⛔️] exit 1, since that is not layout
+      [if] the range also modifies a file that is not .py [then ⛔️] exit 2 UNKNOWN, since no AST can prove it
       [if] a file does not parse, or no .py file changed [then ⛔️] exit 2 UNKNOWN, never a pass
   ignore-revs  ✔︎
     Every listed SHA is a commit, an ancestor of HEAD, and has a style(format): subject.
@@ -23,7 +26,9 @@ Requirements (mini-PRD):
 What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
 docstring positions are normalized (tests/quality/test_format_proof.py pins that).
-A proof over zero files would read as success, so it exits 2 instead.
+A proof over zero files would read as success, so it exits 2 instead. A type-ignore's
+LINE is not compared, because every re-wrap above it moves it; whether it still covers
+its error is not an AST property, so the part's mypy ratchet run decides that.
 """
 
 from __future__ import annotations
@@ -83,9 +88,17 @@ def _normalize_docstring(text: str) -> str:
     return "\n".join(line.strip() for line in text.splitlines()).strip()
 
 
+def _parse(source: str) -> ast.Module:
+    """Parse with type comments, so `# type:` annotations and type-ignore tags are compared."""
+    tree = ast.parse(source, type_comments=True)
+    for ignore in tree.type_ignores:
+        ignore.lineno = 0  # layout, not meaning: see the module docstring
+    return tree
+
+
 def _normalized_dump(source: str) -> tuple[str, int]:
     """AST dump with docstring whitespace normalized, and how many docstrings were touched."""
-    tree = ast.parse(source)
+    tree = _parse(source)
     touched = 0
     for node in ast.walk(tree):
         if not isinstance(node, CFG.DOCSTRING_OWNERS) or not node.body:
@@ -99,7 +112,7 @@ def _normalized_dump(source: str) -> tuple[str, int]:
 
 
 def _raw_dump(source: str) -> str:
-    return ast.dump(ast.parse(source))
+    return ast.dump(_parse(source))
 
 
 # ----- commands -------------------------------------------------------------
@@ -111,6 +124,7 @@ def prove(repo: Path, base: str, head: str) -> Result:
     if not_modified:
         return Result(1, lines=[f"[format-proof] FAIL not format-only, files added/deleted: {x}" for x in not_modified])
     py_paths = [path for _, path in entries if path.endswith(".py")]
+    not_python = [path for _, path in entries if not path.endswith(".py")]
     if not py_paths:
         return Result(2, lines=["[format-proof] UNKNOWN no .py file changed in the range; nothing was proven"])
     result = Result(0, files_checked=len(py_paths))
@@ -126,6 +140,9 @@ def prove(repo: Path, base: str, head: str) -> Result:
             result.lines.append(f"[format-proof] FAIL {path}: AST differs, this is not a format-only change")
         elif not raw_equal:
             result.docstring_normalized += 1
+    if result.exit_code == 0 and not_python:
+        result.exit_code = 2
+        result.lines.extend(f"[format-proof] UNKNOWN {path}: not Python, so no AST can prove it" for path in not_python)
     if result.exit_code == 0:
         result.lines.append(
             f"[format-proof] OK {result.files_checked} .py files AST-equal "

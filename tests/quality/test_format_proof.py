@@ -20,6 +20,9 @@ Regression lines:
   - if prove passes a changed docstring's TEXT then broken
   - if prove reports a pass when a file does not parse, or when no Python changed, then broken
   - if prove passes a commit that added, deleted or renamed a file then broken
+  - if prove passes a range that also edits a file that is not Python then broken
+  - if prove passes a changed `# type:` comment or a changed or removed type-ignore then broken
+  - if prove fails a re-wrap that only moves a type-ignore to another line then broken
   - if ignore-revs passes a SHA that is not an ancestor of HEAD then broken
   - if ignore-revs passes a listed commit whose subject is not style(format): then broken
   - if ignore-revs passes an abbreviated SHA, or a SHA that is not a commit, then broken
@@ -61,6 +64,8 @@ def repo(tmp_path: Path) -> Path:
 
 UNFORMATTED = 'def f(a,b):\n    """Add two.   \n\n       Returns the sum."""\n    return a+b\n'
 REFORMATTED = 'def f(a, b):\n    """Add two.\n\n    Returns the sum."""\n    return a + b\n'
+IGNORE_BEFORE_REWRAP = "def f(a,\n      b):\n    return a+b\ny = f(1, 2)  # type: ignore[call-arg]\n"
+IGNORE_AFTER_REWRAP = "def f(a, b):\n    return a + b\ny = f(1, 2)  # type: ignore[call-arg]\n"
 
 
 # ----- prove ----------------------------------------------------------------
@@ -114,6 +119,44 @@ def test_prove_rejects_an_added_file(repo: Path) -> None:
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 1
     assert any("n.py" in line for line in result.lines)
+
+
+def test_prove_is_unknown_when_a_non_python_file_also_changed(repo: Path) -> None:
+    """No AST can check a TOML edit, so it must never ride along in a proven format commit."""
+    base = _commit(repo, {"m.py": "x=1\n", "pyproject.toml": "a = 1\n"}, "init")
+    head = _commit(repo, {"m.py": "x = 1\n", "pyproject.toml": "a = 2\n"}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 2
+    assert any("pyproject.toml" in line for line in result.lines)
+
+
+def test_prove_still_fails_a_python_edit_beside_a_non_python_file(repo: Path) -> None:
+    base = _commit(repo, {"m.py": "x=1\n", "pyproject.toml": "a = 1\n"}, "init")
+    head = _commit(repo, {"m.py": "x = 2\n", "pyproject.toml": "a = 2\n"}, "style(format): ruff@0.16.3 m")
+    assert format_proof.prove(repo, base, head).exit_code == 1
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("x = f()  # type: ignore[attr-defined]\n", "x = f()  # type: ignore[arg-type]\n"),
+        ("x = f()  # type: ignore\n", "x = f()\n"),
+        ("x = []  # type: list[int]\n", "x = []  # type: list[str]\n"),
+    ],
+    ids=["changed-ignore-tag", "removed-ignore", "changed-type-comment"],
+)
+def test_prove_rejects_a_type_comment_edit(repo: Path, before: str, after: str) -> None:
+    base = _commit(repo, {"m.py": before}, "init")
+    head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    assert format_proof.prove(repo, base, head).exit_code == 1
+
+
+def test_prove_control_a_rewrap_may_move_a_type_ignore_to_another_line(repo: Path) -> None:
+    """Opposite-direction control: an ignore's LINE is layout, so a re-wrap above it still proves."""
+    base = _commit(repo, {"m.py": IGNORE_BEFORE_REWRAP}, "init")
+    head = _commit(repo, {"m.py": IGNORE_AFTER_REWRAP}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
 
 
 def test_prove_control_the_normalizer_does_not_hide_a_real_string_edit(repo: Path) -> None:
