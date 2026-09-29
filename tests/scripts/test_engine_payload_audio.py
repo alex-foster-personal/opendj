@@ -12,6 +12,7 @@ Regression lines:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from scripts.build_engine_payload import (
     PayloadBuildError,
     verify_audio_engine,
 )
+from tests.rust_build_env import bindgen_env
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -103,6 +105,7 @@ def test_the_real_engine_reports_its_build() -> None:
             str(crate / "Cargo.toml"),
         ],
         check=True,
+        env=bindgen_env(os.environ),
     )
     # The default build has no device feature, and says so (False, not absent).
     with pytest.raises(PayloadBuildError, match="device=False"):
