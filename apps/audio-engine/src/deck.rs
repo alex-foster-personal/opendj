@@ -1006,7 +1006,7 @@ mod tests {
         // moved by a jump lands exactly on grid beats: converting its ends
         // to frames and back leaves no offset behind.
         let beats: Vec<Beat> =
-            (0..64).map(|i| Beat { time_ms: 37.3 + i as f64 * 468.75, downbeat: i % 4 == 0 }).collect();
+            (0..64).map(|i| Beat { time_ms: 37.3 + i as f64 * 468.75, downbeat: i % 4 == 0, bpm: None }).collect();
         let t = Arc::new(Track::new(44100, vec![0.0; 44100 * 2 * 40], beats, None));
         let mut d = Deck::new(44100.0);
         d.load(t.clone());
