@@ -139,10 +139,13 @@ else
   digest="$(sha256sum "$dmg" | awk '{{print $1}}')"
 fi
 printf 'origin/main 2026-01-01T00:00:00Z\\n%s\\n' "$digest" > "$dmg.complete"
+# Appends in the exact format the justfile's `dmg` recipe writes to
+# ops/logs/ship-dmg.log (`_record_build_time`). The `[TIMING] total=` form is
+# stdout only and never reaches this file, so the shim must not write it.
 if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
-  cat "$build_root/DMG_SMOKE_TIMING_LOG" > "$log_dir/ship-dmg.log"
+  cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 else
-  echo '[TIMING] total=60s rc=0 verdict=OK' > "$log_dir/ship-dmg.log"
+  echo '2026-01-01T00:00:00Z run=just-dmg mode=direct phase=build_total seconds=60 rc=0 verdict=OK' >> "$log_dir/ship-dmg.log"
 fi
 exit 0
 """
