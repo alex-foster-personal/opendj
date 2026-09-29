@@ -19,6 +19,9 @@ Regression lines:
     then broken
   - if a setup action step that omits its version input stays green because
     another step pins the manifest version then broken
+  - if a `repo:` source names one file where its pin can live in several (one
+    workflow, one app), so a second file pinning another version stays green,
+    then broken
 """
 
 from __future__ import annotations
@@ -308,24 +311,77 @@ WORKFLOW_ACTIONS = {
     "rust-rustc": ("dtolnay/rust-toolchain", "toolchain", "1.97.0"),
     "toolcache-python": ("actions/setup-python", "python-version", "3.12"),
     "toolcache-node": ("actions/setup-node", "node-version", "24.1.0"),
+    "toolcache-sccache": ("mozilla-actions/sccache-action", "version", "0.18.0"),
+}
+
+WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
+# Deriver -> every file its pin can live in. GitHub runs any `*.yml` or `*.yaml`
+# workflow; corepack and Playwright read the package.json / pnpm-lock of whichever
+# app they run in; the repo has one uv project, the root.
+SOURCE_GLOBS: dict[str, tuple[str, ...]] = {
+    "_action_input": WORKFLOW_GLOBS,
+    "_cargo_install": WORKFLOW_GLOBS,
+    "_package_manager": ("apps/*/package.json", "apps/*/*/package.json"),
+    "_pnpm_lock": ("apps/*/pnpm-lock.yaml", "apps/*/*/pnpm-lock.yaml"),
+    "_uv_lock": ("uv.lock",),
 }
 
 
-def _workflow_globbed(entry: dict) -> list[str]:
-    """The source's globs that pick workflows by wildcard (not one named file)."""
-    pattern = str(entry["source"]).removeprefix("repo:").split(" ")[0]
-    return [glob for glob in pattern.split(",") if glob.startswith(".github/workflows/*")]
+def _source_globs(entry: dict) -> list[str]:
+    return str(entry["source"]).removeprefix("repo:").split(" ")[0].split(",")
 
 
-def test_every_workflow_backed_source_reads_both_workflow_extensions(manifest: dict) -> None:
-    """GitHub runs `.github/workflows/*.yml` and `*.yaml`, so a source that globs
-    workflows must read both, or a `.yaml` workflow's pin is never compared."""
-    globbed = {e["name"]: _workflow_globbed(e) for e in manifest["entries"]}
-    globbed = {name: globs for name, globs in globbed.items() if globs}
-    assert set(globbed) == set(WORKFLOW_ACTIONS), set(globbed) ^ set(WORKFLOW_ACTIONS)
-    wanted = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
-    short = {name: globs for name, globs in globbed.items() if sorted(globs) != sorted(wanted)}
-    assert not short, short
+def test_every_repo_pin_source_globs_every_file_its_pin_can_live_in(manifest: dict) -> None:
+    """A source naming one file (a single workflow, one app's lockfile) lets a
+    second file pin another version while this test compares only the first.
+    Keyed on the deriver, so a new entry inherits the rule instead of a list."""
+    kind = {name: derive.__qualname__.split(".")[0] for name, derive in REPO_PINS.items()}
+    assert set(kind.values()) == set(SOURCE_GLOBS), kind
+    narrow = {
+        e["name"]: e["source"]
+        for e in manifest["entries"]
+        if e["name"] in kind and sorted(_source_globs(e)) != sorted(SOURCE_GLOBS[kind[e["name"]]])
+    }
+    assert not narrow, narrow
+
+
+SECOND_FILE_PINS: dict[str, tuple[str, str, Callable[[str], str], str]] = {
+    "cargo-audit": (
+        ".github/workflows/periodic-checks.yml",
+        ".github/workflows/other.yaml",
+        lambda version: _cargo_audit_step(version, PINNED_INSTALL),
+        "0.22.3",
+    ),
+    "pnpm": (
+        "apps/webui/frontend/package.json",
+        "apps/launcher/package.json",
+        lambda version: json.dumps({"packageManager": f"pnpm@{version}"}),
+        "12.0.0",
+    ),
+    "playwright-chromium": (
+        "apps/webui/frontend/pnpm-lock.yaml",
+        "apps/desktop/pnpm-lock.yaml",
+        lambda version: f"packages:\n  playwright@{version}:\n    resolution: {{}}\n",
+        "1.62.0",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SECOND_FILE_PINS))
+def test_a_second_file_pinning_another_version_goes_red(
+    manifest: dict, tmp_path: Path, name: str
+) -> None:
+    """The file that agrees with the manifest (green, the control) does not vouch
+    for another file in the same scope that pins something else."""
+    agreeing, other, text, bumped = SECOND_FILE_PINS[name]
+    entry = _entry_named(manifest, name)
+    pin = _expected_pin(entry)
+    assert pin, entry
+    _write(tmp_path, agreeing, text(pin))
+    assert repo_pin_mismatches([entry], tmp_path) == []
+    _write(tmp_path, other, text(bumped))
+    problems = repo_pin_mismatches([entry], tmp_path)
+    assert len(problems) == 1 and bumped in problems[0], problems
 
 
 @pytest.mark.parametrize("name", sorted(WORKFLOW_ACTIONS))
@@ -343,10 +399,7 @@ def test_a_yaml_workflow_pinning_another_version_goes_red(
     assert problems and bumped in problems[0], problems
 
 
-ACTION_INPUTS = {
-    **{name: (action, key) for name, (action, key, _) in WORKFLOW_ACTIONS.items()},
-    "toolcache-sccache": ("mozilla-actions/sccache-action", "version"),
-}
+ACTION_INPUTS = {name: (action, key) for name, (action, key, _) in WORKFLOW_ACTIONS.items()}
 
 
 @pytest.mark.parametrize("pinned_twice", [False, True], ids=["one-unpinned", "control"])
@@ -360,7 +413,7 @@ def test_a_setup_step_without_its_version_input_goes_red(
     entry = _entry_named(manifest, name)
     pin = _expected_pin(entry)
     assert pin, entry
-    first_glob = str(entry["source"]).removeprefix("repo:").split(" ")[0].split(",")[0]
+    first_glob = _source_globs(entry)[0]
     pinned = {"uses": f"{action}@abc", "with": {key: pin}}
     second = pinned if pinned_twice else {"uses": f"{action}@abc"}
     steps = {"jobs": {"j": {"steps": [pinned, second]}}}

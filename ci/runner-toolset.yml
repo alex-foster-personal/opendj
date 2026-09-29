@@ -59,8 +59,10 @@
 #            is looser than, `version`.
 # source     `repo:<glob>[,<glob>...]` or `agentbox` (the reference host,
 #            measured as the runner user `ghrunner` on Mon 28 Sep 2026). A
-#            workflow-backed source names both `*.yml` and `*.yaml`: GitHub
-#            runs either.
+#            `repo:` source globs EVERY file its pin can live in, never one
+#            named file, so a second file pinning another version goes red:
+#            a workflow-backed pin reads all `*.yml` and `*.yaml` (GitHub runs
+#            either), a package.json or pnpm-lock pin reads every app's.
 # install    how to install it, as root unless it says otherwise.
 # verify     a bash command run AS THE RUNNER USER with the runner's own job
 #            PATH (<runner-dir>/.env PATH=, else <runner-dir>/.path, as the
@@ -178,7 +180,7 @@ entries:
   - name: cargo-audit
     kind: binary
     version: "0.22.2"
-    source: "repo:.github/workflows/periodic-checks.yml (Ensure cargo-audit: CARGO_AUDIT_VERSION)"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (cargo install cargo-audit: its step env CARGO_AUDIT_VERSION)"
     provides: [cargo-audit]
     needed_by: [periodic]
     provision: job
@@ -208,7 +210,7 @@ entries:
   - name: pnpm
     kind: toolchain
     version: "11.9.0"
-    source: "repo:apps/webui/frontend/package.json (packageManager)"
+    source: "repo:apps/*/package.json,apps/*/*/package.json (packageManager)"
     provides: [pnpm]
     needed_by: [e2e, frontend]
     install: "as the runner user: corepack enable && corepack prepare pnpm@11.9.0 --activate"
@@ -276,7 +278,7 @@ entries:
   - name: toolcache-sccache
     kind: toolcache
     version: "0.17.0"
-    source: "repo:.github/workflows/ci.yml (mozilla-actions/sccache-action version input)"
+    source: "repo:.github/workflows/*.yml,.github/workflows/*.yaml (mozilla-actions/sccache-action version input)"
     provides: [sccache]
     needed_by: [rust]
     install: "let mozilla-actions/sccache-action populate /opt/hostedtoolcache/sccache/0.17.0/x64"
@@ -298,10 +300,10 @@ entries:
   # revisions derived from playwright-core@1.61.1/browsers.json; re-derive on every playwright bump
   # verify checks the payload, not the dir name: Playwright writes INSTALLATION_COMPLETE
   # last, so an interrupted install lacks it; the executable run catches a deleted payload.
-  - {name: playwright-chromium, kind: playwright, version: "1228", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e, periodic], install: "as the runner user in apps/webui/frontend: pnpm exec playwright install --with-deps chromium", verify: "d=~/.cache/ms-playwright/chromium-1228 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/chrome-linux64/chrome\" --version >/dev/null && echo \"$d\""}
-  - {name: playwright-chromium-headless-shell, kind: playwright, version: "1228", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e, periodic], install: "installed with playwright-chromium", verify: "d=~/.cache/ms-playwright/chromium_headless_shell-1228 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/chrome-headless-shell-linux64/chrome-headless-shell\" --version >/dev/null && echo \"$d\""}
-  - {name: playwright-webkit, kind: playwright, version: "2311", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e], install: "as the runner user in apps/webui/frontend: pnpm exec playwright install --with-deps webkit", verify: "d=~/.cache/ms-playwright/webkit-2311 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/minibrowser-wpe/MiniBrowser\" --version </dev/null | grep '^WPE WebKit ' >/dev/null && { \"$d/minibrowser-gtk/MiniBrowser\" --version </dev/null 2>&1 || true; } | grep -E 'WebKitGTK |Failed to open display' >/dev/null && echo \"$d\"", notes: "both MiniBrowsers execute their payload: WPE prints its version headless; GTK needs a display for --version, so reaching 'Failed to open display' proves the binary loaded and ran"}
-  - {name: playwright-ffmpeg, kind: playwright, version: "1011", source: "repo:apps/webui/frontend/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e], install: "installed with playwright-chromium", verify: "d=~/.cache/ms-playwright/ffmpeg-1011 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/ffmpeg-linux\" -version >/dev/null && echo \"$d\""}
+  - {name: playwright-chromium, kind: playwright, version: "1228", source: "repo:apps/*/pnpm-lock.yaml,apps/*/*/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e, periodic], install: "as the runner user in apps/webui/frontend: pnpm exec playwright install --with-deps chromium", verify: "d=~/.cache/ms-playwright/chromium-1228 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/chrome-linux64/chrome\" --version >/dev/null && echo \"$d\""}
+  - {name: playwright-chromium-headless-shell, kind: playwright, version: "1228", source: "repo:apps/*/pnpm-lock.yaml,apps/*/*/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e, periodic], install: "installed with playwright-chromium", verify: "d=~/.cache/ms-playwright/chromium_headless_shell-1228 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/chrome-headless-shell-linux64/chrome-headless-shell\" --version >/dev/null && echo \"$d\""}
+  - {name: playwright-webkit, kind: playwright, version: "2311", source: "repo:apps/*/pnpm-lock.yaml,apps/*/*/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e], install: "as the runner user in apps/webui/frontend: pnpm exec playwright install --with-deps webkit", verify: "d=~/.cache/ms-playwright/webkit-2311 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/minibrowser-wpe/MiniBrowser\" --version </dev/null | grep '^WPE WebKit ' >/dev/null && { \"$d/minibrowser-gtk/MiniBrowser\" --version </dev/null 2>&1 || true; } | grep -E 'WebKitGTK |Failed to open display' >/dev/null && echo \"$d\"", notes: "both MiniBrowsers execute their payload: WPE prints its version headless; GTK needs a display for --version, so reaching 'Failed to open display' proves the binary loaded and ran"}
+  - {name: playwright-ffmpeg, kind: playwright, version: "1011", source: "repo:apps/*/pnpm-lock.yaml,apps/*/*/pnpm-lock.yaml (playwright 1.61.1)", provides: [], needed_by: [e2e], install: "installed with playwright-chromium", verify: "d=~/.cache/ms-playwright/ffmpeg-1011 && test -f \"$d/INSTALLATION_COMPLETE\" && \"$d/ffmpeg-linux\" -version >/dev/null && echo \"$d\""}
 
   #----- fixtures (provisioning item 10) -------------------------------------
   - name: mdt-fixtures

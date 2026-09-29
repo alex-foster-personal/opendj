@@ -34,8 +34,10 @@ Requirements:
     [if] a word appears only in a shell comment [then ⛔️] it is reported.
     [if] a word appears only as an argument (`echo unzip`) [then ⛔️] it is reported.
   ✔︎ ✅ 🎯 R2 apt packages named to ci_apt_present.sh or apt-get install are
-    reported as packages, not executables.
-  ✔︎ ✅ 🎯 R3 Playwright browsers named to `playwright install` are reported.
+    reported as packages, not executables, by base name (`pkg:arch`, `pkg=ver`,
+    `pkg/release`); an operand naming no package statically is `unreadable: <word>`.
+  ✔︎ ✅ 🎯 R3 Playwright browsers named to `playwright install` are reported; so
+    are executables named to ci_runner_preflight.sh, also `unreadable:` if not literal.
 
 CLI (read-only): `python -m scripts.runner_toolset_scan [--json]` prints every
 used name with its first source.
@@ -89,7 +91,6 @@ WRAPPERS: dict[str, tuple[set[str], int, bool]] = {
 }
 RECIPE_FLAGS_WITH_VALUE = {"-f", "-C", "--justfile", "--working-directory", "-j", "--jobs"}
 WORD_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+-]*$")
-APT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]+$")
 ASSIGNMENT_RE = re.compile(r"^[A-Za-z_]\w*(\[[^]]*\])?\+?=.*", re.S)
 # `2>x`, `{fd}>x`: shlex splits the fd off, but it belongs to the redirect after it.
 FD_PREFIX_RE = re.compile(r"\d+|\{[A-Za-z_]\w*\}")
@@ -348,7 +349,7 @@ def _args_recipes(name: str, args: list[str], _where: str, ctx: _Ctx) -> None:
 
 def _args_executables(_name: str, args: list[str], where: str, ctx: _Ctx) -> None:
     """scripts/ci_runner_preflight.sh EXE...: each argument is a required executable."""
-    for exe in filter(WORD_RE.match, args):
+    for exe in lex.flag_unreadable(lex.operand_words(args), WORD_RE):
         ctx.usage.executables[exe].add(where)
 
 
@@ -356,17 +357,16 @@ def _args_apt(name: str, args: list[str], where: str, ctx: _Ctx) -> None:
     if name != "ci_apt_present.sh" and "install" not in args:
         return
     pkgs = args[args.index("install") + 1 :] if "install" in args else args
-    for pkg in pkgs:
-        if not pkg.startswith("-") and APT_NAME_RE.match(pkg):
-            ctx.usage.apt_packages[pkg].add(where)
+    for pkg in lex.apt_install_packages(pkgs):
+        ctx.usage.apt_packages[pkg].add(where)
 
 
 def _args_playwright(_name: str, args: list[str], where: str, ctx: _Ctx) -> None:
     if "playwright" not in args or "install" not in args:
         return
-    for browser in args[args.index("install") + 1 :]:
-        if not browser.startswith("-"):
-            ctx.usage.playwright_browsers[browser].add(where)
+    browsers = lex.operand_words(args[args.index("install") + 1 :])
+    for browser in lex.flag_unreadable(browsers, lex.PLAYWRIGHT_BROWSER_RE):
+        ctx.usage.playwright_browsers[browser].add(where)
 
 
 ARGUMENT_HANDLERS: dict[str, Callable[[str, list[str], str, _Ctx], None]] = {

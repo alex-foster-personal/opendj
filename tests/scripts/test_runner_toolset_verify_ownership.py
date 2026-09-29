@@ -113,10 +113,12 @@ def test_an_alternatives_symlink_is_followed_to_the_package_that_owns_its_target
     awk = shutil.which("awk")
     if not awk or not Path(awk).is_symlink():
         pytest.skip("UNAVAILABLE: no alternatives-managed awk here")
+    assert awk is not None  # the gate's isolated mypy cannot see pytest.skip is NoReturn
     target = str(Path(awk).resolve())
     owner = _dpkg_owner(target) or _dpkg_owner(target.removeprefix("/usr"))
     if _dpkg_owner(awk) is not None or owner is None:
         pytest.skip(f"UNAVAILABLE: {awk} is package-owned itself, or {target} is unowned")
+    assert owner is not None  # as above: narrowing, not a second check
     runner = _runner_with_path(tmp_path, _dirs_of(*PROBE_NEEDS, "dpkg-query", "awk"))
     [result], _ = _probe_locally([_apt_entry(owner, "awk")], runner)
     assert result.status == "OK", result

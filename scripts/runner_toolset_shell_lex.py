@@ -223,6 +223,66 @@ def is_redirect(tok: str) -> bool:
     return bool(tok) and set(tok) <= PUNCT and ("<" in tok or ">" in tok)
 
 
+# ----- operands of commands the scanner reads arguments from ---------------------
+
+# `apt-get` options that take the next word as their value (apt-get(8)).
+APT_VALUE_OPTIONS = frozenset(
+    {
+        "-o",
+        "-c",
+        "-t",
+        "-a",
+        "--option",
+        "--config-file",
+        "--target-release",
+        "--default-release",
+        "--host-architecture",
+    }
+)
+# A Debian package name, then an optional `:arch`, then an optional `=version` or
+# `/release` selector. The name is lazy so the selectors are never swallowed into it.
+APT_OPERAND_RE = re.compile(r"([a-z0-9][a-z0-9.+-]+?)(?::[a-z0-9-]+)?(?:[=/].+)?")
+PLAYWRIGHT_BROWSER_RE = re.compile(r"[a-z][a-z0-9-]*")
+UNREADABLE = "unreadable: "
+
+
+def operand_words(args: list[str], value_options: frozenset[str] = frozenset()) -> list[str]:
+    """The operands in `args`: not options or their values, redirects, redirect
+    targets, or the fd shlex splits off `2>&1`."""
+    words: list[str] = []
+    idx = 0
+    while idx < len(args):
+        tok, following = args[idx], args[idx + 1] if idx + 1 < len(args) else ""
+        takes_value = tok in value_options or is_redirect(tok)
+        idx += 2 if takes_value else 1
+        if not (takes_value or tok.startswith("-") or (tok.isdigit() and is_redirect(following))):
+            words.append(tok)
+    return words
+
+
+def flag_unreadable(words: list[str], name_re: re.Pattern[str]) -> list[str]:
+    """Each word that is a literal name, else `unreadable: <word>`: a glob, a
+    variable or a malformed word names nothing a static read can resolve, so it
+    is kept for the manifest check to fail on rather than dropped unseen."""
+    return [word if name_re.fullmatch(word) else UNREADABLE + word for word in words]
+
+
+def apt_install_packages(args: list[str]) -> list[str]:
+    """The package each `apt-get install` (or ci_apt_present.sh) operand names.
+
+    `pkg`, `pkg:arch`, `pkg=version`, `pkg/release` and their combinations all name
+    `pkg`; `pkg-` asks apt to REMOVE pkg, so it names nothing a job needs.
+    """
+    names: list[str] = []
+    for word in operand_words(args, APT_VALUE_OPTIONS):
+        match = APT_OPERAND_RE.fullmatch(word)
+        if match is None:
+            names.append(UNREADABLE + word)
+        elif not match[1].endswith("-"):
+            names.append(match[1])
+    return names
+
+
 # ----- commands launched from inside another command's arguments -------------------
 
 FIND_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
