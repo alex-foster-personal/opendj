@@ -47,8 +47,9 @@ makes them differ by 1s (seen on PR #4221). Those tests bracket the snippet
 between two real clock reads instead of recomputing the floor a second time.
 
 - [if] the bootstrap floor is not 48h before the run [then] broken, [else stop].
-- [if] a second boundary between the test's clock read and the snippet's fails a correct floor [then] broken, [else stop].
+- [if] a second boundary mid-run fails a correct floor [then] broken, [else stop].
 """
+
 from __future__ import annotations
 
 import json
@@ -113,7 +114,7 @@ def _extract_e2e_line_script() -> str:
     `if`/`while` shape, so the extraction survives that shape changing."""
     text = WORKFLOW.read_text(encoding="utf-8")
     match = re.search(
-        r'( *e2e_created_floor=.*?)(?=\n *window_desc=)',
+        r"( *e2e_created_floor=.*?)(?=\n *window_desc=)",
         text,
         re.DOTALL,
     )
@@ -302,7 +303,7 @@ def test_the_bootstrap_floor_survives_a_second_boundary_during_the_run(
     here sleeps to the next whole second before the snippet reads the clock,
     so that boundary is crossed on every run, not by chance.
 
-    [if] a second boundary between the test's clock read and the snippet's fails a correct floor [then] broken, [else stop].
+    [if] a second boundary mid-run fails a correct floor [then] broken, [else stop].
     """
     earliest, floor, latest = _bootstrap_floor_bracket(tmp_path, _DATE_SHIM_CROSSING_A_SECOND)
     assert floor > earliest, (
