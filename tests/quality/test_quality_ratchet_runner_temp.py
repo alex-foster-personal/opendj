@@ -1,4 +1,4 @@
-"""The quality ratchet's scratch must live under the runner's own temp dir.
+"""The quality ratchet's scratch must live in a per-runner dir it wipes itself.
 
 scripts/quality_gate.py makes four `tempfile.mkdtemp()` dirs per run (deptry,
 mypy and jscpd reports, and the merge-base worktree) and removes them in
@@ -8,8 +8,10 @@ persistent self-hosted runner never tidies /tmp, so each kill leaked one
 on megamac-vm over 20 hours, which dropped it under ci_node_preflight's 10 GB
 floor and failed an unrelated PR's production frontend build there.
 
-`runner.temp` is emptied by the runner at the start of every job, so pointing
-TMPDIR at it bounds the leak to one run per runner, whatever kills the job.
+A per-runner dir under `runner.workspace`, wiped at the start of the step,
+bounds the leak to one run per runner, whatever kills the job, and stays on
+the checkout's disk. `runner.temp` would also be emptied per job, but
+nucbox-wsl-10..14 mount it as a 2 GB tmpfs (codex review on #4442).
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github/workflows"
-RUNNER_TEMP = "${{ runner.temp }}"
+SCRATCH = "${{ runner.workspace }}/quality-gate-tmp"
+WIPE = 'rm -rf "$TMPDIR" && mkdir -p "$TMPDIR"'
 
 
 def _quality_gate_steps() -> list[tuple[str, dict]]:
@@ -38,11 +41,12 @@ def test_quality_ratchet_steps_exist() -> None:
     assert _quality_gate_steps(), "found no workflow step running scripts.quality_gate"
 
 
-def test_quality_ratchet_tmpdir_is_runner_temp() -> None:
-    """[if] a quality_gate step leaves TMPDIR off runner.temp [then] broken, kills leak tmp."""
+def test_quality_ratchet_tmpdir_is_wiped_workspace_dir() -> None:
+    """[if] a quality_gate step keeps TMPDIR unwiped or off-disk [then] broken, kills leak."""
     wrong = [
-        f"{where}: TMPDIR={step.get('env', {}).get('TMPDIR')!r}"
+        f"{where}: TMPDIR={(step.get('env') or {}).get('TMPDIR')!r}"
         for where, step in _quality_gate_steps()
-        if (step.get("env") or {}).get("TMPDIR") != RUNNER_TEMP
+        if (step.get("env") or {}).get("TMPDIR") != SCRATCH
+        or step["run"].lstrip().splitlines()[0].strip() != WIPE
     ]
-    assert not wrong, f"these steps must set TMPDIR: {RUNNER_TEMP}: {wrong}"
+    assert not wrong, f"these steps must set TMPDIR: {SCRATCH} and run {WIPE!r} first: {wrong}"
