@@ -118,6 +118,14 @@ fn fake_clock_session_over_pipes() {
     assert_eq!(hello["clock"], "fake");
     // The packager reads this to prove it shipped a device-output build.
     assert_eq!(hello["device"], cfg!(feature = "device"));
+    // The page grays out what the engine lists, so the list must name the
+    // refused commands and never a built one.
+    let not_built: Vec<&str> =
+        hello["not_built"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(not_built.contains(&"stem_mute"), "{not_built:?}");
+    for built in ["play", "seek", "tempo", "loop", "fader"] {
+        assert!(!not_built.contains(&built), "{built} is built: {not_built:?}");
+    }
 
     let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
     say(json!({"id": "l", "cmd": {"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}}));

@@ -401,7 +401,7 @@ mod tests {
             pcm.push(v);
             pcm.push(v);
         }
-        let beats = (0..(secs * 2.0) as usize).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0 }).collect();
+        let beats = (0..(secs * 2.0) as usize).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect();
         Track::new(sr, pcm, beats, None)
     }
 

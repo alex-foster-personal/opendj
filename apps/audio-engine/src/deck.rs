@@ -12,6 +12,10 @@ use crate::mixer::{self, Assign};
 pub struct Beat {
     pub time_ms: f64,
     pub downbeat: bool,
+    /// The analyzer's own tempo at this beat, when the grid carries one. Our
+    /// grids do; a single beat gap jitters by several percent, so this is the
+    /// tempo to report whenever it is there.
+    pub bpm: Option<f64>,
 }
 
 /// Below this trim x fader x crossfader gain (-60 dB) a playing deck counts
@@ -87,14 +91,18 @@ impl Track {
         Some(lo as f64 + (ms - b[lo].time_ms) / (b[hi].time_ms - b[lo].time_ms))
     }
 
-    /// Local tempo of the grid at track time `ms`, from the beat interval
-    /// around it; the tag BPM when there is no grid.
+    /// Local tempo of the grid at track time `ms`: the beat's own bpm when the
+    /// grid carries it, else the beat interval around it; the tag BPM when
+    /// there is no grid.
     pub fn bpm_at(&self, ms: f64) -> Option<f64> {
         let b = &self.beats;
         if b.len() < 2 {
             return self.bpm;
         }
         let i = self.beat_index_at(ms)?.floor().clamp(0.0, (b.len() - 2) as f64) as usize;
+        if let Some(bpm) = b[i].bpm {
+            return Some(bpm);
+        }
         let interval = b[i + 1].time_ms - b[i].time_ms;
         (interval > 0.0).then(|| 60000.0 / interval)
     }
@@ -605,7 +613,7 @@ mod tests {
     use super::*;
 
     fn grid_120(bars: usize) -> Vec<Beat> {
-        (0..bars * 4).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0 }).collect()
+        (0..bars * 4).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect()
     }
 
     fn silent(sr: u32, secs: f64, beats: Vec<Beat>) -> Track {
@@ -785,5 +793,20 @@ mod tests {
         d.load(Arc::new(Track::new(48000, vec![0.0; 960000], vec![], Some(120.0))));
         d.beat_jump(2.0).unwrap();
         assert_eq!(d.pos, 48000.0);
+    }
+
+    #[test]
+    fn bpm_at_reports_the_grids_own_tempo_over_a_jittery_gap() {
+        // A 1 ms jitter on a 500 ms gap reads as 119.76 bpm from the gap alone.
+        let beats = vec![
+            Beat { time_ms: 0.0, downbeat: true, bpm: Some(120.0) },
+            Beat { time_ms: 501.0, downbeat: false, bpm: None },
+            Beat { time_ms: 1000.0, downbeat: false, bpm: None },
+        ];
+        let t = silent(48000, 2.0, beats);
+        assert_eq!(t.bpm_at(100.0), Some(120.0));
+        // Without a bpm on the beat, the gap is still the answer.
+        let gap = t.bpm_at(600.0).unwrap();
+        assert!((gap - 60000.0 / 499.0).abs() < 1e-9, "{gap}");
     }
 }

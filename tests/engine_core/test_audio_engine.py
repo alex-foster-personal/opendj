@@ -423,12 +423,19 @@ def test_grid_from_anlz_converts_seconds_to_ms_and_names_a_missing_grid() -> Non
     }
     g = grid_from_anlz(own)
     assert g.source == "own" and g.bpm == 124.0 and g.missing_reason is None
-    assert g.beats == [{"n": 4, "time_ms": 100.0}, {"n": 1, "time_ms": pytest.approx(583.8)}]
+    assert g.beats == [
+        {"n": 4, "time_ms": 100.0, "bpm": 124.0},
+        {"n": 1, "time_ms": pytest.approx(583.8), "bpm": 124.0},
+    ]
     cmd = load_command(2, "/music/a.mp3", g)
     assert cmd["beatgrid"] == g.beats and cmd["bpm"] == 124.0 and cmd["deck"] == 2
     # rekordbox grids carry bpm per beat only.
     rb = {"source": "rekordbox", "beat_count": 1, "beats": [{"n": 1, "bpm": 128.0, "t": 0.0}]}
     assert grid_from_anlz(rb).bpm == 128.0
+    # Each beat keeps its own tempo; a beat without one sends none.
+    assert grid_from_anlz(rb).beats == [{"n": 1, "time_ms": 0.0, "bpm": 128.0}]
+    bare = {"source": "own", "beats": [{"n": 1, "t": 0.0}, {"n": 2, "t": 0.5}]}
+    assert [("bpm" in b) for b in grid_from_anlz(bare).beats] == [False, False]
     missing = grid_from_anlz(
         {"source": "own", "status": "missing", "beats": [], "reason": "not analyzed"}
     )
@@ -504,7 +511,7 @@ def test_load_route_sends_the_file_and_the_grid_the_page_sees(
         "type": "load",
         "deck": 2,
         "path": str(Picked.path),
-        "beatgrid": [{"n": 1, "time_ms": 250.0}],
+        "beatgrid": [{"n": 1, "time_ms": 250.0, "bpm": 120.0}],
         "bpm": 120.0,
     }
 

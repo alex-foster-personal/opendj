@@ -32,7 +32,7 @@ class EngineGrid:
 
 
 def grid_from_anlz(beatgrid: dict[str, Any] | None) -> EngineGrid:
-    """The anlz ``beatgrid`` block in the engine's ``[{n, time_ms}]`` shape.
+    """The anlz ``beatgrid`` block in the engine's ``[{n, time_ms, bpm}]`` shape.
 
     anlz beat times are SECONDS (``anlz-types.ts``); the engine wants ms.
     """
@@ -53,7 +53,13 @@ def grid_from_anlz(beatgrid: dict[str, Any] | None) -> EngineGrid:
             # the engine's generic refusal back.
             raise ValueError(f"{source} beatgrid times do not increase at {t_ms:.3f} ms")
         last = t_ms
-        beats.append({"n": int(b["n"]), "time_ms": t_ms})
+        beat: dict[str, float | int] = {"n": int(b["n"]), "time_ms": t_ms}
+        # The analyzer's own tempo at this beat: a single beat gap jitters by
+        # several percent, so the engine reports this one when it is there.
+        beat_bpm = b.get("bpm")
+        if beat_bpm is not None:
+            beat["bpm"] = float(beat_bpm)
+        beats.append(beat)
     bpm = beatgrid.get("bpm")
     if bpm is None:
         bpm = raw[0].get("bpm")
