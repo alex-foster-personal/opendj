@@ -647,3 +647,46 @@ fn loads_in_flight_at_eof_still_get_results() {
         assert!(child.wait().unwrap().success());
     }
 }
+
+/// `set_beatgrid` over the threaded (wall clock) session: sent while the load
+/// is still decoding, it waits behind it and then takes effect, and it is
+/// refused on an empty deck.
+#[test]
+fn set_beatgrid_reaches_a_loaded_deck_without_reloading() {
+    let d = temp_dir("cli-set-beatgrid");
+    let wav = write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 4.0));
+    let mut child = Command::new(BIN).args(["serve", "--clock", "wall"]).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut until = |pred: &dyn Fn(&Value) -> bool| -> Value {
+        for line in lines.by_ref() {
+            let v: Value = serde_json::from_str(&line.unwrap()).unwrap();
+            if pred(&v) {
+                return v;
+            }
+        }
+        panic!("stream ended");
+    };
+    let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
+    // Control first: a track with no grid and no BPM cannot beat-jump.
+    say(json!({"id": "l0", "cmd": {"type": "load", "deck": 1, "path": wav.to_str().unwrap()}}));
+    say(json!({"id": "j0", "cmd": {"type": "beat_jump", "deck": 1, "beats": 1}}));
+    assert_eq!(until(&|v| v["id"] == "j0")["ok"], false);
+    say(json!({"id": "l", "cmd": {"type": "load", "deck": 1, "path": wav.to_str().unwrap()}}));
+    say(json!({"id": "g", "cmd": {"type": "set_beatgrid", "deck": 1, "beatgrid_ms": [0, 400, 800, 1200]}}));
+    say(json!({"id": "j", "cmd": {"type": "beat_jump", "deck": 1, "beats": 1}}));
+    let g = until(&|v| v["id"] == "g");
+    assert_eq!(g["ok"], true, "{g}");
+    let j = until(&|v| v["id"] == "j");
+    assert_eq!(j["ok"], true, "{j}");
+    // Sent after, since its immediate reply would overtake the queued ones.
+    say(json!({"id": "e", "cmd": {"type": "set_beatgrid", "deck": 2, "beatgrid_ms": [0, 500]}}));
+    let e = until(&|v| v["id"] == "e");
+    assert_eq!(e["error"]["code"], "no_track", "{e}");
+    say(json!({"id": "s", "cmd": {"type": "engine_state"}}));
+    let st = until(&|v| v["type"] == "state");
+    let pos = st["decks"][0]["position_ms"].as_f64().unwrap();
+    assert!((pos - 400.0).abs() < 1e-6, "the jump used the new grid: {pos}");
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
+}
