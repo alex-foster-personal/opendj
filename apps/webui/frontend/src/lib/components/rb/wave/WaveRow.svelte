@@ -18,7 +18,7 @@
 	} from './wave-row-beatgrid-fallback';
 	import {
 		ghostSeekBlinkVisible,
-		masterBeatsForDeck,
+		masterAnlzForDeck,
 		masterDownbeatOverlayForDeck
 	} from './wave-row-deckux-overlays';
 	import type { DeckId } from '$lib/rb/deck-slots';
@@ -146,7 +146,8 @@
 
 	const masterDeck = $derived(DECK_IDS.find((d) => getDeckState(d).is_master) ?? null);
 	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
-	const masterBeats = $derived(masterBeatsForDeck(masterState, getAnlzEntry));
+	const masterAnlz = $derived(masterAnlzForDeck(masterState, getAnlzEntry));
+	const masterBeats = $derived(masterAnlz?.beatgrid.beats ?? null);
 
 	const syncPlayheadTone = $derived.by((): PlayheadTone => {
 		if (!deck.audible) return 'stopped';
@@ -182,7 +183,7 @@
 		masterDownbeatOverlayForDeck({
 			beatSyncMax: uiPrefs.beat_sync_max,
 			masterState,
-			masterBeats,
+			masterAnlz,
 			deckPositionMs: deck.position_ms,
 			deckPitch: deck.pitch,
 			hasTrustedBeatGrid
