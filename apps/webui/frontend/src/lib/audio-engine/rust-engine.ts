@@ -285,7 +285,7 @@ export function mirrorEngineState(s: EngineState): void {
 					in_ms: d.loop.in_ms,
 					out_ms: d.loop.out_ms,
 					engaged: true,
-					beat_length: null
+					beat_length: d.loop.beat_length
 				}
 			: (displayLoops[d.deck as DeckId] ?? null);
 		if (!d.playing) st.position_ms = d.position_ms;

@@ -38,8 +38,9 @@ export interface EngineDeckState {
 	rate: number;
 	tempo: number;
 	cue_ms: number | null;
-	/** The engaged loop, or null. */
-	loop: { in_ms: number; out_ms: number } | null;
+	/** The engaged loop as the page's LoopState, or null. `beat_length` is
+	 * null for a loop set by bounds. */
+	loop: { in_ms: number; out_ms: number; engaged: true; beat_length: number | null } | null;
 	/** Key lock, from a build with the time-stretcher (plan 20-04). */
 	master_tempo?: boolean;
 	/** Key shift in semitones, from the same builds. */
