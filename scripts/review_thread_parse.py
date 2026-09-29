@@ -80,10 +80,17 @@ _SEVERITY_BARE = re.compile(r"\b(P[0-3])\b")
 # would have its leading letter stripped and become an explicit blocker
 # (Sol P2, PR #1671).
 #
-# A bare P-level MAY precede the verdict, because Copilot writes its severity
-# as plain text leading the headline ("P1 BLOCKING - ...", "P2 NON-BLOCKING:
+# A P-level MAY precede the verdict, because Copilot writes its severity as
+# plain text leading the headline ("P1 BLOCKING - ...", "P2 NON-BLOCKING:
 # ..."), PR #4240. Without that allowance every Copilot verdict read unmarked.
-_BLOCKING = re.compile(r"^\s*(?:P[0-3]\s+)?(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE)
+# The P-level takes the same unenumerated, ABUTTING wrapper the verdict does,
+# on either side ("[P1] BLOCKING", "`P1 BLOCKING`", "P1: BLOCKING"), because
+# `_headline` strips only `*` and a wrapper it keeps must not hide a verdict
+# (Sol P1, PR #4449). Whatever follows the P-level must still BE the verdict:
+# "P2 Avoid blocking I/O" is prose, not a verdict.
+_BLOCKING = re.compile(
+    r"^\s*(?:[^\w\s]*P[0-3][^\w\s]*\s*)?(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE
+)
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
