@@ -1109,6 +1109,13 @@ jobs:
           else
             window_args=(--days 7)
           fi
+          # REQS_JSON_PATH is unset in production, so this is a no-op here: it
+          # exists so a test can point the tool at a pinned reqs.json snapshot
+          # instead of this repo's live one, whose v1 pending ids keep flipping
+          # under it (tests/quality/test_periodic_checks_reqs_drift_row.py).
+          if [ -n "${REQS_JSON_PATH:-}" ]; then
+            window_args+=(--reqs-path "$REQS_JSON_PATH")
+          fi
           # NOT `... || true` followed by `$?`: after either, `$?` reads 0 and
           # the verdict is lost. scripts/shell_construct_lint.py bans that
           # construct for exactly this reason. if/else captures the real code.
