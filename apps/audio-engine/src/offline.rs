@@ -140,13 +140,10 @@ fn yield_ramp(ramps: &mut Vec<ActiveRamp>, cmd: &EngineCmd) {
 /// frames a newly decoded file may hold; a file already decoded shares its
 /// samples and costs nothing more, so it is never refused for room.
 pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Track>, ProtoError> {
-    let mut cache: HashMap<PathBuf, (u32, Arc<[f32]>)> = HashMap::new();
+    let mut cache: HashMap<FileKey, (u32, Arc<[f32]>)> = HashMap::new();
     move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
-        // One file reached by two spellings (`a.wav`, `sub/../a.wav`, a
-        // symlink) is one file: key the cache on where it really is. A path
-        // that does not resolve keeps its own spelling and fails to decode.
-        let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let key = FileKey::of(&path);
         let (sr, pcm) = match cache.get(&key) {
             Some((sr, pcm)) => (*sr, pcm.clone()),
             None => {
@@ -158,6 +155,49 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
         };
         // Every load of one file shares the cached samples; nothing is copied.
         Ok(Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm)))
+    }
+}
+
+/// Which file a path names, so loads of one file share one decode. One file
+/// reached by two names (`a.wav`, `sub/../a.wav`, a symlink, a hard link, a
+/// case-folded spelling on a case-insensitive volume) is one file: on unix
+/// that is its device and inode, the identity the output collision check
+/// uses too, and elsewhere the path with every link resolved. A path that
+/// does not resolve keeps its own spelling and fails to decode.
+///
+/// Its length and modification time are part of it, so a file rewritten in
+/// place, or a new file that is handed a deleted one's inode while a deck
+/// still holds the old samples, decodes afresh instead of sharing them.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct FileKey {
+    id: FileId,
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum FileId {
+    #[cfg(unix)]
+    Inode { dev: u64, ino: u64 },
+    Path(PathBuf),
+}
+
+impl FileKey {
+    fn of(path: &Path) -> FileKey {
+        let by_path = || FileId::Path(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
+        match std::fs::metadata(path) {
+            Ok(m) => {
+                #[cfg(unix)]
+                let id = {
+                    use std::os::unix::fs::MetadataExt;
+                    FileId::Inode { dev: m.dev(), ino: m.ino() }
+                };
+                #[cfg(not(unix))]
+                let id = by_path();
+                FileKey { id, len: m.len(), modified: m.modified().ok() }
+            }
+            Err(_) => FileKey { id: by_path(), len: 0, modified: None },
+        }
     }
 }
 
@@ -174,7 +214,7 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
 /// dropped on every load.
 #[derive(Default)]
 pub struct TrackCache {
-    files: Mutex<HashMap<PathBuf, Holders>>,
+    files: Mutex<HashMap<FileKey, Holders>>,
 }
 
 /// Every track loaded from one file, locked while that file decodes.
@@ -182,8 +222,7 @@ type Holders = Arc<Mutex<Vec<Weak<Track>>>>;
 
 impl TrackCache {
     pub fn load(&self, path: &Path, spec: &LoadSpec) -> Result<Arc<Track>, ProtoError> {
-        // One file reached by two spellings is one file.
-        let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let key = FileKey::of(path);
         let file = {
             let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
             // A file nobody else is loading (only the map holds its slot) and

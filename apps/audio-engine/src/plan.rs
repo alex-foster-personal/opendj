@@ -152,6 +152,14 @@ fn parse_over(v: &Value, what: &str) -> Result<Over, ProtoError> {
     let o = obj(v, what)?;
     exact_keys(o, what, &["deck", "beats", "bars", "ms", "frames"])?;
     at_most_one(o, what, &["beats", "bars", "ms", "frames"])?;
+    // A deck says whose grid counts beats or bars. An absolute length is the
+    // same on every deck, so a deck beside one means nothing and is refused
+    // rather than read as if it changed the ramp.
+    if o.contains_key("deck") {
+        if let Some(k) = ["ms", "frames"].into_iter().find(|k| o.contains_key(*k)) {
+            return Err(invalid(format!("{what}.deck goes only with beats or bars, not {k}")));
+        }
+    }
     let positive = |x: f64, k: &str| {
         if x > 0.0 {
             Ok(x)
@@ -196,7 +204,11 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
             .ok_or_else(|| invalid(format!("plan.block_frames must be 1..{}", crate::engine::MAX_BLOCK)))?
             as usize,
     };
-    let max_ms = finite(o, "plan", "max_ms")?.unwrap_or(DEFAULT_MAX_MS);
+    let max_ms = match finite(o, "plan", "max_ms")? {
+        None => DEFAULT_MAX_MS,
+        Some(ms) if ms >= 0.0 => ms,
+        Some(ms) => return Err(invalid(format!("plan.max_ms must not be negative, got {ms}"))),
+    };
     let end = parse_at(o.get("end").ok_or_else(|| invalid("plan.end is required".into()))?, "plan.end")?;
     let raw = o
         .get("events")

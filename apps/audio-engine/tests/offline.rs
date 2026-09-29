@@ -445,6 +445,58 @@ fn loads_of_one_file_share_its_samples() {
 }
 
 #[test]
+fn a_hard_link_is_the_file_it_links_to() {
+    // Codex on 2f28895b: a hard link resolves to its own path, so a path key
+    // decoded it again and a render charged its budget for it twice.
+    let d = temp_dir("hard-link");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
+    for name in ["hard.wav", "copy.wav"] {
+        let _ = std::fs::remove_file(d.join(name));
+    }
+    std::fs::hard_link(d.join("a.wav"), d.join("hard.wav")).unwrap();
+    std::fs::copy(d.join("a.wav"), d.join("copy.wav")).unwrap();
+    let spec = |path: &str| LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None };
+    let mut offline = odj_audio::offline::file_loader(d.clone());
+    let a = offline(&spec("a.wav"), u64::MAX).unwrap();
+    // The link shares the samples even with no room left, as a cached file does.
+    let hard = offline(&spec("hard.wav"), 0).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&a.pcm, &hard.pcm), "the offline loader decoded a hard link again");
+    let mut session = odj_audio::offline::session_loader(d.clone());
+    let (a2, hard2) = (session(&spec("a.wav")).unwrap(), session(&spec("hard.wav")).unwrap());
+    assert!(std::sync::Arc::ptr_eq(&a2.pcm, &hard2.pcm), "the session loader decoded a hard link again");
+    // Control: a copy is another file, with its own samples.
+    let copy = offline(&spec("copy.wav"), u64::MAX).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&a.pcm, &copy.pcm), "a copy shared the original's samples");
+    let copy2 = session(&spec("copy.wav")).unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&a2.pcm, &copy2.pcm), "a copy shared the original's samples");
+    // And a file rewritten in place, while a deck holds the old samples, is
+    // decoded again rather than handed them.
+    write_wav(&d, "copy.wav", 48000, &sine(48000, 330.0, 0.5));
+    let rewritten = session(&spec("copy.wav")).unwrap();
+    assert_eq!(rewritten.frames, 24000);
+    assert!(!std::sync::Arc::ptr_eq(&copy2.pcm, &rewritten.pcm));
+    // Through a render: the file loaded through its link counts once. The
+    // end leaves room for 72000 frames of decoded tracks, so a.wav and its
+    // link (48000, counted once) fit, and the third file, another 48000, is
+    // the load that runs out. Counted twice, the link would be.
+    write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 1.0));
+    let budget = (u32::MAX as u64 - 36) / 8;
+    let plan = json!({"end": {"frame": budget - 72000}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 2, "path": "hard.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 3, "path": "b.wav"}}]});
+    let e = render_plan_files(&parse_plan(&plan).unwrap(), &d).err().unwrap();
+    assert!(e.message.starts_with("events[2]"), "{}", e.message);
+    // Control: a copy in the link's place is a second file, and it is the
+    // load that runs out.
+    let mut copied = plan.clone();
+    copied["events"][1]["cmd"]["path"] = json!("copy.wav");
+    write_wav(&d, "copy.wav", 48000, &sine(48000, 330.0, 1.0));
+    let e = render_plan_files(&parse_plan(&copied).unwrap(), &d).err().unwrap();
+    assert!(e.message.starts_with("events[1]"), "{}", e.message);
+}
+
+#[test]
 fn a_file_longer_than_the_room_left_stops_decoding_there() {
     let d = temp_dir("room");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
@@ -609,6 +661,33 @@ fn a_time_or_length_naming_two_places_is_refused() {
     }
     for over in [json!({"ms": 100}), json!({"frames": 4800}), json!({"deck": 1, "beats": 4}), json!({"deck": 1, "bars": 1})] {
         assert!(with(ok_at.clone(), over.clone()).is_ok(), "{over}");
+    }
+}
+
+#[test]
+fn a_plan_is_refused_for_a_negative_max_ms_or_a_deck_on_an_absolute_length() {
+    // Codex on 2f28895b: a negative max_ms parsed, and a render then read it
+    // as a zero-frame ceiling; `deck` beside ms or frames parsed and was
+    // dropped, so the plan looked grid-relative while it ran in wall time.
+    let e = parse_plan(&json!({"end": {"ms": 0}, "max_ms": -1, "events": []})).unwrap_err();
+    assert!(e.message.contains("plan.max_ms must not be negative"), "{}", e.message);
+    let with = |over: Value| {
+        parse_plan(&json!({"end": {"ms": 1000}, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+            {"at": {"ms": 10}, "ramp": {"type": "crossfader", "to": 1.0, "over": over}}]}))
+    };
+    for (over, k) in [(json!({"ms": 1000, "deck": 2}), "ms"), (json!({"frames": 4800, "deck": 1}), "frames")] {
+        let e = with(over.clone()).unwrap_err();
+        assert!(e.message.contains(&format!("ramp.over.deck goes only with beats or bars, not {k}")), "{over}: {}", e.message);
+    }
+    // Controls: max_ms of 0 and above parses, and so does a deck with beats
+    // or bars, and ms or frames without a deck.
+    for max_ms in [0.0, 0.5, 5000.0] {
+        let plan = parse_plan(&json!({"end": {"ms": 0}, "max_ms": max_ms, "events": []})).unwrap();
+        assert_eq!(plan.max_ms, max_ms);
+    }
+    for over in [json!({"deck": 2, "beats": 4}), json!({"deck": 1, "bars": 2}), json!({"ms": 1000}), json!({"frames": 4800})] {
+        assert!(with(over.clone()).is_ok(), "{over}");
     }
 }
 

@@ -99,21 +99,35 @@ fn resolved(p: &Path) -> PathBuf {
 
 /// Whether two paths name one file: the same resolved spelling, or, where
 /// both exist, the same file on disk (a hard link has its own spelling but
-/// is the file it links to, so writing it truncates that file). Only Unix
-/// exposes a stable file identity on stable Rust; elsewhere a hard link is
-/// told apart by spelling alone.
+/// is the file it links to, so writing it truncates that file).
+///
+/// Two spellings that differ only in case are one file on a case-insensitive
+/// volume (the macOS and Windows default). Where both exist on Unix the
+/// file identity already answers that. Where neither exists yet (two outputs)
+/// nothing on disk says how the volume folds case, so they count as one
+/// file: refusing `Deck1.wav` beside `deck1.wav` on a case-sensitive volume
+/// costs a rename, while writing both on a case-insensitive one loses a
+/// file. Where only one exists, a case-insensitive volume would have found
+/// the other too, so they are two files. Only Unix exposes a stable file
+/// identity on stable Rust; elsewhere spellings are compared, case-folded.
+/// The fold is Unicode lowercase; it does not normalize (a precomposed and a
+/// decomposed accent still compare as two names).
 fn same_file(a: &Path, b: &Path) -> bool {
-    if resolved(a) == resolved(b) {
+    let (ra, rb) = (resolved(a), resolved(b));
+    if ra == rb {
         return true;
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
-            return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino());
+        match (std::fs::metadata(a), std::fs::metadata(b)) {
+            (Ok(ma), Ok(mb)) => return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino()),
+            (Ok(_), Err(_)) | (Err(_), Ok(_)) => return false,
+            (Err(_), Err(_)) => {}
         }
     }
-    false
+    let fold = |p: &Path| p.to_string_lossy().to_lowercase();
+    fold(&ra) == fold(&rb)
 }
 
 /// Refuse a render that would write one file twice, or over a file it
