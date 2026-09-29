@@ -6,20 +6,22 @@ Parses this repo's `.github/workflows/*.yml` pull_request `paths` /
 not run at the current head (the contraction case from PR #1685 review thread
 r3976977757) without reintroducing the false-SUCCESS class #1608 closes.
 
-GitHub's negation ordering for inclusive `paths` lists ("later patterns win",
-as documented in `.github/workflows/ci.yml`) is reproduced here; `paths-ignore`
-uses the complementary rule (the workflow runs when at least one changed file is
-not ignored). Nothing here calls `gh` or the network.
+GitHub's negation ordering for inclusive `paths` lists ("later patterns win")
+and the complementary `paths-ignore` rule (the workflow runs when at least one
+changed file is not ignored) are evaluated by `scripts.ci_pr_scope`, which the
+in-run scope jobs import without PyYAML. Nothing here calls `gh` or the network.
 """
 
 from __future__ import annotations
 
-import fnmatch
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from scripts.ci_pr_scope import IN_RUN_PULL_REQUEST_SCOPES, workflow_would_run_for_files
 
 #: Check names that a workflow on main USED to emit and no head can emit again. A pull
 #: request whose earlier head ran one of these carries it in its baseline, and the
@@ -34,46 +36,10 @@ RETIRED_CHECK_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# ----- path filter evaluation ------------------------------------------------
-
-
-def _github_glob_matches(pattern: str, path: str) -> bool:
-    return fnmatch.fnmatch(path, pattern)
-
-
-def _file_matches_paths_list(path: str, patterns: Sequence[str]) -> bool:
-    """Inclusive `paths` filter with `!` negation; later patterns win."""
-    included = False
-    for pattern in patterns:
-        if pattern.startswith("!"):
-            if _github_glob_matches(pattern[1:], path):
-                included = False
-        elif _github_glob_matches(pattern, path):
-            included = True
-    return included
-
-
-def _file_matches_paths_ignore(path: str, patterns: Sequence[str]) -> bool:
-    return any(_github_glob_matches(pattern, path) for pattern in patterns)
-
-
-def workflow_would_run_for_files(
-    changed_files: Sequence[str],
-    *,
-    paths: Sequence[str] | None = None,
-    paths_ignore: Sequence[str] | None = None,
-) -> bool:
-    """True when a `pull_request` workflow would schedule for `changed_files`."""
-    if not changed_files:
-        return False
-    if paths is not None:
-        return any(_file_matches_paths_list(path, paths) for path in changed_files)
-    if paths_ignore is not None:
-        return any(
-            not _file_matches_paths_ignore(path, paths_ignore) for path in changed_files
-        )
-    return True
-
+#: A job `if:` that reads the in-run scope decision (`needs.<scope job>.outputs.in_scope`).
+_READS_IN_RUN_SCOPE = re.compile(r"needs\.[\w-]+\.outputs\.in_scope\b")
+#: Status functions that stop a job inheriting a skipped `needs` entry's skip.
+_RUNS_PAST_SKIPPED_NEEDS = re.compile(r"\b(?:always|cancelled)\(\)")
 
 # ----- workflow catalog ------------------------------------------------------
 
@@ -114,6 +80,37 @@ def _expand_matrix_job_name(name: str, matrix: dict) -> list[str]:
     return [name.replace(expr, str(value)) for value in values]
 
 
+def _needs_ids(job: dict) -> list[str]:
+    needs = job.get("needs") or []
+    return [needs] if isinstance(needs, str) else list(needs)
+
+
+def _scope_gated_job_ids(jobs: dict[str, dict]) -> frozenset[str]:
+    """Jobs of an in-run-scoped workflow that the scope decision can skip.
+
+    A job is scope-gated when its `if:` reads the scope output, or when it needs a
+    gated job and has no `always()` / `cancelled()` to run past that job's skip.
+    Every other job (the scope job itself, the `ci gate` / `e2e verdict` aggregators)
+    is created on every pull request, docs-only or not.
+    """
+    gated: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for job_id, job in jobs.items():
+            if job_id in gated:
+                continue
+            condition = str(job.get("if") or "")
+            reads_scope = bool(_READS_IN_RUN_SCOPE.search(condition))
+            inherits_skip = not _RUNS_PAST_SKIPPED_NEEDS.search(condition) and any(
+                need in gated for need in _needs_ids(job)
+            )
+            if reads_scope or inherits_skip:
+                gated.add(job_id)
+                changed = True
+    return frozenset(gated)
+
+
 def _job_display_names(job_id: str, job: dict) -> list[str]:
     raw_name = job.get("name", job_id)
     if not isinstance(raw_name, str):
@@ -131,12 +128,16 @@ class WorkflowCatalog:
     check_to_workflow: dict[str, str]
     workflow_filters: dict[str, tuple[tuple[str, ...] | None, tuple[str, ...] | None]]
     all_job_names: frozenset[str]
+    #: Names an in-run-scoped workflow creates on every pull request whatever the
+    #: changed paths, so a docs-only head must keep waiting for them.
+    always_created_job_names: frozenset[str] = frozenset()
 
     @classmethod
     def from_workflows_dir(cls, workflows_dir: Path) -> WorkflowCatalog:
         check_to_workflow: dict[str, str] = {}
         workflow_filters: dict[str, tuple[tuple[str, ...] | None, tuple[str, ...] | None]] = {}
         all_names: set[str] = set()
+        always_created: set[str] = set()
 
         for path in sorted(workflows_dir.glob("*.yml")):
             document = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -147,27 +148,45 @@ class WorkflowCatalog:
                 continue
             paths = tuple(trigger.get("paths") or ()) or None
             paths_ignore = tuple(trigger.get("paths-ignore") or ()) or None
+            in_run_scope = IN_RUN_PULL_REQUEST_SCOPES.get(path.name)
+            if in_run_scope is not None:
+                # ci.yml and e2e.yml trigger on every pull request and scope the run
+                # from its own `scope` job (scripts/ci_pr_scope.py), so their heavy
+                # jobs are skipped, not absent, out of scope. Reading that scope here
+                # keeps ci-wait and docs-only detection answering exactly as they did
+                # when the same list was a trigger filter.
+                if paths is not None or paths_ignore is not None:
+                    raise ValueError(
+                        f"{path.name} declares a pull_request path filter AND an in-run "
+                        "scope in scripts/ci_pr_scope.py; one list must be the only one"
+                    )
+                paths, paths_ignore = in_run_scope
             workflow_filters[path.name] = (paths, paths_ignore)
-            for job_id, job in (document.get("jobs") or {}).items():
-                if not isinstance(job, dict):
-                    continue
+            jobs = {
+                job_id: job
+                for job_id, job in (document.get("jobs") or {}).items()
+                if isinstance(job, dict)
+            }
+            gated = _scope_gated_job_ids(jobs) if in_run_scope is not None else frozenset()
+            for job_id, job in jobs.items():
                 for display_name in _job_display_names(job_id, job):
                     check_to_workflow.setdefault(display_name, path.name)
                     all_names.add(display_name)
+                    if in_run_scope is not None and job_id not in gated:
+                        always_created.add(display_name)
 
         return cls(
             check_to_workflow=check_to_workflow,
             workflow_filters=workflow_filters,
             all_job_names=frozenset(all_names),
+            always_created_job_names=frozenset(always_created),
         )
 
     def applicable_pull_request_job_names(self, changed_files: Sequence[str]) -> frozenset[str]:
-        applicable: set[str] = set()
+        applicable: set[str] = set(self.always_created_job_names)
         for name, workflow in self.check_to_workflow.items():
             paths, paths_ignore = self.workflow_filters[workflow]
-            if workflow_would_run_for_files(
-                changed_files, paths=paths, paths_ignore=paths_ignore
-            ):
+            if workflow_would_run_for_files(changed_files, paths=paths, paths_ignore=paths_ignore):
                 applicable.add(name)
         return frozenset(applicable)
 
