@@ -133,10 +133,20 @@ fi
 # --- tailnet (only where an auth key is configured) ---------------------------
 # Lets `ssh <machine>` reach the fleet from a cloud session. A failed join does
 # not stop the other installs; the verify step below turns it red.
+# The documented setup keeps TS_AUTHKEY in Doppler, not in the environment, so
+# read it from there when only DOPPLER_TOKEN is raw. Exported so the join and
+# the smoke test below both see it; the value is never printed.
+if [ -z "${TS_AUTHKEY:-}" ] && [ -n "${DOPPLER_TOKEN:-}" ] && command -v doppler >/dev/null 2>&1; then
+  TS_AUTHKEY="$(doppler secrets get TS_AUTHKEY --plain --no-fallback 2>/dev/null || true)"
+  if [ -n "$TS_AUTHKEY" ]; then
+    export TS_AUTHKEY
+    _log "TS_AUTHKEY read from Doppler"
+  fi
+fi
 if [ -n "${TS_AUTHKEY:-}" ] && [ "$CHECK_ONLY" -eq 0 ]; then
   bash scripts/cloud_tailnet_join.sh || _log "tailnet join FAILED; the smoke test will report it"
 elif [ -z "${TS_AUTHKEY:-}" ]; then
-  _log "TS_AUTHKEY not set: no tailnet, the tailnet check will SKIP with a stated reason"
+  _log "TS_AUTHKEY not set in the environment or Doppler: no tailnet, the tailnet check will SKIP with a stated reason"
 fi
 
 # --- verify ------------------------------------------------------------------
