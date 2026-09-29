@@ -117,10 +117,7 @@ def measure_track(
 
 
 def nightly_capture_id(now: dt.datetime) -> str:
-    """One run's cohort id, stamped to the second like `mint_capture_id`'s
-    `perf-capture-...` ids (Codex, PR #4473, P2/BLOCKING, "Give each nightly
-    run a unique capture ID"): the old `perf-kpi-<date>` id repeated for every
-    run on one UTC day, and `kpi_readings` reads equal ids as one session."""
+    """One id per run, to the second (PR #4473): `perf-kpi-<date>` repeated per UTC day."""
     return f"perf-kpi-{now.strftime('%Y%m%dT%H%M%SZ')}"
 
 

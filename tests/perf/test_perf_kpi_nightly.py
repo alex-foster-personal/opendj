@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.perf.perf_kpi_config import PerfKpiConfig, TrackProfile
 from scripts.perf import perf_kpi_nightly
+from scripts.perf.perf_kpi_config import PerfKpiConfig, TrackProfile
 from scripts.perf.perf_kpi_nightly import (
     WarmMedian,
     find_ceiling_breaches,
@@ -224,7 +224,7 @@ def test_run_nightly_refuses_a_clock_that_is_not_utc(tmp_path: Path) -> None:
         raise AssertionError("must refuse before probing")
 
     for bad in (
-        dt.datetime(2026, 9, 29, 3, 0, 9),
+        dt.datetime(2026, 9, 29, 3, 0, 9),  # noqa: DTZ001 - the naive clock is the case under test
         dt.datetime(2026, 9, 29, 4, 0, 9, tzinfo=dt.timezone(dt.timedelta(hours=1))),
     ):
         with pytest.raises(ValueError, match="UTC"):
