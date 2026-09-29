@@ -577,7 +577,9 @@ fn render_within(
             let samples = track.pcm.as_ptr();
             if !sources.contains(&samples) {
                 sources.push(samples);
-                source_frames += track.frames as u64;
+                // What the samples retain, spare capacity included: a
+                // buffer grown geometrically holds more than its frames.
+                source_frames += (track.pcm.capacity() / 2) as u64;
                 let now = ceiling(source_frames);
                 if now.0 == 0 {
                     return Err(fail(
@@ -1009,6 +1011,23 @@ mod tests {
         .unwrap();
         let e = render_within(&playing, memory_loader(1_000_000, &calls), RenderOptions::default(), 1_010_000).err().unwrap();
         assert!(e.message.contains("not reached within") && e.message.contains("1000000 frames of decoded tracks"), "{}", e.message);
+    }
+
+    #[test]
+    fn a_track_is_charged_what_its_buffer_retains() {
+        // Codex on 6a4cfb88: a decoded buffer grown geometrically keeps
+        // spare capacity, and a track was charged only its frames. Here the
+        // track has 20000 frames in a buffer with room for 30000, so of a
+        // 48000-frame budget 18000 are left to render, not 28000.
+        let spare = |_: &LoadSpec, _: u64| -> Result<Arc<Track>, ProtoError> {
+            let mut pcm = Vec::with_capacity(30000 * 2);
+            pcm.resize(20000 * 2, 0.0f32);
+            Ok(Arc::new(Track::new(48000, pcm, vec![], None)))
+        };
+        let run = |end: u64| render_within(&plan_of(serde_json::json!({"frame": end}), &["a"]), spare, RenderOptions::default(), 48000);
+        let e = run(18001).err().unwrap();
+        assert!(e.message.contains("past the longest render allowed (18000 frames"), "{}", e.message);
+        assert_eq!(run(18000).unwrap().frames, 18000);
     }
 
     #[test]

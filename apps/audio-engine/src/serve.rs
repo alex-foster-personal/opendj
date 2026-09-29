@@ -823,12 +823,15 @@ fn serve_threaded_from(
     }
     control.refuse_pending();
     // Let the audio side apply everything already queued before stopping,
-    // so every command sent before shutdown or EOF gets its result. A dead
-    // audio side never drains, so it is not waited on, and neither is one
-    // whose results nobody reads.
+    // so every command sent before shutdown or EOF gets its result, and
+    // answer an `engine_state` already acknowledged: its request stays set
+    // until a block has taken it and will publish it. A dead audio side
+    // never drains, so it is not waited on, and neither is one whose
+    // results nobody reads.
     if !audio_failed && !output_closed {
         let deadline = Instant::now() + DRAIN_LIMIT;
-        while control.cmd_tx.slots() < CMD_SLOTS && Instant::now() < deadline {
+        let busy = |c: &Control| c.cmd_tx.slots() < CMD_SLOTS || c.state_req.load(Ordering::Acquire);
+        while busy(&control) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(1));
         }
     }
@@ -1188,6 +1191,43 @@ mod tests {
             .unwrap_or_else(|| panic!("no result for the stranded command:\n{text}"));
         assert_eq!(result["ok"], false, "{result}");
         assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
+    }
+
+    #[test]
+    fn a_state_request_acknowledged_before_shutdown_is_answered() {
+        // Codex on 6a4cfb88: `engine_state` then EOF, with the audio side
+        // between blocks and nothing in the mailbox, stopped the audio side
+        // before any block took the request, so the acknowledged state never
+        // came. The audio side here only renders every 50 ms and checks
+        // for stop before each block, as the wall clock's loop does.
+        let run = |input: &'static str| {
+            let out = Captured::default();
+            let (tx, rx) = mpsc::channel();
+            let o = out.clone();
+            let started = Instant::now();
+            std::thread::spawn(move || {
+                let r = serve_threaded_from(io::Cursor::new(input), o, 48000, "wall", |mut side, stop| loop {
+                    std::thread::sleep(Duration::from_millis(50));
+                    if stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    side.process(64);
+                });
+                let _ = tx.send(r);
+            });
+            rx.recv_timeout(Duration::from_secs(10)).expect("serve hung").unwrap();
+            let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+            let lines: Vec<Value> = text.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+            (lines, started.elapsed())
+        };
+        let (lines, _) = run("{\"id\": \"s\", \"cmd\": {\"type\": \"engine_state\"}}\n");
+        assert!(lines.iter().any(|v| v["id"] == "s" && v["ok"] == true), "{lines:?}");
+        assert!(lines.iter().any(|v| v["type"] == "state"), "the acknowledged state never came: {lines:?}");
+        // Control: with no request pending, EOF stops at once rather than
+        // waiting out the drain limit.
+        let (lines, took) = run("");
+        assert!(!lines.iter().any(|v| v["type"] == "state"), "{lines:?}");
+        assert!(took < DRAIN_LIMIT / 2, "stopping took {took:?} with nothing to wait for");
     }
 
     /// Output that works until `fail` is set, then refuses every write, as
