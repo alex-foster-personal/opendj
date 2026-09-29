@@ -290,6 +290,43 @@ fn a_session_refuses_to_load_the_file_it_records_to() {
 }
 
 #[test]
+fn a_recording_is_not_written_over_a_track_its_path_became_during_the_session() {
+    // Codex on d959eae8: the --record path was checked against each track
+    // only as it loaded, then created with truncation when the session
+    // ended, so a path relinked to a loaded track in between emptied it.
+    let d = temp_dir("cli-record-relinked");
+    write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 0.5));
+    let b_before = std::fs::read(d.join("b.wav")).unwrap();
+    let mut child = Command::new(BIN)
+        .args(["serve", "--clock", "fake", "--record", "rec.wav"])
+        .current_dir(&d)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    assert_eq!(next()["type"], "hello");
+    let mut say = |v: Value| writeln!(stdin, "{v}").unwrap();
+    say(json!({"id": "b", "cmd": {"type": "load", "deck": 1, "path": "b.wav"}}));
+    assert_eq!(next()["ok"], true);
+    say(json!({"id": "p", "cmd": {"type": "play", "deck": 1, "playing": true}}));
+    assert_eq!(next()["ok"], true);
+    say(json!({"id": "a", "cmd": {"type": "engine_advance", "ms": 100}}));
+    assert_eq!(next()["ok"], true);
+    // The session is live and b.wav loaded: now rec.wav becomes b.wav.
+    std::fs::hard_link(d.join("b.wav"), d.join("rec.wav")).unwrap();
+    drop(stdin);
+    let o = child.wait_with_output().unwrap();
+    assert!(!o.status.success(), "the recording was written over b.wav");
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("would overwrite") && err.contains("b.wav"), "{err}");
+    assert_eq!(std::fs::read(d.join("b.wav")).unwrap(), b_before, "b.wav was changed");
+}
+
+#[test]
 fn fake_clock_session_over_pipes() {
     let d = temp_dir("cli-serve");
     write_wav(&d, "a.wav", 44100, &sine(44100, 440.0, 5.0));

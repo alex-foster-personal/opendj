@@ -114,7 +114,9 @@ fn take_id(ids: &Mutex<HashMap<u64, Pending>>, seq: u64) -> Option<Value> {
 /// One line from stdin, read within `MAX_LINE_BYTES`.
 enum ReadLine {
     Line(String),
-    TooLong,
+    /// A line skipped whole (too long, or not UTF-8), with its refusal: the
+    /// session reads on after it, as after any malformed line.
+    Skipped(ProtoError),
     Eof,
 }
 
@@ -142,13 +144,19 @@ fn read_line(input: &mut impl BufRead, buf: &mut Vec<u8>) -> io::Result<ReadLine
             };
             input.consume(used);
             if done {
-                return Ok(ReadLine::TooLong);
+                return Ok(ReadLine::Skipped(too_long()));
             }
         }
     }
-    String::from_utf8(std::mem::take(buf))
-        .map(ReadLine::Line)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    // Not UTF-8 is malformed, like a line that is not JSON: refused, and
+    // the next line read as usual. It is not a failed read.
+    Ok(match String::from_utf8(std::mem::take(buf)) {
+        Ok(l) => ReadLine::Line(l),
+        Err(e) => ReadLine::Skipped(ProtoError::new(
+            ErrorCode::Invalid,
+            format!("a line that is not UTF-8 was skipped (invalid byte at {})", e.utf8_error().valid_up_to()),
+        )),
+    })
 }
 
 fn too_long() -> ProtoError {
@@ -204,8 +212,8 @@ pub fn serve_fake(
     loop {
         let line = match read_line(&mut input, &mut buf)? {
             ReadLine::Line(l) => l,
-            ReadLine::TooLong => {
-                send(&mut out, &protocol::result_json(None, &Err(too_long())))?;
+            ReadLine::Skipped(e) => {
+                send(&mut out, &protocol::result_json(None, &Err(e)))?;
                 continue;
             }
             ReadLine::Eof => break,
@@ -395,8 +403,8 @@ impl AudioSide {
 
 enum Msg {
     Line(String),
-    /// A line past `MAX_LINE_BYTES`, skipped by the reader.
-    TooLong,
+    /// A line the reader skipped (too long, or not UTF-8), with its refusal.
+    Skipped(ProtoError),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
     Eof,
     /// The audio side returned. Before `stop` is set that means it failed to
@@ -855,9 +863,9 @@ fn serve_threaded_from(
                 }
                 // Its refusal is a reply the control side still has to
                 // write, so it takes a slot like any line.
-                Ok(ReadLine::TooLong) => {
+                Ok(ReadLine::Skipped(e)) => {
                     reader_room.take(0);
-                    Msg::TooLong
+                    Msg::Skipped(e)
                 }
                 Ok(ReadLine::Eof) | Err(_) => break,
             };
@@ -908,8 +916,8 @@ fn serve_threaded_from(
                     break;
                 }
             }
-            Msg::TooLong => {
-                control.reply(None, Err(too_long()));
+            Msg::Skipped(e) => {
+                control.reply(None, Err(e));
                 in_flight.give_back(0);
             }
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
@@ -951,7 +959,7 @@ fn serve_threaded_from(
                     break;
                 }
                 // Nothing sent after shutdown or EOF is taken.
-                Ok(Msg::Line(_) | Msg::TooLong | Msg::Eof) => {}
+                Ok(Msg::Line(_) | Msg::Skipped(_) | Msg::Eof) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -1785,6 +1793,45 @@ mod tests {
             assert_eq!(skipped.len(), 2, "{results:?}");
             assert!(skipped.iter().all(|r| r["error"]["message"].as_str().unwrap().contains("longer than")), "{skipped:?}");
             for id in ["max", "after"] {
+                let r = results.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
+                assert_eq!(r["ok"], true, "{r}");
+            }
+        };
+        let mut out = Vec::new();
+        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None).unwrap();
+        check(&String::from_utf8(out).unwrap());
+        let out = Captured::default();
+        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", |mut side, stop| {
+            while !stop.load(Ordering::Relaxed) {
+                side.process(64);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+        .unwrap();
+        check(&String::from_utf8(out.0.lock().unwrap().clone()).unwrap());
+    }
+
+    #[test]
+    fn a_line_that_is_not_utf8_is_refused_and_the_session_reads_on() {
+        // Codex on d959eae8: one line that is not UTF-8 ended the session,
+        // the fake clock with an error and the threaded ones as at EOF, with
+        // no result for it. It is refused like any malformed line.
+        let mut input = Vec::new();
+        input.extend_from_slice(b"{\"id\": \"bad\", \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}} \xff\xfe\n");
+        input.extend_from_slice(b"\xc3\n");
+        // Control: UTF-8 past ASCII is read as usual, and so is what follows.
+        input.extend_from_slice("{\"id\": \"caf\u{e9}\", \"cmd\": {\"type\": \"crossfader\", \"value\": 0.5}}\n".as_bytes());
+        input.extend_from_slice(b"{\"id\": \"after\", \"cmd\": {\"type\": \"master_volume\", \"value\": 0.5}}\n");
+        let check = |text: &str| {
+            let results: Vec<Value> = text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect();
+            assert_eq!(results.len(), 4, "{results:?}");
+            let skipped: Vec<_> = results.iter().filter(|r| r["id"].is_null()).collect();
+            assert_eq!(skipped.len(), 2, "{results:?}");
+            for r in &skipped {
+                assert_eq!(r["error"]["code"], "invalid", "{r}");
+                assert!(r["error"]["message"].as_str().unwrap().contains("not UTF-8"), "{r}");
+            }
+            for id in ["caf\u{e9}", "after"] {
                 let r = results.iter().find(|r| r["id"] == id).unwrap_or_else(|| panic!("no result for {id}: {results:?}"));
                 assert_eq!(r["ok"], true, "{r}");
             }
