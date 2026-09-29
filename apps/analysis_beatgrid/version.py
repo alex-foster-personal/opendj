@@ -31,6 +31,9 @@ from typing import Literal
 #: the lane payload builder together. 1.1.0 is the version
 #: `beat_this_runner.py` shipped in PR #1514 and the round-1 measurements were
 #: taken at; the record-writing half added here changes no emitted beat.
+#: 1.3.0 (NATIVE-17) changes the octave policy only: the model's own level wins
+#: a two-octave tie, a genre tempo family can pick the octave, and line mode
+#: folds half-time sections. The runner's beats are unchanged from 1.2.0.
 PRODUCER_VERSION = "1.3.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record
