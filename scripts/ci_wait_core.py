@@ -31,7 +31,17 @@ from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 # together, and a check nobody is waiting for cannot fail. Keyed on the slug alone, every
 # other check the same app ever emits disappears with it, so a required one the app adds
 # later is silently dropped on the day it appears.
-DROPPED_APP_CHECKS = frozenset({("mergify", "Mergify Merge Queue")})
+#
+# Trunk Merge Queue (issue #4168, adopted Mon 28 Sep 2026) posts its queue marker from the
+# `trunk-io` app. The name embeds the target branch, so only main's marker is named here: a
+# queue on another branch is a new name a person should classify, not a silent drop. The
+# Mergify pair stays until that queue is retired.
+DROPPED_APP_CHECKS = frozenset(
+    {
+        ("mergify", "Mergify Merge Queue"),
+        ("trunk-io", "Trunk Merge Queue (main)"),
+    }
+)
 DROPPED_APP_SLUGS = frozenset(slug for slug, _name in DROPPED_APP_CHECKS)
 
 
@@ -203,9 +213,9 @@ def _pull_request_triggered_runs(
     seen: dict[str, str] = {}
     kept: list[dict] = []
     for run in check_runs:
-        # Mergify's queue marker has no Actions run to ask for an event, so it is dropped
-        # by APP AND NAME rather than by "not GitHub Actions". Dropping every external app
-        # removes
+        # A merge queue's marker (Mergify, Trunk) has no Actions run to ask for an event, so
+        # it is dropped by APP AND NAME rather than by "not GitHub Actions". Dropping every
+        # external app removes
         # a required security, coverage or CI check from the observed AND expected sets at
         # once, which is invisible: the waiter then reports success for a check it stopped
         # looking at. An unrecognized app raises instead, so a person decides.
@@ -324,8 +334,7 @@ def _timeout_message(
     pending = sorted(name for name, run in latest.items() if run["status"] != "completed")
     if pending:
         return (
-            f"timed out after {elapsed:.0f}s: {len(pending)} check(s) still not "
-            f"terminal: {pending}"
+            f"timed out after {elapsed:.0f}s: {len(pending)} check(s) still not terminal: {pending}"
         )
     return (
         f"timed out after {elapsed:.0f}s: all {len(expected)} expected check(s) were "

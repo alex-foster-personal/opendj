@@ -49,6 +49,8 @@ export const METER_ARTIFACT_ORIGIN = `http://127.0.0.1:${METER_ARTIFACT_PORT}`;
 export const METER_ARTIFACT_BUILD_DIR = `${FRONTEND_ROOT}build`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'meter-artifact.spec.ts',
 	fullyParallel: false,
