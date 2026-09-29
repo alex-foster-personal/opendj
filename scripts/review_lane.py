@@ -400,7 +400,7 @@ def _only_generated_changes(section: list[str], block: GeneratedBlock) -> bool:
     """True when the section has hunks and every changed line is generated output its own
     hunk proves lies inside the block.
 
-    Changing a marker keeps the section, so in a skippable section markers appear only as
+    A marker is not a generated line, so in a skippable section markers appear only as
     context, on both sides alike. A hunk is contiguous, so a changed line is inside exactly
     when the nearest marker above it in the hunk is BEGIN or the nearest below it is END.
     A line with no marker in view cannot be placed and keeps the section reviewed.
@@ -420,7 +420,7 @@ def _changed_line_is_placed_inside(hunk: list[str], index: int, block: Generated
     text = line[1:]
     if line[:1] == " ":
         return True
-    if block.is_marker(text) or not block.is_generated_line(text):
+    if not block.is_generated_line(text):
         return False
     above = next((h[1:] for h in reversed(hunk[:index]) if block.is_marker(h[1:])), None)
     below = next((h[1:] for h in hunk[index + 1 :] if block.is_marker(h[1:])), None)
