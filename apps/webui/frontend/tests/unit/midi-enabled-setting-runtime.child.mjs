@@ -40,6 +40,9 @@ try {
 	const uiState = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-ui-state.svelte.ts');
 	const webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
 	const choice = await vite.ssrLoadModule('/src/lib/components/rb/midi/midi-enabled-choice.ts');
+	const stores = await vite.ssrLoadModule('/src/lib/stores.svelte.ts');
+	const loadFailureToasts = () =>
+		stores.toasts.filter((t) => t.message === 'MIDI could not load, so it stays off').length;
 
 	const snapshot = () => ({
 		navigatorHasWebMidi: typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined,
@@ -71,7 +74,14 @@ try {
 	apply.applySettingChange('rb.midi_enabled', true);
 	const settingRightAfterEnable = apply.readSettingValue('rb.midi_enabled');
 	await until(() => uiState.midiUi.lastError !== null && !uiState.midiUi.requestPending, 'the request to settle');
-	results.enableFromSettings = { ...snapshot(), settingRightAfterEnable };
+	// Control for the failed-load path in 7: here the runtime chunk loads for
+	// real, so the choice is cleared by the runtime's own unsupported branch
+	// (lastError), never by apply.ts's load-failure catch.
+	results.enableFromSettings = {
+		...snapshot(),
+		settingRightAfterEnable,
+		loadFailureToasts: loadFailureToasts()
+	};
 
 	// 3. Turned off while the request is pending (the same function apply.ts
 	// calls, invoked directly so the disable lands inside the pending window).
@@ -110,12 +120,15 @@ try {
 // 7. The settings toggle's displayed value must re-render: a live $effect
 // (runes compiled for the client by load-rune-module.mjs, not stubbed) reads
 // readSettingValue() the way SettingsOverlay's template does. That bundle
-// keeps apply.ts's dynamic import external, so its runtime half logs a load
-// error here; only the synchronous persist and the display are under test.
+// keeps apply.ts's dynamic import of midi-ui-state EXTERNAL, and Node's real
+// loader cannot resolve a `$lib/...` specifier, so the MIDI runtime chunk
+// genuinely fails to load here (Codex P2 4129637645). The restore to off and
+// the error toast below are that real failure's outcome, not a simulated one.
 localStorage.clear();
 const rune = await loadRuneModule(`
 import { applySettingChange, readSettingValue } from '$lib/settings/apply';
-import { persistMidiEnabled, hydrateMidiEnabledFromDisk } from '$lib/components/rb/midi/midi-enabled-choice';
+import { hydrateMidiEnabledFromDisk, midiEnabledPersisted } from '$lib/components/rb/midi/midi-enabled-choice';
+import { dismissToast, toasts } from '$lib/stores.svelte';
 export function watchMidiSetting() {
 	const seen: unknown[] = [];
 	const stop = $effect.root(() => {
@@ -125,18 +138,28 @@ export function watchMidiSetting() {
 	});
 	return { seen, stop };
 }
-export { applySettingChange, persistMidiEnabled, hydrateMidiEnabledFromDisk };
+export function errorToasts() {
+	return toasts.filter((t) => t.kind === 'error').map((t) => t.message);
+}
+export function dismissAll() {
+	for (const t of [...toasts]) dismissToast(t.logId);
+}
+export { applySettingChange, hydrateMidiEnabledFromDisk, midiEnabledPersisted };
 `);
 const settle = () => new Promise((r) => setTimeout(r, 20));
 const watch = rune.watchMidiSetting();
 await settle();
 rune.applySettingChange('rb.midi_enabled', true); // the user's toggle
-await settle();
-rune.persistMidiEnabled(false); // what a denied request's settle writes
+const persistedRightAfterToggle = rune.midiEnabledPersisted();
+for (let i = 0; i < 400 && rune.midiEnabledPersisted(); i += 1) await settle();
+const persistedAfterFailedLoad = rune.midiEnabledPersisted();
+const toastsAfterFailedLoad = rune.errorToasts();
+rune.dismissAll(); // each toast arms a real dismissal timer
 await settle();
 rune.hydrateMidiEnabledFromDisk({ midi_enabled: true }); // disk choice arriving later
 await settle();
 watch.stop();
 results.displayReactivity = { seen: watch.seen };
+results.failedRuntimeLoad = { persistedRightAfterToggle, persistedAfterFailedLoad, toastsAfterFailedLoad };
 
 process.stdout.write(`RESULT ${JSON.stringify(results)}\n`);

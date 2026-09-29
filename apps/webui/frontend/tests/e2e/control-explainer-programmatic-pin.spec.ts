@@ -12,9 +12,10 @@
  * unit suite has no DOM, and an effect's edge behavior is exactly what a
  * source regex cannot establish.
  *
- * Harness-agnostic (setContent, nothing read at module scope), so it runs
- * under the root config with no server. Locally, any config with no
- * webServer that matches this file runs it.
+ * Harness-agnostic (setContent, nothing read at module scope); it runs in
+ * the root suite (e2e.yml "Root Playwright suite"). The real /performance
+ * tray -> I/O -> MIDI flow is io-midi-drawer-handoff.spec.ts; this file is its
+ * component-level complement for the edges that flow does not reach.
  *
  * [if] the parent drops programmaticOpen [then] the popover closes and
  *   onProgrammaticClose is NOT called again [else stop].

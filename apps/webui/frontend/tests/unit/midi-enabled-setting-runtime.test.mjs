@@ -76,7 +76,7 @@ before(() => {
 
 test('the child really ran without WebMIDI, against real storage (instrument check)', () => {
 	for (const [name, snap] of Object.entries(results)) {
-		if (name === 'displayReactivity') continue; // a render trace, not a snapshot
+		if (name === 'displayReactivity' || name === 'failedRuntimeLoad') continue; // not snapshots
 		assert.equal(snap.navigatorHasWebMidi, false, `${name}: this file asserts the no-WebMIDI branch`);
 	}
 	// Real storage both ways: an opt-in written was read back before the request cleared it.
@@ -140,10 +140,44 @@ test('disabling from settings leaves the permission state as the browser reporte
 	assert.equal(s.persisted, false);
 });
 
-test('the settings MIDI toggle re-renders on toggle, on a denied request clearing it, and on a disk hydrate', () => {
-	// Initial read, the optimistic toggle, the settle that clears it, the
-	// disk-backed choice: four distinct renders, not one frozen value.
+test('the settings MIDI toggle re-renders on toggle, on a failed runtime load clearing it, and on a disk hydrate', () => {
+	// Initial read, the optimistic toggle, the real failed load that clears it,
+	// the disk-backed choice: four distinct renders, not one frozen value.
 	assert.deepEqual(results.displayReactivity.seen, [false, true, false, true]);
+});
+
+// Codex P2 4129637645: the runtime chunk failing to load after the toggle
+// saved "on" left MIDI reading enabled with nothing running. The failure here
+// is Node's real loader refusing an unresolvable specifier (see the child).
+test('a MIDI runtime chunk that fails to load restores the choice to off and says so', () => {
+	const s = results.failedRuntimeLoad;
+	assert.equal(s.persistedRightAfterToggle, true, 'the toggle saved "on" first; this is the case under test');
+	assert.equal(s.persistedAfterFailedLoad, false);
+	assert.deepEqual(s.toastsAfterFailedLoad, ['MIDI could not load, so it stays off']);
+});
+
+test('control: when the runtime chunk loads, the load-failure path stays silent', () => {
+	// UNAVAILABLE: "a successful load keeps on" end to end needs a real WebMIDI
+	// grant (see the header). What Node CAN show: the module loads, the choice
+	// is cleared by the runtime's own unsupported branch, and no load-failure
+	// toast is raised, so the catch is not firing on a load that worked.
+	const s = results.enableFromSettings;
+	assert.equal(s.settingRightAfterEnable, true);
+	assert.match(s.lastError, /not supported/i);
+	assert.equal(s.loadFailureToasts, 0);
+});
+
+test('only the load-failure catch restores off; a settled apply leaves the choice to the runtime', () => {
+	const applySrc = read('src/lib/settings/apply.ts');
+	const fn = applySrc.slice(
+		applySrc.indexOf('async function _applyMidiEnabledChoice('),
+		applySrc.indexOf('export const ALLOWED_SETTING_KEYS')
+	);
+	const tryBody = fn.slice(fn.indexOf('try {'), fn.indexOf('} catch'));
+	const catchBody = fn.slice(fn.indexOf('} catch'));
+	assert.doesNotMatch(tryBody, /persistMidiEnabled/, 'a successful apply must not overwrite the choice');
+	assert.match(catchBody, /persistMidiEnabled\(false\);/);
+	assert.match(catchBody, /pushToast\([^)]*'error'[^)]*exc\)/);
 });
 
 test('every write of the choice goes through persistMidiEnabled, which signals the display', () => {

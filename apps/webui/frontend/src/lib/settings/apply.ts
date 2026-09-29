@@ -63,6 +63,7 @@ import {
 	midiEnabledPersisted,
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
+import { pushToast } from '$lib/stores.svelte';
 
 /** The rb.midi_enabled runtime half lives in midi-ui-state, which is loaded on
  * demand here rather than charging the MIDI runtime to first paint. It persists
@@ -74,7 +75,10 @@ async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 		const { applyMidiEnabledSetting } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
 		await applyMidiEnabledSetting(enabled);
 	} catch (exc: unknown) {
-		console.error('[settings] rb.midi_enabled: MIDI state module failed to load or apply', exc);
+		// Nothing acted on the saved choice, so it must not read "on": restore
+		// off (persistMidiEnabled bumps the tick the toggle reads) and say why.
+		persistMidiEnabled(false);
+		pushToast('MIDI could not load, so it stays off', 'error', undefined, exc);
 	}
 }
 
