@@ -1417,8 +1417,19 @@ jobs:
           cargo --version
 
       - name: Ensure cargo-audit
+        # Pinned: ci/runner-toolset.yml's cargo-audit entry declares this version
+        # and tests/scripts/test_runner_toolset_complete.py checks the two agree.
+        # A runner already carrying another version is replaced, never trusted.
+        env:
+          CARGO_AUDIT_VERSION: "0.22.2"
         run: |
-          command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
+          set -euo pipefail
+          have="$(cargo audit --version 2>/dev/null | awk '{print $NF}' || true)"
+          if [ "$have" != "$CARGO_AUDIT_VERSION" ]; then
+            echo "cargo-audit ${have:-absent} is not the pinned ${CARGO_AUDIT_VERSION}: installing it"
+            cargo install cargo-audit --locked --force --version "$CARGO_AUDIT_VERSION"
+          fi
+          cargo audit --version
 
       - name: Install JS lockfile trees for pnpm audit
         run: |

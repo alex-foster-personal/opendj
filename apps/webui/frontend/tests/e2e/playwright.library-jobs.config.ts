@@ -56,6 +56,8 @@ const engineEnv = {
 };
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'library-jobs-ordering.spec.ts',
 	fullyParallel: false,
