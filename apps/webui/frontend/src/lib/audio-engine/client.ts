@@ -8,10 +8,10 @@
  * `result` and `state` (about 30 a second) out. The state feed never passes
  * through Python.
  *
- * Nothing in the app drives audio through this yet: the Web Audio engine stays
- * the one users hear until the null tests (plan 20-05) and switch-over (20-07).
- * It exists so agents, a dev page and the shadow-engine tests can drive the
- * Rust engine from the page with the page's own command vocabulary.
+ * The Web Audio engine stays the one users hear by default until the null
+ * tests (plan 20-05) and switch-over (20-07). The opt-in Rust engine mode
+ * (`rust-mode.svelte.ts`, `?engine=rust`) plays through this client, and agents
+ * and the shadow-engine tests can use it with the page's own command vocabulary.
  *
  * Kept free of `$lib` imports and browser globals: `fetch`, `WebSocket` and the
  * clock are passed in, so the unit tests drive it with stand-ins.
@@ -37,6 +37,9 @@ export interface EngineDeckState {
 	/** Track ms per engine ms while playing, 0 when stopped. */
 	rate: number;
 	tempo: number;
+	cue_ms: number | null;
+	/** The engaged loop, or null. */
+	loop: { in_ms: number; out_ms: number } | null;
 }
 
 export interface EngineState {
