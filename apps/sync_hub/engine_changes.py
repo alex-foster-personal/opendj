@@ -205,6 +205,17 @@ def _changelog_rows(
     *,
     changelog: str,
 ) -> tuple[Offer, int]:
+    """:func:`_walk_changelog_entries`, reading each table's columns once."""
+    with protocol.table_columns_memo(conn):
+        return _walk_changelog_entries(conn, entries, changelog=changelog)
+
+
+def _walk_changelog_entries(
+    conn: sqlite3.Connection,
+    entries: Sequence[tuple[Any, Any, Any]],
+    *,
+    changelog: str,
+) -> tuple[Offer, int]:
     """Read the current state of every row named by ``entries``.
 
     A changelog records THAT a row changed, not what it looked like, so each

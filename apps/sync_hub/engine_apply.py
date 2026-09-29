@@ -441,31 +441,33 @@ def _apply(
     held: set[str] = set()
     identity_rejects: list[protocol.IdentityReject] = []
     identity_repairs: list[IdentityRepairRequest] = []
-    for change in ordered:
-        outcome = _apply_one(
-            conn,
-            change,
-            remap,
-            held,
-            record_changelog,
-            stamp,
-            hub_authoritative=hub_authoritative,
-            hub_row_authority=hub_row_authority,
-        )
-        if outcome.status == "accepted":
-            accepted += 1
-            if change.hash_pending:
-                hash_pending += 1
-        elif outcome.status == "rejected":
-            rejected += 1
-            if outcome.identity_reject is not None:
-                identity_rejects.append(outcome.identity_reject)
-        else:
-            quarantined += 1
-            faults.extend(outcome.faults)
-            if outcome.status == "identity":
-                identity_conflicts += 1
-        identity_repairs.extend(outcome.identity_repairs)
+    # One PRAGMA table_info per table for the batch, not one per row (LIBM-120 L6).
+    with protocol.table_columns_memo(conn):
+        for change in ordered:
+            outcome = _apply_one(
+                conn,
+                change,
+                remap,
+                held,
+                record_changelog,
+                stamp,
+                hub_authoritative=hub_authoritative,
+                hub_row_authority=hub_row_authority,
+            )
+            if outcome.status == "accepted":
+                accepted += 1
+                if change.hash_pending:
+                    hash_pending += 1
+            elif outcome.status == "rejected":
+                rejected += 1
+                if outcome.identity_reject is not None:
+                    identity_rejects.append(outcome.identity_reject)
+            else:
+                quarantined += 1
+                faults.extend(outcome.faults)
+                if outcome.status == "identity":
+                    identity_conflicts += 1
+            identity_repairs.extend(outcome.identity_repairs)
     return ApplyResult(
         accepted=accepted,
         rejected=rejected,
