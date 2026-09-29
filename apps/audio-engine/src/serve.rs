@@ -76,6 +76,16 @@ const LINE_BYTES: usize = 4 * MAX_LINE_BYTES;
 /// load a line can carry still goes alone. Real grids are tens of KiB.
 const LOAD_BYTES: usize = 64 << 20;
 
+/// On the threaded clocks, how many bytes of decoded audio loads may hold
+/// from their decode until their result is out. A decoded track waits in
+/// the mailbox, and the track it replaces on its deck waits in the result
+/// ring, until the pump writes that load's result; with the output stalled
+/// neither drains, so every decode would add a track to what is held. Past
+/// this, a load waits to start decoding (it is not refused) until results
+/// flow again, unless nothing is held, so any one file still loads. Up to
+/// one decode per deck may already be running when it is reached.
+const PCM_BYTES: usize = 1 << 30;
+
 /// What `LOAD_BYTES` counts for one load: its path, its grid, and the
 /// decoded track's copy of the grid with its downbeat index (at most one
 /// entry a beat).
@@ -102,6 +112,8 @@ impl Drop for Charge {
 struct Pending {
     id: Option<Value>,
     hold: Option<Charge>,
+    /// For a decoded load, its samples' share of `PCM_BYTES`.
+    pcm: Option<Charge>,
 }
 
 type Ids = Arc<Mutex<HashMap<u64, Pending>>>;
@@ -450,6 +462,8 @@ enum Msg {
     Skipped(ProtoError),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
     Eof,
+    /// Reading stdin failed: the session ends as at EOF, and then fails.
+    InputFailed(io::Error),
     /// The audio side returned. Before `stop` is set that means it failed to
     /// start or died, e.g. the output device would not open.
     AudioExited,
@@ -504,6 +518,10 @@ struct Control {
     state_seq: u64,
     /// Bytes of `LOAD_BYTES` held now.
     load_used: Arc<AtomicUsize>,
+    /// Bytes of decoded audio held by loads whose result is not yet out,
+    /// and the most there may be before another decode starts.
+    pcm_used: Arc<AtomicUsize>,
+    pcm_budget: usize,
     /// Set by whichever write to the output fails first.
     closed: Arc<AtomicBool>,
 }
@@ -524,7 +542,7 @@ impl Control {
     fn seq(&mut self, id: Option<Value>) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.ids.lock().unwrap().insert(seq, Pending { id, hold: None });
+        self.ids.lock().unwrap().insert(seq, Pending { id, hold: None, pcm: None });
         seq
     }
 
@@ -610,11 +628,15 @@ impl Control {
         }
         self.load_used.fetch_add(bytes, Ordering::AcqRel);
         let charge = Charge { bytes, used: self.load_used.clone() };
-        let (id, spec, charge) = match self.park(deck, Queued::Load(id, spec, charge)) {
-            Some(Queued::Load(id, spec, charge)) => (id, spec, charge),
-            _ => return,
-        };
-        self.start_load(id, spec, charge, VecDeque::new());
+        if let Some(load) = self.park(deck, Queued::Load(id, spec, charge)) {
+            self.release(deck, VecDeque::from([load]));
+        }
+    }
+
+    /// Whether decoded audio already held by loads whose results are not
+    /// out passes the budget, so no further decode may start.
+    fn pcm_full(&self) -> bool {
+        self.pcm_used.load(Ordering::Acquire) > self.pcm_budget
     }
 
     /// Decode `spec` off this thread, with `behind` parked behind it.
@@ -642,6 +664,14 @@ impl Control {
         let mut q = self.waiting[deck as usize - 1].take().unwrap_or_default();
         match result {
             Ok(track) => {
+                // Held until the load's result is out: by then the track is
+                // on its deck and the one it replaced has been freed.
+                let bytes = track.pcm.capacity() * std::mem::size_of::<f32>();
+                self.pcm_used.fetch_add(bytes, Ordering::AcqRel);
+                let charge = Charge { bytes, used: self.pcm_used.clone() };
+                if let Some(p) = self.ids.lock().unwrap().get_mut(&seq) {
+                    p.pcm = Some(charge);
+                }
                 q.push_front(Queued::Ready(seq, EngineCmd::Load { deck, track }));
                 self.release(deck, q);
             }
@@ -665,6 +695,12 @@ impl Control {
         while let Some(item) = q.pop_front() {
             match item {
                 Queued::Ready(..) | Queued::Cmd(..) if self.cmd_tx.slots() == 0 => {
+                    q.push_front(item);
+                    break;
+                }
+                // Decoded audio waits on the output: the load starts once
+                // results flow and give it room.
+                Queued::Load(..) if self.pcm_full() => {
                     q.push_front(item);
                     break;
                 }
@@ -961,13 +997,14 @@ fn serve_threaded_from(
                     reader_room.take(0);
                     Msg::Skipped(e)
                 }
-                Ok(ReadLine::Eof) | Err(_) => break,
+                Ok(ReadLine::Eof) => Msg::Eof,
+                Err(e) => Msg::InputFailed(e),
             };
-            if reader_tx.send(msg).is_err() {
+            let end = matches!(msg, Msg::Eof | Msg::InputFailed(_));
+            if reader_tx.send(msg).is_err() || end {
                 return;
             }
         }
-        let _ = reader_tx.send(Msg::Eof);
     });
 
     let mut control = Control {
@@ -987,10 +1024,13 @@ fn serve_threaded_from(
         fences: HashMap::new(),
         state_seq: 0,
         load_used: Arc::default(),
+        pcm_used: Arc::default(),
+        pcm_budget: PCM_BYTES,
         closed,
     };
     let mut audio_failed = false;
     let mut output_closed = false;
+    let mut input_failed = None;
     loop {
         // The output closing is noticed before the next line is handled,
         // not after every line already read: its message may be queued
@@ -1032,6 +1072,12 @@ fn serve_threaded_from(
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
+            // Lines may have been lost: finish what was read, as at EOF,
+            // but the session did not end well.
+            Msg::InputFailed(e) => {
+                input_failed = Some(e);
+                break;
+            }
             Msg::AudioExited => {
                 audio_failed = true;
                 break;
@@ -1072,7 +1118,7 @@ fn serve_threaded_from(
                     break;
                 }
                 // Nothing sent after shutdown or EOF is taken.
-                Ok(Msg::Line(_) | Msg::Skipped(_) | Msg::Eof) => {}
+                Ok(Msg::Line(_) | Msg::Skipped(_) | Msg::Eof | Msg::InputFailed(_)) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -1113,6 +1159,9 @@ fn serve_threaded_from(
     // just above) is a lost result too.
     if output_closed || control.closed.load(Ordering::Acquire) {
         return Err(io::Error::new(io::ErrorKind::BrokenPipe, "the output closed, so the engine stopped"));
+    }
+    if let Some(e) = input_failed {
+        return Err(io::Error::new(e.kind(), format!("reading stdin failed, so the engine stopped: {e}")));
     }
     Ok(())
 }
@@ -1471,6 +1520,8 @@ mod tests {
             fences: HashMap::new(),
             state_seq: 0,
             load_used: Arc::default(),
+            pcm_used: Arc::default(),
+            pcm_budget: PCM_BYTES,
             closed: Arc::default(),
         };
         (control, cmd_rx, out)
@@ -1555,6 +1606,49 @@ mod tests {
         // Control: the one past the bound is still refused, at once.
         assert_eq!(full.len(), 1, "{full:?}");
         assert_eq!(full[0]["id"], QUEUE_SLOTS);
+    }
+
+    #[test]
+    fn decoded_audio_held_behind_a_stalled_output_is_bounded() {
+        // Codex on 46f9cf68: the load budget charged only paths and grids,
+        // while each decoded track waits in the mailbox (and the one it
+        // replaces in the result ring) until the pump writes its result. With
+        // the output stalled, every decode added a track. A decode's samples
+        // are now held against `PCM_BYTES` until its result is out, and no
+        // further decode starts past it.
+        let (mut c, mut cmd_rx, out) = control();
+        c.pcm_budget = 4000;
+        let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
+        let track = |n: usize| -> Result<Arc<Track>, ProtoError> { Ok(Arc::new(Track::new(48000, vec![0.0; n], vec![], None))) };
+        let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
+        c.load(Some("a".into()), spec(1));
+        c.load(Some("b".into()), spec(1));
+        let a = c.loading[0].unwrap();
+        c.finish_load(a, 1, track(1002));
+        assert_eq!(used(&c), 1002 * 4, "the decoded samples are not held against the budget");
+        assert!(matches!(cmd_rx.pop(), Ok((seq, EngineCmd::Load { .. })) if seq == a), "the decoded load did not go");
+        // Its result is not out, so b, queued behind it, waits to decode,
+        // and so does a new load on another deck.
+        assert_eq!(c.loading[0], None, "a decode started past the budget");
+        c.load(Some("c".into()), spec(2));
+        assert_eq!(c.loading[1], None, "a decode started past the budget on another deck");
+        assert!(c.staged(), "the held loads are not retried");
+        // The pump writes a's result: the room is given back and both start.
+        drop(take_id(&c.ids, a));
+        assert_eq!(used(&c), 0);
+        c.release_staged();
+        assert!(c.loading[0].is_some() && c.loading[1].is_some(), "the held loads never started");
+        // Nothing was refused on the way.
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        assert!(!text.contains("error"), "{text}");
+        // Control: a decode within the budget holds nothing back.
+        let (b, d) = (c.loading[0].unwrap(), c.loading[1].unwrap());
+        c.load(Some("e".into()), spec(1));
+        c.finish_load(b, 1, track(1000));
+        assert_eq!(used(&c), 4000);
+        assert!(c.loading[0].is_some(), "a decode within the budget held the next one back");
+        c.finish_load(d, 2, track(10));
+        let _ = take_id(&c.ids, b);
     }
 
     #[test]
@@ -1968,6 +2062,39 @@ mod tests {
         // Control: with every write delivered, the same sessions end well.
         assert!(run(bye, "never written").is_ok());
         assert!(run(asked, "never written").is_ok());
+    }
+
+    #[test]
+    fn a_failed_stdin_read_is_an_error_not_a_clean_close() {
+        // Codex on 46f9cf68: a read error on stdin was taken for EOF, so the
+        // session shut down and returned success with commands possibly lost.
+        struct Broken;
+        impl io::Read for Broken {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::ConnectionReset, "pipe reset"))
+            }
+        }
+        let run = |tail: Box<dyn io::Read + Send>| {
+            let out = Captured::default();
+            let line = io::Cursor::new(b"{\"id\": \"f\", \"cmd\": {\"type\": \"master_mute\", \"muted\": true}}\n".to_vec());
+            let r = serve_threaded_from(io::BufReader::new(io::Read::chain(line, tail)), out.clone(), 48000, "wall", |mut side, stop| {
+                while !stop.load(Ordering::Relaxed) {
+                    side.process(64);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            });
+            let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+            (r, text)
+        };
+        let (r, text) = run(Box::new(Broken));
+        let e = r.expect_err("a failed read ended the session as a clean close");
+        assert_eq!(e.kind(), io::ErrorKind::ConnectionReset);
+        // What was read before the failure still ran and was answered.
+        assert!(text.contains("\"id\":\"f\",\"ok\":true"), "{text}");
+        // Control: the same session closed by EOF ends well.
+        let (r, text) = run(Box::new(io::empty()));
+        assert!(r.is_ok(), "{r:?}");
+        assert!(text.contains("\"id\":\"f\",\"ok\":true"), "{text}");
     }
 
     /// Output that takes the hello, then holds the next write until the test
