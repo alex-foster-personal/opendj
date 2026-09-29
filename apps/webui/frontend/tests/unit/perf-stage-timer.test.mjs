@@ -20,7 +20,13 @@ const { stageTimer } = await loadTypeScriptModule('src/lib/rb/perf-event-log.ts'
 test('stageTimer passes the value through and records the stage in whole ms', async () => {
 	const stages = {};
 	const time = stageTimer(stages);
-	const value = await time('probeStem', new Promise((resolve) => setTimeout(() => resolve('ok'), 20)));
+	// The 20 ms sleep starts in a microtask, so after stageTimer has read its clock.
+	// Built directly as the argument, its timer started BEFORE the clock, and a slow
+	// host's gap between the two came off the reading ("got 14" on megamac-vm-4).
+	const sleepStartedAfterTheClock = Promise.resolve().then(
+		() => new Promise((resolve) => setTimeout(() => resolve('ok'), 20))
+	);
+	const value = await time('probeStem', sleepStartedAfterTheClock);
 	assert.equal(value, 'ok');
 	assert.ok(Number.isInteger(stages.probeStem), `expected whole ms, got ${stages.probeStem}`);
 	assert.ok(stages.probeStem >= 15, `expected about 20 ms, got ${stages.probeStem}`);
