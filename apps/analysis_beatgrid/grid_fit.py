@@ -174,6 +174,26 @@ def round_bpm(
     return round(bpm, 2), ROUND_STEPS[-1]
 
 
+def _robust_ls(ts: Sequence[float]) -> tuple[float, float] | None:
+    """`(anchor, period)` seeded on the longest clean run, then extended to
+    every beat that lands on the line and refitted; None when too few do."""
+    if len(ts) < MIN_LINE_BEATS:
+        return None
+    period = statistics.median(b - a for a, b in itertools.pairwise(ts))
+    if not period > 0:
+        return None
+    lo, hi = _clean_run(ts, period)
+    if hi - lo + 1 < MIN_LINE_BEATS:
+        return None
+    a, p = _ls(range(hi - lo + 1), ts[lo : hi + 1])
+    for _ in range(3):
+        kin, tin = _inliers(ts, a, p)
+        if len(kin) < MIN_LINE_BEATS:
+            return None
+        a, p = _ls(kin, tin)
+    return (a, p) if p > 0 else None
+
+
 def fit_line(
     times: Sequence[float], *, rounding: bool = True, octave_multiple: float = 1.0
 ) -> SegmentLine | None:
@@ -184,23 +204,10 @@ def fit_line(
     `fitted * octave_multiple`, so the served spacing IS the served tempo.
     """
     ts = [float(t) for t in times]
-    if len(ts) < MIN_LINE_BEATS:
+    seeded = _robust_ls(ts)
+    if seeded is None:
         return None
-    period = statistics.median(b - a for a, b in itertools.pairwise(ts))
-    if not period > 0:
-        return None
-    lo, hi = _clean_run(ts, period)
-    if hi - lo + 1 < MIN_LINE_BEATS:
-        return None
-    a, p = _ls(range(hi - lo + 1), ts[lo : hi + 1])
-    # Extend from the seed to every beat that lands on the line, then refit.
-    for _ in range(3):
-        kin, tin = _inliers(ts, a, p)
-        if len(kin) < MIN_LINE_BEATS:
-            return None
-        a, p = _ls(kin, tin)
-    if not p > 0:
-        return None
+    a, p = seeded
     kin, tin = _inliers(ts, a, p)
     fitted = 60.0 / p * octave_multiple
     bpm, step = fitted, None
@@ -230,6 +237,27 @@ def fit_line(
     )
 
 
+def _material_split(
+    beats: Sequence[float],
+    bounds: Sequence[tuple[int, int]],
+    rounding: bool,
+    octave_multiple: float,
+) -> list[SegmentLine] | None:
+    """One line per proposed segment, or None when any segment cannot be
+    fitted or no neighbouring pair differs by `MIN_RELATIVE_BPM_DELTA`."""
+    lines: list[SegmentLine] = []
+    for lo, hi in bounds:
+        line = fit_line(beats[lo:hi], rounding=rounding, octave_multiple=octave_multiple)
+        if line is None:
+            return None
+        lines.append(line)
+    fitted = [line.bpm_fitted for line in lines]
+    material = any(
+        abs(x - y) / min(x, y) >= MIN_RELATIVE_BPM_DELTA for x, y in itertools.pairwise(fitted)
+    )
+    return lines if material else None
+
+
 def _segment_lines(
     beats: Sequence[float], rounding: bool, octave_multiple: float
 ) -> list[SegmentLine] | None:
@@ -245,17 +273,9 @@ def _segment_lines(
     analysis = detect_tempo_changes(beats)
     bounds = [(lo, hi) for lo, hi, _ in analysis.segments]
     if len(bounds) > 1:
-        lines = [
-            fit_line(beats[lo:hi], rounding=rounding, octave_multiple=octave_multiple)
-            for lo, hi in bounds
-        ]
-        if all(line is not None for line in lines):
-            fitted = [line.bpm_fitted for line in lines if line is not None]
-            if any(
-                abs(x - y) / min(x, y) >= MIN_RELATIVE_BPM_DELTA
-                for x, y in itertools.pairwise(fitted)
-            ):
-                return [line for line in lines if line is not None]
+        split = _material_split(beats, bounds, rounding, octave_multiple)
+        if split is not None:
+            return split
     line = fit_line(beats, rounding=rounding, octave_multiple=octave_multiple)
     return None if line is None else [line]
 

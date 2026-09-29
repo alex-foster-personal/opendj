@@ -288,14 +288,10 @@ def build_beatgrid_lane(
     )
 
 
-def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> BeatgridLane:
-    """`grid_fit="line"`: serve the fitted line instead of the model's peaks.
-
-    Same guard chain up to the tempo fit (runner error, pulse, octave policy),
-    then `grid_fit.fit_grid` replaces both the raw beats and `lock_bar_phase`.
-    Per-beat BPM is the line's own (rounded) tempo, so the deck's local tempo
-    and the beat spacing it plays against are the same number by construction.
-    """
+def _line_guards(
+    result: Mapping[str, Any], *, threshold: float
+) -> tuple[list[float], list[float], Any] | BeatgridLane:
+    """The raw builder's guard chain up to the tempo fit, for line mode."""
     error = result.get("error")
     if error:
         return _failed(f"{REASON_RUNNER_ERROR}: {error}")
@@ -311,6 +307,58 @@ def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> Beatgrid
     tempo = estimate_bpm(beats)
     if tempo is None:
         return _failed(REASON_NO_TEMPO_FIT)
+    return beats, downbeats, tempo
+
+
+def _line_markers(fit: Any, line_bpm: Sequence[float], confidence: float) -> list[dict]:
+    """One tempo marker at the first served beat of each segment after the first."""
+    first_beat_of: dict[int, float] = {}
+    for t, owner in zip(fit.beats, fit.beat_lines, strict=True):
+        first_beat_of.setdefault(owner, t)
+    return [
+        {
+            "at_s": round(first_beat_of[i], 5),
+            "bpm_before": line_bpm[i - 1],
+            "bpm_after": line_bpm[i],
+            "confidence": confidence,
+        }
+        for i in range(1, len(line_bpm))
+        if i in first_beat_of
+    ]
+
+
+def _line_diagnostics(fit: Any, line_bpm: Sequence[float], octave_multiple: float) -> dict:
+    """The `grid_fit` block: how each served segment was fitted and rounded."""
+    return {
+        "mode": GRID_FIT_LINE,
+        "offset_s": fit.offset_s,
+        "octave_policy_multiple": octave_multiple,
+        "segments": [
+            {
+                "bpm": line_bpm[i],
+                "bpm_fitted": round(line.bpm_fitted, 4),
+                "round_step": line.round_step,
+                "n_inliers": line.n_inliers,
+                "n_outliers": line.n_outliers,
+                "residual_rms_ms": round(line.residual_rms_s * 1000.0, 2),
+            }
+            for i, line in enumerate(fit.lines)
+        ],
+    }
+
+
+def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> BeatgridLane:
+    """`grid_fit="line"`: serve the fitted line instead of the model's peaks.
+
+    Same guard chain up to the tempo fit (runner error, pulse, octave policy),
+    then `grid_fit.fit_grid` replaces both the raw beats and `lock_bar_phase`.
+    Per-beat BPM is the line's own (rounded) tempo, so the deck's local tempo
+    and the beat spacing it plays against are the same number by construction.
+    """
+    guarded = _line_guards(result, threshold=threshold)
+    if isinstance(guarded, BeatgridLane):
+        return guarded
+    beats, downbeats, tempo = guarded
 
     # The grid stays at the model's metrical level, as raw mode's beats do.
     # Re-rendering it at the octave policy's multiple was measured (round 4,
@@ -323,48 +371,22 @@ def _build_line_lane(result: Mapping[str, Any], *, threshold: float) -> Beatgrid
         raise LanePayloadError("grid_fit produced a cadence break; programmer error")
 
     line_bpm = [round(line.bpm, 2) for line in fit.lines]
-    first_downbeat = next(t for t, n in zip(fit.beats, fit.beat_numbers, strict=True) if n == 1)
-    markers = []
-    for i in range(1, len(fit.lines)):
-        owned = zip(fit.beats, fit.beat_lines, strict=True)
-        at = next((t for t, owner in owned if owner == i), None)
-        if at is None:
-            continue
-        markers.append({
-            "at_s": round(at, 5),
-            "bpm_before": line_bpm[i - 1],
-            "bpm_after": line_bpm[i],
-            "confidence": tempo.confidence,
-        })
+    first_downbeat = fit.beats[fit.beat_numbers.index(1)]
+    multi = len(line_bpm) > 1
     payload: dict[str, Any] = {
         "beats": [
             {"t": round(t, 5), "n": n, "bpm": line_bpm[owner]}
             for t, n, owner in zip(fit.beats, fit.beat_numbers, fit.beat_lines, strict=True)
         ],
-        "bpm": line_bpm[0] if len(line_bpm) == 1 else round(tempo.bpm, 2),
+        "bpm": round(tempo.bpm, 2) if multi else line_bpm[0],
         "bpm_confidence": tempo.confidence,
         "octave_reason": (
             "grid_fit_model_level" if tempo.octave_multiple != 1 else tempo.octave_reason
         ),
         "first_downbeat_s": round(first_downbeat, 5),
-        "tempo_changes": markers,
+        "tempo_changes": _line_markers(fit, line_bpm, tempo.confidence),
         "static_grid_untrusted": False,
-        "grid_fit": {
-            "mode": GRID_FIT_LINE,
-            "offset_s": fit.offset_s,
-            "octave_policy_multiple": tempo.octave_multiple,
-            "segments": [
-                {
-                    "bpm": line_bpm[i],
-                    "bpm_fitted": round(line.bpm_fitted, 4),
-                    "round_step": line.round_step,
-                    "n_inliers": line.n_inliers,
-                    "n_outliers": line.n_outliers,
-                    "residual_rms_ms": round(line.residual_rms_s * 1000.0, 2),
-                }
-                for i, line in enumerate(fit.lines)
-            ],
-        },
+        "grid_fit": _line_diagnostics(fit, line_bpm, tempo.octave_multiple),
     }
     if fit.phase_agreement is not None:
         payload["bar_phase_agreement"] = round(fit.phase_agreement, 4)
