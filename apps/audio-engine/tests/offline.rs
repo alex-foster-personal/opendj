@@ -168,6 +168,45 @@ fn plan_errors_name_the_event() {
         let e = render_plan_files(&parse_plan(&beyond).unwrap(), &d).err().unwrap();
         assert!(e.message.contains("never be reached: at 0 ms"), "{at}: {}", e.message);
     }
+    // Codex's case: pending work that cannot move the end's deck (a master
+    // mute near the budget, a crossfader ramp, a fader on that deck, another
+    // deck nothing waits on, a tempo ramp or change on a paused deck) does not
+    // keep a stuck render going either.
+    for (i, work) in [
+        json!({"at": {"ms": 1990}, "cmd": {"type": "master_mute", "muted": true}}),
+        json!({"at": {"ms": 0}, "ramp": {"type": "crossfader", "to": 1, "over": {"ms": 1990}}}),
+        json!({"at": {"ms": 0}, "ramp": {"type": "fader", "deck": 1, "to": 0, "over": {"ms": 1990}}}),
+        json!({"at": {"ms": 1000}, "cmd": {"type": "play", "deck": 2, "playing": true}}),
+        json!({"at": {"ms": 0}, "ramp": {"type": "tempo", "deck": 1, "to": 1.05, "over": {"ms": 1990}}}),
+        json!({"at": {"ms": 1990}, "cmd": {"type": "tempo", "deck": 1, "ratio": 1.05}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let stuck = json!({"end": {"deck": 1, "position_ms": 1000}, "max_ms": 2000, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 2, "path": "a.wav"}},
+            work]});
+        let e = render_plan_files(&parse_plan(&stuck).unwrap(), &d).err().unwrap();
+        assert!(e.message.contains("never be reached: at 0 ms"), "case {i}: {}", e.message);
+    }
+    // Controls: work that can move the end's deck keeps it going, and so does
+    // work on a deck that an event moving it waits on (deck 2 starts, and
+    // deck 1 plays when deck 2 reaches 200 ms).
+    let chained = json!({"end": {"deck": 1, "position_ms": 500}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 2, "path": "a.wav"}},
+        {"at": {"ms": 100}, "cmd": {"type": "play", "deck": 2, "playing": true}},
+        {"at": {"deck": 2, "position_ms": 200}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
+    assert_eq!(render_plan_files(&parse_plan(&chained).unwrap(), &d).unwrap().frames, 48000 * 800 / 1000);
+    // Leaving a loop is such work too: deck 1 loops short of the end until
+    // the loop is cleared.
+    let unlooped = json!({"end": {"deck": 1, "position_ms": 800}, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+        {"at": {"ms": 0}, "cmd": {"type": "loop", "deck": 1, "loop": {"in_ms": 0, "out_ms": 500}}},
+        {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}},
+        {"at": {"ms": 700}, "cmd": {"type": "loop", "deck": 1, "loop": null}}]});
+    assert!(render_plan_files(&parse_plan(&unlooped).unwrap(), &d).is_ok());
     // Control: an event due exactly at the budget still fires on that frame,
     // and here it moves the deck onto the end.
     let edge = json!({"end": {"deck": 1, "position_ms": 1000}, "max_ms": 500, "events": [

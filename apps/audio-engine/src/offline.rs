@@ -334,6 +334,58 @@ fn at_frame_of_ms(ms: f64, sr: u32) -> u64 {
 /// Frames from now until `at` is due: Some(0) means now, None means it cannot
 /// happen from the current state (the deck is empty, paused, or looping
 /// short of the target).
+/// The deck whose playhead a plan action can start, stop or put somewhere
+/// else, if any: the only work that can turn an end out of reach into one
+/// within reach. Tempo only changes the speed of a deck already moving (and
+/// is never 0), and ramps only move knobs, so neither can.
+fn deck_moved_by(action: &Action) -> Option<DeckId> {
+    match action {
+        Action::Cmd(Command::Load(spec)) => Some(spec.deck),
+        Action::Cmd(Command::Apply(
+            EngineCmd::Load { deck, .. }
+            | EngineCmd::Play { deck, .. }
+            | EngineCmd::Cue { deck }
+            | EngineCmd::Seek { deck, .. }
+            | EngineCmd::Loop { deck, .. }
+            | EngineCmd::BeatLoop { deck, .. }
+            | EngineCmd::BeatJump { deck, .. },
+        )) => Some(*deck),
+        _ => None,
+    }
+}
+
+/// Which events could still bring a deck-relative end within reach: those
+/// that move the end's deck, then those that move a deck such an event waits
+/// on, and so on. Everything else (a master mute, a fader or tempo change,
+/// any ramp, another deck nothing waits on) cannot, so it does not keep a
+/// stuck render going. Worked out once from the plan: the answer does not
+/// depend on where the render is. An absolute end is always within reach,
+/// so nothing is needed for it.
+fn end_relevance(plan: &Plan) -> Vec<bool> {
+    let mut decks = [false; MAX_DECKS];
+    let mut events = vec![false; plan.events.len()];
+    let At::Deck { deck, .. } = plan.end else {
+        return events;
+    };
+    decks[deck as usize - 1] = true;
+    loop {
+        let mut grew = false;
+        for (i, ev) in plan.events.iter().enumerate() {
+            if events[i] || !deck_moved_by(&ev.action).is_some_and(|d| decks[d as usize - 1]) {
+                continue;
+            }
+            events[i] = true;
+            grew = true;
+            if let At::Deck { deck, .. } = ev.at {
+                decks[deck as usize - 1] = true;
+            }
+        }
+        if !grew {
+            return events;
+        }
+    }
+}
+
 fn due_in(at: At, engine: &Engine, now: u64) -> Option<u64> {
     let sr = engine.sample_rate();
     match at {
@@ -511,6 +563,7 @@ fn render_within(
     let mut observer = Observer::new();
     let mut scratch: [Vec<f32>; MAX_DECKS] = Default::default();
     let mut deck_pcm: [Vec<f32>; MAX_DECKS] = Default::default();
+    let relevant = end_relevance(plan);
     let render_start = Instant::now();
 
     loop {
@@ -658,14 +711,15 @@ fn render_within(
         if end_in == Some(0) {
             break;
         }
-        // Nothing left can change the engine: every pending event waits on a
-        // deck that cannot get there or falls due after the render budget
-        // ends, no ramp is running, and the end cannot arrive from this state
-        // either. Say so now, rather than render (and hold in memory) silence
-        // all the way to max_ms. An event due exactly at the budget still
-        // fires: events fire before the budget check on their frame.
+        // Nothing left can bring the end within reach: every pending event
+        // that could move a deck the end depends on waits on a deck that
+        // cannot get there or falls due after the render budget ends, and the
+        // end cannot arrive from this state either (no ramp can change that).
+        // Say so now, rather than render (and hold in memory) silence all
+        // the way to max_ms. An event due exactly at the budget still fires:
+        // events fire before the budget check on their frame.
         let can_fire = |at| due_in(at, &engine, now).is_some_and(|d| now.saturating_add(d) <= max_frames);
-        if end_in.is_none() && ramps.is_empty() && !pending.iter().any(|&idx| can_fire(plan.events[idx].at)) {
+        if end_in.is_none() && !pending.iter().any(|&idx| relevant[idx] && can_fire(plan.events[idx].at)) {
             return Err(ProtoError::new(
                 ErrorCode::Invalid,
                 format!(

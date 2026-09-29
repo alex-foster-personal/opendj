@@ -197,12 +197,6 @@ fn beat_count(o: &Obj, ty: &str, signed: bool) -> Result<f64, ProtoError> {
     Ok(v)
 }
 
-fn opt_num(o: &Obj, ty: &str, name: &str) -> Result<Option<f64>, ProtoError> {
-    match o.get(name) {
-        None | Some(Value::Null) => Ok(None),
-        Some(_) => num(o, ty, name).map(Some),
-    }
-}
 
 /// An optional boolean as the page's parser takes one: absent is absent,
 /// and anything present, `null` included, must be true or false.
@@ -215,8 +209,10 @@ fn opt_bool(o: &Obj, ty: &str, name: &str) -> Result<Option<bool>, ProtoError> {
 }
 
 /// An optional number as the page's parser takes one: absent is absent, and
-/// anything present, `null` included, must be a finite number.
-fn opt_page_num(o: &Obj, ty: &str, name: &str) -> Result<Option<f64>, ProtoError> {
+/// anything present, `null` included, must be a finite number. Every
+/// optional field follows this rule, the engine's own (`bpm`, `ms`) too, so
+/// one rule covers the protocol: a field sent is a value.
+fn opt_num(o: &Obj, ty: &str, name: &str) -> Result<Option<f64>, ProtoError> {
     if o.contains_key(name) {
         num(o, ty, name).map(Some)
     } else {
@@ -276,8 +272,11 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
             let b = b.as_object().ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}] must be an object")))?;
             exact_keys(b, &format!("{ty}.beatgrid[{i}]"), &["n", "time_ms"])?;
             let time_ms = num(b, ty, "time_ms")?;
+            // A missing n counts as its place from the first beat; a present
+            // one must be a beat number, as the page's validateBeatGrid
+            // requires, `null` included.
             let n = match b.get("n") {
-                None | Some(Value::Null) => (i % 4) as u64 + 1,
+                None => (i % 4) as u64 + 1,
                 Some(n) => n
                     .as_u64()
                     .filter(|n| (1..=4).contains(n))
@@ -463,7 +462,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             let playing = boolean(o, ty, "playing")?;
             // The page arms a quantized or scheduled launch from these; playing
             // at once instead would start audio off the grid, so refuse them.
-            let start_at = opt_page_num(o, ty, "start_at_context_sec")?;
+            let start_at = opt_num(o, ty, "start_at_context_sec")?;
             if let Some(t) = start_at.filter(|t| *t < 0.0) {
                 return Err(invalid(format!("play.start_at_context_sec must be >= 0, got {t}")));
             }
@@ -514,7 +513,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             let beats = beat_count(o, ty, false)?;
             // As the page's parser: an anchor before the track is refused,
             // not taken as the first beat.
-            let start_ms = opt_page_num(o, ty, "start_ms")?;
+            let start_ms = opt_num(o, ty, "start_ms")?;
             if let Some(s) = start_ms.filter(|s| *s < 0.0) {
                 return Err(invalid(format!("beat_loop.start_ms must be >= 0, got {s}")));
             }
@@ -553,7 +552,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             apply(EngineCmd::MasterMute { muted: boolean(o, ty, "muted")? })
         }
         "engine_advance" => {
-            let given = |k: &str| o.get(k).is_some_and(|v| !v.is_null());
+            let given = |k: &str| o.contains_key(k);
             if given("ms") && given("frames") {
                 return Err(invalid("engine_advance gives ms and frames; give exactly one".into()));
             }
@@ -916,6 +915,11 @@ mod tests {
             json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": "now"}),
             json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": -1}),
             json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": null}),
+            // The engine's own optional fields follow the same rule.
+            json!({"type": "load", "deck": 1, "path": "a.wav", "bpm": null}),
+            json!({"type": "engine_advance", "ms": null, "frames": 480}),
+            // Codex's case: a beat number sent as null is not a missing one.
+            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"n": null, "time_ms": 500}]}),
         ] {
             let e = cmd(bad.clone()).unwrap_err();
             assert_eq!(e.code, ErrorCode::Invalid, "{bad}: {}", e.message);
@@ -1077,8 +1081,8 @@ mod tests {
             let e = cmd(c.clone()).unwrap_err();
             assert!(e.message.contains("give exactly one"), "{c}: {}", e.message);
         }
-        // Controls: each on its own, or the other one null, is fine.
-        for c in [json!({"type": "engine_advance", "ms": 10}), json!({"type": "engine_advance", "frames": 480}), json!({"type": "engine_advance", "ms": null, "frames": 480})] {
+        // Controls: each on its own is fine.
+        for c in [json!({"type": "engine_advance", "ms": 10}), json!({"type": "engine_advance", "frames": 480})] {
             assert!(matches!(cmd(c.clone()), Ok(Command::Advance(_))), "{c}");
         }
         assert!(matches!(cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 400]})), Ok(Command::Load(_))));
