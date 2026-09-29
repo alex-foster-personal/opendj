@@ -116,7 +116,9 @@ def pool_verdict(value: str | None, runners: list[Runner], other_pools: dict[str
     ]
     if offline:
         lines.append(f"    offline matches: {', '.join(offline)}")
-    for runner in online:
+    # Every match, online or not: an offline runner that also carries a general
+    # pool's labels serves both queues the moment it comes back.
+    for runner in sorted(matches, key=lambda r: r.name):
         shared = sorted(
             name
             for name, other in other_pools.items()

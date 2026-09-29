@@ -103,6 +103,15 @@ def test_reserve_shared_with_another_pool_warns() -> None:
     assert warns == ["[WARN] reserve not exclusive: agbox3-10 also serves CI_RUNS_ON_PYTEST"]
 
 
+def test_offline_reserve_runner_shared_with_another_pool_warns() -> None:
+    """if an offline reserve runner that also serves CI_RUNS_ON_PYTEST reads clean then broken"""
+    shared = _runner("agbox3-10", "agbox3", "mq", "pytest", online=False)
+    verdict = pool_verdict(MQ, [*RESERVE, shared], OTHER_POOLS)
+    assert (verdict.status, verdict.exit_code) == ("OK", 0)
+    warns = [line for line in verdict.lines if line.startswith("[WARN]")]
+    assert warns == ["[WARN] reserve not exclusive: agbox3-10 also serves CI_RUNS_ON_PYTEST"]
+
+
 def test_partial_listing_is_unknown() -> None:
     """if a partial runner listing yields a verdict then a missing page reads as no runner"""
     short = [{"total_count": 3, "runners": [{"name": "a"}]}]
