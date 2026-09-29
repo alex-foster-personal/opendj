@@ -28,8 +28,8 @@ from apps.shared.state import migrations_v20
 from apps.sync_hub import client, digest_gate, engine, protocol, service, sync_set
 from apps.sync_hub.engine_identity_map import REMAP_TABLE, ensure_identity_remap_table
 from tests.cloudsync.test_hub_sync import (
-    _T1,
     _DEV_A,
+    _T1,
     _open,
     _seed_common_track,
     _set_track_title,

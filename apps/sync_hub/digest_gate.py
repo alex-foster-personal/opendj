@@ -113,7 +113,10 @@ def _identity_remap(conn: sqlite3.Connection) -> tuple[tuple[object, ...], ...] 
     if exists is None:
         return None
     return tuple(
-        tuple(row) for row in conn.execute(f"SELECT * FROM {CFG.IDENTITY_REMAP_TABLE} ORDER BY loser_pk")
+        tuple(row)
+        for row in conn.execute(
+            f"SELECT * FROM {CFG.IDENTITY_REMAP_TABLE} ORDER BY loser_pk"
+        )
     )
 
 
