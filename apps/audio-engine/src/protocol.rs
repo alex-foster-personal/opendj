@@ -60,8 +60,6 @@ pub enum Advance {
 pub enum Command {
     Load(LoadSpec),
     Apply(EngineCmd),
-    /// Accepted and changes nothing: the engine is already in that mode.
-    NoOp,
     /// Fake clock only: render this much time now, as fast as possible.
     Advance(Advance),
     /// Ask for one `state` message now.
@@ -72,8 +70,7 @@ pub enum Command {
 /// Page commands the engine will own in a later plan. Refused with
 /// `not_implemented` and the plan that brings them, never silently ignored.
 const LATER: &[(&str, &str)] = &[
-    ("key_nudge", "key shift needs the time-stretcher (plan 20-04)"),
-    ("key_sync", "key shift needs the time-stretcher (plan 20-04)"),
+    ("key_sync", "key sync needs both tracks' keys, which load does not carry yet"),
     ("stem_mute", "stems arrive in plan 20-04"),
     ("stem_solo", "stems arrive in plan 20-04"),
     ("stem_gain", "stems arrive in plan 20-04"),
@@ -255,16 +252,15 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         "beat_jump" => apply(EngineCmd::BeatJump { deck: deck_of(o, ty)?, beats: num(o, ty, "beats")? }),
         "tempo" => apply(EngineCmd::Tempo { deck: deck_of(o, ty)?, ratio: num(o, ty, "ratio")? }),
         "pitch_range" => apply(EngineCmd::PitchRange { deck: deck_of(o, ty)?, range: num(o, ty, "range")? }),
-        "master_tempo" => {
-            deck_of(o, ty)?;
-            if boolean(o, ty, "enabled")? {
-                Err(ProtoError::new(
-                    ErrorCode::NotImplemented,
-                    "master_tempo (key lock) needs the time-stretcher (plan 20-04); this build plays varispeed only",
-                ))
-            } else {
-                Ok(Command::NoOp)
-            }
+        "master_tempo" => apply(EngineCmd::MasterTempo { deck: deck_of(o, ty)?, enabled: boolean(o, ty, "enabled")? }),
+        "key_nudge" => {
+            let deck = deck_of(o, ty)?;
+            let semitones = match num(o, ty, "semitones")? {
+                v if v == 1.0 => 1,
+                v if v == -1.0 => -1,
+                v => return Err(invalid(format!("key_nudge.semitones must be -1 or 1, got {v}"))),
+            };
+            apply(EngineCmd::KeyNudge { deck, semitones })
         }
         "trim" => apply(EngineCmd::Trim { deck: deck_of(o, ty)?, value: unit(o, ty, "value")? }),
         "eq" => apply(EngineCmd::Eq { deck: deck_of(o, ty)?, band: band(o, ty)?, value: unit(o, ty, "value")? }),
@@ -382,6 +378,8 @@ pub fn state_json(s: &Snapshot, host_time_ns: Option<u64>) -> Value {
                 "duration_ms": d.duration_ms,
                 "rate": if d.playing { d.tempo } else { 0.0 },
                 "tempo": d.tempo,
+                "master_tempo": d.master_tempo,
+                "key_shift_semitones": d.key_shift,
                 "cue_ms": d.cue_ms,
                 "loop": d.loop_ms.map(|(a, b)| json!({"in_ms": a, "out_ms": b})),
                 "trim": d.trim,
@@ -429,7 +427,14 @@ mod tests {
             cmd(json!({"type": "loop", "deck": 1, "loop": {"in_ms": 1.0, "out_ms": 2.0}})),
             Ok(Command::Apply(EngineCmd::Loop { bounds_ms: Some((1.0, 2.0)), .. }))
         ));
-        assert!(matches!(cmd(json!({"type": "master_tempo", "deck": 1, "enabled": false})), Ok(Command::NoOp)));
+        assert!(matches!(
+            cmd(json!({"type": "master_tempo", "deck": 1, "enabled": true})),
+            Ok(Command::Apply(EngineCmd::MasterTempo { deck: 1, enabled: true }))
+        ));
+        assert!(matches!(
+            cmd(json!({"type": "key_nudge", "deck": 2, "semitones": -1})),
+            Ok(Command::Apply(EngineCmd::KeyNudge { deck: 2, semitones: -1 }))
+        ));
     }
 
     #[test]
@@ -441,7 +446,10 @@ mod tests {
         let e = cmd(json!({"type": "eq", "deck": 1, "band": "low", "value": 1.2})).unwrap_err();
         assert_eq!(e.code, ErrorCode::Invalid);
         assert!(e.message.contains("eq.value"), "{}", e.message);
-        let e = cmd(json!({"type": "master_tempo", "deck": 1, "enabled": true})).unwrap_err();
+        // The page sends key nudges one semitone at a time.
+        let e = cmd(json!({"type": "key_nudge", "deck": 1, "semitones": 2})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+        let e = cmd(json!({"type": "key_sync", "deck": 1, "enabled": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);
         let e = cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": true})).unwrap_err();
         assert_eq!(e.code, ErrorCode::NotImplemented);

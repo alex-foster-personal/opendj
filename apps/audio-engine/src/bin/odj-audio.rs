@@ -120,8 +120,8 @@ fn render(mut args: Args) -> Result<(), String> {
         "render_wall_s": out.render_wall_s,
         "realtime_factor": out.realtime_factor(),
         "fired": fired,
-        // v1 plays varispeed only: a tempo change moves pitch with it.
-        "master_tempo": false,
+        // False: every tempo change in this render moved pitch with it.
+        "master_tempo": out.master_tempo,
         "tempo": tempo,
         "timeline": timeline,
         "overlaps": overlaps,

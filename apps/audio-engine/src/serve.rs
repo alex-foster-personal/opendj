@@ -73,7 +73,6 @@ pub fn serve_fake(
                 engine.apply(EngineCmd::Load { deck: spec.deck, track }).map(drop).map_err(Into::into)
             }
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
-            Command::NoOp => Ok(()),
             Command::Advance(a) => {
                 let mut left = match a {
                     Advance::Frames(f) => f,
@@ -215,7 +214,7 @@ impl Control {
         match cmd {
             Load { deck, .. } | Unload { deck } | Play { deck, .. } | Cue { deck } | Seek { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
-            | PitchRange { deck, .. } | Trim { deck, .. } | Eq { deck, .. } | Filter { deck, .. }
+            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. } | Eq { deck, .. } | Filter { deck, .. }
             | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
             Crossfader { .. } | MasterVolume { .. } | MasterMute { .. } => None,
         }
@@ -325,7 +324,6 @@ impl Control {
             Err(e) => self.reply(id.as_deref(), Err(e)),
             Ok(Command::Load(spec)) => self.load(id, spec),
             Ok(Command::Apply(c)) => self.dispatch(id, c),
-            Ok(Command::NoOp) => self.reply(id.as_deref(), Ok(())),
             Ok(Command::Advance(_)) => self.reply(
                 id.as_deref(),
                 Err(ProtoError::new(

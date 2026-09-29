@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::dsp::{Coeffs, LinearRamp, Smoothed, StereoBiquad};
 use crate::engine::{EngineError, ErrorCode};
 use crate::mixer::{self, Assign};
+use crate::stretch::{self, Stretcher, QUANTUM};
 
 /// One beat of a track's grid. `downbeat` marks the first beat of a bar, the
 /// same fact rekordbox's PQTZ grid carries as beat number 1.
@@ -159,7 +160,21 @@ pub struct Deck {
     pub filter: f64,
     pub fader: f64,
     pub assign: Assign,
+    /// Master Tempo (key lock): tempo changes keep the pitch.
+    pub master_tempo: bool,
+    /// Key shift in semitones, -12..=12, reset by a load.
+    pub key_shift: i32,
     strip: Strip,
+    stretch: Stretcher,
+    /// The stretcher has been fed up to the playhead; cleared whenever it
+    /// stops being fed (pause, seek, leaving the stretch path).
+    stretch_warm: bool,
+    /// Frames left of a crossfade between varispeed and the stretcher, and
+    /// which way it goes.
+    path_fade: usize,
+    fading_to_stretch: bool,
+    /// Which path played the last frame.
+    was_stretching: bool,
     /// Position is computed as `anchor + step * run` rather than by adding
     /// `step` each frame, so it does not drift over a long set. Any outside
     /// change to `pos` or the step re-anchors on the next render.
@@ -308,6 +323,13 @@ impl Strip {
 
 impl Deck {
     pub fn new(sr: f64) -> Deck {
+        Deck::in_slot(sr, 0)
+    }
+
+    /// A deck in mixer slot `slot` (0-based). The slot staggers when its
+    /// stretcher does its heavy block work, so decks started together do not
+    /// all spend it in the same audio callback.
+    pub fn in_slot(sr: f64, slot: usize) -> Deck {
         Deck {
             track: None,
             pos: 0.0,
@@ -321,7 +343,14 @@ impl Deck {
             filter: 0.5,
             fader: 1.0,
             assign: Assign::Thru,
+            master_tempo: false,
+            key_shift: 0,
             strip: Strip::new(sr),
+            stretch: Stretcher::new(sr, slot),
+            stretch_warm: false,
+            path_fade: 0,
+            fading_to_stretch: false,
+            was_stretching: false,
             anchor: 0.0,
             anchor_step: 0.0,
             run: 0,
@@ -340,6 +369,8 @@ impl Deck {
     /// Load a track: transport resets, the strip keeps its knob settings.
     /// Returns the track it replaced, for the caller to free off this thread.
     pub fn load(&mut self, track: Arc<Track>) -> Option<Arc<Track>> {
+        self.key_shift = 0;
+        self.stretch_warm = false;
         self.pos = 0.0;
         self.cue = 0.0;
         self.playing = false;
@@ -348,6 +379,8 @@ impl Deck {
     }
 
     pub fn unload(&mut self) -> Option<Arc<Track>> {
+        self.key_shift = 0;
+        self.stretch_warm = false;
         self.playing = false;
         self.pos = 0.0;
         self.cue = 0.0;
@@ -376,6 +409,7 @@ impl Deck {
         self.track()?;
         self.pos = self.cue;
         self.playing = false;
+        self.stretch_warm = false;
         Ok(())
     }
 
@@ -385,6 +419,7 @@ impl Deck {
             return Err(EngineError::new(ErrorCode::Invalid, "seek position must be within the track"));
         }
         self.pos = t.ms_to_frames(ms);
+        self.stretch_warm = false;
         Ok(())
     }
 
@@ -430,6 +465,7 @@ impl Deck {
         let target = target.clamp(0.0, t.duration_ms());
         let delta = t.ms_to_frames(target) - self.pos;
         self.pos = t.ms_to_frames(target);
+        self.stretch_warm = false;
         if let Some((a, b)) = self.looping {
             // Keep the moved loop inside the track at its own length: a jump
             // near either end would otherwise push a bound past 0 or the end.
@@ -473,6 +509,27 @@ impl Deck {
         }
         self.pitch_range = range;
         Ok(())
+    }
+
+    pub fn set_master_tempo(&mut self, enabled: bool) {
+        self.master_tempo = enabled;
+    }
+
+    /// Move the key shift by `by` semitones, within -12..=12 as the page
+    /// allows (`_assertKeyShift`).
+    pub fn nudge_key(&mut self, by: i32) -> Result<(), EngineError> {
+        self.track()?;
+        let k = self.key_shift + by;
+        if !(-12..=12).contains(&k) {
+            return Err(EngineError::new(ErrorCode::Invalid, "key shift must stay within -12..12 semitones"));
+        }
+        self.key_shift = k;
+        Ok(())
+    }
+
+    /// Whether this deck plays through the stretcher.
+    pub fn stretching(&self) -> bool {
+        self.master_tempo || self.key_shift != 0
     }
 
     pub fn set_trim(&mut self, v: f64) {
@@ -536,6 +593,7 @@ impl Deck {
     fn render_track(&mut self, out: &mut [f32], engine_sr: f64) -> usize {
         let Some(track) = self.track.as_ref() else { return 0 };
         if !self.playing {
+            self.stretch_warm = false;
             return 0;
         }
         let mut done = 0;
@@ -548,13 +606,40 @@ impl Deck {
             self.anchor_step = step;
             self.run = 0;
         }
+        let stretching = self.master_tempo || self.key_shift != 0;
+        let semis = stretch::semitones(self.tempo, self.master_tempo, self.key_shift);
+        if stretching != self.was_stretching {
+            // Switching path mid-play crossfades over one quantum; starting
+            // from a pause needs none.
+            self.path_fade = if self.rendered_pos == self.pos { QUANTUM } else { 0 };
+            self.fading_to_stretch = stretching;
+            self.was_stretching = stretching;
+        }
+        let need_stretch = stretching || self.path_fade > 0;
+        if need_stretch && !self.stretch_warm {
+            self.stretch.prime(pcm, frames, self.pos, step, semis);
+            self.stretch_warm = true;
+        }
         for o in out.chunks_exact_mut(2) {
             if self.pos >= end {
                 self.pos = end;
                 self.playing = false;
                 break;
             }
-            let (l, r) = hermite(pcm, frames, self.pos);
+            let (l, r) = if self.path_fade > 0 {
+                let (hl, hr) = hermite(pcm, frames, self.pos);
+                let (sl, sr) = self.stretch.next(pcm, frames, self.pos, step, semis);
+                // g goes 1/Q .. 1 towards the new path over the fade.
+                let g = (QUANTUM - self.path_fade + 1) as f64 / QUANTUM as f64;
+                let g = if self.fading_to_stretch { g } else { 1.0 - g };
+                self.path_fade -= 1;
+                (hl * (1.0 - g) + sl as f64 * g, hr * (1.0 - g) + sr as f64 * g)
+            } else if stretching {
+                let (sl, sr) = self.stretch.next(pcm, frames, self.pos, step, semis);
+                (sl as f64, sr as f64)
+            } else {
+                hermite(pcm, frames, self.pos)
+            };
             let (l, r) = self.strip.process(l, r);
             o[0] += l as f32;
             o[1] += r as f32;
@@ -568,6 +653,10 @@ impl Deck {
                     self.run = 0;
                 }
             }
+        }
+        if !stretching && self.path_fade == 0 {
+            self.stretch_warm = false;
+            self.stretch.discard();
         }
         if done > 0 {
             self.strip.idle_run = 0;

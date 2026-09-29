@@ -106,6 +106,8 @@ pub enum EngineCmd {
     BeatJump { deck: DeckId, beats: f64 },
     Tempo { deck: DeckId, ratio: f64 },
     PitchRange { deck: DeckId, range: f64 },
+    MasterTempo { deck: DeckId, enabled: bool },
+    KeyNudge { deck: DeckId, semitones: i32 },
     Trim { deck: DeckId, value: f64 },
     Eq { deck: DeckId, band: EqBand, value: f64 },
     Filter { deck: DeckId, value: f64 },
@@ -127,6 +129,8 @@ pub struct DeckSnapshot {
     pub position_ms: f64,
     pub duration_ms: f64,
     pub tempo: f64,
+    pub master_tempo: bool,
+    pub key_shift: i32,
     pub cue_ms: f64,
     pub loop_ms: Option<(f64, f64)>,
     pub trim: f64,
@@ -163,7 +167,7 @@ impl Engine {
         let sr = sample_rate as f64;
         let mut e = Engine {
             sr: sample_rate,
-            decks: std::array::from_fn(|_| Deck::new(sr)),
+            decks: std::array::from_fn(|i| Deck::in_slot(sr, i)),
             crossfader: 0.5,
             master_volume: 1.0,
             master_muted: false,
@@ -217,6 +221,8 @@ impl Engine {
             BeatJump { deck, beats } => self.deck_mut(deck)?.beat_jump(beats)?,
             Tempo { deck, ratio } => self.deck_mut(deck)?.set_tempo(ratio)?,
             PitchRange { deck, range } => self.deck_mut(deck)?.set_pitch_range(range)?,
+            MasterTempo { deck, enabled } => self.deck_mut(deck)?.set_master_tempo(enabled),
+            KeyNudge { deck, semitones } => self.deck_mut(deck)?.nudge_key(semitones)?,
             Trim { deck, value } => {
                 let v = mixer::check_unit(value)?;
                 self.deck_mut(deck)?.set_trim(v)
@@ -316,6 +322,8 @@ impl Engine {
             let Some(t) = d.track.as_ref() else {
                 *s = DeckSnapshot {
                     tempo: d.tempo,
+                    master_tempo: d.master_tempo,
+                    key_shift: d.key_shift,
                     trim: d.trim,
                     eq: d.eq,
                     filter: d.filter,
@@ -330,6 +338,8 @@ impl Engine {
                 position_ms: t.frames_to_ms(d.pos),
                 duration_ms: t.duration_ms(),
                 tempo: d.tempo,
+                master_tempo: d.master_tempo,
+                key_shift: d.key_shift,
                 cue_ms: t.frames_to_ms(d.cue),
                 loop_ms: d.looping.map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b))),
                 trim: d.trim,
@@ -452,6 +462,141 @@ mod tests {
         assert!((f - 1080.0).abs() < 0.5, "tempo 1.08 measured {f}");
         let pos = e.snapshot().decks[0].position_ms;
         assert!((pos - 1080.0).abs() < 1e-6, "position {pos}");
+    }
+
+    /// Frequency of the left channel after the stretcher's start-up.
+    fn settled_freq(buf: &[f32]) -> f64 {
+        freq(&buf[9600 * 2..], 48000.0)
+    }
+
+    #[test]
+    fn master_tempo_keeps_pitch_and_moves_the_playhead() {
+        for (mt, want_hz) in [(true, 1000.0), (false, 1080.0)] {
+            let mut e = playing_tone(1000.0, 48000);
+            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
+            e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.08 }).unwrap();
+            let mut buf = vec![0.0f32; 48000 * 2];
+            e.render(&mut buf);
+            let f = settled_freq(&buf);
+            assert!((f - want_hz).abs() < 2.0, "master_tempo {mt}: {f} Hz, want {want_hz}");
+            // Either way the track moves at the tempo.
+            let pos = e.snapshot().decks[0].position_ms;
+            assert!((pos - 1080.0).abs() < 1e-6, "position {pos}");
+        }
+    }
+
+    #[test]
+    fn key_shift_moves_pitch_by_semitones_with_or_without_master_tempo() {
+        for mt in [true, false] {
+            let mut e = playing_tone(1000.0, 48000);
+            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
+            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: 1 }).unwrap();
+            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: 1 }).unwrap();
+            let mut buf = vec![0.0f32; 48000 * 2];
+            e.render(&mut buf);
+            let want = 1000.0 * 2f64.powf(2.0 / 12.0);
+            let f = settled_freq(&buf);
+            assert!((f - want).abs() < 2.0, "master_tempo {mt}: {f} Hz, want {want}");
+            assert_eq!(e.snapshot().decks[0].key_shift, 2);
+        }
+        // The page's range is -12..12, and a load resets the shift.
+        let mut e = playing_tone(1000.0, 48000);
+        for _ in 0..12 {
+            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: -1 }).unwrap();
+        }
+        assert_eq!(e.apply(EngineCmd::KeyNudge { deck: 1, semitones: -1 }).unwrap_err().code, ErrorCode::Invalid);
+        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 500.0, 1.0)) }).unwrap();
+        assert_eq!(e.snapshot().decks[0].key_shift, 0);
+    }
+
+    /// Frame of the first sample above half of the peak, left channel.
+    fn onset(buf: &[f32]) -> usize {
+        let peak = buf.iter().step_by(2).fold(0.0f32, |m, x| m.max(x.abs()));
+        buf.iter().step_by(2).position(|x| x.abs() > peak * 0.5).unwrap()
+    }
+
+    fn clicks(sr: u32, secs: f64, every_s: f64) -> Track {
+        let frames = (sr as f64 * secs) as usize;
+        let mut pcm = vec![0.0f32; frames * 2];
+        let mut t = every_s;
+        while ((t * sr as f64) as usize) < frames - 64 {
+            let i = (t * sr as f64) as usize;
+            for k in 0..32 {
+                let v = 0.8 * (1.0 - k as f32 / 32.0) * if k % 2 == 0 { 1.0 } else { -1.0 };
+                pcm[(i + k) * 2] = v;
+                pcm[(i + k) * 2 + 1] = v;
+            }
+            t += every_s;
+        }
+        Track::new(sr, pcm, vec![], None)
+    }
+
+    #[test]
+    fn stretched_output_is_time_aligned_with_the_playhead() {
+        // The page's worklet compensates the stretcher's latency, landing a
+        // click 0 to 2 ms from where varispeed puts it (null test 20-05).
+        // Same rule here, so position, loops and beat maths need no offset.
+        let render = |mt: bool| {
+            let mut e = Engine::new(48000);
+            e.apply(EngineCmd::Load { deck: 1, track: Arc::new(clicks(48000, 3.0, 1.0)) }).unwrap();
+            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: mt }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 1, position_ms: 500.0 }).unwrap();
+            e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+            let mut buf = vec![0.0f32; 48000 * 2];
+            e.render(&mut buf);
+            onset(&buf)
+        };
+        let (plain, stretched) = (render(false), render(true));
+        assert_eq!(plain, 24000);
+        let off_ms = (stretched as f64 - plain as f64) / 48.0;
+        assert!(off_ms.abs() <= 2.0, "stretched click {off_ms:.2} ms from the varispeed one");
+    }
+
+    #[test]
+    fn stretched_renders_do_not_depend_on_block_size() {
+        // The stretcher runs in fixed 128-frame quanta whatever the caller's
+        // block, so blocks of 480 and 997 give the same bytes (D6), with a
+        // key nudge landing mid-render on the same frame.
+        let render = |block: usize| {
+            let mut e = playing_tone(440.0, 48000);
+            e.apply(EngineCmd::MasterTempo { deck: 1, enabled: true }).unwrap();
+            e.apply(EngineCmd::Tempo { deck: 1, ratio: 0.94 }).unwrap();
+            let mut out = vec![0.0f32; 48000 * 2];
+            let (head, tail) = out.split_at_mut(9600 * 2);
+            for c in head.chunks_mut(block * 2) {
+                e.render(c);
+            }
+            e.apply(EngineCmd::KeyNudge { deck: 1, semitones: 1 }).unwrap();
+            for c in tail.chunks_mut(block * 2) {
+                e.render(c);
+            }
+            out
+        };
+        let (a, b) = (render(480), render(997));
+        let same = a.iter().zip(&b).all(|(x, y)| x.to_bits() == y.to_bits());
+        assert!(same, "block size changed a stretched render");
+        // Control: the render is not silence, so equality means something.
+        assert!(rms_db(&a) > -20.0);
+    }
+
+    #[test]
+    fn switching_master_tempo_mid_play_does_not_drop_out() {
+        let mut e = playing_tone(440.0, 48000);
+        e.apply(EngineCmd::Tempo { deck: 1, ratio: 1.04 }).unwrap();
+        let mut buf = vec![0.0f32; 24000 * 2];
+        e.render(&mut buf);
+        let before = rms_db(&buf[12000 * 2..]);
+        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: true }).unwrap();
+        let mut sw = vec![0.0f32; 480 * 2];
+        e.render(&mut sw);
+        // 10 ms windows across the switch stay within 1.5 dB of steady play;
+        // an unprimed stretcher fades in over about 40 ms instead.
+        let during = rms_db(&sw);
+        assert!((during - before).abs() < 1.5, "switch window {during:.2} dB vs {before:.2} dB");
+        e.apply(EngineCmd::MasterTempo { deck: 1, enabled: false }).unwrap();
+        e.render(&mut sw);
+        let back = rms_db(&sw);
+        assert!((back - before).abs() < 1.5, "switch back {back:.2} dB vs {before:.2} dB");
     }
 
     #[test]

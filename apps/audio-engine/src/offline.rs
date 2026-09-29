@@ -103,6 +103,9 @@ pub struct RenderOutput {
     pub timeline: Vec<Segment>,
     pub overlaps: Vec<Overlap>,
     pub tempo: Vec<TempoPoint>,
+    /// True when any deck had Master Tempo on at any point: then a tempo
+    /// change on that deck did not move its pitch.
+    pub master_tempo: bool,
     /// Empty unless `RenderOptions::deck_outputs`.
     pub decks: Vec<DeckOutput>,
 }
@@ -332,6 +335,7 @@ pub fn render_plan_with(
     let mut engine = Engine::new(sr);
     let mut pending: Vec<usize> = (0..plan.events.len()).collect();
     let mut ramps: Vec<ActiveRamp> = Vec::new();
+    let mut master_tempo = false;
     let mut fired = Vec::new();
     let mut pcm: Vec<f32> = Vec::new();
     let max_frames = at_frame_of_ms(plan.max_ms, sr);
@@ -365,9 +369,9 @@ pub fn render_plan_with(
                         engine.apply(EngineCmd::Load { deck: spec.deck, track }).map_err(|e| fail(idx, e.into()))?;
                     }
                     Action::Cmd(Command::Apply(cmd)) => {
+                        master_tempo |= matches!(cmd, EngineCmd::MasterTempo { enabled: true, .. });
                         engine.apply(cmd.clone()).map_err(|e| fail(idx, e.into()))?;
                     }
-                    Action::Cmd(Command::NoOp) => {}
                     Action::Cmd(_) => unreachable!("rejected by parse_plan"),
                     Action::Ramp(r) => {
                         let from = engine
@@ -495,6 +499,7 @@ pub fn render_plan_with(
         timeline,
         overlaps,
         tempo,
+        master_tempo,
         decks,
     })
 }
