@@ -113,7 +113,11 @@ jobs:
     # Seconds of work on the light pool, never the pytest or e2e label: the job
     # runs `git diff` on the merge commit and one stdlib script. Every event runs
     # it; only a pull_request can come out of scope.
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # A Trunk queue draft (trunk-merge/* head, author trunk-io[bot], same-repo
+    # head) prefers the opt-in CI_RUNS_ON_MERGE_QUEUE pool on every job on its
+    # path to a required status, the e2e gate excepted; unset, the chain is
+    # unchanged (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool).
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     outputs:
       in_scope: ${{ steps.decide.outputs.in_scope }}
@@ -1339,7 +1343,7 @@ jobs:
       - scope
       - gate
     if: ${{ always() }}
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - name: Reclaim workspace ownership before checkout
