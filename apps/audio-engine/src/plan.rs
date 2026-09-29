@@ -195,6 +195,7 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
                 let target = protocol::parse_knob(ro).map_err(|e| ProtoError::new(e.code, format!("{what}.ramp: {}", e.message)))?;
                 let to = finite(ro, &format!("{what}.ramp"), "to")?
                     .ok_or_else(|| invalid(format!("{what}.ramp.to is required")))?;
+                check_ramp_to(target, to).map_err(|m| invalid(format!("{what}.ramp.to {m}")))?;
                 let over = parse_over(
                     ro.get("over").ok_or_else(|| invalid(format!("{what}.ramp.over is required")))?,
                     &format!("{what}.ramp.over"),
@@ -206,4 +207,20 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
         events.push(Event { at, action });
     }
     Ok(Plan { sample_rate, block_frames, max_ms, end, events })
+}
+
+/// A ramp's end value must be one its knob accepts, checked when the plan is
+/// read: every step of a ramp lies between where it starts (a value the knob
+/// already holds) and this, so a bad endpoint would otherwise fail part-way
+/// through a render. A tempo also has to fit the deck's pitch range when the
+/// ramp starts; that is checked then, since the range can change in a plan.
+fn check_ramp_to(target: KnobTarget, to: f64) -> Result<(), String> {
+    match target {
+        KnobTarget::Tempo(_) if !(to > 0.0 && to <= 2.0) => {
+            Err(format!("must be a tempo ratio within 0..2 (the widest pitch range), got {to}"))
+        }
+        KnobTarget::Tempo(_) => Ok(()),
+        _ if !(0.0..=1.0).contains(&to) => Err(format!("must be within 0..1 for this knob, got {to}")),
+        _ => Ok(()),
+    }
 }

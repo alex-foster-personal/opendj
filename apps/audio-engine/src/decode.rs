@@ -87,7 +87,7 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
             Err(e) => return Err(dec_err("decode error in", &e)),
         };
         let spec = buf.spec();
-        sample_rate = spec.rate();
+        lock_rate(&mut sample_rate, spec.rate()).map_err(|m| ProtoError::new(ErrorCode::Decode, format!("{m} in {}", path.display())))?;
         let ch = spec.channels().count();
         if ch == 0 {
             return Err(ProtoError::new(ErrorCode::Decode, format!("zero channels in {}", path.display())));
@@ -106,6 +106,17 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
     Ok(Decoded { sample_rate, pcm })
+}
+
+/// The first rate decoded is the track's rate. A later buffer at another
+/// rate is refused: relabeling the audio before it would play that part at
+/// the wrong speed and move its beatgrid, cues and loops.
+fn lock_rate(locked: &mut u32, rate: u32) -> Result<(), String> {
+    if *locked != 0 && rate != *locked {
+        return Err(format!("the sample rate changes part-way through ({} Hz, then {rate} Hz)", *locked));
+    }
+    *locked = rate;
+    Ok(())
 }
 
 /// `Ok(None)` is the end of the stream. A reset part-way through (a chained
@@ -138,6 +149,18 @@ fn packet_frames(dur: u64, time_base: Option<TimeBase>, rate: Option<u32>) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_decoded_rate_is_the_tracks() {
+        let mut rate = 0;
+        lock_rate(&mut rate, 44100).unwrap();
+        assert_eq!(rate, 44100);
+        // Same rate again is fine; a change part-way through is refused.
+        lock_rate(&mut rate, 44100).unwrap();
+        let e = lock_rate(&mut rate, 48000).unwrap_err();
+        assert!(e.contains("44100 Hz, then 48000 Hz"), "{e}");
+        assert_eq!(rate, 44100, "a refused rate must not relabel the track");
+    }
 
     fn tb(numer: u32, denom: u32) -> Option<TimeBase> {
         TimeBase::try_new(numer, denom)

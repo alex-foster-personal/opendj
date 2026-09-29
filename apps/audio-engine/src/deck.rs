@@ -702,7 +702,7 @@ impl Deck {
                 self.playing = false;
                 break;
             }
-            let (l, r) = hermite(pcm, frames, self.pos);
+            let (l, r) = hermite(pcm, frames, self.pos, self.looping);
             let (l, r) = self.strip.process(l, r);
             o[0] += l as f32;
             o[1] += r as f32;
@@ -769,16 +769,36 @@ fn no_grid() -> EngineError {
 
 /// 4-point, 3rd-order Hermite interpolation of interleaved stereo at a
 /// fractional frame position, with edge frames clamped.
+///
+/// Inside an engaged loop `[a, b)` the audio is periodic: a tap past either
+/// end reads the frame one loop length back into the loop (in whole frames,
+/// so a loop whose length is fractional wraps its taps on the nearest one),
+/// as Web Audio's looping source wraps its read index. Otherwise the frames
+/// around a wrap would interpolate with audio from outside the loop.
 #[inline]
-fn hermite(pcm: &[f32], frames: usize, pos: f64) -> (f64, f64) {
+fn hermite(pcm: &[f32], frames: usize, pos: f64, looping: Option<(f64, f64)>) -> (f64, f64) {
     let i = pos.floor();
     let t = pos - i;
     let i = i as isize;
     let last = frames as isize - 1;
-    let at = |k: isize, ch: usize| -> f64 { pcm[(k.clamp(0, last) as usize) * 2 + ch] as f64 };
+    let mut k = [i - 1, i, i + 1, i + 2];
+    if let Some((a, b)) = looping {
+        if b > a && pos >= a && pos < b {
+            let (first, period) = (a.ceil() as isize, ((b - a).round() as isize).max(1));
+            if k[0] < first || k[3] >= first + period {
+                for k in k.iter_mut() {
+                    *k = first + (*k - first).rem_euclid(period);
+                }
+            }
+        }
+    }
+    for k in k.iter_mut() {
+        *k = (*k).clamp(0, last) * 2;
+    }
     let mut out = [0.0; 2];
     for (ch, o) in out.iter_mut().enumerate() {
-        let (xm1, x0, x1, x2) = (at(i - 1, ch), at(i, ch), at(i + 1, ch), at(i + 2, ch));
+        let at = |j: usize| pcm[k[j] as usize + ch] as f64;
+        let (xm1, x0, x1, x2) = (at(0), at(1), at(2), at(3));
         let c1 = 0.5 * (x1 - xm1);
         let c2 = xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
         let c3 = 0.5 * (x2 - xm1) + 1.5 * (x0 - x1);
@@ -954,6 +974,48 @@ mod tests {
         let k = 1.0 - (-1.0 / (mixer::PARAM_SMOOTH_S * 48000.0)).exp();
         let want = from + (to - from) * k;
         assert!((d.strip.lp_hz.value - want).abs() < 1e-6 * from, "{} vs {want}", d.strip.lp_hz.value);
+    }
+
+    #[test]
+    fn a_loop_interpolates_only_audio_inside_it() {
+        // A 44.1 kHz track played at 48 kHz, so every read is fractional:
+        // silence, then 1.0 from 500 to 600 ms, then silence. Looping exactly
+        // that span must hear 1.0 throughout, across every wrap.
+        let sr = 44100;
+        let mut pcm = vec![0.0f32; sr as usize * 2];
+        pcm[22050 * 2..26460 * 2].fill(1.0);
+        let track = Arc::new(Track::new(sr, pcm, vec![], None));
+        let render = |looped: bool| {
+            let mut d = Deck::new(48000.0);
+            d.load(track.clone());
+            d.seek(510.0).unwrap();
+            if looped {
+                d.set_loop(Some((500.0, 600.0))).unwrap();
+            }
+            d.play(true).unwrap();
+            // 300 ms: three wraps, or straight past the span's end.
+            let mut buf = vec![0.0f32; 14400 * 2];
+            d.render_add(&mut buf, 48000.0);
+            buf
+        };
+        let spread = |b: &[f32]| {
+            let (lo, hi) = b.iter().fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
+            hi - lo
+        };
+        let looped = render(true);
+        assert!(spread(&looped) < 1e-6, "the loop heard audio from outside it: spread {}", spread(&looped));
+        // Control: the same span played through without a loop does reach
+        // the silence after it, so the measure can see a leak.
+        assert!(spread(&render(false)) > 0.5);
+        // And a loop still ahead of the playhead leaves the audio before it
+        // alone: the first 400 ms are the track's silence, not the loop's.
+        let mut d = Deck::new(48000.0);
+        d.load(track.clone());
+        d.set_loop(Some((500.0, 600.0))).unwrap();
+        d.play(true).unwrap();
+        let mut buf = vec![0.0f32; 19200 * 2];
+        d.render_add(&mut buf, 48000.0);
+        assert!(buf.iter().all(|&x| x == 0.0), "audio before the loop read from inside it");
     }
 
     #[test]

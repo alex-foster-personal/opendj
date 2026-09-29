@@ -398,6 +398,20 @@ pub fn render_plan_with(
                         let from = engine
                             .knob(r.target)
                             .ok_or_else(|| fail(idx, ProtoError::new(ErrorCode::Invalid, "ramp target deck does not exist")))?;
+                        // Both ends inside the pitch range keep every step
+                        // inside it, so a ramp that fits fails nowhere later.
+                        if let KnobTarget::Tempo(deck) = r.target {
+                            let range = engine.deck(deck).map_or(0.0, |d| d.pitch_range);
+                            if (r.to - 1.0).abs() > range / 100.0 + 1e-9 {
+                                return Err(fail(
+                                    idx,
+                                    ProtoError::new(
+                                        ErrorCode::Invalid,
+                                        format!("ramp.to tempo {} is outside the deck's pitch range (+/-{range}%)", r.to),
+                                    ),
+                                ));
+                            }
+                        }
                         let len = match r.over {
                             Over::Frames(f) => f,
                             Over::Ms(ms) => at_frame_of_ms(ms, sr).max(1),

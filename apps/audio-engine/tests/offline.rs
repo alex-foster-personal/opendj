@@ -4,7 +4,7 @@ mod common;
 
 use odj_audio::offline::{render_plan_files, render_plan_files_with, RenderOptions, Solo};
 use odj_audio::plan::parse_plan;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use common::*;
 
@@ -329,4 +329,53 @@ fn loads_of_one_file_share_its_samples() {
     write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 1.0));
     let c = load(&odj_audio::protocol::LoadSpec { deck: 3, path: "b.wav".into(), beats: vec![], bpm: None }).unwrap();
     assert!(!std::sync::Arc::ptr_eq(&a.pcm, &c.pcm));
+}
+
+#[test]
+fn ramp_endpoints_are_checked_before_rendering() {
+    let ramp = |target: Value, to: f64| {
+        let mut r = target;
+        r["to"] = json!(to);
+        r["over"] = json!({"ms": 1000});
+        json!({"end": {"ms": 100}, "events": [{"at": {"ms": 0}, "ramp": r}]})
+    };
+    let fader = json!({"type": "fader", "deck": 1});
+    let tempo = json!({"type": "tempo", "deck": 1});
+    // A knob ramped out of its range is refused as the plan is read, not when
+    // the ramp crosses the limit part-way through a render.
+    for to in [2.0, -0.1, 1.0001] {
+        let e = parse_plan(&ramp(fader.clone(), to)).unwrap_err();
+        assert!(e.message.contains("events[0].ramp.to") && e.message.contains("0..1"), "{to}: {}", e.message);
+    }
+    for to in [0.0, -1.0, 2.5] {
+        let e = parse_plan(&ramp(tempo.clone(), to)).unwrap_err();
+        assert!(e.message.contains("tempo ratio within 0..2"), "{to}: {}", e.message);
+    }
+    // Control: the ends of each range are accepted.
+    for (t, to) in [(&fader, 0.0), (&fader, 1.0), (&tempo, 2.0), (&tempo, 0.01)] {
+        assert!(parse_plan(&ramp(t.clone(), to)).is_ok(), "{t} to {to}");
+    }
+
+    // A tempo beyond the deck's pitch range when the ramp starts fails there,
+    // on the ramp's own event, before any of it is applied.
+    let d = temp_dir("ramp-range");
+    write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 2.0));
+    let plan = |range: Option<u32>, to: f64| {
+        let mut events = vec![json!({"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}})];
+        if let Some(r) = range {
+            events.push(json!({"at": {"ms": 0}, "cmd": {"type": "pitch_range", "deck": 1, "range": r}}));
+        }
+        events.push(json!({"at": {"ms": 200}, "ramp": {"type": "tempo", "deck": 1, "to": to, "over": {"ms": 500}}}));
+        json!({"end": {"ms": 1000}, "events": events})
+    };
+    let e = render_plan_files(&parse_plan(&plan(None, 1.5)).unwrap(), &d).err().unwrap();
+    assert!(e.message.starts_with("events[1]: ramp.to tempo 1.5") && e.message.contains("pitch range"), "{}", e.message);
+    // Controls: with a range that fits, the same ramp renders to its end,
+    // and a ramp to the very edge of a narrow range is inside it.
+    let out = render_plan_files(&parse_plan(&plan(Some(100), 1.5)).unwrap(), &d).unwrap();
+    assert_eq!(out.frames, 48000);
+    let out = render_plan_files(&parse_plan(&plan(Some(8), 1.08)).unwrap(), &d).unwrap();
+    assert_eq!(out.frames, 48000);
+    let e = render_plan_files(&parse_plan(&plan(Some(8), 1.09)).unwrap(), &d).err().unwrap();
+    assert!(e.message.contains("pitch range"), "{}", e.message);
 }
