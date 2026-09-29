@@ -35,7 +35,7 @@ CFG: dict[str, Any] = {
         # Override with --track-small / --track-large / --track-stemmed.
         "small": "",  # smallest resolvable audio; bytes/duration unknown here
         "large": "",  # largest resolvable audio
-        "stemmed": "",  # resolvable audio AND GET /stems 200
+        "stemmed": "",  # resolvable audio AND GET /stems answers a manifest with parts
     },
 }
 
@@ -122,6 +122,38 @@ def _require_anlz(status: int, body: bytes, stable_id: str) -> None:
         raise ProbeError(f"/anlz for {stable_id} was not JSON: {exc}") from exc
 
 
+def require_stem_bundle(engine: str, stable_id: str) -> None:
+    """Prove the stemmed role has a stored bundle: a manifest with parts (#3966).
+
+    ``GET /stems`` answers HTTP 200 for a track WITHOUT stems too, with body
+    ``{"status": "unavailable", "code": "STEM_BUNDLE_NOT_FOUND"}``, so the
+    status code alone admitted any track. Only a manifest for this stable_id
+    that lists at least one part counts; anything else raises.
+    """
+    status, _headers, body = fetch_url(
+        f"{engine}/api/v1/tracks/{stable_id}/stems", ANLZ_TIMEOUT_S,
+    )
+    if status != 200:
+        raise ProbeError(f"GET /stems for {stable_id} returned HTTP {status}")
+    try:
+        manifest = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProbeError(f"GET /stems for {stable_id} was not JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise ProbeError(f"GET /stems for {stable_id} was not a JSON object")
+    if manifest.get("status") == "unavailable":
+        raise ProbeError(
+            f"stemmed track {stable_id} has no stem bundle: "
+            f"{manifest.get('code') or 'unavailable'} (HTTP 200 unavailable)"
+        )
+    parts = manifest.get("parts")
+    if manifest.get("stable_id") != stable_id or not isinstance(parts, dict) or not parts:
+        raise ProbeError(
+            f"GET /stems for {stable_id} is not a stem manifest for that track: "
+            f"stable_id={manifest.get('stable_id')!r} parts={parts!r}"
+        )
+
+
 def _content_length(headers: Any, body: bytes) -> int:
     if headers is not None:
         raw = headers.get("Content-Length") or headers.get("content-length")
@@ -151,13 +183,7 @@ def _probe_track(
     data_dir: Path | None,
 ) -> dict[str, Any]:
     if role == "stemmed":
-        stems_url = f"{engine}/api/v1/tracks/{stable_id}/stems"
-        status, _headers, _body = fetch_url(stems_url, ANLZ_TIMEOUT_S)
-        if status != 200:
-            raise ProbeError(
-                f"no stemmed track with resolvable audio: GET /stems for "
-                f"{stable_id} returned HTTP {status}"
-            )
+        require_stem_bundle(engine, stable_id)
     cache_before = _anlz_cache_state(data_dir, stable_id)
     anlz_url = f"{engine}/api/v1/tracks/{stable_id}/anlz?points={points}"
     audio_url = f"{engine}/api/v1/tracks/{stable_id}/audio"
