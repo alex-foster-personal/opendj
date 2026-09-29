@@ -20,7 +20,8 @@ import pytest
 
 from apps.webui.server.routes import settings_ai
 
-_FRONTEND = Path(__file__).resolve().parents[2] / "apps" / "webui" / "frontend" / "src" / "lib" / "settings"
+_REPO = Path(__file__).resolve().parents[2]
+_FRONTEND = _REPO / "apps" / "webui" / "frontend" / "src" / "lib" / "settings"
 
 
 def _client_keys() -> set[str]:
