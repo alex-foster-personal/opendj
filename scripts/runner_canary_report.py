@@ -25,10 +25,12 @@ it reports:
 
 Verdicts, per vendor (decision record: docs/decisions/ADR-NEW-runner-canary.md):
 - FAIL when a known-red SHA comes back green on the vendor (the canary cannot go red), or
-  when at least `min_paired_commits` pairs exist and a bar in ci/runner-canary.json is missed;
+  when at least `min_paired_commits` pairs exist, a known-red SHA came back red on the
+  vendor, and a bar in ci/runner-canary.json is missed;
 - UNKNOWN when fewer than `min_paired_commits` (20) commits are paired, when no known-red
   SHA is configured, or when a known-red SHA was not run on the vendor or is not red on
-  self-hosted. UNKNOWN is never a pass;
+  self-hosted, even if a bar is missed: a canary not yet shown to go red has not measured
+  anything, a miss included (Sol P2 on 27840126b). UNKNOWN is never a pass;
 - PASS otherwise.
 
 A paired commit has all shards on BOTH sides with a non-dropped outcome, from attempt 1 of
@@ -44,8 +46,8 @@ UNKNOWN (including a GitHub read that failed).
 
 Requirements (mini-PRD)
 - [if] fewer than 20 commits are paired [then] UNKNOWN, never PASS, [else stop] ✔︎ ✅ 🎯
-- [if] no known-red SHA came back red on the vendor [then] UNKNOWN, or FAIL when it came back
-  green, [else stop] ✔︎ ✅ 🎯
+- [if] no known-red SHA came back red on the vendor [then] UNKNOWN even when a bar is
+  missed, or FAIL when it came back green, [else stop] ✔︎ ✅ 🎯
 - [if] 20+ pairs meet every bar with a red control [then] PASS, [else stop] ✔︎ ✅ 🎯
 - [if] a gate-passed run lacks a job for a shard its gate planned [then] that shard is an
   infra failure with infinite start latency (pending while the run is still going), and a
@@ -277,6 +279,9 @@ def evaluate_vendor(
 
     if control_green:
         report.verdict, report.reasons = "FAIL", control_green + failed + unknown
+    elif control_unknown:
+        # No valid red control: a missed bar is reported, but it is not yet a measurement.
+        report.verdict, report.reasons = "UNKNOWN", unknown + failed
     elif failed and report.paired_commits >= bars["min_paired_commits"]:
         report.verdict, report.reasons = "FAIL", failed + unknown
     elif unknown:
