@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -55,7 +56,7 @@ WIDER_TITLE = "w" * 200
 
 
 @pytest.fixture
-def hub(tmp_path: Path) -> TestClientTransport:
+def hub(tmp_path: Path) -> Iterator[TestClientTransport]:
     app = FastAPI()
     app.state.state_db_path = str(client.state_db_path(tmp_path / "hub"))
     app.state.sync_hub_data_dir = str(tmp_path / "hub")
