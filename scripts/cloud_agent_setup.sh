@@ -38,12 +38,39 @@ PNPM_PIN="$(sed -n 's/.*"packageManager": *"pnpm@\([^"]*\)".*/\1/p' apps/webui/f
 export PATH="$HOME/.local/bin:$PATH"
 
 # --- system packages (Linux) ------------------------------------------------
-# libsqlcipher-dev mirrors the apt step in .github/workflows/ci.yml.
+# libsqlcipher-dev and just mirror the apt step in .github/workflows/ci.yml.
+# pkg-config + libasound2-dev: cpal's ALSA backend (apps/audio-engine
+# `--features device`). libdbus-1-dev: libdbus-sys in the desktop shells.
+# gh: the REST smoke test below, whenever the runner sets a GitHub token.
+# xvfb + libnss3 libgbm1 libgtk-3-0t64 libxss1: run the Electron shell
+# (apps/desktop/electron) headless under `xvfb-run`.
+# ODJ_CLOUD_TAURI=1 adds the WebKitGTK stack the Tauri shell compiles against;
+# it is several hundred MB, so it is opt-in.
+APT_PACKAGES="ca-certificates curl git libsqlcipher-dev just pkg-config libasound2-dev libdbus-1-dev gh xvfb libnss3 libgbm1 libgtk-3-0t64 libxss1"
+if [ "${ODJ_CLOUD_TAURI:-0}" = "1" ]; then
+  APT_PACKAGES="$APT_PACKAGES libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev"
+fi
 if [ "$CHECK_ONLY" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
-  _log "apt: ca-certificates curl git libsqlcipher-dev"
+  _log "apt: $APT_PACKAGES"
+  # A preinstalled third-party PPA the network policy blocks only warns here;
+  # apt-get still exits 0 and the Ubuntu archive is refreshed.
   _as_root apt-get update -qq
-  _as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    ca-certificates curl git libsqlcipher-dev >/dev/null
+  # shellcheck disable=SC2086  # word splitting of the package list is intended
+  _as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $APT_PACKAGES >/dev/null
+fi
+
+# --- rust (apps/audio-engine, the native waveform extension) ------------------
+if ! command -v cargo >/dev/null 2>&1; then
+  [ "$CHECK_ONLY" -eq 1 ] && _die "cargo not installed (run without --check first)"
+  _log "installing rustup (stable, minimal profile)"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+command -v cargo >/dev/null 2>&1 || _die "cargo not on PATH after install"
+# Warm the crate cache so an agent's first `cargo test` compiles, not downloads.
+if [ "$CHECK_ONLY" -eq 0 ] && [ -f apps/audio-engine/Cargo.lock ]; then
+  _log "cargo fetch --locked (apps/audio-engine)"
+  cargo fetch --locked --manifest-path apps/audio-engine/Cargo.toml --quiet
 fi
 
 # --- uv + python venv -------------------------------------------------------
@@ -75,6 +102,18 @@ PNPM_ACTUAL="$(_pnpm_version)"
 if [ "$CHECK_ONLY" -eq 0 ]; then
   _log "pnpm install --frozen-lockfile (frontend)"
   (cd apps/webui/frontend && pnpm install --frozen-lockfile --reporter=silent)
+fi
+
+# --- electron shell (only on trees that carry it) ----------------------------
+# electron's postinstall is the Chromium download. pnpm can skip build scripts
+# (allowBuilds/onlyBuiltDependencies differ across pnpm majors), so the runtime
+# is fetched explicitly; install.js is a no-op once dist/ matches the version.
+ELECTRON_DIR=apps/desktop/electron
+if [ "$CHECK_ONLY" -eq 0 ] && [ -f "$ELECTRON_DIR/pnpm-lock.yaml" ]; then
+  _log "pnpm install --frozen-lockfile (electron shell)"
+  (cd "$ELECTRON_DIR" && pnpm install --frozen-lockfile --reporter=silent)
+  # One retry: the first download through a proxy has been seen to truncate.
+  (cd "$ELECTRON_DIR/node_modules/electron" && { node install.js || node install.js; })
 fi
 
 # --- doppler (only where a service token is configured) ----------------------
