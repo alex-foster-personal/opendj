@@ -5,6 +5,7 @@
   "private": true,
   "description": "Open DJ desktop shell on Electron: boots the bundled engine and opens a Chromium window onto it. Phase 21, beside the Tauri shell until cutover.",
   "main": "dist/main.js",
+  "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=22.12"
   },
