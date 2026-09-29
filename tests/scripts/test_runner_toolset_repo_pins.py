@@ -22,14 +22,18 @@ Regression lines:
   - if a `repo:` source names one file where its pin can live in several (one
     workflow, one app), so a second file pinning another version stays green,
     then broken
+  - if an app nested deeper under apps/ pinning another version stays green, or
+    a package.json or lock under node_modules is read as a repo pin, then broken
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import tomllib
 from collections.abc import Callable
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
@@ -154,6 +158,20 @@ def _expected_pin(entry: dict) -> str | None:
     return stated.group(1) if stated else None
 
 
+def _source_files(root: Path, glob: str) -> set[Path]:
+    """The files one `repo:` glob names. `<dir>/**/<name>` walks <dir> at any depth
+    but prunes every `node_modules` segment: an installed dependency's package.json
+    or lockfile is a pin that dependency makes, not one this repo makes."""
+    if "/**/" not in glob:
+        return set(root.glob(glob))
+    top, name = glob.split("/**/", 1)
+    found: set[Path] = set()
+    for dirpath, dirnames, filenames in os.walk(root / top):
+        dirnames[:] = [d for d in dirnames if d != "node_modules"]
+        found |= {Path(dirpath) / f for f in filenames if fnmatch(f, name)}
+    return found
+
+
 def repo_pin_mismatches(entries: list[dict], root: Path) -> list[str]:
     """Every `repo:`-sourced entry whose source file pins something else."""
     problems = []
@@ -162,7 +180,7 @@ def repo_pin_mismatches(entries: list[dict], root: Path) -> list[str]:
             continue
         name, pattern = entry["name"], entry["source"].removeprefix("repo:").split(" ")[0]
         paths, derive, expected = (
-            sorted({path for glob in pattern.split(",") for path in root.glob(glob)}),
+            sorted({path for glob in pattern.split(",") for path in _source_files(root, glob)}),
             REPO_PINS.get(name),
             _expected_pin(entry),
         )
@@ -317,12 +335,13 @@ WORKFLOW_ACTIONS = {
 WORKFLOW_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 # Deriver -> every file its pin can live in. GitHub runs any `*.yml` or `*.yaml`
 # workflow; corepack and Playwright read the package.json / pnpm-lock of whichever
-# app they run in; the repo has one uv project, the root.
+# app they run in, at any depth under apps/ (a spike nests three deep); the repo has
+# one uv project, the root.
 SOURCE_GLOBS: dict[str, tuple[str, ...]] = {
     "_action_input": WORKFLOW_GLOBS,
     "_cargo_install": WORKFLOW_GLOBS,
-    "_package_manager": ("apps/*/package.json", "apps/*/*/package.json"),
-    "_pnpm_lock": ("apps/*/pnpm-lock.yaml", "apps/*/*/pnpm-lock.yaml"),
+    "_package_manager": ("apps/**/package.json",),
+    "_pnpm_lock": ("apps/**/pnpm-lock.yaml",),
     "_uv_lock": ("uv.lock",),
 }
 
@@ -382,6 +401,27 @@ def test_a_second_file_pinning_another_version_goes_red(
     _write(tmp_path, other, text(bumped))
     problems = repo_pin_mismatches([entry], tmp_path)
     assert len(problems) == 1 and bumped in problems[0], problems
+
+
+@pytest.mark.parametrize(
+    ("other", "red"),
+    [("apps/launcher/spikes/djay-drag", True), ("apps/webui/frontend/node_modules/dep", False)],
+    ids=["deep-app", "node_modules-control"],
+)
+@pytest.mark.parametrize("name", ["pnpm", "playwright-chromium"])
+def test_a_deep_app_pin_goes_red_and_node_modules_is_ignored(
+    manifest: dict, tmp_path: Path, name: str, other: str, red: bool
+) -> None:
+    """An app nested at any depth pins what its tools run; a dependency installed
+    under node_modules pins only itself, so its package.json or lock is not read."""
+    agreeing, _, text, bumped = SECOND_FILE_PINS[name]
+    entry = _entry_named(manifest, name)
+    pin = _expected_pin(entry)
+    assert pin, entry
+    _write(tmp_path, agreeing, text(pin))
+    _write(tmp_path, f"{other}/{Path(agreeing).name}", text(bumped))
+    problems = repo_pin_mismatches([entry], tmp_path)
+    assert bool(problems) is red and all(bumped in problem for problem in problems), problems
 
 
 @pytest.mark.parametrize("name", sorted(WORKFLOW_ACTIONS))
