@@ -196,8 +196,9 @@ def reconcile_listing(
     created from `horizon` before the reconcile mark up to the plain listing's
     floor. Each page of a runs listing is about 1.7 MB and 4.5 s, so the horizon is
     what a pass costs: 30 days outran a 10-minute job, and a re-run starting more
-    than `horizon` after its run was created is not recorded. A first attempt that completes past the floor is the census's case (the
-    plain pass holds its mark until that run completes); a re-run is the case no
+    than `horizon` after its run was created is not recorded. A first attempt that
+    completes past the floor is the census's case (the plain pass holds its mark
+    until that run completes); a re-run is the case no
     plain pass can see, so re-runs are all a reconcile pass adds, about 20 a day,
     and its overlap can be days wide without re-pricing thousands of runs. Empty
     when the pass is not a reconcile pass (no mark)."""
