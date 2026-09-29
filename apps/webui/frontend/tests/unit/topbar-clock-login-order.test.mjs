@@ -26,6 +26,22 @@ test('clock is hidden when signed out and CloudSync is off', () => {
 	assert.match(topbar, /cloudSyncChipState\.value !== 'off'/);
 });
 
+test('a failed chip refresh publishes the retained status, not off', () => {
+	// [if] a poll fails after a good one [then] the clock keeps following the
+	// state the chip still shows, rather than hiding as if CloudSync were off.
+	const chip = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/CloudSyncStatusChip.svelte', import.meta.url)),
+		'utf8'
+	);
+	const load = chip.slice(chip.indexOf('async function load()'), chip.indexOf('function closePopover()'));
+	assert.ok(load.includes('} catch ('), 'load() must still have its failure branch');
+	const [ok, failed] = load.split('} catch (');
+	// Control: the success path still publishes the fresh status.
+	assert.match(ok, /status = await getStatus\(\);[\s\S]*publishCloudSyncChipState\(status\)/);
+	assert.match(failed, /publishCloudSyncChipState\(status\)/);
+	assert.doesNotMatch(chip, /publishCloudSyncChipState\(null\)/);
+});
+
 test('signed-out bauble lists login-gated features via ControlExplainer hover', () => {
 	assert.match(cluster, /ControlExplainer/);
 	assert.match(cluster, /Sign in required/);
