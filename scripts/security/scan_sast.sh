@@ -52,24 +52,40 @@ sec_require_bin uv || _unknown_exit "uv missing (needed for secscan.py)"
 # Inside a git repo Semgrep scans only tracked files and skips tests/ by default, so the
 # control runs on a copy outside the repo whose own empty .semgrepignore turns the
 # default ignore list off. The copy keeps the repo-relative path the custom rules include.
+#
+# The control contract is the TRACKED file list, never a filesystem walk: a stray
+# untracked file (pytest's __pycache__ beside the .py fixtures, Wed 16 Sep 2026) must not
+# raise the floor, and a tracked file missing from the working tree must fail loudly
+# rather than quietly lower it.
 control_root="$(mktemp -d "${TMPDIR:-/tmp}/sast-control.XXXXXX")"
 trap 'rm -rf "$control_root"' EXIT
-mkdir -p "$control_root/$(dirname "$CONTROL_DIR")"
-cp -R "$SECURITY_REPO_ROOT/$CONTROL_DIR" "$control_root/$CONTROL_DIR"
 printf '# empty on purpose: disables the default ignore list for the control copy\n' \
   >"$control_root/.semgrepignore"
+git -C "$SECURITY_REPO_ROOT" ls-files -z -- "$CONTROL_DIR" >"$OUT/control.files" ||
+  _unknown_exit "git ls-files failed for $CONTROL_DIR, so the control file list is unknown"
 control_targets=()
 while IFS= read -r -d '' _control_file; do
-  control_targets+=("${_control_file#"$control_root"/}")
-done < <(find "$control_root/$CONTROL_DIR" -type f -print0)
+  [[ -f "$SECURITY_REPO_ROOT/$_control_file" ]] ||
+    _unknown_exit "tracked control file missing from the working tree: $_control_file"
+  mkdir -p "$control_root/$(dirname "$_control_file")"
+  cp "$SECURITY_REPO_ROOT/$_control_file" "$control_root/$_control_file"
+  control_targets+=("$_control_file")
+done <"$OUT/control.files"
 control_files="${#control_targets[@]}"
+[[ "$control_files" -gt 0 ]] || _unknown_exit "git tracks no files under $CONTROL_DIR"
 _semgrep "$control_root" "$OUT/control.json" "${control_targets[@]}" ||
   _unknown_exit "control scan errored"
-require_args=()
-for rule in "${REQUIRED_CONTROL_RULES[@]}"; do require_args+=(--require-rule "$rule"); done
-sec_py semgrep-summary "$OUT/control.json" "${require_args[@]}" --min-rules "$MIN_RULES" \
-  --min-files "$control_files" --fail-on-error --count-file "$OUT/control.count" >"$OUT/control.txt" ||
-  _unknown_exit "control did not fire or rules failed to load (see above)"
+control_args=()
+for rule in "${REQUIRED_CONTROL_RULES[@]}"; do control_args+=(--require-rule "$rule"); done
+for target in "${control_targets[@]}"; do control_args+=(--expect-file "$target"); done
+# secscan prints its own UNKNOWN reason; the summary row carries that reason, not a guess.
+if ! sec_py semgrep-summary "$OUT/control.json" "${control_args[@]}" --min-rules "$MIN_RULES" \
+  --min-files "$control_files" --fail-on-error --count-file "$OUT/control.count" \
+  >"$OUT/control.txt" 2>"$OUT/control.err"; then
+  cat "$OUT/control.err" >&2
+  reason="$(sed -n 's/^UNKNOWN: //p' "$OUT/control.err" | tail -n 1)"
+  _unknown_exit "control unmeasured: ${reason:-secscan semgrep-summary failed without an UNKNOWN line (stderr above)}"
+fi
 control_hits="$(cat "$OUT/control.count")"
 
 # ----- scan ---------------------------------------------------------------------------------------

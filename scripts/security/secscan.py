@@ -24,6 +24,8 @@ Acceptance (one assertion each, exercised by `just security-scan`):
 - [if] semgrep-summary has --expected-scannable > 0, scanned 0 files, and errors or results
   [then] exit 2 (UNKNOWN), not a pass.
 - [if] semgrep scanned files but loaded 0 rules [then] exit 2.
+- [if] an --expect-file path is absent from semgrep's paths.scanned [then] exit 2 and the
+  message names it ("control files not scanned: <path>"), whether or not the file floor held.
 """
 
 from __future__ import annotations
@@ -357,7 +359,8 @@ def _semgrep_rules_gate(
     rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
     if rules is None:
         return None
-    scanned = len(doc.get("paths", {}).get("scanned", []))
+    scanned_paths = doc.get("paths", {}).get("scanned", [])
+    scanned = len(scanned_paths)
     print(f"semgrep loaded {rules} rules, scanned {scanned} files")
     expected = args.expected_scannable
     if expected is not None and expected > 0:
@@ -381,11 +384,25 @@ def _semgrep_rules_gate(
             )
     if rules < args.min_rules:
         return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
+    not_scanned = _expected_files_not_scanned(args.expect_file, scanned_paths)
+    named = f"; control files not scanned: {', '.join(not_scanned)}" if not_scanned else ""
     if scanned < args.min_files:
         return _unknown(
-            f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
+            f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor{named}"
         )
+    if not_scanned:
+        return _unknown(f"semgrep scanned {scanned} files{named}")
     return None
+
+
+def _expected_files_not_scanned(expected: list[str], scanned_paths: list[str]) -> list[str]:
+    """Expected targets absent from paths.scanned, compared as the relative paths passed in.
+
+    scan_sast.sh runs semgrep from the control root with root-relative targets, and semgrep
+    echoes them back verbatim in paths.scanned (checked on 1.177.0), so no normalization.
+    """
+    scanned = set(scanned_paths)
+    return [path for path in expected if path not in scanned]
 
 
 def cmd_semgrep_summary(args: argparse.Namespace) -> int:
@@ -477,6 +494,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--require-rule", action="append", default=[])
     p.add_argument("--min-rules", type=int, default=1)
     p.add_argument("--min-files", type=int, default=0, help="fewer scanned files is UNKNOWN")
+    p.add_argument(
+        "--expect-file",
+        action="append",
+        default=[],
+        help="repeatable; a path absent from paths.scanned is UNKNOWN and named",
+    )
     p.add_argument("--fail-on-error", action="store_true")
     p.add_argument(
         "--expected-scannable",
