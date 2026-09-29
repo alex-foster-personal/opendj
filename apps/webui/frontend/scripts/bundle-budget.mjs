@@ -275,7 +275,19 @@ const BUDGETS = [
   // ceil-to-KiB rule on 238,822. This is deferred-code weight: none of it is on
   // the boot or first-paint path, which is the point of moving it here.
   // Decision record: the CI-infra lane comment on #3913, Thu 24 Sep 2026 12:15Z.
-  { name: 'other-lazy', limit: 250880, measured: 238825, note: 'all other routes plus deferred shell' },
+  // RAISED Tue 29 Sep 2026: 245 -> 260 KiB for PR #4321 (Rust engine mode, NAE-13).
+  // Its first head put the mode's code in `library` and read 260,503 there, over
+  // the 259,072 ceiling. The fix loads that code with a dynamic import only when
+  // the mode is on, which moves it here by design: one chunk of 6,267 gzip (the
+  // engine connection, load, state mirror, page-decided sync and hot cues, and
+  // the socket client). Local build, one pass: library 255,553 (98.6%, not
+  // raised), other-lazy 253,082 over 50 files; without that chunk it is 246,815,
+  // matching CI's 246,855 on the head before, so the chunk, not trunk growth, is
+  // what crossed. None of it is boot or first-paint weight, and no eager import
+  // is left to demote: what stays eager is the engine choice and command sets
+  // the dispatcher and Settings read. The ceiling follows the +5% ceil-to-KiB
+  // rule on 253,082.
+  { name: 'other-lazy', limit: 266240, measured: 253082, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

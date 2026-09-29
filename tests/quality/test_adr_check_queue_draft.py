@@ -1,0 +1,178 @@
+"""What adr-check.yml runs on a Trunk queue draft versus an ordinary PR (PR #4227).
+
+A Trunk `trunk-merge/*` draft runs both ADR checks. `--pr` recognizes a Trunk batch
+and judges every member PR on its own files and ADR declaration (scripts.adr_check,
+evaluate_batch), and the merged-tree check catches duplicate ids in the tree that
+lands on main. An ordinary PR runs body validation only. These tests read the
+workflow's own step conditions and arguments, then execute those arguments against
+real git repositories in tmp_path.
+
+Regression lines:
+  - if a trunk-merge/* draft skips the merged-tree ADR check then a duplicate ADR id lands on main
+  - if a trunk-merge/* draft skips --pr then a member's invalid ADR declaration lands (r4135350279)
+  - if an ordinary PR stops getting body validation then a gated change merges with no ADR line
+  - if a trunk-merge/* branch Trunk did not open skips body validation then any PR can bypass it
+
+-Claude
+"""
+
+from __future__ import annotations
+
+import shlex
+import subprocess
+from pathlib import Path
+
+import pytest
+import yaml
+
+from scripts import adr_check
+from tests.quality.gha_conditions import (
+    GENUINE_DRAFT,
+    ORDINARY_PR,
+    SPOOFED_BRANCH,
+    SPOOFED_FORK,
+    PrEvent,
+    condition_holds,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+GATE = REPO_ROOT / ".github" / "workflows" / "adr-check.yml"
+GATE_MODULE = "scripts.adr_check"
+PR_NUMBER_EXPR = "${{ github.event.pull_request.number }}"
+ADR_DIR = "docs/decisions"
+GATED_PATH = "apps/cloud/service.py"
+
+
+# -----------------------------------------------------------------------------
+def _gate_argvs_for(event: PrEvent) -> list[list[str]]:
+    """The scripts.adr_check argument lists the workflow would run for this PR event."""
+    job = yaml.safe_load(GATE.read_text())["jobs"]["gate"]
+    if not condition_holds(job.get("if"), event):
+        return []
+    argvs: list[list[str]] = []
+    for step in job["steps"]:
+        run = str(step.get("run", ""))
+        if GATE_MODULE not in run or not condition_holds(step.get("if"), event):
+            continue
+        tokens = shlex.split(run.replace(PR_NUMBER_EXPR, "4227"))
+        argvs.append(tokens[tokens.index(GATE_MODULE) + 1 :])
+    return argvs
+
+
+def _argv_with(event: PrEvent, flag: str) -> list[str]:
+    (argv,) = [argv for argv in _gate_argvs_for(event) if flag in argv]
+    return argv
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _commit(root: Path, rel: str, text: str) -> str:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    _git(root, "add", rel)
+    _git(root, "commit", "-q", "-m", f"touch {rel}")
+    return _git(root, "rev-parse", "HEAD")
+
+
+def _adr(number: str, slug: str) -> tuple[str, str]:
+    body = f"# ADR-{number}: {slug}\n\nStatus: accepted\nDate: Tue 29 Sep 2026\n"
+    return f"{ADR_DIR}/ADR-{number}-{slug}.md", body
+
+
+def _repo_with_batch(tmp_path: Path, batch_adr: tuple[str, str]) -> Path:
+    """main carries ADR-0002-main; the checked-out batch head adds `batch_adr` on top."""
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    _git(repo, "config", "user.email", "t@example.invalid")
+    _git(repo, "config", "user.name", "t")
+    _commit(repo, *_adr("0001", "base"))
+    main_tip = _commit(repo, *_adr("0002", "main"))
+    _git(repo, "update-ref", "refs/remotes/origin/main", main_tip)
+    _git(repo, "checkout", "-q", "-b", "batch")
+    _commit(repo, *batch_adr)
+    return repo
+
+
+def _run_gate(argv: list[str], repo: Path, **kwargs) -> int:
+    return adr_check.main(argv, repo_root=repo, adr_dir=repo / ADR_DIR, **kwargs)
+
+
+# -----------------------------------------------------------------------------
+def test_queue_draft_runs_batch_member_validation_and_the_merged_tree_check() -> None:
+    argvs = _gate_argvs_for(GENUINE_DRAFT)
+    assert sorted(argv[0] for argv in argvs) == ["--merge-base", "--pr"], argvs
+
+
+@pytest.mark.parametrize(("declared", "expected_rc"), [("ADR: 0099", 1), ("ADR: 0002", 0)])
+def test_queue_draft_judges_each_batch_member_declaration(
+    tmp_path: Path, declared: str, expected_rc: int
+) -> None:
+    """r4135350279: a member whose ADR id is gone from the batch tree fails the draft."""
+    argv = _argv_with(GENUINE_DRAFT, "--pr")
+    repo = _repo_with_batch(tmp_path, _adr("0003", "batch"))
+    batch = {
+        "number": 4227,
+        "headRefName": "trunk-merge/pr-4002/0b1c2d3e",
+        "author": {"login": "app/trunk-io"},
+        "isCrossRepository": False,
+        "body": "## Pull Requests Being Tested\n"
+        "- https://github.com/maintainer/music-dj-tools/pull/4001\n"
+        "- https://github.com/maintainer/music-dj-tools/pull/4002\n",
+    }
+    member_body = {4001: "ADR: none, because docs only.", 4002: declared}
+    bodies = {4227: batch, **{pr: {"body": body} for pr, body in member_body.items()}}
+    rc = _run_gate(
+        argv,
+        repo,
+        fetch=lambda pr: bodies[pr],
+        list_pr_files=lambda _pr: [GATED_PATH],
+        changed=[GATED_PATH],
+    )
+    assert rc == expected_rc
+
+
+def test_queue_draft_catches_a_duplicate_adr_id_in_the_batch_tree(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = _argv_with(GENUINE_DRAFT, "--merge-base")
+    repo = _repo_with_batch(tmp_path, _adr("0002", "batch"))
+    assert _run_gate(argv, repo) == 1
+    err = capsys.readouterr().err
+    assert "duplicate ADR id" in err and "ADR-0002" in err, err
+
+
+def test_queue_draft_with_a_clean_batch_tree_passes(tmp_path: Path) -> None:
+    """Control: the red above is the duplicate id, not a broken invocation."""
+    argv = _argv_with(GENUINE_DRAFT, "--merge-base")
+    assert _run_gate(argv, _repo_with_batch(tmp_path, _adr("0003", "batch"))) == 0
+
+
+@pytest.mark.parametrize(
+    "event",
+    [ORDINARY_PR, SPOOFED_BRANCH, SPOOFED_FORK],
+    ids=lambda e: f"{e.head_ref}@{e.author}@{e.head_repo}",
+)
+def test_every_non_trunk_pr_runs_exactly_the_body_validation(event: PrEvent) -> None:
+    """A trunk-merge/* branch Trunk did not open from this repo is an ordinary PR."""
+    argvs = _gate_argvs_for(event)
+    assert len(argvs) == 1, f"an ordinary PR must run one ADR check, got {argvs}"
+    assert argvs[0][:2] == ["--pr", "4227"], f"an ordinary PR must validate its body: {argvs[0]}"
+    assert "--merge-base" not in argvs[0]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_rc"),
+    [("A gated change with no declaration.", 1), ("ADR: none, because a test fixture.", 0)],
+)
+def test_ordinary_pr_body_validation_still_bites(
+    tmp_path: Path, body: str, expected_rc: int
+) -> None:
+    (argv,) = _gate_argvs_for(ORDINARY_PR)
+    repo = _repo_with_batch(tmp_path, _adr("0003", "feature"))
+    rc = _run_gate(argv, repo, fetch=lambda _pr: {"body": body}, changed=[GATED_PATH])
+    assert rc == expected_rc
