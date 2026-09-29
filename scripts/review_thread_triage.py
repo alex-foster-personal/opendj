@@ -1,6 +1,6 @@
 """Bot review-thread triage gate for one pull request.
 
-Every review thread opened by a review bot (Codex, CodeRabbit, Devin) must
+Every review thread opened by a review bot (Codex, Copilot, CodeRabbit, Devin) must
 reach one of three terminal states before or at merge:
 
     FIXED        code changed in response
@@ -29,6 +29,8 @@ Requirements (mini-PRD)
 - `/ ` list every bot-authored review thread on a PR via the GraphQL API.
   [if a PR has bot threads and none are listed then broken]
   [if a human-authored thread is counted as a bot thread then broken]
+  [if a Copilot thread (GraphQL login copilot-pull-request-reviewer) is not
+  listed, as on PR #4240, then broken]
   [if pagination stops at 100 threads and drops the rest then broken]
 - `/ ` classify each thread RESOLVED / RESOLVED-SILENT / IN-PROGRESS / UNTRIAGED.
   [if a replied-and-resolved thread is reported UNTRIAGED then broken]

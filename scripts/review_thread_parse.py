@@ -5,7 +5,8 @@ a GraphQL thread node, with no network and no filesystem. `review_thread_triage`
 is the shell that fetches, reports and exits. Split out when the pair crossed
 the 600-line file ceiling, along the seam that was already there.
 
-Three reviewers, three vocabularies, one model. Codex states a P-level in a
+Four reviewers, four vocabularies, one model. Copilot states a bare P-level
+and verdict as plain text leading its headline. Codex states a P-level in a
 shields badge and (since Mon 31 Aug 2026) an explicit BLOCKING verdict. Devin
 states neither: it ships a JSON envelope in an HTML comment plus a headline
 colour. CodeRabbit is governed but has emitted no threads here yet.
@@ -24,10 +25,17 @@ from dataclasses import dataclass
 from scripts.review_claude import CLAUDE, is_claude_thread
 from scripts.review_sol import SOL, is_sol_thread
 
+# GitHub Copilot's reviewer has THREE spellings for one author: GraphQL
+# reviewThreads (what this gate reads) says `copilot-pull-request-reviewer`
+# with no [bot] suffix, REST pulls/<n>/reviews adds the suffix, and REST
+# pulls/<n>/comments says `Copilot`. Missing it hid six Copilot threads, five
+# of them "P1 BLOCKING", from the gate on PR #4240 (Tue 29 Sep 2026).
 BOT_LOGINS = frozenset(
     {
         "chatgpt-codex-connector",
         "coderabbitai",
+        "copilot",
+        "copilot-pull-request-reviewer",
         "devin-ai-integration",
     }
 )
@@ -71,7 +79,11 @@ _SEVERITY_BARE = re.compile(r"\b(P[0-3])\b")
 # calls every accented letter decoration, so "πBLOCKING calculation is wrong"
 # would have its leading letter stripped and become an explicit blocker
 # (Sol P2, PR #1671).
-_BLOCKING = re.compile(r"^\s*(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE)
+#
+# A bare P-level MAY precede the verdict, because Copilot writes its severity
+# as plain text leading the headline ("P1 BLOCKING - ...", "P2 NON-BLOCKING:
+# ..."), PR #4240. Without that allowance every Copilot verdict read unmarked.
+_BLOCKING = re.compile(r"^\s*(?:P[0-3]\s+)?(?:[^\w\s]+)?(NON\W?)?BLOCKING", re.IGNORECASE)
 _MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG = re.compile(r"</?[a-zA-Z][^>]*>")
