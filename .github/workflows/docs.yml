@@ -11,6 +11,7 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
+      - "pylock.docs.toml"
       - ".github/workflows/docs.yml"
   pull_request:
     branches: [main, codex--v2-integration]
@@ -22,6 +23,7 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
+      - "pylock.docs.toml"
       - ".github/workflows/docs.yml"
 
 # Pages publishing rights live on the deploy job only (zizmor excessive-permissions).
@@ -159,10 +161,18 @@ jobs:
           python-version: "3.11"
       - name: Setup uv for isolated docs dependencies
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff  # v6
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
       - name: Provision isolated docs environment
         run: |
-          scripts/ci_venv.sh 3.11
-          uv pip install --exact --upgrade --python .venv/bin/python -r requirements-docs.txt
+          scripts/ci_venv.sh 3.11 --lock pylock.docs.toml
       - name: Build site (strict)
         run: .venv/bin/mkdocs build --strict
       - name: Upload pages artifact
