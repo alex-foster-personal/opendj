@@ -210,7 +210,7 @@ import {
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { ArmAtPosition, AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -3519,11 +3519,13 @@ class RbAudioEngine implements AudioEngine {
 	 * Self-referential only: unlike `quantizedSeek`'s syncPlan branch, this
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
+	 * A resolver `armAt` runs on the live projected position before any await.
 	 */
-	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number> {
+	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
+		const armAtPositionSec = typeof armAt === 'function' ? armAt(nowPositionSec) : armAt;
 		if (armAtPositionSec < nowPositionSec) {
 			throw new RangeError(
 				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`

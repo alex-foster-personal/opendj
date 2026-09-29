@@ -63,7 +63,7 @@ import {
 } from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { hasTrustedBeatGrid } from '$lib/player/grid-features';
-import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
+import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
 import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -84,7 +84,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
-import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { ArmAtPosition, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
 import {
@@ -759,8 +759,9 @@ export interface PerformanceHotCueDriver {
 	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
 	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
-	 * operator-felt press stamp. */
-	arm(deck: DeckId, positionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number>;
+	 * operator-felt press stamp. A resolver `armAt` is called with the
+	 * engine's live position inside the scheduling transaction. */
+	arm(deck: DeckId, positionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number>;
 	contextTimeNowSec(): number;
 }
 
@@ -779,8 +780,7 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 		};
 	},
 	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
-	arm: (deck, positionMs, armAtPositionSec, pressT0Ms) =>
-		engine.armHotCueTrigger(deck, positionMs, armAtPositionSec, pressT0Ms),
+	arm: (deck, positionMs, armAt, pressT0Ms) => engine.armHotCueTrigger(deck, positionMs, armAt, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
@@ -2048,10 +2048,15 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		} else {
 			hotCueArmed[command.deck] = null;
 			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+			// The plan above only decides WHETHER to defer. The arm point is
+			// re-resolved from the engine's live position inside the scheduling
+			// transaction: `state.position_ms` is a published snapshot that keeps
+			// falling behind while this command queues, and a click at or just
+			// after a downbeat must roll to the next one, not throw (#4011).
 			const targetContextTime = await _hotCueDriver.arm(
 				command.deck,
 				command.position_ms,
-				plan.armAtPositionSec,
+				(nowPositionSec) => nextDownbeatAtOrAfter(beats, nowPositionSec),
 				pressT0Ms
 			);
 			waveformSeekArmed[command.deck] = {
