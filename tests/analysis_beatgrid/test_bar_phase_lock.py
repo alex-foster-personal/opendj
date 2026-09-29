@@ -123,6 +123,7 @@ def test_production_floor_is_not_zero() -> None:
 
 @pytest.mark.requirement("BEATMAP-02")
 def test_half_bar_doubles_before_the_bar_one_do_not_pick_the_phase() -> None:
+    """[if] beat-3 doubles lead a bar-1 majority [then] bar-1 wins, [else stop]."""
     # Bar-1 on beats 4, 8, ... 28 (7 marks) and a beat-3 double on 2 .. 18 (5):
     # the first mark is a double. The old forward thinning kept 2, 6, 10, 14,
     # 18, 24, 28 and voted phase 2, five to two.
@@ -140,6 +141,7 @@ def test_half_bar_doubles_before_the_bar_one_do_not_pick_the_phase() -> None:
 
 @pytest.mark.requirement("BEATMAP-02")
 def test_majority_phase_wins_whichever_mark_comes_first_control() -> None:
+    """[if] beat-3 marks are the majority [then] the vote follows, [else stop]."""
     # Same pattern with the doubles in the MAJORITY: the vote must follow the
     # majority there too, or the fix would just be "prefer the later mark".
     beats = _grid(32)
@@ -152,6 +154,7 @@ def test_majority_phase_wins_whichever_mark_comes_first_control() -> None:
 
 @pytest.mark.requirement("BEATMAP-02")
 def test_a_downbeat_on_every_beat_fails_closed() -> None:
+    """[if] every beat is a downbeat [then] the phase fails closed, [else stop]."""
     # Per-bar agreement alone would score this stream 1.0: every bar holds a
     # chosen-phase downbeat. The doubles-outnumber-bars rule must catch it.
     beats = _grid(32)
@@ -165,6 +168,7 @@ def test_a_downbeat_on_every_beat_fails_closed() -> None:
 
 @pytest.mark.requirement("BEATMAP-02")
 def test_two_marks_per_bar_is_still_established_boundary() -> None:
+    """[if] one double per bar-1 [then] full agreement, [else stop]."""
     # Exactly one double per bar-1 is the half-bar pattern, not a stream.
     beats = _grid(32)
     downbeats = [beats[i] for i in range(0, 32, 2)]
@@ -179,6 +183,7 @@ def test_two_marks_per_bar_is_still_established_boundary() -> None:
 
 @pytest.mark.requirement("BEATMAP-02")
 def test_a_mark_three_beats_after_bar_one_is_a_disagreement_not_a_double() -> None:
+    """[if] a mark is 3 beats from any bar-1 [then] it disagrees, [else stop]."""
     vote = vote_bar_phase([0, 4, 8, 11, 12, 16])
 
     assert vote.chosen == 0
@@ -194,5 +199,6 @@ def test_a_mark_three_beats_after_bar_one_is_a_disagreement_not_a_double() -> No
 
 @pytest.mark.requirement("BEATMAP-02")
 def test_vote_bar_phase_refuses_no_downbeats() -> None:
+    """[if] no downbeats [then] the vote raises, [else stop]."""
     with pytest.raises(ValueError, match="at least one"):
         vote_bar_phase([])
