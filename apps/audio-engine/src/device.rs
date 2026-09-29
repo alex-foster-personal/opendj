@@ -26,10 +26,25 @@ pub fn default_output_format() -> Result<(u32, u16), String> {
     Ok((config.sample_rate(), config.channels()))
 }
 
+/// Refuse a device opened at another rate than the engine was built for:
+/// the default output (or its format) can change between the probe that set
+/// the engine's rate and the stream being opened, and an engine rendering at
+/// one rate into a stream at another plays at the wrong pitch and speed, with
+/// state timed at neither.
+pub fn check_opened_rate(opened: u32, engine: u32) -> Result<(), String> {
+    if opened == engine {
+        return Ok(());
+    }
+    Err(format!(
+        "the default output device changed to {opened} Hz while the engine started at {engine} Hz; start the engine again"
+    ))
+}
+
 /// Run the audio side inside the default output device's callback until
-/// `stop` is set. The stream is created on this thread because cpal streams
+/// `stop` is set, refusing a device that now runs at another rate than
+/// `engine_rate`. The stream is created on this thread because cpal streams
 /// are not `Send` on every platform.
-pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static {
+pub fn run_device(engine_rate: u32) -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static {
     move |mut side: AudioSide, stop: Arc<AtomicBool>| {
         let device = match cpal::default_host().default_output_device() {
             Some(d) => d,
@@ -45,6 +60,10 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
                 return;
             }
         };
+        if let Err(e) = check_opened_rate(config.sample_rate, engine_rate) {
+            eprintln!("odj-audio: {e}");
+            return;
+        }
         let channels = config.channels as usize;
         let sr = config.sample_rate as u64;
         // A stream error (the device went away) ends the audio side, which
@@ -101,5 +120,21 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
             }
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_device_opened_at_another_rate_than_the_engine_is_refused() {
+        // Codex on b87a0f49: the rate was probed once for the engine and the
+        // device looked up again to open the stream.
+        let err = check_opened_rate(44100, 48000).unwrap_err();
+        assert!(err.contains("44100 Hz") && err.contains("48000 Hz"), "{err}");
+        assert!(check_opened_rate(48000, 44100).is_err());
+        // Control: the rate the engine was built for is accepted.
+        assert!(check_opened_rate(48000, 48000).is_ok());
     }
 }

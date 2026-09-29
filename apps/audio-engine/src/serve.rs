@@ -794,6 +794,10 @@ impl Control {
                 }
                 self.state_seq += 1;
                 let n = self.state_seq;
+                // The `ok` goes out before the audio side can see the
+                // request: its state could otherwise be written first, before
+                // the client knows the number to wait for, and be the last.
+                self.write(&protocol::state_ok_json(id.as_ref(), n));
                 if pending.is_empty() {
                     self.ask_state(n);
                 } else {
@@ -804,7 +808,6 @@ impl Control {
                         }
                     }
                 }
-                self.write(&protocol::state_ok_json(id.as_ref(), n));
             }
             Ok(Command::Shutdown) => {
                 self.reply(id.as_ref(), Ok(()));
@@ -1300,6 +1303,32 @@ mod tests {
         assert!(res_rx.pop().unwrap().1.is_ok());
         side.process(50);
         assert_eq!(states(&mut rx), vec![(250, false, 2)], "answered before the unmute ahead of it");
+    }
+
+    #[test]
+    fn a_state_request_is_acknowledged_before_the_audio_side_can_answer_it() {
+        // Codex on b87a0f49: the request was made before its `ok` was
+        // written, so its only state could go out first, before the client
+        // knew the number to wait for.
+        struct SeesRequest(Arc<AtomicBool>, Arc<Mutex<Vec<bool>>>);
+        impl Write for SeesRequest {
+            fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+                if b.windows(9).any(|w| w == b"state_seq") {
+                    self.1.lock().unwrap().push(self.0.load(Ordering::Acquire));
+                }
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let (mut c, _cmd_rx, _out) = control();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        c.out = Arc::new(Mutex::new(Box::new(SeesRequest(c.state_req.clone(), seen.clone()))));
+        assert!(c.handle_line(&serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(), "wall"));
+        assert_eq!(*seen.lock().unwrap(), vec![false], "the request was visible before its ok was written");
+        // Control: it is made once the ok is out.
+        assert!(c.state_req.load(Ordering::Acquire));
     }
 
     #[test]
