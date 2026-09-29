@@ -26,9 +26,10 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::deck::Track;
+use crate::midi::{self, MapSet, Routed, Router};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
 use crate::offline::TrackCache;
-use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError};
+use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError, RegridSpec};
 
 /// The longest single `engine_advance`, in seconds of audio. The session
 /// answers nothing else until an advance is rendered, so a longer one (or a
@@ -215,9 +216,12 @@ pub fn serve_fake(
     sample_rate: u32,
     mut load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
     mut record: Option<&mut Vec<f32>>,
+    mut router: Router,
 ) -> io::Result<()> {
     let mut engine = Engine::new(sample_rate);
     let mut scratch = vec![0.0f32; MAX_BLOCK * 2];
+    let mut routed = Vec::new();
+    let mut midi_seq = MidiSeq::default();
     send(&mut out, &protocol::hello_json("fake", sample_rate))?;
     let mut input = input;
     let mut buf = Vec::new();
@@ -239,13 +243,18 @@ pub fn serve_fake(
         let mut then_state = false;
         let mut asked = false;
         let mut stop = false;
+        // Lines a midi_inject produced, written before its own result.
+        let mut midi_lines: Vec<Value> = Vec::new();
         let res: Result<(), ProtoError> = parsed.and_then(|cmd| match cmd {
             Command::Load(spec) => {
                 let track = load(&spec)?;
                 engine.apply(EngineCmd::Load { deck: spec.deck, track }).map(drop).map_err(Into::into)
             }
+            Command::Regrid(spec) => {
+                let track = engine.regridded(spec.deck, spec.beats, spec.bpm)?;
+                engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map(drop).map_err(Into::into)
+            }
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
-            Command::NoOp => Ok(()),
             Command::Advance(a) => {
                 let recorded = record.as_deref().map(|r| r.len() as u64 / 2);
                 let mut left = advance_frames(a, sample_rate, recorded)?;
@@ -269,7 +278,23 @@ pub fn serve_fake(
                 stop = true;
                 Ok(())
             }
+            Command::MidiInject { port, bytes } => {
+                router.feed(&port, &bytes, &mut routed);
+                for r in routed.drain(..) {
+                    match r {
+                        Routed::Engine(cmd) => {
+                            let res = engine.apply(cmd).map(drop).map_err(ProtoError::from);
+                            midi_lines.push(protocol::result_json(Some(&Value::String(midi_seq.next())), &res));
+                        }
+                        other => midi_lines.extend(page_line(&port, &other)),
+                    }
+                }
+                Ok(())
+            }
         });
+        for l in &midi_lines {
+            send(&mut out, l)?;
+        }
         if asked {
             state_seq += 1;
             send(&mut out, &protocol::state_ok_json(id.as_ref(), state_seq))?;
@@ -314,6 +339,60 @@ fn advance_frames(a: Advance, sample_rate: u32, recorded: Option<u64>) -> Result
         }
     }
     Ok(frames)
+}
+
+/// Ids for the engine commands MIDI produces: `midi-0`, `midi-1`, ... Each
+/// gets a `result` like any sender's command, so a refusal (play on an
+/// empty deck, a fractional beat loop) is visible, never silent.
+#[derive(Default)]
+struct MidiSeq(u64);
+
+impl MidiSeq {
+    fn next(&mut self) -> String {
+        let id = format!("midi-{}", self.0);
+        self.0 += 1;
+        id
+    }
+}
+
+/// The line a routed page action or unbound message becomes.
+fn page_line(port: &str, r: &Routed) -> Option<Value> {
+    match r {
+        Routed::Page { action, value } => Some(midi::action_json(port, action, *value)),
+        Routed::Unmapped { .. } => midi::unmapped_json(port, r),
+        Routed::Engine(_) => None,
+    }
+}
+
+/// Where the engine's own MIDI input (feature `midi`) delivers bytes: into
+/// the control thread's queue, behind whatever lines are already there, so
+/// MIDI and the supervisor share one mailbox order.
+#[derive(Clone)]
+pub struct MidiSink(mpsc::Sender<Msg>);
+
+impl MidiSink {
+    /// Hand over bytes that arrived on `port`. False once serve has stopped.
+    pub fn send(&self, port: &str, bytes: &[u8]) -> bool {
+        self.0.send(Msg::Midi { port: port.to_string(), bytes: bytes.to_vec() }).is_ok()
+    }
+}
+
+/// Opens the engine's MIDI input ports. Returns what must be kept alive for
+/// them to stay open, and the `midi_ports` line announcing which it claimed.
+pub type MidiOpener = Box<dyn FnOnce(&MapSet, MidiSink) -> Result<(Box<dyn std::any::Any>, Value), String> + Send>;
+
+/// How a threaded serve takes MIDI: the maps it routes with, and, with
+/// `--midi`, the opener for real ports.
+pub struct MidiSetup {
+    pub router: Router,
+    pub open: Option<MidiOpener>,
+}
+
+impl MidiSetup {
+    /// The built-in maps and no ports: `midi_inject` works, nothing is opened.
+    pub fn inject_only() -> MidiSetup {
+        MidiSetup { router: Router::new(MapSet::builtin().expect("the embedded maps load")), open: None }
+    }
 }
 
 /// Where results and state go: stdout in the binary, a buffer in tests.
@@ -456,8 +535,10 @@ impl AudioSide {
     }
 }
 
-enum Msg {
+pub(crate) enum Msg {
     Line(String),
+    /// Bytes from the engine's own MIDI input.
+    Midi { port: String, bytes: Vec<u8> },
     /// A line the reader skipped (too long, or not UTF-8), with its refusal.
     Skipped(ProtoError),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
@@ -478,6 +559,9 @@ enum Msg {
 enum Queued {
     Cmd(Option<Value>, EngineCmd),
     Load(Option<Value>, LoadSpec, Charge),
+    /// A `set_beatgrid`, built from the deck's track once the work ahead of
+    /// it has gone, so it regrids whatever that work left on the deck.
+    Regrid(Option<Value>, RegridSpec),
     /// An `engine_state` sent after the work ahead of it here: it is asked
     /// of the audio side only once this has passed on every deck it waits on.
     Fence(u64),
@@ -501,6 +585,9 @@ struct Control {
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
+    router: Router,
+    routed: Vec<Routed>,
+    midi_seq: MidiSeq,
     /// The last `engine_state` asked of the audio side, by its `state_seq`.
     state_asked: Arc<AtomicU64>,
     /// How many commands were sent when it was asked.
@@ -511,6 +598,10 @@ struct Control {
     pushed: u64,
     /// Decoded tracks, shared by the load threads.
     tracks: Arc<TrackCache>,
+    /// Per deck: the track last sent to the engine, so `set_beatgrid` can
+    /// rebuild it with a new grid here instead of on the audio thread. The
+    /// engine refuses the swap if the deck holds other audio by then.
+    on_deck: [Option<Arc<Track>>; MAX_DECKS],
     /// Per `engine_state` waiting on pending loads, by its `state_seq`: how
     /// many decks' fences have yet to pass.
     fences: HashMap<u64, usize>,
@@ -527,6 +618,28 @@ struct Control {
 }
 
 impl Control {
+    /// Route MIDI bytes: engine commands into the mailbox (behind a deck's
+    /// pending load, like any command), page actions and unbound traffic
+    /// out as lines.
+    fn midi(&mut self, port: &str, bytes: &[u8]) {
+        let mut routed = std::mem::take(&mut self.routed);
+        self.router.feed(port, bytes, &mut routed);
+        for r in routed.drain(..) {
+            match r {
+                Routed::Engine(cmd) => {
+                    let id = self.midi_seq.next();
+                    self.dispatch(Some(Value::String(id)), cmd);
+                }
+                other => {
+                    if let Some(line) = page_line(port, &other) {
+                        self.write(&line);
+                    }
+                }
+            }
+        }
+        self.routed = routed;
+    }
+
     fn reply(&self, id: Option<&Value>, res: Result<(), ProtoError>) {
         self.write(&protocol::result_json(id, &res));
     }
@@ -549,10 +662,18 @@ impl Control {
     /// Enqueue for the audio side; false (and an error reply) when the
     /// mailbox is full and the command was dropped.
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
+        let holds = match &cmd {
+            EngineCmd::Load { deck, track } | EngineCmd::Regrid { deck, track } => Some((*deck, Some(track.clone()))),
+            EngineCmd::Unload { deck } => Some((*deck, None)),
+            _ => None,
+        };
         if self.cmd_tx.push((seq, cmd)).is_err() {
             let id = take_id(&self.ids, seq);
             self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             return false;
+        }
+        if let Some((deck, t)) = holds {
+            self.on_deck[deck as usize - 1] = t;
         }
         self.pushed += 1;
         true
@@ -561,10 +682,11 @@ impl Control {
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, .. } | Unload { deck } | Play { deck, .. } | Cue { deck } | Seek { deck, .. }
-            | Quantize { deck, .. } | QuantizeGrid { deck, .. }
+            Load { deck, .. } | Regrid { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
+            | Seek { deck, .. } | TempoFader { deck, .. } | Quantize { deck, .. } | QuantizeGrid { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
-            | PitchRange { deck, .. } | Trim { deck, .. } | Eq { deck, .. } | Filter { deck, .. }
+            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. }
+            | Eq { deck, .. } | Filter { deck, .. }
             | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
             Crossfader { .. } | MasterVolume { .. } | MasterMute { .. } => None,
         }
@@ -577,7 +699,7 @@ impl Control {
         if q.len() < QUEUE_SLOTS {
             q.push_back(item);
         } else {
-            let (Queued::Cmd(id, _) | Queued::Load(id, ..)) = item else {
+            let (Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _)) = item else {
                 // A fence is only re-parked behind a load released from a
                 // queue that held it, which leaves room; were it ever full,
                 // asking now is later than asked, never earlier.
@@ -607,6 +729,26 @@ impl Control {
         };
         let seq = self.seq(id);
         let _ = self.push_seq(seq, cmd);
+    }
+
+    fn regrid(&mut self, id: Option<Value>, spec: RegridSpec) {
+        if let Some(Queued::Regrid(id, spec)) = self.park(spec.deck, Queued::Regrid(id, spec)) {
+            self.send_regrid(id, spec);
+        }
+    }
+
+    /// Build the deck's track with the new grid and send it on. The deck's
+    /// earlier work is in the mailbox by now, so this is the track it leaves.
+    fn send_regrid(&mut self, id: Option<Value>, spec: RegridSpec) {
+        let deck = spec.deck;
+        match &self.on_deck[deck as usize - 1] {
+            Some(t) => {
+                let track = Arc::new(t.with_grid(spec.beats, spec.bpm));
+                let seq = self.seq(id);
+                let _ = self.push_seq(seq, EngineCmd::Regrid { deck, track });
+            }
+            None => self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::NoTrack, "no track loaded on this deck"))),
+        }
     }
 
     fn load(&mut self, id: Option<Value>, spec: LoadSpec) {
@@ -694,7 +836,7 @@ impl Control {
     fn release(&mut self, deck: DeckId, mut q: VecDeque<Queued>) {
         while let Some(item) = q.pop_front() {
             match item {
-                Queued::Ready(..) | Queued::Cmd(..) if self.cmd_tx.slots() == 0 => {
+                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) if self.cmd_tx.slots() == 0 => {
                     q.push_front(item);
                     break;
                 }
@@ -711,6 +853,7 @@ impl Control {
                     let seq = self.seq(id);
                     let _ = self.push_seq(seq, cmd);
                 }
+                Queued::Regrid(id, spec) => self.send_regrid(id, spec),
                 Queued::Load(id, spec, charge) => {
                     self.start_load(id, spec, charge, q);
                     return;
@@ -793,7 +936,7 @@ impl Control {
     fn refuse_queued(&mut self, q: VecDeque<Queued>) {
         for item in q {
             let id = match item {
-                Queued::Cmd(id, _) | Queued::Load(id, ..) => id,
+                Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _) => id,
                 // Only shutdown refuses a decoded load: it never ran.
                 Queued::Ready(seq, _) => {
                     let id = take_id(&self.ids, seq);
@@ -822,8 +965,8 @@ impl Control {
         match parsed {
             Err(e) => self.reply(id.as_ref(), Err(e)),
             Ok(Command::Load(spec)) => self.load(id, spec),
+            Ok(Command::Regrid(spec)) => self.regrid(id, spec),
             Ok(Command::Apply(c)) => self.dispatch(id, c),
-            Ok(Command::NoOp) => self.reply(id.as_ref(), Ok(())),
             Ok(Command::Advance(_)) => self.reply(
                 id.as_ref(),
                 Err(ProtoError::new(
@@ -867,6 +1010,10 @@ impl Control {
                 self.reply(id.as_ref(), Ok(()));
                 return false;
             }
+            Ok(Command::MidiInject { port, bytes }) => {
+                self.midi(&port, &bytes);
+                self.reply(id.as_ref(), Ok(()));
+            }
         }
         true
     }
@@ -877,9 +1024,10 @@ impl Control {
 pub fn serve_threaded(
     sample_rate: u32,
     clock: &'static str,
+    midi: MidiSetup,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
 ) -> io::Result<()> {
-    serve_threaded_from(io::BufReader::new(io::stdin()), io::stdout(), sample_rate, clock, run_audio)
+    serve_threaded_from(io::BufReader::new(io::stdin()), io::stdout(), sample_rate, clock, midi, run_audio)
 }
 
 fn serve_threaded_from(
@@ -887,6 +1035,7 @@ fn serve_threaded_from(
     output: impl Write + Send + 'static,
     sample_rate: u32,
     clock: &'static str,
+    midi: MidiSetup,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
 ) -> io::Result<()> {
     let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(CMD_SLOTS);
@@ -900,9 +1049,25 @@ fn serve_threaded_from(
     let out: Out = Arc::new(Mutex::new(Box::new(output)));
     let ids: Ids = Arc::new(Mutex::new(HashMap::new()));
 
+    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
+    // Open the engine's own MIDI ports first, so a `--midi` that cannot open
+    // fails before hello rather than after it. Kept alive until serve
+    // returns; dropping it closes the ports. The `midi_ports` line follows
+    // hello and says which ports the engine claimed, so the page knows which
+    // controllers to leave alone.
+    let (_midi_ports, ports_line) = match midi.open {
+        None => (None, None),
+        Some(open) => {
+            let (keep, line) = open(midi.router.maps(), MidiSink(msg_tx.clone())).map_err(io::Error::other)?;
+            (Some(keep), Some(line))
+        }
+    };
     {
         let mut o = out.lock().unwrap();
         send(&mut *o, &protocol::hello_json(clock, sample_rate))?;
+        if let Some(line) = &ports_line {
+            send(&mut *o, line)?;
+        }
     }
 
     // One clock for when state is heard and when it is sent, so the feed's
@@ -927,7 +1092,6 @@ fn serve_threaded_from(
         #[cfg(test)]
         mid_block: None,
     };
-    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
     let audio_stop = stop.clone();
     let exit_tx = msg_tx.clone();
     let audio_thread = std::thread::Builder::new().name("odj-audio".into()).spawn(move || {
@@ -1016,11 +1180,15 @@ fn serve_threaded_from(
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
         state_req,
+        router: midi.router,
+        routed: Vec::new(),
+        midi_seq: MidiSeq::default(),
         state_asked,
         state_fence,
         state_sent,
         pushed: 0,
-        tracks: Arc::default(),
+        tracks: Arc::new(TrackCache::at(sample_rate)),
+        on_deck: Default::default(),
         fences: HashMap::new(),
         state_seq: 0,
         load_used: Arc::default(),
@@ -1070,6 +1238,7 @@ fn serve_threaded_from(
                 in_flight.give_back(0);
             }
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
+            Msg::Midi { port, bytes } => control.midi(&port, &bytes),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
             // Lines may have been lost: finish what was read, as at EOF,
@@ -1118,7 +1287,7 @@ fn serve_threaded_from(
                     break;
                 }
                 // Nothing sent after shutdown or EOF is taken.
-                Ok(Msg::Line(_) | Msg::Skipped(_) | Msg::Eof | Msg::InputFailed(_)) => {}
+                Ok(Msg::Line(_) | Msg::Midi { .. } | Msg::Skipped(_) | Msg::Eof | Msg::InputFailed(_)) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -1512,11 +1681,15 @@ mod tests {
             waiting: Default::default(),
             loading: [None; MAX_DECKS],
             state_req: Arc::new(AtomicBool::new(false)),
+            router: MidiSetup::inject_only().router,
+            routed: Vec::new(),
+            midi_seq: MidiSeq::default(),
             state_asked: Arc::default(),
             state_fence: Arc::default(),
             state_sent: Arc::default(),
             pushed: 0,
             tracks: Arc::default(),
+            on_deck: Default::default(),
             fences: HashMap::new(),
             state_seq: 0,
             load_used: Arc::default(),
@@ -1790,7 +1963,7 @@ mod tests {
             let (tx, rx) = mpsc::channel();
             let (o, g) = (out.clone(), go.clone());
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", move |mut side, stop| {
+                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                     while !stop.load(Ordering::Relaxed) {
                         if g.load(Ordering::Relaxed) {
                             side.process(64);
@@ -1875,7 +2048,7 @@ mod tests {
         let (reader, _writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", |_side, _stop| {}));
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", MidiSetup::inject_only(), |_side, _stop| {}));
         });
         let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
         assert!(r.is_err());
@@ -1904,7 +2077,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", |_side, _stop| {
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |_side, _stop| {
                 std::thread::sleep(Duration::from_millis(300));
             });
             let _ = tx.send(r);
@@ -1922,6 +2095,73 @@ mod tests {
         assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
     }
 
+    fn lines_of(out: &Captured) -> Vec<Value> {
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+    }
+
+    #[test]
+    fn midi_from_the_engines_own_ports_reaches_the_engine_and_the_page() {
+        // An opener standing in for midir: it claims one port and delivers
+        // recorded FLX4 bytes through the sink from its own thread, as a
+        // midir callback does.
+        let open: MidiOpener = Box::new(|maps: &MapSet, sink: MidiSink| {
+            let port = "DDJ-FLX4 MIDI 1".to_string();
+            let map = maps.resolve(&port).expect("the FLX4 map").name_match.clone();
+            let line = midi::ports_json(&[(port.clone(), map)], &["IAC Bus 1".to_string()]);
+            std::thread::spawn(move || {
+                sink.send(&port, &[0xb6, 0x1f, 0x00]); // crossfader hard left
+                sink.send(&port, &[0x97, 0x02, 0x7f]); // hot cue pad C, deck 1
+                sink.send(&port, &[0x90, 0x36, 0x7f]); // jog touch: unbound
+            });
+            Ok((Box::new(()) as Box<dyn std::any::Any>, line))
+        });
+        let (reader, mut writer) = io::pipe().unwrap();
+        let out = Captured::default();
+        let o = out.clone();
+        let (tx, rx) = mpsc::channel();
+        let setup = MidiSetup { router: Router::new(MapSet::builtin().unwrap()), open: Some(open) };
+        std::thread::spawn(move || {
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", setup, run_wall(256)));
+        });
+        // Wait for the three MIDI messages to be handled, then stop.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while lines_of(&out).iter().filter(|l| l["type"] == "midi_action" || l["type"] == "midi_unmapped" || l["id"] == "midi-0").count() < 3 {
+            assert!(Instant::now() < deadline, "MIDI never came through: {:?}", lines_of(&out));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        writeln!(writer, r#"{{"id": "s", "cmd": {{"type": "engine_state"}}}}"#).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        writeln!(writer, r#"{{"id": "bye", "cmd": {{"type": "engine_shutdown"}}}}"#).unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        let lines = lines_of(&out);
+        // hello, then the claim, before anything else.
+        assert_eq!(lines[0]["type"], "hello");
+        assert_eq!(lines[1], serde_json::json!({"type": "midi_ports", "claimed": [{"port": "DDJ-FLX4 MIDI 1", "map": "DDJ-FLX4"}], "unclaimed": ["IAC Bus 1"]}));
+        // The crossfader went to the engine: a result, and the state shows it.
+        let r = lines.iter().find(|l| l["id"] == "midi-0").expect("a result for the MIDI crossfader");
+        assert_eq!(r["ok"], true, "{r}");
+        let last_state = lines.iter().rev().find(|l| l["type"] == "state").expect("a state");
+        assert_eq!(last_state["mixer"]["crossfader"], 0.0);
+        // The hot cue went to the page, verbatim; the jog touch was reported.
+        let a = lines.iter().find(|l| l["type"] == "midi_action").unwrap();
+        assert_eq!(a["action"], serde_json::json!({"type": "deck_hot_cue", "deck": 1, "slot": "C"}));
+        assert_eq!(a["value"]["pressed"], true);
+        let u = lines.iter().find(|l| l["type"] == "midi_unmapped").unwrap();
+        assert_eq!(u["hint"], "JOG touch (deck 1)");
+    }
+
+    #[test]
+    fn a_midi_opener_that_fails_stops_serve_before_hello() {
+        let open: MidiOpener = Box::new(|_: &MapSet, _: MidiSink| Err("MIDI input is unavailable: test".to_string()));
+        let (reader, _writer) = io::pipe().unwrap();
+        let out = Captured::default();
+        let setup = MidiSetup { router: Router::new(MapSet::builtin().unwrap()), open: Some(open) };
+        let r = serve_threaded_from(io::BufReader::new(reader), out.clone(), 48000, "wall", setup, run_wall(256));
+        assert!(r.unwrap_err().to_string().contains("MIDI input is unavailable"));
+        assert!(lines_of(&out).is_empty(), "nothing, not even hello, before the failure");
+    }
+
     #[test]
     fn a_state_request_acknowledged_before_shutdown_is_answered() {
         // Codex on 6a4cfb88: `engine_state` then EOF, with the audio side
@@ -1935,7 +2175,7 @@ mod tests {
             let o = out.clone();
             let started = Instant::now();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::Cursor::new(input), o, 48000, "wall", |mut side, stop| loop {
+                let r = serve_threaded_from(io::Cursor::new(input), o, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| loop {
                     std::thread::sleep(Duration::from_millis(50));
                     if stop.load(Ordering::Relaxed) {
                         break;
@@ -1993,7 +2233,7 @@ mod tests {
             let (o, audio_stopped) = (out.clone(), Arc::new(AtomicBool::new(false)));
             let stopped = audio_stopped.clone();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", move |mut side, stop| {
+                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                     while !stop.load(Ordering::Relaxed) {
                         if audio_runs {
                             side.process(64);
@@ -2046,7 +2286,7 @@ mod tests {
         // pump fails to write while the engine drains.
         let run = |input: &'static str, needle: &'static str| {
             let out = FailsOn(needle, Captured::default(), Vec::new());
-            serve_threaded_from(io::Cursor::new(input), out, 48000, "wall", |mut side, stop| {
+            serve_threaded_from(io::Cursor::new(input), out, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
@@ -2077,7 +2317,7 @@ mod tests {
         let run = |tail: Box<dyn io::Read + Send>| {
             let out = Captured::default();
             let line = io::Cursor::new(b"{\"id\": \"f\", \"cmd\": {\"type\": \"master_mute\", \"muted\": true}}\n".to_vec());
-            let r = serve_threaded_from(io::BufReader::new(io::Read::chain(line, tail)), out.clone(), 48000, "wall", |mut side, stop| {
+            let r = serve_threaded_from(io::BufReader::new(io::Read::chain(line, tail)), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
@@ -2156,7 +2396,7 @@ mod tests {
             let t = std::thread::Builder::new()
                 .name("serve-control".into())
                 .spawn(move || {
-                    serve_threaded_from(io::BufReader::new(reader), out, 48000, "wall", move |mut side, stop| {
+                    serve_threaded_from(io::BufReader::new(reader), out, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                         while !stop.load(Ordering::Relaxed) {
                             side.process(64);
                             std::thread::sleep(Duration::from_millis(1));
@@ -2281,7 +2521,7 @@ mod tests {
             let (tx, rx) = mpsc::channel();
             let o = out.clone();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(input, o, 48000, "wall", |_side, stop| {
+                let r = serve_threaded_from(input, o, 48000, "wall", MidiSetup::inject_only(), |_side, stop| {
                     while !stop.load(Ordering::Relaxed) {
                         std::thread::sleep(Duration::from_millis(1));
                     }
@@ -2349,10 +2589,10 @@ mod tests {
             }
         };
         let mut out = Vec::new();
-        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None).unwrap();
+        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None, MidiSetup::inject_only().router).unwrap();
         check(&String::from_utf8(out).unwrap());
         let out = Captured::default();
-        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", |mut side, stop| {
+        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
             while !stop.load(Ordering::Relaxed) {
                 side.process(64);
                 std::thread::sleep(Duration::from_millis(1));
@@ -2388,10 +2628,10 @@ mod tests {
             }
         };
         let mut out = Vec::new();
-        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None).unwrap();
+        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None, MidiSetup::inject_only().router).unwrap();
         check(&String::from_utf8(out).unwrap());
         let out = Captured::default();
-        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", |mut side, stop| {
+        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
             while !stop.load(Ordering::Relaxed) {
                 side.process(64);
                 std::thread::sleep(Duration::from_millis(1));
@@ -2417,7 +2657,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", |mut side, stop| {
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
@@ -2477,7 +2717,7 @@ mod tests {
         let (reader, mut writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", move |mut side, stop| {
+            let _ = serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
