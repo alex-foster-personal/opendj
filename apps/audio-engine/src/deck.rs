@@ -450,6 +450,11 @@ impl Deck {
         self.track.take()
     }
 
+    #[cfg(test)]
+    pub(crate) fn loaded(&self) -> Option<&Arc<Track>> {
+        self.track.as_ref()
+    }
+
     /// Pause stores the cue at the pause position (snapped when Quantize is
     /// on, as the page's pause does); play at the end restarts
     /// from 0 (`audio-engine.svelte.ts` CUE and transport semantics).

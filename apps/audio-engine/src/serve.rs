@@ -27,6 +27,7 @@ use serde_json::Value;
 
 use crate::deck::Track;
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
+use crate::offline::TrackCache;
 use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError};
 
 /// The longest single `engine_advance`, in seconds of audio. The session
@@ -253,6 +254,8 @@ struct Control {
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
+    /// Decoded tracks, shared by the load threads.
+    tracks: Arc<TrackCache>,
 }
 
 impl Control {
@@ -316,9 +319,11 @@ impl Control {
         self.waiting[deck as usize - 1] = Some(VecDeque::new());
         self.loading[deck as usize - 1] = Some(seq);
         let tx = self.msg_tx.clone();
+        let tracks = self.tracks.clone();
         std::thread::spawn(move || {
-            let result = crate::decode::decode_file(std::path::Path::new(&spec.path))
-                .map(|d| Arc::new(Track::new(d.sample_rate, d.pcm, spec.beats, spec.bpm)));
+            // Decks on one file share its samples, and a load of a file
+            // another deck is still decoding waits for that decode.
+            let result = tracks.load(std::path::Path::new(&spec.path), &spec);
             let _ = tx.send(Msg::Decoded { seq, deck, result });
         });
     }
@@ -522,6 +527,7 @@ fn serve_threaded_from(
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
         state_req,
+        tracks: Arc::default(),
     };
     let mut audio_failed = false;
     while let Ok(msg) = msg_rx.recv() {
@@ -762,6 +768,72 @@ mod tests {
             .unwrap_or_else(|| panic!("no result for the stranded command:\n{text}"));
         assert_eq!(result["ok"], false, "{result}");
         assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
+    }
+
+    #[test]
+    fn threaded_loads_of_one_file_share_its_samples() {
+        // Codex's case: on the wall and device clocks every load decoded its
+        // own copy, even of a file another deck held or was still decoding.
+        let dir = std::env::temp_dir().join(format!("odj-serve-share-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, v: f32| {
+            let p = dir.join(name);
+            let f = std::fs::File::create(&p).unwrap();
+            crate::wav::write_f32(&mut io::BufWriter::new(f), 48000, &vec![v; 96000]).unwrap();
+            p.display().to_string()
+        };
+        let (a, b) = (write("a.wav", 0.1), write("b.wav", 0.2));
+        let (reader, mut writer) = io::pipe().unwrap();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", move |mut side, stop| {
+                while !stop.load(Ordering::Relaxed) {
+                    side.process(64);
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                let pcm = |d| side.engine.deck(d).and_then(|d| d.loaded()).map(|t| t.pcm.clone());
+                let _ = tx.send([pcm(1), pcm(2), pcm(3)]);
+            });
+        });
+        // Decks 1 and 2 load a.wav back to back, so the second load arrives
+        // while the first is still decoding; deck 3 loads another file.
+        for (deck, path) in [(1, &a), (2, &a), (3, &b)] {
+            writeln!(writer, "{}", serde_json::json!({"cmd": {"type": "load", "deck": deck, "path": path}})).unwrap();
+        }
+        drop(writer);
+        let [one, two, three] = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung");
+        let (one, two, three) = (one.expect("deck 1 loaded"), two.expect("deck 2 loaded"), three.expect("deck 3 loaded"));
+        assert!(Arc::ptr_eq(&one, &two), "deck 2 decoded a second copy of a.wav");
+        // Control: another file gets its own samples.
+        assert!(!Arc::ptr_eq(&one, &three));
+        assert_eq!((one[0], three[0]), (0.1, 0.2));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_load_of_a_file_being_decoded_waits_and_shares_it() {
+        // Many threads load one file at once: one decode, one copy.
+        let dir = std::env::temp_dir().join(format!("odj-cache-race-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.wav");
+        crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&p).unwrap()), 48000, &vec![0.1; 960_000]).unwrap();
+        let cache = Arc::new(TrackCache::default());
+        let spec = LoadSpec { deck: 1, path: p.display().to_string(), beats: vec![], bpm: None };
+        let tracks: Vec<Arc<Track>> = (0..8)
+            .map(|_| {
+                let (cache, spec, p) = (cache.clone(), spec.clone(), p.clone());
+                std::thread::spawn(move || cache.load(&p, &spec).unwrap())
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+        assert!(tracks.iter().all(|t| Arc::ptr_eq(&t.pcm, &tracks[0].pcm)), "concurrent loads decoded more than one copy");
+        // Control: once every holder lets go, the samples are freed.
+        let samples = Arc::downgrade(&tracks[0].pcm);
+        drop(tracks);
+        assert!(samples.upgrade().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

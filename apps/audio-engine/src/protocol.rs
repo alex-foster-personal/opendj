@@ -204,6 +204,26 @@ fn opt_num(o: &Obj, ty: &str, name: &str) -> Result<Option<f64>, ProtoError> {
     }
 }
 
+/// An optional boolean as the page's parser takes one: absent is absent,
+/// and anything present, `null` included, must be true or false.
+fn opt_bool(o: &Obj, ty: &str, name: &str) -> Result<Option<bool>, ProtoError> {
+    if o.contains_key(name) {
+        boolean(o, ty, name).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+/// An optional number as the page's parser takes one: absent is absent, and
+/// anything present, `null` included, must be a finite number.
+fn opt_page_num(o: &Obj, ty: &str, name: &str) -> Result<Option<f64>, ProtoError> {
+    if o.contains_key(name) {
+        num(o, ty, name).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
 fn unit(o: &Obj, ty: &str, name: &str) -> Result<f64, ProtoError> {
     let v = num(o, ty, name)?;
     if !(0.0..=1.0).contains(&v) {
@@ -411,9 +431,15 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
                     "load needs a file path; the supervisor resolves stable_id to a path before sending".into(),
                 ));
             }
+            // The page-only fields are checked as the page checks them, so a
+            // malformed one is refused rather than loading anything.
+            if o.contains_key("stable_id") {
+                non_empty(o, ty, "stable_id")?;
+            }
+            opt_bool(o, ty, "suppressCommandErrorToast")?;
             // Stems are plan 20-04. Refuse the stem-aware form rather than
             // acknowledge it and load the plain mix file instead.
-            if o.get("stems").is_some_and(|s| s != &Value::Bool(false) && !s.is_null()) {
+            if opt_bool(o, ty, "stems")? == Some(true) {
                 return Err(ProtoError::new(
                     ErrorCode::NotImplemented,
                     "load.stems: stem loading is not implemented by this engine yet (plan 20-04); send load without it",
@@ -437,13 +463,17 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             let playing = boolean(o, ty, "playing")?;
             // The page arms a quantized or scheduled launch from these; playing
             // at once instead would start audio off the grid, so refuse them.
-            if o.get("quantize").is_some_and(|q| q != &Value::Bool(false)) {
+            let start_at = opt_page_num(o, ty, "start_at_context_sec")?;
+            if let Some(t) = start_at.filter(|t| *t < 0.0) {
+                return Err(invalid(format!("play.start_at_context_sec must be >= 0, got {t}")));
+            }
+            if opt_bool(o, ty, "quantize")? == Some(true) {
                 return Err(ProtoError::new(
                     ErrorCode::NotImplemented,
                     "play.quantize: quantized launch is not scheduled by this engine yet; send play without it",
                 ));
             }
-            if o.get("start_at_context_sec").is_some_and(|t| !t.is_null()) {
+            if start_at.is_some() {
                 return Err(ProtoError::new(
                     ErrorCode::NotImplemented,
                     "play.start_at_context_sec: scheduled launch is not implemented by this engine yet",
@@ -484,7 +514,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             let beats = beat_count(o, ty, false)?;
             // As the page's parser: an anchor before the track is refused,
             // not taken as the first beat.
-            let start_ms = opt_num(o, ty, "start_ms")?;
+            let start_ms = opt_page_num(o, ty, "start_ms")?;
             if let Some(s) = start_ms.filter(|s| *s < 0.0) {
                 return Err(invalid(format!("beat_loop.start_ms must be >= 0, got {s}")));
             }
@@ -808,7 +838,7 @@ mod tests {
         assert!(e.message.contains("start_at_context_sec"), "{}", e.message);
         // Control: the unscheduled forms the page also sends still play.
         assert!(matches!(
-            cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": false, "start_at_context_sec": null})),
+            cmd(json!({"type": "play", "deck": 1, "playing": true, "quantize": false})),
             Ok(Command::Apply(EngineCmd::Play { playing: true, .. }))
         ));
         let e = cmd(json!({"type": "play", "deck": 5, "playing": true})).unwrap_err();
@@ -830,12 +860,8 @@ mod tests {
         // 0 and no anchor are fine (controls).
         let e = cmd(json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": -0.5})).unwrap_err();
         assert!(e.message.contains("beat_loop.start_ms"), "{}", e.message);
-        for start in [json!(0), Value::Null] {
-            assert!(
-                matches!(cmd(json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": start})), Ok(Command::Apply(EngineCmd::BeatLoop { .. }))),
-                "{start}"
-            );
-        }
+        assert!(matches!(cmd(json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": 0})), Ok(Command::Apply(EngineCmd::BeatLoop { .. }))));
+        assert!(matches!(cmd(json!({"type": "beat_loop", "deck": 1, "beats": 4})), Ok(Command::Apply(EngineCmd::BeatLoop { start_ms: None, .. }))));
         // Control: the bound itself still reaches the engine, either way.
         assert!(matches!(
             cmd(json!({"type": "beat_jump", "deck": 1, "beats": -65536})),
@@ -867,11 +893,43 @@ mod tests {
         assert_eq!(e.code, ErrorCode::NotImplemented);
         assert!(e.message.contains("load.stems"), "{}", e.message);
         // Control: without stems, or with them off, it is an ordinary load.
-        for extra in [json!(false), Value::Null] {
-            let r = cmd(json!({"type": "load", "deck": 1, "path": "/x.wav", "stems": extra}));
-            assert!(matches!(r, Ok(Command::Load(_))), "{extra}");
-        }
+        let r = cmd(json!({"type": "load", "deck": 1, "path": "/x.wav", "stems": false}));
+        assert!(matches!(r, Ok(Command::Load(_))));
         assert!(matches!(cmd(json!({"type": "load", "deck": 1, "path": "/x.wav"})), Ok(Command::Load(_))));
+    }
+
+    #[test]
+    fn an_optional_page_field_present_is_checked_as_the_page_checks_it() {
+        // Codex's case: `"stems": null` loaded the plain mix, and other odd
+        // values came back not_implemented, where the page's parser refuses
+        // any present optional field that is not the right type. The same
+        // holds for every optional field the page reads.
+        for bad in [
+            json!({"type": "load", "deck": 1, "path": "a.wav", "stems": null}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "stems": "yes"}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "suppressCommandErrorToast": null}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "stable_id": ""}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "stable_id": 7}),
+            json!({"type": "play", "deck": 1, "playing": true, "quantize": null}),
+            json!({"type": "play", "deck": 1, "playing": true, "quantize": 1}),
+            json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": null}),
+            json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": "now"}),
+            json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": -1}),
+            json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": null}),
+        ] {
+            let e = cmd(bad.clone()).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid, "{bad}: {}", e.message);
+        }
+        // Controls: the well-formed values keep their meaning.
+        for (good, want) in [
+            (json!({"type": "load", "deck": 1, "path": "a.wav", "stems": false, "suppressCommandErrorToast": true, "stable_id": "s"}), None),
+            (json!({"type": "play", "deck": 1, "playing": true, "quantize": false}), None),
+            (json!({"type": "load", "deck": 1, "path": "a.wav", "stems": true}), Some(ErrorCode::NotImplemented)),
+            (json!({"type": "play", "deck": 1, "playing": true, "quantize": true}), Some(ErrorCode::NotImplemented)),
+            (json!({"type": "play", "deck": 1, "playing": true, "start_at_context_sec": 0}), Some(ErrorCode::NotImplemented)),
+        ] {
+            assert_eq!(cmd(good.clone()).err().map(|e| e.code), want, "{good}");
+        }
     }
 
     #[test]
@@ -1051,7 +1109,7 @@ mod tests {
         // Controls: each command with every field it may carry is accepted,
         // including the page-only ones that steer only the page.
         for c in [
-            json!({"type": "play", "deck": 1, "playing": true, "quantize": false, "start_at_context_sec": null}),
+            json!({"type": "play", "deck": 1, "playing": true, "quantize": false}),
             json!({"type": "load", "deck": 1, "path": "a.wav", "stable_id": "s", "refuseIfMaster": false, "stems": false, "suppressCommandErrorToast": true, "bpm": 120, "beatgrid_ms": [0, 500]}),
             json!({"type": "master_mute", "muted": true, "persist": true}),
             json!({"type": "beat_loop", "deck": 1, "beats": 4, "start_ms": 0}),

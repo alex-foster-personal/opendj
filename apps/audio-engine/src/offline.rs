@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
 use sha2::{Digest, Sha256};
@@ -161,34 +161,60 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
     }
 }
 
-/// Loads tracks for a live session, where loads never end: decks on one
-/// file share its samples while any of them holds them, but nothing is kept
-/// for a file no deck holds any more, so memory follows the tracks loaded
-/// now, not every track the session has visited. The cache keeps a `Weak` to
-/// every track loaded from a file, since any one of them may be the last to
-/// hold its samples; a dead `Weak<Track>` keeps only the small `Track`
-/// allocation, never the samples, and dead ones are dropped on every load.
-pub fn session_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
-    let mut cache: HashMap<PathBuf, Vec<Weak<Track>>> = HashMap::new();
-    move |spec: &LoadSpec| {
-        cache.retain(|_, held| {
-            held.retain(|t| t.strong_count() > 0);
-            !held.is_empty()
-        });
-        let path = base.join(&spec.path);
-        let key = path.canonicalize().unwrap_or_else(|_| path.clone());
-        let live = cache.get(&key).and_then(|held| held.iter().find_map(Weak::upgrade));
-        let (sr, pcm) = match live {
+/// Decoded tracks for a live engine, where loads never end: decks on one file
+/// share its samples while any of them holds them, but nothing is kept for a
+/// file no deck holds any more, so memory follows the tracks loaded now, not
+/// every track the session has visited. Safe to share between load threads:
+/// a load of a file already being decoded waits for that decode and shares
+/// it, while loads of other files go ahead.
+///
+/// Each file keeps a `Weak` to every track loaded from it, since any one of
+/// them may be the last to hold the samples. A dead `Weak<Track>` keeps only
+/// the small `Track` allocation, never the samples, and dead ones are
+/// dropped on every load.
+#[derive(Default)]
+pub struct TrackCache {
+    files: Mutex<HashMap<PathBuf, Holders>>,
+}
+
+/// Every track loaded from one file, locked while that file decodes.
+type Holders = Arc<Mutex<Vec<Weak<Track>>>>;
+
+impl TrackCache {
+    pub fn load(&self, path: &Path, spec: &LoadSpec) -> Result<Arc<Track>, ProtoError> {
+        // One file reached by two spellings is one file.
+        let key = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let file = {
+            let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
+            // A file nobody else is loading (only the map holds its slot) and
+            // no deck holds is forgotten. Its lock cannot be contended then.
+            files.retain(|_, f| {
+                Arc::strong_count(f) > 1 || f.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|t| t.strong_count() > 0)
+            });
+            files.entry(key).or_default().clone()
+        };
+        // Held across the decode: a second load of this file waits here and
+        // then finds the first one's track.
+        let mut held = file.lock().unwrap_or_else(|e| e.into_inner());
+        held.retain(|t| t.strong_count() > 0);
+        let (sr, pcm) = match held.iter().find_map(Weak::upgrade) {
             Some(t) => (t.sample_rate, t.pcm.clone()),
             None => {
-                let d = decode_file_within(&path, u64::MAX)?;
+                let d = decode_file_within(path, u64::MAX)?;
                 (d.sample_rate, Arc::<[f32]>::from(d.pcm))
             }
         };
         let track = Arc::new(Track::new(sr, pcm, spec.beats.clone(), spec.bpm));
-        cache.entry(key).or_default().push(Arc::downgrade(&track));
+        held.push(Arc::downgrade(&track));
         Ok(track)
     }
+}
+
+/// Loads tracks for the fake-clock session through a `TrackCache`, relative
+/// paths resolving against `base`.
+pub fn session_loader(base: PathBuf) -> impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError> {
+    let cache = TrackCache::default();
+    move |spec: &LoadSpec| cache.load(&base.join(&spec.path), spec)
 }
 
 pub fn render_plan_files(plan: &Plan, base: &Path) -> Result<RenderOutput, ProtoError> {
