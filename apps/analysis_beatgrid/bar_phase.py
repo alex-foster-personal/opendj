@@ -62,8 +62,9 @@ DOWNBEAT_MATCH_TOLERANCE_S = 1e-6
 
 REASON_NO_BEATS = "no_beats"
 
-# A kept-to-next gap of 1 or 2 is a detector double (round 2: 249 gap-1 + 325
-# gap-2). Gap 3 is a short bar, not a double.
+# An off-phase downbeat closer than this to a chosen-phase one is a detector
+# double (round 2: 249 gap-1 + 325 gap-2), not a vote against the phase. Gap 3
+# is a short bar, not a double.
 DOUBLE_MIN_GAP_BEATS = 3
 
 # Fail a track whose thinned-downbeat agreement with the chosen phase is below
@@ -81,8 +82,10 @@ __all__ = [
     "REASON_NO_BEATS",
     "REASON_NO_DOWNBEAT_ANCHOR",
     "BarPhase",
+    "PhaseVote",
     "assign_bar_phase",
     "lock_bar_phase",
+    "vote_bar_phase",
 ]
 
 
@@ -211,27 +214,67 @@ def assign_bar_phase(
     )
 
 
-def _thin_anchors(anchors: list[int], min_gap: int) -> list[int]:
-    """Keep the first of each pair of downbeats closer than ``min_gap`` beats."""
+@dataclass(frozen=True)
+class PhaseVote:
+    """The bar phase every downbeat voted for, and how well the bars agree."""
+
+    chosen: int
+    agreement: float
+    n_disagreements: int
+    n_doubles: int
+
+
+def vote_bar_phase(anchors: Sequence[int], bar_beats: int = BAR_BEATS) -> PhaseVote:
+    """Majority bar phase over EVERY downbeat index; doubles are not votes against.
+
+    WHY NOT THIN FIRST. The vote used to drop the later of any two downbeats
+    closer than `DOUBLE_MIN_GAP_BEATS`, walking forward, then vote on what
+    was left. That lets the FIRST downbeat of a half-bar double pattern pick
+    the phase: a model that marks bar-1 on 21 bars and beat 3 on 14 of them
+    keeps whichever came first, then votes consistently for it. Measured on
+    round 6 (200 fixed-tempo fixtures, line_round_offset): voting on every
+    downbeat puts 6 more tracks on rekordbox's bar-1, and the one track it
+    loses (2 fixtures) now fails closed rather than serving a wrong bar.
+
+    AGREEMENT. Once the phase is chosen, an off-phase downbeat closer than
+    `DOUBLE_MIN_GAP_BEATS` to a chosen-phase one is a double and is left out;
+    every other off-phase downbeat disagrees. Agreement is chosen-phase
+    downbeats over chosen-phase plus disagreeing ones.
+
+    AN EVERY-BEAT STREAM MUST NOT PASS. With doubles left out, a model that
+    fires on every beat would score 1.0. When doubles outnumber the
+    chosen-phase downbeats (more than two downbeats per marked bar), the
+    model is not marking bars, and agreement is the share of ALL downbeats
+    on the chosen phase instead: 1 / `bar_beats` for that stream.
+
+    Ties go to the smallest phase index, as before.
+    """
     if not anchors:
-        return []
-    kept = [anchors[0]]
-    for anchor in anchors[1:]:
-        if anchor - kept[-1] >= min_gap:
-            kept.append(anchor)
-    return kept
-
-
-def _vote_phase(kept: list[int], bar_beats: int) -> int:
-    """Majority phase over thinned anchors; tie-break to smallest phase index."""
+        raise ValueError("vote_bar_phase needs at least one downbeat index")
     votes = [0] * bar_beats
-    for anchor in kept:
+    for anchor in anchors:
         votes[anchor % bar_beats] += 1
-    best_count = max(votes)
-    for phase in range(bar_beats):
-        if votes[phase] == best_count:
-            return phase
-    raise RuntimeError("unreachable: kept anchors produced no phase vote")
+    chosen = votes.index(max(votes))
+    on_phase = sorted(a for a in anchors if a % bar_beats == chosen)
+    n_doubles = 0
+    for anchor in anchors:
+        if anchor % bar_beats == chosen:
+            continue
+        slot = bisect.bisect_left(on_phase, anchor)
+        near = [on_phase[j] for j in (slot - 1, slot) if 0 <= j < len(on_phase)]
+        if any(abs(anchor - other) < DOUBLE_MIN_GAP_BEATS for other in near):
+            n_doubles += 1
+    n_disagree = len(anchors) - len(on_phase) - n_doubles
+    if n_doubles > len(on_phase):
+        agreement = len(on_phase) / len(anchors)
+    else:
+        agreement = len(on_phase) / (len(on_phase) + n_disagree)
+    return PhaseVote(
+        chosen=chosen,
+        agreement=agreement,
+        n_disagreements=n_disagree,
+        n_doubles=n_doubles,
+    )
 
 
 def _lock_numbers(n_beats: int, chosen: int, bar_beats: int) -> list[int]:
@@ -247,10 +290,12 @@ def lock_bar_phase(
     tolerance_s: float = DOWNBEAT_MATCH_TOLERANCE_S,
     floor: float = BAR_PHASE_AGREEMENT_FLOOR,
 ) -> BarPhase:
-    """Establish a deck-legal 1..4 cadence from thinned downbeat majority vote.
+    """Establish a deck-legal 1..4 cadence from the downbeat majority vote.
 
     Raises when ``beat_times`` is not strictly ascending or when a downbeat is
-    not one of the beats. Fails closed when the thinned vote is below ``floor``.
+    not one of the beats. Fails closed when `vote_bar_phase` agreement is below
+    ``floor``. ``n_downbeats_thinned`` keeps its payload name and now counts
+    the off-phase doubles the vote left out.
     """
     if bar_beats < 1:
         raise ValueError(f"bar_beats must be at least 1, got {bar_beats}")
@@ -277,12 +322,9 @@ def lock_bar_phase(
             longest,
         )
 
-    kept = _thin_anchors(anchors, DOUBLE_MIN_GAP_BEATS)
-    n_thinned = len(anchors) - len(kept)
-    chosen = _vote_phase(kept, bar_beats)
-    agree = sum(1 for anchor in kept if anchor % bar_beats == chosen)
-    agreement = agree / len(kept)
-    n_disagree = len(kept) - agree
+    vote = vote_bar_phase(anchors, bar_beats)
+    chosen, agreement = vote.chosen, vote.agreement
+    n_disagree, n_thinned = vote.n_disagreements, vote.n_doubles
 
     if agreement < floor:
         return BarPhase(

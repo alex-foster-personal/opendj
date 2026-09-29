@@ -25,8 +25,8 @@ three steps, each measured separately by `scripts/beatbench/run_grid_fit.py`:
      the bench reports it on and off.
 
 Bar numbers are voted on the LINE index (downbeat's nearest k, mod 4) rather
-than on list position, for the same missed-beat reason, with the same floor as
-`bar_phase.lock_bar_phase`.
+than on list position, for the same missed-beat reason, with the same vote and
+floor as `bar_phase.lock_bar_phase`.
 
 Pure and stdlib-only, like the rest of the fitter, so the bench, the lane
 builder and a later Rust port can all read the same arithmetic.
@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from apps.analysis_beatgrid.bar_phase import (
     BAR_BEATS,
     BAR_PHASE_AGREEMENT_FLOOR,
-    DOUBLE_MIN_GAP_BEATS,
+    vote_bar_phase,
 )
 from apps.analysis_beatgrid.grid_design import OFFSET_SERVED_S
 from apps.analysis_beatgrid.tempo_change import MIN_RELATIVE_BPM_DELTA, detect_tempo_changes
@@ -308,25 +308,18 @@ def _bar_numbers(
 ) -> tuple[list[int], float] | None:
     """1..4 per beat from the model's downbeats, voted on the GRID index.
 
-    Same policy as `bar_phase.lock_bar_phase` (thin doubled downbeats closer
-    than `DOUBLE_MIN_GAP_BEATS`, majority phase, ties to the smallest phase),
-    but each downbeat is placed by its nearest grid beat rather than by its
-    position in the model's beat list, so a missed beat cannot flip the bar.
+    Same vote as `bar_phase.lock_bar_phase` (`bar_phase.vote_bar_phase`:
+    every downbeat votes, agreement counted per bar, ties to the smallest
+    phase), but each downbeat is placed by its nearest grid beat rather than
+    by its position in the model's beat list, so a missed beat cannot flip
+    the bar.
     """
     if not downbeats or not beats:
         return None
     anchors = sorted({_nearest(beats, d) for d in downbeats})
-    kept = [anchors[0]]
-    for a in anchors[1:]:
-        if a - kept[-1] >= DOUBLE_MIN_GAP_BEATS:
-            kept.append(a)
-    votes = [0] * BAR_BEATS
-    for a in kept:
-        votes[a % BAR_BEATS] += 1
-    chosen = votes.index(max(votes))
-    agreement = votes[chosen] / len(kept)
-    numbers = [((i - chosen) % BAR_BEATS) + 1 for i in range(len(beats))]
-    return numbers, agreement
+    vote = vote_bar_phase(anchors, BAR_BEATS)
+    numbers = [((i - vote.chosen) % BAR_BEATS) + 1 for i in range(len(beats))]
+    return numbers, vote.agreement
 
 
 def _nearest(beats: Sequence[float], t: float) -> int:

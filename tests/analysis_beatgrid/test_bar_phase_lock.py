@@ -1,4 +1,4 @@
-"""Unit tests for lock_bar_phase: thinned majority vote and deck-legal cadence."""
+"""Unit tests for lock_bar_phase: every-downbeat majority vote and deck-legal cadence."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from apps.analysis_beatgrid.bar_phase import (
     REASON_NO_BEATS,
     REASON_NO_DOWNBEAT_ANCHOR,
     lock_bar_phase,
+    vote_bar_phase,
 )
 
 
@@ -118,3 +119,80 @@ def test_missed_downbeat_at_floor_zero_is_established_negative_control() -> None
 
 def test_production_floor_is_not_zero() -> None:
     assert BAR_PHASE_AGREEMENT_FLOOR > 0.0
+
+
+@pytest.mark.requirement("BEATMAP-02")
+def test_half_bar_doubles_before_the_bar_one_do_not_pick_the_phase() -> None:
+    # Bar-1 on beats 4, 8, ... 28 (7 marks) and a beat-3 double on 2 .. 18 (5):
+    # the first mark is a double. The old forward thinning kept 2, 6, 10, 14,
+    # 18, 24, 28 and voted phase 2, five to two.
+    beats = _grid(32)
+    downbeats = [beats[i] for i in (2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28)]
+
+    phase = lock_bar_phase(beats, downbeats)
+
+    assert phase.bar_phase_unestablished is False
+    assert phase.chosen_phase == 0
+    assert phase.phase_agreement == 1.0
+    assert phase.n_downbeats_thinned == 5
+    assert phase.n_phase_disagreements == 0
+
+
+@pytest.mark.requirement("BEATMAP-02")
+def test_majority_phase_wins_whichever_mark_comes_first_control() -> None:
+    # Same pattern with the doubles in the MAJORITY: the vote must follow the
+    # majority there too, or the fix would just be "prefer the later mark".
+    beats = _grid(32)
+    downbeats = [beats[i] for i in (2, 4, 6, 10, 14, 18, 22, 26)]
+
+    phase = lock_bar_phase(beats, downbeats)
+
+    assert phase.chosen_phase == 2
+
+
+@pytest.mark.requirement("BEATMAP-02")
+def test_a_downbeat_on_every_beat_fails_closed() -> None:
+    # Per-bar agreement alone would score this stream 1.0: every bar holds a
+    # chosen-phase downbeat. The doubles-outnumber-bars rule must catch it.
+    beats = _grid(32)
+
+    phase = lock_bar_phase(beats, beats)
+
+    assert phase.bar_phase_unestablished is True
+    assert phase.reason == REASON_BAR_PHASE_BELOW_FLOOR
+    assert phase.phase_agreement == pytest.approx(1 / BAR_BEATS)
+
+
+@pytest.mark.requirement("BEATMAP-02")
+def test_two_marks_per_bar_is_still_established_boundary() -> None:
+    # Exactly one double per bar-1 is the half-bar pattern, not a stream.
+    beats = _grid(32)
+    downbeats = [beats[i] for i in range(0, 32, 2)]
+
+    phase = lock_bar_phase(beats, downbeats)
+
+    assert phase.bar_phase_unestablished is False
+    assert phase.chosen_phase == 0
+    assert phase.phase_agreement == 1.0
+    assert phase.n_downbeats_thinned == 8
+
+
+@pytest.mark.requirement("BEATMAP-02")
+def test_a_mark_three_beats_after_bar_one_is_a_disagreement_not_a_double() -> None:
+    vote = vote_bar_phase([0, 4, 8, 11, 12, 16])
+
+    assert vote.chosen == 0
+    assert vote.n_doubles == 1  # 11 is one beat before 12
+    assert vote.n_disagreements == 0
+
+    vote = vote_bar_phase([0, 4, 8, 12, 15, 20])
+
+    assert vote.n_doubles == 0  # 15 is three from 12 and five from 20
+    assert vote.n_disagreements == 1
+    assert vote.agreement == pytest.approx(5 / 6)
+
+
+@pytest.mark.requirement("BEATMAP-02")
+def test_vote_bar_phase_refuses_no_downbeats() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        vote_bar_phase([])
