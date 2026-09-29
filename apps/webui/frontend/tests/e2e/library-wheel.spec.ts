@@ -119,15 +119,16 @@ test('real library wheel renders genre families through the HTTP contract', asyn
 	mkdirSync(SCREENSHOT_DIR, { recursive: true });
 	await page.screenshot({ path: join(SCREENSHOT_DIR, 'library-wheel-1280x800.png') });
 
-	expect(
-		failedResources.every(
-			({ url, status }) =>
-				url.endsWith('/favicon.svg') || (url.includes('/update/check') && status === 502)
-		)
-	).toBe(true);
+	expect(failedResources.filter(({ url }) => !url.endsWith('/favicon.svg'))).toEqual([]);
+	// A repo checkout names its own build (app_version from tauri.conf.json,
+	// aea4c86d63) and answers /update/check with HTTP 200 whatever the channel
+	// says; a 502 from this route is a defect (update_channel.py). The channel
+	// verdict itself depends on the network, so assert the identity instead.
 	const updateCheckResponse = await updateCheck;
-	expect(updateCheckResponse.status()).toBe(502);
-	expect((await updateCheckResponse.json()).status).toBe('identity-unavailable');
+	expect(updateCheckResponse.status()).toBe(200);
+	const updateCheckBody = await updateCheckResponse.json();
+	expect(updateCheckBody.current_version).toMatch(/^\d+\.\d+\.\d+/);
+	expect(updateCheckBody.current_git_sha).toMatch(/^[0-9a-f]{8}$/);
 	expect(consoleErrors.filter((error) => !error.startsWith('Failed to load resource:'))).toEqual(
 		[]
 	);
