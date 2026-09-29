@@ -188,7 +188,9 @@ def test_the_runner_canary_label_map_prices_as_its_configured_vendor_labels() ->
     labels = runner_labels("pytest", CANARY_RUNS_ON)
     assert labels[0] == "self-hosted"
     assert set(labels[1:]) == {v["label"] for v in _canary_vendors().values()}
-    assert infer_standard_sku(labels).rate_usd_per_minute == 0
+    sku = infer_standard_sku(labels)
+    assert sku is not None, f"no SKU priced for {labels}"
+    assert sku.rate_usd_per_minute == 0
     with_fallback = CANARY_RUNS_ON.replace(" }}", " || 'macos-latest' }}")
     with pytest.raises(AssertionError, match="cannot"):
         runner_labels("pytest", with_fallback)

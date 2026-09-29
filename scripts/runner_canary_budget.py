@@ -426,15 +426,19 @@ def fetch_month_jobs(api_url: str, repo: str, token: str, now: datetime) -> list
     )
     jobs: list[dict[str, Any]] = []
     for run in runs:
-        jobs.extend(
-            collect_paginated(
-                lambda page, run_id=run["id"]: _get_json(
-                    f"{base}/runs/{run_id}/jobs?filter=all&per_page={PER_PAGE}&page={page}", token
-                ),
-                "jobs",
-            )
-        )
+        jobs.extend(collect_paginated(_run_jobs_page(base, run["id"], token), "jobs"))
     return jobs
+
+
+def _run_jobs_page(base: str, run_id: int, token: str) -> Callable[[int], dict[str, Any]]:
+    """The page reader for one run's jobs, bound to that run."""
+
+    def fetch(page: int) -> dict[str, Any]:
+        return _get_json(
+            f"{base}/runs/{run_id}/jobs?filter=all&per_page={PER_PAGE}&page={page}", token
+        )
+
+    return fetch
 
 
 # ----- CLI --------------------------------------------------------------------
