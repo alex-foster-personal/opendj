@@ -45,6 +45,9 @@ Requirements (mini-PRD)
   other program the checkout or git config names [then] it does not: hooks, credential
   helpers, askpass, fsmonitor, gpg and ext:: are switched off for that call only, while
   the source target's own push keeps its hooks, [else stop] ✔︎ ✅ 🎯
+- [if] anything the script prints or raises would carry URL userinfo, an Authorization
+  value, or the mirror token or its base64 [then] it is redacted, host and path still
+  shown, [else stop] ✔︎ ✅ 🎯
 - [if] the SHA is malformed or not an ancestor of refs/remotes/origin/main [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
@@ -85,8 +88,33 @@ CREDENTIALED_CALL_CONFIG = (
 GIT_TIMEOUT_S = 120
 
 
+# ----- redaction: the one path to output -------------------------------------------
+
+# `scheme://userinfo@`: userinfo cannot contain `/`, so a later `@` in a path is left alone.
+URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@'\"]+@")
+# The value of any Authorization header, as the mirror's http.extraheader carries it.
+AUTHORIZATION_RE = re.compile(r"(?i)(authorization:\s*[a-z]+\s+)[^\s'\"]+")
+REDACTED = "<redacted>"
+
+
+def redact(text: str) -> str:
+    """Everything this script prints or raises passes through here: URL userinfo
+    (`user:pass@`) and any Authorization value, which is the only form in which the mirror
+    token reaches git (Sol P1 on c445557c4). Host and path stay readable."""
+    text = URL_USERINFO_RE.sub(rf"\1{REDACTED}@", text)
+    return AUTHORIZATION_RE.sub(rf"\1{REDACTED}", text)
+
+
+def say(text: str) -> None:
+    print(redact(text))
+
+
 class MirrorRefused(Exception):
-    """A named refusal. Exit 1, nothing pushed."""
+    """A named refusal. Exit 1, nothing pushed. Redacted when raised, so no refusal can
+    carry a credential, whoever reads it."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(redact(message))
 
 
 # ----- decisions (pure) -------------------------------------------------------------
@@ -202,18 +230,21 @@ def child_env(auth: dict[str, str]) -> dict[str, str]:
     return {**{k: v for k, v in os.environ.items() if k != TOKEN_ENV}, **auth}
 
 
-def _git(
-    args: list[str], auth: dict[str, str] | None = None, check: bool = True, capture: bool = True
-) -> subprocess.CompletedProcess:
-    """The one spawn site: every git child gets `child_env`, never the inherited env."""
-    return subprocess.run(
-        ["git", *args],
-        capture_output=capture,
-        text=True,
-        env=child_env(auth or {}),
-        timeout=GIT_TIMEOUT_S,
-        check=check,
-    )
+def _git(args: list[str], auth: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    """The one spawn site: every git child gets `child_env`, never the inherited env, and its
+    output is captured, reaching the terminal only through `say`. A timeout, whose text
+    would carry the whole argv (URL included), becomes a redacted refusal."""
+    try:
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            env=child_env(auth or {}),
+            timeout=GIT_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise MirrorRefused(f"git {' '.join(args)} timed out after {GIT_TIMEOUT_S}s") from None
 
 
 def url_rewrite_rules() -> list[tuple[str, str]]:
@@ -221,7 +252,7 @@ def url_rewrite_rules() -> list[tuple[str, str]]:
     worktree, and the inherited GIT_CONFIG_* environment), read through git itself. Read
     without the mirror's auth env, which replaces the inherited GIT_CONFIG_* entries, so this
     is a superset of what the mirror's network calls see and exactly what the source's see."""
-    listed = _git(["config", "-z", "--get-regexp", REWRITE_RULES_RE], check=False)
+    listed = _git(["config", "-z", "--get-regexp", REWRITE_RULES_RE])
     if listed.returncode not in (0, 1):  # 1 is git's "no such key": no rules
         raise MirrorRefused(
             f"cannot read git's url rewrite rules: git config exit {listed.returncode}: "
@@ -247,20 +278,20 @@ def require_no_rewrite(url: str) -> None:
 
 
 def require_on_main(sha: str) -> None:
-    if _git(["rev-parse", "--verify", "--quiet", MAIN_REF], check=False).returncode != 0:
+    if _git(["rev-parse", "--verify", "--quiet", MAIN_REF]).returncode != 0:
         raise MirrorRefused(
             f"{MAIN_REF} is missing in this checkout; run `git fetch origin main` first"
         )
-    if _git(["cat-file", "-e", f"{sha}^{{commit}}"], check=False).returncode != 0:
+    if _git(["cat-file", "-e", f"{sha}^{{commit}}"]).returncode != 0:
         raise MirrorRefused(
             f"{sha} is not a commit in this checkout; run `git fetch origin main` first"
         )
-    if _git(["merge-base", "--is-ancestor", sha, MAIN_REF], check=False).returncode != 0:
+    if _git(["merge-base", "--is-ancestor", sha, MAIN_REF]).returncode != 0:
         raise MirrorRefused(f"{sha} is not on {MAIN_REF}; only main SHAs are mirrored")
 
 
 def read_default_branch(repo: str, url: str, auth: dict[str, str]) -> str | None:
-    listing = _git(["ls-remote", "--symref", url], auth=auth, check=False)
+    listing = _git(["ls-remote", "--symref", url], auth=auth)
     if listing.returncode != 0:
         raise MirrorRefused(
             f"cannot read {repo}: git ls-remote exit {listing.returncode}: {listing.stderr.strip()}"
@@ -274,7 +305,10 @@ def push_canary_ref(repo: str, url: str, sha: str, auth: dict[str, str]) -> str:
     # A credentialed push adds --no-verify to core.hooksPath (auth_env), so pre-push is
     # skipped even if that config were lost. The source push keeps its checkout's hooks.
     no_verify = ["--no-verify"] if auth else []
-    pushed = _git(["push", *no_verify, url, f"{sha}:{ref}"], auth=auth, check=False, capture=False)
+    pushed = _git(["push", *no_verify, url, f"{sha}:{ref}"], auth=auth)
+    git_said = (pushed.stdout + pushed.stderr).strip()
+    if git_said:
+        say(git_said)
     if pushed.returncode != 0:
         raise MirrorRefused(f"git push to {repo} exited {pushed.returncode}")
     return ref
@@ -294,14 +328,14 @@ def origin_push_url() -> str:
 
     More than one pushurl is refused: git would push to every one of them.
     """
-    pushurls = _git(["config", "--get-all", "remote.origin.pushurl"], check=False).stdout.split()
+    pushurls = _git(["config", "--get-all", "remote.origin.pushurl"]).stdout.split()
     if len(pushurls) > 1:
         raise MirrorRefused(
             f"origin has {len(pushurls)} push URLs {pushurls}; git would push to all of them"
         )
     if pushurls:
         return pushurls[0]
-    url = _git(["config", "--get", "remote.origin.url"], check=False)
+    url = _git(["config", "--get", "remote.origin.url"])
     return url.stdout.strip() if url.returncode == 0 else ""
 
 
@@ -336,12 +370,12 @@ def main(argv: list[str] | None = None) -> int:
         sha = validate_sha(args.sha)
         require_on_main(sha)
         check_default_branch(read_default_branch(repo, url, auth), repo)
-        print(f"[canary] target {args.target} = {repo}; pushing {sha} to canary/{sha}")
+        say(f"[canary] target {args.target} = {repo}; pushing {sha} to canary/{sha}")
         ref = push_canary_ref(repo, url, sha, auth)
     except MirrorRefused as exc:
-        print(f"[ERROR] runner canary mirror: {exc}")
+        say(f"[ERROR] runner canary mirror: {exc}")
         return 1
-    print(f"[OK] {repo} {ref} -> {sha}")
+    say(f"[OK] {repo} {ref} -> {sha}")
     return 0
 
 
