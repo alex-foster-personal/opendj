@@ -90,6 +90,11 @@
 	.on-cloud-not-local {
 		color: #e5484d;
 	}
+	/* Local and on cloud reads in plain text color, not the column's dim one:
+	   TrackTable's scoped rule of the same name cannot reach this component. */
+	.on-cloud-and-local {
+		color: var(--rb-text);
+	}
 	.tidal {
 		fill: #fff;
 	}
