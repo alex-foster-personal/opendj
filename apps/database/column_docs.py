@@ -48,6 +48,7 @@ from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
 from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
+from apps.database.column_docs_sync_gate import SYNC_GATE_COLUMN_DOCS
 from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
@@ -619,6 +620,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **LYRICS_COLUMN_DOCS,
     # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
     **FEEDBACK_COLUMN_DOCS,
+    # Migration v20 sync_write_tokens (issue #4396).
+    **SYNC_GATE_COLUMN_DOCS,
 }
 
 
