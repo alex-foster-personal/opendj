@@ -50,6 +50,8 @@ const FIXTURE_DATA_DIR = fileURLToPath(
 const FIXTURE_BUILDER = fileURLToPath(new URL('support/deckload_fixture.py', import.meta.url));
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'autoplay-stall-browser.spec.ts',
 	fullyParallel: false,
