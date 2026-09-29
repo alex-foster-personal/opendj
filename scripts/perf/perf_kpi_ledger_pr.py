@@ -265,7 +265,12 @@ def _update_ledger_pr_inner(
     tonight_entries = _new_entries_since(pre_run_entries, local_entries)
     outbox_dir = outbox_dir_for(worktree_dir)
     outbox_entries = _load_outbox_entries(outbox_dir)
-    candidate_entries = tonight_entries + _new_entries_since(tonight_entries, outbox_entries)
+    # Oldest first (Codex, PR #4473, P2/BLOCKING, "Preserve chronological
+    # order for same-day captures"): the outbox only ever holds rows from runs
+    # EARLIER than this one, and both ledger readers break same-date ties by
+    # append order, so appending tonight's rows ahead of the backlog made an
+    # older same-day capture the current reading.
+    candidate_entries = outbox_entries + _new_entries_since(outbox_entries, tonight_entries)
     # REPO_ROOT's tracked ledger is restored ONLY once tonight's rows are
     # durably somewhere else -- on the branch, or in a completely written
     # outbox (Sol, PR #3827, P1/BLOCKING, review 5321908943, "Preserve

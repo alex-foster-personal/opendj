@@ -116,6 +116,14 @@ def measure_track(
     return results
 
 
+def nightly_capture_id(now: dt.datetime) -> str:
+    """One run's cohort id, stamped to the second like `mint_capture_id`'s
+    `perf-capture-...` ids (Codex, PR #4473, P2/BLOCKING, "Give each nightly
+    run a unique capture ID"): the old `perf-kpi-<date>` id repeated for every
+    run on one UTC day, and `kpi_readings` reads equal ids as one session."""
+    return f"perf-kpi-{now.strftime('%Y%m%dT%H%M%SZ')}"
+
+
 def build_ledger_rows(
     config: PerfKpiConfig,
     *,
@@ -485,11 +493,13 @@ def run_nightly(
     base_url: str,
     git_sha: str,
     probe: ProbeFn,
-    today: dt.date | None = None,
+    now: dt.datetime | None = None,
     repository: str = "maintainer/music-dj-tools",
     file_issue: bool = True,
 ) -> NightlyOutcome:
-    today = today or dt.datetime.now(dt.UTC).date()
+    now = now or dt.datetime.now(dt.UTC)
+    if now.utcoffset() != dt.timedelta(0):
+        raise ValueError(f"run_nightly needs a UTC-aware clock, got {now!r}")
     measurements: list[WarmMedian] = []
     for track in config.tracks:
         measurements.extend(
@@ -502,7 +512,7 @@ def run_nightly(
             written,
             base_url=base_url,
             git_sha=git_sha,
-            today=today,
+            now=now,
             measurements=measurements,
             repository=repository,
             file_issue=file_issue,
@@ -519,7 +529,7 @@ def _append_and_judge(
     *,
     base_url: str,
     git_sha: str,
-    today: dt.date,
+    now: dt.datetime,
     measurements: list[WarmMedian],
     repository: str,
     file_issue: bool,
@@ -527,9 +537,10 @@ def _append_and_judge(
     """Append tonight's rows, then judge them. Records each batch in
     ``written`` as soon as it is on disk, so `run_nightly` can report exactly
     what reached the ledger if anything after it raises."""
+    today = now.date()
     rows = build_ledger_rows(
         config,
-        capture_id=f"perf-kpi-{today.isoformat()}",
+        capture_id=nightly_capture_id(now),
         git_sha=git_sha,
         today=today,
         measurements=measurements,

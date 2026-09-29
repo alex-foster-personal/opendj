@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.perf.perf_kpi_config import PerfKpiConfig, TrackProfile
+from scripts.perf import perf_kpi_nightly
 from scripts.perf.perf_kpi_nightly import (
     WarmMedian,
     find_ceiling_breaches,
@@ -75,7 +79,7 @@ def test_run_nightly_appends_and_flags_ceiling(tmp_path: Path) -> None:
         base_url="http://127.0.0.1:8699",
         git_sha="deadbeef",
         probe=probe,
-        today=__import__("datetime").date(2026, 9, 11),
+        now=dt.datetime(2026, 9, 11, 3, 0, 5, tzinfo=dt.UTC),
         file_issue=False,
     )
     assert outcome.exit_code == 3
@@ -127,7 +131,7 @@ def test_run_nightly_unknown_ceiling_without_history(tmp_path: Path) -> None:
         base_url="http://127.0.0.1:8699",
         git_sha="deadbeef",
         probe=probe,
-        today=__import__("datetime").date(2026, 9, 11),
+        now=dt.datetime(2026, 9, 11, 3, 0, 5, tzinfo=dt.UTC),
         file_issue=False,
     )
     assert outcome.exit_code == 0
@@ -146,3 +150,89 @@ def test_find_ceiling_ignores_audio_legs() -> None:
         today=__import__("datetime").date(2026, 9, 11),
     )
     assert breaches == []
+
+
+def _single_track_config(tmp_path: Path) -> PerfKpiConfig:
+    ledger = tmp_path / "kpi-ledger.json"
+    ledger.write_text(json.dumps({"schema_version": 2, "entries": []}), encoding="utf-8")
+    state_dir = tmp_path / "state"
+    return PerfKpiConfig(
+        ledger_path=ledger,
+        state_dir=state_dir,
+        health_log=state_dir / "health.jsonl",
+        history_log=state_dir / "history.jsonl",
+        health_state=state_dir / "health-state.json",
+        preview_health_url="http://127.0.0.1:8728/api/v1/health",
+        preview_engine_label="com.af.opendj-preview-engine",
+        scratch_port=8699,
+        samples=3,
+        machine="demon-llama",
+        tracks=(
+            TrackProfile("small_mp3", "sid-small", "small"),
+            TrackProfile("large_mp3", "sid-large", "large"),
+        ),
+        ledger_worktree=state_dir / "ledger-worktree",
+    )
+
+
+def test_two_runs_on_one_day_get_distinct_capture_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the nightly runs twice on one UTC day [then] each run's rows carry
+    their own capture_id, and every row within one run shares it.
+
+    Found by Codex (PR #4473, P2/BLOCKING, "Give each nightly run a unique
+    capture ID"): the id was `perf-kpi-<date>`, so demon-llama's 03:00Z and
+    17:30Z runs on Tue 29 Sep 2026 both wrote `perf-kpi-2026-09-29`, and
+    `kpi_readings` treats equal capture ids as one measurement session.
+    The per-run half is the overshoot control: a per-row id is unique too,
+    and would break the cohort a run's own rows must share.
+    """
+    config = _single_track_config(tmp_path)
+    monkeypatch.setattr(perf_kpi_nightly, "capture_s5_against_engine", lambda **_: [])
+
+    def probe(_base: str, _path: str) -> tuple[int, float]:
+        return 200, 40.0
+
+    runs = [
+        dt.datetime(2026, 9, 29, 3, 0, 9, tzinfo=dt.UTC),
+        dt.datetime(2026, 9, 29, 17, 30, 59, tzinfo=dt.UTC),
+    ]
+    run_ids = []
+    for now in runs:
+        outcome = run_nightly(
+            config,
+            base_url="http://127.0.0.1:8699",
+            git_sha="deadbeef",
+            probe=probe,
+            now=now,
+            file_issue=False,
+        )
+        ids = {row["capture_id"] for row in outcome.entries}
+        assert len(ids) == 1, f"one run must share one capture_id, got {sorted(ids)}"
+        assert {row["date"] for row in outcome.entries} == {"2026-09-29"}
+        run_ids.append(ids.pop())
+    assert run_ids == ["perf-kpi-20260929T030009Z", "perf-kpi-20260929T173059Z"]
+
+
+def test_run_nightly_refuses_a_clock_that_is_not_utc(tmp_path: Path) -> None:
+    """[if] the capture clock is naive or not UTC [then] the run refuses before
+    probing, rather than stamping local time with a Z suffix."""
+    config = _single_track_config(tmp_path)
+
+    def probe(_base: str, _path: str) -> tuple[int, float]:
+        raise AssertionError("must refuse before probing")
+
+    for bad in (
+        dt.datetime(2026, 9, 29, 3, 0, 9),
+        dt.datetime(2026, 9, 29, 4, 0, 9, tzinfo=dt.timezone(dt.timedelta(hours=1))),
+    ):
+        with pytest.raises(ValueError, match="UTC"):
+            run_nightly(
+                config,
+                base_url="http://127.0.0.1:8699",
+                git_sha="deadbeef",
+                probe=probe,
+                now=bad,
+                file_issue=False,
+            )
