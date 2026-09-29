@@ -3767,7 +3767,13 @@
 				class="tray-midi"
 				aria-label="Open audio I/O and MIDI"
 				title="Open audio I/O view (MIDI connect)"
-				onclick={() => openIoView()}
+				onclick={() => {
+					// Same entry as the mixer's I/O button: acquire the audio devices
+					// inside this click's user gesture (selectAudioOutput needs it,
+					// and device labels stay locked without it), then open the view.
+					void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
+					openIoView();
+				}}
 			>
 				MIDI
 			</button>
@@ -3775,11 +3781,10 @@
 				type="button"
 				class="tray-preview"
 				class:active={previewCue.playing}
+				disabled={!previewCue.playing}
 				aria-label={previewCue.playing ? 'Stop library preview' : 'Library preview cue'}
-				title={previewCue.playing ? 'Stop library preview' : 'Library preview cue (click a mini-waveform)'}
-				onclick={() => {
-					if (previewCue.playing) void stopPreviewCue();
-				}}
+				title={previewCue.playing ? 'Stop library preview' : 'No preview playing: click a mini-waveform to start one'}
+				onclick={() => void stopPreviewCue()}
 			>
 				Preview
 			</button>
@@ -4128,6 +4133,10 @@
 		font-size: 10px;
 		padding: 2px 8px;
 		cursor: pointer;
+	}
+	.tray-preview:disabled {
+		opacity: 0.45;
+		cursor: default;
 	}
 	.tray-preview.active {
 		color: var(--rb-accent);

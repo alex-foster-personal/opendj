@@ -9,7 +9,7 @@
  * engine as one chunk instead of one chunk per module (each extra chunk costs
  * its own gzip framing and loses shared compression context).
  */
-export { initMidi } from './webmidi.svelte';
+export { initMidi, releaseMidiInputs } from './webmidi.svelte';
 export { registerAllDeviceMaps } from './maps';
 export { attachMidiGlue } from './action-glue.svelte';
 export { loadInstalledDeviceMaps } from './installed-maps';

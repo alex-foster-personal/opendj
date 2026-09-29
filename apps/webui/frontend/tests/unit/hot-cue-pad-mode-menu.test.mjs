@@ -79,3 +79,48 @@ test('unbuilt pad-mode items render inert with a tooltip, built ones stay live',
 	assert.match(item, /title=\{entry\.built \? undefined : NOT_BUILT_TIP\}/);
 	assert.match(padModeMenu, /const NOT_BUILT_TIP = 'not implemented - see PARITY-TODO'/);
 });
+
+// The deck and its main row set overflow: hidden (Deck.svelte), so an
+// absolutely positioned menu below the bank was clipped. The menu must be
+// fixed and placed from the trigger rect through the shared placeFloating
+// path.
+test('pad-mode menu is fixed-positioned via triggerFloatingAction, not absolute inside the deck', () => {
+	assert.match(padModeMenu, /import \{ triggerFloatingAction \} from '\$lib\/ui\/clamp-to-viewport'/);
+	const menuOpen = padModeMenu.indexOf('class="pad-menu"');
+	const menuTag = padModeMenu.slice(padModeMenu.lastIndexOf('<div', menuOpen), padModeMenu.indexOf('>', padModeMenu.indexOf('}}', menuOpen)) + 1);
+	assert.match(menuTag, /use:triggerFloatingAction=\{\{ getTrigger: \(\) => triggerEl \?\? null, preferred: 'below', gap: 4 \}\}/);
+	const css = padModeMenu.slice(padModeMenu.indexOf('<style>'));
+	const rule = css.slice(css.indexOf('.pad-menu {'), css.indexOf('}', css.indexOf('.pad-menu {')));
+	assert.match(rule, /position: fixed;/);
+	assert.doesNotMatch(rule, /position: absolute/);
+	assert.doesNotMatch(rule, /top: calc\(100%/);
+});
+
+test('pad-mode menu closes on outside pointerdown and on Escape', () => {
+	assert.match(padModeMenu, /<svelte:window onpointerdown=\{onWindowPointerDown\} onkeydown=\{onWindowKeyDown\} \/>/);
+	const down = padModeMenu.slice(padModeMenu.indexOf('function onWindowPointerDown'), padModeMenu.indexOf('function onWindowKeyDown'));
+	assert.match(down, /wrapEl\?\.contains\(target\)\) return;/);
+	assert.match(down, /open = false;/);
+	const key = padModeMenu.slice(padModeMenu.indexOf('function onWindowKeyDown'), padModeMenu.indexOf('</script>'));
+	assert.match(key, /e\.key !== 'Escape'/);
+	assert.match(key, /open = false;/);
+});
+
+test('placeFloating flips the 8-item menu above a deck-bottom trigger and keeps it inside the viewport', async () => {
+	// Pure placement math, the function triggerFloatingAction applies to the
+	// menu's measured box. No window, observer or DOM node is stood in for;
+	// the action's DOM wiring is covered by the source check above.
+	const clamp = await vite.ssrLoadModule('/src/lib/ui/clamp-to-viewport.ts');
+	const viewport = { width: 1280, height: 800 };
+	// HOT CUE button at the bottom of a ~248px deck at the bottom of the window.
+	const trigger = { left: 40, top: 770, width: 70, height: 18 };
+	const size = { width: 180, height: 8 * 23 + 8 };
+	const box = clamp.placeFloating({ trigger, size, viewport, preferred: 'below', gap: 4 });
+	assert.equal(box.y, trigger.top - size.height - 4, 'flips above the trigger when below overflows');
+	assert.equal(box.x, trigger.left);
+	assert.ok(box.y >= clamp.VIEWPORT_MARGIN_PX && box.y + size.height <= viewport.height - clamp.VIEWPORT_MARGIN_PX);
+	// Control: with room below, it opens below the trigger, not flipped.
+	const high = { ...trigger, top: 200 };
+	const below = clamp.placeFloating({ trigger: high, size, viewport, preferred: 'below', gap: 4 });
+	assert.equal(below.y, high.top + high.height + 4);
+});

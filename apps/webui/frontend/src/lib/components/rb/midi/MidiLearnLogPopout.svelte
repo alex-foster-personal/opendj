@@ -16,24 +16,37 @@
 		toggleLogPopoutMinimized
 	} from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import MidiLearnLogRows from '$lib/components/rb/midi/MidiLearnLogRows.svelte';
+	import { CLOSE_PATH, MINIMIZE_PATH, RESTORE_PATH } from '$lib/ui/icon-glyphs';
 </script>
 
 {#if midiUi.logPopoutOpen}
 	<div class="log-popout" class:minimized={midiUi.logPopoutMinimized} role="log" aria-label="MIDI learn log">
 		<header class="popout-head">
 			<span class="popout-title">MIDI log</span>
-			<span class="popout-count">{learnLog.length}</span>
+			<span class="popout-count" title="MIDI messages in the learn log">{learnLog.length}</span>
 			<span class="popout-spacer"></span>
 			<button
+				type="button"
 				class="popout-btn"
 				aria-label={midiUi.logPopoutMinimized ? 'restore MIDI log' : 'minimize MIDI log'}
 				title={midiUi.logPopoutMinimized ? 'restore' : 'minimize'}
 				onclick={toggleLogPopoutMinimized}
 			>
-				{midiUi.logPopoutMinimized ? '▢' : '—'}
+				<svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+					<path
+						d={midiUi.logPopoutMinimized ? RESTORE_PATH : MINIMIZE_PATH}
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.4"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
 			</button>
-			<button class="popout-btn" aria-label="close MIDI log" title="close" onclick={closeLogPopout}>
-				&times;
+			<button type="button" class="popout-btn" aria-label="close MIDI log" title="close" onclick={closeLogPopout}>
+				<svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+					<path d={CLOSE_PATH} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+				</svg>
 			</button>
 		</header>
 		{#if !midiUi.logPopoutMinimized}
@@ -98,6 +111,9 @@
 		line-height: 1;
 		padding: 0 4px;
 		cursor: pointer;
+	}
+	.popout-btn svg {
+		display: block;
 	}
 	.popout-btn:hover {
 		color: var(--rb-text);

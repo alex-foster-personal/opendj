@@ -16,12 +16,13 @@
 	 *   ✔︎ 🎯 Esc / backdrop / close button all dismiss the drawer.
 	 *     [if] Esc while open doesn't close [then] broken
 	 */
-	import MidiDeviceList from '$lib/components/rb/midi/MidiDeviceList.svelte';
+	import type { Component } from 'svelte';
 	import MidiLearnLog from '$lib/components/rb/midi/MidiLearnLog.svelte';
 	import {
+		closeLogPopout,
 		floatMidiPanel,
 		midiUi,
-		requestMidiAccess,
+		applyMidiEnabledSetting,
 		setMidiPanelWidthMode,
 		toggleMidiPanel,
 		toggleMidiPanelExpanded
@@ -46,6 +47,43 @@
 	function setTakeoverMode(mode: 'pickup' | 'jump'): void {
 		void runPerformanceCommandFromUi({ type: 'midi_takeover_mode', mode });
 	}
+
+	// This whole panel already only RENDERS while panelOpen (the {#if} below),
+	// but a static import still puts a module's bytes in the eager /performance
+	// bundle regardless of runtime visibility. The device list (per-device map
+	// match, binding count, LED test) is the heavier of the panel's two
+	// sub-views, so it is the one deferred to a real network fetch, triggered
+	// by the same open flip that reveals it.
+	//
+	// The learn-log pop-out is rarer still (its trigger is inside this panel),
+	// so it loads here too. This component mounts on the first open and stays
+	// mounted, so each import runs once per document and the pop-out outlives
+	// the drawer closing. Both follow MidiPanelLoader's contract: a failed
+	// fetch shows its error in place, nothing is swallowed, and recovery is a
+	// Reload the user clicks, since the browser's module map keeps the failure
+	// and a same-document re-import can never succeed.
+	let MidiDeviceListComponent: Component | null = $state(null);
+	let MidiLearnLogPopoutComponent: Component | null = $state(null);
+	let deviceListError: string | null = $state(null);
+	let popoutError: string | null = $state(null);
+
+	function _failed(what: string, exc: unknown): string {
+		console.error(`[midi] ${what} failed to load`, exc);
+		return exc instanceof Error ? exc.message : String(exc);
+	}
+
+	// Reads no state, so each runs once, at mount.
+	$effect(() => {
+		import('$lib/components/rb/midi/MidiDeviceList.svelte')
+			.then((m) => (MidiDeviceListComponent = m.default))
+			.catch((exc: unknown) => (deviceListError = _failed('device list', exc)));
+	});
+
+	$effect(() => {
+		import('$lib/components/rb/midi/MidiLearnLogPopout.svelte')
+			.then((m) => (MidiLearnLogPopoutComponent = m.default))
+			.catch((exc: unknown) => (popoutError = _failed('learn log pop-out', exc)));
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -102,7 +140,7 @@
 					<button
 						class="perm-request"
 						disabled={midiUi.requestPending}
-						onclick={() => void requestMidiAccess()}
+						onclick={() => void applyMidiEnabledSetting(true)}
 					>
 						{midiUi.requestPending ? 'Waiting for browser prompt...' : 'Request MIDI access'}
 					</button>
@@ -115,7 +153,14 @@
 
 		<section class="drawer-section">
 			<h3 class="section-title">Devices ({midiState.devices.length})</h3>
-			<MidiDeviceList />
+			{#if MidiDeviceListComponent}
+				<MidiDeviceListComponent />
+			{:else if deviceListError !== null}
+				<p class="perm-error" role="alert">
+					Devices failed to load: {deviceListError}
+					<button type="button" class="drawer-action" onclick={() => location.reload()}>Reload</button>
+				</p>
+			{/if}
 		</section>
 
 		<section class="drawer-section" aria-label="absolute MIDI takeover">
@@ -150,7 +195,34 @@
 	</div>
 {/if}
 
+{#if MidiLearnLogPopoutComponent}
+	<MidiLearnLogPopoutComponent />
+{:else if midiUi.logPopoutOpen && popoutError !== null}
+	<div class="popout-error rb-panel" role="alert">
+		<span>Learn log pop-out failed to load: {popoutError}</span>
+		<button type="button" class="drawer-action" onclick={() => location.reload()}>Reload</button>
+		<button type="button" class="drawer-action" onclick={closeLogPopout}>Close</button>
+	</div>
+{/if}
+
 <style>
+	/* Error text carries the failed module URL, which has no spaces: let it
+	   wrap, or it pushes Reload and Close past the viewport edge. */
+	.popout-error {
+		position: fixed;
+		right: 12px;
+		bottom: 48px;
+		z-index: 60;
+		display: flex;
+		gap: 10px;
+		align-items: center;
+		max-width: 420px;
+		padding: 8px 12px;
+		border: 1px solid var(--rb-red);
+		color: var(--rb-text);
+		font-size: 12px;
+		overflow-wrap: anywhere;
+	}
 	.midi-backdrop {
 		position: fixed;
 		inset: 0;
@@ -292,5 +364,6 @@
 		margin: 0;
 		color: var(--rb-red);
 		font-size: var(--rb-fs-label);
+		overflow-wrap: anywhere;
 	}
 </style>

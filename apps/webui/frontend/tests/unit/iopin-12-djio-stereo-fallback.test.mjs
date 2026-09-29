@@ -550,6 +550,26 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 		assert.ok(record.cleared.has(record.polls[0].handle), 'the poll stops before the re-entry reload');
 		assert.ok(record.timeline.indexOf('plugin:event|unlisten') < record.timeline.indexOf('replace'));
 	});
+
+	// CHROME-07 (#3896) turning MIDI off meets the native transport (#3837): the
+	// release must drop the Tauri listener and the hot-plug poll, not only
+	// WebMIDI's handlers, or a Mixtour press still dispatches with MIDI off.
+	test('releaseMidiInputs on the native shell unlistens and stops the hot-plug poll; a later initMidi subscribes afresh', async () => {
+		const record = installShell(`?djio=${DJIO}`);
+		await webmidi.initMidi();
+		assert.equal(listens(record), 1);
+		assert.equal(record.polls.length, 1);
+		assert.equal(webmidi.midiState.devices.length, 1);
+		webmidi.releaseMidiInputs();
+		await settle();
+		assert.equal(unlistens(record), 1, 'if release leaves the Tauri listener live then MIDI off still dispatches - broken');
+		assert.ok(record.cleared.has(record.polls[0].handle), 'if the 1 s poll survives release then hot-plug re-adds devices while off - broken');
+		assert.equal(webmidi.midiState.devices.length, 0);
+		assert.equal(webmidi.midiState.permission, 'granted', 'release must not rewrite the platform permission');
+		// Control: MIDI back on, same page, subscribes again.
+		await webmidi.initMidi();
+		assert.equal(listens(record), 2, 'if a released transport cannot re-subscribe then MIDI stays dead until reload - broken');
+	});
 });
 
 //-----------------------------------------------------------------------------

@@ -334,7 +334,10 @@ const BUDGETS = [
   // recoverable part is the ~3.6 KB of split-chunk overhead: loading the drawer
   // and the engine as one on-demand chunk (they already share webmidi) retires
   // most of it. The USB UI is feature weight and stays.
-  { name: 'other-lazy', limit: 286720, measured: 272962, note: 'all other routes plus deferred shell' },
+  // Tue 29 Sep 2026: PR #3896's click-gated MIDI drawer loader, row popovers and
+  // learn-log split, merged into this preview, measure 278,508, inside the
+  // UNCHANGED ceiling; no raise.
+  { name: 'other-lazy', limit: 286720, measured: 278508, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

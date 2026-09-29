@@ -8,6 +8,7 @@
 	// as the smartlist self-fetch below.
 	import type { PlaylistNode } from '$lib/rb/library-types';
 	import { formatMostlyBrokenTooltip } from '$lib/rb/runtime-policy.svelte';
+	import { PENCIL_PATH } from '$lib/ui/icon-glyphs';
 	import ColumnBrowser from './ColumnBrowser.svelte';
 	import type { PlaylistTreeProps } from './playlist-tree-props';
 	import {
@@ -322,12 +323,15 @@
 							type="button"
 							class="pl-action dim"
 							title="Rename playlist"
+							aria-label="Rename playlist"
 							onclick={(e) => {
 								e.stopPropagation();
 								void rename.begin(node);
 							}}
 						>
-							✎
+							<svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+								<path d={PENCIL_PATH} fill="none" stroke="currentColor" stroke-width="2" />
+							</svg>
 						</button>
 					{/if}
 					{#if ondeleteplaylist}

@@ -87,13 +87,11 @@ test('first-paint modules reach the MIDI engine only through dynamic imports', (
 	}
 });
 
-test('the MIDI drawer loader caches one import and words a failed load for the alert', async () => {
-	const loader = await loadTypeScriptModule('src/lib/components/rb/midi/midi-panel-loader.ts');
-	const first = loader.loadMidiPanel();
-	assert.equal(loader.loadMidiPanel(), first, 'a second open re-imported the drawer chunk');
-	assert.equal(typeof (await first).default, 'function');
-	assert.equal(
-		loader.midiSurfaceLoadFailure('MIDI panel', new Error('Failed to fetch dynamically imported module')),
-		'MIDI panel failed to load: Failed to fetch dynamically imported module. Reload the page to retry.'
-	);
+test('the MIDI drawer is fetched by MidiPanelLoader on open and a failed load offers Reload', () => {
+	const src = (path) => readFileSync(new URL(`../../src/lib/${path}`, import.meta.url), 'utf8');
+	const loader = src('components/rb/midi/MidiPanelLoader.svelte');
+	assert.doesNotMatch(loader, /^\s*import\s[^;]*from\s+'[^']*MidiPanel\.svelte'/m, 'MidiPanelLoader imports the drawer statically');
+	assert.match(loader, /import\('\$lib\/components\/rb\/MidiPanel\.svelte'\)/, 'the drawer is no longer fetched on open');
+	assert.match(loader, /location\.reload\(\)/, 'a failed drawer load no longer offers Reload');
+	assert.match(src('components/rb/TopBar.svelte'), /<MidiPanelLoader \/>/, 'TopBar no longer mounts MidiPanelLoader');
 });

@@ -72,3 +72,8 @@ test('the star glyph reads both variables, with safe standalone fallbacks', () =
 	assert.match(theme, /\.perf-root \.rb-star \{[^}]*font-size:\s*var\(--rb-star-size,\s*var\(--rb-fs-browser\)\)/s);
 	assert.match(stars, /gap:\s*var\(--rb-star-gap,/);
 });
+
+test('the star SVG is sized in em so it follows the shrunken star size', () => {
+	assert.match(stars, /<svg viewBox="0 0 24 24" width="1em" height="1em"/);
+	assert.doesNotMatch(stars, /<svg[^>]*width="12"/);
+});

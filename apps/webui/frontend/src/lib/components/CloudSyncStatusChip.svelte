@@ -38,7 +38,11 @@
 			publishCloudSyncChipState(status);
 		} catch (error: unknown) {
 			loadError = error instanceof Error ? error.message : String(error);
-			publishCloudSyncChipState(null);
+			// A failed refresh keeps the last status on screen, so the TopBar
+			// clock (CHROME-06) reads that same retained state; publishing null
+			// here turned one transient error into 'off' and hid the clock
+			// beside a chip still showing syncing/ok (codex review of #3896).
+			publishCloudSyncChipState(status);
 		}
 	}
 

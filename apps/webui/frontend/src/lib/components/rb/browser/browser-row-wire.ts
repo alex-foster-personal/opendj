@@ -88,6 +88,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		cloud_transfer: wire.cloud_transfer ?? null,
 		spotify_pending:
 			wire.spotify_pending === true || wire.stable_id.startsWith('spotify-pending:'),
+		streaming_provider: wire.streaming_provider ?? null,
 		quality: wire.quality ?? null,
 		play_count: typeof wire.play_count === 'number' ? wire.play_count : 0,
 		strip: decodePreviewStrip(wire.preview_b64, wire.preview_max),
@@ -131,7 +132,8 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		energy_source: track.energy_source,
 		energy_reason: track.energy_reason,
 		...availability,
-		is_streaming: null,
+		is_streaming: track.is_streaming,
+		streaming_provider: track.streaming_provider,
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,
 		cloud_transfer: track.cloud_transfer ?? null,

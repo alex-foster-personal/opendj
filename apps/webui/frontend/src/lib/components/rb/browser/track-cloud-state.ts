@@ -37,6 +37,12 @@ export interface TrackCloudInput {
 	fileExists: boolean;
 	isStreaming: boolean;
 	hasRemoteCopy: boolean;
+	/** Inline row fact (TrackRowOut.spotify_pending): an unmatched Spotify
+	 * placeholder. It has no rekordbox mapping, so rb_meta and its
+	 * folder_path never arrive; this flag alone names the provider. */
+	spotifyPending: boolean;
+	/** Inline row provider; wins over folderPath, which only rb_meta carries. */
+	provider?: StreamingProvider | null | undefined;
 	folderPath?: string | null;
 	/** Real bytes from the backend's in-process transfer ledger. */
 	transfer: TrackCloudTransferInput | null;
@@ -97,12 +103,12 @@ function overlayForKind(kind: TrackCloudKind, fileExists: boolean): CloudTickOve
 
 export function trackCloudView(input: TrackCloudInput): TrackCloudView {
 	const transfer = transferView(input.transfer);
-	if (input.isStreaming) {
+	if (input.isStreaming || input.spotifyPending) {
 		return withTransfer(
 			'streaming',
 			'Streaming-service track; it is not part of CloudSync audio storage.',
 			transfer,
-			streamingProviderFromPath(input.folderPath),
+			input.spotifyPending ? 'spotify' : (input.provider ?? streamingProviderFromPath(input.folderPath)),
 			'none'
 		);
 	}

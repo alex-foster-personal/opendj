@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "capture": {
+    "kind": "webui-playlist-detail-tracks",
+    "source": "GET /api/v1/playlists/pl-unmapped-streaming (tracks array) from create_app over SqliteBackend",
+    "captured_on": "2026-09-29",
+    "scenario": "Five rows with NO rekordbox mapping (djay playlist, empty djmdContent): tidal:, soundcloud: and https:// streaming URIs, a present local file, and a spotify: URI whose audio is present through a local track_location. Seeded by tests/webui/test_unmapped_streaming_provider.py helpers _make_master_plain_db/_make_state_db (Codex P2 on PR #3896, CHROME-02).",
+    "immutable": "Do not regenerate or rewrite this capture to make a test pass. Re-capture and independently review any source change.",
+    "encoding": "One captured row per line (re-encoded Tue 29 Sep 2026, PR #3896): the parsed data is unchanged from the original indent-2 capture (sha256 c481cfa7165f3da29c50c0952ffd36955dc3b23a3875560f7a38f840b9f2c8b9, 8117 bytes), verified by Python == and Node assert.deepStrictEqual on the two parses. Re-encoded because the indented rows repeat their shape for 30+ lines, which the quality gate's jscpd scored as duplication; no value was touched."
+  },
+  "files": {
+    "playlist-unmapped-streaming-captured.json": {
+      "bytes": 6877,
+      "sha256": "541baaaa4406e6b3bb5a7618471432f9915a9bd71d8592ad2d0e84dd0ae986aa"
+    }
+  }
+}

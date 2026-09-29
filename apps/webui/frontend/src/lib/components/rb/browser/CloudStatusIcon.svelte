@@ -3,10 +3,11 @@
 
 	let { view }: { view: TrackCloudView } = $props();
 
+	// Tidal's mark is black and white, so its glyph takes a theme-aware fill
+	// from the `.tidal` rule below instead of the dim column text.
 	const providerColor = $derived.by(() => {
 		if (view.provider === 'spotify') return '#35c04f';
 		if (view.provider === 'soundcloud') return '#ff5500';
-		if (view.provider === 'tidal') return 'currentColor';
 		return 'currentColor';
 	});
 </script>
@@ -23,18 +24,25 @@
 	{#if view.kind === 'streaming' && view.provider !== null && view.provider !== 'unknown'}
 		<svg class="provider-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 			{#if view.provider === 'spotify'}
-				<circle cx="8" cy="8" r="6" fill={providerColor} />
+				<!-- Hand-drawn Spotify mark: green disk with three dark sound-wave
+				     arcs, widest on top, so it reads as the provider and not as a
+				     status dot. -->
+				<circle cx="8" cy="8" r="7" fill={providerColor} />
+				<path class="spotify-arc" d="M3.9 6.2Q8 4.6 12.1 6.6" fill="none" stroke="#191414" stroke-width="1.4" stroke-linecap="round" />
+				<path class="spotify-arc" d="M4.5 8.5Q8 7.3 11.3 8.9" fill="none" stroke="#191414" stroke-width="1.15" stroke-linecap="round" />
+				<path class="spotify-arc" d="M5.1 10.7Q8 9.8 10.5 11" fill="none" stroke="#191414" stroke-width="0.95" stroke-linecap="round" />
 			{:else if view.provider === 'soundcloud'}
+				<!-- SoundCloud's mark: four bars rising left to right into a cloud
+				     with a flat base, a large bump and a smaller one on the right. -->
 				<path
-					d="M2 10h2l1-4 1.5 6 1-3 1 3h6"
-					fill="none"
-					stroke={providerColor}
-					stroke-width="1.2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
+					class="soundcloud"
+					d="M.6 9.4h1V12h-1zm1.6-1h1V12h-1zm1.6-1h1V12h-1zm1.6-1h1V12h-1zM7 12V5.2A4 4 0 0 1 13 7.5a2.25 2.25 0 0 1 0 4.5z"
+					fill={providerColor}
 				/>
 			{:else if view.provider === 'tidal'}
-				<path d="M4 4l4 4-4 4M8 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" />
+				<!-- Tidal's four-diamond mark: three touching across the top, one
+				     under the middle. Filled by the `.tidal` rule. -->
+				<path class="tidal" d="M.5 5.5l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm-5 5l2.5-2.5 2.5 2.5-2.5 2.5z" />
 			{/if}
 		</svg>
 	{:else}
@@ -81,5 +89,16 @@
 	}
 	.on-cloud-not-local {
 		color: #e5484d;
+	}
+	/* Local and on cloud reads in plain text color, not the column's dim one:
+	   TrackTable's scoped rule of the same name cannot reach this component. */
+	.on-cloud-and-local {
+		color: var(--rb-text);
+	}
+	.tidal {
+		fill: #fff;
+	}
+	:global(html[data-theme='light']) .tidal {
+		fill: #000;
 	}
 </style>

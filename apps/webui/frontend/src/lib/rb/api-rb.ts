@@ -416,6 +416,9 @@ export interface PlaylistTrackRowWire {
 	cloud_transfer: CloudTransferWire | null;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
+	/** CHROME-02: the streaming service for a streaming row, from the row's own
+	 * path (null when not streaming). Optional for older payloads. */
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	quality: TrackQuality;
 	play_count: number;
 	/** Same four-status vocals as /anlz - drives PreviewStrip blue bars. */
@@ -602,7 +605,8 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
 }
 
 /** Track listing item + contract point 1's per-row fields. STANDALONE-05
- * adds inline genre/genre_reason; is_streaming is still lazy via rb-meta. */
+ * adds inline genre/genre_reason; CHROME-02 adds is_streaming and its
+ * provider, so an unmapped streaming row needs no rb-meta to classify. */
 export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;
@@ -616,6 +620,8 @@ export type TrackListItemWire = Track & {
 	file_exists: boolean | null;
 	/** LIBUX-07: our own audio in non-local storage. Optional for older payloads. */
 	is_remote?: boolean;
+	is_streaming: boolean;
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	/** LIBUX-13: a recorded remote copy, including when local audio also exists. */
 	has_remote_copy: boolean;
 	/** LIBUX-13: present only while this engine process is moving real bytes. */

@@ -15,13 +15,14 @@
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
-	import { PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
+	import { CLOSE_PATH, PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
 	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
 	import { audioOutputStatus, djioFallbackTitle } from '$lib/rb/audio-output-status.svelte';
-	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { toggleMidiPanel, midiUi, midiEnabledPersisted } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { midiState } from '$lib/rb/midi/midi-state.svelte';
 	import Knob from './Knob.svelte';
+	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 
 	interface Props {
@@ -173,14 +174,19 @@
 	// MIDI status moved here with MIDI connect (CHROME-07): the entry keeps the
 	// gray / amber / green / red reading the top-bar MIDI label used to carry.
 	// Logic lives in midi-format.ts (pure, unit-tested); this is the plumbing.
+	// Turning MIDI off keeps the browser's grant and empties the device list, so
+	// the persisted choice tells an explicit off (gray) from a lost device (red).
 	const midiMappedCount = $derived(midiState.devices.filter((d) => d.mapVendor !== null).length);
-	const midiStatus = $derived(
-		midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0)
-	);
+	const midiOn = $derived(midiEnabledPersisted());
+	const midiStatus = $derived(midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0, midiOn));
 	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
-	const midiTitle = $derived(
-		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
-	);
+	const midiTitle = $derived(midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length, midiOn));
+
+	// Both MIDI entries open the drawer and unpin the I/O view (its z-index 80 would cover the drawer's 41).
+	function openMidiDrawer(): void {
+		if (!midiUi.panelOpen) toggleMidiPanel();
+		closeIoView();
+	}
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -231,25 +237,11 @@
 	>
 		<button
 			type="button"
-			class="hp-btn midi-btn"
-			class:st-grey={midiStatus === 'grey'}
-			class:st-green={midiStatus === 'green'}
-			class:st-amber={midiStatus === 'amber'}
-			class:st-red={midiStatus === 'red'}
+			class="hp-btn midi-btn st-{midiStatus}"
 			aria-label="Open MIDI panel"
 			aria-expanded={midiUi.panelOpen}
-			onclick={() => {
-				openIoView();
-				if (!midiUi.panelOpen) toggleMidiPanel();
-			}}
-			>MIDI{#if midiGlyph !== 'none'}<svg class="midi-glyph" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"
-					><path
-						d={midiGlyph === 'tick' ? 'M2 6.2 L5 9.2 L10 3' : 'M3 3 L9 9 M9 3 L3 9'}
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.6"
-					/></svg
-				>{/if}</button
+			onclick={openMidiDrawer}
+			>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
 		>
 	</ControlExplainer>
 </div>
@@ -261,7 +253,7 @@
 				<strong>Audio I/O</strong>
 				<small>Esc or X to dismiss</small>
 			</div>
-			<button type="button" class="hp-panel-close" aria-label="Close audio I/O settings" onclick={closeIo}>×</button>
+			<button type="button" class="hp-panel-close" aria-label="Close audio I/O settings" onclick={closeIo}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d={CLOSE_PATH} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg></button>
 		</header>
 		<div class="hp-panel-body">
 			<section class="hp-section" aria-label="Output routing">
@@ -370,6 +362,17 @@
 				</select>
 			</label>
 		</ControlExplainer>
+		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
+		<ControlExplainer title="MIDI" showDelayMs={40} placement="right"
+			bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}>
+			<button
+				type="button"
+				class="hp-btn midi-btn io-midi st-{midiStatus}"
+				aria-label="Open MIDI panel from audio I/O"
+				aria-expanded={midiUi.panelOpen}
+				onclick={openMidiDrawer}>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
+			>
+		</ControlExplainer>
 	</div>
 {/snippet}
 
@@ -433,10 +436,6 @@
 			opacity: 0.35;
 		}
 	}
-	.midi-glyph {
-		margin-left: 3px;
-		vertical-align: middle;
-	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);
 		border-color: var(--rb-accent, #2f6fd6);
@@ -480,7 +479,7 @@
 		background: transparent;
 		border: 0;
 		color: var(--rb-text, #c8cdd2);
-		font-size: 20px;
+		line-height: 0;
 		cursor: pointer;
 	}
 	.hp-panel-body { overflow: auto; padding: 10px 14px 14px; }

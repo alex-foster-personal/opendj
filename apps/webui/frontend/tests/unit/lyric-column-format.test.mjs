@@ -4,7 +4,8 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 // Library lyrics column (karaoke-lyrics feature). Regression lines:
-// - if lyricVerdictGlyph does not map all 4 verdicts to distinct glyphs then broken
+// - if lyricVerdictMark does not map all 4 verdicts to distinct marks then broken
+// - if the vocal verdict is a text character rather than an SVG icon path then CHROME-01 is broken
 // - if lyricSyncQualityPct(null) is not null then a missing pct fabricates a number
 // - if lyricSyncQualityPct doesn't round((1-red)*100) then the readout lies
 // - if an out-of-band pct_witness_red does not throw then bad wire data renders silently
@@ -31,18 +32,26 @@ function _summary(overrides = {}) {
 	};
 }
 
-test('verdict glyphs: all 4 verdicts map to distinct compact glyphs', () => {
+test('verdict marks: all 4 verdicts map to distinct compact marks', () => {
 	const verdicts = ['vocal', 'sparse', 'no-lyrics', 'unknown'];
-	const glyphs = verdicts.map((v) => mod.lyricVerdictGlyph(v));
-	for (const g of glyphs) {
-		assert.equal(typeof g, 'string');
-		assert.ok(g.length >= 1, 'glyph must be non-empty');
+	const marks = verdicts.map((v) => mod.lyricVerdictMark(v));
+	for (const m of marks) {
+		const value = m.kind === 'icon' ? m.path : m.text;
+		assert.ok(m.kind === 'icon' || m.kind === 'text', `unexpected mark kind ${m.kind}`);
+		assert.equal(typeof value, 'string');
+		assert.ok(value.length >= 1, 'mark must be non-empty');
 	}
-	assert.equal(new Set(glyphs).size, 4, 'glyphs must be distinct');
+	assert.equal(new Set(marks.map((m) => `${m.kind}:${m.kind === 'icon' ? m.path : m.text}`)).size, 4, 'marks must be distinct');
 });
 
-test('verdict glyph throws on an unknown verdict (fail-fast, no fabricated cell)', () => {
-	assert.throws(() => mod.lyricVerdictGlyph('shouting'), /unknown verdict/);
+test('verdict mark: the vocal verdict is an SVG icon path, not a note character (CHROME-01)', () => {
+	const vocal = mod.lyricVerdictMark('vocal');
+	assert.equal(vocal.kind, 'icon');
+	assert.match(vocal.path, /^M/);
+});
+
+test('verdict mark throws on an unknown verdict (fail-fast, no fabricated cell)', () => {
+	assert.throws(() => mod.lyricVerdictMark('shouting'), /unknown verdict/);
 });
 
 test('verdict title appends the human-override marker only when overridden', () => {

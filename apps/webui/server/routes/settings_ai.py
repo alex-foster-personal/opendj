@@ -29,7 +29,7 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "remixes_filter",
         "vocals_filter",
         "available_offline_filter",
-        "midi_enabled",
+        "rb.midi_enabled",
         "hide_todo_settings",
         "jog_radial_waveform",
         "auto_sync.rekordbox",

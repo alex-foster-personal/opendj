@@ -63,16 +63,38 @@ import {
 	midiEnabledPersisted,
 	persistMidiEnabled
 } from '$lib/components/rb/midi/midi-enabled-choice';
+import { syncDiskPrefs } from '$lib/rb/prefs-hydrate';
 
-/** The rb.midi_enabled disk sync (PUT /api/v1/ui-prefs) lives in midi-ui-state,
- * which is loaded on demand here rather than charging the MIDI runtime to first
- * paint. Destructured so knip still sees which export is used. */
-async function _syncMidiEnabledChoice(enabled: boolean): Promise<void> {
+// How a MIDI runtime load failure reaches the user. app-init wires the error
+// toast in at boot (toastMidiLoadFailure), so this first-paint module does not
+// import stores.svelte, the app's highest fan-in module (quality gate
+// frontend.max_fan_in). Until then the failure is still logged, never dropped.
+const _logMidiLoadFailure = (exc: unknown): void => console.error('[midi] MIDI could not load', exc);
+let _reportMidiLoadFailure = _logMidiLoadFailure;
+
+/** null restores the log-only default (app-init's teardown). */
+export function setMidiLoadFailureReporter(report: ((exc: unknown) => void) | null): void {
+	_reportMidiLoadFailure = report ?? _logMidiLoadFailure;
+}
+
+/** The rb.midi_enabled runtime half lives in midi-ui-state, which is loaded on
+ * demand here rather than charging the MIDI runtime to first paint. It persists
+ * the choice (localStorage + PUT /api/v1/ui-prefs) and then acts on it: enable
+ * requests WebMIDI access, disable detaches the glue and input listeners.
+ * Destructured so knip still sees which export is used. */
+async function _applyMidiEnabledChoice(enabled: boolean): Promise<void> {
 	try {
-		const { setMidiEnabledChoice } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
-		setMidiEnabledChoice(enabled);
+		const { applyMidiEnabledSetting } = await import('$lib/components/rb/midi/midi-ui-state.svelte');
+		await applyMidiEnabledSetting(enabled);
 	} catch (exc: unknown) {
-		console.error('[settings] rb.midi_enabled: MIDI state module failed to load', exc);
+		// Nothing acted on the saved choice, so it must not read "on": restore
+		// off (persistMidiEnabled bumps the tick the toggle reads) and say why.
+		// The disk half too: its usual writer lives in the module that failed
+		// to load, and a disk-backed "on" left behind would be hydrated back on
+		// the next page load, undoing an "off" the user just chose.
+		persistMidiEnabled(false);
+		void syncDiskPrefs({ midi_enabled: false });
+		_reportMidiLoadFailure(exc);
 	}
 }
 
@@ -392,7 +414,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			const enabled = _asBool(value, key);
 			// The local choice lands now, so readSettingValue() reflects it at once.
 			persistMidiEnabled(enabled);
-			void _syncMidiEnabledChoice(enabled);
+			void _applyMidiEnabledChoice(enabled);
 			return;
 		}
 		case 'gig_helper': {

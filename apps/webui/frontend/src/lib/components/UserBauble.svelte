@@ -49,9 +49,14 @@
 	// The performance route's topbar is ~28px tall, so the shell's 32px bauble
 	// does not fit there. Size is a prop rather than a CSS override so the
 	// glyph and initial scale with the circle.
-	let { size = 32, showLabel = false }: { size?: number; showLabel?: boolean } = $props();
+	// `menuOpen` is bindable so the top bar's account explainer can stand down
+	// while this menu is open (it would otherwise paint over Sign out).
+	let {
+		size = 32,
+		showLabel = false,
+		menuOpen = $bindable(false)
+	}: { size?: number; showLabel?: boolean; menuOpen?: boolean } = $props();
 
-	let menuOpen = $state(false);
 	let menuEl = $state<HTMLDivElement | null>(null);
 	let menuStyle = $state('');
 	/** Sign-out only; sign-in busy comes from signInOverlay so the bauble and blocker stay in sync. */

@@ -4,18 +4,43 @@
 	// selector normally exposes. Only Hot Cue is built; every other entry is
 	// labeled not-built-yet and renders inert with a tooltip, per the
 	// house rule for controls with no real backing.
+	//
+	// The deck and its main row clip overflow (Deck.svelte), so an absolute
+	// menu below the bank was cut off. The menu is position: fixed and
+	// placed from the trigger's rect by triggerFloatingAction (placeFloating
+	// under the hood): below when it fits, flipped above otherwise, clamped
+	// to the viewport.
 	import type { DeckId } from '$lib/rb/deck-id';
 	import { PAD_MODE_CATALOG, padModeMenuLabel } from '$lib/rb/pad-mode-catalog';
+	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 
 	const NOT_BUILT_TIP = 'not implemented - see PARITY-TODO';
 
 	let { deckId }: { deckId: DeckId } = $props();
 
 	let open = $state(false);
+	let wrapEl: HTMLSpanElement | undefined = $state();
+	let triggerEl: HTMLButtonElement | undefined = $state();
+
+	function onWindowPointerDown(e: PointerEvent): void {
+		if (!open) return;
+		const target = e.target;
+		if (target instanceof Node && wrapEl?.contains(target)) return;
+		open = false;
+	}
+
+	function onWindowKeyDown(e: KeyboardEvent): void {
+		if (!open || e.key !== 'Escape') return;
+		open = false;
+		triggerEl?.focus();
+	}
 </script>
 
-<span class="pad-menu-wrap">
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeyDown} />
+
+<span class="pad-menu-wrap" bind:this={wrapEl}>
 	<button
+		bind:this={triggerEl}
 		class="rb-lit-button dropdown"
 		aria-label={`hot cue menu deck ${deckId}`}
 		title="Pad mode menu - lists the pad modes a controller's performance-pad selector offers; modes marked not-built-yet do nothing yet"
@@ -23,10 +48,14 @@
 		data-testid={`hot-cue-menu-deck-${deckId}`}
 		onclick={() => (open = !open)}
 	>
-		HOT CUE <span class="caret">&#9662;</span>
+		HOT CUE
 	</button>
 	{#if open}
-		<div class="pad-menu" role="menu">
+		<div
+			class="pad-menu"
+			role="menu"
+			use:triggerFloatingAction={{ getTrigger: () => triggerEl ?? null, preferred: 'below', gap: 4 }}
+		>
 			{#each PAD_MODE_CATALOG as entry (entry.id)}
 				<button
 					type="button"
@@ -52,18 +81,28 @@
 		height: 18px;
 		box-sizing: border-box;
 	}
-	.caret {
-		color: var(--rb-text-dim);
+	/* CHROME-01: the caret is a CSS border triangle, never a text glyph. */
+	.dropdown::after {
+		content: '';
+		display: inline-block;
+		width: 0;
+		height: 0;
+		/* the gap the space before a glyph used to leave */
+		margin-left: 5px;
+		vertical-align: middle;
+		border-left: 3px solid transparent;
+		border-right: 3px solid transparent;
+		border-top: 4px solid var(--rb-text-dim);
 	}
 	.pad-menu-wrap {
 		position: relative;
 		align-self: flex-start;
 	}
 	.pad-menu {
-		position: absolute;
-		left: 0;
-		top: calc(100% + 4px);
-		z-index: 20;
+		/* fixed escapes the deck's overflow: hidden; left/top are set by
+		 * triggerFloatingAction from the trigger rect */
+		position: fixed;
+		z-index: 1000;
 		min-width: 180px;
 		background: var(--rb-panel);
 		border: 1px solid var(--rb-border);

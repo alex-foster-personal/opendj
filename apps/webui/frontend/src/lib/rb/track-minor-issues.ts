@@ -6,7 +6,6 @@ export type MinorIssueId =
 	| 'low-quality'
 	| 'missing-genre'
 	| 'stems-failed'
-	| 'stems-not-run-remote'
 	| 'no-lyrics';
 
 export interface MinorIssue {
@@ -20,14 +19,21 @@ const LOW_QUALITY_VENUES = new Set(['naughty_step', 'lounge']);
 /** kbps below lounge ceiling when venue is unknown. */
 const LOW_KBPS_THRESHOLD = 128;
 
+/** Same streaming facts trackCloudView() uses: an unmatched Spotify
+ * placeholder (spotify_pending) streams too, though it carries no rekordbox
+ * path and is_streaming stays false. */
 function _isStreaming(row: BrowserRow): boolean {
-	return row.is_streaming === true || row.rb_meta?.is_streaming === true;
+	return (
+		row.is_streaming === true || row.rb_meta?.is_streaming === true || row.spotify_pending === true
+	);
 }
 
 export function minorIssuesFor(row: BrowserRow): MinorIssue[] {
 	const issues: MinorIssue[] = [];
 
-	if (row.has_remote_copy !== true && !_isStreaming(row)) {
+	// Only an explicit false is "not on CloudSync". Missing Tracks rows carry no
+	// remote-copy fact at all (BrokenTrackOut has none), and unknown is not no.
+	if (row.has_remote_copy === false && !_isStreaming(row)) {
 		issues.push({ id: 'not-on-cloud', label: 'Not on CloudSync' });
 	}
 
@@ -55,17 +61,17 @@ export function minorIssuesFor(row: BrowserRow): MinorIssue[] {
 		});
 	}
 
-	if (row.has_remote_copy === true && row.stems?.status === 'none') {
-		issues.push({ id: 'stems-not-run-remote', label: 'Stems not run remotely yet' });
-	}
+	// "Stems not run remotely" is deliberately NOT emitted: no row field
+	// carries a remote stem job or artifact status. has_remote_copy is the
+	// original audio's cloud presence and row.stems is a LOCAL stems-dir
+	// scan, so combining them would fabricate the warning. Missing data
+	// source: a per-row remote stem status on the listing wire (see
+	// PARITY-TODO); add the issue back only when that field exists.
 
-	const lyrics = row.lyrics;
-	if (lyrics !== null) {
-		if (lyrics.effective === 'no-lyrics') {
-			issues.push({ id: 'no-lyrics', label: 'No lyrics' });
-		} else if (lyrics.has_words === false && lyrics.n_lines !== null) {
-			issues.push({ id: 'no-lyrics', label: 'No lyrics' });
-		}
+	// Only the lyric verdict establishes "no lyrics"; has_words === false
+	// with n_lines set is line-synced lyrics, not an absence of lyrics.
+	if (row.lyrics?.effective === 'no-lyrics') {
+		issues.push({ id: 'no-lyrics', label: 'No lyrics' });
 	}
 
 	return issues;
