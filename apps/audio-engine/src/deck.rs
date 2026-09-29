@@ -466,17 +466,19 @@ impl Deck {
     }
 
     /// CUE while playing returns to the cue point (the start when none is
-    /// set) and pauses. While paused, the first press sets the cue where the
-    /// playhead is without moving; later presses jump to it
+    /// set) and pauses, leaving an engaged loop engaged, as the page's press
+    /// does: it is a pause at the cue, not a seek. While paused, the first
+    /// press sets the cue where the playhead is without moving; later presses
+    /// jump to it as a seek does (snapped, refused past the end of the track,
+    /// leaving a loop it lands outside), as the page's `quantizedSeek` does
     /// (`audio-engine.svelte.ts` `pressCue`).
     pub fn cue(&mut self) -> Result<(), EngineError> {
-        self.track()?;
+        let t = self.track()?.clone();
         if self.playing {
-            self.move_to(self.cue.unwrap_or(0.0));
+            self.pos = self.cue.unwrap_or(0.0);
             self.playing = false;
         } else if let Some(c) = self.cue {
-            let to = self.quantized(c);
-            self.move_to(to);
+            self.seek(t.frames_to_ms(c))?;
         } else {
             self.cue = Some(self.quantized(self.pos));
         }
@@ -1196,6 +1198,51 @@ mod tests {
         d.cue().unwrap();
         assert_eq!(t.frames_to_ms(d.pos), 1300.0);
         assert_eq!(d.set_quantize_grid(2).unwrap_err().code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn a_cue_press_pauses_without_seeking_and_jumps_like_a_seek() {
+        // Codex's case: cue at 0, a loop engaged at 10 to 12 s, CUE while
+        // playing. The page's press pauses at the cue and keeps the loop, so
+        // the next PLAY runs back into it.
+        let t = Arc::new(silent(48000, 20.0, grid_120(10)));
+        let mut d = Deck::new(48000.0);
+        d.load(t.clone());
+        d.cue().unwrap();
+        assert_eq!(d.cue, Some(0.0));
+        d.set_loop(Some((10000.0, 12000.0))).unwrap();
+        d.seek(10500.0).unwrap();
+        d.play(true).unwrap();
+        d.cue().unwrap();
+        assert_eq!((d.playing, d.pos), (false, 0.0));
+        assert_eq!(d.looping, Some((480000.0, 576000.0)), "the loop survives the press");
+        // Control: a paused press jumps as a seek does, so landing outside the
+        // loop leaves it, as the page's quantizedSeek does.
+        d.seek(10500.0).unwrap();
+        d.cue().unwrap();
+        assert_eq!((d.pos, d.looping), (0.0, None));
+
+        // A cue stored on a grid beat past the decoded end (the page stores
+        // it too) cannot be jumped to: the paused press is refused and the
+        // playhead stays, as the page's quantizedSeek refuses it.
+        let mut beats = grid_120(2);
+        beats.push(Beat { time_ms: 4000.0, downbeat: false });
+        let short = Arc::new(silent(48000, 3.9, beats));
+        let mut d = Deck::new(48000.0);
+        d.load(short.clone());
+        d.quantize = false;
+        d.seek(3800.0).unwrap();
+        d.quantize = true;
+        d.play(true).unwrap();
+        d.play(false).unwrap();
+        assert_eq!(d.cue, Some(4000.0 * 48.0));
+        let e = d.cue().unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+        assert_eq!(d.pos, 3800.0 * 48.0);
+        // Control: a cue inside the track is jumped to.
+        d.cue = Some(3500.0 * 48.0);
+        d.cue().unwrap();
+        assert_eq!(d.pos, 3500.0 * 48.0);
     }
 
     #[test]

@@ -185,6 +185,9 @@ fn band(o: &Obj, ty: &str) -> Result<EqBand, ProtoError> {
 /// 1, 2, 3, 4 around the bar (a missing `n` counts as its place from the
 /// first beat). No grid at all is sent by leaving both keys out.
 fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
+    if o.contains_key("beatgrid") && o.contains_key("beatgrid_ms") {
+        return Err(invalid(format!("{ty} gives beatgrid and beatgrid_ms; give exactly one")));
+    }
     let mut out = Vec::new();
     if let Some(v) = o.get("beatgrid") {
         let arr = v.as_array().ok_or_else(|| invalid(format!("{ty}.beatgrid must be an array")))?;
@@ -370,6 +373,10 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
         "master_volume" => apply(EngineCmd::MasterVolume { value: unit(o, ty, "value")? }),
         "master_mute" => apply(EngineCmd::MasterMute { muted: boolean(o, ty, "muted")? }),
         "engine_advance" => {
+            let given = |k: &str| o.get(k).is_some_and(|v| !v.is_null());
+            if given("ms") && given("frames") {
+                return Err(invalid("engine_advance gives ms and frames; give exactly one".into()));
+            }
             if let Some(ms) = opt_num(o, ty, "ms")? {
                 if ms < 0.0 {
                     return Err(invalid("engine_advance.ms must not be negative".into()));
@@ -769,6 +776,24 @@ mod tests {
             let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
             assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);
         }
+    }
+
+    #[test]
+    fn a_command_naming_two_amounts_is_refused() {
+        // Codex's case: an advance with both ms and frames used ms and
+        // dropped frames. The same holds for a load with both grid shapes.
+        for c in [
+            json!({"type": "engine_advance", "ms": 10, "frames": 480}),
+            json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": 1, "time_ms": 0}, {"n": 2, "time_ms": 500}], "beatgrid_ms": [0, 400]}),
+        ] {
+            let e = cmd(c.clone()).unwrap_err();
+            assert!(e.message.contains("give exactly one"), "{c}: {}", e.message);
+        }
+        // Controls: each on its own, or the other one null, is fine.
+        for c in [json!({"type": "engine_advance", "ms": 10}), json!({"type": "engine_advance", "frames": 480}), json!({"type": "engine_advance", "ms": null, "frames": 480})] {
+            assert!(matches!(cmd(c.clone()), Ok(Command::Advance(_))), "{c}");
+        }
+        assert!(matches!(cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 400]})), Ok(Command::Load(_))));
     }
 
     #[test]
