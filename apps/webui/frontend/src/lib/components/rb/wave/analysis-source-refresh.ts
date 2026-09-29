@@ -14,8 +14,9 @@
  *
  * No $state/$derived here, so this is a plain .ts file, not .svelte.ts.
  */
-import { getTrack } from '$lib/api';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
+import { isUnmappedDefault } from '$lib/rb/beatgrid-source-basis';
+import type { Track } from '$lib/api';
 import {
 	bumpAnlzFetchGeneration,
 	currentAnlzFetchGeneration
@@ -67,6 +68,11 @@ export interface AnalysisSourceRefreshPorts {
 	 * would add a new edge to `api-rb.ts`'s own fan-in ratchet for no reason
 	 * other than this file existing. */
 	fetchAnlzBypassingHttpCache: (stable_id: string) => Promise<AnlzData>;
+	/** Same injection seam as ``fetchAnlzBypassingHttpCache``: the cache
+	 * module's ``api-rb`` binding carries the test/prod ``VITE_API_BASE``,
+	 * and a second direct import here would be a separate bundle instance
+	 * under node unit tests. */
+	fetchTrackBypassingHttpCache: (stable_id: string) => Promise<Track>;
 }
 
 export interface AnalysisSourceRefreshDeck {
@@ -166,11 +172,11 @@ export async function refreshAnalysisSourceDecks(
 	}
 	const staged = await Promise.all(
 		[...wanted].map(async ([stableId, holders]) => {
-			const [fresh, row] = await Promise.all([
+			const [fresh, track] = await Promise.all([
 				ports.fetchAnlzBypassingHttpCache(stableId),
-				getTrack(stableId)
+				ports.fetchTrackBypassingHttpCache(stableId)
 			]);
-			return { stableId, holders, fresh, track: row.track };
+			return { stableId, holders, fresh, track };
 		})
 	);
 	// Superseded while the fetches were in flight: the answer is discarded
@@ -184,7 +190,12 @@ export async function refreshAnalysisSourceDecks(
 	// nucbox-wsl-23, run 35731185371). The same check at the publish point
 	// below stays: this one runs before the guards, that one after them.
 	if (isSuperseded()) return null;
-	const served = new Set(staged.map(({ fresh }) => fresh.beatgrid_source));
+	// An unmapped track's STANDALONE-06 default says nothing about which
+	// lane-wide selection was in force, so it neither splits the batch nor
+	// sets the watermark; a batch of only those returns null, like no deck.
+	const served = new Set(
+		staged.filter(({ fresh }) => !isUnmappedDefault(fresh)).map(({ fresh }) => fresh.beatgrid_source)
+	);
 	if (served.size > 1) {
 		throw new Error(
 			`analysis source changed mid-refresh: /anlz served ${[...served].sort().join(' and ')} ` +
@@ -211,6 +222,10 @@ export async function refreshAnalysisSourceDecks(
 		// rekordbox-side answer from before a source switch (discussion_r3976638774
 		// P2 BLOCKING).
 		if (bpmProvenance === undefined) continue;
+		// Same reason as `served` above: an unmapped track's grid follows its
+		// own per-track default, which its bpm need not share (STANDALONE-03
+		// keeps serving a tag BPM there), so the pairing proves nothing.
+		if (isUnmappedDefault(fresh)) continue;
 		const bpmOnOwn = _isOwnProvenanceSource(bpmProvenance.source);
 		const gridOnOwn = fresh.beatgrid_source !== 'rekordbox';
 		if (bpmOnOwn !== gridOnOwn) {

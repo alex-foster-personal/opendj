@@ -1,4 +1,4 @@
-.PHONY: test cov reqs reqs-check fixture vocal-kpi-live-check ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check
+.PHONY: test cov reqs reqs-check fixture vocal-kpi-live-check ci clean audit-cues audit-sync integration lint quality quality-baseline build-dist release-check rb-parity-check rb-parity-final waveform-native-wheel waveform-native-verify waveform-native-release-check require-venv-py
 
 VENV ?= .venv
 PY := $(VENV)/bin/python
@@ -41,7 +41,7 @@ test:
 rb-parity-check:
 	@echo "[rb-parity-check] focused Python, frontend unit, and type gates"
 	$(PYTEST) -q -m rb_parity $(pytest_basetemp_flag)
-	cd apps/webui/frontend && $(FRONTEND_NODE) --test --test-reporter=tap --test-concurrency=4 tests/unit/*.test.mjs
+	cd apps/webui/frontend && $(FRONTEND_NODE) --experimental-strip-types --test --test-reporter=tap --test-concurrency=4 tests/unit/*.test.mjs
 	cd apps/webui/frontend && pnpm check
 
 rb-parity-final: rb-parity-check
@@ -143,7 +143,15 @@ waveform-native-wheel:
 	mkdir -p dist
 	uv build --wheel --python $(PY) --out-dir dist
 
-waveform-native-verify:
+# The last step of waveform-native-verify reinstalls the wheel into $(PY). Run
+# with PY="$(command -v python)" (ci.yml before d6f797500ed), that wrote the
+# project into the shared setup-python toolcache interpreter on agentbox (run
+# 33822960707, Fri 4 Sep 2026), where it shadowed every later job's checkout
+# (ADR PR #4214). Refuse any PY that is not a virtualenv interpreter.
+require-venv-py:
+	@$(PY) -c 'import sys; sys.exit(0 if sys.prefix != sys.base_prefix else "require-venv-py: PY=$(PY) is not a virtualenv interpreter; installing the project into it would pollute a shared interpreter. Pass PY=<venv>/bin/python.")'
+
+waveform-native-verify: require-venv-py
 	$(PY) scripts/check_waveform_native_wheel.py dist/music_dj_tools-*.whl
 	rm -rf $(WAVEFORM_CONSUMER_VENV)
 	uv venv --python $(PY) $(WAVEFORM_CONSUMER_VENV)

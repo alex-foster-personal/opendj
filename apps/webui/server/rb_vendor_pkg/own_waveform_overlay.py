@@ -17,6 +17,8 @@ import copy
 from pathlib import Path
 from typing import Any
 
+from apps.analysis import selection
+
 from .own_lane_store import (
     SOURCE_OWN,
     canonical_lane_result,
@@ -62,7 +64,11 @@ def _waveform_block(result: Any) -> dict[str, Any]:
 
 
 def apply_own_waveform(
-    payload: dict[str, Any], stable_id: str, state_db_path: Path | None = None
+    payload: dict[str, Any],
+    stable_id: str,
+    state_db_path: Path | None = None,
+    *,
+    has_rb_mapping: bool | None = None,
 ) -> dict[str, Any]:
     """Replace the waveform block with the own record when own is selected.
 
@@ -73,12 +79,22 @@ def apply_own_waveform(
     """
     conn = state_conn_ro(state_db_path)
     try:
-        if effective_lane_source(conn, OWN_WAVEFORM_LANE) != SOURCE_OWN:
+        if (
+            effective_lane_source(conn, OWN_WAVEFORM_LANE, has_rb_mapping=has_rb_mapping)
+            != SOURCE_OWN
+        ):
             return payload
         result = canonical_lane_result(conn, stable_id, OWN_WAVEFORM_LANE)
+        keep_served_waveform = result is None and selection.implicit_own_default(
+            conn, OWN_WAVEFORM_LANE, has_rb_mapping=has_rb_mapping
+        )
     finally:
         if conn is not None:
             conn.close()
+    if keep_served_waveform:
+        # No own waveform yet, and own is only the STANDALONE-06 default:
+        # keep the locally decoded peaks rather than blanking the deck.
+        return payload
     payload["waveform"] = _waveform_block(result)
     return payload
 

@@ -13,7 +13,7 @@ let cueAlign;
 
 before(async () => {
 	globalThis.window = { localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } };
-	cueAlign = await loadTypeScriptModule('src/lib/player/cue-align.svelte.ts');
+	cueAlign = await loadTypeScriptModule('src/lib/player/cue-align-policy.ts');
 });
 
 test('if the audio graph is missing then that is what the refusal says', () => {
@@ -62,13 +62,27 @@ test('if the graph readiness is not a boolean then it throws rather than guessin
 });
 
 test('the live effects factory refuses through this list, so its message names the real cause', async () => {
-	const source = await import('node:fs/promises').then((fs) =>
-		fs.readFile(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8')
-	);
-	assert.match(source, /calibrationBlockers\(\{/, 'the engine must reuse the shared list');
-	assert.doesNotMatch(
-		source,
-		/needs two_outputs with a selected headphone output/,
-		'the old message blamed the output mode for a missing audio graph'
-	);
+	const fs = await import('node:fs/promises');
+	// The factory moved to cue-align-audio.ts; headphones.ts is where the old
+	// message lived, so both are held to it.
+	const factory = await fs.readFile(new URL('../../src/lib/player/cue-align-audio.ts', import.meta.url), 'utf8');
+	const headphones = await fs.readFile(new URL('../../src/lib/player/headphones.ts', import.meta.url), 'utf8');
+	assert.match(factory, /calibrationBlockers\(\{/, 'the engine must reuse the shared list');
+	for (const source of [factory, headphones]) {
+		assert.doesNotMatch(
+			source,
+			/needs two_outputs with a selected headphone output/,
+			'the old message blamed the output mode for a missing audio graph'
+		);
+	}
+});
+
+test('the promised duration covers every capture a run can make, so a healthy run never looks hung', async () => {
+	const latency = await loadTypeScriptModule('src/lib/player/cue-latency.ts');
+	const perCaptureMs = latency.CUE_LATENCY_PREROLL_MS + latency.cueLatencyCaptureMs(cueAlign.CUE_ALIGN_MAX_LAG_MS);
+	// Worst case a healthy run can reach: every gain rung on both buses while finding
+	// the level, every measured probe retried once, and the verify pair plus its retry.
+	const captures = 2 * latency.CUE_LATENCY_GAIN_STEPS.length + cueAlign.CUE_ALIGN_RUNS * 2 * 2 + 2 * 2;
+	assert.ok(cueAlign.estimatedCalibrationSeconds() * 1000 >= captures * perCaptureMs - 500,
+		'if the estimate misses level-find rungs or probe retries then a weak but healthy run overruns the promise and looks hung - broken');
 });

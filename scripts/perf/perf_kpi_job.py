@@ -15,17 +15,30 @@ from __future__ import annotations
 import argparse
 import subprocess
 from pathlib import Path
+from typing import Any
 
-from scripts.perf.perf_kpi_config import LEDGER_PR_BRANCH, LEDGER_PR_TITLE, REPO_ROOT, load_config
+from scripts.perf.perf_kpi_config import (
+    REPO_ROOT,
+    PerfKpiConfig,
+    load_config,
+    require_machine_label,
+)
 from scripts.perf.perf_kpi_health import HealthConfig, build_restart_command, run_health_tick
+from scripts.perf.perf_kpi_ledger_local import (
+    LedgerEditedDuringRun,
+    _restore_tracked_ledger,
+    outbox_dir_for,
+    park_run_rows_in_outbox,
+    refuse_ledger_edits_made_during_run,
+)
+from scripts.perf.perf_kpi_ledger_pr import update_ledger_pr
 from scripts.perf.perf_kpi_nightly import (
+    NightlyRunFailed,
     acquire_nightly_engine,
     default_probe,
     run_nightly,
     stop_scratch_engine,
 )
-
-REPOSITORY = "maintainer/music-dj-tools"
 
 
 def _git_sha(repo_root: Path) -> str:
@@ -41,8 +54,7 @@ def _git_sha(repo_root: Path) -> str:
 
 def _engine_log_path() -> Path:
     return (
-        Path.home()
-        / "Library/Application Support/com.opendj.desktop.chrome-loop/logs/engine.log"
+        Path.home() / "Library/Application Support/com.opendj.desktop.chrome-loop/logs/engine.log"
     )
 
 
@@ -61,65 +73,104 @@ def cmd_health(config) -> int:
     )
 
 
-def cmd_nightly(config, *, base_url: str | None, skip_pr: bool) -> int:
+def cmd_nightly(config, *, repo_root: Path, base_url: str | None, skip_pr: bool) -> int:
+    require_machine_label(config)
     url, proc, _log_path, prep_code = acquire_nightly_engine(config, base_url=base_url)
     if prep_code != 0:
         return prep_code
+    # Captured BEFORE run_nightly ever touches the tracked ledger (Sol, PR
+    # #3827, P1/BLOCKING, review 4107678114): this is the one point in the
+    # whole flow where repo_root's own file still holds only whatever the
+    # caller had before tonight's job started, dirty or clean. See
+    # update_ledger_pr's docstring for why it cannot be captured any later.
+    pre_run_content = (
+        config.ledger_path.read_text(encoding="utf-8") if config.ledger_path.exists() else None
+    )
     try:
-        outcome = run_nightly(
-            config,
-            base_url=url,
-            git_sha=_git_sha(REPO_ROOT),
-            probe=default_probe,
-            file_issue=not skip_pr,
-        )
+        try:
+            outcome = run_nightly(
+                config,
+                base_url=url,
+                git_sha=_git_sha(repo_root),
+                probe=default_probe,
+                file_issue=not skip_pr,
+            )
+        except NightlyRunFailed as failure:
+            if not skip_pr:
+                _recover_failed_run(repo_root, config, pre_run_content, failure)
+            raise
         if not skip_pr:
-            update_ledger_pr(REPO_ROOT)
+            _publish_run(repo_root, config, pre_run_content, outcome.append_batches)
         return outcome.exit_code
     finally:
         if proc is not None:
             stop_scratch_engine(proc)
 
 
-def update_ledger_pr(repo_root: Path) -> None:
-    """Open or update the standing docs PR for nightly ledger appends."""
-    completed = subprocess.run(
-        ["gh", "pr", "list", "--repo", REPOSITORY, "--head", LEDGER_PR_BRANCH, "--json", "number"],
-        check=False,
-        capture_output=True,
-        text=True,
+# ----- ledger hand-off --------------------------------------------------------
+
+
+def _publish_run(
+    repo_root: Path,
+    config: PerfKpiConfig,
+    pre_run_content: str | None,
+    append_batches: tuple[list[dict[str, Any]], ...],
+) -> None:
+    """Publish tonight's rows, or park them in the outbox when the tracked
+    file was edited during the run and so cannot be published or restored."""
+    try:
+        validated_content = refuse_ledger_edits_made_during_run(
+            config.ledger_path, pre_run_content=pre_run_content, append_batches=append_batches
+        )
+    except LedgerEditedDuringRun:
+        park_run_rows_in_outbox(
+            outbox_dir_for(config.ledger_worktree),
+            pre_run_content=pre_run_content,
+            append_batches=append_batches,
+        )
+        raise
+    update_ledger_pr(
+        repo_root,
+        config.ledger_path,
+        config.ledger_worktree,
+        pre_run_content=pre_run_content,
+        post_run_content=validated_content,
     )
-    if completed.returncode == 0 and completed.stdout.strip() not in ("", "[]"):
-        return
-    branch = LEDGER_PR_BRANCH
-    subprocess.run(["git", "fetch", "origin", "main"], check=True, cwd=repo_root)
-    subprocess.run(["git", "checkout", "-B", branch, "origin/main"], check=True, cwd=repo_root)
-    subprocess.run(["git", "add", "docs/perf/kpi-ledger.json"], check=True, cwd=repo_root)
-    subprocess.run(
-        ["git", "commit", "-m", "perf(kpi): nightly ledger append\n\n-Codex"],
-        check=True,
-        cwd=repo_root,
+
+
+def _recover_failed_run(
+    repo_root: Path,
+    config: PerfKpiConfig,
+    pre_run_content: str | None,
+    failure: NightlyRunFailed,
+) -> None:
+    """`run_nightly` raised after appending (Codex, PR #3827, P1/BLOCKING,
+    "Recover rows when the nightly measurement raises"): park the rows it
+    wrote in the outbox, so the next successful publish carries them, then
+    put repo_root's tracked ledger back so autoreposync keeps pulling.
+
+    The restore happens only when the file holds exactly the pre-run text
+    plus those rows; a concurrent edit is left in place and noted on the
+    original error, which the caller re-raises."""
+    park_run_rows_in_outbox(
+        outbox_dir_for(config.ledger_worktree),
+        pre_run_content=pre_run_content,
+        append_batches=failure.append_batches,
     )
-    subprocess.run(["git", "push", "-u", "origin", branch], check=True, cwd=repo_root)
-    subprocess.run(
-        [
-            "gh",
-            "pr",
-            "create",
-            "--repo",
-            REPOSITORY,
-            "--base",
-            "main",
-            "--head",
-            branch,
-            "--title",
-            LEDGER_PR_TITLE,
-            "--body",
-            "Standing docs PR for nightly perf KPI ledger appends. Never merges by itself.",
-        ],
-        check=True,
-        cwd=repo_root,
-    )
+    try:
+        validated_content = refuse_ledger_edits_made_during_run(
+            config.ledger_path,
+            pre_run_content=pre_run_content,
+            append_batches=failure.append_batches,
+        )
+        _restore_tracked_ledger(
+            repo_root,
+            config.ledger_path,
+            pre_run_content=pre_run_content,
+            post_run_content=validated_content,
+        )
+    except RuntimeError as refusal:
+        failure.add_note(str(refusal))
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -135,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     if args.mode == "health":
         return cmd_health(config)
-    return cmd_nightly(config, base_url=args.base_url, skip_pr=args.skip_pr)
+    return cmd_nightly(config, repo_root=REPO_ROOT, base_url=args.base_url, skip_pr=args.skip_pr)
 
 
 if __name__ == "__main__":

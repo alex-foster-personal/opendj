@@ -17,7 +17,8 @@ const LIBRARY_BROWSER_PREFS = {
 	library_density: ['setLibraryDensity', 'cosy'],
 	next_only_filter: ['setNextOnlyFilter', true],
 	remixes_filter: ['setRemixesFilter', true],
-	vocals_filter: ['setVocalsFilter', true]
+	vocals_filter: ['setVocalsFilter', true],
+	available_offline_filter: ['setAvailableOfflineFilter', true]
 };
 
 const UI_PREFS_PY = readFileSync(join(WEBUI_ROOT, 'server/routes/ui_prefs.py'), 'utf8');
@@ -97,7 +98,12 @@ test('library-browser keys exist on the HTTP route, DiskPrefsPatch, and setter d
 	for (const [key, [setter]] of Object.entries(LIBRARY_BROWSER_PREFS)) {
 		assert.match(UI_PREFS_PY, new RegExp(`"${key}"`), `ui_prefs.py must serve ${key}`);
 		assert.match(PREFS_HYDRATE, new RegExp(`\\b${key}\\b`), `DiskPrefsPatch must include ${key}`);
-		if (key === 'next_only_filter' || key === 'remixes_filter' || key === 'vocals_filter') {
+		if (
+			key === 'next_only_filter' ||
+			key === 'remixes_filter' ||
+			key === 'vocals_filter' ||
+			key === 'available_offline_filter'
+		) {
 			assert.match(
 				LIBRARY_FILTER_PREFS,
 				new RegExp(`syncDiskPrefs\\(\\{ \\[key\\]: next \\}`),

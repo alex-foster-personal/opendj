@@ -110,12 +110,27 @@ def _batched(
         yield chunk
 
 
+def _fetch_hub_digest(channel: HubTransport, machine_id: str) -> protocol.SyncDigest:
+    """``GET /digest``: the hub's per-table digests and the ``seq`` they describe.
+
+    The hub reads both in one transaction, so the pair names one hub state.
+    """
+    return protocol.SyncDigest.from_wire(
+        channel.get(
+            f"{API_PREFIX}/digest",
+            {"machine_id": machine_id, "capabilities": list(capabilities.THIS_BUILD)},
+        )
+    )
+
+
 @contextmanager
-def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
+def _transaction(conn: sqlite3.Connection, *, immediate: bool = False) -> Iterator[None]:
     """One explicit transaction. A multi-table READ needs one too, so the
     digest describes a single snapshot rather than several (ADR 08 point 6b).
+    ``immediate`` takes the write lock up front, for a decision that must not
+    see a local write land between reading the state and changing it.
     """
-    conn.execute("BEGIN")
+    conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
     try:
         yield
     except Exception:

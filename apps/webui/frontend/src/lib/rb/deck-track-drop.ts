@@ -1,4 +1,5 @@
 import type { DeckId } from './deck-slots';
+import { noteRecentDeck } from '$lib/rb/recent-deck';
 import { trackDragRefusal, type DraggableRow } from './track-drag-refusal';
 
 type DeckLoadCommand =
@@ -21,6 +22,7 @@ export async function applyDeckTrackDrop(args: {
 		}
 	}
 	try {
+		noteRecentDeck(args.deckId);
 		if (args.occupied) {
 			await args.dispatch({ type: 'unload', deck: args.deckId });
 		}

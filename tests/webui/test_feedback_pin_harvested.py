@@ -47,7 +47,7 @@ def _pin(client: TestClient, text: str = "pin") -> dict:
 
 @pytest.mark.requirement("FB-15")
 def test_bulk_harvest_marks_harvested_not_cleared(fb: TestClient) -> None:
-    """[if] bulk archive runs [then] pins stay in comments.json harvested, [else stop]."""
+    """[if] bulk archive runs [then] pins stay open on the live board, [else stop]."""
     pin = _pin(fb)
     r = fb.post("/api/v1/feedback/archive")
     assert r.status_code == 200, r.text
@@ -56,8 +56,8 @@ def test_bulk_harvest_marks_harvested_not_cleared(fb: TestClient) -> None:
     live = fb.get("/api/v1/feedback/comments").json()["comments"]
     assert len(live) == 1
     assert live[0]["id"] == pin["id"]
-    assert live[0]["status"] == "harvested"
-    assert live[0]["harvested_at"]
+    assert live[0]["status"] == pin["status"]
+    assert live[0]["agent_snapshot_at"]
 
 
 @pytest.mark.requirement("FB-15")
@@ -78,8 +78,11 @@ def test_second_harvest_is_idempotent(fb: TestClient) -> None:
 @pytest.mark.requirement("FB-15")
 def test_state_harvested_filter(fb: TestClient) -> None:
     """[if] state=harvested [then] only harvested pins return, [else stop]."""
-    _pin(fb, "one")
-    fb.post("/api/v1/feedback/archive")
+    pin = _pin(fb, "one")
+    comments_path = fb.data_dir / "feedback" / "comments.json"  # type: ignore[attr-defined]
+    payload = json.loads(comments_path.read_text(encoding="utf-8"))
+    payload["comments"][0]["status"] = "harvested"
+    comments_path.write_text(json.dumps(payload), encoding="utf-8")
 
     harvested = fb.get("/api/v1/feedback/comments", params={"state": "harvested"}).json()
     assert len(harvested["comments"]) == 1

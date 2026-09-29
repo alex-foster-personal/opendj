@@ -108,13 +108,20 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
         row for row in campaign_runs
         if row.get("workflowName") in campaign["expected_workflows"] and row.get("status") == "completed"  # noqa: E501
     ]
+    # The cost guard is a scheduled batch pass (Tue 22 Sep 2026, #2196): one
+    # pass prices every watched completion since the previous pass, so coverage
+    # is complete once a guard pass has COMPLETED that STARTED after the last
+    # monitored completion, not once there is one guard run per monitored run.
     guard_runs = [row for row in campaign_runs if row.get("workflowName") == "CI Cost Guard"]
     guard_completed = [row for row in guard_runs if row.get("status") == "completed"]
-    guard_coverage_complete = len(guard_completed) >= len(monitored_completed)
+    last_monitored = max((row.get("updatedAt") or "" for row in monitored_completed), default="")
+    guard_coverage_complete = any(
+        (row.get("createdAt") or "") > last_monitored for row in guard_completed
+    )
     if direct_complete and not guard_coverage_complete:
         anomalies.append(
-            "Cost Guard coverage incomplete: "
-            f"{len(guard_completed)} completed guard runs for {len(monitored_completed)} completed monitored runs"  # noqa: E501
+            "Cost Guard coverage incomplete: no completed guard pass started after the "
+            f"last monitored completion at {last_monitored or 'unknown'}"
         )
     complete = direct_complete and guard_coverage_complete
     run_rows = []

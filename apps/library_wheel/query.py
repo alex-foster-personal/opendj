@@ -170,7 +170,8 @@ def _load_playlist_counts(state: sqlite3.Connection) -> dict[str, int]:
 def _load_genre_and_play_count(
     master: sqlite3.Connection, vendor_ids: list[str]
 ) -> dict[str, tuple[str | None, int]]:
-    """vendor_id -> (raw genre tag, DJPlayCount). Same join bulk_rb_meta uses."""
+    """vendor_id -> (raw genre tag, DJPlayCount). Same join bulk_rb_meta uses,
+    including the unary + that keeps the ID key in the plan (LIBM-130)."""
     out: dict[str, tuple[str | None, int]] = {}
     for chunk in _chunked(sorted(set(vendor_ids))):
         placeholders = ",".join("?" * len(chunk))
@@ -179,7 +180,7 @@ def _load_genre_and_play_count(
             SELECT c.ID AS vendor_id, g.Name AS genre, c.DJPlayCount AS play_count
             FROM djmdContent c
             LEFT JOIN djmdGenre g ON g.ID = c.GenreID AND g.rb_local_deleted = 0
-            WHERE c.ID IN ({placeholders}) AND c.rb_local_deleted = 0
+            WHERE c.ID IN ({placeholders}) AND +c.rb_local_deleted = 0
             """,
             chunk,
         ).fetchall()

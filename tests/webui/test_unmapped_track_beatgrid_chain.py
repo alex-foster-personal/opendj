@@ -186,9 +186,13 @@ def test_anlz_serves_an_empty_grid_rather_than_analysis_not_found(
     # (NATIVE-01, PR #1587): a consumer must never infer the producer. An
     # unmapped file has no rekordbox grid, but this IS the rekordbox branch
     # and "rekordbox with no beats" is what the empty arrays already say.
-    assert body["beatgrid"] == {
-        "source": "rekordbox", "beat_count": 0, "beats": []
-    }
+    # STANDALONE-06: unmapped libraries default beatgrid source to own. This
+    # fixture's legacy librosa row is not a canonical own beatgrid lane, so the
+    # honest own answer is `missing`, not a rekordbox-labelled empty grid.
+    grid = body["beatgrid"]
+    assert body["beatgrid_source"] == "own"
+    assert grid["source"] == "own"
+    assert grid["status"] == "missing"
 
 
 @pytest.mark.requires_ffmpeg

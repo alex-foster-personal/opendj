@@ -28,6 +28,21 @@ from scripts.ci_cost_guard import infer_standard_sku
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
+
+
+def guard_job() -> dict:
+    """The guard's one job. Its `env` carries the watch list and the E2E rule."""
+    return yaml.safe_load(GUARD.read_text())["jobs"]["assess"]
+
+
+def guard_watched() -> set[str]:
+    """The workflows the batch pass prices, from WATCHED_WORKFLOWS on the job."""
+    return {name.strip() for name in guard_job()["env"]["WATCHED_WORKFLOWS"].split(",")}
+
+
+def guard_e2e_priced_events() -> set[str]:
+    """The events E2E is priced on, from E2E_PRICED_EVENTS on the job."""
+    return {name.strip() for name in guard_job()["env"]["E2E_PRICED_EVENTS"].split(",")}
 MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
 MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
@@ -82,6 +97,18 @@ MAIN_FIX_RUNNER_GUARD_PREFIX = (
     "(github.event_name == 'pull_request' && "
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
     "&& vars.CI_RUNS_ON_MAIN_FIX"
+)
+#: The guarded CI_RUNS_ON_TRUNK disjuncts (ADR-NEW-trunk-ci-runs-on-agentbox-hosts-only):
+#: ci.yml job `test` (main push or trunk-repair PR) and job `fast` (trunk-repair PR). Both
+#: select a self-hosted pool, so like the main-fix guard they price at the hosted fallback.
+TRUNK_RUNNER_GUARD_PREFIXES = (
+    "((github.event_name == 'push' && github.ref == 'refs/heads/main') || "
+    "(github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))) "
+    "&& vars.CI_RUNS_ON_TRUNK",
+    "(github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
+    "&& vars.CI_RUNS_ON_TRUNK",
 )
 _JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")
 _VARS_DISJUNCT = re.compile(r"^vars\.[A-Z0-9_]+$")
@@ -155,12 +182,12 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
     )
     for disjunct in disjuncts[:-1]:
         trimmed = disjunct.strip()
-        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX:
+        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX or trimmed in TRUNK_RUNNER_GUARD_PREFIXES:
             continue
         assert _VARS_DISJUNCT.fullmatch(trimmed), (
             f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
             f"price: disjunct {disjunct!r} is neither vars.* nor the ADR-0041 "
-            "main-fix guard prefix"
+            "main-fix guard prefix nor a CI_RUNS_ON_TRUNK guard prefix"
         )
     fallback = json.loads(literal_match.group(1))
     return [fallback] if isinstance(fallback, str) else list(fallback)
@@ -337,25 +364,6 @@ def event_set(condition: str, variable: str) -> set[str]:
     return events
 
 
-def e2e_priced_events(condition: str) -> set[str]:
-    """The events the guard prices FOR E2E, read from its `assess` gate.
-
-    The gate opens with `github.event.workflow_run.name != \'E2E\'`, which is
-    the escape hatch for every other workflow and is what makes the remaining
-    disjuncts E2E-specific. That one clause is matched exactly and removed;
-    everything after it goes through the strict parser above, so a fourth
-    disjunct of any other shape reddens this rather than being skipped.
-    """
-    stripped = re.sub(r"\s+", " ", condition).strip()
-    escape = "github.event.workflow_run.name != 'E2E'"
-    head, sep, tail = stripped.partition("||")
-    assert head.strip() == escape and sep, (
-        f"the guard's gate no longer opens with {escape!r}, so which of its "
-        f"clauses are E2E-specific can no longer be read: {condition}"
-    )
-    return event_set(tail, "github.event.workflow_run.event")
-
-
 def e2e_ceiling_on(event: str, doc: dict) -> float:
     """What an E2E run triggered by `event` can cost at worst.
 
@@ -372,6 +380,6 @@ def e2e_ceiling_on(event: str, doc: dict) -> float:
 
 
 def guard_threshold() -> float:
-    match = re.search(r"--threshold\s+([0-9.]+)", GUARD.read_text())
+    match = re.search(r"THRESHOLD_USD:\s*\"([0-9.]+)\"", GUARD.read_text())
     assert match, "the guard no longer passes --threshold; this reader cannot measure"
     return float(match.group(1))

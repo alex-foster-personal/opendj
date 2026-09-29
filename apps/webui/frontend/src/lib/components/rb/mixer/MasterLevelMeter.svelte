@@ -4,11 +4,11 @@
 	 *
 	 * Pin 5a5c3b8033d8's still-open half. PR #1062 already shipped the
 	 * ten-segment green/amber/red no-gradient CHANNEL meters
-	 * (`ChannelLevelMeter.svelte`), which tap post-EQ, pre-fader per the DJM
-	 * convention -- so they deliberately do NOT move with the master volume
-	 * control. the maintainer's "red = speakers might be damaged - so overall volume
-	 * effects them" is about the MASTER bus, which is what this component
-	 * reads.
+	 * (`ChannelLevelMeter.svelte`), which tap post-trim, post-EQ, and
+	 * post-channel-fader (issue #3529) -- so they track each deck's channel
+	 * fader, not the master volume control. the maintainer's "red = speakers might be
+	 * damaged - so overall volume effects them" is about the MASTER bus,
+	 * which is what this component reads.
 	 *
 	 * NOT factored into a shared component with ChannelLevelMeter, on purpose:
 	 * that component's markup and thresholds are pinned VERBATIM by

@@ -173,6 +173,7 @@ def client(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestClient]:
 
 # ----- /auto-cues -------------------------------------------------------------
 
+# REQ: DECKUX-15
 @pytest.mark.requirement("META-04")
 def test_auto_cues_contract_shape(client: TestClient) -> None:
     r = client.get(f"/api/v1/tracks/{SID_FULL}/auto-cues")

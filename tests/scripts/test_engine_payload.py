@@ -22,6 +22,7 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -45,10 +46,12 @@ from scripts.build_engine_payload import (
     parse_locked_export,
     parse_otool,
     prune_excluded,
+    scan_runtime_loaded_libraries,
     sha256_tree,
     skip_output_tree,
     sole_stretch_asset,
     sole_waveform_wheel,
+    stale_line_classifications,
 )
 from scripts.desktop_lane_config import LaneLabelError, validate_label
 
@@ -311,6 +314,171 @@ def test_a_dynamic_argument_is_still_required_to_be_classified() -> None:
     )
     _, unclassified = classify_runtime_load_sites([unknown, known])
     assert unclassified == [unknown]
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_allowlist_matches_site_key_for_dynamic_path_line_entries() -> None:
+    """[if] dynamic site key is path:line [then] allowlist lookup classifies it."""
+    site = RuntimeLoadSite(
+        path="pylib/torch/_ops.py",
+        line=1516,
+        call="CDLL",
+        library=None,
+        source="ctypes.CDLL(path)",
+    )
+    classified, unclassified = classify_runtime_load_sites([site])
+    assert unclassified == []
+    assert "payload-relative" in classified[site.describe()]
+
+
+def _ops_site(line: int) -> RuntimeLoadSite:
+    return RuntimeLoadSite(
+        path="pylib/torch/_ops.py",
+        line=line,
+        call="CDLL",
+        library=None,
+        source="ctypes.CDLL(path)",
+    )
+
+
+def _ship_ops_file(payload_dir: Path) -> None:
+    target = payload_dir / "pylib" / "torch" / "_ops.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("# no load site on any keyed line\n", encoding="utf-8")
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_a_line_entry_whose_shipped_file_moved_on_is_stale(tmp_path: Path) -> None:
+    """[if] torch ships but its keyed line holds no site [then] the entry is stale."""
+    _ship_ops_file(tmp_path)
+    assert "pylib/torch/_ops.py:1516" in stale_line_classifications([], tmp_path)
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_a_line_entry_whose_site_is_present_is_not_stale(tmp_path: Path) -> None:
+    """[if] the keyed line still holds its site [then] the entry is live, else every build fails."""
+    _ship_ops_file(tmp_path)
+    assert "pylib/torch/_ops.py:1516" not in stale_line_classifications(
+        [_ops_site(1516)], tmp_path
+    )
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_a_line_entry_for_a_file_the_payload_lacks_is_not_stale(tmp_path: Path) -> None:
+    """[if] the dependency is absent from this build [then] its entries are not stale."""
+    assert stale_line_classifications([], tmp_path) == []
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_the_scan_fails_on_a_stale_line_entry(tmp_path: Path) -> None:
+    """[if] a shipped file's keyed line moved [then] the payload build fails naming the entry."""
+    _ship_ops_file(tmp_path)
+    with pytest.raises(PayloadBuildError) as excinfo:
+        scan_runtime_loaded_libraries(tmp_path)
+    assert "stale RUNTIME_LOAD_ALLOWLIST entries" in str(excinfo.value)
+    assert "pylib/torch/_ops.py:1516" in str(excinfo.value)
+
+
+@pytest.mark.requirement("INSTALL-11")
+@pytest.mark.parametrize(
+    "library,keyword",
+    [
+        ("kernel32", "Windows"),
+        ("kernel32.dll", "win32"),
+        ("vcruntime140.dll", "Windows"),
+        ("msvcp140.dll", "Windows"),
+        ("vcruntime140_1.dll", "Windows"),
+        ("libc.so", "Linux"),
+        ("/usr/lib64/libgomp.so.1", "Linux"),
+        ("libnvidia-ml.so.1", "CUDA"),
+        ("__lib_path__", "darwin"),
+    ],
+)
+def test_torch_filelock_literal_runtime_loads_are_classified(
+    library: str, keyword: str
+) -> None:
+    """[if] torch/filelock literal is unclassified [then] dmg payload guard fails."""
+    site = RuntimeLoadSite(
+        path="pylib/torch/example.py",
+        line=1,
+        call="CDLL",
+        library=library,
+        source=f'CDLL("{library}")',
+    )
+    classified, unclassified = classify_runtime_load_sites([site])
+    assert unclassified == []
+    assert keyword in classified[site.describe()]
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_filelock_cdll_none_is_classified() -> None:
+    """[if] filelock CDLL(None) is unclassified [then] dmg payload guard fails."""
+    site = RuntimeLoadSite(
+        path="pylib/filelock/_identity.py",
+        line=162,
+        call="CDLL",
+        library=None,
+        source="_LIBC: Final[ctypes.CDLL] = ctypes.CDLL(None, use_errno=True)",
+    )
+    classified, unclassified = classify_runtime_load_sites([site])
+    assert unclassified == []
+    assert "dlopen(NULL)" in classified[site.describe()]
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_an_unlisted_torch_runtime_load_still_fails() -> None:
+    """[if] a new torch ctypes site is unlisted [then] guard still fails closed."""
+    site = RuntimeLoadSite(
+        path="pylib/torch/_future_probe.py",
+        line=1,
+        call="CDLL",
+        library="unknown_cuda_thing",
+        source='CDLL("unknown_cuda_thing")',
+    )
+    classified, unclassified = classify_runtime_load_sites([site])
+    assert classified == {}
+    assert unclassified == [site]
+
+
+@pytest.mark.requirement("INSTALL-11")
+def test_all_torch_filelock_runtime_sites_in_installed_wheel_are_classified(
+    tmp_path: Path,
+) -> None:
+    """[if] any torch/filelock site in the wheel stays unclassified [then] guard fails."""
+    try:
+        import filelock
+        import torch
+    except ImportError:
+        pytest.skip("torch/filelock not installed; sync --extra vocals to run")
+
+    payload_dir = tmp_path / "payload"
+    pylib = payload_dir / "pylib"
+    pylib.mkdir(parents=True)
+
+    torch_src = Path(torch.__file__).parent
+    filelock_src = Path(filelock.__file__).parent
+    rel_paths = [
+        "filelock/_identity.py",
+        "torch/__init__.py",
+        "torch/_inductor/codecache.py",
+        "torch/_inductor/cpp_builder.py",
+        "torch/_inductor/cpu_vec_isa.py",
+        "torch/_ops.py",
+        "torch/cuda/__init__.py",
+        "torch/cuda/memory.py",
+    ]
+    for rel in rel_paths:
+        src = filelock_src / rel.split("/", 1)[1] if rel.startswith("filelock") else torch_src / rel.split("/", 1)[1]
+        dst = pylib / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    sites = find_runtime_load_sites(payload_dir, payload_dir)
+    _, unclassified = classify_runtime_load_sites(sites)
+    assert unclassified == [], (
+        "unclassified torch/filelock sites:\n"
+        + "\n".join(f"  {s.describe()}" for s in unclassified)
+    )
 
 
 # ----- dependency exclusions ---------------------------------------------

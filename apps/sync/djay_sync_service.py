@@ -19,16 +19,10 @@ from apps.shared.rekordbox_writeback import (
     writeback_enabled,
 )
 from apps.sync.playlist_apply import PlaylistApplyError, _load_plan
-from apps.sync.playlist_diff import (
-    DEFAULT_MATCHES,
-    MAX_OPS_BEFORE_ABORT,
-    generate_plan,
-    write_diff_md,
-    write_patch_csv,
-    write_plan_json,
-)
 
 SYNC_DIR = paths.DATA_DIR / "sync"
+DEFAULT_MATCHES = SYNC_DIR / "matches.csv"
+MAX_OPS_BEFORE_ABORT = 10_000
 DEFAULT_PLAN_PATH = SYNC_DIR / "playlist-plan.json"
 HTTP_PLAYLIST_APPLY_SURFACE = "http.rb_djay_sync.playlists.apply"
 HTTP_ANALYSIS_APPLY_SURFACE = "http.rb_djay_sync.analysis.apply"
@@ -162,6 +156,13 @@ def run_playlist_plan(
     max_ops: int = MAX_OPS_BEFORE_ABORT,
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
+    from apps.sync.playlist_diff import (
+        generate_plan,
+        write_diff_md,
+        write_patch_csv,
+        write_plan_json,
+    )
+
     resolved_matches = matches_path or DEFAULT_MATCHES
     if not resolved_matches.exists():
         raise RbDjaySyncError(

@@ -18,17 +18,24 @@ over from :mod:`apps.shared.state.normalize_stamps`.
 What it does, per natural key
 -----------------------------
 The logical identity of a row is
-``(stable_id, machine_id, kind, file_path)`` for a local row and
-``(stable_id, machine_id, kind, remote_url)`` for a remote one -- exactly the
-two partial UNIQUE indexes (schema v6). This pass groups rows by that key
-AFTER NFC-normalizing the path, so an NFD row and its NFC twin land in one
-group, and:
+``(stable_id, machine_id, kind, file_path)`` and
+``(stable_id, machine_id, kind, remote_url)`` -- exactly the two partial
+UNIQUE indexes (schema v6), each in force on its own wherever its columns are
+all non-NULL (``apps.sync_hub.protocol_common.NATURAL_KEYS``). This pass
+groups rows that share EITHER key AFTER NFC-normalizing the path and URL, so
+an NFD row and its NFC twin land in one group even when their other column
+differs, and:
 
 * **a lone NFD row** (no twin) has its stored path rewritten to NFC in place;
 * **an NFD row plus its NFC twin** collapse to ONE row -- the last-writer-wins
   winner survives (``(updated_at, origin_device_id)``, the same comparison
   ``apps.sync_hub.protocol.lww_key`` makes), the loser is hard-deleted, and
-  the survivor's path is stored NFC.
+  the survivor's path is stored NFC;
+* **a collision chain** (two rows joined only through a third, e.g. one
+  shares the path, the other the URL) is left alone and reported: the hub
+  resolved it row by row as the rows arrived, so its survivors depend on
+  that order, which nothing here records. Only a group whose rows ALL
+  collide pairwise ends with the LWW newest alone in every order.
 
 The loser is hard-deleted, not tombstoned, for the reason
 ``apps.sync_hub.engine_apply._drop_superseded`` gives: a partial UNIQUE index cannot
@@ -54,6 +61,7 @@ Usage (nothing happens without ``--live``)::
 from __future__ import annotations
 
 import argparse
+import itertools
 import sqlite3
 import sys
 import unicodedata
@@ -126,18 +134,24 @@ class LocationRow:
         )
 
     @property
-    def normalized_key(self) -> tuple[str | None, str, str, str | None, str | None]:
-        """The natural key with its path/URL NFC-normalized.
+    def normalized_keys(self) -> tuple[tuple[str, ...], ...]:
+        """Each natural key this row holds, its path or URL NFC-normalized.
 
-        Two spellings of one file share this key; that is what puts an NFD row
+        One per partial UNIQUE index whose columns are all non-NULL, as
+        ``apps.sync_hub.protocol_common.natural_keys`` reads them: SQLite
+        treats NULLs as distinct, so a NULL ``machine_id`` holds neither.
+        Two spellings of one file share a key; that is what puts an NFD row
         and its NFC twin in one group.
         """
-        return (
-            self.machine_id,
-            self.stable_id,
-            self.kind,
-            _nfc(self.file_path),
-            _nfc(self.remote_url),
+        if self.machine_id is None:
+            return ()
+        return tuple(
+            (column, self.stable_id, self.machine_id, self.kind, normalized)
+            for column, normalized in (
+                ("file_path", _nfc(self.file_path)),
+                ("remote_url", _nfc(self.remote_url)),
+            )
+            if normalized is not None
         )
 
 
@@ -200,8 +214,8 @@ def _read_rows(conn: sqlite3.Connection) -> list[LocationRow]:
 
 def _repairable_groups(
     conn: sqlite3.Connection,
-) -> tuple[list[list[LocationRow]], list[list[LocationRow]]]:
-    """Groups needing repair, split into (orderable, quarantined).
+) -> tuple[list[list[LocationRow]], list[list[LocationRow]], list[list[LocationRow]]]:
+    """Groups needing repair, split into (orderable, quarantined, chains).
 
     A group is quarantined when ANY member's stored stamp cannot be ordered.
     Not "the faulted member is dropped from the comparison": this pass picks
@@ -209,23 +223,56 @@ def _repairable_groups(
     one of its members can delete the row carrying the most recent edit. File
     identity would survive (the rows are NFD/NFC twins of one path); edit
     provenance would not, and nothing anywhere would record that it had gone.
+    A chain is held for the reason :func:`collision_chains` gives.
     """
     if not _table_exists(conn, LOCATIONS_TABLE):
-        return [], []
-    groups: dict[tuple[str | None, str, str, str | None, str | None], list[LocationRow]]
-    groups = defaultdict(list)
-    for row in _read_rows(conn):
-        groups[row.normalized_key].append(row)
+        return [], [], []
     repairable: list[list[LocationRow]] = []
     quarantined: list[list[LocationRow]] = []
-    for members in groups.values():
+    chains: list[list[LocationRow]] = []
+    for members in _colliding_groups(_read_rows(conn)):
         if not (len(members) > 1 or any(not m.stored_is_nfc for m in members)):
             continue
-        if all(member.is_orderable for member in members):
-            repairable.append(members)
-        else:
+        if not all(member.is_orderable for member in members):
             quarantined.append(members)
-    return repairable, quarantined
+        elif not _all_collide_pairwise(members):
+            chains.append(members)
+        else:
+            repairable.append(members)
+    return repairable, quarantined, chains
+
+
+def _all_collide_pairwise(members: list[LocationRow]) -> bool:
+    return all(
+        set(first.normalized_keys) & set(second.normalized_keys)
+        for first, second in itertools.combinations(members, 2)
+    )
+
+
+def _colliding_groups(rows: list[LocationRow]) -> list[list[LocationRow]]:
+    """Rows joined by any shared normalized natural key, transitively.
+
+    Union-find over :attr:`LocationRow.normalized_keys`: a row carrying a
+    path and a URL can collide with one row on each, and all three must be
+    decided together.
+    """
+    parent = list(range(len(rows)))
+    first_holder: dict[tuple[str, ...], int] = {}
+    for index, row in enumerate(rows):
+        for key in row.normalized_keys:
+            holder = first_holder.setdefault(key, index)
+            parent[_root(parent, index)] = _root(parent, holder)
+    groups: dict[int, list[LocationRow]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        groups[_root(parent, index)].append(row)
+    return list(groups.values())
+
+
+def _root(parent: list[int], index: int) -> int:
+    while parent[index] != index:
+        parent[index] = parent[parent[index]]
+        index = parent[index]
+    return index
 
 
 def quarantined_groups(conn: sqlite3.Connection) -> list[list[LocationRow]]:
@@ -240,23 +287,51 @@ def quarantined_groups(conn: sqlite3.Connection) -> list[list[LocationRow]]:
     return _repairable_groups(conn)[1]
 
 
+def collision_chains(conn: sqlite3.Connection) -> list[list[LocationRow]]:
+    """Groups joined only through a third row, which this pass REFUSES to collapse.
+
+    The hub decided such a group row by row as the rows arrived: ``C``,
+    ``B``, ``A`` can leave ``A`` alone where ``A`` first leaves ``A`` and
+    ``C``. Nothing records that order, so any local rule is a guess that
+    either deletes a row the hub kept or keeps one it dropped, and the
+    digest stays divergent with no row to say why. Left alone, the group
+    stays divergent too, but named: settling it needs the hub's rows
+    (``GET /rows?table=track_locations``) and a human decision.
+    """
+    return _repairable_groups(conn)[2]
+
+
+def _lww_winner(members: list[LocationRow]) -> LocationRow:
+    """The newest stamp; an exact stamp tie keeps the SMALLER ``location_id``.
+
+    The tie rule is the one ``apps.sync_hub.engine_apply._duplicate_incoming_wins``
+    applies to the same two rows, so this spoke elects the survivor the hub
+    already kept. ``max`` alone would keep whichever tied row SQLite returned
+    first, delete the hub's survivor, and re-offer the row the hub dropped.
+    """
+    newest = max(member.lww_key for member in members)
+    return min(
+        (member for member in members if member.lww_key == newest),
+        key=lambda member: member.location_id,
+    )
+
+
 def scan(conn: sqlite3.Connection) -> list[Collapse]:
     """Every natural key holding a non-NFC path, or a duplicate to collapse.
 
     A table missing from the DB is skipped rather than raising, matching
     :func:`apps.shared.state.normalize_stamps.scan`: this pass runs against
     legacy files. A group holding an unorderable stored stamp is NOT here --
-    it is reported by :func:`quarantined_groups` instead.
+    it is reported by :func:`quarantined_groups` instead, and a collision
+    chain by :func:`collision_chains`.
     """
-    repairable, _quarantined = _repairable_groups(conn)
     collapses: list[Collapse] = []
-    for members in repairable:
-        winner = max(members, key=lambda m: m.lww_key)
-        losers = tuple(m for m in members if m.location_id != winner.location_id)
+    for members in _repairable_groups(conn)[0]:
+        winner = _lww_winner(members)
         collapses.append(
             Collapse(
                 winner=winner,
-                losers=losers,
+                losers=tuple(m for m in members if m.location_id != winner.location_id),
                 nfc_file_path=_nfc(winner.file_path),
                 nfc_remote_url=_nfc(winner.remote_url),
             )
@@ -277,52 +352,72 @@ def apply_collapses(conn: sqlite3.Connection, collapses: list[Collapse]) -> int:
     if not collapses:
         return 0
     with sync_stamp.stamped_transaction(conn):
-        received_at = sync_stamp.canonical_now()
-        for collapse in collapses:
-            for loser in collapse.losers:
-                conn.execute(
-                    f"DELETE FROM {LOCATIONS_TABLE} WHERE location_id = ?",
-                    (loser.location_id,),
-                )
-                loser_pk = sync_stamp.encode_row_pk((loser.location_id,))
-                for changelog in CHANGELOG_TABLES:
-                    conn.execute(
-                        f"DELETE FROM {changelog} "
-                        f"WHERE table_name = ? AND row_pk = ?",
-                        (LOCATIONS_TABLE, loser_pk),
-                    )
-            conn.execute(
-                f"UPDATE {LOCATIONS_TABLE} SET file_path = ?, remote_url = ? "
-                f"WHERE location_id = ?",
-                (
-                    collapse.nfc_file_path,
-                    collapse.nfc_remote_url,
-                    collapse.winner.location_id,
-                ),
-            )
-            conn.execute(
-                f"INSERT INTO {sync_stamp.LOCAL_CHANGELOG_TABLE}("
-                "table_name, row_pk, updated_at, origin_device_id, received_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    LOCATIONS_TABLE,
-                    sync_stamp.encode_row_pk((collapse.winner.location_id,)),
-                    # VERBATIM (round 5). Nothing orders
-                    # local_changelog.updated_at -- the push fence reads
-                    # (seq, table_name, row_pk) -- so the honest value is the
-                    # row's own. A NULL has no verbatim value and the column
-                    # is NOT NULL, so it takes the storable floor.
-                    (
-                        sync_stamp.FLOOR_STAMP
-                        if collapse.winner.updated_at is None
-                        else collapse.winner.updated_at
-                    ),
-                    collapse.winner.origin_device_id or "",
-                    received_at,
-                ),
-            )
+        _collapse_in_transaction(conn, collapses)
     return len(collapses)
 
+
+def collapse_all(conn: sqlite3.Connection) -> list[Collapse]:
+    """Scan AND collapse under one write lock; returns what was collapsed.
+
+    :func:`scan` then :func:`apply_collapses` leaves a gap: a writer that
+    commits a newer stamp onto a planned loser between the two has its edit
+    hard-deleted on a decision made before it existed. ``BEGIN IMMEDIATE``
+    takes the write lock before the rows are read, so the winner is elected
+    over exactly the rows the delete sees. The automatic pre-offer repair in
+    ``apps.sync_hub.client_recovery`` runs this, not the two-step form.
+    """
+    with sync_stamp.stamped_transaction(conn):
+        collapses = scan(conn)
+        _collapse_in_transaction(conn, collapses)
+    return collapses
+
+
+def _collapse_in_transaction(conn: sqlite3.Connection, collapses: list[Collapse]) -> None:
+    """The deletes and rewrites of :func:`apply_collapses`; caller holds the lock."""
+    received_at = sync_stamp.canonical_now()
+    for collapse in collapses:
+        for loser in collapse.losers:
+            conn.execute(
+                f"DELETE FROM {LOCATIONS_TABLE} WHERE location_id = ?",
+                (loser.location_id,),
+            )
+            loser_pk = sync_stamp.encode_row_pk((loser.location_id,))
+            for changelog in CHANGELOG_TABLES:
+                conn.execute(
+                    f"DELETE FROM {changelog} "
+                    f"WHERE table_name = ? AND row_pk = ?",
+                    (LOCATIONS_TABLE, loser_pk),
+                )
+        conn.execute(
+            f"UPDATE {LOCATIONS_TABLE} SET file_path = ?, remote_url = ? "
+            f"WHERE location_id = ?",
+            (
+                collapse.nfc_file_path,
+                collapse.nfc_remote_url,
+                collapse.winner.location_id,
+            ),
+        )
+        conn.execute(
+            f"INSERT INTO {sync_stamp.LOCAL_CHANGELOG_TABLE}("
+            "table_name, row_pk, updated_at, origin_device_id, received_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                LOCATIONS_TABLE,
+                sync_stamp.encode_row_pk((collapse.winner.location_id,)),
+                # VERBATIM (round 5). Nothing orders
+                # local_changelog.updated_at -- the push fence reads
+                # (seq, table_name, row_pk) -- so the honest value is the
+                # row's own. A NULL has no verbatim value and the column
+                # is NOT NULL, so it takes the storable floor.
+                (
+                    sync_stamp.FLOOR_STAMP
+                    if collapse.winner.updated_at is None
+                    else collapse.winner.updated_at
+                ),
+                collapse.winner.origin_device_id or "",
+                received_at,
+            ),
+        )
 
 def state_db_path(data_dir: Path) -> Path:
     """``<data-dir>/state/state.db`` -- the layout spec D1 fixes."""
@@ -352,7 +447,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 #: Exit code when the safe repairs ran but some group could not be touched
-#: because a member's stored stamp is unorderable. NOT 0: a partial repair
+#: because a member's stored stamp is unorderable, or because it is a collision
+#: chain (:func:`collision_chains`). NOT 0: a partial repair
 #: reported as success is the "clean binary answer for a case that should be
 #: messy" .claude/rules/verification.md names, and the operator has one more
 #: command to run before this pass can finish its job.
@@ -378,6 +474,23 @@ def _report_quarantined(groups: list[list[LocationRow]]) -> None:
     )
 
 
+def _report_chains(groups: list[list[LocationRow]]) -> None:
+    for members in groups:
+        first = members[0]
+        print(
+            f"[CHAIN] {LOCATIONS_TABLE} {first.machine_id}/{first.stable_id}/"
+            f"{first.kind}: " + ", ".join(m.location_id for m in members)
+            + " collide only through one another; not collapsed",
+            file=sys.stderr,
+        )
+    print(
+        f"[WARN] {len(groups)} collision chain(s) skipped: their survivors depend "
+        f"on the order the hub received them. Compare with the hub's rows and "
+        f"delete the ones it does not hold",
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     target = state_db_path(args.data_dir)
@@ -388,26 +501,30 @@ def main(argv: list[str] | None = None) -> int:
     try:
         collapses = scan(conn)
         held_back = quarantined_groups(conn)
+        chains = collision_chains(conn)
         for collapse in collapses:
             print(collapse.describe())
         if held_back:
             _report_quarantined(held_back)
+        if chains:
+            _report_chains(chains)
+        unfinished = EXIT_QUARANTINED if held_back or chains else 0
         if not collapses:
             print("[OK] every track_locations path is NFC; nothing to do")
-            return EXIT_QUARANTINED if held_back else 0
+            return unfinished
         dropped = sum(len(c.losers) for c in collapses)
         if args.dry_run:
             print(
                 f"[DRY-RUN] {len(collapses)} natural key(s) would be repaired "
                 f"({dropped} duplicate row(s) dropped)"
             )
-            return EXIT_QUARANTINED if held_back else 0
+            return unfinished
         repaired = apply_collapses(conn, collapses)
         print(
             f"[OK] repaired {repaired} natural key(s), dropped {dropped} "
             f"duplicate row(s)"
         )
-        return EXIT_QUARANTINED if held_back else 0
+        return unfinished
     finally:
         conn.close()
 
@@ -419,6 +536,8 @@ __all__ = [
     "Collapse",
     "LocationRow",
     "apply_collapses",
+    "collapse_all",
+    "collision_chains",
     "main",
     "quarantined_groups",
     "scan",
