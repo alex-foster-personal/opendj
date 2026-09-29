@@ -565,13 +565,15 @@ impl Deck {
     /// A manual in/out loop, its ends snapped to the quantize grid when
     /// Quantize is on and the track has one, as the page's `setLoop` does
     /// (`quantizedLoopEndpointsMs`); exact without. Ends that snap to the
-    /// same grid point are refused, not engaged as an empty loop.
+    /// same grid point are refused, not engaged as an empty loop. An empty
+    /// deck is refused either way, a loop exit too, as the page's `setLoop`
+    /// refuses it (`_requireLoaded`) before looking at the loop.
     pub fn set_loop(&mut self, bounds_ms: Option<(f64, f64)>) -> Result<(), EngineError> {
+        self.track()?;
         let Some((in_ms, out_ms)) = bounds_ms else {
             self.clear_loop();
             return Ok(());
         };
-        self.track()?;
         if !(in_ms.is_finite() && out_ms.is_finite()) || in_ms < 0.0 || out_ms <= in_ms {
             return Err(EngineError::new(ErrorCode::Invalid, "loop needs 0 <= in_ms < out_ms"));
         }
@@ -709,7 +711,11 @@ impl Deck {
         Ok(())
     }
 
+    /// As the page's `setTempoRatio`: an empty deck is refused before the
+    /// ratio is looked at, so a tempo is never taken only for the next load
+    /// to set it back to 1.
     pub fn set_tempo(&mut self, ratio: f64) -> Result<(), EngineError> {
+        self.track()?;
         if !(ratio.is_finite() && ratio > 0.0) {
             return Err(EngineError::new(ErrorCode::Invalid, "tempo ratio must be finite and positive"));
         }
@@ -1664,6 +1670,7 @@ mod tests {
     #[test]
     fn pitch_range_refuses_a_range_the_tempo_does_not_fit() {
         let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, vec![])));
         d.set_pitch_range(16.0).unwrap();
         d.set_tempo(1.12).unwrap();
         assert!(d.set_pitch_range(8.0).is_err());
@@ -1696,11 +1703,41 @@ mod tests {
     #[test]
     fn tempo_respects_the_pitch_range() {
         let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 10.0, vec![])));
         assert!(d.set_tempo(1.16).is_ok());
         assert!(d.set_tempo(1.2).is_err());
         d.set_pitch_range(100.0).unwrap();
         assert!(d.set_tempo(1.9).is_ok());
         assert!(d.set_pitch_range(12.0).is_err());
+    }
+
+    #[test]
+    fn an_empty_deck_refuses_a_tempo_or_a_loop_exit_as_the_page_does() {
+        // Codex on b16e9fa7: a tempo on an empty deck was taken and shown,
+        // then set back to 1 by the next load. The page's `setTempoRatio`
+        // refuses it (`_requireLoaded`), before it looks at the ratio.
+        let mut d = Deck::new(48000.0);
+        for ratio in [1.05, 0.0, 1.5] {
+            assert_eq!(d.set_tempo(ratio).unwrap_err().code, ErrorCode::NoTrack, "ratio {ratio}");
+        }
+        assert_eq!(d.tempo, 1.0);
+        // The pitch range needs no track on the page, and none here.
+        d.set_pitch_range(16.0).unwrap();
+        // Control: once loaded the same tempo is taken, and a bad ratio is
+        // refused as invalid; unloaded again, it is refused again.
+        d.load(Arc::new(silent(48000, 10.0, vec![])));
+        d.set_tempo(1.05).unwrap();
+        assert_eq!(d.tempo, 1.05);
+        assert_eq!(d.set_tempo(0.0).unwrap_err().code, ErrorCode::Invalid);
+        d.unload();
+        assert_eq!(d.set_tempo(1.05).unwrap_err().code, ErrorCode::NoTrack);
+        // The same holds for a loop exit, the other command the page
+        // refuses on an empty deck that the deck took; the loop is still
+        // refused there before its bounds are looked at.
+        assert_eq!(d.set_loop(None).unwrap_err().code, ErrorCode::NoTrack);
+        assert_eq!(d.set_loop(Some((200.0, 100.0))).unwrap_err().code, ErrorCode::NoTrack);
+        d.load(Arc::new(silent(48000, 10.0, vec![])));
+        d.set_loop(None).unwrap();
     }
 
     #[test]

@@ -504,7 +504,16 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
                 },
             }
         }
-        "seek" => apply(EngineCmd::Seek { deck: deck_of(o, ty)?, position_ms: num(o, ty, "position_ms")? }),
+        "seek" => {
+            let deck = deck_of(o, ty)?;
+            // As the page's parser: a position before the track is malformed
+            // whatever is loaded, so it is refused here, not by the deck.
+            let position_ms = num(o, ty, "position_ms")?;
+            if position_ms < 0.0 {
+                return Err(invalid(format!("seek.position_ms must be >= 0, got {position_ms}")));
+            }
+            apply(EngineCmd::Seek { deck, position_ms })
+        }
         "loop" => {
             let deck = deck_of(o, ty)?;
             let bounds = match field(o, ty, "loop")? {
@@ -1203,6 +1212,23 @@ mod tests {
             let (_, c) = parse_line(&json!({"cmd": {"type": "load", "deck": 1, "path": "a.wav", key: grid}}).to_string());
             let Ok(Command::Load(spec)) = c else { panic!("{c:?}") };
             assert_eq!((spec.beats.len(), spec.beats.capacity()), (5, 5), "{key}");
+        }
+    }
+
+    #[test]
+    fn a_seek_before_the_track_is_malformed_whatever_is_loaded() {
+        // Codex on b16e9fa7: `position_ms: -1` reached the deck, which on an
+        // empty deck answered no_track, where the page's parser refuses the
+        // command itself as invalid.
+        let seek = |ms: Value| parse_command(&json!({"type": "seek", "deck": 1, "position_ms": ms}));
+        for ms in [json!(-1), json!(-0.001)] {
+            let e = seek(ms.clone()).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid, "{ms}");
+            assert!(e.message.contains("position_ms must be >= 0"), "{ms}: {}", e.message);
+        }
+        // Control: 0 and later parse, and are the deck's to judge.
+        for ms in [json!(0), json!(-0.0), json!(1500.5)] {
+            assert!(matches!(seek(ms.clone()), Ok(Command::Apply(EngineCmd::Seek { deck: 1, .. }))), "{ms}");
         }
     }
 
