@@ -46,6 +46,7 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
             }
         };
         let channels = config.channels as usize;
+        let sr = config.sample_rate as u64;
         // A stream error (the device went away) ends the audio side, which
         // ends serve with an error instead of acknowledging commands for an
         // engine that no longer makes sound.
@@ -53,10 +54,15 @@ pub fn run_device() -> impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static 
         let failed_cb = failed.clone();
         let stream = device.build_output_stream(
             config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
                 let frames = data.len() / channels;
+                // This buffer starts playing `latency` after now; state is
+                // stamped with when its position is heard, not rendered.
+                let ts = info.timestamp();
+                let latency = ts.playback.duration_since(ts.callback).as_nanos() as u64;
                 let mut done = 0;
                 while done < frames {
+                    side.set_ahead_ns(latency + done as u64 * 1_000_000_000 / sr);
                     let buf = side.process(frames - done);
                     let got = buf.len() / 2;
                     for f in 0..got {
