@@ -115,3 +115,36 @@ describe('applyDeckTrackDrop', () => {
 		assert.deepEqual(dispatches, [{ type: 'load', deck: 1, stable_id: 'SID-1' }]);
 	});
 });
+
+// DECKUX-21 (pin 87241ca36b61): a row dropped on a deck loads there and makes
+// that deck the Space play/pause target, so Space never has to find it by scroll.
+describe('DECKUX-21 drop sets the Space target deck', () => {
+	let entry;
+	before(async () => {
+		entry = await loadTypeScriptModule('tests/unit/fixtures/deck-drop-space-target-entry.ts');
+	});
+
+	function drop(deckId, row) {
+		return entry.applyDeckTrackDrop({
+			deckId,
+			occupied: false,
+			stableId: 'SID-7',
+			row,
+			dispatch: async () => {},
+			toast: () => {}
+		});
+	}
+
+	it('a loadable drop on deck 3 makes deck 3 the Space target', async () => {
+		entry.noteRecentDeck(1);
+		await drop(3, { file_exists: true, is_streaming: false });
+		assert.equal(entry.getRecentDeck(), 3);
+	});
+
+	it('a refused drop leaves the Space target where it was', async () => {
+		entry.noteRecentDeck(2);
+		await drop(4, { file_exists: false, is_streaming: false });
+		assert.equal(entry.getRecentDeck(), 2);
+	});
+});
+

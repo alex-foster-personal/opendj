@@ -59,7 +59,7 @@ test('plain m arms on pointer-only canvas attribute', () => {
 	);
 });
 
-test('Cmd+Shift+M arms even in textarea', () => {
+test('FB-19: Cmd+Shift+M arms even in textarea', () => {
 	assert.equal(
 		routing.resolveCommentPinHotkey(
 			key({
