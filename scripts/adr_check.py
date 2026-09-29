@@ -23,6 +23,9 @@ Before any duplicate-id scan the CLI proves ``base`` is an ancestor of
 PR merge refs fail with ``merge ref is stale, update your branch`` instead
 of historical duplicate-id noise. The workflow ``edited`` trigger re-runs
 body declarations; :mod:`scripts.adr_ref_freshness` handles merge refs.
+A Trunk Merge Queue batch PR (head ``trunk-merge/pr-<N>/...``) carries only Trunk's
+banner, so its body is the union of its member PRs' bodies; a batch whose members
+cannot be read is UNKNOWN (exit 2).
 
 What would satisfy this check without satisfying its intent, and why it
 does not: a bare ``ADR: none`` with no ``because`` reason still fails --
@@ -49,7 +52,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.adr_pr_lookup import DEFAULT_REPO, current_pr_number, pr_files, pr_view
+from scripts.adr_pr_lookup import (
+    DEFAULT_REPO,
+    current_pr_number,
+    pr_files,
+    pr_view,
+    trunk_batch_members,
+)
 from scripts.adr_ref_freshness import DEFAULT_GATED_DIR, check_ref_freshness, emit_gate_result
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -288,6 +297,17 @@ def evaluate(
     )
 
 
+def evaluate_batch(members: list[int], *, fetch, list_pr_files, adr_dir: Path) -> Verdict:
+    """A Trunk batch passes only when every member passes on its OWN files and body, so one
+    member's declaration can never cover another member's gated change."""
+    for member in members:
+        verdict = evaluate(list_pr_files(member), fetch(member).get("body") or "", adr_dir)
+        if verdict.code != 0:
+            return Verdict(verdict.code, f"[adr-check] batch member #{member}: {verdict.message}")
+    shown = ", ".join(f"#{member}" for member in members)
+    return Verdict(0, f"[adr-check] OK -- every Trunk batch member passes ({shown})")
+
+
 def evaluate_tree_entries(entries: dict[str, bytes]) -> Verdict:
     """Duplicate and stale checks over a virtual ADR directory."""
     sizes = {name: len(content) for name, content in entries.items()}
@@ -458,21 +478,24 @@ def _resolve_body(
     body: str | None,
     fetch,
     repo_root: Path,
-) -> str:
+) -> tuple[str, list[int] | None]:
+    """The body to judge, plus the member PR numbers when the PR is a Trunk batch."""
     if body is not None:
-        return body
+        return body, None
     if args.body_file:
-        return Path(args.body_file).read_text(encoding="utf-8")
+        return Path(args.body_file).read_text(encoding="utf-8"), None
     pr_number = args.pr if args.pr is not None else current_pr_number(repo_root, args.repo)
-    if pr_number is not None:
-        return fetch(pr_number).get("body") or ""
-    return git_commit_body(args.base, repo_root)
+    if pr_number is None:
+        return git_commit_body(args.base, repo_root), None
+    pr = fetch(pr_number)
+    return pr.get("body") or "", trunk_batch_members(pr)
 
 
 def main(
     argv: list[str] | None = None,
     *,
     fetch=pr_view,
+    list_pr_files=None,
     list_changed=None,
     changed: list[str] | None = None,
     body: str | None = None,
@@ -504,7 +527,7 @@ def main(
         return 2
 
     try:
-        text = _resolve_body(args, body=body, fetch=fetch, repo_root=repo_root)
+        text, members = _resolve_body(args, body=body, fetch=fetch, repo_root=repo_root)
     except Exception as exc:
         print(f"[adr-check] UNKNOWN: could not read PR/commit body ({exc})", file=sys.stderr)
         return 2
@@ -515,7 +538,19 @@ def main(
     if freshness is not None:
         return emit_gate_result(freshness.code, freshness.message)
 
-    verdict = evaluate(paths, text, decisions)
+    if members is None:
+        verdict = evaluate(paths, text, decisions)
+        return emit_gate_result(verdict.code, verdict.message)
+    try:
+        verdict = evaluate_batch(
+            members,
+            fetch=fetch,
+            list_pr_files=list_pr_files or (lambda pr: pr_files(pr, args.repo)),
+            adr_dir=decisions,
+        )
+    except Exception as exc:
+        print(f"[adr-check] UNKNOWN: could not read Trunk batch members ({exc})", file=sys.stderr)
+        return 2
     return emit_gate_result(verdict.code, verdict.message)
 
 

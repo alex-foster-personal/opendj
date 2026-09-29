@@ -34,19 +34,77 @@ test-supplied JSON payload -- standing in for whatever GitHub already
 filtered server-side -- through the REAL `--jq` filter text extracted from
 the workflow, so the downstream formatting is exercised for real rather
 than asserted against a hand-typed expected string.
+
+The snippet runs on a Linux runner and calls GNU `date -d`, which BSD `date`
+(macOS) rejects. Each run therefore gets a `date` on PATH that execs a
+resolved GNU date (`date` itself on Linux, Homebrew `gdate` on macOS); a host
+with neither SKIPS the whole module as UNAVAILABLE rather than letting the
+snippet's floor silently come out empty.
+
+The bootstrap 48h floor reads the wall clock, so no value computed outside
+the snippet can equal it exactly: a second boundary between the two reads
+makes them differ by 1s (seen on PR #4221). Those tests bracket the snippet
+between two real clock reads instead of recomputing the floor a second time.
+
+- [if] the bootstrap floor is not 48h before the run [then] broken, [else stop].
+- [if] a second boundary mid-run fails a correct floor [then] broken, [else stop].
 """
+
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "periodic-checks.yml"
 
 EXTENDED_JOB = "e2e extended (nightly)"
+
+BOOTSTRAP_FLOOR = timedelta(hours=48)
+
+
+def _resolve_gnu_date() -> str | None:
+    """Path to a GNU coreutils `date`, or None when this host has none."""
+    for name in ("date", "gdate"):
+        path = shutil.which(name)
+        if path is None:
+            continue
+        version = subprocess.run([path, "--version"], capture_output=True, text=True, check=False)
+        if "GNU coreutils" in version.stdout:
+            return path
+    return None
+
+
+GNU_DATE = _resolve_gnu_date()
+
+pytestmark = pytest.mark.skipif(
+    GNU_DATE is None,
+    reason=(
+        "UNAVAILABLE: the periodic-checks e2e snippet needs GNU `date -d` (it runs on a "
+        "Linux runner); this host has neither GNU date nor gdate (brew install coreutils)"
+    ),
+)
+
+# Execs GNU date unchanged, so the snippet sees the Linux runner's `date`.
+_DATE_SHIM = """#!/usr/bin/env bash
+exec "{gnu_date}" "$@"
+"""
+
+# Sleeps to the next whole second first, so a clock read taken by the test
+# BEFORE the run always lands in an earlier second than the snippet's read.
+_DATE_SHIM_CROSSING_A_SECOND = """#!/usr/bin/env bash
+ns="$("{gnu_date}" +%N)"
+left=$((1000000000 - 10#$ns))
+sleep "$((left / 1000000000)).$(printf '%09d' $((left % 1000000000)))"
+exec "{gnu_date}" "$@"
+"""
 
 
 def _extract_e2e_line_script() -> str:
@@ -56,7 +114,7 @@ def _extract_e2e_line_script() -> str:
     `if`/`while` shape, so the extraction survives that shape changing."""
     text = WORKFLOW.read_text(encoding="utf-8")
     match = re.search(
-        r'( *e2e_created_floor=.*?)(?=\n *window_desc=)',
+        r"( *e2e_created_floor=.*?)(?=\n *window_desc=)",
         text,
         re.DOTALL,
     )
@@ -102,6 +160,7 @@ def _run_with_stub_gh(
     fail: str | None = None,
     jobs_fail_id: str | None = None,
     base_at: str | None = None,
+    date_shim: str = _DATE_SHIM,
 ) -> tuple[str, str]:
     """Run the extracted script against the stub `gh` above and return
     ``(e2e_line, argv_log)``.
@@ -114,6 +173,9 @@ def _run_with_stub_gh(
     stub = tmp_path / "gh"
     stub.write_text(_STUB_GH, encoding="utf-8")
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    date = tmp_path / "date"
+    date.write_text(date_shim.format(gnu_date=GNU_DATE), encoding="utf-8")
+    date.chmod(date.stat().st_mode | stat.S_IEXEC)
     script = f'{_extract_e2e_line_script()}\nprintf "%s" "$e2e_line"\n'
     env = dict(os.environ)
     env["PATH"] = f"{tmp_path}:{env['PATH']}"
@@ -191,6 +253,24 @@ def test_the_floor_uses_the_previous_windows_own_timestamp_when_available(
     assert "--created >=2026-08-30T05:40:00Z" in argv, argv
 
 
+def _floor_second(now: datetime) -> datetime:
+    """The 48h floor for a clock read, truncated to whole seconds as `+%FT%TZ` is."""
+    return (now - BOOTSTRAP_FLOOR).replace(microsecond=0)
+
+
+def _bootstrap_floor_bracket(tmp_path: Path, date_shim: str) -> tuple[datetime, datetime, datetime]:
+    """Run a bootstrap window and return ``(earliest, floor, latest)``: the
+    floor the snippet passed to `gh run list`, and the 48h floors of two real
+    clock reads taken just before and just after the run."""
+    before = datetime.now(UTC)
+    _, argv = _run_with_stub_gh(tmp_path, runs=[], base_at=None, date_shim=date_shim)
+    after = datetime.now(UTC)
+    match = re.search(r"--created >=(\S+)", argv)
+    assert match, f"no --created floor in the gh argv: {argv!r}"
+    floor = datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    return _floor_second(before), floor, _floor_second(after)
+
+
 def test_a_bootstrap_window_with_no_prior_report_falls_back_to_a_48h_floor(
     tmp_path: Path,
 ) -> None:
@@ -200,18 +280,37 @@ def test_a_bootstrap_window_with_no_prior_report_falls_back_to_a_48h_floor(
     miss. Anchoring on an empty string instead of falling back is not caught
     by a bare "some --created value is present" check: GNU `date -d ""`
     does not error, it silently parses empty as TODAY at midnight, a much
-    narrower and wrong floor. Pin the exact expected 48h value, computed the
-    same way the workflow itself computes it, so a bootstrap window's floor
-    is provably the intended fallback and not an accidental byproduct of
-    `date` accepting nonsense input."""
-    expected_floor = subprocess.run(
-        ["date", "-u", "-d", "2 days ago", "+%FT%TZ"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    _, argv = _run_with_stub_gh(tmp_path, runs=[], base_at=None)
-    assert f"--created >={expected_floor}" in argv, argv
+    narrower and wrong floor.
+
+    The floor reads the wall clock, so it is pinned between the 48h floors of
+    two real clock reads that bracket the run, not compared with a floor
+    recomputed at a different instant (that raced a second boundary on PR
+    #4221). The bracket spans the run's own duration, so a 24h or 72h floor,
+    or today's midnight, still falls outside it.
+
+    [if] the bootstrap floor is not 48h before the run [then] broken, [else stop].
+    """
+    earliest, floor, latest = _bootstrap_floor_bracket(tmp_path, _DATE_SHIM)
+    assert earliest <= floor <= latest, (earliest, floor, latest)
+
+
+def test_the_bootstrap_floor_survives_a_second_boundary_during_the_run(
+    tmp_path: Path,
+) -> None:
+    """The flake on PR #4221: the old test recomputed the 48h floor with its
+    own `date` call before the run, and a second boundary between that call
+    and the snippet's own read failed a correct floor by 1s. The date shim
+    here sleeps to the next whole second before the snippet reads the clock,
+    so that boundary is crossed on every run, not by chance.
+
+    [if] a second boundary mid-run fails a correct floor [then] broken, [else stop].
+    """
+    earliest, floor, latest = _bootstrap_floor_bracket(tmp_path, _DATE_SHIM_CROSSING_A_SECOND)
+    assert floor > earliest, (
+        "the shim did not move the snippet's clock read past the test's, so this "
+        f"test did not exercise a second boundary: {earliest} vs {floor}"
+    )
+    assert earliest <= floor <= latest, (earliest, floor, latest)
 
 
 def test_a_completed_runs_conclusion_is_reported_verbatim(tmp_path: Path) -> None:
