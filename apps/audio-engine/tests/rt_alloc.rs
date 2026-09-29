@@ -51,7 +51,7 @@ fn track(hz: f64) -> Arc<Track> {
         pcm.push(v);
         pcm.push(v);
     }
-    let beats = (0..40).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0 }).collect();
+    let beats = (0..40).map(|i| Beat { time_ms: i as f64 * 500.0, downbeat: i % 4 == 0, bpm: None }).collect();
     Arc::new(Track::new(sr, pcm, beats, None))
 }
 
