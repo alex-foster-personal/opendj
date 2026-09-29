@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import stat
 import subprocess
 import textwrap
@@ -12,35 +11,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_SH = REPO_ROOT / "ops" / "dmg-smoke" / "run.sh"
 INSTALLER = REPO_ROOT / "scripts" / "install_dmg_smoke_launchd.sh"
-JUSTFILE = REPO_ROOT / "justfile"
+RECORD_BUILD_TIME = REPO_ROOT / "ops" / "dmg-smoke" / "record_build_time.sh"
+REAL_BUILD_BUDGET = REPO_ROOT / "ops" / "build-budget.env"
 
 HEAD_SHA = "a" * 40
 OLD_ROW7_SHA = "b" * 40
 ROW1_SHA = "c" * 40
 
-
-def real_build_total_printf_format() -> str:
-    """The exact printf format string the justfile `dmg` recipe's
-    `_record_build_time` EXIT trap appends to ops/logs/ship-dmg.log --
-    extracted from the justfile itself, the one place that write happens.
-
-    The headless shim's synthetic timing row is built FROM this extraction
-    (see `_headless_shim` below) rather than a hand-duplicated string, so a
-    real change to the recipe's format is inherited here automatically
-    instead of the shim's copy silently drifting out of sync with the
-    producer it stands in for (PR #4481 review, P1: "the producer and
-    consumer can drift together while these regression tests continue to
-    pass"). A missing match fails loudly -- a shim that fabricates a
-    plausible-looking line after its own source went missing is exactly the
-    silent-drift failure this guards against.
-    """
-    match = re.search(
-        r"printf '([^']*phase=build_total[^']*)'",
-        JUSTFILE.read_text(encoding="utf-8"),
-    )
-    if not match:
-        raise RuntimeError(f"{JUSTFILE}: _record_build_time's build_total printf format not found")
-    return match.group(1)
+# The default (non-fabricated) elapsed time/rc the headless shim feeds to the
+# real record_build_time.sh on a successful build. 60s is far under the real
+# BUILD_TOTAL_SOFT_S (1320s), so the real script's own verdict logic reads OK.
+DEFAULT_BUILD_SECONDS = 60
+DEFAULT_BUILD_RC = 0
 
 
 def _write(path: Path, content: str, executable: bool = False) -> None:
@@ -136,14 +118,14 @@ exit 1
 def _headless_shim(build_root: Path) -> str:
     bundle_dir = build_root / "apps/desktop/src-tauri/target/release/bundle/dmg"
     log_dir = build_root / "ops/logs"
-    # Extracted from the justfile, not hand-typed: see real_build_total_printf_format.
-    default_timing_format = real_build_total_printf_format()
     return textwrap.dedent(
         f"""#!/usr/bin/env bash
 set -euo pipefail
 build_root="{build_root}"
 bundle_dir="{bundle_dir}"
 log_dir="{log_dir}"
+record_build_time="{RECORD_BUILD_TIME}"
+real_budget="{REAL_BUILD_BUDGET}"
 prepare_only=0
 while (($#)); do
   case "$1" in
@@ -178,17 +160,22 @@ else
   digest="$(sha256sum "$dmg" | awk '{{print $1}}')"
 fi
 printf 'origin/main 2026-01-01T00:00:00Z\\n%s\\n' "$digest" > "$dmg.complete"
-# Appends in the exact format the justfile's `dmg` recipe writes to
-# ops/logs/ship-dmg.log (`_record_build_time`). The `[TIMING] total=` form is
-# stdout only and never reaches this file, so the shim must not write it.
-# The format string itself ('{default_timing_format}') is extracted from the
-# justfile at test-collection time (real_build_total_printf_format), so a
-# real change to the recipe's line is inherited here rather than drifting
-# silently from a hand-duplicated copy.
 if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
+  # An explicit raw-line fixture: some tests need full control over the
+  # exact log content (a stale prior run, an unparseable line) to exercise
+  # run.sh's own parsing, independent of what a real build would produce.
   cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 else
-  printf '{default_timing_format}' '2026-01-01T00:00:00Z' 60 0 OK >> "$log_dir/ship-dmg.log"
+  # No override: run the SAME executable ops/dmg-smoke's real `dmg` recipe
+  # runs (record_build_time.sh) against a copy of the real build budget, so
+  # this fixture exercises the actual production timing writer rather than
+  # a hand-duplicated or regex-derived copy of its format (PR #4481 review
+  # round 2, P1: "factor the writer into an executable production path and
+  # exercise that instead"). {DEFAULT_BUILD_SECONDS}s/rc={DEFAULT_BUILD_RC}
+  # is a synthetic (elapsed, outcome) pair; the write path is real.
+  mkdir -p "$build_root/ops"
+  [[ -f "$build_root/ops/build-budget.env" ]] || cp "$real_budget" "$build_root/ops/build-budget.env"
+  "$record_build_time" "$build_root" {DEFAULT_BUILD_SECONDS} {DEFAULT_BUILD_RC}
 fi
 exit 0
 """
