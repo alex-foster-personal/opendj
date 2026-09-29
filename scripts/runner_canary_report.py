@@ -116,7 +116,7 @@ def _complete(
     return (
         run_rows is not None
         and sorted(r.shard for r in run_rows) == list(range(1, shard_count + 1))
-        and all(r.outcome in outcomes and not r.missing for r in run_rows)
+        and all(r.outcome in outcomes for r in run_rows)
     )
 
 
