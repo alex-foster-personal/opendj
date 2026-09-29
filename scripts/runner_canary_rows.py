@@ -23,10 +23,13 @@ GATE_JOB = "canary: budget gate"
 # the run owes (scripts/runner_canary_budget.py GateDecision.planned_vendors_notice; the two
 # spellings are pinned equal by tests/scripts/test_runner_canary_rows.py).
 PLANNED_VENDORS_TITLE = "runner-canary planned vendors"
-#: The title the shard's own wall-budget wrapper writes on exit 124 or 137 (ci.yml and the
-#: canary share the step). It is the only field that separates a TIMEOUT from a test red:
-#: both fail the pytest step.
-TIMEOUT_TITLE = re.compile(r"pytest fast lane TIMEOUT \(shard \d+ of \d+\)")
+#: The annotation GitHub writes for a failed run step, carrying its exit code. The pytest
+#: step exits with pytest's own code (ci.yml and the canary share it), so only 1, pytest's
+#: TESTS_FAILED, is a test red (Sol P1 on b6303e8f0). Anything else, the wall-budget TIMEOUT
+#: (124, 137), a missing `timeout` or pytest (126, 127), or a usage or internal error (2 to
+#: 5; the repository's collect floor exits 4), is infra.
+EXIT_CODE = re.compile(r"Process completed with exit code (\d+)\.")
+TESTS_FAILED = 1
 #: green / red: a test verdict. infra: no test at fault. dropped: no verdict (baseline
 #: side). ours: a vendor-side run whose budget gate never passed, so no job reached the
 #: vendor. pending: still queued or running.
@@ -70,17 +73,22 @@ def _never_started(job: dict[str, Any]) -> bool:
     return not job.get("started_at") or (not job.get("runner_name") and not job.get("steps"))
 
 
-def _timed_out(job: dict[str, Any]) -> bool:
+def _pytest_exit_code(job: dict[str, Any]) -> int:
+    """The failed pytest step's exit code. None, or more than one, is UNKNOWN: the
+    annotations do not name their step, so a second failed step makes the code ambiguous."""
     annotations = job.get("annotations")
     if annotations is None:
         raise ReadFailed(f"job {job.get('id')} failed but its annotations were not read")
-    return any(TIMEOUT_TITLE.fullmatch(a.get("title") or "") for a in annotations)
+    codes = [m[1] for a in annotations if (m := EXIT_CODE.fullmatch(a.get("message") or ""))]
+    if len(codes) != 1:
+        raise ReadFailed(f"job {job.get('id')} has {len(codes)} exit-code annotations, not 1")
+    return int(codes[0])
 
 
 def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: int) -> Outcome:
     """green / red (pytest step failed) / infra (no test at fault) / dropped (no verdict).
 
-    A pytest step that failed on its own wall-budget TIMEOUT is infra, not red.
+    A failed pytest step is red only on pytest's own TESTS_FAILED exit; any other is infra.
     """
     if job.get("status") != "completed":
         return "dropped"
@@ -92,7 +100,7 @@ def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: in
             (s for s in job.get("steps") or [] if s.get("name") == pytest_step_name), None
         )
         if pytest_step is not None and pytest_step.get("conclusion") == "failure":
-            return "infra" if _timed_out(job) else "red"
+            return "red" if _pytest_exit_code(job) == TESTS_FAILED else "infra"
         return "infra"
     if conclusion == "timed_out":
         return "infra"
