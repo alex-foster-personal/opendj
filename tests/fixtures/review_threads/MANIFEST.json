@@ -44,6 +44,20 @@
    "source_pr": 1600,
    "threads": 2,
    "note": "Captured Thu 10 Sep 2026. The CONTROL for the opposite error: real BRACKETED '[NON-BLOCKING]' headlines that must keep reading NON-BLOCKING. A substring test for BLOCKING finds it inside NON-BLOCKING at offset 4 and turns both of these into merge blockers."
+  },
+  "pr-4240.json": {
+   "sha256": "0019c410eeae8589c464727ade8611a357770e06da60b426e36a03ce2a5ebb19",
+   "bytes": 11778,
+   "source_pr": 4240,
+   "threads": 6,
+   "note": "Captured Tue 29 Sep 2026 14:43Z at head 25ac3b7d95 with _THREADS_QUERY via `gh api graphql`; the six threads opened by GitHub Copilot's reviewer, whose GraphQL login is `copilot-pull-request-reviewer` with no [bot] suffix (REST spells the same author `Copilot` on pulls/4240/comments and `copilot-pull-request-reviewer[bot]` on pulls/4240/reviews). Five say 'P1 BLOCKING', one 'P2 NON-BLOCKING', in plain text leading the headline. The gate ignored all six before this login joined BOT_LOGINS. All six are resolved with a FIXED reply by now."
+  },
+  "pr-4213.json": {
+   "sha256": "03910fdf62ef8a95227df0bfea07f5a9455fc92b32449e9e0d46d59a7be90dcd",
+   "bytes": 12329,
+   "source_pr": 4213,
+   "threads": 8,
+   "note": "Captured Tue 29 Sep 2026 14:43Z at head d77766908c, same query. Three UNRESOLVED, unanswered Copilot threads (one 'P1 BLOCKING', two 'P2 NON-BLOCKING', one of them bold-wrapped) that must fail the gate, plus the five Sol-lane threads as the control that lane attribution and human-login handling did not move."
   }
  }
 }
