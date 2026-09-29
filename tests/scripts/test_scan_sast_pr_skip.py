@@ -6,7 +6,6 @@ import os
 import subprocess
 from pathlib import Path
 
-
 from tests.scripts.sast_control_fixtures import SEMGREP_BIN, init_scan_repo, needs_scanners
 
 

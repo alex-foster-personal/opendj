@@ -24,8 +24,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from tests.scripts.sast_control_fixtures import (
     CONTROL_DIR,
     ROOT,
@@ -212,4 +210,4 @@ def test_summary_without_time_block_cannot_skip_expect_file(tmp_path: Path) -> N
     """[if] --expect-file is given but the JSON has no "time" block [then] UNKNOWN, not exit 0."""
     rc, stderr = _summary(tmp_path, EXPECTED, min_files=4, with_time=False)
     assert rc == 2, stderr
-    assert '--expect-file could not be checked' in stderr, stderr
+    assert "--expect-file could not be checked" in stderr, stderr

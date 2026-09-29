@@ -27,7 +27,7 @@ E2E_REQUIRED_ENV = "SECURITY_E2E_REQUIRED"
 needs_scanners = pytest.mark.skipif(
     not ((SEMGREP_BIN / "semgrep").exists() and (SEMGREP_BIN / "uv").exists())
     and os.environ.get(E2E_REQUIRED_ENV) != "1",
-    reason=f"semgrep or uv not installed in .tmp/security/bin (set {E2E_REQUIRED_ENV}=1 to fail instead)",
+    reason=f"semgrep or uv missing from .tmp/security/bin ({E2E_REQUIRED_ENV}=1 fails instead)",
 )
 
 

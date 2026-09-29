@@ -358,11 +358,9 @@ def _semgrep_rules_gate(
 ) -> int | None:
     rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
     if rules is None:
-        if args.expect_file:
-            return _unknown(
-                'semgrep JSON has no "time" block, so --expect-file could not be checked'
-            )
-        return None
+        # --expect-file is never skipped silently: no "time" block means it is unmeasured.
+        no_time = 'semgrep JSON has no "time" block, so --expect-file could not be checked'
+        return _unknown(no_time) if args.expect_file else None
     scanned_paths = doc.get("paths", {}).get("scanned", [])
     scanned = len(scanned_paths)
     print(f"semgrep loaded {rules} rules, scanned {scanned} files")
