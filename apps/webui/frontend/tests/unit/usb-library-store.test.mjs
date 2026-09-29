@@ -211,6 +211,18 @@ async function settle(ms = 50) {
 	await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Poll real state until `condition` holds, failing with `what` after
+ * `timeoutMs`. A fixed settle() is a guess at how long the server round trip
+ * takes, and a loaded CI runner outlasts the guess; this waits for the state
+ * itself and still fails loudly when it never arrives. */
+async function waitFor(condition, what, timeoutMs = 5000) {
+	const deadline = Date.now() + timeoutMs;
+	while (!condition()) {
+		if (Date.now() > deadline) throw new Error(`timed out after ${timeoutMs} ms waiting for ${what}`);
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+}
+
 async function loadedPane(uuid, nodeKey, allPanes) {
 	const pane = new PaneStore();
 	allPanes.push(pane);
@@ -277,7 +289,10 @@ test('opening a stick reads it once, then serves the cache', async () => {
 	const before = libraryHits(UUID_A);
 	store.openUsbStick({ id: `vol:${UUID_A}` });
 	assert.equal(store.usbLibrary.sticks[`vol:${UUID_A}`].status, 'loading');
-	await settle();
+	// Join the read openUsbStick started: an in-flight read is shared, so this
+	// waits for that exact request (the hit count below proves it) and never a
+	// guessed interval.
+	await store.ensureUsbLibrary(UUID_A);
 	const view = store.usbLibrary.sticks[`vol:${UUID_A}`];
 	assert.equal(view.status, 'ready');
 	assert.equal(view.name, 'STICK A');
@@ -417,7 +432,7 @@ test('unplug grays the pane in place; replug restores rows and selection', async
 	mounted.set(UUID_A, stickLibrary(UUID_A, 'STICK A '));
 	const readsBefore = libraryHits(UUID_A);
 	await daemonLists(UUID_A, UUID_B);
-	await settle();
+	await waitFor(() => pane.rows.some((r) => r.file_exists === true), 'the replugged pane to refresh');
 	assert.equal(libraryHits(UUID_A) - readsBefore, 1, 'a replug must re-read the stick');
 	assert.equal(pane.title, 'STICK A / Warmup');
 	assert.deepEqual(
@@ -498,7 +513,7 @@ test('a replug seen by the tree before the watcher still restores the pane', asy
 	await store.ensureUsbLibrary(uuid); // the tree remount wins the race
 	const changed = store.applyUsbVolumePresence([{ id: `vol:${uuid}`, present: true }]);
 	assert.deepEqual(changed, [uuid]);
-	await settle();
+	await waitFor(() => pane.rows.some((r) => r.file_exists === true), 'the replugged pane to refresh');
 	assert.ok(pane.rows.every((r) => r.file_exists === true), 'the pane must come back');
 	assert.equal(pane.title, 'ORDER / Warmup');
 });
@@ -509,12 +524,15 @@ test('a dead read settling late does not orphan the live one', async () => {
 	const releaseFirst = holdReads(uuid);
 	store.applyUsbVolumePresence([{ id: `vol:${uuid}`, present: true }]);
 	const first = store.ensureUsbLibrary(uuid).catch((exc) => exc);
-	await settle(20);
+	// The server binds a read to the hold current when it ARRIVES, so the first
+	// read must be at the server before the second hold replaces the first;
+	// otherwise releaseFirst() frees nothing and the test hangs.
+	await waitFor(() => libraryHits(uuid) === 1, 'the first read to reach the server');
 	store.applyUsbVolumePresence([{ id: `vol:${uuid}`, present: false }]); // unplug: the first read is now dead
 	store.applyUsbVolumePresence([{ id: `vol:${uuid}`, present: true }]); // replug
 	const releaseSecond = holdReads(uuid);
 	const second = store.ensureUsbLibrary(uuid);
-	await settle(20);
+	await waitFor(() => libraryHits(uuid) === 2, 'the second read to reach the server');
 	releaseFirst();
 	assert.equal((await first).code, 'USB_STICK_NOT_MOUNTED');
 	// The live read is still shared: no third request.
@@ -543,6 +561,9 @@ test('a pane switched away during a replug refresh keeps its new list', async ()
 	const seq = pane.beginLoad('pl-9', 'Library list', 'playlist');
 	assert.ok(pane.completeLoad(seq, [LIBRARY_ROW], false));
 	release();
+	// Join the held re-read so the late refresh has really landed before the
+	// pane is checked; a fixed sleep could check too early and pass vacuously.
+	await store.ensureUsbLibrary(uuid);
 	await settle();
 	assert.equal(pane.playlist_id, 'pl-9');
 	assert.equal(pane.title, 'Library list');
@@ -642,7 +663,7 @@ test('a stick whose export strands a playlist still opens, and All tracks plays'
 	});
 	mounted.set(uuid, lib);
 	store.openUsbStick({ id: `vol:${uuid}` });
-	await settle();
+	await store.ensureUsbLibrary(uuid); // joins the read openUsbStick started
 	const view = store.usbLibrary.sticks[`vol:${uuid}`];
 	assert.equal(view.status, 'ready', `view: ${JSON.stringify(view)}`);
 	assert.deepEqual(
