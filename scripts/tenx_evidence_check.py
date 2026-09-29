@@ -62,6 +62,7 @@ def check(title: str, body: str) -> Verdict:
     if not title.startswith(TITLE_PREFIX):
         return Verdict(True, [])
     body = re.sub(r"<!--.*?-->", "", body, flags=re.S)  # the template's commented placeholders are not evidence
+    body = re.sub(r"^(```|~~~).*?^\1[^\n]*$", "", body, flags=re.S | re.M)  # fenced text is not a rendered section
     problems: list[str] = []
     evidence = _section(body, "10x Evidence")
     if evidence is None:

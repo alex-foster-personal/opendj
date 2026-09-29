@@ -54,3 +54,8 @@ def test_untouched_template_fails() -> None:
 def test_ratio_must_lead_with_number() -> None:
     body = GOOD.replace("Ratio: 10.8x", "Ratio: <number>x (gate: >= 9x)")
     assert not check("10xHunter-- x", body).ok, "if a placeholder Ratio passes then broken"
+
+
+def test_fenced_sections_fail() -> None:
+    body = "```\n" + GOOD + "```\n"
+    assert not check("10xHunter-- x", body).ok, "if sections inside a code fence pass then broken"
