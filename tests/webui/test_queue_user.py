@@ -23,7 +23,6 @@ from apps.analysis.store import open_conn
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.cache import LyricLine, Lyrics
 from apps.stems.selection import MANIFEST_NAME
-from tests.sleep_spy import record_own_thread_sleeps
 
 
 def _seed(db: Path, ids: list[str]) -> None:
@@ -317,21 +316,26 @@ def test_unknown_runner_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         runner_from_environ()
 
 
-def test_dry_runner_holds_on_its_own_thread_when_not_fresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Positive control for the skip test below: with no fresh bundle the dry
-    runner DOES sleep its hold on the calling thread, so the spy both fires
-    and sees it."""
+# Real timed path, no time.sleep patch: a patched time.sleep is process-wide, so
+# a thread leaked by an earlier test (sentry_sdk's sentry.monitor loops
+# time.sleep(10)) landed its calls in a spy here and flaked PR #4250.
+DRY_CONTROL_HOLD_S: float = 0.2
+#: Long enough that a hold which ran cannot hide under a slow runner's tick.
+DRY_SKIP_HOLD_S: float = 30.0
+
+
+def _tick_dry_stems(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hold_s: float
+) -> tuple[str, float, str]:
+    """Run one real dry-runner tick; return (outcome, wall seconds, settled state)."""
+    import time
+
     from apps.analysis import queue_user_runner
 
     monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
-    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "10")
-    sleep_called = record_own_thread_sleeps(monkeypatch)
-    db = tmp_path / "state.db"
-    _seed(db, ["stale"])
-    conn = _conn(db)
-    _enqueue(conn, "stems", ["stale"], tmp_path)
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", str(hold_s))
+    conn = _conn(tmp_path / "state.db")
+    t0 = time.monotonic()
     outcome = queue_user_runner.tick_lane(
         conn,
         "stems",
@@ -339,41 +343,45 @@ def test_dry_runner_holds_on_its_own_thread_when_not_fresh(
         stems_root=tmp_path / "stems",
         data_dir=tmp_path,
     )
-    assert outcome == "ran"
-    assert sleep_called == [10.0]
-    settled = user.list_lane(conn, "stems", include_settled=True)
-    assert settled[0].state == "done"
+    elapsed = time.monotonic() - t0
+    state = user.list_lane(conn, "stems", include_settled=True)[0].state
     conn.close()
+    return outcome, elapsed, state
+
+
+def test_dry_runner_holds_when_not_fresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a not-fresh dry run finishes before its hold elapses [then] broken, [else stop]."""
+    db = tmp_path / "state.db"
+    _seed(db, ["stale"])
+    conn = _conn(db)
+    _enqueue(conn, "stems", ["stale"], tmp_path)
+    conn.close()
+    outcome, elapsed, state = _tick_dry_stems(
+        tmp_path, monkeypatch, DRY_CONTROL_HOLD_S
+    )
+    assert outcome == "ran"
+    assert elapsed >= DRY_CONTROL_HOLD_S, "the dry runner never held"
+    assert state == "done"
 
 
 def test_dry_runner_still_skips_fresh_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from apps.analysis import queue_user_runner
-
-    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
-    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "10")
-    # Thread-scoped: a leaked background thread's time.sleep must not count.
-    sleep_called = record_own_thread_sleeps(monkeypatch)
+    """[if] a fresh bundle still waits out the dry hold [then] broken, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["fresh"])
     conn = _conn(db)
     _enqueue(conn, "stems", ["fresh"], tmp_path)
+    conn.close()
     bundle = tmp_path / "stems" / "fresh"
     bundle.mkdir(parents=True)
     (bundle / MANIFEST_NAME).write_text("{}", encoding="utf-8")
-    outcome = queue_user_runner.tick_lane(
-        conn,
-        "stems",
-        runner_id="dry",
-        stems_root=tmp_path / "stems",
-        data_dir=tmp_path,
-    )
+    outcome, elapsed, state = _tick_dry_stems(tmp_path, monkeypatch, DRY_SKIP_HOLD_S)
     assert outcome == "ran"
-    assert sleep_called == []
-    settled = user.list_lane(conn, "stems", include_settled=True)
-    assert settled[0].state == "skipped"
-    conn.close()
+    assert elapsed < DRY_SKIP_HOLD_S, "a fresh bundle waited out the dry hold"
+    assert state == "skipped"
 
 
 def test_reorder_running_is_conflict(tmp_path: Path) -> None:

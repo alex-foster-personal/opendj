@@ -1,9 +1,7 @@
-"""The thread-scoped sleep spy records its own thread and nothing else.
+"""The thread-scoped sleep spy in tests/sleep_spy.py records its own thread and nothing else.
 
-[if] another thread calls time.sleep while the spy is installed [then] the call
-is neither recorded nor made instant, else stop.
-[if] the installing thread calls time.sleep [then] the duration is recorded and
-the call returns at once, else stop.
+- [if] a foreign thread's sleep is recorded or made instant [then] broken, [else stop].
+- [if] the owner thread's sleep is unrecorded or real [then] broken, [else stop].
 
 -Claude
 """
@@ -22,6 +20,7 @@ FOREIGN_SLEEP_S: float = 0.05
 def test_foreign_thread_sleep_is_real_and_unrecorded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """[if] a foreign thread's sleep is recorded or made instant [then] broken, [else stop]."""
     calls = record_own_thread_sleeps(monkeypatch)
     elapsed: list[float] = []
 
@@ -42,6 +41,7 @@ def test_foreign_thread_sleep_is_real_and_unrecorded(
 def test_own_thread_sleep_is_recorded_and_instant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """[if] the owner thread's sleep is unrecorded or real [then] broken, [else stop]."""
     calls = record_own_thread_sleeps(monkeypatch)
     t0 = time.monotonic()
     time.sleep(3600)

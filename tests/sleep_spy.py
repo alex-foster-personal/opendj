@@ -12,6 +12,14 @@ PR #4250 (Tue 29 Sep 2026).
 These helpers act only on calls made by the thread that installed them and
 hand every other thread the real sleep, unchanged.
 
+CONTAINMENT ONLY, NOT A PATTERN TO SPREAD. AGENTS.md "No mocks and locked real
+fixtures" bars monkeypatching in tests. This module exists to narrow two
+global ``time.sleep`` patches that predate it
+(tests/lyrics/test_sources_http_retry.py, which also fakes urlopen, and
+tests/shared/test_machine_pressure.py) until they move to a real path. Do not
+use it in a new test: drive the real timed path instead, as the dry-runner
+tests in tests/webui/test_queue_user.py now do.
+
 -Claude
 """
 from __future__ import annotations
