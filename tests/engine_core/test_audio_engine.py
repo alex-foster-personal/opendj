@@ -53,7 +53,20 @@ if mode == "crash":
 if mode == "ignore_eof":
     sys.stdin.read()
     time.sleep(60)
-sys.stdin.read()
+for line in sys.stdin:
+    msg = json.loads(line)
+    with open(log, "a") as f:
+        f.write(json.dumps({{"cmd": msg["cmd"]}}) + "\\n")
+    if msg["cmd"]["type"] == "exit":
+        sys.exit(5)
+    if msg["cmd"]["type"] == "hang":
+        continue
+    ok = msg["cmd"]["type"] != "refuse"
+    res = {{"type": "result", "id": msg["id"], "ok": ok}}
+    if not ok:
+        res["error"] = {{"code": "decode", "message": "no such audio"}}
+    print(json.dumps({{"type": "state", "frame": 1, "note": "result"}}), flush=True)
+    print(json.dumps(res), flush=True)
 sys.exit(0)
 """
 
@@ -68,7 +81,13 @@ def _fake_engine(tmp_path: Path) -> Path:
 def _spawns(log: Path) -> list[dict[str, Any]]:
     if not log.exists():
         return []
-    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    return [r for r in rows if "argv" in r]
+
+
+def _commands(log: Path) -> list[dict[str, Any]]:
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    return [r["cmd"] for r in rows if "cmd" in r]
 
 
 def _wait_for(pred: Callable[[], bool], timeout_s: float = 10.0) -> None:
@@ -356,3 +375,185 @@ def test_the_engine_app_mounts_the_route_and_refuses_a_bad_autostart(tmp_path: P
     # Autostart with a missing binary still boots, and says why it is not up.
     st = _boot(tmp_path / "c", "wall")["status"]
     assert st["state"] == "unavailable" and "no-such-engine" in st["error"]
+
+
+# ----- commands on stdio, and load by stable_id ---------------------------------
+def test_command_waits_for_its_own_result(
+    make_supervisor: Callable[..., AudioEngineSupervisor], tmp_path: Path
+) -> None:
+    sup = make_supervisor("ok")
+    with pytest.raises(AudioEngineError) as e:
+        sup.command({"type": "play", "deck": 1, "playing": True})
+    assert e.value.code == "not_running"
+    sup.start("wall")
+    _wait_for(lambda: sup.status()["state"] == "running")
+    # A state line that merely mentions "result" is not taken for one.
+    assert sup.command({"type": "play", "deck": 1, "playing": True})["ok"] is True
+    with pytest.raises(AudioEngineError) as e:
+        sup.command({"type": "refuse"})
+    assert e.value.code == "decode" and "no such audio" in str(e.value)
+    with pytest.raises(AudioEngineError) as e:
+        sup.command({"type": "hang"}, timeout_s=0.3)
+    assert e.value.code == "timeout"
+    assert [c["type"] for c in _commands(tmp_path / "spawns.jsonl")] == ["play", "refuse", "hang"]
+
+
+def test_a_command_in_flight_fails_when_the_engine_exits(
+    make_supervisor: Callable[..., AudioEngineSupervisor],
+) -> None:
+    sup = make_supervisor("ok", crash_limit=1)
+    sup.start("wall")
+    _wait_for(lambda: sup.status()["state"] == "running")
+    t0 = time.monotonic()
+    with pytest.raises(AudioEngineError) as e:
+        sup.command({"type": "exit"}, timeout_s=10)
+    assert e.value.code == "not_running"
+    assert time.monotonic() - t0 < 5, "the waiter is released at exit, not at its timeout"
+
+
+def test_grid_from_anlz_converts_seconds_to_ms_and_names_a_missing_grid() -> None:
+    from apps.engine_core.audio_engine_load import grid_from_anlz, load_command
+
+    own = {
+        "source": "own",
+        "status": "ok",
+        "bpm": 124.0,
+        "beat_count": 3,
+        "beats": [{"n": 4, "bpm": 124.0, "t": 0.1}, {"n": 1, "bpm": 124.0, "t": 0.5838}],
+    }
+    g = grid_from_anlz(own)
+    assert g.source == "own" and g.bpm == 124.0 and g.missing_reason is None
+    assert g.beats == [{"n": 4, "time_ms": 100.0}, {"n": 1, "time_ms": pytest.approx(583.8)}]
+    cmd = load_command(2, "/music/a.mp3", g)
+    assert cmd["beatgrid"] == g.beats and cmd["bpm"] == 124.0 and cmd["deck"] == 2
+    # rekordbox grids carry bpm per beat only.
+    rb = {"source": "rekordbox", "beat_count": 1, "beats": [{"n": 1, "bpm": 128.0, "t": 0.0}]}
+    assert grid_from_anlz(rb).bpm == 128.0
+    missing = grid_from_anlz(
+        {"source": "own", "status": "missing", "beats": [], "reason": "not analyzed"}
+    )
+    assert missing.beats == [] and missing.missing_reason == "not analyzed"
+    assert "beatgrid" not in load_command(1, "/a", missing)
+    with pytest.raises(ValueError, match="do not increase"):
+        grid_from_anlz(
+            {"source": "own", "beats": [{"n": 1, "bpm": 1, "t": 1}, {"n": 2, "bpm": 1, "t": 1}]}
+        )
+
+
+def test_load_route_sends_the_file_and_the_grid_the_page_sees(
+    make_supervisor: Callable[..., AudioEngineSupervisor],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import HTTPException
+    from fastapi.responses import JSONResponse
+
+    from apps.engine_core import audio_engine_api
+    from apps.webui.server.deps import get_read_state
+
+    class Picked:
+        path = tmp_path / "track.flac"
+
+    seen: dict[str, Any] = {}
+
+    def resolve(stable_id: str, **kw: Any) -> Picked:
+        seen["resolve"] = (stable_id, kw["share"])
+        if stable_id == "gone":
+            raise HTTPException(404, {"code": "AUDIO_NOT_FOUND"})
+        return Picked()
+
+    def anlz(request: Any, stable_id: str, points: int, backend: Any) -> JSONResponse:
+        if stable_id == "nogrid":
+            raise HTTPException(404, {"code": "ANALYSIS_NOT_FOUND"})
+        return JSONResponse(
+            {
+                "beatgrid": {
+                    "source": "own",
+                    "bpm": 120.0,
+                    "beats": [{"n": 1, "bpm": 120.0, "t": 0.25}],
+                }
+            }
+        )
+
+    monkeypatch.setattr(audio_engine_api.rb_vendor, "resolve_playable_audio", resolve)
+    monkeypatch.setattr(audio_engine_api, "get_track_anlz", anlz)
+    sup = make_supervisor("ok")
+    app = FastAPI()
+    add_audio_engine_routes(app, sup)
+    app.dependency_overrides[get_read_state] = lambda: None
+    client = TestClient(app)
+
+    r = client.post(f"{AUDIO_ENGINE_PATH}/load", json={"deck": 1, "stable_id": "abc"})
+    assert r.status_code == 409 and r.json()["error"] == "audio_engine_not_running"
+    sup.start("wall")
+    _wait_for(lambda: sup.status()["state"] == "running")
+
+    r = client.post(f"{AUDIO_ENGINE_PATH}/load", json={"deck": 2, "stable_id": "abc"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {
+        "deck": 2,
+        "stable_id": "abc",
+        "path": str(Picked.path),
+        "beatgrid_source": "own",
+        "beats": 1,
+        "bpm": 120.0,
+        "beatgrid_missing": None,
+    }
+    assert seen["resolve"] == ("abc", False)
+    assert _commands(tmp_path / "spawns.jsonl")[-1] == {
+        "type": "load",
+        "deck": 2,
+        "path": str(Picked.path),
+        "beatgrid": [{"n": 1, "time_ms": 250.0}],
+        "bpm": 120.0,
+    }
+
+    # No analysis: it still loads, and says why there is no grid.
+    r = client.post(f"{AUDIO_ENGINE_PATH}/load", json={"deck": 1, "stable_id": "nogrid"})
+    assert r.status_code == 200 and "ANALYSIS_NOT_FOUND" in r.json()["beatgrid_missing"]
+    assert "beatgrid" not in _commands(tmp_path / "spawns.jsonl")[-1]
+    # No file: the library's own 404 passes through; nothing is sent.
+    n = len(_commands(tmp_path / "spawns.jsonl"))
+    assert (
+        client.post(f"{AUDIO_ENGINE_PATH}/load", json={"deck": 1, "stable_id": "gone"}).status_code
+        == 404
+    )
+    assert len(_commands(tmp_path / "spawns.jsonl")) == n
+    assert (
+        client.post(f"{AUDIO_ENGINE_PATH}/load", json={"deck": 5, "stable_id": "abc"}).status_code
+        == 422
+    )
+
+
+@pytest.mark.skipif(
+    _real_binary() is None,
+    reason="no odj-audio build; cargo build --manifest-path apps/audio-engine/Cargo.toml",
+)
+def test_the_real_engine_loads_a_file_sent_on_stdio(tmp_path: Path) -> None:
+    import math
+    import struct
+    import wave
+
+    wav = tmp_path / "tone.wav"
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(48000)
+        frames = b"".join(
+            struct.pack("<hh", v, v)
+            for v in (int(8000 * math.sin(2 * math.pi * 440 * i / 48000)) for i in range(48000))
+        )
+        w.writeframes(frames)
+    sup = AudioEngineSupervisor(environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT)
+    try:
+        sup.start("wall")
+        _wait_for(lambda: sup.status()["state"] == "running")
+        grid = [{"n": (i % 4) + 1, "time_ms": i * 500.0} for i in range(2)]
+        assert sup.command(
+            {"type": "load", "deck": 1, "path": str(wav), "beatgrid": grid, "bpm": 120}
+        )["ok"]
+        with pytest.raises(AudioEngineError) as e:
+            sup.command({"type": "load", "deck": 2, "path": str(tmp_path / "missing.wav")})
+        assert e.value.code in ("io", "decode"), e.value.code
+    finally:
+        sup.stop()

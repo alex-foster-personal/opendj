@@ -1136,6 +1136,91 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "AudioEngineLoadIn": {
+        "properties": {
+          "deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Deck",
+            "type": "integer"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck",
+          "stable_id"
+        ],
+        "title": "AudioEngineLoadIn",
+        "type": "object"
+      },
+      "AudioEngineLoadOut": {
+        "properties": {
+          "beatgrid_missing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatgrid Missing"
+          },
+          "beatgrid_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatgrid Source"
+          },
+          "beats": {
+            "title": "Beats",
+            "type": "integer"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "deck": {
+            "title": "Deck",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck",
+          "stable_id",
+          "path",
+          "beatgrid_source",
+          "beats",
+          "bpm",
+          "beatgrid_missing"
+        ],
+        "title": "AudioEngineLoadOut",
+        "type": "object"
+      },
       "AudioEngineOut": {
         "properties": {
           "binary": {
@@ -24391,6 +24476,47 @@
           }
         },
         "summary": "Audio Engine Status",
+        "tags": [
+          "audio-engine"
+        ]
+      }
+    },
+    "/api/v1/audio-engine/load": {
+      "post": {
+        "description": "Load a library track onto a deck by ``stable_id``.\n\nThe file is the one ``GET /tracks/{id}/audio`` would stream and the\ngrid is the one ``GET /tracks/{id}/anlz`` serves, so the engine plays\nwhat the page shows. Returns once the engine has decoded the track.",
+        "operationId": "audio_engine_load_api_v1_audio_engine_load_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudioEngineLoadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioEngineLoadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "the engine is not running"
+          },
+          "422": {
+            "description": "the engine refused the load"
+          },
+          "504": {
+            "description": "the engine did not answer"
+          }
+        },
+        "summary": "Audio Engine Load",
         "tags": [
           "audio-engine"
         ]

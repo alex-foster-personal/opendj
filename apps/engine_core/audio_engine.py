@@ -143,6 +143,13 @@ Popen = Callable[..., "subprocess.Popen[str]"]
 
 
 @dataclass
+class _Pending:
+    done: threading.Event = field(default_factory=threading.Event)
+    result: dict[str, Any] | None = None
+    gone: str | None = None
+
+
+@dataclass
 class _Status:
     state: State = "off"
     clock: str | None = None
@@ -193,6 +200,10 @@ class AudioEngineSupervisor:
         self._stop = threading.Event()
         self._proc: subprocess.Popen[str] | None = None
         self._stderr: collections.deque[str] = collections.deque(maxlen=20)
+        # Commands this process sent on the engine's stdio, by id, waiting on
+        # their result line. The engine answers stdio's commands on stdio only.
+        self._pending: dict[str, _Pending] = {}
+        self._next_id = 0
 
     # ----- public ---------------------------------------------------------
     def status(self) -> dict[str, Any]:
@@ -300,6 +311,72 @@ class AudioEngineSupervisor:
                 self._status.state = "stopped"
             return self._snapshot()
 
+    def command(self, cmd: dict[str, Any], timeout_s: float = 60.0) -> dict[str, Any]:
+        """Send one protocol v1 command on stdio and wait for its result.
+
+        Returns the result line. Raises ``AudioEngineError`` when the engine
+        is not running, refuses the command (``code`` is the engine's own:
+        ``invalid``, ``decode``, ``not_implemented``...), exits first, or
+        does not answer in ``timeout_s``.
+        """
+        with self._lock:
+            proc = self._proc
+            if self._status.state != "running" or proc is None or proc.stdin is None:
+                raise AudioEngineError(
+                    "not_running", f"the audio engine is {self._status.state}"
+                )
+            self._next_id += 1
+            cid = f"py{self._next_id}"
+            waiter = _Pending()
+            self._pending[cid] = waiter
+        try:
+            try:
+                proc.stdin.write(json.dumps({"id": cid, "cmd": cmd}) + "\n")
+                proc.stdin.flush()
+            except (OSError, ValueError) as exc:
+                raise AudioEngineError(
+                    "not_running", f"could not write to odj-audio: {exc}"
+                ) from exc
+            if not waiter.done.wait(timeout_s):
+                raise AudioEngineError(
+                    "timeout", f"odj-audio did not answer {cmd.get('type')} in {timeout_s:.0f} s"
+                )
+        finally:
+            with self._lock:
+                self._pending.pop(cid, None)
+        if waiter.gone is not None:
+            raise AudioEngineError("not_running", waiter.gone)
+        result = waiter.result or {}
+        if not result.get("ok"):
+            err = result.get("error") or {}
+            raise AudioEngineError(
+                str(err.get("code", "unknown")), str(err.get("message", "refused"))
+            )
+        return result
+
+    def _on_line(self, line: str) -> None:
+        # State arrives 30 times a second; only results are worth parsing.
+        if '"result"' not in line:
+            return
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(msg, dict) or msg.get("type") != "result":
+            return
+        with self._lock:
+            waiter = self._pending.get(str(msg.get("id")))
+        if waiter is not None:
+            waiter.result = msg
+            waiter.done.set()
+
+    def _fail_pending(self, why: str) -> None:
+        with self._lock:
+            waiting = list(self._pending.values())
+        for w in waiting:
+            w.gone = why
+            w.done.set()
+
     # ----- the supervising thread ----------------------------------------
     def _set(self, **changes: Any) -> None:
         with self._lock:
@@ -396,10 +473,12 @@ class AudioEngineSupervisor:
                 # escalates to terminate. The engine sends state to stdio too.
                 while not self._stop.is_set():
                     try:
-                        if lines.get(timeout=0.2) is None:
-                            break
+                        line = lines.get(timeout=0.2)
                     except queue.Empty:
                         continue
+                    if line is None:
+                        break
+                    self._on_line(line)
             code = self._wait(proc)
             self._set(last_exit_code=code, pid=None, ws_url=None, token=None)
             if not self._stop.is_set():
@@ -408,6 +487,7 @@ class AudioEngineSupervisor:
         finally:
             with self._lock:
                 self._proc = None
+            self._fail_pending("odj-audio exited before answering")
 
     def _await_hello(
         self, lines: queue.Queue[str | None]

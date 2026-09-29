@@ -617,6 +617,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audio-engine/load": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Audio Engine Load
+         * @description Load a library track onto a deck by ``stable_id``.
+         *
+         *     The file is the one ``GET /tracks/{id}/audio`` would stream and the
+         *     grid is the one ``GET /tracks/{id}/anlz`` serves, so the engine plays
+         *     what the page shows. Returns once the engine has decoded the track.
+         */
+        post: operations["audio_engine_load_api_v1_audio_engine_load_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audio-engine/start": {
         parameters: {
             query?: never;
@@ -6397,6 +6421,30 @@ export interface components {
             size_bytes: number;
             /** Url */
             url: string;
+        };
+        /** AudioEngineLoadIn */
+        AudioEngineLoadIn: {
+            /** Deck */
+            deck: number;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** AudioEngineLoadOut */
+        AudioEngineLoadOut: {
+            /** Beatgrid Missing */
+            beatgrid_missing: string | null;
+            /** Beatgrid Source */
+            beatgrid_source: string | null;
+            /** Beats */
+            beats: number;
+            /** Bpm */
+            bpm: number | null;
+            /** Deck */
+            deck: number;
+            /** Path */
+            path: string;
+            /** Stable Id */
+            stable_id: string;
         };
         /** AudioEngineOut */
         AudioEngineOut: {
@@ -15851,6 +15899,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AudioEngineOut"];
                 };
+            };
+        };
+    };
+    audio_engine_load_api_v1_audio_engine_load_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudioEngineLoadIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudioEngineLoadOut"];
+                };
+            };
+            /** @description the engine is not running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description the engine refused the load */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description the engine did not answer */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
