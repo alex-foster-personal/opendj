@@ -1,5 +1,5 @@
 /**
- * requirement: CHROME-07, LIBM-29
+ * requirement: CHROME-07, LIBM-29, UX-FLOAT-01
  *
  * The MIDI drawer and the track-row popovers only exist after a click, so
  * they are fetched by that click instead of riding in the /performance boot
@@ -65,4 +65,21 @@ test('each row popover is fetched by the pick that opens it, and a failure is sh
 	assert.equal((rowPopovers.match(/role="alert"/g) ?? []).length, 2);
 	assert.match(rowPopovers, /Show in playlists failed to load: \{playlistsError\}/);
 	assert.match(rowPopovers, /Relocate failed to load: \{relocateError\}/);
+});
+
+// Codex P2 on PR #3896: the load-error boxes used the raw pointer point with
+// position: fixed, so near the bottom or right edge the message and its Close
+// button landed offscreen. They must go through the same viewport-clamping
+// action the loaded popovers use.
+test('each popover load-error box is placed by pointFloatingAction at its own anchor, never raw coordinates', () => {
+	assert.match(rowPopovers, /import \{ pointFloatingAction \} from '\$lib\/ui\/clamp-to-viewport'/);
+	const boxes = [...rowPopovers.matchAll(/<div\s+class="popover-load-error"[^>]*>/g)].map((m) => m[0]);
+	assert.equal(boxes.length, 2, 'one error box per popover');
+	assert.match(boxes[0], /use:pointFloatingAction=\{\{ x: playlistsMenu\.x, y: playlistsMenu\.y \}\}/);
+	assert.match(boxes[1], /use:pointFloatingAction=\{\{ x: relocateMenu\.x, y: relocateMenu\.y \}\}/);
+	for (const box of boxes) assert.doesNotMatch(box, /style=/, 'raw left/top would bypass the clamp');
+	// The loaded popovers use the same action, so both paths clamp alike.
+	for (const loaded of ['TrackPlaylistsPopover.svelte', 'RelocatePopover.svelte']) {
+		assert.match(read(`src/lib/components/rb/browser/${loaded}`), /use:pointFloatingAction=\{\{ x, y \}\}/);
+	}
 });

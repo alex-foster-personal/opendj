@@ -23,6 +23,10 @@
 	 *     [if] a second pick after a failure never retries [then] ⛔️
 	 */
 	import type { Component } from 'svelte';
+	// The error branches are placed exactly like the loaded popovers: a fixed
+	// box at the click point, kept inside the viewport so the message and its
+	// Close button stay reachable near the bottom or right edge.
+	import { pointFloatingAction } from '$lib/ui/clamp-to-viewport';
 
 	type PlaylistsProps = { stableId: string; x: number; y: number; onclose: () => void };
 	type RelocateProps = PlaylistsProps & { trackTitle: string | null; onrelocated: () => void };
@@ -91,7 +95,11 @@
 		onclose={() => (playlistsMenu = null)}
 	/>
 {:else if playlistsMenu !== null && playlistsError !== null}
-	<div class="popover-load-error" role="alert" style={`left:${playlistsMenu.x}px;top:${playlistsMenu.y}px`}>
+	<div
+		class="popover-load-error"
+		role="alert"
+		use:pointFloatingAction={{ x: playlistsMenu.x, y: playlistsMenu.y }}
+	>
 		<span>Show in playlists failed to load: {playlistsError}</span>
 		<button type="button" onclick={() => (playlistsMenu = null)}>Close</button>
 	</div>
@@ -106,7 +114,11 @@
 		onrelocated={() => onrelocated?.()}
 	/>
 {:else if relocateMenu !== null && relocateError !== null}
-	<div class="popover-load-error" role="alert" style={`left:${relocateMenu.x}px;top:${relocateMenu.y}px`}>
+	<div
+		class="popover-load-error"
+		role="alert"
+		use:pointFloatingAction={{ x: relocateMenu.x, y: relocateMenu.y }}
+	>
 		<span>Relocate failed to load: {relocateError}</span>
 		<button type="button" onclick={() => (relocateMenu = null)}>Close</button>
 	</div>

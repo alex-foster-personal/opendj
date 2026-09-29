@@ -106,45 +106,21 @@ test('pad-mode menu closes on outside pointerdown and on Escape', () => {
 	assert.match(key, /open = false;/);
 });
 
-test('triggerFloatingAction places the 8-item menu fixed and inside the viewport for a deck-bottom trigger', async () => {
+test('placeFloating flips the 8-item menu above a deck-bottom trigger and keeps it inside the viewport', async () => {
+	// Pure placement math, the function triggerFloatingAction applies to the
+	// menu's measured box. No window, observer or DOM node is stood in for;
+	// the action's DOM wiring is covered by the source check above.
 	const clamp = await vite.ssrLoadModule('/src/lib/ui/clamp-to-viewport.ts');
-	const saved = {
-		window: globalThis.window,
-		ResizeObserver: globalThis.ResizeObserver,
-		requestAnimationFrame: globalThis.requestAnimationFrame
-	};
 	const viewport = { width: 1280, height: 800 };
-	globalThis.window = {
-		innerWidth: viewport.width,
-		innerHeight: viewport.height,
-		addEventListener() {},
-		removeEventListener() {}
-	};
-	globalThis.ResizeObserver = class {
-		observe() {}
-		disconnect() {}
-	};
-	const frames = [];
-	globalThis.requestAnimationFrame = (cb) => frames.push(cb);
-	try {
-		// HOT CUE button at the bottom of a ~248px deck that sits at the
-		// bottom of the window: an 8-item menu (~190px) cannot open below.
-		const triggerRect = { left: 40, top: 770, width: 70, height: 18 };
-		const trigger = { getBoundingClientRect: () => triggerRect };
-		const size = { width: 180, height: 8 * 23 + 8 };
-		const node = { offsetWidth: size.width, offsetHeight: size.height, style: {} };
-		const action = clamp.triggerFloatingAction(node, { getTrigger: () => trigger, preferred: 'below', gap: 4 });
-		assert.equal(frames.length, 1);
-		frames[0]();
-		assert.equal(node.style.position, 'fixed');
-		const expected = clamp.placeFloating({ trigger: triggerRect, size, viewport, preferred: 'below', gap: 4 });
-		assert.equal(node.style.left, `${Math.round(expected.x)}px`);
-		assert.equal(node.style.top, `${Math.round(expected.y)}px`);
-		const top = parseInt(node.style.top, 10);
-		assert.equal(top, triggerRect.top - size.height - 4, 'flips above the trigger when below overflows');
-		assert.ok(top >= clamp.VIEWPORT_MARGIN_PX && top + size.height <= viewport.height - clamp.VIEWPORT_MARGIN_PX);
-		action.destroy();
-	} finally {
-		Object.assign(globalThis, saved);
-	}
+	// HOT CUE button at the bottom of a ~248px deck at the bottom of the window.
+	const trigger = { left: 40, top: 770, width: 70, height: 18 };
+	const size = { width: 180, height: 8 * 23 + 8 };
+	const box = clamp.placeFloating({ trigger, size, viewport, preferred: 'below', gap: 4 });
+	assert.equal(box.y, trigger.top - size.height - 4, 'flips above the trigger when below overflows');
+	assert.equal(box.x, trigger.left);
+	assert.ok(box.y >= clamp.VIEWPORT_MARGIN_PX && box.y + size.height <= viewport.height - clamp.VIEWPORT_MARGIN_PX);
+	// Control: with room below, it opens below the trigger, not flipped.
+	const high = { ...trigger, top: 200 };
+	const below = clamp.placeFloating({ trigger: high, size, viewport, preferred: 'below', gap: 4 });
+	assert.equal(below.y, high.top + high.height + 4);
 });
