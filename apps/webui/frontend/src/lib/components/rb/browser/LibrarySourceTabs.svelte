@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { COLUMN_VIEW_PATH, TREE_LIST_PATH } from '$lib/ui/icon-glyphs';
+	import { COLUMN_VIEW_PATH, REDO_PATH, TREE_LIST_PATH, UNDO_PATH } from '$lib/ui/icon-glyphs';
 	import type { PlaylistTreeViewMode } from '$lib/rb/playlist-tree-view-prefs';
 	import {
 		playlistHistoryChrome,
@@ -95,6 +95,7 @@
 			type="button"
 			class="icon-btn"
 			data-testid="playlist-undo"
+			aria-label="Undo playlist edit"
 			title="Undo playlist edit (Ctrl/Cmd+Z). Hover for recent edits."
 			disabled={!playlistHistoryChrome.canUndo}
 			bind:this={historyAnchor}
@@ -102,17 +103,22 @@
 			onmouseenter={openHistory}
 			onfocus={openHistory}
 		>
-			↶
+			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+				<path d={UNDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
 		</button>
 		<button
 			type="button"
 			class="icon-btn"
 			data-testid="playlist-redo"
+			aria-label="Redo playlist edit"
 			title="Redo playlist edit (Ctrl/Cmd+Shift+Z)"
 			disabled={!playlistHistoryChrome.canRedo}
 			onclick={() => redoPlaylistFromChrome()}
 		>
-			↷
+			<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+				<path d={REDO_PATH} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
 		</button>
 	</div>
 </div>

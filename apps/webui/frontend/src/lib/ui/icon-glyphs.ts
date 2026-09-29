@@ -44,3 +44,15 @@ export const PENCIL_PATH = 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z M14.5 5.5
 
 /** Lyrics column vocal verdict (a single note). */
 export const MUSIC_NOTE_PATH = 'M9 18V5l11-2v13 M9 18a3 3 0 1 1-6 0a3 3 0 0 1 6 0z M20 16a3 3 0 1 1-6 0a3 3 0 0 1 6 0z';
+
+/** Undo / redo (curved arrows), 24x24 viewBox, stroked. */
+export const UNDO_PATH = 'M9 14 4 9l5-5 M4 9h10.5a5.5 5.5 0 0 1 0 11H11';
+
+export const REDO_PATH = 'M15 14l5-5-5-5 M20 9H9.5a5.5 5.5 0 0 0 0 11H13';
+
+/** Window controls, 24x24 viewBox, stroked: minimize bar, restore square, close X. */
+export const MINIMIZE_PATH = 'M5 12h14';
+
+export const RESTORE_PATH = 'M5 5h14v14H5z';
+
+export const CLOSE_PATH = 'M6 6l12 12 M18 6 6 18';

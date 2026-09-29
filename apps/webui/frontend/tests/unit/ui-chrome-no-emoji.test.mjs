@@ -18,6 +18,13 @@
  * files still fails the sweep, and it does not shrink the search space for
  * any file not named here. Fixing one of these files means removing its
  * entry, not widening it.
+ *
+ * BUTTON_GLYPHS are ordinary action symbols (undo/redo arrows, window
+ * controls, close crosses, back and collapse arrows). They are also ordinary
+ * text and punctuation (an U+2014 character in toast prose, "1280×800"), so they are
+ * banned only where they are a CONTROL: inside a <button>'s content, not in
+ * its attributes and not as a word joiner between two letters or digits
+ * (Codex BLOCKING 4133648260, PR #3896).
  */
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -32,6 +39,10 @@ const SRC_ROOTS = ['src/lib', 'src/routes'];
 // Extended_Pictographic depends on the runtime's Unicode data (Node 22.14,
 // Unicode 16: yes; Node 22.22, Unicode 17: no), so the verdict must not.
 const BANNED_GLYPHS = ['✓', '✗', '⚡', '★', '☆', '▲', '▼', '▾', '↻', '✎', '✅', '🤖'];
+
+// The U+2014 character is spelled as an escape so this file carries no literal one.
+const BUTTON_GLYPHS = ['↶', '↷', '▢', '\u2014', '▸', '←', '‹', '›', '■', '▯', '┃', '┆', '✕', '×'];
+const BUTTON_GLYPH_SET = new Set(BUTTON_GLYPHS);
 
 /**
  * Musical accidentals are TEXT in key names ("F♯m", "B♭"), not icons, and
@@ -66,6 +77,9 @@ const NAMED_ENTITIES = new Map([
 	['rarr', '→'],
 	['hellip', '…'],
 	['middot', '·'],
+	['mdash', '\u2014'],
+	['lsaquo', '‹'],
+	['rsaquo', '›'],
 
 	['check', '✓'],
 	['checkmark', '✓'],
@@ -128,24 +142,121 @@ const KNOWN_DEBT = new Map([
 	['src/routes/admin/format.ts', new Set(['▲', '▼'])],
 	['src/routes/progress-tree/types.ts', new Set(['⏸', '✋', '⚠'])],
 
-	['src/lib/components/rb/BrowserPanel.svelte', new Set(['▾'])],
-	['src/lib/components/rb/ToastStack.svelte', new Set(['▾'])],
+	['src/lib/components/rb/BrowserPanel.svelte', new Set(['▾', '←', '‹', '›'])], // button glyphs: 3356 ← Back, 3489 ‹ / › collapse
+	['src/lib/components/rb/ToastStack.svelte', new Set(['▾', '▸'])], // button glyph: 164 ▸ expand
 	['src/lib/components/rb/browser/AutoPlayWalkthrough.svelte', new Set(['😊', '🙃'])],
 	['src/lib/components/rb/browser/RecentlyDeletedFolder.svelte', new Set(['↻'])],
-	['src/lib/components/rb/deck/HotCueBank.svelte', new Set(['✎'])],
-	['src/lib/components/rb/deck/LoopCluster.svelte', new Set(['▾'])],
+	['src/lib/components/rb/deck/HotCueBank.svelte', new Set(['✎', '×'])], // button glyph: 326, 385 × clear
+	['src/lib/components/rb/deck/LoopCluster.svelte', new Set(['▾', '▯'])], // button glyph: 280 ▯▯ mode
 	['src/routes/admin/LyricSourceOrder.svelte', new Set(['▲', '▼'])],
-	['src/routes/progress-tree/DepGraph.svelte', new Set(['⚠', '↗'])],
+	['src/routes/progress-tree/DepGraph.svelte', new Set(['⚠', '↗', '✕'])], // button glyph: 276 ✕ close
 	['src/routes/progress-tree/NodeDetail.svelte', new Set(['↗'])],
 	['src/routes/progress-tree/NodeRow.svelte', new Set(['▾'])],
-	['src/routes/progress-tree/StatusChip.svelte', new Set(['✓'])]
+	['src/routes/progress-tree/StatusChip.svelte', new Set(['✓'])],
+
+	// Third group: BUTTON_GLYPHS already used as controls when the button-scoped
+	// ban landed (Codex BLOCKING 4133648260). Only the two components Codex
+	// named (LibrarySourceTabs undo/redo, MidiLearnLogPopout window controls)
+	// were converted; the rest are tracked in .planning/debt/3896.md. Lines are
+	// where each glyph sat at that commit, for finding them, not for matching.
+	['src/lib/components/lyrics/StageOverlay.svelte', new Set(['×'])], // 282
+	['src/lib/components/rb/CreatePairingSheet.svelte', new Set(['×'])], // 141, 162
+	['src/lib/components/rb/Deck.svelte', new Set(['┃', '┆'])], // 452 ┃┃┃, 455 ┆┆┆
+	['src/lib/components/rb/FeedbackPinCard.svelte', new Set(['×'])], // 277, 296
+	['src/lib/components/rb/FeedbackSupportPanel.svelte', new Set(['×'])], // 31
+	['src/lib/components/rb/MidiPanel.svelte', new Set(['×'])], // 119
+	['src/lib/components/rb/browser/PlaylistTree.svelte', new Set(['×'])], // 346
+	['src/lib/components/rb/browser/PreviewStrip.svelte', new Set(['■'])], // 296 stop
+	['src/lib/components/rb/browser/SearchBox.svelte', new Set(['×'])], // 128
+	['src/lib/components/rb/browser/SpotifySourcePanel.svelte', new Set(['×'])], // 72
+	['src/lib/components/rb/browser/TrackTable.svelte', new Set(['×'])], // 1802
+	['src/lib/components/rb/deck/LoopSafetyControls.svelte', new Set(['×'])], // 89
+	['src/lib/components/smartlists/RuleGroup.svelte', new Set(['×'])], // 40
+	['src/lib/components/smartlists/RulePredicate.svelte', new Set(['×'])], // 49, 63
+	['src/routes/pairings/+page.svelte', new Set(['×'])], // 80
+	['src/routes/track/[stable_id]/+page.svelte', new Set(['×'])] // 107
 ]);
 
+/** Comments removed; their newlines kept, so a finding's line number is the file's. */
 function stripComments(source) {
+	const blank = (m) => m.replace(/[^\n]/g, '');
 	return source
-		.replace(/\/\*[\s\S]*?\*\//g, '')
-		.replace(/^\s*\/\/.*$/gm, '')
-		.replace(/<!--[\s\S]*?-->/g, '');
+		.replace(/\/\*[\s\S]*?\*\//g, blank)
+		.replace(/^[ \t]*\/\/.*$/gm, '')
+		.replace(/<!--[\s\S]*?-->/g, blank);
+}
+
+/**
+ * Index of the `>` that closes the tag opening at `start`. Brace- and
+ * quote-aware, because Svelte attributes hold arrow functions
+ * (`onclick={() => x}`) whose `>` must not end the tag.
+ */
+function tagEnd(source, start) {
+	let depth = 0;
+	let quote = null;
+	for (let i = start + 1; i < source.length; i++) {
+		const c = source[i];
+		if (quote !== null) {
+			if (c === quote && source[i - 1] !== '\\') quote = null;
+			continue;
+		}
+		if (c === '"' || (depth > 0 && (c === "'" || c === '`'))) quote = c;
+		else if (c === '{') depth++;
+		else if (c === '}') depth--;
+		else if (c === '>' && depth === 0) return i;
+	}
+	return -1;
+}
+
+/** A button body with every nested tag blanked (newlines kept), so only content remains. */
+function blankTags(body) {
+	let out = '';
+	let i = 0;
+	while (i < body.length) {
+		if (body[i] === '<' && /[a-zA-Z/]/.test(body[i + 1] ?? '')) {
+			const end = tagEnd(body, i);
+			if (end === -1) break;
+			out += body.slice(i, end + 1).replace(/[^\n]/g, ' ');
+			i = end + 1;
+		} else {
+			out += body[i++];
+		}
+	}
+	return out;
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** The nearest non-blank character before or after index `i`, on the same line. */
+function neighbor(text, i, step) {
+	for (let j = i + step; j >= 0 && j < text.length; j += step) {
+		if (text[j] === ' ' || text[j] === '\t') continue;
+		return text[j] === '\n' ? '' : text[j];
+	}
+	return '';
+}
+
+/**
+ * BUTTON_GLYPHS used as a control: inside a <button>'s content (text or a
+ * string rendered there), and not a joiner between two words or numbers
+ * ("1280×800", "Save \u2014 then close" stay text). Returns [{ glyph, line }].
+ */
+function buttonControlGlyphs(source) {
+	const found = [];
+	for (const open of source.matchAll(/<button\b/g)) {
+		const openEnd = tagEnd(source, open.index);
+		if (openEnd === -1) continue;
+		const close = source.indexOf('</button', openEnd);
+		if (close === -1) continue;
+		const body = blankTags(source.slice(openEnd + 1, close));
+		for (let i = 0; i < body.length; i++) {
+			if (!BUTTON_GLYPH_SET.has(body[i])) continue;
+			if (WORD_CHAR.test(neighbor(body, i, -1)) && WORD_CHAR.test(neighbor(body, i, 1))) continue;
+			const line = source.slice(0, openEnd + 1 + i).split('\n').length;
+			found.push({ glyph: body[i], line });
+		}
+	}
+	return found;
 }
 
 function findEmojiCodepoints(source) {
@@ -192,6 +303,13 @@ for (const rel of scanned) {
 			0,
 			`${rel} contains emoji codepoints: ${emoji.map((g) => `${g} (U+${g.codePointAt(0).toString(16)})`).join(', ')}`
 		);
+
+		const controls = buttonControlGlyphs(source).filter((f) => !allowed.has(f.glyph));
+		assert.deepEqual(
+			controls,
+			[],
+			`${rel} uses text-symbol glyphs as button controls: ${controls.map((f) => `${f.glyph} at line ${f.line}`).join(', ')} -- draw an inline SVG icon`
+		);
 	});
 }
 
@@ -199,7 +317,15 @@ test('CHROME-01: KNOWN_DEBT grandfathers exactly the glyphs each file contains, 
 	for (const [rel, allowed] of KNOWN_DEBT) {
 		assert.ok(scanned.includes(rel), `KNOWN_DEBT names ${rel}, which the sweep no longer finds -- remove the stale entry`);
 		const source = scannable(rel);
+		const controlGlyphs = new Set(buttonControlGlyphs(source).map((f) => f.glyph));
 		for (const glyph of allowed) {
+			if (BUTTON_GLYPH_SET.has(glyph)) {
+				assert.ok(
+					controlGlyphs.has(glyph),
+					`KNOWN_DEBT for ${rel} lists ${glyph}, but no button there uses it as a control any more -- shrink the entry`
+				);
+				continue;
+			}
 			const isBanned = BANNED_GLYPHS.includes(glyph);
 			const isEmoji = EMOJI_CODEPOINT_RE.test(glyph);
 			assert.ok(isBanned || isEmoji, `KNOWN_DEBT for ${rel} lists ${glyph}, which the sweep would not have flagged anyway`);
@@ -247,4 +373,60 @@ test('CHROME-01: legitimate entities decode to text the sweep allows', () => {
 
 test('CHROME-01: a named entity the sweep cannot decode fails loudly, never passes unread', () => {
 	assert.throws(() => decodeEncodedGlyphs('&utrif;'), /unknown named entity &utrif;/);
+});
+
+test('CHROME-01: a text-symbol action glyph used as a button control is caught', () => {
+	const glyphsOf = (src) => buttonControlGlyphs(decodeEncodedGlyphs(src)).map((f) => f.glyph);
+	for (const glyph of BUTTON_GLYPHS) {
+		assert.deepEqual(glyphsOf(`<button type="button">${glyph}</button>`), [glyph], `lone ${glyph}`);
+	}
+	assert.deepEqual(glyphsOf('<button onclick={() => (open = false)}>&times;</button>'), ['×'], 'entity, arrow fn attr');
+	assert.deepEqual(glyphsOf("<button>{min ? '▢' : '\u2014'}</button>"), ['▢', '\u2014'], 'string literals rendered');
+	assert.deepEqual(glyphsOf('<button>\n\t\u2190 Back\n</button>'), ['←'], 'glyph leading a label');
+	assert.deepEqual(glyphsOf('<button>&times; group</button>'), ['×'], 'glyph leading a label, entity');
+	assert.deepEqual(glyphsOf('<button><span class="remove">×</span><small>LO</small></button>'), ['×'], 'inside a nested span');
+	assert.deepEqual(glyphsOf('<button>Back \u2190</button>'), ['←'], 'glyph trailing a label');
+});
+
+test('CHROME-01: the same characters as ordinary text or punctuation still pass', () => {
+	const glyphsOf = (src) => buttonControlGlyphs(decodeEncodedGlyphs(src)).map((f) => f.glyph);
+	assert.deepEqual(glyphsOf('<button>Resize to 1280×800</button>'), [], 'a dimension inside a label');
+	assert.deepEqual(glyphsOf('<button>Save \u2014 then close</button>'), [], 'an U+2014 character between words');
+	assert.deepEqual(glyphsOf('<p>\u2014</p><dd>{w}×{h}</dd><span>× 2</span>'), [], 'outside any button');
+	assert.deepEqual(glyphsOf('<button title="a \u2014 b" aria-label="x × y">Go</button>'), [], 'in the button attributes');
+	assert.deepEqual(glyphsOf("<button onclick={() => go('×')}>Go</button>"), [], 'a > inside an attribute does not end the tag');
+	assert.deepEqual(glyphsOf('<button><span title="a \u2014 b">Go</span></button>'), [], 'in a nested tag attribute');
+
+	// Real prose already on this branch: the toast copy's U+2014 characters and the
+	// feedback card's viewport readout pass, and the scan did see them.
+	const toast = scannable('src/lib/rb/reanalyze-batch-feedback.ts');
+	assert.ok(toast.includes('\u2014'), 'control: the toast prose carries U+2014 characters');
+	assert.deepEqual(buttonControlGlyphs(toast), []);
+	const pin = scannable('src/lib/components/rb/FeedbackPinCard.svelte');
+	const viewportLine = pin.slice(0, pin.indexOf('}×{')).split('\n').length;
+	assert.ok(pin.includes('}×{'), 'control: the feedback card shows a viewport as W×H');
+	const pinLines = buttonControlGlyphs(pin).map((f) => f.line);
+	assert.ok(pinLines.length >= 2, 'control: the card close buttons are still seen');
+	assert.equal(pinLines.includes(viewportLine), false, 'the viewport readout is text, not a control');
+});
+
+test('CHROME-01: the Codex-named controls draw SVG icons with an accessible name and a title', () => {
+	const cases = [
+		['src/lib/components/rb/browser/LibrarySourceTabs.svelte', ['data-testid="playlist-undo"', 'data-testid="playlist-redo"']],
+		['src/lib/components/rb/midi/MidiLearnLogPopout.svelte', ['minimize MIDI log', 'aria-label="close MIDI log"']]
+	];
+	for (const [rel, markers] of cases) {
+		assert.equal(KNOWN_DEBT.has(rel), false, `${rel} was converted, so it carries no debt entry`);
+		const source = scannable(rel);
+		assert.deepEqual(buttonControlGlyphs(source), [], rel);
+		for (const marker of markers) {
+			const at = source.indexOf(marker);
+			assert.ok(at >= 0, `${rel}: ${marker}`);
+			const start = source.lastIndexOf('<button', at);
+			const button = source.slice(start, source.indexOf('</button', at));
+			assert.match(button, /aria-label=/, `${rel}: ${marker} has an aria-label`);
+			assert.match(button, /title=/, `${rel}: ${marker} has a title`);
+			assert.match(button, /<svg[^>]*aria-hidden="true"/, `${rel}: ${marker} draws an SVG icon`);
+		}
+	}
 });
