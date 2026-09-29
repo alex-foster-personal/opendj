@@ -126,6 +126,15 @@ elif [ -z "${DOPPLER_TOKEN:-}" ]; then
   _log "DOPPLER_TOKEN not set: Doppler checks will SKIP with a stated reason"
 fi
 
+# --- tailnet (only where an auth key is configured) ---------------------------
+# Lets `ssh <machine>` reach the fleet from a cloud session. A failed join does
+# not stop the other installs; the verify step below turns it red.
+if [ -n "${TS_AUTHKEY:-}" ] && [ "$CHECK_ONLY" -eq 0 ]; then
+  bash scripts/cloud_tailnet_join.sh || _log "tailnet join FAILED; the smoke test will report it"
+elif [ -z "${TS_AUTHKEY:-}" ]; then
+  _log "TS_AUTHKEY not set: no tailnet, the tailnet check will SKIP with a stated reason"
+fi
+
 # --- verify ------------------------------------------------------------------
 _log "running tests/test_cloud_agent_env.py"
 CLOUD_ENV_DOCTOR=1 .venv/bin/python -m pytest tests/test_cloud_agent_env.py -q -p no:cacheprovider
