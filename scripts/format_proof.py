@@ -15,12 +15,13 @@ Requirements (mini-PRD):
     every line, which is looser: it would pass a change to a doctest's relative
     indentation). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
     keeps its text, its order, how many AST nodes open and close before it, how many
-    names, keywords and numbers precede it, and whether code precedes it on its line.
+    names, keywords, numbers and operators precede it, and whether code precedes it on its line.
     Only its line, its trailing space and the one space ruff adds after `#` may
     change. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
-      [if] a comment is added, removed, reworded, reordered, or moved past any node, name or keyword [then ⛔️] exit 1
+      [if] a comment is added, removed, reworded, reordered, or moved past a node or fixed token [then ⛔️] exit 1
+      [if] ruff moves a trailing operator past an end-of-line comment [then ⛔️] exit 1 (no count tells it from a move)
       [if] an end-of-line comment moves onto its own line, e.g. a block header's pragma into the body [then ⛔️] exit 1
       [if] a shebang moves off byte 0 or onto it [then ⛔️] exit 1
       [if] the range adds, deletes or renames a file, or changes a file's mode [then ⛔️] exit 1
@@ -38,7 +39,7 @@ whitespace from EVERY string would pass a real edit to a string value, so only
 docstring positions are normalized (tests/quality/test_format_proof.py pins that).
 A proof over zero files would read as success, so it exits 2 instead. A comment's
 LINE is not compared, because every re-wrap above it moves it; its place in the tree
-is, because a formatter never moves a comment past a token. So a noqa or type-ignore
+is, counted in nodes and in the tokens ruff never adds or drops. So a noqa or type-ignore
 moved to another statement or argument fails even when a count-based ratchet would net
 to zero, and so does a whole-module type-ignore moved below the module's first line.
 Whether a pragma still covers its finding after a re-wrap inside one statement is not
@@ -94,6 +95,8 @@ class CFG:
         ast.SetComp,
         ast.DictComp,
     )
+    # The only operator tokens ruff adds or drops: parentheses, trailing commas, and the `;` it splits statements at.
+    MOVABLE_OPERATORS: frozenset[str] = frozenset({"(", ")", ",", ";"})
     DOCSTRING_OWNERS: tuple[type[ast.Module], type[ast.ClassDef], type[ast.FunctionDef], type[ast.AsyncFunctionDef]] = (
         ast.Module,
         ast.ClassDef,
@@ -182,25 +185,34 @@ def _normalize_comment(text: str) -> str:
     return "#" + body
 
 
+def _is_fixed_token(tok: tokenize.TokenInfo) -> bool:
+    """A token ruff never adds or drops: a name, keyword, number or operator, but not a string, which it joins."""
+    if tok.type == tokenize.OP:
+        return tok.string not in CFG.MOVABLE_OPERATORS
+    return tok.type in (tokenize.NAME, tokenize.NUMBER)
+
+
 def _comments(source: str) -> list[tuple[tuple[int, int, int, bool], str]]:
     """Every comment in order, as (place, normalized text): its line is layout, its words and place are not.
 
-    A formatter never moves a comment past a token, so its place in the tree is how many AST nodes open and how many
-    close before it; that counts statements, names, strings and `...` alike, and survives ruff adding or dropping
-    parentheses, commas and string pieces. Keywords have no node (`else:`), so NAME and NUMBER tokens are counted
-    too, which ruff never adds or drops. ruff keeps an end-of-line comment at the end of a line, and coverage reads
-    `if x:  # pragma: no cover` as the whole block but a comment-only line as nothing, so that is part of it too."""
+    Its place in the tree is how many AST nodes open and close before it, which counts statements, strings and `...`
+    alike and survives ruff adding or dropping parentheses, commas and string pieces, and how many fixed tokens
+    precede it: names, keywords, numbers and operators, which ruff never adds or drops, and which cover `else:` and
+    `+`, since neither has a node. ruff does move a trailing operator past an end-of-line comment (`a +  # c` then
+    `b` becomes `a  # c` then `+ b`), and that fails here, the safe side. ruff keeps an end-of-line comment at the end
+    of a line, and coverage reads `if x:  # pragma: no cover` as the whole block but a comment-only line as nothing,
+    so that is part of it too."""
     starts, ends = _node_bounds(ast.parse(source))
     found: list[tuple[tuple[int, int, int, bool], str]] = []
-    names = 0
+    fixed_tokens = 0
     prev_row = 0  # A comment is own-line when the token before it ended on an earlier row: only code can end on its.
     for tok in tokenize.generate_tokens(io.StringIO(source).readline):
         if tok.type == tokenize.COMMENT:
             row = tok.start[0]
-            place = (bisect.bisect_right(starts, row), bisect.bisect_right(ends, row), names, prev_row != row)
+            place = (bisect.bisect_right(starts, row), bisect.bisect_right(ends, row), fixed_tokens, prev_row != row)
             found.append((place, _normalize_comment(tok.string)))
-        elif tok.type in (tokenize.NAME, tokenize.NUMBER):
-            names += 1
+        elif _is_fixed_token(tok):
+            fixed_tokens += 1
         prev_row = tok.end[0]
     return found
 

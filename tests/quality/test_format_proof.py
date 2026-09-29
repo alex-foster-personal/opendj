@@ -31,7 +31,11 @@ Regression lines:
   - if prove passes a header pragma moved into the body, or any end-of-line comment made own-line, then broken
   - if prove passes a comment moved past a name inside one statement (a per-argument type comment) then broken
   - if prove passes a comment moved between string args or `...` items, into a bracket or out of a call then broken
+  - if prove passes a comment moved across an operator or keyword in one expression (`+`, `==`, `.`, `and`) then broken
+  - if prove passes a comment moved into a parenthesized tuple, whose `(` is not counted, then broken
+  - if prove passes ruff moving a trailing operator past an end-of-line comment then broken: it is not provable
   - if prove fails ruff joining strings, dropping parentheses or adding commas around a comment then broken
+  - if prove fails ruff adding a trailing comma between an item and its comment then broken
   - if prove fails ruff unparenthesizing a commented value (`x = (\n    1  # c\n)` to `x = 1  # c`) then broken
   - if prove fails a semicolon split that keeps the trailing comment on the last statement then broken
   - if prove passes a shebang moved off or onto byte 0 then broken
@@ -240,6 +244,7 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
             "try:\n    pass\nexcept E:\n    x = (\n        1  # c\n    )\n",
             "try:\n    pass\nexcept E:\n    x = 1  # c\n",
         ),
+        ("x = [\n    1,\n    2  # c\n]\n", "x = [\n    1,\n    2,  # c\n]\n"),
     ],
     ids=[
         "noqa-rewrap-same-statement",
@@ -253,6 +258,7 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
         "commented-value-unparenthesized",
         "commented-return-unparenthesized",
         "commented-value-in-a-handler-unparenthesized",
+        "trailing-comma-added-before-a-comment",
     ],
 )
 def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:
@@ -282,6 +288,11 @@ def test_prove_control_layout_around_comments_still_proves(repo: Path, before: s
         ("x = (\n    # c\n    [\n        1,\n    ]\n)\n", "x = (\n    [\n        # c\n        1,\n    ]\n)\n"),
         ("x = [foo(\n    a,  # c\n), b]\n", "x = [foo(\n    a,\n),  # c\n b]\n"),
         ("if x:\n    pass  # c\nelse:\n    pass\n", "if x:\n    pass\nelse:  # c\n    pass\n"),
+        ("x = (\n    a\n    # c\n    + b\n)\n", "x = (\n    a +\n    # c\n    b\n)\n"),
+        ("x = (\n    a  # c\n    == b\n)\n", "x = (\n    a ==  # c\n    b\n)\n"),
+        ("x = (\n    a\n    # c\n    .b\n)\n", "x = (\n    a.\n    # c\n    b\n)\n"),
+        ("x = (\n    a\n    # c\n    and b\n)\n", "x = (\n    a and\n    # c\n    b\n)\n"),
+        ("x = [\n    # c\n    (\n        1,\n    ),\n]\n", "x = [\n    (\n        # c\n        1,\n    ),\n]\n"),
     ],
     ids=[
         "past-a-sibling-statement",
@@ -297,16 +308,34 @@ def test_prove_control_layout_around_comments_still_proves(repo: Path, before: s
         "into-a-bracket",
         "out-of-a-nested-call",
         "onto-an-else",
+        "own-line-across-an-operator",
+        "end-of-line-across-a-comparison",
+        "across-an-attribute-dot",
+        "across-a-keyword-operator",
+        "into-a-parenthesized-tuple",
     ],
 )
 def test_prove_rejects_a_comment_moved_to_another_place_in_the_tree(repo: Path, before: str, after: str) -> None:
-    """A formatter never moves a comment past a token, so a comment keeps how many AST nodes open and close before
-    it, how many names and keywords precede it (`else:` has no node), and whether it ends a line of code. Some cases
-    cross exactly one of those: a node start (into-a-bracket), a node end (out-of-a-nested-call), a keyword
-    (onto-an-else), a line end (header-pragma-into-the-body). A whole-module type-ignore only works above the first
-    statement, and coverage reads `if cond:  # pragma: no cover` as the whole block, a comment-only line as nothing."""
+    """A comment keeps how many AST nodes open and close before it, how many of the tokens ruff never adds or drops
+    precede it (names, keywords, numbers, operators: `else:` and `+` have no node of their own), and whether it ends
+    a line of code. Some cases cross exactly one of those: a node start (into-a-parenthesized-tuple, whose `(` ruff
+    may drop), a node end (out-of-a-nested-call), a keyword (across-a-keyword-operator), an operator
+    (own-line-across-an-operator), a line end (header-pragma-into-the-body). A whole-module type-ignore only works
+    above the first statement, and coverage reads `if cond:  # pragma: no cover` as the whole block, a comment-only
+    line as nothing."""
     base = _commit(repo, {"m.py": before}, "init")
     head = _commit(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 1
+    assert any("comment" in line for line in result.lines), result.lines
+
+
+def test_prove_fails_safe_when_ruff_moves_a_trailing_operator_past_a_comment(repo: Path) -> None:
+    """The rule's known limit, pinned so it is not loosened by accident: ruff turns `a +  # c` then `b` into `a  # c`
+    then `+ b`, which moves the operator past the comment. No token count tells that from a comment moved across the
+    operator, so the proof fails it, and such a comment is re-anchored in its own commit before the part."""
+    base = _commit(repo, {"m.py": "x = (a +  # c\n     b)\n"}, "init")
+    head = _commit(repo, {"m.py": "x = (\n    a  # c\n    + b\n)\n"}, "style(format): ruff@0.16.3 m")
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 1
     assert any("comment" in line for line in result.lines), result.lines
