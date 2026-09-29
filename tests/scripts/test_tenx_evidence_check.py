@@ -104,3 +104,10 @@ def test_template_keeps_standard_sections() -> None:
     assert "ADR" in template and "## 10x Evidence" in template, (
         "if the PR template loses sections then broken"
     )
+
+
+def test_comment_token_inside_fence_does_not_hide_evidence() -> None:
+    body = "```\necho '<!--'\n```\n" + GOOD
+    assert check("10xHunter-- x", body).ok, (
+        "if a <!-- inside a code block hides real evidence then broken"
+    )

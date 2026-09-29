@@ -77,7 +77,7 @@ def check(title: str, body: str) -> Verdict:
     if not title.startswith(TITLE_PREFIX):
         return Verdict(True, [])
     # The template's commented placeholders and fenced text are not rendered evidence.
-    body = _strip_fences(re.sub(r"<!--.*?(?:-->|\Z)", "", body, flags=re.S))
+    body = re.sub(r"<!--.*?(?:-->|\Z)", "", _strip_fences(body), flags=re.S)
     problems: list[str] = []
     evidence = _section(body, "10x Evidence")
     if evidence is None:
