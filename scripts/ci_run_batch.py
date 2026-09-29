@@ -115,6 +115,13 @@ def fetch_completed_runs(
     one second; only a one-second slice holding a full page fails the pass. Listing
     per watched workflow instead of repo-wide reads about a tenth of the runs.
     Boundary seconds belong to both neighbours; runs are deduped by id.
+
+    The listing is NOT filtered by `status=completed`: GitHub once served that
+    filter 63 of 76 completed runs with a matching `total_count`, while the same
+    window unfiltered served all 76 (Tue 29 Sep 2026, Codex P1 on #3844). A
+    short read no count can expose is dropped at the source, so the status is
+    checked here instead; a page served short of its own `total_count` fails the
+    pass (Sol P1 on #3844).
     """
     fetch = get_json or (lambda url: _get_json(url, token, agent))
     base = f"https://api.github.com/repos/{repository}/actions/workflows"
@@ -125,15 +132,13 @@ def fetch_completed_runs(
         )
         while pending:
             start, stop = pending.pop()
-            batch = (
-                fetch(
-                    f"{base}/{workflow_id}/runs?status=completed&per_page={PAGE_SIZE}"
-                    f"&created={start}..{stop}"
-                ).get("workflow_runs")
-                or []
-            )
+            page = fetch(f"{base}/{workflow_id}/runs?per_page={PAGE_SIZE}&created={start}..{stop}")
+            batch = page.get("workflow_runs") or []
             if len(batch) < PAGE_SIZE:
-                seen.update((str(run["id"]), run) for run in batch)
+                require_served_total(
+                    len(batch), int(page["total_count"]), f"{name} {start}..{stop}"
+                )
+                seen.update((str(run["id"]), run) for run in batch if run["status"] == "completed")
                 continue
             pending.extend(halves(name, start, stop))
     return list(seen.values())
@@ -238,7 +243,7 @@ def require_closed_window(created_before: str, now: datetime) -> None:
 
 
 def require_served_total(served: int, total: int, what: str) -> None:
-    """A closed window serves exactly its total_count, or it changed while read."""
+    """A listing serves exactly its total_count, or it changed while read."""
     if served != total:
         raise RuntimeError(
             f"{what} reports {total} runs but served {served}; the listing changed while "
