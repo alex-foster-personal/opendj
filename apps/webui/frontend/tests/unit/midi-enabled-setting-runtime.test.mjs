@@ -56,7 +56,9 @@ before(() => {
 			[
 				'--experimental-webstorage',
 				`--localstorage-file=${path.join(dir, 'localstorage.db')}`,
-				path.join(FRONTEND_ROOT, 'tests/unit/midi-enabled-setting-runtime.child.mjs')
+				// new URL(..., import.meta.url) is also how knip sees a helper that
+				// is spawned rather than imported (prefs-golden-probe.mjs precedent).
+				fileURLToPath(new URL('./midi-enabled-setting-runtime.child.mjs', import.meta.url))
 			],
 			{ cwd: FRONTEND_ROOT, encoding: 'utf8', timeout: 120_000 }
 		);
@@ -74,6 +76,7 @@ before(() => {
 
 test('the child really ran without WebMIDI, against real storage (instrument check)', () => {
 	for (const [name, snap] of Object.entries(results)) {
+		if (name === 'displayReactivity') continue; // a render trace, not a snapshot
 		assert.equal(snap.navigatorHasWebMidi, false, `${name}: this file asserts the no-WebMIDI branch`);
 	}
 	// Real storage both ways: an opt-in written was read back before the request cleared it.
@@ -135,6 +138,22 @@ test('disabling from settings leaves the permission state as the browser reporte
 	assert.equal(s.permission, 'unsupported', 'disable must not rewrite permission');
 	assert.equal(s.glueAttached, false);
 	assert.equal(s.persisted, false);
+});
+
+test('the settings MIDI toggle re-renders on toggle, on a denied request clearing it, and on a disk hydrate', () => {
+	// Initial read, the optimistic toggle, the settle that clears it, the
+	// disk-backed choice: four distinct renders, not one frozen value.
+	assert.deepEqual(results.displayReactivity.seen, [false, true, false, true]);
+});
+
+test('every write of the choice goes through persistMidiEnabled, which signals the display', () => {
+	const choiceSrc = read('src/lib/components/rb/midi/midi-enabled-choice.ts');
+	const persist = body(choiceSrc, 'export function persistMidiEnabled(enabled: boolean)');
+	assert.match(persist, /bumpMidiEnabledTick\(\);/);
+	assert.match(body(choiceSrc, 'export function midiEnabledPersisted()'), /void midiEnabledTick\.n;/);
+	// setMidiEnabledChoice (grant, denial, superseded settle) writes through it.
+	assert.match(body(uiStateSrc, 'export function setMidiEnabledChoice(enabled: boolean)'), /persistMidiEnabled\(enabled\);/);
+	assert.match(body(choiceSrc, 'export function hydrateMidiEnabledFromDisk('), /persistMidiEnabled\(body\.midi_enabled\);/);
 });
 
 // ---------------------------------------------------------------- source

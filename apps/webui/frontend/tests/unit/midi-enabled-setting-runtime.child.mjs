@@ -13,6 +13,8 @@ import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
+import { loadRuneModule } from './load-rune-module.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 if (typeof localStorage === 'undefined') {
@@ -104,5 +106,37 @@ try {
 } finally {
 	await vite.close();
 }
+
+// 7. The settings toggle's displayed value must re-render: a live $effect
+// (runes compiled for the client by load-rune-module.mjs, not stubbed) reads
+// readSettingValue() the way SettingsOverlay's template does. That bundle
+// keeps apply.ts's dynamic import external, so its runtime half logs a load
+// error here; only the synchronous persist and the display are under test.
+localStorage.clear();
+const rune = await loadRuneModule(`
+import { applySettingChange, readSettingValue } from '$lib/settings/apply';
+import { persistMidiEnabled, hydrateMidiEnabledFromDisk } from '$lib/components/rb/midi/midi-enabled-choice';
+export function watchMidiSetting() {
+	const seen: unknown[] = [];
+	const stop = $effect.root(() => {
+		$effect(() => {
+			seen.push(readSettingValue('rb.midi_enabled'));
+		});
+	});
+	return { seen, stop };
+}
+export { applySettingChange, persistMidiEnabled, hydrateMidiEnabledFromDisk };
+`);
+const settle = () => new Promise((r) => setTimeout(r, 20));
+const watch = rune.watchMidiSetting();
+await settle();
+rune.applySettingChange('rb.midi_enabled', true); // the user's toggle
+await settle();
+rune.persistMidiEnabled(false); // what a denied request's settle writes
+await settle();
+rune.hydrateMidiEnabledFromDisk({ midi_enabled: true }); // disk choice arriving later
+await settle();
+watch.stop();
+results.displayReactivity = { seen: watch.seen };
 
 process.stdout.write(`RESULT ${JSON.stringify(results)}\n`);

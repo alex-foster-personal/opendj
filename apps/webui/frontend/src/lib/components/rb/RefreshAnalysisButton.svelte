@@ -111,7 +111,6 @@
 		try {
 			status = await startIngestRefresh();
 			badged.clear();
-			clickFeedback = `Running: ${status.steps.join(', ')}`;
 			pushToast(`Refresh started: ${status.steps.join(', ')}`, 'info');
 			_syncTimer();
 		} catch (e) {
@@ -164,6 +163,11 @@
 			use:triggerFloatingAction={{ getTrigger: () => wrapEl ?? null, preferred: 'below', gap: 4 }}
 		>
 			<div class="pop-title">Refresh analysis</div>
+			<!-- The latest click's own outcome renders first, whatever the hover
+			     fetch or a previous run left behind (Codex P2, PR #3896). -->
+			{#if clickFeedback !== null}
+				<div class="pop-phase" data-testid="refresh-click-feedback">{clickFeedback}</div>
+			{/if}
 			{#if fetchError !== null}
 				<div class="pop-err">{fetchError}</div>
 			{:else}
@@ -202,9 +206,7 @@
 					{#if status.log_tail.length > 0}
 						<pre class="pop-log">{status.log_tail.slice(-8).join('\n')}</pre>
 					{/if}
-				{:else if clickFeedback !== null}
-					<div class="pop-phase" data-testid="refresh-click-feedback">{clickFeedback}</div>
-				{:else}
+				{:else if clickFeedback === null}
 					<div class="pop-phase">idle - click to run the enabled steps over every missing track</div>
 				{/if}
 			{/if}

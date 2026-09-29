@@ -19,8 +19,13 @@ const LOW_QUALITY_VENUES = new Set(['naughty_step', 'lounge']);
 /** kbps below lounge ceiling when venue is unknown. */
 const LOW_KBPS_THRESHOLD = 128;
 
+/** Same streaming facts trackCloudView() uses: an unmatched Spotify
+ * placeholder (spotify_pending) streams too, though it carries no rekordbox
+ * path and is_streaming stays false. */
 function _isStreaming(row: BrowserRow): boolean {
-	return row.is_streaming === true || row.rb_meta?.is_streaming === true;
+	return (
+		row.is_streaming === true || row.rb_meta?.is_streaming === true || row.spotify_pending === true
+	);
 }
 
 export function minorIssuesFor(row: BrowserRow): MinorIssue[] {
