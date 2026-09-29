@@ -180,23 +180,32 @@ fn band(o: &Obj, ty: &str) -> Result<EqBand, ProtoError> {
 /// Beatgrid in either shape the repo already uses: the mirror's
 /// `beatgrid: [{n, time_ms}]` (n = beat in bar, 1 = downbeat) or a bare
 /// `beatgrid_ms: [..]` with every 4th beat from the first taken as a downbeat.
+/// A grid that is sent must be one the page's `validateBeatGrid` accepts: at
+/// least two beats, times from 0 strictly increasing, and `n` counting
+/// 1, 2, 3, 4 around the bar (a missing `n` counts as its place from the
+/// first beat). No grid at all is sent by leaving both keys out.
 fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
     let mut out = Vec::new();
     if let Some(v) = o.get("beatgrid") {
         let arr = v.as_array().ok_or_else(|| invalid(format!("{ty}.beatgrid must be an array")))?;
+        let mut prev_n = 0;
         for (i, b) in arr.iter().enumerate() {
             let b = b.as_object().ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}] must be an object")))?;
             let time_ms = num(b, ty, "time_ms")?;
-            let downbeat = match b.get("n") {
-                None | Some(Value::Null) => i % 4 == 0,
-                Some(n) => {
-                    n.as_u64()
-                        .filter(|n| (1..=4).contains(n))
-                        .ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}].n must be 1..4")))?
-                        == 1
-                }
+            let n = match b.get("n") {
+                None | Some(Value::Null) => (i % 4) as u64 + 1,
+                Some(n) => n
+                    .as_u64()
+                    .filter(|n| (1..=4).contains(n))
+                    .ok_or_else(|| invalid(format!("{ty}.beatgrid[{i}].n must be 1..4")))?,
             };
-            out.push(Beat { time_ms, downbeat });
+            if i > 0 && n != prev_n % 4 + 1 {
+                return Err(invalid(format!(
+                    "{ty}.beatgrid[{i}].n is {n} after {prev_n}; beat numbers must count 1, 2, 3, 4 around the bar"
+                )));
+            }
+            prev_n = n;
+            out.push(Beat { time_ms, downbeat: n == 1 });
         }
     } else if let Some(v) = o.get("beatgrid_ms") {
         let arr = v.as_array().ok_or_else(|| invalid(format!("{ty}.beatgrid_ms must be an array")))?;
@@ -208,6 +217,12 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
             out.push(Beat { time_ms, downbeat: i % 4 == 0 });
         }
     }
+    if (o.contains_key("beatgrid") || o.contains_key("beatgrid_ms")) && out.len() < 2 {
+        return Err(invalid(format!(
+            "{ty} beatgrid needs at least 2 beats, got {}; leave it out for a track with no grid",
+            out.len()
+        )));
+    }
     // The page's validateBeatGrid refuses a beat before the track starts; a
     // grid point there would be a cue or a quantize target at a negative time.
     if let Some((i, b)) = out.iter().enumerate().find(|(_, b)| b.time_ms < 0.0) {
@@ -217,6 +232,22 @@ fn beats(o: &Obj, ty: &str) -> Result<Vec<Beat>, ProtoError> {
         return Err(invalid(format!("{ty} beatgrid times must strictly increase")));
     }
     Ok(out)
+}
+
+/// The page's opt-in `refuseIfMaster` guard on load and unload refuses to
+/// replace or clear the deck that is sync master. This engine has no master
+/// election yet, so it cannot honor the guard: `true` is refused rather than
+/// acknowledged and ignored, while `false` or leaving it out is the plain
+/// command.
+fn refuse_if_master(o: &Obj, ty: &str) -> Result<(), ProtoError> {
+    match o.get("refuseIfMaster") {
+        None | Some(Value::Bool(false)) => Ok(()),
+        Some(Value::Bool(true)) => Err(ProtoError::new(
+            ErrorCode::NotImplemented,
+            format!("{ty}.refuseIfMaster: this engine has no sync master to protect yet; send {ty} without it"),
+        )),
+        Some(_) => Err(invalid(format!("{ty}.refuseIfMaster must be true or false"))),
+    }
 }
 
 /// Parse one command object (`{"type": ...}`).
@@ -243,6 +274,7 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
                     "load.stems: stem loading is not implemented by this engine yet (plan 20-04); send load without it",
                 ));
             }
+            refuse_if_master(o, ty)?;
             let path = string(o, ty, "path")?.to_string();
             let bpm = opt_num(o, ty, "bpm")?;
             if bpm.is_some_and(|b| b <= 0.0) {
@@ -250,7 +282,11 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             }
             Ok(Command::Load(LoadSpec { deck, path, beats: beats(o, ty)?, bpm }))
         }
-        "unload" => apply(EngineCmd::Unload { deck: deck_of(o, ty)? }),
+        "unload" => {
+            let deck = deck_of(o, ty)?;
+            refuse_if_master(o, ty)?;
+            apply(EngineCmd::Unload { deck })
+        }
         "play" => {
             let deck = deck_of(o, ty)?;
             let playing = boolean(o, ty, "playing")?;
@@ -586,6 +622,33 @@ mod tests {
     }
 
     #[test]
+    fn a_master_guarded_load_or_unload_is_refused_not_ignored() {
+        // Codex's case: the page's refuseIfMaster guard can't be honored with
+        // no master election, so it is refused on both commands.
+        for c in [
+            json!({"type": "load", "deck": 1, "path": "/x.wav", "refuseIfMaster": true}),
+            json!({"type": "unload", "deck": 1, "refuseIfMaster": true}),
+        ] {
+            let e = cmd(c.clone()).unwrap_err();
+            assert_eq!(e.code, ErrorCode::NotImplemented, "{c}");
+            assert!(e.message.contains("refuseIfMaster"), "{}", e.message);
+        }
+        // Controls: false or absent is the plain command; anything else is
+        // malformed, as the page's parser has it.
+        for c in [
+            json!({"type": "load", "deck": 1, "path": "/x.wav", "refuseIfMaster": false}),
+            json!({"type": "load", "deck": 1, "path": "/x.wav"}),
+        ] {
+            assert!(matches!(cmd(c.clone()), Ok(Command::Load(_))), "{c}");
+        }
+        for c in [json!({"type": "unload", "deck": 2, "refuseIfMaster": false}), json!({"type": "unload", "deck": 2})] {
+            assert!(matches!(cmd(c.clone()), Ok(Command::Apply(EngineCmd::Unload { deck: 2 }))), "{c}");
+        }
+        let e = cmd(json!({"type": "unload", "deck": 1, "refuseIfMaster": "yes"})).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+    }
+
+    #[test]
     fn the_state_feed_carries_the_loop_as_the_page_holds_it() {
         let mut s = Snapshot {
             frame: 0,
@@ -690,6 +753,40 @@ mod tests {
             let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
             assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);
         }
+    }
+
+    #[test]
+    fn a_grid_the_page_would_refuse_is_refused() {
+        let load = |grid: Value| cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": grid}));
+        let beat = |n: u64, t: u64| json!({"n": n, "time_ms": t});
+        // Codex's case: two downbeats in a row, and the n count broken
+        // anywhere else, including at the bar wrap.
+        for grid in [
+            json!([beat(1, 0), beat(1, 500)]),
+            json!([beat(1, 0), beat(3, 500)]),
+            json!([beat(3, 0), beat(4, 500), beat(2, 1000)]),
+            json!([beat(2, 0), beat(3, 500), {"time_ms": 1000}]),
+        ] {
+            let e = load(grid.clone()).unwrap_err();
+            assert!(e.message.contains("count 1, 2, 3, 4"), "{grid}: {}", e.message);
+        }
+        // Controls: a count starting anywhere and wrapping 4 to 1 is a grid,
+        // and a missing n counts as its place from the first beat.
+        for grid in [
+            json!([beat(3, 0), beat(4, 500), beat(1, 1000), beat(2, 1500)]),
+            json!([beat(1, 0), beat(2, 500), beat(3, 1000), beat(4, 1500), beat(1, 2000)]),
+            json!([{"time_ms": 0}, {"time_ms": 500}, beat(3, 1000)]),
+        ] {
+            assert!(matches!(load(grid.clone()), Ok(Command::Load(_))), "{grid}");
+        }
+        // Fewer than two beats is no grid, in either shape; leaving the grid
+        // out is the way to load without one (control).
+        for (key, grid) in [("beatgrid", json!([])), ("beatgrid", json!([beat(1, 0)])), ("beatgrid_ms", json!([])), ("beatgrid_ms", json!([0]))] {
+            let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", key: grid})).unwrap_err();
+            assert!(e.message.contains("at least 2 beats"), "{key} {grid}: {}", e.message);
+        }
+        let Command::Load(l) = cmd(json!({"type": "load", "deck": 1, "path": "a.wav"})).unwrap() else { panic!() };
+        assert!(l.beats.is_empty());
     }
 
     #[test]

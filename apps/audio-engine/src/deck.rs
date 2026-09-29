@@ -506,15 +506,30 @@ impl Deck {
         }
     }
 
-    /// Seek to an exact position. Quantize is the caller's: the page's
-    /// Quantize toggle and grid size are UI state, so the page adapter snaps
-    /// the target (`quantizedSeekDecisionMs`) before sending it here.
+    /// `ms` snapped the same way, for the targets the wire sends in ms.
+    fn quantized_ms(&self, ms: f64) -> f64 {
+        match self.track.as_ref() {
+            Some(t) if self.quantize && t.has_grid() => t.quantize_ms(ms, self.quantize_grid),
+            _ => ms,
+        }
+    }
+
+    /// Seek, snapped to the quantize grid when Quantize is on and the track
+    /// has one, as the page's `quantizedSeek` does
+    /// (`quantizedSeekDecisionMs`). The asked position must lie within the
+    /// track, and so must the snapped one: a last grid beat past the decoded
+    /// end is refused, not clamped.
     pub fn seek(&mut self, ms: f64) -> Result<(), EngineError> {
         let t = self.track()?;
-        if !ms.is_finite() || ms < 0.0 || ms > t.duration_ms() {
+        let dur = t.duration_ms();
+        if !ms.is_finite() || ms < 0.0 || ms > dur {
             return Err(EngineError::new(ErrorCode::Invalid, "seek position must be within the track"));
         }
-        let to = t.ms_to_frames(ms);
+        let to_ms = self.quantized_ms(ms);
+        if to_ms > dur {
+            return Err(EngineError::new(ErrorCode::Invalid, "the quantized seek target is past the end of the track"));
+        }
+        let to = self.track()?.ms_to_frames(to_ms);
         self.move_to(to);
         Ok(())
     }
@@ -530,11 +545,31 @@ impl Deck {
         self.pos = to;
     }
 
+    /// A manual in/out loop, its ends snapped to the quantize grid when
+    /// Quantize is on and the track has one, as the page's `setLoop` does
+    /// (`quantizedLoopEndpointsMs`); exact without. Ends that snap to the
+    /// same grid point are refused, not engaged as an empty loop.
     pub fn set_loop(&mut self, bounds_ms: Option<(f64, f64)>) -> Result<(), EngineError> {
         let Some((in_ms, out_ms)) = bounds_ms else {
             self.clear_loop();
             return Ok(());
         };
+        self.track()?;
+        if !(in_ms.is_finite() && out_ms.is_finite()) || in_ms < 0.0 || out_ms <= in_ms {
+            return Err(EngineError::new(ErrorCode::Invalid, "loop needs 0 <= in_ms < out_ms"));
+        }
+        let (in_ms, out_ms) = (self.quantized_ms(in_ms), self.quantized_ms(out_ms));
+        if out_ms <= in_ms {
+            return Err(EngineError::new(
+                ErrorCode::Invalid,
+                "the quantized loop collapsed onto one grid point; choose ends on different grid points",
+            ));
+        }
+        self.set_loop_exact(in_ms, out_ms)
+    }
+
+    /// Engage `[in_ms, out_ms)` as given, bounded to the track.
+    fn set_loop_exact(&mut self, in_ms: f64, out_ms: f64) -> Result<(), EngineError> {
         let t = self.track()?;
         let dur = t.duration_ms();
         if !(in_ms.is_finite() && out_ms.is_finite()) || in_ms < 0.0 || out_ms <= in_ms {
@@ -568,7 +603,11 @@ impl Deck {
             return Err(EngineError::new(ErrorCode::Invalid, "the beat loop runs past the end of the track"));
         }
         let before = self.looping.zip(self.loop_beats);
-        self.set_loop(Some((in_ms, out_ms)))?;
+        // Beat loop ends are already whole grid beats. The page sends them
+        // through `setLoop`, whose re-snap is the identity on the 1-beat grid
+        // but on a 4 or 8-beat grid collapses a short loop or stretches it
+        // off its labeled length; this engine keeps the exact beats.
+        self.set_loop_exact(in_ms, out_ms)?;
         self.loop_beats = Some(beats);
         if let (Some(((a, b), n)), Some(now)) = (before, self.looping) {
             if n == beats && (a, b) == now {
@@ -958,6 +997,7 @@ mod tests {
         // Control for the restart: only the SAME engaged loop restarts.
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 10.0, grid_120(4))));
+        d.set_quantize(false);
         d.beat_loop(4.0, Some(1000.0)).unwrap();
         d.seek(1200.0).unwrap();
         // Same start, other length: a new loop, the playhead stays.
@@ -1087,7 +1127,12 @@ mod tests {
             let mut d = Deck::new(48000.0);
             d.load(t.clone());
             setup(&mut d);
+            // Park the playhead off the grid, as pausing mid-beat does: a
+            // seek with Quantize on would snap it.
+            let q = d.quantize;
+            d.quantize = false;
             d.seek(ms).unwrap();
+            d.quantize = q;
             d
         };
         let cue_ms = |d: &Deck| t.frames_to_ms(d.cue.unwrap());
@@ -1139,6 +1184,80 @@ mod tests {
         d.cue().unwrap();
         assert_eq!(t.frames_to_ms(d.pos), 1300.0);
         assert_eq!(d.set_quantize_grid(2).unwrap_err().code, ErrorCode::Invalid);
+    }
+
+    #[test]
+    fn seek_and_loop_snap_to_the_quantize_grid_like_the_pages() {
+        // 120 BPM grid: beats every 500 ms, downbeats at 0, 2, 4 and 6 s.
+        let t = Arc::new(silent(48000, 10.0, grid_120(4)));
+        let deck = |setup: &dyn Fn(&mut Deck)| {
+            let mut d = Deck::new(48000.0);
+            d.load(t.clone());
+            setup(&mut d);
+            d
+        };
+        let at = |d: &Deck| t.frames_to_ms(d.pos);
+        let lp = |d: &Deck| d.looping.map(|(a, b)| (t.frames_to_ms(a), t.frames_to_ms(b)));
+        let none = |_: &mut Deck| {};
+        // Codex's case: a seek to 1250 ms lands on the 1000 ms beat, the
+        // earlier one on the tie, as the page's quantizedSeek does.
+        for (grid, to, want) in [(1, 1250.0, 1000.0), (1, 1300.0, 1500.0), (4, 2900.0, 2000.0), (4, 3100.0, 4000.0), (8, 2100.0, 4000.0)] {
+            let mut d = deck(&|d: &mut Deck| d.set_quantize_grid(grid).unwrap());
+            d.seek(to).unwrap();
+            assert_eq!(at(&d), want, "grid {grid} seek {to}");
+        }
+        // Controls: Quantize off, or no grid, seeks exactly.
+        let mut d = deck(&|d: &mut Deck| d.set_quantize(false));
+        d.seek(1250.0).unwrap();
+        assert_eq!(at(&d), 1250.0);
+        let mut bpm_only = Deck::new(48000.0);
+        bpm_only.load(Arc::new(Track::new(48000, vec![0.0; 480000 * 2], vec![], Some(120.0))));
+        bpm_only.seek(1250.0).unwrap();
+        assert_eq!(bpm_only.pos, 1250.0 * 48.0);
+        // The loop exit is decided on the snapped target: 1900 ms snaps to
+        // the loop's out point and leaves it; 1700 ms snaps inside and stays.
+        let mut d = deck(&none);
+        d.set_loop(Some((1000.0, 2000.0))).unwrap();
+        d.seek(1700.0).unwrap();
+        assert_eq!((lp(&d), at(&d)), (Some((1000.0, 2000.0)), 1500.0));
+        d.seek(1900.0).unwrap();
+        assert_eq!((lp(&d), at(&d)), (None, 2000.0));
+        // A snapped target past the decoded end is refused and nothing moves,
+        // while one that snaps inside is taken.
+        let mut beats = grid_120(2);
+        beats.push(Beat { time_ms: 4000.0, downbeat: false });
+        let short = Arc::new(silent(48000, 3.9, beats));
+        let mut d = Deck::new(48000.0);
+        d.load(short.clone());
+        d.seek(3700.0).unwrap();
+        assert_eq!(d.pos, 3500.0 * 48.0);
+        assert_eq!(d.seek(3800.0).unwrap_err().code, ErrorCode::Invalid);
+        assert_eq!(d.pos, 3500.0 * 48.0);
+        // A last beat exactly at the end is inside the track, as on the page.
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 3.5, grid_120(2))));
+        d.seek(3400.0).unwrap();
+        assert_eq!(d.pos, 3500.0 * 48.0);
+        // Manual loop ends snap each to its nearest grid point.
+        let mut d = deck(&none);
+        d.set_loop(Some((1100.0, 1900.0))).unwrap();
+        assert_eq!(lp(&d), Some((1000.0, 2000.0)));
+        let mut d = deck(&|d: &mut Deck| d.set_quantize_grid(4).unwrap());
+        d.set_loop(Some((900.0, 3100.0))).unwrap();
+        assert_eq!(lp(&d), Some((0.0, 4000.0)));
+        // Ends that snap onto one grid point are refused; the loop in force
+        // stays.
+        let e = d.set_loop(Some((1100.0, 2900.0))).unwrap_err();
+        assert!(e.message.contains("collapsed"), "{}", e.message);
+        assert_eq!(lp(&d), Some((0.0, 4000.0)));
+        // Controls: Quantize off keeps the ends exact, and beat loops keep
+        // their exact beats on a coarse grid (see engage_beat_loop).
+        let mut d = deck(&|d: &mut Deck| d.set_quantize(false));
+        d.set_loop(Some((1100.0, 1900.0))).unwrap();
+        assert_eq!(lp(&d), Some((1100.0, 1900.0)));
+        let mut d = deck(&|d: &mut Deck| d.set_quantize_grid(4).unwrap());
+        d.beat_loop(1.0, Some(500.0)).unwrap();
+        assert_eq!((lp(&d), d.loop_beats), (Some((500.0, 1000.0)), Some(1.0)));
     }
 
     #[test]
@@ -1247,6 +1366,8 @@ mod tests {
         // Codex's case: 120 BPM grid, loop [1 s, 2 s], playhead 1.25 s, +2.
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 20.0, grid_120(10))));
+        // Off-grid ends and playheads need Quantize off to be placed.
+        d.set_quantize(false);
         d.set_loop(Some((1000.0, 2000.0))).unwrap();
         d.seek(1250.0).unwrap();
         d.beat_jump(2.0).unwrap();
@@ -1395,6 +1516,8 @@ mod tests {
     fn a_loop_ending_at_the_track_end_wraps() {
         let mut d = Deck::new(48000.0);
         d.load(Arc::new(silent(48000, 4.0, grid_120(2))));
+        // The grid ends at 3.5 s; Quantize would snap the out point to it.
+        d.set_quantize(false);
         d.set_loop(Some((3000.0, 4000.0))).unwrap();
         assert_eq!(d.looping, Some((144000.0, 192000.0)));
         d.seek(3000.0).unwrap();
