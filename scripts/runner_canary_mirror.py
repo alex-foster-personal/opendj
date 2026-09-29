@@ -20,7 +20,9 @@ Usage (from a checkout that has fetched main):
 Environment:
     CANARY_MIRROR_PUSH_TOKEN  required for --target mirror. A token with contents write on
                               the mirror ONLY. Read from the environment, handed to git
-                              through GIT_CONFIG_* variables, never argv, never printed.
+                              through GIT_CONFIG_* variables, never argv, never printed,
+                              and only on the mirror's network calls: it is stripped from
+                              every git child's environment, on either target.
     CANARY_MIRROR_REPO        RETIRED, and refused if set: an override could land a canary
                               branch in a repository whose budget gate starts at zero.
 
@@ -157,14 +159,23 @@ def auth_env(token: str) -> dict[str, str]:
     }
 
 
+def child_env(auth: dict[str, str]) -> dict[str, str]:
+    """The environment of EVERY git child: this process's, minus the mirror token, plus
+    `auth`. git never needs the raw token, only the mirror's auth header, and that header
+    is `auth` only on the mirror's own network calls. So a `--target source` push, and every
+    hook or credential helper its git starts, never sees the mirror credential."""
+    return {**{k: v for k, v in os.environ.items() if k != TOKEN_ENV}, **auth}
+
+
 def _git(
-    args: list[str], env: dict[str, str] | None = None, check: bool = True
+    args: list[str], auth: dict[str, str] | None = None, check: bool = True, capture: bool = True
 ) -> subprocess.CompletedProcess:
+    """The one spawn site: every git child gets `child_env`, never the inherited env."""
     return subprocess.run(
         ["git", *args],
-        capture_output=True,
+        capture_output=capture,
         text=True,
-        env=env,
+        env=child_env(auth or {}),
         timeout=GIT_TIMEOUT_S,
         check=check,
     )
@@ -183,8 +194,8 @@ def require_on_main(sha: str) -> None:
         raise MirrorRefused(f"{sha} is not on {MAIN_REF}; only main SHAs are mirrored")
 
 
-def read_default_branch(repo: str, url: str, env: dict[str, str]) -> str | None:
-    listing = _git(["ls-remote", "--symref", url], env=env, check=False)
+def read_default_branch(repo: str, url: str, auth: dict[str, str]) -> str | None:
+    listing = _git(["ls-remote", "--symref", url], auth=auth, check=False)
     if listing.returncode != 0:
         raise MirrorRefused(
             f"cannot read {repo}: git ls-remote exit {listing.returncode}: {listing.stderr.strip()}"
@@ -192,23 +203,22 @@ def read_default_branch(repo: str, url: str, env: dict[str, str]) -> str | None:
     return default_branch_from_ls_remote(listing.stdout)
 
 
-def push_canary_ref(repo: str, url: str, sha: str, env: dict[str, str]) -> str:
+def push_canary_ref(repo: str, url: str, sha: str, auth: dict[str, str]) -> str:
     """Push `sha` to `canary/<sha>`, streaming git's own output. Returns the ref."""
     ref = f"refs/heads/{CANARY_PREFIX}{sha}"
-    pushed = subprocess.run(
-        ["git", "push", url, f"{sha}:{ref}"], env=env, timeout=GIT_TIMEOUT_S, check=False
-    )
+    pushed = _git(["push", url, f"{sha}:{ref}"], auth=auth, check=False, capture=False)
     if pushed.returncode != 0:
         raise MirrorRefused(f"git push to {repo} exited {pushed.returncode}")
     return ref
 
 
 def _mirror_destination(config: dict) -> tuple[str, str, dict[str, str]]:
+    """(repo, url, auth header env for the mirror's network calls)."""
     token = require_token(dict(os.environ))
     # The mirror's owner and its distinctness from the source are config invariants,
     # pinned by tests/scripts/test_runner_canary_budget.py.
     repo = config["mirror_repository"]
-    return repo, f"https://github.com/{repo}.git", {**os.environ, **auth_env(token)}
+    return repo, f"https://github.com/{repo}.git", auth_env(token)
 
 
 def origin_push_url() -> str:
@@ -231,8 +241,9 @@ def _source_destination(config: dict) -> tuple[str, str, dict[str, str]]:
     push_url = origin_push_url()
     require_origin_is_source(push_url, config)
     # Push to the URL just checked, not to the name `origin`, so the address git uses is
-    # the address that was validated. git's own credentials: never the mirror token.
-    return config["source_repository"], push_url, dict(os.environ)
+    # the address that was validated. No auth header: git's own credentials, never the
+    # mirror's (child_env strips the token from every child).
+    return config["source_repository"], push_url, {}
 
 
 def _destination(target: str, config: dict) -> tuple[str, str, dict[str, str]]:
@@ -252,12 +263,12 @@ def main(argv: list[str] | None = None) -> int:
     config = json.loads(args.config.read_text())
     try:
         refuse_retired_override(dict(os.environ))
-        repo, url, env = _destination(args.target, config)
+        repo, url, auth = _destination(args.target, config)
         sha = validate_sha(args.sha)
         require_on_main(sha)
-        check_default_branch(read_default_branch(repo, url, env), repo)
+        check_default_branch(read_default_branch(repo, url, auth), repo)
         print(f"[canary] target {args.target} = {repo}; pushing {sha} to canary/{sha}")
-        ref = push_canary_ref(repo, url, sha, env)
+        ref = push_canary_ref(repo, url, sha, auth)
     except MirrorRefused as exc:
         print(f"[ERROR] runner canary mirror: {exc}")
         return 1

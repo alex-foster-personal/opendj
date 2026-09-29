@@ -19,6 +19,9 @@ Regression lines:
     the configured source repository then broken, in both directions
   - if a `remote.origin.pushurl` pointing elsewhere is not the URL checked then broken
     (git pushes to pushurl, not url, so the guard would check the wrong address)
+  - if the mirror credential, raw or as its git auth header, reaches ANY git child of a
+    `--target source` push (and so its hooks and credential helpers) then broken; and if
+    the mirror push itself stops carrying the auth header then broken (opposite direction)
   - if a SHA that is not on origin/main can be mirrored then broken
   - if an EMPTY mirror is pushed to then broken: the first branch pushed becomes the
     default branch, which arms every `schedule` and `workflow_run` workflow in the mirror
@@ -32,6 +35,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -370,6 +374,68 @@ def test_source_target_honors_a_push_url_that_is_the_source_repository(world) ->
     result = _run(world, world["on_main"], target="source")
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"refs/heads/canary/{world['on_main']}" in _mirror_refs(world, "real")
+
+
+def _log_every_git_child(world: dict[str, object]) -> Path:
+    """Put a `git` on PATH that records each invocation's argv and environment, then runs
+    the real git. Hooks and credential helpers inherit exactly this environment."""
+    log = Path(str(world["mirror"]) + "-git-env.log")
+    shim_dir = Path(str(world["mirror"]) + "-bin")
+    shim_dir.mkdir()
+    real_git = shutil.which("git")
+    assert real_git, "control: a real git is on PATH"
+    shim = shim_dir / "git"
+    shim.write_text(
+        f'#!/bin/sh\n{{ printf "=== %s\\n" "$*"; env; }} >> "{log}"\nexec "{real_git}" "$@"\n'
+    )
+    shim.chmod(0o755)
+    world["env"]["PATH"] = f"{shim_dir}{os.pathsep}{world['env']['PATH']}"
+    return log
+
+
+def _invocations(log: Path) -> list[tuple[str, str]]:
+    """(argv, environment) for every git child the script started."""
+    chunks = log.read_text().split("=== ")[1:]
+    return [(chunk.split("\n", 1)[0], chunk.split("\n", 1)[1]) for chunk in chunks]
+
+
+ENCODED = base64.b64encode(f"x-access-token:{TOKEN}".encode()).decode()
+
+
+def test_source_target_children_never_see_the_mirror_credential(world) -> None:
+    """Sol P1 on d18006414: the mirror token was exported into every git child (and so its
+    hooks and credential helpers) of a push to the SOURCE repository."""
+    log = _log_every_git_child(world)
+    result = _run(world, world["on_main"], target="source")  # the token IS exported
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = _invocations(log)
+    # Controls: every spawn site ran through the shim, the push included.
+    argvs = [argv for argv, _ in calls]
+    assert any(a.startswith("config ") for a in argvs), argvs
+    assert any(a.startswith("merge-base ") for a in argvs), argvs
+    assert any(a.startswith("push ") for a in argvs), argvs
+    for argv, env in calls:
+        assert "CANARY_MIRROR_PUSH_TOKEN" not in env, argv
+        assert TOKEN not in env and ENCODED not in env, argv
+
+
+def test_mirror_push_still_carries_the_auth_header_and_nothing_else_does(world) -> None:
+    """Opposite direction: stripping the credential must not reach the mirror's own
+    network calls, and the raw variable reaches no child on either target."""
+    _bootstrap_default_branch(world)
+    log = _log_every_git_child(world)
+    result = _run(world, world["on_main"])
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = _invocations(log)
+    network = [(a, e) for a, e in calls if a.startswith(("push ", "ls-remote "))]
+    local = [(a, e) for a, e in calls if not a.startswith(("push ", "ls-remote "))]
+    assert len(network) == 2 and local, [a for a, _ in calls]
+    for argv, env in network:
+        assert ENCODED in env, argv
+    for argv, env in local:
+        assert ENCODED not in env, argv
+    for argv, env in calls:
+        assert "CANARY_MIRROR_PUSH_TOKEN" not in env, argv
 
 
 def test_source_target_refuses_a_sha_not_on_main(world) -> None:
