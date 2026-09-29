@@ -17,6 +17,8 @@
  *   if TrackTable statically imports RelocatePopover or TrackPlaylistsPopover then broken
  *   if TrackRowPopovers fetches either popover other than by import() then broken
  *   if a failed popover import renders no role="alert" then broken
+ *   if any lazy-load error promises a same-document retry, lacks Reload, or
+ *     reloads without a click then broken
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -53,7 +55,7 @@ test('the MIDI drawer module is fetched by the open flip, and a failure is shown
 });
 
 // Codex P2 on PR #3896 (comment 4129741948). The browser behavior (error
-// shown, retried on the next open) is tests/e2e/midi-panel-lazy-load-errors.spec.ts;
+// shown, recovered by Reload) is tests/e2e/lazy-chunk-reload-recovery.spec.ts;
 // this pins the shape that keeps the pop-out out of TopBar's boot chunk.
 test('the learn-log pop-out and device list load inside MidiPanel, each with a handled failure', () => {
 	assert.doesNotMatch(topBar, /MidiLearnLogPopout/);
@@ -64,6 +66,27 @@ test('the learn-log pop-out and device list load inside MidiPanel, each with a h
 	assert.equal((midiPanel.match(/\.catch\(/g) ?? []).length, 2);
 	assert.match(midiPanel, /Devices failed to load: \{deviceListError\}/);
 	assert.match(midiPanel, /Learn log pop-out failed to load: \{popoutError\}/);
+});
+
+// Codex P2 on PR #3896 (comment 4130011276): a failed import() stays failed in
+// its document (the browser's module map keeps it), so the only recovery is a
+// fresh document the user asks for. The end-to-end proof, including the
+// same-document negative control, is tests/e2e/lazy-chunk-reload-recovery.spec.ts.
+test('every lazy-load error offers Reload on click, and none promises a same-document retry', () => {
+	for (const [src, errors] of [
+		[midiLoader, 1],
+		[midiPanel, 2],
+		[rowPopovers, 2]
+	]) {
+		// The markup is what the user reads; comments may describe the old promise.
+		const markup = src.slice(src.lastIndexOf('</script>'));
+		assert.match(markup, /failed to load/);
+		assert.doesNotMatch(markup, /reopen|retry/i);
+		const reloads = src.match(/location\.reload\(\)/g) ?? [];
+		const onClick = src.match(/onclick=\{\(\) => location\.reload\(\)\}>Reload</g) ?? [];
+		assert.equal(onClick.length, errors, 'one Reload button per error surface');
+		assert.equal(reloads.length, onClick.length, 'location.reload() only inside a Reload click');
+	}
 });
 
 test('TrackTable mounts the row popovers through the lazy wrapper, never statically', () => {

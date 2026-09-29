@@ -4,11 +4,6 @@
  *
  * Every .svelte file is compiled with Svelte's own client compiler and CSS is
  * injected, so component styles apply exactly as they ship. Nothing is stubbed.
- *
- * `unresolvable` names dynamic-import specifiers to leave OUT of the bundle.
- * The browser then has to resolve the bare `$lib/...` specifier itself, which
- * it cannot, so that import() really rejects. It is how a failed lazy chunk is
- * reproduced without replacing the code that handles it.
  */
 import { readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -20,11 +15,7 @@ import { compile, compileModule } from 'svelte/compiler';
 const FRONTEND_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../../src/lib', import.meta.url));
 
-export async function bundleSvelteHarness(
-	harness: string,
-	opts: { unresolvable?: readonly string[] } = {}
-): Promise<string> {
-	const unresolvable = new Set(opts.unresolvable ?? []);
+export async function bundleSvelteHarness(harness: string): Promise<string> {
 	const result = await build({
 		stdin: {
 			contents:
@@ -47,9 +38,6 @@ export async function bundleSvelteHarness(
 			{
 				name: 'svelte-client',
 				setup(b) {
-					b.onResolve({ filter: /^\$lib\// }, (args) =>
-						unresolvable.has(args.path) ? { path: args.path, external: true } : undefined
-					);
 					// Vite's `?url` import yields the asset's URL string. Audio worklet
 					// modules are imported this way; a harness never registers them,
 					// so the URL only has to be the string Vite would hand back.

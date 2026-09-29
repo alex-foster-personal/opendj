@@ -19,8 +19,12 @@
 	 *   ✔︎ A failed fetch is shown inline at the click point with the error
 	 *     text, and dismissing it clears the anchor like the popover would.
 	 *     [if] the import rejects and the pick shows nothing [then] ⛔️
-	 *   ✔︎ A failed fetch is retried by the next pick, not on every render.
-	 *     [if] a second pick after a failure never retries [then] ⛔️
+	 *   ✔︎ A failed fetch is recovered by a fresh document on the user's
+	 *     click (Reload), never by re-importing in this one: the browser keeps
+	 *     the failed fetch in its module map (see MidiPanelLoader), so each
+	 *     popover is fetched once per document and a later pick shows the
+	 *     same error again.
+	 *     [if] the error promises a retry on the next pick, or reloads unasked [then] ⛔️
 	 */
 	import type { Component } from 'svelte';
 	// The error branches are placed exactly like the loaded popovers: a fixed
@@ -45,17 +49,16 @@
 	let RelocatePopover: Component<RelocateProps> | null = $state(null);
 	let playlistsError: string | null = $state(null);
 	let relocateError: string | null = $state(null);
-	let playlistsLoading = false;
-	let relocateLoading = false;
+	let playlistsRequested = false;
+	let relocateRequested = false;
 
 	function _message(exc: unknown): string {
 		return exc instanceof Error ? exc.message : String(exc);
 	}
 
 	$effect(() => {
-		if (playlistsMenu === null || PlaylistsPopover !== null || playlistsLoading) return;
-		playlistsLoading = true;
-		playlistsError = null;
+		if (playlistsMenu === null || playlistsRequested) return;
+		playlistsRequested = true;
 		import('./TrackPlaylistsPopover.svelte')
 			.then((m) => {
 				PlaylistsPopover = m.default;
@@ -63,16 +66,12 @@
 			.catch((exc: unknown) => {
 				console.error('[track-table] Show in playlists popover failed to load', exc);
 				playlistsError = _message(exc);
-			})
-			.finally(() => {
-				playlistsLoading = false;
 			});
 	});
 
 	$effect(() => {
-		if (relocateMenu === null || RelocatePopover !== null || relocateLoading) return;
-		relocateLoading = true;
-		relocateError = null;
+		if (relocateMenu === null || relocateRequested) return;
+		relocateRequested = true;
 		import('./RelocatePopover.svelte')
 			.then((m) => {
 				RelocatePopover = m.default;
@@ -80,9 +79,6 @@
 			.catch((exc: unknown) => {
 				console.error('[track-table] Relocate popover failed to load', exc);
 				relocateError = _message(exc);
-			})
-			.finally(() => {
-				relocateLoading = false;
 			});
 	});
 </script>
@@ -101,6 +97,7 @@
 		use:pointFloatingAction={{ x: playlistsMenu.x, y: playlistsMenu.y }}
 	>
 		<span>Show in playlists failed to load: {playlistsError}</span>
+		<button type="button" onclick={() => location.reload()}>Reload</button>
 		<button type="button" onclick={() => (playlistsMenu = null)}>Close</button>
 	</div>
 {/if}
@@ -120,6 +117,7 @@
 		use:pointFloatingAction={{ x: relocateMenu.x, y: relocateMenu.y }}
 	>
 		<span>Relocate failed to load: {relocateError}</span>
+		<button type="button" onclick={() => location.reload()}>Reload</button>
 		<button type="button" onclick={() => (relocateMenu = null)}>Close</button>
 	</div>
 {/if}
@@ -138,6 +136,7 @@
 		border-radius: 4px;
 		color: var(--rb-red);
 		font-size: 11px;
+		overflow-wrap: anywhere;
 	}
 	.popover-load-error button {
 		background: transparent;

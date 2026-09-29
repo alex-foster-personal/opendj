@@ -15,20 +15,24 @@
 	 *   ✔︎ A failed fetch is shown inline, in place of the drawer, with the
 	 *     error text; nothing retries silently and nothing is swallowed.
 	 *     [if] the import rejects and the open click shows nothing [then] ⛔️
-	 *   ✔︎ A failed fetch is retried on the next open, not on every render.
-	 *     [if] closing and reopening after a failure never retries [then] ⛔️
+	 *   ✔︎ A failed fetch is recovered by a fresh document, on the user's click:
+	 *     the error offers Reload. A same-document retry cannot work, because
+	 *     the browser keeps the failed fetch in its module map and a second
+	 *     import() of that URL rejects without touching the network (see
+	 *     retrySetupOverlay in routes/+layout.svelte), so the import is tried
+	 *     once per document and never re-attempted on reopen.
+	 *     [if] the error promises a retry on reopen, or reloads unasked [then] ⛔️
 	 */
 	import type { Component } from 'svelte';
 	import { midiUi, toggleMidiPanel } from '$lib/components/rb/midi/midi-ui-state.svelte';
 
 	let MidiPanelComponent: Component | null = $state(null);
 	let loadError: string | null = $state(null);
-	let loading = false;
+	let requested = false;
 
 	$effect(() => {
-		if (!midiUi.panelOpen || MidiPanelComponent !== null || loading) return;
-		loading = true;
-		loadError = null;
+		if (!midiUi.panelOpen || requested) return;
+		requested = true;
 		import('$lib/components/rb/MidiPanel.svelte')
 			.then((m) => {
 				MidiPanelComponent = m.default;
@@ -36,9 +40,6 @@
 			.catch((exc: unknown) => {
 				console.error('[midi] MIDI panel failed to load', exc);
 				loadError = exc instanceof Error ? exc.message : String(exc);
-			})
-			.finally(() => {
-				loading = false;
 			});
 	});
 </script>
@@ -48,6 +49,7 @@
 {:else if midiUi.panelOpen && loadError !== null}
 	<div class="midi-load-error rb-panel" role="alert" data-testid="midi-panel-load-error">
 		<span>MIDI panel failed to load: {loadError}</span>
+		<button type="button" class="midi-load-close" onclick={() => location.reload()}>Reload</button>
 		<button type="button" class="midi-load-close" onclick={toggleMidiPanel}>Close</button>
 	</div>
 {/if}
@@ -66,6 +68,7 @@
 		border: 1px solid var(--rb-red);
 		color: var(--rb-text);
 		font-size: 12px;
+		overflow-wrap: anywhere;
 	}
 	.midi-load-close {
 		background: transparent;

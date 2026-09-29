@@ -50,40 +50,33 @@
 	// by the same open flip that reveals it.
 	//
 	// The learn-log pop-out is rarer still (its trigger is inside this panel),
-	// so it loads here too. This component stays mounted once loaded, so the
-	// pop-out outlives the drawer closing. Both follow MidiPanelLoader's
-	// contract: a failed fetch shows its error in place, nothing is swallowed,
-	// and it is retried on the next open, not on every render.
+	// so it loads here too. This component mounts on the first open and stays
+	// mounted, so each import runs once per document and the pop-out outlives
+	// the drawer closing. Both follow MidiPanelLoader's contract: a failed
+	// fetch shows its error in place, nothing is swallowed, and recovery is a
+	// Reload the user clicks, since the browser's module map keeps the failure
+	// and a same-document re-import can never succeed.
 	let MidiDeviceListComponent: Component | null = $state(null);
 	let MidiLearnLogPopoutComponent: Component | null = $state(null);
 	let deviceListError: string | null = $state(null);
 	let popoutError: string | null = $state(null);
-	let deviceListLoading = false;
-	let popoutLoading = false;
 
 	function _failed(what: string, exc: unknown): string {
 		console.error(`[midi] ${what} failed to load`, exc);
 		return exc instanceof Error ? exc.message : String(exc);
 	}
 
+	// Reads no state, so each runs once, at mount.
 	$effect(() => {
-		if (!midiUi.panelOpen || MidiDeviceListComponent !== null || deviceListLoading) return;
-		deviceListLoading = true;
-		deviceListError = null;
 		import('$lib/components/rb/midi/MidiDeviceList.svelte')
 			.then((m) => (MidiDeviceListComponent = m.default))
-			.catch((exc: unknown) => (deviceListError = _failed('device list', exc)))
-			.finally(() => (deviceListLoading = false));
+			.catch((exc: unknown) => (deviceListError = _failed('device list', exc)));
 	});
 
 	$effect(() => {
-		if (!midiUi.panelOpen || MidiLearnLogPopoutComponent !== null || popoutLoading) return;
-		popoutLoading = true;
-		popoutError = null;
 		import('$lib/components/rb/midi/MidiLearnLogPopout.svelte')
 			.then((m) => (MidiLearnLogPopoutComponent = m.default))
-			.catch((exc: unknown) => (popoutError = _failed('learn log pop-out', exc)))
-			.finally(() => (popoutLoading = false));
+			.catch((exc: unknown) => (popoutError = _failed('learn log pop-out', exc)));
 	});
 </script>
 
@@ -157,7 +150,10 @@
 			{#if MidiDeviceListComponent}
 				<MidiDeviceListComponent />
 			{:else if deviceListError !== null}
-				<p class="perm-error" role="alert">Devices failed to load: {deviceListError}. Close and reopen MIDI to retry.</p>
+				<p class="perm-error" role="alert">
+					Devices failed to load: {deviceListError}
+					<button type="button" class="drawer-action" onclick={() => location.reload()}>Reload</button>
+				</p>
 			{/if}
 		</section>
 
@@ -172,12 +168,15 @@
 	<MidiLearnLogPopoutComponent />
 {:else if midiUi.logPopoutOpen && popoutError !== null}
 	<div class="popout-error rb-panel" role="alert">
-		<span>Learn log pop-out failed to load: {popoutError}. Close and reopen MIDI to retry.</span>
+		<span>Learn log pop-out failed to load: {popoutError}</span>
+		<button type="button" class="drawer-action" onclick={() => location.reload()}>Reload</button>
 		<button type="button" class="drawer-action" onclick={closeLogPopout}>Close</button>
 	</div>
 {/if}
 
 <style>
+	/* Error text carries the failed module URL, which has no spaces: let it
+	   wrap, or it pushes Reload and Close past the viewport edge. */
 	.popout-error {
 		position: fixed;
 		right: 12px;
@@ -191,6 +190,7 @@
 		border: 1px solid var(--rb-red);
 		color: var(--rb-text);
 		font-size: 12px;
+		overflow-wrap: anywhere;
 	}
 	.midi-backdrop {
 		position: fixed;
@@ -321,5 +321,6 @@
 		margin: 0;
 		color: var(--rb-red);
 		font-size: var(--rb-fs-label);
+		overflow-wrap: anywhere;
 	}
 </style>
