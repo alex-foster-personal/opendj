@@ -1,27 +1,38 @@
-"""Push one `main` SHA to `refs/heads/canary/<sha>` on the runner-canary mirror.
+"""Push one `main` SHA to `refs/heads/canary/<sha>` in a runner-canary target repository.
 
-The mirror repository's `push` trigger on `canary/**` then runs
-`.github/workflows/runner-canary.yml` there. Decision record:
-docs/decisions/ADR-NEW-runner-canary.md. Config: ci/runner-canary.json.
+That repository's `push` trigger on `canary/**` then runs
+`.github/workflows/runner-canary.yml` there, for the vendors whose config `target_repo`
+it is. Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config:
+ci/runner-canary.json.
+
+Targets:
+    --target mirror   the canary org's mirror (`mirror_repository`): Blacksmith and
+                      Ubicloud, whose runners are organization-only.
+    --target source   the source repository itself (`source_repository`), through this
+                      checkout's own `origin` and git's own credentials: Avrea and Tenki.
 
 Usage (from a checkout that has fetched main):
     git fetch origin main
-    CANARY_MIRROR_PUSH_TOKEN=... python3 scripts/runner_canary_mirror.py <40-hex-sha>
+    CANARY_MIRROR_PUSH_TOKEN=... python3 scripts/runner_canary_mirror.py <sha> \\
+        --target mirror --config ci/runner-canary.json
+    python3 scripts/runner_canary_mirror.py <sha> --target source --config ci/runner-canary.json
 
 Environment:
-    CANARY_MIRROR_PUSH_TOKEN  required. A token with contents write on the mirror ONLY.
-                              Read from the environment, handed to git through
-                              GIT_CONFIG_* variables, never argv, never printed.
-    CANARY_MIRROR_REPO        optional override of the config's `mirror_repository`.
-                              Must still be owned by the config's `mirror_owner`.
+    CANARY_MIRROR_PUSH_TOKEN  required for --target mirror. A token with contents write on
+                              the mirror ONLY. Read from the environment, handed to git
+                              through GIT_CONFIG_* variables, never argv, never printed.
+    CANARY_MIRROR_REPO        RETIRED, and refused if set: an override could land a canary
+                              branch in a repository whose budget gate starts at zero.
 
 Standard library only, so a timer host can run it with a bare python3.
 
 Requirements (mini-PRD)
-- [if] the token is missing or empty [then] exit 1 naming CANARY_MIRROR_PUSH_TOKEN and push
-  nothing, [else stop] ✔︎ ✅ 🎯
-- [if] the target is outside the mirror owner, is the source repository, or is not
-  `owner/name` [then] exit 1 and push nothing, [else stop] ✔︎ ✅ 🎯
+- [if] --target mirror and the token is missing or empty [then] exit 1 naming
+  CANARY_MIRROR_PUSH_TOKEN and push nothing, [else stop] ✔︎ ✅ 🎯
+- [if] CANARY_MIRROR_REPO is set [then] exit 1 naming it and push nothing, [else stop]
+  ✔︎ ✅ 🎯
+- [if] --target source and `origin` is not the configured source repository [then] exit 1
+  and push nothing, [else stop] ✔︎ ✅ 🎯
 - [if] the SHA is malformed or not an ancestor of refs/remotes/origin/main [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
@@ -47,7 +58,11 @@ REPO_ENV = "CANARY_MIRROR_REPO"
 MAIN_REF = "refs/remotes/origin/main"
 CANARY_PREFIX = "canary/"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
-REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+GITHUB_REMOTE_RE = re.compile(
+    r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+    r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?"
+)
+TARGETS = ("mirror", "source")
 GIT_TIMEOUT_S = 120
 
 
@@ -58,22 +73,28 @@ class MirrorRefused(Exception):
 # ----- decisions (pure) -------------------------------------------------------------
 
 
-def resolve_mirror(config: dict, env: dict[str, str]) -> tuple[str, str]:
-    """The mirror `owner/name` and where it came from, refusing anything off the owner."""
-    override = env.get(REPO_ENV)
-    repo, source = (override, REPO_ENV) if override else (config["mirror_repository"], "config")
-    if not REPO_RE.fullmatch(repo):
-        raise MirrorRefused(f"mirror {repo!r} (from {source}) is not an owner/name slug")
-    if repo.lower() == config["source_repository"].lower():
+def refuse_retired_override(env: dict[str, str]) -> None:
+    if REPO_ENV in env:
         raise MirrorRefused(
-            f"mirror {repo!r} is the source repository; refusing to push canary branches there"
+            f"{REPO_ENV} is no longer honored: a canary branch lands only in a configured "
+            "target (--target mirror|source), because a repository the config does not name "
+            "has a budget gate that starts at zero; unset it"
         )
-    if repo.split("/")[0] != config["mirror_owner"]:
+
+
+def github_repo_of_remote(url: str) -> str | None:
+    """`owner/name` of a GitHub remote URL in any of git's spellings, else None."""
+    match = GITHUB_REMOTE_RE.fullmatch(url.strip())
+    return match.group("repo") if match else None
+
+
+def require_origin_is_source(origin_url: str, config: dict) -> None:
+    repo = github_repo_of_remote(origin_url)
+    if repo is None or repo.lower() != config["source_repository"].lower():
         raise MirrorRefused(
-            f"mirror {repo!r} (from {source}) is not owned by the canary owner "
-            f"{config['mirror_owner']!r}"
+            f"origin is {origin_url!r}, not the source repository "
+            f"{config['source_repository']!r}; run from a checkout of it"
         )
-    return repo, source
 
 
 def require_token(env: dict[str, str]) -> str:
@@ -181,21 +202,43 @@ def push_canary_ref(repo: str, url: str, sha: str, env: dict[str, str]) -> str:
     return ref
 
 
+def _mirror_destination(config: dict) -> tuple[str, str, dict[str, str]]:
+    token = require_token(dict(os.environ))
+    # The mirror's owner and its distinctness from the source are config invariants,
+    # pinned by tests/scripts/test_runner_canary_budget.py.
+    repo = config["mirror_repository"]
+    return repo, f"https://github.com/{repo}.git", {**os.environ, **auth_env(token)}
+
+
+def _source_destination(config: dict) -> tuple[str, str, dict[str, str]]:
+    origin = _git(["config", "--get", "remote.origin.url"], check=False)
+    require_origin_is_source(origin.stdout if origin.returncode == 0 else "", config)
+    # git's own credentials for origin: the operator's, never the mirror token.
+    return config["source_repository"], "origin", dict(os.environ)
+
+
+def _destination(target: str, config: dict) -> tuple[str, str, dict[str, str]]:
+    if target == "mirror":
+        return _mirror_destination(config)
+    if target == "source":
+        return _source_destination(config)
+    raise MirrorRefused(f"unhandled target {target!r}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("sha")
+    parser.add_argument("--target", choices=TARGETS, required=True)
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args(argv)
     config = json.loads(args.config.read_text())
     try:
-        token = require_token(dict(os.environ))
-        repo, source = resolve_mirror(config, dict(os.environ))
+        refuse_retired_override(dict(os.environ))
+        repo, url, env = _destination(args.target, config)
         sha = validate_sha(args.sha)
         require_on_main(sha)
-        url = f"https://github.com/{repo}.git"
-        env = {**os.environ, **auth_env(token)}
         check_default_branch(read_default_branch(repo, url, env), repo)
-        print(f"[mirror] target {repo} (from {source}); pushing {sha} to canary/{sha}")
+        print(f"[canary] target {args.target} = {repo}; pushing {sha} to canary/{sha}")
         ref = push_canary_ref(repo, url, sha, env)
     except MirrorRefused as exc:
         print(f"[ERROR] runner canary mirror: {exc}")

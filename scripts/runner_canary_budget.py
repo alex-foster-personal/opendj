@@ -7,6 +7,12 @@ tier is quoted in, and fails red with an explicit `::error::` at or past
 `budget_gate_fraction` (0.8) of that tier. It also decides which vendors run at all: only
 those named in `vars.CANARY_VENDORS_ENABLED`, and never a fallback runner for the rest.
 
+Each vendor runs in exactly one repository, its config `target_repo`: Avrea and Tenki in
+the source repository, where their apps are installed, and Blacksmith and Ubicloud in the
+canary org's mirror, because their runners are organization-only. A vendor enabled in any
+other repository is refused, and a repository that is no vendor's target runs nothing, so
+a vendor's minutes are always summed in the one repository that can spend them.
+
 Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config: ci/runner-canary.json.
 Standard library only: the gate job runs the hosted image's bare `python3`, with no venv.
 
@@ -28,8 +34,10 @@ Requirements (mini-PRD)
   dispatching it by name is exit 1, [else stop] ✔︎ ✅ 🎯
 - [if] the enable list is empty, unset, malformed or names an unknown vendor [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
-- [if] the repository owner is not the configured mirror owner [then] exit 1, [else stop]
-  ✔︎ ✅ 🎯
+- [if] the repository is no vendor's target_repo, or an enabled vendor targets another
+  repository [then] exit 1 before any billing read, [else stop] ✔︎ ✅ 🎯
+- [if] a vendor is evaluated [then] its minutes come from its own target_repo's jobs, and a
+  target that was not read is UNKNOWN, [else stop] ✔︎ ✅ 🎯
 """
 
 from __future__ import annotations
@@ -73,6 +81,7 @@ class BillingUnreadable(Exception):
 class Vendor:
     name: str
     label: str
+    target_repo: str
     vcpu: int
     free_minutes_per_month: int
     free_minutes_vcpu_basis: int
@@ -93,6 +102,15 @@ class CanaryConfig:
     success_bars: dict[str, float]
     known_red_shas: tuple[str, ...]
 
+    @property
+    def target_repositories(self) -> tuple[str, ...]:
+        return tuple(sorted({v.target_repo for v in self.vendors.values()}))
+
+    @property
+    def allowed_owners(self) -> tuple[str, ...]:
+        """The owners the workflow's guard admits: exactly those of the target repositories."""
+        return tuple(sorted({repo.split("/")[0] for repo in self.target_repositories}))
+
 
 def load_config(path: Path) -> CanaryConfig:
     raw = json.loads(Path(path).read_text())
@@ -100,6 +118,7 @@ def load_config(path: Path) -> CanaryConfig:
         name: Vendor(
             name=name,
             label=v["label"],
+            target_repo=v["target_repo"],
             vcpu=int(v["vcpu"]),
             free_minutes_per_month=int(v["free_minutes_per_month"]),
             free_minutes_vcpu_basis=int(v["free_minutes_vcpu_basis"]),
@@ -107,6 +126,13 @@ def load_config(path: Path) -> CanaryConfig:
         )
         for name, v in raw["vendors"].items()
     }
+    allowed_targets = (raw["source_repository"], raw["mirror_repository"])
+    for vendor in vendors.values():
+        if vendor.target_repo not in allowed_targets:
+            raise BudgetGateError(
+                f"{vendor.name} targets {vendor.target_repo!r}; a target_repo must be the "
+                f"source or the mirror repository {allowed_targets}"
+            )
     return CanaryConfig(
         source_repository=raw["source_repository"],
         mirror_owner=raw["mirror_owner"],
@@ -147,6 +173,30 @@ def parse_enabled_vendors(raw: str, config: CanaryConfig) -> list[str]:
             f"known: {sorted(config.vendors)}"
         )
     return [name for name in config.vendors if name in parsed]
+
+
+def check_repository(owner: str, repository: str, config: CanaryConfig) -> None:
+    """Refuse any repository that is not some vendor's target: it would run nothing, and its
+    own jobs listing would read as a fresh, zero-minute budget."""
+    if owner not in config.allowed_owners or repository not in config.target_repositories:
+        raise BudgetGateError(
+            f"{repository} (owner {owner!r}) runs no canary vendor; the targets are "
+            f"{list(config.target_repositories)}"
+        )
+
+
+def require_vendors_target(repository: str, vendors: Iterable[str], config: CanaryConfig) -> None:
+    """A vendor runs only in its target_repo: never skipped silently, never elsewhere."""
+    misrouted = [
+        f"{name} runs only in {config.vendors[name].target_repo}"
+        for name in vendors
+        if config.vendors[name].target_repo != repository
+    ]
+    if misrouted:
+        raise BudgetGateError(
+            "; ".join(misrouted) + f", not {repository}; remove it from this repository's "
+            "vars.CANARY_VENDORS_ENABLED"
+        )
 
 
 def requested_vendors(requested: str, enabled: list[str]) -> list[str]:
@@ -221,11 +271,18 @@ class VendorBudget:
 
 
 def evaluate_budgets(
-    vendors: Iterable[str], jobs: list[dict[str, Any]], config: CanaryConfig, now: datetime
+    vendors: Iterable[str],
+    jobs_by_repo: dict[str, list[dict[str, Any]]],
+    config: CanaryConfig,
+    now: datetime,
 ) -> list[VendorBudget]:
+    """Each vendor's month against its tier, summed from its OWN target repository's jobs."""
     budgets = []
     for name in vendors:
         vendor = config.vendors[name]
+        if vendor.target_repo not in jobs_by_repo:
+            raise BillingUnreadable(f"{name}'s target {vendor.target_repo} was not read")
+        jobs = jobs_by_repo[vendor.target_repo]
         used = sum(
             billed_basis_minutes(job, vendor, now)
             for job in jobs
@@ -255,26 +312,34 @@ class GateDecision:
         return [f"vendors={json.dumps(self.vendors)}", f"labels={json.dumps(self.labels)}"]
 
 
-def check_owner(owner: str, config: CanaryConfig) -> None:
-    if owner != config.mirror_owner:
-        raise BudgetGateError(
-            f"repository owner {owner!r} is not the canary mirror owner "
-            f"{config.mirror_owner!r}; the canary runs only in the mirror"
-        )
+def select_vendors(
+    *, owner: str, repository: str, enabled_raw: str, requested: str, config: CanaryConfig
+) -> list[str]:
+    """Which vendors this run covers. Pure, and decided before any billing read."""
+    check_repository(owner, repository, config)
+    enabled = parse_enabled_vendors(enabled_raw, config)
+    require_vendors_target(repository, enabled, config)
+    return requested_vendors(requested, enabled)
 
 
 def gate_decision(
     *,
     owner: str,
+    repository: str,
     enabled_raw: str,
     requested: str,
-    jobs: list[dict[str, Any]],
+    jobs_by_repo: dict[str, list[dict[str, Any]]],
     config: CanaryConfig,
     now: datetime,
 ) -> GateDecision:
-    check_owner(owner, config)
-    vendors = requested_vendors(requested, parse_enabled_vendors(enabled_raw, config))
-    budgets = evaluate_budgets(vendors, jobs, config, now)
+    vendors = select_vendors(
+        owner=owner,
+        repository=repository,
+        enabled_raw=enabled_raw,
+        requested=requested,
+        config=config,
+    )
+    budgets = evaluate_budgets(vendors, jobs_by_repo, config, now)
     month = now.strftime("%Y-%m")
     refusals = [
         f"{b.vendor} used {b.used_minutes:g} of {b.free_minutes} free minutes in {month} "
@@ -405,26 +470,37 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_config(args.config)
         owner = _required_env("GITHUB_REPOSITORY_OWNER")
-        check_owner(owner, config)
+        repo = _required_env("GITHUB_REPOSITORY")
         enabled_raw = _required_env("CANARY_VENDORS_ENABLED")
         requested = _required_env("CANARY_REQUESTED_VENDOR")
-        # Enablement is decided before any network read, so a disabled vendor is refused
-        # by name even when the billing API is down.
-        requested_vendors(requested, parse_enabled_vendors(enabled_raw, config))
+        # Placement and enablement are decided before any network read, so a misrouted or
+        # disabled vendor is refused by name even when the billing API is down.
+        vendors = select_vendors(
+            owner=owner,
+            repository=repo,
+            enabled_raw=enabled_raw,
+            requested=requested,
+            config=config,
+        )
         token = _required_env("GH_TOKEN")
-        repo = _required_env("GITHUB_REPOSITORY")
         api_url = _required_env("GITHUB_API_URL")
         output_path = _required_env("GITHUB_OUTPUT")
     except BudgetGateError as exc:
         print(f"::error::budget gate: {exc}")
         return 1
     try:
-        jobs = fetch_month_jobs(api_url, repo, token, now)
+        # Each vendor's own target repository. select_vendors has already refused any vendor
+        # targeting another repository, so this is the one repository github.token can read.
+        jobs_by_repo = {
+            target: fetch_month_jobs(api_url, target, token, now)
+            for target in sorted({config.vendors[v].target_repo for v in vendors})
+        }
         decision = gate_decision(
             owner=owner,
+            repository=repo,
             enabled_raw=enabled_raw,
             requested=requested,
-            jobs=jobs,
+            jobs_by_repo=jobs_by_repo,
             config=config,
             now=now,
         )

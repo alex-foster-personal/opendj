@@ -1,15 +1,22 @@
-"""`scripts/runner_canary_mirror.py`: push one `main` SHA to `canary/<sha>` on the mirror.
+"""`scripts/runner_canary_mirror.py`: push one `main` SHA to `canary/<sha>` in a target.
 
-Driven for real: a source repository and a bare "mirror" repository are built in
-`tmp_path`, and the mirror's https URL is rewritten to the bare repository through an
-isolated git config (`url.<file>.insteadOf`), so the script's own URL construction, auth
-header, preflight and push all run unmodified. Nothing touches GitHub.
+Two targets (ci/runner-canary.json `target_repo` per vendor): `--target mirror`, the canary
+org's mirror, for Blacksmith and Ubicloud; `--target source`, the source repository itself
+through the checkout's own `origin`, for Avrea and Tenki.
+
+Driven for real: a source checkout and two bare repositories (the mirror, and the source
+repository's "remote") are built in `tmp_path`, and their https URLs are rewritten to the
+bare repositories through an isolated git config (`url.<file>.insteadOf`), so the script's
+own URL construction, auth header, preflight and push all run unmodified. Nothing touches
+GitHub.
 
 Regression lines:
   - if a missing push token does anything but exit non-zero naming CANARY_MIRROR_PUSH_TOKEN
     then broken
-  - if the mirror target can be overridden to the source repository or another owner then
-    broken (the canary would push branches, and vendor jobs, where they do not belong)
+  - if CANARY_MIRROR_REPO, the retired override, is silently ignored or honored then broken
+    (it let a push land in a repository whose budget gate starts at zero minutes)
+  - if `--target source` pushes anywhere but the checkout's `origin` when that origin IS
+    the configured source repository then broken, in both directions
   - if a SHA that is not on origin/main can be mirrored then broken
   - if an EMPTY mirror is pushed to then broken: the first branch pushed becomes the
     default branch, which arms every `schedule` and `workflow_run` workflow in the mirror
@@ -80,10 +87,29 @@ def world(tmp_path: Path) -> dict[str, object]:
     _git(source, "commit", "-q", "-m", "two", env=base_env)
     off_main = _git(source, "rev-parse", "HEAD", env=base_env)
     _git(tmp_path, "init", "-q", "--bare", str(mirror), env=base_env)
+    # The source repository's own remote: a bare repository whose default branch is main,
+    # reached through the checkout's `origin` at its real GitHub URL.
+    real = tmp_path / "real.git"
+    _git(tmp_path, "init", "-q", "--bare", str(real), env=base_env)
+    _git(source, "push", "-q", f"file://{real}", f"{on_main}:refs/heads/main", env=base_env)
+    with gitconfig.open("a") as fh:
+        fh.write(
+            f'[url "file://{real}"]\n'
+            f"\tinsteadOf = https://github.com/{CONFIG['source_repository']}.git\n"
+        )
+    _git(
+        source,
+        "remote",
+        "add",
+        "origin",
+        f"https://github.com/{CONFIG['source_repository']}.git",
+        env=base_env,
+    )
     return {
         "env": base_env,
         "source": source,
         "mirror": mirror,
+        "real": real,
         "on_main": on_main,
         "off_main": off_main,
     }
@@ -101,11 +127,21 @@ def _bootstrap_default_branch(world: dict[str, object], branch: str = "main") ->
     _git(Path(str(world["mirror"])), "symbolic-ref", "HEAD", f"refs/heads/{branch}", env=env)
 
 
-def _run(world: dict[str, object], sha: str, **extra_env: str) -> subprocess.CompletedProcess:
+def _run(
+    world: dict[str, object], sha: str, target: str | None = "mirror", **extra_env: str
+) -> subprocess.CompletedProcess:
     env = {**world["env"], "CANARY_MIRROR_PUSH_TOKEN": TOKEN, **extra_env}
     env = {k: v for k, v in env.items() if v is not None and v != "<unset>"}
+    target_args = [] if target is None else ["--target", target]
     return subprocess.run(
-        [sys.executable, str(SCRIPT), sha, "--config", str(REPO / "ci" / "runner-canary.json")],
+        [
+            sys.executable,
+            str(SCRIPT),
+            sha,
+            *target_args,
+            "--config",
+            str(REPO / "ci" / "runner-canary.json"),
+        ],
         cwd=world["source"],
         capture_output=True,
         check=False,
@@ -115,9 +151,9 @@ def _run(world: dict[str, object], sha: str, **extra_env: str) -> subprocess.Com
     )
 
 
-def _mirror_refs(world: dict[str, object]) -> dict[str, str]:
+def _mirror_refs(world: dict[str, object], which: str = "mirror") -> dict[str, str]:
     out = _git(
-        Path(str(world["mirror"])),
+        Path(str(world[which])),
         "for-each-ref",
         "--format=%(refname) %(objectname)",
         env=world["env"],
@@ -194,47 +230,85 @@ def test_a_missing_origin_main_ref_is_refused_with_the_fix(world) -> None:
     assert "git fetch origin main" in result.stdout + result.stderr
 
 
-def _route_to_bare_mirror(world: dict[str, object], repo: str) -> None:
-    """Point `https://github.com/<repo>.git` at the bare mirror, so a push there WOULD land.
-
-    Without this, a missing guard is masked: the unrewritten URL fails on the network and
-    the refusal reads green for the wrong reason (caught by mutation, Tue 29 Sep 2026).
-    """
-    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    gitconfig.write_text(
-        gitconfig.read_text()
-        + f'[url "file://{world["mirror"]}"]\n\tinsteadOf = https://github.com/{repo}.git\n'
-    )
-
-
-@pytest.mark.parametrize(
-    ("override", "refusal"),
-    [
-        (CONFIG["source_repository"], "is the source repository"),
-        ("someone-else/music-dj-tools-canary", "is not owned by the canary owner"),
-        ("not-a-repo-slug", "is not an owner/name slug"),
-    ],
-    ids=["source-repo", "other-owner", "malformed"],
-)
-def test_a_mirror_override_outside_the_canary_owner_is_refused(
-    world, override: str, refusal: str
-) -> None:
+def test_the_retired_mirror_override_is_refused_by_name_not_ignored(world) -> None:
+    """Codex P1 on #4472: an override let a push land where the budget gate read zero."""
     _bootstrap_default_branch(world)
-    _route_to_bare_mirror(world, override)
-    result = _run(world, world["on_main"], CANARY_MIRROR_REPO=override)
+    result = _run(world, world["on_main"], CANARY_MIRROR_REPO=CONFIG["mirror_repository"])
     assert result.returncode == 1, result.stdout + result.stderr
-    assert refusal in result.stdout
+    assert "CANARY_MIRROR_REPO is no longer honored" in result.stdout
     assert set(_mirror_refs(world)) == {"refs/heads/main"}
 
 
-def test_an_override_inside_the_canary_owner_is_used_and_named(world) -> None:
-    """Opposite direction: a legitimate override is honored, not refused with the rest."""
+def test_the_target_must_be_named(world) -> None:
     _bootstrap_default_branch(world)
-    alt = f"{CONFIG['mirror_owner']}/another-canary"
-    _route_to_bare_mirror(world, alt)
-    result = _run(world, world["on_main"], CANARY_MIRROR_REPO=alt)
+    result = _run(world, world["on_main"], target=None)
+    assert result.returncode == 2
+    assert "--target" in result.stderr
+    assert set(_mirror_refs(world)) == {"refs/heads/main"}
+
+
+# ----- --target source: the source repository, through the checkout's origin --------
+
+
+def test_source_target_lands_canary_sha_through_origin_without_the_mirror_token(world) -> None:
+    sha = world["on_main"]
+    result = _run(world, sha, target="source", CANARY_MIRROR_PUSH_TOKEN="<unset>")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"{alt} (from CANARY_MIRROR_REPO)" in result.stdout
+    assert _mirror_refs(world, "real")[f"refs/heads/canary/{sha}"] == sha
+    assert set(_mirror_refs(world, "real")) == {"refs/heads/main", f"refs/heads/canary/{sha}"}
+    # Control: the mirror, the other target, was not touched.
+    assert _mirror_refs(world) == {}
+
+
+def test_source_target_refuses_an_origin_that_is_not_the_source_repository(world) -> None:
+    other = "someone-else/music-dj-tools"
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    # Route the impostor URL to the same bare repository, so a missing guard WOULD land.
+    gitconfig.write_text(
+        gitconfig.read_text()
+        + f'[url "file://{world["real"]}"]\n\tinsteadOf = https://github.com/{other}.git\n'
+    )
+    _git(
+        world["source"],
+        "remote",
+        "set-url",
+        "origin",
+        f"https://github.com/{other}.git",
+        env=world["env"],
+    )
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "origin is" in result.stdout and "not the source repository" in result.stdout
+    assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "git@github.com:{repo}.git",
+        "ssh://git@github.com/{repo}.git",
+        "https://github.com/{repo}",
+    ],
+    ids=["scp", "ssh", "https-no-suffix"],
+)
+def test_source_target_accepts_every_spelling_of_the_source_origin(world, url: str) -> None:
+    """Opposite direction: the guard must not refuse the real repository spelled otherwise."""
+    spelled = url.format(repo=CONFIG["source_repository"])
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    gitconfig.write_text(
+        gitconfig.read_text() + f'[url "file://{world["real"]}"]\n\tinsteadOf = {spelled}\n'
+    )
+    _git(world["source"], "remote", "set-url", "origin", spelled, env=world["env"])
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"refs/heads/canary/{world['on_main']}" in _mirror_refs(world, "real")
+
+
+def test_source_target_refuses_a_sha_not_on_main(world) -> None:
+    result = _run(world, world["off_main"], target="source")
+    assert result.returncode == 1
+    assert "not on refs/remotes/origin/main" in result.stdout
+    assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
 
 
 def test_an_empty_mirror_is_refused_because_the_first_push_becomes_the_default(world) -> None:

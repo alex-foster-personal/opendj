@@ -1,8 +1,10 @@
 """Runner-canary report: each vendor's pytest shards against self-hosted, on the same SHAs.
 
-For every canary run in the mirror (`.github/workflows/runner-canary.yml`), each vendor
-shard is paired with the self-hosted shard of the same SHA from the source repository's
-`ci.yml` push run on `main`. Per vendor it reports:
+For every canary run (`.github/workflows/runner-canary.yml`) in each vendor's own
+`target_repo` (the source repository or the canary org's mirror), each vendor shard is
+paired with the self-hosted shard of the same SHA from the source repository's `ci.yml`
+push run on `main`. A vendor's rows are read from its target repository only. Per vendor
+it reports:
 
 - median push-to-verdict ratio: median(vendor verdict latency) / median(self-hosted), where
   a run's verdict latency is max(shard completed_at) - run created_at;
@@ -30,9 +32,9 @@ Usage:
     python -m scripts.runner_canary_report --config ci/runner-canary.json \\
         [--vendor avrea] [--known-red-sha <sha> ...] [--json out.json]
 
-Reads through `gh api`, so it uses gh's own authentication, which needs read access to both
-the mirror and the source repository. Exit 0 all PASS, 1 any FAIL, 3 any UNKNOWN (including
-a GitHub read that failed).
+Reads through `gh api`, so it uses gh's own authentication, which needs read access to
+every target repository and the source repository. Exit 0 all PASS, 1 any FAIL, 3 any
+UNKNOWN (including a GitHub read that failed).
 
 Requirements (mini-PRD)
 - [if] fewer than 20 commits are paired [then] UNKNOWN, never PASS, [else stop] ✔︎ ✅ 🎯
@@ -365,9 +367,32 @@ def _with_jobs(repo: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return runs
 
 
-def fetch_canary_runs(mirror: str) -> list[dict[str, Any]]:
-    runs = _gh_lines(f"repos/{mirror}/actions/runs?per_page=100", ".workflow_runs[]")
-    return _with_jobs(mirror, [r for r in runs if r.get("path") == CANARY_WORKFLOW])
+def fetch_canary_runs(repo: str) -> list[dict[str, Any]]:
+    workflow = Path(CANARY_WORKFLOW).name
+    runs = _gh_lines(
+        f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=100", ".workflow_runs[]"
+    )
+    return _with_jobs(repo, runs)
+
+
+def vendor_rows_from_targets(
+    runs_by_repo: dict[str, list[dict[str, Any]]], config: dict[str, Any]
+) -> list[ShardRow]:
+    """Each vendor's shard rows from its OWN target repository, and from nowhere else."""
+    rows = []
+    for repo, runs in runs_by_repo.items():
+        rows += [
+            row
+            for row in shard_jobs(
+                runs,
+                side="vendor",
+                pytest_step_name=config["pytest_step_name"],
+                timeout_minutes=config["shard_timeout_minutes"],
+            )
+            if row.vendor in config["vendors"]
+            and config["vendors"][row.vendor]["target_repo"] == repo
+        ]
+    return rows
 
 
 def fetch_baseline_runs(
@@ -425,20 +450,18 @@ def main(argv: list[str] | None = None) -> int:
     if unknown_vendors:
         parser.error(f"unknown vendor(s) {unknown_vendors}")
     known_red = [*config["known_red_shas"], *args.known_red_sha]
+    targets = sorted({config["vendors"][v]["target_repo"] for v in vendors})
     try:
-        canary_runs = fetch_canary_runs(config["mirror_repository"])
+        runs_by_repo = {repo: fetch_canary_runs(repo) for repo in targets}
         baseline_runs = fetch_baseline_runs(
-            config["source_repository"], config["baseline"], (r["head_sha"] for r in canary_runs)
+            config["source_repository"],
+            config["baseline"],
+            (r["head_sha"] for runs in runs_by_repo.values() for r in runs),
         )
     except ReadFailed as exc:
         print(f"UNKNOWN: the GitHub read failed, so nothing was measured: {exc}")
         return EXIT_UNKNOWN
-    vendor_rows = shard_jobs(
-        canary_runs,
-        side="vendor",
-        pytest_step_name=config["pytest_step_name"],
-        timeout_minutes=config["shard_timeout_minutes"],
-    )
+    vendor_rows = vendor_rows_from_targets(runs_by_repo, config)
     # ci.yml's shard cap. A baseline cancelled at it is infra, as on the vendor side.
     baseline_rows = shard_jobs(
         baseline_runs,

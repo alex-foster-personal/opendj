@@ -3,13 +3,17 @@
 # Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config, free tiers and
 # their sources: ci/runner-canary.json. Measurement: scripts/runner_canary_report.py.
 #
-# WHERE IT RUNS. Only in the canary org's private mirror (ci/runner-canary.json
-# `mirror_repository`), which scripts/runner_canary_mirror.py feeds by pushing a
-# chosen `main` SHA to `canary/<sha>`. In the source repository every job here is
-# SKIPPED: the budget gate is guarded on `github.repository_owner`, and every other
-# job needs the gate and carries no status function that could run it past a skip.
-# tests/scripts/test_runner_canary_workflow.py pins that, and the owner literal below
-# against the config.
+# WHERE IT RUNS. Each vendor runs in exactly one repository, its `target_repo` in
+# ci/runner-canary.json: Avrea and Tenki in the source repository, where their apps are
+# installed, and Blacksmith and Ubicloud in the canary org's private mirror, because their
+# runners are organization-only. scripts/runner_canary_mirror.py pushes a chosen `main`
+# SHA to `canary/<sha>` in either one (`--target source|mirror`). The budget gate is
+# guarded on a positive allowlist of those two owners, and every other job needs the gate
+# and carries no status function that could run it past a skip, so anywhere else (a fork,
+# a copy) every job is SKIPPED. Inside the allowlist the gate itself refuses a repository
+# that is no vendor's target, and puts in the matrix only enabled vendors whose target is
+# THIS repository, refusing the run if an enabled vendor targets the other one.
+# tests/scripts/test_runner_canary_workflow.py pins the guard against the config.
 #
 # WHAT IT RUNS. The `test` job of ci.yml (`pytest fast lane (shard N of 5)`), step for
 # step. ci.yml is not touched: extracting the job into a reusable workflow would rename
@@ -21,8 +25,8 @@
 # artifact names would collide across vendors and whose readers live in the source
 # repository.
 #
-# SAFETY. No pull_request trigger, so no fork or PR author can reach a vendor VM. No
-# repository secret is read. `permissions: contents: read`; the gate job alone adds `actions: read` to
+# SAFETY. No pull_request or merge_group trigger and no push to main, so no fork or PR
+# author can reach a vendor VM and no required check changes. No repository secret is read. `permissions: contents: read`; the gate job alone adds `actions: read` to
 # list this repository's own jobs. A vendor absent from vars.CANARY_VENDORS_ENABLED
 # never runs and is never rerouted: `runs-on` is the gate's label map indexed by the
 # matrix vendor, with no `||` fallback.
@@ -58,10 +62,10 @@ concurrency:
 jobs:
   budget-gate:
     name: "canary: budget gate"
-    if: github.repository_owner == 'opendj-ci-canary'
-    # GitHub-hosted in the mirror org, never a vendor label: the gate must run even
-    # when every vendor is out of minutes, and it must not bill a vendor to decide
-    # whether that vendor may be billed.
+    if: github.repository_owner == 'maintainer' || github.repository_owner == 'opendj-ci-canary'
+    # GitHub-hosted, never a vendor label: the gate must run even when every vendor is
+    # out of minutes, and it must not bill a vendor to decide whether that vendor may be
+    # billed. About one hosted minute per canary run, on the repository owner's allowance.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
