@@ -7,6 +7,7 @@ import { queryPerformanceState } from './performance-ipc.svelte';
 import { installAgentOrderPoll } from './agent-orders';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { audioOutputHealth } from '$lib/rb/audio-output-health.svelte';
+import { outputTopologyMirror } from '$lib/rb/audio-output-status.svelte';
 import { readPerfEvents, recordPerfEvent } from './perf-event-log';
 import { buildAudioHealthMirror } from './audio-health-mirror';
 import {
@@ -81,6 +82,9 @@ export function buildUiMirror(): Record<string, unknown> {
 		master_reason: state.master_reason,
 		transition: state.transition,
 		context_state: audioContextState(),
+		// IOPIN-12 parity with the I/O panel notice: what djio asked for, what the
+		// graph actually wired, and the stereo-fallback reason when they differ.
+		output_topology: outputTopologyMirror(),
 		master: { ...state.master, level: state.mixer.master, rms: silence.rms },
 		xrun_sentinel: readXrunSessionCounter(),
 		mixer: state.mixer,

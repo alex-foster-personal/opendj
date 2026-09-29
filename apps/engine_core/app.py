@@ -41,6 +41,7 @@ from apps.engine_core.account.api import (
 )
 from apps.engine_core.app_posture_api import add_app_posture_route
 from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.audio_interference_api import add_audio_interference_route
 from apps.engine_core.availability_api import add_availability_routes
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
 from apps.engine_core.config import (
@@ -67,17 +68,21 @@ from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
+from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
+from apps.engine_core.setup.library_events import on_setup_import_progress
+from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
-from apps.shared.paths import STATE_DB
+from apps.shared.state import db as state_db
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
 from apps.stems.live_capability import assess_install_once
 from apps.stems.live_capability_api import router as live_stems_capability_router
+from apps.sync_hub import first_run as cloudsync_first_run
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
 from apps.webui.server import analysis_autostart, library_jobs_autostart
@@ -171,6 +176,7 @@ def create_app(
     add_host_info_route(app, data_dir=cfg.data_dir)
     add_perf_tier_route(app, data_dir=cfg.data_dir)
     add_app_posture_route(app, data_dir=cfg.data_dir)
+    add_audio_interference_route(app)
     build_identity = getattr(app.state, BUILD_IDENTITY_STATE_ATTR)
     if build_identity.info is not None and build_identity.info.source == "payload":
         # An installed engine owns the first-run assessment. A checkout has no
@@ -233,6 +239,7 @@ def _register_job_kinds() -> None:
     register_worker(stems_job.JOB_KIND, stems_job.build_argv)
     register_progress_observer(stems_job.JOB_KIND, stems_job.on_progress)
     register_reconcile(stems_job.JOB_KIND, stems_job.reconcile_from_disk)
+    register_progress_observer(SETUP_IMPORT_KIND, on_setup_import_progress)
     register_worker(cloud_job.JOB_KIND, cloud_job.build_argv)
     register_reconcile(cloud_job.JOB_KIND, cloud_job.reconcile_from_disk)
 
@@ -254,13 +261,14 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
     assert_ready()
     stems = stem_storage()
     ensure_stem_storage(stems)
+    state_db_path = _create_state_store(cfg)
 
     return legacy_create_app(
-        backend=make_backend(),
+        backend=make_backend(state_db_path),
         bind_host=cfg.host,
         hostname=os.environ.get("MUSIC_DJ_HOSTNAME"),
         syncthing_status_fn=probe_syncthing_status,
-        state_db_path=str(STATE_DB),
+        state_db_path=str(state_db_path),
         port=cfg.port,
         stem_roots=stems.roots,
         mount_frontend=False,
@@ -291,6 +299,29 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,
     )
+
+
+def _create_state_store(cfg: EngineConfig) -> Path:
+    """Create and migrate ``state.db`` BEFORE a backend is chosen (#3965).
+
+    ``make_backend`` picks by file presence: SqliteBackend when ``state.db``
+    exists, InMemoryBackend when it does not. On a first run nothing had
+    created it yet, so the engine bound an in-memory library for the life of
+    the process. The first folder import then wrote its rows to sqlite,
+    readiness (which reads sqlite directly) counted them, and ``/tracks`` and
+    ``/health`` served an empty library until the app was relaunched. The
+    availability worker created the file a moment after boot anyway, too
+    late, and a readiness request racing that creation read a half-migrated
+    schema and 500'd.
+
+    The engine is the long-lived store owner, so an in-memory library is
+    never its right answer: anything written to one is lost at exit. This
+    writes no rows. An empty, fully migrated store is what every later
+    reader and the import worker expect to find.
+    """
+    path = cfg.state_db
+    state_db.open_rw(path).close()
+    return path
 
 
 def _drop_api_routes(app: FastAPI, prefix: str) -> int:
@@ -418,12 +449,26 @@ def _wrap_lifespan(
         try:
             # The CloudSync scheduler idles until cloudsync-config.json (or
             # its env overrides) turns it on, and never starts on the hub.
+            # First run (#3870): a build that names a default hub writes that
+            # file once, so a test user's install syncs with no prompt. An
+            # existing file always wins; no default means nothing changes.
             cloudsync_dir = Path(str(instance.state.state_db_path)).resolve().parent.parent
-            async with legacy_lifespan(instance), scheduler_lifespan(
-                cloudsync_dir,
-                ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
-            ) as sched:
+            cloudsync_first_run.seed_default_config(cloudsync_dir, env=os.environ)
+            async with (
+                legacy_lifespan(instance),
+                scheduler_lifespan(
+                    cloudsync_dir,
+                    ui_mirror_provider=lambda: getattr(instance.state, "ui_mirror", None),
+                ) as sched,
+                # cfg.data_dir, not cloudsync_dir: same per-instance value
+                # ``LibraryAvailabilityWorker(cfg.data_dir)`` above already
+                # uses, rather than the module-level ``STATE_DB`` constant
+                # ``cloudsync_dir`` is derived from (out of scope for #3180
+                # to also re-key CloudSync onto it).
+                folder_rescan_lifespan(cfg.data_dir) as folder_rescan,
+            ):
                 instance.state.sync_hub_scheduler = sched
+                instance.state.folder_rescan_scheduler = folder_rescan
                 availability_worker.start()
                 try:
                     yield

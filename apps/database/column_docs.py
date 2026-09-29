@@ -93,6 +93,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
             "sync operation until the CLOUDSYNC content-hash-backfill "
             "phase runs (cloudsync-spec.md section 4)."
         ),
+        "audio_hash": (
+            "Tag-independent SHA-256 of the decoded container audio payload; "
+            "used beside content_hash for CloudSync identity merges."
+        ),
         "created_at": "RFC 3339 UTC timestamp of first insert. Never rewritten.",
         "updated_at": (
             "RFC 3339 UTC timestamp of the most recent write to this row. "

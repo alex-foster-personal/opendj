@@ -5,15 +5,18 @@
 import { startFolderImport } from '$lib/setup/setup-api';
 import { pushToast } from '$lib/stores.svelte';
 import { RbApiError } from './api-rb-error';
-import type { UsbVolumeKnown } from './usb-tracker.svelte';
+import { usbAccessBlocked, type UsbVolumeKnown } from './usb-tracker.svelte';
 
+/** A blocked drive (USBPLAY-02) cannot be read, so its import would only
+ * queue a job that fails on the first directory it lists. */
 export function canImportUsbVolume(vol: UsbVolumeKnown): boolean {
 	return Boolean(
 		vol.mount_path &&
 			vol.present &&
 			!vol.simulated &&
 			!vol.forgotten &&
-			vol.is_music !== false
+			vol.is_music !== false &&
+			!usbAccessBlocked(vol)
 	);
 }
 

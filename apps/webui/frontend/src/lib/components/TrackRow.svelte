@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type { Track } from '$lib/api';
+	import { STAR_FILLED_PATH, STAR_OUTLINE_PATH } from '$lib/ui/icon-glyphs';
+
+	const STARS = [1, 2, 3, 4, 5];
+
 	let {
 		track,
 		selected = false,
@@ -33,7 +37,18 @@
 	<td>{track.key ?? ''}</td>
 	<td>
 		{#if track.rating != null}
-			<span aria-label={`rating ${track.rating}`}>{'★'.repeat(track.rating)}{'☆'.repeat(5 - track.rating)}</span>
+			<span class="rating-stars" aria-label={`rating ${track.rating}`}>
+				{#each STARS as n (n)}
+					<svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+						<path
+							d={n <= track.rating ? STAR_FILLED_PATH : STAR_OUTLINE_PATH}
+							fill={n <= track.rating ? 'currentColor' : 'none'}
+							stroke="currentColor"
+							stroke-width="1.2"
+						/>
+					</svg>
+				{/each}
+			</span>
 		{/if}
 	</td>
 	<td>{track.last_played_at ?? ''}</td>
@@ -47,5 +62,9 @@
 <style>
 	tr.selected {
 		background: #1a212c;
+	}
+	.rating-stars {
+		display: inline-flex;
+		gap: 1px;
 	}
 </style>

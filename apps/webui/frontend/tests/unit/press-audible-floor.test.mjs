@@ -397,7 +397,12 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 
 	const hotkeys = readSource('src/lib/rb/performance-hotkeys.ts');
 	assert.ok(
-		hotkeys.includes('void _toggleRecentPlay(e.timeStamp);'),
+		// issue #3528 routed Space through the shared performance-shortcut-routing
+		// module, which hands the callback its own pressT0Ms/quantize rather than
+		// the raw event, so the literal this pins moved from `e.timeStamp` to the
+		// routed parameter - it must still be the DOM event stamp captured at
+		// keydown, not a fresh performance.now() taken inside the callback.
+		hotkeys.includes('void _toggleRecentPlay(pressT0Ms, quantize || undefined);'),
 		'Space is how a DJ starts a track without looking at the screen; it is the LAST ' +
 			'path that should be measuring from after its own dispatch'
 	);

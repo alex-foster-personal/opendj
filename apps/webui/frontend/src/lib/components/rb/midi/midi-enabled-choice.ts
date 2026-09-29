@@ -17,6 +17,14 @@
  *     [if] performance-ipc.svelte.ts no longer loads in isolation [then ⛔️] broken
  */
 
+import { bumpMidiEnabledTick, midiEnabledTick } from './midi-enabled-tick.svelte';
+
+// localStorage is not reactive, so a UI reading the choice (the settings
+// overlay's MIDI toggle) would never re-render on a toggle or when a denied
+// request clears the choice later. Every write goes through
+// persistMidiEnabled(), which bumps the tick; every read tracks it. The stored
+// key stays the single source of truth; the tick carries no value of its own.
+
 /** localStorage key for the "user enabled MIDI" choice. Set once the user
  * successfully grants access; read on page load to auto-re-request without a
  * second click. Namespaced so it never collides with other app keys. */
@@ -32,6 +40,16 @@ export function persistMidiEnabled(enabled: boolean): void {
 	} else {
 		localStorage.removeItem(MIDI_ENABLED_KEY);
 	}
+	bumpMidiEnabledTick();
+}
+
+/** True if the user previously enabled MIDI (persisted choice). Lives in this
+ * leaf so first-paint code (settings/apply.ts) can read the choice without
+ * importing midi-ui-state and, through it, the WebMIDI runtime and device maps. */
+export function midiEnabledPersisted(): boolean {
+	void midiEnabledTick.n;
+	if (typeof localStorage === 'undefined') return false;
+	return localStorage.getItem(MIDI_ENABLED_KEY) === '1';
 }
 
 let _hydratedListener: ((enabled: boolean) => void) | null = null;

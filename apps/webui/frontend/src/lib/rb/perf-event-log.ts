@@ -409,6 +409,24 @@ export function findPerfEventById(id: string): PerfEvent | null {
 	return null;
 }
 
+/** A stage timer over `stages`: `time(name, work)` awaits `work` and records
+ * its wall time in whole ms under `stages[name]`, whether it resolves or throws.
+ * `now` is the clock, injected like the other perf timers' so a test can script
+ * it; production callers leave it at `performance.now`, the perf log's clock. */
+export function stageTimer(
+	stages: Record<string, number>,
+	now: () => number = () => performance.now()
+): <T>(name: string, work: Promise<T>) => Promise<T> {
+	return async <T>(name: string, work: Promise<T>): Promise<T> => {
+		const started = now();
+		try {
+			return await work;
+		} finally {
+			stages[name] = Math.round(now() - started);
+		}
+	};
+}
+
 /** Always-on stage timing (ms). One console.info + ring entry. */
 export function recordPerfTiming(
 	kind: string,

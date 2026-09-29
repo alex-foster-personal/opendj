@@ -54,3 +54,31 @@ export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { setTabLabel } from './playlist-set-tabs';
+/** A stick track row whose stick was pulled (USBPLAY-09: the browse store
+ * grays it to awaiting_volume), refused as "Stick removed" (spec 4b) rather
+ * than as a broken link. Stick ids start `usb-`; library ids are sha1 hex, so
+ * the prefix cannot match one (the same test as track-source's isUsbTrackId). */
+export function isRemovedStickRow(row: {
+	stable_id: string;
+	file_availability?: string | null;
+}): boolean {
+	return row.file_availability === 'awaiting_volume' && row.stable_id.startsWith('usb-');
+}
+
+/** Play from USB pane source (USBPLAY-05): dynamic, so the stick store and
+ * row mapping load on the first stick pane, not with /performance. */
+export function usbPaneSource(): Promise<typeof import('$lib/rb/usb-library.svelte')> {
+	return import('$lib/rb/usb-library.svelte');
+}
+
+// Re-exported so BrowserPanel.svelte, already coupled to this barrel, does not
+// take three more direct fan-out edges for IOPIN-01 keyboard nav and the MIDI
+// browse adapter.
+export { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
+export {
+	browserNavigationMayHandle,
+	browserSelectionDelta,
+	moveBrowserFocus,
+	type BrowserFocusZone
+} from '$lib/rb/browser-navigation';
+export { openIoView } from '$lib/rb/io-surface.svelte';

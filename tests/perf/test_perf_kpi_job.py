@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import plistlib
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -14,42 +14,14 @@ from pathlib import Path
 import pytest
 
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import build
-from scripts.perf.perf_kpi_config import REPO_ROOT, load_config
+from scripts.perf.perf_kpi_config import REPO_ROOT, load_config, require_machine_label
 from scripts.perf.perf_kpi_job import cmd_nightly
 from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE_LOG_NAME
+from tests.perf.perf_kpi_job_fixtures import free_port, nightly_env
 
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _empty_ledger(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"schema_version": 2, "entries": []}, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-
-def _nightly_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **overrides: str) -> Path:
-    state_dir = tmp_path / "state"
-    ledger = tmp_path / "kpi-ledger.json"
-    _empty_ledger(ledger)
-    values = {
-        "MDT_PERF_KPI_STATE_DIR": str(state_dir),
-        "MDT_PERF_KPI_LEDGER": str(ledger),
-        "MDT_PERF_KPI_SCRATCH_PORT": str(_free_port()),
-        "MDT_PERF_KPI_SAMPLES": "2",
-        "MDT_PERF_KPI_MACHINE": "test",
-        **overrides,
-    }
-    for name, value in values.items():
-        monkeypatch.setenv(name, value)
-    return state_dir
+DECIDE_SCRIPT = REPO_ROOT / "scripts" / "perf_kpi_launchd_decide.sh"
+LAUNCHCTL_UNAVAILABLE = sys.platform != "darwin" or shutil.which("launchctl") is None
 
 
 def _history_events(state_dir: Path) -> list[str]:
@@ -95,15 +67,13 @@ def _ledger_entries(tmp_path: Path) -> list[dict]:
     return ledger["entries"]
 
 
-def test_nightly_fails_when_data_dir_unset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nightly_fails_when_data_dir_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If MDT_PERF_KPI_DATA_DIR is unset then nightly exits non-zero with engine_unavailable."""
-    state_dir = _nightly_env(monkeypatch, tmp_path)
+    state_dir = nightly_env(monkeypatch, tmp_path)
     monkeypatch.delenv("MDT_PERF_KPI_DATA_DIR", raising=False)
     config = load_config()
 
-    code = cmd_nightly(config, base_url=None, skip_pr=True)
+    code = cmd_nightly(config, repo_root=REPO_ROOT, base_url=None, skip_pr=True)
 
     assert code != 0
     assert "engine_unavailable" in _history_events(state_dir)
@@ -116,7 +86,7 @@ def test_nightly_fails_when_state_db_missing(
     """If state/state.db is missing then nightly exits non-zero with engine_unavailable."""
     data_dir = tmp_path / "library"
     data_dir.mkdir()
-    state_dir = _nightly_env(
+    state_dir = nightly_env(
         monkeypatch,
         tmp_path,
         MDT_PERF_KPI_DATA_DIR=str(data_dir),
@@ -124,7 +94,7 @@ def test_nightly_fails_when_state_db_missing(
     config = load_config()
     missing = data_dir / "state" / "state.db"
 
-    code = cmd_nightly(config, base_url=None, skip_pr=True)
+    code = cmd_nightly(config, repo_root=REPO_ROOT, base_url=None, skip_pr=True)
 
     assert code != 0
     assert "engine_unavailable" in _history_events(state_dir)
@@ -137,11 +107,11 @@ def test_nightly_refuses_bound_scratch_port(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """If the scratch port is already bound then nightly exits without touching the occupant."""
-    port = _free_port()
+    port = free_port()
     data_dir = tmp_path / "library"
     (data_dir / "state").mkdir(parents=True)
     (data_dir / "state" / "state.db").touch()
-    state_dir = _nightly_env(
+    state_dir = nightly_env(
         monkeypatch,
         tmp_path,
         MDT_PERF_KPI_DATA_DIR=str(data_dir),
@@ -150,7 +120,7 @@ def test_nightly_refuses_bound_scratch_port(
     occupant = _occupy(port)
     try:
         config = load_config()
-        code = cmd_nightly(config, base_url=None, skip_pr=True)
+        code = cmd_nightly(config, repo_root=REPO_ROOT, base_url=None, skip_pr=True)
         assert code != 0
         assert occupant.poll() is None
         assert _listening(port)
@@ -165,10 +135,10 @@ def test_nightly_starts_real_engine_and_stops_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """If a real fixture library is available then nightly runs and releases the scratch port."""
-    port = _free_port()
+    port = free_port()
     data_dir = tmp_path / "fixture-data"
     build(data_dir)
-    state_dir = _nightly_env(
+    state_dir = nightly_env(
         monkeypatch,
         tmp_path,
         MDT_PERF_KPI_DATA_DIR=str(data_dir),
@@ -179,7 +149,7 @@ def test_nightly_starts_real_engine_and_stops_it(
     monkeypatch.delenv("MDT_PERF_KPI_STEMMED_STABLE_ID", raising=False)
     config = load_config()
 
-    code = cmd_nightly(config, base_url=None, skip_pr=True)
+    code = cmd_nightly(config, repo_root=REPO_ROOT, base_url=None, skip_pr=True)
 
     assert code != 1
     entries = _ledger_entries(tmp_path)
@@ -193,13 +163,13 @@ def test_nightly_refuses_a_library_with_no_tracks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """[if] state.db has an empty tracks table [then] nightly refuses before boot, [else stop]."""
-    port = _free_port()
+    port = free_port()
     data_dir = tmp_path / "library"
     (data_dir / "state").mkdir(parents=True)
     with sqlite3.connect(data_dir / "state" / "state.db") as connection:
         connection.execute("CREATE TABLE tracks (stable_id TEXT PRIMARY KEY, title TEXT)")
     (data_dir / "progress-tree.yaml").write_text("nodes: []\n", encoding="utf-8")
-    state_dir = _nightly_env(
+    state_dir = nightly_env(
         monkeypatch,
         tmp_path,
         MDT_PERF_KPI_DATA_DIR=str(data_dir),
@@ -207,7 +177,7 @@ def test_nightly_refuses_a_library_with_no_tracks(
     )
     config = load_config()
 
-    code = cmd_nightly(config, base_url=None, skip_pr=True)
+    code = cmd_nightly(config, repo_root=REPO_ROOT, base_url=None, skip_pr=True)
     captured = capsys.readouterr()
 
     assert code != 0
@@ -221,12 +191,12 @@ def test_nightly_fails_fast_when_engine_exits_before_healthy(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """If the engine exits before healthy then nightly fails fast and prints the log path."""
-    port = _free_port()
+    port = free_port()
     data_dir = tmp_path / "library"
     (data_dir / "state").mkdir(parents=True)
     (data_dir / "state" / "state.db").touch()
     (data_dir / "progress-tree.yaml").write_text("nodes: []\n", encoding="utf-8")
-    state_dir = _nightly_env(
+    state_dir = nightly_env(
         monkeypatch,
         tmp_path,
         MDT_PERF_KPI_DATA_DIR=str(data_dir),
@@ -235,7 +205,7 @@ def test_nightly_fails_fast_when_engine_exits_before_healthy(
     config = load_config()
     started = time.monotonic()
 
-    code = cmd_nightly(config, base_url=None, skip_pr=True)
+    code = cmd_nightly(config, repo_root=REPO_ROOT, base_url=None, skip_pr=True)
     elapsed = time.monotonic() - started
     captured = capsys.readouterr()
     log_path = state_dir / SCRATCH_ENGINE_LOG_NAME
@@ -248,16 +218,14 @@ def test_nightly_fails_fast_when_engine_exits_before_healthy(
     assert not _listening(port)
 
 
-def test_base_url_starts_no_engine(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_base_url_starts_no_engine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If --base-url is passed then no engine is started and DATA_DIR is not required."""
-    scratch_port = _free_port()
-    closed_port = _free_port()
+    scratch_port = free_port()
+    closed_port = free_port()
     data_dir = tmp_path / "library"
     (data_dir / "state").mkdir(parents=True)
     (data_dir / "state" / "state.db").touch()
-    state_dir = _nightly_env(
+    state_dir = nightly_env(
         monkeypatch,
         tmp_path,
         MDT_PERF_KPI_DATA_DIR=str(data_dir),
@@ -268,6 +236,7 @@ def test_base_url_starts_no_engine(
         config = load_config()
         code = cmd_nightly(
             config,
+            repo_root=REPO_ROOT,
             base_url=f"http://127.0.0.1:{closed_port}",
             skip_pr=True,
         )
@@ -282,56 +251,29 @@ def test_base_url_starts_no_engine(
         occupant.wait(timeout=5)
 
 
-def test_install_render_includes_data_dir_and_path(
+def test_load_config_does_not_require_machine_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """If the launchd installer renders plists then nightly gets DATA_DIR and a uv-capable PATH."""
-    home = tmp_path / "home"
-    launch_agents = home / "Library" / "LaunchAgents"
-    launch_agents.mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-
-    completed = subprocess.run(
-        [str(INSTALL_SCRIPT)],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0
-
-    nightly = plistlib.loads(
-        (launch_agents / "com.af.perf-kpi-nightly.plist").read_bytes()
-    )
-    health = plistlib.loads(
-        (launch_agents / "com.af.perf-kpi-health.plist").read_bytes()
-    )
-    env = nightly["EnvironmentVariables"]
-    assert env["MDT_PERF_KPI_DATA_DIR"] == "/abs/lib"
-    assert ".local/bin" in env["PATH"] or ".venv/bin" in env["PATH"]
-    assert "MDT_PERF_KPI_DATA_DIR" not in health.get("EnvironmentVariables", {})
+    """The health path never attributes a ledger entry to a machine (round 4,
+    P1/BLOCKING): Air's already-installed com.af.perf-kpi-health plist
+    predates MDT_PERF_KPI_MACHINE entirely, so requiring it inside
+    load_config() itself -- which both cmd_health and cmd_nightly call --
+    would break Air's wedged-engine detection on merge with no reinstall
+    step. load_config() must succeed with machine=="" when the env var is
+    unset; only the nightly path enforces it."""
+    nightly_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
+    config = load_config()
+    assert config.machine == ""
 
 
-def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """If MDT_PERF_KPI_DATA_DIR is unset then the installer exits non-zero."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.delenv("MDT_PERF_KPI_DATA_DIR", raising=False)
-
-    completed = subprocess.run(
-        [str(INSTALL_SCRIPT)],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 2
+def test_require_machine_label_raises_when_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """cmd_nightly's own guard (require_machine_label) still fails loud
+    before doing any nightly work when the label truly is missing."""
+    nightly_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
+    config = load_config()
+    with pytest.raises(ValueError, match="MDT_PERF_KPI_MACHINE"):
+        require_machine_label(config)

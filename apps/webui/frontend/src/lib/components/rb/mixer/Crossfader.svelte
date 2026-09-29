@@ -4,8 +4,15 @@
 	 * Real control: 0 = full A (left bus), 1 = full B (right bus).
 	 * Wheel up moves toward B.
 	 */
+	import {
+		CROSSFADER_THUMB_HIT_W,
+		CROSSFADER_THUMB_VIS_H,
+		CROSSFADER_THUMB_VIS_W,
+		crossfaderThumbLeftPx,
+		crossfaderValueFromPointerX
+	} from '$lib/rb/crossfader-geometry';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
-	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-state.svelte';
+	import { midiTakeoverGhost } from '$lib/rb/midi/takeover-ui.svelte';
 
 	interface Props {
 		/** 0..1; 0 = full A, 1 = full B. */
@@ -16,15 +23,13 @@
 
 	let { value, onchange }: Props = $props();
 
-	const THUMB_W = 12;
-
 	let dragging = false;
 	let trackWidth = $state(0);
 
-	const thumbLeftPx = $derived(value * Math.max(0, trackWidth - THUMB_W));
+	const thumbLeftPx = $derived(crossfaderThumbLeftPx(value, trackWidth));
 	const takeoverGhost = $derived(midiTakeoverGhost('mixer:global:crossfader'));
 	const ghostLeftPx = $derived(
-		takeoverGhost === null ? 0 : takeoverGhost.value * Math.max(0, trackWidth - THUMB_W)
+		takeoverGhost === null ? 0 : crossfaderThumbLeftPx(takeoverGhost.value, trackWidth)
 	);
 
 	function _clamp01(v: number): number {
@@ -33,8 +38,7 @@
 
 	function _valueFromEvent(e: PointerEvent): number {
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		const x = e.clientX - rect.left - THUMB_W / 2;
-		return _clamp01(x / (rect.width - THUMB_W));
+		return crossfaderValueFromPointerX(e.clientX, rect.left, rect.width);
 	}
 
 	function handlePointerDown(e: PointerEvent): void {
@@ -87,7 +91,12 @@
 	{#if takeoverGhost !== null}
 		<div class="ghost-thumb" style={`left: ${ghostLeftPx}px;`}></div>
 	{/if}
-	<div class="thumb" style={`left: ${thumbLeftPx}px;`}></div>
+	<div class="thumb-hit" style={`left: ${thumbLeftPx}px; width: ${CROSSFADER_THUMB_HIT_W}px;`}>
+		<div
+			class="thumb-visual"
+			style={`width: ${CROSSFADER_THUMB_VIS_W}px; height: ${CROSSFADER_THUMB_VIS_H}px;`}
+		></div>
+	</div>
 </div>
 
 <style>
@@ -109,14 +118,19 @@
 		background: #060809;
 		border: 1px solid var(--rb-border);
 	}
-	.thumb {
+	.thumb-hit {
 		position: absolute;
-		top: 2px;
-		bottom: 2px;
-		width: 12px;
+		top: 0;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.thumb-visual {
 		background: #2a2f37;
 		border: 1px solid var(--rb-border);
 		border-radius: 2px;
+		position: relative;
 	}
 	.ghost-thumb {
 		position: absolute;
@@ -127,7 +141,7 @@
 		border-radius: 2px;
 		pointer-events: none;
 	}
-	.thumb::after {
+	.thumb-visual::after {
 		content: '';
 		position: absolute;
 		top: 2px;
@@ -137,7 +151,7 @@
 		margin-left: -1px;
 		background: var(--rb-accent);
 	}
-	.xfader:focus-visible .thumb {
+	.xfader:focus-visible .thumb-visual {
 		box-shadow: 0 0 4px var(--rb-accent-glow);
 	}
 </style>

@@ -24,6 +24,7 @@
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
+	import CrossfadeCurveSelect from './mixer/CrossfadeCurveSelect.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
 
@@ -235,6 +236,7 @@
 		</div>
 		<div class="xfade-row">
 			<AssignMatrix bus="A" {assigns} onassign={handleAssign} />
+			<CrossfadeCurveSelect />
 			<Crossfader value={mixerState.crossfader} onchange={handleCrossfader} />
 			<AssignMatrix bus="B" {assigns} onassign={handleAssign} />
 		</div>

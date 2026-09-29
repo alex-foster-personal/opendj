@@ -48,7 +48,7 @@ describe('bpm-heat', () => {
 		assert.equal(h.lane, 'half');
 	});
 
-	it('uses the closest raw, half, or double relationship for strict-under-8 compatibility', () => {
+	it('IOPIN-11 (pin 84a92dd0b175): uses the closest raw, half, or double relationship for strict-under-8 compatibility', () => {
 		const { classifyBpmCompatibility } = mod;
 		const raw = classifyBpmCompatibility(135.9, 128);
 		assert.equal(raw.fold, 1);
@@ -64,7 +64,7 @@ describe('bpm-heat', () => {
 		assert.equal(folded.compatible, true);
 	});
 
-	it('escalates red BPM-border severity only after 8, 16, and 24 BPM', () => {
+	it('IOPIN-11: escalates red BPM-border severity only after 8, 16, and 24 BPM', () => {
 		const { classifyBpmCompatibility } = mod;
 		assert.equal(classifyBpmCompatibility(136.1, 128).severity, 'warn');
 		assert.equal(classifyBpmCompatibility(144.1, 128).severity, 'danger');

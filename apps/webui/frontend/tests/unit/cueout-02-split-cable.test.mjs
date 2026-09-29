@@ -99,12 +99,12 @@ test('split-cable graph uses ChannelMerger L/R assignment and mono downmix', asy
 test('applyHeadphoneMix ramps split gains with setTargetAtTime, not hard gain.value', async () => {
 	const hpSrc = await readFile('src/lib/player/headphones.ts', 'utf8');
 	const applyStart = hpSrc.indexOf('export function applyHeadphoneMix');
-	const applyEnd = hpSrc.indexOf('export function setHeadphoneOutputMode', applyStart);
+	const applyEnd = hpSrc.indexOf('export function setHeadDelayMs', applyStart);
 	const applyBody = hpSrc.slice(applyStart, applyEnd === -1 ? undefined : applyEnd);
-	assert.match(applyBody, /splitCableGains\(/);
-	assert.match(applyBody, /nodes\.splitLeftGain\.gain/);
-	assert.match(applyBody, /nodes\.splitRightCueGain\.gain/);
-	assert.match(applyBody, /nodes\.splitRightMasterGain\.gain/);
+	assert.match(applyBody, /headphoneMixTargetGains\(/);
+	assert.match(applyBody, /nodes\.splitLeftGain\.gain, targets\.splitLeft/);
+	assert.match(applyBody, /nodes\.splitRightCueGain\.gain, targets\.splitRightCue/);
+	assert.match(applyBody, /nodes\.splitRightMasterGain\.gain, targets\.splitRightMaster/);
 	assert.match(applyBody, /_setMonitorParam/);
 	assert.doesNotMatch(applyBody, /splitLeftGain\.gain\.value\s*=/);
 	assert.doesNotMatch(applyBody, /splitRightCueGain\.gain\.value\s*=/);
@@ -116,7 +116,7 @@ test('HeadphoneCluster exposes split-cable mode label, warning, and SPLIT contro
 	assert.match(clusterSrc, /data-output-mode=\{headphoneState\.output_mode\}/);
 	assert.match(clusterSrc, /split cable/);
 	assert.match(clusterSrc, /aria-pressed=\{headphoneState\.output_mode === 'split_cable'\}/);
-	assert.match(clusterSrc, /Mono master on LEFT/);
-	assert.match(clusterSrc, /DJ splitter cable\. A Y cable/);
+	assert.match(clusterSrc, /mono master on LEFT, mono cue on RIGHT/);
+	assert.match(clusterSrc, /a Y cable will not separate the legs/);
 	assert.match(clusterSrc, />SPLIT cable</);
 });

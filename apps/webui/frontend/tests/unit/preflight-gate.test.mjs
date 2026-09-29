@@ -88,6 +88,7 @@ test('an all-pass response clears the gate', async () => {
 	assert.equal(preflightStore.preflightGate.cleared, true);
 });
 
+// REQ: PREFLIGHT-01
 test('re-check and re-request permissions both re-issue the same real GET', async () => {
 	let calls = 0;
 	globalThis.fetch = async (input) => {

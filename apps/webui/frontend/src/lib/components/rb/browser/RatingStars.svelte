@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { STAR_FILLED_PATH, STAR_OUTLINE_PATH } from '$lib/ui/icon-glyphs';
 	// Editable 5-star rating cell (SCREENSHOT-SPEC 5c: outline stars).
 	// Clicking star n rates n; clicking the current rating clears to 0.
 	// Hover previews the star count like a scrub (temporary highlight).
@@ -49,7 +50,15 @@
 			onclick={(e) => _click(e, n)}
 			ondblclick={(e) => e.stopPropagation()}
 		>
-			{_lit(n) ? '★' : '☆'}
+			<!-- 1em follows .rb-star font-size, which the rating cell shrinks via --rb-star-size. -->
+			<svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
+				<path
+					d={_lit(n) ? STAR_FILLED_PATH : STAR_OUTLINE_PATH}
+					fill={_lit(n) ? 'currentColor' : 'none'}
+					stroke="currentColor"
+					stroke-width="1.2"
+				/>
+			</svg>
 		</button>
 	{/each}
 </span>

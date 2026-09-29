@@ -84,7 +84,7 @@ export interface EngineStamp {
 	git_branch: string;
 	git_dirty: boolean;
 	built_at_utc: string;
-	built_at_kind: 'payload-build' | 'head-commit';
+	built_at_kind: 'payload-build' | 'head-commit' | 'engine-start';
 	lane_label: string | null;
 	product_name: string | null;
 	bundle_identifier: string | null;
@@ -393,6 +393,113 @@ export function shortLabel(state: SideState<ShellStamp | EngineStamp>): string {
  * The hover explanation, per house rule: every readout says what it is and
  * where the number came from.
  */
+export interface BuildIdentityReportInput {
+	shell: SideState<ShellStamp>;
+	engine: SideState<EngineStamp>;
+	engineUrl: EngineUrl;
+	drift: Drift;
+	updateSummary: { label: string; title: string } | null;
+}
+
+/**
+ * Plain-text build identity for clipboard and agent parity.
+ *
+ * Agents may assemble the same shape from GET /api/v1/build-info, the shell
+ * global, and the page origin; the UI uses this function so humans and agents
+ * share one report layout.
+ */
+export function formatBuildIdentityReport(input: BuildIdentityReportInput): string {
+	const lines: string[] = [];
+	if (input.engineUrl.kind === 'ok') {
+		lines.push(`url: ${input.engineUrl.url}`);
+		lines.push(
+			`url_provenance: ${input.engineUrl.source === 'served' ? 'page origin (engine-served)' : 'VITE_API_BASE (configured daemon)'}`
+		);
+	} else {
+		lines.push(`url: ${UNKNOWN}`);
+		lines.push(`url_provenance: ${explainEngineUrl(input.engineUrl)}`);
+	}
+	lines.push(`drift: ${input.drift}`);
+	const channel =
+		input.shell.kind === 'ok' && input.shell.value.release_channel
+			? input.shell.value.release_channel
+			: UNKNOWN;
+	lines.push(`channel: ${channel}`);
+	if (input.engine.kind === 'ok') {
+		lines.push(
+			`app_version_engine: ${input.engine.value.product_name ?? UNKNOWN} · ${input.engine.value.bundle_identifier ?? UNKNOWN} · v${input.engine.value.app_version ?? UNKNOWN}`
+		);
+	} else {
+		lines.push(`app_version_engine: ${explainSide('engine', input.engine)}`);
+	}
+	if (input.shell.kind === 'absent') {
+		lines.push('app_version_shell: browser identity · Chrome dev loop');
+	} else if (input.shell.kind === 'ok') {
+		lines.push(`app_version_shell: DMG app · v${input.shell.value.app_version ?? UNKNOWN}`);
+	} else {
+		lines.push(`app_version_shell: ${explainSide('shell', input.shell)}`);
+	}
+	lines.push('engine:');
+	if (input.engine.kind === 'ok') {
+		const e = input.engine.value;
+		lines.push(`  git_sha: ${e.git_sha_full}`);
+		lines.push(`  git_branch: ${e.git_branch ?? UNKNOWN}`);
+		lines.push(`  source: ${e.source}`);
+		lines.push(`  engine_version: v${e.engine_version}`);
+		lines.push(`  dirty: ${e.git_dirty ? 'yes' : 'no'}`);
+		const stamp = formatStamp(e.built_at_utc);
+		if (stamp !== null) {
+			lines.push(`  built_at_local: ${stamp.local}`);
+			lines.push(`  built_at_utc: ${stamp.utc}`);
+		}
+	} else {
+		lines.push(`  ${explainSide('engine', input.engine)}`);
+	}
+	lines.push('shell:');
+	if (input.shell.kind === 'ok') {
+		const s = input.shell.value;
+		lines.push(`  git_sha: ${s.git_sha_full ?? s.git_sha ?? UNKNOWN}`);
+		lines.push(`  git_branch: ${s.git_branch ?? UNKNOWN}`);
+		lines.push(`  dirty: ${s.git_dirty === true ? 'yes' : s.git_dirty === false ? 'no' : UNKNOWN}`);
+		const stamp = formatStamp(s.built_at_utc);
+		if (stamp !== null) {
+			lines.push(`  built_at_local: ${stamp.local}`);
+			lines.push(`  built_at_utc: ${stamp.utc}`);
+		}
+	} else {
+		lines.push(`  ${explainSide('shell', input.shell)}`);
+	}
+	if (input.updateSummary !== null) {
+		lines.push(`update: ${input.updateSummary.label}`);
+	}
+	return lines.join('\n');
+}
+
+/** Minimal clipboard surface for copy-all parity (browser API and unit tests). */
+export interface BuildIdentityClipboard {
+	writeText(text: string): Promise<void>;
+}
+
+/**
+ * Copy the full build identity report. Returns the foldout note string; never
+ * silent success and never silent failure.
+ */
+export async function copyBuildIdentityToClipboard(
+	input: BuildIdentityReportInput,
+	clipboard: BuildIdentityClipboard | undefined
+): Promise<string> {
+	const text = formatBuildIdentityReport(input);
+	if (clipboard === undefined) {
+		return 'this browser offers no clipboard API; select the text in the foldout instead';
+	}
+	try {
+		await clipboard.writeText(text);
+		return 'copied all details';
+	} catch (err) {
+		return `copy refused: ${err instanceof Error ? err.message : String(err)}`;
+	}
+}
+
 export function explainSide(
 	side: 'shell' | 'engine',
 	state: SideState<ShellStamp | EngineStamp>

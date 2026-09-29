@@ -46,6 +46,21 @@ class HeadphoneOutputDeviceOut(BaseModel):
     label: str
 
 
+class HeadphoneCalibrationProbeOut(BaseModel):
+    """CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.
+
+    The ear-cup step is interactive, so this is the feedback an agent needs to
+    drive it the way the operator does, watching `best` climb toward `threshold`.
+    """
+
+    bus: str
+    gain: float
+    peak: float | None
+    lag_ms: float | None
+    best: float
+    threshold: float
+
+
 class HeadphoneCalibrationOut(BaseModel):
     """CUEOUT-14 calibration progress; `step` is the modal's state machine."""
 
@@ -53,6 +68,8 @@ class HeadphoneCalibrationOut(BaseModel):
     cue_latency_ms: float | None
     master_latency_ms: float | None
     offset_ms: float | None
+    verify_residual_ms: float | None
+    probe: HeadphoneCalibrationProbeOut | None
     error: str | None
 
 
@@ -161,8 +178,7 @@ def _validate_output_mode(mode: object) -> str:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"headphone output_mode must be practice, two_outputs, or split_cable; "
-                f"got {mode}"
+                f"headphone output_mode must be practice, two_outputs, or split_cable; got {mode}"
             ),
         )
     return mode
@@ -205,8 +221,7 @@ def _validate_master_delay_ms(value: object) -> float:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"master delay must be a finite number within 0..{MASTER_DELAY_MAX_MS}, "
-                f"got {value}"
+                f"master delay must be a finite number within 0..{MASTER_DELAY_MAX_MS}, got {value}"
             ),
         )
     return float(value)
@@ -224,9 +239,7 @@ def _validate_device_id(device_id: object) -> str:
     return device_id
 
 
-async def _submit_headphone_command(
-    request: Request, command: dict[str, Any]
-) -> HeadphoneStateOut:
+async def _submit_headphone_command(request: Request, command: dict[str, Any]) -> HeadphoneStateOut:
     _require_page(request)
     result = await submit_single_command(request, command)
     steps = result.get("steps")
@@ -260,9 +273,7 @@ async def post_headphone_mix(
 ) -> HeadphoneStateOut:
     _require_page(request)
     value = _validate_unit(body.get("value"))
-    return await _submit_headphone_command(
-        request, {"type": "headphone_mix", "value": value}
-    )
+    return await _submit_headphone_command(request, {"type": "headphone_mix", "value": value})
 
 
 @router.post(
@@ -276,9 +287,7 @@ async def post_headphone_level(
 ) -> HeadphoneStateOut:
     _require_page(request)
     value = _validate_unit(body.get("value"))
-    return await _submit_headphone_command(
-        request, {"type": "headphone_level", "value": value}
-    )
+    return await _submit_headphone_command(request, {"type": "headphone_level", "value": value})
 
 
 @router.post(
@@ -323,9 +332,7 @@ async def post_head_delay_ms(
 ) -> HeadphoneStateOut:
     _require_page(request)
     value = _validate_head_delay_ms(body.get("value"))
-    return await _submit_headphone_command(
-        request, {"type": "head_delay_ms", "value": value}
-    )
+    return await _submit_headphone_command(request, {"type": "head_delay_ms", "value": value})
 
 
 @router.post(
@@ -358,9 +365,7 @@ async def post_master_delay_ms(
     """CUEOUT-14: room delay line, 0..1500 ms, the last node before the output."""
     _require_page(request)
     value = _validate_master_delay_ms(body.get("value"))
-    return await _submit_headphone_command(
-        request, {"type": "master_delay_ms", "value": value}
-    )
+    return await _submit_headphone_command(request, {"type": "master_delay_ms", "value": value})
 
 
 @router.post(
@@ -397,9 +402,7 @@ async def post_headphone_outputs_refresh(
     _body: Annotated[dict[str, Any] | None, Body(title="HeadphoneOutputsRefreshBody")] = None,
 ) -> HeadphoneStateOut:
     _require_page(request)
-    return await _submit_headphone_command(
-        request, {"type": "headphone_outputs_refresh"}
-    )
+    return await _submit_headphone_command(request, {"type": "headphone_outputs_refresh"})
 
 
 @router.post(

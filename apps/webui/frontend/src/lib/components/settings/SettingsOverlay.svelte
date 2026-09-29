@@ -598,14 +598,18 @@
 						</button>
 						{#if applyMsg}
 							<p class="so-apply-msg" class:ok={applyOk === true} class:bad={applyOk === false}>
-								{#if applyOk === true}✅{:else if applyOk === false}✗{/if}
+								{#if applyOk === true}
+									<svg class="so-glyph" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2 6.2 L5 9.2 L10 3" fill="none" stroke="currentColor" stroke-width="1.4" /></svg>
+								{:else if applyOk === false}
+									<svg class="so-glyph" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 3 L9 9 M9 3 L3 9" fill="none" stroke="currentColor" stroke-width="1.4" /></svg>
+								{/if}
 								{applyMsg}
 							</p>
 						{/if}
 						{#if pendingProposal}
 							<div class="so-confirm">
-								<button type="button" onclick={() => confirmProposal(true)}>✅ Apply</button>
-								<button type="button" onclick={() => confirmProposal(false)}>✗ Reject</button>
+								<button type="button" onclick={() => confirmProposal(true)}>Apply</button>
+								<button type="button" onclick={() => confirmProposal(false)}>Reject</button>
 							</div>
 						{/if}
 					</div>

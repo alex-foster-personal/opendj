@@ -16,6 +16,7 @@
 	import { untrack } from 'svelte';
 
 	import { API_BASE } from '$lib/api';
+	import { trackApiPath } from '$lib/rb/track-source';
 	import {
 		putLyricOverride,
 		type KaraokeTrack,
@@ -49,7 +50,8 @@
 	let currentTime = $state(0);
 	let audioEl = $state<HTMLAudioElement | null>(null);
 
-	const audioUrl = $derived(`${API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}/audio`);
+	// Spec 4b: a stick id streams from /api/v1/usb/tracks/{id}/audio.
+	const audioUrl = $derived(`${API_BASE}${trackApiPath(stableId, '/audio')}`);
 
 	/** Index of the word currently sounding, or -1. Words carry absolute times,
 	 *  so a linear scan is honest and cheap at these lengths (<1k words). */

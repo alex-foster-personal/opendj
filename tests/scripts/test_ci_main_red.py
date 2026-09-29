@@ -638,6 +638,7 @@ def test_stale_red_identities_is_empty_when_the_pull_request_has_not_advanced_pa
     assert stale == frozenset()
 
 
+@pytest.mark.requirement("OPS-39")
 def test_stale_red_identities_downgrades_only_the_commit_the_pull_request_advanced_past():
     """The narrow rule the issue asks for: bounded per SOURCE COMMIT, not wholesale. A pull
     request that advanced past one measurement but not another must not lose the excuse it

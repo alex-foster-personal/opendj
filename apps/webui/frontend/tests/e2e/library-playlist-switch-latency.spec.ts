@@ -203,6 +203,7 @@ async function warmPlaylistEndpoints(request: APIRequestContext): Promise<void> 
 	}
 }
 
+// REQ: PERF-UI-05
 test('playlist tree and switch first-row paint meet PERF-UI-05 caps', async ({
 	browser,
 	request

@@ -134,6 +134,7 @@ describe('pending rows have their own reason, not "missing"', () => {
 	});
 });
 
+// REQ: PERF-RB-02
 test('BrowserPanel maps through the shared module and words pending refusals', () => {
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.ok(!panel.includes('function _rowFromPlaylistWire('), 'a private mapper came back');
@@ -153,6 +154,7 @@ test('BrowserPanel maps through the shared module and words pending refusals', (
 	assert.match(support, /rowFromPlaylistWire.*from '\.\/browser-row-wire'/);
 });
 
+// REQ: PERF-RB-02
 test('pending rows are styled and titled as pending in both browser views', () => {
 	const table = read('src/lib/components/rb/browser/TrackTable.svelte');
 	assert.match(table, /class:rb-row-availability-pending=/);

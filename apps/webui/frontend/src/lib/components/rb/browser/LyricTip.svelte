@@ -13,9 +13,10 @@
 		groupLinesIntoParagraphs,
 		LYRIC_QUALITY_TITLE,
 		lyricSyncQualityPct,
-		lyricVerdictGlyph,
+		lyricVerdictMark,
 		lyricVerdictTitle
 	} from './lyric-column';
+	import LyricVerdictMark from './LyricVerdictMark.svelte';
 	import { placeFloating } from '$lib/ui/clamp-to-viewport';
 
 	let {
@@ -101,7 +102,7 @@
 	{:else}
 		<div class="lt-head">
 			<span class="lt-verdict" title={lyricVerdictTitle(summary)}>
-				{lyricVerdictGlyph(summary.effective)}
+				<LyricVerdictMark mark={lyricVerdictMark(summary.effective)} />
 				{summary.effective}{summary.override !== null ? ' (override)' : ''}
 			</span>
 		</div>

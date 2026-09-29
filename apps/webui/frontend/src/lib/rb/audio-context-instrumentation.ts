@@ -134,7 +134,7 @@ export function stampContextDeviceFloors(ctx: AudioContext): void {
  * to say "this one is not healthy". Audio is never blocked either way.
  */
 /**
- * Arm the post-EQ channel level meters for this context.
+ * Arm the post-trim, post-EQ, post-channel-fader level meters for this context.
  *
  * Fire-and-forget for the same reason as the sentinel: `addModule` is async and
  * the graph build is not, so the decks must not wait on an instrument. The
@@ -439,4 +439,17 @@ export function armAudioContextWatchdog(
 	const liveness = _outputLiveness;
 	(window as Window & { __mdtAudioOutput?: () => AudioOutputSnapshot }).__mdtAudioOutput = () =>
 		liveness.snapshot();
+}
+
+/**
+ * TEST-ONLY: run the armed output-stall recovery (rebind, then the engine's graph
+ * recreate) exactly as the liveness poll's `stalled` verdict does. Reaching that
+ * verdict for real needs a playing deck on a worklet processor, which node:test
+ * cannot host.
+ */
+export function _recoverOutputStallForTests(): Promise<void> {
+	if (_outputStallRecovery === null) {
+		throw new Error('no output-stall recovery is armed: build the audio graph first');
+	}
+	return _outputStallRecovery.recover();
 }

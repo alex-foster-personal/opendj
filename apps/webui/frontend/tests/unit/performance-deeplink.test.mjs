@@ -115,7 +115,7 @@ test('formatReplaceStateUrl emits a single ? for lv2 deck ids', async () => {
 	assert.equal(deeplink.formatReplaceStateUrl(url), '/performance?playlist=pl-abc&d1=sid-a&d3=sid-c');
 });
 
-test('lv1 collection playlist round-trips without a source key', async () => {
+test('6a812c8ac2e5: lv1 collection playlist round-trips without a source key', async () => {
 	const deeplink = await _loadDeeplink();
 	const lv1 = { source: 'collection', playlist_id: 'pl-abc' };
 	const params = deeplink.writeLv1(new URLSearchParams('d1=keep-me'), lv1);
@@ -152,7 +152,7 @@ test('lv1 empty playlist query parses as null', async () => {
 	assert.deepEqual(deeplink.parseLv1(''), { source: 'collection', playlist_id: null });
 });
 
-test('lv2 deck ids round-trip and omit empty decks', async () => {
+test('6a812c8ac2e5: lv2 deck ids round-trip and omit empty decks', async () => {
 	const deeplink = await _loadDeeplink();
 	const ids = { 1: 'sid-a', 3: 'sid-c' };
 	const params = deeplink.writeLv2Ids(new URLSearchParams(), ids);
@@ -162,16 +162,20 @@ test('lv2 deck ids round-trip and omit empty decks', async () => {
 	assert.deepEqual(deeplink.parseLv2Ids(params), ids);
 });
 
-test('performance session snapshot round-trips fixture state', async () => {
+test('6a812c8ac2e5: performance session snapshot round-trips lv3 fixture state', async () => {
 	const snapshot = await _loadSnapshot();
 	const fixture = _snapshotFixture();
+	fixture.mixer.channels[1].stem_eq_mode = true;
 	const raw = snapshot.serializePerformanceSession(fixture);
 	const parsed = snapshot.parsePerformanceSession(raw);
 	assert.notEqual(parsed, null);
 	assert.equal(parsed.decks[1].position_ms, 12_345);
 	assert.equal(parsed.decks[1].stable_id, 'sid-a');
+	assert.equal(parsed.mixer.crossfader, 0.5);
+	assert.equal(parsed.mixer.master, 0.8);
 	assert.equal(parsed.mixer.channels[1].eq_high, 0.2);
 	assert.equal(parsed.mixer.channels[1].fader, 0.7);
+	assert.equal(parsed.mixer.channels[1].stem_eq_mode, true);
 	assert.equal(parsed.stems[1].vocal.muted, true);
 });
 
@@ -255,6 +259,152 @@ test('installPerformanceSessionRestore with explicit undefined location does not
 	assert.equal(replaceCalls.length, 0);
 });
 
-// Superseded by the real-browser verifySessionWriter check in
-// tests/e2e/performance-mixtour-neural.spec.ts: actual deck state, native
-// storage/history/timers, throttled writes and the pagehide event handler.
+test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushes on pagehide', async () => {
+	const session = await _loadSession();
+	const snapshot = await _loadSnapshot();
+	const store = new Map();
+	let now = 0;
+	const replaceCalls = [];
+	const listeners = new Map();
+
+	const query = () => ({
+		browser: { active_playlist: 'pl-1' },
+		mixer: {
+			crossfader: 0.5,
+			master: 0.75,
+			channels: {
+				1: { trim: 0.5, eq_high: 0.5, eq_mid: 0.5, eq_low: 0.5, filter: 0.5, fader: 1, assign: 'THRU' },
+				2: { trim: 0.5, eq_high: 0.5, eq_mid: 0.5, eq_low: 0.5, filter: 0.5, fader: 1, assign: 'THRU' },
+				3: { trim: 0.5, eq_high: 0.5, eq_mid: 0.5, eq_low: 0.5, filter: 0.5, fader: 1, assign: 'THRU' },
+				4: { trim: 0.5, eq_high: 0.5, eq_mid: 0.5, eq_low: 0.5, filter: 0.5, fader: 1, assign: 'THRU' }
+			}
+		},
+		decks: {
+			1: {
+				stable_id: 'sid-a',
+				position_ms: 1000,
+				pitch: 1,
+				pitch_range: 8,
+				quantize_enabled: true,
+				beat_sync_enabled: true,
+				master_tempo_enabled: true,
+				key_sync_enabled: false,
+				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
+					controls: {
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
+					}
+				}
+			},
+			2: {
+				stable_id: null,
+				position_ms: 0,
+				pitch: 1,
+				pitch_range: 8,
+				quantize_enabled: true,
+				beat_sync_enabled: true,
+				master_tempo_enabled: true,
+				key_sync_enabled: false,
+				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
+					controls: {
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
+					}
+				}
+			},
+			3: {
+				stable_id: null,
+				position_ms: 0,
+				pitch: 1,
+				pitch_range: 8,
+				quantize_enabled: true,
+				beat_sync_enabled: true,
+				master_tempo_enabled: true,
+				key_sync_enabled: false,
+				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
+					controls: {
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
+					}
+				}
+			},
+			4: {
+				stable_id: null,
+				position_ms: 0,
+				pitch: 1,
+				pitch_range: 8,
+				quantize_enabled: true,
+				beat_sync_enabled: true,
+				master_tempo_enabled: true,
+				key_sync_enabled: false,
+				stems: {
+					available_controls: ['vocal', 'instrumental', 'drums'],
+					controls: {
+						vocal: { muted: false, solo: false, gain: 0.5 },
+						instrumental: { muted: false, solo: false, gain: 0.5 },
+						drums: { muted: false, solo: false, gain: 0.5 }
+					}
+				}
+			}
+		}
+	});
+
+	const location = {
+		pathname: '/performance',
+		search: '',
+		href: 'http://127.0.0.1/performance'
+	};
+
+	const writer = session.createSessionSnapshotWriter({
+		now: () => now,
+		storage: {
+			getItem: (key) => (store.has(key) ? store.get(key) : null),
+			setItem: (key, value) => store.set(key, value)
+		},
+		location,
+		replaceState: (url) => replaceCalls.push(url),
+		query,
+		throttle_ms: 10_000,
+		document: {
+			hidden: false,
+			addEventListener: (type, handler) => listeners.set(`document:${type}`, handler),
+			removeEventListener: (type) => listeners.delete(`document:${type}`)
+		},
+		window: {
+			addEventListener: (type, handler) => listeners.set(`window:${type}`, handler),
+			removeEventListener: (type) => listeners.delete(`window:${type}`)
+		},
+		setInterval: () => 1,
+		clearInterval: () => {}
+	});
+
+	writer.flush(true);
+	assert.equal(store.size, 1);
+	assert.equal(replaceCalls.length, 1);
+	assert.equal(replaceCalls[0], '/performance?d1=sid-a');
+	assert.doesNotMatch(replaceCalls[0], /\?\?/);
+	const first = store.get(snapshot.PERFORMANCE_SESSION_STORAGE_KEY);
+
+	now = 1_000;
+	writer.flush(false);
+	assert.equal(store.get(snapshot.PERFORMANCE_SESSION_STORAGE_KEY), first);
+
+	now = 2_000;
+	listeners.get('window:pagehide')();
+	const afterHide = store.get(snapshot.PERFORMANCE_SESSION_STORAGE_KEY);
+	assert.notEqual(afterHide, first);
+
+	now = 12_000;
+	writer.flush(false);
+	const afterInterval = store.get(snapshot.PERFORMANCE_SESSION_STORAGE_KEY);
+	assert.notEqual(afterInterval, afterHide);
+
+	assert.equal(listeners.has('window:audioprocess'), false);
+	assert.deepEqual([...listeners.keys()].sort(), ['document:visibilitychange', 'window:pagehide']);
+});

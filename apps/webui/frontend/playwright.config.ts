@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { claimAndCheckWebuiDevConfigOnce } from './webui-port-config';
+import { guardedWebServerCommand } from './tests/e2e/support/guarded-web-server';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const FIXTURE_DATA_DIR = join(
@@ -57,6 +58,8 @@ const ENGINE_COMMAND = [
 const SERVER_COMMAND = `${FIXTURE_COMMAND} && ${ENGINE_COMMAND}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: './tests/e2e',
 	// EVERY spec that owns a dedicated config is ignored here, because this
 	// config starts vite and nothing else. Before this list existed the only
@@ -84,11 +87,16 @@ export default defineConfig({
 		'**/library-playlist-switch-latency.spec.ts', // playwright.playlist-switch-latency.config.ts (PERF-UI-05 gate)
 		'**/stem-decode-bench.spec.ts', // playwright.stem-decode-bench.config.ts (production-build bench)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
+		'**/comment-pin-io-modal.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
+		'**/comment-pin-admin-dock.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
+		'**/reanalyze-context-menu-toast.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
 		'**/kpi-boot-library-capture.spec.ts', // playwright.kpi-boot-library-capture.config.ts (PERF-UI-03 boot KPI capture; operator-only)
+		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (PERFMODE-14 library-mode capture; operator-only)
 		'**/kpi-login-capture.spec.ts', // playwright.kpi-capture.config.ts (S13 login KPI capture; operator-only)
 		'**/kpi-s2-capture.spec.ts', // playwright.kpi-s2-capture.config.ts (S2 press-to-audible KPI capture; operator-only)
+		'**/library-mode-perf-capture.spec.ts', // playwright.library-mode-perf.config.ts (library-mode KPI capture; operator-only)
 		'**/meter-artifact.spec.ts', // playwright.meter-artifact.config.ts (built artifact)
 		'**/preflight-gate.spec.ts', // playwright.preflight-gate.config.ts (two real backends)
 		// Same owner as the line above, and for the same reason: it imports
@@ -123,7 +131,7 @@ export default defineConfig({
 	timeout: 30_000,
 	webServer: [
 		{
-			command: SERVER_COMMAND,
+			command: guardedWebServerCommand('root-engine', SERVER_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: `http://127.0.0.1:${ports.backendPort}/api/v1/health`,
 			reuseExistingServer: false,
@@ -142,7 +150,7 @@ export default defineConfig({
 			// 127.0.0.1 -- every test in every suite then died on
 			// ERR_CONNECTION_REFUSED while `port` reported the server up. Bind the
 			// exact address the tests connect to, so the two can never disagree.
-			command: `pnpm dev --host 127.0.0.1`,
+			command: guardedWebServerCommand('root-vite', `pnpm dev --host 127.0.0.1`),
 			cwd: fileURLToPath(new URL('./', import.meta.url)),
 			url: `http://127.0.0.1:${ports.frontendPort}`,
 			reuseExistingServer: false,

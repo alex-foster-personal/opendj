@@ -10,14 +10,20 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertText, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
-	import { calibrateButtonEnabled } from '$lib/player/cue-align.svelte';
+	import { headphoneLivenessAlertForState, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
+	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
+	import { CLOSE_PATH, PLAY_TRIANGLE_PATH, RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
+	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
+	import { audioOutputStatus, djioFallbackTitle } from '$lib/rb/audio-output-status.svelte';
+	import { toggleMidiPanel, midiUi, midiEnabledPersisted } from '$lib/components/rb/midi/midi-ui-state.svelte';
+	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
+	import { midiState } from '$lib/rb/midi/midi-state.svelte';
 	import Knob from './Knob.svelte';
+	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
-	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
 
 	interface Props {
 		state: HeadphoneState;
@@ -37,7 +43,6 @@
 
 	let { state: headphoneState, onmix, onlevel, ondelay, onrefresh, onacquire, onselect, onmaster, oninput, onmode, oncalibrate, onAlignmentMode }: Props =
 		$props();
-	let ioOpen = $state(false);
 
 	let mixStepDirection: HeadphoneMixDirection = 1;
 	let lastMixStep: HeadphoneMixStepResult | null = null;
@@ -77,32 +82,27 @@
 			: (headphoneState.outputs.find((output) => output.id === headphoneState.selected_master_output_device_id)?.label ?? null)
 	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: headphoneState.output_mode, selectedLabel }));
-	const livenessVerdict = $derived(
-		(headphoneState as HeadphoneState & { liveness_verdict?: LivenessVerdict }).liveness_verdict ?? 'idle'
-	);
-	const livenessAlert = $derived(headphoneLivenessAlertText(livenessVerdict));
-	type SignalReading = {
-		state: 'inactive' | 'unavailable' | 'measured';
-		rms: number | null;
-		peak: number | null;
-		measured_at: string | null;
-		source: 'application_bus' | 'captured_input';
-		physical_output_proven: false;
-	};
-	const signals = $derived(
-		(headphoneState as HeadphoneState & { signals?: Record<'master' | 'cue' | 'input', SignalReading> }).signals
-	);
+	const livenessAlert = $derived(headphoneLivenessAlertForState(headphoneState));
 	const mixBullets = [
-		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.',
-		'In MAIN, master always plays at full on the speakers and MIX sets how much cue is blended on top (full cue at left). In two outputs, MIX feeds headphones only.'
+		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
+		'Single-click the knob to step toward the other extreme.',
+		'MAIN (practice): master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
+		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.'
 	];
 	const levelBullets = [
 		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
 		'It does not change the room MASTER volume. Default is 1 (full). Turn down if the phones are hot.'
 	];
+	const mainBullets = [
+		'1) Press MAIN for laptop or a single output (practice mode).',
+		'2) Turn CUE on for each channel you want in the headphone blend.',
+		'3) With no HEADPHONE CUE device picked, MIX left adds more cue into the speaker mix; master stays full.',
+		'4) Picking HEADPHONE CUE in I/O switches to two outputs: room on MASTER/MAIN, cue on the phones.'
+	];
 	const splitBullets = [
-		'Mono master on LEFT, mono cue on RIGHT of the same output.',
-		'Needs a DJ splitter cable. A Y cable will not separate the legs.'
+		'1) Press SPLIT for a DJ splitter cable: mono master on LEFT, mono cue on RIGHT.',
+		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
+		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
 	const ioBullets = ['Click for Speaker / Headphone CUE quick settings without interrupting audio.'];
 	const delayBullets = [
@@ -118,10 +118,13 @@
 		'ROOM is the room (MASTER) delay, 0-1500 ms, the last node before the speakers. The phones never pay it.',
 		'The waveform and PLAY light lag by the same amount on purpose, so what you see is what the room hears.'
 	];
+	const rescanBullets = [
+		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
+	];
 	const modeBullets = [
-		'practice: cue and master share the speakers.',
-		'two outputs: MASTER/MAIN is the room, HEADPHONE CUE is headphones.',
-		'split cable: mono master on LEFT, mono cue on RIGHT of one device.'
+		'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
+		'two outputs: pin MASTER/MAIN for the room and HEADPHONE CUE for phones; cue does not bleed into the room.',
+		'split cable (SPLIT): one stereo jack; left = master, right = cue. Requires a DJ splitter, not a Y cable.'
 	];
 	const masterPickBullets = [
 		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.'
@@ -133,17 +136,21 @@
 		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
 
+	function stepHeadDelay(delta: number): void {
+		ondelay(Math.min(500, Math.max(0, headphoneState.head_delay_ms + delta)));
+	}
+
 	function openIo(): void {
-		ioOpen = true;
+		openIoView();
 	}
 
 	function closeIo(): void {
 		if (cueAlignModal.open) closeCueAlignModal();
-		ioOpen = false;
+		closeIoView();
 	}
 
 	function onWindowKeydown(event: KeyboardEvent): void {
-		if (event.key === 'Escape' && ioOpen && !cueAlignModal.open) {
+		if (event.key === 'Escape' && ioSurface.open && !cueAlignModal.open) {
 			event.preventDefault();
 			closeIo();
 		}
@@ -163,13 +170,30 @@
 		const step = event.deltaY < 0 ? 1 : -1;
 		ondelay(Math.max(0, Math.min(500, headphoneState.head_delay_ms + step)));
 	}
+
+	// MIDI status moved here with MIDI connect (CHROME-07): the entry keeps the
+	// gray / amber / green / red reading the top-bar MIDI label used to carry.
+	// Logic lives in midi-format.ts (pure, unit-tested); this is the plumbing.
+	// Turning MIDI off keeps the browser's grant and empties the device list, so
+	// the persisted choice tells an explicit off (gray) from a lost device (red).
+	const midiMappedCount = $derived(midiState.devices.filter((d) => d.mapVendor !== null).length);
+	const midiOn = $derived(midiEnabledPersisted());
+	const midiStatus = $derived(midiLabelStatus(midiState.permission, midiUi.requestPending, midiMappedCount > 0, midiOn));
+	const midiGlyph = $derived(midiLabelGlyph(midiStatus));
+	const midiTitle = $derived(midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length, midiOn));
+
+	// Both MIDI entries open the drawer and unpin the I/O view (its z-index 80 would cover the drawer's 41).
+	function openMidiDrawer(): void {
+		if (!midiUi.panelOpen) toggleMidiPanel();
+		closeIoView();
+	}
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="hp" data-performance-control="headphones">
-	<ControlExplainer title="MIX" bullets={mixBullets} showDelayMs={60}>
-		<span class="hp-control-icon" aria-hidden="true">🎧</span>
+	<ControlExplainer title="MIX" bullets={mixBullets} demo="headphone-mix" showDelayMs={60}>
+		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-mix')}
 			label="MIX"
@@ -182,7 +206,7 @@
 		/>
 	</ControlExplainer>
 	<ControlExplainer title="VOL" bullets={levelBullets} showDelayMs={60}>
-		<span class="hp-control-icon" aria-hidden="true">🎧</span>
+		<svg class="hp-control-icon" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 8 V6 a4 4 0 0 1 8 0 V8" fill="none" stroke="currentColor" stroke-width="1.2" /><rect x="1.2" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /><rect x="8.5" y="7" width="2.3" height="3.6" rx="0.8" fill="currentColor" /></svg>
 		<Knob
 			knobId={knobId('hp', 'hp-level')}
 			label="VOL"
@@ -196,40 +220,53 @@
 		bullets={ioBullets}
 		showDelayMs={100}
 		compact={true}
-		disabled={ioOpen}
+		disabled={ioSurface.open}
 	>
 		<button
 			type="button"
 			class="hp-btn hp-io-trigger"
 			aria-label="SHOW AUDIO I/O"
-			aria-expanded={ioOpen}
-			onclick={openIo}>
-			<span aria-hidden="true">🎧</span><span aria-hidden="true">ᛒ</span><span aria-hidden="true">🔊</span>
-		</button
+			aria-expanded={ioSurface.open}
+			onclick={openIo}>I/O</button
+		>
+	</ControlExplainer>
+	<ControlExplainer
+		title="MIDI"
+		bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}
+		showDelayMs={60}
+	>
+		<button
+			type="button"
+			class="hp-btn midi-btn st-{midiStatus}"
+			aria-label="Open MIDI panel"
+			aria-expanded={midiUi.panelOpen}
+			onclick={openMidiDrawer}
+			>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
 		>
 	</ControlExplainer>
 </div>
 
-{#if ioOpen}
+{#if ioSurface.open}
 	<div class="hp-panel" role="dialog" aria-label="Audio I/O settings" aria-modal="false" tabindex="-1" data-audio-io-panel>
 		<header class="hp-panel-header">
 			<div>
 				<strong>Audio I/O</strong>
 				<small>Esc or X to dismiss</small>
 			</div>
-			<button type="button" class="hp-panel-close" aria-label="Close audio I/O settings" onclick={closeIo}>×</button>
+			<button type="button" class="hp-panel-close" aria-label="Close audio I/O settings" onclick={closeIo}><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d={CLOSE_PATH} fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg></button>
 		</header>
 		<div class="hp-panel-body">
 			<section class="hp-section" aria-label="Output routing">
-				<h3>Routing <span data-output-mode={headphoneState.output_mode}>{modeLabel}</span></h3>
+				<h3>Routing <ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" showDelayMs={60}><span class="hp-mode" data-output-mode={headphoneState.output_mode}>{modeLabel}</span></ControlExplainer></h3>
 				<div class="hp-mode-choices">
-					<button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>MAIN / practice</button>
+					<ControlExplainer title="MAIN" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}><button type="button" aria-label="Practice output mode" aria-pressed={headphoneState.output_mode === 'practice'} onclick={() => onmode('practice')}>MAIN / practice</button></ControlExplainer>
 					<button type="button" aria-label="Two outputs output mode" aria-pressed={headphoneState.output_mode === 'two_outputs'} onclick={() => onmode('two_outputs')}>Two outputs</button>
-					<button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right; use a DJ splitter cable" onclick={() => onmode('split_cable')}>SPLIT cable</button>
+					<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}><button type="button" aria-label="Split cable output mode" aria-pressed={headphoneState.output_mode === 'split_cable'} title="Mono master left, mono cue right; use a DJ splitter cable" onclick={() => onmode('split_cable')}>SPLIT cable</button></ControlExplainer>
 				</div>
 				<p class="hp-context">{modeBullets[headphoneState.output_mode === 'practice' ? 0 : headphoneState.output_mode === 'two_outputs' ? 1 : 2]}</p>
+				{#if audioOutputStatus.fallback !== null}<p class="hp-warn" role="status" data-djio-fallback-notice title={djioFallbackTitle(audioOutputStatus.fallback)}>{audioOutputStatus.fallback.message}</p>{/if}
 				{#if headphoneState.output_mode === 'split_cable'}
-					<p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p>
+					<ControlExplainer title="SPLIT warning" bullets={splitBullets} showDelayMs={60}><p class="hp-warn" role="status" title="Split cable wiring">{splitBullets[0]} {splitBullets[1]}</p></ControlExplainer>
 				{/if}
 			</section>
 			<section class="hp-section" aria-label="Future routing options">
@@ -237,7 +274,7 @@
 				<div class="hp-future"><button type="button" disabled>Advanced channel assignment</button><span>Coming soon</span></div>
 			</section>
 			<section class="hp-section" aria-label="Audio devices">
-				<div class="hp-section-heading"><h3>Devices</h3><button type="button" aria-label="Rescan available headphone output devices" title="Rescan audio devices" onclick={onrefresh}>Rescan ↻</button></div>
+				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
 			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
 			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
 				{#if masterLabel !== null || selectedLabel !== null}
@@ -254,9 +291,9 @@
 				<section class="hp-section" aria-label="Cue alignment">
 					<h3>Cue alignment</h3>
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
-					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━▶</span><span>CUE ━━━━━▶</span></div>
+					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span><span>CUE ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span></div>
 					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} showDelayMs={100}>
-						<label class="hp-delay"><span>HEAD DELAY</span><input type="number" min="0" max="500" step="1" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
+						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
 					</ControlExplainer>
 					<p class="hp-context">Click the value, then use ↑/↓ or two-finger scroll. Hover HEAD DELAY for timing guidance.</p>
 					{#if headphoneState.master_delay_ms > 0}<p class="hp-room" data-performance-control="room-delay">ROOM +{headphoneState.master_delay_ms} ms. {roomBullets[0]}</p>{/if}
@@ -325,11 +362,22 @@
 				</select>
 			</label>
 		</ControlExplainer>
+		<!-- CHROME-07: the tray's "Open audio I/O and MIDI" lands here, so MIDI connect lives inside this view. -->
+		<ControlExplainer title="MIDI" showDelayMs={40} placement="right"
+			bullets={[midiTitle, 'Open the MIDI panel to connect controllers and view the learn log.']}>
+			<button
+				type="button"
+				class="hp-btn midi-btn io-midi st-{midiStatus}"
+				aria-label="Open MIDI panel from audio I/O"
+				aria-expanded={midiUi.panelOpen}
+				onclick={openMidiDrawer}>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
+			>
+		</ControlExplainer>
 	</div>
 {/snippet}
 
 {#snippet signalIndicator(bus: 'master' | 'cue' | 'input')}
-	{@const reading = signals?.[bus]}
+	{@const reading = headphoneState.signals[bus]}
 	<span
 		class="hp-signal"
 		class:lit={reading?.state === 'measured' && reading.rms !== null && reading.rms > 0.002}
@@ -365,6 +413,28 @@
 		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
 		cursor: pointer;
+	}
+	.midi-btn.st-grey {
+		opacity: 0.6;
+	}
+	.midi-btn.st-green {
+		color: var(--rb-green);
+	}
+	.midi-btn.st-red {
+		color: var(--rb-red);
+	}
+	.midi-btn.st-amber {
+		color: var(--rb-orange);
+		animation: midi-pulse 1s ease-in-out infinite;
+	}
+	@keyframes midi-pulse {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.35;
+		}
 	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);
@@ -409,7 +479,7 @@
 		background: transparent;
 		border: 0;
 		color: var(--rb-text, #c8cdd2);
-		font-size: 20px;
+		line-height: 0;
 		cursor: pointer;
 	}
 	.hp-panel-body { overflow: auto; padding: 10px 14px 14px; }
@@ -476,6 +546,21 @@
 		font-size: 10px;
 		color: var(--rb-text-dim, #838990);
 	}
+	.hp-delay-stepper {
+		display: inline-flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+	.hp-delay-step {
+		font: inherit;
+		line-height: 0;
+		padding: 1px 2px;
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border, #23282f);
+		border-radius: 2px;
+		color: var(--rb-text-dim, #838990);
+		cursor: pointer;
+	}
 	.hp-delay input {
 		font: inherit;
 		font-size: 11px;
@@ -483,7 +568,13 @@
 		padding: 0 2px;
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
+		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
+		cursor: pointer;
+	}
+	.hp-delay-step:hover {
+		color: var(--rb-text, #c8cdd2);
+		border-color: var(--rb-accent, #2f6fd6);
 	}
 	.hp-btn:disabled {
 		opacity: 0.45;

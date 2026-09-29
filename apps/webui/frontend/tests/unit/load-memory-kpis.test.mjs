@@ -177,12 +177,31 @@ test('the IPC deck snapshot reports null stages before any load', () => {
 });
 
 test('decoded-memory accounting charges a stems-ready deck for its four stem buffers', () => {
-	// Brace-matched off the declaration, so the body cannot silently widen to the
-	// rest of the file (or narrow to '') when a neighbouring symbol moves.
-	const body = engineBlockAfter('export function deckPcmEstimatedBytes(): number {');
-	// deckPcmEstimatedBytes reads _rt[deck].audioBuffer, which only exists behind
-	// a real decoded AudioBuffer, so the arithmetic is asserted here rather than
-	// faked with a stub buffer. Recorded as an audit finding for an e2e KPI check.
+	// The arithmetic itself lives in estimateDeckPcmBytes (deck-audio-snapshot.ts,
+	// listed in ENGINE_SOURCE_PATHS) since deckPcmEstimatedBytes in the engine is
+	// now a thin wrapper that reads _rt[deck].audioBuffer / deckStates[deck].stems
+	// and hands them to it. Brace-matched off the declaration, so the body cannot
+	// silently widen to the rest of the file (or narrow to '') when a neighbouring
+	// symbol moves.
+	const body = engineBlockAfter(
+		'export function estimateDeckPcmBytes(decks: Iterable<DeckPcmEstimateInput>): number {'
+	);
+	// The wrapper's only real behaviour is reading _rt[deck].audioBuffer, which
+	// only exists behind a real decoded AudioBuffer, so the arithmetic itself is
+	// asserted here rather than faked with a stub buffer. Recorded as an audit
+	// finding for an e2e KPI check.
+	const wrapperBody = engineBlockAfter('export function deckPcmEstimatedBytes(): number {');
+	assert.match(
+		wrapperBody,
+		/audioBuffer: _rt\[deck\]\.audioBuffer,/,
+		'if the wrapper stops reading the real decoded buffer then the KPI is fed nothing'
+	);
+	assert.match(
+		wrapperBody,
+		/stemsReady: deckStates\[deck\]\.stems\.status === 'ready'/,
+		'if the wrapper stops reading the real stems-ready state then a stems-ready ' +
+			'deck is never charged the 4x term'
+	);
 	assert.match(
 		body,
 		/const mixBytes = buffer\.length \* buffer\.numberOfChannels \* 4;/,
@@ -190,7 +209,7 @@ test('decoded-memory accounting charges a stems-ready deck for its four stem buf
 	);
 	assert.match(
 		body,
-		/if \(deckStates\[deck\]\.stems\.status === 'ready'\) total \+= mixBytes \* 4;/,
+		/if \(deck\.stemsReady\) total \+= mixBytes \* 4;/,
 		'if the stems term is dropped or the multiplier changes then a stems-ready ' +
 			'deck under-reports its decoded footprint'
 	);

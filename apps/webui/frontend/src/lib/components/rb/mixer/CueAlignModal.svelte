@@ -10,13 +10,18 @@
 	 * radios go through `onmode` (the `headphone_alignment_mode` command) like
 	 * every other mixer control.
 	 */
-	import { deriveAlignment, estimatedCalibrationSeconds } from '$lib/player/cue-align.svelte';
+	import { deriveAlignment, estimatedCalibrationSeconds } from '$lib/player/cue-align-policy';
 	import {
 		closeCueAlignModal,
 		continueCueAlignment,
 		cueAlignmentRunning,
 		startCueAlignment
 	} from '$lib/rb/cue-align-session.svelte';
+	import {
+		audioInterference,
+		audioInterferenceWarning,
+		refreshAudioInterference
+	} from '$lib/rb/audio-interference.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneState } from '$lib/rb/mixer-types';
 
 	let { headphones, onmode, embedded = false }: { headphones: HeadphoneState; onmode: (mode: HeadphoneAlignmentMode) => void; embedded?: boolean } =
@@ -37,6 +42,16 @@
 		}
 	};
 
+	// Asked as soon as the modal is on screen: the warning is worth most BEFORE
+	// the operator spends a run on it, and again on Start in case they quit the
+	// offending app in between.
+	void refreshAudioInterference();
+
+	/** CUEOUT-21: other software that listens to the mic can take it mid-run.
+	 * Advisory only: it never blocks a run and says nothing when the engine
+	 * could not look. */
+	const interferenceWarning = $derived(audioInterferenceWarning(audioInterference.report));
+
 	const estimatedSeconds = estimatedCalibrationSeconds();
 	const calibration = $derived(headphones.calibration);
 	/** Set once Continue is pressed so the button cannot fire twice in one step. */
@@ -47,6 +62,12 @@
 	$effect(() => {
 		if (calibration.step !== 'mic_check_cue') cueCheckReleased = false;
 	});
+
+	/** Stage one, live: which rung the ramp is on and how close it is. The bar
+	 * is what lets the operator move the ear cup and SEE the number rise instead
+	 * of waiting a whole ramp for a verdict. */
+	const probe = $derived(calibration.probe);
+	const probePct = $derived(probe === null ? 0 : Math.min(100, Math.round((probe.best / probe.threshold) * 100)));
 
 	const plan = $derived(
 		calibration.step === 'applied' && calibration.offset_ms !== null
@@ -63,11 +84,14 @@
 					? 3
 					: calibration.step === 'measuring'
 						? 4
-						: 0
+						: calibration.step === 'verifying'
+							? 5
+							: 0
 	);
 
 	function start(): void {
 		startError = null;
+		void refreshAudioInterference();
 		startCueAlignment({ interactive: true }).catch((error: unknown) => {
 			// The machine already wrote `calibration.error` for a failed run; this
 			// only catches a start that never reached it.
@@ -108,7 +132,7 @@
 				{#if calibration.step === 'idle'}
 					<p>
 						This measures how far your headphones lag the room. The laptop plays a short chirp through the
-						speakers, then through the headphones, and the built-in microphone times both. It takes about
+						speakers, then through the headphones, and the built-in microphone times both. It takes up to
 						{estimatedSeconds} seconds; playing decks are paused while it runs and resume when it finishes.
 					</p>
 				{:else if calibration.step === 'applied' && plan !== null}
@@ -116,12 +140,18 @@
 						Applied. Room {calibration.master_latency_ms} ms, headphones {calibration.cue_latency_ms} ms,
 						offset {calibration.offset_ms} ms:
 						HEAD DELAY {plan.head_delay_ms} ms, ROOM +{plan.master_delay_ms} ms.
+						{#if calibration.verify_residual_ms !== null}
+							verified: {calibration.verify_residual_ms} ms apart after the fix.
+						{/if}
 					</p>
 					{#if plan.warning !== null}
 						<p class="ca-warn" role="status">{plan.warning}</p>
 					{/if}
 				{:else if calibration.step === 'failed'}
 					<p class="ca-error" role="alert">{calibration.error}</p>
+				{/if}
+				{#if interferenceWarning !== null}
+					<p class="ca-warn" role="status">{interferenceWarning}</p>
 				{/if}
 				{#if startError !== null}
 					<p class="ca-error" role="alert">{startError}</p>
@@ -174,17 +204,24 @@
 					<li class:active={stepIndex === 1} class:done={stepIndex > 1}>Microphone access</li>
 					<li class:active={stepIndex === 2} class:done={stepIndex > 2}>Speakers check</li>
 					<li class:active={stepIndex === 3} class:done={stepIndex > 3}>Headphones check</li>
-					<li class:active={stepIndex === 4}>Measuring</li>
+					<li class:active={stepIndex === 4} class:done={stepIndex > 4}>Measuring</li>
+					<li class:active={stepIndex === 5}>Verifying</li>
 				</ol>
 				{#if calibration.step === 'mic_access'}
 					<p>Waiting for microphone access. Allow the built-in microphone if the browser asks.</p>
 				{:else if calibration.step === 'mic_check_master'}
-					<p>Chirping through the speakers. Keep the room quiet for a moment.</p>
+					<p>
+						Chirping through the speakers, getting louder until the microphone hears it. Keep the room quiet
+						for a moment.
+					</p>
+					{@render levelFind()}
 				{:else if calibration.step === 'mic_check_cue'}
 					<p>
 						Speakers heard at {calibration.master_latency_ms} ms.
-						Hold one ear cup against the laptop microphone, then press Continue.
+						Hold one ear cup against the laptop microphone, then press Continue. The chirp gets louder until
+						the microphone hears it, so move the cup closer while the bar is short.
 					</p>
+					{@render levelFind()}
 					<div class="ca-actions">
 						<button type="button" class="ca-primary" disabled={cueCheckReleased} onclick={continueCueCheck}
 							>Continue</button
@@ -196,6 +233,12 @@
 						Measuring: two more chirps per output so each latency is the median of three. Keep the ear cup on
 						the microphone.
 					</p>
+				{:else if calibration.step === 'verifying'}
+					<p>
+						Verifying: one more chirp through each output to confirm the delay fix landed. Keep the ear cup on
+						the microphone.
+					</p>
+					{@render levelFind()}
 				{/if}
 				{#if calibration.step !== 'mic_check_cue'}
 					<div class="ca-actions">
@@ -206,6 +249,18 @@
 		</div>
 	</div>
 </div>
+
+{#snippet levelFind()}
+	{#if probe !== null}
+		<div class="ca-level" data-cue-align-probe-bus={probe.bus}>
+			<div class="ca-level-bar"><span style:width={`${probePct}%`} class:heard={probe.best >= probe.threshold}
+				></span></div>
+			<span class="ca-level-read">
+				level {probe.gain.toFixed(2)}, heard {probe.best.toFixed(2)} of {probe.threshold} needed
+			</span>
+		</div>
+	{/if}
+{/snippet}
 
 {#snippet modeCopy(mode: HeadphoneAlignmentMode)}
 	<span class="ca-mode-label">{MODE_COPY[mode].label}</span>
@@ -307,6 +362,34 @@
 	}
 	.ca-mode-detail {
 		color: var(--rb-text-dim, #999);
+	}
+	.ca-level {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0 0 10px;
+	}
+	.ca-level-bar {
+		flex: 1;
+		height: 6px;
+		background: var(--rb-panel, #14171b);
+		border: 1px solid var(--rb-border, #333);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+	.ca-level-bar span {
+		display: block;
+		height: 100%;
+		background: var(--rb-warn, #e6a23c);
+		transition: width 120ms linear;
+	}
+	.ca-level-bar span.heard {
+		background: var(--rb-accent, #4fb3ff);
+	}
+	.ca-level-read {
+		color: var(--rb-text-dim, #999);
+		font-size: 11px;
+		white-space: nowrap;
 	}
 	.ca-steps {
 		display: flex;

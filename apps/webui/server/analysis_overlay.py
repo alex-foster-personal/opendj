@@ -2,7 +2,7 @@
 
 Split out of ``sqlite_backend.py``, which is already the largest module in
 this package: these two functions are one concern (how a lane's SOURCE
-changes what a track row says) and neither touches SQLite'"'"'s cursor
+changes what a track row says) and neither touches SQLite's cursor
 handling, connection pooling or the EAV pass around them.
 
 Both are called from ``_row_to_track`` / ``_fetch_fields``. Neither writes.
@@ -15,34 +15,60 @@ import sqlite3
 
 from apps.analysis import lanes as analysis_lanes
 from apps.analysis import selection as analysis_selection
+from apps.analysis.lanes import LANES
 from apps.analysis.selection import OWN_ANALYSIS_SOURCE as _OWN_ANALYSIS_SOURCE
 from apps.analysis.selection import EffectiveField
+
+
+def _rb_mapped_for_batch(stable_ids: list[str]) -> dict[str, bool]:
+    from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
+
+    metas = bulk_rb_meta(stable_ids)
+    return {sid: sid in metas for sid in stable_ids}
+
+
+def _batch_needs_lane_owned_fields(
+    conn: sqlite3.Connection,
+    stable_ids: list[str],
+    rb_mapped: dict[str, bool],
+) -> bool:
+    """True when any track/lane pair reads from ``analysis_projection``."""
+    selection = analysis_selection.Selection.resolve(conn)
+    if selection.any_own:
+        return True
+    for sid in stable_ids:
+        mapped = rb_mapped.get(sid, False)
+        for lane in LANES:
+            if (
+                analysis_selection.effective_source_for_track(
+                    conn, lane, has_rb_mapping=mapped
+                )
+                == "own"
+            ):
+                return True
+    return False
 
 
 def lane_owned_fields(
     conn: sqlite3.Connection, stable_ids: list[str],
 ) -> dict[str, dict[str, EffectiveField]]:
-    """The lane-owned half, skipped only when every lane is on rbx.
+    """Lane-owned scalars from :func:`effective_fields`, with a safe skip.
 
-    The skip is gated on the SELECTION, never on whether
-    ``analysis_projection`` exists. An earlier draft gated on the table and
-    was wrong in a way a live run caught and the unit tests did not: the
-    promoted default lives in a DIFFERENT table
-    (``analysis_source_default``), so a lane could be on own while the
-    projection table was still absent, and the EAV pass then served the
-    rekordbox value under an `own` selection. That is the exact silent
-    substitution this milestone removes.
-
-    Under all-rbx, :func:`effective_fields` returns the same ``track_fields``
-    rows the EAV pass above already produced for ``bpm`` and ``key`` and
-    nothing else, so skipping it is an optimization on the library-listing
-    hot path rather than a behavior change. It is asserted as such in
-    tests/webui/test_effective_fields.py.
+    Skips the projection query only when every track in the batch is
+    rekordbox-mapped and every lane's per-track effective source is rbx
+    (including PARITY-02 toggles). Unmapped standalone libraries always
+    read ``analysis_projection`` even when the global default is still rbx
+    (STANDALONE-02/06).
     """
-    selection = analysis_selection.Selection.resolve(conn)
-    if not selection.any_own:
+    if not stable_ids:
         return {}
-    return analysis_selection.effective_fields(conn, stable_ids, selection)
+    rb_mapped = _rb_mapped_for_batch(stable_ids)
+    if not _batch_needs_lane_owned_fields(conn, stable_ids, rb_mapped):
+        return {}
+    selection = analysis_selection.Selection.resolve(conn)
+    return analysis_selection.effective_fields(
+        conn, stable_ids, selection, rb_mapped=rb_mapped
+    )
 
 
 def selection_tag(fields: dict[str, EffectiveField]) -> str:

@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getTrack, patchTrack, ConflictError, type Track } from '$lib/api';
-	import StarRating from '$lib/components/StarRating.svelte';
+	import RatingStars from '$lib/components/rb/browser/RatingStars.svelte';
 	import ConflictDialog from '$lib/components/ConflictDialog.svelte';
 	import ProvenanceTooltip from '$lib/components/ProvenanceTooltip.svelte';
 	import { pushToast } from '$lib/stores.svelte';
@@ -99,7 +99,7 @@
 	<p><ProvenanceTooltip {track} field="artist">{track.artist ?? ''}</ProvenanceTooltip></p>
 	<p>BPM: {track.bpm ?? '?'} · Key: {track.key ?? '?'}</p>
 	{#if quality}<p><QualityBadge {quality} /></p>{/if}
-	<p>Rating: <StarRating rating={track.rating ?? 0} onchange={(n) => applyPatch({ rating: n })} /></p>
+	<p>Rating: <RatingStars rating={track.rating ?? 0} onrate={(n) => applyPatch({ rating: n })} /></p>
 
 	<h3>Tags</h3>
 	<div>

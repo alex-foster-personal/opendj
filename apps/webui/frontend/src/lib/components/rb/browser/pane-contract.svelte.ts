@@ -31,7 +31,7 @@ import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$
 import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
-import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
+import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
 import type { LyricsRowSummary } from '$lib/rb/lyrics/types';
 import { lyricsSortValue } from './lyric-column';
 import { applySelect } from './pane-row-selection';
@@ -45,7 +45,15 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
  * (not types.ts, which is a frozen contract between the original build
  * units). */
-export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
+export interface BrowserRow extends Pick<
+	TrackRow,
+	| 'key_status'
+	| 'key_reason'
+	| 'bpm_status'
+	| 'bpm_reason'
+	| 'loudness_status'
+	| 'loudness_reason'
+> {
 	stable_id: string;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
@@ -92,6 +100,9 @@ export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' |
 	/** Spotify-unmatched placeholder (light green row). True when the
 	 * row is a synthetic spotify-pending track or wire spotify_pending. */
 	spotify_pending?: boolean;
+	/** Inline streaming provider (playlist and /tracks rows); the only source for
+	 * a row with no rekordbox mapping, whose rb_meta never loads. */
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null | undefined;
 	/** Decoded 120-col preview strip; null = no ANLZ preview (real
 	 * state, renders the explicit dash). */
 	strip: PreviewStripData | null;
@@ -192,9 +203,8 @@ export function makeClientRowProvider(
 export class PaneStore {
 	/** Selected playlist id ('all' for All Tracks); null = blank pane. */
 	playlist_id = $state<string | null>(null);
-	kind = $state<
-		'all_tracks' | 'playlist' | 'smartlist' | 'folder' | 'missing_tracks' | 'taglist' | 'autolist' | null
-	>(null);
+	/** The loaded node's kind (PlaylistNode's union); null = blank pane. */
+	kind = $state<PlaylistNode['kind'] | null>(null);
 	/** Pane tab title (playlist name; 'blank list' when empty). */
 	title = $state('blank list');
 	/** Loaded rows in membership order (pre filter/sort). */
@@ -257,14 +267,7 @@ export class PaneStore {
 	beginLoad(
 		playlist_id: string,
 		title: string,
-		kind:
-			| 'all_tracks'
-			| 'playlist'
-			| 'smartlist'
-			| 'folder'
-			| 'missing_tracks'
-			| 'taglist'
-			| 'autolist' = playlist_id === 'all' ? 'all_tracks' : 'playlist'
+		kind: PlaylistNode['kind'] = playlist_id === 'all' ? 'all_tracks' : 'playlist'
 	): number {
 		this.#load_seq += 1;
 		this.playlist_id = playlist_id;
@@ -445,6 +448,12 @@ export function rowHasVocalLyrics(row: BrowserRow): boolean {
 	);
 }
 
+/** Available-offline filter: local audio present, not cloud-only or streaming. */
+export function rowIsLocallyAvailable(row: BrowserRow): boolean {
+	if (row.is_streaming === true || row.spotify_pending === true) return false;
+	return row.file_exists === true;
+}
+
 // ------------------------------------------------------- boot pane selection
 
 // Moved to ./boot-pane-selection (pure, runeless; the karaoke lyric column
@@ -573,7 +582,12 @@ export function applyDecodedStripAcrossPanes(
 // math, a distinct concern from the reactive PaneStore contract above).
 // Re-exported here so BrowserPanel.svelte and the existing tests keep one
 // import site for the pane vocabulary.
-export { reorderPanesInPlace, resolveNewTabIndex } from './pane-tabs';
+export {
+	MAX_PANE_SLOTS,
+	canAddPaneSlot,
+	reorderPanesInPlace,
+	resolveNewTabIndex
+} from './pane-tabs';
 
 // ---------------------------------------------- playlist deck-context tints
 // Pin 2ac3a0: the tint derivations + the tree's CURRENT fold control moved to

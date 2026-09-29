@@ -34,6 +34,7 @@ import { resumeAnlzPrefetchOwedFetch, setAnlzPrefetchShedRequest } from '$lib/co
 import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
+import { setMidiLoadFailureReporter } from '$lib/settings/apply';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
 import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
@@ -92,6 +93,12 @@ function _hasPlayableAutoPlayNext(): boolean {
 
 let _xrunsAtPrevious = 0;
 
+/** The settings MIDI toggle's load-failure toast (CHROME-07), wired into
+ * settings/apply.ts at boot so that module stays off stores.svelte. */
+export function toastMidiLoadFailure(exc: unknown): void {
+	pushToast('MIDI could not load, so it stays off', 'error', undefined, exc);
+}
+
 /**
  * Start the page-lifetime instruments. Returns the teardown, which the
  * caller owns (the root layout hands it back from onMount).
@@ -102,6 +109,7 @@ let _xrunsAtPrevious = 0;
  */
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	installPerfEventLogGlobal();
+	setMidiLoadFailureReporter(toastMidiLoadFailure);
 	// Every client error from here on carries the page's own transport read,
 	// so the engine can hold the Sentry forward while a deck is live. Wired
 	// here rather than in client-error-reporting because that module boots
@@ -189,6 +197,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 	return () => {
 		stopTelemetryConsent?.();
 		setLiveTransportProbe(null);
+		setMidiLoadFailureReporter(null);
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);

@@ -12,12 +12,15 @@
 import { ApiError, api, unwrap } from '../api/client';
 import type { components } from '../api-types';
 import { RbApiError } from './api-rb';
+import { refuseStickRead } from './track-source';
 
 export type AutoCuesOut = components['schemas']['AutoCuesOut'];
 export type AutoCueOut = components['schemas']['AutoCueOut'];
 export { RbApiError };
 
 export async function fetchAutoCues(stable_id: string): Promise<AutoCuesOut> {
+	// Spec 4b: auto-cues are library analysis; no stick route exists.
+	refuseStickRead(stable_id, 'auto-cues');
 	try {
 		return await unwrap(
 			api.GET('/api/v1/tracks/{stable_id}/auto-cues', {

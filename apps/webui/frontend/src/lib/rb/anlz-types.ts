@@ -126,6 +126,29 @@ export interface AnlzCue {
 	comment: string | null;
 }
 
+/** A save/clear reversal token: single-use, redeemable to undo one hot-cue
+ * mutation. Lives here (not hot-cue-types.ts) because it is typed against
+ * AnlzCue and hot-cue-types.ts is upstream of this module. */
+export interface HotCueReversal {
+	reversal_id: string;
+}
+
+/** Result of a hot-cue save/rename/clear: the resulting cue (or null when
+ * cleared), the slot's fresh revision, and a reversal when the change can be
+ * undone. */
+export interface HotCueMutation {
+	cue: AnlzCue | null;
+	revision: string;
+	reversal?: HotCueReversal;
+}
+
+/** One hot-cue bank slot as read back from GET /hot-cues. */
+export interface HotCueSlotState {
+	slot: HotCueSlot;
+	cue: AnlzCue | null;
+	revision: string;
+}
+
 /** One phrase from ANLZ .EXT PSSI; response field may be an empty array. */
 export interface AnlzPhrase {
 	/** Phrase start in seconds. */
@@ -224,4 +247,15 @@ export interface AnlzData {
 	 * this track: `beatgrid` is then the real empty grid, never a silent
 	 * fallback to the rekordbox one, and this names why. */
 	beatgrid_own_unavailable_reason: string | null;
+	/** WHY `beatgrid_source` is what it is for THIS track (rb_assets_beatgrid_source.py
+	 * `beatgrid_source_for_track`). 'unmapped-default' is STANDALONE-06's
+	 * per-track own for a track rekordbox never mapped, which legitimately
+	 * differs from the lane-wide selection; 'selection' means the track
+	 * follows that selection. The engine always sends it; it is optional only
+	 * for payloads the client builds itself, and absence reads as the stricter
+	 * 'selection' (see beatgrid-source-basis.ts). */
+	beatgrid_source_basis?: AnlzBeatgridSourceBasis;
 }
+
+/** See `AnlzData.beatgrid_source_basis`. */
+export type AnlzBeatgridSourceBasis = 'selection' | 'unmapped-default';

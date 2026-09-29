@@ -7,8 +7,8 @@
 	// slot click = real jump to in_ms via the audio engine (COMPONENT-MAP
 	// 1.3). Empty slot click = SAVE the current playhead there (djmdCue
 	// Kind 1-8 write path); the x on a filled slot clears it. Kind 9-11
-	// (beyond H) is unverified and never exposed (PARITY-TODO.md). HOT CUE
-	// dropdown selector below-left is visual-only (inert).
+	// (beyond H) is unverified and never exposed (PARITY-TODO.md). The HOT CUE
+	// pad-mode dropdown below-left lives in PadModeMenu.svelte (CHROME-11).
 	//
 	// A locally imported track has no djmdContent row for djmdCue to key
 	// off, so SAVE has nowhere to write (PARITY-TODO v1 blocker, issue
@@ -21,18 +21,25 @@
 	// defaults true (deck-state-types.ts), so that flag alone cannot gate
 	// this case. Same inert-with-tooltip treatment, gated on stable_id
 	// instead (issue #804).
+	//
+	// A USB stick track (Play from USB, specs/usb-play-from-stick.md 4b and
+	// decision 2) has no rekordbox mapping and needs none: save, rename,
+	// clear and undo stay in this session (lib/rb/stick-session-edits.ts),
+	// never written to the stick, and every edit control says so.
 	import { fetchTrackLyrics, type HotCueMutation } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { hotCueTitle } from '$lib/rb/hot-cue-label';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
+	import PadModeMenu from './PadModeMenu.svelte';
 	import { proposalTitle, visibleProposalForSlot } from '$lib/rb/auto-cue-proposals';
 	import { ensureAutoCues, getAutoCuesEntry } from './auto-cues-cache.svelte';
 	import HotCueProposalLabel from './HotCueProposalLabel.svelte';
 	import { createLyricsFetchState } from '../wave/lyrics-fetch.svelte';
+	import { hotCueEditsAllowed, isUsbTrackId } from '$lib/rb/track-source';
 
 	const MAPPING_TIP = 'cues need a rekordbox mapping';
 	const NOT_LOADED_TIP = 'no track loaded - nothing to save';
+	const SESSION_TIP = ' (this session only - the stick is never written)';
 
 	let {
 		deck,
@@ -57,6 +64,10 @@
 	} = $props();
 
 	const SLOTS: HotCueSlot[] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+	const onStick = $derived(deck.stable_id !== null && isUsbTrackId(deck.stable_id));
+	const canSave = $derived(hotCueEditsAllowed(deck.stable_id, deck.has_rb_mapping));
+	const sessionTip = $derived(onStick ? SESSION_TIP : '');
 
 	const bank: { slot: HotCueSlot; cue: HotCue | null }[] = $derived(
 		SLOTS.map((slot) => ({
@@ -128,7 +139,7 @@
 		// defaults true on an empty deck (deck-state-types.ts), so it alone
 		// cannot gate the save - stable_id is the real "is there a deck to
 		// save onto" signal (#804).
-		if (deck.stable_id === null || !deck.has_rb_mapping) return;
+		if (deck.stable_id === null || !canSave) return;
 		await beginRename(entry.slot, deck.position_ms, deck.stable_id);
 	}
 
@@ -266,8 +277,7 @@
 							class:filled={entry.cue !== null}
 							class:proposal={entry.cue === null && visible !== null}
 							class:loop={entry.cue !== null && entry.cue.is_loop}
-							class:inert-mapping={entry.cue === null &&
-								(deck.stable_id === null || !deck.has_rb_mapping)}
+							class:inert-mapping={entry.cue === null && !canSave}
 							disabled={busySlot === entry.slot || renameSlot === entry.slot}
 							aria-busy={pending}
 							aria-label={`hot cue ${entry.slot} deck ${deck.deck_id}`}
@@ -277,10 +287,10 @@
 							title={entry.cue === null
 								? deck.stable_id === null
 									? NOT_LOADED_TIP
-									: deck.has_rb_mapping
-										? visible !== null
-											? `${proposalTitle(visible.kind, visible.time_s)} - click to save the current position`
-											: 'empty hot cue slot - click to save the current position'
+									: canSave
+										? `${visible !== null
+											? proposalTitle(visible.kind, visible.time_s)
+											: 'empty hot cue slot'} - click to save the current position${sessionTip}`
 										: MAPPING_TIP
 								: hotCueTitle(entry.cue, deck.anlz?.beatgrid.beats ?? [], lyricsState.lyrics?.lines ?? [])}
 							onclick={(e) => onSlotClick(entry, e.timeStamp)}
@@ -297,7 +307,7 @@
 									tabindex="0"
 									aria-label={`rename hot cue ${entry.slot} deck ${deck.deck_id}`}
 									data-testid={`edit-hot-cue-${deck.deck_id}-${entry.slot}`}
-									title={`edit hot cue ${entry.slot} label`}
+									title={`edit hot cue ${entry.slot} label${sessionTip}`}
 									onclick={(event) => void onEditClick(entry, event)}
 									onkeydown={(event) => {
 										if (event.key === 'Enter' || event.key === ' ') {
@@ -314,7 +324,7 @@
 									tabindex="0"
 									aria-label={`clear hot cue ${entry.slot} deck ${deck.deck_id}`}
 									data-testid={`clear-hot-cue-${deck.deck_id}-${entry.slot}`}
-									title={`clear hot cue ${entry.slot}`}
+									title={`clear hot cue ${entry.slot}${sessionTip}`}
 									onclick={(event) => onClearClick(entry.slot, event)}
 									onkeydown={(event) => {
 										if (event.key === 'Enter' || event.key === ' ') {
@@ -391,9 +401,7 @@
 			</div>
 		{/each}
 	</div>
-	<button class="rb-lit-button rb-inert dropdown" disabled title={plannedTitle('hot-cue-menu')} aria-label={`hot cue menu deck ${deck.deck_id}`} data-testid={`hot-cue-menu-deck-${deck.deck_id}`}>
-		HOT CUE <span class="caret">&#9662;</span>
-	</button>
+	<PadModeMenu deckId={deck.deck_id} />
 	{#if undo !== null}
 		<!-- Undo is frequently the control a DJ clicks to LEAVE the open cue-name
 		input, and that click's mousedown blurs the input, which starts the
@@ -580,17 +588,9 @@
 		background: rgba(255, 255, 255, 0.08);
 		outline: none;
 	}
-	.dropdown {
-		align-self: flex-start;
-		height: 18px;
-		box-sizing: border-box;
-	}
 	.undo {
 		align-self: flex-start;
 		height: 18px;
 		box-sizing: border-box;
-	}
-	.caret {
-		color: var(--rb-text-dim);
 	}
 </style>

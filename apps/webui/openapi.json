@@ -1136,6 +1136,71 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "AudioInterferenceItemOut": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "why",
+          "matched"
+        ],
+        "title": "AudioInterferenceItemOut",
+        "type": "object"
+      },
+      "AudioInterferenceOut": {
+        "properties": {
+          "detected": {
+            "items": {
+              "$ref": "#/components/schemas/AudioInterferenceItemOut"
+            },
+            "title": "Detected",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "supported": {
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "supported",
+          "detected"
+        ],
+        "title": "AudioInterferenceOut",
+        "type": "object"
+      },
       "AudioOutputHealthOut": {
         "properties": {
           "checked_at": {
@@ -2644,7 +2709,7 @@
         "type": "object"
       },
       "BuildInfoOut": {
-        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the two sources measure different\nmoments: a payload knows when it was packaged, a checkout only knows when\nHEAD was committed. Labelling which one is on screen costs one field and\nremoves a whole class of \"why does this say yesterday\" confusion.",
+        "description": "The identity contract the UI and any agent read.\n\n``built_at_kind`` exists because the sources measure different moments: a\npayload knows when it was packaged; a repo checkout stamps the running\nengine's start instant at identity resolution (``engine-start``). The\nlegacy ``head-commit`` literal remains on the wire for older readers only.\nLabelling which moment is on screen removes \"why does this say yesterday\"\nconfusion.",
         "properties": {
           "app_version": {
             "anyOf": [
@@ -2660,7 +2725,8 @@
           "built_at_kind": {
             "enum": [
               "payload-build",
-              "head-commit"
+              "head-commit",
+              "engine-start"
             ],
             "title": "Built At Kind",
             "type": "string"
@@ -3351,9 +3417,31 @@
       },
       "ClientErrorOut": {
         "properties": {
+          "error_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Id"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
+          },
+          "sentry_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentry Event Id"
           },
           "stored": {
             "title": "Stored",
@@ -4522,6 +4610,17 @@
               }
             ],
             "title": "Agent Note"
+          },
+          "agent_snapshot_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Snapshot At"
           },
           "anchor": {
             "anyOf": [
@@ -7593,6 +7692,69 @@
         "title": "FolderScanOut",
         "type": "object"
       },
+      "FolderWatchOut": {
+        "description": "LIBM-128: the continuous folder-rescan scheduler's own status.\n\n``None`` on ``SetupStatusOut.folder_watch`` means the scheduler has not\nrun in this process (no lifespan, or not yet its first cycle) -- a\ngenuinely different fact from a scheduler that ran and found nothing,\nwhich is ``warning=None`` with a real ``last_cycle_at``.",
+        "properties": {
+          "consecutive_failures": {
+            "default": 0,
+            "title": "Consecutive Failures",
+            "type": "integer"
+          },
+          "interval_s": {
+            "title": "Interval S",
+            "type": "number"
+          },
+          "last_cycle_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Cycle At"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "tracks_added_last_cycle": {
+            "default": 0,
+            "title": "Tracks Added Last Cycle",
+            "type": "integer"
+          },
+          "tracks_removed_last_cycle": {
+            "default": 0,
+            "title": "Tracks Removed Last Cycle",
+            "type": "integer"
+          },
+          "unreadable_roots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Roots",
+            "type": "array"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "running",
+          "interval_s"
+        ],
+        "title": "FolderWatchOut",
+        "type": "object"
+      },
       "GateErrorBody": {
         "description": "The refusal. ``ui_title`` is present only on a plan refusal (ENT-02).",
         "properties": {
@@ -7858,9 +8020,30 @@
             ],
             "title": "Offset Ms"
           },
+          "probe": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeadphoneCalibrationProbeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "step": {
             "title": "Step",
             "type": "string"
+          },
+          "verify_residual_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Residual Ms"
           }
         },
         "required": [
@@ -7868,9 +8051,64 @@
           "cue_latency_ms",
           "master_latency_ms",
           "offset_ms",
+          "verify_residual_ms",
+          "probe",
           "error"
         ],
         "title": "HeadphoneCalibrationOut",
+        "type": "object"
+      },
+      "HeadphoneCalibrationProbeOut": {
+        "description": "CUEOUT-14 stage one, live: the rung being tried and how close it is to heard.\n\nThe ear-cup step is interactive, so this is the feedback an agent needs to\ndrive it the way the operator does, watching `best` climb toward `threshold`.",
+        "properties": {
+          "best": {
+            "title": "Best",
+            "type": "number"
+          },
+          "bus": {
+            "title": "Bus",
+            "type": "string"
+          },
+          "gain": {
+            "title": "Gain",
+            "type": "number"
+          },
+          "lag_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Ms"
+          },
+          "peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bus",
+          "gain",
+          "peak",
+          "lag_ms",
+          "best",
+          "threshold"
+        ],
+        "title": "HeadphoneCalibrationProbeOut",
         "type": "object"
       },
       "HeadphoneOutputDeviceOut": {
@@ -14772,7 +15010,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Status",
             "type": "string"
@@ -16572,6 +16811,27 @@
             ],
             "title": "Bpm"
           },
+          "bpm_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Reason"
+          },
+          "bpm_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected"
+            ],
+            "title": "Bpm Status",
+            "type": "string"
+          },
           "cloud_transfer": {
             "anyOf": [
               {
@@ -16743,7 +17003,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Key Status",
             "type": "string"
@@ -16763,7 +17024,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Loudness Status",
             "type": "string"
@@ -16837,6 +17099,23 @@
             "title": "Stems",
             "type": "object"
           },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
           "title": {
             "anyOf": [
               {
@@ -16882,6 +17161,7 @@
           "energy_reason",
           "key_status",
           "key_reason",
+          "bpm_status",
           "loudness_status",
           "loudness_reason",
           "match_context"
@@ -17065,6 +17345,16 @@
             },
             "title": "Folder Stages",
             "type": "array"
+          },
+          "folder_watch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FolderWatchOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "last_import": {
             "anyOf": [
@@ -19596,6 +19886,19 @@
         "title": "TodoPatchIn",
         "type": "object"
       },
+      "TrackLibraryRevisionOut": {
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "TrackLibraryRevisionOut",
+        "type": "object"
+      },
       "TrackLifecycleOut": {
         "properties": {
           "deleted_at": {
@@ -19820,6 +20123,10 @@
             "title": "Is Remote",
             "type": "boolean"
           },
+          "is_streaming": {
+            "title": "Is Streaming",
+            "type": "boolean"
+          },
           "key": {
             "anyOf": [
               {
@@ -19929,6 +20236,23 @@
             "title": "Stems Available",
             "type": "boolean"
           },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
           "tags": {
             "default": [],
             "items": {
@@ -19981,6 +20305,7 @@
           "preview_max",
           "file_availability",
           "file_exists",
+          "is_streaming",
           "has_remote_copy",
           "quality",
           "vocals",
@@ -20400,6 +20725,27 @@
             ],
             "title": "Bpm"
           },
+          "bpm_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Reason"
+          },
+          "bpm_status": {
+            "enum": [
+              "ok",
+              "failed",
+              "missing",
+              "available-not-selected"
+            ],
+            "title": "Bpm Status",
+            "type": "string"
+          },
           "cloud_transfer": {
             "anyOf": [
               {
@@ -20571,7 +20917,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Key Status",
             "type": "string"
@@ -20591,7 +20938,8 @@
             "enum": [
               "ok",
               "failed",
-              "missing"
+              "missing",
+              "available-not-selected"
             ],
             "title": "Loudness Status",
             "type": "string"
@@ -20661,6 +21009,23 @@
             "title": "Stems",
             "type": "object"
           },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
           "title": {
             "anyOf": [
               {
@@ -20706,6 +21071,7 @@
           "energy_reason",
           "key_status",
           "key_reason",
+          "bpm_status",
           "loudness_status",
           "loudness_reason"
         ],
@@ -20839,6 +21205,11 @@
           "auto_sync": {
             "$ref": "#/components/schemas/AutoSyncOut"
           },
+          "available_offline_filter": {
+            "default": false,
+            "title": "Available Offline Filter",
+            "type": "boolean"
+          },
           "beat_sync_max": {
             "default": true,
             "title": "Beat Sync Max",
@@ -20848,6 +21219,21 @@
             "additionalProperties": true,
             "title": "Confirm",
             "type": "object"
+          },
+          "deck_right_mirror": {
+            "default": false,
+            "title": "Deck Right Mirror",
+            "type": "boolean"
+          },
+          "gig_helper": {
+            "default": "unset",
+            "enum": [
+              "unset",
+              "off",
+              "on"
+            ],
+            "title": "Gig Helper",
+            "type": "string"
           },
           "hide_broken_links": {
             "default": false,
@@ -20935,6 +21321,15 @@
               "high"
             ],
             "title": "Perf Tier",
+            "type": "string"
+          },
+          "playlist_tree_view": {
+            "default": "tree",
+            "enum": [
+              "tree",
+              "column"
+            ],
+            "title": "Playlist Tree View",
             "type": "string"
           },
           "remixes_filter": {
@@ -21048,6 +21443,17 @@
               }
             ]
           },
+          "available_offline_filter": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Offline Filter"
+          },
           "beat_sync_max": {
             "anyOf": [
               {
@@ -21070,6 +21476,33 @@
               }
             ],
             "title": "Confirm"
+          },
+          "deck_right_mirror": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck Right Mirror"
+          },
+          "gig_helper": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unset",
+                  "off",
+                  "on"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gig Helper"
           },
           "hide_broken_links": {
             "anyOf": [
@@ -21249,6 +21682,21 @@
               }
             ],
             "title": "Perf Tier"
+          },
+          "playlist_tree_view": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tree",
+                  "column"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playlist Tree View"
           },
           "remixes_filter": {
             "anyOf": [
@@ -21855,8 +22303,403 @@
         "title": "UsbCapabilityErrorOut",
         "type": "object"
       },
+      "UsbStickCountsOut": {
+        "properties": {
+          "history_playlists": {
+            "title": "History Playlists",
+            "type": "integer"
+          },
+          "playlist_entries": {
+            "title": "Playlist Entries",
+            "type": "integer"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "tracks": {
+            "title": "Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tracks",
+          "playlists",
+          "playlist_entries",
+          "history_playlists"
+        ],
+        "title": "UsbStickCountsOut",
+        "type": "object"
+      },
+      "UsbStickErrorDetail": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USB_TRACK_ID_INVALID",
+                  "USB_VOLUME_ID_INVALID",
+                  "USB_VOLUME_HAS_NO_UUID",
+                  "USB_STICK_NOT_MOUNTED",
+                  "USB_STICK_ACCESS_BLOCKED",
+                  "USB_TRACK_NOT_FOUND",
+                  "USB_PATH_OUTSIDE_VOLUME",
+                  "USB_FILE_MISSING"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "AUDIO_ACCESS_BLOCKED",
+                  "ANALYSIS_NOT_FOUND"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "volume_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Id"
+          },
+          "volume_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Uuid"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "UsbStickErrorDetail",
+        "type": "object"
+      },
+      "UsbStickErrorOut": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/UsbStickErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "UsbStickErrorOut",
+        "type": "object"
+      },
+      "UsbStickHistoryOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "track_ids"
+        ],
+        "title": "UsbStickHistoryOut",
+        "type": "object"
+      },
+      "UsbStickLibraryOut": {
+        "properties": {
+          "cache_hit": {
+            "title": "Cache Hit",
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/UsbStickCountsOut"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/UsbStickHistoryOut"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "mount_path": {
+            "title": "Mount Path",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlists": {
+            "items": {
+              "$ref": "#/components/schemas/UsbStickPlaylistOut"
+            },
+            "title": "Playlists",
+            "type": "array"
+          },
+          "read_ms": {
+            "title": "Read Ms",
+            "type": "number"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/UsbStickTrackOut"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "volume_id": {
+            "title": "Volume Id",
+            "type": "string"
+          },
+          "volume_uuid": {
+            "title": "Volume Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume_id",
+          "volume_uuid",
+          "name",
+          "mount_path",
+          "tracks",
+          "playlists",
+          "history",
+          "counts",
+          "read_ms",
+          "cache_hit"
+        ],
+        "title": "UsbStickLibraryOut",
+        "type": "object"
+      },
+      "UsbStickPlaylistOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_folder": {
+            "title": "Is Folder",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "pdb_id": {
+            "title": "Pdb Id",
+            "type": "integer"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "pdb_id",
+          "name",
+          "parent_id",
+          "is_folder",
+          "sort_order",
+          "track_ids"
+        ],
+        "title": "UsbStickPlaylistOut",
+        "type": "object"
+      },
+      "UsbStickTrackOut": {
+        "properties": {
+          "album": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Album"
+          },
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "date_added": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Added"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
+          "has_analysis": {
+            "title": "Has Analysis",
+            "type": "boolean"
+          },
+          "has_artwork": {
+            "title": "Has Artwork",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "pdb_id": {
+            "title": "Pdb Id",
+            "type": "integer"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pdb_id",
+          "title",
+          "artist",
+          "album",
+          "genre",
+          "key",
+          "bpm",
+          "duration_s",
+          "rating",
+          "file_path",
+          "has_analysis",
+          "has_artwork",
+          "date_added"
+        ],
+        "title": "UsbStickTrackOut",
+        "type": "object"
+      },
       "UsbVolumeOut": {
         "properties": {
+          "access": {
+            "default": "unknown",
+            "enum": [
+              "ok",
+              "pending",
+              "denied",
+              "unknown"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
           "hide_reason": {
             "anyOf": [
               {
@@ -24254,6 +25097,27 @@
         "summary": "Assistant Status",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/audio-interference": {
+      "get": {
+        "operationId": "audio_interference_api_v1_audio_interference_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioInterferenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Interference",
+        "tags": [
+          "health"
         ]
       }
     },
@@ -35978,6 +36842,28 @@
         ]
       }
     },
+    "/api/v1/tracks/revision": {
+      "get": {
+        "description": "Return a cheap revision probe for clients holding library snapshots.",
+        "operationId": "get_library_revision_api_v1_tracks_revision_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackLibraryRevisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library Revision",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/{stable_id}": {
       "get": {
         "operationId": "get_track_api_v1_tracks__stable_id__get",
@@ -37582,6 +38468,562 @@
         ]
       }
     },
+    "/api/v1/usb/tracks/{track_id}": {
+      "get": {
+        "description": "The library's TrackOut for a stick track, so the deck loads it unchanged.\n\nThe flags predict the stick routes: no lyrics, auto-cues or stems route\nexists under ``/usb/tracks``, so those are False; ``has_rb_mapping`` is\nFalse because ``/hot-cues`` is read only and ``rb-meta`` cannot resolve a\nstick id; ``artwork_available`` is True only when both served sizes\nexist. ``/anlz`` and ``/hot-cues`` answer for every track whose export\nrow names no analysis (empty) or a readable one (the stick's own).",
+        "operationId": "get_usb_track_api_v1_usb_tracks__track_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Api V1 Usb Tracks  Track Id  Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/anlz": {
+      "get": {
+        "description": "The stick's own waveform / beatgrid / cues / phrases, in the library\n``/anlz`` shape, decoded from this track's exact ANLZ files.\n\n``vocals`` is always ``not_analyzed`` (a PVDI tag is listed in\n``unreadable_anlz``); ``beatgrid.source`` and ``beatgrid_source`` are\nalways ``rekordbox``. Same ``points`` bounds, ETag and\n``private, no-cache`` revalidation as the library route; the client's\n``gen`` cache-buster is ignored here as it is there.",
+        "operationId": "get_usb_track_anlz_api_v1_usb_tracks__track_id__anlz_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max length of each waveform band array after downsampling",
+            "in": "query",
+            "name": "points",
+            "required": false,
+            "schema": {
+              "default": 38400,
+              "description": "Max length of each waveform band array after downsampling",
+              "maximum": 38400,
+              "minimum": 100,
+              "title": "Points",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Anlz Api V1 Usb Tracks  Track Id  Anlz Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Anlz",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/artwork": {
+      "get": {
+        "description": "The pdb's pre-rendered jpg: ``s`` as named, ``m``/``orig`` its ``_m``\nsibling (the largest rendering rekordbox writes to a stick).",
+        "operationId": "get_usb_track_artwork_api_v1_usb_tracks__track_id__artwork_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "s=80x80 browser rows; m and orig = the 240x240 _m jpg",
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "s",
+              "description": "s=80x80 browser rows; m and orig = the 240x240 _m jpg",
+              "enum": [
+                "s",
+                "m",
+                "orig"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Artwork Api V1 Usb Tracks  Track Id  Artwork Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Artwork",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/audio": {
+      "get": {
+        "description": "Stream the stick's file. FileResponse handles Range/206 and HEAD, as\nthe library's ``/tracks/{id}/audio`` does.\n\nA subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,\nso a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)\nanswers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.",
+        "operationId": "get_usb_track_audio_api_v1_usb_tracks__track_id__audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Track Audio Api V1 Usb Tracks  Track Id  Audio Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Audio",
+        "tags": [
+          "usb"
+        ]
+      },
+      "head": {
+        "description": "Stream the stick's file. FileResponse handles Range/206 and HEAD, as\nthe library's ``/tracks/{id}/audio`` does.\n\nA subprocess probe opens the file under ``AUDIO_ACCESS_TIMEOUT_S`` first,\nso a kernel-blocked ``open()`` (a pending macOS Removable Volumes prompt)\nanswers 503 ``AUDIO_ACCESS_BLOCKED`` instead of hanging the worker.",
+        "operationId": "head_usb_track_audio_api_v1_usb_tracks__track_id__audio_head",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Head Usb Track Audio Api V1 Usb Tracks  Track Id  Audio Head"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Track Audio",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/tracks/{track_id}/hot-cues": {
+      "get": {
+        "description": "Eight slots from the stick's own cues, the library's shape. Read only:\nno PUT/DELETE/restore exists here, so a revision is only an identity for\nthe slot's current state and edits stay in the deck's session.",
+        "operationId": "list_usb_track_hot_cue_slots_api_v1_usb_tracks__track_id__hot_cues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HotCueSlotOut"
+                  },
+                  "title": "Response List Usb Track Hot Cue Slots Api V1 Usb Tracks  Track Id  Hot Cues Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 List Usb Track Hot Cue Slots Api V1 Usb Tracks  Track Id  Hot Cues Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "List Usb Track Hot Cue Slots",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
     "/api/v1/usb/volumes": {
       "get": {
         "operationId": "get_usb_volumes_api_v1_usb_volumes_get",
@@ -37640,6 +39082,97 @@
           }
         },
         "summary": "Usb Volume Events",
+        "tags": [
+          "usb"
+        ]
+      }
+    },
+    "/api/v1/usb/volumes/{volume_id}/library": {
+      "get": {
+        "description": "The stick's rekordbox library from ``export.pdb`` alone (no ANLZ read).\n\nCached per VolumeUUID while ``export.pdb``'s size and mtime are\nunchanged; ``cache_hit`` and ``read_ms`` say which path this was.",
+        "operationId": "get_usb_stick_library_api_v1_usb_volumes__volume_id__library_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "volume_id",
+            "required": true,
+            "schema": {
+              "title": "Volume Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickLibraryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_PATH_OUTSIDE_VOLUME: the pdb path resolves outside the stick or outside the directory/extension this route may serve"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_STICK_NOT_MOUNTED (carries volume_uuid), USB_TRACK_NOT_FOUND, USB_FILE_MISSING or, for anlz and hot-cues, ANALYSIS_NOT_FOUND (the track's ANLZ files hold no readable tag)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_VOLUME_HAS_NO_UUID: the volume id is path-based or its UUID is not canonical, so its stick ids would not be stable"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsbStickErrorOut"
+                }
+              }
+            },
+            "description": "USB_TRACK_ID_INVALID or USB_VOLUME_ID_INVALID"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/UsbCapabilityErrorOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UsbStickErrorOut"
+                    }
+                  ],
+                  "title": "Response 503 Get Usb Stick Library Api V1 Usb Volumes  Volume Id  Library Get"
+                }
+              }
+            },
+            "description": "usb_volume_discovery_unavailable (the volume list's own refusal), USB_STICK_ACCESS_BLOCKED (reading export.pdb was refused or did not return within AUDIO_ACCESS_TIMEOUT_S) or, for audio, AUDIO_ACCESS_BLOCKED"
+          }
+        },
+        "summary": "Get Usb Stick Library",
         "tags": [
           "usb"
         ]

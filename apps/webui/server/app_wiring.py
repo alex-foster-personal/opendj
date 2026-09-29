@@ -142,6 +142,7 @@ from .routes import telemetry as telemetry_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
+from .routes import usb_tracks as usb_tracks_routes
 from .routes import usb_volumes as usb_volumes_routes
 from .routes import usb_volumes_sim as usb_volumes_sim_routes
 from .routes import vocals as vocals_routes
@@ -574,6 +575,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         spotify_routes.router,
         usb_export_routes.router,
         usb_volumes_routes.router,
+        usb_tracks_routes.router,
     )
     for router in prefixed:
         app.include_router(router, prefix=api_prefix)

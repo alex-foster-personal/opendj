@@ -1,8 +1,11 @@
 /** Thin client for POST /api/v1/tracks/{stable_id}:reveal (issue #2286). */
 
 import { API_BASE, RbApiError } from '$lib/api';
+import { refuseStickRead } from './track-source';
 
 export async function revealTrack(stableId: string): Promise<void> {
+	// Spec 4b: reveal resolves a library file; no stick route exists.
+	refuseStickRead(stableId, 'reveal');
 	const r = await fetch(
 		`${API_BASE}/api/v1/tracks/${encodeURIComponent(stableId)}:reveal`,
 		{ method: 'POST' }

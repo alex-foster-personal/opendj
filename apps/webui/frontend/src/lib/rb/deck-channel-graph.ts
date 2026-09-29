@@ -153,6 +153,9 @@ export interface LoadedDeckRecreateSnap {
 	loop: LoopState | null;
 	stableId: string;
 	stemsReady: boolean;
+	/** A stem upgrade was in flight (STEM-37 can wait minutes on R2): the
+	 * rebuild must restart it on the new context, or stems never land. */
+	stemsLoading: boolean;
 }
 
 export async function reattachLoadedDeckProcessors(deps: {
@@ -219,8 +222,14 @@ export async function rebuildKeepingLoadedDecks(deps: {
 	}
 	deps.disarmInstrumentation();
 	nodes.push(...deps.extraDisposeNodes());
-	await deps.disposeResources({ processors, nodes });
-	deps.resetGraphState();
+	try {
+		await deps.disposeResources({ processors, nodes });
+	} finally {
+		// IOPIN-12: reset even when the old graph's teardown rejects. Every deck above
+		// has had its nodes cleared, so a skipped reset keeps the old context installed
+		// and each later load fails "audio graph is missing" for the rest of the session.
+		deps.resetGraphState();
+	}
 	const ctx = deps.ensureGraph();
 	await deps.reattach(ctx, snaps);
 }
@@ -251,7 +260,8 @@ export function snapLoadedDeck(
 		keyShiftSemitones: rt.controlKeyShiftSemitones,
 		loop: rt.controlLoop,
 		stableId: st.stable_id ?? '',
-		stemsReady: st.stems.status === 'ready'
+		stemsReady: st.stems.status === 'ready',
+		stemsLoading: st.stems.status === 'loading'
 	};
 }
 
@@ -388,3 +398,15 @@ export async function recreateEngineGraph(bindings: EngineGraphRecreateBindings)
 			})
 	});
 }
+
+// Re-exported so audio-engine.svelte.ts, already coupled to this module for
+// its channel graph, does not take a separate direct fan-out edge for DJ
+// output-topology wiring (same engine-graph concern, different file).
+export {
+	cueOnlyMonitoringActive,
+	parseDjOutputProfile,
+	resolveDjOutputProfile,
+	wireAudioOutputTopology,
+	type DjOutputProfile
+} from '$lib/rb/audio-output-topology';
+export { clearDjOutputResolution, publishDjOutputResolution } from '$lib/rb/audio-output-status.svelte';

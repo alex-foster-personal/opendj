@@ -38,7 +38,7 @@ from tests.opendj_cli import ts_contract
 _SAMPLE_TOKENS = (
     "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
-    "beatgrid", "own", "practice", "hybrid",
+    "beatgrid", "own", "practice", "hybrid", "pickup",
 )
 
 

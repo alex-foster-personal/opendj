@@ -11,6 +11,7 @@ through the CLI ``export`` subcommand end-to-end to pin the wiring.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,9 @@ from apps.open_dj.wire import library_to_wire_document
 # the schema's regexes (``^[0-9a-f]{40}$`` and ``^sha256:[0-9a-f]{64}$``).
 _TRACK_ID = "a" * 40
 _CONTENT_HASH = "sha256:" + ("b" * 64)
+# library_to_wire_document() requires an explicit modified_at (no
+# wall-clock default -- see apps.open_dj.provenance module docstring).
+_MODIFIED_AT = datetime(2026, 1, 5, 12, 30, 0, tzinfo=UTC)
 
 
 def _minimal_library() -> OpenDjLibrary:
@@ -79,7 +83,9 @@ class TestExportV02WireSchema:
     """Export must produce schema-valid v0.2 documents (codex P15 finding)."""
 
     def test_library_to_wire_document_validates(self) -> None:
-        doc = library_to_wire_document(_minimal_library(), source="serato")
+        doc = library_to_wire_document(
+            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
+        )
 
         # Top-level shape: spec-mandated keys present, no stale ones.
         assert doc["schema_version"] == "0.2"
@@ -96,7 +102,9 @@ class TestExportV02WireSchema:
         )
 
     def test_provenance_envelopes_on_authored_fields(self) -> None:
-        doc = library_to_wire_document(_minimal_library(), source="serato")
+        doc = library_to_wire_document(
+            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
+        )
         track = doc["tracks"][0]
 
         # bpm / key / rating must be ProvenanceValue objects, not scalars.
@@ -113,7 +121,9 @@ class TestExportV02WireSchema:
         assert track["rating"]["value"] == 5
 
     def test_cue_loop_alias_splits_into_loop_in_loop_out(self) -> None:
-        doc = library_to_wire_document(_minimal_library(), source="serato")
+        doc = library_to_wire_document(
+            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
+        )
         cues = doc["tracks"][0]["cue_points"]
         types = [c["type"] for c in cues]
         assert "loop" not in types, "convenience alias must not leak to wire"
@@ -125,7 +135,9 @@ class TestExportV02WireSchema:
         assert loop_out["position_ms"] == loop_in["position_ms"] + 4_000
 
     def test_beats_collapse_to_beatgrid_object(self) -> None:
-        doc = library_to_wire_document(_minimal_library(), source="serato")
+        doc = library_to_wire_document(
+            _minimal_library(), source="serato", modified_at=_MODIFIED_AT
+        )
         track = doc["tracks"][0]
         assert "beats" not in track, "in-memory per-anchor shape must not leak"
         grid = track["beatgrid"]

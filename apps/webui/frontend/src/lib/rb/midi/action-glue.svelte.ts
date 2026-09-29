@@ -47,6 +47,7 @@ import {
 	peekDeckMeterReading,
 	pitchRanges
 } from '$lib/rb/audio-engine.svelte';
+import { onMidiFaderMove } from '$lib/rb/fader-ghost.svelte';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import {
 	activeMidiControlId,
@@ -348,6 +349,7 @@ export function handleMidiAction(
 				}
 				setControllerEq(action.deck, action.band, v, pushToast, pressT0Ms);
 			} else if (action.target === 'fader') {
+				onMidiFaderMove(action.deck, v, mixerState.channels[action.deck].fader);
 				void dispatchPerformanceCommand({ type: 'fader', deck: action.deck, value: v }, pressT0Ms);
 			} else if (action.target === 'filter') {
 				void dispatchPerformanceCommand({ type: 'filter', deck: action.deck, value: v }, pressT0Ms);

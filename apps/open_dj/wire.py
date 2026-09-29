@@ -28,7 +28,7 @@ adapter output through (serato / traktor); module-family adapters
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from apps.open_dj.provenance import wrap
@@ -51,17 +51,23 @@ def library_to_wire_document(
     library: OpenDjLibrary,
     *,
     source: str = _DEFAULT_SOURCE,
-    modified_at: datetime | str | None = None,
+    modified_at: datetime | str,
 ) -> dict[str, Any]:
     """Return the v0.2 wire-format ``dict`` for ``library``.
 
     ``source`` is the :mod:`apps.open_dj.provenance` enum value stamped
     onto authored fields (``bpm``, ``key``, ``rating``). ``modified_at``
-    controls the timestamp; defaults to now-UTC.
+    stamps every provenance envelope in the document and is REQUIRED: the
+    typed :class:`apps.open_dj.schema.Track` layer has no per-track source
+    timestamp of its own (class-family serato/traktor adapters do not
+    expose one yet), so this function does not guess one via the wall
+    clock -- the caller (``open-dj-tool export``) decides and passes an
+    explicit value, once, at the export boundary. Passing ``datetime.now()``
+    there is a legitimate choice for a snapshot-time stamp; defaulting to
+    it silently inside this serializer is not, because it makes two calls
+    for the same untouched library disagree on output bytes whenever they
+    straddle a wall-clock second.
     """
-    if modified_at is None:
-        modified_at = datetime.now(UTC).replace(microsecond=0)
-
     doc: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "kind": "library",

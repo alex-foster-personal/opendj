@@ -5,8 +5,9 @@
  * Split out of the former lib/rb/types.ts god module.
  */
 
-import type { DeckId } from './deck-slots';
 import type { HeadphoneAlignmentMode } from '$lib/player/constants';
+import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
+import type { DeckId } from './deck-slots';
 
 /** EQ band selector for AudioEngine.setEq. */
 export type EqBand = 'low' | 'mid' | 'high';
@@ -63,6 +64,7 @@ export type CueAlignStep =
 	| 'mic_check_master'
 	| 'mic_check_cue'
 	| 'measuring'
+	| 'verifying'
 	| 'applied'
 	| 'failed';
 
@@ -89,6 +91,23 @@ export interface HeadphoneCalibrationDiagnostics {
 	spread_ms: number | null;
 }
 
+/** One stage-one attempt, in the serialized read model. The snake_case twin of
+ * `CueAlignProbe` (player/cue-align.svelte.ts), which is the controller's own
+ * camelCase shape. It lives here because the ear-cup step is interactive: the
+ * operator moves the cup and watches `best` climb toward `threshold`, so an
+ * agent driving the same step over IPC or HTTP needs the same numbers. Null
+ * between runs and outside stage one. */
+export interface HeadphoneCalibrationProbe {
+	bus: 'cue' | 'master';
+	gain: number;
+	/** Null while this rung is still playing. */
+	peak: number | null;
+	/** What this attempt measured, null while it is still playing. */
+	lag_ms: number | null;
+	best: number;
+	threshold: number;
+}
+
 /** Live calibration progress, mirrored as `GET /headphones.calibration`.
  * Seeded from the persisted last calibration on load so the offset survives a
  * reload; the latencies are null until a run has measured them. */
@@ -98,6 +117,10 @@ export interface HeadphoneCalibrationState {
 	master_latency_ms: number | null;
 	/** `cue_latency_ms - master_latency_ms`: positive means the phones are behind the room. */
 	offset_ms: number | null;
+	/** Residual cue-minus-master offset after the post-apply verification chirp, null until verified. */
+	verify_residual_ms: number | null;
+	/** Live stage-one level find. What the modal's bar draws, so an agent sees it too. */
+	probe: HeadphoneCalibrationProbe | null;
 	error: string | null;
 	diagnostics: HeadphoneCalibrationDiagnostics;
 }
@@ -159,6 +182,8 @@ export interface HeadphoneState {
 	supported: boolean;
 	active: boolean;
 	error: string | null;
+	/** Live output liveness verdict from the monitor path; absent until probed. */
+	liveness_verdict?: LivenessVerdict;
 }
 
 /** Whole mixer surface including the real headphone cue bus. */

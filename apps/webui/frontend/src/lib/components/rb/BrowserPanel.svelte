@@ -85,7 +85,15 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs
+		PlaylistSetTabs,
+		usbPaneSource,
+		isRemovedStickRow,
+		registerBrowseAdapter,
+		browserNavigationMayHandle,
+		browserSelectionDelta,
+		moveBrowserFocus,
+		type BrowserFocusZone,
+		openIoView
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -98,6 +106,7 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
+	import { computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -112,13 +121,6 @@
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
-	import { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
-	import {
-		browserNavigationMayHandle,
-		browserSelectionDelta,
-		moveBrowserFocus,
-		type BrowserFocusZone
-	} from '$lib/rb/browser-navigation';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
@@ -154,6 +156,7 @@
 		setLibraryDensity,
 		setPlaylistTreeWidth,
 		setNextOnlyFilter,
+		setAvailableOfflineFilter,
 		setRemixesFilter,
 		setVocalsFilter,
 		uiPrefs,
@@ -165,8 +168,8 @@
 		hydrateRuntimePolicy,
 		playlistMostlyBroken
 	} from '$lib/rb/runtime-policy.svelte';
-	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
-	import { pushToast } from '$lib/stores.svelte';
+	import { PREVIEW_SUPERSEDED, previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
+	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -211,6 +214,8 @@
 		makeClientRowProvider,
 		multiPanePlaylistIds,
 		reconcileBootSnapshot,
+		canAddPaneSlot,
+		MAX_PANE_SLOTS,
 		reorderPanesInPlace,
 		parseLv1,
 		resolveBootPlaylist,
@@ -218,6 +223,7 @@
 		shouldRetryBootPane,
 		writeLv1,
 		rowHasVocalLyrics,
+		rowIsLocallyAvailable,
 		rowIsRemix,
 		sortRows,
 		visibleRowsOf,
@@ -269,12 +275,7 @@
 	// 4 independent PaneStore instances - selection, search, sort, and
 	// scroll cursor per pane survive tab switches. Only the active pane
 	// is mounted (one TrackTable) - a deliberate perf choice, kept.
-	const panes: PaneStore[] = [
-		createPaneStore(),
-		createPaneStore(),
-		createPaneStore(),
-		createPaneStore()
-	];
+	const panes: PaneStore[] = [createPaneStore()];
 	let activePane = $state(0);
 	/** IOPIN-01: ownership is application state, not incidental DOM focus. */
 	let browserFocus = $state<BrowserFocusZone>('tracks');
@@ -531,8 +532,9 @@
 	const treeNodes = $derived(
 		playlists
 			.slice()
-			// With Broken unchecked, playlists below the existing 30% playable
-			// threshold, including zero-track empty entries, vanish from the tree.
+			// With Broken unchecked, playlists below the server min playable-track
+			// count (hide_broken_playlist_min_available_tracks), including empty
+			// entries, vanish from the tree.
 			// A playlist still inside its create grace stays: the '+' flow needs
 			// the brand-new blank reachable so PlaylistTree can focus its rename.
 			.filter(
@@ -597,24 +599,24 @@
 
 	/** Reference for next-only: master, else playing loaded, else any loaded with key+BPM. */
 	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
-		const states = DECK_IDS.map((d) => decks[d]);
-		const ordered = [
-			...states.filter((s) => s.is_master && s.stable_id !== null),
-			...states.filter((s) => s.playing && s.stable_id !== null),
-			...states.filter((s) => s.stable_id !== null)
-		];
-		for (const s of ordered) {
-			if (s.key !== null && s.bpm !== null && s.bpm > 0) {
-				return { key: s.key, bpm: s.bpm };
-			}
-		}
-		return null;
+		const slices = DECK_IDS.map((d) => {
+			const s = decks[d];
+			return {
+				is_master: s.is_master,
+				playing: s.playing,
+				stable_id: s.stable_id,
+				key: s.key,
+				bpm: s.bpm
+			};
+		});
+		return computeNextOnlyRef(slices);
 	});
 
 	function _applyLibraryFilters(rows: BrowserRow[]): BrowserRow[] {
 		let out = rows;
 		if (uiPrefs.remixes_filter) out = out.filter(rowIsRemix);
 		if (uiPrefs.vocals_filter) out = out.filter(rowHasVocalLyrics);
+		if (uiPrefs.available_offline_filter) out = out.filter(rowIsLocallyAvailable);
 		return out;
 	}
 
@@ -1400,13 +1402,20 @@
 		if (isAutolistId(snap.playlist_id)) {
 			return autolistNode(autolistTitle, 0);
 		}
-		if (snap.playlist_id.startsWith('taglist:')) {
+		// Prefix-addressed panes (taglists, Play from USB sticks) are not in
+		// the library tree; their names come from their own sources on load.
+		const prefixKind = snap.playlist_id.startsWith('taglist:')
+			? 'taglist'
+			: snap.playlist_id.startsWith('usbpl:')
+				? 'usb'
+				: null;
+		if (prefixKind !== null) {
 			return {
 				playlist_id: snap.playlist_id,
 				name: snap.playlist_name,
 				track_count: 0,
 				broken_count: 0,
-				kind: 'taglist',
+				kind: prefixKind,
 				children: []
 			};
 		}
@@ -1487,7 +1496,7 @@
 		const target = resolveNewTabIndex(panes);
 		if (target === null) {
 			pushToast(
-				'ALL 4 LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist',
+				`ALL ${MAX_PANE_SLOTS} LIBRARY TABS ARE LOCKED - unlock one (or free a non-sticky tab) before opening another playlist`,
 				'error'
 			);
 			return;
@@ -1515,6 +1524,12 @@
 	function togglePaneSticky(index: number): void {
 		if (index < 0 || index >= panes.length) return;
 		panes[index].sticky = !panes[index].sticky;
+	}
+
+	function addBlankPaneSlot(): void {
+		if (!canAddPaneSlot(panes.length)) return;
+		panes.push(createPaneStore());
+		activePane = panes.length - 1;
 	}
 
 	function reorderPaneTabs(from: number, to: number): void {
@@ -1604,6 +1619,10 @@
 			// pane showing another playlist's tracks is still wrong on screen.
 			const requestedPlaylistId = p.playlist_id;
 			try {
+				if (p.kind === 'usb') {
+					await (await usbPaneSource()).refreshUsbPane(p);
+					continue;
+				}
 				const result =
 					requestedPlaylistId === 'all'
 						? await _fetchAllRows()
@@ -1933,6 +1952,30 @@
 		return { rows, truncated: page.total > rows.length, etag: '' };
 	}
 
+	function _pushPaneLoadError(
+		p: PaneStore,
+		node: PlaylistNode,
+		label: string,
+		error: string
+	): void {
+		const paneKey = p.playlist_id ?? node.playlist_id ?? 'pane';
+		pushToast(
+			`${label}: ${error}`,
+			'error',
+			TOAST_DEFAULT_MS,
+			new Error(error),
+			{
+				source: 'browser-pane-load',
+				playlist_id: node.playlist_id,
+				playlist_name: node.name,
+				pane_kind: node.kind
+			},
+			`browser-pane-load:${paneKey}`,
+			undefined,
+			{ feature: 'Library selection' }
+		);
+	}
+
 	async function _loadPane(p: PaneStore, node: PlaylistNode): Promise<void> {
 		// Every route into a pane funnels through here (tree click, new tab,
 		// back-stack, post-mutation refresh), so this is the one place that
@@ -1944,7 +1987,8 @@
 			node.kind !== 'missing_tracks' &&
 			node.kind !== 'taglist' &&
 			node.kind !== 'smartlist' &&
-			node.kind !== 'autolist'
+			node.kind !== 'autolist' &&
+			node.kind !== 'usb'
 		) {
 			setLastPlaylist({
 				playlist_id: node.playlist_id,
@@ -1959,6 +2003,13 @@
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
 		try {
+			if (node.kind === 'usb') {
+				// Play from USB (USBPLAY-05): rows come from the stick's export,
+				// read only; the store also grays and restores them on unplug.
+				const failure = await (await usbPaneSource()).loadUsbPane(p, seq, () => panes);
+				if (failure !== null) pushToast(`playlist load failed: ${failure}`, 'error');
+				return;
+			}
 			if (node.kind === 'autolist') {
 				await fillAutolistPane({
 					pane: p,
@@ -1968,7 +2019,11 @@
 					fetchPage: (offset, limit) => queryAutolists(autolistSelection, offset, limit),
 					mapRow: (wire, order) =>
 						_rowFromPlaylistWire(wire as PlaylistTrackRowWire, order),
-					onFillError: (error) => pushToast(`autolist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'autolist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -1989,7 +2044,11 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'playlist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -2006,7 +2065,11 @@
 						completeLibraryUsable({ source: 'all-tracks' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('all-tracks', info),
-					onFillError: (error) => pushToast(`taglist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'taglist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -2032,7 +2095,11 @@
 						completeLibraryUsable({ source: 'playlist' });
 					},
 					onComplete: (info) => recordLibraryLoadTiming('playlist', info),
-					onFillError: (error) => pushToast(`playlist load failed: ${error}`, 'error')
+					onFillError: (error) => {
+						if (p.failLoad(seq, error)) {
+							_pushPaneLoadError(p, node, 'playlist load failed', error);
+						}
+					}
 				});
 				return;
 			}
@@ -2047,7 +2114,7 @@
 			}
 		} catch (exc) {
 			if (p.failLoad(seq, String(exc))) {
-				pushToast(`playlist load failed: ${String(exc)}`, 'error');
+				_pushPaneLoadError(p, node, 'playlist load failed', String(exc));
 			}
 		}
 	}
@@ -2069,13 +2136,13 @@
 				children: []
 			};
 		}
-		if (p.playlist_id.startsWith('taglist:')) {
+		if (p.playlist_id.startsWith('taglist:') || p.kind === 'usb') {
 			return {
 				playlist_id: p.playlist_id,
 				name: p.title,
 				track_count: p.rows.length,
 				broken_count: 0,
-				kind: 'taglist',
+				kind: p.kind === 'usb' ? 'usb' : 'taglist',
 				children: []
 			};
 		}
@@ -2182,7 +2249,8 @@
 		// stayed empty even when /artwork could serve real bytes. Unmapped
 		// rows now pay the same one-fetch-per-visible-row cost mapped rows
 		// already pay via this same IntersectionObserver-gated path.
-		if (row.rb_meta !== null || _inflight.has(row.stable_id)) return;
+		// Stick rows (usb- ids) have no library row: rb-meta would only 404.
+		if (row.rb_meta !== null || row.stable_id.startsWith('usb-') || _inflight.has(row.stable_id)) return;
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
@@ -2214,6 +2282,10 @@
 	// ------------------------------------------------------- rating edits
 
 	function rateRow(row: BrowserRow, next: number): void {
+		if (row.stable_id.startsWith('usb-')) {
+			pushToast('stick tracks are read only: the rating was not saved', 'error');
+			return;
+		}
 		void _patchRating(row, next);
 	}
 
@@ -2499,6 +2571,10 @@
 			pushToast('preview: availability still checking (wait for disk probe)', 'error');
 			return;
 		}
+		if (isRemovedStickRow(row)) {
+			pushToast('preview: Stick removed', 'error');
+			return;
+		}
 		if (!row.file_exists) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
@@ -2539,6 +2615,10 @@
 			}
 			if (_availabilityPending(row)) {
 				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
+				return;
+			}
+			if (isRemovedStickRow(row)) {
+				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
 			if (!row.file_exists) {
@@ -3273,6 +3353,7 @@
 
 <section
 	class="rb-browser"
+	data-library-root
 	data-testid="browser-panel"
 	style:--playlist-tree-width={`${uiPrefs.playlist_tree_width}px`}
 >
@@ -3343,8 +3424,10 @@
 				onreorder={reorderPaneTabs}
 				ondropplaylist={dropPlaylistOnTabBar}
 				onsaveas={(i) => void saveAsPlaylistUi(i)}
+				onaddpane={addBlankPaneSlot}
 			/>
 			<div class="header-right">
+				<div class="header-controls-cluster">
 				<button
 					class="rb-lit-button rb-inert master-dd"
 					disabled
@@ -3460,6 +3543,18 @@
 					/>
 					<span>compatible</span>
 				</label>
+				<label
+					class="offline-filter"
+					title="Keep only tracks with local audio present (excludes cloud-only and streaming rows)"
+				>
+					<input
+						type="checkbox"
+						aria-label="Available offline - keep only tracks with local audio present"
+						checked={uiPrefs.available_offline_filter}
+						onchange={(e) => setAvailableOfflineFilter(e.currentTarget.checked)}
+					/>
+					<span>available offline</span>
+				</label>
 				{#if editablePane}
 					<AddTrackSearch onadd={addTrack} />
 				{/if}
@@ -3499,9 +3594,14 @@
 						onfocuschange={(f) => (searchFocused = f)}
 					/>
 				</div>
-				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
-				<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
-				<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
+				</div>
+				<div class="edit-actions-stack">
+					<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('find-replace')}>Find &amp; Replace</button>
+					<div class="edit-actions-fold">
+						<button class="rb-lit-button" disabled={pane.selected_ids.length === 0} onclick={() => void openEditModal('bulk-edit')}>Bulk Edit</button>
+						<button class="rb-lit-button" onclick={() => void openEditModal('mytag')}>MyTags</button>
+					</div>
+				</div>
 			</div>
 		</div>
 		{#if uiPrefs.auto_play_enabled && autoPlaySnapshotActive && !autoPlaySnapshotMatchesView}
@@ -3568,6 +3668,7 @@
 			searchQuery={pane.search}
 			findQuery={findHighlightQuery}
 			{suggestHoverId}
+			compatibleReferenceKey={nextOnlyRef?.key ?? null}
 		/>
 		{#if filterFallbackNote !== null}
 			<div class="filter-fallback-note" role="status">{filterFallbackNote}</div>
@@ -3659,6 +3760,34 @@
 					<p><strong>{dot.label}</strong><br />{dot.detail}</p>
 				{/each}
 			</div>
+		</div>
+		<div class="tray-right-cluster">
+			<button
+				type="button"
+				class="tray-midi"
+				aria-label="Open audio I/O and MIDI"
+				title="Open audio I/O view (MIDI connect)"
+				onclick={() => {
+					// Same entry as the mixer's I/O button: acquire the audio devices
+					// inside this click's user gesture (selectAudioOutput needs it,
+					// and device labels stay locked without it), then open the view.
+					void runPerformanceCommandFromUi({ type: 'headphone_output_acquire' });
+					openIoView();
+				}}
+			>
+				MIDI
+			</button>
+			<button
+				type="button"
+				class="tray-preview"
+				class:active={previewCue.playing}
+				disabled={!previewCue.playing}
+				aria-label={previewCue.playing ? 'Stop library preview' : 'Library preview cue'}
+				title={previewCue.playing ? 'Stop library preview' : 'No preview playing: click a mini-waveform to start one'}
+				onclick={() => void stopPreviewCue()}
+			>
+				Preview
+			</button>
 		</div>
 		<!-- The build identity lives at the RIGHT end of this tray on
 		     /performance. It used to be position:fixed bottom-left, sitting on
@@ -3798,21 +3927,32 @@
 	}
 	.header-right {
 		display: flex;
-		align-items: center;
-		/* Wraps rather than overflowing. At 1280px an editable playlist mounts
-		   the 190px AddTrackSearch alongside these controls, and .list-panel
-		   is overflow: hidden, so a non-wrapping row silently clipped its
-		   rightmost buttons (Bulk Edit, MyTags) out of reach instead of
-		   running past the edge visibly. Bot review, PR #1672.
-		   `flex: 0 1 auto` with `min-width: 0` is load-bearing: at the old
-		   `flex: none` this box sized to max-content, so `flex-wrap` had no
-		   narrower width to wrap INTO and did nothing at all. */
-		flex-wrap: wrap;
-		row-gap: 3px;
+		align-items: flex-start;
 		gap: 4px;
 		padding: 0 6px;
 		flex: 0 1 auto;
 		min-width: 0;
+	}
+	.header-controls-cluster {
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: center;
+		gap: 4px;
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.edit-actions-stack {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
+		flex: none;
+	}
+	.edit-actions-fold {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 3px;
 	}
 	.autoplay-snapshot-notice {
 		flex: none;
@@ -3839,6 +3979,8 @@
 		flex-direction: column;
 		align-items: flex-end;
 		gap: 3px;
+		flex: 1 1 auto;
+		min-width: 0;
 	}
 	.search-options {
 		display: flex;
@@ -3853,7 +3995,8 @@
 	.hide-broken,
 	.next-only,
 	.remixes-filter,
-	.vocals-filter {
+	.vocals-filter,
+	.offline-filter {
 		display: inline-flex;
 		align-items: center;
 		gap: 3px;
@@ -3865,13 +4008,15 @@
 	.hide-broken:hover,
 	.next-only:hover,
 	.remixes-filter:hover,
-	.vocals-filter:hover {
+	.vocals-filter:hover,
+	.offline-filter:hover {
 		color: var(--rb-text);
 	}
 	.hide-broken input,
 	.next-only input,
 	.remixes-filter input,
-	.vocals-filter input {
+	.vocals-filter input,
+	.offline-filter input {
 		width: 10px;
 		height: 10px;
 		margin: 0;
@@ -3927,7 +4072,7 @@
 			max-height: 24px;
 			overflow: hidden;
 		}
-		.header-right {
+		.header-controls-cluster {
 			flex-wrap: nowrap;
 		}
 	}
@@ -3958,6 +4103,44 @@
 	}
 	.panels-chevron:hover {
 		color: var(--rb-accent);
+	}
+	.tray-right-cluster {
+		display: inline-flex;
+		align-items: center;
+		margin-left: auto;
+		gap: 0;
+	}
+	.tray-midi {
+		opacity: 0.45;
+		margin-right: 20px;
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 8px;
+		cursor: pointer;
+	}
+	.tray-midi:hover {
+		opacity: 0.75;
+		color: var(--rb-text);
+	}
+	.tray-preview {
+		background: transparent;
+		border: 1px solid var(--rb-border);
+		border-radius: 3px;
+		color: var(--rb-text-dim);
+		font-size: 10px;
+		padding: 2px 8px;
+		cursor: pointer;
+	}
+	.tray-preview:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.tray-preview.active {
+		color: var(--rb-accent);
+		border-color: var(--rb-accent);
 	}
 	.bottom-bar {
 		grid-area: bottom;

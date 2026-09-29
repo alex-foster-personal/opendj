@@ -8,16 +8,34 @@
 
 import { DECK_IDS } from '$lib/player/constants';
 import type { DeckState } from '$lib/rb/deck-state-types';
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import type { MixerState } from '$lib/rb/mixer-types';
 
 export type DjOutputProfile = 'master12-cue34';
+
+/** master12-cue34 carries master on 1/2 and cue on 3/4. */
+export const DJIO_REQUIRED_OUTPUT_CHANNELS = 4;
 
 export interface AudioOutputTopology {
 	externalMerger: ChannelMergerNode | null;
 	externalRouteAnalyser: AnalyserNode | null;
 	ownedNodes: AudioNode[];
 	multichannelMonitorActive: boolean;
+}
+
+/** Why a djio request is playing as ordinary stereo master instead. */
+export interface DjOutputFallback {
+	requested: DjOutputProfile;
+	/** `AudioDestinationNode.maxChannelCount` of the output the context opened on. */
+	available_channels: number;
+	message: string;
+}
+
+export interface DjOutputResolution {
+	requested: DjOutputProfile | null;
+	/** The profile actually wired; null is ordinary stereo master. */
+	profile: DjOutputProfile | null;
+	fallback: DjOutputFallback | null;
 }
 
 export function parseDjOutputProfile(search: string): DjOutputProfile | null {
@@ -27,6 +45,56 @@ export function parseDjOutputProfile(search: string): DjOutputProfile | null {
 		throw new Error(`djio: unsupported profile '${value}' (expected master12-cue34)`);
 	}
 	return value;
+}
+
+/**
+ * IOPIN-12: decide what a djio request can actually wire on this output.
+ *
+ * The app cannot choose the macOS output device (WKWebView has no setSinkId),
+ * so a connected Mixtour map can request master12-cue34 while the laptop
+ * speakers are selected. That used to throw mid graph-build and take every
+ * deck down with it; it now degrades to stereo master and names the fix.
+ */
+export function resolveDjOutputProfile(
+	requested: DjOutputProfile | null,
+	maxChannelCount: number
+): DjOutputResolution {
+	if (requested === null) return { requested, profile: null, fallback: null };
+	if (maxChannelCount >= DJIO_REQUIRED_OUTPUT_CHANNELS) {
+		return { requested, profile: requested, fallback: null };
+	}
+	const message =
+		`Mixtour 4-channel output unavailable: this output has ${maxChannelCount} channels and ` +
+		`${requested} needs ${DJIO_REQUIRED_OUTPUT_CHANNELS}, so master plays in stereo and cue 3/4 is off. ` +
+		'Select the Mixtour Pro as the macOS output device and reload.';
+	return {
+		requested,
+		profile: null,
+		fallback: { requested, available_channels: maxChannelCount, message }
+	};
+}
+
+/** Hover text for the channel count a fallback quotes (numeric readouts carry a title). */
+export function djioFallbackTitle(fallback: DjOutputFallback): string {
+	return (
+		`${fallback.available_channels} = output channels the current macOS output device exposes to the app ` +
+		`(AudioDestinationNode.maxChannelCount). ${fallback.requested} needs ${DJIO_REQUIRED_OUTPUT_CHANNELS}: ` +
+		'master on 1/2, cue on 3/4.'
+	);
+}
+
+/**
+ * Where a connected controller's audio profile should send the page, or null
+ * when the page must stay put. A page that already names djio (a stereo
+ * fallback page keeps its param) is never redirected again, so the reload
+ * cannot loop; an explicit empty djio is the operator opting out; extroute is
+ * an explicit topology that djio would contradict.
+ */
+export function djioRedirectTarget(href: string, profile: DjOutputProfile): string | null {
+	const url = new URL(href);
+	if (url.searchParams.has('djio') || url.searchParams.has('extroute')) return null;
+	url.searchParams.set('djio', profile);
+	return url.toString();
 }
 
 function _makeDiscrete(node: AudioNode & { channelCount: number }): void {

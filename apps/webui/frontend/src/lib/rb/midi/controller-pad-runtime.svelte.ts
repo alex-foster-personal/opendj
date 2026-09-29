@@ -8,7 +8,7 @@
  */
 
 import { deckStates, mixerState } from '$lib/rb/audio-engine.svelte';
-import type { DeckId } from '$lib/rb/deck-slots';
+import type { DeckId } from '$lib/rb/deck-id';
 import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
