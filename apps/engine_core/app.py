@@ -41,6 +41,8 @@ from apps.engine_core.account.api import (
 )
 from apps.engine_core.app_posture_api import add_app_posture_route
 from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.audio_engine import AudioEngineSupervisor, autostart_from_environ
+from apps.engine_core.audio_engine_api import add_audio_engine_routes
 from apps.engine_core.audio_interference_api import add_audio_interference_route
 from apps.engine_core.availability_api import add_availability_routes
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
@@ -191,6 +193,17 @@ def create_app(
     add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
+    # Plan 20-02: this engine supervises odj-audio (the shell only bundles it
+    # and sets ODJ_AUDIO_BIN). ODJ_AUDIO_ENGINE is read here so a bad value
+    # stops the boot rather than surfacing on the first request.
+    try:
+        autostart_from_environ(os.environ)
+    except ValueError as exc:
+        raise EngineBootError(str(exc)) from exc
+    audio_engine = AudioEngineSupervisor(
+        environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
+    )
+    add_audio_engine_routes(app, audio_engine)
     app.state.engine_cfg = cfg
     add_rescue_routes(app)
 
@@ -219,6 +232,7 @@ def create_app(
         runner=runner,
         lock=lock,
         availability_worker=availability_worker,
+        audio_engine=audio_engine,
     )
     return app
 
@@ -419,6 +433,7 @@ def _wrap_lifespan(
     runner: JobRunner,
     lock: EngineLock | None,
     availability_worker: LibraryAvailabilityWorker,
+    audio_engine: AudioEngineSupervisor,
 ) -> None:
     """Wrap, never replace, the legacy lifespan.
 
@@ -470,9 +485,12 @@ def _wrap_lifespan(
                 instance.state.sync_hub_scheduler = sched
                 instance.state.folder_rescan_scheduler = folder_rescan
                 availability_worker.start()
+                audio_engine.autostart()
                 try:
                     yield
                 finally:
+                    # Off the event loop: stop() waits for the process.
+                    await asyncio.to_thread(audio_engine.stop)
                     availability_worker.stop()
         finally:
             if heartbeat is not None:

@@ -1,4 +1,3 @@
-# ruff: noqa: E501  (TOML inline tables in the fixtures cannot wrap)
 """scripts/lock_metadata_check.py: a stale uv.lock fails closed without resolution.
 
 - [if] pyproject.toml and uv.lock's root requires-dist agree [then] exit 0, [else stop]

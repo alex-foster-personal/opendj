@@ -59,6 +59,7 @@
 		setupOverlay
 	} from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { nativeShellKind, pickFolder } from '$lib/shell/native-shell';
 	import {
 		FOLDER_STAGE_LABELS,
 		STAGE_LABELS,
@@ -141,11 +142,9 @@
 
 	let refreshDecrypt = $state(false);
 
-	/** The global Tauri v2 injects into every window it owns. */
-	const TAURI_GLOBAL = '__TAURI_INTERNALS__';
-
-	function canUseNativeFolderPicker(scope: Record<string, unknown> = globalThis): boolean {
-		return scope[TAURI_GLOBAL] !== undefined && scope[TAURI_GLOBAL] !== null;
+	/** Either desktop shell (Tauri or Electron) offers a native picker; a tab does not. */
+	function canUseNativeFolderPicker(): boolean {
+		return nativeShellKind() !== null;
 	}
 
 	const nativeFolderPicker = canUseNativeFolderPicker();
@@ -155,12 +154,7 @@
 	async function chooseFolder(rowId: string): Promise<void> {
 		if (!canUseNativeFolderPicker()) return;
 		try {
-			const { open } = await import('@tauri-apps/plugin-dialog');
-			const selected = await open({
-				directory: true,
-				multiple: false,
-				title: 'Choose a folder'
-			});
+			const selected = await pickFolder('Choose a folder');
 			if (typeof selected === 'string') {
 				setupWizard.folderRows = setupWizard.folderRows.map((row) =>
 					row.id === rowId ? { ...row, path: selected, scan: null } : row
