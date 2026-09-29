@@ -232,7 +232,9 @@ impl TrackCache {
         let file = {
             let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
             // A file nobody else is loading (only the map holds its slot) and
-            // no deck holds is forgotten. Its lock cannot be contended then.
+            // no deck holds is forgotten. Only a load that cloned a slot ever
+            // locks it, and a cloned slot is kept without being locked, so
+            // this never waits on another file's decode.
             files.retain(|_, f| {
                 Arc::strong_count(f) > 1 || f.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|t| t.strong_count() > 0)
             });
@@ -851,6 +853,58 @@ fn render_within(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_decode_in_progress_holds_back_only_loads_of_its_own_file() {
+        use std::time::Duration;
+        // Codex on 8a6342f1 feared the prune step locks every file's entry,
+        // including one held through a slow decode, while holding the map.
+        // It skips any entry a load holds a clone of, which is the only way
+        // an entry is ever locked, so another file's load goes ahead.
+        let d = std::env::temp_dir().join(format!("odj-cache-independent-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let write = |name: &str| {
+            let p = d.join(name);
+            let mut f = std::io::BufWriter::new(std::fs::File::create(&p).unwrap());
+            crate::wav::write_f32(&mut f, 48000, &[0.0; 9600]).unwrap();
+            p
+        };
+        let (a, b) = (write("a.wav"), write("b.wav"));
+        let spec = LoadSpec { deck: 1, path: String::new(), beats: vec![], bpm: None };
+        let cache = Arc::new(TrackCache::default());
+        // A load of a.wav mid-decode: its entry cloned out of the map and
+        // locked, exactly as `load` holds it across `decode_file_within`.
+        let entry = cache.files.lock().unwrap().entry(FileKey::of(&a)).or_default().clone();
+        let decoding = entry.lock().unwrap();
+        let load_in_thread = |path: PathBuf| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (c, spec) = (cache.clone(), spec.clone());
+            std::thread::spawn(move || {
+                let _ = tx.send(c.load(&path, &spec).map(|t| t.frames));
+            });
+            rx
+        };
+        let other = load_in_thread(b.clone()).recv_timeout(Duration::from_secs(10));
+        // Control: a load of a.wav itself waits for that decode, and then
+        // goes ahead once it is done.
+        let same = load_in_thread(a.clone());
+        let waited = same.recv_timeout(Duration::from_millis(300)).is_err();
+        drop(decoding);
+        let after = same.recv_timeout(Duration::from_secs(10));
+        assert!(other.expect("a load of b.wav waited on a.wav's decode").unwrap() > 0);
+        assert!(waited, "a load of a.wav did not wait for the decode of a.wav in progress");
+        assert!(after.expect("a load of a.wav never went ahead").unwrap() > 0);
+        // And the prune still forgets what nobody holds: with every track
+        // dropped, a load leaves only its own file in the map, while a file
+        // a deck still holds is kept.
+        drop(entry);
+        let held_b = cache.load(&b, &spec).unwrap();
+        assert_eq!(cache.files.lock().unwrap().len(), 1, "a file nobody holds was kept");
+        cache.load(&a, &spec).unwrap();
+        assert_eq!(cache.files.lock().unwrap().len(), 2, "a file a deck holds was forgotten");
+        drop(held_b);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn a_render_never_runs_past_what_its_wav_file_holds() {
