@@ -93,11 +93,15 @@ test('five pushed toasts yield at most three visible in policy slice', async () 
 		const visible = policy.selectVisibleToasts(stores.toasts);
 		assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
 	} finally {
-		// Real 120s dismissal timers otherwise outlive assertions and race the file timeout.
+		// pushToast(..., 120_000) arms a REAL 120 s dismissal timer per toast
+		// (stores.svelte.ts _armTimer). Left armed, the three uncapped toasts held
+		// the process open past the suite's 120 s --test-timeout, failing the file
+		// after every assertion had passed. Dismiss through the production path so
+		// the real handles are cleared the moment the test ends.
 		const logIds = stores.toasts.map((toast) => toast.logId);
 		for (const logId of logIds) {
 			assert.equal(stores.dismissToast(logId), true);
 		}
-		assert.equal(stores.toasts.length, 0);
+		assert.equal(stores.toasts.length, 0, 'every toast dismissed, no timer left armed');
 	}
 });

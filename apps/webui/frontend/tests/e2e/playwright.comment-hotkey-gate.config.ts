@@ -49,6 +49,7 @@ import {
 	COMMENT_HOTKEY_GATE_API_PORT,
 	COMMENT_HOTKEY_GATE_FRONTEND_PORT
 } from './vite.comment-hotkey-gate.config';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -83,7 +84,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: [
+			command: guardedWebServerCommand('comment-hotkey-gate-engine', [
 				// Only the feedback subtree is wiped before every run: pins from
 				// a PRIOR run stay in <data-dir>/feedback/comments.json and stack
 				// multiple `.fb-pin`s at identical coordinates, so a later run's
@@ -104,7 +105,7 @@ export default defineConfig({
 				'--host 127.0.0.1',
 				`--port ${COMMENT_HOTKEY_GATE_API_PORT}`,
 				'--prod'
-			].join(' '),
+			].join(' ')),
 			cwd: REPOSITORY_ROOT,
 			url: `${API_ORIGIN}/api/v1/health`,
 			reuseExistingServer: false,
@@ -136,7 +137,7 @@ export default defineConfig({
 			}
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.comment-hotkey-gate.config.ts',
+			command: guardedWebServerCommand('comment-hotkey-gate-vite', 'pnpm exec vite --config tests/e2e/vite.comment-hotkey-gate.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${FRONTEND_ORIGIN}/performance`,
 			reuseExistingServer: false,
