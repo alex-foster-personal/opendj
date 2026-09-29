@@ -11,8 +11,14 @@
 	// its own showClock (CHROME-06) without importing `auth` itself, which
 	// keeps TopBar's own import fan-out inside the quality ratchet (this
 	// file already exists for exactly that reason, see the note above).
-	let { children, signedIn = $bindable(false) }: { children: Snippet; signedIn?: boolean } =
-		$props();
+	// `menuOpen` is the bauble's own account menu, relayed by TopBar. That menu
+	// is a descendant of the explainer below, so moving onto it never dismisses
+	// the explainer, which then paints over Sign out (z-index 80 over 40).
+	let {
+		children,
+		signedIn = $bindable(false),
+		menuOpen = false
+	}: { children: Snippet; signedIn?: boolean; menuOpen?: boolean } = $props();
 
 	$effect(() => {
 		signedIn = auth.user !== null;
@@ -36,9 +42,10 @@
 		Account
 	</button>
 {/if}
+<!-- No bullets while the menu is open: the explainer has nothing rich to show, so it stays hidden. -->
 <ControlExplainer
 	title={auth.user ? 'Signed-in features' : 'Sign in required'}
-	bullets={loginGatedBullets}
+	bullets={menuOpen ? [] : loginGatedBullets}
 	showDelayMs={60}
 >
 	<span class="login-cluster" class:signed-in={auth.user !== null}>

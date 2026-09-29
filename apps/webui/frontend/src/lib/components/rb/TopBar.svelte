@@ -263,6 +263,8 @@
 	// `auth` directly here, which is what keeps this file's own import
 	// fan-out inside the quality ratchet (CHROME-05/06).
 	let signedIn = $state(false);
+	// The bauble's account menu, relayed so the account explainer hides while it is open.
+	let baubleMenuOpen = $state(false);
 
 	const showClock = $derived(
 		signedIn || cloudSyncChipState.value !== 'off'
@@ -839,8 +841,8 @@
 
 	<CloudSyncStatusChip />
 	<!-- Labeled signed out too: it is the only sign-in control on this route (AUTH-02). -->
-	<TopBarAccountCluster bind:signedIn>
-		<UserBauble size={20} showLabel />
+	<TopBarAccountCluster bind:signedIn menuOpen={baubleMenuOpen}>
+		<UserBauble size={20} showLabel bind:menuOpen={baubleMenuOpen} />
 	</TopBarAccountCluster>
 	{#if showClock}
 		<!-- clock: REAL, local time HH:MM - right of login bauble (CHROME-04) -->
