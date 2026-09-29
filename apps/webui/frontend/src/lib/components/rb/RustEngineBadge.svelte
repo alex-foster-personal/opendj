@@ -4,13 +4,29 @@
 	// carries the engine's start-up error when there is one. Fixed-position
 	// and outside the grid, like the AutoPlay stall banner.
 	import { onMount } from 'svelte';
+	import { watchRustInert } from '$lib/audio-engine/rust-inert';
 	import { ensureRustEngine, initRustMode, rustMode } from '$lib/audio-engine/rust-mode.svelte';
+
+	let inert = $state<ReturnType<typeof watchRustInert> | null>(null);
+	let held = $state<string[]>([]);
 
 	onMount(() => {
 		initRustMode();
+		if (!rustMode.enabled) return;
 		// Start the engine with the page, so the first load does not wait on
 		// it. A failure shows here; commands then fail with the same reason.
-		if (rustMode.enabled) ensureRustEngine().catch(() => {});
+		ensureRustEngine().catch(() => {});
+		// Gray out, page-wide, the controls this engine cannot play yet.
+		inert = watchRustInert(document.body);
+		return () => inert?.stop();
+	});
+
+	$effect(() => {
+		// What is unsupported changes when the engine says hello and when it
+		// first reports key lock.
+		void rustMode.notBuilt;
+		void rustMode.keyLock;
+		if (inert !== null) held = inert.refresh();
 	});
 
 	const label = $derived(
@@ -23,7 +39,8 @@
 	const title = $derived(
 		rustMode.status === 'error'
 			? `The Rust audio engine could not start: ${rustMode.error ?? 'no reason given'}. Switch back in Settings > Audio engine.`
-			: `Decks play through odj-audio (${rustMode.clock} clock), not Web Audio. Switch in Settings > Audio engine.`
+			: `Decks play through odj-audio (${rustMode.clock} clock), not Web Audio. Switch in Settings > Audio engine.` +
+				(held.length > 0 ? ` Not available yet, grayed out: ${held.join(', ')}.` : '')
 	);
 </script>
 

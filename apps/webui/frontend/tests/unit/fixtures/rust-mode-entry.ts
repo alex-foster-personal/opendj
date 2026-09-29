@@ -7,3 +7,5 @@
  */
 export * from '$lib/audio-engine/rust-mode.svelte';
 export { deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
+export { uiPrefs } from '$lib/rb/prefs.svelte';
+export { lateJumpPositionMs, SYNC_LEAD_SEC } from '$lib/audio-engine/rust-sync';

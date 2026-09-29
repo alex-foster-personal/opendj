@@ -769,8 +769,14 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
+/** Rust engine mode (NAE-13) drives hot cues through its own driver
+ * (`rustHotCueDriver`); Web Audio uses the engine-owned one above. */
+export function installPerformanceHotCueDriver(driver: PerformanceHotCueDriver): void {
+	_hotCueDriver = driver;
+}
+
 /** Narrow test seam for exercising the public IPC command protocol without
- * initializing Web Audio. Production always uses the engine-owned driver. */
+ * initializing Web Audio. */
 export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueDriver): () => void {
 	const previous = _hotCueDriver;
 	_hotCueDriver = driver;

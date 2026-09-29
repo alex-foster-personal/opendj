@@ -40,6 +40,10 @@ export interface EngineDeckState {
 	cue_ms: number | null;
 	/** The engaged loop, or null. */
 	loop: { in_ms: number; out_ms: number } | null;
+	/** Key lock, from a build with the time-stretcher (plan 20-04). */
+	master_tempo?: boolean;
+	/** Key shift in semitones, from the same builds. */
+	key_shift_semitones?: number;
 }
 
 export interface EngineState {
@@ -170,6 +174,8 @@ export class AudioEngineClient {
 	stateReceivedAt = 0;
 	connected = false;
 	generation = 0;
+	/** Page commands this engine build refuses as `not_implemented` (hello). */
+	notBuilt: ReadonlySet<string> = new Set();
 
 	private socket: SocketLike | null = null;
 	private nextId = 1;
@@ -204,6 +210,13 @@ export class AudioEngineClient {
 						socket.close();
 						return;
 					}
+					const notBuilt = msg.not_built;
+					if (!Array.isArray(notBuilt) || notBuilt.some((t) => typeof t !== 'string')) {
+						reject(new EngineUnreachableError('failed', `hello lacks its not_built list: ${String(ev.data)}`));
+						socket.close();
+						return;
+					}
+					this.notBuilt = new Set(notBuilt as string[]);
 					greeted = true;
 					this.connected = true;
 					resolve();

@@ -83,7 +83,7 @@ async function connected(overrides) {
 	const t = client(overrides);
 	const p = t.c.connect();
 	await new Promise((r) => setImmediate(r));
-	t.sockets[0].engine({ type: 'hello', protocol: 1, clock: 'wall' });
+	t.sockets[0].engine({ type: 'hello', protocol: 1, clock: 'wall', not_built: ['slip'] });
 	await p;
 	return t;
 }
@@ -131,7 +131,7 @@ test('a dropped socket rejects every waiting command and a reconnect re-reads th
 	await assert.rejects(c.send({ type: 'play', deck: 1, playing: false }), /not connected/);
 	const again = c.connect();
 	await new Promise((r) => setImmediate(r));
-	sockets[1].engine({ type: 'hello', protocol: 1 });
+	sockets[1].engine({ type: 'hello', protocol: 1, not_built: [] });
 	await again;
 	assert.equal(fetch.calls.length, 2, 'a restarted engine has a new token, so the route is read again');
 });
@@ -150,6 +150,17 @@ test('a first message that is not a v1 hello fails the connect', async () => {
 	t.sockets[0].engine({ type: 'hello', protocol: 2 });
 	await assert.rejects(p, /v1 hello/);
 	assert.equal(t.sockets[0].closed, true);
+});
+
+test('the hello names what this engine build refuses, and a hello without the list fails', async () => {
+	const { c } = await connected();
+	assert.deepEqual([...c.notBuilt], ['slip']);
+	const t = client();
+	const p = t.c.connect();
+	await new Promise((r) => setImmediate(r));
+	t.sockets[0].engine({ type: 'hello', protocol: 1 });
+	await assert.rejects(p, /not_built/);
+	assert.equal(t.c.connected, false);
 });
 
 test('the playhead extrapolates from the last acknowledged state only', async () => {

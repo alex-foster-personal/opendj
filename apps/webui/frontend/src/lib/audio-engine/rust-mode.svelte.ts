@@ -21,12 +21,18 @@
  *   the file and the beatgrid the waveform draws (own or rekordbox, per the
  *   analysis-source selection).
  *
+ * - Beat sync, master election, quantize, CUE and hot-cue triggers are
+ *   DECISIONS the page already makes with pure functions over our own
+ *   beatgrids (`rust-sync.ts` names them). This mode makes the same decisions
+ *   and sends the engine the result: a tempo ratio, a seek, a play.
+ *
  * What the Rust engine does not do yet is refused, never faked: its own
- * commands it has not built (sync, keylock, stems, hot-cue triggers, the
- * headphone cue bus) come back `not_implemented` naming the plan that brings
- * them, and page features that are bound to Web Audio internals throw
+ * commands it has not built (keylock, stems, the headphone cue bus) come back
+ * `not_implemented` naming the plan that brings them, the engine lists them in
+ * its hello so the page grays those controls out (`rustCommandUnsupported`),
+ * and page features that are bound to Web Audio internals throw
  * `RUST_ENGINE_UNAVAILABLE` naming the command. Everything else (library,
- * panels, feedback) runs on the page as before.
+ * panels, feedback, hot-cue editing, preview) runs on the page as before.
  */
 
 import { API_BASE } from '$lib/api/base';
@@ -38,35 +44,57 @@ import {
 	mixerState,
 	pitchRanges
 } from '$lib/player/state.svelte';
+import { effectiveBeatSync, gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 import { fetchHotCueSlots } from '$lib/rb/api-rb';
+import {
+	assertPausedMasterSelectionAllowed,
+	masterSwitchFollowers,
+	pausedMasterSelectionBlockers
+} from '$lib/rb/audio-engine-guards';
+import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
 import { displayLoopFrom } from '$lib/rb/beat-sync-math';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
-import type { PerformanceCommand } from '$lib/rb/performance-ipc.svelte';
+import { electMaster } from '$lib/rb/master-election';
+import {
+	installPerformanceHotCueDriver,
+	type PerformanceCommand,
+	type PerformanceHotCueDriver
+} from '$lib/rb/performance-ipc.svelte';
+import { uiPrefs } from '$lib/rb/prefs.svelte';
+import { pushToast } from '$lib/stores.svelte';
 import {
 	AUDIO_ENGINE_PATH,
 	AudioEngineClient,
 	type AudioEngineStatus,
+	type EngineCommand,
 	type EngineState
 } from './client';
+import {
+	electionInputFrom,
+	lateJumpPositionMs,
+	planRustFollowerJoin,
+	reanchorNeedsSeek,
+	rustCuePoint,
+	rustSeekTarget,
+	SYNC_LEAD_SEC,
+	type SyncDeckView
+} from './rust-sync';
 
 export const ENGINE_PREF_KEY = 'odj.audioEngine';
 
-/** Commands the engine owns, built or not. Built ones play; the rest come
- * back `not_implemented` from the engine with the plan that brings them. */
-export const ENGINE_COMMANDS: ReadonlySet<string> = new Set([
-	'load',
+/** Commands the engine plays as the page sends them. The ones this build has
+ * not made yet come back `not_implemented` naming the plan that brings them,
+ * and the engine lists them in its hello (`rustMode.notBuilt`). */
+export const FORWARDED: ReadonlySet<string> = new Set([
 	'unload',
-	'play',
-	'cue',
-	'seek',
 	'loop',
 	'beat_loop',
 	'beat_jump',
-	'tempo',
 	'pitch_range',
 	'master_tempo',
+	'key_nudge',
 	'trim',
 	'eq',
 	'filter',
@@ -76,29 +104,39 @@ export const ENGINE_COMMANDS: ReadonlySet<string> = new Set([
 	'master_volume',
 	'master_mute',
 	// Engine commands for later plans (protocol.rs LATER).
-	'key_nudge',
 	'key_sync',
 	'stem_mute',
 	'stem_solo',
 	'stem_gain',
 	'stem_eq_mode',
 	'slip',
-	'beat_sync',
-	'sync_mode',
-	'master',
-	'quantize',
-	'quantize_grid',
-	'hot_cue_trigger',
 	'channel_cue',
 	'headphone_mix',
 	'headphone_level',
 	'head_delay_ms',
 	'output_mode',
 	'headphone_output_select',
-	'headphone_master_select',
-	'preview_cue',
-	'preview_stop'
+	'headphone_master_select'
 ]);
+
+/** Commands whose decisions the page makes on its own beatgrids (the same pure
+ * functions the Web Audio engine uses), sending the engine the outcome. */
+export const PAGE_DECIDED: ReadonlySet<string> = new Set([
+	'play',
+	'cue',
+	'seek',
+	'tempo',
+	'beat_sync',
+	'sync_mode',
+	'master',
+	'quantize',
+	'quantize_grid'
+]);
+
+/** Every command this mode takes from the page. Hot-cue save, clear, restore
+ * and trigger stay the page's own and reach the engine through
+ * `rustHotCueDriver`; preview plays on the page's own preview player. */
+export const ENGINE_COMMANDS: ReadonlySet<string> = new Set(['load', ...FORWARDED, ...PAGE_DECIDED]);
 
 /** Page features whose implementation reaches into the Web Audio engine's
  * own clock, buffers or devices. Refused by name in this mode. */
@@ -109,9 +147,6 @@ export const WEB_AUDIO_ONLY: ReadonlySet<string> = new Set([
 	'safety_loop_save',
 	'safety_loop_arm',
 	'safety_loop_clear',
-	'hot_cue_save',
-	'hot_cue_clear',
-	'hot_cue_restore',
 	'headphone_outputs_refresh',
 	'headphone_output_acquire',
 	'headphone_input_select',
@@ -133,8 +168,25 @@ export const rustMode = $state({
 	enabled: false,
 	clock: 'device' as 'device' | 'wall',
 	status: 'off' as 'off' | 'starting' | 'connected' | 'error',
-	error: null as string | null
+	error: null as string | null,
+	/** What the connected engine build refuses (its hello). */
+	notBuilt: [] as string[],
+	/** Whether the engine reports key lock state (a build with the stretcher). */
+	keyLock: false
 });
+
+/**
+ * Whether a control that sends `type` does nothing in this mode, so the UI
+ * renders it inert with the PARITY-TODO title instead of failing on press.
+ * False whenever the Rust engine mode is off.
+ */
+export function rustCommandUnsupported(type: string): boolean {
+	initRustMode();
+	if (!rustMode.enabled) return false;
+	if (WEB_AUDIO_ONLY.has(type)) return true;
+	if (type === 'master_tempo') return !rustMode.keyLock;
+	return FORWARDED.has(type) && rustMode.notBuilt.includes(type);
+}
 
 /** Read the choice from `?engine=` (remembered) or the remembered value. */
 export function readEngineChoice(search: string, stored: string | null): EngineChoice {
@@ -193,6 +245,7 @@ export function initRustMode(): void {
 	}
 	rustMode.clock = clock ?? 'device';
 	rustMode.enabled = choice === 'rust';
+	if (rustMode.enabled) installPerformanceHotCueDriver(rustHotCueDriver);
 }
 
 let client: AudioEngineClient | null = null;
@@ -283,6 +336,7 @@ export async function ensureRustEngine(): Promise<AudioEngineClient> {
 					.map((d) => c.send({ type: 'unload', deck: d }))
 			);
 			client = c;
+			rustMode.notBuilt = [...c.notBuilt];
 			rustMode.status = 'connected';
 			rustMode.error = null;
 			_startRaf();
@@ -312,15 +366,458 @@ export async function executeInRustEngine(command: PerformanceCommand): Promise<
 		);
 	}
 	if (!ENGINE_COMMANDS.has(type)) return false;
-	const c = await ensureRustEngine();
+	await ensureRustEngine();
 	if (command.type === 'load') {
+		_cancelArmedJump(command.deck);
 		await loadRustDeck(command.deck, command.stable_id);
 		return true;
 	}
-	await c.send(command as unknown as { type: string } & Record<string, unknown>);
+	if (PAGE_DECIDED.has(type)) {
+		await _decide(command);
+		return true;
+	}
+	await _send(command as unknown as EngineCommand);
 	applyAcknowledged(command);
+	if (command.type === 'unload') {
+		_cancelArmedJump(command.deck);
+		if (rustMaster.deck === command.deck) _electIfAuto({ force: true });
+	}
 	return true;
 }
+
+function _send(cmd: EngineCommand): Promise<unknown> {
+	if (client === null) throw new Error('the Rust audio engine is not connected');
+	return client.send(cmd);
+}
+
+/** Stand in for the engine connection in unit tests. */
+export function installRustEngineClientForTest(fake: AudioEngineClient | null): void {
+	client = fake;
+	rustMode.status = fake === null ? 'off' : 'connected';
+	rustMode.notBuilt = fake === null ? [] : [...fake.notBuilt];
+}
+
+// ------------------------------------------------------ page-decided commands
+
+/** The page's master, as the Web Audio engine keeps `_masterDeck` and
+ * `_masterMode`. `is_master` on each deck mirrors `deck`. */
+export const rustMaster: { deck: DeckId | null; mode: 'auto' | 'locked' } = {
+	deck: null,
+	mode: 'auto'
+};
+
+const DECKS = [1, 2, 3, 4] as DeckId[];
+
+function _assignMaster(deck: DeckId | null): void {
+	rustMaster.deck = deck;
+	for (const d of DECKS) deckStates[d].is_master = d === deck;
+}
+
+/** The master that can drive Beat Sync phase: set and playing. */
+function _syncMaster(): DeckId | null {
+	const d = rustMaster.deck;
+	return d !== null && deckStates[d].playing ? d : null;
+}
+
+function _electIfAuto(options?: { force?: boolean }): void {
+	if (rustMaster.mode === 'locked' && !options?.force) return;
+	if (options?.force) rustMaster.mode = 'auto';
+	_assignMaster(electMaster(electionInputFrom(deckStates, mixerState)));
+}
+
+function _positionMs(deck: DeckId): number {
+	const st = deckStates[deck];
+	if (!st.playing) return st.position_ms;
+	return client?.positionMs(deck) ?? st.position_ms;
+}
+
+function _view(deck: DeckId, positionSec?: number): SyncDeckView {
+	const st = deckStates[deck];
+	return {
+		beats: st.anlz?.beatgrid.beats ?? [],
+		playing: st.playing,
+		positionSec: positionSec ?? _positionMs(deck) / 1000,
+		tempo: st.pitch
+	};
+}
+
+function _loaded(deck: DeckId, what: string): DeckState {
+	const st = deckStates[deck];
+	if (st.stable_id === null) throw new Error(`${what}: deck ${deck} is not loaded`);
+	return st;
+}
+
+function _pitchBounds(deck: DeckId): { min: number; max: number } {
+	const range = pitchRanges[deck] / 100;
+	return { min: Math.max(0.01, 1 - range), max: 1 + range };
+}
+
+function _setPlaying(deck: DeckId, playing: boolean): void {
+	const st = deckStates[deck];
+	st.playing = playing;
+	st.audible = playing;
+	st.transport_pending = false;
+}
+
+/**
+ * Lock `follower` to `master`. `play` starts it on the lock; `reanchor`
+ * re-phases a follower that is already locked, seeking only when its phase
+ * is off (`reanchorNeedsSeek`). A plan that cannot phase-lock throws.
+ */
+async function _join(
+	master: DeckId,
+	follower: DeckId,
+	options: {
+		play?: boolean;
+		reanchor?: boolean;
+		masterAtSec?: number | undefined;
+		followerAtSec?: number;
+	} = {}
+): Promise<void> {
+	const st = deckStates[follower];
+	const fv = _view(follower);
+	const join = planRustFollowerJoin(_view(master, options.masterAtSec), fv, {
+		leadSec: SYNC_LEAD_SEC,
+		mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode),
+		pitchRangePct: pitchRanges[follower],
+		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec })
+	});
+	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
+	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
+		cmds.push({ type: 'seek', deck: follower, position_ms: join.positionMs });
+	}
+	if (options.play) cmds.push({ type: 'play', deck: follower, playing: true });
+	// Sent together: the engine applies what arrives before its next block
+	// in that block, so tempo, position and start land as one.
+	await Promise.all(cmds.map(_send));
+	st.pitch = join.tempo;
+	st.sync_error = null;
+	if (options.play) _setPlaying(follower, true);
+}
+
+/** Re-phase playing followers after their master moved. A follower that
+ * cannot lock keeps playing and says why in `sync_error`, as on Web Audio. */
+async function _reanchor(
+	master: DeckId,
+	followers: readonly DeckId[],
+	masterAtSec?: number
+): Promise<void> {
+	await Promise.all(
+		followers.map((f) =>
+			_join(master, f, { reanchor: true, masterAtSec }).catch((e: unknown) => {
+				deckStates[f].sync_error = e instanceof Error ? e.message : String(e);
+			})
+		)
+	);
+}
+
+function _lockedFollowers(master: DeckId): DeckId[] {
+	return DECKS.filter(
+		(d) => d !== master && deckStates[d].playing && effectiveBeatSync(deckStates[d])
+	);
+}
+
+async function _play(deck: DeckId): Promise<void> {
+	const st = _loaded(deck, 'play');
+	const syncClock = _syncMaster();
+	const syncActive = effectiveBeatSync(st);
+	if (syncClock !== null && syncClock !== deck && syncActive) {
+		try {
+			await _join(syncClock, deck, { play: true });
+		} catch (e) {
+			const detail = e instanceof Error ? e.message : String(e);
+			st.sync_error = detail;
+			throw new Error(
+				`Beat Sync: deck ${deck} could not phase-lock to deck ${syncClock} (${detail})`,
+				{ cause: e }
+			);
+		}
+		return;
+	}
+	await _send({ type: 'play', deck, playing: true });
+	_setPlaying(deck, true);
+	st.sync_error = null;
+	if (rustMaster.mode === 'auto' && syncClock === null) {
+		_electIfAuto();
+		const elected = _syncMaster();
+		if (elected !== null && elected !== deck && syncActive) {
+			await _join(elected, deck, { reanchor: true });
+		}
+	}
+}
+
+async function _pause(deck: DeckId): Promise<void> {
+	const st = _loaded(deck, 'pause');
+	const at = _positionMs(deck);
+	_cancelArmedJump(deck);
+	await _send({ type: 'play', deck, playing: false });
+	_setPlaying(deck, false);
+	st.position_ms = at;
+	// The memory cue a pause leaves, snapped as the Web Audio engine snaps it.
+	st.cue_ms = rustCuePoint(st, at);
+	if (rustMaster.deck === deck) _electIfAuto();
+}
+
+/** The CUE button. Playing: back to the cue point and pause. Paused with no
+ * cue: set it here. Paused with a cue: go to it. */
+async function _pressCue(deck: DeckId): Promise<void> {
+	const st = _loaded(deck, 'pressCue');
+	if (st.playing) {
+		const target = st.cue_ms ?? 0;
+		_cancelArmedJump(deck);
+		await Promise.all([
+			_send({ type: 'seek', deck, position_ms: target }),
+			_send({ type: 'play', deck, playing: false })
+		]);
+		_setPlaying(deck, false);
+		st.position_ms = target;
+		if (rustMaster.deck === deck) _electIfAuto();
+		return;
+	}
+	if (st.cue_ms === null) {
+		st.cue_ms = rustCuePoint(st, st.position_ms);
+		return;
+	}
+	await _seek(deck, st.cue_ms, { quantize: true });
+}
+
+/** A seek: snapped to the deck's quantize grid when asked, out of an engaged
+ * loop when it lands outside it, and re-phased when the deck is a follower
+ * (or, with Beat Sync Max, when it is the master). */
+async function _seek(deck: DeckId, ms: number, options: { quantize: boolean }): Promise<void> {
+	const st = _loaded(deck, 'seek');
+	const durMs = st.duration_ms ?? Infinity;
+	if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
+		throw new RangeError(`seek: ms must be within 0..${Math.round(durMs)}, got ${ms}`);
+	}
+	const { targetMs, exitLoop } = rustSeekTarget(
+		options.quantize ? st : { ...st, quantize_enabled: false },
+		ms
+	);
+	if (targetMs > durMs) {
+		throw new RangeError(`seek: quantized target ${targetMs} exceeds duration ${durMs}`);
+	}
+	_cancelArmedJump(deck);
+	if (exitLoop) {
+		// Rekordbox: a seek outside an engaged loop leaves it.
+		await _send({ type: 'loop', deck, loop: null });
+		displayLoops[deck] = null;
+		st.loop = null;
+	}
+	const master = _syncMaster();
+	if (st.playing && effectiveBeatSync(st) && master !== null && master !== deck) {
+		await _join(master, deck, { followerAtSec: targetMs / 1000 });
+		st.position_ms = targetMs;
+		return;
+	}
+	await _send({ type: 'seek', deck, position_ms: targetMs });
+	st.position_ms = targetMs;
+	if (st.playing && uiPrefs.beat_sync_max && master === deck) {
+		await _reanchor(deck, _lockedFollowers(deck), targetMs / 1000);
+	}
+}
+
+async function _setTempo(deck: DeckId, ratio: number): Promise<void> {
+	const st = _loaded(deck, 'setTempoRatio');
+	if (!Number.isFinite(ratio) || ratio <= 0) {
+		throw new RangeError(`setTempoRatio: ratio must be > 0, got ${ratio}`);
+	}
+	const rangePct = pitchRanges[deck];
+	if (Math.abs(ratio - 1) * 100 > rangePct + 1e-9) {
+		throw new RangeError(
+			`setTempoRatio: ratio ${ratio} outside the selected +-${rangePct}% range on deck ${deck}`
+		);
+	}
+	const master = _syncMaster();
+	if (st.playing && effectiveBeatSync(st) && master !== null && master !== deck) {
+		throw new Error(`setTempoRatio: disable Beat Sync before changing follower deck ${deck}`);
+	}
+	await _send({ type: 'tempo', deck, ratio });
+	st.pitch = ratio;
+	if (master === deck) await _reanchor(deck, _lockedFollowers(deck));
+}
+
+async function _setBeatSync(deck: DeckId, enabled: boolean): Promise<void> {
+	if (typeof enabled !== 'boolean') throw new TypeError('setBeatSync: enabled must be boolean');
+	const st = deckStates[deck];
+	st.beat_sync_enabled = enabled;
+	if (!enabled) {
+		st.sync_error = null;
+		return;
+	}
+	// Same contract as Web Audio: the flag keeps the DJ's choice, a gridless
+	// deck has nothing to lock to, and that is said out loud.
+	if (gridFeaturesInert(st)) {
+		pushToast(`Deck ${deck} BEAT SYNC ${gridFeatureInertTip(st)}`, 'info');
+		return;
+	}
+	if (!st.playing) return;
+	let master = _syncMaster();
+	if (master === null) {
+		if (rustMaster.mode === 'locked' && rustMaster.deck !== null) return;
+		_electIfAuto();
+		master = _syncMaster();
+	}
+	if (master === null || master === deck) return;
+	try {
+		await _join(master, deck);
+	} catch (e) {
+		st.beat_sync_enabled = false;
+		const { min, max } = _pitchBounds(deck);
+		const detail = e instanceof Error ? e.message : String(e);
+		throw new Error(`cannot phase-lock within pitch [${min}, ${max}] (BAR): ${detail}`, {
+			cause: e
+		});
+	}
+}
+
+async function _setDeckMaster(deck: DeckId, lock: boolean | undefined): Promise<void> {
+	const st = _loaded(deck, 'setDeckMaster');
+	const applyLock = (): void => {
+		if (lock === true) rustMaster.mode = 'locked';
+		else if (lock === false) {
+			rustMaster.mode = 'auto';
+			if (!st.playing) _electIfAuto();
+		}
+	};
+	if (!st.playing) {
+		if (lock === false && rustMaster.deck === deck) return applyLock();
+		assertPausedMasterSelectionAllowed(
+			deck,
+			st.audible,
+			pausedMasterSelectionBlockers(deck, deckStates)
+		);
+		_assignMaster(deck);
+		return applyLock();
+	}
+	const followers = masterSwitchFollowers(deck, deckStates).filter((d) =>
+		effectiveBeatSync(deckStates[d])
+	);
+	_assignMaster(deck);
+	await _reanchor(deck, followers);
+	applyLock();
+}
+
+async function _decide(command: PerformanceCommand): Promise<void> {
+	switch (command.type) {
+		case 'play':
+			// Quantized and scheduled launches go to the engine, which refuses
+			// them by name rather than starting off the grid.
+			if (command.quantize === true || command.start_at_context_sec !== undefined) {
+				await _send(command as unknown as EngineCommand);
+				return;
+			}
+			return command.playing ? _play(command.deck) : _pause(command.deck);
+		case 'cue':
+			return _pressCue(command.deck);
+		case 'seek':
+			return _seek(command.deck, command.position_ms, { quantize: true });
+		case 'tempo':
+			return _setTempo(command.deck, command.ratio);
+		case 'beat_sync':
+			return _setBeatSync(command.deck, command.enabled);
+		case 'sync_mode': {
+			if (command.mode !== 'beat' && command.mode !== 'bar') {
+				throw new TypeError(`setSyncMode: invalid sync mode ${String(command.mode)}`);
+			}
+			const st = deckStates[command.deck];
+			st.sync_mode = command.mode;
+			const master = _syncMaster();
+			if (st.playing && effectiveBeatSync(st) && master !== null && master !== command.deck) {
+				await _join(master, command.deck, { reanchor: true });
+			}
+			return;
+		}
+		case 'master':
+			return _setDeckMaster(command.deck, command.lock);
+		case 'quantize': {
+			if (typeof command.enabled !== 'boolean') {
+				throw new TypeError('setQuantize: enabled must be boolean');
+			}
+			const st = deckStates[command.deck];
+			st.quantize_enabled = command.enabled;
+			if (command.enabled && gridFeaturesInert(st)) {
+				pushToast(`Deck ${command.deck} QUANTIZE ${gridFeatureInertTip(st)}`, 'info');
+			}
+			return;
+		}
+		case 'quantize_grid':
+			if (command.beats !== 1 && command.beats !== 4 && command.beats !== 8) {
+				throw new TypeError('setQuantizeGrid: beats must be 1, 4, or 8');
+			}
+			deckStates[command.deck].quantize_grid_beats = command.beats;
+			return;
+		default:
+			throw new Error(`${command.type} is not decided by the page in Rust engine mode`);
+	}
+}
+
+// ------------------------------------------------------------------ hot cues
+
+/** Armed jumps waiting on their downbeat, per deck. */
+const armedJumps: Partial<Record<DeckId, ReturnType<typeof setTimeout>>> = {};
+
+function _cancelArmedJump(deck: DeckId): void {
+	const t = armedJumps[deck];
+	if (t !== undefined) clearTimeout(t);
+	delete armedJumps[deck];
+}
+
+const _nowSec = (): number => performance.now() / 1000;
+
+/**
+ * The page's hot-cue logic (`hot_cue_*` in performance-ipc) driving this
+ * engine: the same slots, trust gate and `planHotCueTrigger` decision. An
+ * immediate trigger is a quantized seek. An armed one waits for the planned
+ * downbeat on the page clock, then seeks as far past the cue as the music
+ * already went, so it lands on the beat even when the timer fires late.
+ */
+export const rustHotCueDriver: PerformanceHotCueDriver = {
+	stableId: (deck) => deckStates[deck].stable_id,
+	refresh: async (deck) => {
+		const st = _loaded(deck, 'hot cue refresh');
+		const id = st.stable_id as string;
+		const slots = await fetchHotCueSlots(id);
+		if (st.stable_id !== id) return;
+		st.hot_cues = hotCuesFromAnlz(slots.flatMap((s) => (s.cue === null ? [] : [s.cue])));
+		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
+	},
+	hasRbMapping: (deck) => deckStates[deck].has_rb_mapping,
+	triggerState: (deck, slot) => {
+		const st = deckStates[deck];
+		return {
+			cue: st.hot_cues.find((c) => c.slot === slot) ?? null,
+			playing: st.playing,
+			loopEngaged: st.loop !== null && st.loop.engaged,
+			positionSec: _positionMs(deck) / 1000,
+			beats: st.anlz?.beatgrid.beats ?? []
+		};
+	},
+	jump: (deck, positionMs) => _seek(deck, positionMs, { quantize: true }),
+	arm: async (deck, positionMs, armAtPositionSec) => {
+		const st = _loaded(deck, 'armHotCueTrigger');
+		const nowPositionSec = _positionMs(deck) / 1000;
+		if (armAtPositionSec < nowPositionSec) {
+			throw new RangeError(
+				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
+			);
+		}
+		_cancelArmedJump(deck);
+		const delaySec = (armAtPositionSec - nowPositionSec) / st.pitch;
+		const landsAt = _nowSec() + delaySec;
+		const generation = st.load_generation;
+		armedJumps[deck] = setTimeout(() => {
+			delete armedJumps[deck];
+			if (st.load_generation !== generation || !st.playing) return;
+			const target = lateJumpPositionMs(positionMs, _nowSec() - landsAt, st.pitch);
+			_seek(deck, target, { quantize: false }).catch((e: unknown) => {
+				pushToast(`Deck ${deck} hot cue: ${e instanceof Error ? e.message : String(e)}`, 'error');
+			});
+		}, delaySec * 1000);
+		return landsAt;
+	},
+	contextTimeNowSec: _nowSec
+};
 
 /** Load a library track: the page's metadata fetches plus the engine load. */
 export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<void> {
@@ -420,19 +917,30 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 	}
 }
 
-/** Transport truth from the engine: play state, tempo, cue, loop, length. */
+/** Transport truth from the engine: play state, tempo, loop, length, key. */
 export function mirrorEngineState(s: EngineState): void {
 	lastState = s;
+	let masterStopped = false;
 	for (const d of s.decks) {
-		const st = deckStates[d.deck as DeckId];
+		const deck = d.deck as DeckId;
+		const st = deckStates[deck];
 		if (st === undefined || st.stable_id === null) continue;
-		if (s.frame <= (loadFences[d.deck as DeckId] ?? -1)) continue;
+		if (s.frame <= (loadFences[deck] ?? -1)) continue;
+		// A track that plays out stops in the engine, not on a command.
+		if (st.playing && !d.playing && rustMaster.deck === deck) masterStopped = true;
 		st.playing = d.playing;
 		st.audible = d.playing;
 		st.transport_pending = false;
 		st.pitch = d.tempo;
 		if (d.loaded) st.duration_ms = d.duration_ms;
-		st.cue_ms = d.cue_ms;
+		// The memory cue is the page's: pause and CUE set it, snapped to the
+		// grid. The engine's own unsnapped cue is not mirrored.
+		// Key lock and key shift as the engine plays them. A build without the
+		// time-stretcher plays varispeed and unshifted, so MT shows off rather
+		// than lit over audio that is not key-locked.
+		if (d.master_tempo !== undefined) rustMode.keyLock = true;
+		st.master_tempo_enabled = d.master_tempo ?? false;
+		st.key_shift_semitones = d.key_shift_semitones ?? 0;
 		st.loop = d.loop
 			? {
 					in_ms: d.loop.in_ms,
@@ -443,6 +951,7 @@ export function mirrorEngineState(s: EngineState): void {
 			: (displayLoops[d.deck as DeckId] ?? null);
 		if (!d.playing) st.position_ms = d.position_ms;
 	}
+	if (masterStopped) _electIfAuto();
 }
 
 function _startRaf(): void {

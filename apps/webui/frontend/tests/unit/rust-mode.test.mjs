@@ -14,6 +14,8 @@
  * - if frames after the load are held back then broken (the overshoot): the
  *   deck would never show the engine's playhead
  * - if knob positions do not follow an acknowledged command then broken
+ * - if a hot-cue command is taken from the page or refused then broken: the
+ *   page's own cue logic drives the engine through `rustHotCueDriver`
  */
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
@@ -64,7 +66,11 @@ test('no command is both forwarded and refused', () => {
 	assert.deepEqual(both, []);
 	// Positive control: the sets are populated, so an empty overlap means something.
 	assert.ok(m.ENGINE_COMMANDS.has('play'));
-	assert.ok(m.WEB_AUDIO_ONLY.has('hot_cue_save'));
+	assert.ok(m.WEB_AUDIO_ONLY.has('safety_loop_save'));
+	// Hot cues are the page's own logic, driving the engine through its driver.
+	for (const t of ['hot_cue_save', 'hot_cue_trigger']) {
+		assert.equal(m.ENGINE_COMMANDS.has(t) || m.WEB_AUDIO_ONLY.has(t), false, t);
+	}
 });
 
 test('off: every command stays with the page', async () => {
@@ -75,11 +81,12 @@ test('on: a Web Audio only command fails by name', async () => {
 	m.rustMode.enabled = true;
 	try {
 		await assert.rejects(
-			m.executeInRustEngine({ type: 'hot_cue_save', deck: 1, slot: 'A' }),
-			/RUST_ENGINE_UNAVAILABLE: hot_cue_save .* see PARITY-TODO/
+			m.executeInRustEngine({ type: 'safety_loop_save', deck: 1 }),
+			/RUST_ENGINE_UNAVAILABLE: safety_loop_save .* see PARITY-TODO/
 		);
 		// Not the engine's either: still the page's own.
 		assert.equal(await m.executeInRustEngine({ type: 'browser_search', query: 'x' }), false);
+		assert.equal(await m.executeInRustEngine({ type: 'hot_cue_clear', deck: 1, slot: 'A' }), false);
 	} finally {
 		m.rustMode.enabled = false;
 	}
@@ -99,9 +106,10 @@ test('the load fence holds back frames up to the one seen when the load landed',
 	m.mirrorEngineState(frame(11, { position_ms: 14813 }));
 	assert.equal(st.position_ms, 0, 'the frame current at landing may predate the swap');
 
+	st.cue_ms = 480;
 	m.mirrorEngineState(frame(12, { position_ms: 250, cue_ms: 100 }));
 	assert.equal(st.position_ms, 250, 'a newer frame is mirrored');
-	assert.equal(st.cue_ms, 100);
+	assert.equal(st.cue_ms, 480, 'the memory cue stays the page one');
 	assert.equal(st.duration_ms, 60000);
 
 	m.mirrorEngineState(frame(13, { playing: true, rate: 1, position_ms: 300, tempo: 1.02 }));
