@@ -105,6 +105,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       - name: PERFBATCH-02/03 gate (issue #1704)
         # Stdlib only. Exit 1 = pipeline mutation without idle+quality markers.
         # Exit 2 = the gate could not measure, which is never a pass.

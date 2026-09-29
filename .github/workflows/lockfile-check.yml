@@ -1,49 +1,86 @@
-name: ADR Check
+name: Lockfile check
 
-# WHY THIS IS ITS OWN WORKFLOW AND NOT A STEP IN CI
+# pyproject.toml and uv.lock must agree. Renovate security PR #2740 raised
+# pytest in pyproject.toml but could not regenerate uv.lock (Renovate
+# commented "Artifact update problem"), and it merged anyway: from then on,
+# `uv sync --extra dev` on main failed to resolve for every agent
+# (Mon 14 Sep 2026). This job fails such a PR in seconds instead.
 #
-# Same two reasons as reqs-flip-gate.yml (issue #1605 / PR #1709), applied
-# to the ADR line (issue #1489):
+# Report-only, like every check here (ADR-0043). Fleet merges treat completed
+# checks as binding once ADR-0042 follow-up F1 lands.
 #
-# 1. ABSENT on some of the PRs it exists for. ci.yml's `pull_request`
-#    `paths` filter excludes `**.md` and `docs/**`, so a docs-only ADR
-#    migration would schedule no ci.yml run. The gated surfaces
-#    (`apps/cloud/`, `apps/engine_core/`, `apps/sync_hub/`,
-#    `apps/webui/server/routes/`, `apps/database/`, `*/migrations/*`,
-#    `.github/workflows/`, webui server state, REQUIREMENTS.md,
-#    frontend/contract files) DO reach ci.yml, but the body line is
-#    metadata: it must re-run when the body changes, not only when those
-#    paths change. The duplicate-id check (issue #2678) is repo-wide and
-#    fires even on a PR that touches nothing gated, which is a second
-#    reason this cannot be a `paths:`-filtered ci.yml step.
-# 2. STALE relative to the metadata it reads. Title and body change with
-#    no new head SHA. `edited` is in the list below; the other three are
-#    restated because naming `types` REPLACES the implicit list.
-#
-# Splitting it out is also what makes `edited` affordable. Adding that
-# type to ci.yml would re-run the whole fast lane on every body edit.
+# Two jobs, two halves of "agree":
+# - `uv-lock` (GitHub-hosted, gated on hosted billing): `uv lock --check`, the
+#   full resolution against the index. Skipped while hosted Actions are
+#   blocked on billing, and a skip is unavailable evidence, not a verdict.
+# - `lock-metadata` (self-hosted pool, never gated): the metadata half, which
+#   is the #2740 shape. uv.lock records the root package's requires-dist
+#   verbatim from pyproject.toml at the last `uv lock`, so a pyproject.toml
+#   edit without a `uv lock` differs from it. scripts/lock_metadata_check.py
+#   compares the two with tomllib alone: no resolution, no network, no
+#   environment, no package code, which is what makes it safe on a persistent
+#   runner where `uv lock --check` is not (Codex P1 on #3763). It cannot see
+#   pinned versions gone stale with pyproject.toml unchanged; that stays the
+#   hosted job's half.
 
+# uv.toml is on both lists because it outranks [tool.uv] for every setting the
+# metadata job compares, so a PR that adds or edits it changes what `uv lock`
+# resolves without touching either file the job reads; the job then reports
+# UNKNOWN (scripts/lock_settings.py refuse_uv_toml) rather than not running at
+# all (Codex P2 on #3763, round 57).
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
-
-concurrency:
-  group: adr-check-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - uv.toml
+      - .github/workflows/lockfile-check.yml
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - uv.toml
 
 permissions:
   contents: read
-  pull-requests: read
 
 env:
+  # Keep .pyc out of the persistent self-hosted workspace (#1338).
   PYTHONDONTWRITEBYTECODE: "1"
 
+concurrency:
+  group: lockfile-check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  gate:
-    # Trunk merge-queue drafts (trunk-merge/*) re-test PRs that already passed this PR-metadata
-    # gate; the draft has no PR body of its own, so the gate would fail on a body it never had.
-    if: ${{ !startsWith(github.head_ref, 'trunk-merge/') }}
-    name: adr check
+  uv-lock:
+    name: uv.lock matches pyproject.toml
+    # GitHub-hosted on purpose: resolving a dependency PR can build sdists,
+    # which runs package code, and that must not happen on the persistent
+    # self-hosted runners (docs/security/ci-supply-chain.md).
+    #
+    # Hosted availability is separate from a lockfile verdict; skipped remains unavailable.
+    if: vars.CI_HOSTED_LOCKFILE_CHECK == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
+      - name: uv lock --check
+        run: uv lock --check
+
+  lock-metadata:
+    name: uv.lock metadata matches pyproject.toml (no resolution)
+    # Self-hosted on purpose: this job resolves nothing and runs no package
+    # code (stdlib tomllib over two files), so the sdist exposure that keeps
+    # `uv lock --check` hosted does not apply, and it stays fail-closed while
+    # hosted billing is blocked. tests/scripts/test_lockfile_check_gate.py
+    # pins that it is never gated.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
@@ -82,10 +119,7 @@ jobs:
             name_offenders "$remaining"
             exit 1
           }
-          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
-          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
-          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
-          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          # A cancelled checkout can leave locks; require no live workspace git.
           if [ -d "$ws/.git" ]; then
             live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
             if [ -z "$live" ]; then
@@ -123,12 +157,9 @@ jobs:
         timeout-minutes: 1
         run: scripts/ci_runner_preflight.sh python
 
-      - name: ADR check (issue #1489)
-        # No venv: scripts.adr_check is stdlib only. It reads THIS PR's
-        # docs/decisions/ for whether an id exists, and the PR body plus
-        # the PR file list via gh. Exit 1 = gated path, no valid ADR line.
-        # Exit 2 = the gate could not measure, which is never a pass.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python -m scripts.adr_check --pr "${{ github.event.pull_request.number }}"
+      - name: uv.lock metadata matches pyproject.toml
+        # Exit 1 = stale (each odd requirement named). Exit 2 = the check
+        # could not measure (no root package, an uncomparable requirement),
+        # which is never a pass.
+        timeout-minutes: 1
+        run: python -m scripts.lock_metadata_check
