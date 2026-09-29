@@ -27,7 +27,7 @@ use serde_json::Value;
 
 use crate::deck::Track;
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
-use crate::protocol::{self, Advance, Command, LoadSpec, ProtoError};
+use crate::protocol::{self, Advance, Command, LoadSpec, ProtoError, RegridSpec};
 
 /// State messages per second in the threaded modes.
 pub const STATE_HZ: u32 = 30;
@@ -71,6 +71,10 @@ pub fn serve_fake(
             Command::Load(spec) => {
                 let track = load(&spec)?;
                 engine.apply(EngineCmd::Load { deck: spec.deck, track }).map(drop).map_err(Into::into)
+            }
+            Command::Regrid(spec) => {
+                let track = engine.regridded(spec.deck, spec.beats, spec.bpm)?;
+                engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map(drop).map_err(Into::into)
             }
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
             Command::Advance(a) => {
@@ -166,6 +170,7 @@ enum Msg {
 enum Queued {
     Cmd(Option<String>, EngineCmd),
     Load(Option<String>, LoadSpec),
+    Regrid(Option<String>, RegridSpec),
 }
 
 /// The control half: owns the command ring's producer, the per-deck load
@@ -183,6 +188,10 @@ struct Control {
     state_req: Arc<AtomicBool>,
     /// The engine's rate; loads are resampled to it off the audio thread.
     sample_rate: u32,
+    /// Per deck: the track last sent to the engine, so `set_beatgrid` can
+    /// rebuild it with a new grid here instead of on the audio thread. The
+    /// engine refuses the swap if the deck holds other audio by then.
+    tracks: [Option<Arc<Track>>; MAX_DECKS],
 }
 
 impl Control {
@@ -212,7 +221,7 @@ impl Control {
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, .. } | Unload { deck } | Play { deck, .. } | Cue { deck } | Seek { deck, .. }
+            Load { deck, .. } | Regrid { deck, .. } | Unload { deck } | Play { deck, .. } | Cue { deck } | Seek { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
             | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. } | Eq { deck, .. } | Filter { deck, .. }
             | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
@@ -232,7 +241,31 @@ impl Control {
             }
         }
         let seq = self.seq(id);
-        let _ = self.push_seq(seq, cmd);
+        let sent = match &cmd {
+            EngineCmd::Unload { deck } => Some((*deck, None)),
+            EngineCmd::Regrid { deck, track } => Some((*deck, Some(track.clone()))),
+            _ => None,
+        };
+        if self.push_seq(seq, cmd) {
+            if let Some((deck, t)) = sent {
+                self.tracks[deck as usize - 1] = t;
+            }
+        }
+    }
+
+    fn regrid(&mut self, id: Option<String>, spec: RegridSpec) {
+        let deck = spec.deck;
+        if let Some(q) = self.queue_for(deck) {
+            q.push_back(Queued::Regrid(id, spec));
+            return;
+        }
+        match &self.tracks[deck as usize - 1] {
+            Some(t) => {
+                let track = Arc::new(t.with_grid(spec.beats, spec.bpm));
+                self.dispatch(id, EngineCmd::Regrid { deck, track });
+            }
+            None => self.reply(id.as_deref(), Err(ProtoError::new(ErrorCode::NoTrack, "no track loaded on this deck"))),
+        }
     }
 
     fn load(&mut self, id: Option<String>, spec: LoadSpec) {
@@ -257,7 +290,13 @@ impl Control {
         self.loading[deck as usize - 1] = None;
         // True when the load will not reach the engine.
         let dropped = match result {
-            Ok(track) => !self.push_seq(seq, EngineCmd::Load { deck, track }),
+            Ok(track) => {
+                let sent = self.push_seq(seq, EngineCmd::Load { deck, track: track.clone() });
+                if sent {
+                    self.tracks[deck as usize - 1] = Some(track);
+                }
+                !sent
+            }
             Err(e) => {
                 let id = self.ids.lock().unwrap().remove(&seq).flatten();
                 self.reply(id.as_deref(), Err(e));
@@ -278,6 +317,7 @@ impl Control {
             match item {
                 Queued::Cmd(id, cmd) => self.dispatch(id, cmd),
                 Queued::Load(id, spec) => self.load(id, spec),
+                Queued::Regrid(id, spec) => self.regrid(id, spec),
             }
         }
     }
@@ -306,7 +346,7 @@ impl Control {
     fn refuse_queued(&self, q: VecDeque<Queued>) {
         for item in q {
             let id = match item {
-                Queued::Cmd(id, _) | Queued::Load(id, _) => id,
+                Queued::Cmd(id, _) | Queued::Load(id, _) | Queued::Regrid(id, _) => id,
             };
             self.reply(
                 id.as_deref(),
@@ -323,6 +363,7 @@ impl Control {
         match parsed {
             Err(e) => self.reply(id.as_deref(), Err(e)),
             Ok(Command::Load(spec)) => self.load(id, spec),
+            Ok(Command::Regrid(spec)) => self.regrid(id, spec),
             Ok(Command::Apply(c)) => self.dispatch(id, c),
             Ok(Command::Advance(_)) => self.reply(
                 id.as_deref(),
@@ -446,6 +487,7 @@ fn serve_threaded_from(
         loading: [None; MAX_DECKS],
         state_req,
         sample_rate,
+        tracks: Default::default(),
     };
     let mut audio_failed = false;
     while let Ok(msg) = msg_rx.recv() {

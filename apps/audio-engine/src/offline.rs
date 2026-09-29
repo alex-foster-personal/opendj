@@ -368,6 +368,10 @@ pub fn render_plan_with(
                         let track = loaded.remove(&idx).expect("decoded above");
                         engine.apply(EngineCmd::Load { deck: spec.deck, track }).map_err(|e| fail(idx, e.into()))?;
                     }
+                    Action::Cmd(Command::Regrid(spec)) => {
+                        let track = engine.regridded(spec.deck, spec.beats.clone(), spec.bpm).map_err(|e| fail(idx, e.into()))?;
+                        engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map_err(|e| fail(idx, e.into()))?;
+                    }
                     Action::Cmd(Command::Apply(cmd)) => {
                         master_tempo |= matches!(cmd, EngineCmd::MasterTempo { enabled: true, .. });
                         engine.apply(cmd.clone()).map_err(|e| fail(idx, e.into()))?;

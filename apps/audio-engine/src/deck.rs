@@ -49,6 +49,12 @@ impl Track {
         Track { sample_rate, pcm, frames, beats, downbeats, bpm }
     }
 
+    /// The same audio with another beatgrid. Shares the samples, so a
+    /// re-analysis never decodes the file again.
+    pub fn with_grid(&self, beats: Vec<Beat>, bpm: Option<f64>) -> Track {
+        Track::new(self.sample_rate, self.pcm.clone(), beats, bpm)
+    }
+
     pub fn duration_ms(&self) -> f64 {
         self.frames as f64 * 1000.0 / self.sample_rate as f64
     }
@@ -401,6 +407,21 @@ impl Deck {
         self.playing = false;
         self.looping = None;
         self.track.replace(track)
+    }
+
+    /// Swap in the same audio with a new beatgrid (`Track::with_grid`).
+    /// Playhead, loop, cue, tempo and the strip are untouched; the next beat
+    /// math reads the new grid. Refused when the deck no longer holds that
+    /// audio, e.g. a load landed in between. Returns the replaced track, for
+    /// the caller to free off this thread.
+    pub fn regrid(&mut self, track: Arc<Track>) -> Result<Arc<Track>, (EngineError, Arc<Track>)> {
+        match &self.track {
+            Some(cur) if Arc::ptr_eq(&cur.pcm, &track.pcm) => Ok(self.track.replace(track).expect("checked above")),
+            _ => Err((
+                EngineError::new(ErrorCode::Invalid, "set_beatgrid: the deck no longer holds that track"),
+                track,
+            )),
+        }
     }
 
     pub fn unload(&mut self) -> Option<Arc<Track>> {

@@ -55,6 +55,14 @@ pub struct LoadSpec {
     pub bpm: Option<f64>,
 }
 
+/// A `set_beatgrid`: new analysis for the track a deck already holds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegridSpec {
+    pub deck: DeckId,
+    pub beats: Vec<Beat>,
+    pub bpm: Option<f64>,
+}
+
 /// How far a fake clock moves on `engine_advance`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Advance {
@@ -65,6 +73,8 @@ pub enum Advance {
 #[derive(Clone, Debug)]
 pub enum Command {
     Load(LoadSpec),
+    /// Needs the deck's current track, so it is built where that is known.
+    Regrid(RegridSpec),
     Apply(EngineCmd),
     /// Fake clock only: render this much time now, as fast as possible.
     Advance(Advance),
@@ -218,6 +228,19 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
                 return Err(invalid("load.bpm must be positive".into()));
             }
             Ok(Command::Load(LoadSpec { deck, path, beats: beats(o, ty)?, bpm }))
+        }
+        "set_beatgrid" => {
+            let deck = deck_of(o, ty)?;
+            // An absent grid is a malformed message, not a request to clear
+            // it; an empty array clears it on purpose.
+            if !o.contains_key("beatgrid") && !o.contains_key("beatgrid_ms") {
+                return Err(invalid("set_beatgrid needs beatgrid or beatgrid_ms (an empty array clears the grid)".into()));
+            }
+            let bpm = opt_num(o, ty, "bpm")?;
+            if bpm.is_some_and(|b| b <= 0.0) {
+                return Err(invalid("set_beatgrid.bpm must be positive".into()));
+            }
+            Ok(Command::Regrid(RegridSpec { deck, beats: beats(o, ty)?, bpm }))
         }
         "unload" => apply(EngineCmd::Unload { deck: deck_of(o, ty)? }),
         "play" => {
@@ -495,6 +518,22 @@ mod tests {
             let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
             assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);
         }
+    }
+
+    #[test]
+    fn set_beatgrid_parses_and_needs_a_grid() {
+        let Command::Regrid(r) = cmd(json!({"type": "set_beatgrid", "deck": 2, "beatgrid_ms": [0, 400, 800], "bpm": 150})).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!((r.deck, r.beats.len(), r.bpm), (2, 3, Some(150.0)));
+        assert!(r.beats[0].downbeat && !r.beats[1].downbeat);
+        let Command::Regrid(r) = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid": []})).unwrap() else { panic!() };
+        assert!(r.beats.is_empty(), "an empty grid clears it");
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "bpm": 120})).unwrap_err();
+        assert!(e.message.contains("needs beatgrid"), "{}", e.message);
+        let e = cmd(json!({"type": "set_beatgrid", "deck": 1, "beatgrid_ms": [0, 400, 300]})).unwrap_err();
+        assert!(e.message.contains("strictly increase"), "{}", e.message);
     }
 
     #[test]

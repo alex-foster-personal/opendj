@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use crate::deck::{Deck, Track};
+use crate::deck::{Beat, Deck, Track};
 use crate::dsp::Smoothed;
 use crate::mixer::{self, Assign};
 
@@ -97,6 +97,9 @@ impl EqBand {
 #[derive(Clone, Debug)]
 pub enum EngineCmd {
     Load { deck: DeckId, track: Arc<Track> },
+    /// The loaded audio with a new beatgrid, built off the audio thread by
+    /// `Track::with_grid` from the deck's current track.
+    Regrid { deck: DeckId, track: Arc<Track> },
     Unload { deck: DeckId },
     Play { deck: DeckId, playing: bool },
     Cue { deck: DeckId },
@@ -216,6 +219,14 @@ impl Engine {
         self.decks.get(i)
     }
 
+    /// The deck's current audio with a new grid, for `EngineCmd::Regrid`.
+    /// Allocates: call off the audio thread.
+    pub fn regridded(&self, deck: DeckId, beats: Vec<Beat>, bpm: Option<f64>) -> Result<Arc<Track>, EngineError> {
+        let d = self.deck(deck).ok_or(EngineError::new(ErrorCode::Invalid, "no such deck"))?;
+        let t = d.track.as_ref().ok_or(EngineError::new(ErrorCode::NoTrack, "no track loaded on this deck"))?;
+        Ok(Arc::new(t.with_grid(beats, bpm)))
+    }
+
     fn deck_mut(&mut self, deck: DeckId) -> Result<&mut Deck, EngineError> {
         let i = (deck as usize)
             .checked_sub(1)
@@ -239,6 +250,12 @@ impl Engine {
             Load { deck, track } => {
                 return match self.deck_mut(deck) {
                     Ok(d) => Ok(d.load(track)),
+                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                }
+            }
+            Regrid { deck, track } => {
+                return match self.deck_mut(deck) {
+                    Ok(d) => d.regrid(track).map(Some).map_err(|(error, t)| Rejected { error, track: Some(t) }),
                     Err(error) => Err(Rejected { error, track: Some(track) }),
                 }
             }
@@ -723,5 +740,60 @@ mod tests {
         assert!(e.apply(EngineCmd::Load { deck: 2, track: a.clone() }).unwrap().is_none());
         let retired = e.apply(EngineCmd::Load { deck: 2, track: Arc::new(tone(48000, 440.0, 1.0)) }).unwrap();
         assert!(Arc::ptr_eq(retired.as_ref().unwrap(), &a));
+    }
+
+    fn grid(every_ms: f64, secs: f64) -> Vec<Beat> {
+        (0..(secs * 1000.0 / every_ms) as usize).map(|i| Beat { time_ms: i as f64 * every_ms, downbeat: i % 4 == 0 }).collect()
+    }
+
+    #[test]
+    fn set_beatgrid_swaps_the_grid_and_leaves_the_audio_and_transport_alone() {
+        let run = |regrid: bool| {
+            let mut e = Engine::new(48000);
+            let t = Arc::new(tone(48000, 440.0, 4.0));
+            e.apply(EngineCmd::Load { deck: 1, track: t.clone() }).unwrap();
+            e.apply(EngineCmd::Play { deck: 1, playing: true }).unwrap();
+            let mut buf = vec![0.0f32; 14400 * 2];
+            e.render(&mut buf);
+            let before = e.snapshot().decks[0];
+            if regrid {
+                let g = e.regridded(1, grid(400.0, 4.0), Some(150.0)).unwrap();
+                assert!(Arc::ptr_eq(&g.pcm, &t.pcm), "the new grid must share the decoded samples");
+                let retired = e.apply(EngineCmd::Regrid { deck: 1, track: g }).unwrap();
+                assert!(Arc::ptr_eq(retired.as_ref().unwrap(), &t), "the old track comes back to be freed off-thread");
+            }
+            let after = e.snapshot().decks[0];
+            assert_eq!(before.position_ms, after.position_ms);
+            assert!(after.playing);
+            let mut out = vec![0.0f32; 4800 * 2];
+            e.render(&mut out);
+            // 300 ms in: nearest beat is 400 ms on the new grid, 500 ms on the old.
+            e.apply(EngineCmd::Play { deck: 1, playing: false }).unwrap();
+            e.apply(EngineCmd::Seek { deck: 1, position_ms: 300.0 }).unwrap();
+            e.apply(EngineCmd::BeatJump { deck: 1, beats: 1.0 }).unwrap();
+            (out, e.snapshot().decks[0].position_ms)
+        };
+        let (a, jump_new) = run(true);
+        let (b, jump_old) = run(false);
+        assert_eq!(a, b, "a grid swap must not touch the audio");
+        assert!((jump_new - 800.0).abs() < 1e-6, "{jump_new}");
+        assert!((jump_old - 1000.0).abs() < 1e-6, "control: the old grid jumps to {jump_old}");
+    }
+
+    #[test]
+    fn set_beatgrid_is_refused_once_the_deck_holds_other_audio() {
+        let mut e = Engine::new(48000);
+        assert_eq!(e.regridded(1, grid(500.0, 1.0), None).unwrap_err().code, ErrorCode::NoTrack);
+        e.apply(EngineCmd::Load { deck: 1, track: Arc::new(tone(48000, 440.0, 2.0)) }).unwrap();
+        let stale = e.regridded(1, grid(400.0, 2.0), None).unwrap();
+        let fresh = Arc::new(tone(48000, 880.0, 2.0));
+        e.apply(EngineCmd::Load { deck: 1, track: fresh.clone() }).unwrap();
+        let r = e.apply(EngineCmd::Regrid { deck: 1, track: stale.clone() }).unwrap_err();
+        assert_eq!(r.error.code, ErrorCode::Invalid);
+        assert!(Arc::ptr_eq(r.track.as_ref().unwrap(), &stale), "a refused grid is handed back, not dropped here");
+        assert!(Arc::ptr_eq(e.deck(1).unwrap().track.as_ref().unwrap(), &fresh));
+        // Control: built from the track the deck now holds, it is accepted.
+        let ok = e.regridded(1, grid(400.0, 2.0), None).unwrap();
+        assert!(e.apply(EngineCmd::Regrid { deck: 1, track: ok }).is_ok());
     }
 }
