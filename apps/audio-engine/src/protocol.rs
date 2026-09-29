@@ -40,6 +40,12 @@ impl From<crate::engine::EngineError> for ProtoError {
     }
 }
 
+impl From<crate::engine::Rejected> for ProtoError {
+    fn from(r: crate::engine::Rejected) -> ProtoError {
+        r.error.into()
+    }
+}
+
 /// A `load` before decoding: the file and its analysis.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoadSpec {
@@ -403,6 +409,8 @@ pub fn state_json(s: &Snapshot, host_time_ns: Option<u64>) -> Value {
                 "eq": {"low": d.eq[0], "mid": d.eq[1], "high": d.eq[2]},
                 "filter": d.filter,
                 "fader": d.fader,
+                "assign": d.assign.as_str(),
+                "pitch_range": d.pitch_range,
             })
         })
         .collect();
