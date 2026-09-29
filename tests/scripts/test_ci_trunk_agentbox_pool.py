@@ -11,10 +11,12 @@ disjunct prefers it for the trunk job classes.
 The existing pins in test_ci_main_fix_runner_reserve.py, test_ci_shard_matrix.py
 and test_ci_fast_tier_job.py compare expression STRINGS. This file EVALUATES the
 expressions with a small evaluator for the GitHub Actions expression subset they
-use (`==`, `&&`, `||`, parentheses, `contains`, `fromJSON`, `vars.*` and
-`github.*` paths), so the routing claims below are checked as behavior, not as
+use (`==`, `&&`, `||`, parentheses, `contains`, `startsWith`, `fromJSON`, `vars.*`
+and `github.*` paths), so the routing claims below are checked as behavior, not as
 text. Its own semantics are pinned by a control case against the pre-change
 expression, which must resolve to today's pools.
+tests/scripts/test_ci_merge_queue_runner_pool.py reuses it for the Trunk draft
+route (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool).
 
 Regression lines:
   - if a main push does not resolve to CI_RUNS_ON_TRUNK when it is set then main's
@@ -52,6 +54,7 @@ PYTEST = '["self-hosted","linux","pytest"]'
 FAST = '["self-hosted","linux","pytest"]'
 E2E = '["self-hosted","linux","e2e"]'
 LINUX = '["self-hosted","linux","agentbox"]'
+REPOSITORY = "owner/music-dj-tools"
 LIVE_VARS = {
     "CI_RUNS_ON_MAIN_FIX": MAIN_FIX,
     "CI_RUNS_ON_TRUNK": TRUNK,
@@ -83,15 +86,27 @@ class Event:
     ref: str
     labels: tuple[str, ...] = ()
     variables: dict[str, str] = field(default_factory=dict)
+    head_ref: str = ""
+    author: str = "a-human"
+    head_repo: str = REPOSITORY
+    repository: str = REPOSITORY
 
     def context(self) -> dict[str, Any]:
         event: dict[str, Any] = {}
-        if self.name == "pull_request":
-            event["pull_request"] = {"labels": [{"name": n} for n in self.labels]}
-        return {
-            "github": {"event_name": self.name, "ref": self.ref, "event": event},
-            "vars": self.variables,
+        github: dict[str, Any] = {
+            "event_name": self.name,
+            "ref": self.ref,
+            "repository": self.repository,
+            "event": event,
         }
+        if self.name == "pull_request":
+            event["pull_request"] = {
+                "labels": [{"name": n} for n in self.labels],
+                "user": {"login": self.author},
+                "head": {"repo": {"full_name": self.head_repo}},
+            }
+            github["head_ref"] = self.head_ref
+        return {"github": github, "vars": self.variables}
 
 
 _TOKEN = re.compile(
@@ -189,6 +204,9 @@ class _Parser:
                 return isinstance(haystack, list) and any(
                     str(item).lower() == str(needle).lower() for item in haystack
                 )
+            if token == "startsWith":
+                haystack, needle = args
+                return str(haystack or "").lower().startswith(str(needle).lower())
             if token == "fromJSON":
                 return json.loads(args[0])
             raise AssertionError(f"evaluator does not know function {token!r}")

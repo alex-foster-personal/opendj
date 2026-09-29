@@ -39,6 +39,8 @@ export const SETUP_PAGE_ORIGIN = `http://127.0.0.1:${SETUP_PAGE_PORT}`;
 export const DEAD_ENGINE_ORIGIN = `http://127.0.0.1:${DEAD_ENGINE_PORT}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'desktop-setup.spec.ts',
 	fullyParallel: false,
