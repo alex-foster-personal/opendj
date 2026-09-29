@@ -73,6 +73,7 @@ from apps.analysis.pcm_fingerprint import (
     require_resampler,
 )
 from apps.analysis_beatgrid import activations
+from apps.analysis_beatgrid.grid_fit import GRID_FIT_RAW
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
@@ -104,6 +105,12 @@ DEFAULT_DEVICE = "cpu"
 #: with a wide margin; a run that exceeds it has hung, and a hung backfill that
 #: never returns is worse than one that says which track it stopped on.
 TIMEOUT_ENV = "MDT_BEATGRID_TIMEOUT_S"
+
+#: Which grid the lane serves: `raw` (the model's peak times, the default until
+#: the grid-fit bench round is reviewed) or `line` (the fitted, BPM-rounded,
+#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`). A `line`
+#: record says so in its payload's `grid_fit` block.
+GRID_FIT_ENV = "MDT_BEATGRID_GRID_FIT"
 DEFAULT_TIMEOUT_S = 1800
 
 
@@ -315,6 +322,7 @@ def record_from_payload(
     audio_path: Path,
     model_sha256: str,
     decode_fingerprint: str,
+    grid_fit: str = GRID_FIT_RAW,
 ) -> AnalysisRecord:
     """Turn one runner payload into one v2 record. Pure; raises, never guesses.
 
@@ -368,7 +376,7 @@ def record_from_payload(
         raise TrackUnreadable(
             f"beat_this_runner.py could not analyze {audio_path}: {runner_error}"
         )
-    lane = build_beatgrid_lane(result, threshold=threshold)
+    lane = build_beatgrid_lane(result, threshold=threshold, grid_fit=grid_fit)
     # The runner reports the sha256 of ITS OWN model input: Beat This's
     # `load_audio` float32 at whatever rate it chose. The record may not carry
     # that. `decode_fingerprint` is defined over the canonical decode (44100
@@ -522,6 +530,7 @@ class OwnBeatgridBackfillBackend:
                 audio_path=audio_path,
                 model_sha256=model_sha256,
                 decode_fingerprint=decode_fingerprint,
+                grid_fit=os.environ.get(GRID_FIT_ENV, "").strip() or GRID_FIT_RAW,
             )
         except TrackUnreadable:
             # `record_from_payload` raises this specifically for a
