@@ -16,7 +16,7 @@ use std::time::Instant;
 use sha2::{Digest, Sha256};
 
 use crate::deck::Track;
-use crate::decode::{decode_file_within, reserve_within, SourceId};
+use crate::decode::{decode_open_within, reserve_within, SourceId};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, KnobTarget, MAX_DECKS};
 use crate::plan::{Action, At, DeckPos, Over, Plan};
 use crate::protocol::{Command, LoadSpec, ProtoError};
@@ -149,11 +149,11 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
     let mut cache: HashMap<FileKey, CachedFile> = HashMap::new();
     move |spec: &LoadSpec, room: u64| {
         let path = base.join(&spec.path);
-        let key = FileKey::of(&path);
+        let (file, key) = open_keyed(&path)?;
         let (sr, pcm, source) = match cache.get(&key) {
             Some((sr, pcm, source)) => (*sr, pcm.clone(), source.clone()),
             None => {
-                let d = decode_file_within(&path, room)?;
+                let d = decode_open_within(file, &path, room)?;
                 let pcm = Arc::new(d.pcm);
                 cache.insert(key, (d.sample_rate, pcm.clone(), d.source.clone()));
                 (d.sample_rate, pcm, d.source)
@@ -167,9 +167,14 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
 /// Which file a path names, so loads of one file share one decode. One file
 /// reached by two names (`a.wav`, `sub/../a.wav`, a symlink, a hard link, a
 /// case-folded spelling on a case-insensitive volume) is one file: on unix
-/// that is its device and inode, the identity the output collision check
-/// uses too, and elsewhere the path with every link resolved. A path that
-/// does not resolve keeps its own spelling and fails to decode.
+/// that is its device and inode, on Windows its volume serial and file id
+/// (as the output collision check compares files there too), and elsewhere,
+/// or on a Windows volume that reports no file id, the path with every link
+/// resolved.
+///
+/// It is taken from the open file that is then decoded, never from the path
+/// again, so the samples stored under a key are that file's even when the
+/// path is renamed or replaced in between.
 ///
 /// Its length and modification time are part of it, so a file rewritten in
 /// place, or a new file that is handed a deleted one's inode while a deck
@@ -192,38 +197,80 @@ struct FileKey {
 enum FileId {
     #[cfg(unix)]
     Inode { dev: u64, ino: u64 },
+    #[cfg(windows)]
+    Volume { serial: u64, id: [u8; 16] },
     Path(PathBuf),
 }
 
+/// Open `path` for a load, keyed by the handle that will be decoded.
+fn open_keyed(path: &Path) -> Result<(std::fs::File, FileKey), ProtoError> {
+    let file = crate::decode::open(path)?;
+    let key = FileKey::of_file(&file, path);
+    #[cfg(test)]
+    AFTER_OPEN.with(|h| h.get().map(|h| h(path)));
+    Ok((file, key))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Runs once a load has opened and keyed its file, before it decodes it:
+    /// the path renamed or replaced just then.
+    static AFTER_OPEN: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
+}
+
 impl FileKey {
-    fn of(path: &Path) -> FileKey {
+    /// The key of `file`, opened from `path`.
+    fn of_file(file: &std::fs::File, path: &Path) -> FileKey {
         let by_path = || FileId::Path(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
-        match std::fs::metadata(path) {
-            Ok(m) => {
-                #[cfg(unix)]
-                let (id, changed) = {
-                    use std::os::unix::fs::MetadataExt;
-                    (FileId::Inode { dev: m.dev(), ino: m.ino() }, Some((m.ctime(), m.ctime_nsec())))
-                };
-                #[cfg(windows)]
-                let (id, changed) = (by_path(), change_time(path));
-                #[cfg(not(any(unix, windows)))]
-                let (id, changed) = (by_path(), None);
-                FileKey { id, len: m.len(), modified: m.modified().ok(), changed }
+        let m = file.metadata().ok();
+        #[cfg(unix)]
+        let (id, changed) = match &m {
+            Some(m) => {
+                use std::os::unix::fs::MetadataExt;
+                (FileId::Inode { dev: m.dev(), ino: m.ino() }, Some((m.ctime(), m.ctime_nsec())))
             }
-            Err(_) => FileKey { id: by_path(), len: 0, modified: None, changed: None },
-        }
+            None => (by_path(), None),
+        };
+        #[cfg(windows)]
+        let (id, changed) = (file_id(file).unwrap_or_else(by_path), change_time(file));
+        #[cfg(not(any(unix, windows)))]
+        let (id, changed) = (by_path(), None);
+        FileKey { id, len: m.as_ref().map_or(0, |m| m.len()), modified: m.and_then(|m| m.modified().ok()), changed }
     }
+
+    #[cfg(test)]
+    fn of(path: &Path) -> FileKey {
+        FileKey::of_file(&std::fs::File::open(path).unwrap(), path)
+    }
+}
+
+/// The volume serial and file id Windows gives an open file (128 bits, as
+/// ReFS needs), or none where the volume reports none.
+#[cfg(windows)]
+fn file_id(file: &std::fs::File) -> Option<FileId> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{FileIdInfo, GetFileInformationByHandleEx, FILE_ID_INFO};
+    let mut info = FILE_ID_INFO::default();
+    // SAFETY: the handle is open for the call, and the buffer is a
+    // FILE_ID_INFO of the size passed, as FileIdInfo requires.
+    let ok = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle() as _,
+            FileIdInfo,
+            (&mut info as *mut FILE_ID_INFO).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    (ok != 0).then_some(FileId::Volume { serial: info.VolumeSerialNumber, id: info.FileId.Identifier })
 }
 
 /// The file's change time (100 ns ticks), which Windows moves on every write
 /// and `SetFileTime` callers do not set back in practice; std reads it only
 /// on nightly.
 #[cfg(windows)]
-fn change_time(path: &Path) -> Option<(i64, i64)> {
+fn change_time(f: &std::fs::File) -> Option<(i64, i64)> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{FileBasicInfo, GetFileInformationByHandleEx, FILE_BASIC_INFO};
-    let f = std::fs::File::open(path).ok()?;
     let mut info = FILE_BASIC_INFO::default();
     // SAFETY: the handle is open for the call, and the buffer is a
     // FILE_BASIC_INFO of the size passed, as FileBasicInfo requires.
@@ -259,7 +306,7 @@ type Holders = Arc<Mutex<Vec<Weak<Track>>>>;
 
 impl TrackCache {
     pub fn load(&self, path: &Path, spec: &LoadSpec) -> Result<Arc<Track>, ProtoError> {
-        let key = FileKey::of(path);
+        let (opened, key) = open_keyed(path)?;
         let file = {
             let mut files = self.files.lock().unwrap_or_else(|e| e.into_inner());
             // A file nobody else is loading (only the map holds its slot) and
@@ -278,7 +325,7 @@ impl TrackCache {
         let (sr, pcm, source) = match held.iter().find_map(Weak::upgrade) {
             Some(t) => (t.sample_rate, t.pcm.clone(), t.source.clone()),
             None => {
-                let d = decode_file_within(path, u64::MAX)?;
+                let d = decode_open_within(opened, path, u64::MAX)?;
                 (d.sample_rate, Arc::new(d.pcm), d.source)
             }
         };
@@ -911,7 +958,7 @@ mod tests {
         let spec = LoadSpec { deck: 1, path: String::new(), beats: vec![], bpm: None };
         let cache = Arc::new(TrackCache::default());
         // A load of a.wav mid-decode: its entry cloned out of the map and
-        // locked, exactly as `load` holds it across `decode_file_within`.
+        // locked, exactly as `load` holds it across `decode_open_within`.
         let entry = cache.files.lock().unwrap().entry(FileKey::of(&a)).or_default().clone();
         let decoding = entry.lock().unwrap();
         let load_in_thread = |path: PathBuf| {
@@ -941,6 +988,58 @@ mod tests {
         cache.load(&a, &spec).unwrap();
         assert_eq!(cache.files.lock().unwrap().len(), 2, "a file a deck holds was forgotten");
         drop(held_b);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn samples_are_cached_under_the_file_they_were_decoded_from() {
+        // Codex on b1f97c9d: the key was read from the path before the
+        // decoder opened it again, so a path repointed in between stored the
+        // new file's samples under the old file's key, and a later load of
+        // the old file was handed them. A symlink repointed is that case
+        // without touching either file (a rename or unlink would move the
+        // old file's change time, and with it its key).
+        fn write(p: &Path, v: f32) {
+            let mut f = std::io::BufWriter::new(std::fs::File::create(p).unwrap());
+            crate::wav::write_f32(&mut f, 48000, &[v; 1920]).unwrap();
+        }
+        fn point(link: &Path, to: &str) {
+            let tmp = link.with_file_name("cur.tmp");
+            let _ = std::fs::remove_file(&tmp);
+            std::os::unix::fs::symlink(to, &tmp).unwrap();
+            std::fs::rename(&tmp, link).unwrap();
+        }
+        fn repoint(p: &Path) {
+            if p.file_name().is_some_and(|n| n == "cur.wav") {
+                point(p, "b.wav");
+            }
+        }
+        let d = std::env::temp_dir().join(format!("odj-cache-swap-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        write(&d.join("a.wav"), 0.25);
+        write(&d.join("b.wav"), 0.5);
+        let spec = |path: &str| LoadSpec { deck: 1, path: path.into(), beats: vec![], bpm: None };
+        let cache = TrackCache::default();
+        let mut offline = file_loader(d.clone());
+        type Load<'a> = Box<dyn FnMut(&str) -> Arc<Track> + 'a>;
+        let loaders: [(&str, Load); 2] = [
+            ("session", Box::new(|p: &str| cache.load(&d.join(p), &spec(p)).unwrap())),
+            ("offline", Box::new(|p: &str| offline(&spec(p), u64::MAX).unwrap())),
+        ];
+        for (name, mut load) in loaders {
+            point(&d.join("cur.wav"), "a.wav");
+            AFTER_OPEN.with(|h| h.set(Some(repoint)));
+            let first = load("cur.wav");
+            AFTER_OPEN.with(|h| h.set(None));
+            let a = load("a.wav");
+            assert_eq!(a.pcm[0], 0.25, "{name}: a.wav was handed the samples of the file put in its place");
+            assert_eq!(first.pcm[0], 0.25, "{name}: the load did not decode the file it opened");
+            // Control: a.wav is the file decoded, so it shares those samples,
+            // and the file the path names now gets its own.
+            assert!(Arc::ptr_eq(&first.pcm, &a.pcm), "{name}: a.wav was decoded again");
+            assert_eq!(load("cur.wav").pcm[0], 0.5, "{name}: the repointed path was handed the old samples");
+        }
         let _ = std::fs::remove_dir_all(&d);
     }
 

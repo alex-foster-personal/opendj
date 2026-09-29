@@ -89,8 +89,18 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
 /// that fails as soon as it passes the limit, before it is held whole, so a
 /// caller with a memory budget never allocates past it.
 pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
-    let file = File::open(path)
-        .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot open {}: {e}", path.display())))?;
+    decode_open_within(open(path)?, path, max_frames)
+}
+
+/// Open `path` for decoding.
+pub fn open(path: &Path) -> Result<File, ProtoError> {
+    File::open(path).map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot open {}: {e}", path.display())))
+}
+
+/// Decode `file`, already opened from `path` (which names it in errors and
+/// gives the format hint), as `decode_file_within` does: a caller that keyed
+/// the file by its open handle decodes exactly the file it keyed.
+pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
     // Taken from the file the samples come from, not from its path again.
     let source = SourceId::of(&file).ok();
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
