@@ -69,16 +69,20 @@ def matches_by_hash(
             )
             for row in rows
         ]
+    # ``col = NULL`` is never true, so an absent hash drops its arm without an
+    # ``? IS NOT NULL`` guard, which would stop sqlite serving each arm from
+    # its own index (idx_tracks_content_hash, idx_tracks_audio_hash; #4397).
+    # ORDER BY rowid keeps the order the old table scan returned.
     rows = conn.execute(
         """
         SELECT stable_id, content_hash, audio_hash, isrc, updated_at, origin_device_id
         FROM tracks
         WHERE stable_id != ?
           AND deleted_at IS NULL
-          AND ((content_hash = ? AND ? IS NOT NULL)
-            OR (audio_hash = ? AND ? IS NOT NULL))
+          AND (content_hash = ? OR audio_hash = ?)
+        ORDER BY rowid
         """,
-        (incoming_pk, content_hash, content_hash, audio_hash, audio_hash),
+        (incoming_pk, content_hash, audio_hash),
     ).fetchall()
     return [_match_from_row(row) for row in rows]
 
@@ -86,7 +90,11 @@ def matches_by_hash(
 def matches_by_isrc(
     conn: sqlite3.Connection, incoming_pk: str, isrc: str, raw_isrc: str | None
 ) -> list[StoredMatch]:
-    """Find rows sharing a normalizable ISRC across schema versions."""
+    """Find rows sharing a normalizable ISRC across schema versions.
+
+    Each OR arm has its own index (idx_tracks_isrc, idx_tracks_isrc_upper), so
+    the lookup is a seek, not a scan (#4397).
+    """
     columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
     audio_column = "audio_hash" if "audio_hash" in columns else "NULL AS audio_hash"
     rows = conn.execute(
@@ -97,6 +105,7 @@ def matches_by_isrc(
           AND deleted_at IS NULL
           AND isrc IS NOT NULL
           AND (isrc = ? OR upper(isrc) = ?)
+        ORDER BY rowid
         """,
         (incoming_pk, raw_isrc or isrc, isrc),
     ).fetchall()
