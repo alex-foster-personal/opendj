@@ -107,11 +107,15 @@ test('five pushed toasts yield at most three visible in policy slice', async () 
 		viteApiBase: API_BASE
 	});
 	const policy = await loadTypeScriptModule('src/lib/toast-tray-policy.ts');
-	for (let i = 0; i < 5; i += 1) {
-		stores.pushToast(`burst ${i}`, 'error', 120_000);
+	try {
+		for (let i = 0; i < 5; i += 1) {
+			stores.pushToast(`burst ${i}`, 'error', 120_000);
+		}
+		const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
+		assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
+		const visible = policy.selectVisibleToasts(stores.toasts);
+		assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
+	} finally {
+		for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 	}
-	const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
-	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
-	const visible = policy.selectVisibleToasts(stores.toasts);
-	assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
 });
