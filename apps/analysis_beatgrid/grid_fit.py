@@ -20,8 +20,9 @@ three steps, each measured separately by `scripts/beatbench/run_grid_fit.py`:
      follows Mixxx's `BeatUtils::roundBpmWithinRange`; Mixxx is GPL, so this is
      a re-implementation from the description, not a copy.
   3. OFFSET. A constant shift is added to every beat. Beat This! beats sit
-     early against human annotation (round 2, GTZAN, median -8 ms), so the
-     default is `DEFAULT_OFFSET_S`; the bench reports it on and off.
+     early: about 15 ms against rekordbox, about 8 ms against human
+     annotation. `DEFAULT_OFFSET_S` is the served choice from `grid_design`;
+     the bench reports it on and off.
 
 Bar numbers are voted on the LINE index (downbeat's nearest k, mod 4) rather
 than on list position, for the same missed-beat reason, with the same floor as
@@ -47,6 +48,7 @@ from apps.analysis_beatgrid.bar_phase import (
     BAR_PHASE_AGREEMENT_FLOOR,
     DOUBLE_MIN_GAP_BEATS,
 )
+from apps.analysis_beatgrid.grid_design import OFFSET_SERVED_S
 from apps.analysis_beatgrid.tempo_change import MIN_RELATIVE_BPM_DELTA, detect_tempo_changes
 
 #: The two grid-fit modes. `raw` is the served behavior before this module.
@@ -68,12 +70,10 @@ ROUND_TOLERANCE_S = 0.020
 #: step always succeeds and the result is always a legal rekordbox tempo.
 ROUND_STEPS = (1.0, 0.5, 0.1, 0.01)
 
-#: Constant shift added to every regularized beat. Round 2 (GTZAN, 998 clips,
-#: `ops/beatbench/round-2/`) measured Beat This! beats a median 8 ms EARLY
-#: against human annotation, so they are moved later by that much. Taken from
-#: human truth rather than from the rekordbox fixtures this is scored on, so
-#: the bench does not grade a constant it was tuned to.
-DEFAULT_OFFSET_S = 0.008
+#: Constant shift added to every regularized beat. The value is a product
+#: decision, so it lives in `grid_design` with its reasoning: +15 ms served
+#: (matches rekordbox), +8 ms (human truth, round 2) the v2 target.
+DEFAULT_OFFSET_S = OFFSET_SERVED_S
 
 #: A model interval within this of the median counts as clean when seeding the
 #: line: two 50 fps frames, the model's own quantization plus one frame of jitter.

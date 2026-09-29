@@ -9,8 +9,11 @@ side by side against rekordbox:
                      from `bar_phase.lock_bar_phase`, failures as failures.
   line               `grid_fit.fit_grid` with no rounding and no offset.
   line_round         plus DJ-software BPM rounding.
-  line_round_offset  plus the constant offset from human truth: exactly what
-                     the lane serves with MDT_BEATGRID_GRID_FIT=line.
+  line_round_offset  plus the served offset (`grid_design.OFFSET_SERVED_S`,
+                     +15 ms, matches rekordbox): exactly what the lane serves
+                     with MDT_BEATGRID_GRID_FIT=line.
+  line_round_offset_v2_target
+                     the same with the v2 target offset (+8 ms, human truth).
   line_round_offset_octave
                      EXPERIMENT, not served: the grid re-rendered at the octave
                      `bpm.estimate_bpm` publishes. Measured to halve 163-175 BPM
@@ -38,12 +41,14 @@ from typing import Any
 
 from apps.analysis_beatgrid.bar_phase import lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
+from apps.analysis_beatgrid.grid_design import OFFSET_V2_TARGET_S
 from apps.analysis_beatgrid.grid_fit import DEFAULT_OFFSET_S, fit_grid
 
 VARIANTS: dict[str, dict[str, Any]] = {
     "line": {"rounding": False, "offset_s": 0.0},
     "line_round": {"rounding": True, "offset_s": 0.0},
     "line_round_offset": {"rounding": True, "offset_s": DEFAULT_OFFSET_S},
+    "line_round_offset_v2_target": {"rounding": True, "offset_s": OFFSET_V2_TARGET_S},
     "line_round_offset_octave": {"rounding": True, "offset_s": DEFAULT_OFFSET_S, "octave": True},
 }
 
