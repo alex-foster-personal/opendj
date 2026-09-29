@@ -475,6 +475,24 @@ fn a_hard_link_is_the_file_it_links_to() {
     let rewritten = session(&spec("copy.wav")).unwrap();
     assert_eq!(rewritten.frames, 24000);
     assert!(!std::sync::Arc::ptr_eq(&copy2.pcm, &rewritten.pcm));
+    // Codex on 7a620cdd: also when the rewrite keeps the length and puts the
+    // modification time back, as `cp -p` or `rsync -t` does.
+    #[cfg(unix)]
+    {
+        let old = std::fs::metadata(d.join("copy.wav")).unwrap();
+        let kept = old.modified().unwrap();
+        let before = offline(&spec("copy.wav"), u64::MAX).unwrap();
+        write_wav(&d, "copy.wav", 48000, &sine(48000, 440.0, 0.5));
+        std::fs::File::options().write(true).open(d.join("copy.wav")).unwrap().set_modified(kept).unwrap();
+        let meta = std::fs::metadata(d.join("copy.wav")).unwrap();
+        assert_eq!((meta.len(), meta.modified().unwrap()), (old.len(), kept), "the rewrite is not the case under test");
+        let after = session(&spec("copy.wav")).unwrap();
+        assert!(after.pcm[..] != rewritten.pcm[..], "the session loader handed out the old samples");
+        let after = offline(&spec("copy.wav"), u64::MAX).unwrap();
+        assert!(after.pcm[..] != before.pcm[..], "the offline loader handed out the old samples");
+        // Control: loaded again untouched, it shares the new samples.
+        assert!(std::sync::Arc::ptr_eq(&after.pcm, &offline(&spec("copy.wav"), u64::MAX).unwrap().pcm));
+    }
     // Through a render: the file loaded through its link counts once. The
     // end leaves room for 72000 frames of decoded tracks, so a.wav and its
     // link (48000, counted once) fit, and the third file, another 48000, is

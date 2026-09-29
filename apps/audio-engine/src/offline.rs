@@ -167,12 +167,18 @@ pub fn file_loader(base: PathBuf) -> impl FnMut(&LoadSpec, u64) -> Result<Arc<Tr
 ///
 /// Its length and modification time are part of it, so a file rewritten in
 /// place, or a new file that is handed a deleted one's inode while a deck
-/// still holds the old samples, decodes afresh instead of sharing them.
+/// still holds the old samples, decodes afresh instead of sharing them. On
+/// unix so is its change time, which every write moves and no tool can set
+/// back: a same-length rewrite whose modification time was kept (`cp -p`,
+/// `rsync -t`, `touch -r`) is a new file too. Two writes inside one tick of
+/// the volume's clock still look alike; elsewhere the change time is not
+/// read, so a kept modification time hides a same-length rewrite there.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FileKey {
     id: FileId,
     len: u64,
     modified: Option<std::time::SystemTime>,
+    changed: Option<(i64, i64)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -188,15 +194,15 @@ impl FileKey {
         match std::fs::metadata(path) {
             Ok(m) => {
                 #[cfg(unix)]
-                let id = {
+                let (id, changed) = {
                     use std::os::unix::fs::MetadataExt;
-                    FileId::Inode { dev: m.dev(), ino: m.ino() }
+                    (FileId::Inode { dev: m.dev(), ino: m.ino() }, Some((m.ctime(), m.ctime_nsec())))
                 };
                 #[cfg(not(unix))]
-                let id = by_path();
-                FileKey { id, len: m.len(), modified: m.modified().ok() }
+                let (id, changed) = (by_path(), None);
+                FileKey { id, len: m.len(), modified: m.modified().ok(), changed }
             }
-            Err(_) => FileKey { id: by_path(), len: 0, modified: None },
+            Err(_) => FileKey { id: by_path(), len: 0, modified: None, changed: None },
         }
     }
 }
