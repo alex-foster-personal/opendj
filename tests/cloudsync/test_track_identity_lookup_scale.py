@@ -10,8 +10,14 @@ It counts the whole per-row apply (``hub_apply`` and ``spoke_apply``), so a
 second per-row scan added anywhere on that path trips it too, not only the
 two lookups this issue names.
 
-[if] per-row apply work at 20x the library is more than 3x the small library's [then] the lookup scans the table, broken.
-[if] the probe does not see growth once the identity indexes are dropped [then] the instrument cannot detect a scan, broken.
+[if] per-row apply work at 20x the library exceeds 3x the small library's
+[then] the lookup scans the table, broken.
+[if] the probe sees no growth once the identity indexes are dropped
+[then] the instrument cannot detect a scan, broken.
+[if] a stored lowercase ISRC stops matching an uppercase incoming one
+[then] the index traded away the case-insensitive arm, broken.
+[if] matches come back in index order rather than stored (rowid) order
+[then] the seek changed what the scan returned, broken.
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from apps.sync_hub import engine, protocol
+from apps.sync_hub.engine_identity_queries import matches_by_hash, matches_by_isrc
 from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _T1
 from tests.cloudsync.test_track_identity_collapse import _open_hub, _values
 
@@ -158,3 +165,32 @@ def test_probe_sees_the_scan_when_the_identity_indexes_are_gone(
         f"unindexed lookup grew only {large / small:.1f}x "
         f"({small} -> {large} steps); the probe cannot tell a scan from a seek"
     )
+
+
+def test_isrc_lookup_still_matches_a_lowercase_stored_isrc(tmp_path: Path) -> None:
+    """Overshoot control: an indexed ``isrc = ?`` alone would pass the growth
+    test and silently drop this match, which only ``upper(isrc)`` finds."""
+    conn = _open_hub(tmp_path)
+    try:
+        _seed_library(conn, SMALL_LIBRARY)
+        conn.execute(
+            "UPDATE tracks SET isrc = lower(isrc) WHERE stable_id = 'stored-7'"
+        )
+        matches = matches_by_isrc(conn, "incoming", _isrc("SEE", 7), None)
+    finally:
+        conn.close()
+    assert [match.pk for match in matches] == ["stored-7"]
+
+
+def test_hash_matches_come_back_in_stored_order(tmp_path: Path) -> None:
+    """The indexed plan reads the content_hash arm before the audio_hash arm;
+    the old scan returned stored (rowid) order, and so must the seek."""
+    conn = _open_hub(tmp_path)
+    try:
+        _seed_library(conn, SMALL_LIBRARY)
+        matches = matches_by_hash(
+            conn, "incoming", content_hash=_digest("c", 9), audio_hash=_digest("a", 3)
+        )
+    finally:
+        conn.close()
+    assert [match.pk for match in matches] == ["stored-3", "stored-9"]

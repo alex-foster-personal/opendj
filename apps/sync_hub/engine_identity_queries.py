@@ -69,20 +69,21 @@ def matches_by_hash(
             )
             for row in rows
         ]
-    # ``col = NULL`` is never true, so an absent hash drops its arm without an
-    # ``? IS NOT NULL`` guard, which would stop sqlite serving each arm from
-    # its own index (idx_tracks_content_hash, idx_tracks_audio_hash; #4397).
-    # ORDER BY rowid keeps the order the old table scan returned.
+    # Each OR arm is served by its own index (idx_tracks_content_hash,
+    # idx_tracks_audio_hash), so this is a seek, not a scan (#4397). That
+    # plan returns rows arm by arm; ORDER BY rowid keeps the order the old
+    # table scan returned.
     rows = conn.execute(
         """
         SELECT stable_id, content_hash, audio_hash, isrc, updated_at, origin_device_id
         FROM tracks
         WHERE stable_id != ?
           AND deleted_at IS NULL
-          AND (content_hash = ? OR audio_hash = ?)
+          AND ((content_hash = ? AND ? IS NOT NULL)
+            OR (audio_hash = ? AND ? IS NOT NULL))
         ORDER BY rowid
         """,
-        (incoming_pk, content_hash, audio_hash),
+        (incoming_pk, content_hash, content_hash, audio_hash, audio_hash),
     ).fetchall()
     return [_match_from_row(row) for row in rows]
 
