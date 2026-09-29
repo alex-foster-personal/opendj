@@ -1307,7 +1307,9 @@ mod tests {
             go.store(true, Ordering::Relaxed);
             let results = || -> Vec<Value> {
                 let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
-                text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
+                // serve is still writing: a line is whole only once its newline is out.
+                let whole = text.rfind('\n').map_or(0, |i| i + 1);
+                text[..whole].lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
             };
             let deadline = Instant::now() + Duration::from_secs(10);
             while !results().iter().any(|v| v["id"] == 199) && Instant::now() < deadline {
@@ -1688,7 +1690,9 @@ mod tests {
         });
         let results = || -> Vec<Value> {
             let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
-            text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
+            // serve is still writing: a line is whole only once its newline is out.
+            let whole = text.rfind('\n').map_or(0, |i| i + 1);
+            text[..whole].lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).filter(|v| v["type"] == "result").collect()
         };
         writeln!(writer, "{}", serde_json::json!({"id": "load", "cmd": {"type": "load", "deck": 1, "path": fifo}})).unwrap();
         let extra = 50;
