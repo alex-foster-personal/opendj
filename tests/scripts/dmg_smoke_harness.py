@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import stat
 import subprocess
 import textwrap
@@ -11,10 +12,35 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_SH = REPO_ROOT / "ops" / "dmg-smoke" / "run.sh"
 INSTALLER = REPO_ROOT / "scripts" / "install_dmg_smoke_launchd.sh"
+JUSTFILE = REPO_ROOT / "justfile"
 
 HEAD_SHA = "a" * 40
 OLD_ROW7_SHA = "b" * 40
 ROW1_SHA = "c" * 40
+
+
+def real_build_total_printf_format() -> str:
+    """The exact printf format string the justfile `dmg` recipe's
+    `_record_build_time` EXIT trap appends to ops/logs/ship-dmg.log --
+    extracted from the justfile itself, the one place that write happens.
+
+    The headless shim's synthetic timing row is built FROM this extraction
+    (see `_headless_shim` below) rather than a hand-duplicated string, so a
+    real change to the recipe's format is inherited here automatically
+    instead of the shim's copy silently drifting out of sync with the
+    producer it stands in for (PR #4481 review, P1: "the producer and
+    consumer can drift together while these regression tests continue to
+    pass"). A missing match fails loudly -- a shim that fabricates a
+    plausible-looking line after its own source went missing is exactly the
+    silent-drift failure this guards against.
+    """
+    match = re.search(
+        r"printf '([^']*phase=build_total[^']*)'",
+        JUSTFILE.read_text(encoding="utf-8"),
+    )
+    if not match:
+        raise RuntimeError(f"{JUSTFILE}: _record_build_time's build_total printf format not found")
+    return match.group(1)
 
 
 def _write(path: Path, content: str, executable: bool = False) -> None:
@@ -110,6 +136,8 @@ exit 1
 def _headless_shim(build_root: Path) -> str:
     bundle_dir = build_root / "apps/desktop/src-tauri/target/release/bundle/dmg"
     log_dir = build_root / "ops/logs"
+    # Extracted from the justfile, not hand-typed: see real_build_total_printf_format.
+    default_timing_format = real_build_total_printf_format()
     return textwrap.dedent(
         f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -128,6 +156,17 @@ if [[ "$prepare_only" == "1" ]]; then
   exit 0
 fi
 if [[ -f "$build_root/DMG_SMOKE_BUILD_FAIL" ]]; then
+  # The real recipe's EXIT trap (_record_build_time) fires on every exit,
+  # success or failure, and records whatever verdict it reached before
+  # returning the original rc. Mirror that here: a failing build still gets
+  # its timing line (from DMG_SMOKE_TIMING_LOG when the test supplies one)
+  # before this shim's own nonzero exit, so run.sh's failure path can be
+  # tested against a real-shaped already-_FAILED verdict, not only the
+  # no-line-at-all case.
+  mkdir -p "$log_dir"
+  if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
+    cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
+  fi
   exit 1
 fi
 mkdir -p "$bundle_dir" "$log_dir"
@@ -142,10 +181,14 @@ printf 'origin/main 2026-01-01T00:00:00Z\\n%s\\n' "$digest" > "$dmg.complete"
 # Appends in the exact format the justfile's `dmg` recipe writes to
 # ops/logs/ship-dmg.log (`_record_build_time`). The `[TIMING] total=` form is
 # stdout only and never reaches this file, so the shim must not write it.
+# The format string itself ('{default_timing_format}') is extracted from the
+# justfile at test-collection time (real_build_total_printf_format), so a
+# real change to the recipe's line is inherited here rather than drifting
+# silently from a hand-duplicated copy.
 if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
   cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 else
-  echo '2026-01-01T00:00:00Z run=just-dmg mode=direct phase=build_total seconds=60 rc=0 verdict=OK' >> "$log_dir/ship-dmg.log"
+  printf '{default_timing_format}' '2026-01-01T00:00:00Z' 60 0 OK >> "$log_dir/ship-dmg.log"
 fi
 exit 0
 """
