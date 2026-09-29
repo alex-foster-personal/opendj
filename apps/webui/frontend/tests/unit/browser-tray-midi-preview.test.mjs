@@ -73,7 +73,7 @@ test('the I/O view MIDI entry keeps the status the top-bar MIDI label used to sh
 		assert.match(cluster, new RegExp(`\\.midi-btn\\.st-${status} \\{`));
 	}
 	assert.match(cluster, /bullets=\{\[midiTitle, /, 'the MIDI explainer must say why the color is what it is');
-	assert.match(cluster, /midiGlyph === 'tick'/);
+	assert.match(cluster, /<MidiStatusGlyph glyph=\{midiGlyph\} \/>/);
 });
 
 test('settings config exposes MIDI controller enablement', async () => {

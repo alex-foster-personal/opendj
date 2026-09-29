@@ -19,6 +19,7 @@
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 	import Knob from './Knob.svelte';
+	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
 
@@ -264,14 +265,7 @@
 			aria-label="Open MIDI panel"
 			aria-expanded={midiUi.panelOpen}
 			onclick={openMidiDrawer}
-			>MIDI{#if midiGlyph !== 'none'}<svg class="midi-glyph" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"
-					><path
-						d={midiGlyph === 'tick' ? 'M2 6.2 5 9.2 10 3' : 'M3 3l6 6m0-6-6 6'}
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.6"
-					/></svg
-				>{/if}</button
+			>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
 		>
 	</ControlExplainer>
 	<ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={60}>
@@ -413,7 +407,7 @@
 				class="hp-btn midi-btn io-midi st-{midiStatus}"
 				aria-label="Open MIDI panel from audio I/O"
 				aria-expanded={midiUi.panelOpen}
-				onclick={openMidiDrawer}>MIDI</button
+				onclick={openMidiDrawer}>MIDI<MidiStatusGlyph glyph={midiGlyph} /></button
 			>
 		</ControlExplainer>
 	</div>
@@ -465,10 +459,6 @@
 		50% {
 			opacity: 0.35;
 		}
-	}
-	.midi-glyph {
-		margin-left: 3px;
-		vertical-align: middle;
 	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);

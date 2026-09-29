@@ -10,6 +10,11 @@ export function midiLabelGlyphKind(
 	return 'none';
 }
 
+/** MIDI entry status marks (CHROME-07): tick when a mapped controller is bound, cross when none is. */
+export const MIDI_TICK_PATH = 'M2 6.2 5 9.2 10 3';
+
+export const MIDI_CROSS_PATH = 'M3 3l6 6m0-6-6 6';
+
 /** Sort arrow: up when asc, down when desc. */
 export function sortArrowPath(asc: boolean): string {
 	return asc ? 'M6 3 L10 9 L2 9 Z' : 'M6 11 L2 5 L10 5 Z';
