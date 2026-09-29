@@ -185,6 +185,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       # agentbox runners have shipped gh 2.62.0 (confirmed live: agentbox-15,
       # job 103871571683, Fri 12 Sep 2026 onward), below the 2.64.0 that
       # `gh api --paginate --slurp` needs (scripts/gh_version_guard.py:
@@ -467,6 +476,15 @@ jobs:
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
       # corepack BEFORE setup-node, so a pnpm shim exists when setup-node's
       # `cache: pnpm` resolves the store. Same order as ci.yml's frontend job.
       - name: Enable pinned pnpm
@@ -626,6 +644,15 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       - name: Install Python deps into the project venv
         run: uv sync --extra dev --extra analysis
 
@@ -761,6 +788,15 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       - name: Install Python deps into the project venv
         run: uv sync --extra dev --extra analysis
 
@@ -885,6 +921,15 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: Install Python deps into the project venv
         run: uv sync --extra dev
@@ -1064,6 +1109,13 @@ jobs:
           else
             window_args=(--days 7)
           fi
+          # REQS_JSON_PATH is unset in production, so this is a no-op here: it
+          # exists so a test can point the tool at a pinned reqs.json snapshot
+          # instead of this repo's live one, whose v1 pending ids keep flipping
+          # under it (tests/quality/test_periodic_checks_reqs_drift_row.py).
+          if [ -n "${REQS_JSON_PATH:-}" ]; then
+            window_args+=(--reqs-path "$REQS_JSON_PATH")
+          fi
           # NOT `... || true` followed by `$?`: after either, `$?` reads 0 and
           # the verdict is lost. scripts/shell_construct_lint.py bans that
           # construct for exactly this reason. if/else captures the real code.
@@ -1213,15 +1265,22 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Provision duplicate-writer venv
+        # Synced from the hash-pinned lock, never resolved (issue #4252). A
+        # separate step, so a provisioning failure cannot read as a verdict.
+        run: scripts/ci_venv.sh 3.11 --lock ops/fleet/pylock.duplicate-writer.toml
+
       - name: Duplicate-writer check
         run: |
           set -uo pipefail
-          pip install --quiet pyyaml
           # NOT `... || true` followed by `$?`: after a pipeline or an
           # `|| true`, `$?` reads 0 and the verdict is lost. scripts/
           # shell_construct_lint.py bans that construct for exactly this
           # reason. if/else captures the real code.
-          if python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
+          if .venv/bin/python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
             code=0
           else
             code=$?
@@ -1339,6 +1398,15 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: A Rust toolchain must be present
         run: |
@@ -1643,6 +1711,15 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
 
       - name: Post the window result
         env:

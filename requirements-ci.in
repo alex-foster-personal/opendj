@@ -1,0 +1,11 @@
+# Source of pylock.ci.toml, the lock every Linux pytest-shaped CI job syncs
+# (`scripts/ci_venv.sh 3.11 --lock pylock.ci.toml`). Edit this or
+# requirements.txt, then run `python -m scripts.ci_lock compile`;
+# tests/scripts/test_ci_lock.py fails until the lock is recompiled.
+-r requirements.txt
+# modal is a CI test-environment tool, not a package dependency: see the note
+# above the `dev` extra in pyproject.toml.
+modal
+# The pyproject `observability` extra, verbatim: the Sentry e2e tests import
+# sentry_sdk, and requirements.txt (the shipped payload) deliberately omits it.
+sentry-sdk>=2.0,<3

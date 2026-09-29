@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import asdict, is_dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -226,7 +227,16 @@ def _cmd_export(args: argparse.Namespace) -> int:
             # and requires ``schema_version`` + ``kind``. (codex P15)
             from apps.open_dj.wire import library_to_wire_document
 
-            doc = library_to_wire_document(library, source=spec.name)
+            # ``modified_at`` is required by library_to_wire_document (no
+            # wall-clock default -- see apps.open_dj.provenance module
+            # docstring). The class-family typed Track layer has no
+            # per-track source timestamp yet, so "now, once, at the CLI
+            # boundary" is the explicit snapshot-time stamp for this run;
+            # it is not a hidden default because it is decided here, in
+            # the open, rather than guessed inside the serializer.
+            doc = library_to_wire_document(
+                library, source=spec.name, modified_at=datetime.now(UTC)
+            )
     except FileNotFoundError as exc:
         print(f"{args.source}: {exc}", file=sys.stderr)
         return 1

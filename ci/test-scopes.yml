@@ -15,6 +15,9 @@ full_triggers:
   - "pyproject.toml"
   - "uv.lock"
   - "requirements.txt"
+  # The CI venv is synced from these locks (scripts/ci_lock.py, issue #4252).
+  - "requirements-*.in"
+  - "pylock.*.toml"
   - "justfile"
   - "conftest.py"
   - "**/conftest.py"
@@ -57,6 +60,8 @@ always:
   - "tests/live/"
   - "tests/lyrics_search/"
   - "tests/ops/"
+  # Global helper: the root conftest registers tests.support.spawned_servers (DEVOPS-17).
+  - "tests/support/"
 
 scopes:
   - name: adapters
@@ -233,7 +238,7 @@ scopes:
     # is a full trigger above and wins before this scope is consulted.
     sources: ["docs/", "specs/", "app_docs/", ".planning/", "handoffs/", "blog/"]
     tests: []
-    dependents: ["agentic_testing", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
+    dependents: ["agentic_testing", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
     mentions: ["docs", "specs", "app_docs", ".planning", "handoffs", "blog"]
   - name: agentic_testing
     sources: ["ops/agentic_testing/"]

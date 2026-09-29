@@ -26,6 +26,7 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -58,7 +59,7 @@ export default defineConfig({
 	expect: { timeout: 10_000 },
 	reporter: [['list']],
 	webServer: {
-		command: `pnpm build && python3 -m http.server ${METER_ARTIFACT_PORT} --bind 127.0.0.1 --directory build`,
+		command: guardedWebServerCommand('meter-artifact-static', `pnpm build && python3 -m http.server ${METER_ARTIFACT_PORT} --bind 127.0.0.1 --directory build`),
 		cwd: FRONTEND_ROOT,
 		url: `${METER_ARTIFACT_ORIGIN}/index.html`,
 		reuseExistingServer: false,

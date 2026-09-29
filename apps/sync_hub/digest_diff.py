@@ -96,7 +96,12 @@ def _newer_side(
 
 
 def _canonical_hex(table: str, columns: Sequence[str], row: Sequence[Any]) -> str:
-    return hashlib.sha256(canonical_bytes(canonical_row(table, columns, row))).hexdigest()
+    return canonical_hex(canonical_row(table, columns, row))
+
+
+def canonical_hex(canonical: Mapping[str, Any]) -> str:
+    """The ``GET /rows`` ``canonical_hex`` of one canonical row mapping."""
+    return hashlib.sha256(canonical_bytes(canonical)).hexdigest()
 
 
 def _pk_column_types(
@@ -201,7 +206,7 @@ def hub_sync_row_page(
     return rows, next_cursor
 
 
-def _fetch_hub_rows(
+def fetch_hub_rows(
     channel: HubTransport,
     machine_id: str,
     table: str,
@@ -302,7 +307,7 @@ def sample_divergence(
     """Fetch hub rows and return up to ``limit`` divergent samples."""
     hub_by_table: dict[str, dict[tuple[str, ...], HubRowSample]] = {}
     for table in tables:
-        hub_by_table[table] = _fetch_hub_rows(channel, machine_id, table)
+        hub_by_table[table] = fetch_hub_rows(channel, machine_id, table)
     found: list[DigestDiffRow] = []
     for table in tables:
         hub_rows = hub_by_table[table]
@@ -439,7 +444,9 @@ __all__ = [
     "DEFAULT_SAMPLE_LIMIT",
     "DigestDiffRow",
     "HubRowSample",
+    "canonical_hex",
     "divergent_rows",
+    "fetch_hub_rows",
     "format_diff_line",
     "format_mismatch_message",
     "format_pk",

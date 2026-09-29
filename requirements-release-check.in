@@ -1,0 +1,6 @@
+# Source of pylock.release-check.toml, synced by release-check.yml's project
+# venv. `make release-check` builds the sdist/wheel (build) and the native
+# extension (maturin). Recompile with `python -m scripts.ci_lock compile`.
+-r requirements.txt
+build
+maturin
