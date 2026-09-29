@@ -36,6 +36,9 @@ Requirements (mini-PRD)
 - [if] --target source and the URL `git push origin` would use (pushurl, else url) is not
   the configured source repository, or there is more than one pushurl [then] exit 1 and
   push nothing, [else stop] ✔︎ ✅ 🎯
+- [if] any git url rewrite rule (`insteadOf` or `pushInsteadOf`, any config scope) matches
+  the URL about to be contacted, on either target [then] exit 1 and push nothing: the
+  checked URL must be the destination, [else stop] ✔︎ ✅ 🎯
 - [if] the SHA is malformed or not an ancestor of refs/remotes/origin/main [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
@@ -61,10 +64,7 @@ REPO_ENV = "CANARY_MIRROR_REPO"
 MAIN_REF = "refs/remotes/origin/main"
 CANARY_PREFIX = "canary/"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
-GITHUB_REMOTE_RE = re.compile(
-    r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
-    r"(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?"
-)
+REWRITE_RULES_RE = r"^url\..*\.(push)?insteadof$"
 TARGETS = ("mirror", "source")
 GIT_TIMEOUT_S = 120
 
@@ -85,15 +85,15 @@ def refuse_retired_override(env: dict[str, str]) -> None:
         )
 
 
-def github_repo_of_remote(url: str) -> str | None:
-    """`owner/name` of a GitHub remote URL in any of git's spellings, else None."""
-    match = GITHUB_REMOTE_RE.fullmatch(url.strip())
-    return match.group("repo") if match else None
+def remote_urls_of(repo: str, config: dict) -> list[str]:
+    """Every accepted spelling of `repo`'s remote URL, from `remote_url_templates`. The first
+    is the one this script pushes to when it builds the URL itself (the mirror)."""
+    return [template.format(repo=repo) for template in config["remote_url_templates"]]
 
 
 def require_origin_is_source(origin_url: str, config: dict) -> None:
-    repo = github_repo_of_remote(origin_url)
-    if repo is None or repo.lower() != config["source_repository"].lower():
+    spellings = {url.lower() for url in remote_urls_of(config["source_repository"], config)}
+    if origin_url.strip().lower() not in spellings:
         raise MirrorRefused(
             f"origin is {origin_url!r}, not the source repository "
             f"{config['source_repository']!r}; run from a checkout of it"
@@ -128,6 +128,13 @@ def default_branch_from_ls_remote(listing: str) -> str | None:
     if target is None or target not in heads or not target.startswith("refs/heads/"):
         return None
     return target[len("refs/heads/") :]
+
+
+def rewrites_matching(url: str, rules: list[tuple[str, str]]) -> list[str]:
+    """The `url.<base>.insteadOf` / `pushInsteadOf` rules git would apply to `url`: git
+    rewrites a URL when a rule's value is a prefix of it (the longest wins), so any match
+    means the address git contacts is not `url`."""
+    return [f"{key} = {prefix!r}" for key, prefix in rules if url.startswith(prefix)]
 
 
 def check_default_branch(branch: str | None, repo: str) -> None:
@@ -181,6 +188,36 @@ def _git(
     )
 
 
+def url_rewrite_rules() -> list[tuple[str, str]]:
+    """Every url rewrite rule git sees, from every config scope (system, global, local,
+    worktree, and the inherited GIT_CONFIG_* environment), read through git itself. Read
+    without the mirror's auth env, which replaces the inherited GIT_CONFIG_* entries, so this
+    is a superset of what the mirror's network calls see and exactly what the source's see."""
+    listed = _git(["config", "-z", "--get-regexp", REWRITE_RULES_RE], check=False)
+    if listed.returncode not in (0, 1):  # 1 is git's "no such key": no rules
+        raise MirrorRefused(
+            f"cannot read git's url rewrite rules: git config exit {listed.returncode}: "
+            f"{listed.stderr.strip()}"
+        )
+    return [
+        (key, prefix)
+        for key, _, prefix in (entry.partition("\n") for entry in listed.stdout.split("\0"))
+        if key
+    ]
+
+
+def require_no_rewrite(url: str) -> None:
+    """Refuse when git would contact anything but `url` itself: the checked address must be
+    the address git uses, on both targets (Codex P1 on d18006414)."""
+    matching = rewrites_matching(url, url_rewrite_rules())
+    if matching:
+        raise MirrorRefused(
+            f"git would rewrite {url!r} before contacting it ({'; '.join(matching)}), so the "
+            "checked URL is not the destination; remove the rule or run from a checkout "
+            "without it"
+        )
+
+
 def require_on_main(sha: str) -> None:
     if _git(["rev-parse", "--verify", "--quiet", MAIN_REF], check=False).returncode != 0:
         raise MirrorRefused(
@@ -218,7 +255,7 @@ def _mirror_destination(config: dict) -> tuple[str, str, dict[str, str]]:
     # The mirror's owner and its distinctness from the source are config invariants,
     # pinned by tests/scripts/test_runner_canary_budget.py.
     repo = config["mirror_repository"]
-    return repo, f"https://github.com/{repo}.git", auth_env(token)
+    return repo, remote_urls_of(repo, config)[0], auth_env(token)
 
 
 def origin_push_url() -> str:
@@ -264,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         refuse_retired_override(dict(os.environ))
         repo, url, auth = _destination(args.target, config)
+        require_no_rewrite(url)
         sha = validate_sha(args.sha)
         require_on_main(sha)
         check_default_branch(read_default_branch(repo, url, auth), repo)

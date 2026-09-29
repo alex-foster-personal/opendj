@@ -5,10 +5,11 @@ org's mirror, for Blacksmith and Ubicloud; `--target source`, the source reposit
 through the checkout's own `origin`, for Avrea and Tenki.
 
 Driven for real: a source checkout and two bare repositories (the mirror, and the source
-repository's "remote") are built in `tmp_path`, and their https URLs are rewritten to the
-bare repositories through an isolated git config (`url.<file>.insteadOf`), so the script's
-own URL construction, auth header, preflight and push all run unmodified. Nothing touches
-GitHub.
+repository's "remote") are built in `tmp_path`, laid out as `<remotes>/<owner>/<name>.git`,
+and the script runs against a copy of ci/runner-canary.json whose `remote_url_templates` are
+`file://` spellings of that layout. No url rewrite rule is involved (the script refuses
+those), so the script's own URL construction, auth header, preflight and push all run
+unmodified. Nothing touches GitHub.
 
 Regression lines:
   - if a missing push token does anything but exit non-zero naming CANARY_MIRROR_PUSH_TOKEN
@@ -19,6 +20,10 @@ Regression lines:
     the configured source repository then broken, in both directions
   - if a `remote.origin.pushurl` pointing elsewhere is not the URL checked then broken
     (git pushes to pushurl, not url, so the guard would check the wrong address)
+  - if a git url rewrite rule (`insteadOf` or `pushInsteadOf`, any config scope) that
+    matches the URL about to be contacted does not refuse the run, on either target, then
+    broken (git would contact the rewritten address, not the checked one); and if a rule
+    that does NOT match refuses it then broken (opposite direction)
   - if the mirror credential, raw or as its git auth header, reaches ANY git child of a
     `--target source` push (and so its hooks and credential helpers) then broken; and if
     the mirror push itself stops carrying the auth header then broken (opposite direction)
@@ -63,10 +68,28 @@ def _git(cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
     ).stdout.strip()
 
 
+def _url(world: dict[str, object], repo: str, spelling: int = 0) -> str:
+    return world["config"]["remote_url_templates"][spelling].format(repo=repo)
+
+
+def _bare(world: dict[str, object], repo: str) -> Path:
+    """A writable bare repository at `repo`'s place in the remotes layout."""
+    bare = Path(str(world["remotes"])) / f"{repo}.git"
+    bare.parent.mkdir(parents=True, exist_ok=True)
+    _git(bare.parent, "init", "-q", "--bare", str(bare), env=world["env"])
+    return bare
+
+
 @pytest.fixture()
 def world(tmp_path: Path) -> dict[str, object]:
     gitconfig = tmp_path / "gitconfig"
-    mirror = tmp_path / "mirror.git"
+    remotes = tmp_path / "remotes"
+    config = {
+        **CONFIG,
+        "remote_url_templates": [f"file://{remotes}/{{repo}}.git", f"file://{remotes}/{{repo}}"],
+    }
+    config_path = tmp_path / "runner-canary.json"
+    config_path.write_text(json.dumps(config))
     base_env = {
         "PATH": os.environ["PATH"],
         "HOME": str(tmp_path),
@@ -74,11 +97,8 @@ def world(tmp_path: Path) -> dict[str, object]:
         "GIT_CONFIG_NOSYSTEM": "1",
         **GIT_IDENTITY,
     }
-    gitconfig.write_text(
-        f'[url "file://{mirror}"]\n'
-        f"\tinsteadOf = https://github.com/{CONFIG['mirror_repository']}.git\n"
-        "[init]\n\tdefaultBranch = main\n"
-    )
+    gitconfig.write_text("[init]\n\tdefaultBranch = main\n")
+    world = {"env": base_env, "remotes": remotes, "config": config, "config_path": config_path}
     source = tmp_path / "source"
     source.mkdir()
     _git(source, "init", "-q", env=base_env)
@@ -92,27 +112,15 @@ def world(tmp_path: Path) -> dict[str, object]:
     _git(source, "add", "b.txt", env=base_env)
     _git(source, "commit", "-q", "-m", "two", env=base_env)
     off_main = _git(source, "rev-parse", "HEAD", env=base_env)
-    _git(tmp_path, "init", "-q", "--bare", str(mirror), env=base_env)
+    mirror = _bare(world, CONFIG["mirror_repository"])
     # The source repository's own remote: a bare repository whose default branch is main,
-    # reached through the checkout's `origin` at its real GitHub URL.
-    real = tmp_path / "real.git"
-    _git(tmp_path, "init", "-q", "--bare", str(real), env=base_env)
+    # reached through the checkout's `origin` at its configured URL.
+    real = _bare(world, CONFIG["source_repository"])
     _git(source, "push", "-q", f"file://{real}", f"{on_main}:refs/heads/main", env=base_env)
-    with gitconfig.open("a") as fh:
-        fh.write(
-            f'[url "file://{real}"]\n'
-            f"\tinsteadOf = https://github.com/{CONFIG['source_repository']}.git\n"
-        )
-    _git(
-        source,
-        "remote",
-        "add",
-        "origin",
-        f"https://github.com/{CONFIG['source_repository']}.git",
-        env=base_env,
-    )
+    source_url = _url(world, CONFIG["source_repository"])
+    _git(source, "remote", "add", "origin", source_url, env=base_env)
     return {
-        "env": base_env,
+        **world,
         "source": source,
         "mirror": mirror,
         "real": real,
@@ -121,16 +129,19 @@ def world(tmp_path: Path) -> dict[str, object]:
     }
 
 
-def _bootstrap_default_branch(world: dict[str, object], branch: str = "main") -> None:
+def _bootstrap_default_branch(
+    world: dict[str, object], branch: str = "main", bare: Path | None = None
+) -> None:
     """What the ADR's one-time bootstrap does: a workflow-free default branch."""
     env = world["env"]
-    scratch = Path(str(world["mirror"]) + "-boot")
+    bare = bare or Path(str(world["mirror"]))
+    scratch = Path(str(bare) + "-boot")
     _git(scratch.parent, "init", "-q", str(scratch), env=env)
     (scratch / "README.md").write_text("canary mirror\n")
     _git(scratch, "add", "README.md", env=env)
     _git(scratch, "commit", "-q", "-m", "boot", env=env)
-    _git(scratch, "push", "-q", f"file://{world['mirror']}", f"HEAD:refs/heads/{branch}", env=env)
-    _git(Path(str(world["mirror"])), "symbolic-ref", "HEAD", f"refs/heads/{branch}", env=env)
+    _git(scratch, "push", "-q", f"file://{bare}", f"HEAD:refs/heads/{branch}", env=env)
+    _git(bare, "symbolic-ref", "HEAD", f"refs/heads/{branch}", env=env)
 
 
 def _run(
@@ -146,7 +157,7 @@ def _run(
             sha,
             *target_args,
             "--config",
-            str(REPO / "ci" / "runner-canary.json"),
+            str(world["config_path"]),
         ],
         cwd=world["source"],
         capture_output=True,
@@ -267,43 +278,19 @@ def test_source_target_lands_canary_sha_through_origin_without_the_mirror_token(
 
 
 def test_source_target_refuses_an_origin_that_is_not_the_source_repository(world) -> None:
-    other = "someone-else/music-dj-tools"
-    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    # Route the impostor URL to the same bare repository, so a missing guard WOULD land.
-    gitconfig.write_text(
-        gitconfig.read_text()
-        + f'[url "file://{world["real"]}"]\n\tinsteadOf = https://github.com/{other}.git\n'
-    )
-    _git(
-        world["source"],
-        "remote",
-        "set-url",
-        "origin",
-        f"https://github.com/{other}.git",
-        env=world["env"],
-    )
+    impostor_url, impostor = _impostor(world)
+    _git(world["source"], "remote", "set-url", "origin", impostor_url, env=world["env"])
     result = _run(world, world["on_main"], target="source")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "origin is" in result.stdout and "not the source repository" in result.stdout
+    assert _git(impostor, "for-each-ref", env=world["env"]) == ""
     assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
 
 
-@pytest.mark.parametrize(
-    "url",
-    [
-        "git@github.com:{repo}.git",
-        "ssh://git@github.com/{repo}.git",
-        "https://github.com/{repo}",
-    ],
-    ids=["scp", "ssh", "https-no-suffix"],
-)
-def test_source_target_accepts_every_spelling_of_the_source_origin(world, url: str) -> None:
+@pytest.mark.parametrize("spelling", [0, 1], ids=["with-dot-git", "without-dot-git"])
+def test_source_target_accepts_every_spelling_of_the_source_origin(world, spelling: int) -> None:
     """Opposite direction: the guard must not refuse the real repository spelled otherwise."""
-    spelled = url.format(repo=CONFIG["source_repository"])
-    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    gitconfig.write_text(
-        gitconfig.read_text() + f'[url "file://{world["real"]}"]\n\tinsteadOf = {spelled}\n'
-    )
+    spelled = _url(world, CONFIG["source_repository"], spelling)
     _git(world["source"], "remote", "set-url", "origin", spelled, env=world["env"])
     result = _run(world, world["on_main"], target="source")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -311,16 +298,9 @@ def test_source_target_accepts_every_spelling_of_the_source_origin(world, url: s
 
 
 def _impostor(world: dict[str, object]) -> tuple[str, Path]:
-    """A writable bare repository at another GitHub URL: a push there WOULD land."""
+    """A writable bare repository at another repository's URL: a push there WOULD land."""
     other = "someone-else/music-dj-tools"
-    bare = Path(str(world["real"]) + "-impostor")
-    _git(bare.parent, "init", "-q", "--bare", str(bare), env=world["env"])
-    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    gitconfig.write_text(
-        gitconfig.read_text()
-        + f'[url "file://{bare}"]\n\tinsteadOf = https://github.com/{other}.git\n'
-    )
-    return f"https://github.com/{other}.git", bare
+    return _url(world, other), _bare(world, other)
 
 
 def test_source_target_checks_the_push_url_git_will_actually_use(world) -> None:
@@ -336,7 +316,7 @@ def test_source_target_checks_the_push_url_git_will_actually_use(world) -> None:
 
 def test_source_target_refuses_more_than_one_push_url(world) -> None:
     impostor_url, impostor = _impostor(world)
-    source_url = f"https://github.com/{CONFIG['source_repository']}.git"
+    source_url = _url(world, CONFIG["source_repository"])
     _git(
         world["source"],
         "remote",
@@ -364,16 +344,113 @@ def test_source_target_refuses_more_than_one_push_url(world) -> None:
 
 
 def test_source_target_honors_a_push_url_that_is_the_source_repository(world) -> None:
-    """Opposite direction: a pushurl spelled over ssh for the SAME repository is fine."""
-    spelled = f"git@github.com:{CONFIG['source_repository']}.git"
-    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
-    gitconfig.write_text(
-        gitconfig.read_text() + f'[url "file://{world["real"]}"]\n\tinsteadOf = {spelled}\n'
-    )
+    """Opposite direction: a pushurl spelled differently for the SAME repository is fine."""
+    spelled = _url(world, CONFIG["source_repository"], 1)
     _git(world["source"], "remote", "set-url", "--push", "origin", spelled, env=world["env"])
     result = _run(world, world["on_main"], target="source")
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"refs/heads/canary/{world['on_main']}" in _mirror_refs(world, "real")
+
+
+# ----- url rewrite rules: the checked URL must be the URL git contacts ---------------
+
+
+def _canary_refs(bare: Path, world: dict[str, object]) -> list[str]:
+    out = _git(bare, "for-each-ref", "--format=%(refname)", "refs/heads/canary/", env=world["env"])
+    return out.splitlines()
+
+
+def test_source_target_refuses_a_push_rewrite_of_the_checked_url(world) -> None:
+    """Codex P1 on d18006414: `remote.origin.url` IS the source, but a local-scope
+    `pushInsteadOf` makes git push that very URL to another repository."""
+    impostor_url, impostor = _impostor(world)
+    source_url = _url(world, CONFIG["source_repository"])
+    _git(
+        world["source"],
+        "config",
+        f"url.{impostor_url}.pushInsteadOf",
+        source_url,
+        env=world["env"],
+    )
+    # Control: git itself resolves the push elsewhere, so a missing guard WOULD land there.
+    resolved = _git(world["source"], "remote", "get-url", "--push", "origin", env=world["env"])
+    assert resolved == impostor_url
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "would rewrite" in result.stdout and "pushinsteadof" in result.stdout
+    assert _git(impostor, "for-each-ref", env=world["env"]) == ""
+    assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
+
+
+def test_mirror_target_refuses_a_rewrite_of_the_mirror_url(world) -> None:
+    """Same class on the other target: a global-scope `insteadOf` would send the mirror's
+    ls-remote and push, auth header included, to another repository."""
+    _bootstrap_default_branch(world)
+    impostor_url, impostor = _impostor(world)
+    # A default branch, so without the guard the default-branch check passes and the push
+    # WOULD land in the impostor rather than being refused for another reason.
+    _bootstrap_default_branch(world, bare=impostor)
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    mirror_url = _url(world, CONFIG["mirror_repository"])
+    gitconfig.write_text(
+        gitconfig.read_text() + f'[url "{impostor_url}"]\n\tinsteadOf = {mirror_url}\n'
+    )
+    result = _run(world, world["on_main"])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "would rewrite" in result.stdout and ".insteadof" in result.stdout
+    assert _canary_refs(impostor, world) == []
+    assert _canary_refs(Path(str(world["mirror"])), world) == []
+
+
+def test_a_rewrite_rule_from_the_environment_scope_is_seen_too(world) -> None:
+    """Every scope git reads, not only config files: GIT_CONFIG_* in the environment."""
+    impostor_url, impostor = _impostor(world)
+    result = _run(
+        world,
+        world["on_main"],
+        target="source",
+        GIT_CONFIG_COUNT="1",
+        GIT_CONFIG_KEY_0=f"url.{impostor_url}.pushInsteadOf",
+        GIT_CONFIG_VALUE_0=_url(world, CONFIG["source_repository"]),
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "would rewrite" in result.stdout
+    assert _git(impostor, "for-each-ref", env=world["env"]) == ""
+
+
+def test_unreadable_rewrite_rules_are_refused_not_read_as_none(world) -> None:
+    """A config git cannot parse must not read as "no rewrite rules"."""
+    _bootstrap_default_branch(world)
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    readable = gitconfig.read_text()
+    gitconfig.write_text(readable + "[url\n")
+    result = _run(world, world["on_main"])
+    gitconfig.write_text(readable)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "cannot read git's url rewrite rules" in result.stdout
+    assert _canary_refs(Path(str(world["mirror"])), world) == []
+
+
+@pytest.mark.parametrize("target", ["mirror", "source"])
+def test_rewrite_rules_that_do_not_match_the_url_do_not_refuse(world, target: str) -> None:
+    """Opposite direction: only a rule git would APPLY refuses. A rule for another host, and
+    a near miss whose value merely EXTENDS the URL (a prefix check run backwards would
+    match it), leave the push alone."""
+    _bootstrap_default_branch(world)
+    impostor_url, impostor = _impostor(world)
+    repo = CONFIG["mirror_repository"] if target == "mirror" else CONFIG["source_repository"]
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    gitconfig.write_text(
+        gitconfig.read_text()
+        + f'[url "{impostor_url}"]\n'
+        + "\tinsteadOf = https://git.example.invalid/\n"
+        + f"\tpushInsteadOf = {_url(world, repo)}-other\n"
+    )
+    result = _run(world, world["on_main"], target=target)
+    assert result.returncode == 0, result.stdout + result.stderr
+    landed = Path(str(world["mirror"] if target == "mirror" else world["real"]))
+    assert _canary_refs(landed, world) == [f"refs/heads/canary/{world['on_main']}"]
+    assert _git(impostor, "for-each-ref", env=world["env"]) == ""
 
 
 def _log_every_git_child(world: dict[str, object]) -> Path:
