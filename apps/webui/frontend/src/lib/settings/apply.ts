@@ -53,6 +53,11 @@ import {
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
 import {
+	setStoredEngineChoice,
+	storedEngineChoice,
+	type EngineChoice
+} from '$lib/audio-engine/rust-mode.svelte';
+import {
 	setWheelSensitivity,
 	wheelSensitivity,
 	type WheelInputKind
@@ -98,7 +103,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'horizontal_wheel_knob',
 	'perf_tier',
 	'app_posture',
-	'gig_helper'
+	'gig_helper',
+	'audio_engine'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -191,6 +197,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.app_posture;
 		case 'gig_helper':
 			return uiPrefs.gig_helper;
+		case 'audio_engine':
+			return storedEngineChoice();
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -385,6 +393,10 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setGigHelper(value as GigHelperPref);
 			return;
 		}
+		case 'audio_engine':
+			// Validates, and throws on anything but webaudio|rust.
+			setStoredEngineChoice(value as EngineChoice);
+			return;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);

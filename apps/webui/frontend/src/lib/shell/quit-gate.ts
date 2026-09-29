@@ -1,6 +1,7 @@
 /**
- * INSTALL-21: desktop-shell quit gate. Rust intercepts Cmd-Q and calls
- * `globalThis.__OPENDJ_requestQuit`; this module owns the product decision.
+ * INSTALL-21: desktop-shell quit gate. The shell (Tauri or Electron) intercepts
+ * Cmd-Q and window close and calls `globalThis.__OPENDJ_requestQuit`; this
+ * module owns the product decision.
  */
 
 import { subscribe, TOPIC_SHELL_QUIT, type Unsubscribe } from '$lib/api/events-bus';
@@ -9,6 +10,7 @@ import { flushPerformanceSessionSnapshot } from '$lib/rb/performance-session.sve
 import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 import { detectSurface, type ShellScope } from '$lib/rb/usage-heartbeat';
 import { closeQuitConfirm, isQuitConfirmOpen, openQuitConfirm } from './quit-gate-state';
+import { exitApp } from './native-shell';
 import { needsQuitConfirmation } from './needs-quit-confirmation';
 import { planQuitRequest } from './quit-gate-logic';
 
@@ -30,8 +32,7 @@ type QuitGateDeps = {
 let confirming = false;
 
 async function exitShellDefault(): Promise<void> {
-	const { exit } = await import('@tauri-apps/plugin-process');
-	await exit(0);
+	await exitApp(0);
 }
 
 function isConfirmChord(event: KeyboardEvent): boolean {
@@ -66,7 +67,8 @@ export async function confirmQuit(deps?: Pick<QuitGateDeps, 'flushSnapshot' | 'e
 		flush();
 		await exit();
 	} catch (error) {
-		// exit() rejects when the ACL refuses process:allow-exit (issue #3058).
+		// exit() rejects when the ACL refuses process:allow-exit (issue #3058),
+		// or when the Electron shell refuses a page outside its trusted origins.
 		// Report deliberately, under the quit-gate source, instead of letting it
 		// surface only as a generic window.onunhandledrejection accident: that
 		// kept the failure diagnosable only by luck, with no quit-path context.
