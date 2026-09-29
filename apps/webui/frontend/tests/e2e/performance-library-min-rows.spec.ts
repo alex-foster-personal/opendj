@@ -455,6 +455,38 @@ test('performance: at the short 1280x720 window, the shortfall costs library row
 
 const MORE_MODE_CHORD = process.platform === 'darwin' ? 'Meta+1' : 'Control+1';
 
+async function tableWrapHeight(page: import('@playwright/test').Page): Promise<number> {
+	return page.locator('.table-wrap').evaluate((el) => el.getBoundingClientRect().height);
+}
+
+async function scrollRowNearViewportBottom(
+	page: import('@playwright/test').Page,
+	rowIndex: number
+): Promise<void> {
+	await page.evaluate((index) => {
+		const wrap = document.querySelector('.table-wrap');
+		const row = document.querySelectorAll('[data-testid="track-row"]')[index];
+		if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) {
+			throw new Error('table-wrap or target row missing');
+		}
+		const w = wrap.getBoundingClientRect();
+		const r = row.getBoundingClientRect();
+		const delta = r.bottom - w.bottom + 2;
+		wrap.scrollTop = Math.max(0, wrap.scrollTop + delta);
+	}, rowIndex);
+}
+
+async function selectedRowFullyVisible(page: import('@playwright/test').Page): Promise<boolean> {
+	return page.evaluate(() => {
+		const wrap = document.querySelector('.table-wrap');
+		const row = document.querySelector('[data-testid="track-row"].rb-row-selected');
+		if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
+		const w = wrap.getBoundingClientRect();
+		const r = row.getBoundingClientRect();
+		return r.top >= w.top - 0.5 && r.bottom <= w.bottom + 0.5;
+	});
+}
+
 test('performance: selected library row stays visible when toggling MORE and LESS (LIBUX-18, issue #3984)', async ({
 	page
 }) => {
@@ -465,45 +497,58 @@ test('performance: selected library row stays visible when toggling MORE and LES
 	const rows = page.locator('[data-testid="track-row"]');
 	const count = await rows.count();
 	expect(count).toBeGreaterThanOrEqual(8);
-	const target = rows.nth(7);
+
+	// LESS first: select a lower row near the bottom of the expanded viewport, then shrink to MORE.
+	await page.locator('.deck-layout-btn').filter({ hasText: 'LESS' }).click();
+	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+	const lessHeight = await tableWrapHeight(page);
+	expect(lessHeight).toBeGreaterThan(100);
+
+	const shrinkTarget = rows.nth(7);
 	await tableWrap.evaluate((el) => {
 		el.scrollTop = 0;
 	});
-	const offScreenBeforeSelect = await page.evaluate(() => {
-		const wrap = document.querySelector('.table-wrap');
-		const row = document.querySelectorAll('[data-testid="track-row"]')[7];
-		if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
-		const w = wrap.getBoundingClientRect();
-		const r = row.getBoundingClientRect();
-		return r.bottom <= w.top || r.top >= w.bottom;
-	});
-	expect(offScreenBeforeSelect).toBe(true);
-	await target.scrollIntoViewIfNeeded();
-	await target.click();
-	await expect(target).toHaveClass(/rb-row-selected/);
+	await scrollRowNearViewportBottom(page, 7);
+	await shrinkTarget.click();
+	await expect(shrinkTarget).toHaveClass(/rb-row-selected/);
+	expect(await selectedRowFullyVisible(page)).toBe(true);
+	const shrinkStableId = await shrinkTarget.getAttribute('data-stable-id');
+	expect(shrinkStableId).toBeTruthy();
 
-	const intersects = async (): Promise<boolean> => {
-		return page.evaluate(() => {
-			const wrap = document.querySelector('.table-wrap');
-			const row = document.querySelector('[data-testid="track-row"].rb-row-selected');
-			if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
-			const w = wrap.getBoundingClientRect();
-			const r = row.getBoundingClientRect();
-			return r.bottom > w.top && r.top < w.bottom;
-		});
-	};
-
-	expect(await intersects()).toBe(true);
-	await page.locator('.deck-layout-btn').filter({ hasText: 'LESS' }).click();
-	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
-	expect(await intersects()).toBe(true);
 	await page.locator('.deck-layout-btn').filter({ hasText: 'MORE' }).click();
 	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
-	expect(await intersects()).toBe(true);
+	await expect
+		.poll(async () => tableWrapHeight(page), { timeout: 10_000 })
+		.toBeLessThan(lessHeight - 4);
+	await expect
+		.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 })
+		.toBe(true);
+	await expect(page.locator(`[data-testid="track-row"][data-stable-id="${shrinkStableId}"]`)).toHaveClass(
+		/rb-row-selected/
+	);
+
+	// Inverse: establish a fresh selection in the smaller MORE viewport, then expand with the keyboard chord.
+	await tableWrap.evaluate((el) => {
+		el.scrollTop = 0;
+	});
+	const expandTarget = rows.nth(5);
+	await scrollRowNearViewportBottom(page, 5);
+	await expandTarget.click();
+	await expect(expandTarget).toHaveClass(/rb-row-selected/);
+	expect(await selectedRowFullyVisible(page)).toBe(true);
+	const expandStableId = await expandTarget.getAttribute('data-stable-id');
+	expect(expandStableId).toBeTruthy();
+	const moreHeight = await tableWrapHeight(page);
+
 	await page.keyboard.press(LESS_MODE_CHORD);
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
-	expect(await intersects()).toBe(true);
-	await page.keyboard.press(MORE_MODE_CHORD);
-	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
-	expect(await intersects()).toBe(true);
+	await expect
+		.poll(async () => tableWrapHeight(page), { timeout: 10_000 })
+		.toBeGreaterThan(moreHeight + 4);
+	await expect
+		.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 })
+		.toBe(true);
+	await expect(page.locator(`[data-testid="track-row"][data-stable-id="${expandStableId}"]`)).toHaveClass(
+		/rb-row-selected/
+	);
 });

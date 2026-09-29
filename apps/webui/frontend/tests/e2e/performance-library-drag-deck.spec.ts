@@ -2,20 +2,49 @@
  * DECKUX-21 / LIBUX-21: Chromium drag-to-deck load and Space must not scroll
  * the library. Uses the performance fixture library (playwright.performance.config.ts).
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+const API_BASE = process.env.PERFORMANCE_E2E_API_BASE ?? 'http://127.0.0.1:8686';
 const TRACK_ROW = '[data-testid="track-row"]';
 const TRACK_STABLE_MIME = 'application/x-mdt-stable-id';
 
+/** Optional row probes; benign 404s on other tracks must not mask failures on the dragged row. */
+const OPTIONAL_ROW_PROBE_PATTERNS: readonly RegExp[] = [
+	/\/api\/v1\/tracks\/[^/]+\/artwork(\?|$)/,
+	/\/api\/v1\/tracks\/[^/]+\/stems(\?|$)/
+];
+
+function isIgnorableOptionalRowProbe(url: string, draggedStableId: string): boolean {
+	if (!OPTIONAL_ROW_PROBE_PATTERNS.some((pattern) => pattern.test(url))) return false;
+	const match = url.match(/\/api\/v1\/tracks\/([^/]+)\//);
+	if (match?.[1] === draggedStableId) return false;
+	return true;
+}
+
+async function firstOnDiskStableId(request: APIRequestContext): Promise<string> {
+	const response = await request.get(`${API_BASE}/api/v1/tracks?limit=50&available=true`);
+	expect(response.ok(), 'track listing must succeed').toBeTruthy();
+	const payload = (await response.json()) as {
+		items: { stable_id: string; file_exists: boolean }[];
+	};
+	const track = payload.items.find(
+		(item) => item.file_exists && typeof item.stable_id === 'string' && item.stable_id.length > 0
+	);
+	expect(track, 'library must include at least one on-disk available track').toBeDefined();
+	return track!.stable_id;
+}
+
 async function dragRowToDeck(
 	page: Page,
-	rowIndex: number,
+	stableId: string,
 	deckId: number
 ): Promise<{ dragOverAccepted: boolean; payloadOnDrop: string }> {
 	return page.evaluate(
-		({ rowSelector, index, deck, mime }) => {
-			const row = document.querySelectorAll(rowSelector)[index];
-			if (!(row instanceof HTMLElement)) throw new Error(`no track row at index ${index}`);
+		({ rowSelector, sid, deck, mime }) => {
+			const row = [...document.querySelectorAll(rowSelector)].find(
+				(el) => el.getAttribute('data-stable-id') === sid
+			);
+			if (!(row instanceof HTMLElement)) throw new Error(`no track row for stable_id ${sid}`);
 			const target = document.querySelector(`section.rb-deck[data-deck="${deck}"]`);
 			if (!(target instanceof HTMLElement)) throw new Error(`no deck ${deck}`);
 
@@ -42,31 +71,45 @@ async function dragRowToDeck(
 			row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: carried }));
 			return report;
 		},
-		{ rowSelector: TRACK_ROW, index: rowIndex, deck: deckId, mime: TRACK_STABLE_MIME }
+		{ rowSelector: TRACK_ROW, sid: stableId, deck: deckId, mime: TRACK_STABLE_MIME }
 	);
 }
 
 test('performance: drag library row onto deck loads track and Space toggles play without scrolling library', async ({
-	page
+	page,
+	request
 }) => {
 	test.setTimeout(120_000);
+	const stableId = await firstOnDiskStableId(request);
 	const pageErrors: string[] = [];
 	page.on('pageerror', (err) => pageErrors.push(err.message));
 	page.on('console', (msg) => {
-		if (msg.type() === 'error') pageErrors.push(msg.text());
+		if (msg.type() !== 'error') return;
+		const text = msg.text();
+		if (
+			text.startsWith('Failed to load resource:') &&
+			isIgnorableOptionalRowProbe(msg.location().url, stableId)
+		) {
+			return;
+		}
+		pageErrors.push(text);
+	});
+	page.on('response', (response) => {
+		if (response.status() < 400) return;
+		if (isIgnorableOptionalRowProbe(response.url(), stableId)) return;
+		pageErrors.push(`http ${response.status()}: ${response.url()}`);
 	});
 	await page.goto('/performance');
 	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1, undefined, {
 		timeout: 60_000
 	});
 
-	const row = page.locator(TRACK_ROW).first();
+	const row = page.locator(`${TRACK_ROW}[data-stable-id="${stableId}"]`);
+	await row.scrollIntoViewIfNeeded();
 	await expect(row).toBeVisible({ timeout: 60_000 });
-	const stableId = await row.getAttribute('data-stable-id');
-	if (stableId === null) throw new Error('first row missing data-stable-id');
 	await row.click();
 
-	const gesture = await dragRowToDeck(page, 0, 1);
+	const gesture = await dragRowToDeck(page, stableId, 1);
 	expect(gesture.dragOverAccepted, 'deck 1 must accept dragover').toBe(true);
 	expect(gesture.payloadOnDrop).toBe(stableId);
 

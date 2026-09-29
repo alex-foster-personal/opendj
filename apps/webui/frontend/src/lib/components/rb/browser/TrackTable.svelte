@@ -2286,7 +2286,7 @@
 		height: 1px;
 		background: #131519;
 		pointer-events: none;
-		z-index: 1;
+		z-index: 4;
 	}
 	/* Prefetch markers - top-left of row (same corner as job wash). */
 	.audio-cache-chevron {

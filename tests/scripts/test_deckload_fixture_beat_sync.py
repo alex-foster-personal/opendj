@@ -1,6 +1,7 @@
 """Regression tests for the analysis-backed performance rescue fixture (#1735)."""
 from __future__ import annotations
 
+import hashlib
 import wave
 from pathlib import Path
 
@@ -8,16 +9,29 @@ import pytest
 
 from apps.analysis.record import AnalysisRecord
 from apps.analysis.store import fetch_records
+from apps.shared import audio_files
 from apps.shared.state import db as state_db
 from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
+    ARTWORK_PNG_SHA256,
+    ARTWORK_SOURCE_PNG,
     FIXTURE_TRACKS,
     PERFORMANCE_FOLD_TRACK,
+    RESCUE_PLAYBACK_ARTWORK_TRACK,
     RESCUE_PLAYBACK_LIBRARY_TRACKS,
     RESCUE_PLAYBACK_TRACKS,
     build_rescue_playback,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _id3_apic_frames(wav_path: Path) -> list[object]:
+    from mutagen.wave import WAVE
+
+    audio = WAVE(wav_path)
+    if audio.tags is None:
+        return []
+    return list(audio.tags.getall("APIC") or [])
 
 
 @pytest.mark.requirement("PARITY-10")
@@ -104,3 +118,21 @@ def test_rescue_playback_fixture_is_idempotent_on_second_build(tmp_path: Path) -
         db_path=state_db_path,
     )
     assert len(stored) == len(RESCUE_PLAYBACK_TRACKS)
+
+    artwork_wav = data_dir / "fixture-audio" / RESCUE_PLAYBACK_ARTWORK_TRACK.filename
+    expected_png = ARTWORK_SOURCE_PNG.read_bytes()
+    assert hashlib.sha256(expected_png).hexdigest() == ARTWORK_PNG_SHA256
+    artwork = audio_files.read_embedded_artwork(artwork_wav)
+    assert artwork == (expected_png, "image/png")
+    apics = _id3_apic_frames(artwork_wav)
+    assert len(apics) == 1
+    assert apics[0].type == 3
+    assert apics[0].mime == "image/png"
+    other_wavs = {
+        track.filename
+        for track in RESCUE_PLAYBACK_LIBRARY_TRACKS
+        if track.filename != RESCUE_PLAYBACK_ARTWORK_TRACK.filename
+    }
+    for filename in other_wavs:
+        path = data_dir / "fixture-audio" / filename
+        assert audio_files.read_embedded_artwork(path) is None

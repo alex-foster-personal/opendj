@@ -285,6 +285,17 @@ html[data-theme='light'] .perf-root {
 .perf-root tbody tr.rb-row-selected .art-slate {
 	background: transparent;
 }
+.perf-root tbody tr.rb-row-selected .c-art::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background: color-mix(in srgb, var(--rb-select) 55%, transparent);
+}
+.perf-root tbody tr.rb-row-selected .c-art img {
+	z-index: 0;
+}
 
 /* -------- finished-track eject: overlaid on the waveform once the transport
  * has actually settled at silence, reusing WaveRow's own unload dispatcher -------- */
