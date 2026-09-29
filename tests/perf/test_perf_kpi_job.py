@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import plistlib
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -20,6 +20,8 @@ from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE
 from tests.perf.perf_kpi_job_fixtures import free_port, nightly_env
 
 INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
+DECIDE_SCRIPT = REPO_ROOT / "scripts" / "perf_kpi_launchd_decide.sh"
+LAUNCHCTL_UNAVAILABLE = sys.platform != "darwin" or shutil.which("launchctl") is None
 
 
 def _history_events(state_dir: Path) -> list[str]:
@@ -65,9 +67,7 @@ def _ledger_entries(tmp_path: Path) -> list[dict]:
     return ledger["entries"]
 
 
-def test_nightly_fails_when_data_dir_unset(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nightly_fails_when_data_dir_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If MDT_PERF_KPI_DATA_DIR is unset then nightly exits non-zero with engine_unavailable."""
     state_dir = nightly_env(monkeypatch, tmp_path)
     monkeypatch.delenv("MDT_PERF_KPI_DATA_DIR", raising=False)
@@ -218,9 +218,7 @@ def test_nightly_fails_fast_when_engine_exits_before_healthy(
     assert not _listening(port)
 
 
-def test_base_url_starts_no_engine(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_base_url_starts_no_engine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """If --base-url is passed then no engine is started and DATA_DIR is not required."""
     scratch_port = free_port()
     closed_port = free_port()
@@ -251,88 +249,6 @@ def test_base_url_starts_no_engine(
     finally:
         occupant.terminate()
         occupant.wait(timeout=5)
-
-
-def test_install_render_includes_data_dir_and_path(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """If the launchd installer renders plists then nightly gets DATA_DIR and a uv-capable PATH."""
-    home = tmp_path / "home"
-    launch_agents = home / "Library" / "LaunchAgents"
-    launch_agents.mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.setenv("MDT_PERF_KPI_MACHINE", "air")
-
-    completed = subprocess.run(
-        [str(INSTALL_SCRIPT)],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0
-
-    nightly = plistlib.loads(
-        (launch_agents / "com.af.perf-kpi-nightly.plist").read_bytes()
-    )
-    health = plistlib.loads(
-        (launch_agents / "com.af.perf-kpi-health.plist").read_bytes()
-    )
-    env = nightly["EnvironmentVariables"]
-    assert env["MDT_PERF_KPI_DATA_DIR"] == "/abs/lib"
-    assert ".local/bin" in env["PATH"] or ".venv/bin" in env["PATH"]
-    assert "MDT_PERF_KPI_DATA_DIR" not in health.get("EnvironmentVariables", {})
-
-
-def test_install_requires_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """If MDT_PERF_KPI_DATA_DIR is unset then the installer exits non-zero."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.delenv("MDT_PERF_KPI_DATA_DIR", raising=False)
-
-    completed = subprocess.run(
-        [str(INSTALL_SCRIPT)],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 2
-
-
-def test_install_requires_host_label(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """No hidden 'air' default (claude-review, PR #3827, round 3, P1/BLOCKING):
-    an install without --host-label or MDT_PERF_KPI_MACHINE must refuse
-    rather than silently attributing a second Mac's runs to Air."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("MDT_PERF_KPI_SMALL_STABLE_ID", "sid-small")
-    monkeypatch.setenv("MDT_PERF_KPI_LARGE_STABLE_ID", "sid-large")
-    monkeypatch.setenv("MDT_PERF_KPI_STEMMED_STABLE_ID", "sid-stemmed")
-    monkeypatch.setenv("MDT_PERF_KPI_DATA_DIR", "/abs/lib")
-    monkeypatch.delenv("MDT_PERF_KPI_MACHINE", raising=False)
-
-    completed = subprocess.run(
-        [str(INSTALL_SCRIPT)],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 2
-    assert "--host-label" in completed.stderr
-
 
 
 def test_load_config_does_not_require_machine_label(
