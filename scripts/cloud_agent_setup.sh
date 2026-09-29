@@ -137,10 +137,14 @@ fi
 # read it from there when only DOPPLER_TOKEN is raw. Exported so the join and
 # the smoke test below both see it; the value is never printed.
 if [ -z "${TS_AUTHKEY:-}" ] && [ -n "${DOPPLER_TOKEN:-}" ] && command -v doppler >/dev/null 2>&1; then
-  TS_AUTHKEY="$(doppler secrets get TS_AUTHKEY --plain --no-fallback 2>/dev/null || true)"
+  # --no-fallback is a `doppler run` flag; `doppler secrets get` rejects it
+  # with "unknown flag" and exits 1, which silently emptied the key.
+  TS_AUTHKEY="$(doppler run --no-fallback -- printenv TS_AUTHKEY 2>/dev/null || true)"
   if [ -n "$TS_AUTHKEY" ]; then
     export TS_AUTHKEY
     _log "TS_AUTHKEY read from Doppler"
+  else
+    _log "TS_AUTHKEY could not be read from Doppler (absent from the config, or doppler run failed)"
   fi
 fi
 if [ -n "${TS_AUTHKEY:-}" ] && [ "$CHECK_ONLY" -eq 0 ]; then

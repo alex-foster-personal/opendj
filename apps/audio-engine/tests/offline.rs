@@ -441,7 +441,7 @@ fn a_session_lets_go_of_a_track_no_deck_holds() {
 fn loads_of_one_file_share_its_samples() {
     let d = temp_dir("shared-pcm");
     write_wav(&d, "a.wav", 48000, &sine(48000, 220.0, 1.0));
-    let mut load = odj_audio::offline::file_loader(d.clone());
+    let mut load = odj_audio::offline::file_loader_at(d.clone(), Some(48000));
     let spec = |deck| odj_audio::protocol::LoadSpec { deck, path: "a.wav".into(), beats: vec![], bpm: None };
     let (a, b) = (load(&spec(1), u64::MAX).unwrap(), load(&spec(2), u64::MAX).unwrap());
     assert!(std::sync::Arc::ptr_eq(&a.pcm, &b.pcm), "a second load copied the samples");

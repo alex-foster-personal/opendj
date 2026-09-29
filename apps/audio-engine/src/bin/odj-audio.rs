@@ -2,13 +2,21 @@
 //!
 //!   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
+//!                   [--ws 127.0.0.1:0]
+//!                   [--midi] [--midi-map MAPS.json]
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
 //! sha256, when each event fired, which decks are heard when (the timeline
 //! and its overlaps), and each deck's tempo. `--decks-out` also writes each
 //! loaded deck's own audio as `deckN.wav`. `serve` speaks protocol v1 on
-//! stdin/stdout; see `src/protocol.rs`.
+//! stdin/stdout; see `src/protocol.rs`. With `--ws`
+//! (wall and device clocks) it also listens on a loopback WebSocket for the
+//! renderer and agents, each presenting `ODJ_AUDIO_WS_TOKEN`; see `src/ws.rs`.
+//! `--midi` (build feature `midi`, wall
+//! and device clocks) has the engine read the controllers its device maps
+//! match; `--midi-map` adds onboarded maps that win over the built-in ones.
+//! `midi_inject` feeds recorded MIDI bytes on any clock, with or without it.
 
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -16,8 +24,9 @@ use std::process::ExitCode;
 
 use odj_audio::decode::SourceId;
 use odj_audio::engine::ErrorCode;
-use odj_audio::offline::{render_plan_files_with, session_loader, RenderOptions, Solo};
+use odj_audio::offline::{render_plan_files_with, session_loader_at, RenderOptions, Solo};
 use odj_audio::plan::{parse_plan, Action, Plan};
+use odj_audio::midi::{MapSet, Router};
 use odj_audio::{protocol, serve, wav};
 use serde_json::json;
 use same_file::Handle;
@@ -26,6 +35,8 @@ use sha2::{Digest, Sha256};
 const USAGE: &str = "usage:
   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
+                  [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
+                  [--midi] [--midi-map MAPS.json]
   odj-audio version";
 
 struct Args {
@@ -43,6 +54,16 @@ impl Args {
                 let v = self.rest.remove(i + 1);
                 self.rest.remove(i);
                 Ok(Some(v))
+            }
+        }
+    }
+
+    fn flag(&mut self, flag: &str) -> bool {
+        match self.rest.iter().position(|a| a == flag) {
+            None => false,
+            Some(i) => {
+                self.rest.remove(i);
+                true
             }
         }
     }
@@ -396,8 +417,8 @@ fn render(mut args: Args) -> Result<(), String> {
         "render_wall_s": out.render_wall_s,
         "realtime_factor": out.realtime_factor(),
         "fired": fired,
-        // v1 plays varispeed only: a tempo change moves pitch with it.
-        "master_tempo": false,
+        // False: every tempo change in this render moved pitch with it.
+        "master_tempo": out.master_tempo,
         "tempo": tempo,
         "timeline": timeline,
         "overlaps": overlaps,
@@ -437,10 +458,35 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             .ok_or(format!("--block must be 16..{}", odj_audio::engine::MAX_BLOCK))?,
     };
     let record = args.take("--record")?.map(PathBuf::from);
+    let ws_addr = args.take("--ws")?;
+    let midi_map = args.take("--midi-map")?.map(PathBuf::from);
+    let midi_ports = args.flag("--midi");
     args.done()?;
     if record.is_some() && clock != "fake" {
         return Err("--record works on the fake clock only".into());
     }
+    let ws = match ws_addr {
+        None => None,
+        // The fake clock is a single-threaded simulator driven by one sender.
+        Some(_) if clock == "fake" => return Err("--ws works on the wall and device clocks only".into()),
+        Some(a) => {
+            let addr: std::net::SocketAddr = a.parse().map_err(|_| format!("--ws needs HOST:PORT, got {a}"))?;
+            let token = std::env::var("ODJ_AUDIO_WS_TOKEN").map_err(|_| "--ws needs ODJ_AUDIO_WS_TOKEN in the environment")?;
+            odj_audio::ws::check_token(&token)?;
+            let listener = odj_audio::ws::bind(addr).map_err(|e| format!("--ws {a}: {e}"))?;
+            Some(serve::WsListen { listener, token })
+        }
+    };
+    if midi_ports && clock == "fake" {
+        return Err("--midi reads controllers in real time; on the fake clock send midi_inject lines instead".into());
+    }
+    let mut maps = MapSet::builtin()?;
+    if let Some(p) = &midi_map {
+        let text = std::fs::read_to_string(p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{} is not JSON: {e}", p.display()))?;
+        maps.install_json(&v, &p.display().to_string())?;
+    }
+    let midi = serve::MidiSetup { router: Router::new(maps), open: if midi_ports { Some(midi_opener()?) } else { None } };
     match clock.as_str() {
         "fake" => {
             let sr = sr.unwrap_or(48000);
@@ -448,7 +494,7 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             // A live session has no render budget: tracks load whole, and a
             // track no deck holds is let go.
             let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-            let mut files = session_loader(cwd.clone());
+            let mut files = session_loader_at(cwd.clone(), Some(sr));
             let record_to = record.clone();
             // Every track the session read, by path and as opened, kept off
             // when the recording is written: a path swapped or relinked during
@@ -475,7 +521,7 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
                 Ok(track)
             };
             let sink = if record.is_some() { Some(&mut rec) } else { None };
-            serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink).map_err(|e| e.to_string())?;
+            serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink, midi.router).map_err(|e| e.to_string())?;
             if let Some(p) = record {
                 let writes = [(p.clone(), "--record".to_string())];
                 let h = claim_outputs(&writes, &loaded.borrow())?.remove(0);
@@ -483,14 +529,24 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             }
             Ok(())
         }
-        "wall" => serve::serve_threaded(sr.unwrap_or(48000), "wall", serve::run_wall(block)).map_err(|e| e.to_string()),
-        "device" => device(sr),
+        "wall" => serve::serve_threaded(sr.unwrap_or(48000), "wall", midi, serve::run_wall(block), ws).map_err(|e| e.to_string()),
+        "device" => device(sr, midi, ws),
         other => Err(format!("unknown clock {other}; use fake, wall or device")),
     }
 }
 
+#[cfg(feature = "midi")]
+fn midi_opener() -> Result<serve::MidiOpener, String> {
+    Ok(odj_audio::midi_in::opener())
+}
+
+#[cfg(not(feature = "midi"))]
+fn midi_opener() -> Result<serve::MidiOpener, String> {
+    Err("this build has no MIDI input; rebuild with --features midi".into())
+}
+
 #[cfg(feature = "device")]
-fn device(sr: Option<u32>) -> Result<(), String> {
+fn device(sr: Option<u32>, midi: serve::MidiSetup, ws: Option<serve::WsListen>) -> Result<(), String> {
     let probed = odj_audio::device::default_output()?;
     let rate = probed.rate;
     if let Some(want) = sr {
@@ -498,11 +554,11 @@ fn device(sr: Option<u32>) -> Result<(), String> {
             return Err(format!("the output device runs at {rate} Hz; --sample-rate {want} does not match"));
         }
     }
-    serve::serve_threaded(rate, "device", odj_audio::device::run_device(probed)).map_err(|e| e.to_string())
+    serve::serve_threaded(rate, "device", midi, odj_audio::device::run_device(probed), ws).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "device"))]
-fn device(_sr: Option<u32>) -> Result<(), String> {
+fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen>) -> Result<(), String> {
     Err("this build has no device output; rebuild with --features device".into())
 }
 

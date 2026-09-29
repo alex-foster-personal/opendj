@@ -15,10 +15,17 @@
 //! Loads decode on worker threads; a deck's later commands wait behind its own
 //! pending load so the mailbox order holds per deck, while other decks and the
 //! mixer stay responsive.
+//!
+//! The threaded modes can also listen on a loopback WebSocket (`crate::ws`,
+//! plan 20-02). Stdio and every socket are equal clients of one mailbox: a
+//! `result` goes back only to the client that sent the command, and `state` goes
+//! to everyone. Stdio stays the supervisor's line: closing it stops the engine,
+//! and only it may send `engine_shutdown`.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, Write};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -26,9 +33,10 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::deck::Track;
+use crate::midi::{self, MapSet, Routed, Router};
 use crate::engine::{DeckId, Engine, EngineCmd, ErrorCode, Rejected, Retired, Snapshot, MAX_BLOCK, MAX_DECKS};
 use crate::offline::TrackCache;
-use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError};
+use crate::protocol::{self, Advance, Command, HostTime, LoadSpec, ProtoError, RegridSpec};
 
 /// The longest single `engine_advance`, in seconds of audio. The session
 /// answers nothing else until an advance is rendered, so a longer one (or a
@@ -110,6 +118,8 @@ impl Drop for Charge {
 /// A command the audio side has yet to answer, by seq: the id its result
 /// carries and, for a load, the payload it holds until then.
 struct Pending {
+    /// The client the result goes back to.
+    client: ClientId,
     id: Option<Value>,
     hold: Option<Charge>,
     /// For a decoded load, its samples' share of `PCM_BYTES`.
@@ -119,8 +129,18 @@ struct Pending {
 type Ids = Arc<Mutex<HashMap<u64, Pending>>>;
 
 /// Take `seq`'s id, giving back what it held.
+#[cfg(test)]
 fn take_id(ids: &Mutex<HashMap<u64, Pending>>, seq: u64) -> Option<Value> {
     ids.lock().unwrap().remove(&seq).and_then(|p| p.id)
+}
+
+/// Where a result goes: the sending client and the command's own id.
+type Origin = (ClientId, Option<Value>);
+
+/// Take `seq`'s origin, giving back what it held. A seq with none answers on
+/// stdio without an id, as before there were socket clients.
+fn take_origin(ids: &Mutex<HashMap<u64, Pending>>, seq: u64) -> Origin {
+    ids.lock().unwrap().remove(&seq).map_or((STDIO, None), |p| (p.client, p.id))
 }
 
 /// One line from stdin, read within `MAX_LINE_BYTES`.
@@ -207,6 +227,119 @@ fn send(out: &mut impl Write, v: &Value) -> io::Result<()> {
     out.flush()
 }
 
+/// Who sent a command, so its result goes back to the same place.
+pub type ClientId = u32;
+
+/// The supervisor's stdio line. Always connected while the engine runs.
+pub const STDIO: ClientId = 0;
+
+/// Lines queued for one socket client before it counts as stalled. At 30 state
+/// messages a second this is several seconds of backlog.
+pub const CLIENT_QUEUE: usize = 256;
+
+/// Socket clients connected at once, beside stdio.
+pub const MAX_WS_CLIENTS: usize = 16;
+
+enum Sink {
+    Stdio(Box<dyn Write + Send>),
+    Socket(mpsc::SyncSender<String>),
+}
+
+/// Every connected client and how to reach it. Writing to stdio happens under
+/// the lock (as before the socket existed); a socket client only gets a line
+/// queued, and one that stops draining its queue is dropped rather than
+/// allowed to hold up the rest. Only a failed stdio write is an error: that
+/// is the supervisor gone, which stops the engine.
+pub struct Hub {
+    clients: Mutex<HashMap<ClientId, Sink>>,
+    next: AtomicU32,
+    /// Set by the stdio write that fails, before the lock is let go, so no
+    /// thread can take the lock after that write and still see it clear.
+    closed: Arc<AtomicBool>,
+}
+
+impl Hub {
+    /// `stdio` is where the supervisor's line goes: stdout in the binary, a
+    /// buffer in tests.
+    pub fn new(stdio: Box<dyn Write + Send>) -> Hub {
+        let mut clients = HashMap::new();
+        clients.insert(STDIO, Sink::Stdio(stdio));
+        Hub { clients: Mutex::new(clients), next: AtomicU32::new(STDIO + 1), closed: Arc::default() }
+    }
+
+    /// Set once a stdio write has failed. The control loop reads it before
+    /// each line it applies.
+    pub fn closed(&self) -> Arc<AtomicBool> {
+        self.closed.clone()
+    }
+
+    /// Register a socket client. `None` when `MAX_WS_CLIENTS` are connected.
+    pub fn add_socket(&self, tx: mpsc::SyncSender<String>) -> Option<ClientId> {
+        let mut c = self.clients.lock().unwrap();
+        if c.len() > MAX_WS_CLIENTS {
+            return None;
+        }
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        c.insert(id, Sink::Socket(tx));
+        Some(id)
+    }
+
+    pub fn remove(&self, id: ClientId) {
+        if id != STDIO {
+            self.clients.lock().unwrap().remove(&id);
+        }
+    }
+
+    pub fn socket_clients(&self) -> usize {
+        self.clients.lock().unwrap().len() - 1
+    }
+
+    fn deliver(&self, c: &mut HashMap<ClientId, Sink>, id: ClientId, v: &Value) -> io::Result<()> {
+        match c.get_mut(&id) {
+            None => Ok(()),
+            Some(Sink::Stdio(o)) => {
+                let r = send(o, v);
+                if r.is_err() {
+                    self.closed.store(true, Ordering::Release);
+                }
+                r
+            }
+            Some(Sink::Socket(tx)) => {
+                // Dropping the sender is what tells the socket thread to close.
+                if tx.try_send(v.to_string()).is_err() {
+                    c.remove(&id);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Send one message to one client. A client that has gone is skipped.
+    pub fn send_to(&self, id: ClientId, v: &Value) -> io::Result<()> {
+        self.deliver(&mut self.clients.lock().unwrap(), id, v)
+    }
+
+    /// Send one message to every client; the stdio write's failure, if any.
+    pub fn broadcast(&self, v: &Value) -> io::Result<()> {
+        let mut c = self.clients.lock().unwrap();
+        let ids: Vec<ClientId> = c.keys().copied().collect();
+        let mut stdio = Ok(());
+        for id in ids {
+            let r = self.deliver(&mut c, id, v);
+            if id == STDIO {
+                stdio = r;
+            }
+        }
+        stdio
+    }
+}
+
+impl Default for Hub {
+    fn default() -> Hub {
+        Hub::new(Box::new(io::stdout()))
+    }
+}
+
 /// Serve on the fake clock. `record`, when given, receives every rendered
 /// frame (interleaved stereo), for writing the session out afterwards.
 pub fn serve_fake(
@@ -215,9 +348,12 @@ pub fn serve_fake(
     sample_rate: u32,
     mut load: impl FnMut(&LoadSpec) -> Result<Arc<Track>, ProtoError>,
     mut record: Option<&mut Vec<f32>>,
+    mut router: Router,
 ) -> io::Result<()> {
     let mut engine = Engine::new(sample_rate);
     let mut scratch = vec![0.0f32; MAX_BLOCK * 2];
+    let mut routed = Vec::new();
+    let mut midi_seq = MidiSeq::default();
     send(&mut out, &protocol::hello_json("fake", sample_rate))?;
     let mut input = input;
     let mut buf = Vec::new();
@@ -239,13 +375,18 @@ pub fn serve_fake(
         let mut then_state = false;
         let mut asked = false;
         let mut stop = false;
+        // Lines a midi_inject produced, written before its own result.
+        let mut midi_lines: Vec<Value> = Vec::new();
         let res: Result<(), ProtoError> = parsed.and_then(|cmd| match cmd {
             Command::Load(spec) => {
                 let track = load(&spec)?;
                 engine.apply(EngineCmd::Load { deck: spec.deck, track }).map(drop).map_err(Into::into)
             }
+            Command::Regrid(spec) => {
+                let track = engine.regridded(spec.deck, spec.beats, spec.bpm)?;
+                engine.apply(EngineCmd::Regrid { deck: spec.deck, track }).map(drop).map_err(Into::into)
+            }
             Command::Apply(c) => engine.apply(c).map(drop).map_err(Into::into),
-            Command::NoOp => Ok(()),
             Command::Advance(a) => {
                 let recorded = record.as_deref().map(|r| r.len() as u64 / 2);
                 let mut left = advance_frames(a, sample_rate, recorded)?;
@@ -269,7 +410,23 @@ pub fn serve_fake(
                 stop = true;
                 Ok(())
             }
+            Command::MidiInject { port, bytes } => {
+                router.feed(&port, &bytes, &mut routed);
+                for r in routed.drain(..) {
+                    match r {
+                        Routed::Engine(cmd) => {
+                            let res = engine.apply(cmd).map(drop).map_err(ProtoError::from);
+                            midi_lines.push(protocol::result_json(Some(&Value::String(midi_seq.next())), &res));
+                        }
+                        other => midi_lines.extend(page_line(&port, &other)),
+                    }
+                }
+                Ok(())
+            }
         });
+        for l in &midi_lines {
+            send(&mut out, l)?;
+        }
         if asked {
             state_seq += 1;
             send(&mut out, &protocol::state_ok_json(id.as_ref(), state_seq))?;
@@ -316,8 +473,59 @@ fn advance_frames(a: Advance, sample_rate: u32, recorded: Option<u64>) -> Result
     Ok(frames)
 }
 
-/// Where results and state go: stdout in the binary, a buffer in tests.
-type Out = Arc<Mutex<Box<dyn Write + Send>>>;
+/// Ids for the engine commands MIDI produces: `midi-0`, `midi-1`, ... Each
+/// gets a `result` like any sender's command, so a refusal (play on an
+/// empty deck, a fractional beat loop) is visible, never silent.
+#[derive(Default)]
+struct MidiSeq(u64);
+
+impl MidiSeq {
+    fn next(&mut self) -> String {
+        let id = format!("midi-{}", self.0);
+        self.0 += 1;
+        id
+    }
+}
+
+/// The line a routed page action or unbound message becomes.
+fn page_line(port: &str, r: &Routed) -> Option<Value> {
+    match r {
+        Routed::Page { action, value } => Some(midi::action_json(port, action, *value)),
+        Routed::Unmapped { .. } => midi::unmapped_json(port, r),
+        Routed::Engine(_) => None,
+    }
+}
+
+/// Where the engine's own MIDI input (feature `midi`) delivers bytes: into
+/// the control thread's queue, behind whatever lines are already there, so
+/// MIDI and the supervisor share one mailbox order.
+#[derive(Clone)]
+pub struct MidiSink(mpsc::Sender<Msg>);
+
+impl MidiSink {
+    /// Hand over bytes that arrived on `port`. False once serve has stopped.
+    pub fn send(&self, port: &str, bytes: &[u8]) -> bool {
+        self.0.send(Msg::Midi { port: port.to_string(), bytes: bytes.to_vec() }).is_ok()
+    }
+}
+
+/// Opens the engine's MIDI input ports. Returns what must be kept alive for
+/// them to stay open, and the `midi_ports` line announcing which it claimed.
+pub type MidiOpener = Box<dyn FnOnce(&MapSet, MidiSink) -> Result<(Box<dyn std::any::Any>, Value), String> + Send>;
+
+/// How a threaded serve takes MIDI: the maps it routes with, and, with
+/// `--midi`, the opener for real ports.
+pub struct MidiSetup {
+    pub router: Router,
+    pub open: Option<MidiOpener>,
+}
+
+impl MidiSetup {
+    /// The built-in maps and no ports: `midi_inject` works, nothing is opened.
+    pub fn inject_only() -> MidiSetup {
+        MidiSetup { router: Router::new(MapSet::builtin().expect("the embedded maps load")), open: None }
+    }
+}
 
 /// What the audio side sends back for each command.
 type AudioResult = (u64, Result<Retired, Rejected>);
@@ -456,8 +664,10 @@ impl AudioSide {
     }
 }
 
-enum Msg {
-    Line(String),
+pub(crate) enum Msg {
+    Line(ClientId, String),
+    /// Bytes from the engine's own MIDI input.
+    Midi { port: String, bytes: Vec<u8> },
     /// A line the reader skipped (too long, or not UTF-8), with its refusal.
     Skipped(ProtoError),
     Decoded { seq: u64, deck: DeckId, result: Result<Arc<Track>, ProtoError> },
@@ -476,8 +686,11 @@ enum Msg {
 
 /// Work parked behind a deck's pending load.
 enum Queued {
-    Cmd(Option<Value>, EngineCmd),
-    Load(Option<Value>, LoadSpec, Charge),
+    Cmd(Origin, EngineCmd),
+    Load(Origin, LoadSpec, Charge),
+    /// A `set_beatgrid`, built from the deck's track once the work ahead of
+    /// it has gone, so it regrids whatever that work left on the deck.
+    Regrid(Origin, RegridSpec),
     /// An `engine_state` sent after the work ahead of it here: it is asked
     /// of the audio side only once this has passed on every deck it waits on.
     Fence(u64),
@@ -491,7 +704,7 @@ enum Queued {
 struct Control {
     cmd_tx: rtrb::Producer<(u64, EngineCmd)>,
     ids: Ids,
-    out: Out,
+    hub: Arc<Hub>,
     msg_tx: mpsc::Sender<Msg>,
     next_seq: u64,
     /// Per deck: Some while a load is decoding, holding work queued behind
@@ -501,6 +714,9 @@ struct Control {
     /// Per deck: the seq of the load that is decoding, while `waiting` is Some.
     loading: [Option<u64>; MAX_DECKS],
     state_req: Arc<AtomicBool>,
+    router: Router,
+    routed: Vec<Routed>,
+    midi_seq: MidiSeq,
     /// The last `engine_state` asked of the audio side, by its `state_seq`.
     state_asked: Arc<AtomicU64>,
     /// How many commands were sent when it was asked.
@@ -511,6 +727,10 @@ struct Control {
     pushed: u64,
     /// Decoded tracks, shared by the load threads.
     tracks: Arc<TrackCache>,
+    /// Per deck: the track last sent to the engine, so `set_beatgrid` can
+    /// rebuild it with a new grid here instead of on the audio thread. The
+    /// engine refuses the swap if the deck holds other audio by then.
+    on_deck: [Option<Arc<Track>>; MAX_DECKS],
     /// Per `engine_state` waiting on pending loads, by its `state_seq`: how
     /// many decks' fences have yet to pass.
     fences: HashMap<u64, usize>,
@@ -527,32 +747,75 @@ struct Control {
 }
 
 impl Control {
-    fn reply(&self, id: Option<&Value>, res: Result<(), ProtoError>) {
-        self.write(&protocol::result_json(id, &res));
+    /// Route MIDI bytes: engine commands into the mailbox (behind a deck's
+    /// pending load, like any command), page actions and unbound traffic
+    /// out as lines.
+    fn midi(&mut self, port: &str, bytes: &[u8]) {
+        let mut routed = std::mem::take(&mut self.routed);
+        self.router.feed(port, bytes, &mut routed);
+        for r in routed.drain(..) {
+            match r {
+                Routed::Engine(cmd) => {
+                    let id = self.midi_seq.next();
+                    self.dispatch((STDIO, Some(Value::String(id))), cmd);
+                }
+                other => {
+                    // For the page, which is a socket client, and any
+                    // other listener: sent to every client, like state.
+                    if let Some(line) = page_line(port, &other) {
+                        self.broadcast(&line);
+                    }
+                }
+            }
+        }
+        self.routed = routed;
     }
 
-    fn write(&self, v: &Value) {
-        let mut o = self.out.lock().unwrap();
-        if send(&mut *o, v).is_err() {
-            self.closed.store(true, Ordering::Release);
-            let _ = self.msg_tx.send(Msg::OutputClosed);
+    fn reply(&self, (client, id): &Origin, res: Result<(), ProtoError>) {
+        self.write(*client, &protocol::result_json(id.as_ref(), &res));
+    }
+
+    /// Write to one client. Only stdio failing closes the output.
+    fn write(&self, client: ClientId, v: &Value) {
+        if self.hub.send_to(client, v).is_err() {
+            self.output_failed();
         }
     }
 
-    fn seq(&mut self, id: Option<Value>) -> u64 {
+    /// Write to every client. Only stdio failing closes the output.
+    fn broadcast(&self, v: &Value) {
+        if self.hub.broadcast(v).is_err() {
+            self.output_failed();
+        }
+    }
+
+    fn output_failed(&self) {
+        self.closed.store(true, Ordering::Release);
+        let _ = self.msg_tx.send(Msg::OutputClosed);
+    }
+
+    fn seq(&mut self, (client, id): Origin) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.ids.lock().unwrap().insert(seq, Pending { id, hold: None, pcm: None });
+        self.ids.lock().unwrap().insert(seq, Pending { client, id, hold: None, pcm: None });
         seq
     }
 
     /// Enqueue for the audio side; false (and an error reply) when the
     /// mailbox is full and the command was dropped.
     fn push_seq(&mut self, seq: u64, cmd: EngineCmd) -> bool {
+        let holds = match &cmd {
+            EngineCmd::Load { deck, track } | EngineCmd::Regrid { deck, track } => Some((*deck, Some(track.clone()))),
+            EngineCmd::Unload { deck } => Some((*deck, None)),
+            _ => None,
+        };
         if self.cmd_tx.push((seq, cmd)).is_err() {
-            let id = take_id(&self.ids, seq);
-            self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
+            let origin = take_origin(&self.ids, seq);
+            self.reply(&origin, Err(ProtoError::new(ErrorCode::Invalid, "engine mailbox is full; command dropped")));
             return false;
+        }
+        if let Some((deck, t)) = holds {
+            self.on_deck[deck as usize - 1] = t;
         }
         self.pushed += 1;
         true
@@ -561,10 +824,11 @@ impl Control {
     fn deck_of(cmd: &EngineCmd) -> Option<DeckId> {
         use EngineCmd::*;
         match cmd {
-            Load { deck, .. } | Unload { deck } | Play { deck, .. } | Cue { deck } | Seek { deck, .. }
-            | Quantize { deck, .. } | QuantizeGrid { deck, .. }
+            Load { deck, .. } | Regrid { deck, .. } | Unload { deck } | Play { deck, .. } | PlayToggle { deck } | Cue { deck }
+            | Seek { deck, .. } | TempoFader { deck, .. } | Quantize { deck, .. } | QuantizeGrid { deck, .. }
             | Loop { deck, .. } | BeatLoop { deck, .. } | BeatJump { deck, .. } | Tempo { deck, .. }
-            | PitchRange { deck, .. } | Trim { deck, .. } | Eq { deck, .. } | Filter { deck, .. }
+            | PitchRange { deck, .. } | MasterTempo { deck, .. } | KeyNudge { deck, .. } | Trim { deck, .. }
+            | Eq { deck, .. } | Filter { deck, .. }
             | Fader { deck, .. } | Assign { deck, .. } => Some(*deck),
             Crossfader { .. } | MasterVolume { .. } | MasterMute { .. } => None,
         }
@@ -577,7 +841,7 @@ impl Control {
         if q.len() < QUEUE_SLOTS {
             q.push_back(item);
         } else {
-            let (Queued::Cmd(id, _) | Queued::Load(id, ..)) = item else {
+            let (Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _)) = item else {
                 // A fence is only re-parked behind a load released from a
                 // queue that held it, which leaves room; were it ever full,
                 // asking now is later than asked, never earlier.
@@ -587,7 +851,7 @@ impl Control {
                 return None;
             };
             self.reply(
-                id.as_ref(),
+                &id,
                 Err(ProtoError::new(
                     ErrorCode::Invalid,
                     format!("engine mailbox is full ({QUEUE_SLOTS} commands wait on deck {deck}'s load); command dropped"),
@@ -597,7 +861,7 @@ impl Control {
         None
     }
 
-    fn dispatch(&mut self, id: Option<Value>, cmd: EngineCmd) {
+    fn dispatch(&mut self, id: Origin, cmd: EngineCmd) {
         let (id, cmd) = match Self::deck_of(&cmd) {
             Some(d) => match self.park(d, Queued::Cmd(id, cmd)) {
                 Some(Queued::Cmd(id, cmd)) => (id, cmd),
@@ -609,13 +873,33 @@ impl Control {
         let _ = self.push_seq(seq, cmd);
     }
 
-    fn load(&mut self, id: Option<Value>, spec: LoadSpec) {
+    fn regrid(&mut self, id: Origin, spec: RegridSpec) {
+        if let Some(Queued::Regrid(id, spec)) = self.park(spec.deck, Queued::Regrid(id, spec)) {
+            self.send_regrid(id, spec);
+        }
+    }
+
+    /// Build the deck's track with the new grid and send it on. The deck's
+    /// earlier work is in the mailbox by now, so this is the track it leaves.
+    fn send_regrid(&mut self, id: Origin, spec: RegridSpec) {
+        let deck = spec.deck;
+        match &self.on_deck[deck as usize - 1] {
+            Some(t) => {
+                let track = Arc::new(t.with_grid(spec.beats, spec.bpm));
+                let seq = self.seq(id);
+                let _ = self.push_seq(seq, EngineCmd::Regrid { deck, track });
+            }
+            None => self.reply(&id, Err(ProtoError::new(ErrorCode::NoTrack, "no track loaded on this deck"))),
+        }
+    }
+
+    fn load(&mut self, id: Origin, spec: LoadSpec) {
         let deck = spec.deck;
         let bytes = load_bytes(&spec);
         let used = self.load_used.load(Ordering::Acquire);
         if used > 0 && used + bytes > LOAD_BYTES {
             self.reply(
-                id.as_ref(),
+                &id,
                 Err(ProtoError::new(
                     ErrorCode::Invalid,
                     format!(
@@ -640,7 +924,7 @@ impl Control {
     }
 
     /// Decode `spec` off this thread, with `behind` parked behind it.
-    fn start_load(&mut self, id: Option<Value>, spec: LoadSpec, charge: Charge, behind: VecDeque<Queued>) {
+    fn start_load(&mut self, id: Origin, spec: LoadSpec, charge: Charge, behind: VecDeque<Queued>) {
         let deck = spec.deck;
         let seq = self.seq(id);
         // Held until the load's result is out, decoded or not.
@@ -676,8 +960,8 @@ impl Control {
                 self.release(deck, q);
             }
             Err(e) => {
-                let id = take_id(&self.ids, seq);
-                self.reply(id.as_ref(), Err(e));
+                let origin = take_origin(&self.ids, seq);
+                self.reply(&origin, Err(e));
                 // The work queued behind it would run against the previous
                 // track. Fail it instead: every command after the failed load
                 // is refused.
@@ -694,7 +978,7 @@ impl Control {
     fn release(&mut self, deck: DeckId, mut q: VecDeque<Queued>) {
         while let Some(item) = q.pop_front() {
             match item {
-                Queued::Ready(..) | Queued::Cmd(..) if self.cmd_tx.slots() == 0 => {
+                Queued::Ready(..) | Queued::Cmd(..) | Queued::Regrid(..) if self.cmd_tx.slots() == 0 => {
                     q.push_front(item);
                     break;
                 }
@@ -711,6 +995,7 @@ impl Control {
                     let seq = self.seq(id);
                     let _ = self.push_seq(seq, cmd);
                 }
+                Queued::Regrid(id, spec) => self.send_regrid(id, spec),
                 Queued::Load(id, spec, charge) => {
                     self.start_load(id, spec, charge, q);
                     return;
@@ -747,9 +1032,9 @@ impl Control {
     fn refuse_pending(&mut self) {
         for d in 0..MAX_DECKS {
             if let Some(seq) = self.loading[d].take() {
-                let id = take_id(&self.ids, seq);
+                let origin = take_origin(&self.ids, seq);
                 self.reply(
-                    id.as_ref(),
+                    &origin,
                     Err(ProtoError::new(ErrorCode::Invalid, "the engine shut down before this load finished")),
                 );
             }
@@ -793,11 +1078,11 @@ impl Control {
     fn refuse_queued(&mut self, q: VecDeque<Queued>) {
         for item in q {
             let id = match item {
-                Queued::Cmd(id, _) | Queued::Load(id, ..) => id,
+                Queued::Cmd(id, _) | Queued::Load(id, ..) | Queued::Regrid(id, _) => id,
                 // Only shutdown refuses a decoded load: it never ran.
                 Queued::Ready(seq, _) => {
-                    let id = take_id(&self.ids, seq);
-                    self.reply(id.as_ref(), Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")));
+                    let origin = take_origin(&self.ids, seq);
+                    self.reply(&origin, Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")));
                     continue;
                 }
                 // The work ahead of it is done with, failed or not: the state
@@ -808,24 +1093,39 @@ impl Control {
                 }
             };
             self.reply(
-                id.as_ref(),
+                &id,
                 Err(ProtoError::new(ErrorCode::Invalid, "the load this command waited on failed; command dropped")),
             );
         }
     }
 
+    /// Answer a line that arrived after shutdown began.
+    fn refuse_line(&self, client: ClientId, line: &str) {
+        if line.trim().is_empty() {
+            return;
+        }
+        let (id, _) = protocol::parse_line(line);
+        self.reply(&(client, id), Err(ProtoError::new(ErrorCode::Invalid, "the engine is shutting down")));
+    }
+
+    #[cfg(test)]
     fn handle_line(&mut self, line: &str, clock: &str) -> bool {
+        self.handle_line_from(STDIO, line, clock)
+    }
+
+    fn handle_line_from(&mut self, client: ClientId, line: &str, clock: &str) -> bool {
         if line.trim().is_empty() {
             return true;
         }
         let (id, parsed) = protocol::parse_line(line);
+        let origin: Origin = (client, id);
         match parsed {
-            Err(e) => self.reply(id.as_ref(), Err(e)),
-            Ok(Command::Load(spec)) => self.load(id, spec),
-            Ok(Command::Apply(c)) => self.dispatch(id, c),
-            Ok(Command::NoOp) => self.reply(id.as_ref(), Ok(())),
+            Err(e) => self.reply(&origin, Err(e)),
+            Ok(Command::Load(spec)) => self.load(origin, spec),
+            Ok(Command::Regrid(spec)) => self.regrid(origin, spec),
+            Ok(Command::Apply(c)) => self.dispatch(origin, c),
             Ok(Command::Advance(_)) => self.reply(
-                id.as_ref(),
+                &origin,
                 Err(ProtoError::new(
                     ErrorCode::WrongClock,
                     format!("engine_advance needs the fake clock; this engine runs on the {clock} clock"),
@@ -838,7 +1138,7 @@ impl Control {
                 let pending: Vec<usize> = (0..MAX_DECKS).filter(|&d| self.waiting[d].is_some()).collect();
                 if pending.iter().any(|&d| self.waiting[d].as_ref().is_some_and(|q| q.len() >= QUEUE_SLOTS)) {
                     self.reply(
-                        id.as_ref(),
+                        &origin,
                         Err(ProtoError::new(
                             ErrorCode::Invalid,
                             format!("engine mailbox is full ({QUEUE_SLOTS} commands wait on a deck's load); command dropped"),
@@ -851,7 +1151,7 @@ impl Control {
                 // The `ok` goes out before the audio side can see the
                 // request: its state could otherwise be written first, before
                 // the client knows the number to wait for, and be the last.
-                self.write(&protocol::state_ok_json(id.as_ref(), n));
+                self.write(client, &protocol::state_ok_json(origin.1.as_ref(), n));
                 if pending.is_empty() {
                     self.ask_state(n);
                 } else {
@@ -863,31 +1163,66 @@ impl Control {
                     }
                 }
             }
+            Ok(Command::Shutdown) if client != STDIO => self.reply(
+                &origin,
+                Err(ProtoError::new(
+                    ErrorCode::Unsupported,
+                    "engine_shutdown belongs to the supervisor on stdio; a socket client disconnects instead",
+                )),
+            ),
             Ok(Command::Shutdown) => {
-                self.reply(id.as_ref(), Ok(()));
+                self.reply(&origin, Ok(()));
                 return false;
+            }
+            Ok(Command::MidiInject { port, bytes }) => {
+                self.midi(&port, &bytes);
+                self.reply(&origin, Ok(()));
             }
         }
         true
     }
 }
 
+/// A bound loopback WebSocket listener and the token its clients must present.
+pub struct WsListen {
+    pub listener: TcpListener,
+    pub token: String,
+}
+
 /// Serve on a threaded clock. `run_audio` owns the audio side for the life of
-/// the process and must return once `stop` is set.
+/// the process and must return once `stop` is set. With `ws`, the same
+/// mailbox also accepts socket clients, and the stdout `hello` carries the
+/// socket's URL (without the token) as `ws`.
 pub fn serve_threaded(
     sample_rate: u32,
     clock: &'static str,
+    midi: MidiSetup,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
+    ws: Option<WsListen>,
 ) -> io::Result<()> {
-    serve_threaded_from(io::BufReader::new(io::stdin()), io::stdout(), sample_rate, clock, run_audio)
+    serve_threaded_with(io::BufReader::new(io::stdin()), io::stdout(), sample_rate, clock, midi, run_audio, ws)
 }
 
+#[cfg(test)]
 fn serve_threaded_from(
     input: impl BufRead + Send + 'static,
     output: impl Write + Send + 'static,
     sample_rate: u32,
     clock: &'static str,
+    midi: MidiSetup,
     run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
+) -> io::Result<()> {
+    serve_threaded_with(input, output, sample_rate, clock, midi, run_audio, None)
+}
+
+fn serve_threaded_with(
+    input: impl BufRead + Send + 'static,
+    output: impl Write + Send + 'static,
+    sample_rate: u32,
+    clock: &'static str,
+    midi: MidiSetup,
+    run_audio: impl FnOnce(AudioSide, Arc<AtomicBool>) + Send + 'static,
+    ws: Option<WsListen>,
 ) -> io::Result<()> {
     let (cmd_tx, cmd_rx) = rtrb::RingBuffer::new(CMD_SLOTS);
     let (res_tx, mut res_rx) = rtrb::RingBuffer::<AudioResult>::new(1024);
@@ -897,12 +1232,44 @@ fn serve_threaded_from(
     let state_asked = Arc::new(AtomicU64::new(0));
     let state_fence = Arc::new(AtomicU64::new(0));
     let state_sent = Arc::new(AtomicU64::new(0));
-    let out: Out = Arc::new(Mutex::new(Box::new(output)));
+    let hub = Arc::new(Hub::new(Box::new(output)));
     let ids: Ids = Arc::new(Mutex::new(HashMap::new()));
+    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
 
-    {
-        let mut o = out.lock().unwrap();
-        send(&mut *o, &protocol::hello_json(clock, sample_rate))?;
+    // Open the engine's own MIDI ports first, so a `--midi` that cannot open
+    // fails before hello rather than after it. Kept alive until serve
+    // returns; dropping it closes the ports. The `midi_ports` line follows
+    // hello and says which ports the engine claimed, so the page knows which
+    // controllers to leave alone.
+    let (_midi_ports, ports_line) = match midi.open {
+        None => (None, None),
+        Some(open) => {
+            let (keep, line) = open(midi.router.maps(), MidiSink(msg_tx.clone())).map_err(io::Error::other)?;
+            (Some(keep), Some(line))
+        }
+    };
+    let hello = protocol::hello_json(clock, sample_rate);
+    let mut stdio_hello = hello.clone();
+    if let Some(w) = ws {
+        let url = crate::ws::url(w.listener.local_addr()?);
+        stdio_hello["ws"] = Value::String(url);
+        let line_tx = msg_tx.clone();
+        crate::ws::spawn_accept(
+            w.listener,
+            w.token,
+            hub.clone(),
+            hello,
+            state_req.clone(),
+            move |client, line| {
+                let _ = line_tx.send(Msg::Line(client, line));
+            },
+        )?;
+    }
+    // Written to stdio before any socket client can be answered: the
+    // supervisor learns the socket's URL from this line.
+    hub.send_to(STDIO, &stdio_hello)?;
+    if let Some(line) = &ports_line {
+        hub.send_to(STDIO, line)?;
     }
 
     // One clock for when state is heard and when it is sent, so the feed's
@@ -927,7 +1294,6 @@ fn serve_threaded_from(
         #[cfg(test)]
         mid_block: None,
     };
-    let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
     let audio_stop = stop.clone();
     let exit_tx = msg_tx.clone();
     let audio_thread = std::thread::Builder::new().name("odj-audio".into()).spawn(move || {
@@ -935,23 +1301,27 @@ fn serve_threaded_from(
         let _ = exit_tx.send(Msg::AudioExited);
     })?;
 
-    // Pump: results and snapshots out to stdout; retired tracks freed here.
-    // The pump stops only after the audio side has, so a result pushed by
-    // the audio side's last block is still written out.
+    // Pump: results to their sender, snapshots to everyone; retired tracks
+    // freed here. The pump stops only after the audio side has, so a result
+    // pushed by the audio side's last block is still sent.
     let pump_stop = Arc::new(AtomicBool::new(false));
     let pump_stop_flag = pump_stop.clone();
-    let pump_out = out.clone();
+    let pump_hub = hub.clone();
     let pump_ids = ids.clone();
     let pump_tx = msg_tx.clone();
-    let closed = Arc::new(AtomicBool::new(false));
+    let closed = hub.closed();
     let pump_closed = closed.clone();
     let pump = std::thread::spawn(move || {
         // Once a write fails the engine is stopping; the pump keeps draining
         // (retired tracks are still freed here, off the audio thread) but
         // writes nothing more.
         let mut closed = false;
-        let mut write = |v: &Value| {
-            if !closed && send(&mut *pump_out.lock().unwrap(), v).is_err() {
+        let mut write = |to: Option<ClientId>, v: &Value| {
+            let sent = match to {
+                Some(client) => pump_hub.send_to(client, v),
+                None => pump_hub.broadcast(v),
+            };
+            if !closed && sent.is_err() {
                 closed = true;
                 pump_closed.store(true, Ordering::Release);
                 let _ = pump_tx.send(Msg::OutputClosed);
@@ -961,14 +1331,14 @@ fn serve_threaded_from(
             let mut idle = true;
             while let Ok((seq, r)) = res_rx.pop() {
                 idle = false;
-                let id = take_id(&pump_ids, seq);
+                let (client, id) = take_origin(&pump_ids, seq);
                 let res = r.map(drop).map_err(ProtoError::from);
-                write(&protocol::result_json(id.as_ref(), &res));
+                write(Some(client), &protocol::result_json(id.as_ref(), &res));
             }
             while let Ok((snap, heard_ns, state_seq)) = state_rx.pop() {
                 idle = false;
                 let host = HostTime { heard_ns, sent_ns: epoch.elapsed().as_nanos() as u64 };
-                write(&protocol::state_json(&snap, Some(host), state_seq));
+                write(None, &protocol::state_json(&snap, Some(host), state_seq));
             }
             if pump_stop_flag.load(Ordering::Relaxed) && idle {
                 break;
@@ -989,7 +1359,7 @@ fn serve_threaded_from(
             let msg = match read_line(&mut input, &mut buf) {
                 Ok(ReadLine::Line(l)) => {
                     reader_room.take(l.len());
-                    Msg::Line(l)
+                    Msg::Line(STDIO, l)
                 }
                 // Its refusal is a reply the control side still has to
                 // write, so it takes a slot like any line.
@@ -1010,17 +1380,21 @@ fn serve_threaded_from(
     let mut control = Control {
         cmd_tx,
         ids,
-        out,
+        hub,
         msg_tx,
         next_seq: 0,
         waiting: Default::default(),
         loading: [None; MAX_DECKS],
         state_req,
+        router: midi.router,
+        routed: Vec::new(),
+        midi_seq: MidiSeq::default(),
         state_asked,
         state_fence,
         state_sent,
         pushed: 0,
-        tracks: Arc::default(),
+        tracks: Arc::new(TrackCache::at(sample_rate)),
+        on_deck: Default::default(),
         fences: HashMap::new(),
         state_seq: 0,
         load_used: Arc::default(),
@@ -1058,18 +1432,23 @@ fn serve_threaded_from(
             }
         };
         match msg {
-            Msg::Line(l) => {
-                let go_on = control.handle_line(&l, clock);
-                in_flight.give_back(l.len());
+            Msg::Line(client, l) => {
+                let go_on = control.handle_line_from(client, &l, clock);
+                // Only stdin's lines count against its read-ahead; a socket
+                // client is bounded by its own connection.
+                if client == STDIO {
+                    in_flight.give_back(l.len());
+                }
                 if !go_on {
                     break;
                 }
             }
             Msg::Skipped(e) => {
-                control.reply(None, Err(e));
+                control.reply(&(STDIO, None), Err(e));
                 in_flight.give_back(0);
             }
             Msg::Decoded { seq, deck, result } => control.finish_load(seq, deck, result),
+            Msg::Midi { port, bytes } => control.midi(&port, &bytes),
             // Supervisor gone: the engine has no reason to outlive it.
             Msg::Eof => break,
             // Lines may have been lost: finish what was read, as at EOF,
@@ -1117,8 +1496,10 @@ fn serve_threaded_from(
                     output_closed = true;
                     break;
                 }
-                // Nothing sent after shutdown or EOF is taken.
-                Ok(Msg::Line(_) | Msg::Skipped(_) | Msg::Eof | Msg::InputFailed(_)) => {}
+                // Nothing sent after shutdown or EOF is taken, but a socket
+                // client still gets a result for it.
+                Ok(Msg::Line(client, l)) if client != STDIO => control.refuse_line(client, &l),
+                Ok(Msg::Line(..) | Msg::Midi { .. } | Msg::Skipped(_) | Msg::Eof | Msg::InputFailed(_)) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
@@ -1144,10 +1525,10 @@ fn serve_threaded_from(
     let _ = pump.join();
     // Anything still without a result never ran: its audio side died with
     // it in the mailbox, or the drain gave up. Refuse each one by its id.
-    let unanswered: Vec<Option<Value>> = control.ids.lock().unwrap().drain().map(|(_, p)| p.id).collect();
-    for id in unanswered {
+    let unanswered: Vec<Origin> = control.ids.lock().unwrap().drain().map(|(_, p)| (p.client, p.id)).collect();
+    for origin in unanswered {
         control.reply(
-            id.as_ref(),
+            &origin,
             Err(ProtoError::new(ErrorCode::Invalid, "the engine stopped before this command ran")),
         );
     }
@@ -1398,7 +1779,8 @@ mod tests {
         }
         let (mut c, _cmd_rx, _out) = control();
         let seen = Arc::new(Mutex::new(Vec::new()));
-        c.out = Arc::new(Mutex::new(Box::new(SeesRequest(c.state_req.clone(), seen.clone()))));
+        c.hub = Arc::new(Hub::new(Box::new(SeesRequest(c.state_req.clone(), seen.clone()))));
+        c.closed = c.hub.closed();
         assert!(c.handle_line(&serde_json::json!({"cmd": {"type": "engine_state"}}).to_string(), "wall"));
         assert_eq!(*seen.lock().unwrap(), vec![false], "the request was visible before its ok was written");
         // Control: it is made once the ok is out.
@@ -1503,26 +1885,31 @@ mod tests {
         let out = Captured::default();
         let (msg_tx, msg_rx) = mpsc::channel();
         std::mem::forget(msg_rx);
+        let hub = Arc::new(Hub::new(Box::new(out.clone())));
         let control = Control {
             cmd_tx,
             ids: Arc::default(),
-            out: Arc::new(Mutex::new(Box::new(out.clone()))),
+            closed: hub.closed(),
+            hub,
             msg_tx,
             next_seq: 0,
             waiting: Default::default(),
             loading: [None; MAX_DECKS],
             state_req: Arc::new(AtomicBool::new(false)),
+            router: MidiSetup::inject_only().router,
+            routed: Vec::new(),
+            midi_seq: MidiSeq::default(),
             state_asked: Arc::default(),
             state_fence: Arc::default(),
             state_sent: Arc::default(),
             pushed: 0,
             tracks: Arc::default(),
+            on_deck: Default::default(),
             fences: HashMap::new(),
             state_seq: 0,
             load_used: Arc::default(),
             pcm_used: Arc::default(),
             pcm_budget: PCM_BYTES,
-            closed: Arc::default(),
         };
         (control, cmd_rx, out)
     }
@@ -1621,8 +2008,8 @@ mod tests {
         let used = |c: &Control| c.pcm_used.load(Ordering::Acquire);
         let track = |n: usize| -> Result<Arc<Track>, ProtoError> { Ok(Arc::new(Track::new(48000, vec![0.0; n], vec![], None))) };
         let spec = |deck: DeckId| LoadSpec { deck, path: "nope.wav".into(), beats: vec![], bpm: None };
-        c.load(Some("a".into()), spec(1));
-        c.load(Some("b".into()), spec(1));
+        c.load((STDIO, Some("a".into())), spec(1));
+        c.load((STDIO, Some("b".into())), spec(1));
         let a = c.loading[0].unwrap();
         c.finish_load(a, 1, track(1002));
         assert_eq!(used(&c), 1002 * 4, "the decoded samples are not held against the budget");
@@ -1630,7 +2017,7 @@ mod tests {
         // Its result is not out, so b, queued behind it, waits to decode,
         // and so does a new load on another deck.
         assert_eq!(c.loading[0], None, "a decode started past the budget");
-        c.load(Some("c".into()), spec(2));
+        c.load((STDIO, Some("c".into())), spec(2));
         assert_eq!(c.loading[1], None, "a decode started past the budget on another deck");
         assert!(c.staged(), "the held loads are not retried");
         // The pump writes a's result: the room is given back and both start.
@@ -1643,7 +2030,7 @@ mod tests {
         assert!(!text.contains("error"), "{text}");
         // Control: a decode within the budget holds nothing back.
         let (b, d) = (c.loading[0].unwrap(), c.loading[1].unwrap());
-        c.load(Some("e".into()), spec(1));
+        c.load((STDIO, Some("e".into())), spec(1));
         c.finish_load(b, 1, track(1000));
         assert_eq!(used(&c), 4000);
         assert!(c.loading[0].is_some(), "a decode within the budget held the next one back");
@@ -1662,7 +2049,7 @@ mod tests {
         let spec = |deck: DeckId, path: String, beats: usize| LoadSpec {
             deck,
             path,
-            beats: (0..beats).map(|i| Beat { time_ms: i as f64, downbeat: i % 4 == 0 }).collect(),
+            beats: (0..beats).map(|i| Beat { time_ms: i as f64, downbeat: i % 4 == 0, bpm: None }).collect(),
             bpm: None,
         };
         let big = || spec(1, "nope.wav".into(), LOAD_BYTES / 3 / per_beat);
@@ -1670,9 +2057,9 @@ mod tests {
         assert!(each > LOAD_BYTES / 4, "the grid is not charged");
         let (mut c, mut cmd_rx, out) = control();
         let used = |c: &Control| c.load_used.load(Ordering::Acquire);
-        c.load(Some("decoding".into()), big());
+        c.load((STDIO, Some("decoding".into())), big());
         for i in 0..4 {
-            c.load(Some(i.into()), big());
+            c.load((STDIO, Some(i.into())), big());
         }
         // Three fit: the one decoding and two parked. The rest are refused
         // at once, before they are held.
@@ -1690,8 +2077,8 @@ mod tests {
         // To the byte: a load that fits the room left goes, on another deck
         // too, and one byte more is refused.
         let room = LOAD_BYTES - used(&c);
-        c.load(Some("over".into()), spec(2, "x".repeat(room + 1), 0));
-        c.load(Some("fits".into()), spec(2, "x".repeat(room), 0));
+        c.load((STDIO, Some("over".into())), spec(2, "x".repeat(room + 1), 0));
+        c.load((STDIO, Some("fits".into())), spec(2, "x".repeat(room), 0));
         assert_eq!(full(&out), [Value::from(2), Value::from(3), Value::from("over")]);
         assert!(c.loading[1].is_some(), "a load that fits was refused");
         assert_eq!(used(&c), LOAD_BYTES);
@@ -1715,9 +2102,9 @@ mod tests {
         // else is held, so any load a line can carry is taken alone; the
         // next is refused while it is held.
         let (mut c, _cmd_rx, out) = control();
-        c.load(Some("alone".into()), spec(1, "x".repeat(LOAD_BYTES + 1), 0));
+        c.load((STDIO, Some("alone".into())), spec(1, "x".repeat(LOAD_BYTES + 1), 0));
         assert!(c.loading[0].is_some(), "a lone load was refused");
-        c.load(Some("next".into()), spec(2, "y.wav".into(), 0));
+        c.load((STDIO, Some("next".into())), spec(2, "y.wav".into(), 0));
         assert_eq!(full(&out), [Value::from("next")]);
     }
 
@@ -1790,7 +2177,7 @@ mod tests {
             let (tx, rx) = mpsc::channel();
             let (o, g) = (out.clone(), go.clone());
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", move |mut side, stop| {
+                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                     while !stop.load(Ordering::Relaxed) {
                         if g.load(Ordering::Relaxed) {
                             side.process(64);
@@ -1875,7 +2262,7 @@ mod tests {
         let (reader, _writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", |_side, _stop| {}));
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", MidiSetup::inject_only(), |_side, _stop| {}));
         });
         let r = rx.recv_timeout(Duration::from_secs(10)).expect("serve hung after its audio side stopped");
         assert!(r.is_err());
@@ -1895,6 +2282,66 @@ mod tests {
         }
     }
 
+    /// A writer whose every write fails: the supervisor's stdout gone.
+    struct Dead;
+
+    impl Write for Dead {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_stalled_socket_is_dropped_and_only_stdio_failing_is_an_error() {
+        let v = serde_json::json!({"type": "state"});
+        let hub = Hub::new(Box::new(io::sink()));
+        let (tx, rx) = mpsc::sync_channel(1);
+        let id = hub.add_socket(tx).unwrap();
+        assert!(hub.broadcast(&v).is_ok());
+        // Its queue is full: the next line stalls it. It is dropped, and a
+        // slow page is not the supervisor gone, so this is no error.
+        assert!(hub.broadcast(&v).is_ok());
+        assert_eq!(hub.socket_clients(), 0);
+        assert_eq!(rx.try_iter().count(), 1);
+        assert!(hub.send_to(id, &v).is_ok(), "a client that has gone is skipped");
+        // A result sent to one stalled socket is the same: dropped, no error.
+        let (tx, rx) = mpsc::sync_channel(1);
+        let id = hub.add_socket(tx).unwrap();
+        assert!(hub.send_to(id, &v).is_ok());
+        assert!(hub.send_to(id, &v).is_ok(), "a stalled socket's result stopped the engine");
+        assert_eq!((hub.socket_clients(), rx.try_iter().count()), (0, 1));
+        assert!(!hub.closed().load(Ordering::Acquire), "a stalled socket closed the output");
+        // Control: stdio failing is the error that stops the engine, with a
+        // socket beside it, and that socket still gets the line.
+        let hub = Hub::new(Box::new(Dead));
+        let (tx, rx) = mpsc::sync_channel(4);
+        let id = hub.add_socket(tx).unwrap();
+        assert!(!hub.closed().load(Ordering::Acquire));
+        assert!(hub.broadcast(&v).is_err());
+        // Set by the failing write itself, while it still holds the lock.
+        assert!(hub.closed().load(Ordering::Acquire), "stdio failed and the output is not marked closed");
+        assert!(hub.send_to(STDIO, &v).is_err());
+        assert!(hub.send_to(id, &v).is_ok());
+        assert_eq!(rx.try_iter().count(), 2);
+    }
+
+    #[test]
+    fn a_socket_line_after_shutdown_began_is_refused_to_its_sender() {
+        let (c, _cmd_rx, out) = control();
+        let (tx, rx) = mpsc::sync_channel(4);
+        let client = c.hub.add_socket(tx).unwrap();
+        c.refuse_line(client, r#"{"id": "late", "cmd": {"type": "crossfader", "value": 0.5}}"#);
+        c.refuse_line(client, "   ");
+        let got: Vec<Value> = rx.try_iter().map(|l| serde_json::from_str(&l).unwrap()).collect();
+        assert_eq!(got.len(), 1, "one result, none for a blank line: {got:?}");
+        assert_eq!((got[0]["id"].clone(), got[0]["ok"].clone()), (serde_json::json!("late"), serde_json::json!(false)));
+        assert!(got[0]["error"]["message"].as_str().unwrap().contains("shutting down"));
+        assert!(out.0.lock().unwrap().is_empty(), "stdio got a socket's refusal");
+    }
+
     #[test]
     fn commands_left_in_the_mailbox_when_the_audio_side_dies_are_refused() {
         // The command is taken into the mailbox, then the audio side dies
@@ -1904,7 +2351,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", |_side, _stop| {
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |_side, _stop| {
                 std::thread::sleep(Duration::from_millis(300));
             });
             let _ = tx.send(r);
@@ -1922,6 +2369,73 @@ mod tests {
         assert!(result["error"]["message"].as_str().unwrap().contains("stopped before"), "{result}");
     }
 
+    fn lines_of(out: &Captured) -> Vec<Value> {
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        text.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+    }
+
+    #[test]
+    fn midi_from_the_engines_own_ports_reaches_the_engine_and_the_page() {
+        // An opener standing in for midir: it claims one port and delivers
+        // recorded FLX4 bytes through the sink from its own thread, as a
+        // midir callback does.
+        let open: MidiOpener = Box::new(|maps: &MapSet, sink: MidiSink| {
+            let port = "DDJ-FLX4 MIDI 1".to_string();
+            let map = maps.resolve(&port).expect("the FLX4 map").name_match.clone();
+            let line = midi::ports_json(&[(port.clone(), map)], &["IAC Bus 1".to_string()]);
+            std::thread::spawn(move || {
+                sink.send(&port, &[0xb6, 0x1f, 0x00]); // crossfader hard left
+                sink.send(&port, &[0x97, 0x02, 0x7f]); // hot cue pad C, deck 1
+                sink.send(&port, &[0x90, 0x36, 0x7f]); // jog touch: unbound
+            });
+            Ok((Box::new(()) as Box<dyn std::any::Any>, line))
+        });
+        let (reader, mut writer) = io::pipe().unwrap();
+        let out = Captured::default();
+        let o = out.clone();
+        let (tx, rx) = mpsc::channel();
+        let setup = MidiSetup { router: Router::new(MapSet::builtin().unwrap()), open: Some(open) };
+        std::thread::spawn(move || {
+            let _ = tx.send(serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", setup, run_wall(256)));
+        });
+        // Wait for the three MIDI messages to be handled, then stop.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while lines_of(&out).iter().filter(|l| l["type"] == "midi_action" || l["type"] == "midi_unmapped" || l["id"] == "midi-0").count() < 3 {
+            assert!(Instant::now() < deadline, "MIDI never came through: {:?}", lines_of(&out));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        writeln!(writer, r#"{{"id": "s", "cmd": {{"type": "engine_state"}}}}"#).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        writeln!(writer, r#"{{"id": "bye", "cmd": {{"type": "engine_shutdown"}}}}"#).unwrap();
+        rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+        let lines = lines_of(&out);
+        // hello, then the claim, before anything else.
+        assert_eq!(lines[0]["type"], "hello");
+        assert_eq!(lines[1], serde_json::json!({"type": "midi_ports", "claimed": [{"port": "DDJ-FLX4 MIDI 1", "map": "DDJ-FLX4"}], "unclaimed": ["IAC Bus 1"]}));
+        // The crossfader went to the engine: a result, and the state shows it.
+        let r = lines.iter().find(|l| l["id"] == "midi-0").expect("a result for the MIDI crossfader");
+        assert_eq!(r["ok"], true, "{r}");
+        let last_state = lines.iter().rev().find(|l| l["type"] == "state").expect("a state");
+        assert_eq!(last_state["mixer"]["crossfader"], 0.0);
+        // The hot cue went to the page, verbatim; the jog touch was reported.
+        let a = lines.iter().find(|l| l["type"] == "midi_action").unwrap();
+        assert_eq!(a["action"], serde_json::json!({"type": "deck_hot_cue", "deck": 1, "slot": "C"}));
+        assert_eq!(a["value"]["pressed"], true);
+        let u = lines.iter().find(|l| l["type"] == "midi_unmapped").unwrap();
+        assert_eq!(u["hint"], "JOG touch (deck 1)");
+    }
+
+    #[test]
+    fn a_midi_opener_that_fails_stops_serve_before_hello() {
+        let open: MidiOpener = Box::new(|_: &MapSet, _: MidiSink| Err("MIDI input is unavailable: test".to_string()));
+        let (reader, _writer) = io::pipe().unwrap();
+        let out = Captured::default();
+        let setup = MidiSetup { router: Router::new(MapSet::builtin().unwrap()), open: Some(open) };
+        let r = serve_threaded_from(io::BufReader::new(reader), out.clone(), 48000, "wall", setup, run_wall(256));
+        assert!(r.unwrap_err().to_string().contains("MIDI input is unavailable"));
+        assert!(lines_of(&out).is_empty(), "nothing, not even hello, before the failure");
+    }
+
     #[test]
     fn a_state_request_acknowledged_before_shutdown_is_answered() {
         // Codex on 6a4cfb88: `engine_state` then EOF, with the audio side
@@ -1935,7 +2449,7 @@ mod tests {
             let o = out.clone();
             let started = Instant::now();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::Cursor::new(input), o, 48000, "wall", |mut side, stop| loop {
+                let r = serve_threaded_from(io::Cursor::new(input), o, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| loop {
                     std::thread::sleep(Duration::from_millis(50));
                     if stop.load(Ordering::Relaxed) {
                         break;
@@ -1993,7 +2507,7 @@ mod tests {
             let (o, audio_stopped) = (out.clone(), Arc::new(AtomicBool::new(false)));
             let stopped = audio_stopped.clone();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", move |mut side, stop| {
+                let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                     while !stop.load(Ordering::Relaxed) {
                         if audio_runs {
                             side.process(64);
@@ -2046,7 +2560,7 @@ mod tests {
         // pump fails to write while the engine drains.
         let run = |input: &'static str, needle: &'static str| {
             let out = FailsOn(needle, Captured::default(), Vec::new());
-            serve_threaded_from(io::Cursor::new(input), out, 48000, "wall", |mut side, stop| {
+            serve_threaded_from(io::Cursor::new(input), out, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
@@ -2077,7 +2591,7 @@ mod tests {
         let run = |tail: Box<dyn io::Read + Send>| {
             let out = Captured::default();
             let line = io::Cursor::new(b"{\"id\": \"f\", \"cmd\": {\"type\": \"master_mute\", \"muted\": true}}\n".to_vec());
-            let r = serve_threaded_from(io::BufReader::new(io::Read::chain(line, tail)), out.clone(), 48000, "wall", |mut side, stop| {
+            let r = serve_threaded_from(io::BufReader::new(io::Read::chain(line, tail)), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
@@ -2156,7 +2670,7 @@ mod tests {
             let t = std::thread::Builder::new()
                 .name("serve-control".into())
                 .spawn(move || {
-                    serve_threaded_from(io::BufReader::new(reader), out, 48000, "wall", move |mut side, stop| {
+                    serve_threaded_from(io::BufReader::new(reader), out, 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                         while !stop.load(Ordering::Relaxed) {
                             side.process(64);
                             std::thread::sleep(Duration::from_millis(1));
@@ -2281,7 +2795,7 @@ mod tests {
             let (tx, rx) = mpsc::channel();
             let o = out.clone();
             std::thread::spawn(move || {
-                let r = serve_threaded_from(input, o, 48000, "wall", |_side, stop| {
+                let r = serve_threaded_from(input, o, 48000, "wall", MidiSetup::inject_only(), |_side, stop| {
                     while !stop.load(Ordering::Relaxed) {
                         std::thread::sleep(Duration::from_millis(1));
                     }
@@ -2349,10 +2863,10 @@ mod tests {
             }
         };
         let mut out = Vec::new();
-        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None).unwrap();
+        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None, MidiSetup::inject_only().router).unwrap();
         check(&String::from_utf8(out).unwrap());
         let out = Captured::default();
-        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", |mut side, stop| {
+        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
             while !stop.load(Ordering::Relaxed) {
                 side.process(64);
                 std::thread::sleep(Duration::from_millis(1));
@@ -2388,10 +2902,10 @@ mod tests {
             }
         };
         let mut out = Vec::new();
-        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None).unwrap();
+        serve_fake(io::Cursor::new(input.clone()), &mut out, 48000, |_| unreachable!(), None, MidiSetup::inject_only().router).unwrap();
         check(&String::from_utf8(out).unwrap());
         let out = Captured::default();
-        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", |mut side, stop| {
+        serve_threaded_from(io::Cursor::new(input), out.clone(), 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
             while !stop.load(Ordering::Relaxed) {
                 side.process(64);
                 std::thread::sleep(Duration::from_millis(1));
@@ -2417,7 +2931,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let o = out.clone();
         std::thread::spawn(move || {
-            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", |mut side, stop| {
+            let r = serve_threaded_from(io::BufReader::new(reader), o, 48000, "wall", MidiSetup::inject_only(), |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));
@@ -2477,7 +2991,7 @@ mod tests {
         let (reader, mut writer) = io::pipe().unwrap();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", move |mut side, stop| {
+            let _ = serve_threaded_from(io::BufReader::new(reader), io::sink(), 48000, "wall", MidiSetup::inject_only(), move |mut side, stop| {
                 while !stop.load(Ordering::Relaxed) {
                     side.process(64);
                     std::thread::sleep(Duration::from_millis(1));

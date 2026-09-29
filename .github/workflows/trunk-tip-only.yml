@@ -1,0 +1,123 @@
+name: trunk-tip-only
+
+# Issue #2922 / ADR-0042 F6: cancel superseded queued CI and bookkeeping runs so
+# workflow_run followers do not starve PR CI on the self-hosted agentbox pool.
+# Never CI_RUNS_ON_LINUX: a sweeper queued behind the backlog it exists to
+# trim cannot trim it. Use the main-fix reserve; hosted fallback remains configured.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Backstop if a push-trigger miss leaves superseded bookkeeping queued.
+    - cron: "*/7 * * * *"
+  workflow_dispatch:
+
+env:
+  # Keep .pyc out of the reused self-hosted workspace (same ratchet as above).
+  PYTHONDONTWRITEBYTECODE: "1"
+
+permissions:
+  actions: write
+  contents: read
+  # Listing open pull requests. Unspecified permissions are disabled, so without this the
+  # closed-PR sweep reads "Resource not accessible by integration" and cancels nothing.
+  pull-requests: read
+
+concurrency:
+  group: trunk-tip-only
+  cancel-in-progress: true
+
+jobs:
+  sweep:
+    name: Cancel superseded queued trunk runs
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_MAIN_FIX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338):
+      # the same block every self-hosted job carries, pinned identical by
+      # tests/quality/test_workspace_ownership_hygiene.py. On the hosted
+      # fallback the workspace is fresh and the step is a no-op scan.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled checkout can leave locks; require no live workspace git.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # Full history so origin/main is current enough for the ancestry guard
+      # (issue #3513). edited below re-runs body declarations; ancestry catches
+      # stale synthetic merge refs that predate trunk ADR fixes.
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
+          persist-credentials: false
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      - name: Install Python deps into the project venv
+        run: uv sync --extra dev
+
+      - name: Preflight gh auth
+        run: scripts/ci_runner_preflight.sh gh
+
+      - name: Sweep superseded queued CI and bookkeeping runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-sync python -m scripts.ci_trunk_tip_only
