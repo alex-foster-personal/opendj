@@ -2,13 +2,17 @@
 //!
 //!   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
+//!                   [--midi] [--midi-map MAPS.json]
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
 //! sha256, when each event fired, which decks are heard when (the timeline
 //! and its overlaps), and each deck's tempo. `--decks-out` also writes each
 //! loaded deck's own audio as `deckN.wav`. `serve` speaks protocol v1 on
-//! stdin/stdout; see `src/protocol.rs`.
+//! stdin/stdout; see `src/protocol.rs`. `--midi` (build feature `midi`, wall
+//! and device clocks) has the engine read the controllers its device maps
+//! match; `--midi-map` adds onboarded maps that win over the built-in ones.
+//! `midi_inject` feeds recorded MIDI bytes on any clock, with or without it.
 
 use std::fs::File;
 use std::io::{self, BufWriter};
@@ -17,6 +21,7 @@ use std::process::ExitCode;
 
 use odj_audio::offline::{file_loader, render_plan_files_with, RenderOptions, Solo};
 use odj_audio::plan::parse_plan;
+use odj_audio::midi::{MapSet, Router};
 use odj_audio::{protocol, serve, wav};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -24,6 +29,7 @@ use sha2::{Digest, Sha256};
 const USAGE: &str = "usage:
   odj-audio render --plan PLAN.json --out OUT.wav [--decks-out DIR]
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
+                  [--midi] [--midi-map MAPS.json]
   odj-audio version";
 
 struct Args {
@@ -41,6 +47,16 @@ impl Args {
                 let v = self.rest.remove(i + 1);
                 self.rest.remove(i);
                 Ok(Some(v))
+            }
+        }
+    }
+
+    fn flag(&mut self, flag: &str) -> bool {
+        match self.rest.iter().position(|a| a == flag) {
+            None => false,
+            Some(i) => {
+                self.rest.remove(i);
+                true
             }
         }
     }
@@ -158,42 +174,64 @@ fn serve_cmd(mut args: Args) -> Result<(), String> {
             .ok_or(format!("--block must be 16..{}", odj_audio::engine::MAX_BLOCK))?,
     };
     let record = args.take("--record")?.map(PathBuf::from);
+    let midi_map = args.take("--midi-map")?.map(PathBuf::from);
+    let midi_ports = args.flag("--midi");
     args.done()?;
     if record.is_some() && clock != "fake" {
         return Err("--record works on the fake clock only".into());
     }
+    if midi_ports && clock == "fake" {
+        return Err("--midi reads controllers in real time; on the fake clock send midi_inject lines instead".into());
+    }
+    let mut maps = MapSet::builtin()?;
+    if let Some(p) = &midi_map {
+        let text = std::fs::read_to_string(p).map_err(|e| format!("cannot read {}: {e}", p.display()))?;
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{} is not JSON: {e}", p.display()))?;
+        maps.install_json(&v, &p.display().to_string())?;
+    }
+    let midi = serve::MidiSetup { router: Router::new(maps), open: if midi_ports { Some(midi_opener()?) } else { None } };
     match clock.as_str() {
         "fake" => {
             let sr = sr.unwrap_or(48000);
             let mut rec = Vec::new();
             let loader = file_loader(std::env::current_dir().map_err(|e| e.to_string())?);
             let sink = if record.is_some() { Some(&mut rec) } else { None };
-            serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink).map_err(|e| e.to_string())?;
+            serve::serve_fake(io::stdin().lock(), io::stdout().lock(), sr, loader, sink, midi.router).map_err(|e| e.to_string())?;
             if let Some(p) = record {
                 let file = File::create(&p).map_err(|e| format!("cannot create {}: {e}", p.display()))?;
                 wav::write_f32(&mut BufWriter::new(file), sr, &rec).map_err(|e| e.to_string())?;
             }
             Ok(())
         }
-        "wall" => serve::serve_threaded(sr.unwrap_or(48000), "wall", serve::run_wall(block)).map_err(|e| e.to_string()),
-        "device" => device(sr),
+        "wall" => serve::serve_threaded(sr.unwrap_or(48000), "wall", midi, serve::run_wall(block)).map_err(|e| e.to_string()),
+        "device" => device(sr, midi),
         other => Err(format!("unknown clock {other}; use fake, wall or device")),
     }
 }
 
+#[cfg(feature = "midi")]
+fn midi_opener() -> Result<serve::MidiOpener, String> {
+    Ok(odj_audio::midi_in::opener())
+}
+
+#[cfg(not(feature = "midi"))]
+fn midi_opener() -> Result<serve::MidiOpener, String> {
+    Err("this build has no MIDI input; rebuild with --features midi".into())
+}
+
 #[cfg(feature = "device")]
-fn device(sr: Option<u32>) -> Result<(), String> {
+fn device(sr: Option<u32>, midi: serve::MidiSetup) -> Result<(), String> {
     let (rate, _channels) = odj_audio::device::default_output_format()?;
     if let Some(want) = sr {
         if want != rate {
             return Err(format!("the output device runs at {rate} Hz; --sample-rate {want} does not match"));
         }
     }
-    serve::serve_threaded(rate, "device", odj_audio::device::run_device()).map_err(|e| e.to_string())
+    serve::serve_threaded(rate, "device", midi, odj_audio::device::run_device()).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "device"))]
-fn device(_sr: Option<u32>) -> Result<(), String> {
+fn device(_sr: Option<u32>, _midi: serve::MidiSetup) -> Result<(), String> {
     Err("this build has no device output; rebuild with --features device".into())
 }
 

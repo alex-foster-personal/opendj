@@ -19,6 +19,10 @@ default = []
 # Real audio output through cpal (CoreAudio, WASAPI, ALSA). Off by default so
 # Linux CI builds without ALSA headers; the fake and wall clocks need no device.
 device = ["dep:cpal"]
+# MIDI input read by the engine itself through midir (CoreMIDI, WinMM, ALSA).
+# Off by default for the same reason as `device`: Linux CI has no ALSA headers.
+# Decoding and dispatch (src/midi.rs) and the `midi_inject` seam need no feature.
+midi = ["dep:midir"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -27,6 +31,8 @@ symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "f
 rtrb = "0.4"
 sha2 = "0.10"
 cpal = { version = "0.18", optional = true }
+midir = { version = "0.11", optional = true }
+regex-lite = "0.1"
 
 [profile.release]
 opt-level = 3

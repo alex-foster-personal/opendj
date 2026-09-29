@@ -188,6 +188,11 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
                 if matches!(cmd, Command::Advance(_) | Command::State | Command::Shutdown) {
                     return Err(invalid(format!("{what}: clock and session commands do not belong in a plan")));
                 }
+                if matches!(cmd, Command::MidiInject { .. }) {
+                    // A plan names engine commands; MIDI bytes are a serve
+                    // session's input and route through its device maps.
+                    return Err(invalid(format!("{what}: midi_inject belongs in a serve session, not a plan; write the engine command")));
+                }
                 Action::Cmd(cmd)
             }
             (None, Some(r)) => {
@@ -206,4 +211,20 @@ pub fn parse_plan(v: &Value) -> Result<Plan, ProtoError> {
         events.push(Event { at, action });
     }
     Ok(Plan { sample_rate, block_frames, max_ms, end, events })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn midi_bytes_are_refused_in_a_plan() {
+        let plan = |cmd: Value| json!({"end": {"ms": 10}, "events": [{"at": {"ms": 0}, "cmd": cmd}]});
+        let e = parse_plan(&plan(json!({"type": "midi_inject", "port": "DDJ-FLX4", "bytes": [144, 11, 127]}))).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Invalid);
+        assert!(e.message.contains("midi_inject belongs in a serve session"), "{}", e.message);
+        // Control: the engine command it would have routed to is a plan event.
+        assert!(parse_plan(&plan(json!({"type": "crossfader", "value": 1.0}))).is_ok());
+    }
 }

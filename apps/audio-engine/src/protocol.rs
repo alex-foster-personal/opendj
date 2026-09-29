@@ -72,6 +72,10 @@ pub enum Command {
     Advance(Advance),
     /// Ask for one `state` message now.
     State,
+    /// Raw MIDI bytes as if they arrived on `port`: the test and replay seam
+    /// for plan 20-03. They go through the same decode and dispatch as bytes
+    /// the engine reads from a device itself.
+    MidiInject { port: String, bytes: Vec<u8> },
     Shutdown,
 }
 
@@ -324,6 +328,33 @@ pub fn parse_command(v: &Value) -> Result<Command, ProtoError> {
             }
         }
         "engine_state" => Ok(Command::State),
+        "midi_inject" => {
+            let port = string(o, ty, "port")?;
+            if port.is_empty() {
+                return Err(invalid("midi_inject.port must name the port the bytes arrived on".into()));
+            }
+            let arr = field(o, ty, "bytes")?
+                .as_array()
+                .ok_or_else(|| invalid("midi_inject.bytes must be an array of bytes".into()))?;
+            if arr.is_empty() || arr.len() > crate::midi::MAX_FEED_BYTES {
+                return Err(invalid(format!(
+                    "midi_inject.bytes must hold 1..{} bytes, got {}",
+                    crate::midi::MAX_FEED_BYTES,
+                    arr.len()
+                )));
+            }
+            let bytes = arr
+                .iter()
+                .enumerate()
+                .map(|(i, b)| {
+                    b.as_u64()
+                        .filter(|b| *b <= 255)
+                        .map(|b| b as u8)
+                        .ok_or_else(|| invalid(format!("midi_inject.bytes[{i}] must be 0..255, got {b}")))
+                })
+                .collect::<Result<Vec<u8>, _>>()?;
+            Ok(Command::MidiInject { port: port.to_string(), bytes })
+        }
         "engine_shutdown" => Ok(Command::Shutdown),
         other => {
             if let Some((_, why)) = LATER.iter().find(|(t, _)| *t == other) {
@@ -631,6 +662,30 @@ mod tests {
             let e = cmd(json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid": [{"n": n, "time_ms": 0}]})).unwrap_err();
             assert!(e.message.contains("must be 1..4"), "n {n}: {}", e.message);
         }
+    }
+
+    #[test]
+    fn midi_inject_takes_a_port_and_bytes() {
+        let Command::MidiInject { port, bytes } =
+            cmd(json!({"type": "midi_inject", "port": "DDJ-FLX4", "bytes": [144, 11, 127]})).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!((port.as_str(), bytes), ("DDJ-FLX4", vec![0x90, 0x0b, 0x7f]));
+        for (bad, want) in [
+            (json!({"type": "midi_inject", "port": "", "bytes": [144]}), "port"),
+            (json!({"type": "midi_inject", "port": "p", "bytes": []}), "1..4096"),
+            (json!({"type": "midi_inject", "port": "p", "bytes": [256]}), "bytes[0]"),
+            (json!({"type": "midi_inject", "port": "p", "bytes": [-1]}), "bytes[0]"),
+            (json!({"type": "midi_inject", "port": "p", "bytes": vec![0; 4097]}), "1..4096"),
+        ] {
+            let e = cmd(bad).unwrap_err();
+            assert_eq!(e.code, ErrorCode::Invalid);
+            assert!(e.message.contains(want), "{want}: {}", e.message);
+        }
+        // Control: both ends of the byte range and the length bound are taken.
+        assert!(cmd(json!({"type": "midi_inject", "port": "p", "bytes": [0, 255]})).is_ok());
+        assert!(cmd(json!({"type": "midi_inject", "port": "p", "bytes": vec![0; 4096]})).is_ok());
     }
 
     #[test]
