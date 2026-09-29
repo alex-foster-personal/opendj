@@ -115,18 +115,28 @@ def test_probe_sees_growth_when_every_page_elects_the_library(
 
 # ----- verdict equivalence ------------------------------------------------------
 
-_HASHES: tuple[object, ...] = (
-    None, "", "  ", "h1", "h2", "h3", "h4", " h1", "h2 ", "\th3", "h1x", "\xa0h4",
-    b"h1", "~h2", "h5",
+_KEYS = tuple(f"k{i:02d}" for i in range(24))
+_ODD_FORMS = (
+    lambda key: f" {key}", lambda key: f"{key} ", lambda key: f"\t{key}",
+    lambda key: f"\xa0{key}", lambda key: key.encode(), lambda key: f"{key}x",
 )
 _ISRCS: tuple[object, ...] = (
     None, "GBAAA2600001", "gb-aaa-26-00001", "GB AAA 26 00001", "USBBB2600002",
     "usbbb2600002", "bad", "",
 )
-_STAMPS = (_T0, _T1, "not a stamp")
+_BLANK_HASHES: tuple[object, ...] = (None, "", "  ")
+
+
+def _random_hash(rng: random.Random, present: float) -> object:
+    """Mostly canonical, sometimes padded, a BLOB, or a longer key sharing the prefix."""
+    if rng.random() >= present:
+        return rng.choice(_BLANK_HASHES)
+    key = rng.choice(_KEYS)
+    return rng.choice(_ODD_FORMS)(key) if rng.random() < 0.3 else key
 
 
 def _random_library(conn: sqlite3.Connection, rng: random.Random, rows: int) -> list[str]:
+    """Sparse identity keys, so a row often shares one ONLY in an odd stored form."""
     pks = [f"t{i:03d}" for i in range(rows)]
     conn.executemany(
         "INSERT INTO tracks(stable_id, stable_id_tier, title, isrc, content_hash,"
@@ -134,9 +144,9 @@ def _random_library(conn: sqlite3.Connection, rng: random.Random, rows: int) -> 
         " VALUES (?, 'fingerprint', ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             (
-                pk, pk, rng.choice(_ISRCS), rng.choice(_HASHES), rng.choice(_HASHES),
-                _T0, rng.choice(_STAMPS), rng.choice((_DEV_A, _DEV_B)),
-                _T1 if rng.random() < 0.1 else None,
+                pk, pk, rng.choice(_ISRCS), _random_hash(rng, 0.6), _random_hash(rng, 0.3),
+                _T0, "not a stamp" if rng.random() < 0.1 else rng.choice((_T0, _T1)),
+                rng.choice((_DEV_A, _DEV_B)), _T1 if rng.random() < 0.1 else None,
             )
             for pk in pks
         ],
