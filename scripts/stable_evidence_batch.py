@@ -110,7 +110,10 @@ def main(argv: list[str] | None = None) -> int:
         args.previous_started or None, datetime.now(UTC), timedelta(minutes=args.overlap_minutes)
     )
     created_since = created_floor(since, timedelta(hours=args.lookback_hours))
-    listed = fetch_completed_runs(args.repository, created_since, args.token, "stable-evidence")
+    listed = fetch_completed_runs(
+        args.repository, created_since, args.token, "stable-evidence",
+        workflow_names=RECORDED_WORKFLOWS,
+    )
     chosen = select_suite_runs(listed, since)
     evidence_dir = Path(args.evidence_dir) if args.evidence_dir else default_evidence_dir()
     written = append_suite_runs(evidence_dir, chosen, args.written_by)

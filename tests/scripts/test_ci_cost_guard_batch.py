@@ -19,10 +19,10 @@ import pytest
 
 from scripts.ci_cost_guard import render_batch_summary, select_batch_runs
 from scripts.ci_run_batch import (
-    RESULT_CAP,
     batch_since,
     created_slices,
     fetch_completed_runs,
+    fetch_inflight_runs,
     last_successful_pass_start,
     parse_time,
     runs_held_back,
@@ -138,72 +138,76 @@ def test_created_slices_cover_the_window_end_to_end() -> None:
     ]
 
 
-def _pages(per_slice: int) -> Callable[[str], dict]:
-    """A fake GET: `per_slice` runs per one-hour creation slice, 100 per page, ids
-    unique per slice except that each later slice's first id repeats the previous
-    slice's last (the boundary second is inclusive on both ends)."""
+def _github(created: dict[str, list[datetime]]) -> tuple[Callable[[str], dict], list[str]]:
+    """A fake GET over named workflows. The workflows index maps each name to an id; a runs
+    listing returns that workflow's runs created inside `created=A..B` (inclusive), newest
+    first, ONE page of 100 at most, the way GitHub serves page 1. Every URL is recorded."""
+    names = sorted(created)
+    requested: list[str] = []
 
     def get_json(url: str) -> dict:
-        query = re.search(r"&page=(\d+)&created=(\d{4}-\d\d-\d\dT(\d\d))", url)
+        requested.append(url)
+        if "/actions/workflows?" in url:
+            return {"workflows": [{"id": 10 + k, "name": n} for k, n in enumerate(names)]}
+        query = re.search(
+            r"/actions/workflows/(\d+)/runs\?.*created=([0-9TZ:-]+)\.\.([0-9TZ:-]+)", url
+        )
         assert query, url
-        page, slice_index = int(query.group(1)), int(query.group(3))
-        first = slice_index * per_slice
-        ids = list(range(first, first + per_slice))
-        if slice_index:
-            ids[0] = first - 1
-        chunk = ids[(page - 1) * 100 : page * 100]
-        return {"workflow_runs": [{"id": run_id} for run_id in chunk]}
-
-    return get_json
-
-
-def test_listing_dedupes_the_inclusive_slice_boundary() -> None:
-    now = datetime(2026, 9, 22, 2, 0, tzinfo=UTC)
-    runs = fetch_completed_runs(
-        "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_pages(150)
-    )
-    assert len(runs) == len({run["id"] for run in runs}) == 299
-
-
-def _repo(created: list[datetime]) -> Callable[[str], dict]:
-    """A fake GET that behaves like GitHub's filtered listing: the runs created inside the
-    `created=A..B` range (inclusive), newest first, 100 per page, and nothing past the
-    1,000th result however many match."""
-
-    def get_json(url: str) -> dict:
-        query = re.search(r"&page=(\d+)&created=([0-9TZ:-]+)\.\.([0-9TZ:-]+)", url)
-        assert query, url
-        page = int(query.group(1))
+        name = names[int(query.group(1)) - 10]
         start, stop = (parse_time(query.group(k)) for k in (2, 3))
         matching = sorted(
-            (index for index, when in enumerate(created) if start <= when <= stop),
-            reverse=True,
-        )[:RESULT_CAP]
-        return {"workflow_runs": [{"id": i} for i in matching[(page - 1) * 100 : page * 100]]}
-
-    return get_json
-
-
-def test_a_saturated_slice_is_split_until_every_run_is_listed() -> None:
-    """if an hour holding more than 1,000 runs fails every pass then evidence stays stale
-    for good (Sol P1 on #3844): the slice is bisected instead"""
-    start = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
-    created = [start + timedelta(seconds=index * 1.44) for index in range(2500)]
-    now = start + timedelta(hours=1)
-    runs = fetch_completed_runs(
-        "o/r", "2026-09-22T00:00:00Z", "t", "test", now=now, get_json=_repo(created)
-    )
-    assert {run["id"] for run in runs} == set(range(2500))
-
-
-def test_a_slice_still_saturated_at_one_second_fails_closed() -> None:
-    start = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
-    created = [start + timedelta(seconds=30)] * RESULT_CAP
-    with pytest.raises(RuntimeError, match=str(RESULT_CAP)):
-        fetch_completed_runs(
-            "o/r", "2026-09-22T00:00:00Z", "t", "test",
-            now=start + timedelta(hours=1), get_json=_repo(created),
+            (k for k, when in enumerate(created[name]) if start <= when <= stop), reverse=True
         )
+        return {"workflow_runs": [{"id": f"{name}-{k}", "name": name} for k in matching[:100]]}
+
+    return get_json, requested
+
+
+START = datetime(2026, 9, 22, 0, 0, tzinfo=UTC)
+
+
+def _list(created: dict[str, list[datetime]], names: set[str]) -> tuple[list[dict], list[str]]:
+    get, requested = _github(created)
+    runs = fetch_completed_runs(
+        "o/r", "2026-09-22T00:00:00Z", "t", "test",
+        workflow_names=names, now=START + timedelta(hours=2), get_json=get,
+    )
+    return runs, requested
+
+
+def test_only_the_named_workflows_are_listed_and_every_run_once() -> None:
+    created = {
+        "CI": [START + timedelta(minutes=m) for m in range(0, 120, 7)],
+        "Other": [START + timedelta(minutes=5)],
+    }
+    created["CI"].append(START + timedelta(hours=1))  # on the slice boundary, both sides
+    runs, requested = _list(created, {"CI"})
+    assert sorted(run["id"] for run in runs) == sorted(f"CI-{k}" for k in range(len(created["CI"])))
+    assert not any("/workflows/11/" in url for url in requested), "Other was never listed"
+
+
+def test_every_listing_is_one_page_so_no_rerun_can_shift_a_run_across_pages() -> None:
+    """if a slice is read across pages then a run re-run mid-listing leaves the completed set
+    and shifts a later run into the page already read, which is then skipped for good (Codex
+    P1 on #3844): a full page is bisected instead of paged, and the dense hour still lists
+    every run"""
+    created = {"CI": [START + timedelta(seconds=k * 1.44) for k in range(2500)]}
+    runs, requested = _list(created, {"CI"})
+    assert {run["id"] for run in runs} == {f"CI-{k}" for k in range(2500)}
+    assert not any(re.search(r"[?&]page=", url) for url in requested if "/runs?" in url)
+
+
+def test_a_full_page_at_one_second_fails_closed() -> None:
+    created = {"CI": [START + timedelta(seconds=30)] * 100}
+    with pytest.raises(RuntimeError, match="one second"):
+        _list(created, {"CI"})
+
+
+def test_a_watched_name_with_no_workflow_fails_closed() -> None:
+    """if a watched name matches no workflow then the pass reads nothing for it and looks
+    clean"""
+    with pytest.raises(RuntimeError, match="Full CI"):
+        _list({"CI": []}, {"CI", "Full CI"})
 
 
 # ----- the mark: the last SUCCESSFUL pass, however far back (Codex P1s on #3844) -----
@@ -281,3 +285,26 @@ def test_a_watched_run_created_before_the_lookback_holds_the_mark() -> None:
 def test_no_in_flight_straggler_lets_the_pass_advance() -> None:
     inflight = [_inflight(2, "CI", "2026-09-29T06:01:00Z")]
     assert runs_held_back(inflight, {"CI"}, NOW, timedelta(hours=6)) == []
+
+
+def test_the_census_reads_one_page_of_old_runs_per_status() -> None:
+    requested: list[str] = []
+
+    def get(url: str) -> dict:
+        requested.append(url)
+        return {"workflow_runs": [_inflight(1, "CI", "2026-09-29T05:00:00Z")]}
+
+    runs = fetch_inflight_runs(
+        "o/r", "t", "test", created_before="2026-09-29T06:00:00Z", get_json=get
+    )
+    assert [run["id"] for run in runs] == [1]
+    assert all("created=<2026-09-29T06:00:00Z" in url for url in requested)
+    assert not any(re.search(r"[?&]page=", url) for url in requested)
+
+
+def test_a_census_status_that_fills_a_page_fails_closed() -> None:
+    def get(url: str) -> dict:
+        return {"workflow_runs": [_inflight(k, "CI", "2026-09-29T05:00:00Z") for k in range(100)]}
+
+    with pytest.raises(RuntimeError, match="second page"):
+        fetch_inflight_runs("o/r", "t", "test", created_before="2026-09-29T06:00:00Z", get_json=get)

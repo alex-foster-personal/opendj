@@ -289,7 +289,9 @@ def run_batch(args: argparse.Namespace) -> int:
     created_since = created_floor(since, timedelta(hours=args.lookback_hours))
     watched = {name.strip() for name in args.watched.split(",") if name.strip()}
     e2e_events = {name.strip() for name in args.e2e_events.split(",") if name.strip()}
-    runs = fetch_completed_runs(args.repository, created_since, args.token, "ci-cost-guard")
+    runs = fetch_completed_runs(
+        args.repository, created_since, args.token, "ci-cost-guard", workflow_names=watched
+    )
     priced: list[dict[str, Any]] = []
     for run in select_batch_runs(runs, watched, e2e_events, since):
         attempt = str(run.get("run_attempt") or 1)

@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.request import Request, urlopen
@@ -59,9 +59,6 @@ def created_floor(since: str, lookback: timedelta) -> str:
     return iso(parse_time(since) - lookback)
 
 
-RESULT_CAP = 1000
-
-
 def created_slices(created_since: str, now: datetime, width: timedelta) -> list[tuple[str, str]]:
     """Consecutive creation windows from `created_since` to `now`, each `width` wide."""
     slices: list[tuple[str, str]] = []
@@ -80,63 +77,79 @@ def _get_json(url: str, token: str, agent: str) -> dict[str, Any]:
     return payload
 
 
+PAGE_SIZE = 100
+
+
 def fetch_completed_runs(
     repository: str,
     created_since: str,
     token: str,
     agent: str,
     *,
+    workflow_names: Iterable[str],
     now: datetime | None = None,
     slice_width: timedelta = timedelta(hours=1),
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Completed runs created at or after `created_since`, every page of every slice.
+    """Completed runs of the named workflows created at or after `created_since`.
 
-    GitHub caps a filtered runs listing at 1,000 results, the newest; one query
-    over a window wider than that silently drops the oldest runs, and with them
-    a long-running completion the mark will step past (Codex P1 on #3844). So
-    the window is listed one creation slice at a time, and a slice that reaches
-    the cap is bisected and listed again, down to one second (Sol P1 on #3844:
-    a fixed slice that saturates would fail every pass from then on). Only a
-    one-second slice holding 1,000 runs fails the pass. Boundary seconds belong
-    to both neighbours; runs are deduped by id.
+    Every listing is ONE page. Offset pagination over the completed set is not a
+    snapshot: a run re-run while later pages are read leaves the set, shifts a later
+    run into the page already read, and that run is skipped with nothing to say so
+    (Codex P1 on #3844). So each workflow is listed one creation slice at a time, and
+    a slice that fills a page is bisected and listed again rather than paged, down to
+    one second; only a one-second slice holding a full page fails the pass. Listing
+    per watched workflow instead of repo-wide reads about a tenth of the runs.
+    Boundary seconds belong to both neighbours; runs are deduped by id.
     """
     fetch = get_json or (lambda url: _get_json(url, token, agent))
-    seen: dict[int, dict[str, Any]] = {}
-    pending = list(reversed(created_slices(created_since, now or datetime.now(UTC), slice_width)))
-    while pending:
-        start, stop = pending.pop()
-        listed = _list_creation_slice(repository, start, stop, fetch)
-        if len(listed) < RESULT_CAP:
-            seen.update((int(run["id"]), run) for run in listed)
-            continue
-        width = parse_time(stop) - parse_time(start)
-        if width <= timedelta(seconds=1):
-            raise RuntimeError(
-                f"creation slice {start}..{stop} holds {RESULT_CAP} runs, GitHub's result "
-                "cap, and cannot be narrowed further; the listing would be truncated"
+    base = f"https://api.github.com/repos/{repository}/actions/workflows"
+    seen: dict[str, dict[str, Any]] = {}
+    for name, workflow_id in sorted(_workflow_ids(base, set(workflow_names), fetch).items()):
+        pending = list(
+            reversed(created_slices(created_since, now or datetime.now(UTC), slice_width))
+        )
+        while pending:
+            start, stop = pending.pop()
+            batch = (
+                fetch(
+                    f"{base}/{workflow_id}/runs?status=completed&per_page={PAGE_SIZE}"
+                    f"&created={start}..{stop}"
+                ).get("workflow_runs")
+                or []
             )
-        middle = iso(parse_time(start) + timedelta(seconds=width.total_seconds() // 2))
-        pending.extend([(middle, stop), (start, middle)])
+            if len(batch) < PAGE_SIZE:
+                seen.update((str(run["id"]), run) for run in batch)
+                continue
+            width = parse_time(stop) - parse_time(start)
+            if width <= timedelta(seconds=1):
+                raise RuntimeError(
+                    f"{name}: creation slice {start}..{stop} fills a page and cannot be "
+                    "narrowed below one second; the listing would need a second page"
+                )
+            middle = iso(parse_time(start) + timedelta(seconds=width.total_seconds() // 2))
+            pending.extend([(middle, stop), (start, middle)])
     return list(seen.values())
 
 
-def _list_creation_slice(
-    repository: str, start: str, stop: str, fetch: Callable[[str], dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """Every page of one creation slice, stopping at the cap."""
-    listed: list[dict[str, Any]] = []
+def _workflow_ids(
+    base: str, names: set[str], fetch: Callable[[str], dict[str, Any]]
+) -> dict[str, int]:
+    """Each watched name's workflow id. A name with no workflow, or with two, fails the
+    pass: an unmatched name would read nothing and look clean."""
+    found: dict[str, list[int]] = {}
     page = 1
-    while len(listed) < RESULT_CAP:
-        batch = fetch(
-            f"https://api.github.com/repos/{repository}/actions/runs"
-            f"?status=completed&per_page=100&page={page}&created={start}..{stop}"
-        ).get("workflow_runs") or []
-        listed.extend(batch)
-        if len(batch) < 100:
+    while True:
+        workflows = fetch(f"{base}?per_page={PAGE_SIZE}&page={page}").get("workflows") or []
+        for workflow in workflows:
+            found.setdefault(str(workflow["name"]), []).append(int(workflow["id"]))
+        if len(workflows) < PAGE_SIZE:
             break
         page += 1
-    return listed
+    unmatched = sorted(name for name in names if len(found.get(name, [])) != 1)
+    if unmatched:
+        raise RuntimeError(f"watched workflow names without exactly one workflow: {unmatched}")
+    return {name: found[name][0] for name in names}
 
 
 def last_successful_pass_start(
@@ -162,10 +175,13 @@ def last_successful_pass_start(
     oldest = ""
     page = 1
     while True:
-        runs = fetch(
-            f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_file}"
-            f"/runs?per_page=100&page={page}"
-        ).get("workflow_runs") or []
+        runs = (
+            fetch(
+                f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_file}"
+                f"/runs?per_page=100&page={page}"
+            ).get("workflow_runs")
+            or []
+        )
         for run in runs:
             if int(run["id"]) == this_run or run.get("status") != "completed":
                 continue
@@ -185,26 +201,32 @@ def fetch_inflight_runs(
     token: str,
     agent: str,
     *,
+    created_before: str,
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Every run not yet completed, each status listed in full; fails closed at the cap."""
+    """Every run not yet completed that was created before `created_before`.
+
+    One page per status, for the same reason the completed listing is one page per
+    slice: paging a set that changes under the reader can skip a member. Only runs
+    older than the cutoff matter to the census, and those are few; a status that fills
+    a page fails the pass rather than reading a second one.
+    """
     fetch = get_json or (lambda url: _get_json(url, token, agent))
-    seen: dict[int, dict[str, Any]] = {}
+    seen: dict[str, dict[str, Any]] = {}
     for status in INFLIGHT_STATUSES:
-        listed = 0
-        page = 1
-        while True:
-            batch = fetch(
+        batch = (
+            fetch(
                 f"https://api.github.com/repos/{repository}/actions/runs"
-                f"?status={status}&per_page=100&page={page}"
-            ).get("workflow_runs") or []
-            listed += len(batch)
-            seen.update((int(run["id"]), run) for run in batch)
-            if listed >= RESULT_CAP:
-                raise RuntimeError(f"{status} runs reached GitHub's {RESULT_CAP}-result cap")
-            if len(batch) < 100:
-                break
-            page += 1
+                f"?status={status}&per_page={PAGE_SIZE}&created=<{created_before}"
+            ).get("workflow_runs")
+            or []
+        )
+        if len(batch) >= PAGE_SIZE:
+            raise RuntimeError(
+                f"{PAGE_SIZE} or more {status} runs were created before {created_before}; "
+                "the census would need a second page"
+            )
+        seen.update((str(run["id"]), run) for run in batch)
     return list(seen.values())
 
 
@@ -255,10 +277,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "census":
         watched = {name.strip() for name in args.watched.split(",") if name.strip()}
-        inflight = fetch_inflight_runs(args.repository, token, "ci-run-batch")
-        held = runs_held_back(
-            inflight, watched, datetime.now(UTC), timedelta(hours=args.lookback_hours)
+        now = datetime.now(UTC)
+        lookback = timedelta(hours=args.lookback_hours)
+        inflight = fetch_inflight_runs(
+            args.repository, token, "ci-run-batch", created_before=iso(now - lookback)
         )
+        held = runs_held_back(inflight, watched, now, lookback)
         for run in held:
             print(
                 f"::error::run {run['id']} ({run['name']}, {run['status']}) was created "
