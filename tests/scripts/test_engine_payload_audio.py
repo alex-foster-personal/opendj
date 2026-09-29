@@ -1,4 +1,4 @@
-"""The payload ships odj-audio with device output (NAE-11, plan 20-02).
+"""The payload ships odj-audio with device output (NAE-13, plan 20-02).
 
 Regression lines:
 - if the launcher does not point ODJ_AUDIO_BIN at the payload's own build then

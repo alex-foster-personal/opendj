@@ -1,5 +1,5 @@
 /**
- * Rust engine mode (NAE-11): the performance page driving odj-audio.
+ * Rust engine mode (NAE-13): the performance page driving odj-audio.
  *
  * Regression lines:
  * - if the default choice is anything but Web Audio then broken: the mode is
