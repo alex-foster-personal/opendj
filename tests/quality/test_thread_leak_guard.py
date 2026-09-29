@@ -1,8 +1,8 @@
 """The thread-leak guard in tests/support/thread_leaks.py names real leaks and only those.
 
-- [if] an unclosed real sentry_sdk client's monitor is not reported by name [then] broken, [else stop].
+- [if] an unclosed real sentry_sdk client's monitor goes unnamed [then] broken, [else stop].
 - [if] a closed client's draining monitor is still reported [then] broken, [else stop].
-- [if] a non-daemon thread started by the test is not reported where the rule applies [then] broken, [else stop].
+- [if] a test's own non-daemon thread goes unnamed under the rule [then] broken, [else stop].
 - [if] a thread alive before the test started is reported [then] broken, [else stop].
 
 -Claude
@@ -49,7 +49,7 @@ def _start_real_sentry_monitor() -> None:
 
 
 def test_unclosed_sentry_client_leaks_a_named_monitor_and_closing_drains_it() -> None:
-    """[if] an unclosed client's monitor is unreported, or a closed one's still reported [then] broken, [else stop]."""
+    """[if] an open monitor goes unnamed, or a closed one is named [then] broken, [else stop]."""
     baseline = set(threading.enumerate())
     try:
         _start_real_sentry_monitor()
@@ -61,7 +61,7 @@ def test_unclosed_sentry_client_leaks_a_named_monitor_and_closing_drains_it() ->
 
 
 def test_non_daemon_thread_is_named_only_where_the_rule_applies() -> None:
-    """[if] a leaked non-daemon thread is unreported under the rule, or reported without it [then] broken, [else stop]."""
+    """[if] a non-daemon leak is missed on-rule, or named off-rule [then] broken, [else stop]."""
     baseline = set(threading.enumerate())
     release = threading.Event()
     worker = threading.Thread(target=release.wait, name="leaky-worker", daemon=False)
