@@ -28,23 +28,18 @@ function makeLocalStorage() {
 }
 
 let originalFetch;
-let originalConsole;
 
 function install() {
 	const store = makeLocalStorage();
 	defineGlobal('window', {
-		location: {
-			href: 'http://127.0.0.1:8585/performance',
-			pathname: '/performance'
-		},
+		location: { href: 'http://127.0.0.1:8585/performance', pathname: '/performance' },
 		isSecureContext: true,
 		localStorage: store,
 		addEventListener: () => {}
 	});
 	defineGlobal('localStorage', store);
 	defineGlobal('navigator', {
-		userAgent:
-			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15',
+		userAgent: 'Mozilla/5.0',
 		clipboard: { writeText: async () => {} }
 	});
 	defineGlobal('crypto', {
@@ -56,26 +51,13 @@ function install() {
 	});
 	defineGlobal('AudioWorkletNode', function AudioWorkletNode() {});
 
-	originalConsole = { info: console.info, warn: console.warn, error: console.error };
-	for (const level of ['info', 'warn', 'error']) {
-		console[level] = () => {};
-	}
-
 	originalFetch = globalThis.fetch;
 	globalThis.fetch = async (input) => {
 		const url = typeof input === 'string' ? input : input.url;
 		if (url.includes('/api/v1/settings')) {
 			return new Response(
 				JSON.stringify({
-					groups: [
-						{
-							group: 'network',
-							items: [
-								{ key: 'bind_host', value: '127.0.0.1' },
-								{ key: 'hostname', value: 'test-host' }
-							]
-						}
-					]
+					groups: [{ group: 'network', items: [{ key: 'hostname', value: 'test-host' }] }]
 				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } }
 			);
@@ -94,12 +76,7 @@ beforeEach(() => install());
 
 afterEach(() => {
 	globalThis.fetch = originalFetch;
-	if (originalConsole) Object.assign(console, originalConsole);
 	delete globalThis.window;
-	delete globalThis.localStorage;
-	delete globalThis.navigator;
-	delete globalThis.crypto;
-	delete globalThis.AudioWorkletNode;
 });
 
 test('five pushed toasts yield at most three visible in policy slice', async () => {
@@ -107,15 +84,12 @@ test('five pushed toasts yield at most three visible in policy slice', async () 
 		viteApiBase: API_BASE
 	});
 	const policy = await loadTypeScriptModule('src/lib/toast-tray-policy.ts');
-	try {
-		for (let i = 0; i < 5; i += 1) {
-			stores.pushToast(`burst ${i}`, 'error', 120_000);
-		}
-		const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
-		assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
-		const visible = policy.selectVisibleToasts(stores.toasts);
-		assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
-	} finally {
-		for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
+	for (let i = 0; i < 5; i += 1) {
+		stores.pushToast(`burst ${i}`, 'error', 120_000);
 	}
+	const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
+	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
+	const visible = policy.selectVisibleToasts(stores.toasts);
+	assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
+	for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 });
