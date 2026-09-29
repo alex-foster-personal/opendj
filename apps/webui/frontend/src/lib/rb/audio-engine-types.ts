@@ -6,15 +6,10 @@
  * downstream of every other module in this group.
  */
 
+import type { ArmAtPosition } from './beat-sync-math';
 import type { DeckId } from './deck-slots';
 
 export type MasterMode = 'auto' | 'locked';
-
-/** Where an armed jump lands on the deck's own transport: a fixed position, or
- * a resolver the engine calls with its LIVE presentation position inside the
- * scheduling transaction, so a published position that went stale while the
- * command queued can never pick an arm point already behind the playhead. */
-export type ArmAtPosition = number | ((nowPositionSec: number) => number);
 
 export type MasterReason =
 	| 'manual'

@@ -63,7 +63,7 @@ import {
 } from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { hasTrustedBeatGrid } from '$lib/player/grid-features';
-import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
+import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat, type ArmAtPosition } from '$lib/rb/beat-sync-math';
 import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
@@ -85,7 +85,7 @@ import {
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
 import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
-import type { ArmAtPosition, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
 import {

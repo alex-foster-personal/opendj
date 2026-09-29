@@ -168,9 +168,10 @@ import {
 	playbackBpm,
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
-	QUANTIZED_LAUNCH
+	QUANTIZED_LAUNCH,
+	resolveArmAtPosition
 } from '$lib/rb/beat-sync-math';
-import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
 	deckHasRealBeatGrid,
@@ -210,7 +211,7 @@ import {
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import type { ArmAtPosition, AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -3525,12 +3526,7 @@ class RbAudioEngine implements AudioEngine {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
-		const armAtPositionSec = typeof armAt === 'function' ? armAt(nowPositionSec) : armAt;
-		if (armAtPositionSec < nowPositionSec) {
-			throw new RangeError(
-				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
-			);
-		}
+		const armAtPositionSec = resolveArmAtPosition(armAt, nowPositionSec);
 		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
 		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
