@@ -40,9 +40,9 @@ env:
 
 jobs:
   gate:
-    # Trunk merge-queue drafts (trunk-merge/*) re-test PRs that already passed this PR-metadata
-    # gate; the draft has no PR body of its own, so the gate would fail on a body it never had.
-    if: ${{ !startsWith(github.head_ref, 'trunk-merge/') }}
+    # Trunk merge-queue drafts (trunk-merge/*) have no PR body of their own, so body validation
+    # skips them, but their tree is exactly what lands on main: they run the merged-tree check
+    # instead (PR #4227). The split lives on the two steps at the end, not on this job.
     name: adr check
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
@@ -124,6 +124,7 @@ jobs:
         run: scripts/ci_runner_preflight.sh python
 
       - name: ADR check (issue #1489)
+        if: ${{ !startsWith(github.head_ref, 'trunk-merge/') }}
         # No venv: scripts.adr_check is stdlib only. It reads THIS PR's
         # docs/decisions/ for whether an id exists, and the PR body plus
         # the PR file list via gh. Exit 1 = gated path, no valid ADR line.
@@ -132,3 +133,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m scripts.adr_check --pr "${{ github.event.pull_request.number }}"
+
+      - name: ADR merged-tree check on Trunk queue drafts (PR #4227)
+        if: ${{ startsWith(github.head_ref, 'trunk-merge/') }}
+        # The batch tree about to land on main: duplicate numeric ids, duplicate
+        # placeholders and stale renumber paths. Git only, no PR body and no gh.
+        # Exit 2 = the gate could not measure, which is never a pass.
+        run: |
+          python -m scripts.adr_check --merge-base origin/main --merge-head HEAD
