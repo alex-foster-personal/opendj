@@ -31,8 +31,9 @@ Requirements (mini-PRD)
   CANARY_MIRROR_PUSH_TOKEN and push nothing, [else stop] ✔︎ ✅ 🎯
 - [if] CANARY_MIRROR_REPO is set [then] exit 1 naming it and push nothing, [else stop]
   ✔︎ ✅ 🎯
-- [if] --target source and `origin` is not the configured source repository [then] exit 1
-  and push nothing, [else stop] ✔︎ ✅ 🎯
+- [if] --target source and the URL `git push origin` would use (pushurl, else url) is not
+  the configured source repository, or there is more than one pushurl [then] exit 1 and
+  push nothing, [else stop] ✔︎ ✅ 🎯
 - [if] the SHA is malformed or not an ancestor of refs/remotes/origin/main [then] exit 1,
   [else stop] ✔︎ ✅ 🎯
 - [if] the mirror has no default branch, or its default is a `canary/` branch [then] exit 1:
@@ -210,11 +211,28 @@ def _mirror_destination(config: dict) -> tuple[str, str, dict[str, str]]:
     return repo, f"https://github.com/{repo}.git", {**os.environ, **auth_env(token)}
 
 
+def origin_push_url() -> str:
+    """The URL `git push origin` would use: `remote.origin.pushurl` when set, else `url`.
+
+    More than one pushurl is refused: git would push to every one of them.
+    """
+    pushurls = _git(["config", "--get-all", "remote.origin.pushurl"], check=False).stdout.split()
+    if len(pushurls) > 1:
+        raise MirrorRefused(
+            f"origin has {len(pushurls)} push URLs {pushurls}; git would push to all of them"
+        )
+    if pushurls:
+        return pushurls[0]
+    url = _git(["config", "--get", "remote.origin.url"], check=False)
+    return url.stdout.strip() if url.returncode == 0 else ""
+
+
 def _source_destination(config: dict) -> tuple[str, str, dict[str, str]]:
-    origin = _git(["config", "--get", "remote.origin.url"], check=False)
-    require_origin_is_source(origin.stdout if origin.returncode == 0 else "", config)
-    # git's own credentials for origin: the operator's, never the mirror token.
-    return config["source_repository"], "origin", dict(os.environ)
+    push_url = origin_push_url()
+    require_origin_is_source(push_url, config)
+    # Push to the URL just checked, not to the name `origin`, so the address git uses is
+    # the address that was validated. git's own credentials: never the mirror token.
+    return config["source_repository"], push_url, dict(os.environ)
 
 
 def _destination(target: str, config: dict) -> tuple[str, str, dict[str, str]]:

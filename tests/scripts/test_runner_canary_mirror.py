@@ -17,6 +17,8 @@ Regression lines:
     (it let a push land in a repository whose budget gate starts at zero minutes)
   - if `--target source` pushes anywhere but the checkout's `origin` when that origin IS
     the configured source repository then broken, in both directions
+  - if a `remote.origin.pushurl` pointing elsewhere is not the URL checked then broken
+    (git pushes to pushurl, not url, so the guard would check the wrong address)
   - if a SHA that is not on origin/main can be mirrored then broken
   - if an EMPTY mirror is pushed to then broken: the first branch pushed becomes the
     default branch, which arms every `schedule` and `workflow_run` workflow in the mirror
@@ -299,6 +301,72 @@ def test_source_target_accepts_every_spelling_of_the_source_origin(world, url: s
         gitconfig.read_text() + f'[url "file://{world["real"]}"]\n\tinsteadOf = {spelled}\n'
     )
     _git(world["source"], "remote", "set-url", "origin", spelled, env=world["env"])
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"refs/heads/canary/{world['on_main']}" in _mirror_refs(world, "real")
+
+
+def _impostor(world: dict[str, object]) -> tuple[str, Path]:
+    """A writable bare repository at another GitHub URL: a push there WOULD land."""
+    other = "someone-else/music-dj-tools"
+    bare = Path(str(world["real"]) + "-impostor")
+    _git(bare.parent, "init", "-q", "--bare", str(bare), env=world["env"])
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    gitconfig.write_text(
+        gitconfig.read_text()
+        + f'[url "file://{bare}"]\n\tinsteadOf = https://github.com/{other}.git\n'
+    )
+    return f"https://github.com/{other}.git", bare
+
+
+def test_source_target_checks_the_push_url_git_will_actually_use(world) -> None:
+    """Codex P1 on f0f50fe68: `url` is the source, but `pushurl` sends the push elsewhere."""
+    impostor_url, impostor = _impostor(world)
+    _git(world["source"], "remote", "set-url", "--push", "origin", impostor_url, env=world["env"])
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "not the source repository" in result.stdout and "someone-else" in result.stdout
+    assert _git(impostor, "for-each-ref", env=world["env"]) == ""
+    assert set(_mirror_refs(world, "real")) == {"refs/heads/main"}
+
+
+def test_source_target_refuses_more_than_one_push_url(world) -> None:
+    impostor_url, impostor = _impostor(world)
+    source_url = f"https://github.com/{CONFIG['source_repository']}.git"
+    _git(
+        world["source"],
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        source_url,
+        env=world["env"],
+    )
+    _git(
+        world["source"],
+        "remote",
+        "set-url",
+        "--add",
+        "--push",
+        "origin",
+        impostor_url,
+        env=world["env"],
+    )
+    result = _run(world, world["on_main"], target="source")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "push URLs" in result.stdout
+    assert _git(impostor, "for-each-ref", env=world["env"]) == ""
+
+
+def test_source_target_honors_a_push_url_that_is_the_source_repository(world) -> None:
+    """Opposite direction: a pushurl spelled over ssh for the SAME repository is fine."""
+    spelled = f"git@github.com:{CONFIG['source_repository']}.git"
+    gitconfig = Path(world["env"]["GIT_CONFIG_GLOBAL"])
+    gitconfig.write_text(
+        gitconfig.read_text() + f'[url "file://{world["real"]}"]\n\tinsteadOf = {spelled}\n'
+    )
+    _git(world["source"], "remote", "set-url", "--push", "origin", spelled, env=world["env"])
     result = _run(world, world["on_main"], target="source")
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"refs/heads/canary/{world['on_main']}" in _mirror_refs(world, "real")
