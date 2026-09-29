@@ -146,6 +146,16 @@ done
 if [[ "$prepare_only" == "1" ]]; then
   exit 0
 fi
+if [[ -f "$build_root/DMG_SMOKE_HEADLESS_SLEEP_S" ]]; then
+  # Simulates setup work run.sh's own wall-clock sees but the recipe's own
+  # build_total timer never does (checkout, uv sync, the frontend build,
+  # dmg-preflight all run before `just dmg` starts its own clock): sleeping
+  # here, before the fast synthetic build below, makes the full $HEADLESS
+  # wall time genuinely exceed a low test TIMING_BUDGET_S while the
+  # recipe-reported seconds stays fast and in-budget (review round 4, P1:
+  # "preserve the full headless wall time for flagging").
+  sleep "$(cat "$build_root/DMG_SMOKE_HEADLESS_SLEEP_S")"
+fi
 if [[ -f "$build_root/DMG_SMOKE_BUILD_FAIL" ]]; then
   # The real recipe's EXIT trap (_record_build_time) fires on every exit,
   # success or failure, and records whatever verdict it reached before
