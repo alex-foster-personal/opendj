@@ -413,6 +413,9 @@ export interface PlaylistTrackRowWire {
 	cloud_transfer: CloudTransferWire | null;
 	/** Unmatched Spotify placeholder row (light green). Optional for older payloads. */
 	spotify_pending?: boolean;
+	/** CHROME-02: the streaming service for a streaming row, from the row's own
+	 * path (null when not streaming). Optional for older payloads. */
+	streaming_provider?: 'spotify' | 'tidal' | 'soundcloud' | 'unknown' | null;
 	quality: TrackQuality;
 	play_count: number;
 	/** Same four-status vocals as /anlz - drives PreviewStrip blue bars. */

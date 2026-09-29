@@ -19,6 +19,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Literal
 
 from apps.shared import fd_anchored_walk, fs_residency
 from apps.shared.library_mode import crate_root, is_mac_users_path
@@ -162,6 +163,29 @@ def is_streaming_uri(path: str | None) -> bool:
     must use :func:`is_streaming_row` instead.
     """
     return bool(path) and str(path).startswith(STREAMING_PREFIXES)
+
+
+StreamingProvider = Literal["spotify", "tidal", "soundcloud", "unknown"]
+
+
+def streaming_provider(path: str | None) -> StreamingProvider | None:
+    """Which service a streaming URI names, or ``None`` for a non-streaming path.
+
+    ``http(s)://`` streams are real streams from no service this app brands,
+    so they report ``"unknown"`` rather than ``None``. Listing rows carry this
+    so a row with no rekordbox mapping (djay-only, locally imported), whose
+    browser rb-meta never arrives, still shows its provider.
+    """
+    if not is_streaming_uri(path):
+        return None
+    uri = str(path)
+    if uri.startswith("spotify:"):
+        return "spotify"
+    if uri.startswith("tidal:"):
+        return "tidal"
+    if uri.startswith("soundcloud:"):
+        return "soundcloud"
+    return "unknown"
 
 
 def is_streaming_row(path: str | None, *, file_exists: bool) -> bool:

@@ -31,7 +31,28 @@ test('the I/O view the tray opens carries its own MIDI panel entry (CHROME-07)',
 	const start = cluster.indexOf('{#snippet outputMenu()}');
 	const menu = cluster.slice(start, cluster.indexOf('{/snippet}', start));
 	assert.match(menu, /aria-label="Open MIDI panel from audio I\/O"/);
-	assert.match(menu, /onclick=\{\(\) => \{\s*if \(!midiUi\.panelOpen\) toggleMidiPanel\(\);/);
+	assert.match(menu, /aria-label="Open MIDI panel from audio I\/O"[^>]*onclick=\{openMidiDrawer\}/);
+});
+
+// Codex P2 on PR #3896: the pinned I/O popover (z-index 80) stayed open over
+// the MIDI drawer (41) it had just opened. Both MIDI entries go through one
+// handler that opens the drawer AND unpins the I/O view; neither opens it.
+test('both MIDI entries open the drawer and close the I/O view, and neither opens it', () => {
+	const script = cluster.slice(0, cluster.indexOf('</script>'));
+	const handler = script.slice(script.indexOf('function openMidiDrawer(): void {'));
+	const handlerBody = handler.slice(0, handler.indexOf('\n\t}'));
+	assert.match(handlerBody, /if \(!midiUi\.panelOpen\) toggleMidiPanel\(\);\s*closeIoView\(\);/);
+	for (const label of ['Open MIDI panel', 'Open MIDI panel from audio I/O']) {
+		const at = cluster.indexOf(`aria-label="${label}"`);
+		const tag = cluster.slice(at, cluster.indexOf('>', cluster.indexOf('onclick=', at)));
+		assert.match(tag, /onclick=\{openMidiDrawer\}/, label);
+	}
+	assert.doesNotMatch(cluster, /openIoView/, 'no MIDI path may open the I/O view');
+});
+
+test('the I/O button still pins and unpins the I/O view itself (control)', () => {
+	assert.match(cluster, /programmaticOpen=\{ioSurface\.open\}/);
+	assert.match(cluster, /onProgrammaticClose=\{closeIoView\}/);
 });
 
 test('ControlExplainer accepts right placement and anchors to the real trigger rect', () => {

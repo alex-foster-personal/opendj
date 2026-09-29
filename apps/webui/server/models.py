@@ -314,6 +314,9 @@ class TrackRowOut(BaseModel):
     file_availability: FileAvailabilityStatus
     file_exists: bool | None
     is_streaming: bool
+    # CHROME-02: which service streams this row (null when not streaming), so
+    # an unmapped streaming row whose rb-meta never loads still shows its icon.
+    streaming_provider: Literal["spotify", "tidal", "soundcloud", "unknown"] | None = None
     # LIBUX-07: our own audio in non-local storage. False when unset.
     is_remote: bool = False
     # LIBUX-13: true whenever track_locations records a live remote object,

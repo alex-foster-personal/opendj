@@ -17039,6 +17039,23 @@
             "title": "Stems",
             "type": "object"
           },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
+          },
           "title": {
             "anyOf": [
               {
@@ -20909,6 +20926,23 @@
             "additionalProperties": true,
             "title": "Stems",
             "type": "object"
+          },
+          "streaming_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "spotify",
+                  "tidal",
+                  "soundcloud",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaming Provider"
           },
           "title": {
             "anyOf": [

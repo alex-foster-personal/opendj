@@ -1552,6 +1552,7 @@
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
 						spotifyPending: row.spotify_pending === true,
+						provider: row.streaming_provider,
 						folderPath: row.rb_meta?.folder_path ?? null,
 						transfer:
 							row.cloud_transfer === null || row.cloud_transfer === undefined

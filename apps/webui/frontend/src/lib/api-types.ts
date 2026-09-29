@@ -12517,6 +12517,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /** Title */
             title: string | null;
             /** Vocals */
@@ -13964,6 +13966,8 @@ export interface components {
             stems: {
                 [key: string]: unknown;
             };
+            /** Streaming Provider */
+            streaming_provider?: ("spotify" | "tidal" | "soundcloud" | "unknown") | null;
             /** Title */
             title: string | null;
             /** Vocals */

@@ -14,7 +14,7 @@
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import { RESCAN_ARROW_PATH, RESCAN_PATH } from '$lib/ui/icon-glyphs';
-	import { closeIoView, openIoView, ioSurface } from '$lib/rb/io-surface.svelte';
+	import { closeIoView, ioSurface } from '$lib/rb/io-surface.svelte';
 	import { toggleMidiPanel, midiUi } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
@@ -171,6 +171,13 @@
 	const midiTitle = $derived(
 		midiLabelTitle(midiState.permission, midiUi.requestPending, midiMappedCount, midiState.devices.length)
 	);
+
+	// Both MIDI entries open the drawer and unpin the I/O view: the pinned I/O
+	// popover (z-index 80) would otherwise sit over the drawer (41).
+	function openMidiDrawer(): void {
+		if (!midiUi.panelOpen) toggleMidiPanel();
+		closeIoView();
+	}
 </script>
 
 <div class="hp" data-performance-control="headphones">
@@ -257,10 +264,7 @@
 			class:st-red={midiStatus === 'red'}
 			aria-label="Open MIDI panel"
 			aria-expanded={midiUi.panelOpen}
-			onclick={() => {
-				openIoView();
-				if (!midiUi.panelOpen) toggleMidiPanel();
-			}}
+			onclick={openMidiDrawer}
 			>MIDI{#if midiGlyph !== 'none'}<svg class="midi-glyph" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"
 					><path
 						d={midiGlyph === 'tick' ? 'M2 6.2 L5 9.2 L10 3' : 'M3 3 L9 9 M9 3 L3 9'}
@@ -414,9 +418,7 @@
 				class:st-red={midiStatus === 'red'}
 				aria-label="Open MIDI panel from audio I/O"
 				aria-expanded={midiUi.panelOpen}
-				onclick={() => {
-					if (!midiUi.panelOpen) toggleMidiPanel();
-				}}>MIDI</button
+				onclick={openMidiDrawer}>MIDI</button
 			>
 		</ControlExplainer>
 	</div>

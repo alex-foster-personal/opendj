@@ -159,3 +159,96 @@ test('the Spotify glyph draws three dark sound-wave arcs inside the green disk, 
 	assert.ok(bows[0] > bows[1] && bows[1] > bows[2], 'arcs narrow toward the bottom');
 	assert.match(icon, /<svg class="provider-icon" viewBox="0 0 16 16" width="12" height="12"/, 'icon size unchanged');
 });
+
+// Codex P2 on PR #3896: a streaming row with NO rekordbox mapping (djay-only,
+// locally imported) never loads rb_meta, so rb_meta.folder_path is null and
+// the provider was lost. The row carries streaming_provider inline now. The
+// rows here are a CAPTURED real server response (manifest beside it), mapped
+// through the real playlist-row mapper, not hand-built.
+const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
+const UNMAPPED_MANIFEST = fileURLToPath(
+	new URL('./fixtures/playlist-unmapped-streaming-captured.manifest.json', import.meta.url)
+);
+
+async function unmappedRows() {
+	const { verifiedFixtureText } = await import('./verified-fixture.mjs');
+	const wire = await vite.ssrLoadModule('/src/lib/components/rb/browser/browser-row-wire.ts');
+	const captured = JSON.parse(
+		verifiedFixtureText(FIXTURES, UNMAPPED_MANIFEST, 'playlist-unmapped-streaming-captured.json')
+	);
+	return captured.map((w, i) => wire.rowFromPlaylistWire(w, i + 1));
+}
+
+/** Exactly what TrackTable passes for a row whose rb_meta never loads. */
+function viewFor(row) {
+	return cloud.trackCloudView({
+		fileExists: row.file_exists === true,
+		isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
+		hasRemoteCopy: row.has_remote_copy === true,
+		spotifyPending: row.spotify_pending === true,
+		provider: row.streaming_provider,
+		folderPath: row.rb_meta?.folder_path ?? null,
+		transfer: null
+	});
+}
+
+test('unmapped Tidal and SoundCloud rows render their own provider, not the generic cloud', async () => {
+	const rows = await unmappedRows();
+	const byId = Object.fromEntries(rows.map((r) => [r.stable_id[0], r]));
+	for (const [id, provider] of [['a', 'tidal'], ['b', 'soundcloud']]) {
+		const row = byId[id];
+		assert.equal(row.has_rb_mapping, false, 'the case under test is an unmapped row');
+		assert.equal(row.rb_meta, null);
+		const view = viewFor(row);
+		assert.equal(view.kind, 'streaming');
+		assert.equal(view.provider, provider);
+	}
+});
+
+test('an unmapped https stream stays unknown and local rows stay off streaming (control)', async () => {
+	const rows = await unmappedRows();
+	const byId = Object.fromEntries(rows.map((r) => [r.stable_id[0], r]));
+	assert.equal(viewFor(byId.c).provider, 'unknown');
+	for (const id of ['d', 'e']) {
+		const view = viewFor(byId[id]);
+		assert.notEqual(view.kind, 'streaming', `row ${id} has present local audio`);
+		assert.equal(view.provider, null);
+	}
+});
+
+test('without an inline provider, a mapped row still reads it from rb_meta.folder_path (control)', () => {
+	const view = cloud.trackCloudView({
+		fileExists: false,
+		isStreaming: true,
+		hasRemoteCopy: false,
+		spotifyPending: false,
+		provider: null,
+		folderPath: 'soundcloud:tracks:1',
+		transfer: null
+	});
+	assert.equal(view.provider, 'soundcloud');
+});
+
+test('an inline provider never outranks spotify_pending (control)', () => {
+	// A pending Spotify placeholder may carry a generic http(s) stream URI; the
+	// pending fact is the stronger signal and still names Spotify.
+	const view = cloud.trackCloudView({
+		fileExists: false,
+		isStreaming: true,
+		hasRemoteCopy: false,
+		spotifyPending: true,
+		provider: 'unknown',
+		folderPath: null,
+		transfer: null
+	});
+	assert.equal(view.provider, 'spotify');
+});
+
+test('TrackTable feeds the inline streaming_provider to the cloud classifier', () => {
+	const table = readFileSync(
+		fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
+		'utf8'
+	);
+	const call = table.slice(table.indexOf('trackCloudView({'), table.indexOf('})}', table.indexOf('trackCloudView({')));
+	assert.match(call, /provider: row\.streaming_provider,/);
+});
