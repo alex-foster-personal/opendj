@@ -58,6 +58,8 @@ const ENGINE_COMMAND = [
 const SERVER_COMMAND = `${FIXTURE_COMMAND} && ${ENGINE_COMMAND}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: './tests/e2e',
 	// EVERY spec that owns a dedicated config is ignored here, because this
 	// config starts vite and nothing else. Before this list existed the only

@@ -9,7 +9,12 @@ test('gig helper prompt offers enable on first Gig switch', async ({ page }) => 
 
 	await page.getByRole('button', { name: 'Gig', exact: true }).click();
 	const dialog = page.getByTestId('gig-helper-prompt');
-	await expect(dialog).toBeVisible();
+	// 15s, not the 5s default: trunk red Tue 29 Sep 2026 (checkpoint 077b1358a81)
+	// - the exact-SHA rerun passed clean and no gig-helper code changed between
+	// the last green checkpoint and this one, so the 5s window was too tight
+	// for a loaded runner's render, not a broken transition. Same allowance
+	// pattern as brand-launch.spec.ts / artwork-reader-unavailable.spec.ts.
+	await expect(dialog).toBeVisible({ timeout: 15_000 });
 	await dialog.getByRole('button', { name: 'Enable', exact: true }).click();
 	await expect(dialog).toBeHidden();
 	await expect(page.getByTestId('gig-helper-on')).toBeVisible();
@@ -27,7 +32,8 @@ test('gig helper No thanks suppresses future prompts', async ({ page, request })
 
 	await page.getByRole('button', { name: 'Gig', exact: true }).click();
 	const dialog = page.getByTestId('gig-helper-prompt');
-	await expect(dialog).toBeVisible();
+	// See the matching comment in the first test above.
+	await expect(dialog).toBeVisible({ timeout: 15_000 });
 	await dialog.getByRole('button', { name: 'No thanks', exact: true }).click();
 	await expect(dialog).toBeHidden();
 

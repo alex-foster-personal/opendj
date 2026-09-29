@@ -26,6 +26,8 @@ const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const FRONTEND_ORIGIN = `http://127.0.0.1:${FULL_RELOAD_GATE_FRONTEND_PORT}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'full-reload-gate.spec.ts',
 	fullyParallel: false,
