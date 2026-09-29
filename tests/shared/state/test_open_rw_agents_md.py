@@ -16,6 +16,7 @@ from apps.database.generate_agents_md import (
     MissingColumnDocsError,
     agents_md_cache_line,
     agents_md_cache_marker,
+    schema_fingerprint,
     write_agents_md,
 )
 from apps.shared.state import schema as state_schema
@@ -236,24 +237,31 @@ def test_open_dry_run_does_not_create_agents_md(tmp_path: Path) -> None:
 def _marker_for(conn: sqlite3.Connection, owned_tables: frozenset[str], version: int) -> str:
     return agents_md_cache_marker(
         sqlite_schema_version=conn.execute("PRAGMA schema_version").fetchone()[0],
+        schema_fingerprint=schema_fingerprint(conn),
         owned_tables=owned_tables,
         generator_version=version,
     )
 
 
 def test_agents_md_cache_marker_changes_with_each_real_input(tmp_path: Path) -> None:
-    """if schema version, owned tables, or generator version differ, the marker differs - broken"""
+    """if schema version, fingerprint, tables or generator differ, the marker differs - broken"""
     tracks_only = frozenset({"tracks"})
     tracks_and_playlists = frozenset({"tracks", "playlists"})
 
-    def marker(schema: int, tables: frozenset[str], version: int) -> str:
+    def marker(
+        schema: int, tables: frozenset[str], version: int, fingerprint: str = "aaaa"
+    ) -> str:
         return agents_md_cache_marker(
-            sqlite_schema_version=schema, owned_tables=tables, generator_version=version
+            sqlite_schema_version=schema,
+            schema_fingerprint=fingerprint,
+            owned_tables=tables,
+            generator_version=version,
         )
 
     base = marker(19, tracks_only, GENERATOR_VERSION)
     assert base == marker(19, tracks_only, GENERATOR_VERSION)
     assert base != marker(20, tracks_only, GENERATOR_VERSION)
+    assert base != marker(19, tracks_only, GENERATOR_VERSION, fingerprint="bbbb")
     assert base != marker(19, tracks_and_playlists, GENERATOR_VERSION)
     assert base != marker(19, tracks_only, GENERATOR_VERSION + 1)
 
@@ -366,6 +374,52 @@ def test_open_rw_regenerates_a_sidecar_written_for_another_schema(tmp_path: Path
     text = (dest_dir / "AGENTS.md").read_text(encoding="utf-8")
     assert "## `playlists`" in text
     assert agents_md_cache_line(foreign_marker) not in text
+
+
+# One CREATE TABLE each, so both bump sqlite's schema counter by exactly one.
+_LAUNCHER_META_DDL = "CREATE TABLE launcher_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+_PAIRINGS_DDL = (
+    "CREATE TABLE pairings (from_stable_id TEXT NOT NULL, to_stable_id TEXT NOT NULL, "
+    "direction TEXT NOT NULL, source TEXT NOT NULL, notes TEXT, confidence REAL, "
+    "created_at TEXT NOT NULL, modified_at TEXT NOT NULL, "
+    "PRIMARY KEY (from_stable_id, to_stable_id, direction))"
+)
+
+
+def _schema_counter(db_path: Path) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute("PRAGMA schema_version").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_open_rw_regenerates_for_a_restored_db_that_only_shares_the_schema_counter(
+    tmp_path: Path,
+) -> None:
+    """if a restored DB has another schema at the same counter then open_rw rewrites - broken"""
+    restored_dir, live_dir = tmp_path / "restored", tmp_path / "live"
+    for state_dir, ddl in ((restored_dir, _PAIRINGS_DDL), (live_dir, _LAUNCHER_META_DDL)):
+        state_dir.mkdir()
+        open_rw(state_dir / "state.db").close()
+        peer = sqlite3.connect(state_dir / "state.db", isolation_level=None)
+        peer.execute(ddl)
+        peer.close()
+        # The reopen misses on the new schema, regenerates, records its marker.
+        open_rw(state_dir / "state.db").close()
+    # Precondition, not decoration: the two schemas differ while sqlite's
+    # counter agrees, which is the collision a counter-only key cannot see.
+    assert _schema_counter(restored_dir / "state.db") == _schema_counter(live_dir / "state.db")
+    live_md = live_dir / "AGENTS.md"
+    assert "## `launcher_meta`" in live_md.read_text(encoding="utf-8")
+    assert "## `pairings`" not in live_md.read_text(encoding="utf-8")
+
+    shutil.copy2(restored_dir / "state.db", live_dir / "state.db")
+    open_rw(live_dir / "state.db").close()
+
+    text = live_md.read_text(encoding="utf-8")
+    assert "## `pairings`" in text
+    assert "## `launcher_meta`" not in text
 
 
 def test_insert_marker_if_absent_keeps_one_row_where_insert_marker_aborts(tmp_path: Path) -> None:

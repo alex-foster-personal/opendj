@@ -29,6 +29,7 @@ because that pair is a package cycle the quality gate counts
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sqlite3
 import uuid
@@ -62,9 +63,29 @@ YAML rendering on every request that opens a connection.
 """
 
 
+def schema_fingerprint(conn: sqlite3.Connection) -> str:
+    """A content hash of every ``sqlite_master`` row on ``conn``.
+
+    sqlite's ``PRAGMA schema_version`` is only a counter, so two databases
+    that ran different DDL (one creates ``pairings``, another
+    ``launcher_meta``) can reach the same value. A restored copy of one
+    landing beside the other's sidecar would then carry a matching marker
+    and skip regeneration past the drift guard (issue #4015 review). The
+    hash covers every table, index, view and trigger definition (sqlite
+    rewrites a table's stored ``sql`` on ``ALTER TABLE``), so equal
+    fingerprints mean equal schemas. One small indexed read, not the
+    per-table introspection this cache exists to skip.
+    """
+    rows = conn.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+    ).fetchall()
+    return hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()[:16]
+
+
 def agents_md_cache_marker(
     *,
     sqlite_schema_version: int,
+    schema_fingerprint: str,
     owned_tables: frozenset[str] | None,
     generator_version: int,
 ) -> str:
@@ -85,6 +106,10 @@ def agents_md_cache_marker(
     pays for itself against the introspect-and-render cost this exists to
     skip.
 
+    ``schema_fingerprint`` (:func:`schema_fingerprint`) is the schema's
+    CONTENT, and the counter alone is not enough: two different schemas can
+    share a counter value.
+
     ``generator_version`` is passed explicitly (callers pass
     :data:`GENERATOR_VERSION`) so a test can build the marker an OLDER
     generator wrote without rebinding the module constant. It changes
@@ -95,7 +120,7 @@ def agents_md_cache_marker(
     tables_part = ",".join(sorted(owned_tables)) if owned_tables else ""
     return (
         f"agents_md_generated:v{generator_version}:"
-        f"sqliteschema{sqlite_schema_version}:{tables_part}"
+        f"sqliteschema{sqlite_schema_version}:fp{schema_fingerprint}:{tables_part}"
     )
 
 
@@ -483,5 +508,6 @@ __all__ = [
     "main",
     "render",
     "sidecar_carries_cache_line",
+    "schema_fingerprint",
     "write_agents_md",
 ]

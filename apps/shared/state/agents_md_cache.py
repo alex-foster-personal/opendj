@@ -7,8 +7,8 @@ that when BOTH halves of the cache agree:
 
 - a ``schema_meta_markers`` row keyed on
   :func:`apps.database.generate_agents_md.agents_md_cache_marker` (sqlite's
-  own ``PRAGMA schema_version``, the owned tables, and the generator
-  version), and
+  own ``PRAGMA schema_version``, a content hash of ``sqlite_master``, the
+  owned tables, and the generator version), and
 - the sidecar beside this DB ending with that marker's cache line (a tail
   read). The row travels with a restored or copied state.db and the file
   does not, so the row alone cannot prove the sidecar is current.
@@ -48,11 +48,13 @@ def regenerate_agents_md_cached(
     from apps.database.generate_agents_md import (
         GENERATOR_VERSION,
         agents_md_cache_marker,
+        schema_fingerprint,
         sidecar_carries_cache_line,
     )
 
     marker = agents_md_cache_marker(
         sqlite_schema_version=conn.execute("PRAGMA schema_version").fetchone()[0],
+        schema_fingerprint=schema_fingerprint(conn),
         owned_tables=owned_tables,
         generator_version=GENERATOR_VERSION,
     )
