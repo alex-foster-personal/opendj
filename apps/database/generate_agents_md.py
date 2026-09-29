@@ -507,7 +507,7 @@ __all__ = [
     "introspect",
     "main",
     "render",
-    "sidecar_carries_cache_line",
     "schema_fingerprint",
+    "sidecar_carries_cache_line",
     "write_agents_md",
 ]
