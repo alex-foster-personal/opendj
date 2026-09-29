@@ -327,15 +327,20 @@ pub fn render_plan_with(
     let sr = plan.sample_rate;
     let max_frames = render_ceiling(plan.max_ms, sr);
     let max_ms_held = max_frames as f64 * 1000.0 / sr as f64;
-    if let At::Ms(end_ms) = plan.end {
-        if at_frame_of_ms(end_ms, sr) > max_frames {
-            return Err(ProtoError::new(
-                ErrorCode::Invalid,
-                format!(
-                    "plan.end at {end_ms} ms is past the longest render allowed ({max_ms_held:.0} ms: max_ms, or what one WAV file holds at {sr} Hz)"
-                ),
-            ));
-        }
+    // An absolute end (in ms or frames) past the ceiling is known too far
+    // before anything is decoded or held.
+    let end_frame = match plan.end {
+        At::Frame(f) => Some(f),
+        At::Ms(ms) => Some(at_frame_of_ms(ms, sr)),
+        At::Deck { .. } => None,
+    };
+    if let Some(end) = end_frame.filter(|&f| f > max_frames) {
+        return Err(ProtoError::new(
+            ErrorCode::Invalid,
+            format!(
+                "plan.end at frame {end} is past the longest render allowed ({max_frames} frames, {max_ms_held:.0} ms: max_ms, or what one WAV file holds at {sr} Hz)"
+            ),
+        ));
     }
     // Decode everything up front, so decode time is reported apart from render
     // time and the render loop itself never waits on IO.

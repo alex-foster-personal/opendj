@@ -181,7 +181,10 @@ pub struct Engine {
     master_volume: f64,
     master_muted: bool,
     master_gain: Smoothed,
-    mute_gain: Smoothed,
+    /// Set outright, never smoothed: the page assigns its mute node's gain
+    /// exactly 0 or 1 (`master-mute.svelte.ts`), so a mute is silent from its
+    /// first frame.
+    mute_gain: f64,
     frame: u64,
 }
 
@@ -195,7 +198,7 @@ impl Engine {
             master_volume: 1.0,
             master_muted: false,
             master_gain: Smoothed::new(1.0, sr, mixer::PARAM_SMOOTH_S),
-            mute_gain: Smoothed::new(1.0, sr, mixer::PARAM_SMOOTH_S),
+            mute_gain: 1.0,
             frame: 0,
         };
         // The page's default assign matrix (`_defaultChannel`): odd decks on
@@ -289,7 +292,7 @@ impl Engine {
             }
             MasterMute { muted } => {
                 self.master_muted = muted;
-                self.mute_gain.set(if muted { 0.0 } else { 1.0 });
+                self.mute_gain = if muted { 0.0 } else { 1.0 };
             }
         }
         Ok(None)
@@ -343,7 +346,7 @@ impl Engine {
     /// Master gain and the frame count, shared by both render paths.
     fn finish_block(&mut self, out: &mut [f32]) {
         for o in out.chunks_exact_mut(2) {
-            let g = (self.master_gain.tick() * self.mute_gain.tick()) as f32;
+            let g = (self.master_gain.tick() * self.mute_gain) as f32;
             o[0] *= g;
             o[1] *= g;
         }
@@ -530,6 +533,36 @@ mod tests {
         e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
         e.render(&mut buf);
         assert!(rms_db(&buf[48000..]) < -120.0, "master mute leaked");
+    }
+
+    #[test]
+    fn master_mute_is_a_hard_switch_like_the_pages() {
+        let mut e = playing_tone(1000.0, 48000);
+        let mut buf = vec![0.0f32; 4800 * 2];
+        e.render(&mut buf);
+        // Muted mid-play: the very first frame is silent, as the page's
+        // gain.value = 0 is, rather than gliding down over the next 200 ms.
+        e.apply(EngineCmd::MasterMute { muted: true }).unwrap();
+        let mut one = vec![0.0f32; 2];
+        e.render(&mut one);
+        assert_eq!(one, [0.0, 0.0]);
+        // Unmuted: full level from the first frame back, no glide in.
+        e.render(&mut buf);
+        e.apply(EngineCmd::MasterMute { muted: false }).unwrap();
+        let mut with = vec![0.0f32; 480 * 2];
+        e.render(&mut with);
+        let mut reference = playing_tone(1000.0, 48000);
+        let mut skip = vec![0.0f32; (4800 + 1 + 4800) * 2];
+        reference.render(&mut skip);
+        let mut without = vec![0.0f32; 480 * 2];
+        reference.render(&mut without);
+        assert_eq!(with, without, "unmute glided in");
+        // Control: master volume still glides like the page's setTargetAtTime,
+        // so snapping everything is not what passes this test.
+        e.apply(EngineCmd::MasterVolume { value: 0.0 }).unwrap();
+        let mut tail = vec![0.0f32; 48 * 2];
+        e.render(&mut tail);
+        assert!(tail.iter().any(|&x| x != 0.0), "master volume snapped");
     }
 
     #[test]

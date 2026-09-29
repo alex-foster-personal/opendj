@@ -171,15 +171,26 @@ fn plan_errors_name_the_event() {
     // A reachable end longer than one WAV file holds (4 h at 48 kHz, under
     // the default max_ms) is refused before anything is decoded or held,
     // deck outputs or not.
-    let huge = json!({"end": {"ms": 14_400_000}, "events": [
-        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
-        {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
-    for opts in [RenderOptions::default(), with_decks()] {
-        let started = std::time::Instant::now();
-        let e = render_plan_files_with(&parse_plan(&huge).unwrap(), &d, opts).err().unwrap();
-        assert!(e.message.contains("WAV file holds"), "{}", e.message);
-        assert!(started.elapsed().as_secs() < 2, "took {:?}", started.elapsed());
+    // The same for an end given in frames, up to u64::MAX.
+    for end in [json!({"ms": 14_400_000}), json!({"frame": u64::MAX}), json!({"frame": 691_200_000u64})] {
+        let huge = json!({"end": end, "events": [
+            {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}},
+            {"at": {"ms": 0}, "cmd": {"type": "play", "deck": 1, "playing": true}}]});
+        for opts in [RenderOptions::default(), with_decks()] {
+            let started = std::time::Instant::now();
+            let e = render_plan_files_with(&parse_plan(&huge).unwrap(), &d, opts).err().unwrap();
+            assert!(e.message.contains("WAV file holds"), "{end}: {}", e.message);
+            assert!(started.elapsed().as_secs() < 2, "{end} took {:?}", started.elapsed());
+        }
     }
+    // Control: a frame end exactly at max_ms is inside it.
+    let at_frame = json!({"end": {"frame": 24000}, "max_ms": 500, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    assert_eq!(render_plan_files(&parse_plan(&at_frame).unwrap(), &d).unwrap().frames, 24000);
+    let past_frame = json!({"end": {"frame": 24001}, "max_ms": 500, "events": [
+        {"at": {"ms": 0}, "cmd": {"type": "load", "deck": 1, "path": "a.wav"}}]});
+    let e = render_plan_files(&parse_plan(&past_frame).unwrap(), &d).err().unwrap();
+    assert!(e.message.contains("is past the longest render"), "{}", e.message);
 }
 
 // What a transition scorer reads from a render (plan 20-08): each deck's own
