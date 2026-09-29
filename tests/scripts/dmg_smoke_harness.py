@@ -126,6 +126,15 @@ bundle_dir="{bundle_dir}"
 log_dir="{log_dir}"
 record_build_time="{RECORD_BUILD_TIME}"
 real_budget="{REAL_BUILD_BUDGET}"
+# ops/dmg-smoke/run.sh exports this before invoking the real headless script,
+# so this fixture can correlate a fabricated row the same way a real build's
+# row is correlated (review round 4, P1: "correlate the timing row with this
+# build"). Fixtures below stamp any DMG_SMOKE_TIMING_LOG content with it too,
+# so a test asserting "this build's own row" reads the same way a real one
+# would; a line written directly into ops/logs/ship-dmg.log by a test's own
+# setup code (simulating an unrelated PRIOR run) never passes through here,
+# so it is correctly left uncorrelated.
+run_id="${{MDT_DMG_SMOKE_RUN_ID:-none}}"
 prepare_only=0
 while (($#)); do
   case "$1" in
@@ -147,7 +156,7 @@ if [[ -f "$build_root/DMG_SMOKE_BUILD_FAIL" ]]; then
   # no-line-at-all case.
   mkdir -p "$log_dir"
   if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
-    cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
+    sed "s/mode=direct /mode=direct run_id=$run_id /" "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
   fi
   exit 1
 fi
@@ -164,7 +173,7 @@ if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
   # An explicit raw-line fixture: some tests need full control over the
   # exact log content (a stale prior run, an unparseable line) to exercise
   # run.sh's own parsing, independent of what a real build would produce.
-  cat "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
+  sed "s/mode=direct /mode=direct run_id=$run_id /" "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 else
   # No override: run the SAME executable ops/dmg-smoke's real `dmg` recipe
   # runs (record_build_time.sh) against the REAL build budget directly, so
@@ -175,7 +184,17 @@ else
   # is a synthetic (elapsed, outcome) pair; the write path is real. Budget
   # path and log root are separate arguments (matching the justfile's own
   # independent `_budget`/`_root`), so no copy of the budget file is needed.
-  "$record_build_time" "$real_budget" "$build_root" {DEFAULT_BUILD_SECONDS} {DEFAULT_BUILD_RC}
+  # run_id is passed straight through so run.sh's own correlation matches.
+  "$record_build_time" "$real_budget" "$build_root" {DEFAULT_BUILD_SECONDS} {DEFAULT_BUILD_RC} "$run_id"
+fi
+if [[ -f "$build_root/DMG_SMOKE_EXTRA_TIMING_LOG" ]]; then
+  # Simulates a genuinely OTHER run's row landing AFTER this run's own
+  # (unlike a stale row a test writes directly into the log before this
+  # script even starts): written verbatim, with NO run_id substitution, so
+  # it is the LAST line in the log yet still not correlated to this run.
+  # Proves correlation is by run_id, not by "whichever line is newest"
+  # (review round 4, P1: "correlate the timing row with this build").
+  cat "$build_root/DMG_SMOKE_EXTRA_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 fi
 exit 0
 """

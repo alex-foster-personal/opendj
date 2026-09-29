@@ -15,6 +15,11 @@ throwaway tmp_path while passing the REAL ops/build-budget.env directly,
 without needing a full checkout under tmp_path (review round 3, P1: "keep
 the existing recorder contract tests runnable").
 
+An optional 5th run_id argument stamps the row so a reader of a log shared
+across builds (ops/dmg-smoke/run.sh's BUILD_WORKTREE) can prove a row
+belongs to its own run rather than trusting log position alone (review
+round 4, P1: "correlate the timing row with this build").
+
 [if] record_build_time.sh runs [then] it appends the verdict its inputs predict, [else stop].
 """
 
@@ -30,9 +35,14 @@ from tests.scripts.dmg_smoke_harness import REAL_BUILD_BUDGET, RECORD_BUILD_TIME
 pytestmark = pytest.mark.requirement("DEVOPS-04")
 
 
-def _run(budget: Path, root: Path, elapsed: int, rc: int) -> subprocess.CompletedProcess[str]:
+def _run(
+    budget: Path, root: Path, elapsed: int, rc: int, run_id: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    argv = [str(RECORD_BUILD_TIME), str(budget), str(root), str(elapsed), str(rc)]
+    if run_id is not None:
+        argv.append(run_id)
     return subprocess.run(
-        [str(RECORD_BUILD_TIME), str(budget), str(root), str(elapsed), str(rc)],
+        argv,
         capture_output=True,
         text=True,
         check=False,
@@ -48,6 +58,24 @@ def test_under_soft_budget_reads_ok(tmp_path: Path) -> None:
     proc = _run(REAL_BUILD_BUDGET, tmp_path, 60, 0)
     assert proc.returncode == 0
     assert "phase=build_total seconds=60 rc=0 verdict=OK" in _log_line(tmp_path)
+
+
+def test_omitted_run_id_defaults_to_none(tmp_path: Path) -> None:
+    proc = _run(REAL_BUILD_BUDGET, tmp_path, 60, 0)
+    assert proc.returncode == 0
+    assert "run_id=none phase=build_total" in _log_line(tmp_path)
+
+
+def test_empty_run_id_also_defaults_to_none(tmp_path: Path) -> None:
+    proc = _run(REAL_BUILD_BUDGET, tmp_path, 60, 0, run_id="")
+    assert proc.returncode == 0
+    assert "run_id=none phase=build_total" in _log_line(tmp_path)
+
+
+def test_a_given_run_id_is_stamped_onto_the_row(tmp_path: Path) -> None:
+    proc = _run(REAL_BUILD_BUDGET, tmp_path, 60, 0, run_id="20260101T000000Z-4242")
+    assert proc.returncode == 0
+    assert "run_id=20260101T000000Z-4242 phase=build_total" in _log_line(tmp_path)
 
 
 def test_over_soft_under_hard_reads_flag_soft(tmp_path: Path) -> None:
