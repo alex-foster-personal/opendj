@@ -228,9 +228,14 @@ export function drawWaveRow(ctx: CanvasRenderingContext2D, frame: WaveRowFrame):
 	const design = frame.waveformDesign ?? 'tri-band';
 	if (frame.anlz !== null && durS > 0) {
 		_drawCachedBands(ctx, frame.anlz.waveform, tLeft, pxPerS, durS, w, h, palette, design);
-		if (frame.masterDownbeatOverlay !== undefined && frame.masterDownbeatOverlay !== null) {
-			drawMasterDownbeatOverlay(ctx, frame.masterDownbeatOverlay, tLeft, pxPerS, w, h);
-		}
+	}
+	// Derived only from the trusted MASTER grid plus this deck's own position
+	// and pitch, so a loaded row with no (or failed) local analysis still shows
+	// the master's downbeats; painted after the bands, before everything else.
+	if (durS > 0 && frame.masterDownbeatOverlay !== undefined && frame.masterDownbeatOverlay !== null) {
+		drawMasterDownbeatOverlay(ctx, frame.masterDownbeatOverlay, tLeft, pxPerS, w, h);
+	}
+	if (frame.anlz !== null && durS > 0) {
 		drawLoopRegion(ctx, frame.loop, (ms) => (ms / 1000 - tLeft) * pxPerS, w, h);
 		// Loop cue bands paint as background, before the beat grid/phrases they
 		// would otherwise blank out for their span; point cue markers stay in
