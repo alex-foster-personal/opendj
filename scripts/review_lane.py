@@ -279,33 +279,44 @@ GENERATED_DATA_PATHS: frozenset[str] = frozenset(
         "apps/webui/frontend/src/lib/api-types.ts",
     }
 )
-# Files generated only BETWEEN markers, mapped to the test for one changed line of that
-# generated output. docs/perf/performance-register.md renders its flag table from
-# docs/perf/register.d/ fragments, and `python -m scripts.perf_register --check` pins that
-# block byte for byte, but the aspect register and prose around it are hand-written and no
-# check reads them. So its section is dropped only when EVERY changed line is flag-table
-# output; one hand-written line keeps the whole section reviewed. The fragments themselves,
+
+
+# Files generated only BETWEEN markers. docs/perf/performance-register.md renders its flag
+# table from docs/perf/register.d/ fragments, and `python -m scripts.perf_register --check`
+# pins that block byte for byte, but the aspect register and prose around it are
+# hand-written and no check reads them. So its section is dropped only when EVERY changed
+# line is a flag-table line that its own hunk PROVES lies between the markers; one other
+# line, or one it cannot place, keeps the whole section reviewed. The fragments themselves,
 # 0000-before-fragments.md included, are hand-written rows and are never skipped.
+@dataclass(frozen=True)
+class GeneratedBlock:
+    begin_prefix: str
+    end: str
+    is_generated_line: Callable[[str], bool]
+
+    def is_marker(self, text: str) -> bool:
+        return text.startswith(self.begin_prefix) or text == self.end
+
+
 _PERF_FLAG_ROW = re.compile(r"^\| (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2} \d{4} \|")
-_PERF_FLAG_TABLE_LINES = frozenset(
+_PERF_FLAG_TABLE_HEADER = frozenset(
     {
         "| Date | Agent / PR | Aspect | Flag | Triage |",
         "|------|------------|--------|------|--------|",
-        "<!-- END GENERATED -->",
     }
 )
 
 
 def _is_perf_flag_table_line(text: str) -> bool:
-    return (
-        bool(_PERF_FLAG_ROW.match(text))
-        or text in _PERF_FLAG_TABLE_LINES
-        or text.startswith("<!-- BEGIN GENERATED: rows from docs/perf/register.d/")
-    )
+    return bool(_PERF_FLAG_ROW.match(text)) or text in _PERF_FLAG_TABLE_HEADER
 
 
-GENERATED_BLOCK_PATHS: dict[str, Callable[[str], bool]] = {
-    "docs/perf/performance-register.md": _is_perf_flag_table_line,
+GENERATED_BLOCK_PATHS: dict[str, GeneratedBlock] = {
+    "docs/perf/performance-register.md": GeneratedBlock(
+        begin_prefix="<!-- BEGIN GENERATED: rows from docs/perf/register.d/",
+        end="<!-- END GENERATED -->",
+        is_generated_line=_is_perf_flag_table_line,
+    ),
 }
 _FILE_HEADER = re.compile(r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$')
 _FILE_HEADER_QUOTED = re.compile(r'^diff --git "a/([^"]+)" "b/([^"]+)"$')
@@ -354,11 +365,11 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
     skipped_paths: set[str] = set()
     section: list[str] = []
     skipping = False
-    block_line: Callable[[str], bool] | None = None
+    block: GeneratedBlock | None = None
 
     def flush() -> None:
         nonlocal section, skipping
-        if section and block_line is not None and _only_generated_changes(section, block_line):
+        if section and block is not None and _only_generated_changes(section, block):
             skipping = True
             skipped_paths.add(section_path)
         if section and not skipping:
@@ -375,7 +386,7 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
             section = [line]
             section_path = b_path
             skipping = a_path == b_path and b_path in GENERATED_DATA_PATHS
-            block_line = GENERATED_BLOCK_PATHS.get(b_path) if a_path == b_path else None
+            block = GENERATED_BLOCK_PATHS.get(b_path) if a_path == b_path else None
             if skipping:
                 skipped_paths.add(b_path)
         else:
@@ -385,13 +396,35 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
     return "\n".join(kept), frozenset(skipped_paths)
 
 
-def _only_generated_changes(section: list[str], is_generated: Callable[[str], bool]) -> bool:
-    """True when the section has hunks and every changed line in them is generated output."""
-    hunks = section[
-        next((i for i, line in enumerate(section) if line.startswith("@@")), len(section)) :
-    ]
-    changed = [line[1:] for line in hunks if line[:1] in ("+", "-")]
-    return bool(changed) and all(is_generated(text) for text in changed)
+def _only_generated_changes(section: list[str], block: GeneratedBlock) -> bool:
+    """True when the section has hunks and every changed line is generated output its own
+    hunk proves lies inside the block.
+
+    Changing a marker keeps the section, so in a skippable section markers appear only as
+    context, on both sides alike. A hunk is contiguous, so a changed line is inside exactly
+    when the nearest marker above it in the hunk is BEGIN or the nearest below it is END.
+    A line with no marker in view cannot be placed and keeps the section reviewed.
+    """
+    starts = [i for i, line in enumerate(section) if line.startswith("@@")]
+    if not starts:
+        return False
+    for start, stop in zip(starts, [*starts[1:], len(section)], strict=True):
+        hunk = [line for line in section[start + 1 : stop] if line[:1] in (" ", "+", "-")]
+        if not all(_changed_line_is_placed_inside(hunk, i, block) for i in range(len(hunk))):
+            return False
+    return any(line[:1] in ("+", "-") for line in section[starts[0] + 1 :])
+
+
+def _changed_line_is_placed_inside(hunk: list[str], index: int, block: GeneratedBlock) -> bool:
+    line = hunk[index]
+    text = line[1:]
+    if line[:1] == " ":
+        return True
+    if block.is_marker(text) or not block.is_generated_line(text):
+        return False
+    above = next((h[1:] for h in reversed(hunk[:index]) if block.is_marker(h[1:])), None)
+    below = next((h[1:] for h in hunk[index + 1 :] if block.is_marker(h[1:])), None)
+    return (above is not None and above.startswith(block.begin_prefix)) or below == block.end
 
 
 def reviewable_diff(pr: str) -> tuple[str, list[str]]:
