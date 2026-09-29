@@ -74,6 +74,8 @@ process.env.SAVEPOINT_SMOKE_API_BASE = api.origin;
 process.env.SAVEPOINT_SMOKE_ENGINE_SERVES_BUILD_INFO = engineServesBuildInfo ? '1' : '';
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'savepoint-smoke.spec.ts',
 	fullyParallel: false,

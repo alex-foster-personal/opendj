@@ -106,6 +106,8 @@ const ENGINE_COMMAND = [
 ].join(' ');
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: ['boot-burst.spec.ts'],
 	fullyParallel: false,
