@@ -11,9 +11,12 @@ it reports:
 - p95 start latency: nearest-rank p95 of started_at - created_at over EVERY vendor shard
   job (attempt 1 of every run), paired or not;
 - infra failures per 100 shard jobs, over every finished vendor shard job, paired or not: a
-  failure before or without the pytest step, a `timed_out`, or a `cancelled` that ran to
-  the job cap (a lost runner or provisioning error, no test at fault); other CANCELLEDs are
-  dropped, never counted as a pass;
+  failure before or without the pytest step, a pytest step that failed on its own
+  wall-budget TIMEOUT (read from its check-run annotation), a `timed_out`, and, once the
+  budget gate has handed the job to the vendor, ANY cancel, skip or job that never started.
+  A never-started job also counts as an infinite start latency. Only a run whose gate never
+  passed (superseded in the concurrency queue, or refused) is identifiably ours and left
+  out; a job still in flight makes the verdict UNKNOWN;
 - outcome agreement: the share of shard pairs with a test verdict on both sides that agree,
   over paired commits only, as is the push-to-verdict ratio.
 
@@ -42,6 +45,11 @@ Requirements (mini-PRD)
   green, [else stop] ✔︎ ✅ 🎯
 - [if] 20+ pairs meet every bar with a red control [then] PASS, [else stop] ✔︎ ✅ 🎯
 - [if] a GitHub read fails [then] exit 3 UNKNOWN, [else stop] ✔︎ ✅ 🎯
+- [if] a vendor shard never started, or was cancelled after the gate passed [then] it is
+  infra and a start-latency breach; [if] the run's gate never passed [then] it is excluded,
+  [else stop] ✔︎ ✅ 🎯
+- [if] a pytest step failed on its TIMEOUT annotation [then] infra, never a test red,
+  [else stop] ✔︎ ✅ 🎯
 - [if] an infra failure or slow start lands on a commit with no complete baseline [then]
   it still counts in the operational rates, and never in the ratio or agreement, [else
   stop] ✔︎ ✅ 🎯
@@ -68,9 +76,17 @@ CANARY_WORKFLOW = ".github/workflows/runner-canary.yml"
 VENDOR_JOB = re.compile(r"canary: pytest (?P<vendor>[a-z0-9-]+) \(shard (?P<shard>\d+) of \d+\)")
 BASELINE_JOB = re.compile(r"pytest fast lane \(shard (?P<shard>\d+) of \d+\)")
 BASELINE_SIDE = "self-hosted"
+GATE_JOB = "canary: budget gate"
+#: The title the shard's own wall-budget wrapper writes on exit 124 or 137 (ci.yml and the
+#: canary share the step). It is the only field that separates a TIMEOUT from a test red:
+#: both fail the pytest step.
+TIMEOUT_TITLE = re.compile(r"pytest fast lane TIMEOUT \(shard \d+ of \d+\)")
 GH_TIMEOUT_S = 120
 
-Outcome = Literal["green", "red", "infra", "dropped"]
+#: green / red: a test verdict. infra: no test at fault. dropped: no verdict (baseline
+#: side). ours: a vendor-side run whose budget gate never passed, so no job reached the
+#: vendor. pending: still queued or running.
+Outcome = Literal["green", "red", "infra", "dropped", "ours", "pending"]
 
 
 class ReadFailed(Exception):
@@ -91,14 +107,31 @@ class ShardRow:
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    never_started: bool = False
 
 
 def _ts(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
 
 
+def _never_started(job: dict[str, Any]) -> bool:
+    """No runner and no steps. GitHub stamps a job cancelled in the queue with started_at
+    EQUAL to created_at, not null, so started_at alone cannot say."""
+    return not job.get("started_at") or (not job.get("runner_name") and not job.get("steps"))
+
+
+def _timed_out(job: dict[str, Any]) -> bool:
+    annotations = job.get("annotations")
+    if annotations is None:
+        raise ReadFailed(f"job {job.get('id')} failed but its annotations were not read")
+    return any(TIMEOUT_TITLE.fullmatch(a.get("title") or "") for a in annotations)
+
+
 def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: int) -> Outcome:
-    """green / red (pytest step failed) / infra (no test at fault) / dropped (no verdict)."""
+    """green / red (pytest step failed) / infra (no test at fault) / dropped (no verdict).
+
+    A pytest step that failed on its own wall-budget TIMEOUT is infra, not red.
+    """
     if job.get("status") != "completed":
         return "dropped"
     conclusion = job.get("conclusion")
@@ -109,7 +142,7 @@ def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: in
             (s for s in job.get("steps") or [] if s.get("name") == pytest_step_name), None
         )
         if pytest_step is not None and pytest_step.get("conclusion") == "failure":
-            return "red"
+            return "infra" if _timed_out(job) else "red"
         return "infra"
     if conclusion == "timed_out":
         return "infra"
@@ -124,6 +157,26 @@ def classify_job(job: dict[str, Any], pytest_step_name: str, timeout_minutes: in
     return "dropped"
 
 
+def _gate_passed(run: dict[str, Any]) -> bool:
+    gates = [j for j in run["jobs"] if j.get("name") == GATE_JOB and j.get("run_attempt", 1) == 1]
+    if not gates:
+        raise ReadFailed(f"canary run {run['id']} has vendor shards but no budget gate job")
+    return gates[0].get("conclusion") == "success"
+
+
+def vendor_outcome(job: dict[str, Any], gate_passed: bool, base: Outcome) -> Outcome:
+    """A vendor shard's outcome. Once the gate passed, the job was the vendor's to run: a
+    cancel short of the cap, a skip, or a job that never started is a lost job (infra),
+    never a smaller denominator. Only a run whose gate never passed is identifiably ours."""
+    if not gate_passed:
+        return "ours"
+    if job.get("status") != "completed":
+        return "pending"
+    if base == "dropped":
+        return "infra"
+    return base
+
+
 def shard_jobs(
     runs: Iterable[dict[str, Any]],
     *,
@@ -135,21 +188,27 @@ def shard_jobs(
     pattern = VENDOR_JOB if side == "vendor" else BASELINE_JOB
     rows = []
     for run in runs:
+        gate_passed: bool | None = None
         for job in run["jobs"]:
             match = pattern.fullmatch(job.get("name", ""))
             if not match or job.get("run_attempt", 1) != 1:
                 continue
+            outcome = classify_job(job, pytest_step_name, timeout_minutes)
+            if side == "vendor":
+                gate_passed = _gate_passed(run) if gate_passed is None else gate_passed
+                outcome = vendor_outcome(job, gate_passed, outcome)
             rows.append(
                 ShardRow(
                     vendor=match.group("vendor") if side == "vendor" else BASELINE_SIDE,
                     sha=run["head_sha"],
                     shard=int(match.group("shard")),
-                    outcome=classify_job(job, pytest_step_name, timeout_minutes),
+                    outcome=outcome,
                     run_id=run["id"],
                     run_created_at=_ts(run["created_at"]),
                     created_at=_ts(job["created_at"]),
                     started_at=_ts(job.get("started_at")),
                     completed_at=_ts(job.get("completed_at")),
+                    never_started=_never_started(job),
                 )
             )
     return rows
@@ -170,7 +229,7 @@ def _complete(run_rows: list[ShardRow] | None, shard_count: int) -> bool:
     return (
         run_rows is not None
         and sorted(r.shard for r in run_rows) == list(range(1, shard_count + 1))
-        and all(r.outcome != "dropped" for r in run_rows)
+        and all(r.outcome in ("green", "red", "infra") for r in run_rows)
     )
 
 
@@ -224,17 +283,23 @@ CEILING_BARS = (
 )
 
 
+def _start_latency_s(row: ShardRow) -> float:
+    """Seconds from queue to start; a job that never started waits forever (a breach)."""
+    if row.never_started or row.started_at is None:
+        return math.inf
+    return (row.started_at - row.created_at).total_seconds()
+
+
 def _measure_operations(report: VendorReport, rows: list[ShardRow]) -> None:
-    """Start latency and infra rate over EVERY vendor shard job, paired or not.
+    """Start latency and infra rate over EVERY finished vendor shard job, paired or not.
 
     A job whose commit has no complete self-hosted run is still a job the runner started
-    late or lost, so these rates never shrink to the paired subset. A dropped job (cancelled
-    short of the cap, or unfinished) has no outcome and stays out of the infra denominator.
+    late or lost, so these rates never shrink to the paired subset. A lost job (never
+    started, or cancelled short of the cap after the gate) is already `infra` and waits
+    forever. Only `ours` (the gate never passed) and `pending` rows are left out.
     """
-    report.p95_queue_wait_s = _p95(
-        [(r.started_at - r.created_at).total_seconds() for r in rows if r.started_at]
-    )
-    finished = [r for r in rows if r.outcome != "dropped"]
+    finished = [r for r in rows if r.outcome in ("green", "red", "infra")]
+    report.p95_queue_wait_s = _p95([_start_latency_s(r) for r in finished])
     report.shard_jobs = len(finished)
     if finished:
         report.infra_failures_per_100 = (
@@ -307,8 +372,9 @@ def evaluate_vendor(
     shard_count: int,
 ) -> VendorReport:
     report = VendorReport(vendor=vendor)
-    own_rows = [r for r in vendor_rows if r.vendor == vendor]
+    own_rows = [r for r in vendor_rows if r.vendor == vendor and r.outcome != "ours"]
     _measure_operations(report, own_rows)
+    in_flight = sum(r.outcome == "pending" for r in own_rows)
     vendor_runs = _first_run_by_sha(own_rows)
     baseline_runs = _first_run_by_sha(baseline_rows)
     paired = sorted(
@@ -325,6 +391,8 @@ def evaluate_vendor(
         [_control_state(sha, vendor_runs, baseline_runs) for sha in known_red_shas]
     )
     unknown += control_unknown
+    if in_flight:
+        unknown.append(f"{in_flight} vendor shard jobs are still in flight; re-run when done")
 
     if control_green:
         report.verdict, report.reasons = "FAIL", control_green + failed + unknown
@@ -360,10 +428,20 @@ def _gh_lines(path: str, jq: str) -> list[dict[str, Any]]:
 
 
 def _with_jobs(repo: str, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each run's jobs, and each FAILED shard job's check-run annotations, which carry the
+    only mark that separates a wall-budget TIMEOUT from a test red."""
     for run in runs:
         run["jobs"] = _gh_lines(
             f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=all&per_page=100", ".jobs[]"
         )
+        for job in run["jobs"]:
+            is_shard = VENDOR_JOB.fullmatch(job.get("name", "")) or BASELINE_JOB.fullmatch(
+                job.get("name", "")
+            )
+            if is_shard and job.get("conclusion") == "failure":
+                job["annotations"] = _gh_lines(
+                    f"repos/{repo}/check-runs/{job['id']}/annotations?per_page=100", ".[]"
+                )
     return runs
 
 
@@ -458,17 +536,17 @@ def main(argv: list[str] | None = None) -> int:
             config["baseline"],
             (r["head_sha"] for runs in runs_by_repo.values() for r in runs),
         )
+        vendor_rows = vendor_rows_from_targets(runs_by_repo, config)
+        # ci.yml's shard cap. A baseline cancelled at it is infra, as on the vendor side.
+        baseline_rows = shard_jobs(
+            baseline_runs,
+            side="baseline",
+            pytest_step_name=config["pytest_step_name"],
+            timeout_minutes=60,
+        )
     except ReadFailed as exc:
         print(f"UNKNOWN: the GitHub read failed, so nothing was measured: {exc}")
         return EXIT_UNKNOWN
-    vendor_rows = vendor_rows_from_targets(runs_by_repo, config)
-    # ci.yml's shard cap. A baseline cancelled at it is infra, as on the vendor side.
-    baseline_rows = shard_jobs(
-        baseline_runs,
-        side="baseline",
-        pytest_step_name=config["pytest_step_name"],
-        timeout_minutes=60,
-    )
     reports = [
         evaluate_vendor(
             vendor,
