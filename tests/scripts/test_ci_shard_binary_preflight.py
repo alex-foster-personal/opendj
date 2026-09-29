@@ -38,9 +38,19 @@ REQUIRED = ("file", "bwrap", "just", "pkg-config", "cargo", "uv", "ffmpeg")
 PYTEST_JOBS = (("ci.yml", "test"), ("ci.yml", "contracts"), ("full-ci.yml", "test"))
 
 
+#: A job may also run the preflight earlier naming only its interpreter: that is
+#: the stale-install guard step (tests/scripts/test_ci_workflow_stale_install_coverage.py),
+#: not the host-binary preflight this module pins.
+_INTERPRETER_ONLY = {"python", "python3"}
+
+
 def _preflight_step(job: dict) -> dict | None:
     for step in job["steps"]:
-        if "scripts/ci_runner_preflight.sh" in (step.get("run") or ""):
+        run = step.get("run") or ""
+        if "scripts/ci_runner_preflight.sh" not in run:
+            continue
+        named = set(run.split("scripts/ci_runner_preflight.sh", 1)[1].split())
+        if not named <= _INTERPRETER_ONLY:
             return step
     return None
 
