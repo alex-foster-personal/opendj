@@ -16,8 +16,9 @@ Acceptance tests:
   strict MkDocs build must invoke the docs venv executable.
 - [if] a test spawns `uv run --with modal` against the repo root [then ⛔️]
   the pytest jobs must carry UV_NO_SYNC so `.venv` is not pruned to uv.lock.
-- [if] the `observability` extra is missing from a pytest venv [then ⛔️] the
-  Sentry end-to-end tests fail on import, so every pytest install carries it.
+- [if] a pytest job stops syncing pylock.ci.toml [then ⛔️] it loses the
+  `observability` extra and modal (requirements-ci.in; the extra's verbatim
+  presence there is tests/scripts/test_ci_lock.py's job).
 """
 
 from __future__ import annotations
@@ -44,12 +45,13 @@ def test_dependency_jobs_provision_venvs_with_uv() -> None:
     # Self-hosted jobs reuse a persistent .venv through scripts/ci_venv.sh and
     # install it exactly (tests/scripts/test_ci_workspace_reuse.py); the
     # hosted macOS job starts clean and keeps the plain form.
-    reused_venv = "scripts/ci_venv.sh 3.11"
-    exact = "uv pip install --exact --upgrade --python .venv/bin/python"
+    # Both halves live in one command there, so the second item is the command itself.
+    ci_lock = "scripts/ci_venv.sh 3.11 --lock pylock.ci.toml"
+    release_lock = "scripts/ci_venv.sh 3.11 --lock pylock.release-check.toml"
     requirements_jobs = {
-        "ci.yml": (reused_venv, f"{exact} -r requirements.txt modal"),
-        "full-ci.yml": (reused_venv, f"{exact} -r requirements.txt modal"),
-        "release-check.yml": (reused_venv, f"{exact} -r requirements.txt build maturin"),
+        "ci.yml": (ci_lock, ci_lock),
+        "full-ci.yml": (ci_lock, ci_lock),
+        "release-check.yml": (release_lock, release_lock),
         # The macOS pytest job moved out of release-check.yml into its own
         # workflow (#924). The contract follows the job, not the file it used
         # to live in - otherwise relocating a job silently drops its cover.
@@ -65,22 +67,17 @@ def test_dependency_jobs_provision_venvs_with_uv() -> None:
         assert install_command in contents, workflow
 
     forbidden_installs = ("pip install", "python -m pip install", ".venv/bin/pip install")
-    # Row 14 duplicate-writer (DEVOPS-10, #1580) is a cheap hosted periodic
-    # job with no persistent workspace: it installs PyYAML once before
-    # `python -m scripts.duplicate_writer_check`. scripts/ci_duplicate_writer_check.sh
-    # is the uv-provisioned replacement; until periodic-checks.yml adopts it,
-    # this one line is the only bare-pip install left in the workflow tree.
-    allowed_bare_pip = {
-        "periodic-checks.yml": frozenset({"pip install --quiet pyyaml"}),
-    }
+    # Row 14 duplicate-writer (DEVOPS-10, #1580) used to `pip install pyyaml`;
+    # it now syncs ops/fleet/pylock.duplicate-writer.toml (issue #4252), so no
+    # bare-pip install is left in the workflow tree.
+    allowed_bare_pip: dict[str, frozenset[str]] = {}
     for workflow_path in WORKFLOWS.glob("*.yml"):
         allowed = allowed_bare_pip.get(workflow_path.name, frozenset())
         lines = workflow_path.read_text(encoding="utf-8").splitlines()
         offenders = [
             line.lstrip()
             for line in lines
-            if line.lstrip().startswith(forbidden_installs)
-            and line.lstrip() not in allowed
+            if line.lstrip().startswith(forbidden_installs) and line.lstrip() not in allowed
         ]
         assert not offenders, (
             f"{workflow_path.name}: bare pip installs are forbidden outside an "
@@ -125,9 +122,7 @@ def test_docs_build_uses_uv_provisioned_venv() -> None:
     workflow = _workflow("docs.yml")
 
     assert "astral-sh/setup-uv" in workflow
-    assert "scripts/ci_venv.sh 3.11" in workflow
-    exact = "uv pip install --exact --upgrade --python .venv/bin/python"
-    assert f"{exact} -r requirements-docs.txt" in workflow
+    assert "scripts/ci_venv.sh 3.11 --lock pylock.docs.toml" in workflow
     assert "run: .venv/bin/mkdocs build --strict" in workflow
 
 
@@ -152,18 +147,19 @@ def test_pytest_jobs_forbid_child_uv_runs_from_resyncing_the_venv() -> None:
 def test_pytest_installs_carry_the_observability_extra() -> None:
     """requirements.txt is the shipped payload and omits sentry-sdk on purpose.
 
-    The Sentry end-to-end tests import sentry_sdk, so each pytest install adds
-    the `observability` extra's pins verbatim. Taking them from pyproject.toml
-    means a changed extra cannot leave CI testing a different SDK range.
+    The Sentry end-to-end tests import sentry_sdk, so every pytest job syncs
+    pylock.ci.toml, whose source adds the `observability` extra's pins
+    verbatim (held there by tests/scripts/test_ci_lock.py).
     """
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     extra = pyproject["project"]["optional-dependencies"]["observability"]
-    pins = " ".join(f"'{pin}'" for pin in extra)
-    exact = "uv pip install --exact --upgrade --python .venv/bin/python"
-    install = f"{exact} -r requirements.txt modal {pins}\n"
+    source = (REPO_ROOT / "requirements-ci.in").read_text(encoding="utf-8").splitlines()
+    assert extra and set(extra) <= set(source), f"requirements-ci.in lacks {extra}"
+    sync = "scripts/ci_venv.sh 3.11 --lock pylock.ci.toml\n"
 
-    assert _workflow("ci.yml").count(install) == 2, "ci.yml: test job and fast tier job"
-    assert _workflow("full-ci.yml").count(install) == 1, "full-ci.yml: the full suite"
+    ci_jobs = "ci.yml: test, fast tier, contracts, fixture server"
+    assert _workflow("ci.yml").count(sync) == 4, ci_jobs
+    assert _workflow("full-ci.yml").count(sync) == 1, "full-ci.yml: the full suite"
 
 
 def test_audio_stack_marker_uses_real_guarded_imports() -> None:
@@ -171,5 +167,5 @@ def test_audio_stack_marker_uses_real_guarded_imports() -> None:
     conftest = (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8")
 
     assert "def _can_import" in conftest
-    assert "importlib.util.find_spec(\"soundfile\")" not in conftest
-    assert "importlib.util.find_spec(\"librosa\")" not in conftest
+    assert 'importlib.util.find_spec("soundfile")' not in conftest
+    assert 'importlib.util.find_spec("librosa")' not in conftest
