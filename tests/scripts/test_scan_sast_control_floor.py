@@ -227,4 +227,3 @@ def test_empty_scan_success_cannot_bypass_expect_file(tmp_path: Path) -> None:
     rc, stderr = _summary(tmp_path, [], min_files=0, expected_scannable=1)
     assert rc == 2, stderr
     assert f"control files not scanned: {', '.join(EXPECTED)}" in stderr, stderr
-
