@@ -16,6 +16,7 @@ import urllib.request
 import pytest
 
 from apps.lyrics.sources import base
+from tests.sleep_spy import record_own_thread_sleeps
 
 
 def _http_error(code: int) -> urllib.error.HTTPError:
@@ -36,8 +37,8 @@ class _Resp:
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, outcomes: list) -> list[float]:
-    sleeps: list[float] = []
-    monkeypatch.setattr(base.time, "sleep", sleeps.append)
+    # base.time is the process-wide time module: record this thread's sleeps only.
+    sleeps = record_own_thread_sleeps(monkeypatch)
 
     def fake_urlopen(_req, timeout=None):
         outcome = outcomes.pop(0)

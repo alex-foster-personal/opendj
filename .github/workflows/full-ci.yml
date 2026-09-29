@@ -216,10 +216,10 @@ jobs:
         # modal is a CI test-environment tool, not a package dependency;
         # see the fuller note in ci.yml.
         run: |
-          scripts/ci_venv.sh 3.11
-          # + the pyproject `observability` extra, verbatim: the Sentry e2e tests import
-          # sentry_sdk, and requirements.txt (the shipped payload) deliberately omits it.
-          uv pip install --exact --upgrade --python .venv/bin/python -r requirements.txt modal 'sentry-sdk>=2.0,<3'
+          # Exact sync from a hash-pinned lock: zero index requests on a warm cache
+          # (issue #4252). requirements-ci.in adds modal and the pyproject
+          # `observability` extra to requirements.txt; scripts/ci_lock.py compiles it.
+          scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
 
       - name: System deps for pyrekordbox (SQLCipher)
         # Keep the project interpreter available to any post-failure steps.
