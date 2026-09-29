@@ -10,16 +10,11 @@ It counts the whole per-row apply (``hub_apply`` and ``spoke_apply``), so a
 second per-row scan added anywhere on that path trips it too, not only the
 two lookups this issue names.
 
-[if] per-row apply work at 20x the library exceeds 3x the small library's
-[then] the lookup scans the table, broken.
-[if] the probe sees no growth once the identity indexes are dropped
-[then] the instrument cannot detect a scan, broken.
-[if] a stored lowercase ISRC stops matching an uppercase incoming one
-[then] the index traded away the case-insensitive arm, broken.
-[if] matches come back in index order rather than stored (rowid) order
-[then] the seek changed what the scan returned, broken.
-[if] an identity repair of k tracks in one playlist reads its members k times
-[then] the repair bundle rebuilds the same playlist per track, broken.
+[if] per-row apply work grows with the library [then] identity scans, [else stop].
+
+Controls beside it: the probe must see growth once the indexes are dropped; a
+lowercase stored ISRC must still match; matches keep stored (rowid) order; and
+an identity repair reads a shared playlist's members once, not once per track.
 """
 from __future__ import annotations
 
