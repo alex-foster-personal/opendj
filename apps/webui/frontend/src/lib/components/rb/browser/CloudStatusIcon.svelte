@@ -3,7 +3,7 @@
 
 	let { view }: { view: TrackCloudView } = $props();
 
-	// Tidal's mark is black and white, so its glyph takes a theme-aware color
+	// Tidal's mark is black and white, so its glyph takes a theme-aware fill
 	// from the `.tidal` rule below instead of the dim column text.
 	const providerColor = $derived.by(() => {
 		if (view.provider === 'spotify') return '#35c04f';
@@ -41,7 +41,9 @@
 					stroke-linejoin="round"
 				/>
 			{:else if view.provider === 'tidal'}
-				<path class="tidal" d="M4 4l4 4-4 4M8 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" />
+				<!-- Tidal's four-diamond mark: three touching across the top, one
+				     under the middle. Filled by the `.tidal` rule. -->
+				<path class="tidal" d="M.5 5.5l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm5 0l2.5-2.5 2.5 2.5-2.5 2.5zm-5 5l2.5-2.5 2.5 2.5-2.5 2.5z" />
 			{/if}
 		</svg>
 	{:else}
@@ -90,9 +92,9 @@
 		color: #e5484d;
 	}
 	.tidal {
-		color: #fff;
+		fill: #fff;
 	}
 	:global(html[data-theme='light']) .tidal {
-		color: #000;
+		fill: #000;
 	}
 </style>
