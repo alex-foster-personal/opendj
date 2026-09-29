@@ -2435,6 +2435,13 @@ function _invalidateCommandSession(generation: number): void {
 	_commandStatusGeneration += 1;
 	_commandScheduler.invalidateQueued(`performance command session ${generation} was invalidated`);
 	_resetCommandStatus();
+	// Armed records carry a target time on the route-owned AudioContext, which
+	// dies with this session: a record surviving into the next mount would be
+	// measured against an uninitialised or brand-new clock (#4011 review).
+	for (const deckId of DECK_IDS) {
+		waveformSeekArmed[deckId] = null;
+		hotCueArmed[deckId] = null;
+	}
 }
 
 function _currentCommandSession(): number {
