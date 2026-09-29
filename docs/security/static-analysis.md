@@ -84,6 +84,8 @@ same-repo branches, with a read-only token.
 - [if] the control directory holds untracked files (a `__pycache__` written by pytest)
   [then] the control still passes: its file floor and semgrep targets are the git-tracked
   list (`git ls-files`), never a filesystem walk.
+- [if] a control file is unmerged (a merge or rebase conflict leaves one index entry per
+  stage) [then] it counts once toward the floor (`git ls-files --deduplicate`).
 - [if] a tracked control file is missing from the working tree or semgrep does not scan it
   [then] UNKNOWN, and the message names that file.
 - [if] a PR adds `subprocess.run(cmd, shell=True)` under `apps/` [then] the PR fails.

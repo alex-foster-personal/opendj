@@ -56,12 +56,13 @@ sec_require_bin uv || _unknown_exit "uv missing (needed for secscan.py)"
 # The control contract is the TRACKED file list, never a filesystem walk: a stray
 # untracked file (pytest's __pycache__ beside the .py fixtures, Wed 16 Sep 2026) must not
 # raise the floor, and a tracked file missing from the working tree must fail loudly
-# rather than quietly lower it.
+# rather than quietly lower it. --deduplicate (git >= 2.31) lists an unmerged path once
+# rather than once per index stage, so a merge or rebase conflict cannot raise it either.
 control_root="$(mktemp -d "${TMPDIR:-/tmp}/sast-control.XXXXXX")"
 trap 'rm -rf "$control_root"' EXIT
 printf '# empty on purpose: disables the default ignore list for the control copy\n' \
   >"$control_root/.semgrepignore"
-git -C "$SECURITY_REPO_ROOT" ls-files -z -- "$CONTROL_DIR" >"$OUT/control.files" ||
+git -C "$SECURITY_REPO_ROOT" ls-files -z --deduplicate -- "$CONTROL_DIR" >"$OUT/control.files" ||
   _unknown_exit "git ls-files failed for $CONTROL_DIR, so the control file list is unknown"
 control_targets=()
 while IFS= read -r -d '' _control_file; do

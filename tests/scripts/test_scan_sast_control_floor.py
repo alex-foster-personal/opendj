@@ -6,6 +6,8 @@ semgrep scanned 4, and every run read UNKNOWN blaming the rules.
 
 - if a stray __pycache__/*.pyc and an untracked .txt sit in the control dir then the
   control still passes (floor stays at the tracked count)
+- if a control file is unmerged (one index entry per conflict stage) then the control
+  still passes (the path counts once)
 - if a tracked control file is missing from the working tree then UNKNOWN naming it
 - if a tracked control file is one semgrep does not scan then UNKNOWN naming it
 - if semgrep-summary --expect-file names a path absent from paths.scanned then UNKNOWN
@@ -125,6 +127,36 @@ def test_tracked_control_file_semgrep_did_not_scan_is_named(tmp_path: Path) -> N
     assert f"control files not scanned: {unscannable}" in proc.stderr
     assert "\tUNKNOWN\t" in summary and unscannable in summary, summary
     assert "rules failed to load" not in summary, summary
+
+
+@needs_scanners
+def test_unmerged_control_file_does_not_raise_the_control_floor(tmp_path: Path) -> None:
+    """[if] a control file has unmerged conflict stages [then] control passes, [else stop]."""
+    repo = _fixture_repo(tmp_path)
+    conflicted = f"{CONTROL_DIR}/subprocess_shell_true.py"
+    original = (repo / conflicted).read_text(encoding="utf-8")
+    trunk = git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    git(repo, "checkout", "-q", "-b", "side")
+    (repo / conflicted).write_text(original + "# side edit\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "side edit")
+    git(repo, "checkout", "-q", trunk)
+    (repo / conflicted).write_text(original + "# trunk edit\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "trunk edit")
+    merge = subprocess.run(
+        ["git", "-C", str(repo), "merge", "side"], capture_output=True, text=True, check=False
+    )
+    assert merge.returncode != 0, merge.stdout
+    # Parseable source in the working tree; the index keeps all three conflict stages.
+    git(repo, "checkout", "--ours", "--", conflicted)
+    unmerged = git(repo, "ls-files", "-u", "--", conflicted).splitlines()
+    assert len(unmerged) == 3, unmerged
+    work = tmp_path / "work"
+    proc = _run_pr_scan(repo, work)
+    summary = _summary_row(work)
+    assert proc.returncode == 0, proc.stderr or proc.stdout
+    assert "UNKNOWN" not in summary, summary
+    control_txt = (work / "sast" / "control.txt").read_text(encoding="utf-8")
+    assert f"scanned {len(tracked_control_files())} files" in control_txt, control_txt
 
 
 # ----- secscan semgrep-summary --expect-file ---------------------------------------------------
