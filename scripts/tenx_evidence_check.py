@@ -53,7 +53,7 @@ def _field(section: str, key: str) -> str | None:
 
 
 def _ratio(value: str) -> float | None:
-    match = re.search(r"(\d+(?:\.\d+)?)\s*x", value, re.I)
+    match = re.match(r"(\d+(?:\.\d+)?)\s*x\b", value, re.I)
     return float(match.group(1)) if match else None
 
 
@@ -61,6 +61,7 @@ def _ratio(value: str) -> float | None:
 def check(title: str, body: str) -> Verdict:
     if not title.startswith(TITLE_PREFIX):
         return Verdict(True, [])
+    body = re.sub(r"<!--.*?-->", "", body, flags=re.S)  # the template's commented placeholders are not evidence
     problems: list[str] = []
     evidence = _section(body, "10x Evidence")
     if evidence is None:

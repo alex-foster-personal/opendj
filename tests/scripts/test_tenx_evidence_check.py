@@ -42,3 +42,15 @@ def test_ratio_below_gate_fails() -> None:
 def test_workings_card_only_fails() -> None:
     body = GOOD.replace("- 13.5 / 1.25 = 10.8. The floor is the listing without per-PR mergeability.\n", "")
     assert not check("10xHunter-- x", body).ok, "if a Workings section holding only the card link passes then broken"
+
+
+def test_untouched_template_fails() -> None:
+    from pathlib import Path
+
+    template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text()
+    assert not check("10xHunter-- x", template).ok, "if the untouched PR template passes then broken"
+
+
+def test_ratio_must_lead_with_number() -> None:
+    body = GOOD.replace("Ratio: 10.8x", "Ratio: <number>x (gate: >= 9x)")
+    assert not check("10xHunter-- x", body).ok, "if a placeholder Ratio passes then broken"
