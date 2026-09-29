@@ -82,21 +82,22 @@ def _already_recorded(evidence_dir: Path, run: dict[str, Any], suite: str) -> bo
     return record == {"run_id": str(run["id"]), "conclusion": str(run["conclusion"])}
 
 
-def drop_superseded_reruns(
+def drop_superseded_completions(
     evidence_dir: Path,
-    reruns: list[dict[str, Any]],
+    runs: list[dict[str, Any]],
     recorded_updated_at: Callable[[str], str],
 ) -> list[dict[str, Any]]:
-    """The reconciled re-runs that would not overwrite a later completion.
+    """The chosen runs that would not overwrite a later completion.
 
-    A reconcile pass reaches back days, so a re-run it lists may have completed
-    BEFORE a different run of the same suite on the same sha that a plain pass has
-    since recorded; writing it would put the older result back. Where the file
-    records a different run, that run's completion time (one API read) decides. A
-    re-run of the recorded run itself is its own later completion and is kept.
+    Coalescing sees only the runs this pass listed, but the file may record a run
+    the listing no longer reaches: a re-run a reconcile pass wrote, whose run was
+    created before the plain lookback (Sol P1 on #3844). Writing an earlier
+    completion over it would put the older result back, whichever pass writes. Where
+    the file records a different run, that run's completion time decides. A re-run
+    of the recorded run itself is its own later completion and is kept.
     """
     kept: list[dict[str, Any]] = []
-    for run in reruns:
+    for run in runs:
         path = evidence_path(evidence_dir, str(run["head_sha"]))
         suite = suite_for_workflow(str(run["name"]))
         record = (load_evidence(path).get("suites") or {}).get(suite) if path.is_file() else None
@@ -108,6 +109,15 @@ def drop_superseded_reruns(
             continue
         kept.append(run)
     return kept
+
+
+def completion_time_lookup(
+    listed: Iterable[dict[str, Any]], read_run: Callable[[str], dict[str, Any]]
+) -> Callable[[str], str]:
+    """A run's `updated_at`, from this pass's own listings where it is there, so
+    only a recorded run the listings do not reach costs an API read."""
+    known = {str(run["id"]): str(run["updated_at"]) for run in listed}
+    return lambda run_id: known[run_id] if run_id in known else str(read_run(run_id)["updated_at"])
 
 
 def append_suite_runs(
@@ -175,14 +185,16 @@ def main(argv: list[str] | None = None) -> int:
         workflow_names=RECORDED_WORKFLOWS,
     )
     evidence_dir = Path(args.evidence_dir) if args.evidence_dir else default_evidence_dir()
-    reruns = drop_superseded_reruns(
+    chosen = drop_superseded_completions(
         evidence_dir,
-        select_suite_runs(reconciled, args.reconcile_since),
-        lambda run_id: str(
-            fetch_run(args.repository, run_id, args.token, "stable-evidence")["updated_at"]
+        newest_per_suite(
+            select_suite_runs(listed, since) + select_suite_runs(reconciled, args.reconcile_since)
+        ),
+        completion_time_lookup(
+            listed + reconciled,
+            lambda run_id: fetch_run(args.repository, run_id, args.token, "stable-evidence"),
         ),
     )
-    chosen = newest_per_suite(select_suite_runs(listed, since) + reruns)
     written = append_suite_runs(evidence_dir, chosen, args.written_by)
     for run, path in written:
         print(f"[OK] run {run['id']} {run['name']} {run['conclusion']} -> {path}", file=sys.stderr)
