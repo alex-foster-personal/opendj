@@ -141,7 +141,8 @@ fn page_actions_and_refusals_come_back_as_lines() {
     assert_eq!(lines[0]["error"]["code"], "no_track");
     // A quarter-beat loop pad (FLX4 BEAT LOOP pad 1) is refused, not rounded:
     // the engine takes whole beats, as the page's command parser does.
-    s.say("l", json!({"type": "load", "deck": 1, "path": "a.wav", "bpm": 120}));
+    // A real grid (120 BPM): a tag BPM alone is refused for beat loops.
+    s.say("l", json!({"type": "load", "deck": 1, "path": "a.wav", "beatgrid_ms": [0, 500, 1000, 1500, 2000]}));
     let (lines, _) = inject(&mut s, "b", json!([0x97, 0x60, 0x7f]));
     assert_eq!(lines[0]["id"], "midi-1");
     assert_eq!(lines[0]["error"]["code"], "invalid", "{}", lines[0]);

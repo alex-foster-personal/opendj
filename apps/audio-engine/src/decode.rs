@@ -22,13 +22,87 @@ pub struct Decoded {
     pub sample_rate: u32,
     /// Interleaved stereo.
     pub pcm: Vec<f32>,
+    /// The file the samples were read from, as opened.
+    pub source: Option<SourceId>,
+}
+
+/// A file as the volume knows it, taken from the open file itself, so it
+/// still names what was read after its path is renamed or replaced: device
+/// and inode on Unix; elsewhere the open handle (volume serial and file
+/// index), kept open for as long as the id is held. On Unix a file deleted
+/// since may have its inode reused, which can only make a later comparison
+/// say "the same file" of a new one: a refusal, never an overwrite.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceId(#[cfg(unix)] (u64, u64), #[cfg(not(unix))] std::sync::Arc<same_file::Handle>);
+
+impl SourceId {
+    pub fn of(file: &File) -> std::io::Result<SourceId> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let m = file.metadata()?;
+            Ok(SourceId((m.dev(), m.ino())))
+        }
+        #[cfg(not(unix))]
+        {
+            Ok(SourceId(std::sync::Arc::new(same_file::Handle::from_file(file.try_clone()?)?)))
+        }
+    }
+}
+
+/// Make room for `extra` more samples in `v`, growing it geometrically as
+/// `Vec` does but never past `limit` samples unless the samples themselves
+/// need more. A budget charged in frames is a budget of samples held, and a
+/// plain `Vec` may hold nearly twice what it contains: this keeps what it
+/// holds inside what the budget charged it.
+pub(crate) fn reserve_within(v: &mut Vec<f32>, extra: usize, limit: usize) {
+    let need = v.len().saturating_add(extra);
+    if need > v.capacity() {
+        let want = v.capacity().saturating_mul(2).min(limit).max(need);
+        v.reserve_exact(want - v.len());
+    }
+}
+
+/// Refuse `more` frames on top of the `held` samples when they would pass
+/// `max_frames`, before anything is allocated for them.
+fn check_room(held: usize, more: usize, max_frames: u64, path: &Path) -> Result<(), ProtoError> {
+    let frames = (held / 2) as u64 + more as u64;
+    if frames > max_frames {
+        return Err(ProtoError::new(
+            ErrorCode::Invalid,
+            format!(
+                "{} decodes past the {max_frames} frames left in the render's memory budget (one WAV file's worth)",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Decode `path`. Mono is duplicated to both sides; files with more than two
 /// channels keep their first two (front left and right).
 pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
-    let file = File::open(path)
-        .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot open {}: {e}", path.display())))?;
+    decode_file_within(path, u64::MAX)
+}
+
+/// Decode `path`, holding at most `max_frames` frames: a file longer than
+/// that fails as soon as it passes the limit, before it is held whole, so a
+/// caller with a memory budget never allocates past it.
+pub fn decode_file_within(path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
+    decode_open_within(open(path)?, path, max_frames)
+}
+
+/// Open `path` for decoding.
+pub fn open(path: &Path) -> Result<File, ProtoError> {
+    File::open(path).map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot open {}: {e}", path.display())))
+}
+
+/// Decode `file`, already opened from `path` (which names it in errors and
+/// gives the format hint), as `decode_file_within` does: a caller that keyed
+/// the file by its open handle decodes exactly the file it keyed.
+pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
+    // Taken from the file the samples come from, not from its path again.
+    let source = SourceId::of(&file).ok();
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -56,8 +130,13 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
         .map_err(|e| dec_err("unsupported codec in", &e))?;
 
     let mut pcm: Vec<f32> = Vec::new();
+    // What the budget allows the samples to hold, spare capacity included.
+    let limit = usize::try_from(max_frames.saturating_mul(2)).unwrap_or(usize::MAX);
     let mut scratch: Vec<f32> = Vec::new();
     let mut sample_rate = 0u32;
+    // Silence stands in for a corrupt packet only around real audio: a file
+    // none of whose packets decode is undecodable, not a silent track.
+    let mut decoded_any = false;
     loop {
         let packet = match end_or_packet(format.next_packet()) {
             Ok(Some(p)) => p,
@@ -78,6 +157,8 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
                 let frames = packet_frames(packet.dur.get(), time_base, rate).ok_or_else(|| {
                     dec_err("corrupt packet of unknown length in", &e)
                 })?;
+                check_room(pcm.len(), frames, max_frames, path)?;
+                reserve_within(&mut pcm, frames * 2, limit);
                 pcm.resize(pcm.len() + frames * 2, 0.0);
                 if sample_rate == 0 {
                     sample_rate = rate.unwrap_or(0);
@@ -86,15 +167,17 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
             }
             Err(e) => return Err(dec_err("decode error in", &e)),
         };
+        decoded_any = true;
         let spec = buf.spec();
-        sample_rate = spec.rate();
+        lock_rate(&mut sample_rate, spec.rate()).map_err(|m| ProtoError::new(ErrorCode::Decode, format!("{m} in {}", path.display())))?;
         let ch = spec.channels().count();
         if ch == 0 {
             return Err(ProtoError::new(ErrorCode::Decode, format!("zero channels in {}", path.display())));
         }
         scratch.resize(buf.samples_interleaved(), 0.0);
         buf.copy_to_slice_interleaved(&mut scratch[..]);
-        pcm.reserve(buf.frames() * 2);
+        check_room(pcm.len(), buf.frames(), max_frames, path)?;
+        reserve_within(&mut pcm, buf.frames() * 2, limit);
         for frame in scratch.chunks_exact(ch) {
             let l = frame[0];
             let r = if ch == 1 { frame[0] } else { frame[1] };
@@ -102,10 +185,24 @@ pub fn decode_file(path: &Path) -> Result<Decoded, ProtoError> {
             pcm.push(r);
         }
     }
+    if !decoded_any {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
+    }
     if sample_rate == 0 || pcm.is_empty() {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
-    Ok(Decoded { sample_rate, pcm })
+    Ok(Decoded { sample_rate, pcm, source })
+}
+
+/// The first rate decoded is the track's rate. A later buffer at another
+/// rate is refused: relabeling the audio before it would play that part at
+/// the wrong speed and move its beatgrid, cues and loops.
+fn lock_rate(locked: &mut u32, rate: u32) -> Result<(), String> {
+    if *locked != 0 && rate != *locked {
+        return Err(format!("the sample rate changes part-way through ({} Hz, then {rate} Hz)", *locked));
+    }
+    *locked = rate;
+    Ok(())
 }
 
 /// `Ok(None)` is the end of the stream. A reset part-way through (a chained
@@ -138,6 +235,18 @@ fn packet_frames(dur: u64, time_base: Option<TimeBase>, rate: Option<u32>) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_decoded_rate_is_the_tracks() {
+        let mut rate = 0;
+        lock_rate(&mut rate, 44100).unwrap();
+        assert_eq!(rate, 44100);
+        // Same rate again is fine; a change part-way through is refused.
+        lock_rate(&mut rate, 44100).unwrap();
+        let e = lock_rate(&mut rate, 48000).unwrap_err();
+        assert!(e.contains("44100 Hz, then 48000 Hz"), "{e}");
+        assert_eq!(rate, 44100, "a refused rate must not relabel the track");
+    }
 
     fn tb(numer: u32, denom: u32) -> Option<TimeBase> {
         TimeBase::try_new(numer, denom)
