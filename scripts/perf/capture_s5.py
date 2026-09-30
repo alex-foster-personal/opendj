@@ -30,6 +30,12 @@ from scripts.perf.capture_kpi_ledger import (
 CFG: dict[str, Any] = {
     "points": 38400,  # fetchAnlz default in api-rb.ts
     "runs": 5,
+    # A cold on-demand R2 hydration answers GET /stems 200 unavailable
+    # STEM_BUNDLE_HYDRATING until the bundle lands (4 parts, tens of seconds;
+    # the engine's own part route waits 30 s). Poll until ready; past the
+    # deadline the stemmed role errors loud, never a number.
+    "stems_hydrate_deadline_s": 120.0,
+    "stems_hydrate_poll_s": 2.0,
     "tracks": {
         # Pin after a live engine whose /audio 200'd. Empty = fail-fast.
         # Override with --track-small / --track-large / --track-stemmed.
@@ -122,36 +128,73 @@ def _require_anlz(status: int, body: bytes, stable_id: str) -> None:
         raise ProbeError(f"/anlz for {stable_id} was not JSON: {exc}") from exc
 
 
-def require_stem_bundle(engine: str, stable_id: str) -> None:
+def _fetch_stems_payload(engine: str, stable_id: str) -> dict[str, Any]:
+    status, _headers, body = fetch_url(
+        f"{engine}/api/v1/tracks/{stable_id}/stems",
+        ANLZ_TIMEOUT_S,
+    )
+    if status != 200:
+        code = _detail_code(body)
+        raise ProbeError(
+            f"GET /stems for {stable_id} returned HTTP {status}" + (f" {code}" if code else "")
+        )
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProbeError(f"GET /stems for {stable_id} was not JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ProbeError(f"GET /stems for {stable_id} was not a JSON object")
+    return payload
+
+
+def stems_payload_is_ready(payload: dict[str, Any], stable_id: str) -> bool:
+    """True for this track's manifest, False while its bundle hydrates; else raises.
+
+    ``STEM_BUNDLE_HYDRATING`` means the engine knows the bundle (R2 index) and
+    is fetching it, so the caller polls. Any other ``unavailable`` code, such
+    as ``STEM_BUNDLE_NOT_FOUND``, means there is no bundle to wait for.
+    """
+    if payload.get("status") == "unavailable":
+        code = payload.get("code")
+        if code == "STEM_BUNDLE_HYDRATING":
+            return False
+        raise ProbeError(
+            f"stemmed track {stable_id} has no stem bundle: "
+            f"{code or 'unavailable'} (HTTP 200 unavailable)"
+        )
+    parts = payload.get("parts")
+    if payload.get("stable_id") != stable_id or not isinstance(parts, dict) or not parts:
+        raise ProbeError(
+            f"GET /stems for {stable_id} is not a stem manifest for that track: "
+            f"stable_id={payload.get('stable_id')!r} parts={parts!r}"
+        )
+    return True
+
+
+def require_stem_bundle(
+    engine: str,
+    stable_id: str,
+    *,
+    deadline_s: float,
+    poll_s: float,
+) -> None:
     """Prove the stemmed role has a stored bundle: a manifest with parts (#3966).
 
     ``GET /stems`` answers HTTP 200 for a track WITHOUT stems too, with body
     ``{"status": "unavailable", "code": "STEM_BUNDLE_NOT_FOUND"}``, so the
-    status code alone admitted any track. Only a manifest for this stable_id
-    that lists at least one part counts; anything else raises.
+    status code alone admitted any track. A bundle still hydrating from R2
+    (``STEM_BUNDLE_HYDRATING``) is polled every ``poll_s`` until it turns
+    into a manifest; still hydrating after ``deadline_s`` raises, as does
+    any non-200 answer (a failed hydration is HTTP 502/503).
     """
-    status, _headers, body = fetch_url(
-        f"{engine}/api/v1/tracks/{stable_id}/stems", ANLZ_TIMEOUT_S,
-    )
-    if status != 200:
-        raise ProbeError(f"GET /stems for {stable_id} returned HTTP {status}")
-    try:
-        manifest = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProbeError(f"GET /stems for {stable_id} was not JSON: {exc}") from exc
-    if not isinstance(manifest, dict):
-        raise ProbeError(f"GET /stems for {stable_id} was not a JSON object")
-    if manifest.get("status") == "unavailable":
-        raise ProbeError(
-            f"stemmed track {stable_id} has no stem bundle: "
-            f"{manifest.get('code') or 'unavailable'} (HTTP 200 unavailable)"
-        )
-    parts = manifest.get("parts")
-    if manifest.get("stable_id") != stable_id or not isinstance(parts, dict) or not parts:
-        raise ProbeError(
-            f"GET /stems for {stable_id} is not a stem manifest for that track: "
-            f"stable_id={manifest.get('stable_id')!r} parts={parts!r}"
-        )
+    deadline = time.monotonic() + deadline_s
+    while not stems_payload_is_ready(_fetch_stems_payload(engine, stable_id), stable_id):
+        if time.monotonic() >= deadline:
+            raise ProbeError(
+                f"stemmed track {stable_id} still STEM_BUNDLE_HYDRATING after "
+                f"{deadline_s:g} s deadline"
+            )
+        time.sleep(poll_s)
 
 
 def _content_length(headers: Any, body: bytes) -> int:
@@ -183,7 +226,12 @@ def _probe_track(
     data_dir: Path | None,
 ) -> dict[str, Any]:
     if role == "stemmed":
-        require_stem_bundle(engine, stable_id)
+        require_stem_bundle(
+            engine,
+            stable_id,
+            deadline_s=float(CFG["stems_hydrate_deadline_s"]),
+            poll_s=float(CFG["stems_hydrate_poll_s"]),
+        )
     cache_before = _anlz_cache_state(data_dir, stable_id)
     anlz_url = f"{engine}/api/v1/tracks/{stable_id}/anlz?points={points}"
     audio_url = f"{engine}/api/v1/tracks/{stable_id}/audio"
