@@ -590,6 +590,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<span
 		class="ap-wrap topbar-slot-autoplay"
+		class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 		bind:this={autoPlayWrapEl}
 		onpointerenter={_showAutoPlayMenu}
 		onpointerleave={_hideAutoPlayMenu}
@@ -1101,12 +1102,22 @@
 		position: relative;
 		display: inline-flex;
 		align-items: center;
+		border-radius: 3px;
 	}
-	/* Pin fc60002b81a8: the ">|" next-track trigger reads as one button with
-	   the AutoPlay toggle plus an RHS section, not two separate controls. */
+	.ap-wrap.on {
+		border: 1px solid var(--rb-accent);
+	}
+	.ap-wrap.on > .bsm-toggle {
+		border: none;
+		box-shadow: none;
+	}
+	/* Pin fc60002b81a8 / PLAY-13: one enclosure with a single divider line. */
 	.ap-wrap > .bsm-toggle:first-child {
 		border-top-right-radius: 0;
 		border-bottom-right-radius: 0;
+		border-right: 1px solid color-mix(in srgb, var(--rb-accent) 55%, var(--rb-border));
+	}
+	.ap-wrap:not(.on) > .bsm-toggle:first-child {
 		border-right: none;
 	}
 	.ap-next-btn {

@@ -26,11 +26,11 @@ test('the committed engine export matches the page device maps byte for byte', a
 
 test('the export holds every registry map, in registry order', async () => {
 	const doc = JSON.parse(await renderExport());
-	// Positive control on content: the four maps the page registers, each with
+	// Positive control on content: the five maps the page registers, each with
 	// bindings, so an empty or partial registry cannot pass as "in sync".
 	assert.deepEqual(
 		doc.maps.map((m) => m.nameMatch),
-		['DDJ-FLX10', 'DDJ-400', 'Mixtour', 'DDJ-FLX4']
+		['DDJ-FLX10', 'DDJ-400', '\\bMixtour\\s+Pro\\b', '\\bMixtour\\b(?!\\s+Pro\\b)', 'DDJ-FLX4']
 	);
 	for (const m of doc.maps) assert.ok(m.bindings.length > 0, `${m.nameMatch} has no bindings`);
 });

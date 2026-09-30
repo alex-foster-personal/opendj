@@ -25,7 +25,22 @@ const dynamicImportExternal = {
 	}
 };
 
-function _bundle(entry, { stdin = false, deferSvelteRuntime = false } = {}) {
+/**
+ * Pass 1 must leave `svelte` itself as an import. Bundled there, svelte's own
+ * client runtime lands in the text compileModule reads, and its internal
+ * `$window`/`$document` variables trip `dollar_prefix_invalid` (any rune
+ * module that calls `untrack`/`flushSync` hit it). Pass 3 then resolves the
+ * import next to the compiler's own `svelte/internal/client`, so both share
+ * ONE runtime instance - the same scheduler a real component runs under.
+ */
+const svelteExternal = {
+	name: 'svelte-external',
+	setup(build) {
+		build.onResolve({ filter: /^svelte($|\/)/ }, (args) => ({ path: args.path, external: true }));
+	}
+};
+
+function _bundle(entry, { stdin = false, keepSvelteImports = false } = {}) {
 	return build({
 		...(stdin
 			? { stdin: { contents: entry, resolveDir: FRONTEND_ROOT, loader: 'ts', sourcefile: 'rune-entry.ts' } }
@@ -38,12 +53,11 @@ function _bundle(entry, { stdin = false, deferSvelteRuntime = false } = {}) {
 		// inlining that package here exposes runtime names such as `$window` to
 		// the application rune compiler, which correctly rejects them. Link the
 		// real runtime only in the second bundle, after rune compilation.
-		...(deferSvelteRuntime ? { external: ['svelte', 'svelte/*'] } : {}),
 		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://rune-harness.example.test') },
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'browser',
-		plugins: [viteUrlSuffixPlugin, dynamicImportExternal],
+		plugins: [viteUrlSuffixPlugin, dynamicImportExternal, ...(keepSvelteImports ? [svelteExternal] : [])],
 		target: 'es2022',
 		write: false
 	});
@@ -94,7 +108,7 @@ export async function loadRuneModule(entrySource) {
  * 106269849983, 106613353127, 106743215758) with every test in it passing.
  */
 async function _bundleRunes(entrySource) {
-	const runes = await _bundle(entrySource, { stdin: true, deferSvelteRuntime: true });
+	const runes = await _bundle(entrySource, { stdin: true, keepSvelteImports: true });
 	const compiled = compileModule(runes.outputFiles[0].text, {
 		generate: 'client',
 		filename: 'rune-entry.svelte.js'

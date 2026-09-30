@@ -170,9 +170,10 @@ import {
 	playbackBpm,
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
-	QUANTIZED_LAUNCH
+	QUANTIZED_LAUNCH,
+	resolveArmAtPosition
 } from '$lib/rb/beat-sync-math';
-import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
 	deckHasRealBeatGrid,
@@ -3491,16 +3492,13 @@ class RbAudioEngine implements AudioEngine {
 	 * Self-referential only: unlike `quantizedSeek`'s syncPlan branch, this
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
+	 * A resolver `armAt` runs on the live projected position before any await.
 	 */
-	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number> {
+	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
-		if (armAtPositionSec < nowPositionSec) {
-			throw new RangeError(
-				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
-			);
-		}
+		const armAtPositionSec = resolveArmAtPosition(armAt, nowPositionSec);
 		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
 		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);

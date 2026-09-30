@@ -351,7 +351,16 @@ test('PreviewStrip.svelte: draw effect does not call _draw once canvas has unmou
 		if (el === null) drawnWithNull = true;
 	};
 	assert.doesNotThrow(() =>
-		runEffect(arrow, { canvas: null, strip: {}, revealed: true, vocals: null, duration_ms: 0, dpr: 1, _draw })
+		runEffect(arrow, {
+			canvas: null,
+			strip: {},
+			revealed: true,
+			vocals: null,
+			duration_ms: 0,
+			dpr: 1,
+			uiPrefs: { waveform_design: 'tri-band' },
+			_draw
+		})
 	);
 	assert.equal(drawnWithNull, false, 'the effect must not call _draw once canvas has unmounted to null');
 });
