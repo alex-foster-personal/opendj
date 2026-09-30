@@ -56,7 +56,10 @@ from tests.cloudsync.test_track_identity_lookup_scale import _seed_library
 pytestmark = pytest.mark.requirement("LIBM-120")
 
 MEET_TIMEOUT_S = 10.0
-SLOW_LOCAL_S = 1.0
+# Wide enough that a hub fetch on a loaded CI host (it took over 0.5 s at load
+# about 270 on silver) still reads under half of it; a span that also covers
+# the local hash reads at least this much.
+SLOW_LOCAL_S = 3.0
 SMALL_LIBRARY = 10
 LARGE_LIBRARY = 200
 TRANSACTION_CONTROL = ("BEGIN", "COMMIT", "ROLLBACK")
