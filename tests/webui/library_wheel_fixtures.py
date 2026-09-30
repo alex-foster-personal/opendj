@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state.schema import apply_migrations
+from scripts.redteam_fixture_library import REKORDBOX_SCHEMA_PATH, REKORDBOX_TIMESTAMP
 
 # djmdGenre rows: (ID, Name)
 GENRES = {
@@ -78,23 +79,33 @@ def _make_state_db(
 
 
 def _make_master_db(path: Path, *, content: list[dict]) -> None:
+    """Write a master.plain.db with rekordbox's full schema and the given rows.
+
+    The DDL is the committed snapshot rendered from pyrekordbox
+    (``scripts.redteam_fixture_schema``), not a hand-typed subset: the
+    library-wheel e2e boots the whole engine on this file, and its page load
+    reads ``djmdPlaylist`` and ``djmdContent.ImagePath`` as well as the genre
+    columns the wheel query needs.
+    """
     conn = sqlite3.connect(str(path))
     try:
-        conn.execute(
-            "CREATE TABLE djmdGenre (ID VARCHAR(255) PRIMARY KEY, Name VARCHAR(255), "
-            "rb_local_deleted TINYINT(1) DEFAULT 0)"
-        )
-        conn.execute(
-            "CREATE TABLE djmdContent (ID VARCHAR(255) PRIMARY KEY, GenreID VARCHAR(255), "
-            "FolderPath VARCHAR(255), AnalysisDataPath VARCHAR(255), Commnt VARCHAR(255), "
-            "DJPlayCount INTEGER, rb_local_deleted TINYINT(1) DEFAULT 0)"
-        )
+        conn.executescript(REKORDBOX_SCHEMA_PATH.read_text())
         for genre_id, name in GENRES.items():
-            conn.execute("INSERT INTO djmdGenre (ID, Name) VALUES (?, ?)", (genre_id, name))
+            conn.execute(
+                "INSERT INTO djmdGenre (ID, Name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (genre_id, name, REKORDBOX_TIMESTAMP, REKORDBOX_TIMESTAMP),
+            )
         for c in content:
             conn.execute(
-                "INSERT INTO djmdContent (ID, GenreID, DJPlayCount) VALUES (?, ?, ?)",
-                (c["vendor_id"], c.get("genre_id"), c.get("play_count", 0)),
+                "INSERT INTO djmdContent (ID, GenreID, DJPlayCount, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    c["vendor_id"],
+                    c.get("genre_id"),
+                    c.get("play_count", 0),
+                    REKORDBOX_TIMESTAMP,
+                    REKORDBOX_TIMESTAMP,
+                ),
             )
         conn.commit()
     finally:
