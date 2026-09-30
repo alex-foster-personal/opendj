@@ -14,7 +14,7 @@
   "bisectionConcurrency": 6,
   "optimizationMode": "bisection_skip_redundant_tests",
   "canOptimisticallyMerge": true,
-  "pendingFailureDepth": 1,
+  "pendingFailureDepth": 2,
   "testingTimeoutMinutes": 300,
   "directMergeMode": "off",
   "createPrsForTestingBranches": true,

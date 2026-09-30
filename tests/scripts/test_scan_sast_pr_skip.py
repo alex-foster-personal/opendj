@@ -3,40 +3,14 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
-SEMGREP_BIN = ROOT / ".tmp" / "security" / "bin"
+from tests.scripts.sast_control_fixtures import SEMGREP_BIN, init_scan_repo, needs_scanners
 
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
-
-
-def _init_repo(repo: Path) -> None:
-    _git(repo, "init")
-    _git(repo, "config", "user.email", "sast@test")
-    _git(repo, "config", "user.name", "sast test")
-
-
-def _fixture_repo(tmp_path: Path) -> Path:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _init_repo(repo)
-    shutil.copytree(ROOT / "tools" / "semgrep", repo / "tools" / "semgrep")
-    shutil.copytree(
-        ROOT / "tests" / "fixtures" / "security" / "sast-control",
-        repo / "tests" / "fixtures" / "security" / "sast-control",
-    )
-    sec_scripts = repo / "scripts" / "security"
-    sec_scripts.mkdir(parents=True)
-    for name in ("scan_sast.sh", "lib.sh", "secscan.py"):
-        shutil.copy2(ROOT / "scripts" / "security" / name, sec_scripts / name)
-    return repo
 
 
 def _bin_dir(work: Path) -> Path:
@@ -78,10 +52,9 @@ def _commit_pair(repo: Path, rel: str, first: str, second: str) -> tuple[str, st
     return base, head
 
 
-@pytest.mark.skipif(not (SEMGREP_BIN / "semgrep").exists(), reason="semgrep not installed")
-@pytest.mark.skipif(not (SEMGREP_BIN / "uv").exists(), reason="uv not installed")
+@needs_scanners
 def test_docs_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
-    repo = _fixture_repo(tmp_path)
+    repo = init_scan_repo(tmp_path)
     base, head = _commit_pair(repo, "docs/foo.md", "# one\n", "# two\n")
     work = tmp_path / "work"
     proc = _run_pr_scan(repo, work, base, head)
@@ -92,14 +65,13 @@ def test_docs_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     assert "no scannable file changed" in summary
 
 
-@pytest.mark.skipif(not (SEMGREP_BIN / "semgrep").exists(), reason="semgrep not installed")
-@pytest.mark.skipif(not (SEMGREP_BIN / "uv").exists(), reason="uv not installed")
+@needs_scanners
 def test_tests_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     """[if] the PR changes only a tests/ file [then] SKIP, never UNKNOWN, [else stop].
 
     End to end over the shape that failed as UNKNOWN in job 104882711482 on PR #3362.
     """
-    repo = _fixture_repo(tmp_path)
+    repo = init_scan_repo(tmp_path)
     body = "import subprocess\nsubprocess.call({!r}, shell=True)\n"
     base, head = _commit_pair(
         repo, "tests/scripts/test_probe.py", body.format("ls"), body.format("pwd")
@@ -113,15 +85,14 @@ def test_tests_only_pr_writes_skip_row_via_scan_sast(tmp_path: Path) -> None:
     assert "no scannable file changed" in summary
 
 
-@pytest.mark.skipif(not (SEMGREP_BIN / "semgrep").exists(), reason="semgrep not installed")
-@pytest.mark.skipif(not (SEMGREP_BIN / "uv").exists(), reason="uv not installed")
+@needs_scanners
 def test_scannable_pr_still_runs_the_scan(tmp_path: Path) -> None:
     """[if] the PR changes a file outside the ignore list [then] a real scan row, [else stop].
 
     Negative control for the two SKIP cases: the same wrapper must still reach a verdict
     when there is something to scan, so SKIP cannot be the answer to everything.
     """
-    repo = _fixture_repo(tmp_path)
+    repo = init_scan_repo(tmp_path)
     body = "import subprocess\nsubprocess.call({!r}, shell=True)\n"
     base, head = _commit_pair(repo, "apps/probe.py", body.format("ls"), body.format("pwd"))
     work = tmp_path / "work"

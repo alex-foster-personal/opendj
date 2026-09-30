@@ -33,6 +33,7 @@ overshoot:
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import threading
 import time
@@ -40,7 +41,6 @@ from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import anyio
 import pytest
 from fastapi import FastAPI, Request, Response
 from fastapi.testclient import TestClient
@@ -112,9 +112,9 @@ class _DigestProbe:
 
     async def around_hub_digest(self) -> None:
         self.hub_started.set()
-        self.hub_met = await anyio.to_thread.run_sync(self.local_started.wait, MEET_TIMEOUT_S)
+        self.hub_met = await asyncio.to_thread(self.local_started.wait, MEET_TIMEOUT_S)
         if self.hold_hub_until_rollback:
-            await anyio.to_thread.run_sync(self.spoke_rolled_back.wait, MEET_TIMEOUT_S)
+            await asyncio.to_thread(self.spoke_rolled_back.wait, MEET_TIMEOUT_S)
 
 
 def _assert_met(probe: _DigestProbe) -> None:
