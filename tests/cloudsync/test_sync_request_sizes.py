@@ -110,14 +110,10 @@ class _ProxiedHub(TestClientTransport):
         if self._body_limit is not None and len(body) > self._body_limit:
             if is_push:
                 self.refused_push_bytes.append(len(body))
-            raise transport.refused(
-                f"POST {path}", 413, '{"detail":"request entity too large"}'
-            )
+            raise transport.refused(f"POST {path}", 413, '{"detail":"request entity too large"}')
         if is_push:
             self.delivered_push_bytes.append(len(body))
-        response = self._http.post(
-            path, content=body, headers={"content-type": "application/json"}
-        )
+        response = self._http.post(path, content=body, headers={"content-type": "application/json"})
         return self._decoded(response, f"POST {path}")
 
 
