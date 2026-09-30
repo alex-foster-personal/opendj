@@ -27,10 +27,10 @@ _VITE_DEV_MARKER = "/@vite/client"
 _FRONTEND_DIRTY_SUFFIX = "-dirty"
 
 
-def _git_sha() -> str:
+def _git_sha(repo_root: Path = _REPO) -> str:
     proc = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=_REPO,
+        cwd=repo_root,
         capture_output=True,
         text=True,
         check=True,
@@ -66,6 +66,26 @@ def _verify_capturing_checkout_clean(repo_root: Path = _REPO) -> str | None:
             "the process sampler all run out of this tree, so a dirty checkout "
             "can emit rows attributed to a commit it does not actually run; "
             "commit or stash before capturing release evidence"
+        )
+    return None
+
+
+def _verify_capturing_checkout_at(expected_sha: str, repo_root: Path = _REPO) -> str | None:
+    """None when the capturing checkout is clean AND at `expected_sha`; otherwise why not.
+
+    Sol P1/BLOCKING, PR #4540: clean is not enough. A checkout switched to
+    ANOTHER clean commit mid-capture runs a different harness while the engine
+    and frontend still serve `expected_sha`, so every served-identity check
+    passes and the rows are attributed to the wrong harness.
+    """
+    dirty_reason = _verify_capturing_checkout_clean(repo_root)
+    if dirty_reason is not None:
+        return dirty_reason
+    checkout_sha = _git_sha(repo_root)
+    if checkout_sha != expected_sha:
+        return (
+            f"the capturing checkout at {repo_root} is at {checkout_sha}, not "
+            f"{expected_sha}: the harness that ran is not the build the rows name"
         )
     return None
 

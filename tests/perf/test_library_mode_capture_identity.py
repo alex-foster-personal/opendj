@@ -152,7 +152,6 @@ def test_main_refuses_a_vite_dev_frontend_outright(
         frontend_server.server_close()
 
 
-
 def test_main_refuses_a_capture_when_the_checkout_itself_is_dirty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -240,8 +239,8 @@ def test_verify_capture_targets_catches_the_checkout_going_dirty_between_two_cal
     """
     import scripts.perf.capture_library_mode as capture_mod
 
-    this_sha = capture_mod._git_sha()
     repo_root = _disposable_git_repo(tmp_path)
+    this_sha = capture_mod._git_sha(repo_root)
     engine_server, engine_url = _serve_engine(this_sha)
     frontend_server, frontend_url = _serve_frontend(version=this_sha, vite_dev=False)
     probe = repo_root / "CAPTURE_LIBRARY_MODE_REVERIFY_TEST_PROBE.tmp"
@@ -291,8 +290,8 @@ def test_verify_capture_targets_catches_a_same_sha_engine_restart(tmp_path: Path
     """
     import scripts.perf.capture_library_mode as capture_mod
 
-    this_sha = capture_mod._git_sha()
     repo_root = _disposable_git_repo(tmp_path)
+    this_sha = capture_mod._git_sha(repo_root)
     frontend_server, frontend_url = _serve_frontend(version=this_sha, vite_dev=False)
     engine_before, engine_before_url = _serve_engine(this_sha, pid=11111)
     try:
@@ -327,3 +326,50 @@ def test_verify_capture_targets_catches_a_same_sha_engine_restart(tmp_path: Path
         frontend_server.shutdown()
         frontend_server.server_close()
 
+
+def test_verify_capture_targets_catches_the_checkout_moving_to_another_clean_commit(
+    tmp_path: Path,
+) -> None:
+    """Sol P1/BLOCKING, PR #4540: [if] the capturing checkout moves to ANOTHER
+    clean commit between the pre- and post-capture calls, while the engine and
+    frontend still serve the original sha [then] the second call refuses,
+    naming both shas, [else] a different harness's measurements are recorded
+    under the original build.
+
+    The first call is the control: the same real servers and repo pass while
+    HEAD still equals app_build_sha, so a gate that always refused fails here.
+    """
+    import scripts.perf.capture_library_mode as capture_mod
+
+    repo_root = _disposable_git_repo(tmp_path)
+    this_sha = capture_mod._git_sha(repo_root)
+    engine_server, engine_url = _serve_engine(this_sha)
+    frontend_server, frontend_url = _serve_frontend(version=this_sha, vite_dev=False)
+    try:
+        first_reason, _mode, first_pid = capture_mod._verify_capture_targets(
+            engine_url, frontend_url, this_sha, repo_root=repo_root
+        )
+        assert first_reason is None, f"first call should pass clean, got: {first_reason}"
+
+        subprocess.run(
+            ["git", "commit", "-q", "--allow-empty", "-m", "moved"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        )
+        moved_sha = capture_mod._git_sha(repo_root)
+        assert moved_sha != this_sha
+
+        reason, mode, pid = capture_mod._verify_capture_targets(
+            engine_url, frontend_url, this_sha, expected_engine_pid=first_pid, repo_root=repo_root
+        )
+        assert reason is not None, "checkout moved to another commit; reverify must refuse"
+        assert moved_sha in reason
+        assert this_sha in reason
+        assert mode is None
+        assert pid is None
+    finally:
+        engine_server.shutdown()
+        engine_server.server_close()
+        frontend_server.shutdown()
+        frontend_server.server_close()

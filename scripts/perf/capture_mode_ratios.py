@@ -27,7 +27,8 @@ from scripts.diagnostics.probe_log_store import _linear_slope_mb_per_hour
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf.capture_build_identity import (
     _frontend_mode,
-    _verify_capturing_checkout_clean,
+    _git_sha,
+    _verify_capturing_checkout_at,
     _verify_frontend_build_version,
 )
 from scripts.perf.capture_kpi_ledger import build_row, session_meta
@@ -48,17 +49,6 @@ def _require_macos() -> None:
             "capture_mode_ratios refuses non-macOS capture: run on the reference Mac "
             "with opendj_performance_probe installed"
         )
-
-
-def _git_sha() -> str:
-    proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=_REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return proc.stdout.strip()
 
 
 class _ProcessTreeSampler:
@@ -370,24 +360,28 @@ _METHOD = (
 )
 
 
-def _post_capture_identity_reason(frontend: str, sha: str) -> str | None:
-    """None when the capture still has the identity it was gated on before sampling.
+def _capture_identity_reason(
+    frontend: str, expected_sha: str, repo_root: Path = _REPO
+) -> str | None:
+    """None when the checkout at `repo_root` is clean at `expected_sha` and
+    `frontend` serves that same static build; otherwise why not.
 
-    Sol P1/BLOCKING, PR #4540: the pre-capture gates ran once, then rows were
-    labeled with that sha after a capture that can run for an hour. A checkout
-    that moved or went dirty, or a frontend redeployed mid-run, would mix
-    builds under one clean-looking sha. Mirrors capture_library_mode.py's
-    post-capture `_verify_capture_targets` call.
+    `main()` runs this before the capture and again before any row is written
+    (Sol P1/BLOCKING, PR #4540): the capture can run for an hour, and a
+    checkout that moved or went dirty, or a frontend redeployed mid-run, would
+    otherwise mix builds under one clean-looking sha. The checkout is checked
+    first so a dirty tree refuses without touching the network.
     """
-    checkout_reason = _verify_capturing_checkout_clean()
+    checkout_reason = _verify_capturing_checkout_at(expected_sha, repo_root)
     if checkout_reason is not None:
         return checkout_reason
-    current_sha = _git_sha()
-    if current_sha != sha:
-        return f"checkout moved from {sha} to {current_sha} during the capture"
     if _frontend_mode(frontend) == "vite-dev":
-        return "frontend switched to vite-dev during the capture"
-    return _verify_frontend_build_version(frontend, sha)
+        return (
+            "capture_mode_ratios refuses a vite-dev frontend: /_app/version.json 404s in "
+            "dev mode, so it cannot confirm its own build identity (mirrors "
+            "capture_library_targets.py's vite-dev refusal, PR #4034, discussion_r4132371694)"
+        )
+    return _verify_frontend_build_version(frontend, expected_sha)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -413,19 +407,10 @@ def main(argv: list[str] | None = None) -> int:
     # checks capture_library_targets.py's `_verify_capture_targets` runs for
     # PERFMODE-14, scoped to what this capture actually has (no engine target
     # here, only a served frontend).
-    checkout_reason = _verify_capturing_checkout_clean()
-    if checkout_reason is not None:
-        raise SystemExit(f"refusing to capture: {checkout_reason}")
     sha = _git_sha()
-    if _frontend_mode(args.frontend) == "vite-dev":
-        raise SystemExit(
-            "capture_mode_ratios refuses a vite-dev frontend: /_app/version.json 404s in "
-            "dev mode, so it cannot confirm its own build identity (mirrors "
-            "capture_library_targets.py's vite-dev refusal, PR #4034, discussion_r4132371694)"
-        )
-    frontend_reason = _verify_frontend_build_version(args.frontend, sha)
-    if frontend_reason is not None:
-        raise SystemExit(f"refusing to capture: {frontend_reason}")
+    identity_reason = _capture_identity_reason(args.frontend, sha)
+    if identity_reason is not None:
+        raise SystemExit(f"refusing to capture: {identity_reason}")
 
     meta = session_meta(sha=sha)
     rows: list[dict[str, Any]] = []
@@ -484,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
-    post_capture_reason = _post_capture_identity_reason(args.frontend, sha)
+    post_capture_reason = _capture_identity_reason(args.frontend, sha)
     if post_capture_reason is not None:
         raise SystemExit(
             "refusing to write rows: post-capture reverification failed (checkout or "

@@ -15,7 +15,7 @@ from scripts.perf.capture_build_identity import (
     _frontend_mode,
     _probe_engine,
     _read_engine_pid,
-    _verify_capturing_checkout_clean,
+    _verify_capturing_checkout_at,
     _verify_frontend_build_version,
     _verify_served_build_sha,
 )
@@ -94,7 +94,7 @@ def _verify_capture_targets(
     frontend_sha_reason = _verify_frontend_build_version(frontend, app_build_sha)
     if frontend_sha_reason is not None:
         return frontend_sha_reason, None, None
-    checkout_dirty_reason = _verify_capturing_checkout_clean(repo_root)
-    if checkout_dirty_reason is not None:
-        return checkout_dirty_reason, None, None
+    checkout_reason = _verify_capturing_checkout_at(app_build_sha, repo_root)
+    if checkout_reason is not None:
+        return checkout_reason, None, None
     return None, frontend_mode, engine_pid
