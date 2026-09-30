@@ -52,7 +52,7 @@ def test_anti_flake_protection_is_complete(queue: dict[str, Any]) -> None:
     """Optimistic merging only clears flakes when pending failure depth is above 0."""
     assert _setting(queue, "canOptimisticallyMerge") is True
     depth = _setting(queue, "pendingFailureDepth")
-    assert isinstance(depth, int) and depth >= MIN_PENDING_FAILURE_DEPTH, depth
+    assert type(depth) is int and depth >= MIN_PENDING_FAILURE_DEPTH, depth
 
 
 def test_bisection_is_at_least_as_wide_as_testing(queue: dict[str, Any]) -> None:
@@ -60,9 +60,11 @@ def test_bisection_is_at_least_as_wide_as_testing(queue: dict[str, Any]) -> None
 
 
 def test_batches_bisect_rather_than_fail_whole(queue: dict[str, Any]) -> None:
-    if _setting(queue, "batch") is True:
+    batch = _setting(queue, "batch")
+    assert type(batch) is bool, f"batch must be a boolean, got {batch!r}"
+    if batch is True:
         assert _setting(queue, "optimizationMode") == "bisection_skip_redundant_tests"
-    elif _setting(queue, "batch") is False:
+    elif batch is False:
         pytest.skip("batching is off, so there is no batch to bisect")
 
 
@@ -72,7 +74,8 @@ def test_every_merge_is_queue_tested(queue: dict[str, Any]) -> None:
 
 def test_a_test_run_has_a_bounded_timeout(queue: dict[str, Any]) -> None:
     timeout = _setting(queue, "testingTimeoutMinutes")
-    assert isinstance(timeout, int) and timeout > 0, timeout
+    # type() not isinstance(): bool subclasses int, so JSON `true` must not pass as 1 minute.
+    assert type(timeout) is int and timeout > 0, timeout
 
 
 def test_a_known_bad_combination_is_rejected() -> None:
@@ -81,3 +84,17 @@ def test_a_known_bad_combination_is_rejected() -> None:
         test_anti_flake_protection_is_complete(
             {"canOptimisticallyMerge": True, "pendingFailureDepth": 1}
         )
+
+
+@pytest.mark.parametrize("batch", [None, "true", 1])
+def test_a_non_boolean_batch_setting_is_rejected(batch: Any) -> None:
+    """Negative control: a malformed batch value must fail, not skip both branches."""
+    with pytest.raises(AssertionError):
+        test_batches_bisect_rather_than_fail_whole({"batch": batch})
+
+
+@pytest.mark.parametrize("timeout", [True, 0, "300"])
+def test_a_non_integer_or_unbounded_timeout_is_rejected(timeout: Any) -> None:
+    """Negative control: JSON true is a bool, not a 1-minute timeout."""
+    with pytest.raises(AssertionError):
+        test_a_test_run_has_a_bounded_timeout({"testingTimeoutMinutes": timeout})
