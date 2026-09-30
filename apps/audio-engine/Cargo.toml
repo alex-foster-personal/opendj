@@ -1,0 +1,56 @@
+[package]
+name = "odj-audio"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Open DJ audio engine: one playback actor driven by a device, wall or fake clock"
+publish = false
+
+[lib]
+name = "odj_audio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "odj-audio"
+path = "src/bin/odj-audio.rs"
+
+[features]
+default = []
+# Real audio output through cpal (CoreAudio, WASAPI, ALSA). Off by default so
+# Linux CI builds without ALSA headers; the fake and wall clocks need no device.
+device = ["dep:cpal"]
+# MIDI input read by the engine itself through midir (CoreMIDI, WinMM, ALSA).
+# Off by default for the same reason as `device`: Linux CI has no ALSA headers.
+# Decoding and dispatch (src/midi.rs) and the `midi_inject` seam need no feature.
+midi = ["dep:midir"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "wav", "aiff", "pcm", "aac", "alac", "isomp4", "ogg", "vorbis"] }
+rtrb = "0.4"
+sha2 = "0.10"
+# File identity for output collision checks, on Windows too (volume serial
+# and file index), where std exposes none on stable.
+same-file = "1"
+cpal = { version = "0.18", optional = true }
+# Loopback WebSocket for the renderer and agents (plan 20-02). Blocking std
+# I/O on per-client threads, so no async runtime enters the engine.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+rubato = "0.16"
+signalsmith-stretch = "0.1.3"
+midir = { version = "0.11", optional = true }
+regex-lite = "0.1"
+
+# The change time of a file on Windows (for the decode cache's key), which
+# std reads only on nightly. Already in the tree through same-file.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.test]
+opt-level = 2
