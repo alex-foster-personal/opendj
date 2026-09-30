@@ -230,12 +230,15 @@ def _vm_steps(conn: sqlite3.Connection, action: Callable[[], object]) -> int:
 
 
 def test_first_window_does_not_grow_with_the_playlist(tmp_path: Path) -> None:
-    steps = {}
+    steps: dict[int, int] = {}
     for size in (SMALL, LARGE):
         conn = _sized_db(tmp_path, size)
-        rows = conn.execute(WINDOW_SQL, (MIXED, 30, 0)).fetchall()
-        assert len(rows) == 30
-        steps[size] = _vm_steps(conn, lambda c=conn: c.execute(WINDOW_SQL, (MIXED, 30, 0)).fetchall())
+
+        def _first_window(c: sqlite3.Connection = conn) -> list[sqlite3.Row]:
+            return c.execute(WINDOW_SQL, (MIXED, 30, 0)).fetchall()
+
+        assert len(_first_window()) == 30
+        steps[size] = _vm_steps(conn, _first_window)
         conn.close()
     assert steps[LARGE] <= steps[SMALL] * 1.2, steps
 

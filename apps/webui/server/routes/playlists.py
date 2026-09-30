@@ -172,9 +172,9 @@ def list_playlist_tracks(
     """Paginated hydrated membership slice for first-page library paint.
 
     Agent parity: ``GET /api/v1/playlists/{playlist_id}/tracks?limit=&offset=``.
-    Full detail remains on ``GET /playlists/{playlist_id}``. Reads only the
-    requested window of the membership, never the whole playlist (LIBM-133).
+    Full detail remains on ``GET /playlists/{playlist_id}``.
     """
+    # LIBM-133: read only the requested window, never the whole playlist.
     page = backend.get_playlist_page(playlist_id, limit=limit, offset=offset)
     pl = page.playlist
     response.headers["ETag"] = compute_etag(pl.playlist_id, pl.updated_at)
