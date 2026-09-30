@@ -15,7 +15,7 @@ from scripts.perf.capture_build_identity import (
     _frontend_mode,
     _probe_engine,
     _read_engine_pid,
-    _verify_capturing_checkout_clean,
+    _verify_capturing_checkout,
     _verify_frontend_build_version,
     _verify_served_build_sha,
 )
@@ -30,7 +30,8 @@ def _verify_capture_targets(
 ) -> tuple[str | None, str | None, int | None]:
     """Every identity gate `main()` must pass before launching Playwright, in
     one place: engine reachable and clean at this sha, frontend a verifiable
-    static build (never vite-dev) clean and matching this sha. Returns
+    static build (never vite-dev) clean and matching this sha, and the
+    capturing checkout itself clean with HEAD still at this sha. Returns
     `(reason, None, None)` on the first failure, or `(None, frontend_mode,
     engine_pid)` once all checks pass. Extracted from `main()` (quality-ratchet
     `ruff.complexity`, PR #4034): five review rounds of Codex P0/P1 findings
@@ -94,7 +95,7 @@ def _verify_capture_targets(
     frontend_sha_reason = _verify_frontend_build_version(frontend, app_build_sha)
     if frontend_sha_reason is not None:
         return frontend_sha_reason, None, None
-    checkout_dirty_reason = _verify_capturing_checkout_clean(repo_root)
-    if checkout_dirty_reason is not None:
-        return checkout_dirty_reason, None, None
+    checkout_reason = _verify_capturing_checkout(repo_root, app_build_sha)
+    if checkout_reason is not None:
+        return checkout_reason, None, None
     return None, frontend_mode, engine_pid

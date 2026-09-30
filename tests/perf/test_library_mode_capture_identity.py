@@ -47,6 +47,24 @@ def _disposable_git_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def _git_head(repo: Path) -> str:
+    """The disposable repo's own HEAD, read with real git."""
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    )
+    return proc.stdout.strip()
+
+
+def _commit_another_change(repo: Path) -> str:
+    """Move the disposable repo's HEAD to a new commit, leaving the tree clean."""
+    (repo / "moved.txt").write_text("a later commit\n", encoding="utf-8")
+    subprocess.run(["git", "add", "moved.txt"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "move HEAD"], cwd=repo, check=True, capture_output=True
+    )
+    return _git_head(repo)
+
+
 def test_main_refuses_a_capture_when_the_frontend_serves_a_different_build(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -152,7 +170,6 @@ def test_main_refuses_a_vite_dev_frontend_outright(
         frontend_server.server_close()
 
 
-
 def test_main_refuses_a_capture_when_the_checkout_itself_is_dirty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -240,8 +257,8 @@ def test_verify_capture_targets_catches_the_checkout_going_dirty_between_two_cal
     """
     import scripts.perf.capture_library_mode as capture_mod
 
-    this_sha = capture_mod._git_sha()
     repo_root = _disposable_git_repo(tmp_path)
+    this_sha = _git_head(repo_root)
     engine_server, engine_url = _serve_engine(this_sha)
     frontend_server, frontend_url = _serve_frontend(version=this_sha, vite_dev=False)
     probe = repo_root / "CAPTURE_LIBRARY_MODE_REVERIFY_TEST_PROBE.tmp"
@@ -291,8 +308,8 @@ def test_verify_capture_targets_catches_a_same_sha_engine_restart(tmp_path: Path
     """
     import scripts.perf.capture_library_mode as capture_mod
 
-    this_sha = capture_mod._git_sha()
     repo_root = _disposable_git_repo(tmp_path)
+    this_sha = _git_head(repo_root)
     frontend_server, frontend_url = _serve_frontend(version=this_sha, vite_dev=False)
     engine_before, engine_before_url = _serve_engine(this_sha, pid=11111)
     try:
@@ -327,3 +344,40 @@ def test_verify_capture_targets_catches_a_same_sha_engine_restart(tmp_path: Path
         frontend_server.shutdown()
         frontend_server.server_close()
 
+
+def test_verify_capture_targets_catches_the_checkout_moving_to_another_commit(
+    tmp_path: Path,
+) -> None:
+    """[if] the capturing checkout stays clean but HEAD moves to another commit between the
+    two calls [then] the second call refuses, naming both shas, [else stop].
+
+    Codex P1/BLOCKING, PR #4553, discussion_r4150378530: a dirty-only gate passes a clean
+    tree at the wrong commit, so the harness could run code the ledger's app_build_sha
+    never named. Real disposable repo, real loopback engine and frontend.
+    """
+    import scripts.perf.capture_library_mode as capture_mod
+
+    repo_root = _disposable_git_repo(tmp_path)
+    this_sha = _git_head(repo_root)
+    engine_server, engine_url = _serve_engine(this_sha)
+    frontend_server, frontend_url = _serve_frontend(version=this_sha, vite_dev=False)
+    try:
+        first_reason, _mode, first_pid = capture_mod._verify_capture_targets(
+            engine_url, frontend_url, this_sha, repo_root=repo_root
+        )
+        assert first_reason is None, f"first call should pass clean, got: {first_reason}"
+
+        moved_sha = _commit_another_change(repo_root)
+
+        reason, mode, pid = capture_mod._verify_capture_targets(
+            engine_url, frontend_url, this_sha, expected_engine_pid=first_pid, repo_root=repo_root
+        )
+        assert reason is not None, "HEAD moved between calls; reverify must refuse"
+        assert f"moved off {this_sha} to {moved_sha}" in reason
+        assert mode is None
+        assert pid is None
+    finally:
+        engine_server.shutdown()
+        engine_server.server_close()
+        frontend_server.shutdown()
+        frontend_server.server_close()

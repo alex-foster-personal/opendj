@@ -27,10 +27,10 @@ _VITE_DEV_MARKER = "/@vite/client"
 _FRONTEND_DIRTY_SUFFIX = "-dirty"
 
 
-def _git_sha() -> str:
+def _git_sha(repo_root: Path = _REPO) -> str:
     proc = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=_REPO,
+        cwd=repo_root,
         capture_output=True,
         text=True,
         check=True,
@@ -66,6 +66,30 @@ def _verify_capturing_checkout_clean(repo_root: Path = _REPO) -> str | None:
             "the process sampler all run out of this tree, so a dirty checkout "
             "can emit rows attributed to a commit it does not actually run; "
             "commit or stash before capturing release evidence"
+        )
+    return None
+
+
+def _verify_capturing_checkout(repo_root: Path, expected_sha: str) -> str | None:
+    """The capturing checkout is clean AND still at `expected_sha`.
+
+    Cleanliness alone is not identity (Codex P1/BLOCKING, PR #4553,
+    discussion_r4150378530): a clean checkout can move to another commit
+    between the initial sha read and Playwright loading its spec or sampler,
+    and a clean tree at the wrong commit passes a dirty-only gate while the
+    harness runs code the ledger's `app_build_sha` never named. Every capture
+    that labels rows with this checkout's sha calls this, before and after
+    sampling, so the HEAD compare lives here once.
+    """
+    dirty_reason = _verify_capturing_checkout_clean(repo_root)
+    if dirty_reason is not None:
+        return dirty_reason
+    head_sha = _git_sha(repo_root)
+    if head_sha != expected_sha:
+        return (
+            f"the capturing checkout at {repo_root} moved off {expected_sha} to "
+            f"{head_sha} -- the harness would run code from a different commit "
+            "than the one its rows are labeled with"
         )
     return None
 
