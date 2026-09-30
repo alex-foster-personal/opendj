@@ -173,9 +173,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
-          # 2, not 1: the pull_request checkout is GitHub's test merge commit and
-          # the scope is its diff against the first (base) parent.
-          fetch-depth: 2
+          # 0, not 2: every persistent-runner checkout fetches full history
+          # (docs/decisions/ADR-NEW-uniform-checkout-depth-on-persistent-runners.md),
+          # which is a superset of the depth-2 this job used to need to diff
+          # the pull_request test-merge commit against its first (base) parent.
+          fetch-depth: 0
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
 
@@ -330,6 +332,8 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -985,6 +989,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -1397,7 +1403,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
-          fetch-depth: 1
+          # 0: every persistent-runner checkout fetches full history
+          # (docs/decisions/ADR-NEW-uniform-checkout-depth-on-persistent-runners.md).
+          fetch-depth: 0
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
 

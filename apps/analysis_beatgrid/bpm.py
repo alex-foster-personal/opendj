@@ -33,6 +33,8 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from apps.analysis_beatgrid.tempo_family import TempoFamily
+
 # ----- Named constants ----------------------------------------------------
 
 # The tempo band a DJ library's ordinary BPM is expected to land in. Its ratio
@@ -52,6 +54,8 @@ MIN_BEATS_FOR_FIT = 4
 # Reasons, named once so a caller can branch on them without matching prose.
 REASON_SINGLE_OCTAVE_IN_RANGE = "single_octave_in_range"
 REASON_AMBIGUOUS_NEAREST_CENTER = "ambiguous_nearest_center"
+REASON_AMBIGUOUS_MODEL_LEVEL = "ambiguous_model_level"
+REASON_GENRE_FAMILY = "genre_family"
 REASON_NO_OCTAVE_IN_RANGE = "no_octave_in_range"
 REASON_PRIOR_SELECTED = "prior_selected"
 REASON_PRIOR_SELECTED_OUT_OF_RANGE = "prior_selected_out_of_range"
@@ -127,17 +131,25 @@ def choose_octave(
     prior_bpm: float | None = None,
     *,
     scoring: bool = False,
+    family: TempoFamily | None = None,
 ) -> tuple[float, float, str, bool]:
     """Pick a metrical level for `raw_bpm`; return `(bpm, multiple, reason, ambiguous)`.
 
     Rule order, and it never changes:
-      1. Octaves inside [70, 180] are the only candidates while any exists.
-      2. Exactly one such octave wins outright.
-      3. More than one is genuinely ambiguous. When SCORING, the rekordbox
-         prior breaks the tie. At runtime there is no prior, so the octave
-         nearest the geometric center of the band wins and the estimate is
-         flagged `octave_ambiguous`.
-      4. No octave in the band leaves the nearest one and the flag set.
+      1. When SCORING, the rekordbox prior picks the octave (attribution only).
+      2. A genre tempo `family` (from the user's own genre tag, see
+         `tempo_family.py`) picks the one octave inside its range, unflagged.
+         No octave in its range means the family is ignored and rules 3-6
+         decide, so a mistagged track cannot be forced off its pulse.
+      3. Octaves inside [70, 180] are the only candidates while any exists.
+      4. Exactly one such octave wins outright.
+      5. More than one is genuinely ambiguous and flagged `octave_ambiguous`.
+         The model's own metrical level wins when it is one of them; round 4
+         measured the old tie-break (nearest the band's geometric center,
+         112 BPM) halving every 163-175 BPM track the model tracked whole.
+         Only when the model's level is outside the band does the center rule
+         still pick.
+      6. No octave in the band leaves the nearest one and the flag set.
 
     Raises when a prior is supplied without `scoring=True`. The prior is
     rekordbox data; letting it reach a runtime estimate would make the own
@@ -161,18 +173,43 @@ def choose_octave(
         reason = REASON_PRIOR_SELECTED if in_range else REASON_PRIOR_SELECTED_OUT_OF_RANGE
         return bpm, multiple, reason, not in_range
 
+    if family is not None:
+        chosen = _family_octave(candidates, family)
+        if chosen is not None:
+            return chosen
+    return _band_octave(candidates, in_range)
+
+
+_Octave = tuple[float, float, str, bool]
+
+
+def _family_octave(
+    candidates: Sequence[tuple[float, float]], family: TempoFamily
+) -> _Octave | None:
+    """Rule 2: the octave inside the genre family's range, or None when none lands there."""
+    in_family = [(m, bpm) for m, bpm in candidates if family.contains(bpm)]
+    if not in_family:
+        return None
+    center = math.sqrt(family.min_bpm * family.max_bpm)
+    multiple, bpm = min(in_family, key=lambda mb: _log_distance(mb[1], center))
+    return bpm, multiple, REASON_GENRE_FAMILY, False
+
+
+def _band_octave(
+    candidates: Sequence[tuple[float, float]], in_range: Sequence[tuple[float, float]]
+) -> _Octave:
+    """Rules 3-6: the [70, 180] band, the model's own level, then the band center."""
     if len(in_range) == 1:
         multiple, bpm = in_range[0]
         return bpm, multiple, REASON_SINGLE_OCTAVE_IN_RANGE, False
-
-    if in_range:
-        center = math.sqrt(OCTAVE_RANGE_MIN_BPM * OCTAVE_RANGE_MAX_BPM)
-        multiple, bpm = min(in_range, key=lambda mb: _log_distance(mb[1], center))
-        return bpm, multiple, REASON_AMBIGUOUS_NEAREST_CENTER, True
-
+    model_level = [(m, bpm) for m, bpm in in_range if m == 1.0]
+    if model_level:
+        multiple, bpm = model_level[0]
+        return bpm, multiple, REASON_AMBIGUOUS_MODEL_LEVEL, True
     center = math.sqrt(OCTAVE_RANGE_MIN_BPM * OCTAVE_RANGE_MAX_BPM)
-    multiple, bpm = min(candidates, key=lambda mb: _log_distance(mb[1], center))
-    return bpm, multiple, REASON_NO_OCTAVE_IN_RANGE, True
+    reason = REASON_AMBIGUOUS_NEAREST_CENTER if in_range else REASON_NO_OCTAVE_IN_RANGE
+    multiple, bpm = min(in_range or candidates, key=lambda mb: _log_distance(mb[1], center))
+    return bpm, multiple, reason, True
 
 
 # ----- The public entry point ---------------------------------------------
@@ -198,17 +235,21 @@ def estimate_bpm(
     prior_bpm: float | None = None,
     *,
     scoring: bool = False,
+    family: TempoFamily | None = None,
 ) -> BpmEstimate | None:
     """Ordinary BPM for one track's beat times, or None when there is no fit.
 
     `prior_bpm` is the rekordbox stored tempo and is accepted ONLY with
-    `scoring=True`; see `choose_octave`.
+    `scoring=True`; `family` is the genre tempo family from the user's own tag;
+    see `choose_octave`.
     """
     fit = least_squares_bpm(beat_times)
     if fit is None:
         return None
     raw_bpm, residual_rms_s = fit
-    bpm, multiple, reason, ambiguous = choose_octave(raw_bpm, prior_bpm, scoring=scoring)
+    bpm, multiple, reason, ambiguous = choose_octave(
+        raw_bpm, prior_bpm, scoring=scoring, family=family
+    )
     return BpmEstimate(
         bpm=bpm,
         raw_bpm=raw_bpm,
