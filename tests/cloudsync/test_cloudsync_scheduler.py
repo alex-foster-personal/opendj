@@ -20,7 +20,7 @@ import itertools
 import sqlite3
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -36,6 +36,7 @@ from apps.sync_hub import heartbeat as sync_heartbeat
 from apps.sync_hub import scheduler as sync_scheduler
 from apps.sync_hub import status as sync_status
 from apps.sync_hub.scheduler_owed import clear_scheduler_owed, scheduler_owed
+from tests import waits
 from tests.cloudsync.conftest import free_port
 from tests.waits import start_uvicorn_in_thread
 
@@ -128,12 +129,16 @@ def _track_title(data_dir: Path, stable_id: str) -> str | None:
     return None if row is None else str(row[0])
 
 
-async def _until(predicate: Callable[[], bool], what: str) -> None:
-    deadline = time.monotonic() + _DEADLINE_S
-    while not predicate():
-        if time.monotonic() > deadline:
-            raise AssertionError(f"timed out after {_DEADLINE_S}s waiting for {what}")
-        await asyncio.sleep(0.02)
+async def _until(
+    schedulers: Sequence[sync_scheduler.CloudSyncScheduler],
+    predicate: Callable[[], bool],
+    what: str,
+) -> None:
+    """``_DEADLINE_S`` bounds scheduler idle time only.
+
+    See :func:`tests.waits.until_scheduler_idle_budget`.
+    """
+    await waits.until_scheduler_idle_budget(schedulers, predicate, what, idle_budget_s=_DEADLINE_S)
 
 
 def _scheduler(data_dir: Path, **kwargs: object) -> sync_scheduler.CloudSyncScheduler:
@@ -156,7 +161,7 @@ def test_two_spokes_converge_with_no_cli_call(tmp_path: Path, live_hub: str) -> 
         await b.start()
         try:
             await _until(
-                lambda: _track_title(spoke_b, "track-1") is not None, "B to pull A's track"
+                (a, b), lambda: _track_title(spoke_b, "track-1") is not None, "B to pull A's track"
             )
             rounds_on_b = b.rounds_started
             live_status = sync_status.read_status(spoke_b, env={})
@@ -207,13 +212,15 @@ def test_a_slow_round_never_overlaps_another(tmp_path: Path, live_hub: str) -> N
         scheduler = _scheduler(spoke, sync_fn=gated_sync)
         await scheduler.start()
         try:
-            await asyncio.to_thread(first_entered.wait, _DEADLINE_S)
+            await _until((scheduler,), first_entered.is_set, "round 1 to enter sync")
             # Ten beats and several intervals pass while round 1 is stuck.
             await asyncio.sleep(10 * _FAST.BEAT_INTERVAL_S + 2 * _FAST.INTERVAL_S)
             direct = await asyncio.to_thread(scheduler.run_round, live_hub, None)
             beating_during_round = sync_status.read_status(spoke, env={}).running
             release_first.set()
-            await _until(lambda: scheduler.rounds_completed >= 3, "three completed rounds")
+            await _until(
+                (scheduler,), lambda: scheduler.rounds_completed >= 3, "three completed rounds"
+            )
         finally:
             release_first.set()
             await scheduler.stop()
@@ -252,7 +259,7 @@ def test_failing_rounds_back_off_and_are_journaled(tmp_path: Path) -> None:
         scheduler = _scheduler(spoke, sync_fn=timed_sync)
         await scheduler.start()
         try:
-            await _until(lambda: len(starts) >= 3, "three failed rounds")
+            await _until((scheduler,), lambda: len(starts) >= 3, "three failed rounds")
         finally:
             await scheduler.stop()
         return scheduler.consecutive_failures
@@ -288,7 +295,11 @@ def test_unconfigured_idles_then_picks_up_config_without_restart(
                 spoke,
                 sync_config.CloudSyncConfig(enabled=True, hub_url=live_hub, machine_name="late"),
             )
-            await _until(lambda: scheduler.rounds_completed >= 1, "a round after config appeared")
+            await _until(
+                (scheduler,),
+                lambda: scheduler.rounds_completed >= 1,
+                "a round after config appeared",
+            )
             assert sync_heartbeat.heartbeat_path(spoke).exists()
         finally:
             await scheduler.stop()
@@ -358,9 +369,7 @@ def test_scheduler_defers_when_deck_playing(tmp_path: Path, live_hub: str) -> No
 
 
 @pytest.mark.requirement("CLOUDSYNC-09")
-def test_scheduler_defers_when_pressure_elevated_and_playing(
-    tmp_path: Path, live_hub: str
-) -> None:
+def test_scheduler_defers_when_pressure_elevated_and_playing(tmp_path: Path, live_hub: str) -> None:
     """[if] elevated pressure and a playing deck [then] defer with pressure_shed."""
     spoke = _spoke(tmp_path, "spoke-pressure", live_hub)
     playing_mirror = {"decks": {"1": {"playing": True}}}
