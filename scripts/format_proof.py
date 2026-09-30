@@ -116,8 +116,8 @@ class CFG:
     )
     # The only operator tokens ruff adds or drops: parentheses, trailing commas, and the `;` it splits statements at.
     MOVABLE_OPERATORS: frozenset[str] = frozenset({"(", ")", ",", ";"})
-    # ruff's docstring whitespace is Unicode White_Space (Rust's char::is_whitespace): Python's isspace() less U+001C
-    # to U+001F. Measured per character against ruff 0.16.3 in review 1l.
+    # ruff's whitespace, in docstrings and comments, is Unicode White_Space (Rust's char::is_whitespace): Python's
+    # isspace() less U+001C to U+001F. Measured per character against ruff 0.16.3 in reviews 1l and 1m.
     RUFF_WHITESPACE: str = (
         "\t\n\x0b\x0c\r \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
         "\u2028\u2029\u202f\u205f\u3000"
@@ -241,10 +241,12 @@ def _node_bounds(tree: ast.Module) -> tuple[list[int], list[int]]:
 
 
 def _normalize_comment(text: str) -> str:
-    """ruff format's comment rule, and nothing looser: trailing space goes, a leading no-break space becomes a
-    space, and `#x` gains one space unless x is ! : # or ' (shebangs, Sphinx, banners). Inner spacing is kept,
-    because `# no sec` and `# nosec` differ to the tools that read them."""
-    body = text.rstrip()[1:]
+    """ruff format's comment rule: trailing whitespace goes (ruff's set, so a trailing U+001C stays), a leading
+    no-break space becomes a space, and `#x` gains one space unless x is ! : # or ' (shebangs, Sphinx, banners).
+    Inner spacing is kept, because `# no sec` and `# nosec` differ to the tools that read them. One spot is looser
+    than ruff: `#x` and `# x` compare alike either way, though ruff only adds the space, since the two sides are
+    compared with each other rather than the head with ruff's output."""
+    body = text.rstrip(CFG.RUFF_WHITESPACE)[1:]
     if body.startswith("\u00a0"):
         body = " " + body[1:]
     if body and not body.startswith((" ", "!", ":", "#", "'")):
