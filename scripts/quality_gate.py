@@ -157,6 +157,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 try:
     from scripts import quality_latency, shell_construct_lint
@@ -1614,8 +1615,56 @@ def _unlink_node_modules(base_fe: Path) -> None:
         os.rmdir(link)  # a junction: pathlib reports it as a plain directory
 
 
+#: Read in that order (GH_TOKEN first to match the `gh`-cli convention this
+#: repo already uses elsewhere, e.g. `GH_TOKEN: ${{ github.token }}` in
+#: ci.yml); stripped back out of the env handed to `_run_in_base` below so
+#: the base's own committed gate never sees it either.
+_GIT_AUTH_ENV_KEYS: tuple[str, ...] = ("GH_TOKEN", "GITHUB_TOKEN")
+
+
+def _origin_auth_header_args(cwd: Path = REPO) -> list[str]:
+    """`-c` args that authenticate ONE git invocation against origin, or [].
+
+    A self-hosted runner's persistent workspace can be a partial (promisor)
+    clone, and `git worktree add` below checks out a real working tree at the
+    merge base -- which, for any file this branch touched, needs a blob the
+    initial checkout never had reason to fetch. Git fetches it lazily from
+    the promisor remote the moment it is needed, and on a private repo with
+    `persist-credentials: false` (ci.yml's checkout step, kept that way on
+    purpose so a PR's own code never inherits write access) that lazy fetch
+    has no credentials at all: "could not read Username for
+    'https://github.com'" (job 110140841841, PR #4426). #3459/#3464 hit the
+    same promisor class in the hotspot `git log` and fixed it with
+    `--no-renames` there; a checkout has no equivalent flag, because
+    materializing files is the whole point, so the fix here supplies
+    credentials instead of avoiding the fetch.
+
+    `-c http.<url>.extraheader` is a per-invocation override: unlike `git
+    config --local`, it is never written to .git/config, so nothing persists
+    once this one process (and the internal fetch git spawns as its own
+    child to satisfy the lazy read, which inherits `-c` overrides the same
+    way every git child process does) exits. CI supplies the token via
+    GH_TOKEN, scoped to this job's own `permissions: contents: read` -- the
+    same token every other job already uses for `gh`. A dev machine (or any
+    host where git's own credential helper already handles auth) has no such
+    variable set, so returning [] there changes nothing: git behaves exactly
+    as it always has.
+    """
+    token = next((os.environ[k] for k in _GIT_AUTH_ENV_KEYS if os.environ.get(k)), "")
+    if not token:
+        return []
+    code, url = _run(["git", "remote", "get-url", "origin"], cwd=cwd, allow_fail=True)
+    if code != 0 or not url.strip():
+        return []
+    parsed = urlsplit(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        return []  # ssh/file remotes: no HTTP header to inject, nothing to do
+    prefix = f"{parsed.scheme}://{parsed.netloc}/"
+    return ["-c", f"http.{prefix}.extraheader=AUTHORIZATION: bearer {token}"]
+
+
 def _measure_owners_at_base(
-    sha: str, owners: list[str]
+    sha: str, owners: list[str], *, repo: Path = REPO
 ) -> tuple[dict[str, float] | None, str]:
     """Measure `owners` against the tree at `sha`; (metrics, "") or (None, why).
 
@@ -1634,13 +1683,26 @@ def _measure_owners_at_base(
     The worktree lives in a throwaway tempdir and is removed in `finally`, so
     an interrupted run leaves at worst an orphaned entry that `git worktree
     prune` clears.
+
+    `repo` defaults to this run's own checkout; it exists as a parameter (not
+    a bare `REPO` reference below) so a real partial-clone repro -- a second,
+    disposable `.git` a test builds on disk -- can drive this exact function
+    instead of a stand-in, per tests/quality_gate_base_compare_partial_clone.py.
     """
     # mkdtemp creates the dir, which `git worktree add` refuses to reuse.
     base_dir = Path(tempfile.mkdtemp(prefix="quality-gate-base-"))
     base_dir.rmdir()
+    # Stripped of any auth token before it ever reaches the base's own
+    # committed gate (spawned via `_run_in_base` below): that subprocess does
+    # not fetch anything, so it has no use for it, and least-privilege says
+    # an unrelated child process should not see it just because it inherited
+    # the parent's environment wholesale.
+    base_env = {k: v for k, v in os.environ.items() if k not in _GIT_AUTH_ENV_KEYS}
     try:
         code, stdout, stderr = _run_capture(
-            ["git", "worktree", "add", "--detach", str(base_dir), sha],
+            ["git", *_origin_auth_header_args(cwd=repo), "worktree", "add",
+             "--detach", str(base_dir), sha],
+            cwd=repo,
         )
         if code != 0:
             detail = (stderr or stdout).strip()
@@ -1662,7 +1724,7 @@ def _measure_owners_at_base(
             sys.executable, "-m", "scripts.quality_gate",
             "--only", ",".join(owners), "--json", str(out_json),
         ]
-        proc = _run_in_base(cmd, base_dir, os.environ)
+        proc = _run_in_base(cmd, base_dir, base_env)
         if not out_json.exists():
             # Base's own gate can abort before --json (mypy follow-import into
             # ops/agentic_testing/coach.py is the live case). Overlay this
@@ -1670,7 +1732,7 @@ def _measure_owners_at_base(
             # can still inherit. The tree being measured stays the merge-base.
             dest = base_dir / "scripts" / "quality_gate.py"
             dest.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
-            proc = _run_in_base(cmd, base_dir, os.environ)
+            proc = _run_in_base(cmd, base_dir, base_env)
         if not out_json.exists():
             return None, (
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "
@@ -1685,7 +1747,7 @@ def _measure_owners_at_base(
         _unlink_node_modules(base_dir / "apps" / "webui" / "frontend")
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(base_dir)],
-            capture_output=True, text=True, check=False,
+            cwd=repo, capture_output=True, text=True, check=False,
         )
         shutil.rmtree(base_dir, ignore_errors=True)
 
