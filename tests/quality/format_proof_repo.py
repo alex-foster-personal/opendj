@@ -2,7 +2,7 @@
 
 Every test builds its own repository under pytest's tmp_path, so nothing depends on
 this checkout's history or on whether CI cloned it shallow. Shared by
-`test_format_proof.py` and `test_format_proof_ignore_revs.py`.
+`test_format_proof.py`, `test_format_proof_docstrings.py` and `test_format_proof_ignore_revs.py`.
 """
 
 from __future__ import annotations
