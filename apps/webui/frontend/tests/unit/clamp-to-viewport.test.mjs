@@ -56,3 +56,71 @@ test('clampToViewport pins an oversized box to the top-left margin', () => {
 	const box = clamp.clampToViewport(100, 100, { width: 1400, height: 800 }, VIEWPORT);
 	assert.deepEqual(box, { x: MARGIN, y: MARGIN });
 });
+
+// PR #4094: a floating box must not be clamped back over its own trigger when
+// the opposite side has room. The flip used to be vetoed by an overflow on the
+// CROSS axis (which clamping fixes anyway), so a corner trigger kept a side
+// that did not fit and was clamped up over itself, where the tile swallowed
+// the trigger's clicks (the feedback dock's comment-pin button, bottom right).
+function overlaps(box, size, rect) {
+	return (
+		box.x < rect.left + rect.width &&
+		box.x + size.width > rect.left &&
+		box.y < rect.top + rect.height &&
+		box.y + size.height > rect.top
+	);
+}
+
+for (const preferred of ['below', 'above', 'right', 'left']) {
+	for (const [name, left, top] of EDGE_CASES) {
+		test(`placeFloating ${preferred} from the ${name} stays inside and off its trigger`, () => {
+			const trigger = { left, top, width: TRIGGER_SIZE.width, height: TRIGGER_SIZE.height };
+			const box = clamp.placeFloating({ trigger, size: FLOAT_SIZE, viewport: VIEWPORT, preferred });
+			assertInsideInset(box);
+			assert.ok(!overlaps(box, FLOAT_SIZE, trigger), `${JSON.stringify(box)} covers its trigger`);
+		});
+	}
+}
+
+test('placeFloating: an explainer centered on a bottom-right dock button flips above it', () => {
+	// ControlExplainer passes a trigger centered on the button and as wide as
+	// the popover, so it overflows the right edge whichever side it takes.
+	const button = { left: 1236, top: 676, width: 32, height: 32 };
+	const size = { width: 240, height: 120 };
+	const trigger = {
+		left: button.left + button.width / 2 - size.width / 2,
+		top: button.top,
+		width: size.width,
+		height: button.height
+	};
+	const box = clamp.placeFloating({ trigger, size, viewport: VIEWPORT, preferred: 'below', gap: 6 });
+	assertInsideInset(box, size);
+	assert.equal(box.y, button.top - size.height - 6, 'flipped above the button');
+	assert.ok(!overlaps(box, size, button), `${JSON.stringify(box)} covers the button`);
+});
+
+test('placeFloating keeps a preferred side that fits even when the cross axis overflows', () => {
+	// Control for the overshoot: flipping on ANY overflow would move this tile
+	// above a trigger it already fits below.
+	const trigger = { left: 1256, top: 348, width: TRIGGER_SIZE.width, height: TRIGGER_SIZE.height };
+	const below = clamp.placeFloating({ trigger, size: FLOAT_SIZE, viewport: VIEWPORT, preferred: 'below' });
+	assert.equal(below.y, 348 + 24 + 4, 'stays below');
+	const right = clamp.placeFloating({
+		trigger: { left: 628, top: 0, width: 24, height: 24 },
+		size: FLOAT_SIZE,
+		viewport: VIEWPORT,
+		preferred: 'right'
+	});
+	assert.equal(right.x, 628 + 24 + 4, 'stays right');
+});
+
+test('placeFloating with no room on either side of the main axis keeps the preferred side, clamped', () => {
+	const tiny = { width: 300, height: 200 };
+	const box = clamp.placeFloating({
+		trigger: { left: 138, top: 88, width: 24, height: 24 },
+		size: FLOAT_SIZE,
+		viewport: tiny,
+		preferred: 'below'
+	});
+	assert.deepEqual(box, { x: 52, y: 12 });
+});

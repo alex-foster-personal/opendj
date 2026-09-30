@@ -7,7 +7,7 @@
 	 * comment-anywhere pin placement. Pin markers and placement live in
 	 * FeedbackPinLayer.svelte at the app root (FB-16).
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 	import { onPinsVisibleChanged, readPinsVisible, writePinsVisible } from '$lib/rb/feedback-pin-visibility';
 	import { setShowAgentPins, uiPrefs } from '$lib/rb/prefs.svelte';
 	import {
@@ -18,7 +18,6 @@
 		toggleFeedbackPanel
 	} from '$lib/rb/feedback-store.svelte';
 	import ControlExplainer from './deck/ControlExplainer.svelte';
-	import FeedbackPanel from './FeedbackPanel.svelte';
 	import FeedbackPinVisibilityActions from './FeedbackPinVisibilityActions.svelte';
 
 	const FEEDBACK_UNAVAILABLE =
@@ -49,8 +48,38 @@
 		}
 		return commentPinSummaryBullets(feedbackState.pins);
 	});
+
+	/* The review-todo panel renders only while feedbackState.panelOpen, so it
+	 * is fetched on the first open instead of with /performance (PR #4094:
+	 * the route's bundle budget). Once loaded it stays mounted, so its
+	 * position and per-item drafts persist across close/reopen as before. A
+	 * failed load closes the panel and puts the reason in the chevron's title
+	 * rather than leaving the chevron lit over nothing. It names a reload as
+	 * the retry because a browser keeps a failed module fetch in its module
+	 * map: a second import() of the same URL rejects with no request (see
+	 * tests/e2e/lazy-chunk-failures.spec.ts). */
+	let FeedbackPanel: Component | null = $state(null);
+	let panelLoadError: string | null = $state(null);
+	let panelLoad: Promise<void> | null = null;
+	$effect(() => {
+		if (!feedbackState.panelOpen || panelLoad !== null) return;
+		panelLoad = import('./FeedbackPanel.svelte').then(
+			({ default: panel }) => {
+				panelLoadError = null;
+				FeedbackPanel = panel;
+			},
+			(error: unknown) => {
+				panelLoad = null;
+				feedbackState.panelOpen = false;
+				panelLoadError = error instanceof Error ? error.message : String(error);
+			}
+		);
+	});
+
 	const chevronTitle = $derived.by(() => {
 		if (unavailable) return FEEDBACK_UNAVAILABLE;
+		if (panelLoadError !== null)
+			return `Review todos - the panel failed to load (${panelLoadError}); reload the page to retry`;
 		if (feedbackState.availability === 'unknown')
 			return 'Review todos - probing the daemon for /api/v1/feedback (click retries)';
 		return `Review todos - ${openCount} open item(s) agents queued for the maintainer's review; check done, pick options, type feedback (auto-saves)`;
@@ -143,7 +172,9 @@
 	</ControlExplainer>
 </span>
 
-<FeedbackPanel />
+{#if FeedbackPanel}
+	<FeedbackPanel />
+{/if}
 
 <style>
 	.fb-cluster {

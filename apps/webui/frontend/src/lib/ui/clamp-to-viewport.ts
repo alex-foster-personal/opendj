@@ -54,19 +54,28 @@ function _proposedPosition(
 	}
 }
 
-function _overflows(
+/**
+ * Whether a box at (x, y) crosses the inset viewport along the axis that
+ * `placement` moves it on. Only that axis can be fixed by flipping to the
+ * opposite side; the cross axis is clampToViewport's job, so it must not veto
+ * a flip. It used to: a trigger in the bottom-right corner whose tile
+ * overflowed the right edge had its flip to `above` refused for that sideways
+ * overflow, stayed `below`, and was clamped up over its own trigger, where the
+ * tile swallowed the trigger's clicks (the app-shell comment-pin button in the
+ * feedback dock, PR #4094).
+ */
+function _overflowsMainAxis(
 	x: number,
 	y: number,
 	size: Size,
 	viewport: ViewportSize,
-	margin: number
+	margin: number,
+	placement: FloatingPlacement
 ): boolean {
-	return (
-		x < margin ||
-		y < margin ||
-		x + size.width > viewport.width - margin ||
-		y + size.height > viewport.height - margin
-	);
+	if (placement === 'below' || placement === 'above') {
+		return y < margin || y + size.height > viewport.height - margin;
+	}
+	return x < margin || x + size.width > viewport.width - margin;
 }
 
 /** Shift a proposed top-left so the full box stays inside the viewport inset by margin. */
@@ -104,9 +113,9 @@ export function placeFloating(input: {
 	} = input;
 
 	let pos = _proposedPosition(trigger, size, preferred, gap);
-	if (_overflows(pos.x, pos.y, size, viewport, margin)) {
+	if (_overflowsMainAxis(pos.x, pos.y, size, viewport, margin, preferred)) {
 		const flipped = _proposedPosition(trigger, size, OPPOSITE[preferred], gap);
-		if (!_overflows(flipped.x, flipped.y, size, viewport, margin)) {
+		if (!_overflowsMainAxis(flipped.x, flipped.y, size, viewport, margin, preferred)) {
 			pos = flipped;
 		}
 	}

@@ -89,6 +89,7 @@ export default defineConfig({
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/comment-pin-io-modal.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/comment-pin-admin-dock.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
+		'**/feedback-review-panel-lazy.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/reanalyze-context-menu-toast.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/autoplay-stall-browser.spec.ts', // playwright.autoplay-stall-gate.config.ts (real backend)
 		'**/performance-*.spec.ts', // playwright.performance.config.ts (real library)
