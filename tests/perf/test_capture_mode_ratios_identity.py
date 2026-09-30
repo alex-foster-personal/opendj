@@ -120,8 +120,7 @@ def _run_main_with_post_capture_version(tmp_path: Path, post_reason: str | None)
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_main_refuses_rows_when_the_frontend_changes_during_sampling(tmp_path: Path) -> None:
-    """[if] the served frontend no longer matches after sampling [then] main() refuses and
-    writes no row [⛔️ if rows are appended under the pre-capture sha].
+    """[if] the frontend changes during sampling [then] main() refuses and writes no row, [else stop].
 
     Sol P1/BLOCKING, PR #4034, discussion_r4149791234.
     """
@@ -132,7 +131,7 @@ def test_main_refuses_rows_when_the_frontend_changes_during_sampling(tmp_path: P
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_main_appends_rows_when_identity_still_holds_after_sampling(tmp_path: Path) -> None:
-    """Control: [if] every gate still passes after sampling [then] both ratio rows land."""
+    """[if] every gate still passes after sampling [then] both ratio rows land, [else stop]."""
     ledger = _run_main_with_post_capture_version(tmp_path, None)
     kpis = [row["kpi"] for row in json.loads(ledger.read_text())["entries"]]
     assert kpis == ["trackify_mode_footprint_ratio", "trackify_mode_cpu_ratio"]
