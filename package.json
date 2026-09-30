@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "trunk": "trunk",
-    "lint": "trunk check",
+    "lint": "trunk check --no-fix",
+    "lint:fix": "trunk check",
     "fmt": "trunk fmt"
   },
   "devDependencies": {

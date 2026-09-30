@@ -7,7 +7,7 @@ exists. This observer never writes a ``row=7 sha=`` marker: that marker is
 owned by ``ops/dmg-smoke/run.sh`` on the Air.
 
 Exit codes: 0 instrument ok (mac may be UNOBSERVED), 1 instrument broken
-or headed evidence is not a fresh PASS with positive counts, 2 UNKNOWN
+or headed evidence is not a fresh PASS or FLAG with positive counts, 2 UNKNOWN
 (ledger unreadable). A failed read is never rendered as UNOBSERVED. A
 parseable headed FAIL, a purported PASS with zero tracks or playlists, or
 evidence older than the 7-day clock is a failing verdict, never EXIT_OK.
@@ -168,8 +168,19 @@ def elapsed_days_since(created_at: str, now: datetime) -> int | None:
     return int((current - then).total_seconds() // 86400)
 
 
-def headed_is_pass(headed: HeadedRun) -> bool:
-    return headed.result == "PASS" and headed.tracks > 0 and headed.playlists > 0
+# Results whose attach held. FLAG is a slow build with a successful attach:
+# spec 93839409 says it "does not by itself FAIL the row", and run.sh exits 0
+# for it. Supersedes: PASS-only, which made every notarizing host (two Apple
+# notarizations alone exceed the 720s budget) read mac=FAIL forever.
+ATTACH_HELD_RESULTS = frozenset({"PASS", "FLAG"})
+
+
+def headed_attach_held(headed: HeadedRun) -> bool:
+    return (
+        headed.result in ATTACH_HELD_RESULTS
+        and headed.tracks > 0
+        and headed.playlists > 0
+    )
 
 
 def headed_is_fresh(headed: HeadedRun, now: datetime, clock_days: int) -> bool:
@@ -233,7 +244,7 @@ def summary_line(
         )
     age = elapsed_days_since(headed.created_at, now) if now is not None else None
     stale = now is None or not headed_is_fresh(headed, now, clock_days)
-    if not headed_is_pass(headed):
+    if not headed_attach_held(headed):
         mac = "FAIL"
     elif stale:
         mac = "STALE"
@@ -294,7 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if headed is None:
         return EXIT_OK
-    if headed_is_pass(headed) and headed_is_fresh(headed, now, args.clock_days):
+    if headed_attach_held(headed) and headed_is_fresh(headed, now, args.clock_days):
         return EXIT_OK
     return EXIT_FINDINGS
 
