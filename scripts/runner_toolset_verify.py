@@ -73,7 +73,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 
-from scripts.runner_toolset_scan import load_manifest
+from scripts.runner_toolset_scan import REPO_ROOT, load_manifest
 
 CFG_TIMEOUT_PER_ENTRY_S = 60
 CFG_SSH_TIMEOUT_S = 900
@@ -184,9 +184,22 @@ def _probe_script(
     return "\n".join(lines) + "\n"
 
 
+# A verify may carry a committed helper as `{repo_b64:<repo path>}`: the probe
+# runs from the runner user's home, where no checkout exists, so the file's
+# base64 travels inside the command. A missing file raises: never a blank probe.
+REPO_B64_RE = re.compile(r"\{repo_b64:([^}]+)\}")
+
+
+def expand_verify(verify: str) -> str:
+    """`verify` with every `{repo_b64:<path>}` replaced by that repo file's base64."""
+    return REPO_B64_RE.sub(
+        lambda m: base64.b64encode((REPO_ROOT / m.group(1)).read_bytes()).decode(), verify
+    )
+
+
 def _probe_lines(entry: dict) -> list[str]:
     name = entry["name"]
-    verify = base64.b64encode(entry["verify"].encode()).decode()
+    verify = base64.b64encode(expand_verify(entry["verify"]).encode()).decode()
     run = (
         f"out=$(timeout {CFG_TIMEOUT_PER_ENTRY_S} bash -o pipefail -c "
         f'"$(echo {verify} | base64 -d)" 2>&1); rc=$?; '

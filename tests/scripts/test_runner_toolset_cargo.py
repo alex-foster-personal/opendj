@@ -28,7 +28,7 @@ from scripts import runner_toolset_scan as scan
 # cannot see. A tracked Cargo.lock carrying one requires a manifest apt entry
 # matching the glob. Value: (apt entry name glob, why).
 CARGO_SYSTEM_LIBRARIES = {
-    "clang-sys": ("libclang1-*", "bindgen loads libclang through clang-sys at build time"),
+    "clang-sys": ("libclang1*", "bindgen loads libclang through clang-sys at build time"),
 }
 
 KNOWN_MISSES_ENTRIES = {
@@ -107,6 +107,7 @@ LOCK_WITH = '[[package]]\nname = "{}"\nversion = "1.0.0"\n'
     ("crate", "entry", "gap"),
     [
         ("clang-sys", None, True),
+        ("clang-sys", {"name": "libclang1", "kind": "apt"}, False),
         ("clang-sys", {"name": "libclang1-19", "kind": "apt"}, False),
         ("clang-sys", {"name": "libclang1-18", "kind": "binary"}, True),
         ("clang-sys", {"name": "libclang-dev", "kind": "apt"}, True),
@@ -117,10 +118,11 @@ LOCK_WITH = '[[package]]\nname = "{}"\nversion = "1.0.0"\n'
 def test_a_cargo_system_library_needs_its_apt_entry(
     crate: str, entry: dict | None, gap: bool
 ) -> None:
-    """Positive: clang-sys with no libclang1-* apt entry is a gap. Negative controls:
-    another LLVM's libclang1 satisfies it, a crate whose name only starts with
-    clang-sys or a crate with no system library requires nothing, and a
-    same-named entry of another kind or a differently named package does not count."""
+    """Positive: clang-sys with no libclang1* apt entry is a gap. Negative controls:
+    the version-neutral libclang1 or another LLVM's libclang1-NN satisfies it, a
+    crate whose name only starts with clang-sys or a crate with no system library
+    requires nothing, and a same-named entry of another kind or a differently
+    named package does not count."""
     manifest = {"entries": [entry] if entry else []}
     gaps = cargo_system_library_gaps(manifest, {"probe/Cargo.lock": LOCK_WITH.format(crate)})
     assert bool(gaps) is gap, gaps
