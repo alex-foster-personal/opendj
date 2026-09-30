@@ -21,8 +21,11 @@ matches raw values, so:
   holds every raw value that strips to ``K`` by its end;
 * a raw hash that starts with anything outside printable ASCII (leading
   whitespace, a number, a BLOB) sorts below ``'!'`` or above ``'~'``, and
-  those rows are read once per walk and join any component whose keys they
-  share. On canonical data both ranges are empty;
+  those rows are read once per walk, filed under the keys they strip to, and
+  join any component that seeks one of those keys. ``''``, the missing hash
+  sync code stores, is left out of that read by index range, so a library
+  of blank hashes costs no more than a canonical one. On canonical data the
+  read is empty;
 * ISRC-only rows (no hash at all) normalize away separators an index cannot
   see, so the first ISRC-only row asked about reads every live row that has an
   ISRC and could have no hash, once per walk. Such rows are rare after the
@@ -77,7 +80,7 @@ class IdentityLoserVerdicts:
         self._conn = conn
         self._verdicts: dict[str, bool] = {}
         self._persisted: PersistedRemap | None = None
-        self._odd_hash_rows: list[tuple[int, IdentityRow]] | None = None
+        self._odd_hash_rows: dict[str, list[tuple[int, IdentityRow]]] | None = None
         self._library_losers: frozenset[str] | None = None
         self._select: str | None = None
         self._hash_columns: tuple[str, ...] | None = None
@@ -149,7 +152,7 @@ class IdentityLoserVerdicts:
 
     def _rows_with_hash(self, key: str) -> Iterable[tuple[int, IdentityRow]]:
         """Rows whose stripped ``content_hash`` or ``audio_hash`` is ``key``."""
-        candidates = list(self._odd_rows())
+        candidates = list(self._odd_rows().get(key, ()))
         for column in self._hash_column_names():
             candidates.extend(
                 self._rows_with_rowid(
@@ -162,20 +165,35 @@ class IdentityLoserVerdicts:
             if key in identity_keys(row[1], row[2], row[3]).hashes
         ]
 
-    def _odd_rows(self) -> list[tuple[int, IdentityRow]]:
-        """Rows with a hash no prefix range can find: read once per walk."""
+    def _odd_rows(self) -> dict[str, list[tuple[int, IdentityRow]]]:
+        """Rows with a hash no prefix range can find, by the keys they strip to.
+
+        Read once per walk. ``''`` sorts below every other text and is the
+        missing hash, so the low range starts above it (non-text values sort
+        below all text and get their own range). A row whose hashes all strip
+        to nothing files under no key.
+        """
         if self._odd_hash_rows is None:
             bounds = [
-                (f" AND {column} {op} ?", (edge,))
+                (f" AND {column} {where}", params)
                 for column in self._hash_column_names()
-                for op, edge in (("<", CFG.PRINTABLE_LOW), (">", CFG.PRINTABLE_HIGH))
+                for where, params in (
+                    ("< ''", ()),
+                    (f"> '' AND {column} < ?", (CFG.PRINTABLE_LOW,)),
+                    ("> ?", (CFG.PRINTABLE_HIGH,)),
+                )
             ]
             rows = {
                 rowid: row
                 for where, params in bounds
                 for rowid, row in self._rows_with_rowid(where, params)
             }
-            self._odd_hash_rows = [(rowid, rows[rowid]) for rowid in sorted(rows)]
+            by_key: dict[str, list[tuple[int, IdentityRow]]] = {}
+            for rowid in sorted(rows):
+                row = rows[rowid]
+                for key in identity_keys(row[1], row[2], row[3]).hashes:
+                    by_key.setdefault(key, []).append((rowid, row))
+            self._odd_hash_rows = by_key
         return self._odd_hash_rows
 
     def _isrc_only_rows(self) -> list[IdentityRow]:
