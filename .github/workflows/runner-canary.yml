@@ -234,6 +234,9 @@ jobs:
       # as an infra failure rather than dropping it.
       - name: Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)
         id: pytest-shard
+        # TMPDIR mirrors ci.yml (ADR-NEW-ci-test-scratch-on-tmpfs).
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           set -uo pipefail
           # Remove any report left by an EARLIER run on this persistent

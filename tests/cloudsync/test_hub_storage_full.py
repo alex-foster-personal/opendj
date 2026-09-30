@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client, engine, generation, protocol, service_storage
+from apps.sync_hub import client, engine, generation, hub_wal_keeper, protocol, service_storage
 from apps.sync_hub import service as sync_service
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import (
@@ -85,9 +85,14 @@ def _track_title_on_hub(hub_dir: Path, stable_id: str) -> str | None:
         conn.close()
 
 
-def _cap_hub_pages(monkeypatch: pytest.MonkeyPatch, hub_dir: Path) -> int:
+def _cap_hub_pages(
+    monkeypatch: pytest.MonkeyPatch, hub_dir: Path, hub: TestClientTransport
+) -> int:
     hub_db_path = client.state_db_path(hub_dir).resolve()
     real_open_rw = state_db.open_rw
+    # Leaving WAL needs the database to itself; the running hub's keeper
+    # connection would answer "database is locked" (LIBM-120 L6 round 3).
+    assert hub_wal_keeper.close_wal_keepers(hub.app_state) == 1
     prep = real_open_rw(hub_db_path)
     capped = False
     try:
@@ -197,7 +202,7 @@ def test_push_to_a_full_hub_returns_sync_hub_storage(
 ) -> None:
     """[if] the hub sqlite cannot grow [then] push is 507 SYNC_HUB_STORAGE, [else stop]."""
     _first_successful_sync(enroll_spoke_dir, enroll_hub)
-    _cap_hub_pages(monkeypatch, enroll_hub_dir)
+    _cap_hub_pages(monkeypatch, enroll_hub_dir, enroll_hub)
 
     conn = _open(enroll_spoke_dir)
     try:
@@ -234,7 +239,7 @@ def test_failed_full_hub_push_leaves_fence_and_changelog_unchanged_then_converge
     max_seq_before = _hub_changelog_max_seq(enroll_hub_dir)
     count_before = _hub_changelog_count(enroll_hub_dir)
 
-    _cap_hub_pages(monkeypatch, enroll_hub_dir)
+    _cap_hub_pages(monkeypatch, enroll_hub_dir, enroll_hub)
 
     conn = _open(enroll_spoke_dir)
     try:
