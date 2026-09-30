@@ -13,6 +13,7 @@ satisfy (which tables, why the fts5 shadow tables are excluded).
 
 from __future__ import annotations
 
+from apps.database.column_docs_sync_gate import SYNC_GATE_TABLE_DOC
 from apps.database.enrollment_table_docs import ENROLLMENT_TABLE_DOCS
 
 TABLE_DOCS: dict[str, str] = {
@@ -222,6 +223,7 @@ TABLE_DOCS: dict[str, str] = {
         "lost rows under clock skew (round 1 finding 3). Never crosses a "
         "machine boundary and never rides hub sync itself."
     ),
+    "sync_write_tokens": SYNC_GATE_TABLE_DOC,
     # ----- apps.shared.state.schema.INFRASTRUCTURE_TABLES -----------------
     "schema_meta": (
         "Migration bookkeeping for apps.shared.state.schema.apply_"

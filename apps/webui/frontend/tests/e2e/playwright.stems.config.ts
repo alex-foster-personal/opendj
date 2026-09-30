@@ -30,6 +30,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 import { resolveEndpoints, seedDataDir } from './stems-e2e-endpoints';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -53,6 +54,8 @@ const engineEnv = {
 };
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: process.env.STEMS_E2E_MATCH ?? 'stems-progress.spec.ts',
 	fullyParallel: false,
@@ -64,7 +67,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: `uv run --no-sync python -m apps.engine_core serve --data-dir ${dataDir} --host 127.0.0.1 --port ${endpoints.backendPort}`,
+			command: guardedWebServerCommand('stems-engine', `uv run --no-sync python -m apps.engine_core serve --data-dir ${dataDir} --host 127.0.0.1 --port ${endpoints.backendPort}`),
 			cwd: REPOSITORY_ROOT,
 			url: `${endpoints.backendOrigin}/api/v1/health`,
 			reuseExistingServer: false,
@@ -72,7 +75,7 @@ export default defineConfig({
 			env: engineEnv
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.stems.config.ts',
+			command: guardedWebServerCommand('stems-vite', 'pnpm exec vite --config tests/e2e/vite.stems.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${endpoints.frontendOrigin}/performance`,
 			reuseExistingServer: false,

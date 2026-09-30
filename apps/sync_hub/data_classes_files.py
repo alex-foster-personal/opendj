@@ -171,6 +171,20 @@ FILE_CLASSES: tuple[DataClass, ...] = (
         (logical("audio"),),
     ),
     fixed(
+        "structure-and-genre-caches",
+        "Song structure sidecars and genre suggestions",
+        files(
+            "<data>/state/structure-cache/<stable_id>.json",
+            "<data>/state/genre/",
+        ),
+        _LOCAL,
+        "Model output derived from local audio plus the library's own tags "
+        "(apps/analysis_structure, apps/genre_infer); regenerable, no asset kind "
+        "yet. Structure is GPU-minutes per track on a CPU box, so an asset kind "
+        "is the follow-up once the lane is promoted (ADR-NEW-structure-and-genre-sidecars).",
+        (logical("audio"), logical("engine-analysis")),
+    ),
+    fixed(
         "stem-experiments",
         "Stem separation experiments",
         files(
@@ -461,6 +475,9 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "junit-shard-*.xml",  # per-shard JUnit the fast lane uploads to Mergify CI Insights
         "htmlcov/",
         "coverage-matrix.md",
+        "/node_modules/",  # root npm install: @trunkio/launcher (npm run lint / fmt)
+        "node_modules/",  # any depth: the CI runners keep every node_modules (ci_clean_untracked.sh)
+        "target/",  # any depth: cargo output, which the CI runners keep as well
         "apps/webui/frontend/node_modules/",
         "apps/webui/frontend/build/",
         "apps/webui/frontend/.svelte-kit/",

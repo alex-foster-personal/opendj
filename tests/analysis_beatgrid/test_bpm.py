@@ -14,7 +14,9 @@ import pytest
 from apps.analysis_beatgrid.bpm import (
     OCTAVE_RANGE_MAX_BPM,
     OCTAVE_RANGE_MIN_BPM,
+    REASON_AMBIGUOUS_MODEL_LEVEL,
     REASON_AMBIGUOUS_NEAREST_CENTER,
+    REASON_GENRE_FAMILY,
     REASON_NO_OCTAVE_IN_RANGE,
     REASON_PRIOR_SELECTED,
     REASON_SINGLE_OCTAVE_IN_RANGE,
@@ -22,6 +24,7 @@ from apps.analysis_beatgrid.bpm import (
     estimate_bpm,
     least_squares_bpm,
 )
+from apps.analysis_beatgrid.tempo_family import tempo_family_for_genre
 
 FRAME_S = 0.02  # Beat This! emits at 50 fps, so its beat times land on 20 ms.
 
@@ -96,13 +99,55 @@ def test_out_of_range_tempo_is_doubled_into_the_band():
 
 def test_two_octaves_inside_the_band_are_flagged_ambiguous():
     """80 and 160 are both inside [70, 180]; the band is wider than one octave."""
-    bpm, _multiple, reason, ambiguous = choose_octave(80.0)
+    bpm, multiple, reason, ambiguous = choose_octave(80.0)
     assert ambiguous is True
+    assert reason == REASON_AMBIGUOUS_MODEL_LEVEL
+    # The model's own level wins a two-octave tie: 80 stays 80.
+    assert (bpm, multiple) == (pytest.approx(80.0), 1.0)
+
+
+def test_a_fast_pulse_the_model_tracked_whole_is_not_halved():
+    """174 BPM drum and bass: 87 and 174 are both in the band.
+
+    The old tie-break (nearest the band's 112 BPM center) published 87, which
+    halved every 163-175 BPM track in round 4 that the model had tracked at
+    174. The model's level now wins, so 174 stays 174. Control in the other
+    direction: a model that tracked 87 is not doubled without a genre hint.
+    """
+    fast = choose_octave(174.0)
+    assert (fast[0], fast[1], fast[2]) == (pytest.approx(174.0), 1.0, REASON_AMBIGUOUS_MODEL_LEVEL)
+    slow = choose_octave(87.0)
+    assert (slow[0], slow[1]) == (pytest.approx(87.0), 1.0)
+
+
+def test_the_center_rule_still_picks_when_the_model_level_is_outside_the_band():
+    """Model at 40 BPM: 80 and 160 are in the band, 40 is not; center picks 80."""
+    bpm, multiple, reason, ambiguous = choose_octave(40.0)
     assert reason == REASON_AMBIGUOUS_NEAREST_CENTER
-    # The band's geometric center is sqrt(70 * 180) = 112.2. In log-tempo 80 is
-    # 0.338 from it and 160 is 0.355, so 80 wins, narrowly. Pinned because the
-    # margin is small enough that a change to either bound could flip it.
-    assert bpm == pytest.approx(80.0)
+    assert ambiguous is True
+    assert (bpm, multiple) == (pytest.approx(80.0), 2.0)
+
+
+def test_a_genre_family_picks_the_octave_inside_its_range_unflagged():
+    dnb = tempo_family_for_genre("Drum & Bass")
+    assert estimate_bpm(_beats(87.0, 60), family=dnb).bpm == pytest.approx(174.0, abs=0.05)
+    _bpm, multiple, reason, ambiguous = choose_octave(87.0, family=dnb)
+    assert (multiple, reason, ambiguous) == (2.0, REASON_GENRE_FAMILY, False)
+    # Psytrance at 145 tracked as 72.5: the family doubles it.
+    psy = tempo_family_for_genre("Psytrance")
+    assert choose_octave(72.5, family=psy)[:2] == (pytest.approx(145.0), 2.0)
+
+
+def test_a_genre_family_with_no_octave_in_range_is_ignored():
+    """A DnB tag on a 128 BPM house track (64/128/256 never reach 160-185)."""
+    dnb = tempo_family_for_genre("dnb")
+    assert choose_octave(128.0, family=dnb) == choose_octave(128.0)
+
+
+def test_the_scoring_prior_still_outranks_a_genre_family():
+    dnb = tempo_family_for_genre("dnb")
+    bpm, _m, reason, _a = choose_octave(174.0, prior_bpm=87.0, scoring=True, family=dnb)
+    assert (bpm, reason) == (pytest.approx(87.0), REASON_PRIOR_SELECTED)
 
 
 def test_nothing_in_the_band_is_flagged_rather_than_hidden():

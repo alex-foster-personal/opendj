@@ -266,6 +266,37 @@ test('a Tauri shell reports it can install', () => {
 	assert.equal(mod.canApplyHere({ __TAURI_INTERNALS__: {} }), true);
 });
 
+test('an Electron shell reports it can install', () => {
+	assert.equal(mod.canApplyHere({ opendjShell: { kind: 'electron' } }), true);
+});
+
+test('Electron installs through its own bridge, and a bridge rejection is a stated refusal', async () => {
+	const phases = [];
+	const installed = await mod.applyUpdate((p) => phases.push(p.phase), {
+		opendjShell: {
+			kind: 'electron',
+			applyUpdate: async (onProgress) => {
+				onProgress({ phase: 'checking' });
+				onProgress({ phase: 'restarting' });
+				return { kind: 'installed' };
+			}
+		}
+	});
+	assert.deepEqual(installed, { kind: 'installed' });
+	assert.deepEqual(phases, ['checking', 'restarting']);
+
+	const refused = await mod.applyUpdate(() => {}, {
+		opendjShell: {
+			kind: 'electron',
+			applyUpdate: async () => {
+				throw new Error('this page is not allowed to use the Open DJ shell bridge');
+			}
+		}
+	});
+	assert.equal(refused.kind, 'refused');
+	assert.match(refused.reason, /not allowed/);
+});
+
 test('applying outside a shell is refused with a stated reason', async () => {
 	const outcome = await mod.applyUpdate(() => {}, {});
 	assert.equal(outcome.kind, 'refused');

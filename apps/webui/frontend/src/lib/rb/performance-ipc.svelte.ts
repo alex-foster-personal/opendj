@@ -83,6 +83,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
@@ -198,7 +199,8 @@ export type PerformanceCommand =
 			stable_id: string;
 			refuseIfMaster?: boolean;
 			stems?: boolean;
-			// Caller shows its own failure toast (Trackify skip); deck_errors still update.
+			// Caller shows its own failure toast (Trackify skip): mutes this dispatcher's
+			// toast AND the engine's (#4036); deck_errors and the server report remain.
 			suppressCommandErrorToast?: boolean;
 	  }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
@@ -767,8 +769,14 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
+/** Rust engine mode (NAE-13) drives hot cues through its own driver
+ * (`rustHotCueDriver`); Web Audio uses the engine-owned one above. */
+export function installPerformanceHotCueDriver(driver: PerformanceHotCueDriver): void {
+	_hotCueDriver = driver;
+}
+
 /** Narrow test seam for exercising the public IPC command protocol without
- * initializing Web Audio. Production always uses the engine-owned driver. */
+ * initializing Web Audio. */
 export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueDriver): () => void {
 	const previous = _hotCueDriver;
 	_hotCueDriver = driver;
@@ -1888,6 +1896,9 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
+	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
+	if (await executeInRustEngine(command, pushToast)) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
@@ -1912,8 +1923,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// releases on its own ceiling if a load never settles.
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
-			const loadOptions = command.stems === undefined ? undefined : { stems: command.stems };
-			await engine.load(command.deck, command.stable_id, loadOptions);
+			await engine.load(command.deck, command.stable_id, {
+				stems: command.stems,
+				suppressFailureToast: command.suppressCommandErrorToast
+			});
 		} finally {
 			deckLoadSettled();
 		}
