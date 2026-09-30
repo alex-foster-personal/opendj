@@ -12,6 +12,12 @@ Regression lines:
   - if prove passes a docstring tab made spaces, a form feed made a newline or a blank first line dropped then broken
   - if prove fails ruff's docstring re-layout (a trailing form feed or no-break space, an indent tab) then broken
   - if prove passes ruff re-laying a docstring with an escape or a space before an indent tab then broken
+  - if prove passes docstring whitespace ruff never adds (a trailing space, a blank line's spaces) then broken
+  - if prove passes a docstring moved off its statement's indent, or its padding space dropped, then broken
+  - if prove fails ruff collapsing a blank remainder, keeping one space, or re-indenting a line then broken
+  - if prove fails a docstring ruff left alone where the model of ruff declines it then broken
+  - if prove fails ruff padding a `"` just inside a docstring's opening quotes, or pads a `'`, then broken
+  - if prove passes ruff padding a docstring's closing quote then broken: it is not modeled
 """
 
 from __future__ import annotations
@@ -54,6 +60,7 @@ def test_prove_control_a_docstring_reindented_as_a_whole_still_proves(repo: Path
         ('def f():\n    """Doc.\x0cMore."""\n', 'def f():\n    """Doc.\n    More."""\n'),
         ('def f():\n    """Doc.\u2028More."""\n', 'def f():\n    """Doc.\n    More."""\n'),
         ('def f():\n    """\n    Doc.\n    """\n', 'def f():\n    """Doc.\n    """\n'),
+        ('def f():\n    """\n    Doc.\n\n    More.\n    """\n', 'def f():\n    """Doc.\n\n    More.\n    """\n'),
         ('def f():\n    """Doc.\\t"""\n', 'def f():\n    """Doc."""\n'),
         ('def f():\n    """Doc.\x1c"""\n', 'def f():\n    """Doc."""\n'),
     ],
@@ -62,6 +69,7 @@ def test_prove_control_a_docstring_reindented_as_a_whole_still_proves(repo: Path
         "form-feed-to-newline",
         "line-separator-to-newline",
         "leading-blank-line-dropped",
+        "leading-blank-line-dropped-before-a-paragraph",
         "escaped-tab-dropped",
         "trailing-group-separator-dropped",
     ],
@@ -89,6 +97,20 @@ def test_prove_rejects_docstring_whitespace_ruff_never_changes(repo: Path, befor
         ('def f():\n    """Doc.\xa0\n\n    More.\n    """\n', 'def f():\n    """Doc.\n\n    More.\n    """\n'),
         ('def f():\n    """   Doc."""\n', 'def f():\n    """Doc."""\n'),
         ('def f():\n    """Doc.\u3000"""\n', 'def f():\n    """Doc."""\n'),
+        ('def f():\n    """Doc.\n        """\n', 'def f():\n    """Doc."""\n'),
+        ('def f():\n    """   """\n', 'def f():\n    """ """\n'),
+        ('def f():\n    """Doc.\nMore.\n    """\n', 'def f():\n    """Doc.\n    More.\n    """\n'),
+        ('"""Doc.\n    More.\n"""\n', '"""Doc.\nMore.\n"""\n'),
+        ("def f():\n    '''x' '''\n", 'def f():\n    """x\'"""\n'),
+        (
+            'def f():\n  """Doc.\n\n  More.\n  """\n  pass\n',
+            'def f():\n    """Doc.\n\n    More.\n    """\n    pass\n',
+        ),
+        ('def f(a,b):\n    """Say "hi" """\n    return a+b\n', 'def f(a, b):\n    """Say "hi" """\n    return a + b\n'),
+        ('def f():\n    """"x" y"""\n', 'def f():\n    """ "x" y"""\n'),
+        ("def f():\n    '''  \"x\" y'''\n", 'def f():\n    """ "x" y"""\n'),
+        ("def f():\n    '''\"x\" y\n\n    More.\n    '''\n", 'def f():\n    """ "x" y\n\n    More.\n    """\n'),
+        ("def f():\n    ''' 'x' y'''\n", 'def f():\n    """\'x\' y"""\n'),
     ],
     ids=[
         "trailing-form-feed-stripped",
@@ -98,11 +120,24 @@ def test_prove_rejects_docstring_whitespace_ruff_never_changes(repo: Path, befor
         "trailing-no-break-space-stripped",
         "first-line-leading-space-stripped",
         "trailing-ideographic-space-stripped",
+        "blank-remainder-collapsed",
+        "blank-docstring-keeps-one-space",
+        "less-indented-line-re-indented",
+        "module-docstring-dedented",
+        "single-quote-end-unpadded",
+        "two-space-file-reindented",
+        "unmodeled-docstring-left-alone",
+        "opening-quote-padded",
+        "single-quoted-opening-quote-padded-once",
+        "multi-line-opening-quote-padded",
+        "leading-single-quote-not-padded",
     ],
 )
 def test_prove_control_ruff_docstring_relayout_still_proves(repo: Path, before: str, after: str) -> None:
     """Opposite-direction control, ruff 0.16.3's real output: it strips each line's trailing whitespace and the first
-    line's leading whitespace, and re-indents the rest with tabs at 8-column stops, over Unicode's whitespace."""
+    line's leading whitespace, over Unicode's whitespace, and re-indents the rest to the statement with tabs at 8-column
+    stops. A `"` just inside the opening quotes gets one space, a docstring blank after its first line collapses onto
+    it, a blank one keeps one space, and one ruff leaves alone proves even where the model of ruff declines it."""
     base = commit_files(repo, {"m.py": before}, "init")
     head = commit_files(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
     result = format_proof.prove(repo, base, head)
@@ -120,13 +155,53 @@ def test_prove_control_ruff_docstring_relayout_still_proves(repo: Path, before: 
             'def f():\n    """Doc.\n\n    Example:\n    \tcode\n    """\n',
             'def f():\n    """Doc.\n\n    Example:\n        code\n    """\n',
         ),
+        ('def f():\n    """Say "hi"   """\n', 'def f():\n    """Say "hi" """\n'),
     ],
-    ids=["an-escape", "a-space-before-an-indent-tab"],
+    ids=["an-escape", "a-space-before-an-indent-tab", "a-quote-ruff-pads"],
 )
 def test_prove_fails_safe_when_ruff_re_lays_a_docstring_it_cannot_prove(repo: Path, before: str, after: str) -> None:
     """The rule's known limit, pinned on ruff 0.16.3's real output: `__doc__` cannot tell an escaped tab from a
-    literal one, and an indent that is not tabs then spaces has no column count ruff agrees with, so either docstring
-    is compared exactly and ruff re-laying it fails. The real tree has none of either (review 1l)."""
+    literal one, an indent that is not tabs then spaces has no column count ruff agrees with, and before a closing
+    `"` ruff pads with a space or keeps its quotes, so each such docstring must stay exactly as it was and ruff
+    re-laying it fails. The real tree has none of the first two (review 1l) or the third (review 1o)."""
+    base = commit_files(repo, {"m.py": before}, "init")
+    head = commit_files(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 1
+    assert any("AST differs" in line for line in result.lines), result.lines
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ('def f():\n    """Doc."""\n', 'def f():\n    """Doc.   """\n'),
+        ('def f():\n    """Doc."""\n', 'def f():\n    """  Doc."""\n'),
+        ('def f():\n    """Doc.\n\n    More.\n    """\n', 'def f():\n    """Doc.\n    \n    More.\n    """\n'),
+        ('def f():\n    """Doc.\n\n    More.\n    """\n', 'def f():\n    """Doc.\n\n    More.  \n    """\n'),
+        ('def f():\n    """Doc.\n\n    More.\n    """\n', 'def f():\n    """Doc.\n\n        More.\n    """\n'),
+        ('def f():\n    """Doc.\n\n    More.\n    """\n', 'def f():\n    """Doc.\n\n    More.\n"""\n'),
+        ('def f():\n    """Say "hi" """\n', 'def f():\n    """Say "hi\\""""\n'),
+        ('def f():\n    """ "x" is quoted."""\n', 'def f():\n    """\\"x" is quoted."""\n'),
+        ("def f():\n    '''a \"\"\" b' '''\n", "def f():\n    '''a \"\"\" b\\''''\n"),
+        ('def f(): """A\n    B"""\n', 'def f(): """A\ndef f(): B"""\n'),
+    ],
+    ids=[
+        "trailing-spaces-added",
+        "first-line-leading-spaces-added",
+        "blank-line-given-spaces",
+        "trailing-spaces-added-mid-docstring",
+        "indent-shifted-past-the-statement",
+        "closing-quotes-dedented",
+        "padding-space-dropped",
+        "opening-padding-space-dropped",
+        "padding-dropped-where-ruff-keeps-single-quotes",
+        "code-before-the-docstring-taken-as-its-indent",
+    ],
+)
+def test_prove_rejects_docstring_whitespace_ruff_never_adds(repo: Path, before: str, after: str) -> None:
+    """The reverse direction: ruff only strips and re-indents, so a head that ADDS whitespace, moves the text off its
+    statement's indent or drops the space ruff pads a quote with is not ruff's output, even though stripping both
+    sides would make them equal. `__doc__` changed, and blame must not skip it."""
     base = commit_files(repo, {"m.py": before}, "init")
     head = commit_files(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
     result = format_proof.prove(repo, base, head)

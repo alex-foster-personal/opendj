@@ -11,11 +11,12 @@ Requirements (mini-PRD):
   prove  ✔︎
     Every .py file the range modifies decodes by its own cookie (so a cookie moved in
     or out of reach is judged by what the bytes then MEAN), parses on both sides and
-    has an equal AST once docstrings get ruff's own re-layout and nothing looser: each
-    line's trailing whitespace, the first line's leading whitespace, and the indent the
-    rest share (Black's safety check strips every line, which would pass a change to a
-    doctest's relative indentation; inspect.cleandoc expands every tab and drops blank
-    first lines, which ruff keeps). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
+    has an equal AST, each docstring either untouched or exactly ruff's re-layout of it:
+    each line's trailing whitespace stripped, the first line's leading whitespace too,
+    and the rest re-indented to the statement with their relative indent kept (Black's
+    safety check strips every line, which would pass a change to a doctest's relative
+    indentation; inspect.cleandoc expands every tab and drops blank first lines, which
+    ruff keeps). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
     keeps its text, its order, how many AST nodes open and close before it, how many
     names, keywords, numbers and operators precede it, which piece of an implicitly
     concatenated string it follows, and whether code precedes it on its line.
@@ -24,7 +25,8 @@ Requirements (mini-PRD):
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
       [if] a docstring's tab between words, form feed, blank first line or escaped whitespace changes [then ⛔️] exit 1
-      [if] ruff re-lays a docstring with an escape, or one indented by more than tabs then spaces [then ⛔️] exit 1
+      [if] a docstring gains whitespace ruff would strip, or leaves its statement's indent [then ⛔️] exit 1
+      [if] ruff re-lays a docstring with an escape, an indent not tabs then spaces, or a `"` by a quote [then ⛔️] exit 1
       [if] a comment is added, removed, reworded, reordered, or moved past a node or fixed token [then ⛔️] exit 1
       [if] ruff moves a trailing operator past an end-of-line comment [then ⛔️] exit 1 (no count tells it from a move)
       [if] an end-of-line comment moves onto its own line, e.g. a block header's pragma into the body [then ⛔️] exit 1
@@ -46,7 +48,9 @@ Requirements (mini-PRD):
 
 What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
-docstring positions are normalized (tests/quality/test_format_proof.py pins that).
+docstring positions are re-laid (tests/quality/test_format_proof_docstrings.py pins
+that), and one that strips BOTH sides would pass whitespace ADDED to a docstring, so
+each head docstring must be its base or ruff's exact output for it.
 A proof over zero files would read as success, so it exits 2 instead. A style(format):
 subject is only a claim, so ignore-revs proves every listed commit again. A comment's
 LINE is not compared, because every re-wrap above it moves it; its place in the tree
@@ -144,6 +148,13 @@ class Result:
     lines: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Docstring:
+    text: str
+    indent: str | None  # its statement's indent, None when code precedes it on its line
+    plain: bool  # the source between its quotes IS its text
+
+
 # ----- git helpers ----------------------------------------------------------
 
 
@@ -183,19 +194,42 @@ def _indent_columns(indent: str) -> int | None:
     return (len(indent) - len(spaces)) * CFG.TAB_COLUMNS + len(spaces)
 
 
-def _normalize_docstring(text: str) -> str:
-    """ruff's docstring re-layout, and nothing looser: every line loses its trailing whitespace, the first its leading
-    whitespace too, and the rest keep only their indent beyond the least-indented. Lines split only at newlines and a
-    blank line stays a line, because a tab between words, a form feed or a blank first line is text `__doc__` carries
-    and ruff keeps. RELATIVE indentation is kept, because doctests and code blocks read it."""
+def _ruff_reindent(rest: list[str], indent: str) -> list[str] | None:
+    """A docstring's lines after its first, trailing whitespace already stripped, re-indented as ruff does: to the
+    statement's `indent` plus each line's indent beyond the least-indented, a blank line emptied, and a blank last
+    line holding the closing quotes at `indent`. None when an indent has no column count ruff agrees with."""
+    split = [_split_indent(line) for line in rest]
+    widths = [width for width in (_indent_columns(line_indent) for line_indent, _ in split) if width is not None]
+    if len(widths) != len(split):
+        return None
+    common = min(width for width, (_, body) in zip(widths, split, strict=True) if body)
+    pairs = zip(widths, split, strict=True)
+    relaid = [indent + " " * (width - common) + body if body else "" for width, (_, body) in pairs]
+    return [*relaid[:-1], relaid[-1] or indent]
+
+
+def _ruff_docstring(text: str, indent: str) -> str | None:
+    """What ruff 0.16.3 makes of a plain docstring whose statement is indented by `indent`, and nothing looser: every
+    line loses its trailing whitespace, the first its leading whitespace too, and the rest are re-indented. A `"` just
+    inside the opening quotes gets one space, a docstring blank after its first line collapses onto it, and a blank one
+    keeps one space. Lines split only at newlines, since a tab between words, a form feed or a blank first line is
+    text `__doc__` carries and ruff keeps. None where ruff's output is not modeled, so the docstring must stay as it
+    was: an indent that is not tabs then spaces, a `"` or a backslash just inside the closing quotes, where ruff pads
+    or keeps its quotes, and three double quotes inside, which keep single quotes."""
     lines = [line.rstrip(CFG.RUFF_WHITESPACE) for line in text.split("\n")]
-    rest = [_split_indent(line) for line in lines[1:]]
-    widths = [width for width in (_indent_columns(indent) for indent, _ in rest) if width is not None]
-    if len(widths) != len(rest):
-        return text  # an indent no column count reproduces: this docstring must match exactly
-    common = min((width for width, (_, body) in zip(widths, rest, strict=True) if body), default=0)
-    relaid = [" " * (width - common) + body if body else "" for width, (_, body) in zip(widths, rest, strict=True)]
-    return "\n".join([lines[0].lstrip(CFG.RUFF_WHITESPACE), *relaid])
+    first = lines[0].lstrip(CFG.RUFF_WHITESPACE)
+    if first.startswith('"'):
+        first = " " + first  # ruff's pad, so the opening quotes do not run into the text
+    if any(lines[1:]):
+        rest = _ruff_reindent(lines[1:], indent)
+        doc = None if rest is None else "\n".join([first, *rest])
+    elif first or not text:
+        doc = first
+    else:
+        doc = " "  # ruff keeps one space in a blank docstring, and none in an empty one
+    if doc is None or doc.endswith(('"', "\\")) or '"""' in text:
+        return None
+    return doc
 
 
 def _is_plain_literal(source: str, node: ast.Constant) -> bool:
@@ -209,29 +243,31 @@ def _is_plain_literal(source: str, node: ast.Constant) -> bool:
     return text[opening + quote : len(text) - quote] == node.value
 
 
-def _normalized_dump(source: str) -> tuple[str, int]:
-    """AST dump with docstring whitespace normalized, and how many docstrings were touched. A docstring whose literal
-    is not plain is compared exactly, so ruff re-laying one fails, the safe side."""
+def _dump_without_docstrings(source: str) -> tuple[str, list[Docstring]]:
+    """The AST dump with every docstring blanked, and the docstrings in walk order, so equal dumps pair them up."""
     tree = ast.parse(source)
-    touched = 0
+    lines = source.split("\n")  # decode_source leaves only newlines, and the AST numbers lines by them
+    found: list[Docstring] = []
     for node in ast.walk(tree):
         if not isinstance(node, CFG.DOCSTRING_OWNERS) or not node.body:
             continue
         first = node.body[0]
-        if (
-            isinstance(first, ast.Expr)
-            and isinstance(first.value, ast.Constant)
-            and isinstance(first.value.value, str)
-            and _is_plain_literal(source, first.value)
-        ):
-            normalized = _normalize_docstring(first.value.value)
-            touched += normalized != first.value.value
-            first.value.value = normalized
-    return ast.dump(tree), touched
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            prefix = lines[first.lineno - 1].encode()[: first.col_offset].decode()
+            indent = None if prefix.strip(" \t") else prefix
+            found.append(Docstring(first.value.value, indent, _is_plain_literal(source, first.value)))
+            first.value.value = ""
+    return ast.dump(tree), found
 
 
-def _raw_dump(source: str) -> str:
-    return ast.dump(ast.parse(source))
+def _docstrings_match(before: list[Docstring], after: list[Docstring]) -> bool:
+    """Each head docstring is its base's text, or exactly ruff's re-layout of a plain base at the head's indent. One
+    way, as ruff only strips and re-indents: a head that adds whitespace ruff would strip is a real edit."""
+    return len(before) == len(after) and all(
+        new.text == old.text
+        or (old.plain and new.indent is not None and new.text == _ruff_docstring(old.text, new.indent))
+        for old, new in zip(before, after, strict=True)
+    )
 
 
 def _node_bounds(tree: ast.Module) -> tuple[list[int], list[int]]:
@@ -371,18 +407,20 @@ def prove(repo: Path, base: str, head: str) -> Result:
             continue
         try:
             before, after = importlib.util.decode_source(data_before), importlib.util.decode_source(data_after)
-            raw_equal = _raw_dump(before) == _raw_dump(after)
-            (dump_before, _), (dump_after, _) = _normalized_dump(before), _normalized_dump(after)
+            (dump_before, docs_before), (dump_after, docs_after) = (
+                _dump_without_docstrings(before),
+                _dump_without_docstrings(after),
+            )
             comments_equal = _comments_match(_comments(before), _comments(after))
         except (SyntaxError, UnicodeDecodeError) as exc:
             return Result(2, lines=[f"[format-proof] UNKNOWN {path} does not decode or parse: {exc}"])
-        if dump_before != dump_after:
+        if dump_before != dump_after or not _docstrings_match(docs_before, docs_after):
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: AST differs, this is not a format-only change")
         elif not comments_equal:
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: a comment was added, removed, reworded or moved")
-        elif not raw_equal:
+        elif [doc.text for doc in docs_before] != [doc.text for doc in docs_after]:
             result.docstring_normalized += 1
     if result.exit_code == 0 and unprovable:
         result.exit_code = 2
@@ -390,7 +428,7 @@ def prove(repo: Path, base: str, head: str) -> Result:
     if result.exit_code == 0:
         result.lines.append(
             f"[format-proof] OK {result.files_checked} .py files AST-equal "
-            f"({result.docstring_normalized} after docstring-whitespace normalization), "
+            f"({result.docstring_normalized} with a docstring ruff re-laid), "
             f"base={_git(repo, 'rev-parse', base).stdout.strip()} head={_git(repo, 'rev-parse', head).stdout.strip()}"
         )
     return result
