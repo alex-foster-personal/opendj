@@ -169,6 +169,30 @@ def test_ci_cost_guard_batch_lists_every_completion_including_cancelled() -> Non
     )
 
 
+def _token_env_read_by(module: str) -> str:
+    source = (REPO / (module.replace(".", "/") + ".py")).read_text(encoding="utf-8")
+    names = set(re.findall(r'os\.environ(?:\.get\(|\[)"(\w*TOKEN)"', source))
+    assert len(names) == 1, f"{module} reads {sorted(names)}; expected one token variable"
+    return names.pop()
+
+
+def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
+    """The steps mix GH_TOKEN and GITHUB_TOKEN because the modules do; each is read out of
+    the module's own source here, so a step exporting the other name fails before a pass
+    lists nothing (Sol raised the guard step twice on #3844; it was wired, now it is held)."""
+    checked = 0
+    for path in (CI_COST_GUARD, STABLE_EVIDENCE):
+        for job in _workflow(path)["jobs"].values():
+            for step in job["steps"]:
+                for module in re.findall(r"python3? -m (scripts\.\w+)", step.get("run", "")):
+                    variable = _token_env_read_by(module)
+                    assert "GITHUB_TOKEN" in str(step.get("env", {}).get(variable, "")) or (
+                        "github.token" in str(step.get("env", {}).get(variable, ""))
+                    ), f"{path.name} step {step.get('name')!r} runs {module} without {variable}"
+                    checked += 1
+    assert checked >= 5, checked
+
+
 def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:
     """Two consecutive passes must overlap, so a late or failed pass loses nothing.
 
