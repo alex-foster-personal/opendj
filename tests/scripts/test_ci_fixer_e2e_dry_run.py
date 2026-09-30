@@ -40,6 +40,13 @@ def test_e2e_dry_run_against_a_real_deliberately_failing_branch(tmp_path):
     _run(["git", "config", "user.email", "ci-fixer-e2e@example.com"], cwd=repo)
     _run(["git", "config", "user.name", "ci-fixer-e2e"], cwd=repo)
     (repo / "test_deliberately_failing.py").write_text(FAILING_TEST, encoding="utf-8")
+    # Own pytest root so this throwaway repo does not inherit the parent checkout's
+    # conftest.py or tier plugins (which can skip the lone test or change exit codes).
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "ci-fixer-e2e-fixture"\nversion = "0"\nrequires-python = ">=3.11"\n\n'
+        '[tool.pytest.ini_options]\ntestpaths = ["."]\n',
+        encoding="utf-8",
+    )
     _run(["git", "add", "-A"], cwd=repo)
     _run(["git", "commit", "-q", "-m", "deliberately failing fixture"], cwd=repo)
 
