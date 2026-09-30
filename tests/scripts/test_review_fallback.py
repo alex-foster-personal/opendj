@@ -198,6 +198,16 @@ def test_a_codex_review_of_an_earlier_head_covers_nothing() -> None:
     assert decide(state, _minutes_after(PUSH_4515_8FC0, 30)).action is Action.RUN_SOL
 
 
+def test_a_notice_submitted_as_a_review_at_the_head_is_not_coverage() -> None:
+    """NOT a recorded shape: Codex has only been seen posting the notice as an
+    issue comment. Pinned anyway because review coverage counts any Codex
+    review at the head, so a notice in review form must still read as a
+    notice here, or a walled head would sit at COVERED and never reach Sol."""
+    as_review = {**REVIEW_4515_8FC0, "body": NOTICE_4538["body"]}
+    state = _state(HEAD_4515_8FC0, PUSH_4515_8FC0, reviews=[as_review])
+    assert decide(state, _minutes_after(PUSH_4515_8FC0, 1)).action is Action.RUN_SOL
+
+
 def test_the_summary_rows_completed_status_covers_a_no_findings_head() -> None:
     """Codex reacts 👍 instead of reviewing when it finds nothing; the summary
     row marked Completed for the head is then the only artifact."""
