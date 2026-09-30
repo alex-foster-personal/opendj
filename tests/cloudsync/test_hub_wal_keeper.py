@@ -8,9 +8,12 @@ read after every request: present means the close was not the last one.
 
 [if] a hub request's close deletes the WAL [then] checkpoint per request, [else stop].
 
-Controls: the probe must see the WAL vanish when the keeper is removed; the
-keeper must not hold a read transaction, or no checkpoint could ever reset
-the WAL; one keeper per database, however many requests.
+Controls: the probe must see the WAL vanish once the keepers close, through
+the real ``close_wal_keepers`` (no swapped implementation); the keeper must
+not hold a read transaction, or no checkpoint could ever reset the WAL; one
+keeper per database, however many requests. That the WAL-present test goes
+red without the keeper is proved by hand mutation (unwire
+``keep_wal_open`` in ``service._hub_conn``), recorded in the commit body.
 """
 from __future__ import annotations
 
@@ -61,13 +64,17 @@ def test_the_hub_wal_outlives_every_request(hub_app: FastAPI, tmp_path: Path) ->
     )
 
 
-def test_probe_sees_the_wal_vanish_without_a_keeper(
-    hub_app: FastAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_probe_sees_the_wal_vanish_once_the_keepers_close(
+    hub_app: FastAPI, tmp_path: Path
 ) -> None:
-    """Negative control: without the keeper the same probe must go red."""
-    monkeypatch.setattr(hub_wal_keeper, "keep_wal_open", lambda *_args: None)
+    """Negative control on the instrument: with every request answered, the
+    keeper is the last connection, so closing it through the real
+    ``close_wal_keepers`` checkpoints and deletes the WAL, and the same probe
+    must report it gone."""
     present = list(_wal_after_each_sync(hub_app, tmp_path / "spoke"))
-    assert present == [False] * SYNCS, present
+    assert present == [True] * SYNCS, present
+    assert hub_wal_keeper.close_wal_keepers(hub_app.state) == 1
+    assert not _wal(hub_app).exists(), "the probe cannot see the WAL vanish"
 
 
 def test_the_keeper_never_blocks_a_checkpoint(hub_app: FastAPI, tmp_path: Path) -> None:
