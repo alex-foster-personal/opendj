@@ -305,6 +305,31 @@ test('performance: title text is vertically centered in the row and separator sp
 	);
 	const artPixel = rgbaAt(rowShot, artX, sampleY);
 	const titlePixel = rgbaAt(rowShot, titleX, sampleY);
-	expect(colourDistance(artPixel, SEPARATOR_RGB)).toBeLessThanOrEqual(SEPARATOR_TOLERANCE);
-	expect(colourDistance(titlePixel, SEPARATOR_RGB)).toBeLessThanOrEqual(SEPARATOR_TOLERANCE);
+	expect(
+		colourDistance(artPixel, SEPARATOR_RGB),
+		`separator must paint over the artwork column, got rgba(${artPixel.join(',')})`
+	).toBeLessThanOrEqual(SEPARATOR_TOLERANCE);
+	expect(
+		colourDistance(titlePixel, SEPARATOR_RGB),
+		`separator must paint under the title column, got rgba(${titlePixel.join(',')})`
+	).toBeLessThanOrEqual(SEPARATOR_TOLERANCE);
+	// Negative control on the same shot, one pixel above the separator line.
+	// The fixture artwork's bottom rows are near-black (#0d0f12), within
+	// SEPARATOR_TOLERANCE of the separator colour, so an artwork image painted
+	// OVER the separator would also pass the sample above. Directly above the
+	// line the selected row must show its highlight instead - tinted artwork
+	// in the art column, the selection fill under the title - and neither may
+	// read as separator. This proves the probe can say no at both x positions
+	// and that the selection highlight reaches the art column's last rows.
+	expect(sampleY, 'row screenshot too short for an above-separator control').toBeGreaterThan(0);
+	const artAbove = rgbaAt(rowShot, artX, sampleY - 1);
+	const titleAbove = rgbaAt(rowShot, titleX, sampleY - 1);
+	expect(
+		colourDistance(artAbove, SEPARATOR_RGB),
+		`selected artwork just above the separator must be tinted, got rgba(${artAbove.join(',')})`
+	).toBeGreaterThan(SEPARATOR_TOLERANCE);
+	expect(
+		colourDistance(titleAbove, SEPARATOR_RGB),
+		`selected title cell just above the separator must show the highlight, got rgba(${titleAbove.join(',')})`
+	).toBeGreaterThan(SEPARATOR_TOLERANCE);
 });

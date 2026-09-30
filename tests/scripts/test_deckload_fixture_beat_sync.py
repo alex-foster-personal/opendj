@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import wave
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,7 +26,7 @@ from apps.webui.frontend.tests.e2e.support.deckload_fixture import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _id3_apic_frames(wav_path: Path) -> list[object]:
+def _id3_apic_frames(wav_path: Path) -> list[Any]:
     from mutagen.wave import WAVE
 
     audio = WAVE(wav_path)

@@ -34,44 +34,61 @@ async function firstOnDiskStableId(request: APIRequestContext): Promise<string> 
 	return track!.stable_id;
 }
 
+/**
+ * A REAL pointer drag: Playwright's mouse down / move / up on Chromium goes
+ * through the browser's own hit-testing and native drag machinery, so the row
+ * must really start a drag and the deck must really be the element under the
+ * pointer at drop. Capture-phase listeners record that the dragstart on the
+ * row and the drop on the deck were browser-generated (`isTrusted`), which a
+ * synthetic `dispatchEvent` can never be. The WebKit path (custom MIME hidden
+ * during dragover, in-app drag state carries acceptance) is pinned by
+ * tests/unit/track-drag-drop.test.mjs.
+ */
 async function dragRowToDeck(
 	page: Page,
 	stableId: string,
 	deckId: number
-): Promise<{ dragOverAccepted: boolean; payloadOnDrop: string }> {
-	return page.evaluate(
-		({ rowSelector, sid, deck, mime }) => {
-			const row = [...document.querySelectorAll(rowSelector)].find(
-				(el) => el.getAttribute('data-stable-id') === sid
+): Promise<{ trustedDragStart: boolean; trustedDrop: boolean; payloadOnDrop: string }> {
+	await page.evaluate(
+		({ sid, deck, mime }) => {
+			const probe = { trustedDragStart: false, trustedDrop: false, payloadOnDrop: '' };
+			(window as unknown as { __dragDeckProbe: typeof probe }).__dragDeckProbe = probe;
+			document.addEventListener(
+				'dragstart',
+				(event) => {
+					const row = (event.target as Element | null)?.closest?.('[data-testid="track-row"]');
+					if (row?.getAttribute('data-stable-id') === sid && event.isTrusted) {
+						probe.trustedDragStart = true;
+					}
+				},
+				{ capture: true }
 			);
-			if (!(row instanceof HTMLElement)) throw new Error(`no track row for stable_id ${sid}`);
-			const target = document.querySelector(`section.rb-deck[data-deck="${deck}"]`);
-			if (!(target instanceof HTMLElement)) throw new Error(`no deck ${deck}`);
-
-			const start = new DataTransfer();
-			row.dispatchEvent(
-				new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: start })
+			document.addEventListener(
+				'drop',
+				(event) => {
+					const target = (event.target as Element | null)?.closest?.('section.rb-deck');
+					if (target?.getAttribute('data-deck') === String(deck) && event.isTrusted) {
+						probe.trustedDrop = true;
+						probe.payloadOnDrop = event.dataTransfer?.getData(mime) ?? '';
+					}
+				},
+				{ capture: true }
 			);
-
-			const carried = start;
-			const over = new DragEvent('dragover', {
-				bubbles: true,
-				cancelable: true,
-				dataTransfer: carried
-			});
-			target.dispatchEvent(over);
-			const report = {
-				dragOverAccepted: over.defaultPrevented,
-				payloadOnDrop: carried.getData(mime)
-			};
-
-			target.dispatchEvent(
-				new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: carried })
-			);
-			row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: carried }));
-			return report;
 		},
-		{ rowSelector: TRACK_ROW, sid: stableId, deck: deckId, mime: TRACK_STABLE_MIME }
+		{ sid: stableId, deck: deckId, mime: TRACK_STABLE_MIME }
+	);
+	const source = page.locator(`${TRACK_ROW}[data-stable-id="${stableId}"] .c-artist`);
+	const target = page.locator(`section.rb-deck[data-deck="${deckId}"]`);
+	await expect(source).toBeVisible();
+	await expect(target).toBeVisible();
+	await source.dragTo(target);
+	return page.evaluate(
+		() =>
+			(
+				window as unknown as {
+					__dragDeckProbe: { trustedDragStart: boolean; trustedDrop: boolean; payloadOnDrop: string };
+				}
+			).__dragDeckProbe
 	);
 }
 
@@ -110,7 +127,8 @@ test('performance: drag library row onto deck loads track and Space toggles play
 	await row.click();
 
 	const gesture = await dragRowToDeck(page, stableId, 1);
-	expect(gesture.dragOverAccepted, 'deck 1 must accept dragover').toBe(true);
+	expect(gesture.trustedDragStart, 'a real pointer drag must start on the library row').toBe(true);
+	expect(gesture.trustedDrop, 'the real drag must drop on deck 1').toBe(true);
 	expect(gesture.payloadOnDrop).toBe(stableId);
 
 	await page.waitForFunction(
