@@ -330,11 +330,35 @@ exit 1
         ),
         "lsof": textwrap.dedent(
             """#!/usr/bin/env bash
+# `lsof -iTCP:PORT -sTCP:LISTEN -t`: the pid listening on the log's port.
+if [[ " $* " == *" -t "* ]]; then
+  if [[ -n "${DMG_SMOKE_LISTENER_PID:-}" ]]; then
+    echo "$DMG_SMOKE_LISTENER_PID"
+    exit 0
+  fi
+  exit 1
+fi
 if [[ -n "${DMG_SMOKE_ENGINE_PORT:-}" ]]; then
   echo "n*:${DMG_SMOKE_ENGINE_PORT}"
   exit 0
 fi
 exit 1
+"""
+        ),
+        "ps": textwrap.dedent(
+            """#!/usr/bin/env bash
+# `ps -ww -o command= -p PID` for the log-port listener: this run's scratch
+# engine (its app path is the last `open` argument) or another instance's.
+if [[ "$*" == *"command="* ]]; then
+  if [[ "${DMG_SMOKE_LISTENER_FROM_SCRATCH:-0}" == "1" ]]; then
+    app="$(tail -n 1 "${DMG_SMOKE_OPEN_LOG:?}")"
+  else
+    app="/Applications/Open DJ.app"
+  fi
+  echo "opendj-engine --name opendj-engine [${app}/Contents/Resources/payload/runtime/bin/python3 apps.engine_core serve]"
+  exit 0
+fi
+exec /bin/ps "$@"
 """
         ),
         "open": textwrap.dedent(
