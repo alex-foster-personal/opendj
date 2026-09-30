@@ -12,8 +12,9 @@ replaced by itself: none, at either size.
 
 [if] replacing a bundle with itself writes rows [then] per-member rewrites, [else stop].
 
-Controls:
-* the probe must count a DELETE and one INSERT per member when the skip is taken out;
+Controls, all through the unmodified production path:
+* the probe must count a DELETE and one INSERT per kept member when a real
+  replace runs (a bundle a member shorter than the stored one);
 * a bundle that differs in one member, one stamp, one value's type, one
   position, or by a member fewer or more, is still replaced;
 * on randomized stored and incoming bundles the table ends exactly as the
@@ -88,11 +89,6 @@ def _writes_replacing_with_itself(tmp_path: Path, members: int) -> int:
         conn.close()
 
 
-def _always_replace(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put back the unconditional replace: the stored bundle never equals."""
-    monkeypatch.setattr(engine_apply, "_bundle_unchanged", lambda *_args: False)
-
-
 def _replace_unconditionally(conn: sqlite3.Connection, members: list[dict[str, Any]]) -> None:
     """The reference: delete the bundle, insert every member whose track is stored."""
     conn.execute("DELETE FROM playlist_memberships WHERE playlist_id = ?", (PLAYLIST,))
@@ -117,12 +113,20 @@ def test_replacing_a_bundle_with_itself_writes_nothing(tmp_path: Path, members: 
     assert writes == 0, f"{writes} membership writes to replace {members} members with themselves"
 
 
-def test_probe_counts_every_row_without_the_skip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Negative control: the unconditional replace deletes once and inserts per member."""
-    _always_replace(monkeypatch)
-    assert _writes_replacing_with_itself(tmp_path, SMALL_BUNDLE) == 1 + SMALL_BUNDLE
+def test_probe_counts_every_row_of_a_real_replace(tmp_path: Path) -> None:
+    """Probe control: a real replace is seen as one DELETE and one INSERT per kept member."""
+    print("if the write probe cannot see a real replace's per-member rows, then broken")
+    conn = _hub_with_bundle(tmp_path, SMALL_BUNDLE)
+    try:
+        shorter = _stored_bundle(conn)[:-1]
+        with _membership_writes(conn) as writes:
+            engine_apply._replace_members(conn, PLAYLIST, shorter)
+        deletes = [w for w in writes if w.startswith(MEMBERSHIP_WRITE[0])]
+        inserts = [w for w in writes if w.startswith(MEMBERSHIP_WRITE[1])]
+        assert (len(deletes), len(inserts)) == (1, len(shorter)), writes
+        assert _stored_bundle(conn) == shorter
+    finally:
+        conn.close()
 
 
 # ----- overshoot controls -------------------------------------------------------
@@ -172,11 +176,9 @@ def test_a_stored_member_the_incoming_bundle_lacks_is_removed(tmp_path: Path) ->
     conn = _hub_with_bundle(tmp_path, SMALL_BUNDLE)
     try:
         incoming = _stored_bundle(conn)
-        conn.execute(
-            "INSERT INTO playlist_memberships(playlist_id, stable_id, position, updated_at,"
-            " origin_device_id) SELECT playlist_id, stable_id, position + 100, updated_at,"
-            " origin_device_id FROM playlist_memberships WHERE position = 0"
-        )
+        extra = {**incoming[0], "position": incoming[0]["position"] + 100}
+        engine_apply._replace_members(conn, PLAYLIST, [*incoming, extra])
+        assert len(_stored_bundle(conn)) == len(incoming) + 1
         engine_apply._replace_members(conn, PLAYLIST, incoming)
         assert _stored_bundle(conn) == incoming
     finally:
@@ -205,8 +207,9 @@ def test_the_table_ends_as_the_unconditional_replace_leaves_it(tmp_path: Path, s
     try:
         fixture = _stored_bundle(ours)
         stored, incoming = _random_case(rng, fixture)
-        for conn in (ours, reference):
-            _replace_unconditionally(conn, stored)
+        engine_apply._replace_members(ours, PLAYLIST, stored)
+        _replace_unconditionally(reference, stored)
+        assert _stored_bundle(ours) == _stored_bundle(reference)
         engine_apply._replace_members(ours, PLAYLIST, incoming)
         _replace_unconditionally(reference, incoming)
         assert _stored_bundle(ours) == _stored_bundle(reference)
