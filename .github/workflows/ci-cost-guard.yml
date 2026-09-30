@@ -1,6 +1,4 @@
 name: CI Cost Guard
-# A reconcile pass carries its own title, which is how it finds its own mark.
-run-name: ${{ (github.event.schedule == '23 3 * * *' || inputs.reconcile) && 'CI Cost Guard reconcile' || 'CI Cost Guard' }}
 
 # One scheduled pass prices every watched completion since the previous pass's
 # start (RUN-COUNT round 1, Tue 22 Sep 2026, issue #2196). Until then this was
@@ -29,12 +27,12 @@ on:
   schedule:
     - cron: "*/15 * * * *"
     # Daily reconcile pass: the plain pass plus the re-runs of runs created up to
-    # RECONCILE_HORIZON_DAYS before the reconcile mark (see the reconcile mark step).
+    # RECONCILE_HORIZON_DAYS back (see the pricing step).
     - cron: "23 3 * * *"
   workflow_dispatch:
     inputs:
       reconcile:
-        description: "Run a reconcile pass (also lists re-runs of runs created up to 7 days back)"
+        description: "Run a reconcile pass (also prices recent re-runs of runs created up to 31 days back, about 17 minutes)"
         type: boolean
         default: false
 
@@ -66,7 +64,9 @@ jobs:
     # per cadence on the shared pool is the whole saving; hosted would cost a
     # billed minute per pass, 2,880 a month, more than the allowance.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 10
+    # A reconcile pass lists 31 days of runs on top of the plain pass: 30 days read
+    # 22,130 runs in 276 calls and 957 s on Tue 29 Sep 2026.
+    timeout-minutes: ${{ (github.event.schedule == '23 3 * * *' || inputs.reconcile) && 30 || 10 }}
     env:
       # The watch list and the E2E rule live here, as data, and
       # tests/test_ci_cost_guard_workflow_coverage.py derives both from the
@@ -120,17 +120,17 @@ jobs:
       # cron above.
       OVERLAP_MINUTES: "30"
       LOOKBACK_HOURS: "3"
-      # A reconcile pass: the daily cron, or a dispatch with reconcile ticked. The
-      # title must match run-name's reconcile title above.
+      # A reconcile pass: the daily cron, or a dispatch with reconcile ticked.
       RECONCILE: ${{ github.event.schedule == '23 3 * * *' || inputs.reconcile == true }}
-      RECONCILE_TITLE: "CI Cost Guard reconcile"
-      RECONCILE_OVERLAP_HOURS: "48"
-      RECONCILE_SEARCH_HOURS: "72"
-      # How far before the reconcile mark a re-run's run may have been created. Each
-      # runs page is about 1.7 MB and 4.5 s, so this is the pass's cost: 30 days (the
-      # re-run limit) outran a 10-minute job. In the 7 days to Tue 29 Sep 2026 the
-      # latest re-run started 143.6 h after its run was created.
-      RECONCILE_HORIZON_DAYS: "7"
+      # GitHub re-runs a run up to 30 days after it was created, plus one day for
+      # the reconcile cadence. There is no reconcile mark: every reconcile lists the
+      # whole horizon.
+      RECONCILE_HORIZON_DAYS: "31"
+      # Pricing is one jobs read per run and the job's GITHUB_TOKEN allows 1,000
+      # requests an hour, so a reconcile prices the re-runs that completed this
+      # recently (about 20 a day), not all 578 of 30 days. An outage longer than this
+      # leaves older re-runs unpriced; the alert is advisory, not a release gate.
+      RECONCILE_PRICE_DAYS: "7"
       THRESHOLD_USD: "0.30"
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
@@ -248,31 +248,6 @@ jobs:
           echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
           echo "[guard] previous successful pass started at: ${previous:-none, using the overlap floor}"
 
-      # A re-run keeps its run's created_at, so a run re-run long after creation is
-      # below every plain pass's creation floor: 25 of 5,123 watched runs in the 7
-      # days to Tue 29 Sep 2026 started their latest attempt more than 3 h after
-      # creation, the oldest 143.6 h (Codex P1 on #3844). Once a day the pass also
-      # lists the re-runs among runs created from GitHub's 30-day re-run limit
-      # before the reconcile mark. That mark counts reconcile passes only, searched
-      # RECONCILE_SEARCH_HOURS back (an unbounded search read 11,493 passes and
-      # outran the timeout before the first reconcile ever succeeded), and is
-      # floored RECONCILE_OVERLAP_HOURS back, so one missed day loses nothing.
-      - name: Read the reconcile mark
-        id: reconcile
-        if: env.RECONCILE == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-          THIS_RUN: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          since=$(python3 -m scripts.ci_run_batch mark --repository "$REPOSITORY" \
-            --workflow-file ci-cost-guard.yml --this-run "$THIS_RUN" \
-            --display-title "$RECONCILE_TITLE" --overlap-hours "$RECONCILE_OVERLAP_HOURS" \
-            --search-hours "$RECONCILE_SEARCH_HOURS")
-          echo "[mark] reconcile pass since: $since"
-          echo "since=$since" >> "$GITHUB_OUTPUT"
-
       # Threshold rationale (Mon 31 Aug 2026): the previous $1.00 was
       # unreachable. CI's worst case is 20+15+20 min of Linux timeouts =
       # 55 min x $0.006 = $0.33, so no single run could ever trip it and
@@ -300,16 +275,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           PREVIOUS_STARTED: ${{ steps.mark.outputs.previous_started }}
-          RECONCILE_SINCE: ${{ steps.reconcile.outputs.since }}
         run: |
           mkdir -p ci-cost-reports
-          python scripts/ci_cost_guard.py --batch \
+          # A re-run keeps its run's created_at, so a run re-run long after creation
+          # is below every plain pass's creation floor (Codex P1 on #3844).
+          reconcile=()
+          [ "$RECONCILE" != "true" ] || reconcile=(--reconcile-horizon-days "$RECONCILE_HORIZON_DAYS" --reconcile-price-days "$RECONCILE_PRICE_DAYS")
+          python -m scripts.ci_cost_guard --batch \
             --repository "$REPOSITORY" \
             --watched "$WATCHED_WORKFLOWS" \
             --e2e-events "$E2E_PRICED_EVENTS" \
             --previous-started "$PREVIOUS_STARTED" \
-            --reconcile-since "$RECONCILE_SINCE" \
-            --reconcile-horizon-days "$RECONCILE_HORIZON_DAYS" \
+            "${reconcile[@]}" \
             --overlap-minutes "$OVERLAP_MINUTES" \
             --lookback-hours "$LOOKBACK_HOURS" \
             --threshold "$THRESHOLD_USD" \

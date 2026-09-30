@@ -14,8 +14,6 @@ The floor makes two passes overlap even if a pass is late; every follower must
 make re-applying an overlap harmless on its own terms.
 
     python3 -m scripts.ci_run_batch mark --repository o/r --workflow-file f.yml --this-run N
-    python3 -m scripts.ci_run_batch mark ... --display-title "X reconcile" \
-        --search-hours 72 --overlap-hours 48
     python3 -m scripts.ci_run_batch census --repository o/r --watched "CI,E2E" --lookback-hours 6
 """
 
@@ -147,8 +145,10 @@ def fetch_completed_runs(
 # GitHub re-runs a run, or any of its jobs, "up to 30 days after its initial run"
 # (docs.github.com, Re-running workflows and jobs). A re-run keeps the run's id and
 # created_at, so past this age a run can no longer complete again. A reconcile pass
-# lists a horizon no wider than this; its workflow sets how much narrower.
+# lists at most this plus one day, its cadence: a re-run on the last allowed day
+# completes after that day's reconcile and is listed by the next one.
 RERUN_HORIZON = timedelta(days=30)
+RECONCILE_CADENCE = timedelta(days=1)
 # GitHub serves at most 1,000 results from a filtered runs listing.
 LISTING_CAP = 1000
 
@@ -198,34 +198,36 @@ def fetch_runs_created_between(
     return list(seen.values())
 
 
+def reconcile_created_since(now: datetime, horizon: timedelta) -> str:
+    """The creation floor of a reconcile listing, `horizon` back from now. There is
+    no reconcile mark: every reconcile lists the whole horizon, so a run of failed
+    reconciles of any length loses nothing a later success can still list (Sol and
+    Codex P1s on #3844, where a mark searched 72 hours back lost what completed
+    before it)."""
+    if not timedelta(0) < horizon <= RERUN_HORIZON + RECONCILE_CADENCE:
+        raise ValueError(f"a reconcile horizon of {horizon} is outside GitHub's re-run limit")
+    return iso(now - horizon)
+
+
 def reconcile_listing(
     repository: str,
-    reconcile_since: str,
+    created_since: str,
     created_before: str,
     token: str,
     *,
     workflow_names: Iterable[str],
-    horizon: timedelta,
     listing_cap: int = LISTING_CAP,
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """What a reconcile pass adds to the plain listing: the RE-RUNS among the runs
-    created from `horizon` before the reconcile mark up to the plain listing's
-    floor. Each page of a runs listing is about 1.7 MB and 4.5 s, so the horizon is
-    what a pass costs: 30 days outran a 10-minute job, and a re-run starting more
-    than `horizon` after its run was created is not recorded. A first attempt that
-    completes past the floor is the census's case (the plain pass holds its mark
-    until that run completes); a re-run is the case no
-    plain pass can see, so re-runs are all a reconcile pass adds, about 20 a day,
-    and its overlap can be days wide without re-pricing thousands of runs. Empty
-    when the pass is not a reconcile pass (no mark)."""
-    if not reconcile_since:
-        return []
-    if not timedelta(0) < horizon <= RERUN_HORIZON:
-        raise ValueError(f"a reconcile horizon of {horizon} is outside GitHub's re-run limit")
+    created from `created_since` up to the plain listing's floor. A first attempt
+    that completes past the floor is the census's case (the plain pass holds its
+    mark until that run completes); a re-run is the case no plain pass can see, so
+    re-runs are all a reconcile pass adds. Each runs page is about 1.7 MB and
+    4.5 s, so the window is what a reconcile costs."""
     listed = fetch_runs_created_between(
         repository,
-        iso(parse_time(reconcile_since) - horizon),
+        created_since,
         created_before,
         token,
         "ci-run-batch-reconcile",
@@ -294,23 +296,11 @@ def last_successful_pass_start(
     workflow_file: str,
     this_run: int,
     *,
-    display_title: str | None = None,
-    not_before: str | None = None,
     token: str = "",
     agent: str = "ci-run-batch",
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> str:
     """The start of the follower's last successful pass, however far back it is.
-
-    With `display_title`, only passes with that title count: a reconcile pass
-    (`run-name` set by its workflow) keeps its own mark, while the plain pass mark
-    counts every pass, reconcile ones included, since a reconcile pass is a plain
-    pass plus its reconcile listing. With `not_before`, the search stops at passes
-    created before it and returns "" if it found no success, so the caller falls back
-    to `not_before` itself: before the first reconcile succeeds, an unbounded search
-    read all 11,493 passes of stable-evidence.yml and outran the job's timeout, and a
-    reconcile that never succeeds never writes the mark it searches for (live run
-    36562208010 on #3844).
 
     A failed pass may have written none of its batch, so it never moves the mark, and the
     search has no fixed window: a run of failures longer than any window would otherwise
@@ -332,11 +322,7 @@ def last_successful_pass_start(
             or []
         )
         for run in runs:
-            if not_before is not None and str(run["created_at"]) < not_before:
-                return ""
             if int(run["id"]) == this_run or run.get("status") != "completed":
-                continue
-            if display_title is not None and run.get("display_title") != display_title:
                 continue
             if run["conclusion"] == "success":
                 return str(run["run_started_at"])
@@ -423,19 +409,6 @@ def main(argv: list[str] | None = None) -> int:
     mark.add_argument("--repository", required=True)
     mark.add_argument("--workflow-file", required=True)
     mark.add_argument("--this-run", type=int, required=True)
-    mark.add_argument("--display-title", default=None, help="count only passes with this title")
-    mark.add_argument(
-        "--search-hours",
-        type=int,
-        default=None,
-        help="search only passes created this recently; with no success, the mark is the bound",
-    )
-    mark.add_argument(
-        "--overlap-hours",
-        type=int,
-        default=None,
-        help="print the mark floored at now minus this many hours (batch_since), never empty",
-    )
     census = commands.add_parser(
         "census", help="count watched runs in flight since before the lookback (held=N)"
     )
@@ -445,21 +418,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     token = os.environ["GITHUB_TOKEN"]
     if args.command == "mark":
-        now = datetime.now(UTC)
-        not_before = (
-            iso(now - timedelta(hours=args.search_hours)) if args.search_hours is not None else None
+        print(
+            last_successful_pass_start(
+                args.repository, args.workflow_file, args.this_run, token=token
+            )
         )
-        start = last_successful_pass_start(
-            args.repository,
-            args.workflow_file,
-            args.this_run,
-            display_title=args.display_title,
-            not_before=not_before,
-            token=token,
-        )
-        if args.overlap_hours is not None:
-            start = batch_since(start or not_before, now, timedelta(hours=args.overlap_hours))
-        print(start)
         return 0
     if args.command == "census":
         watched = {name.strip() for name in args.watched.split(",") if name.strip()}

@@ -23,6 +23,7 @@ from scripts.ci_run_batch import (
     created_floor,
     fetch_completed_runs,
     fetch_run,
+    reconcile_created_since,
     reconcile_listing,
 )
 from scripts.stable_evidence import (
@@ -153,13 +154,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--overlap-minutes", type=int, default=30)
     parser.add_argument("--lookback-hours", type=int, default=6)
     parser.add_argument(
-        "--reconcile-since", default="", help="the reconcile mark; empty on a plain pass"
-    )
-    parser.add_argument(
         "--reconcile-horizon-days",
         type=int,
         default=None,
-        help="how far before the reconcile mark a re-run's run may have been created",
+        help="a reconcile pass: also record every re-run of a run created this many days back",
     )
     parser.add_argument("--written-by", default="github-actions")
     parser.add_argument("--evidence-dir", default=None)
@@ -176,20 +174,21 @@ def main(argv: list[str] | None = None) -> int:
         "stable-evidence",
         workflow_names=RECORDED_WORKFLOWS,
     )
-    reconciled = reconcile_listing(
-        args.repository,
-        args.reconcile_since,
-        created_since,
-        args.token,
-        horizon=timedelta(days=args.reconcile_horizon_days or 0),
-        workflow_names=RECORDED_WORKFLOWS,
+    reconciled = (
+        reconcile_listing(
+            args.repository,
+            reconcile_created_since(datetime.now(UTC), timedelta(days=args.reconcile_horizon_days)),
+            created_since,
+            args.token,
+            workflow_names=RECORDED_WORKFLOWS,
+        )
+        if args.reconcile_horizon_days is not None
+        else []
     )
     evidence_dir = Path(args.evidence_dir) if args.evidence_dir else default_evidence_dir()
     chosen = drop_superseded_completions(
         evidence_dir,
-        newest_per_suite(
-            select_suite_runs(listed, since) + select_suite_runs(reconciled, args.reconcile_since)
-        ),
+        newest_per_suite(select_suite_runs(listed, since) + select_suite_runs(reconciled, "")),
         completion_time_lookup(
             listed + reconciled,
             lambda run_id: fetch_run(args.repository, run_id, args.token, "stable-evidence"),
@@ -199,8 +198,9 @@ def main(argv: list[str] | None = None) -> int:
     for run, path in written:
         print(f"[OK] run {run['id']} {run['name']} {run['conclusion']} -> {path}", file=sys.stderr)
     print(
-        f"[OK] since={since} listed={len(listed)} reconcile_since={args.reconcile_since or '-'} "
-        f"reconciled={len(reconciled)} recordable={len(chosen)} written={len(written)}",
+        f"[OK] since={since} listed={len(listed)} "
+        f"reconcile_days={args.reconcile_horizon_days or '-'} reconciled={len(reconciled)} "
+        f"recordable={len(chosen)} written={len(written)}",
         file=sys.stderr,
     )
     output_file = os.environ.get("GITHUB_OUTPUT", "")

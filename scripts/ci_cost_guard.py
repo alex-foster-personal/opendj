@@ -25,7 +25,9 @@ from scripts.ci_run_batch import (
     created_floor,
     fetch_completed_runs,
     headers,
+    iso,
     parse_time,
+    reconcile_created_since,
     reconcile_listing,
 )
 
@@ -293,18 +295,23 @@ def run_batch(args: argparse.Namespace) -> int:
     runs = fetch_completed_runs(
         args.repository, created_since, args.token, "ci-cost-guard", workflow_names=watched
     )
-    reconciled = reconcile_listing(
-        args.repository,
-        args.reconcile_since,
-        created_since,
-        args.token,
-        horizon=timedelta(days=args.reconcile_horizon_days or 0),
-        workflow_names=watched,
+    reconciled = (
+        reconcile_listing(
+            args.repository,
+            reconcile_created_since(now, timedelta(days=args.reconcile_horizon_days)),
+            created_since,
+            args.token,
+            workflow_names=watched,
+        )
+        if args.reconcile_horizon_days is not None
+        else []
     )
+    # Pricing is one jobs read per run, so a reconcile prices only the re-runs that
+    # completed in the last few days, not every re-run it lists.
+    priced_since = iso(now - timedelta(days=args.reconcile_price_days or 0))
     selected = {
         str(run["id"]): run
-        for listing, mark in ((runs, since), (reconciled, args.reconcile_since))
-        if mark
+        for listing, mark in ((runs, since), (reconciled, priced_since))
         for run in select_batch_runs(listing, watched, e2e_events, mark)
     }
     priced: list[dict[str, Any]] = []
@@ -366,13 +373,16 @@ def main() -> int:
     parser.add_argument("--overlap-minutes", type=int, default=30)
     parser.add_argument("--lookback-hours", type=int, default=3)
     parser.add_argument(
-        "--reconcile-since", default="", help="the reconcile mark; empty on a plain pass"
-    )
-    parser.add_argument(
         "--reconcile-horizon-days",
         type=int,
         default=None,
-        help="how far before the reconcile mark a re-run's run may have been created",
+        help="a reconcile pass: also list re-runs of runs created this many days back",
+    )
+    parser.add_argument(
+        "--reconcile-price-days",
+        type=int,
+        default=None,
+        help="a reconcile pass prices the re-runs that completed this many days back",
     )
     parser.add_argument("--report-dir", type=Path, default=Path("."))
     parser.add_argument("--threshold", type=float, default=1.0)
@@ -380,6 +390,8 @@ def main() -> int:
     parser.add_argument("--jobs-json", type=Path)
     parser.add_argument("--report-file", type=Path, default=Path("ci-cost-report.md"))
     args = parser.parse_args()
+    if (args.reconcile_horizon_days is None) != (args.reconcile_price_days is None):
+        parser.error("--reconcile-horizon-days and --reconcile-price-days go together")
 
     if args.batch:
         if not (args.repository and args.token and args.watched):

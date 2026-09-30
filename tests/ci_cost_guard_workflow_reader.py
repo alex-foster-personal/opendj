@@ -260,11 +260,7 @@ def job_ceiling_usd(job_id: str, job: dict, _depth: int = 0) -> float:
             for i, j in (called.get("jobs") or {}).items()
         )
 
-    timeout = job.get("timeout-minutes")
-    assert isinstance(timeout, int), (
-        f"{job_id} has no explicit timeout-minutes, so its ceiling is "
-        "GitHub's 360-minute default and this arithmetic is meaningless"
-    )
+    timeout = worst_case_timeout(job_id, job.get("timeout-minutes"))
     labels = runner_labels(job_id, job.get("runs-on"))
     sku = infer_standard_sku(labels)
     assert sku is not None, f"{job_id} runs on {labels}, which has no known rate"
@@ -277,6 +273,23 @@ def job_ceiling_usd(job_id: str, job: dict, _depth: int = 0) -> float:
     # unable to trip and dropped from the watch list. Codex found this on #713:
     # Windows Parity priced at exactly $0.30 against a `> $0.30` alert.
     return matrix_runs(job_id, job) * (timeout + 1) * sku.rate_usd_per_minute
+
+
+def worst_case_timeout(job_id: str, timeout: object) -> int:
+    """A job's timeout, or the largest one an expression can choose.
+
+    A pass that reconciles once a day sets `${{ reconciling && 30 || 10 }}`; the
+    ceiling is the case that costs most, so it is the largest literal the
+    expression can yield. An expression with no literal cannot be priced.
+    """
+    if isinstance(timeout, int):
+        return timeout
+    choices = re.findall(r"(?:&&|\|\|)\s*(\d+)", timeout) if isinstance(timeout, str) else []
+    assert choices, (
+        f"{job_id} has no explicit timeout-minutes, so its ceiling is "
+        "GitHub's 360-minute default and this arithmetic is meaningless"
+    )
+    return max(int(choice) for choice in choices)
 
 
 def ceiling_usd(doc: dict) -> float:
