@@ -41,6 +41,11 @@ class TestClientTransport:
             {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
         )
 
+    @property
+    def app_state(self) -> Any:
+        """The hub app's ``state``, for a test that must reach its resources."""
+        return self._http.app.state
+
     def _decoded(self, response: Any, label: str) -> dict[str, Any]:
         if response.status_code >= 400:
             raise transport.refused(label, response.status_code, response.text)
