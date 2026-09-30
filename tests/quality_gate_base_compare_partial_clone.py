@@ -7,7 +7,7 @@ lazy promisor fetch that followed had no credentials (`persist-credentials:
 false` in ci.yml) --  "could not read Username for 'https://github.com'".
 #3459/#3464 hit the same promisor class in the hotspot `git log` and dodged
 it with `--no-renames`; a checkout has no such dodge, since materializing
-files is the entire point, so `scripts/quality_gate.py::_origin_auth_header_args`
+files is the entire point, so `scripts/quality_gate.py::_origin_auth_env`
 supplies a per-invocation credential instead.
 
 This runs a REAL local partial clone against a REAL (if tiny) authenticated

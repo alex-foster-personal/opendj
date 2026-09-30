@@ -1622,8 +1622,8 @@ def _unlink_node_modules(base_fe: Path) -> None:
 _GIT_AUTH_ENV_KEYS: tuple[str, ...] = ("GH_TOKEN", "GITHUB_TOKEN")
 
 
-def _origin_auth_header_args(cwd: Path = REPO) -> list[str]:
-    """`-c` args that authenticate ONE git invocation against origin, or [].
+def _origin_auth_env(cwd: Path = REPO) -> dict[str, str]:
+    """Env vars that authenticate ONE git invocation against origin, or {}.
 
     A self-hosted runner's persistent workspace can be a partial (promisor)
     clone, and `git worktree add` below checks out a real working tree at the
@@ -1639,11 +1639,12 @@ def _origin_auth_header_args(cwd: Path = REPO) -> list[str]:
     materializing files is the whole point, so the fix here supplies
     credentials instead of avoiding the fetch.
 
-    `-c http.<url>.extraheader` is a per-invocation override: unlike `git
-    config --local`, it is never written to .git/config, so nothing persists
-    once this one process (and the internal fetch git spawns as its own
-    child to satisfy the lazy read, which inherits `-c` overrides the same
-    way every git child process does) exits. CI supplies the token via
+    `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` set
+    `http.<url>.extraheader` for this one process and the internal fetch git
+    spawns as its own child to satisfy the lazy read. Unlike `git config
+    --local` it is never written to .git/config, and unlike `-c` it never
+    appears in argv, which any other process on a shared self-hosted runner
+    can read through ps or /proc/<pid>/cmdline. CI supplies the token via
     GH_TOKEN, scoped to this job's own `permissions: contents: read` -- the
     same token every other job already uses for `gh`. A dev machine (or any
     host where git's own credential helper already handles auth) has no such
@@ -1652,15 +1653,19 @@ def _origin_auth_header_args(cwd: Path = REPO) -> list[str]:
     """
     token = next((os.environ[k] for k in _GIT_AUTH_ENV_KEYS if os.environ.get(k)), "")
     if not token:
-        return []
+        return {}
     code, url = _run(["git", "remote", "get-url", "origin"], cwd=cwd, allow_fail=True)
     if code != 0 or not url.strip():
-        return []
+        return {}
     parsed = urlsplit(url.strip())
     if parsed.scheme not in ("http", "https"):
-        return []  # ssh/file remotes: no HTTP header to inject, nothing to do
+        return {}  # ssh/file remotes: no HTTP header to inject, nothing to do
     prefix = f"{parsed.scheme}://{parsed.netloc}/"
-    return ["-c", f"http.{prefix}.extraheader=AUTHORIZATION: bearer {token}"]
+    return {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"http.{prefix}.extraheader",
+        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+    }
 
 
 def _measure_owners_at_base(
@@ -1700,9 +1705,9 @@ def _measure_owners_at_base(
     base_env = {k: v for k, v in os.environ.items() if k not in _GIT_AUTH_ENV_KEYS}
     try:
         code, stdout, stderr = _run_capture(
-            ["git", *_origin_auth_header_args(cwd=repo), "worktree", "add",
-             "--detach", str(base_dir), sha],
+            ["git", "worktree", "add", "--detach", str(base_dir), sha],
             cwd=repo,
+            env={**os.environ, **_origin_auth_env(cwd=repo)},
         )
         if code != 0:
             detail = (stderr or stdout).strip()
