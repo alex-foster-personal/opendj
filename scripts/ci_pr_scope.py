@@ -21,6 +21,10 @@ Both lists keep GitHub's own filter semantics, evaluated by
   exclusions because it is a CI input, not documentation: `reqs.json` is generated
   from it and gated against it, and three commits that drifted the ledger (fa98ffda,
   643f896b, 9bc4128f) touched only `.planning` and so skipped the PR gate.
+  `docs/perf/*.json` is written back in for the same reason: the perf KPI ledger, cards
+  and map are read by the test suite (`tests/webui/test_bench.py` serves the real ledger
+  against the real cards), so the nightly ledger PR (#4473) that only appends ledger rows
+  was docs-only, ran no pytest, and could land undeclared KPIs that break that test on main.
 - `E2E_PATHS_IGNORE` is a `paths-ignore` list: in scope when at least one changed file
   is not ignored. `e2e.yml`'s `push` trigger must carry the same list as a literal,
   because GitHub reads trigger filters from the workflow file and nowhere else;
@@ -47,6 +51,7 @@ CI_PULL_REQUEST_PATHS: tuple[str, ...] = (
     "!specs/**",
     "!blog/**",
     ".planning/REQUIREMENTS.md",
+    "docs/perf/*.json",
 )
 
 #: e2e.yml: documentation, plus workflow YAML and pytest-only trees that cannot change
