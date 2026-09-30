@@ -28,6 +28,8 @@ Regression lines:
   - if prove fails a re-wrap that keeps a noqa on its statement, or the ratified `#---` to `# ---` then broken
   - if prove passes a whitespace edit ruff never makes (`# no sec` to `# nosec`, a shebang re-spaced) then broken
   - if prove passes a comment's trailing U+001C dropped, or fails ruff stripping a trailing U+3000, then broken
+  - if prove passes a comment made into anything but ruff's output for it (`# x` to `#x`, a space added) then broken
+  - if prove fails a comment ruff left alone inside `# fmt: off` then broken
   - if prove passes a comment moved past a sibling, across a decorator, or into a module's first statement then broken
   - if prove passes a header pragma moved into the body, or any end-of-line comment made own-line, then broken
   - if prove passes a comment moved past a name inside one statement (a per-argument type comment) then broken
@@ -223,6 +225,8 @@ def test_prove_rejects_a_mode_change(repo: Path) -> None:
         ("x = run()  # no sec B602\n", "x = run()  # nosec B602\n"),
         ("#!/usr/bin/env python3\nx = 1\n", "#!/usr/bin/env  python3\nx = 1\n"),
         ("x = 1  # c\x1c\n", "x = 1  # c\n"),
+        ("x = 1  # type: ignore\n", "x = 1  #type: ignore\n"),
+        ("x = 1  # c\n", "x = 1  # c \n"),
     ],
     ids=[
         "ignore-to-other-statement",
@@ -235,6 +239,8 @@ def test_prove_rejects_a_mode_change(repo: Path) -> None:
         "directive-inner-space",
         "shebang-respaced",
         "trailing-group-separator-dropped",
+        "space-after-hash-removed",
+        "trailing-space-added",
     ],
 )
 def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> None:
@@ -268,6 +274,7 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
         ('a = ("x"\n     "y")\nb = (\n    "p"  # c\n    "q"\n)\n', 'a = "xy"\nb = (\n    "p"  # c\n    "q"\n)\n'),
         ("x = 1  # c\u3000\n", "x = 1  # c\n"),
         ("x = 1  #\tc\n", "x = 1  # \tc\n"),
+        ("# fmt: off\nx=[1,2]  #keep\n# fmt: on\ny=1  #fix\n", "# fmt: off\nx=[1,2]  #keep\n# fmt: on\ny = 1  # fix\n"),
     ],
     ids=[
         "noqa-rewrap-same-statement",
@@ -287,6 +294,7 @@ def test_prove_rejects_a_comment_edit(repo: Path, before: str, after: str) -> No
         "string-pieces-joined-above-a-kept-run",
         "trailing-ideographic-space-stripped",
         "space-added-before-a-tab",
+        "comment-in-fmt-off-left-alone",
     ],
 )
 def test_prove_control_layout_around_comments_still_proves(repo: Path, before: str, after: str) -> None:

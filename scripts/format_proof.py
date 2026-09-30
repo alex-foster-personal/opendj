@@ -19,8 +19,8 @@ Requirements (mini-PRD):
     keeps its text, its order, how many AST nodes open and close before it, how many
     names, keywords, numbers and operators precede it, which piece of an implicitly
     concatenated string it follows, and whether code precedes it on its line.
-    Only its line, its trailing space and the one space ruff adds after `#` may
-    change. A shebang stays on byte 0, or stays off it.
+    Only its line may change, and its text only to exactly what ruff makes of it:
+    trailing whitespace stripped, one space added after `#`. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
       [if] a docstring's tab between words, form feed, blank first line or escaped whitespace changes [then ⛔️] exit 1
@@ -73,6 +73,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+# A comment's place: AST nodes opened and closed before it, fixed tokens before it, own-line, string piece.
+Place = tuple[int, int, int, bool, int]
 
 
 class CFG:
@@ -240,12 +244,10 @@ def _node_bounds(tree: ast.Module) -> tuple[list[int], list[int]]:
     return starts, ends
 
 
-def _normalize_comment(text: str) -> str:
-    """ruff format's comment rule: trailing whitespace goes (ruff's set, so a trailing U+001C stays), a leading
-    no-break space becomes a space, and `#x` gains one space unless x is ! : # or ' (shebangs, Sphinx, banners).
-    Inner spacing is kept, because `# no sec` and `# nosec` differ to the tools that read them. One spot is looser
-    than ruff: `#x` and `# x` compare alike either way, though ruff only adds the space, since the two sides are
-    compared with each other rather than the head with ruff's output."""
+def _ruff_comment(text: str) -> str:
+    """What ruff format makes of a comment: trailing whitespace goes (ruff's set, so a trailing U+001C stays), a
+    leading no-break space becomes a space, and `#x` gains one space unless x is ! : # or ' (shebangs, Sphinx,
+    banners). Inner spacing is kept, because `# no sec` and `# nosec` differ to the tools that read them."""
     body = text.rstrip(CFG.RUFF_WHITESPACE)[1:]
     if body.startswith("\u00a0"):
         body = " " + body[1:]
@@ -290,8 +292,18 @@ def _string_pieces_before_each_comment(tokens: list[tokenize.TokenInfo]) -> list
     return positions
 
 
-def _comments(source: str) -> list[tuple[tuple[int, int, int, bool, int], str]]:
-    """Every comment in order, as (place, normalized text): its line is layout, its words and place are not.
+def _comments_match(before: list[tuple[Place, str]], after: list[tuple[Place, str]]) -> bool:
+    """Same places, and each head comment is its base comment untouched or exactly what ruff makes of it. One-way,
+    because ruff only strips and adds space: `# x` to `#x`, or a trailing space added, is no ruff output, while a
+    comment inside `# fmt: off`, which ruff leaves alone, still matches."""
+    return len(before) == len(after) and all(
+        place_before == place_after and text_after in (text_before, _ruff_comment(text_before))
+        for (place_before, text_before), (place_after, text_after) in zip(before, after, strict=True)
+    )
+
+
+def _comments(source: str) -> list[tuple[Place, str]]:
+    """Every comment in order, as (place, text): its line is layout, its words and place are not.
 
     Its place in the tree is how many AST nodes open and close before it, which counts statements, strings and `...`
     alike and survives ruff adding or dropping parentheses, commas and string pieces, and how many fixed tokens
@@ -305,7 +317,7 @@ def _comments(source: str) -> list[tuple[tuple[int, int, int, bool, int], str]]:
     starts, ends = _node_bounds(ast.parse(source))
     tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
     pieces = iter(_string_pieces_before_each_comment(tokens))
-    found: list[tuple[tuple[int, int, int, bool, int], str]] = []
+    found: list[tuple[Place, str]] = []
     fixed_tokens = 0
     prev_row = 0  # A comment is own-line when the token before it ended on an earlier row: only code can end on its.
     for tok in tokens:
@@ -318,7 +330,7 @@ def _comments(source: str) -> list[tuple[tuple[int, int, int, bool, int], str]]:
                 prev_row != row,
                 next(pieces),
             )
-            found.append((place, _normalize_comment(tok.string)))
+            found.append((place, tok.string))
         elif _is_fixed_token(tok):
             fixed_tokens += 1
         prev_row = tok.end[0]
@@ -361,7 +373,7 @@ def prove(repo: Path, base: str, head: str) -> Result:
             before, after = importlib.util.decode_source(data_before), importlib.util.decode_source(data_after)
             raw_equal = _raw_dump(before) == _raw_dump(after)
             (dump_before, _), (dump_after, _) = _normalized_dump(before), _normalized_dump(after)
-            comments_equal = _comments(before) == _comments(after)
+            comments_equal = _comments_match(_comments(before), _comments(after))
         except (SyntaxError, UnicodeDecodeError) as exc:
             return Result(2, lines=[f"[format-proof] UNKNOWN {path} does not decode or parse: {exc}"])
         if dump_before != dump_after:
