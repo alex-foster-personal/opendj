@@ -120,6 +120,7 @@ def _members_for_playlist(
     """The whole membership bundle for ``playlist_id``, or None to hold the
     playlist back. See :func:`apps.sync_hub.sync_set.membership_reason`.
     """
+    held.decide_member_tracks(playlist_id)
     columns = protocol.table_columns(conn, MEMBERSHIP_TABLE)
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} "
