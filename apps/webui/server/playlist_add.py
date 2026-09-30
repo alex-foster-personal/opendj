@@ -7,7 +7,7 @@ the playlist:
 
 * neighbors: ``DESC LIMIT 1`` for an append, ``LIMIT 2 OFFSET position - 1``
   for an insert, both seeks on ``idx_playlist_memberships_live_order``
-  (migration v21). An insert walks ``position`` index entries in C and
+  (migration v22). An insert walks ``position`` index entries in C and
   materializes at most two rows.
 * duplicates (``forbid_duplicates``): one ``IN`` read of the requested ids
   on ``idx_playlist_memberships_live_stable_id``.
@@ -41,7 +41,7 @@ MEMBERSHIP_ORDER_KEY = "COALESCE(order_key, printf('%08d', position))"
 """Effective order key; a legacy row with no order_key sorts by its padded position."""
 
 MEMBERSHIP_ORDER_BY = f"{MEMBERSHIP_ORDER_KEY}, position"
-"""Must match ``idx_playlist_memberships_live_order`` (migrations_v21) exactly."""
+"""Must match ``idx_playlist_memberships_live_order`` (migrations_v22) exactly."""
 
 ADD_ITEMS_OP = "add_items"
 
