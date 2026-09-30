@@ -16,7 +16,9 @@ grow by one request per 1,000 rows, not per 200 or 500.
 Controls:
 * a pull page of ``PULL_LIMIT`` tracks must never elect the whole library
   for identity verdicts: the page stays under the cutover, or every page
-  pays a library scan (the round 2 finding, back through the page size);
+  pays a library scan (the round 2 finding, back through the page size).
+  The election is observed from outside, as the one statement it runs (the
+  bare live-tracks identity select) on the hub connection's SQLite trace;
 * the probe for that must see the election when a page does cross it;
 * ``PULL_LIMIT`` stays within what the hub serves (``MAX_PULL_LIMIT``);
 * a push of WIDE track rows (long ``title``, ``artists_json``, ``file_path``)
@@ -46,7 +48,7 @@ from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
 from apps.sync_hub import client, engine, identity_verdicts, protocol, service, transport
-from apps.sync_hub.engine_identity_map import effective_identity_remap
+from apps.sync_hub.sync_set import identity_row_select
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import _DEV_B, _T0, _T1
 from tests.cloudsync.test_track_identity_collapse import _open_hub
@@ -157,17 +159,23 @@ def _first_syncs(hub: TestClientTransport, tmp_path: Path, tracks: int) -> tuple
     return pushed.pushed, pushed.push_requests, reader.pull_requests
 
 
-class _Elections:
-    """Counts library-wide identity elections in one walk."""
+def _library_elections(conn: sqlite3.Connection) -> list[str]:
+    """Record, from now on, every whole-library identity election on ``conn``.
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self.count = 0
+    An election reads every live track with the bare identity select
+    (:func:`apps.sync_hub.sync_set.identity_duplicate_remap`); a per-row
+    verdict runs the same select with a ``rowid`` column and a filter, so
+    only the election matches it exactly.
+    """
+    election = identity_row_select(conn)
+    seen: list[str] = []
 
-        def counted(conn: sqlite3.Connection) -> dict[str, str]:
-            self.count += 1
-            return effective_identity_remap(conn)
+    def trace(statement: str) -> None:
+        if statement.strip() == election:
+            seen.append(statement)
 
-        monkeypatch.setattr(identity_verdicts, "effective_identity_remap", counted)
+    conn.set_trace_callback(trace)
+    return seen
 
 
 def _new_tracks(conn: sqlite3.Connection, count: int) -> list[protocol.RowChange]:
@@ -195,9 +203,7 @@ def _new_tracks(conn: sqlite3.Connection, count: int) -> list[protocol.RowChange
     ]
 
 
-def _elections_serving_one_page(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int
-) -> tuple[int, int]:
+def _elections_serving_one_page(tmp_path: Path, limit: int) -> tuple[int, int]:
     """(rows on the page, library elections) for one hub pull page of ``limit`` new tracks."""
     conn = _open_hub(tmp_path / f"page-{limit}")
     try:
@@ -205,9 +211,10 @@ def _elections_serving_one_page(
         since = engine.current_seq(conn)
         engine.hub_apply(conn, _new_tracks(conn, limit))
         conn.commit()
-        elections = _Elections(monkeypatch)
+        elections = _library_elections(conn)
         page = engine.hub_changes_since(conn, since, limit=limit)
-        return len(page.rows), elections.count
+        conn.set_trace_callback(None)
+        return len(page.rows), len(elections)
     finally:
         conn.close()
 
@@ -293,11 +300,9 @@ def test_one_row_the_proxy_refuses_alone_fails_loud(tmp_path: Path) -> None:
 # ----- overshoot controls -------------------------------------------------------
 
 
-def test_a_full_pull_page_never_elects_the_library(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_full_pull_page_never_elects_the_library(tmp_path: Path) -> None:
     print("if a full pull page crosses the identity cutover and scans the library, then broken")
-    rows, elections = _elections_serving_one_page(tmp_path, monkeypatch, client.PULL_LIMIT)
+    rows, elections = _elections_serving_one_page(tmp_path, client.PULL_LIMIT)
     assert rows == client.PULL_LIMIT, "the page must be full, or it tests a smaller one"
     assert elections == 0, (
         f"one pull page of {rows} tracks elected the whole library {elections} time(s): "
@@ -306,11 +311,9 @@ def test_a_full_pull_page_never_elects_the_library(
     )
 
 
-def test_probe_sees_the_election_when_a_page_crosses_the_cutover(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_probe_sees_the_election_when_a_page_crosses_the_cutover(tmp_path: Path) -> None:
     """Negative control: a page as big as the cutover must elect, or the probe is blind."""
     limit = identity_verdicts.CFG.ELECT_LIBRARY_AFTER_VERDICTS + 1
-    rows, elections = _elections_serving_one_page(tmp_path, monkeypatch, limit)
+    rows, elections = _elections_serving_one_page(tmp_path, limit)
     assert rows == limit
     assert elections >= 1
