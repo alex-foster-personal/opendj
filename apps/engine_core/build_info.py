@@ -47,6 +47,7 @@ Acceptance tests:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -122,6 +123,21 @@ class BuildInfoOut(BaseModel):
     bundle_identifier: str | None = None
     app_version: str | None = None
     manifest_path: str | None = None
+    #: This SERVING process's own os.getpid(), stamped at route construction
+    #: (never from the manifest -- a payload build has no pid at build time).
+    #: Sol P1/BLOCKING (PR #4034, discussion_r4137872466): a PERFMODE-14
+    #: capture reaching --engine through a local SSH/TCP forward would pass
+    #: every build-identity check above (they only read HTTP content, which
+    #: a tunnel forwards correctly) while `lsof` resolves the FORWARDER's
+    #: local pid, not the engine's -- silently sampling the wrong process
+    #: family. A capture harness cross-checks this field against its own
+    #: lsof result for the port and refuses when they disagree, which a
+    #: tunnel can never satisfy: this field is always the answering
+    #: process's real pid, and a forwarder is never itself the engine.
+    #: Optional, defaulting to None, so the several existing call sites that
+    #: construct BuildInfoOut directly (tests, update-channel fixtures) do
+    #: not need to supply a meaningless pid; the live route always sets it.
+    pid: int | None = None
 
 
 @dataclass(frozen=True)
@@ -307,6 +323,12 @@ def add_build_info_route(app: FastAPI, *, environ: dict[str, str], repo_root: Pa
         failure: str | None = None
     except BuildInfoUnavailable as exc:
         resolved, failure = None, str(exc)
+
+    if resolved is not None:
+        # This process's own pid, stamped here rather than in a resolver:
+        # it is a runtime fact of whichever process serves the route, not a
+        # build fact either source describes (see BuildInfoOut.pid).
+        resolved = resolved.model_copy(update={"pid": os.getpid()})
 
     setattr(
         app.state,
