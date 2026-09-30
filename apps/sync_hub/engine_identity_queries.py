@@ -46,7 +46,7 @@ def matches_by_hash(
     audio_hash: str | None,
 ) -> list[StoredMatch]:
     """Find rows sharing either supported content identity hash."""
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    columns = protocol.table_columns(conn, "tracks")
     if "audio_hash" not in columns:
         rows = conn.execute(
             "SELECT stable_id, content_hash, isrc, updated_at, origin_device_id "
@@ -96,7 +96,7 @@ def matches_by_isrc(
     Each OR arm has its own index (idx_tracks_isrc, idx_tracks_isrc_upper), so
     the lookup is a seek, not a scan (#4397).
     """
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    columns = protocol.table_columns(conn, "tracks")
     audio_column = "audio_hash" if "audio_hash" in columns else "NULL AS audio_hash"
     rows = conn.execute(
         f"""
