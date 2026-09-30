@@ -122,8 +122,11 @@ def _minutes_after(start: datetime, minutes: float) -> datetime:
 # ----- the notice ----------------------------------------------------------
 
 
+@pytest.mark.requirement("REVIEW-12")
 def test_a_notice_six_seconds_after_the_push_runs_sol() -> None:
-    """#4538 as it happened. Ignoring the notice would leave this at WAIT for
+    """[if] a notice follows the push [then] the action is RUN_SOL, [else stop].
+
+    #4538 as it happened. Ignoring the notice would leave this at WAIT for
     20 minutes, the delay this module exists to remove."""
     state = _state_4538()
     decision = decide(state, _minutes_after(state.pushed_at, 1))
@@ -131,8 +134,11 @@ def test_a_notice_six_seconds_after_the_push_runs_sol() -> None:
     assert "usage-limit notice" in decision.reason
 
 
+@pytest.mark.requirement("REVIEW-12")
 def test_a_notice_left_for_an_earlier_head_does_not_run_sol() -> None:
-    """#4515's 07:51Z notice answered an older head. Read as current, it would
+    """[if] the only notice predates the push [then] the action is WAIT, [else stop].
+
+    #4515's 07:51Z notice answered an older head. Read as current, it would
     skip Codex's grace on every push that follows a walled one."""
     state = _state(HEAD_4515_FINAL, PUSH_4515_FINAL, comments=[OLD_NOTICE_4515])
     decision = decide(state, _minutes_after(PUSH_4515_FINAL, 5))
@@ -233,7 +239,9 @@ def test_the_limit_is_read_from_both_lanes_not_restated() -> None:
     assert lanes == CFG.MAX_DIFF_BYTES
 
 
+@pytest.mark.requirement("REVIEW-12")
 def test_a_diff_over_the_lanes_limit_is_refused_not_run() -> None:
+    """[if] the diff is over the lanes' limit [then] no lane runs, [else stop]."""
     state = _state_4538(diff=CFG.MAX_DIFF_BYTES + 1)
     decision = decide(state, _minutes_after(state.pushed_at, 1))
     assert decision.action is Action.REFUSED_OVERSIZE
@@ -270,7 +278,9 @@ def test_every_sol_seat_spent_runs_claude() -> None:
     assert _after_notice(sol=LaneResult(3, all_seats_spent=True)) is Action.RUN_CLAUDE
 
 
+@pytest.mark.requirement("REVIEW-12")
 def test_claude_already_tried_at_this_head_is_exhausted_not_rerun() -> None:
+    """[if] Claude was tried at this head [then] it is not run again, [else stop]."""
     assert _after_notice(sol=LaneResult(3), claude_attempted=True) is Action.EXHAUSTED
 
 
@@ -360,8 +370,11 @@ def gh_authenticated() -> None:
 
 
 @live
+@pytest.mark.requirement("REVIEW-12")
 def test_a_gh_error_is_raised_never_read_as_no_notice(gh_authenticated: None) -> None:
-    """Negative control: a PR that does not exist must raise, not come back
+    """[if] a gh read fails [then] it raises rather than reading as silence, [else stop].
+
+    Negative control: a PR that does not exist must raise, not come back
     as zero artifacts, which `decide` would read as silence."""
     with pytest.raises(TriageError):
         codex_artifacts_on("999999999")
