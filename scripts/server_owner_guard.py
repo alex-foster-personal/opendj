@@ -106,6 +106,29 @@ def testing_service_id(name: str, repo_root: Path = CFG.REPO_ROOT) -> str:
     return f"{process_namespace(repo_root)}{CFG.TEST_SERVICE_INFIX}{name}"
 
 
+def _proc_ppid(pid: int) -> int | None:
+    if sys.platform.startswith("linux"):
+        try:
+            text = Path(f"/proc/{pid}/stat").read_text()
+            fields = text[text.rfind(")") + 2 :].split()
+            return int(fields[1])
+        except (OSError, ValueError, IndexError):
+            return None
+    out = subprocess.run(
+        ["ps", "-o", "ppid=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": "C"},
+    ).stdout.strip()
+    if not out:
+        return None
+    try:
+        return int(out)
+    except ValueError:
+        return None
+
+
 def process_start_time(pid: int) -> str | None:
     """Identity of a pid: its start time. None when the pid is gone or a zombie."""
     if sys.platform.startswith("linux"):
@@ -125,6 +148,27 @@ def process_start_time(pid: int) -> str | None:
     if not out or out.startswith("Z"):
         return None
     return out.partition(" ")[2].strip()
+
+
+def _ownership_watch(repo_owner_pid: int) -> dict[int, str | None]:
+    """Pids whose death ends the run: the declared owner plus every ancestor
+    of this guard. Playwright's webServer ``exec`` keeps the runner on that
+    chain even when ``--owner-pid`` was stamped at config load on a child that
+    outlives a SIGKILL of the process the test actually signals."""
+    watched: dict[int, str | None] = {}
+    pending = [repo_owner_pid, os.getppid()]
+    while pending:
+        pid = pending.pop()
+        if pid <= 1 or pid in watched:
+            continue
+        ident = process_start_time(pid)
+        if ident is None:
+            continue
+        watched[pid] = ident
+        parent = _proc_ppid(pid)
+        if parent is not None:
+            pending.append(parent)
+    return watched
 
 
 def _log(message: str) -> None:
@@ -219,8 +263,8 @@ def main(argv: list[str] | None = None) -> int:
             "start_new_session, so its group signals reach only the server"
         )
     owner_seen_alive_at = time.monotonic()
-    owner_identity = process_start_time(args.owner_pid)
-    if owner_identity is None:
+    watched = _ownership_watch(args.owner_pid)
+    if args.owner_pid not in watched:
         raise SystemExit(
             f"[ERROR] owner pid {args.owner_pid} is not running: "
             "refusing to start an unowned server"
@@ -247,12 +291,13 @@ def main(argv: list[str] | None = None) -> int:
             _kill_group_leftovers(f"{args.name}: child exited with status {status}")
             return status
         probe_started_at = time.monotonic()
-        if process_start_time(args.owner_pid) != owner_identity:
+        gone = [pid for pid, ident in watched.items() if process_start_time(pid) != ident]
+        if gone:
             # The owner died after the last probe that saw it alive STARTED, so
             # this deadline falls inside the bound measured from its real death,
             # however late the poll noticed it.
             kill_by = owner_seen_alive_at + CFG.OWNER_DEATH_BOUND_S - CFG.DEADLINE_MARGIN_S
-            _kill_own_group(f"{args.name}: owner pid {args.owner_pid} is gone", kill_by)
+            _kill_own_group(f"{args.name}: owner process(es) {gone} gone", kill_by)
             return 1
         owner_seen_alive_at = probe_started_at
         time.sleep(CFG.POLL_S)
