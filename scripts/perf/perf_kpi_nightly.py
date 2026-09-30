@@ -116,25 +116,31 @@ def measure_track(
     return results
 
 
+def nightly_capture_id(now: dt.datetime, machine: str) -> str:
+    """One id per run and host (PRs #4473, #4474): a date or bare second can repeat."""
+    return f"perf-kpi-{now.strftime('%Y%m%dT%H%M%S.%fZ')}-{machine}"
+
+
 def build_ledger_rows(
     config: PerfKpiConfig,
     *,
-    capture_id: str,
     git_sha: str,
-    today: dt.date,
+    now: dt.datetime,
     measurements: list[WarmMedian],
 ) -> list[dict[str, Any]]:
+    """`captured_at` is fixed-width UTC, so readers order same-date rows by capture time."""
     rows: list[dict[str, Any]] = []
     for item in measurements:
         name = kpi_name(item.leg, item.profile_key)
         common = {
-            "date": today.isoformat(),
+            "date": now.date().isoformat(),
+            "captured_at": now.isoformat(timespec="microseconds"),
             "round": "perf-kpi-nightly",
             "kpi": name,
             "unit": "ms",
             "machine": config.machine,
             "source": "scripts/perf/perf_kpi_job.py nightly",
-            "capture_id": capture_id,
+            "capture_id": nightly_capture_id(now, config.machine),
             "denominator": item.denominator,
             "git_sha": git_sha,
         }
@@ -485,11 +491,13 @@ def run_nightly(
     base_url: str,
     git_sha: str,
     probe: ProbeFn,
-    today: dt.date | None = None,
+    now: dt.datetime | None = None,
     repository: str = "maintainer/music-dj-tools",
     file_issue: bool = True,
 ) -> NightlyOutcome:
-    today = today or dt.datetime.now(dt.UTC).date()
+    now = now or dt.datetime.now(dt.UTC)
+    if now.utcoffset() != dt.timedelta(0):
+        raise ValueError(f"run_nightly needs a UTC-aware clock, got {now!r}")
     measurements: list[WarmMedian] = []
     for track in config.tracks:
         measurements.extend(
@@ -502,7 +510,7 @@ def run_nightly(
             written,
             base_url=base_url,
             git_sha=git_sha,
-            today=today,
+            now=now,
             measurements=measurements,
             repository=repository,
             file_issue=file_issue,
@@ -519,7 +527,7 @@ def _append_and_judge(
     *,
     base_url: str,
     git_sha: str,
-    today: dt.date,
+    now: dt.datetime,
     measurements: list[WarmMedian],
     repository: str,
     file_issue: bool,
@@ -527,13 +535,8 @@ def _append_and_judge(
     """Append tonight's rows, then judge them. Records each batch in
     ``written`` as soon as it is on disk, so `run_nightly` can report exactly
     what reached the ledger if anything after it raises."""
-    rows = build_ledger_rows(
-        config,
-        capture_id=f"perf-kpi-{today.isoformat()}",
-        git_sha=git_sha,
-        today=today,
-        measurements=measurements,
-    )
+    today = now.date()
+    rows = build_ledger_rows(config, git_sha=git_sha, now=now, measurements=measurements)
     append_entries(config.ledger_path, rows)
     written.append(rows)
     s5_rows = capture_s5_against_engine(

@@ -39,7 +39,9 @@ const TRACK_TABLE = join(SRC, 'lib/components/rb/browser/TrackTable.svelte');
 /** Every ANLZ fetch entry point. Anything calling these can hit the network. */
 // ensureAnlzPrefetch is the shed-gated row-select variant PERFMODE-04 split out
 // of ensureAnlz (2f4981be0); it still starts a fetch, so it is an entry point.
-const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'ensureAnlzPrefetch', 'fetchAnlz'];
+// prefetchDeckStripAnlz is the deck strip's untracked wrapper around it (PR
+// #4011): listed so its callers stay penned in here, not just the wrapper.
+const ANLZ_ENTRY_POINTS = ['ensureAnlz', 'ensureAnlzPrefetch', 'fetchAnlz', 'prefetchDeckStripAnlz'];
 
 /**
  * Files allowed to reach an /anlz fetch, and why. Each is O(1) in the number of
@@ -55,6 +57,11 @@ const ALLOWED_ANLZ_CALLERS = new Map([
 	[
 		'lib/player/beatgrid-upgrade.ts',
 		'one refetch per deck load, only when a vendor mapping lands mid-flight (PARITY-09)'
+	],
+	['lib/components/rb/deck/StripWaveform.svelte', 'one per deck strip waveform, not per library row'],
+	[
+		'lib/components/rb/deck/strip-anlz-prefetch.ts',
+		"StripWaveform's untracked warm-up; itself an entry point, so its callers are listed too"
 	]
 ]);
 
@@ -221,6 +228,52 @@ test('strip markers resolve from memory: playing deck wins, cache fills, a miss 
 	assert.equal(out.b, cached, 'a ready cache entry answers for a row on no deck');
 	assert.equal('c' in out, false, 'a cache miss must stay a miss, not a placeholder');
 	assert.deepEqual(asked, ['b', 'c'], 'the cache is consulted once per row with no deck answer');
+});
+
+test('preview strips resolve from memory without per-row fetch', () => {
+	const hydrated = { cols: 120, bands: new Uint8Array(360), max: 1 };
+	const out = rowVocals.resolveRowPreviewStrip({
+		rows: [
+			{ stable_id: 'a', strip: null },
+			{ stable_id: 'b', strip: hydrated },
+			{ stable_id: 'c', strip: null }
+		],
+		cachedAnlzEntry: (sid) => {
+			if (sid === 'a') {
+				return {
+					status: 'ready',
+					data: {
+						local_waveform: {
+							status: 'decoded',
+							preview_b64: null,
+							preview_max: null
+						}
+					}
+				};
+			}
+			if (sid === 'c') return { status: 'loading' };
+			return undefined;
+		}
+	});
+	assert.equal(out.b, hydrated, 'listing-hydrated strip must win');
+	assert.equal(out.a, null, 'decoded-with-null-preview stays absent');
+	assert.equal(out.c, null, 'loading cache must not invent strip bytes');
+	const loading = rowVocals.resolveRowStripLoading({
+		rows: [
+			{ stable_id: 'a', strip: null },
+			{ stable_id: 'b', strip: hydrated },
+			{ stable_id: 'c', strip: null },
+			{ stable_id: 'd', strip: null }
+		],
+		cachedAnlzEntry: (sid) => {
+			if (sid === 'c') return { status: 'loading' };
+			if (sid === 'd') return undefined;
+			return { status: 'ready', data: {} };
+		}
+	});
+	assert.equal(loading.b, false, 'hydrated strip is never loading');
+	assert.equal(loading.c, true, 'cache loading shows spinner');
+	assert.equal(loading.d, false, 'no cache entry must not spin forever');
 });
 
 test('TrackTable draws strip markers from its markerAnlzById prop', () => {
