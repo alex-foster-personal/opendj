@@ -97,17 +97,9 @@ test('five pushed toasts yield at most three visible in policy slice', async (t)
 		for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 		assert.equal(stores.toasts.length, 0, 'every toast dismissed, no timer left armed');
 	});
-	try {
-		const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
-		assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
-		const visible = policy.selectVisibleToasts(stores.toasts);
-		assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
-	} finally {
-		// Real 120s dismiss timers otherwise keep the Node process alive until the file timeout.
-		const logIds = stores.toasts.map((t) => t.logId);
-		for (const logId of logIds) {
-			assert.equal(stores.dismissToast(logId), true, `dismissToast(${logId})`);
-		}
-		assert.equal(stores.toasts.length, 0);
-	}
+	const nonExiting = stores.toasts.filter((t) => t.exiting !== true);
+	assert.ok(nonExiting.length <= 3, `non-exiting count ${nonExiting.length}`);
+	const visible = policy.selectVisibleToasts(stores.toasts);
+	assert.ok(visible.length <= 3, `visible slice length ${visible.length}`);
+	for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 });
