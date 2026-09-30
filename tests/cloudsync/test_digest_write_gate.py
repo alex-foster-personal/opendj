@@ -25,7 +25,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from apps.shared.state import migrations_v20
+from apps.shared.state import migrations_v21
 from apps.shared.state.machine_identity import IS_HUB_ENV
 from apps.sync_hub import client, digest_gate, engine, protocol, service, sync_set
 from apps.sync_hub.engine_identity_map import REMAP_TABLE, ensure_identity_remap_table
@@ -248,7 +248,7 @@ def test_missing_trigger_disables_the_gate(spoke_a: Path) -> None:
         assert (intact.walks, intact.hits) == (0, 1), (
             "positive control: an intact gate must serve the second digest"
         )
-        conn.execute(f"DROP TRIGGER {migrations_v20.trigger_name('track_fields', 'UPDATE')}")
+        conn.execute(f"DROP TRIGGER {migrations_v21.trigger_name('track_fields', 'UPDATE')}")
         broken = Since()
         protocol.sync_digest(conn)
         protocol.sync_digest(conn)
@@ -284,10 +284,10 @@ def test_gate_watches_every_table_the_digest_reads(spoke_a: Path) -> None:
         conn.close()
     assert "tracks" in read, "positive control: the authorizer must see the walk"
     # sqlite_master is itself part of the gate key (every definition, verbatim).
-    watched = set(migrations_v20.WRITE_TOKEN_TABLES) | {REMAP_TABLE, "sqlite_master"}
+    watched = set(migrations_v21.WRITE_TOKEN_TABLES) | {REMAP_TABLE, "sqlite_master"}
     assert read <= watched, f"digest reads unwatched table(s): {sorted(read - watched)}"
 
 
 def test_write_token_tables_are_exactly_the_digest_set() -> None:
-    assert set(migrations_v20.WRITE_TOKEN_TABLES) == set(sync_set.FK_ORDER)
+    assert set(migrations_v21.WRITE_TOKEN_TABLES) == set(sync_set.FK_ORDER)
     assert digest_gate.CFG.IDENTITY_REMAP_TABLE == REMAP_TABLE

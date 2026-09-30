@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 9
+SCHEMA_VERSION: int = 10
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -326,14 +326,14 @@ _SYNC_INFRA: tuple[str, ...] = (
 
 
 # ==========================================================================
-# DOMAIN: CloudSync per-table write tokens (legacy v20, issue #4396)
-# Legacy source: apps/shared/state/migrations_v20.py. Its own rung, not an
+# DOMAIN: CloudSync per-table write tokens (legacy v21, issue #4396)
+# Legacy source: apps/shared/state/migrations_v21.py. Its own rung, not an
 # append to _SYNC_INFRA/_V1: an install already stamped at v1 never re-runs
 # rung 1 (see the _V2 docstring below), so appending here would leave the
 # table absent on every pre-existing consolidated install.
 #
 # Only the table is mirrored, not the write-token TRIGGERS
-# (apps.shared.state.migrations_v20.EXPECTED_TRIGGERS) or their seed INSERTs:
+# (apps.shared.state.migrations_v21.EXPECTED_TRIGGERS) or their seed INSERTs:
 # the table/index equivalence gate (tests/engine_core/test_store_schema.py)
 # this module is checked against does not compare triggers, and unlike this
 # domain's CREATE TABLE the trigger CREATEs and seed INSERTs are not safely
@@ -1136,7 +1136,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "dedup": "apps/dedup/schema.py",
     "caches": "apps/shared/fingerprints.py + apps/shared/hashing.py",
     "launcher": "apps/launcher/scripts/bootstrap_db.py",
-    "sync_write_tokens": "apps/shared/state/migrations_v20.py",
+    "sync_write_tokens": "apps/shared/state/migrations_v21.py",
 }
 """Domain -> the legacy file its DDL was lifted from, verbatim.
 
@@ -1296,14 +1296,24 @@ _V8: list[str] = [
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v7 never re-runs an earlier rung."""
 
-_V9: list[str] = list(_SYNC_WRITE_TOKENS)
-"""8 -> 9: sync_write_tokens, the CloudSync digest gate's per-table write
-token (legacy ladder v20, issue #4396).
+_V9: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) "
+    "WHERE content_hash IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_isrc_upper ON tracks(upper(isrc))",
+]
+"""8 -> 9: indexed CloudSync track identity lookups (legacy ladder v20, issue #4397).
 
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v8 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9]
+_V10: list[str] = list(_SYNC_WRITE_TOKENS)
+"""9 -> 10: sync_write_tokens, the CloudSync digest gate's per-table write
+token (legacy ladder v21, issue #4396).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v9 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.

@@ -1,4 +1,4 @@
-"""Docs for the v20 ``sync_write_tokens`` table (issue #4396, CloudSync digest gate).
+"""Docs for the v21 ``sync_write_tokens`` table (issue #4396, CloudSync digest gate).
 
 Own module for the same reason ``column_docs_feedback`` is one: the combined
 column-doc table would otherwise grow past the 600-line file-size gate.
@@ -9,7 +9,7 @@ from __future__ import annotations
 SYNC_GATE_TABLE_DOC: str = (
     "Machine-local, never synced. One row per table the CloudSync digest "
     "hashes, holding a random token that a trigger on that table replaces on "
-    "every row INSERT, UPDATE or DELETE (migration v20). "
+    "every row INSERT, UPDATE or DELETE (migration v21). "
     "apps.sync_hub.digest_gate reuses a previous digest only while every "
     "token, both changelog seqs, the schema and the identity remap are "
     "unchanged, so a no-op sync does not re-hash the library."

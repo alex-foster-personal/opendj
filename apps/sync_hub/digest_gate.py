@@ -10,7 +10,7 @@ The proof is a :class:`DigestInputs` read in the caller's transaction:
 * the ``local_changelog`` and ``hub_changelog`` seqs, the changelog gate
   the issue asks for;
 * one write token per digested table
-  (:mod:`apps.shared.state.migrations_v20`), replaced by a trigger on every
+  (:mod:`apps.shared.state.migrations_v21`), replaced by a trigger on every
   row write, so a write that bypassed the changelog still moves the key. The
   changelog alone cannot prove "unchanged": it is appended by application
   code, and the digest exists precisely to catch the writes that code missed;
@@ -42,7 +42,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from apps.shared.state import migrations_v20
+from apps.shared.state import migrations_v21
 from apps.sync_hub import sync_set
 
 if TYPE_CHECKING:
@@ -99,7 +99,7 @@ def _schema(conn: sqlite3.Connection) -> tuple[tuple[str | None, ...], ...]:
 def _trigger_fault(schema: tuple[tuple[str | None, ...], ...]) -> str | None:
     """Why the write-token triggers cannot be trusted, or None when intact."""
     stored = {name: sql for kind, name, _, sql in schema if kind == "trigger"}
-    for name, sql in migrations_v20.EXPECTED_TRIGGERS.items():
+    for name, sql in migrations_v21.EXPECTED_TRIGGERS.items():
         if stored.get(name) != sql:
             return f"trigger {name} is missing or altered"
     return None
@@ -108,7 +108,7 @@ def _trigger_fault(schema: tuple[tuple[str | None, ...], ...]) -> str | None:
 def _write_tokens(conn: sqlite3.Connection) -> tuple[tuple[str, bytes], ...] | None:
     """One token per digested table, or None when any is absent."""
     tokens = dict(
-        conn.execute(f"SELECT table_name, token FROM {migrations_v20.WRITE_TOKEN_TABLE}").fetchall()
+        conn.execute(f"SELECT table_name, token FROM {migrations_v21.WRITE_TOKEN_TABLE}").fetchall()
     )
     if not set(sync_set.FK_ORDER) <= set(tokens):
         return None
@@ -137,8 +137,8 @@ def read_inputs(conn: sqlite3.Connection) -> DigestInputs | None:
     """The gate key for ``conn``'s current snapshot, or None when unprovable."""
     schema = _schema(conn)
     tables = {name for kind, name, _, _ in schema if kind == "table"}
-    if migrations_v20.WRITE_TOKEN_TABLE not in tables:
-        _unprovable(f"{migrations_v20.WRITE_TOKEN_TABLE} is absent (schema below v20)")
+    if migrations_v21.WRITE_TOKEN_TABLE not in tables:
+        _unprovable(f"{migrations_v21.WRITE_TOKEN_TABLE} is absent (schema below v21)")
         return None
     fault = _trigger_fault(schema)
     if fault is not None:
@@ -146,7 +146,7 @@ def read_inputs(conn: sqlite3.Connection) -> DigestInputs | None:
         return None
     tokens = _write_tokens(conn)
     if tokens is None:
-        _unprovable(f"{migrations_v20.WRITE_TOKEN_TABLE} lacks a digested table's row")
+        _unprovable(f"{migrations_v21.WRITE_TOKEN_TABLE} lacks a digested table's row")
         return None
     return DigestInputs(
         changelog_seqs=(_max_seq(conn, "local_changelog"), _max_seq(conn, "hub_changelog")),

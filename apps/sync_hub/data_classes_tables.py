@@ -153,7 +153,7 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "sync_identity_remap (engine_identity_map.py) holds identity-collapse remaps "
         "across batched hub_apply calls on the shared connection; additive bookkeeping "
         "for this machine's own apply, not part of the sync set itself. "
-        "sync_write_tokens (migrations_v20.py) gates this machine's own digest walk.",
+        "sync_write_tokens (migrations_v21.py) gates this machine's own digest walk.",
         (),
     ),
     fixed(

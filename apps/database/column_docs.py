@@ -620,7 +620,7 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **LYRICS_COLUMN_DOCS,
     # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
     **FEEDBACK_COLUMN_DOCS,
-    # Migration v20 sync_write_tokens (issue #4396).
+    # Migration v21 sync_write_tokens (issue #4396).
     **SYNC_GATE_COLUMN_DOCS,
 }
 
