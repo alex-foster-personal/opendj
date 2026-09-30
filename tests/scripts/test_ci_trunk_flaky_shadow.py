@@ -37,7 +37,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,7 +76,9 @@ def _uploads() -> list[dict]:
 def test_trunk_uploads_live_in_the_isolated_insights_job() -> None:
     for upload in _uploads():
         assert upload["uses"].startswith("trunk-io/analytics-uploader@"), upload["uses"]
-    all_uploaders = [s for s in _steps(INSIGHTS_JOB) if str(s.get("uses", "")).startswith("trunk-io/")]
+    all_uploaders = [
+        s for s in _steps(INSIGHTS_JOB) if str(s.get("uses", "")).startswith("trunk-io/")
+    ]
     assert len(all_uploaders) == len(SHARDS), "exactly one uploader per shard, no combined upload"
 
 
@@ -104,7 +105,9 @@ def test_trunk_uploader_never_quarantines() -> None:
 
 def test_trunk_uploads_are_pinned_to_a_sha() -> None:
     for upload in _uploads():
-        assert re.fullmatch(r"trunk-io/analytics-uploader@[0-9a-f]{40}", upload["uses"]), upload["uses"]
+        assert re.fullmatch(r"trunk-io/analytics-uploader@[0-9a-f]{40}", upload["uses"]), upload[
+            "uses"
+        ]
 
 
 def test_trunk_uploads_run_without_a_checkout() -> None:
@@ -117,7 +120,9 @@ def test_trunk_uploads_run_without_a_checkout() -> None:
 
 def test_each_upload_carries_exactly_its_own_shard_report() -> None:
     download_paths = [
-        s["with"]["path"] for s in _steps(INSIGHTS_JOB) if str(s.get("id", "")).startswith("download-")
+        s["with"]["path"]
+        for s in _steps(INSIGHTS_JOB)
+        if str(s.get("id", "")).startswith("download-")
     ]
     assert len(download_paths) == len(SHARDS), download_paths
     for shard, (upload, path) in enumerate(zip(_uploads(), download_paths, strict=True), start=1):
@@ -137,8 +142,12 @@ def test_trunk_steps_are_skipped_without_a_token() -> None:
 def test_trunk_guard_reads_every_shard_upload() -> None:
     guard = _step_by_name(INSIGHTS_JOB, GUARD_NAME)
     for n in SHARDS:
-        assert guard["env"][f"TRUNK_UPLOAD_{n}"] == f"${{{{ steps.trunk-flaky-tests-{n}.outcome }}}}"
-        assert guard["env"][f"HAS_REPORT_{n}"] == f"${{{{ steps.shard-outcome-{n}.outputs.report }}}}"
+        assert (
+            guard["env"][f"TRUNK_UPLOAD_{n}"] == f"${{{{ steps.trunk-flaky-tests-{n}.outcome }}}}"
+        )
+        assert (
+            guard["env"][f"HAS_REPORT_{n}"] == f"${{{{ steps.shard-outcome-{n}.outputs.report }}}}"
+        )
 
 
 def _run_guard(results: dict[int, tuple[str, str]]) -> str:
@@ -151,7 +160,12 @@ def _run_guard(results: dict[int, tuple[str, str]]) -> str:
         has_report, upload = results.get(n, ("false", ""))
         env[f"HAS_REPORT_{n}"], env[f"TRUNK_UPLOAD_{n}"] = has_report, upload
     done = subprocess.run(
-        [bash, "-e", "-c", guard["run"]], env=env, capture_output=True, text=True, timeout=30, check=True
+        [bash, "-e", "-c", guard["run"]],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
     )
     return done.stdout
 

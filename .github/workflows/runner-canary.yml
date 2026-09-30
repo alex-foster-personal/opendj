@@ -339,6 +339,7 @@ jobs:
               --ignore=tests/perf/test_library_playlist_switch_bench.py
           rc=$?
           set -e
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
             elapsed=$(( $(date +%s) - started ))
             # 124 is `timeout`'s own expiry. 137 is its KILL escalation: the

@@ -48,7 +48,9 @@ def _jobs() -> dict:
 
 def _step(job: str, *, step_id: str | None = None, name: str | None = None) -> dict:
     steps = [
-        s for s in _jobs()[job]["steps"] if (step_id and s.get("id") == step_id) or (name and s.get("name") == name)
+        s
+        for s in _jobs()[job]["steps"]
+        if (step_id and s.get("id") == step_id) or (name and s.get("name") == name)
     ]
     assert len(steps) == 1, f"{job}: want one step id={step_id} name={name}, got {len(steps)}"
     return steps[0]
@@ -58,9 +60,13 @@ def _junit(tmp_path: Path, cases: list[tuple[str, str, str]]) -> Path:
     body = []
     for classname, name, kind in cases:
         inner = "" if kind == "pass" else f'<{kind} message="boom">trace</{kind}>'
-        body.append(f'<testcase classname="{classname}" name="{name}" time="0.1">{inner}</testcase>')
+        body.append(
+            f'<testcase classname="{classname}" name="{name}" time="0.1">{inner}</testcase>'
+        )
     path = tmp_path / "junit-shard-1.xml"
-    path.write_text(f'<?xml version="1.0"?><testsuites><testsuite name="pytest">{"".join(body)}</testsuite></testsuites>')
+    path.write_text(
+        f'<?xml version="1.0"?><testsuites><testsuite name="pytest">{"".join(body)}</testsuite></testsuites>'
+    )
     return path
 
 
@@ -71,7 +77,16 @@ def _listed(*keys: tuple[str, str], status: str = "ok") -> str:
 
 def _verdict(rc: str, quarantine: str, junit: Path) -> tuple[int, str]:
     done = subprocess.run(
-        [sys.executable, str(VERDICT_SCRIPT), "--pytest-rc", rc, "--junit", str(junit), "--shard", "1"],
+        [
+            sys.executable,
+            str(VERDICT_SCRIPT),
+            "--pytest-rc",
+            rc,
+            "--junit",
+            str(junit),
+            "--shard",
+            "1",
+        ],
         env={"PATH": os.environ.get("PATH", ""), "TRUNK_QUARANTINE_LIST": quarantine},
         capture_output=True,
         text=True,
@@ -83,7 +98,9 @@ def _verdict(rc: str, quarantine: str, junit: Path) -> tuple[int, str]:
 
 # ----- the verdict script ----------------------------------------------------
 def test_an_unlisted_failure_fails_the_shard(tmp_path: Path) -> None:
-    junit = _junit(tmp_path, [(*FLAKY, "failure"), (*REAL, "failure"), ("tests.x", "test_ok", "pass")])
+    junit = _junit(
+        tmp_path, [(*FLAKY, "failure"), (*REAL, "failure"), ("tests.x", "test_ok", "pass")]
+    )
     rc, out = _verdict("1", _listed(FLAKY), junit)
     assert rc == 1 and "test_real_regression" in out and "VERDICT: FAIL" in out, out
     rc, out = _verdict("1", _listed(), junit)
@@ -91,9 +108,13 @@ def test_an_unlisted_failure_fails_the_shard(tmp_path: Path) -> None:
 
 
 def test_a_listed_only_failure_passes_the_shard(tmp_path: Path) -> None:
-    junit = _junit(tmp_path, [(*FLAKY, "failure"), (*REAL, "error"), ("tests.x", "test_ok", "pass")])
+    junit = _junit(
+        tmp_path, [(*FLAKY, "failure"), (*REAL, "error"), ("tests.x", "test_ok", "pass")]
+    )
     rc, out = _verdict("1", _listed(FLAKY, REAL), junit)
-    assert rc == 0 and "VERDICT: PASS" in out and "::warning title=Trunk quarantine excused 2" in out, out
+    assert (
+        rc == 0 and "VERDICT: PASS" in out and "::warning title=Trunk quarantine excused 2" in out
+    ), out
 
 
 def test_exit_zero_passes_without_any_list(tmp_path: Path) -> None:
@@ -102,7 +123,9 @@ def test_exit_zero_passes_without_any_list(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("pytest_rc", ["2", "3", "4", "5", "124", "137", ""])
-def test_any_exit_but_one_fails_even_when_every_failure_is_listed(tmp_path: Path, pytest_rc: str) -> None:
+def test_any_exit_but_one_fails_even_when_every_failure_is_listed(
+    tmp_path: Path, pytest_rc: str
+) -> None:
     junit = _junit(tmp_path, [(*FLAKY, "failure")])
     rc, out = _verdict(pytest_rc, _listed(FLAKY), junit)
     assert rc == 1 and "only exit 1 can be excused" in out, out
@@ -111,7 +134,14 @@ def test_any_exit_but_one_fails_even_when_every_failure_is_listed(tmp_path: Path
 
 @pytest.mark.parametrize(
     "quarantine",
-    ["", "not json", '{"status": "unreachable"}', '{"status": "ok"}', '["x"]', '{"status": "ok", "tests": [{"c": ""}]}'],
+    [
+        "",
+        "not json",
+        '{"status": "unreachable"}',
+        '{"status": "ok"}',
+        '["x"]',
+        '{"status": "ok", "tests": [{"c": ""}]}',
+    ],
 )
 def test_an_unusable_list_fails_closed(tmp_path: Path, quarantine: str) -> None:
     junit = _junit(tmp_path, [(*FLAKY, "failure")])
@@ -124,7 +154,9 @@ def test_an_oversized_list_is_a_mass_false_flag(tmp_path: Path) -> None:
     padding = [("tests.pad", f"test_{i}") for i in range(400)]
     rc, out = _verdict("1", _listed(FLAKY, *padding), junit)
     assert rc == 1 and "mass false flag" in out, out
-    assert _verdict("1", _listed(FLAKY, *padding[:100]), junit)[0] == 0, "control: a plausible list passes"
+    assert _verdict("1", _listed(FLAKY, *padding[:100]), junit)[0] == 0, (
+        "control: a plausible list passes"
+    )
 
 
 def test_too_many_excused_failures_in_one_shard_is_an_infra_burst(tmp_path: Path) -> None:
@@ -166,7 +198,14 @@ def test_an_unreachable_list_fails_closed_end_to_end(tmp_path: Path) -> None:
         "TRUNK_API_URL": f"http://127.0.0.1:{_closed_port()}",
         "TRUNK_TEST_COLLECTION_ID": fetch["env"]["TRUNK_TEST_COLLECTION_ID"],
     }
-    done = subprocess.run([bash, "-e", "-c", fetch["run"]], env=env, capture_output=True, text=True, timeout=90, check=False)
+    done = subprocess.run(
+        [bash, "-e", "-c", fetch["run"]],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
+    )
     assert done.returncode != 0, done.stdout + done.stderr
     assert "list=" not in output.read_text(), output.read_text()
     junit = _junit(tmp_path, [(*FLAKY, "failure")])
@@ -178,8 +217,19 @@ def test_the_list_job_fails_without_a_token(tmp_path: Path) -> None:
     fetch = _step(LIST_JOB, step_id="fetch")
     output = tmp_path / "github_output"
     output.write_text("")
-    env = {"PATH": os.environ.get("PATH", ""), "GITHUB_OUTPUT": str(output), "TRUNK_API_URL": "http://127.0.0.1:9"}
-    done = subprocess.run([shutil.which("bash") or "bash", "-e", "-c", fetch["run"]], env=env, capture_output=True, text=True, timeout=30, check=False)
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "GITHUB_OUTPUT": str(output),
+        "TRUNK_API_URL": "http://127.0.0.1:9",
+    }
+    done = subprocess.run(
+        [shutil.which("bash") or "bash", "-e", "-c", fetch["run"]],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
     assert done.returncode != 0 and "not provisioned" in done.stderr, done.stderr
     assert output.read_text() == ""
 
@@ -188,7 +238,9 @@ def test_the_list_job_fails_without_a_token(tmp_path: Path) -> None:
 def test_the_list_job_runs_no_repository_code_on_a_hosted_runner() -> None:
     job = _jobs()[LIST_JOB]
     assert job["runs-on"] == "ubuntu-latest", job["runs-on"]
-    assert all("uses" not in s for s in job["steps"]), "the list job must not run any action, checkout included"
+    assert all("uses" not in s for s in job["steps"]), (
+        "the list job must not run any action, checkout included"
+    )
     assert _step(LIST_JOB, step_id="fetch")["continue-on-error"] is True
     assert job["outputs"]["list"] == "${{ steps.fetch.outputs.list }}"
     assert "vars.TRUNK_QUARANTINE_CI == 'true'" in job["if"], job["if"]
@@ -197,7 +249,11 @@ def test_the_list_job_runs_no_repository_code_on_a_hosted_runner() -> None:
 def test_the_shards_need_the_list_but_survive_its_failure() -> None:
     test = _jobs()["test"]
     assert test["needs"] == ["scope", LIST_JOB], test["needs"]
-    for clause in ("!cancelled()", "needs.scope.result == 'success'", "needs.scope.outputs.in_scope == 'true'"):
+    for clause in (
+        "!cancelled()",
+        "needs.scope.result == 'success'",
+        "needs.scope.outputs.in_scope == 'true'",
+    ):
         assert clause in test["if"], (clause, test["if"])
     assert "always()" not in test["if"], "always() would run the shards on a cancelled run"
 
@@ -239,7 +295,12 @@ def _run_verdict_step(tmp_path: Path, outcome: str, rc: str, quarantine: str) ->
         "SHARD": "1",
     }
     return subprocess.run(
-        [shutil.which("bash") or "bash", "-e", "-c", step["run"]], cwd=tmp_path, env=env, capture_output=True, timeout=60, check=False
+        [shutil.which("bash") or "bash", "-e", "-c", step["run"]],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        timeout=60,
+        check=False,
     ).returncode
 
 
@@ -256,5 +317,7 @@ def _run_verdict_step(tmp_path: Path, outcome: str, rc: str, quarantine: str) ->
         ("cancelled", "", _listed(FLAKY), 1),
     ],
 )
-def test_the_verdict_step_executes_as_written(tmp_path: Path, outcome: str, rc: str, quarantine: str, want: int) -> None:
+def test_the_verdict_step_executes_as_written(
+    tmp_path: Path, outcome: str, rc: str, quarantine: str, want: int
+) -> None:
     assert _run_verdict_step(tmp_path, outcome, rc, quarantine) == want

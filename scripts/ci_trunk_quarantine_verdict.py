@@ -104,11 +104,11 @@ def _failed_testcases(junit: Path) -> list[TestKey] | str:
         root = ET.parse(junit).getroot()
     except ET.ParseError as error:
         return f"the JUnit report does not parse ({error})"
-    failed = []
-    for case in root.iter("testcase"):
-        if case.find("failure") is not None or case.find("error") is not None:
-            failed.append((case.get("classname", ""), case.get("name", "")))
-    return failed
+    return [
+        (case.get("classname", ""), case.get("name", ""))
+        for case in root.iter("testcase")
+        if case.find("failure") is not None or case.find("error") is not None
+    ]
 
 
 # -----------------------------------------------------------------------------
@@ -116,7 +116,10 @@ def decide(pytest_rc: str, quarantine_raw: str, junit: Path) -> Verdict:
     if pytest_rc == "0":
         return Verdict(True, "pytest exited 0")
     if pytest_rc != str(PYTEST_TESTS_FAILED):
-        return Verdict(False, f"pytest exited {pytest_rc or 'with no recorded code'}; only exit 1 can be excused by quarantine")
+        return Verdict(
+            False,
+            f"pytest exited {pytest_rc or 'with no recorded code'}; only exit 1 can be excused by quarantine",
+        )
     quarantined = _parse_quarantine_list(quarantine_raw)
     if isinstance(quarantined, str):
         return Verdict(False, f"nothing is quarantined: {quarantined}")
@@ -127,9 +130,15 @@ def decide(pytest_rc: str, quarantine_raw: str, junit: Path) -> Verdict:
         return Verdict(False, "pytest exited 1 but the JUnit report records no failed testcase")
     unlisted = [f"{c}::{n}" for c, n in failed if (c, n) not in quarantined]
     if unlisted:
-        return Verdict(False, f"{len(unlisted)} failed test(s) are not quarantined: " + ", ".join(unlisted[:20]))
+        return Verdict(
+            False,
+            f"{len(unlisted)} failed test(s) are not quarantined: " + ", ".join(unlisted[:20]),
+        )
     if len(failed) > MAX_EXCUSED_PER_SHARD:
-        return Verdict(False, f"{len(failed)} quarantined failures in one shard exceeds {MAX_EXCUSED_PER_SHARD}; treated as an infrastructure burst")
+        return Verdict(
+            False,
+            f"{len(failed)} quarantined failures in one shard exceeds {MAX_EXCUSED_PER_SHARD}; treated as an infrastructure burst",
+        )
     excused = tuple(f"{c}::{n}" for c, n in failed)
     return Verdict(True, f"all {len(failed)} failure(s) are quarantined in Trunk", excused)
 
@@ -137,24 +146,32 @@ def decide(pytest_rc: str, quarantine_raw: str, junit: Path) -> Verdict:
 # -----------------------------------------------------------------------------
 def _report(verdict: Verdict, shard: str) -> None:
     if verdict.passed and verdict.excused:
-        print(f"::warning title=Trunk quarantine excused {len(verdict.excused)} failure(s) (shard {shard} of 5)::{', '.join(verdict.excused)}")
+        print(
+            f"::warning title=Trunk quarantine excused {len(verdict.excused)} failure(s) (shard {shard} of 5)::{', '.join(verdict.excused)}"
+        )
     elif not verdict.passed:
         print(f"::error title=pytest fast lane FAILED (shard {shard} of 5)::{verdict.reason}")
     print(f"VERDICT: {'PASS' if verdict.passed else 'FAIL'} -- {verdict.reason}")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as handle:
-            handle.write(f"### Fast lane verdict (shard {shard} of 5): {'PASS' if verdict.passed else 'FAIL'}\n\n{verdict.reason}\n\n")
+            handle.write(
+                f"### Fast lane verdict (shard {shard} of 5): {'PASS' if verdict.passed else 'FAIL'}\n\n{verdict.reason}\n\n"
+            )
             for test in verdict.excused:
                 handle.write(f"- quarantined: `{test}`\n")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--pytest-rc", required=True, help="the shard's pytest exit code, as recorded by its step")
+    parser.add_argument(
+        "--pytest-rc", required=True, help="the shard's pytest exit code, as recorded by its step"
+    )
     parser.add_argument("--junit", required=True, type=Path)
     parser.add_argument("--shard", required=True)
-    parser.add_argument("--quarantine-env", default="TRUNK_QUARANTINE_LIST", help="env var holding the list JSON")
+    parser.add_argument(
+        "--quarantine-env", default="TRUNK_QUARANTINE_LIST", help="env var holding the list JSON"
+    )
     args = parser.parse_args(argv)
     verdict = decide(args.pytest_rc, os.environ.get(args.quarantine_env, ""), args.junit)
     _report(verdict, args.shard)
