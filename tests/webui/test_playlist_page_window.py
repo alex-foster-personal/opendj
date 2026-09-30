@@ -24,6 +24,7 @@ Regression one-liners:
   - if the window query sorts in a temp b-tree or scans the table then broken
   - if the live count walks the order index (legacy keys up to 10,027 chars) then broken
   - if a writer's commit mid-read makes total disagree with the rows then broken
+  - if a state.db with no membership table answers an empty page then broken
 """
 
 from __future__ import annotations
@@ -248,7 +249,7 @@ def test_page_read_materializes_only_its_window(tmp_path: Path) -> None:
     conn = _sized_db(tmp_path, LARGE)
     counter = RowCounter()
     conn.row_factory = counter
-    page = read_playlist_page(conn, MIXED, limit=30, offset=LARGE - 30, has_memberships=True)
+    page = read_playlist_page(conn, MIXED, limit=30, offset=LARGE - 30)
     conn.close()
     assert page.total == LARGE
     assert len(page.playlist.items) == 30
@@ -293,7 +294,7 @@ def test_a_commit_mid_read_does_not_split_total_from_rows(mixed_db: Path) -> Non
             writer.commit()
 
     reader.set_trace_callback(_commit_before_window)
-    page = read_playlist_page(reader, MIXED, limit=500, offset=0, has_memberships=True)
+    page = read_playlist_page(reader, MIXED, limit=500, offset=0)
     reader.set_trace_callback(None)
     reader.close()
     writer.close()
@@ -301,3 +302,12 @@ def test_a_commit_mid_read_does_not_split_total_from_rows(mixed_db: Path) -> Non
     assert page.playlist.item_ids == before.item_ids
     after = SqliteBackend(mixed_db).get_playlist(MIXED)
     assert "late-item" in after.item_ids  # the write did land, just not inside the read
+
+
+def test_a_missing_membership_table_fails_loudly(mixed_db: Path) -> None:
+    conn = sqlite3.connect(str(mixed_db))
+    conn.execute("DROP TABLE playlist_memberships")
+    conn.commit()
+    conn.close()
+    with pytest.raises(sqlite3.OperationalError):
+        SqliteBackend(mixed_db).get_playlist_page(MIXED, limit=30, offset=0)

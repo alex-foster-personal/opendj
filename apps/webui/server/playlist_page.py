@@ -75,14 +75,15 @@ def read_playlist_page(
     *,
     limit: int,
     offset: int,
-    has_memberships: bool,
 ) -> PlaylistPage:
-    """Header, live count and one ordered window, in one read transaction."""
+    """Header, live count and one ordered window, in one read transaction.
+
+    A state.db without ``playlist_memberships`` or its v22 indexes raises
+    ``sqlite3.OperationalError``: a missing schema is never an empty playlist.
+    """
     conn.execute("BEGIN")
     try:
         header = read_playlist_header(conn, playlist_id)
-        if not has_memberships:
-            return PlaylistPage(playlist=playlist_from_header(header, [], []), total=0)
         total = conn.execute(LIVE_COUNT_SQL, (playlist_id,)).fetchone()[0]
         rows = conn.execute(WINDOW_SQL, (playlist_id, limit, offset)).fetchall()
     finally:

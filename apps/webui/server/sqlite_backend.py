@@ -745,10 +745,7 @@ class SqliteBackend:
                 return self._fallback.get_playlist_page(
                     playlist_id, limit=limit, offset=offset,
                 )
-            return read_playlist_page(
-                conn, playlist_id, limit=limit, offset=offset,
-                has_memberships=self._table_exists(conn, "playlist_memberships"),
-            )
+            return read_playlist_page(conn, playlist_id, limit=limit, offset=offset)
 
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
         with self._ro() as conn:
