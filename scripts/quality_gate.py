@@ -1160,21 +1160,58 @@ def _eval_frontend() -> list[Metric]:
 # ----- evaluator: size + duplication ---------------------------------------
 
 
-def _jscpd_duplication(apps_root: Path) -> Metric:
-    """Run pinned jscpd over `apps_root` and return the duplication metric.
+def _tracked_files(repo: Path, roots: tuple[str, ...]) -> list[Path]:
+    """Every git-tracked regular file under `roots` in `repo`, as absolute paths.
+
+    The gate measures the tree a commit would carry, never whatever else
+    happens to sit on disk. Persistent self-hosted runners keep untracked
+    dependency and build trees between jobs on purpose (scripts/
+    ci_clean_untracked.sh spares every `target` dir, for instance), and on
+    Tue 29 Sep 2026 Cargo `.d` files left under apps/audio-engine/target by
+    a crate main no longer tracks added 11 jscpd clones to PRs that touched
+    nothing jscpd scans. Listing from the index makes that class of debris
+    unreachable instead of excluding one instance of it.
+
+    Symlinks and gitlinks are dropped because jscpd never followed them in a
+    directory scan either, and a tracked file deleted in the working tree is
+    not there to measure. An empty list is a broken scope, not a clean tree.
+    """
+    _, out = _run(["git", "ls-files", "-z", "--", *roots], cwd=repo)
+    files = [
+        repo / rel
+        for rel in out.split("\0")
+        if rel and (repo / rel).is_file() and not (repo / rel).is_symlink()
+    ]
+    if not files:
+        raise RuntimeError(
+            f"git ls-files found no tracked files under {', '.join(roots)} in "
+            f"{repo}; that is a broken scan scope reporting as a clean tree"
+        )
+    return files
+
+
+def _jscpd_duplication(repo: Path, roots: tuple[str, ...] = ("apps",)) -> Metric:
+    """Run pinned jscpd over the tracked files under `roots` in `repo`.
+
+    The file list goes to jscpd through a config file rather than argv,
+    because thousands of paths overflow the Windows command line. CLI flags
+    still apply to it, `--ignore` included (probed against jscpd 5.0.15).
 
     Fresh report directory per call, removed after, for the same reason as
     the deptry report: two concurrent gates must not share a path. A missing
     JSON report is a broken tool, not a clean tree.
     """
+    files = _tracked_files(repo, roots)
     jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
     try:
+        config = jscpd_dir / "jscpd-paths.json"
+        config.write_text(json.dumps({"path": [str(f) for f in files]}), encoding="utf-8")
         _pnpm_dlx(
             CFG.JSCPD,
+            "--config", str(config),
             "--reporters", "json", "--output", str(jscpd_dir), "--silent",
             "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
             "--ignore", ",".join(CFG.LOCKFILE_GLOBS + CFG.GENERATED_CONTRACT_GLOBS),
-            str(apps_root),
             allow_fail=True,
         )
         report_path = jscpd_dir / "jscpd-report.json"
@@ -1214,7 +1251,7 @@ def _eval_size() -> list[Metric]:
         Metric("file_size.over_limit_python", py_over, f"files > {CFG.PY_FILE_LIMIT} lines"),
         Metric("file_size.max_frontend", fe_max, "lines", fe_worst),
         Metric("file_size.over_limit_frontend", fe_over, f"files > {CFG.FE_FILE_LIMIT} lines"),
-        _jscpd_duplication(REPO / "apps"),
+        _jscpd_duplication(REPO),
     ]
 
 
