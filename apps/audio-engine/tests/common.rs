@@ -2,23 +2,54 @@
 //! Shared fixtures: synthetic tones written as real WAV files, so tests go
 //! through the same decode path the engine uses for a user's tracks.
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::ffi::OsStr;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
 
 use odj_audio::wav;
 
-static N: AtomicU32 = AtomicU32::new(0);
+/// A test's scratch directory, deleted with everything in it when this guard
+/// drops, so it goes on panic and unwind too. Keep the guard bound for as
+/// long as anything, a spawned `odj-audio` included, uses the directory: a
+/// helper hands the guard on, never a bare path to it. Derefs to `PathBuf`,
+/// so `d.join(..)`, `&d` and `d.clone()` (an owned path) read as before.
+pub struct TestDir {
+    path: PathBuf,
+    // Owns the deletion; `path` is a copy so the guard can deref to `PathBuf`.
+    _dir: tempfile::TempDir,
+}
 
-/// A fresh directory under the system temp dir, unique per call.
-pub fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "odj-audio-test-{}-{}-{}",
-        tag,
-        std::process::id(),
-        N.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&d).unwrap();
-    d
+impl Deref for TestDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for TestDir {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<OsStr> for TestDir {
+    fn as_ref(&self) -> &OsStr {
+        self.path.as_os_str()
+    }
+}
+
+/// A fresh directory under the system temp dir (`TMPDIR`), unique per call.
+/// Its name keeps the `odj-audio-test-<tag>-<pid>-` prefix so a host reaper
+/// can still match what a killed job left behind.
+pub fn temp_dir(tag: &str) -> TestDir {
+    let dir = tempfile::Builder::new()
+        .prefix(&format!("odj-audio-test-{tag}-{}-", std::process::id()))
+        .tempdir()
+        .unwrap();
+    TestDir {
+        path: dir.path().to_path_buf(),
+        _dir: dir,
+    }
 }
 
 /// Interleaved stereo sine, amplitude 0.5.
