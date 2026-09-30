@@ -13,6 +13,10 @@ Requirements:
 - ✔︎ A reused .venv is recreated when its interpreter is not the one a fresh
   job would build, and kept otherwise.
 - ✔︎ A reused .venv is installed exactly, so it holds what a fresh fill would.
+- ✔︎ Every self-hosted checkout fetches full history (`fetch-depth: 0`), so no
+  job leaves a shallow graft in a workspace the next job reuses.
+- ✔︎ Every tree the clean step keeps is gitignored at any depth, so a tool
+  that honors .gitignore never scans another branch's leftover build.
 
 Acceptance tests:
 - [if] a self-hosted checkout goes back to `clean: true`, or loses the clean
@@ -32,6 +36,20 @@ Acceptance tests:
 - [if] the venv's interpreter reports another version, or does not run
   [then] it is recreated from the requested interpreter.
 - [if] the venv's interpreter matches [then] it is kept, contents intact.
+- [if] a self-hosted checkout drops `fetch-depth: 0` (or sets any other depth)
+  [then] this fails [⛔️ a depth-1 fetch writes .git/shallow, and the next
+  full-history job on that runner pays an `--unshallow` re-download: measured
+  6.8 GB of the 11.2 GB of pack writes on nucbox in 48 h; see the
+  uniform-checkout-depth ADR in docs/decisions/].
+- [if] the selector stops finding the history-dependent jobs (ci.yml test,
+  fast, contracts, quality; adr-check) [then] this fails [⛔️ the depth rule
+  would pass vacuously for the jobs whose results depend on history].
+- [if] a tree the clean step keeps (node_modules, target, .venv) is not
+  gitignored at some depth [then] this fails [⛔️ jscpd read a stale
+  apps/audio-engine/target left by another branch's build as 13 clones, and
+  the quality ratchet failed every PR those runners took, Tue 29 Sep 2026].
+- [if] the ignore probe reports an ordinary source file as ignored [then]
+  this fails [⛔️ an over-broad rule would pass the check above vacuously].
 """
 
 from __future__ import annotations
@@ -53,6 +71,14 @@ VENV_SCRIPT = REPO_ROOT / "scripts" / "ci_venv.sh"
 SELF_HOSTED_VAR_PREFIX = "vars.CI_RUNS_ON_"
 CHECKOUT_PREFIX = "actions/checkout@"
 CLEAN_STEP_RUN = "scripts/ci_clean_untracked.sh"
+FULL_HISTORY = 0
+# Jobs whose results read history: progress-tree provenance, the 90-day
+# hotspot report, and the origin/main ancestry guard. A positive control for
+# the depth rule's selector.
+HISTORY_DEPENDENT = {
+    ("ci.yml", "test"), ("ci.yml", "fast"), ("ci.yml", "contracts"),
+    ("ci.yml", "quality"), ("adr-check.yml", "gate"),
+}
 PYTHON = "3.11"
 LOCK_SYNC_RE = re.compile(rf"^\s*scripts/ci_venv\.sh {re.escape(PYTHON)} --lock (\S+)\s*$", re.M)
 
@@ -186,6 +212,37 @@ def test_checkout_keeps_dependency_trees_and_cleans_right_after(workflow: str, j
     )
 
 
+def _checkout_with(steps: list[dict]) -> dict:
+    step = next(s for s in steps if str(s.get("uses", "")).startswith(CHECKOUT_PREFIX))
+    return step.get("with") or {}
+
+
+def test_depth_selector_covers_the_history_dependent_jobs() -> None:
+    """A depth rule whose selector misses the jobs that need history proves nothing."""
+    selected = {(w, j) for w, j, _ in _checkout_jobs()}
+    missing = HISTORY_DEPENDENT - selected
+    assert not missing, f"history-dependent jobs fell out of the self-hosted selector: {missing}"
+
+
+@pytest.mark.parametrize("workflow,job", [(w, j) for w, j, _ in _checkout_jobs()])
+def test_checkout_fetches_full_history_so_no_shallow_graft_is_left(workflow: str, job: str) -> None:
+    """One depth for every job that shares a persistent workspace.
+
+    actions/checkout v4 runs `git fetch --depth=1` for the default depth, which
+    writes .git/shallow into the reused repository. The next `fetch-depth: 0`
+    job on that runner then fetches with `--unshallow`, which re-downloads
+    history the runner already holds (up to ~150 MB per fetch on a runner
+    without a blob filter). A uniform depth means the workspace is never
+    shallow, and every fetch is an incremental negotiation against local refs.
+    """
+    steps = next(s for w, j, s in _checkout_jobs() if (w, j) == (workflow, job))
+    depth = _checkout_with(steps).get("fetch-depth")
+    assert depth == FULL_HISTORY, (
+        f"{workflow}:{job} checkout has fetch-depth={depth!r}; every self-hosted checkout "
+        f"must set fetch-depth: {FULL_HISTORY} so it never leaves a shallow workspace behind"
+    )
+
+
 def test_self_hosted_jobs_never_run_bare_uv_venv() -> None:
     """uv refuses to create over an existing venv, and the workspace now keeps one."""
     offenders = [
@@ -254,6 +311,55 @@ def test_clean_script_removes_debris_and_keeps_dependency_trees(tmp_path: Path) 
     assert not kept_missing, f"clean removed dependency trees it must keep: {kept_missing}"
     assert not debris_left, f"clean left build debris behind: {debris_left}"
     assert (repo / "tracked.txt").exists(), "clean must never touch tracked files"
+
+
+#-----------------------------------------------------------------------------
+# invariant: every tree the clean script keeps is gitignored, at any depth
+#-----------------------------------------------------------------------------
+def _kept_tree_patterns() -> list[str]:
+    """The `-e <pattern>` exemptions on the clean script's `git clean` line."""
+    script = CLEAN_SCRIPT.read_text(encoding="utf-8").splitlines()
+    lines = [ln for ln in script if ln.startswith("git clean ")]
+    assert len(lines) == 1, f"expected one `git clean` line in {CLEAN_SCRIPT}, found {len(lines)}"
+    patterns = re.findall(r"-e\s+(\S+)", lines[0])
+    assert patterns, f"no -e exemptions parsed from {lines[0]!r}; the parser no longer matches"
+    return patterns
+
+
+def _probe_inside(pattern: str) -> str:
+    """A path inside a kept tree that no subproject-specific ignore rule names."""
+    if pattern.startswith("/"):
+        return f"{pattern.lstrip('/')}/probe.txt"  # root-anchored: only the root copy is kept
+    return f"apps/zz-new-subproject/{pattern}/debug/deps/probe.d"
+
+
+def _is_gitignored(rel: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "check-ignore", "-q", "--no-index", rel],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"git check-ignore could not answer for {rel} "
+            f"(exit {result.returncode}): {result.stderr}"
+        )
+    return result.returncode == 0
+
+
+def test_every_tree_the_runner_keeps_is_gitignored_at_any_depth() -> None:
+    patterns = _kept_tree_patterns()
+    unignored = [
+        f"{p} (probe {_probe_inside(p)})" for p in patterns if not _is_gitignored(_probe_inside(p))
+    ]
+    assert not unignored, (
+        "the clean step keeps these trees between jobs but .gitignore does not cover them, "
+        f"so tools that honor .gitignore scan other branches' leftovers: {unignored}"
+    )
+
+
+def test_ignore_probe_reports_an_ordinary_source_file_as_not_ignored() -> None:
+    """Negative control: the probe can say no, so the check above is not vacuous."""
+    assert not _is_gitignored("apps/zz-new-subproject/src/main.rs")
 
 
 #-----------------------------------------------------------------------------

@@ -482,7 +482,7 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 		'quantizedSeek must accept the stamp rather than dropping it on the floor'
 	);
 	assert.ok(
-		/async armHotCueTrigger\(\s*deck: DeckId,\s*targetPositionMs: number,\s*armAtPositionSec: number,\s*pressT0Ms\?: number\s*\): Promise<number> \{/.test(
+		/async armHotCueTrigger\(\s*deck: DeckId,\s*targetPositionMs: number,\s*armAt: ArmAtPosition,\s*pressT0Ms\?: number\s*\): Promise<number> \{/.test(
 			engine
 		),
 		'armHotCueTrigger must accept the stamp rather than dropping it on the floor'

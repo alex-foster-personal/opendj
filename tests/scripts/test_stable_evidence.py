@@ -23,8 +23,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from scripts.stable_evidence import (
+    _WORKFLOW_TO_SUITE,
     SUITE_KEYS,
     StableEvidenceError,
     append_red_team,
@@ -292,13 +294,15 @@ def test_just_dmg_appends_signing_after_notarize() -> None:
     )
 
 
-def test_ci_appends_suite_results_for_the_head_sha() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/stable-evidence.yml").read_text(encoding="utf-8")
-    assert "workflow_run" in workflow
-    for name in ("CI", "Full CI (on-demand)", "E2E", "macOS Packaging"):
-        assert name in workflow
-    assert "scripts.stable_evidence append-suite" in workflow
-    assert "head_sha" in workflow
+def test_ci_appends_suite_results_for_every_recorded_workflow() -> None:
+    """The scheduled pass records exactly the workflows the suite map names."""
+    from scripts.stable_evidence_batch import RECORDED_WORKFLOWS
+
+    assert frozenset(_WORKFLOW_TO_SUITE) == RECORDED_WORKFLOWS
+    text = (REPO_ROOT / ".github/workflows/stable-evidence.yml").read_text(encoding="utf-8")
+    assert "workflow_run" not in yaml.safe_load(text)[True]
+    assert "scripts.stable_evidence_batch" in text
+    assert "OPENDJ_STABLE_EVIDENCE_DIR" in text
 
 
 def test_just_release_stable_names_missing_evidence_without_a_mac() -> None:

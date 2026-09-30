@@ -2,6 +2,7 @@
  * Allowlisted setting mutators. Used by the overlay controls and AI apply.
  * Unknown keys throw (fail-loud).
  */
+import { parseWaveformDesign } from '$lib/rb/waveform-design';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -22,6 +23,7 @@ import {
 	setHorizontalWheelKnob,
 	setJogRadialWaveform,
 	setShowStems,
+	setWaveformDesign,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -50,6 +52,11 @@ import {
 	type PreviewBeatSync,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
+import {
+	setStoredEngineChoice,
+	storedEngineChoice,
+	type EngineChoice
+} from '$lib/audio-engine/rust-mode.svelte';
 import {
 	setWheelSensitivity,
 	wheelSensitivity,
@@ -121,6 +128,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
+	'waveform_design',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -138,7 +146,8 @@ export const ALLOWED_SETTING_KEYS = [
 	'perf_tier',
 	'app_posture',
 	'rb.midi_enabled',
-	'gig_helper'
+	'gig_helper',
+	'audio_engine'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -193,6 +202,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.jog_radial_waveform;
 		case 'show_stems':
 			return uiPrefs.show_stems;
+		case 'waveform_design':
+			return uiPrefs.waveform_design;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -231,6 +242,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return midiEnabledPersisted();
 		case 'gig_helper':
 			return uiPrefs.gig_helper;
+		case 'audio_engine':
+			return storedEngineChoice();
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -318,6 +331,14 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'show_stems':
 			setShowStems(_asBool(value, key));
 			return;
+		case 'waveform_design': {
+			const design = parseWaveformDesign(value);
+			if (design === undefined) {
+				throw new Error(`waveform_design must be tri-band|mono|line, got ${String(value)}`);
+			}
+			setWaveformDesign(design);
+			return;
+		}
 		case 'deck_layout': {
 			if (value !== 'more' && value !== 'less') {
 				throw new Error(`deck_layout must be more|less, got ${String(value)}`);
@@ -424,6 +445,10 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setGigHelper(value as GigHelperPref);
 			return;
 		}
+		case 'audio_engine':
+			// Validates, and throws on anything but webaudio|rust.
+			setStoredEngineChoice(value as EngineChoice);
+			return;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
