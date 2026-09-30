@@ -64,10 +64,11 @@ def between(left: str | None, right: str | None) -> str:
 
     An append increments the last key like a counter, so its length stays
     fixed; a head insert decrements the first key. Raises PrecisionExhausted
-    when no key fits, e.g. before an all-zero or empty key.
+    when no key fits, e.g. before an all-zero or empty key, or between two
+    neighbors that share a key (the pre-LIBM-132 head insert wrote those).
     """
     if left is not None and right is not None and left >= right:
-        raise ValueError(f"left must be < right: {left!r} >= {right!r}")
+        raise PrecisionExhausted(f"no key between {left!r} and {right!r}: left >= right")
     if left is None:
         if right is None:
             return from_index(KEY_BASE)

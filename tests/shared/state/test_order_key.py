@@ -58,6 +58,16 @@ def test_no_key_is_minted_below_a_floor_key(floor: str) -> None:
 
 
 @pytest.mark.requirement("LIBM-132")
+@pytest.mark.parametrize(("left", "right"), [("00000004", "00000004"), ("00000005", "00000004")])
+def test_neighbors_sharing_or_inverting_a_key_raise_precision_exhausted(
+    left: str, right: str,
+) -> None:
+    """[if] the neighbors leave no gap [then] callers get PrecisionExhausted to renumber, [else stop]."""
+    with pytest.raises(PrecisionExhausted):
+        allocate_keys(left, right, 1)
+
+
+@pytest.mark.requirement("LIBM-132")
 def test_ten_thousand_appends_keep_keys_at_eight_characters() -> None:
     """[if] 10,000 rows are appended one by one [then] no key grows past 8 chars, [else stop]."""
     keys = allocate_keys(None, None, 10_000)

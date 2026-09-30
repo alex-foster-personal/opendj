@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from .events import EventBus, FakeEventBus
 from .order_key import renumbered_keys
@@ -515,59 +516,20 @@ class _PlaylistWriterMixin:
         *,
         renumbered: bool = False,
     ) -> None:
-        """UPDATE order_key for named live membership rows only."""
-        if not rows:
-            return
-        transaction = (
-            self._tx() if self._conn.in_transaction
-            else immediate_transaction(self._conn)
-        )
-        with transaction as conn:
-            now = next_playlist_revision(conn, playlist_id, self._now_iso())
-            changed = 0
-            for item_id, new_key in rows:
-                row = conn.execute(
-                    "SELECT position, order_key FROM playlist_memberships "
-                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NULL",
-                    (playlist_id, item_id),
-                ).fetchone()
-                if row is None or row[1] == new_key:
-                    continue
-                position = row[0]
-                member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
-                )
-                conn.execute(
-                    "UPDATE playlist_memberships SET order_key=?, updated_at=?, "
-                    "origin_device_id=? WHERE playlist_id=? AND item_id=?",
-                    (
-                        new_key,
-                        member_stamp.updated_at,
-                        member_stamp.origin_device_id,
-                        playlist_id,
-                        item_id,
-                    ),
-                )
-                changed += 1
-            if changed == 0:
-                return
-            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
-            conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
-                (stamp.updated_at, stamp.origin_device_id, playlist_id),
-            )
-            ev = self._append_event(
-                kind="playlist.memberships.move",
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "count": changed,
-                    "renumbered": renumbered,
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
+        """UPDATE order_key for named live membership rows only, by item_id."""
+        _write_membership_order_keys(self, playlist_id, "item_id", rows, renumbered=renumbered)
+
+    def renumber_playlist_membership_order_keys(
+        self: _WriterHost,
+        playlist_id: str,
+        rows: list[tuple[int, str]],
+    ) -> None:
+        """Rewrite live order_keys by position, the primary key.
+
+        A renumber must reach every live row, and the Spotify importer writes
+        rows with no item_id, so addressing them by item_id would skip them.
+        """
+        _write_membership_order_keys(self, playlist_id, "position", rows, renumbered=True)
 
     def append_playlist_history(
         self: _WriterHost, kind: str, payload: dict[str, Any]
@@ -590,8 +552,70 @@ class _PlaylistWriterMixin:
         return ev
 
 
+def _write_membership_order_keys(
+    host: _WriterHost,
+    playlist_id: str,
+    address: Literal["item_id", "position"],
+    rows: Sequence[tuple[str | int, str]],
+    *,
+    renumbered: bool,
+) -> None:
+    """UPDATE order_key for live membership rows named by ``address``."""
+    if not rows:
+        return
+    transaction = (
+        host._tx() if host._conn.in_transaction
+        else immediate_transaction(host._conn)
+    )
+    with transaction as conn:
+        now = next_playlist_revision(conn, playlist_id, host._now_iso())
+        changed = 0
+        for address_value, new_key in rows:
+            row = conn.execute(
+                f"SELECT position, order_key FROM playlist_memberships "
+                f"WHERE playlist_id = ? AND {address} = ? AND deleted_at IS NULL",
+                (playlist_id, address_value),
+            ).fetchone()
+            if row is None or row[1] == new_key:
+                continue
+            position = row[0]
+            member_stamp = host._stamp(MEMBERSHIPS_TABLE, (playlist_id, position), now)
+            conn.execute(
+                "UPDATE playlist_memberships SET order_key=?, updated_at=?, "
+                "origin_device_id=? WHERE playlist_id=? AND position=?",
+                (
+                    new_key,
+                    member_stamp.updated_at,
+                    member_stamp.origin_device_id,
+                    playlist_id,
+                    position,
+                ),
+            )
+            changed += 1
+        if changed == 0:
+            return
+        stamp = host._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
+        conn.execute(
+            "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
+            "WHERE playlist_id = ?",
+            (stamp.updated_at, stamp.origin_device_id, playlist_id),
+        )
+        ev = host._append_event(
+            kind="playlist.memberships.move",
+            stable_id=None,
+            payload={
+                "playlist_id": playlist_id,
+                "count": changed,
+                "renumbered": renumbered,
+            },
+            ts=now,
+        )
+        host.bus.publish(ev)
+
+
 __all__ = [
     "_PlaylistWriterMixin",
     "PlaylistNotDeletedError",
     "PlaylistNotFoundError",
 ]
+

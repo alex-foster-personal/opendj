@@ -19,23 +19,30 @@ Instruments, all on the store's REAL connection, none a mock:
 * the ``playlist.edit`` payload's size.
 * ``EXPLAIN QUERY PLAN`` of every membership SELECT the add really ran.
 
+Legacy order_keys come from a checksum-locked dump of a database the
+pre-LIBM-132 build wrote (``tests/fixtures/playlist-legacy-order-keys``),
+restored to a disposable copy and opened through the production migration.
+
 Regression one-liners:
   - if an append or head insert runs more sqlite steps at 4,000 members than at 40 then broken
   - if an add materializes more rows at 4,000 members than at 40 then broken
   - if the add_items history payload grows with the membership then broken
   - if any membership read of an add scans the table or sorts in a temp b-tree then broken
-  - if a positioned add lands anywhere but the requested index (legacy NULL keys too) then broken
+  - if a positioned add lands anywhere but the requested index then broken
+  - if a positioned add to a legacy NULL-key playlist lands anywhere but the requested index then broken
   - if undo of an add removes anything but the rows it inserted then broken
   - if redo of an add restores different rows or order_keys than undo removed then broken
   - if undo proceeds after an added row was already removed then broken
   - if a peer write can land between the neighbor read and the insert then broken
   - if an appended key is longer than the key before it then broken
-  - if an add before an empty or overlong legacy key fails or misplaces the row then broken
+  - if an add before an empty, beside an overlong, or between two shared legacy keys fails
+    or misplaces the row then broken
   - if a move before an empty legacy key lands anywhere but first then broken
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Callable, Iterator
@@ -45,6 +52,8 @@ from pathlib import Path
 import pytest
 
 from apps.shared.state import db as state_db
+from apps.shared.state.order_key import MAX_ORDER_KEY_LEN
+from apps.shared.state.schema import SCHEMA_VERSION
 from apps.webui.server.backend import BackendError, ConflictError
 from apps.webui.server.playlist_add import MEMBERSHIP_ORDER_BY, _load_live_members
 from apps.webui.server.playlist_store import PlaylistStore
@@ -251,12 +260,6 @@ def test_every_membership_read_of_an_add_seeks_an_index(store: PlaylistStore) ->
 def test_positioned_add_lands_at_every_index(store: PlaylistStore) -> None:
     """[if] a position is given [then] the track lands exactly there, [else stop]."""
     playlist_id = _playlist(store, 12)
-    # Legacy rows with no order_key sort by their zero-padded position.
-    store._conn.execute(
-        "UPDATE playlist_memberships SET order_key = NULL "
-        "WHERE playlist_id = ? AND position IN (0, 5, 11)",
-        (playlist_id,),
-    )
     store.remove_memberships(playlist_id, [_load_live_members(store._conn, playlist_id)[3].item_id])
     for index in range(len(_live_stable_ids(store, playlist_id)) + 1):
         before = _live_stable_ids(store, playlist_id)
@@ -406,14 +409,6 @@ def _raw_keys(store: PlaylistStore, playlist_id: str) -> list[str | None]:
     ]
 
 
-def _set_key(store: PlaylistStore, playlist_id: str, index: int, key: str) -> None:
-    item_id = _load_live_members(store._conn, playlist_id)[index].item_id
-    store._conn.execute(
-        "UPDATE playlist_memberships SET order_key = ? WHERE item_id = ?", (key, item_id),
-    )
-    store._conn.commit()
-
-
 def test_appended_keys_stay_as_short_as_the_last_key(store: PlaylistStore) -> None:
     """[if] 200 tracks are appended one by one [then] every key stays 8 chars, [else stop]."""
     playlist_id = _playlist(store, SMALL)
@@ -424,42 +419,135 @@ def test_appended_keys_stay_as_short_as_the_last_key(store: PlaylistStore) -> No
     assert {len(k or "") for k in keys} == {8}, sorted({len(k or "") for k in keys})
 
 
-@pytest.mark.parametrize(
-    ("legacy_index", "legacy_key", "position"),
-    [(3, "", 0), (4, "01000004" + "V" * 100, None)],
-    ids=["empty-key-at-head", "overlong-key-at-tail"],
-)
-def test_an_add_next_to_a_legacy_key_renumbers_and_lands_in_place(
-    store: PlaylistStore, legacy_index: int, legacy_key: str, position: int | None,
-) -> None:
-    """[if] no key fits beside a legacy key [then] the add renumbers and lands, [else stop]."""
-    playlist_id = _playlist(store, 5)
-    _set_key(store, playlist_id, legacy_index, legacy_key)
-    before = _live_stable_ids(store, playlist_id)
-    assert before[0 if position == 0 else -1] == _sid(legacy_index), "seed did not take"
+# ---------------------------------------------------------------------------
+# legacy keys: a database the pre-LIBM-132 build really wrote, opened through
+# the production migration path. capture.py beside the dump says how each
+# playlist got its keys; nothing below writes an order_key itself.
 
-    result = store.add_memberships(playlist_id, [_sid(LARGE + 3)], position=position)
+_LEGACY_DIR = Path(__file__).parent / "fixtures" / "playlist-legacy-order-keys"
+_LEGACY_DUMP = "v20-legacy-order-keys.sql"
+_LEGACY_SCHEMA_VERSION = 20
 
-    expected = [_sid(LARGE + 3), *before] if position == 0 else [*before, _sid(LARGE + 3)]
-    assert _live_stable_ids(store, playlist_id) == expected
+
+def _verified_legacy_dump() -> str:
+    """The pinned dump, after its manifest version and sha256 both match."""
+    manifest = json.loads((_LEGACY_DIR / "manifest.json").read_text())
+    assert manifest["version"] == 1, f"unknown manifest version {manifest['version']!r}"
+    entry = manifest["files"][_LEGACY_DUMP]
+    raw = (_LEGACY_DIR / _LEGACY_DUMP).read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    assert digest == entry["sha256"], (
+        f"{_LEGACY_DUMP} does not match its manifest checksum; it is IMMUTABLE, "
+        f"expected {entry['sha256']}, got {digest}"
+    )
+    return raw.decode("utf-8")
+
+
+@pytest.fixture
+def legacy_store(tmp_path: Path) -> Iterator[PlaylistStore]:
+    """A disposable copy of the legacy database, opened as the webui opens it."""
+    path = tmp_path / "legacy" / "state" / "state.db"
+    path.parent.mkdir(parents=True)
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.executescript(_verified_legacy_dump())
+        restored = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+    finally:
+        conn.close()
+    assert restored == _LEGACY_SCHEMA_VERSION, restored
+    playlist_store = PlaylistStore(path)  # migrates v20 -> current on open
+    migrated = playlist_store._conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+    assert migrated == SCHEMA_VERSION, "the production open did not migrate the legacy db"
+    yield playlist_store
+    playlist_store.close()
+
+
+def _legacy_playlist(store: PlaylistStore, name: str) -> str:
+    return store._conn.execute(
+        "SELECT playlist_id FROM playlists WHERE vendor = 'webui' AND name = ?", (name,),
+    ).fetchone()[0]
+
+
+def _legacy_track_ids(store: PlaylistStore) -> list[str]:
+    """The 12 tracks the Spotify import wrote, in Spotify playlist order."""
+    spotify_id = store._conn.execute(
+        "SELECT playlist_id FROM playlists WHERE vendor = 'spotify'",
+    ).fetchone()[0]
+    return [
+        row[0]
+        for row in store._conn.execute(
+            "SELECT stable_id FROM playlist_memberships WHERE playlist_id = ? ORDER BY position",
+            (spotify_id,),
+        )
+    ]
+
+
+def _assert_renumbered(store: PlaylistStore, playlist_id: str) -> list[str]:
     raw = _raw_keys(store, playlist_id)
     keys = [k for k in raw if k is not None]
     assert len(keys) == len(raw) and all(len(k) == 8 for k in keys), raw
     assert keys == sorted(keys) and len(set(keys)) == len(keys), keys
-    assert result.added[0].order_key == keys[0 if position == 0 else -1]
+    return keys
 
 
-def test_a_move_before_an_empty_legacy_key_lands_first(store: PlaylistStore) -> None:
+def test_positioned_add_lands_at_every_index_of_a_legacy_null_key_playlist(
+    legacy_store: PlaylistStore,
+) -> None:
+    """[if] a legacy NULL-key playlist gets a positioned add [then] it lands there, [else stop]."""
+    playlist_id = _legacy_playlist(legacy_store, "Imported from Spotify")
+    raw = _raw_keys(legacy_store, playlist_id)
+    # Control: Spotify's 12 NULL-key rows with the two live webui adds between them.
+    assert raw.count(None) == 12 and len(raw) == 14, raw
+    new_sid = _legacy_track_ids(legacy_store)[11]
+    # Highest index first: the head insert renumbers, so it runs last.
+    for index in range(len(raw), -1, -1):
+        before = _live_stable_ids(legacy_store, playlist_id)
+        result = legacy_store.add_memberships(playlist_id, [new_sid], position=index)
+        assert _live_stable_ids(legacy_store, playlist_id) == [
+            *before[:index], new_sid, *before[index:],
+        ], index
+        legacy_store.remove_memberships(playlist_id, [result.added[0].item_id])
+    _assert_renumbered(legacy_store, playlist_id)
+
+
+@pytest.mark.parametrize(
+    ("playlist", "position"),
+    [("Head inserts", 0), ("Head inserts", 6), ("Batch append", None)],
+    ids=["before-the-empty-key", "between-two-shared-keys", "after-the-overlong-key"],
+)
+def test_an_add_next_to_a_legacy_key_renumbers_and_lands_in_place(
+    legacy_store: PlaylistStore, playlist: str, position: int | None,
+) -> None:
+    """[if] no key fits beside a legacy key [then] the add renumbers and lands, [else stop]."""
+    playlist_id = _legacy_playlist(legacy_store, playlist)
+    raw = _raw_keys(legacy_store, playlist_id)
+    # Controls: the shapes the legacy add path wrote are really there.
+    if playlist == "Head inserts":
+        assert raw[0] == "" and raw[-2] == raw[-1] == "00000004", raw
+    elif playlist == "Batch append":
+        assert len(raw[-1] or "") > MAX_ORDER_KEY_LEN, raw[-1]
+    new_sid = _legacy_track_ids(legacy_store)[11]
+    before = _live_stable_ids(legacy_store, playlist_id)
+    index = len(before) if position is None else position
+
+    result = legacy_store.add_memberships(playlist_id, [new_sid], position=position)
+
+    assert _live_stable_ids(legacy_store, playlist_id) == [*before[:index], new_sid, *before[index:]]
+    keys = _assert_renumbered(legacy_store, playlist_id)
+    assert result.added[0].order_key == keys[index]
+
+
+def test_a_move_before_an_empty_legacy_key_lands_first(legacy_store: PlaylistStore) -> None:
     """[if] a row moves before an empty-keyed first row [then] it lands first, [else stop]."""
-    playlist_id = _playlist(store, 5)
-    _set_key(store, playlist_id, 3, "")
-    members = _load_live_members(store._conn, playlist_id)
-    assert members[0].stable_id == _sid(3), "seed did not take"
-    store.move_memberships(
+    playlist_id = _legacy_playlist(legacy_store, "Head inserts")
+    assert _raw_keys(legacy_store, playlist_id)[0] == "", "the legacy empty key is not first"
+    members = _load_live_members(legacy_store._conn, playlist_id)
+    before = [m.stable_id for m in members]
+    legacy_store.move_memberships(
         playlist_id,
-        range_start=members[4].item_id,
+        range_start=members[-1].item_id,
         range_length=1,
         before_item_id=members[0].item_id,
-        expected_etag=store._load(playlist_id).etag,
+        expected_etag=legacy_store._load(playlist_id).etag,
     )
-    assert _live_stable_ids(store, playlist_id) == [_sid(4), _sid(3), _sid(0), _sid(1), _sid(2)]
+    assert _live_stable_ids(legacy_store, playlist_id) == [before[-1], *before[:-1]]

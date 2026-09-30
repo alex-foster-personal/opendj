@@ -237,19 +237,20 @@ def _renumber_around_insert(
     Runs only when the gap has no key left (a legacy empty or overlong key, or
     a run of inserts at one point); the rewritten keys then leave room again.
     """
-    item_ids = [
+    # By position, the primary key: Spotify-imported rows have no item_id.
+    positions = [
         row[0]
         for row in conn.execute(
-            f"SELECT item_id FROM playlist_memberships "
+            f"SELECT position FROM playlist_memberships "
             f"WHERE playlist_id = ? AND deleted_at IS NULL ORDER BY {MEMBERSHIP_ORDER_BY}",
             (playlist_id,),
         )
     ]
-    at = len(item_ids) if position is None else position
-    keys = renumbered_keys(len(item_ids) + len(stable_ids))
+    at = len(positions) if position is None else position
+    keys = renumbered_keys(len(positions) + len(stable_ids))
     kept = keys[:at] + keys[at + len(stable_ids):]
-    writer.update_playlist_membership_order_keys(
-        playlist_id, list(zip(item_ids, kept, strict=True)), renumbered=True,
+    writer.renumber_playlist_membership_order_keys(
+        playlist_id, list(zip(positions, kept, strict=True)),
     )
     return _new_members(stable_ids, keys[at:at + len(stable_ids)])
 
