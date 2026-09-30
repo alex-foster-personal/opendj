@@ -9,6 +9,8 @@ is publish order. A 03:00Z reading parked in one host's outbox can land after a
 value read as current. Rows now carry `captured_at`, and both readers order
 same-date rows by it.
 
+[if] a later same-day capture is published before an older one [then] both readers still read the later capture as current, [else stop].
+
 Every test here drives the production functions directly with real rows built
 by `build_ledger_rows`: no gh replay, no monkeypatch (Codex, PR #4474,
 P1/BLOCKING, "Remove the fake gh path from the ordering test").
@@ -73,6 +75,10 @@ def test_nightly_rows_carry_their_run_capture_time() -> None:
     rows = _run_rows("air", _at(3, 0), 100.0) + _run_rows("air", _at(3, 0), None)
     assert {row["captured_at"] for row in rows} == {"2026-09-29T03:00:00.125000+00:00"}
     assert {row["date"] for row in rows} == {"2026-09-29"}
+    whole_second = dt.datetime(2026, 9, 29, 17, 30, tzinfo=dt.UTC)
+    assert _run_rows("air", whole_second, 100.0)[0]["captured_at"] == (
+        "2026-09-29T17:30:00.000000+00:00"
+    )
 
 
 def test_readers_prefer_the_later_capture_over_publish_order() -> None:
@@ -107,7 +113,7 @@ def test_rows_without_capture_time_keep_append_order_ahead_of_timed_rows() -> No
     earlier_day = [{**timed[0], "date": "2026-09-28", "captured_at": "2026-09-30T00:00:00"}]
     ordered = _in_capture_order(timed + legacy + earlier_day)
     assert [row["value"] for row in ordered] == [100.0, 1.0, 2.0, 100.0]
-    assert [row["date"] for row in ordered][0] == "2026-09-28"
+    assert ordered[0]["date"] == "2026-09-28"
     assert newest_reading(legacy, KPI).value == 2.0
 
 
