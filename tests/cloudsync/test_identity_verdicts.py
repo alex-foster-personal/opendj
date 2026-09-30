@@ -6,25 +6,32 @@ Two per-row costs made a 10,000-track first sync slow:
   to learn which tracks lose an identity election: quadratic in the library;
 * every row asked ``PRAGMA table_info`` for its table's columns.
 
-The instruments are SQLite's own: VM steps (``set_progress_handler`` at
-granularity 1) and the statements it traces, not wall time, so the verdict
-does not move with host load.
+The instruments observe the unmodified path from outside: SQLite's own VM
+steps (``set_progress_handler`` at granularity 1), the statements it traces,
+and Python's own call events (``sys.setprofile``), not wall time, so the
+verdict does not move with host load. Every library is written through a
+production write path: ``hub_apply`` on the hub, ``StateWriter`` and
+``apply_hub_identity_rejects`` on a spoke.
 
 [if] a hub pull page's work grows with the library [then] per-page identity election, [else stop].
 
-Controls: the probe must see growth when the library-wide election is put
-back; per-row verdicts must equal the library-wide election on randomized
-libraries with odd stored keys, stamp faults, deletions and persisted remap
-chains; the column memo must never answer for another connection, nor
-outlive its scope.
+Controls: a library whose tracks store the blank ``content_hash`` sync code
+treats as missing must cost a page no more than a canonical one, in SQL or in
+Python; per-row verdicts must equal the library-wide election on randomized
+libraries with odd stored keys, deletions and persisted remap chains, both
+before and after a walk switches to electing the library; the column memo
+must never answer for another connection, nor outlive its scope.
 """
 from __future__ import annotations
 
 import random
 import sqlite3
-from collections.abc import Iterator
+import sys
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from types import FrameType
 
 import pytest
 
@@ -34,8 +41,8 @@ from apps.sync_hub.engine_identity_map import (
     ensure_identity_remap_table,
 )
 from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _T1
-from tests.cloudsync.test_track_identity_collapse import _open_hub
-from tests.cloudsync.test_track_identity_lookup_scale import _incoming, _seed_library
+from tests.cloudsync.test_track_identity_collapse import _open_hub, _values
+from tests.cloudsync.test_track_identity_lookup_scale import _digest, _incoming, _isrc
 
 pytestmark = pytest.mark.requirement("CLOUDSYNC-07")
 
@@ -43,73 +50,117 @@ SMALL_LIBRARY = 100
 LARGE_LIBRARY = 2_000
 MAX_GROWTH = 3.0
 """Per-row verdicts are index seeks: flat at 20x the library. A library-wide
-election grows with it, about 20x here."""
+election grows with it, about 20x here, and so does a fallback that files
+every blank-hash row under every key a page seeks (11x in SQL, 18x in Python
+measured Wed 30 Sep 2026 before that fix)."""
 
 
 # ----- growth guard -------------------------------------------------------------
 
 
-@contextmanager
-def _counting_steps(conn: sqlite3.Connection) -> Iterator[list[int]]:
-    steps = [0]
+@dataclass(frozen=True)
+class PageCost:
+    vm_steps: int
+    python_calls: int
 
-    def _count() -> int:
-        steps[0] += 1
+
+LibraryShape = Callable[[int], str]
+LIBRARY_SHAPES: dict[str, LibraryShape] = {
+    "distinct-hashes": lambda i: _digest("c", i),
+    "blank-content-hash": lambda i: "",
+}
+"""``content_hash`` of stored track ``i``; every track keeps a unique audio_hash."""
+
+
+@contextmanager
+def _counting_page_cost(conn: sqlite3.Connection) -> Iterator[list[int]]:
+    """``[vm_steps, python_calls]`` spent inside the block, observed from outside."""
+    counts = [0, 0]
+
+    def _count_step() -> int:
+        counts[0] += 1
         return 0
 
-    conn.set_progress_handler(_count, 1)
+    def _count_call(frame: FrameType, event: str, arg: object) -> None:
+        if event == "call":
+            counts[1] += 1
+
+    previous = sys.getprofile()
+    conn.set_progress_handler(_count_step, 1)
+    sys.setprofile(_count_call)
     try:
-        yield steps
+        yield counts
     finally:
+        sys.setprofile(previous)
         conn.set_progress_handler(None, 1)
 
 
-def _pull_page_steps(tmp_path: Path, count: int) -> int:
-    """VM steps to serve one pull page of new tracks from a hub holding ``count``."""
-    conn = _open_hub(tmp_path / f"lib-{count}")
+def _stored_library(
+    conn: sqlite3.Connection, count: int, content_hash: LibraryShape
+) -> list[protocol.RowChange]:
+    return [
+        protocol.RowChange(
+            table="tracks",
+            pk=(f"stored-{i}",),
+            values=_values(
+                conn,
+                "tracks",
+                stable_id=f"stored-{i}",
+                stable_id_tier="fingerprint",
+                title=f"stored {i}",
+                isrc=_isrc("SEE", i),
+                content_hash=content_hash(i),
+                audio_hash=_digest("a", i),
+                created_at=_T0,
+                updated_at=_T0,
+                origin_device_id=_DEV_A,
+                deleted_at=None,
+            ),
+        )
+        for i in range(count)
+    ]
+
+
+def _pull_page_cost(tmp_path: Path, count: int, shape: str) -> PageCost:
+    """Cost to serve one pull page of new tracks from a hub holding ``count``."""
+    conn = _open_hub(tmp_path / f"{shape}-{count}")
     try:
-        _seed_library(conn, count)
+        library = _stored_library(conn, count, LIBRARY_SHAPES[shape])
+        engine.hub_apply(conn, library)
+        conn.commit()
+        stored = conn.execute(
+            "SELECT count(*) FROM tracks WHERE content_hash = ?",
+            (LIBRARY_SHAPES[shape](0),),
+        ).fetchone()[0]
+        assert stored >= 1, f"the hub did not store the {shape} library as sent"
         since = engine.current_seq(conn)
         engine.hub_apply(conn, _incoming(conn))
         conn.commit()
-        with _counting_steps(conn) as steps:
+        with _counting_page_cost(conn) as counts:
             batch = engine.hub_changes_since(conn, since)
         assert len(batch.rows) == len(_incoming(conn)), batch
-        return steps[0]
+        return PageCost(vm_steps=counts[0], python_calls=counts[1])
     finally:
         conn.close()
 
 
-def _library_wide_verdicts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put back what every HeldKeys did before: elect the whole library."""
-
-    def _elect(self: sync_set.HeldKeys, stable_id: str) -> bool:
-        return stable_id in effective_identity_remap(self._conn)
-
-    monkeypatch.setattr(sync_set.HeldKeys, "is_identity_loser", _elect)
-
-
-def test_a_pull_page_costs_the_same_in_a_bigger_library(tmp_path: Path) -> None:
-    small = _pull_page_steps(tmp_path, SMALL_LIBRARY)
-    large = _pull_page_steps(tmp_path, LARGE_LIBRARY)
-    growth = large / small
-    assert growth <= MAX_GROWTH, (
-        f"one pull page cost {small} VM steps against {SMALL_LIBRARY} stored "
-        f"tracks and {large} against {LARGE_LIBRARY} ({growth:.1f}x). Something "
-        "on the hub pull path reads the whole tracks table per page (LIBM-120 L6)."
+@pytest.mark.parametrize("shape", sorted(LIBRARY_SHAPES))
+def test_a_pull_page_costs_the_same_in_a_bigger_library(tmp_path: Path, shape: str) -> None:
+    small = _pull_page_cost(tmp_path, SMALL_LIBRARY, shape)
+    large = _pull_page_cost(tmp_path, LARGE_LIBRARY, shape)
+    assert small.vm_steps > 0 and small.python_calls > 0, (
+        f"the instruments counted nothing ({small}); they measured no page"
     )
-
-
-def test_probe_sees_growth_when_every_page_elects_the_library(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Negative control: with the old election back, the same probe must go red."""
-    _library_wide_verdicts(monkeypatch)
-    small = _pull_page_steps(tmp_path, SMALL_LIBRARY)
-    large = _pull_page_steps(tmp_path, LARGE_LIBRARY)
-    assert large / small > MAX_GROWTH * 2, (
-        f"library-wide election grew only {large / small:.1f}x ({small} -> {large} "
-        "steps); the probe cannot tell a per-page scan from per-row seeks"
+    growth = {
+        "VM steps": large.vm_steps / small.vm_steps,
+        "Python calls": large.python_calls / small.python_calls,
+    }
+    assert max(growth.values()) <= MAX_GROWTH, (
+        f"one pull page against a {shape} library cost {small} with "
+        f"{SMALL_LIBRARY} stored tracks and {large} with {LARGE_LIBRARY} "
+        f"({', '.join(f'{name} {ratio:.1f}x' for name, ratio in growth.items())}). "
+        "Something on the hub pull path reads or filters the whole tracks table "
+        "per page (LIBM-120 L6)."
     )
 
 
