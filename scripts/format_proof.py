@@ -11,9 +11,11 @@ Requirements (mini-PRD):
   prove  ✔︎
     Every .py file the range modifies decodes by its own cookie (so a cookie moved in
     or out of reach is judged by what the bytes then MEAN), parses on both sides and
-    has an equal AST once docstrings get the PEP 257 trim (Black's safety check strips
-    every line, which is looser: it would pass a change to a doctest's relative
-    indentation). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
+    has an equal AST once docstrings get ruff's own re-layout and nothing looser: each
+    line's trailing whitespace, the first line's leading whitespace, and the indent the
+    rest share (Black's safety check strips every line, which would pass a change to a
+    doctest's relative indentation; inspect.cleandoc expands every tab and drops blank
+    first lines, which ruff keeps). Every comment (prose, `# type:`, noqa, nosec, pragma, fmt: ...)
     keeps its text, its order, how many AST nodes open and close before it, how many
     names, keywords, numbers and operators precede it, which piece of an implicitly
     concatenated string it follows, and whether code precedes it on its line.
@@ -21,6 +23,8 @@ Requirements (mini-PRD):
     change. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
+      [if] a docstring's tab between words, form feed, blank first line or escaped whitespace changes [then ⛔️] exit 1
+      [if] ruff re-lays a docstring with an escape, or one indented by more than tabs then spaces [then ⛔️] exit 1
       [if] a comment is added, removed, reworded, reordered, or moved past a node or fixed token [then ⛔️] exit 1
       [if] ruff moves a trailing operator past an end-of-line comment [then ⛔️] exit 1 (no count tells it from a move)
       [if] an end-of-line comment moves onto its own line, e.g. a block header's pragma into the body [then ⛔️] exit 1
@@ -60,7 +64,6 @@ import argparse
 import ast
 import bisect
 import importlib.util
-import inspect
 import io
 import re
 import subprocess
@@ -113,6 +116,14 @@ class CFG:
     )
     # The only operator tokens ruff adds or drops: parentheses, trailing commas, and the `;` it splits statements at.
     MOVABLE_OPERATORS: frozenset[str] = frozenset({"(", ")", ",", ";"})
+    # ruff's docstring whitespace is Unicode White_Space (Rust's char::is_whitespace): Python's isspace() less U+001C
+    # to U+001F. Measured per character against ruff 0.16.3 in review 1l.
+    RUFF_WHITESPACE: str = (
+        "\t\n\x0b\x0c\r \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+        "\u2028\u2029\u202f\u205f\u3000"
+    )
+    # A tab in a docstring's indent is this many columns to ruff, whatever its configured indent width.
+    TAB_COLUMNS: int = 8
     DOCSTRING_OWNERS: tuple[type[ast.Module], type[ast.ClassDef], type[ast.FunctionDef], type[ast.AsyncFunctionDef]] = (
         ast.Module,
         ast.ClassDef,
@@ -154,21 +165,61 @@ def _blob(repo: Path, rev: str, path: str) -> bytes:
 # ----- AST comparison -------------------------------------------------------
 
 
+def _split_indent(line: str) -> tuple[str, str]:
+    body = line.lstrip(CFG.RUFF_WHITESPACE)
+    return line[: len(line) - len(body)], body
+
+
+def _indent_columns(indent: str) -> int | None:
+    """ruff's width of a docstring line's indent when it is tabs then spaces: 8 columns a tab and 1 a space. None
+    otherwise: ruff strips a no-break space as indent but counts it as nothing, and measures ` \t ` as 10 columns."""
+    spaces = indent.lstrip("\t")
+    if spaces.strip(" "):
+        return None
+    return (len(indent) - len(spaces)) * CFG.TAB_COLUMNS + len(spaces)
+
+
 def _normalize_docstring(text: str) -> str:
-    """PEP 257 trim: the first line's indent, the common indent of the rest, trailing space and outer
-    blank lines are layout. RELATIVE indentation is kept, because doctests and code blocks read it."""
-    return inspect.cleandoc("\n".join(line.rstrip() for line in text.splitlines()))
+    """ruff's docstring re-layout, and nothing looser: every line loses its trailing whitespace, the first its leading
+    whitespace too, and the rest keep only their indent beyond the least-indented. Lines split only at newlines and a
+    blank line stays a line, because a tab between words, a form feed or a blank first line is text `__doc__` carries
+    and ruff keeps. RELATIVE indentation is kept, because doctests and code blocks read it."""
+    lines = [line.rstrip(CFG.RUFF_WHITESPACE) for line in text.split("\n")]
+    rest = [_split_indent(line) for line in lines[1:]]
+    widths = [width for width in (_indent_columns(indent) for indent, _ in rest) if width is not None]
+    if len(widths) != len(rest):
+        return text  # an indent no column count reproduces: this docstring must match exactly
+    common = min((width for width, (_, body) in zip(widths, rest, strict=True) if body), default=0)
+    relaid = [" " * (width - common) + body if body else "" for width, (_, body) in zip(widths, rest, strict=True)]
+    return "\n".join([lines[0].lstrip(CFG.RUFF_WHITESPACE), *relaid])
+
+
+def _is_plain_literal(source: str, node: ast.Constant) -> bool:
+    """True when the source between the literal's quotes IS its value: no escape, line continuation or second piece.
+    Otherwise `__doc__` cannot tell an escaped tab, which ruff keeps, from a literal one, which it may strip."""
+    text = ast.get_source_segment(source, node)
+    if text is None:
+        return False
+    opening = len(text) - len(text.lstrip("rRuU"))
+    quote = 3 if text[opening : opening + 3] in ('"""', "'''") else 1
+    return text[opening + quote : len(text) - quote] == node.value
 
 
 def _normalized_dump(source: str) -> tuple[str, int]:
-    """AST dump with docstring whitespace normalized, and how many docstrings were touched."""
+    """AST dump with docstring whitespace normalized, and how many docstrings were touched. A docstring whose literal
+    is not plain is compared exactly, so ruff re-laying one fails, the safe side."""
     tree = ast.parse(source)
     touched = 0
     for node in ast.walk(tree):
         if not isinstance(node, CFG.DOCSTRING_OWNERS) or not node.body:
             continue
         first = node.body[0]
-        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+            and _is_plain_literal(source, first.value)
+        ):
             normalized = _normalize_docstring(first.value.value)
             touched += normalized != first.value.value
             first.value.value = normalized
