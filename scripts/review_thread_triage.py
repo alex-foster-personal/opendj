@@ -1,6 +1,6 @@
 """Bot review-thread triage gate for one pull request.
 
-Every review thread opened by a review bot (Codex, CodeRabbit, Devin) must
+Every review thread opened by a review bot (Codex, Copilot, CodeRabbit, Devin) must
 reach one of three terminal states before or at merge:
 
     FIXED        code changed in response
@@ -18,17 +18,17 @@ The gate additionally REFUSES a blocker written off as debt: P0/P1 and
 anything marked BLOCKING must be FIXED or REBUTTED, and a debt-log reply on
 one of those fails however the thread was closed.
 
-What this script can and cannot prove. It is a SILENCE DETECTOR, not a judge
-of whether a rebuttal is sound or a fix is correct. It answers "did anyone
-reach a disposition here", which is mechanically checkable; it deliberately
-does not try to verify that a FIXED reply's code change is real, because that
-is a reviewer's judgment and a regex claiming otherwise would be worse than
-no check at all.
+What this script can and cannot prove. It is a SILENCE DETECTOR, not a judge of whether a rebuttal
+is sound or a fix is correct. It answers "did anyone reach a disposition here", which is
+mechanically checkable; it deliberately does not try to verify that a FIXED reply's code change is
+real, because that is a reviewer's judgment and a regex claiming otherwise would be worse than no
+check at all.
 
 Requirements (mini-PRD)
 - `/ ` list every bot-authored review thread on a PR via the GraphQL API.
   [if a PR has bot threads and none are listed then broken]
   [if a human-authored thread is counted as a bot thread then broken]
+  [if a Copilot thread (login copilot-pull-request-reviewer, #4240) is not listed then broken]
   [if pagination stops at 100 threads and drops the rest then broken]
 - `/ ` classify each thread RESOLVED / RESOLVED-SILENT / IN-PROGRESS / UNTRIAGED.
   [if a replied-and-resolved thread is reported UNTRIAGED then broken]
