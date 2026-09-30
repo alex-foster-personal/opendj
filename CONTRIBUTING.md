@@ -82,7 +82,8 @@ Optional local linting via [Trunk](https://docs.trunk.io/code-quality) (config i
 
 ```bash
 npm ci            # once: installs the trunk launcher into ./node_modules
-npm run lint      # trunk check: new issues on lines changed vs main only
+npm run lint      # trunk check --no-fix: new issues on lines changed vs main only, read-only
+npm run lint:fix  # trunk check with autofix, for interactive use
 npm run fmt       # trunk fmt: changed files only; near no-op today (see below)
 ```
 
@@ -91,8 +92,8 @@ shfmt, taplo and rustfmt are disabled because none is an existing gate and each
 rewrites whole files. Enabling one is a separate decision.
 
 Trunk's git hooks are disabled on purpose (shared checkouts); run it on demand.
-Without a TTY (agents, CI) `trunk check` applies autofixes without asking, so
-pass `npm run lint -- --no-fix` for a read-only run.
+Without a TTY (agents, CI) a bare `trunk check` applies autofixes without asking, so
+`npm run lint` passes `--no-fix`; run `npm run lint:fix` when you want the fixes applied.
 
 ## Branching convention
 

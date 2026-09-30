@@ -14,8 +14,11 @@ runs no transaction after its first read, so it never pins the WAL and never
 blocks a checkpoint. This is the usual shape of a long-lived SQLite server:
 the process holds the database open, and requests borrow connections.
 
-A keeper is dropped with the app, and a process that exits with it open
-leaves a WAL the next open recovers, as after any crash. Anything that needs
+The webui lifespan (``apps.webui.server.app_wiring._lifespan_context``, which
+``engine_core`` wraps) calls :func:`close_wal_keepers` on shutdown, so a
+stopped app holds no handle on the database. A process that dies with a
+keeper open leaves a WAL the next open recovers, as after any crash. Policy:
+docs/decisions/ADR-NEW-hub-wal-keeper.md. Anything that needs
 the database to itself while the app lives (changing its journal mode, for
 one) calls :func:`close_wal_keepers` first: with a keeper open, SQLite
 answers it ``database is locked``.
