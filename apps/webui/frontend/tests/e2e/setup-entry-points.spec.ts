@@ -88,6 +88,9 @@ import { spendBootLanding } from './support/boot-landing';
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
  * platform-correct modifier is what gets pressed. */
 const SETTINGS_CHORD = process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma';
+// A same-origin tab opens in well under a second on every gate host; 15 s is
+// generous headroom for a loaded runner while leaving most of the test budget.
+const NEW_TAB_TIMEOUT_MS = 15_000;
 
 const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
 const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run setup' });
@@ -590,15 +593,27 @@ test.describe('setup entry points', () => {
 		const urlLink = chip.locator('a.url');
 		await expect(urlLink).toBeVisible();
 		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		await expect(urlLink).toHaveAttribute('target', '_blank');
 		const href = await urlLink.getAttribute('href');
-		if (href) {
-			const pagePromise = context.waitForEvent('page');
-			await urlLink.click();
-			const engineTab = await pagePromise;
-			await engineTab.waitForLoadState('domcontentloaded');
-			expect(engineTab.url().replace(/\/$/, '')).toBe(href.replace(/\/$/, ''));
-			await engineTab.close();
-		}
+		if (href === null) throw new Error('the build identity url link lost its href after it was asserted');
+		// Bounded on purpose. Twice on Mon 28 Sep 2026 (runs 36393773779 and
+		// 36415901881, both on agbox2) WebKit took this click, focused the link
+		// and opened no tab at all: no page event and no request for the URL.
+		// An unbounded wait spent the whole test budget and reported only
+		// "Test timeout", which says nothing about which step failed.
+		const pagePromise = context.waitForEvent('page', { timeout: NEW_TAB_TIMEOUT_MS });
+		await urlLink.click();
+		const engineTab = await pagePromise.catch(async (cause: unknown) => {
+			const focused = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160) ?? 'nothing');
+			throw new Error(
+				`clicking the build identity url link opened no tab within ${NEW_TAB_TIMEOUT_MS} ms ` +
+					`on ${browserName} (focus after the click: ${focused})`,
+				{ cause }
+			);
+		});
+		await engineTab.waitForLoadState('domcontentloaded');
+		expect(engineTab.url().replace(/\/$/, '')).toBe(href.replace(/\/$/, ''));
+		await engineTab.close();
 		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
 		const copyIcon = chip.getByRole('button', { name: 'Copy build identity to clipboard' });
 		await expect(copyIcon).toBeVisible();

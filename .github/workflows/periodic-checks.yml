@@ -173,6 +173,8 @@ jobs:
       # NEXT job regardless of whether THIS one needed them.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           clean: false
 
@@ -467,6 +469,8 @@ jobs:
       # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           # false on purpose: the next step cleans all but the dependency trees.
@@ -617,6 +621,8 @@ jobs:
       # covered that no check here ever executed.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           # false on purpose: the next step cleans all but the dependency trees.
@@ -762,6 +768,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: false
@@ -906,6 +914,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.window.outputs.head }}
           clean: false
@@ -1368,6 +1378,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           ref: main
           clean: false
@@ -1711,6 +1723,8 @@ jobs:
       # (tests/scripts/test_ci_workspace_reuse.py): same runner, same rule.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           clean: false
 

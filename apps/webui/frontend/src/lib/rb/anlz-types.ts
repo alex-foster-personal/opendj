@@ -136,7 +136,14 @@ export interface AnlzPhrase {
 	kind: number;
 	/** Raw PSSI mood id. */
 	mood: number;
+	/** Own sections only (`source: 'own'`, kind and mood 0): the model's section label. */
+	label?: string;
+	/** Present only on own sections; PSSI phrases carry no per-phrase source. */
+	source?: 'own';
 }
+
+/** Which producer filled `phrases` (STRUCT-02); rekordbox PSSI always wins when present. */
+export type AnlzPhrasesSource = 'rekordbox' | 'own' | 'none';
 
 /** Optional analyzer hints for future dynamic key and tempo-aware sync. */
 export interface AnlzPerformanceHints {
@@ -204,8 +211,12 @@ export interface AnlzData {
 	beatgrid: AnlzBeatgrid;
 	/** Cues + loops; sparse coverage is real - most tracks show none. */
 	cues: AnlzCue[];
-	/** Phrases; empty array when PSSI absent. */
+	/** Phrases: rekordbox PSSI, else own sections, else an empty array. */
 	phrases: AnlzPhrase[];
+	/** Which producer filled `phrases`; `none` means nothing was measured. */
+	phrases_source?: AnlzPhrasesSource;
+	/** Own-section sidecar status whenever one exists, including a failed one. */
+	own_phrases?: { status: 'ok' | 'failed'; reason: string | null; producer: string | null; producer_version: string | null };
 	/** Own beatgrid payloads only: time-stamped tempo-change markers, empty
 	 * `[]` when static. A rekordbox-sourced payload has no such key at all. */
 	tempo_changes?: AnlzTempoChange[];
