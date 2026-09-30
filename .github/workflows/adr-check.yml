@@ -40,6 +40,13 @@ env:
 
 jobs:
   gate:
+    # Every PR runs the `--pr` step: on Trunk's own merge-queue drafts it judges each batch
+    # member on its own files and ADR declaration (scripts.adr_check evaluate_batch). Those
+    # drafts also run the merged-tree step, because their tree is exactly what lands on main
+    # (PR #4227, Codex r4135350279). A draft counts as Trunk's only when the branch is
+    # trunk-merge/*, the author is the Trunk App (REST login trunk-io[bot], e.g. draft #4355)
+    # and the head lives in this repository; a branch name alone is caller-controlled
+    # (Codex r4120216186).
     name: adr check
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
@@ -111,7 +118,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: ADR check (issue #1489)
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      # Step names are quoted: an unquoted ` #` starts a YAML comment and truncates them.
+      - name: "ADR check (issue #1489)"
         # No venv: scripts.adr_check is stdlib only. It reads THIS PR's
         # docs/decisions/ for whether an id exists, and the PR body plus
         # the PR file list via gh. Exit 1 = gated path, no valid ADR line.
@@ -120,3 +137,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python -m scripts.adr_check --pr "${{ github.event.pull_request.number }}"
+
+      - name: "ADR merged-tree check on Trunk queue drafts (PR #4227)"
+        if: ${{ startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository }}
+        # The batch tree about to land on main: duplicate numeric ids, duplicate
+        # placeholders and stale renumber paths. Git only, no PR body and no gh.
+        # Exit 2 = the gate could not measure, which is never a pass.
+        run: |
+          python -m scripts.adr_check --merge-base origin/main --merge-head HEAD

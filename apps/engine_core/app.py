@@ -41,6 +41,8 @@ from apps.engine_core.account.api import (
 )
 from apps.engine_core.app_posture_api import add_app_posture_route
 from apps.engine_core.assistant.api import router as assistant_router
+from apps.engine_core.audio_engine import AudioEngineSupervisor, autostart_from_environ
+from apps.engine_core.audio_engine_api import add_audio_engine_routes
 from apps.engine_core.audio_interference_api import add_audio_interference_route
 from apps.engine_core.availability_api import add_availability_routes
 from apps.engine_core.build_info import BUILD_IDENTITY_STATE_ATTR, add_build_info_route
@@ -76,7 +78,7 @@ from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
 from apps.shared import events, platform_paths
 from apps.shared.library_mode import apply_library_env, assert_ready
-from apps.shared.paths import STATE_DB
+from apps.shared.state import db as state_db
 from apps.shared.sync_bind_guard import assert_sync_bind_allowed
 from apps.stems import job as stems_job
 from apps.stems.api import router as stems_plan_router
@@ -191,6 +193,17 @@ def create_app(
     add_update_apply_route(app)
     availability_worker = LibraryAvailabilityWorker(cfg.data_dir)
     add_availability_routes(app, availability_worker)
+    # Plan 20-02: this engine supervises odj-audio (the shell only bundles it
+    # and sets ODJ_AUDIO_BIN). ODJ_AUDIO_ENGINE is read here so a bad value
+    # stops the boot rather than surfacing on the first request.
+    try:
+        autostart_from_environ(os.environ)
+    except ValueError as exc:
+        raise EngineBootError(str(exc)) from exc
+    audio_engine = AudioEngineSupervisor(
+        environ=dict(os.environ), repo_root=platform_paths.PROJECT_ROOT
+    )
+    add_audio_engine_routes(app, audio_engine)
     app.state.engine_cfg = cfg
     add_rescue_routes(app)
 
@@ -219,6 +232,7 @@ def create_app(
         runner=runner,
         lock=lock,
         availability_worker=availability_worker,
+        audio_engine=audio_engine,
     )
     return app
 
@@ -261,13 +275,14 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
     assert_ready()
     stems = stem_storage()
     ensure_stem_storage(stems)
+    state_db_path = _create_state_store(cfg)
 
     return legacy_create_app(
-        backend=make_backend(),
+        backend=make_backend(state_db_path),
         bind_host=cfg.host,
         hostname=os.environ.get("MUSIC_DJ_HOSTNAME"),
         syncthing_status_fn=probe_syncthing_status,
-        state_db_path=str(STATE_DB),
+        state_db_path=str(state_db_path),
         port=cfg.port,
         stem_roots=stems.roots,
         mount_frontend=False,
@@ -298,6 +313,29 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,
     )
+
+
+def _create_state_store(cfg: EngineConfig) -> Path:
+    """Create and migrate ``state.db`` BEFORE a backend is chosen (#3965).
+
+    ``make_backend`` picks by file presence: SqliteBackend when ``state.db``
+    exists, InMemoryBackend when it does not. On a first run nothing had
+    created it yet, so the engine bound an in-memory library for the life of
+    the process. The first folder import then wrote its rows to sqlite,
+    readiness (which reads sqlite directly) counted them, and ``/tracks`` and
+    ``/health`` served an empty library until the app was relaunched. The
+    availability worker created the file a moment after boot anyway, too
+    late, and a readiness request racing that creation read a half-migrated
+    schema and 500'd.
+
+    The engine is the long-lived store owner, so an in-memory library is
+    never its right answer: anything written to one is lost at exit. This
+    writes no rows. An empty, fully migrated store is what every later
+    reader and the import worker expect to find.
+    """
+    path = cfg.state_db
+    state_db.open_rw(path).close()
+    return path
 
 
 def _drop_api_routes(app: FastAPI, prefix: str) -> int:
@@ -395,6 +433,7 @@ def _wrap_lifespan(
     runner: JobRunner,
     lock: EngineLock | None,
     availability_worker: LibraryAvailabilityWorker,
+    audio_engine: AudioEngineSupervisor,
 ) -> None:
     """Wrap, never replace, the legacy lifespan.
 
@@ -446,9 +485,12 @@ def _wrap_lifespan(
                 instance.state.sync_hub_scheduler = sched
                 instance.state.folder_rescan_scheduler = folder_rescan
                 availability_worker.start()
+                audio_engine.autostart()
                 try:
                     yield
                 finally:
+                    # Off the event loop: stop() waits for the process.
+                    await asyncio.to_thread(audio_engine.stop)
                     availability_worker.stop()
         finally:
             if heartbeat is not None:
