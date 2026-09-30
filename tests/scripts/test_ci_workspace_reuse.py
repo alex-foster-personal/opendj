@@ -13,6 +13,8 @@ Requirements:
 - ✔︎ A reused .venv is recreated when its interpreter is not the one a fresh
   job would build, and kept otherwise.
 - ✔︎ A reused .venv is installed exactly, so it holds what a fresh fill would.
+- ✔︎ Every self-hosted checkout fetches full history (`fetch-depth: 0`), so no
+  job leaves a shallow graft in a workspace the next job reuses.
 
 Acceptance tests:
 - [if] a self-hosted checkout goes back to `clean: true`, or loses the clean
@@ -25,11 +27,21 @@ Acceptance tests:
   target dir [then] this fails [⛔️ if the churn silently comes back].
 - [if] a self-hosted job runs bare `uv venv` [then] this fails [⛔️ uv refuses
   to create over an existing venv, so a reused workspace would go red].
-- [if] a reused venv's install drops `--exact` or `--upgrade` [then] this fails
-  [⛔️ if a reused venv tests another branch's packages or stale versions].
+- [if] a reused venv is filled any way but `ci_venv.sh --lock <committed
+  pylock>` (an exact sync from a hash-pinned lock) [then] this fails [⛔️ if a
+  reused venv tests another branch's packages, or a job resolves against the
+  live index (issue #4252)].
 - [if] the venv's interpreter reports another version, or does not run
   [then] it is recreated from the requested interpreter.
 - [if] the venv's interpreter matches [then] it is kept, contents intact.
+- [if] a self-hosted checkout drops `fetch-depth: 0` (or sets any other depth)
+  [then] this fails [⛔️ a depth-1 fetch writes .git/shallow, and the next
+  full-history job on that runner pays an `--unshallow` re-download: measured
+  6.8 GB of the 11.2 GB of pack writes on nucbox in 48 h; see the
+  uniform-checkout-depth ADR in docs/decisions/].
+- [if] the selector stops finding the history-dependent jobs (ci.yml test,
+  fast, contracts, quality; adr-check) [then] this fails [⛔️ the depth rule
+  would pass vacuously for the jobs whose results depend on history].
 """
 
 from __future__ import annotations
@@ -51,8 +63,16 @@ VENV_SCRIPT = REPO_ROOT / "scripts" / "ci_venv.sh"
 SELF_HOSTED_VAR_PREFIX = "vars.CI_RUNS_ON_"
 CHECKOUT_PREFIX = "actions/checkout@"
 CLEAN_STEP_RUN = "scripts/ci_clean_untracked.sh"
-EXACT_INSTALL = "uv pip install --exact --upgrade --python .venv/bin/python "
+FULL_HISTORY = 0
+# Jobs whose results read history: progress-tree provenance, the 90-day
+# hotspot report, and the origin/main ancestry guard. A positive control for
+# the depth rule's selector.
+HISTORY_DEPENDENT = {
+    ("ci.yml", "test"), ("ci.yml", "fast"), ("ci.yml", "contracts"),
+    ("ci.yml", "quality"), ("adr-check.yml", "gate"),
+}
 PYTHON = "3.11"
+LOCK_SYNC_RE = re.compile(rf"^\s*scripts/ci_venv\.sh {re.escape(PYTHON)} --lock (\S+)\s*$", re.M)
 
 
 #-----------------------------------------------------------------------------
@@ -184,6 +204,37 @@ def test_checkout_keeps_dependency_trees_and_cleans_right_after(workflow: str, j
     )
 
 
+def _checkout_with(steps: list[dict]) -> dict:
+    step = next(s for s in steps if str(s.get("uses", "")).startswith(CHECKOUT_PREFIX))
+    return step.get("with") or {}
+
+
+def test_depth_selector_covers_the_history_dependent_jobs() -> None:
+    """A depth rule whose selector misses the jobs that need history proves nothing."""
+    selected = {(w, j) for w, j, _ in _checkout_jobs()}
+    missing = HISTORY_DEPENDENT - selected
+    assert not missing, f"history-dependent jobs fell out of the self-hosted selector: {missing}"
+
+
+@pytest.mark.parametrize("workflow,job", [(w, j) for w, j, _ in _checkout_jobs()])
+def test_checkout_fetches_full_history_so_no_shallow_graft_is_left(workflow: str, job: str) -> None:
+    """One depth for every job that shares a persistent workspace.
+
+    actions/checkout v4 runs `git fetch --depth=1` for the default depth, which
+    writes .git/shallow into the reused repository. The next `fetch-depth: 0`
+    job on that runner then fetches with `--unshallow`, which re-downloads
+    history the runner already holds (up to ~150 MB per fetch on a runner
+    without a blob filter). A uniform depth means the workspace is never
+    shallow, and every fetch is an incremental negotiation against local refs.
+    """
+    steps = next(s for w, j, s in _checkout_jobs() if (w, j) == (workflow, job))
+    depth = _checkout_with(steps).get("fetch-depth")
+    assert depth == FULL_HISTORY, (
+        f"{workflow}:{job} checkout has fetch-depth={depth!r}; every self-hosted checkout "
+        f"must set fetch-depth: {FULL_HISTORY} so it never leaves a shallow workspace behind"
+    )
+
+
 def test_self_hosted_jobs_never_run_bare_uv_venv() -> None:
     """uv refuses to create over an existing venv, and the workspace now keeps one."""
     offenders = [
@@ -202,11 +253,13 @@ def test_every_reused_venv_is_installed_exactly() -> None:
         for s in steps
         if "scripts/ci_venv.sh" in str(s.get("run", ""))
     ]
-    # CONTROL: ci.yml (3 jobs), full-ci, docs and release-check provision this way.
-    assert len(provisioning) >= 6, provisioning
+    # CONTROL: ci.yml (4 jobs), full-ci, docs and release-check provision this way.
+    assert len(provisioning) >= 7, provisioning
     for w, j, run in provisioning:
-        assert f"scripts/ci_venv.sh {PYTHON}" in run, f"{w}:{j}"
-        assert EXACT_INSTALL in run, f"{w}:{j} must install with --exact --upgrade: {run}"
+        locks = LOCK_SYNC_RE.findall(run)
+        assert len(locks) == 1, f"{w}:{j} must provision with `ci_venv.sh {PYTHON} --lock`: {run}"
+        assert (REPO_ROOT / locks[0]).is_file(), f"{w}:{j} syncs an uncommitted lock: {locks[0]}"
+        assert "uv pip install" not in run, f"{w}:{j} must not resolve on top of the lock: {run}"
 
 
 #-----------------------------------------------------------------------------

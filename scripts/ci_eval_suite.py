@@ -177,7 +177,7 @@ def plan_command(args: argparse.Namespace) -> int:
         workspace=workspace,
     )
     if args.manifest.exists() and not args.replace:
-        raise CampaignError(f"manifest already exists: {args.manifest}; pass --replace to overwrite")  # noqa: E501
+        raise CampaignError(f"manifest already exists: {args.manifest}; pass --replace to overwrite")
     write_json(args.manifest, campaign)
     print(json.dumps(campaign, indent=2))
     return 0
@@ -199,7 +199,7 @@ def prepare_command(args: argparse.Namespace, runner: CommandRunner) -> int:
     if existing.returncode == 0:
         payload = json.loads(existing.stdout)
         if not args.resume:
-            raise CampaignError(f"target repository already exists: {target}; use --resume only for this campaign")  # noqa: E501
+            raise CampaignError(f"target repository already exists: {target}; use --resume only for this campaign")
         if payload.get("description") != description or not payload.get("isPrivate"):
             raise CampaignError("existing target is not this campaign's private disposable mirror")
     else:

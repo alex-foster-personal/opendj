@@ -24,6 +24,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -65,6 +66,8 @@ function engineEnv(dataDir: string, isHub: '1' | '0'): Record<string, string> {
 }
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'cloudsync-ui.spec.ts',
 	fullyParallel: false,
@@ -75,7 +78,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: `uv run --no-sync python -m apps.shared.state.cli init && ${engineCommand(HUB_DATA_DIR, CLOUDSYNC_UI_HUB_PORT)}`,
+			command: guardedWebServerCommand('cloudsync-ui-engine', `uv run --no-sync python -m apps.shared.state.cli init && ${engineCommand(HUB_DATA_DIR, CLOUDSYNC_UI_HUB_PORT)}`),
 			cwd: REPOSITORY_ROOT,
 			url: `${CLOUDSYNC_UI_HUB_URL}/api/v1/health`,
 			reuseExistingServer: false,
@@ -83,7 +86,7 @@ export default defineConfig({
 			env: engineEnv(HUB_DATA_DIR, '1')
 		},
 		{
-			command: `uv run --no-sync python ${FIXTURE_BUILDER} --data-dir ${SPOKE_DATA_DIR} && ${engineCommand(SPOKE_DATA_DIR, CLOUDSYNC_UI_SPOKE_PORT)}`,
+			command: guardedWebServerCommand('cloudsync-ui-engine-2', `uv run --no-sync python ${FIXTURE_BUILDER} --data-dir ${SPOKE_DATA_DIR} && ${engineCommand(SPOKE_DATA_DIR, CLOUDSYNC_UI_SPOKE_PORT)}`),
 			cwd: REPOSITORY_ROOT,
 			url: `http://127.0.0.1:${CLOUDSYNC_UI_SPOKE_PORT}/api/v1/health`,
 			reuseExistingServer: false,
@@ -91,7 +94,7 @@ export default defineConfig({
 			env: engineEnv(SPOKE_DATA_DIR, '0')
 		},
 		{
-			command: `pnpm exec vite --config ${VITE_CONFIG}`,
+			command: guardedWebServerCommand('cloudsync-ui-vite', `pnpm exec vite --config ${VITE_CONFIG}`),
 			cwd: FRONTEND_ROOT,
 			url: `${CLOUDSYNC_UI_ORIGIN}/`,
 			reuseExistingServer: false,
