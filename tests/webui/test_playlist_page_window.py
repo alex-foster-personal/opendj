@@ -1,6 +1,6 @@
 """A playlist tracks page reads only its window, in today's order (LIBM-133).
 
-[if] ``GET /playlists/{id}/tracks`` reads or sorts every member to serve one page [then] fail, [else stop].
+[if] a playlist tracks page reads or sorts every member [then] fail, [else stop].
 
 Found by the LIBM-120 re-measure on main ``2ecfde5d7`` (Wed 30 Sep 2026, agentbox):
 the first 30-row page of a 10,042-member playlist took 455 ms at p95 against
