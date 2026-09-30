@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import {
+  gigBaselineDeckFaults,
   watchContinuousPlaybackUntil,
   watchGigDecksPlayingUntil,
 } from "./trackify-playback-watch.mjs";
@@ -153,6 +154,28 @@ async function loadGigSteadyState(page) {
     await waitForQueueIdle(page);
   }
   await page.waitForTimeout(5_000);
+  // Queue-idle and HEAD 200 do not prove a load landed, so before GIG_READY
+  // require each deck to hold exactly its picked track with a positive
+  // duration and be playing (Sol P1/BLOCKING, PR #4540). The whole-window
+  // watch after GIG_READY then keeps that true while the sampler runs.
+  const decks = await page.evaluate((count) => {
+    const ipc = window.musicDjToolsPerformance;
+    if (ipc === undefined) throw new Error("performance IPC is not installed");
+    const all = ipc.query().decks;
+    const projected = {};
+    for (let deckId = 1; deckId <= count; deckId += 1) {
+      const deck = all[deckId];
+      projected[deckId] =
+        deck === undefined
+          ? null
+          : { stable_id: deck.stable_id, duration_ms: deck.duration_ms, playing: deck.playing };
+    }
+    return projected;
+  }, stableIds.length);
+  const deckFaults = gigBaselineDeckFaults(decks, stableIds);
+  if (deckFaults.length > 0) {
+    throw new Error(`Gig baseline is not four loaded, playing decks: ${deckFaults.join("; ")}`);
+  }
   return stableIds;
 }
 
