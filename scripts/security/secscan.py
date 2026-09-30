@@ -20,10 +20,13 @@ Acceptance (one assertion each, exercised by `just security-scan`):
   even when an ignored path changed in the same diff.
 - [if] semgrep-summary has --expected-scannable > 0 but loaded 0 rules [then] exit 2 (UNKNOWN).
 - [if] semgrep-summary has --expected-scannable > 0, rules loaded, scanned 0 files, no errors,
-  and no results [then] exit 0 (baseline excluded unchanged files; no new findings).
+  no results, and no --expect-file path missing [then] exit 0 (baseline excluded unchanged
+  files; no new findings).
 - [if] semgrep-summary has --expected-scannable > 0, scanned 0 files, and errors or results
   [then] exit 2 (UNKNOWN), not a pass.
 - [if] semgrep scanned files but loaded 0 rules [then] exit 2.
+- [if] an --expect-file path is absent from semgrep's paths.scanned [then] exit 2 and the
+  message names it ("control files not scanned: <path>"), whether or not the file floor held.
 """
 
 from __future__ import annotations
@@ -356,8 +359,14 @@ def _semgrep_rules_gate(
 ) -> int | None:
     rules = len(doc.get("time", {}).get("rules", [])) if "time" in doc else None
     if rules is None:
-        return None
-    scanned = len(doc.get("paths", {}).get("scanned", []))
+        # --expect-file is never skipped silently: no "time" block means it is unmeasured.
+        no_time = 'semgrep JSON has no "time" block, so --expect-file could not be checked'
+        return _unknown(no_time) if args.expect_file else None
+    scanned_paths = doc.get("paths", {}).get("scanned", [])
+    scanned = len(scanned_paths)
+    # Computed before any success path, so no early exit 0 can bypass --expect-file.
+    not_scanned = _expected_files_not_scanned(args.expect_file, scanned_paths)
+    named = f"; control files not scanned: {', '.join(not_scanned)}" if not_scanned else ""
     print(f"semgrep loaded {rules} rules, scanned {scanned} files")
     expected = args.expected_scannable
     if expected is not None and expected > 0:
@@ -372,20 +381,32 @@ def _semgrep_rules_gate(
                 f"semgrep expected {expected} scannable file(s) but loaded 0 rules {detail}"
             )
         if scanned == 0:
-            if not errors and not results:
+            if not errors and not results and not not_scanned:
                 _emit(args, args.title, [], 0)
                 return 0
             return _unknown(
                 f"semgrep expected {expected} scannable file(s) but loaded {rules} rules "
-                f"and scanned {scanned} files"
+                f"and scanned {scanned} files{named}"
             )
     if rules < args.min_rules:
         return _unknown(f"semgrep loaded {rules} rules, fewer than the {args.min_rules} floor")
     if scanned < args.min_files:
         return _unknown(
-            f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor"
+            f"semgrep scanned {scanned} files, fewer than the {args.min_files} floor{named}"
         )
+    if not_scanned:
+        return _unknown(f"semgrep scanned {scanned} files{named}")
     return None
+
+
+def _expected_files_not_scanned(expected: list[str], scanned_paths: list[str]) -> list[str]:
+    """Expected targets absent from paths.scanned, compared as the relative paths passed in.
+
+    scan_sast.sh runs semgrep from the control root with root-relative targets, and semgrep
+    echoes them back verbatim in paths.scanned (checked on 1.177.0), so no normalization.
+    """
+    scanned = set(scanned_paths)
+    return [path for path in expected if path not in scanned]
 
 
 def cmd_semgrep_summary(args: argparse.Namespace) -> int:
@@ -477,6 +498,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--require-rule", action="append", default=[])
     p.add_argument("--min-rules", type=int, default=1)
     p.add_argument("--min-files", type=int, default=0, help="fewer scanned files is UNKNOWN")
+    p.add_argument(
+        "--expect-file",
+        action="append",
+        default=[],
+        help="repeatable; a path absent from paths.scanned is UNKNOWN and named",
+    )
     p.add_argument("--fail-on-error", action="store_true")
     p.add_argument(
         "--expected-scannable",
