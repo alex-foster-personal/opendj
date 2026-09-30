@@ -124,22 +124,23 @@ def nightly_capture_id(now: dt.datetime, machine: str) -> str:
 def build_ledger_rows(
     config: PerfKpiConfig,
     *,
-    capture_id: str,
     git_sha: str,
-    today: dt.date,
+    now: dt.datetime,
     measurements: list[WarmMedian],
 ) -> list[dict[str, Any]]:
+    """`captured_at` is fixed-width UTC, so readers order same-date rows by capture time."""
     rows: list[dict[str, Any]] = []
     for item in measurements:
         name = kpi_name(item.leg, item.profile_key)
         common = {
-            "date": today.isoformat(),
+            "date": now.date().isoformat(),
+            "captured_at": now.isoformat(timespec="microseconds"),
             "round": "perf-kpi-nightly",
             "kpi": name,
             "unit": "ms",
             "machine": config.machine,
             "source": "scripts/perf/perf_kpi_job.py nightly",
-            "capture_id": capture_id,
+            "capture_id": nightly_capture_id(now, config.machine),
             "denominator": item.denominator,
             "git_sha": git_sha,
         }
@@ -535,13 +536,7 @@ def _append_and_judge(
     ``written`` as soon as it is on disk, so `run_nightly` can report exactly
     what reached the ledger if anything after it raises."""
     today = now.date()
-    rows = build_ledger_rows(
-        config,
-        capture_id=nightly_capture_id(now, config.machine),
-        git_sha=git_sha,
-        today=today,
-        measurements=measurements,
-    )
+    rows = build_ledger_rows(config, git_sha=git_sha, now=now, measurements=measurements)
     append_entries(config.ledger_path, rows)
     written.append(rows)
     s5_rows = capture_s5_against_engine(

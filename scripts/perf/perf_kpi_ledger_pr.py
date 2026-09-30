@@ -226,6 +226,18 @@ def _create_pr(repository: str, branch: str, *, cwd: Path) -> None:
     subprocess.run(_create_pr_argv(repository, branch), check=True, cwd=cwd)
 
 
+def _publish_candidates(tonight_entries: list, outbox_entries: list) -> list:
+    """The outbox backlog, then tonight's rows it does not already hold.
+
+    Oldest first (Codex, PR #4473, P2/BLOCKING, "Preserve chronological order
+    for same-day captures"): the outbox only ever holds rows from runs EARLIER
+    than this one, so the ledger stays in capture order for a single host. The
+    readers do not rely on it: rows another host already published can be
+    newer, so they order same-date rows by `captured_at` (Codex, PR #4474).
+    """
+    return outbox_entries + _new_entries_since(outbox_entries, tonight_entries)
+
+
 def _update_ledger_pr_inner(
     repo_root: Path,
     ledger_path: Path,
@@ -265,12 +277,7 @@ def _update_ledger_pr_inner(
     tonight_entries = _new_entries_since(pre_run_entries, local_entries)
     outbox_dir = outbox_dir_for(worktree_dir)
     outbox_entries = _load_outbox_entries(outbox_dir)
-    # Oldest first (Codex, PR #4473, P2/BLOCKING, "Preserve chronological
-    # order for same-day captures"): the outbox only ever holds rows from runs
-    # EARLIER than this one, and both ledger readers break same-date ties by
-    # append order, so appending tonight's rows ahead of the backlog made an
-    # older same-day capture the current reading.
-    candidate_entries = outbox_entries + _new_entries_since(outbox_entries, tonight_entries)
+    candidate_entries = _publish_candidates(tonight_entries, outbox_entries)
     # REPO_ROOT's tracked ledger is restored ONLY once tonight's rows are
     # durably somewhere else -- on the branch, or in a completely written
     # outbox (Sol, PR #3827, P1/BLOCKING, review 5321908943, "Preserve
