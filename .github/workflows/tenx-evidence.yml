@@ -26,6 +26,9 @@ permissions:
 jobs:
   gate:
     name: 10x evidence
+    # Only 10xHunter PRs; a skipped job bills 0 and still satisfies a required check.
+    # A retitle fires `edited`, which re-evaluates this condition.
+    if: startsWith(github.event.pull_request.title, '10xHunter--')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
