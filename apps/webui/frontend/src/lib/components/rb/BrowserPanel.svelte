@@ -239,7 +239,6 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
-	import BrowserConfirmDialog from './browser/BrowserConfirmDialog.svelte';
 	import CompatibleFilterPopover from './browser/CompatibleFilterPopover.svelte';
 	import {
 		ensureAnlzPrefetch,
@@ -293,6 +292,11 @@
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	const pairingIndex = new PairingIndex();
 	let browserConfirmOpen = $state(false);
+	// The confirm dialog renders only after a delete or drop asks, so it loads on
+	// first use instead of riding the /performance route's eager bundle budget.
+	let BrowserConfirmDialog = $state<
+		typeof import('./browser/BrowserConfirmDialog.svelte').default | null
+	>(null);
 	let browserConfirmPending = $state<{
 		title: string;
 		message: string;
@@ -621,14 +625,20 @@
 		secondaryLabel: string;
 		showDefault?: boolean;
 	}): Promise<{ ok: boolean; remember: boolean; setDefault: boolean }> {
-		return new Promise((resolve) => {
+		const loaded =
+			BrowserConfirmDialog === null
+				? import('./browser/BrowserConfirmDialog.svelte').then((mod) => {
+						BrowserConfirmDialog = mod.default;
+					})
+				: Promise.resolve();
+		return loaded.then(() => new Promise((resolve) => {
 			browserConfirmPending = {
 				...cfg,
 				showDefault: cfg.showDefault ?? false,
 				resolve
 			};
 			browserConfirmOpen = true;
-		});
+		}));
 	}
 
 	const nextOnlyRef = $derived.by((): NextOnlyRef | null => {
@@ -3625,7 +3635,7 @@
 	</div>
 </section>
 
-{#if browserConfirmPending}
+{#if browserConfirmPending && BrowserConfirmDialog}
 	<BrowserConfirmDialog
 		bind:open={browserConfirmOpen}
 		title={browserConfirmPending.title}

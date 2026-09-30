@@ -185,7 +185,19 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
+  // RAISED Wed 30 Sep 2026 (+2 KiB, PR #4014, issue #3986 library pins): the
+  // library pane on /performance gains the configurable compatible filter
+  // (Camelot steps, BPM window and direction), the purple pairing underline
+  // (PairingIndex + the reference-master derivation), the BPM provenance hover
+  // and the in-app confirm flow. Pinned origin/main 2ecfde5d7 measured 241,520
+  // locally (144 bytes of headroom); the merged tree measured 243,507. The
+  // BrowserConfirmDialog and the compatible-filter range panel now load with a
+  // dynamic import on first use (they render only after a confirm is asked or
+  // on hover), which moves 608 bytes to other-lazy; what stays is the filter
+  // and pairing logic the always-rendered table needs: 242,899 locally. Local
+  // and CI agree on this route within 11 bytes (PR head f545571e7: 242,236
+  // locally, 242,225 on CI). Ceil-to-KiB of 242,899 is 238 KiB.
+  { name: 'performance', limit: 243712, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
