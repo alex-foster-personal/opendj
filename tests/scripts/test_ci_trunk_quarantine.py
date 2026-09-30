@@ -3,6 +3,8 @@
 ADR-NEW-trunk-flaky-quarantine-on (the maintainer, Wed 30 Sep 2026): "Set TRUNK
 QUARANTINE to True so flakey tests stop blocking merges so aggressively."
 
+  - [if] a shard fails only on tests Trunk quarantines [then] it passes while every other red still fails, [else stop]
+
 Regression lines:
   - if an unlisted failure passes then quarantine is hiding a real regression
   - if a failure whose every failed test is listed still fails then quarantine does nothing
@@ -188,9 +190,10 @@ def _closed_port() -> int:
 
 def test_an_unreachable_list_fails_closed_end_to_end(tmp_path: Path) -> None:
     fetch = _step(LIST_JOB, step_id="fetch")
-    bash, curl, jq = shutil.which("bash"), shutil.which("curl"), shutil.which("jq")
-    if not (bash and curl and jq):
-        pytest.fail("bash, curl and jq are required to execute the list job's own run block")
+    bash = shutil.which("bash")
+    assert bash and shutil.which("curl") and shutil.which("jq"), (
+        "bash, curl and jq are required to execute the list job's own run block"
+    )
     output = tmp_path / "github_output"
     output.write_text("")
     env = {
