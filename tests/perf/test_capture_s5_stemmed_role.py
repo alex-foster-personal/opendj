@@ -113,7 +113,7 @@ class _SilentHub:
     hydration is in. ``on_accept`` runs once per accepted connection.
     """
 
-    def __init__(self, on_accept: Callable[[], None] | None = None) -> None:
+    def __init__(self, on_accept: Callable[[], object] | None = None) -> None:
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.bind(("127.0.0.1", 0))
         self._listener.listen()
