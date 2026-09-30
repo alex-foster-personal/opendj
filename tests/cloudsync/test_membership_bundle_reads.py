@@ -15,10 +15,17 @@ matched on those two point reads, at 10 and at 200 members.
 
 [if] a bundle's point reads grow with its member count [then] per-member reads, [else stop].
 
-Controls: the probe must count one read per member when the batched decision
-is taken out; batched verdicts must equal per-member verdicts on randomized
-libraries with stamp faults, deletions, identity losers and identity holds;
-a replace must still skip, and warn about, a member whose track is not here.
+Controls: the probe must count one read per member on the per-member read
+path, which production still takes for any parent a walk has not decided;
+batched verdicts must equal each member's per-member read on randomized libraries
+with stamp faults, deletions, identity losers and identity holds, on both
+sides of the real library-election cutover; a replace must still skip, and
+warn about, a member whose track is not here.
+
+Every path runs unmodified: counts come from the statements SQLite traces,
+and both cutover cases are real bundle sizes. That the growth guards bite is
+proved by hand mutation (recorded in the commit that introduced this form),
+not by swapping production code inside the suite.
 """
 from __future__ import annotations
 
@@ -34,6 +41,7 @@ from typing import Any
 import pytest
 
 from apps.sync_hub import engine_apply, engine_changes, identity_verdicts, sync_set
+from apps.sync_hub.protocol_common import MEMBERSHIP_TABLE
 from tests.cloudsync.test_hub_sync import _DEV_A, _T0, _T1
 from tests.cloudsync.test_identity_verdicts import _random_library
 from tests.cloudsync.test_track_identity_collapse import _open_hub
@@ -46,6 +54,10 @@ LARGE_BUNDLE = 200
 PLAYLIST = "pl-bundle"
 PARENT_POINT_READ = re.compile(r"FROM tracks WHERE stable_id = ")
 EXISTS_POINT_READ = re.compile(r"SELECT 1 FROM tracks WHERE stable_id = ")
+COMPONENT_SEED_READ = re.compile(r"FROM tracks WHERE deleted_at IS NULL AND stable_id = ")
+"""One per-row identity decision: the seed read of the row's component."""
+CUTOVER = identity_verdicts.CFG.ELECT_LIBRARY_AFTER_VERDICTS
+"""Read, never set: both sides of it are reached with real bundle sizes."""
 
 
 # ----- fixtures -----------------------------------------------------------------
@@ -89,9 +101,10 @@ def _point_reads(statements: list[str], pattern: re.Pattern[str]) -> int:
     return sum(bool(pattern.search(statement)) for statement in statements)
 
 
-def _per_member_decisions(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Take the batched decision out: every parent is read when first asked."""
-    monkeypatch.setattr(sync_set.HeldKeys, "decide_member_tracks", lambda self, playlist_id: None)
+def _library_elections(conn: sqlite3.Connection, statements: list[str]) -> int:
+    """Statements that read every live track's identity: one per library election."""
+    library_read = sync_set.identity_row_select(conn)
+    return sum(statement.strip() == library_read for statement in statements)
 
 
 # ----- growth guards ------------------------------------------------------------
@@ -128,13 +141,22 @@ def test_a_bundle_reads_its_tracks_in_one_statement(tmp_path: Path, walk: str) -
     )
 
 
-@pytest.mark.parametrize("walk", sorted(_BUNDLE_WALKS))
-def test_probe_counts_a_read_per_member_without_the_batch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, walk: str
-) -> None:
-    """Negative control: with per-member decisions back, the same probe must count them."""
-    _per_member_decisions(monkeypatch)
-    assert _parent_reads(tmp_path, LARGE_BUNDLE, walk) == LARGE_BUNDLE
+def test_probe_counts_a_read_per_member_on_the_per_member_path(tmp_path: Path) -> None:
+    """Positive control: the per-member read the batch replaced is still how a
+    walk judges a parent it has not decided. Asking it member by member, the
+    same probe must count one read each, or a zero above proves nothing."""
+    conn = _hub_with_bundle(tmp_path, LARGE_BUNDLE)
+    try:
+        held = sync_set.HeldKeys(conn)
+        with _traced(conn) as statements:
+            blocked = [
+                held.blocking_parent(MEMBERSHIP_TABLE, {"stable_id": f"stored-{i}"})
+                for i in range(LARGE_BUNDLE)
+            ]
+    finally:
+        conn.close()
+    assert blocked == [None] * LARGE_BUNDLE
+    assert _point_reads(statements, PARENT_POINT_READ) == LARGE_BUNDLE
 
 
 def _replace_exists_reads(tmp_path: Path, members: int) -> tuple[int, int]:
@@ -167,27 +189,52 @@ def test_a_replace_checks_its_tracks_exist_in_one_statement(tmp_path: Path) -> N
 # ----- equivalence --------------------------------------------------------------
 
 
-def _travels_alone(conn: sqlite3.Connection, pk: str) -> bool:
-    return sync_set._stored_row_reason(conn, "tracks", pk, sync_set.HeldKeys(conn)) is None
+def _per_member_verdicts(
+    conn: sqlite3.Connection, pks: list[str], decided: dict[str, bool]
+) -> dict[str, bool]:
+    """Each track's verdict (True: held) from the per-member read production
+    takes for a parent the walk has not decided, one member at a time, on one
+    walk that has already decided ``decided``."""
+    held = sync_set.HeldKeys(conn)
+    for pk, is_held in decided.items():
+        (held.hold if is_held else held.release)("tracks", (pk,))
+    return {
+        pk: held.blocking_parent(MEMBERSHIP_TABLE, {"stable_id": pk}) is not None for pk in pks
+    }
+
+
+#: Bundle sizes, in distinct member tracks, on each side of the cutover.
+_BUNDLE_SIZES: dict[str, tuple[int, int]] = {
+    "per-row": (40, 90),
+    "expect-crosses": (CUTOVER + 40, CUTOVER + 90),
+}
+#: Library rows per case: enough free tracks that a travelling bundle of the
+#: larger size can be drawn from them alone.
+_LIBRARY_ROWS: dict[str, int] = {"per-row": 120, "expect-crosses": 2 * CUTOVER}
 
 
 def _random_bundle(
-    conn: sqlite3.Connection, rng: random.Random, pks: list[str], *, travels: bool
-) -> None:
-    """Members drawn with repeats: from every stored track, deleted and faulty
-    included, or (``travels``) only from tracks a lone read finds free, so the
-    bundle is sent and every verdict is compared."""
-    pool = [pk for pk in pks if not travels or _travels_alone(conn, pk)]
-    _add_playlist(conn, [rng.choice(pool) for _ in range(rng.randint(40, 90))])
+    conn: sqlite3.Connection, rng: random.Random, pks: list[str], *, size: str, travels: bool
+) -> list[str]:
+    """Distinct members plus repeats: from every stored track, deleted and
+    faulty included, or (``travels``) only from tracks a per-member read finds
+    free, so the bundle is sent and every verdict is compared."""
+    alone = _per_member_verdicts(conn, pks, {}) if travels else {}
+    pool = [pk for pk in pks if not alone.get(pk, False)]
+    distinct = rng.sample(pool, min(len(pool), rng.randint(*_BUNDLE_SIZES[size])))
+    members = [*distinct, *(rng.choice(distinct) for _ in range(20))]
+    rng.shuffle(members)
+    _add_playlist(conn, members)
+    return distinct
 
 
-def _verdicts(
-    conn: sqlite3.Connection, walk: str, predecided: dict[str, bool]
-) -> tuple[Any, ...]:
-    """Walk the bundle after the walk has already decided ``predecided`` tracks
-    (True: held), some of them against what their stored row alone says."""
+def _walk(
+    conn: sqlite3.Connection, walk: str, decided: dict[str, bool]
+) -> tuple[Any, frozenset[str], frozenset[str]]:
+    """Walk the bundle after the walk has already decided ``decided`` tracks
+    (True: held); returns the result and every track the walk then holds or frees."""
     held = sync_set.HeldKeys(conn)
-    for pk, is_held in predecided.items():
+    for pk, is_held in decided.items():
         (held.hold if is_held else held.release)("tracks", (pk,))
     result = _BUNDLE_WALKS[walk](conn, held)
     return (
@@ -199,85 +246,76 @@ def _verdicts(
 
 @pytest.mark.parametrize("seed", range(10))
 @pytest.mark.parametrize("walk", sorted(_BUNDLE_WALKS))
-@pytest.mark.parametrize("elect_after", [50, 10**9], ids=["expect-crosses", "per-row"])
+@pytest.mark.parametrize("size", sorted(_BUNDLE_SIZES))
 def test_batched_verdicts_equal_per_member_verdicts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seed: int, walk: str, elect_after: int
+    tmp_path: Path, seed: int, walk: str, size: str
 ) -> None:
     """Overshoot control: a batch that freed or held the wrong tracks would pass
-    the read count and send, or hold back, the wrong bundle."""
-    monkeypatch.setattr(identity_verdicts.CFG, "ELECT_LIBRARY_AFTER_VERDICTS", elect_after)
+    the read count and send, or hold back, the wrong bundle.
+
+    The expected verdicts come from the per-member read path on a walk that
+    predecided the same tracks, and the expected result is the walk given
+    exactly those verdicts. ``expect-crosses`` bundles are past the real
+    cutover, so the batch elects the library up front while the per-member
+    walk decides row by row until it reaches the cutover itself."""
     conn = _open_hub(tmp_path)
     try:
         rng = random.Random(seed)
-        pks = _random_library(conn, rng, rows=120)
+        pks = _random_library(conn, rng, rows=_LIBRARY_ROWS[size])
         conn.execute(
             "UPDATE tracks SET stable_id_tier = 'inferred', content_hash = NULL, isrc = NULL"
             " WHERE rowid % 7 = 0"
         )
-        _random_bundle(conn, rng, pks, travels=seed % 2 == 0)
+        conn.commit()
+        members = _random_bundle(conn, rng, pks, size=size, travels=seed % 2 == 0)
         # Freed only: a walk that held a member holds the bundle, and the
         # travelling case below must stay travelling.
         predecided = {pk: False for pk in rng.sample(pks, 20)}
-        batched = _verdicts(conn, walk, predecided)
-        with monkeypatch.context() as per_member:
-            _per_member_decisions(per_member)
-            expected = _verdicts(conn, walk, predecided)
+        undecided = [pk for pk in members if pk not in predecided]
+        assert (len(undecided) >= CUTOVER) == (size == "expect-crosses"), (
+            "the fixture missed its side of the cutover"
+        )
+        with _traced(conn) as statements:
+            result, held, free = _walk(conn, walk, predecided)
+        elections = _library_elections(conn, statements)
+        expected = _per_member_verdicts(conn, members, predecided)
+        expected_result = _walk(conn, walk, expected)[0]
     finally:
         conn.close()
-    (result, held, free), (expected_result, expected_held, expected_free) = batched, expected
-    assert result == expected_result
-    # A held bundle stops the per-member walk at its first held member; the
-    # batch has decided every member by then. Each track either path decided
-    # must carry the same verdict in both.
-    assert expected_held <= held and expected_free <= free, "a per-member verdict is missing"
-    assert not (held & expected_free) and not (free & expected_held), (
-        "the batch decided a member track differently from a per-member read"
+    assert elections == (1 if size == "expect-crosses" else 0), (
+        "the fixture missed its identity path"
     )
     assert _BUNDLE_HELD[walk](expected_result) == (seed % 2 == 1), "the fixture missed its case"
-    if not _BUNDLE_HELD[walk](expected_result):
-        assert (held, free) == (expected_held, expected_free)
+    assert result == expected_result
+    decided = {**expected, **predecided}
+    assert held == {pk for pk, is_held in decided.items() if is_held}, (
+        "the batch held a member track a per-member read frees, or missed one it holds"
+    )
+    assert free == {pk for pk, is_held in decided.items() if not is_held}, (
+        "the batch freed a member track a per-member read holds, or left one undecided"
+    )
 
 
-def _identity_work(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, members: int, elect_after: int
-) -> tuple[int, int]:
-    """(per-row component decisions, library elections) for one bundle walk."""
-    monkeypatch.setattr(identity_verdicts.CFG, "ELECT_LIBRARY_AFTER_VERDICTS", elect_after)
-    counts = {"component": 0, "library": 0}
-    decide = identity_verdicts.IdentityLoserVerdicts._decide_component_of
-    elect = identity_verdicts.effective_identity_remap
-
-    def _counted_decide(self: Any, stable_id: str) -> None:
-        counts["component"] += 1
-        decide(self, stable_id)
-
-    def _counted_elect(conn: sqlite3.Connection) -> Any:
-        counts["library"] += 1
-        return elect(conn)
-
-    verdicts = identity_verdicts.IdentityLoserVerdicts
-    monkeypatch.setattr(verdicts, "_decide_component_of", _counted_decide)
-    monkeypatch.setattr(identity_verdicts, "effective_identity_remap", _counted_elect)
+def _identity_work(tmp_path: Path, members: int) -> tuple[int, int]:
+    """(per-row component decisions, library elections) for one bundle walk,
+    counted from the statements SQLite traces."""
     conn = _hub_with_bundle(tmp_path, members)
     try:
-        engine_changes._members_for_playlist(conn, PLAYLIST, sync_set.HeldKeys(conn))
+        with _traced(conn) as statements:
+            engine_changes._members_for_playlist(conn, PLAYLIST, sync_set.HeldKeys(conn))
+        return _point_reads(statements, COMPONENT_SEED_READ), _library_elections(conn, statements)
     finally:
         conn.close()
-    return counts["component"], counts["library"]
 
 
-def test_a_bundle_past_the_cutover_elects_the_library_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    assert _identity_work(tmp_path, monkeypatch, LARGE_BUNDLE, elect_after=50) == (0, 1)
+def test_a_bundle_past_the_cutover_elects_the_library_once(tmp_path: Path) -> None:
+    assert _identity_work(tmp_path, CUTOVER) == (0, 1)
 
 
-def test_a_bundle_under_the_cutover_still_decides_per_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_bundle_under_the_cutover_still_decides_per_row(tmp_path: Path) -> None:
     """Overshoot control: electing the library for every bundle is the per-page
     election round 2 removed."""
-    assert _identity_work(tmp_path, monkeypatch, SMALL_BUNDLE, elect_after=50) == (SMALL_BUNDLE, 0)
+    assert _identity_work(tmp_path, SMALL_BUNDLE) == (SMALL_BUNDLE, 0)
 
 
 def test_replace_still_skips_a_member_whose_track_is_not_here(
