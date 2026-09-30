@@ -370,6 +370,26 @@ _METHOD = (
 )
 
 
+def _post_capture_identity_reason(frontend: str, sha: str) -> str | None:
+    """None when the capture still has the identity it was gated on before sampling.
+
+    Sol P1/BLOCKING, PR #4540: the pre-capture gates ran once, then rows were
+    labeled with that sha after a capture that can run for an hour. A checkout
+    that moved or went dirty, or a frontend redeployed mid-run, would mix
+    builds under one clean-looking sha. Mirrors capture_library_mode.py's
+    post-capture `_verify_capture_targets` call.
+    """
+    checkout_reason = _verify_capturing_checkout_clean()
+    if checkout_reason is not None:
+        return checkout_reason
+    current_sha = _git_sha()
+    if current_sha != sha:
+        return f"checkout moved from {sha} to {current_sha} during the capture"
+    if _frontend_mode(frontend) == "vite-dev":
+        return "frontend switched to vite-dev during the capture"
+    return _verify_frontend_build_version(frontend, sha)
+
+
 def main(argv: list[str] | None = None) -> int:
     _require_macos()
     parser = argparse.ArgumentParser(description="Capture Trackify mode KPI ratios")
@@ -464,6 +484,12 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
+    post_capture_reason = _post_capture_identity_reason(args.frontend, sha)
+    if post_capture_reason is not None:
+        raise SystemExit(
+            "refusing to write rows: post-capture reverification failed (checkout or "
+            f"frontend changed during the capture): {post_capture_reason}"
+        )
     append_ledger_rows(args.ledger, rows)
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0

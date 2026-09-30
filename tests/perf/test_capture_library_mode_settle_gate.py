@@ -40,6 +40,7 @@ def _capture_result() -> dict[str, Any]:
             "median_rss_mb": 900.0,
             "footprint_samples_mb": [980.0, 990.0, 1000.0, 1000.0, 1010.0, 1020.0],
             "cpu_samples_percent": [8.0, 9.0, 10.0, 10.0, 11.0, 12.0],
+            "sample_failure_count": 0,
         },
         "library": {
             "median_footprint_mb": 500.0,
@@ -47,6 +48,7 @@ def _capture_result() -> dict[str, Any]:
             "median_rss_mb": 450.0,
             "footprint_samples_mb": [480.0, 490.0, 500.0, 500.0, 510.0, 520.0],
             "cpu_samples_percent": [2.0, 2.5, 3.0, 3.0, 3.5, 4.0],
+            "sample_failure_count": 0,
         },
     }
 
