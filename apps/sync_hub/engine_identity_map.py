@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Sequence
+from collections import ChainMap
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from apps.shared.state import db as state_db
@@ -111,28 +112,55 @@ def effective_identity_remap(conn: sqlite3.Connection) -> dict[str, str]:
     is chain-normalized through
     :func:`apps.sync_hub.engine_identity._follow_remap`.
     """
-    local = identity_duplicate_remap(conn)
-    persisted = load_identity_remap(conn)
-    if not persisted:
-        return {
-            loser: _follow_remap(local, survivor)
-            for loser, survivor in local.items()
-            if loser != _follow_remap(local, survivor)
-        }
-    combined = {
-        loser: _follow_remap(persisted, survivor)
-        for loser, survivor in persisted.items()
-    }
-    hub_domain = set(combined.keys()) | set(combined.values())
-    for loser, survivor in local.items():
-        if loser in hub_domain or survivor in hub_domain:
-            continue
-        combined[loser] = survivor
+    combined = PersistedRemap.load(conn).with_local(identity_duplicate_remap(conn))
     return {
         loser: _follow_remap(combined, mapped)
         for loser, mapped in combined.items()
         if loser != _follow_remap(combined, mapped)
     }
+
+
+@dataclass(frozen=True)
+class PersistedRemap:
+    """The persisted hub remaps, chain-normalized, and every PK they name."""
+
+    combined: dict[str, str]
+    hub_domain: frozenset[str]
+
+    @classmethod
+    def load(cls, conn: sqlite3.Connection) -> PersistedRemap:
+        persisted = load_identity_remap(conn)
+        combined = {
+            loser: _follow_remap(persisted, survivor)
+            for loser, survivor in persisted.items()
+        }
+        return cls(combined, frozenset(combined) | frozenset(combined.values()))
+
+    def with_local(self, local: Mapping[str, str]) -> dict[str, str]:
+        """These remaps plus every local election outside the hub domain."""
+        combined = dict(self.combined)
+        combined.update(self._local_outside_hub_domain(local))
+        return combined
+
+    def effective_losers(
+        self, local: Mapping[str, str], candidates: Iterable[str]
+    ) -> frozenset[str]:
+        """The ``candidates`` in ``effective_identity_remap(conn)``, given ``local``
+        holds every election their remap chains can reach."""
+        combined = ChainMap(self._local_outside_hub_domain(local), self.combined)
+        return frozenset(
+            pk
+            for pk in candidates
+            if (mapped := combined.get(pk)) is not None
+            and pk != _follow_remap(combined, mapped)
+        )
+
+    def _local_outside_hub_domain(self, local: Mapping[str, str]) -> dict[str, str]:
+        return {
+            loser: survivor
+            for loser, survivor in local.items()
+            if loser not in self.hub_domain and survivor not in self.hub_domain
+        }
 
 
 def _remove_remap_loser(
@@ -270,6 +298,7 @@ def prepare_spoke_identity(conn: sqlite3.Connection) -> int:
 __all__ = [
     "IDENTITY_REMAP_BATCH_ROWS",
     "IdentityRepairRequest",
+    "PersistedRemap",
     "REMAP_TABLE",
     "_remove_remap_loser",
     "apply_hub_identity_rejects",
