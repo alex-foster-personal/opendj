@@ -403,6 +403,16 @@ def _replace_members(
         kept.append(tuple(member[column] for column in columns))
     if _bundle_unchanged(conn, playlist_id, columns, kept):
         return
+    _write_members(conn, playlist_id, columns, kept)
+
+
+def _write_members(
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    columns: Sequence[str],
+    kept: Sequence[tuple[Any, ...]],
+) -> None:
+    """Replace the playlist's stored bundle with ``kept``, one row per member."""
     conn.execute(f"DELETE FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?", (playlist_id,))
     sql = (
         f"INSERT INTO {MEMBERSHIP_TABLE} ({', '.join(columns)}) "
