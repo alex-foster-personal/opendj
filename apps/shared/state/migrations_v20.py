@@ -1,26 +1,23 @@
-"""Migration 19 -> 20: bounded playlist membership reads (LIBM-132, issue #3963).
+"""Migration 19 -> 20: indexed CloudSync track identity lookups (issue #4397).
 
-``POST .../items:add`` reads only the neighbors' order_keys and the requested
-ids' existing copies. Without an index sqlite answered both by walking every
-live membership row of the playlist and sorting it (``USE TEMP B-TREE FOR
-ORDER BY``), 25 ms at 10,042 members on agentbox, so the add stayed O(members)
-in C even after it stopped materializing rows in Python.
+CLOUDSYNC-07 asks, for every incoming ``tracks`` row, which stored rows share
+its ``content_hash``, ``audio_hash`` or ISRC. ``content_hash`` had no index and
+the ISRC match compares ``upper(isrc)``, which ``idx_tracks_isrc`` cannot
+serve, so both lookups scanned the table and a first sync of n tracks cost
+O(n^2): 76.9 s at 10,000 tracks on agentbox.
 
-The order index expression MUST stay textually identical to
-``apps.webui.server.playlist_add.MEMBERSHIP_ORDER_BY``: sqlite only uses an
-expression index for an ORDER BY that matches it.
-``tests/test_playlist_add_constant_time.py`` reads the query plan of the SQL
-the add really runs and fails when the index stops being used.
+The ISRC expression index is deliberately NOT partial: sqlite uses a partial
+index for an OR arm only when that arm itself implies the index's WHERE, and
+``upper(isrc) = ?`` does not, so a partial copy falls back to a scan.
+``tests/cloudsync/test_track_identity_lookup_scale.py`` counts sqlite VM steps
+per applied row and fails when either lookup stops using its index.
 """
 from __future__ import annotations
 
 _V20: list[str] = [
-    "CREATE INDEX IF NOT EXISTS idx_playlist_memberships_live_order "
-    "ON playlist_memberships("
-    "playlist_id, COALESCE(order_key, printf('%08d', position)), position"
-    ") WHERE deleted_at IS NULL",
-    "CREATE INDEX IF NOT EXISTS idx_playlist_memberships_live_stable_id "
-    "ON playlist_memberships(playlist_id, stable_id) WHERE deleted_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) "
+    "WHERE content_hash IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_isrc_upper ON tracks(upper(isrc))",
 ]
 
 __all__ = ["_V20"]

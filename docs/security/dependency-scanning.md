@@ -23,6 +23,7 @@ unchanged while new advisories land against them.
 | `apps/desktop/pnpm-lock.yaml` | npm | Desktop test tooling (wdio) |
 | `apps/desktop/src-tauri/Cargo.lock` | crates.io | Tauri shell, updater TLS |
 | `apps/webui/server/native/waveform/Cargo.lock` | crates.io | pyo3 native waveform module |
+| `apps/audio-engine/Cargo.lock` | crates.io | `odj-audio` engine process: symphonia decode, cpal device output (feature `device`) |
 
 Adding a lockfile means adding it here. The scan asserts the parsed-lockfile count
 (see acceptance criteria), so a lockfile the scanner silently skips fails loudly.

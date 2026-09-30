@@ -7,7 +7,7 @@ Found at 10k members (LIBM-120 measurement, Fri 25 Sep 2026): one
 three full membership reads to one; that one read, the response ``items`` and
 the undo snapshots still scaled with the playlist (246 ms at 10,042 members).
 LIBM-132 removes all of them: bounded neighbor and duplicate reads on the
-v20 indexes, a response of the inserted rows only, and an ``add_items`` undo
+v21 indexes, a response of the inserted rows only, and an ``add_items`` undo
 command that records those rows instead of two membership snapshots.
 
 Instruments, all on the store's REAL connection, none a mock:
