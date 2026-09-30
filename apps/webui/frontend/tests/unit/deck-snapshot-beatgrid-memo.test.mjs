@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, beforeEach, test } from 'node:test';
+import v8 from 'node:v8';
+import { runInNewContext } from 'node:vm';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
@@ -160,4 +162,74 @@ test('the shared projection is frozen, so a consumer cannot poison later reads',
 	}, TypeError);
 
 	assert.deepEqual(ipc.queryPerformanceState().decks[1].beatgrid_ms, [0, 500]);
+});
+
+//-----------------------------------------------------------------------------
+// PERFMODE-14: the memo must not be what keeps an unloaded track alive
+//-----------------------------------------------------------------------------
+
+/** A real major GC without a CLI flag: the test runner does not pass --expose-gc. */
+function collectGarbage() {
+	v8.setFlagsFromString('--expose-gc');
+	runInNewContext('gc')();
+}
+
+/** Load a payload on all four decks, project them once, then unload every deck
+ * through the REAL `engine.dispose()` - the same call Library mode's
+ * `releaseGigRuntime()` makes, and the one discussion_r4127920891 asked this
+ * test to drive instead of a hand-rolled `anlz = null` loop. `engine.dispose()`
+ * needs no live AudioContext (it guards on `_masterGain`/`_ctx` both being
+ * nullable) and resets every deck via the same `_emptyDeckState()` path
+ * production teardown uses, so this exercises the actual disposal code the
+ * regression is about, not a simulation of it.
+ *
+ * The LOAD half still uses `fakeAnlz()`, not a real analysis fixture: ANLZ
+ * parsing happens server-side (pyrekordbox) and reaches the frontend only as
+ * a plain JSON-shaped object via `fetchAnlz`/`getAnlzEntry` - there is no
+ * client-side ANLZ parser here to bypass, so a fabricated object of the same
+ * shape the frontend actually receives is the real production input for this
+ * layer, not a stand-in for one.
+ *
+ * Returns only WeakRefs, so the test itself holds nothing that could keep a
+ * payload alive. */
+async function projectFourThenUnload() {
+	const payloads = [1, 2, 3, 4].map(() => fakeAnlz([0, 0.5, 1]));
+	for (const [index, anlz] of payloads.entries()) ipc.deckStates[index + 1].anlz = anlz;
+	const decks = ipc.queryPerformanceState().decks;
+	for (const deck of [1, 2, 3, 4]) assert.equal(decks[deck].beatgrid_ms.length, 3);
+	await ipc.engine.dispose();
+	return payloads.map((anlz) => new WeakRef(anlz));
+}
+
+test('an unloaded ANLZ payload is collectable even when no later query runs', async () => {
+	// Library mode disposes the engine and then never queries the IPC again, so
+	// a memo that only drops its entry on the NEXT query held all four decks'
+	// ANLZ (waveform detail as reactive proxies, plus the full-track band
+	// images keyed weakly on it) for the whole Library session: 34 MB of JS
+	// heap on silver on Sat 26 Sep 2026, the largest retainer found.
+	const refs = await projectFourThenUnload();
+	await new Promise((resolve) => setImmediate(resolve));
+	collectGarbage();
+	for (const [index, ref] of refs.entries()) {
+		assert.equal(
+			ref.deref(),
+			undefined,
+			`if deck ${index + 1}'s unloaded ANLZ survives a full GC then the beatgrid memo is ` +
+				'retaining every track a Library-mode switch was meant to release'
+		);
+	}
+});
+
+test('control: a payload still on the deck is NOT collected by the memo change', async () => {
+	// The opposite overshoot: a memo that forgets live payloads would pass the
+	// release test above and quietly bring back the per-query rebuild.
+	ipc.deckStates[3].anlz = fakeAnlz([0, 0.5]);
+	const first = ipc.queryPerformanceState().decks[3].beatgrid_ms;
+	await new Promise((resolve) => setImmediate(resolve));
+	collectGarbage();
+	assert.equal(
+		ipc.queryPerformanceState().decks[3].beatgrid_ms,
+		first,
+		'if a live payload loses its projection across a GC then the memo is not memoizing'
+	);
 });
