@@ -22,6 +22,7 @@ Regression one-liners:
   - if the first window runs more sqlite steps at 4,000 members than at 40 then broken
   - if a page hands more rows to Python than header, count and its window then broken
   - if the window query sorts in a temp b-tree or scans the table then broken
+  - if the live count walks the order index (legacy keys up to 10,027 chars) then broken
   - if a writer's commit mid-read makes total disagree with the rows then broken
 """
 
@@ -251,14 +252,22 @@ def test_page_read_materializes_only_its_window(tmp_path: Path) -> None:
     assert counter.rows == 1 + 1 + 30, counter.rows
 
 
-@pytest.mark.parametrize("sql", [WINDOW_SQL, LIVE_COUNT_SQL])
-def test_page_queries_use_the_live_order_index(tmp_path: Path, sql: str) -> None:
+@pytest.mark.parametrize(
+    ("sql", "index"),
+    [
+        (WINDOW_SQL, "idx_playlist_memberships_live_order"),
+        # the narrow index: order index entries carry legacy keys of up to 10,027 chars
+        (LIVE_COUNT_SQL, "idx_playlist_memberships_live_stable_id"),
+    ],
+    ids=["window", "count"],
+)
+def test_page_queries_seek_their_index(tmp_path: Path, sql: str, index: str) -> None:
     conn = _sized_db(tmp_path, SMALL)
     params = (MIXED, 30, 0) if "LIMIT" in sql else (MIXED,)
     plan = " | ".join(r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + sql, params))
     conn.close()
     assert "TEMP B-TREE" not in plan, plan
-    assert "USING INDEX idx_playlist_memberships_live" in plan or "USING COVERING INDEX" in plan, plan
+    assert f"SEARCH playlist_memberships USING INDEX {index} (playlist_id=?)" == plan, plan
 
 
 # ---------------------------------------------------------------------------

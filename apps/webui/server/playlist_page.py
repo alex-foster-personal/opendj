@@ -32,8 +32,17 @@ HEADER_SQL = (
 
 LIVE_COUNT_SQL = (
     "SELECT COUNT(*) FROM playlist_memberships "
+    "INDEXED BY idx_playlist_memberships_live_stable_id "
     "WHERE playlist_id = ? AND deleted_at IS NULL"
 )
+"""Counts on the narrow ``(playlist_id, stable_id)`` index, never the order index.
+
+Without ``INDEXED BY`` sqlite counts on the order index, whose entries carry
+each row's order_key. Pre-LIBM-132 appends grew that key by one character per
+append (mean 5,007, max 10,027 characters on the 10k fixture), so the count
+walked about 50 MB of index per page: 807 of 1,118 busy samples of this
+function at 10k. ``INDEXED BY`` also fails loudly if the v22 index is absent.
+"""
 
 WINDOW_SQL = (
     "SELECT stable_id, item_id FROM playlist_memberships "
