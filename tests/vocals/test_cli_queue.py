@@ -717,7 +717,7 @@ def _real_data_dir() -> Path | None:
     candidates = (
         [Path(override)]
         if override
-        else [DATA_DIR, Path("/Users/user/Music/music-dj-tools/data")]
+        else [DATA_DIR, Path("/Users/user/code/music-dj-tools/data")]
     )
     for candidate in candidates:
         if (candidate / "state" / "state.db").is_file() and (
