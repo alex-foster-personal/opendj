@@ -609,6 +609,7 @@
 		<button
 			type="button"
 			class="bsm-toggle ap-next-btn"
+			data-rust-command="auto_play_next_arm"
 			class:on={uiPrefs.auto_play_enabled || autoPlayNextState.armed}
 			aria-pressed={autoPlayNextState.armed}
 			title={autoPlayNextState.armed

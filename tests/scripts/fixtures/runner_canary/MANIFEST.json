@@ -1,0 +1,12 @@
+{
+  "description": "Trust anchor for actions_real.json (see README.md). Verified before parsing; scenarios mutate copies only.",
+  "captured": "Tue 29 Sep 2026",
+  "regenerate": "python -m tests.scripts.runner_canary_fixture_projection capture RAW, then project RAW OUT, then recompute this manifest, in its own reviewed change.",
+  "files": {
+    "actions_real.json": {
+      "sha256": "8d635282fffeb259a7577ca876ec3ed9504aacd7747f11ea5c364bd8bdbd4064",
+      "bytes": 7005,
+      "projected_from_sha256": "41205e3dd82e9ec4fb252963f479224da68a2ae96888432da2ca78d8016c9ce9"
+    }
+  }
+}

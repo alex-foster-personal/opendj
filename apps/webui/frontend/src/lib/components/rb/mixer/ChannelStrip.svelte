@@ -352,6 +352,7 @@
 		aria-label={`cue channel ${deckId}`}
 		title={cueTitle}
 		data-testid={`cue-channel-${deckId}`}
+		data-rust-command="channel_cue"
 		onclick={() => oncue(!cueEnabled)}
 	>
 		<svg class="cue-icon" width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">

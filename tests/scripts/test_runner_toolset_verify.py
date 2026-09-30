@@ -74,6 +74,7 @@ def _classify(
         ("3.11", "prefix", "3.12.3", "MISMATCH"),
         ("0.12.19", "min", "uv 0.13.0 (x86_64)", "OK"),
         ("0.12.19", "min", "uv 0.12.9 (x86_64)", "MISMATCH"),
+        ("any libclang", "capability", "libclang 17.0.6 loaded from /usr/lib/llvm-17", "OK"),
     ],
 )
 def test_version_comparison(version: str, match: str, output: str, status: str) -> None:

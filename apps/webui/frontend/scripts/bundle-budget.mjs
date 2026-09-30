@@ -193,6 +193,11 @@ const BUDGETS = [
   // Payback: taking the deck audio engine out of the root layout's static
   // closure (the 66,479-byte engine chunk flagged under other-lazy's Wed 16 Sep
   // entry) retires these 2 KiB; the #3837 bytes above ride in that engine.
+  // Wed 30 Sep 2026: the Air preview loop's merge of origin/main 2ecfde5d7 onto
+  // #3837 + #3896 measures 262,092 locally, 972 bytes OVER this limit (merge
+  // skew: main's 500 commits since the merge base add first-paint weight on
+  // top of #3837's). Deliberately NOT raised on that local, never-pushed
+  // branch: #3837 must pay back or justify a raise on its own rebase onto main.
   { name: 'library', limit: 261120, measured: 259325, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
@@ -309,6 +314,18 @@ const BUDGETS = [
   // ceil-to-KiB rule on 238,822. This is deferred-code weight: none of it is on
   // the boot or first-paint path, which is the point of moving it here.
   // Decision record: the CI-infra lane comment on #3913, Thu 24 Sep 2026 12:15Z.
+  // RAISED Tue 29 Sep 2026: 245 -> 260 KiB for PR #4321 (Rust engine mode, NAE-13).
+  // Its first head put the mode's code in `library` and read 260,503 there, over
+  // the 259,072 ceiling. The fix loads that code with a dynamic import only when
+  // the mode is on, which moves it here by design: one chunk of 6,267 gzip (the
+  // engine connection, load, state mirror, page-decided sync and hot cues, and
+  // the socket client). Local build, one pass: library 255,553 (98.6%, not
+  // raised), other-lazy 253,082 over 50 files; without that chunk it is 246,815,
+  // matching CI's 246,855 on the head before, so the chunk, not trunk growth, is
+  // what crossed. None of it is boot or first-paint weight, and no eager import
+  // is left to demote: what stays eager is the engine choice and command sets
+  // the dispatcher and Settings read. The ceiling follows the +5% ceil-to-KiB
+  // rule on 253,082.
   // RAISED Sat 26 Sep 2026: 245 -> 280 KiB for PR #3837 (Reloop Mixtour Pro
   // I/O + MIDI + Play from USB). Clean origin/main a3ca2f14a measured 247,222;
   // this merged tree measures 272,962, +25,740, all fetched on demand:
@@ -337,7 +354,11 @@ const BUDGETS = [
   // Tue 29 Sep 2026: PR #3896's click-gated MIDI drawer loader, row popovers and
   // learn-log split, merged into this preview, measure 278,508, inside the
   // UNCHANGED ceiling; no raise.
-  { name: 'other-lazy', limit: 286720, measured: 278508, note: 'all other routes plus deferred shell' },
+  // Wed 30 Sep 2026: the Air preview loop's merge of origin/main 2ecfde5d7
+  // (which carries #4321's 260 KiB raise above) onto #3837 + #3896 measures
+  // 284,759 over 64 files, local, one build: the Rust engine mode chunk fits
+  // inside this UNCHANGED 280 KiB ceiling; no raise.
+  { name: 'other-lazy', limit: 286720, measured: 284759, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

@@ -86,6 +86,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
@@ -781,8 +782,14 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
+/** Rust engine mode (NAE-13) drives hot cues through its own driver
+ * (`rustHotCueDriver`); Web Audio uses the engine-owned one above. */
+export function installPerformanceHotCueDriver(driver: PerformanceHotCueDriver): void {
+	_hotCueDriver = driver;
+}
+
 /** Narrow test seam for exercising the public IPC command protocol without
- * initializing Web Audio. Production always uses the engine-owned driver. */
+ * initializing Web Audio. */
 export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueDriver): () => void {
 	const previous = _hotCueDriver;
 	_hotCueDriver = driver;
@@ -1939,6 +1946,9 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	if ((command.type === 'loop' || command.type === 'beat_loop') &&
 		command.if_load_generation !== undefined &&
 		getDeckState(command.deck).load_generation !== command.if_load_generation) return;
+	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
+	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
+	if (await executeInRustEngine(command, pushToast)) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'

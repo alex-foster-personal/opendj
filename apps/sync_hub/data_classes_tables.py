@@ -141,12 +141,19 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "sync-bookkeeping",
         "Sync watermarks, changelogs and identity remaps",
-        state_tables("sync_state", "hub_changelog", "local_changelog", "sync_identity_remap"),
+        state_tables(
+            "sync_state",
+            "hub_changelog",
+            "local_changelog",
+            "sync_identity_remap",
+            "sync_write_tokens",
+        ),
         "machine_local",
         "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py). "
         "sync_identity_remap (engine_identity_map.py) holds identity-collapse remaps "
         "across batched hub_apply calls on the shared connection; additive bookkeeping "
-        "for this machine's own apply, not part of the sync set itself.",
+        "for this machine's own apply, not part of the sync set itself. "
+        "sync_write_tokens (migrations_v21.py) gates this machine's own digest walk.",
         (),
     ),
     fixed(
