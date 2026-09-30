@@ -12,6 +12,7 @@
 	 * knob/fader positions inseparable.
 	 */
 	import { onMount } from 'svelte';
+	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
@@ -148,6 +149,8 @@
 	}
 
 	onMount(() => {
+		// The Rust engine has no Web Audio devices to list (NAE-15).
+		if (rustCommandUnsupported('headphone_outputs_refresh')) return;
 		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
 	});
 </script>

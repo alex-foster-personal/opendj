@@ -77,6 +77,24 @@ Lint and formatting tools are not yet wired into `make`. Match the
 existing code style; CI will grow ruff + mypy incrementally. PRs that
 reformat unrelated code will be asked to split that out.
 
+Optional local linting via [Trunk](https://docs.trunk.io/code-quality) (config in
+`.trunk/trunk.yaml`, not a merge gate; `just quality` stays authoritative):
+
+```bash
+npm ci            # once: installs the trunk launcher into ./node_modules
+npm run lint      # trunk check --no-fix: new issues on lines changed vs main only, read-only
+npm run lint:fix  # trunk check with autofix, for interactive use
+npm run fmt       # trunk fmt: changed files only; near no-op today (see below)
+```
+
+`npm run fmt` currently has only dotenv-linter to run: black, prettier, ruff format,
+shfmt, taplo and rustfmt are disabled because none is an existing gate and each
+rewrites whole files. Enabling one is a separate decision.
+
+Trunk's git hooks are disabled on purpose (shared checkouts); run it on demand.
+Without a TTY (agents, CI) a bare `trunk check` applies autofixes without asking, so
+`npm run lint` passes `--no-fix`; run `npm run lint:fix` when you want the fixes applied.
+
 ## Branching convention
 
 Starting with the v1.1 cycle, no change lands on `master` directly.
@@ -257,10 +275,10 @@ make release-check
 
 This runs, in order:
 
-1. `make test` — full pytest suite.
-2. `make lint` — `ruff check apps tests scripts`.
-3. `make build-dist` — `python -m build` producing wheel + sdist under `dist/`.
-4. `make reqs-check` — verifies `reqs.json` is in sync with
+1. `make test` -- full pytest suite.
+2. `make lint` -- `ruff check apps tests scripts`.
+3. `make build-dist` -- `python -m build` producing wheel + sdist under `dist/`.
+4. `make reqs-check` -- verifies `reqs.json` is in sync with
    `.planning/REQUIREMENTS.md` (`python -m scripts.build_reqs_json --check`).
 5. A best-effort `gh release view v1.0.1` sanity check (non-fatal; skipped
    if `gh` is unauthenticated or the release is not visible).

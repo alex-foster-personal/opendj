@@ -122,13 +122,31 @@ def _replay_appends(
 ) -> str | None:
     """The ledger text this run's own `append_entries` calls produce when
     replayed onto ``pre_run_content`` in a scratch directory, or None when
-    that leaves no file."""
+    that leaves no file.
+
+    Replayed with ``validate=False`` (fixing issue #3827's `LedgerEditedDuringRun`
+    false positive, found live on silver and demon-llama): the S5 capture path
+    (`capture_kpi_ledger.append_entries` -> `kpi_ledger_append.append_entries(...,
+    validate=False)`) writes success rows that never carry a "measured" key --
+    only `capture_kpi_ledger.build_row`'s error/withheld callers pass one. This
+    function used to call `append_entries(replay, batch)` with its default
+    `validate=True`, which runs every replayed row through `validate_entry()`,
+    and `validate_entry` unconditionally injects `"measured": True` into any row
+    missing that key. The replay then disagreed with the real file on every S5
+    row, byte for byte, and the mismatch was misreported as a concurrent edit --
+    deterministically, every night, not as a race. `validate=False` reproduces
+    exactly what each writer already put on disk instead of re-deriving it:
+    the anlz/audio batch (`build_ledger_rows`) already sets `measured`
+    explicitly for both its success and error rows, so skipping validation
+    there changes nothing; the S5 batch matches its own real write path,
+    which never validated either.
+    """
     with tempfile.TemporaryDirectory(prefix="perf-kpi-ledger-replay-") as scratch:
         replay = Path(scratch) / "kpi-ledger.json"
         if pre_run_content is not None:
             replay.write_text(pre_run_content, encoding="utf-8")
         for batch in append_batches:
-            append_entries(replay, batch)
+            append_entries(replay, batch, validate=False)
         return replay.read_text(encoding="utf-8") if replay.exists() else None
 
 
