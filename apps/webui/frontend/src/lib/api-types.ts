@@ -10458,6 +10458,41 @@ export interface components {
             /** Stable Ids */
             stable_ids: string[];
         };
+        /**
+         * MembershipAddOut
+         * @description ``:add`` response: the header and the rows inserted, in order.
+         *
+         *     No ``items`` / ``track_count``: both are O(members) and no caller reads
+         *     them (ADR-NEW playlist-add-constant-time). ``added`` is empty when
+         *     ``forbid_duplicates`` dropped every requested id.
+         */
+        MembershipAddOut: {
+            /** Added */
+            added: components["schemas"]["MembershipAddedOut"][];
+            /** Created At */
+            created_at: string;
+            /** Forbid Duplicates */
+            forbid_duplicates: boolean;
+            /** Name */
+            name: string;
+            /** Playlist Id */
+            playlist_id: string;
+            /** Updated At */
+            updated_at: string;
+            /** Vendor */
+            vendor: string;
+            /** Vendor Pl Id */
+            vendor_pl_id: string;
+        };
+        /** MembershipAddedOut */
+        MembershipAddedOut: {
+            /** Item Id */
+            item_id: string;
+            /** Order Key */
+            order_key: string;
+            /** Stable Id */
+            stable_id: string;
+        };
         /** MembershipMoveIn */
         MembershipMoveIn: {
             /** After Item Id */
@@ -21093,7 +21128,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlaylistWriteOut"];
+                    "application/json": components["schemas"]["MembershipAddOut"];
                 };
             };
             /** @description Validation Error */
