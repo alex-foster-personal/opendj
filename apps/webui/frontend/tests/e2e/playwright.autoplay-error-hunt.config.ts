@@ -138,6 +138,8 @@ const ENGINE_COMMAND = [
 const SERVER_COMMAND = `${FIXTURE_COMMAND} && ${ENGINE_COMMAND}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'autoplay-error-hunt.spec.ts',
 	fullyParallel: false,

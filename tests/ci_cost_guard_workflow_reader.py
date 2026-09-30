@@ -25,9 +25,28 @@ from pathlib import Path
 import yaml
 
 from scripts.ci_cost_guard import infer_standard_sku
+from tests.scripts.ci_runner_routes import (
+    CANARY_RUNS_ON,
+    CANARY_VENDOR_MATRIX,
+    MERGE_QUEUE_DISJUNCT,
+)
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
+CANARY_CONFIG = WORKFLOW_DIR.parents[1] / "ci" / "runner-canary.json"
+
+
+def canary_vendor_labels() -> list[str]:
+    """Every runner label runner-canary.yml's shard job can select, from its config.
+
+    ADR-NEW-runner-canary. These are third-party vendors whose runners register with
+    GitHub as SELF-HOSTED runners, so GitHub bills nothing for them; the vendor bills its
+    own free tier, which the canary's budget gate guards. They price here as self-hosted
+    ($0) because that is what GitHub charges, and the labels come from the one committed
+    config rather than a copy, so a vendor added there is priced here too.
+    """
+    vendors = json.loads(CANARY_CONFIG.read_text())["vendors"]
+    return [vendor["label"] for vendor in vendors.values()]
 
 
 def guard_job() -> dict:
@@ -43,6 +62,8 @@ def guard_watched() -> set[str]:
 def guard_e2e_priced_events() -> set[str]:
     """The events E2E is priced on, from E2E_PRICED_EVENTS on the job."""
     return {name.strip() for name in guard_job()["env"]["E2E_PRICED_EVENTS"].split(",")}
+
+
 MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
 MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
 MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
@@ -88,9 +109,7 @@ def workflow_docs() -> dict[str, dict]:
 RUNNER_SWITCH = re.compile(
     r"\$\{\{\s*fromJSON\(\s*vars\.[A-Z0-9_]+\s*\|\|\s*'(?P<fallback>.+?)'\s*\)\s*\}\}"
 )
-CHAINED_RUNNER_SWITCH = re.compile(
-    r"\$\{\{\s*fromJSON\(\s*(?P<inner>.*?)\)\s*\}\}"
-)
+CHAINED_RUNNER_SWITCH = re.compile(r"\$\{\{\s*fromJSON\(\s*(?P<inner>.*?)\)\s*\}\}")
 #: First disjunct of ci.yml job `test` runs-on (ADR-0041 main-fix reserve). Pinned
 #: in tests/scripts/test_ci_main_fix_runner_reserve.py EXPECTED_RUNS_ON.
 MAIN_FIX_RUNNER_GUARD_PREFIX = (
@@ -110,6 +129,10 @@ TRUNK_RUNNER_GUARD_PREFIXES = (
     "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')) "
     "&& vars.CI_RUNS_ON_TRUNK",
 )
+#: The guarded CI_RUNS_ON_MERGE_QUEUE disjunct (ADR-NEW-trunk-queue-drafts-use-a-reserved-
+#: runner-pool) on every job on a Trunk draft's required path. It selects a self-hosted pool
+#: too, so it prices at the hosted fallback like the guards above.
+MERGE_QUEUE_RUNNER_GUARD_PREFIX = MERGE_QUEUE_DISJUNCT
 _JSON_LITERAL_DISJUNCT = re.compile(r"^'(.+)'\s*$")
 _VARS_DISJUNCT = re.compile(r"^vars\.[A-Z0-9_]+$")
 
@@ -152,6 +175,11 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
         "runner it selects cannot be read here"
     )
     expr = labels[0].strip()
+    if expr == CANARY_RUNS_ON:
+        # The one non-vars shape read here, matched EXACTLY: it has no fallback disjunct,
+        # and every value it can select is a configured vendor label (see
+        # canary_vendor_labels for why those price as self-hosted).
+        return ["self-hosted", *canary_vendor_labels()]
     match = RUNNER_SWITCH.fullmatch(expr)
     if match:
         fallback = json.loads(match.group("fallback"))
@@ -172,9 +200,7 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
             "price: inputs.* disjuncts are not readable here"
         )
     disjuncts = top_level_disjuncts(inner)
-    assert disjuncts, (
-        f"{job_id} runner expression {expr!r} has no disjuncts this reader can read"
-    )
+    assert disjuncts, f"{job_id} runner expression {expr!r} has no disjuncts this reader can read"
     literal_match = _JSON_LITERAL_DISJUNCT.fullmatch(disjuncts[-1])
     assert literal_match, (
         f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
@@ -182,12 +208,16 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
     )
     for disjunct in disjuncts[:-1]:
         trimmed = disjunct.strip()
-        if trimmed == MAIN_FIX_RUNNER_GUARD_PREFIX or trimmed in TRUNK_RUNNER_GUARD_PREFIXES:
+        if trimmed in (
+            MAIN_FIX_RUNNER_GUARD_PREFIX,
+            MERGE_QUEUE_RUNNER_GUARD_PREFIX,
+            *TRUNK_RUNNER_GUARD_PREFIXES,
+        ):
             continue
         assert _VARS_DISJUNCT.fullmatch(trimmed), (
             f"{job_id} runs on the expression {labels[0]!r}, which this reader cannot "
             f"price: disjunct {disjunct!r} is neither vars.* nor the ADR-0041 "
-            "main-fix guard prefix nor a CI_RUNS_ON_TRUNK guard prefix"
+            "main-fix guard prefix nor a CI_RUNS_ON_TRUNK or CI_RUNS_ON_MERGE_QUEUE guard prefix"
         )
     fallback = json.loads(literal_match.group(1))
     return [fallback] if isinstance(fallback, str) else list(fallback)
@@ -214,6 +244,11 @@ def matrix_runs(job_id: str, job: dict) -> int:
     )
     runs = 1
     for key, values in matrix.items():
+        if values == CANARY_VENDOR_MATRIX:
+            # runner-canary.yml: one run per vendor the gate allowed, at most every
+            # configured vendor, which is the worst case this ceiling needs.
+            runs *= len(canary_vendor_labels())
+            continue
         assert isinstance(values, list) and values, (
             f"{job_id} matrix key {key!r} is not a literal list: {values!r}"
         )
@@ -364,17 +399,38 @@ def event_set(condition: str, variable: str) -> set[str]:
     return events
 
 
+#: Conditions that cannot narrow a job by event: a status function alone, or one
+#: comparison of an upstream job's output (the in-run scope decision, issue #4168).
+#: Neither names an event, so the job is priced on EVERY event, the widest answer,
+#: which keeps the reader fail-closed. Anything else still goes through `event_set`.
+_EVENT_BLIND_CONDITION = re.compile(
+    r"always\(\)|needs\.[A-Za-z0-9_-]+\.outputs\.[A-Za-z0-9_]+ == '[A-Za-z0-9_-]+'"
+)
+
+
+def admits_every_event(condition: str) -> bool:
+    """True when `condition` is one of the event-blind shapes above."""
+    stripped = re.sub(r"\s+", " ", condition).strip()
+    unwrapped = re.fullmatch(r"\$\{\{ (.+) \}\}", stripped)
+    return bool(_EVENT_BLIND_CONDITION.fullmatch(unwrapped.group(1) if unwrapped else stripped))
+
+
 def e2e_ceiling_on(event: str, doc: dict) -> float:
     """What an E2E run triggered by `event` can cost at worst.
 
-    Every job that would run on that event, priced. A job with no `if` runs on
-    every trigger the workflow declares; a gated one runs only on the events
-    its condition admits, read by the fail-closed parser above.
+    Every job that would run on that event, priced. A job with no `if`, or an
+    event-blind one, runs on every trigger the workflow declares; a gated one
+    runs only on the events its condition admits, read by the fail-closed
+    parser above.
     """
     total = 0.0
     for job_id, job in doc["jobs"].items():
         gate = job.get("if")
-        if gate is None or event in event_set(gate, "github.event_name"):
+        if (
+            gate is None
+            or admits_every_event(gate)
+            or event in event_set(gate, "github.event_name")
+        ):
             total += job_ceiling_usd(job_id, job)
     return total
 
