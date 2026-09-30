@@ -1,0 +1,9 @@
+# Standalone package (apps/desktop/electron), not part of the webui workspace.
+#
+# electron's postinstall downloads the Chromium runtime for the host platform;
+# it is the one build script this package needs. `allowBuilds` is the pnpm 11
+# spelling the rest of the repo uses; `onlyBuiltDependencies` is pnpm 10's.
+allowBuilds:
+  electron: true
+onlyBuiltDependencies:
+  - electron

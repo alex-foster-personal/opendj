@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 8
+SCHEMA_VERSION: int = 9
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1269,7 +1269,17 @@ _V8: list[str] = [
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v7 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8]
+_V9: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) "
+    "WHERE content_hash IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_isrc_upper ON tracks(upper(isrc))",
+]
+"""8 -> 9: indexed CloudSync track identity lookups (legacy ladder v20, issue #4397).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v8 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
