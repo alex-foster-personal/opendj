@@ -921,6 +921,20 @@ declare global {
 	}
 }
 
+/** Browser global used by installPerformanceBrowserIpc and unit tests that set globalThis.window. */
+function _performanceIpcHosts(): {
+	primary: Window & typeof globalThis;
+	secondary: (Window & typeof globalThis) | null;
+} {
+	const primary = globalThis.window;
+	if (primary === undefined || primary === null) {
+		throw new Error('performance IPC requires a browser window');
+	}
+	const secondary =
+		typeof window !== 'undefined' && window !== null && window !== primary ? window : null;
+	return { primary: primary as Window & typeof globalThis, secondary };
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 // ---------------------------------------------------------------- validation
@@ -2883,8 +2897,8 @@ export function parsePerformanceCommandForTest(message: unknown): PerformanceCom
 }
 
 export function installPerformanceBrowserIpc(): () => void {
-	if (typeof window === 'undefined') throw new Error('performance IPC requires a browser window');
-	if (window.musicDjToolsPerformance !== undefined) {
+	const { primary: host, secondary } = _performanceIpcHosts();
+	if (host.musicDjToolsPerformance !== undefined) {
 		throw new Error('performance IPC is already installed');
 	}
 	const commandGeneration = _startCommandSession();
@@ -2925,13 +2939,17 @@ export function installPerformanceBrowserIpc(): () => void {
 		releaseToast: (id: unknown) => releaseToast(_toastId(id)),
 		copyToast: (id: unknown) => copyToast(_toastId(id))
 	});
-	window.musicDjToolsPerformance = ipc;
+	host.musicDjToolsPerformance = ipc;
+	if (secondary !== null) secondary.musicDjToolsPerformance = ipc;
 	return () => {
-		if (window.musicDjToolsPerformance !== ipc) {
+		if (host.musicDjToolsPerformance !== ipc) {
 			throw new Error('performance IPC ownership changed before cleanup');
 		}
 		_invalidateCommandSession(commandGeneration);
-		delete window.musicDjToolsPerformance;
+		delete host.musicDjToolsPerformance;
+		if (secondary !== null && secondary.musicDjToolsPerformance === ipc) {
+			delete secondary.musicDjToolsPerformance;
+		}
 	};
 }
 
