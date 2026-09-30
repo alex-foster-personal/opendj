@@ -221,7 +221,7 @@ def _string_pieces_before_each_comment(tokens: list[tokenize.TokenInfo]) -> list
         elif tok.type == tokenize.COMMENT:
             waiting.append(len(positions))
             positions.append(run)
-        elif depth:
+        elif depth:  # a field's names and operators are not pieces; _comments counts them as fixed tokens
             depth += (tok.type in CFG.PIECE_OPENERS) - (tok.type in CFG.PIECE_CLOSERS)
         elif tok.type in (tokenize.NL, tokenize.INDENT, tokenize.DEDENT):
             continue

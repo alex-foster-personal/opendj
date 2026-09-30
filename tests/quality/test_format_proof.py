@@ -36,6 +36,8 @@ Regression lines:
   - if prove passes a comment moved between the pieces of one implicitly concatenated string then broken
   - if prove fails ruff joining string pieces around a comment, or keeping one between them, then broken
   - if prove passes ruff moving a trailing operator past an end-of-line comment then broken: it is not provable
+  - if prove certifies a comment moved across an operator inside an f-string field then broken
+  - if prove fails ruff re-laying a commented call inside an f-string field then broken
   - if prove fails ruff joining strings, dropping parentheses or adding commas around a comment then broken
   - if prove fails ruff adding a trailing comma between an item and its comment then broken
   - if prove fails ruff unparenthesizing a commented value (`x = (\n    1  # c\n)` to `x = 1  # c`) then broken
@@ -51,12 +53,16 @@ Regression lines:
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts import format_proof
 from tests.quality.format_proof_repo import IDENTITY, commit_files, commit_index_entries, hash_blob, init_repo, run_git
+
+# PEP 701: a comment inside an f-string's replacement field parses only on 3.12 and later.
+FIELD_COMMENTS_PARSE = sys.version_info >= (3, 12)
 
 UNFORMATTED = 'def f(a,b):\n    """Add two.   \n\n       Returns the sum."""\n    return a+b\n'
 REFORMATTED = 'def f(a, b):\n    """Add two.\n\n    Returns the sum."""\n    return a + b\n'
@@ -358,6 +364,32 @@ def test_prove_fails_safe_when_ruff_moves_a_trailing_operator_past_a_comment(rep
     result = format_proof.prove(repo, base, head)
     assert result.exit_code == 1
     assert any("comment" in line for line in result.lines), result.lines
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ('x = f"{a +  # c\n    b}"\n', 'x = f"{a  # c\n    + b}"\n'),
+        ('x = f"{\n    a\n    # c\n    + b\n}"\n', 'x = f"{\n    a +\n    # c\n    b\n}"\n'),
+    ],
+    ids=["end-of-line-across-a-plus", "own-line-across-a-plus"],
+)
+def test_prove_never_certifies_a_comment_moved_inside_an_f_string_field(repo: Path, before: str, after: str) -> None:
+    """On 3.12 and later a replacement field's names and operators are tokens of their own and count like any other,
+    so the move fails. Before 3.12 a comment cannot sit in a field at all: no AST reads the file, so it is UNKNOWN."""
+    base = commit_files(repo, {"m.py": before}, "init")
+    head = commit_files(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == (1 if FIELD_COMMENTS_PARSE else 2), result.lines
+
+
+def test_prove_control_ruff_expanding_a_commented_call_inside_an_f_string_field_still_proves(repo: Path) -> None:
+    """Opposite-direction control, ruff 0.16.3's own output: counting a field's tokens does not fail its re-layout."""
+    base = commit_files(repo, {"m.py": 'x = f"{foo(a,  # c\n    b)}"\n'}, "init")
+    after = 'x = f"{\n    foo(\n        a,  # c\n        b,\n    )\n}"\n'
+    head = commit_files(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == (0 if FIELD_COMMENTS_PARSE else 2), result.lines
 
 
 def test_prove_control_a_semicolon_split_keeps_the_trailing_comment(repo: Path) -> None:
