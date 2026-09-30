@@ -14,9 +14,10 @@
 # Consumers (read this file, never a copy of it):
 #   - tests/scripts/test_runner_toolset_complete.py: scans workflows, the scripts
 #     and justfile/Makefile recipes they call, and tests/, and fails when CI uses
-#     an executable, apt package or Playwright browser not declared here, or
-#     when a tracked Cargo.lock carries a crate whose build script needs a
-#     system library (CARGO_SYSTEM_LIBRARIES there) with no apt entry here.
+#     an executable, apt package or Playwright browser not declared here.
+#   - tests/scripts/test_runner_toolset_cargo.py: fails when a tracked Cargo.lock
+#     carries a crate whose build script needs a system library
+#     (CARGO_SYSTEM_LIBRARIES there) with no apt entry here.
 #   - tests/scripts/test_runner_toolset_repo_pins.py: fails when a `repo:`
 #     entry's version drifts from the file its source names.
 #   - scripts/runner_toolset_verify.py: runs every `verify` on a host as the
