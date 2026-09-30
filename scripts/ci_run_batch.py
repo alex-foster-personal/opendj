@@ -359,16 +359,16 @@ def fetch_inflight_runs(
     seen: dict[str, dict[str, Any]] = {}
     for name, workflow_id in sorted(_workflow_ids(base, set(workflow_names), fetch).items()):
         for status in INFLIGHT_STATUSES:
-            batch = (
-                fetch(
-                    f"{base}/{workflow_id}/runs"
-                    f"?status={status}&per_page={PAGE_SIZE}&created=<{created_before}"
-                ).get("workflow_runs")
-                or []
+            page = fetch(
+                f"{base}/{workflow_id}/runs"
+                f"?status={status}&per_page={PAGE_SIZE}&created=<{created_before}"
             )
-            require_under_one_page(
-                len(batch), f"{status} runs of {name!r} created before {created_before}"
-            )
+            batch = page.get("workflow_runs") or []
+            what = f"{status} runs of {name!r} created before {created_before}"
+            require_under_one_page(len(batch), what)
+            # A short page trusted as whole reports no hold and moves the mark past the
+            # run it withheld (Sol P1 on #3844; ADR item 8 saw the listing served short).
+            require_served_total(len(batch), int(page["total_count"]), what)
             seen.update((str(run["id"]), run) for run in batch)
     return list(seen.values())
 
