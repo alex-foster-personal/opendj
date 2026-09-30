@@ -35,12 +35,13 @@ from types import FrameType
 
 import pytest
 
+from apps.shared.state.writer import StateWriter
 from apps.sync_hub import engine, identity_verdicts, protocol, sync_set
 from apps.sync_hub.engine_identity_map import (
+    apply_hub_identity_rejects,
     effective_identity_remap,
-    ensure_identity_remap_table,
 )
-from tests.cloudsync.test_hub_sync import _DEV_A, _DEV_B, _T0, _T1
+from tests.cloudsync.test_hub_sync import _DEV_A, _T0
 from tests.cloudsync.test_track_identity_collapse import _open_hub, _values
 from tests.cloudsync.test_track_identity_lookup_scale import _digest, _incoming, _isrc
 
@@ -167,19 +168,19 @@ def test_a_pull_page_costs_the_same_in_a_bigger_library(tmp_path: Path, shape: s
 # ----- verdict equivalence ------------------------------------------------------
 
 _KEYS = tuple(f"k{i:02d}" for i in range(24))
-_ODD_FORMS = (
+_ODD_FORMS: tuple[Callable[[str], str], ...] = (
     lambda key: f" {key}", lambda key: f"{key} ", lambda key: f"\t{key}",
-    lambda key: f"\xa0{key}", lambda key: key.encode(), lambda key: f"{key}x",
+    lambda key: f"\xa0{key}", lambda key: f"{key}x",
 )
-_ISRCS: tuple[object, ...] = (
+_ISRCS: tuple[str | None, ...] = (
     None, "GBAAA2600001", "gb-aaa-26-00001", "GB AAA 26 00001", "USBBB2600002",
     "usbbb2600002", "bad", "",
 )
-_BLANK_HASHES: tuple[object, ...] = (None, "", "  ")
+_BLANK_HASHES: tuple[str | None, ...] = (None, "", "  ")
 
 
-def _random_hash(rng: random.Random, present: float) -> object:
-    """Mostly canonical, sometimes padded, a BLOB, or a longer key sharing the prefix."""
+def _random_hash(rng: random.Random, present: float) -> str | None:
+    """Mostly canonical, sometimes padded or a longer key sharing the prefix."""
     if rng.random() >= present:
         return rng.choice(_BLANK_HASHES)
     key = rng.choice(_KEYS)
@@ -187,50 +188,72 @@ def _random_hash(rng: random.Random, present: float) -> object:
 
 
 def _random_library(conn: sqlite3.Connection, rng: random.Random, rows: int) -> list[str]:
-    """Sparse identity keys, so a row often shares one ONLY in an odd stored form."""
+    """Sparse identity keys, so a row often shares one ONLY in an odd stored form.
+
+    Tracks and deletions go through ``StateWriter``, the spoke's own writer;
+    persisted remap chains through ``apply_hub_identity_rejects``, which
+    records the hub's collapse verdicts a push brings back.
+    """
     pks = [f"t{i:03d}" for i in range(rows)]
-    conn.executemany(
-        "INSERT INTO tracks(stable_id, stable_id_tier, title, isrc, content_hash,"
-        " audio_hash, created_at, updated_at, origin_device_id, deleted_at)"
-        " VALUES (?, 'fingerprint', ?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                pk, pk, rng.choice(_ISRCS), _random_hash(rng, 0.6), _random_hash(rng, 0.3),
-                _T0, "not a stamp" if rng.random() < 0.1 else rng.choice((_T0, _T1)),
-                rng.choice((_DEV_A, _DEV_B)), _T1 if rng.random() < 0.1 else None,
+    with StateWriter(conn, actor="test") as writer:
+        for pk in pks:
+            writer.upsert_track(
+                stable_id=pk, stable_id_tier="fingerprint", title=pk, artists=[],
+                album=None, isrc=rng.choice(_ISRCS), duration_ms=None, file_path=None,
+                content_hash=_random_hash(rng, 0.6), audio_hash=_random_hash(rng, 0.3),
             )
-            for pk in pks
-        ],
-    )
-    ensure_identity_remap_table(conn)
-    conn.executemany(
-        "INSERT OR REPLACE INTO sync_identity_remap(loser_pk, survivor_pk) VALUES (?, ?)",
-        [(rng.choice(pks), rng.choice(pks)) for _ in range(rows // 10)],
-    )
+        for pk in pks:
+            if rng.random() < 0.1:
+                writer.remove_from_library(pk)
+    rejects = [
+        protocol.IdentityReject(table="tracks", offered_pk=offered, survivor_pk=survivor)
+        for offered, survivor in (rng.sample(pks, 2) for _ in range(rows // 10))
+    ]
+    apply_hub_identity_rejects(conn, rejects)
     conn.commit()
     return pks
 
 
+def _elects_the_library(statements: list[str], conn: sqlite3.Connection) -> bool:
+    """True once a traced statement read every live track's identity."""
+    return sync_set.identity_row_select(conn) in statements
+
+
 @pytest.mark.parametrize("seed", range(12))
-@pytest.mark.parametrize("elect_after", [0, 10**9], ids=["library", "per-row"])
+@pytest.mark.parametrize("mode", ["per-row", "library"])
 def test_per_row_verdicts_equal_the_library_wide_election(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seed: int, elect_after: int
+    tmp_path: Path, seed: int, mode: str
 ) -> None:
     """Overshoot control: a verdict that skipped any row sharing a key (a
-    padded hash, a BLOB, a separator-formatted ISRC) would pass the growth
-    test and hold or release the wrong track."""
-    monkeypatch.setattr(identity_verdicts.CFG, "ELECT_LIBRARY_AFTER_VERDICTS", elect_after)
+    padded hash, a separator-formatted ISRC) would pass the growth test and
+    hold or release the wrong track. ``library`` first asks about as many
+    absent tracks as a walk decides row by row, so the verdicts that follow
+    come from the walk's one library election."""
     conn = _open_hub(tmp_path)
+    statements: list[str] = []
     try:
         pks = _random_library(conn, random.Random(seed), rows=120)
         expected = set(effective_identity_remap(conn))
         assert expected, "the fixture elected no loser, so it tests nothing"
         order = [*pks, "absent"]
         random.Random(seed).shuffle(order)
+        warmup = (
+            [f"absent-{i}" for i in range(identity_verdicts.CFG.ELECT_LIBRARY_AFTER_VERDICTS)]
+            if mode == "library"
+            else []
+        )
         held = sync_set.HeldKeys(conn)
+        conn.set_trace_callback(statements.append)
+        assert not any(held.is_identity_loser(pk) for pk in warmup)
         actual = {pk for pk in order if held.is_identity_loser(pk)}
+        conn.set_trace_callback(None)
+        elected_library = _elects_the_library(statements, conn)
     finally:
         conn.close()
+    assert elected_library == (mode == "library"), (
+        f"{mode} walk {'never' if mode == 'library' else 'also'} elected the whole "
+        "library, so this case did not test the path it names"
+    )
     assert actual == expected
 
 
