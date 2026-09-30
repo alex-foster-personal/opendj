@@ -16,7 +16,27 @@ use odj_audio::wav;
 pub struct TestDir {
     path: PathBuf,
     // Owns the deletion; `path` is a copy so the guard can deref to `PathBuf`.
-    _dir: tempfile::TempDir,
+    // Taken in `Drop`, which deletes it checked rather than silently.
+    dir: Option<tempfile::TempDir>,
+}
+
+/// A directory that will not delete fails the test that made it: a leaked
+/// handle or a still-running child must not pass green and leave the tree
+/// behind. While a test is already panicking the delete is best-effort, so
+/// the original failure is the one reported.
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let Some(dir) = self.dir.take() else { return };
+        let deleted = dir.close();
+        if !std::thread::panicking() {
+            if let Err(e) = deleted {
+                panic!(
+                    "could not delete test scratch dir {}: {e}",
+                    self.path.display()
+                );
+            }
+        }
+    }
 }
 
 impl Deref for TestDir {
@@ -48,7 +68,7 @@ pub fn temp_dir(tag: &str) -> TestDir {
         .unwrap();
     TestDir {
         path: dir.path().to_path_buf(),
-        _dir: dir,
+        dir: Some(dir),
     }
 }
 
