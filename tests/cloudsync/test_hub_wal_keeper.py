@@ -8,6 +8,8 @@ read after every request: present means the close was not the last one.
 
 [if] a hub request's close deletes the WAL [then] checkpoint per request, [else stop].
 
+[if] the app's lifespan ends and a keeper is still open [then] the database stays locked after shutdown, [else stop].
+
 Controls: the probe must see the WAL vanish once the keepers close, through
 the real ``close_wal_keepers`` (no swapped implementation); the keeper must
 not hold a read transaction, or no checkpoint could ever reset the WAL; one
@@ -26,6 +28,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.sync_hub import client, hub_wal_keeper, service
+from apps.webui.server.app import create_app
 from tests.cloudsync.enrollment_transport import TestClientTransport
 
 pytestmark = pytest.mark.requirement("LIBM-120")
@@ -119,3 +122,24 @@ def test_a_keeper_is_why_the_database_is_not_exclusive(hub_app: FastAPI, tmp_pat
         assert _leave_wal(hub_app) == "delete"
         assert hub_wal_keeper.wal_keepers(hub_app.state) == {}
 
+
+def test_app_shutdown_hands_the_database_back(tmp_path: Path) -> None:
+    """The real webui app (the one ``engine_core`` serves) through its own
+    lifespan: a hub request opens a keeper, and once the lifespan has ended
+    the database can be taken exclusively (leave WAL) with the app object
+    still alive."""
+    hub_dir = tmp_path / "hub"
+    app = create_app(
+        state_db_path=str(client.state_db_path(hub_dir)),
+        hostname="hub",
+        mount_frontend=False,
+        enable_cors=False,
+    )
+    with TestClient(app) as http:
+        client.run_sync(
+            tmp_path / "spoke", "http://hub.invalid", transport=TestClientTransport(http),
+            name="spoke",
+        )
+        assert len(hub_wal_keeper.wal_keepers(app.state)) == 1, "no keeper opened"
+    assert _leave_wal(app) == "delete"
+    assert hub_wal_keeper.wal_keepers(app.state) == {}, "lifespan left a keeper registered"
