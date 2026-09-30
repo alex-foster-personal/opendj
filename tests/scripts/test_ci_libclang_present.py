@@ -10,6 +10,8 @@ Regression lines:
   - if LIBCLANG_PATH is set and anything else is searched then the pick is not clang-sys's
   - if the newest candidate does not load and the probe passes then CI skips an install it needs
   - if a real library that is not libclang counts as loaded then a broken host passes
+  - if a host with a real libclang cannot load it through load_clang_version then broken
+  - if a loadable LLVM 17 libclang is not OK to the host audit then verify and CI disagree
   - if the contracts job builds the wheel or runs cargo before the probe step then broken
   - if the manifest verify does not carry this exact script then verify and CI disagree
 """
@@ -18,14 +20,17 @@ from __future__ import annotations
 
 import base64
 import ctypes.util
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 from scripts import ci_libclang_present as probe_mod
+from scripts import runner_toolset_verify as rtv
 from scripts.runner_toolset_scan import REPO_ROOT, load_manifest
 from scripts.runner_toolset_verify import expand_verify
 
@@ -42,11 +47,45 @@ def _lib(path: Path, bits: int = 64) -> Path:
     return path
 
 
-def _loads(version: str = "21.1.2"):
-    def load(path: Path) -> str:
-        return f"Ubuntu clang version {version} (1ubuntu1)"
+def _never_loads(path: Path) -> str:
+    """Fake-tree files are not libraries: a test that reaches a load must say it fails."""
+    raise OSError(f"{path} is a fake-tree file, not a library")
 
-    return load
+
+# clang-sys's macOS locations (build/common.rs DIRECTORIES_MACOS and xcode-select).
+MACOS_LIBCLANG = (
+    "/Library/Developer/CommandLineTools/usr/lib/libclang.dylib",
+    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+    "/usr/lib/libclang.dylib",
+)
+SEARCHED = (
+    "LIBCLANG_PATH, llvm-config --prefix, LD_LIBRARY_PATH, LIBRARY_PATH and"
+    f" {', '.join(probe_mod.DIRECTORIES_LINUX)}"
+)
+
+
+def _real_libclang() -> Path:
+    """The host's real libclang (Linux: the probe's own pick), or skip as UNAVAILABLE."""
+    if sys.platform.startswith("linux"):
+        paths = probe_mod.search_directories(os.environ, probe_mod.llvm_config_prefix(os.environ))
+        chosen, _ = probe_mod.pick(paths, 64 if sys.maxsize > 2**32 else 32)
+        if chosen is None:
+            pytest.skip(
+                f"UNAVAILABLE: no libclang on this Linux host where clang-sys looks ({SEARCHED})"
+            )
+        return chosen.path
+    if sys.platform == "darwin":
+        found = [Path(p) for p in MACOS_LIBCLANG if Path(p).is_file()]
+        if not found:
+            pytest.skip(f"UNAVAILABLE: no libclang.dylib at {', '.join(MACOS_LIBCLANG)}")
+        return found[0]
+    pytest.skip(f"UNAVAILABLE: no libclang search modelled for {sys.platform}")
+
+
+def _require_linux_libclang() -> Path:
+    if not sys.platform.startswith("linux"):
+        pytest.skip(f"UNAVAILABLE: the probe models clang-sys's Linux search, not {sys.platform}")
+    return _real_libclang()
 
 
 def _search(root: Path, environ: dict[str, str] | None = None, prefix: str | None = None):
@@ -69,10 +108,11 @@ def test_search_order_is_clang_sys_order(tmp_path: Path) -> None:
 
 
 def test_llvm_21_alone_is_found_without_libclang_path(tmp_path: Path) -> None:
-    """nucbox-wsl's shape: LLVM 21 only, nothing from LLVM 18, no LIBCLANG_PATH."""
+    """nucbox-wsl's shape: LLVM 21 only, nothing from LLVM 18, no LIBCLANG_PATH.
+    Enumeration and pick only: whether it loads needs a real library (below)."""
     lib = _lib(tmp_path / "usr/lib/llvm-21/lib/libclang-21.so.1")
-    code, message = probe_mod.probe({}, None, _loads("21.1.2"), tmp_path, 64)
-    assert (code, message.split(" ")[:5]) == (0, ["libclang", "21.1.2", "loaded", "from", str(lib)])
+    chosen, valid = probe_mod.pick(_search(tmp_path), 64)
+    assert chosen is not None and (chosen.path, valid) == (lib, 1)
 
 
 def test_libclang_path_is_the_only_place_searched(tmp_path: Path) -> None:
@@ -133,7 +173,7 @@ def test_wrong_elf_class_non_elf_and_absent_files_are_not_candidates(tmp_path: P
 
 
 def test_no_candidate_is_missing(tmp_path: Path) -> None:
-    code, message = probe_mod.probe({}, None, _loads(), tmp_path, 64)
+    code, message = probe_mod.probe({}, None, _never_loads, tmp_path, 64)
     assert code == 1 and message.startswith("[libclang] MISSING"), message
 
 
@@ -141,14 +181,15 @@ def test_the_pick_failing_to_load_is_missing_with_no_fallback(tmp_path: Path) ->
     """clang-sys dlopens its one pick; an older loadable libclang does not rescue it."""
     _lib(tmp_path / "usr/lib/llvm-18/lib/libclang-18.so.1")
     newest = _lib(tmp_path / "usr/lib/llvm-21/lib/libclang-21.so.1")
+    tried: list[Path] = []
 
     def load(path: Path) -> str:
-        if path == newest:
-            raise OSError("cannot open shared object file")
-        return "Ubuntu clang version 18.1.3"
+        tried.append(path)
+        return _never_loads(path)
 
     code, message = probe_mod.probe({}, None, load, tmp_path, 64)
     assert code == 1 and str(newest) in message and "does not load" in message, message
+    assert tried == [newest], f"loaded {tried}: clang-sys tries its one pick only"
 
 
 def test_a_load_without_a_version_is_missing(tmp_path: Path) -> None:
@@ -173,6 +214,23 @@ def test_the_real_loader_rejects_a_real_library_that_is_not_libclang() -> None:
     assert libc, "no libc to load: the control cannot run, which is not a pass"
     with pytest.raises(AttributeError):
         probe_mod.load_clang_version(Path(libc))
+
+
+def test_the_real_loader_loads_a_real_libclang() -> None:
+    """Positive control through ctypes and a real libclang; UNAVAILABLE where none exists."""
+    path = _real_libclang()
+    reported = probe_mod.load_clang_version(path)
+    assert probe_mod.CLANG_VERSION_RE.search(reported), f"{path} reported {reported!r}"
+
+
+def test_the_probe_passes_on_this_hosts_real_libclang() -> None:
+    chosen = _require_linux_libclang()
+    code, message = probe_mod.probe(
+        os.environ, probe_mod.llvm_config_prefix(os.environ), probe_mod.load_clang_version
+    )
+    assert code == 0 and re.match(
+        rf"libclang \d[\d.]* loaded from {re.escape(str(chosen))} ", message
+    ), message
 
 
 # ----- wiring: the contracts job and the manifest ---------------------------------
@@ -220,17 +278,50 @@ def test_manifest_entry_installs_what_ci_installs_and_verifies_with_the_probe() 
     assert [base64.b64decode(p) for p in payloads] == [SCRIPT.read_bytes()]
 
 
-def test_the_expanded_verify_runs_the_probe() -> None:
-    """Presence, not exit code: every probe outcome names libclang, an empty decode does not."""
+def _audit(entry: dict, rc: int, output: str) -> str:
+    """runner_toolset_verify's verdict for one verify record, as the host audit gives it."""
+    record = base64.b64encode(output.encode()).decode()
+    stdout = (
+        f"{rtv.RECORD} PATHSRC /r\n{rtv.RECORD} V {entry['name']} {rc} {record}\n{rtv.RECORD} END"
+    )
+    [result] = rtv.classify([entry], 0, stdout, "")
+    return result.status
+
+
+def test_the_expanded_verify_is_ok_on_a_host_with_libclang() -> None:
+    """The verify exactly as the host audit ships it; never MISSING taken as a pass."""
+    _require_linux_libclang()
+    entry = _libclang_entry()
     done = subprocess.run(
-        ["bash", "-o", "pipefail", "-c", expand_verify(_libclang_entry()["verify"])],
+        ["bash", "-o", "pipefail", "-c", expand_verify(entry["verify"])],
         capture_output=True,
         text=True,
         timeout=60,
         check=False,
     )
     output = done.stdout + done.stderr
-    assert re.match(r"(libclang \d|\[libclang\] (MISSING|UNKNOWN))", output), output
+    assert done.returncode == 0 and re.match(r"libclang \d", output), output
+    assert _audit(entry, done.returncode, output) == "OK", output
+
+
+def test_a_loadable_llvm_17_is_ok_and_a_failed_probe_is_missing() -> None:
+    """Verdict mapping, no load claimed: the probe's success line for an LLVM 17 host is OK
+    (no LLVM 18 floor), and its failure exit stays MISSING whatever it prints."""
+    entry = _libclang_entry()
+    seventeen = "libclang 17.0.6 loaded from /usr/lib/llvm-17/lib/libclang-17.so.1"
+    assert _audit(entry, 0, seventeen) == "OK"
+    assert _audit(entry, 1, "[libclang] MISSING: libclang 21.1.2 would not load") == "MISSING"
+
+
+def test_capability_match_is_only_for_committed_probes() -> None:
+    """`match: capability` compares no version, so it must never silence a package
+    check: only an entry whose verify ships a committed probe script may use it."""
+    loose = [
+        e["name"]
+        for e in load_manifest()["entries"]
+        if e.get("match") == "capability" and "{repo_b64:scripts/" not in e["verify"]
+    ]
+    assert not loose, f"capability match on a verify with no committed probe: {loose}"
 
 
 def test_expand_verify_refuses_a_missing_repo_file() -> None:

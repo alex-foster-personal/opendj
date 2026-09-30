@@ -27,6 +27,8 @@ Version matching (`match`, see ci/runner-toolset.yml): apt entries default to
 (`-4ubuntu3.3` over `-4ubuntu3.2`) is OK and an older one is a MISMATCH.
 `exact` and `prefix` compare the whole reported version token, so a
 prerelease or build suffix (`1.96.0-nightly`, `v22.23.2-rc.1`) is a MISMATCH.
+`capability` compares nothing: the verify's exit 0 is the whole verdict (a
+libclang of any LLVM major), and a nonzero exit is still MISSING.
 
 Exit codes (a stable contract; scripts/ci_runner_host_audit.sh calls this):
   0  every entry OK
@@ -264,6 +266,8 @@ def _version_matches(version: str, match: str, output: str) -> bool:
     if match == "min":
         found = re.search(r"(?<![\w.])(?:\d+:)?\d[\w.+~:-]*", output)
         return found is not None and dpkg_compare(found.group(0), version) >= 0
+    if match == "capability":
+        return True
     raise ValueError(f"unknown match mode {match!r}")
 
 
