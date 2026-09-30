@@ -19,8 +19,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from apps.adapters.rekordbox import config as rb_config
 from apps.analysis import canonical
 from apps.analysis.record import AnalysisRecord
+from apps.analysis_structure.serve import merge_own_phrases
 from apps.shared import platform_paths, runtime_policy
 
 from .. import rb_vendor
@@ -439,6 +441,9 @@ def get_track_anlz(
         beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
     )
     payload["beatgrid_source_basis"] = beatgrid_source_basis
+    # Own sections fill `phrases` only where rekordbox PSSI is empty, on every
+    # branch above, and `phrases_source` names which one was served (STRUCT-02).
+    payload = merge_own_phrases(payload, stable_id, rb_config.DATA_DIR)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things

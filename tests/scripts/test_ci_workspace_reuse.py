@@ -15,6 +15,8 @@ Requirements:
 - ✔︎ A reused .venv is installed exactly, so it holds what a fresh fill would.
 - ✔︎ Every self-hosted checkout fetches full history (`fetch-depth: 0`), so no
   job leaves a shallow graft in a workspace the next job reuses.
+- ✔︎ Every tree the clean step keeps is gitignored at any depth, so a tool
+  that honors .gitignore never scans another branch's leftover build.
 
 Acceptance tests:
 - [if] a self-hosted checkout goes back to `clean: true`, or loses the clean
@@ -42,6 +44,12 @@ Acceptance tests:
 - [if] the selector stops finding the history-dependent jobs (ci.yml test,
   fast, contracts, quality; adr-check) [then] this fails [⛔️ the depth rule
   would pass vacuously for the jobs whose results depend on history].
+- [if] a tree the clean step keeps (node_modules, target, .venv) is not
+  gitignored at some depth [then] this fails [⛔️ jscpd read a stale
+  apps/audio-engine/target left by another branch's build as 13 clones, and
+  the quality ratchet failed every PR those runners took, Tue 29 Sep 2026].
+- [if] the ignore probe reports an ordinary source file as ignored [then]
+  this fails [⛔️ an over-broad rule would pass the check above vacuously].
 """
 
 from __future__ import annotations
@@ -303,6 +311,55 @@ def test_clean_script_removes_debris_and_keeps_dependency_trees(tmp_path: Path) 
     assert not kept_missing, f"clean removed dependency trees it must keep: {kept_missing}"
     assert not debris_left, f"clean left build debris behind: {debris_left}"
     assert (repo / "tracked.txt").exists(), "clean must never touch tracked files"
+
+
+#-----------------------------------------------------------------------------
+# invariant: every tree the clean script keeps is gitignored, at any depth
+#-----------------------------------------------------------------------------
+def _kept_tree_patterns() -> list[str]:
+    """The `-e <pattern>` exemptions on the clean script's `git clean` line."""
+    script = CLEAN_SCRIPT.read_text(encoding="utf-8").splitlines()
+    lines = [ln for ln in script if ln.startswith("git clean ")]
+    assert len(lines) == 1, f"expected one `git clean` line in {CLEAN_SCRIPT}, found {len(lines)}"
+    patterns = re.findall(r"-e\s+(\S+)", lines[0])
+    assert patterns, f"no -e exemptions parsed from {lines[0]!r}; the parser no longer matches"
+    return patterns
+
+
+def _probe_inside(pattern: str) -> str:
+    """A path inside a kept tree that no subproject-specific ignore rule names."""
+    if pattern.startswith("/"):
+        return f"{pattern.lstrip('/')}/probe.txt"  # root-anchored: only the root copy is kept
+    return f"apps/zz-new-subproject/{pattern}/debug/deps/probe.d"
+
+
+def _is_gitignored(rel: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "check-ignore", "-q", "--no-index", rel],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"git check-ignore could not answer for {rel} "
+            f"(exit {result.returncode}): {result.stderr}"
+        )
+    return result.returncode == 0
+
+
+def test_every_tree_the_runner_keeps_is_gitignored_at_any_depth() -> None:
+    patterns = _kept_tree_patterns()
+    unignored = [
+        f"{p} (probe {_probe_inside(p)})" for p in patterns if not _is_gitignored(_probe_inside(p))
+    ]
+    assert not unignored, (
+        "the clean step keeps these trees between jobs but .gitignore does not cover them, "
+        f"so tools that honor .gitignore scan other branches' leftovers: {unignored}"
+    )
+
+
+def test_ignore_probe_reports_an_ordinary_source_file_as_not_ignored() -> None:
+    """Negative control: the probe can say no, so the check above is not vacuous."""
+    assert not _is_gitignored("apps/zz-new-subproject/src/main.rs")
 
 
 #-----------------------------------------------------------------------------
