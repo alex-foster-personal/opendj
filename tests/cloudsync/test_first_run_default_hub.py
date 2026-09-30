@@ -262,6 +262,9 @@ def test_payload_manifest_carries_the_default_hub_block(tmp_path: Path) -> None:
     (build_dir / "index.html").write_text("<html></html>")
     stretch = build_dir / "stretch.wasm"
     stretch.write_bytes(b"\0")
+    engine_bin = payload_dir / payload.AUDIO_ENGINE_RELATIVE
+    engine_bin.parent.mkdir(parents=True, exist_ok=True)
+    engine_bin.write_bytes(b"\0")
     identity = payload.PayloadIdentity(
         label=None, product_name="Open DJ", identifier="com.example.opendj",
         app_version="0.0.0", engine_version="0.0.0", default_hub_url=_DEFAULT_HUB,
@@ -269,6 +272,7 @@ def test_payload_manifest_carries_the_default_hub_block(tmp_path: Path) -> None:
     staged = payload.StagedPayload(
         runtime_source=tmp_path, python_version="3.11", pruned=[], requirements=[],
         orphaned=[], stretch_asset=stretch, waveform_wheel_name="", waveform_wheel_sha256="",
+        audio_engine_hello={"engine": "0.0.0", "protocol": 1, "device": True},
     )
     manifest = payload.build_manifest(
         repo_root=Path(__file__).resolve().parents[2], payload_dir=payload_dir,
