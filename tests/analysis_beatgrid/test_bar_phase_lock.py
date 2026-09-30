@@ -75,7 +75,7 @@ def test_pickup_numbers_leading_beats_from_chosen_phase() -> None:
 def test_phase_tie_breaks_to_smallest_index() -> None:
     beats = _grid(24)
     tie_downbeats = [beats[i] for i in (0, 6, 12, 18)]
-    control_downbeats = tie_downbeats + [beats[22]]
+    control_downbeats = [*tie_downbeats, beats[22]]
 
     tie = lock_bar_phase(beats, tie_downbeats)
     control = lock_bar_phase(beats, control_downbeats)

@@ -195,9 +195,7 @@ def assign_bar_phase(
 
     anchors = _downbeat_indices(beats, downbeats, tolerance_s)
     if not anchors:
-        return BarPhase(
-            [], True, REASON_NO_DOWNBEAT_ANCHOR, len(beats), 0, 0, 0, 0, 0
-        )
+        return BarPhase([], True, REASON_NO_DOWNBEAT_ANCHOR, len(beats), 0, 0, 0, 0, 0)
 
     closed, open_bar = _bar_lengths(anchors, len(beats))
     over, under, longest = _bar_anomalies(closed, open_bar, bar_beats)
@@ -265,10 +263,9 @@ def vote_bar_phase(anchors: Sequence[int], bar_beats: int = BAR_BEATS) -> PhaseV
         if any(abs(anchor - other) < DOUBLE_MIN_GAP_BEATS for other in near):
             n_doubles += 1
     n_disagree = len(anchors) - len(on_phase) - n_doubles
-    if n_doubles > len(on_phase):
-        agreement = len(on_phase) / len(anchors)
-    else:
-        agreement = len(on_phase) / (len(on_phase) + n_disagree)
+    # More doubles than on-phase marks (an every-beat stream) is scored against all marks.
+    denominator = len(anchors) if n_doubles > len(on_phase) else len(on_phase) + n_disagree
+    agreement = len(on_phase) / denominator
     return PhaseVote(
         chosen=chosen,
         agreement=agreement,
