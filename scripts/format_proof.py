@@ -21,13 +21,19 @@ Requirements (mini-PRD):
     names, keywords, numbers and operators precede it, which piece of an implicitly
     concatenated string it follows, and whether code precedes it on its line.
     Only its line may change, and its text only to exactly what ruff makes of it:
-    trailing whitespace stripped, one space added after `#`. A shebang stays on byte 0, or stays off it.
+    trailing whitespace stripped, one space added after `#`. Where ruff formats nothing, inside a `# fmt: off` or
+    `# yapf: disable` region and on the other lines of a statement with a trailing `# fmt: skip`, a comment's text
+    and a docstring stay exactly as they were. A region whose first statement is simple and skipped is no region:
+    ruff holds that statement alone and formats on. A shebang stays on byte 0, or stays off it.
       [if] a changed file's value, name or structure differs [then ⛔️] exit 1 naming it
       [if] a docstring's relative indentation changes [then ⛔️] exit 1
       [if] a docstring's tab between words, form feed, blank first line or escaped whitespace changes [then ⛔️] exit 1
       [if] a docstring gains whitespace ruff would strip, or leaves its statement's indent [then ⛔️] exit 1
       [if] ruff re-lays a docstring with an escape, an indent not tabs then spaces, or a `"` by a quote [then ⛔️] exit 1
       [if] a comment is added, removed, reworded, reordered, or moved past a node or fixed token [then ⛔️] exit 1
+      [if] a comment or docstring changes at all in a `# fmt: off` region or `# fmt: skip` statement [then ⛔️] exit 1
+      [if] a region's later skip, a skipped compound header, or a trailing `# fmt: on` hides an edit [then ⛔️] exit 1
+      [if] ruff ends a region sooner than the model (a dedented comment, `elif`, `match = ...`) [then ⛔️] exit 1 (safe)
       [if] ruff moves a trailing operator past an end-of-line comment [then ⛔️] exit 1 (no count tells it from a move)
       [if] an end-of-line comment moves onto its own line, e.g. a block header's pragma into the body [then ⛔️] exit 1
       [if] a shebang moves off byte 0 or onto it [then ⛔️] exit 1
@@ -50,7 +56,9 @@ What could satisfy this without satisfying its intent: a normalizer that strips
 whitespace from EVERY string would pass a real edit to a string value, so only
 docstring positions are re-laid (tests/quality/test_format_proof_docstrings.py pins
 that), and one that strips BOTH sides would pass whitespace ADDED to a docstring, so
-each head docstring must be its base or ruff's exact output for it.
+each head docstring must be its base or ruff's exact output for it. Allowing ruff's
+output everywhere would pass a hand edit inside `# fmt: off`, where ruff changes nothing,
+so there a comment or docstring must match exactly (`scripts/format_proof_regions.py` reads where).
 A proof over zero files would read as success, so it exits 2 instead. A style(format):
 subject is only a claim, so ignore-revs proves every listed commit again. A comment's
 LINE is not compared, because every re-wrap above it moves it; its place in the tree
@@ -75,6 +83,8 @@ import sys
 import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from scripts.format_proof_regions import formatter_disabled
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -153,6 +163,23 @@ class Docstring:
     text: str
     indent: str | None  # its statement's indent, None when code precedes it on its line
     plain: bool  # the source between its quotes IS its text
+    verbatim: bool  # where ruff formats nothing, so only its own text matches
+
+
+@dataclass(frozen=True)
+class Comment:
+    place: Place
+    text: str
+    verbatim: bool  # where ruff formats nothing, so only its own text matches
+
+
+@dataclass(frozen=True)
+class Side:
+    """One side of a changed file, as `prove` compares it."""
+
+    dump: str  # the AST with every docstring blanked
+    docstrings: list[Docstring]
+    comments: list[Comment]
 
 
 # ----- git helpers ----------------------------------------------------------
@@ -244,7 +271,7 @@ def _is_plain_literal(source: str, node: ast.Constant) -> bool:
     return text[opening + quote : len(text) - quote] == node.value
 
 
-def _dump_without_docstrings(source: str) -> tuple[str, list[Docstring]]:
+def _dump_without_docstrings(source: str, verbatim_rows: frozenset[int]) -> tuple[str, list[Docstring]]:
     """The AST dump with every docstring blanked, and the docstrings in walk order, so equal dumps pair them up."""
     tree = ast.parse(source)
     lines = source.split("\n")  # decode_source leaves only newlines, and the AST numbers lines by them
@@ -256,17 +283,24 @@ def _dump_without_docstrings(source: str) -> tuple[str, list[Docstring]]:
         if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
             prefix = lines[first.lineno - 1].encode()[: first.col_offset].decode()
             indent = None if prefix.strip(" \t") else prefix
-            found.append(Docstring(first.value.value, indent, _is_plain_literal(source, first.value)))
+            plain = _is_plain_literal(source, first.value)
+            found.append(Docstring(first.value.value, indent, plain, first.lineno in verbatim_rows))
             first.value.value = ""
     return ast.dump(tree), found
 
 
 def _docstrings_match(before: list[Docstring], after: list[Docstring]) -> bool:
-    """Each head docstring is its base's text, or exactly ruff's re-layout of a plain base at the head's indent. One
-    way, as ruff only strips and re-indents: a head that adds whitespace ruff would strip is a real edit."""
+    """Each head docstring is its base's text, or exactly ruff's re-layout of a plain base at the head's indent, and
+    only its base's text where ruff formats nothing. One way, as ruff only strips and re-indents: a head that adds
+    whitespace ruff would strip is a real edit. Where ruff formats is read from the base, which is what ruff read."""
     return len(before) == len(after) and all(
         new.text == old.text
-        or (old.plain and new.indent is not None and new.text == _ruff_docstring(old.text, new.indent))
+        or (
+            not old.verbatim
+            and old.plain
+            and new.indent is not None
+            and new.text == _ruff_docstring(old.text, new.indent)
+        )
         for old, new in zip(before, after, strict=True)
     )
 
@@ -329,18 +363,18 @@ def _string_pieces_before_each_comment(tokens: list[tokenize.TokenInfo]) -> list
     return positions
 
 
-def _comments_match(before: list[tuple[Place, str]], after: list[tuple[Place, str]]) -> bool:
-    """Same places, and each head comment is its base comment untouched or exactly what ruff makes of it. One-way,
-    because ruff only strips and adds space: `# x` to `#x`, or a trailing space added, is no ruff output, while a
-    comment inside `# fmt: off`, which ruff leaves alone, still matches."""
+def _comments_match(before: list[Comment], after: list[Comment]) -> bool:
+    """Same places, and each head comment is its base comment untouched or exactly what ruff makes of it, and only
+    untouched where ruff formats nothing. One-way, because ruff only strips and adds space: `# x` to `#x`, or a
+    trailing space added, is no ruff output. Where ruff formats is read from the base, which is what ruff read."""
     return len(before) == len(after) and all(
-        place_before == place_after and text_after in (text_before, _ruff_comment(text_before))
-        for (place_before, text_before), (place_after, text_after) in zip(before, after, strict=True)
+        old.place == new.place and (new.text == old.text or (not old.verbatim and new.text == _ruff_comment(old.text)))
+        for old, new in zip(before, after, strict=True)
     )
 
 
-def _comments(source: str) -> list[tuple[Place, str]]:
-    """Every comment in order, as (place, text): its line is layout, its words and place are not.
+def _comments(source: str, tokens: list[tokenize.TokenInfo], verbatim_rows: frozenset[int]) -> list[Comment]:
+    """Every comment in order, with its place and text: its line is layout, its words and place are not.
 
     Its place in the tree is how many AST nodes open and close before it, which counts statements, strings and `...`
     alike and survives ruff adding or dropping parentheses, commas and string pieces, and how many fixed tokens
@@ -352,9 +386,8 @@ def _comments(source: str) -> list[tuple[Place, str]]:
     What is left uncounted is `( ) , ;`, which ruff adds and drops, and a comment moved across only those stays on
     the same line of the same code."""
     starts, ends = _node_bounds(ast.parse(source))
-    tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
     pieces = iter(_string_pieces_before_each_comment(tokens))
-    found: list[tuple[Place, str]] = []
+    found: list[Comment] = []
     fixed_tokens = 0
     prev_row = 0  # A comment is own-line when the token before it ended on an earlier row: only code can end on its.
     for tok in tokens:
@@ -367,11 +400,20 @@ def _comments(source: str) -> list[tuple[Place, str]]:
                 prev_row != row,
                 next(pieces),
             )
-            found.append((place, tok.string))
+            found.append(Comment(place, tok.string, row in verbatim_rows))
         elif _is_fixed_token(tok):
             fixed_tokens += 1
         prev_row = tok.end[0]
     return found
+
+
+def _read_side(source: str) -> Side:
+    """One side of a file: its AST without docstrings, its docstrings and its comments, each marked where ruff
+    formats nothing. A docstring on a `# fmt: skip` pragma's own line is held by it; the pragma itself is not."""
+    tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+    rows, pragmas = formatter_disabled(tokens)
+    dump, docstrings = _dump_without_docstrings(source, rows)
+    return Side(dump, docstrings, _comments(source, tokens, rows - pragmas))
 
 
 def _runs_a_shebang(data: bytes) -> bool:
@@ -408,17 +450,14 @@ def prove(repo: Path, base: str, head: str) -> Result:
             continue
         try:
             before, after = importlib.util.decode_source(data_before), importlib.util.decode_source(data_after)
-            (dump_before, docs_before), (dump_after, docs_after) = (
-                _dump_without_docstrings(before),
-                _dump_without_docstrings(after),
-            )
-            comments_equal = _comments_match(_comments(before), _comments(after))
-        except (SyntaxError, UnicodeDecodeError) as exc:
+            side_before, side_after = _read_side(before), _read_side(after)
+        except (SyntaxError, UnicodeDecodeError, tokenize.TokenError) as exc:
             return Result(2, lines=[f"[format-proof] UNKNOWN {path} does not decode or parse: {exc}"])
-        if dump_before != dump_after or not _docstrings_match(docs_before, docs_after):
+        docs_before, docs_after = side_before.docstrings, side_after.docstrings
+        if side_before.dump != side_after.dump or not _docstrings_match(docs_before, docs_after):
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: AST differs, this is not a format-only change")
-        elif not comments_equal:
+        elif not _comments_match(side_before.comments, side_after.comments):
             result.exit_code = 1
             result.lines.append(f"[format-proof] FAIL {path}: a comment was added, removed, reworded or moved")
         elif [doc.text for doc in docs_before] != [doc.text for doc in docs_after]:
