@@ -14,7 +14,9 @@
 # Consumers (read this file, never a copy of it):
 #   - tests/scripts/test_runner_toolset_complete.py: scans workflows, the scripts
 #     and justfile/Makefile recipes they call, and tests/, and fails when CI uses
-#     an executable, apt package or Playwright browser not declared here.
+#     an executable, apt package or Playwright browser not declared here, or
+#     when a tracked Cargo.lock carries a crate whose build script needs a
+#     system library (CARGO_SYSTEM_LIBRARIES there) with no apt entry here.
 #   - tests/scripts/test_runner_toolset_repo_pins.py: fails when a `repo:`
 #     entry's version drifts from the file its source names.
 #   - scripts/runner_toolset_verify.py: runs every `verify` on a host as the
@@ -147,6 +149,7 @@ entries:
   - {name: pkg-config, kind: apt, version: "1.8.1-2build1", source: agentbox, provides: [pkg-config], owners: [pkgconf-bin], needed_by: [rust], install: "apt-get install -y pkg-config", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' pkg-config | grep ^ii", notes: "item 15: libdbus-sys build.rs panics without it"}
   - {name: libdbus-1-dev, kind: apt, version: "1.14.10-4ubuntu4.1", source: agentbox, provides: [], needed_by: [rust], install: "apt-get install -y libdbus-1-dev", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' libdbus-1-dev | grep ^ii && pkg-config --modversion dbus-1"}
   - {name: build-essential, kind: apt, version: "12.10ubuntu1", source: agentbox, provides: [cc, gcc], owners: [gcc-*-*-linux-gnu, gcc], needed_by: [rust, pytest], install: "apt-get install -y build-essential", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' build-essential | grep ^ii", notes: "linker for cargo and the setuptools-rust wheel build"}
+  - {name: libclang1-18, kind: apt, version: "1:18.1.3-1ubuntu1", source: agentbox, provides: [], needed_by: [rust], install: "apt-get install -y libclang1-18", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' libclang1-18 | grep ^ii && python3 -c 'import ctypes; ctypes.CDLL(\"/usr/lib/llvm-18/lib/libclang-18.so.1\")'", notes: "apps/audio-engine/Cargo.toml depends on signalsmith-stretch 0.1.3, whose build script runs bindgen 0.70.1, which loads libclang through clang-sys (searching /usr/lib*/*/*, so /usr/lib/llvm-18/lib); both came in with #4459. Without it the build panics 'Unable to find libclang' (PR #4361, agentbox-11, Wed 30 Sep 2026). verify dlopens the library as clang-sys does, so a present package whose .so cannot load is MISSING. Builtin headers (libclang-common-18-dev) are not needed: ci.yml points BINDGEN_EXTRA_CLANG_ARGS at gcc's. Absent from agentbox at the Mon 28 Sep measurement; version is agbox2/agbox3's, hand-installed on agentbox Wed 30 Sep. Kept complete by test_every_cargo_system_library_is_declared"}
   - {name: libssl-dev, kind: apt, version: "3.0.13-0ubuntu3.15", source: agentbox, provides: [], needed_by: [rust], install: "apt-get install -y libssl-dev", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' libssl-dev | grep ^ii"}
   - {name: libglib2.0-dev, kind: apt, version: "2.80.0-6ubuntu3.9", source: agentbox, provides: [], needed_by: [rust], install: "apt-get install -y libglib2.0-dev", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' libglib2.0-dev | grep ^ii", notes: "Tauri 2 system lib (item 11)"}
   - {name: libgtk-3-dev, kind: apt, version: "3.24.41-4ubuntu1.3", source: agentbox, provides: [], needed_by: [rust], install: "apt-get install -y libgtk-3-dev", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' libgtk-3-dev | grep ^ii", notes: "Tauri 2 system lib (item 11)"}
