@@ -37,6 +37,8 @@ VERDICT_SCRIPT = REPO_ROOT / "scripts" / "ci_trunk_quarantine_verdict.py"
 LIST_JOB = "trunk-quarantine-list"
 VERDICT_STEP = "Fast lane verdict (pytest exit code, Trunk quarantine applied)"
 
+pytestmark = pytest.mark.requirement("CIQUAR-01")
+
 FLAKY = ("tests.webui.test_queue", "test_flaky_one")
 REAL = ("tests.webui.test_queue", "test_real_regression")
 
