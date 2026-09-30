@@ -117,7 +117,14 @@ def mixed_db(tmp_path: Path) -> Path:
 # equivalence
 
 
-def test_every_window_equals_the_full_read_slice(mixed_db: Path) -> None:
+@pytest.mark.parametrize("with_index", [True, False], ids=["index", "no-index"])
+def test_every_window_equals_the_full_read_slice(mixed_db: Path, with_index: bool) -> None:
+    """Without the index sqlite sorts instead, and ties must still break on position."""
+    if not with_index:
+        conn = sqlite3.connect(str(mixed_db))
+        conn.execute("DROP INDEX idx_playlist_memberships_live_order")
+        conn.commit()
+        conn.close()
     backend = SqliteBackend(mixed_db)
     full = backend.get_playlist(MIXED)
     assert len(full.items) == 120 - len([p for p in range(120) if p % 11 == 5])
