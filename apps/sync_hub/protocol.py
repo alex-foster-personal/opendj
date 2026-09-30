@@ -101,6 +101,7 @@ from apps.sync_hub.protocol_common import (
     pk_columns,
     stored_stamp_faults,
     table_columns,
+    table_columns_memo,
     validate_hash_pending_row,
 )
 from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
@@ -592,5 +593,6 @@ __all__ = [
     "stored_stamp_faults",
     "sync_digest",
     "table_columns",
+    "table_columns_memo",
     "table_digest",
 ]
