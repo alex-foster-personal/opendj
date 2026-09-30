@@ -150,6 +150,8 @@ function _nonExitingCount(): number {
 
 function _announceToastEviction(logId: string): void {
 	if (typeof window === 'undefined') return;
+	if (typeof window.dispatchEvent !== 'function') return;
+	if (typeof CustomEvent === 'undefined') return;
 	window.dispatchEvent(new CustomEvent<string>('toast:evicted', { detail: logId }));
 }
 

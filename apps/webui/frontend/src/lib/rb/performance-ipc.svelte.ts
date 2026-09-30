@@ -921,18 +921,22 @@ declare global {
 	}
 }
 
-/** Browser global used by installPerformanceBrowserIpc and unit tests that set globalThis.window. */
-function _performanceIpcHosts(): {
-	primary: Window & typeof globalThis;
-	secondary: (Window & typeof globalThis) | null;
-} {
-	const primary = globalThis.window;
-	if (primary === undefined || primary === null) {
+/** Browser globals used by installPerformanceBrowserIpc and unit tests that set globalThis.window. */
+function _performanceIpcHosts(): (Window & typeof globalThis)[] {
+	const hosts: (Window & typeof globalThis)[] = [];
+	const seen = new Set<object>();
+	const add = (candidate: unknown): void => {
+		if (candidate === null || candidate === undefined || typeof candidate !== 'object') return;
+		if (seen.has(candidate)) return;
+		seen.add(candidate);
+		hosts.push(candidate as Window & typeof globalThis);
+	};
+	add(globalThis.window);
+	if (typeof window !== 'undefined') add(window);
+	if (hosts.length === 0) {
 		throw new Error('performance IPC requires a browser window');
 	}
-	const secondary =
-		typeof window !== 'undefined' && window !== null && window !== primary ? window : null;
-	return { primary: primary as Window & typeof globalThis, secondary };
+	return hosts;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -2897,9 +2901,11 @@ export function parsePerformanceCommandForTest(message: unknown): PerformanceCom
 }
 
 export function installPerformanceBrowserIpc(): () => void {
-	const { primary: host, secondary } = _performanceIpcHosts();
-	if (host.musicDjToolsPerformance !== undefined) {
-		throw new Error('performance IPC is already installed');
+	const hosts = _performanceIpcHosts();
+	for (const host of hosts) {
+		if (host.musicDjToolsPerformance !== undefined) {
+			throw new Error('performance IPC is already installed');
+		}
 	}
 	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
@@ -2939,16 +2945,20 @@ export function installPerformanceBrowserIpc(): () => void {
 		releaseToast: (id: unknown) => releaseToast(_toastId(id)),
 		copyToast: (id: unknown) => copyToast(_toastId(id))
 	});
-	host.musicDjToolsPerformance = ipc;
-	if (secondary !== null) secondary.musicDjToolsPerformance = ipc;
+	for (const host of hosts) {
+		host.musicDjToolsPerformance = ipc;
+	}
 	return () => {
-		if (host.musicDjToolsPerformance !== ipc) {
-			throw new Error('performance IPC ownership changed before cleanup');
+		for (const host of hosts) {
+			if (host.musicDjToolsPerformance !== ipc) {
+				throw new Error('performance IPC ownership changed before cleanup');
+			}
 		}
 		_invalidateCommandSession(commandGeneration);
-		delete host.musicDjToolsPerformance;
-		if (secondary !== null && secondary.musicDjToolsPerformance === ipc) {
-			delete secondary.musicDjToolsPerformance;
+		for (const host of hosts) {
+			if (host.musicDjToolsPerformance === ipc) {
+				delete host.musicDjToolsPerformance;
+			}
 		}
 	};
 }
