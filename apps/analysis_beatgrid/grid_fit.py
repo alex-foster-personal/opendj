@@ -25,8 +25,8 @@ three steps, each measured separately by `scripts/beatbench/run_grid_fit.py`:
      the bench reports it on and off.
 
 Bar numbers are voted on the LINE index (downbeat's nearest k, mod 4) rather
-than on list position, for the same missed-beat reason, with the same floor as
-`bar_phase.lock_bar_phase`.
+than on list position, for the same missed-beat reason, with the same vote and
+floor as `bar_phase.lock_bar_phase`.
 
 Pure and stdlib-only, like the rest of the fitter, so the bench, the lane
 builder and a later Rust port can all read the same arithmetic.
@@ -46,15 +46,18 @@ from dataclasses import dataclass, field
 from apps.analysis_beatgrid.bar_phase import (
     BAR_BEATS,
     BAR_PHASE_AGREEMENT_FLOOR,
-    DOUBLE_MIN_GAP_BEATS,
+    vote_bar_phase,
 )
 from apps.analysis_beatgrid.grid_design import OFFSET_SERVED_S
 from apps.analysis_beatgrid.tempo_change import MIN_RELATIVE_BPM_DELTA, detect_tempo_changes
 
-#: The two grid-fit modes. `raw` is the served behavior before this module.
+#: The grid-fit modes. `raw` is the served behavior before this module.
 GRID_FIT_RAW = "raw"
 GRID_FIT_LINE = "line"
-GRID_FIT_MODES = (GRID_FIT_RAW, GRID_FIT_LINE)
+#: `const_regions.fit_const_regions`: the constant-region recipe (longest
+#: steady region sets the tempo, neighbors that land on it extend it).
+GRID_FIT_CONST_REGIONS = "const_regions"
+GRID_FIT_MODES = (GRID_FIT_RAW, GRID_FIT_LINE, GRID_FIT_CONST_REGIONS)
 
 #: A beat further than this from the fitted line is not used to fit it. Half
 #: the 70 ms scoring tolerance: a beat this far off is a model error, not jitter.
@@ -117,6 +120,9 @@ class GridFit:
     phase_agreement: float | None = None
     #: Per served beat, the index into `lines` of the segment it belongs to.
     beat_lines: list[int] = field(default_factory=list)
+    #: Which fitter chose `lines`: `line` here, `const_regions` for
+    #: `const_regions.fit_const_regions`.
+    fitter: str = GRID_FIT_LINE
 
 
 def _clean_run(ts: Sequence[float], period: float) -> tuple[int, int]:
@@ -308,25 +314,18 @@ def _bar_numbers(
 ) -> tuple[list[int], float] | None:
     """1..4 per beat from the model's downbeats, voted on the GRID index.
 
-    Same policy as `bar_phase.lock_bar_phase` (thin doubled downbeats closer
-    than `DOUBLE_MIN_GAP_BEATS`, majority phase, ties to the smallest phase),
-    but each downbeat is placed by its nearest grid beat rather than by its
-    position in the model's beat list, so a missed beat cannot flip the bar.
+    Same vote as `bar_phase.lock_bar_phase` (`bar_phase.vote_bar_phase`:
+    every downbeat votes, agreement counted per bar, ties to the smallest
+    phase), but each downbeat is placed by its nearest grid beat rather than
+    by its position in the model's beat list, so a missed beat cannot flip
+    the bar.
     """
     if not downbeats or not beats:
         return None
     anchors = sorted({_nearest(beats, d) for d in downbeats})
-    kept = [anchors[0]]
-    for a in anchors[1:]:
-        if a - kept[-1] >= DOUBLE_MIN_GAP_BEATS:
-            kept.append(a)
-    votes = [0] * BAR_BEATS
-    for a in kept:
-        votes[a % BAR_BEATS] += 1
-    chosen = votes.index(max(votes))
-    agreement = votes[chosen] / len(kept)
-    numbers = [((i - chosen) % BAR_BEATS) + 1 for i in range(len(beats))]
-    return numbers, agreement
+    vote = vote_bar_phase(anchors, BAR_BEATS)
+    numbers = [((i - vote.chosen) % BAR_BEATS) + 1 for i in range(len(beats))]
+    return numbers, vote.agreement
 
 
 def _nearest(beats: Sequence[float], t: float) -> int:
@@ -358,19 +357,38 @@ def fit_grid(
     lines = _segment_lines(ts, rounding, octave_multiple)
     if not lines:
         return GridFit([], [], (), offset_s, REASON_TOO_FEW_BEATS)
+    return grid_from_lines(lines, downbeats, offset_s)
+
+
+def grid_from_lines(
+    lines: Sequence[SegmentLine],
+    downbeats: Sequence[float],
+    offset_s: float,
+    *,
+    fitter: str = GRID_FIT_LINE,
+) -> GridFit:
+    """Render fitted lines into a served grid: beats, offset, bar numbers.
+
+    Shared by every fitter (`fit_grid` here, `const_regions` for the
+    constant-region recipe), so fitters differ only in how they choose lines.
+    """
+    lines = list(lines)
     grid, owner = _render(lines, offset_s)
     # Vote on the un-shifted grid: downbeats are model times, like the beats were.
     bars = _bar_numbers([t - offset_s for t in grid], [float(d) for d in downbeats])
     if bars is None:
-        return GridFit([], [], tuple(lines), offset_s, REASON_NO_DOWNBEATS)
+        return GridFit([], [], tuple(lines), offset_s, REASON_NO_DOWNBEATS, fitter=fitter)
     numbers, agreement = bars
     if agreement < BAR_PHASE_AGREEMENT_FLOOR:
-        return GridFit([], [], tuple(lines), offset_s, REASON_BAR_PHASE_BELOW_FLOOR, agreement)
-    return GridFit(grid, numbers, tuple(lines), offset_s, None, agreement, owner)
+        return GridFit(
+            [], [], tuple(lines), offset_s, REASON_BAR_PHASE_BELOW_FLOOR, agreement, fitter=fitter
+        )
+    return GridFit(grid, numbers, tuple(lines), offset_s, None, agreement, owner, fitter)
 
 
 __all__ = [
     "DEFAULT_OFFSET_S",
+    "GRID_FIT_CONST_REGIONS",
     "GRID_FIT_LINE",
     "GRID_FIT_MODES",
     "GRID_FIT_RAW",
@@ -378,5 +396,6 @@ __all__ = [
     "SegmentLine",
     "fit_grid",
     "fit_line",
+    "grid_from_lines",
     "round_bpm",
 ]

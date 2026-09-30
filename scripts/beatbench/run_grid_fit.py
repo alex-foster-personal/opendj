@@ -18,6 +18,27 @@ side by side against rekordbox:
                      EXPERIMENT, not served: the grid re-rendered at the octave
                      `bpm.estimate_bpm` publishes. Measured to halve 163-175 BPM
                      tracks rekordbox keeps whole, so the lane does not do it.
+  const_regions_only_round_offset
+                     `const_regions.fit_const_regions` as the recipe stands:
+                     25 ms regions, the longest of 16+ beats extended over
+                     every neighbor that lands on it, rounded, phase averaged,
+                     served offset. A track with no such region FAILS here.
+  const_regions_round
+                     the served constant-region fit, no offset: the recipe
+                     where its span covers `MIN_COVERAGE` (0.5) of the track,
+                     the line fitter elsewhere.
+  const_regions_round_offset
+                     plus the served offset: exactly what the lane serves with
+                     MDT_BEATGRID_GRID_FIT=const_regions.
+  const_regions_cov70_round_offset, const_regions_cov90_round_offset
+                     the coverage gate at 0.7 and 0.9, to show where 0.5 sits.
+  const_regions_piecewise_round_offset
+                     EXPERIMENT, not served: every long region keeps its own
+                     line, toward piecewise grids (#1481). No fallback.
+  const_regions_lsq_only_round_offset, const_regions_lsq_round_offset
+                     each region's line fitted by least squares over its beats
+                     rather than drawn through its end beats, alone and served
+                     (see `const_regions.find_const_regions`).
 
 Every variant sees the same input beats, so the deltas between rows are the
 fit alone. A variant that cannot grid a track records an error for it rather
@@ -41,8 +62,9 @@ from typing import Any
 
 from apps.analysis_beatgrid.bar_phase import lock_bar_phase
 from apps.analysis_beatgrid.bpm import estimate_bpm
+from apps.analysis_beatgrid.const_regions import MIN_COVERAGE, fit_const_regions
 from apps.analysis_beatgrid.grid_design import OFFSET_V2_TARGET_S
-from apps.analysis_beatgrid.grid_fit import DEFAULT_OFFSET_S, fit_grid
+from apps.analysis_beatgrid.grid_fit import DEFAULT_OFFSET_S, GridFit, fit_grid
 
 VARIANTS: dict[str, dict[str, Any]] = {
     "line": {"rounding": False, "offset_s": 0.0},
@@ -50,6 +72,51 @@ VARIANTS: dict[str, dict[str, Any]] = {
     "line_round_offset": {"rounding": True, "offset_s": DEFAULT_OFFSET_S},
     "line_round_offset_v2_target": {"rounding": True, "offset_s": OFFSET_V2_TARGET_S},
     "line_round_offset_octave": {"rounding": True, "offset_s": DEFAULT_OFFSET_S, "octave": True},
+    "const_regions_lsq_only_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "const",
+        "fallback_line": False,
+        "min_coverage": 0.0,
+        "least_squares": True,
+    },
+    "const_regions_lsq_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "const",
+        "least_squares": True,
+    },
+    "const_regions_only_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "const",
+        "fallback_line": False,
+        "min_coverage": 0.0,
+    },
+    "const_regions_round": {"rounding": True, "offset_s": 0.0, "method": "const"},
+    "const_regions_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "const",
+    },
+    "const_regions_cov70_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "const",
+        "min_coverage": 0.7,
+    },
+    "const_regions_cov90_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "const",
+        "min_coverage": 0.9,
+    },
+    "const_regions_piecewise_round_offset": {
+        "rounding": True,
+        "offset_s": DEFAULT_OFFSET_S,
+        "method": "piecewise",
+        "fallback_line": False,
+    },
 }
 
 
@@ -70,8 +137,42 @@ def served_raw(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fit(
+    beats: list[float],
+    downbeats: list[float],
+    *,
+    method: str,
+    rounding: bool,
+    offset_s: float,
+    octave_multiple: float,
+    const_options: dict[str, Any],
+) -> GridFit:
+    """The grid for one row by `method`: `line`, `const` or `piecewise`.
+    `const_options` go to `fit_const_regions` and are ignored for `line`."""
+    if method == "line":
+        return fit_grid(
+            beats, downbeats, rounding=rounding, offset_s=offset_s, octave_multiple=octave_multiple
+        )
+    return fit_const_regions(
+        beats,
+        downbeats,
+        rounding=rounding,
+        offset_s=offset_s,
+        piecewise=method == "piecewise",
+        **const_options,
+    )
+
+
 def fitted(
-    row: dict[str, Any], *, rounding: bool, offset_s: float, octave: bool = False
+    row: dict[str, Any],
+    *,
+    rounding: bool,
+    offset_s: float,
+    octave: bool = False,
+    method: str = "line",
+    fallback_line: bool = True,
+    min_coverage: float = MIN_COVERAGE,
+    least_squares: bool = False,
 ) -> dict[str, Any]:
     if row.get("error"):
         return _failed(str(row["error"]))
@@ -82,12 +183,18 @@ def fitted(
         if tempo is None:
             return _failed("no_tempo_fit")
         multiple = tempo.octave_multiple
-    fit = fit_grid(
+    fit = _fit(
         beats,
         row.get("downbeats") or [],
+        method=method,
         rounding=rounding,
         offset_s=offset_s,
         octave_multiple=multiple,
+        const_options={
+            "min_coverage": min_coverage,
+            "fallback_line": fallback_line,
+            "least_squares": least_squares,
+        },
     )
     if fit.reason:
         return _failed(fit.reason)
@@ -97,6 +204,7 @@ def fitted(
         "native_bpm": fit.lines[0].bpm if len(fit.lines) == 1 else None,
         "n_segments": len(fit.lines),
         "round_steps": [ln.round_step for ln in fit.lines],
+        "fitter": fit.fitter,
         "error": None,
     }
 
