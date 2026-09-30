@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { guardedWebServerCommand } from './support/guarded-web-server';
 import { resolveEndpoints } from './vocals-demucs-overlay-endpoints';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -95,7 +96,20 @@ const engineEnv = {
 	MDT_LIVE_DEMUCS_ACCEPTANCE: '1'
 };
 
+const engineCmd = [
+	`uv run --no-sync python ${FIXTURE_BUILDER}`,
+	`--data-dir ${FIXTURE_DATA_DIR}`,
+	`--manifest ${FIXTURE_MANIFEST}`,
+	`--source-audio ${JSON.stringify(SOURCE_AUDIO)}`,
+	`--clip-start-s ${CLIP_START_S}`,
+	'&&',
+	'uv run --no-sync python -m apps.engine_core serve',
+	`--data-dir ${FIXTURE_DATA_DIR}`,
+	`--host 127.0.0.1 --port ${endpoints.backendPort}`
+].join(' ');
+
 export default defineConfig({
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: ['vocals-demucs-overlay.spec.ts'],
 	fullyParallel: false,
@@ -107,17 +121,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: [
-				`uv run --no-sync python ${FIXTURE_BUILDER}`,
-				`--data-dir ${FIXTURE_DATA_DIR}`,
-				`--manifest ${FIXTURE_MANIFEST}`,
-				`--source-audio ${JSON.stringify(SOURCE_AUDIO)}`,
-				`--clip-start-s ${CLIP_START_S}`,
-				'&&',
-				'uv run --no-sync python -m apps.engine_core serve',
-				`--data-dir ${FIXTURE_DATA_DIR}`,
-				`--host 127.0.0.1 --port ${endpoints.backendPort}`
-			].join(' '),
+			command: guardedWebServerCommand('vocals-demucs-overlay-engine', engineCmd),
 			cwd: REPOSITORY_ROOT,
 			url: `${endpoints.backendOrigin}/api/v1/health`,
 			reuseExistingServer: false,
@@ -125,7 +129,10 @@ export default defineConfig({
 			env: engineEnv
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.vocals-demucs-overlay.config.ts',
+			command: guardedWebServerCommand(
+				'vocals-demucs-overlay-vite',
+				'pnpm exec vite --config tests/e2e/vite.vocals-demucs-overlay.config.ts'
+			),
 			cwd: FRONTEND_ROOT,
 			url: `${endpoints.frontendOrigin}/performance`,
 			reuseExistingServer: false,
