@@ -47,6 +47,7 @@ from scripts.node_test_reporter_scan import (
 
 EXPECTED_SITES_PER_FILE = {
     "Makefile": 1,
+    "apps/desktop/electron/package.json": 2,
     "apps/webui/frontend/package.json": 4,
     "scripts/savepoint_gate.py": 1,
 }

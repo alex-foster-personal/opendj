@@ -25,10 +25,28 @@ from pathlib import Path
 import yaml
 
 from scripts.ci_cost_guard import infer_standard_sku
-from tests.scripts.ci_runner_routes import MERGE_QUEUE_DISJUNCT
+from tests.scripts.ci_runner_routes import (
+    CANARY_RUNS_ON,
+    CANARY_VENDOR_MATRIX,
+    MERGE_QUEUE_DISJUNCT,
+)
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
+CANARY_CONFIG = WORKFLOW_DIR.parents[1] / "ci" / "runner-canary.json"
+
+
+def canary_vendor_labels() -> list[str]:
+    """Every runner label runner-canary.yml's shard job can select, from its config.
+
+    ADR-NEW-runner-canary. These are third-party vendors whose runners register with
+    GitHub as SELF-HOSTED runners, so GitHub bills nothing for them; the vendor bills its
+    own free tier, which the canary's budget gate guards. They price here as self-hosted
+    ($0) because that is what GitHub charges, and the labels come from the one committed
+    config rather than a copy, so a vendor added there is priced here too.
+    """
+    vendors = json.loads(CANARY_CONFIG.read_text())["vendors"]
+    return [vendor["label"] for vendor in vendors.values()]
 
 
 def guard_job() -> dict:
@@ -157,6 +175,11 @@ def runner_labels(job_id: str, runs_on: object) -> list[str]:
         "runner it selects cannot be read here"
     )
     expr = labels[0].strip()
+    if expr == CANARY_RUNS_ON:
+        # The one non-vars shape read here, matched EXACTLY: it has no fallback disjunct,
+        # and every value it can select is a configured vendor label (see
+        # canary_vendor_labels for why those price as self-hosted).
+        return ["self-hosted", *canary_vendor_labels()]
     match = RUNNER_SWITCH.fullmatch(expr)
     if match:
         fallback = json.loads(match.group("fallback"))
@@ -221,6 +244,11 @@ def matrix_runs(job_id: str, job: dict) -> int:
     )
     runs = 1
     for key, values in matrix.items():
+        if values == CANARY_VENDOR_MATRIX:
+            # runner-canary.yml: one run per vendor the gate allowed, at most every
+            # configured vendor, which is the worst case this ceiling needs.
+            runs *= len(canary_vendor_labels())
+            continue
         assert isinstance(values, list) and values, (
             f"{job_id} matrix key {key!r} is not a literal list: {values!r}"
         )

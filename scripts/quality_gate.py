@@ -152,7 +152,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1160,21 +1160,58 @@ def _eval_frontend() -> list[Metric]:
 # ----- evaluator: size + duplication ---------------------------------------
 
 
-def _jscpd_duplication(apps_root: Path) -> Metric:
-    """Run pinned jscpd over `apps_root` and return the duplication metric.
+def _tracked_files(repo: Path, roots: tuple[str, ...]) -> list[Path]:
+    """Every git-tracked regular file under `roots` in `repo`, as absolute paths.
+
+    The gate measures the tree a commit would carry, never whatever else
+    happens to sit on disk. Persistent self-hosted runners keep untracked
+    dependency and build trees between jobs on purpose (scripts/
+    ci_clean_untracked.sh spares every `target` dir, for instance), and on
+    Tue 29 Sep 2026 Cargo `.d` files left under apps/audio-engine/target by
+    a crate main no longer tracks added 11 jscpd clones to PRs that touched
+    nothing jscpd scans. Listing from the index makes that class of debris
+    unreachable instead of excluding one instance of it.
+
+    Symlinks and gitlinks are dropped because jscpd never followed them in a
+    directory scan either, and a tracked file deleted in the working tree is
+    not there to measure. An empty list is a broken scope, not a clean tree.
+    """
+    _, out = _run(["git", "ls-files", "-z", "--", *roots], cwd=repo)
+    files = [
+        repo / rel
+        for rel in out.split("\0")
+        if rel and (repo / rel).is_file() and not (repo / rel).is_symlink()
+    ]
+    if not files:
+        raise RuntimeError(
+            f"git ls-files found no tracked files under {', '.join(roots)} in "
+            f"{repo}; that is a broken scan scope reporting as a clean tree"
+        )
+    return files
+
+
+def _jscpd_duplication(repo: Path, roots: tuple[str, ...] = ("apps",)) -> Metric:
+    """Run pinned jscpd over the tracked files under `roots` in `repo`.
+
+    The file list goes to jscpd through a config file rather than argv,
+    because thousands of paths overflow the Windows command line. CLI flags
+    still apply to it, `--ignore` included (probed against jscpd 5.0.15).
 
     Fresh report directory per call, removed after, for the same reason as
     the deptry report: two concurrent gates must not share a path. A missing
     JSON report is a broken tool, not a clean tree.
     """
+    files = _tracked_files(repo, roots)
     jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
     try:
+        config = jscpd_dir / "jscpd-paths.json"
+        config.write_text(json.dumps({"path": [str(f) for f in files]}), encoding="utf-8")
         _pnpm_dlx(
             CFG.JSCPD,
+            "--config", str(config),
             "--reporters", "json", "--output", str(jscpd_dir), "--silent",
             "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
             "--ignore", ",".join(CFG.LOCKFILE_GLOBS + CFG.GENERATED_CONTRACT_GLOBS),
-            str(apps_root),
             allow_fail=True,
         )
         report_path = jscpd_dir / "jscpd-report.json"
@@ -1214,7 +1251,7 @@ def _eval_size() -> list[Metric]:
         Metric("file_size.over_limit_python", py_over, f"files > {CFG.PY_FILE_LIMIT} lines"),
         Metric("file_size.max_frontend", fe_max, "lines", fe_worst),
         Metric("file_size.over_limit_frontend", fe_over, f"files > {CFG.FE_FILE_LIMIT} lines"),
-        _jscpd_duplication(REPO / "apps"),
+        _jscpd_duplication(REPO),
     ]
 
 
@@ -1518,8 +1555,8 @@ def _resolve_base() -> tuple[str | None, str]:
     return sha, ""
 
 
-def _link_node_modules(base_fe: Path) -> None:
-    """Expose this run's node_modules to the merge-base worktree, read-only.
+def _link_node_modules(base_fe: Path, install: Path) -> None:
+    """Expose this run's node_modules `install` to the merge-base worktree, read-only.
 
     A symlink needs SeCreateSymbolicLinkPrivilege on Windows (Developer Mode
     or an elevated shell), so the merge-base run died with WinError 1314 on
@@ -1531,11 +1568,35 @@ def _link_node_modules(base_fe: Path) -> None:
     link = base_fe / "node_modules"
     if sys.platform == "win32":
         subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link), str(FRONTEND / "node_modules")],
+            ["cmd", "/c", "mklink", "/J", str(link), str(install)],
             capture_output=True, text=True, check=True,
         )
     else:
-        link.symlink_to(FRONTEND / "node_modules", target_is_directory=True)
+        link.symlink_to(install, target_is_directory=True)
+
+
+#: pnpm 11 runs `pnpm install` before `pnpm exec` whenever the lockfile disagrees
+#: with node_modules (verify-deps-before-run). In the merge-base run the lockfile
+#: is main's and node_modules is THIS run's, linked in, so that install rewrote the
+#: real install's links relative to the throwaway tree, and all 24 dangled once the
+#: tree was removed (agbox3-3, Tue 29 Sep 2026; a later job on the runner then hit
+#: MODULE_NOT_FOUND). pnpm 11 reads `pnpm_config_*` from the environment and
+#: ignores `npm_config_*` (both measured with pnpm 11.9.0).
+BASE_RUN_PNPM_ENV = {"pnpm_config_verify_deps_before_run": "false"}
+
+
+def _run_in_base(
+    cmd: list[str], base_dir: Path, ambient: Mapping[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Run `cmd` in the merge-base tree, with pnpm barred from installing through the link.
+
+    The one launcher for the base run, so the real-pnpm test in
+    tests/test_quality_gate.py exercises exactly what the gate runs.
+    """
+    return subprocess.run(
+        cmd, cwd=base_dir, capture_output=True, text=True, check=False,
+        env={**ambient, **BASE_RUN_PNPM_ENV},
+    )  # fmt: skip
 
 
 def _unlink_node_modules(base_fe: Path) -> None:
@@ -1591,16 +1652,17 @@ def _measure_owners_at_base(
         if "frontend" in owners:
             # knip and svelte-kit resolve against a node_modules install, which
             # a git worktree does not carry. Reuse this run's install read-only
-            # instead of running pnpm install on a throwaway tree.
+            # instead of running pnpm install on a throwaway tree; read-only is
+            # enforced by `_run_in_base` below, not assumed.
             base_fe = base_dir / "apps" / "webui" / "frontend"
             if (FRONTEND / "node_modules").is_dir():
-                _link_node_modules(base_fe)
+                _link_node_modules(base_fe, FRONTEND / "node_modules")
         out_json = base_dir / "metrics.json"
         cmd = [
             sys.executable, "-m", "scripts.quality_gate",
             "--only", ",".join(owners), "--json", str(out_json),
         ]
-        proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        proc = _run_in_base(cmd, base_dir, os.environ)
         if not out_json.exists():
             # Base's own gate can abort before --json (mypy follow-import into
             # ops/agentic_testing/coach.py is the live case). Overlay this
@@ -1608,7 +1670,7 @@ def _measure_owners_at_base(
             # can still inherit. The tree being measured stays the merge-base.
             dest = base_dir / "scripts" / "quality_gate.py"
             dest.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
-            proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+            proc = _run_in_base(cmd, base_dir, os.environ)
         if not out_json.exists():
             return None, (
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "

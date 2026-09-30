@@ -485,12 +485,17 @@ test('the folder step offers a native picker beside the path field', () => {
 	assert.match(overlay, /aria-label="Folder to import"/);
 });
 
-test('the folder picker guards on the Tauri runtime and opens a directory dialog', () => {
+test('the folder picker guards on a desktop shell and opens a directory dialog', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /__TAURI_INTERNALS__/);
+	// Either shell (Tauri or Electron) through the one bridge; a tab has none.
+	assert.match(overlay, /return nativeShellKind\(\) !== null/);
 	assert.match(overlay, /canUseNativeFolderPicker/);
-	assert.match(overlay, /await import\('@tauri-apps\/plugin-dialog'\)/);
-	assert.match(overlay, /directory: true,\s*\n\s*multiple: false/);
+	assert.match(overlay, /await pickFolder\('Choose a folder'\)/);
+	const bridge = read('src/lib/shell/native-shell.ts');
+	assert.match(bridge, /__TAURI_INTERNALS__/);
+	assert.match(bridge, /await import\('@tauri-apps\/plugin-dialog'\)/);
+	assert.match(bridge, /directory: true, multiple: false/);
+	assert.match(bridge, /electron\.pickFolder\(\{ title \}\)/);
 	assert.match(
 		overlay,
 		/if \(typeof selected === 'string'\) \{\s*\n\s*setupWizard\.folderRows = setupWizard\.folderRows\.map/

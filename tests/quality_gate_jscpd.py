@@ -10,6 +10,7 @@ is already 596 lines, and inlining it would cross the 600-line size gate.
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,11 @@ _LAUNCHER_JSCPD_SOURCE: tuple[str, ...] = (
     "apps/launcher/src/hooks/useSearch.ts",
     "apps/launcher/src/hooks/useDragEvents.ts",
 )
+
+
+def _git_add(repo: Path, *paths: str) -> None:
+    """Track `paths`: the gate scores the git index, not the disk."""
+    subprocess.run(["git", "add", "-f", *paths], cwd=repo, check=True, capture_output=True)
 
 
 def _duplicated_source_block() -> str:
@@ -73,10 +79,13 @@ def test_jscpd_ignores_lockfiles_but_still_scores_source_clones(
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, capture_output=True)
+    _git_add(tmp_path, "apps")
     apps = tmp_path / "apps"
-    without_lock = qg._jscpd_duplication(apps)
+    without_lock = qg._jscpd_duplication(tmp_path)
     shutil.copy2(lockfile, tmp_path / "apps" / "launcher" / "pnpm-lock.yaml")
-    with_lock = qg._jscpd_duplication(apps)
+    _git_add(tmp_path, "apps/launcher/pnpm-lock.yaml")
+    with_lock = qg._jscpd_duplication(tmp_path)
     assert with_lock.value == without_lock.value, (
         "if a lockfile under apps/ moves duplication.percent then the jscpd "
         f"ignore is not covering it: {without_lock.value} -> {with_lock.value}"
@@ -89,7 +98,8 @@ def test_jscpd_ignores_lockfiles_but_still_scores_source_clones(
     )
     (apps / "launcher" / "src" / "dup_a.ts").write_text(block, encoding="utf-8")
     (apps / "launcher" / "src" / "dup_b.ts").write_text(block, encoding="utf-8")
-    with_clones = qg._jscpd_duplication(apps)
+    _git_add(tmp_path, "apps/launcher/src")
+    with_clones = qg._jscpd_duplication(tmp_path)
     assert with_clones.value > with_lock.value, (
         "if a genuine source clone does not raise duplication.percent then "
         "the lockfile exclusion also silenced the metric; "
