@@ -245,9 +245,9 @@ test('isEngineCommand rejects Python running a script, -c, or stdin whose ARGUME
 		'python -c import_forwarder -m apps.engine_core',
 		'python - -m apps.engine_core',
 		'python -- -m apps.engine_core',
-		'uv run python proxy.py -m apps.engine_core',
+		'uv run --no-sync python proxy.py -m apps.engine_core',
 		'uv run --no-sync socat -m apps.engine_core',
-		'uv run -m apps.engine_core_proxy'
+		'uv run --no-sync -m apps.engine_core_proxy'
 	]) {
 		assert.equal(sample.isEngineCommand(command), false, command);
 	}
@@ -260,7 +260,7 @@ test('isEngineCommand accepts the engine module behind interpreter and uv option
 		'python3.11 -u -B -m apps.engine_core serve',
 		'python -X dev -W ignore -m apps.engine_core',
 		'uv run --no-sync python -m apps.engine_core serve --port 8686',
-		'uv run -- python3 -m apps.engine_core',
+		'uv run --no-sync -- python3 -m apps.engine_core',
 		'uv run --no-sync -m apps.engine_core'
 	]) {
 		assert.equal(sample.isEngineCommand(command), true, command);
