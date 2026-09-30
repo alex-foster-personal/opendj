@@ -263,6 +263,7 @@ scopes:
     # the mention reader keeps a test that spawns or reads it by name as a consumer.
     mentions: ["scripts/fixtures", "scripts.fixtures"]
     tests: ["tests/fixtures/"]
+    dependents: ["scripts"]
   - name: lyrics_alignment
     sources: ["scripts/lyrics_alignment/"]
     # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;
