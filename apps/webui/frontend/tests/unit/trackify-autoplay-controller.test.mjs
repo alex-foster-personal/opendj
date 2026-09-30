@@ -441,7 +441,7 @@ describe('trackify autoplay controller (real performance dispatcher)', { concurr
 			assert.deepEqual(loadOptions, [{
 				deckId: 1,
 				stableId: 'next',
-				options: { stems: false }
+				options: { stems: false, suppressFailureToast: true }
 			}]);
 		} finally {
 			if (uninstall !== null) uninstall();

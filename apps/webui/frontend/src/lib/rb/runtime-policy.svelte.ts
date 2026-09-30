@@ -6,21 +6,22 @@
 
 import { getSettings, type SettingItem } from '$lib/api';
 import { defaultAnlzPoints, setAnlzPointsDefault } from '$lib/rb/runtime-policy-points';
+import {
+	playlistMostlyBroken as playlistMostlyBrokenByCount,
+	type PlaylistAvailability
+} from '$lib/rb/playlist-broken-filter';
 
 /** Shipped server defaults; used until hydration succeeds. */
-const SHIPPED_HIDE_BROKEN_RATIO = 0.3;
+const SHIPPED_HIDE_BROKEN_MIN_TRACKS = 4;
 const SHIPPED_ANLZ_POINTS_DEFAULT = 38400;
 const SHIPPED_ANLZ_POINTS_MIN = 100;
 const SHIPPED_ANLZ_POINTS_MAX = 38400;
 const SHIPPED_FILE_EXISTS_TTL_S = 30.0;
 
-export type PlaylistAvailability = {
-	available_count: number;
-	track_count: number;
-};
+export type { PlaylistAvailability };
 
 export const runtimePolicy = $state({
-	hide_broken_playlist_min_available_ratio: SHIPPED_HIDE_BROKEN_RATIO,
+	hide_broken_playlist_min_available_tracks: SHIPPED_HIDE_BROKEN_MIN_TRACKS,
 	anlz_points_default: SHIPPED_ANLZ_POINTS_DEFAULT,
 	anlz_points_min: SHIPPED_ANLZ_POINTS_MIN,
 	anlz_points_max: SHIPPED_ANLZ_POINTS_MAX,
@@ -46,9 +47,9 @@ function _settingNumber(items: SettingItem[], key: string): number {
 export async function hydrateRuntimePolicy(): Promise<void> {
 	const settings = await getSettings();
 	const items = settings.groups.flatMap((g) => g.items);
-	runtimePolicy.hide_broken_playlist_min_available_ratio = _settingNumber(
+	runtimePolicy.hide_broken_playlist_min_available_tracks = _settingNumber(
 		items,
-		'hide_broken_playlist_min_available_ratio'
+		'hide_broken_playlist_min_available_tracks'
 	);
 	runtimePolicy.anlz_points_default = _settingNumber(items, 'anlz_points_default');
 	runtimePolicy.anlz_points_min = _settingNumber(items, 'anlz_points_min');
@@ -61,25 +62,25 @@ export async function hydrateRuntimePolicy(): Promise<void> {
 export { defaultAnlzPoints };
 
 export function playlistMostlyBroken(p: PlaylistAvailability): boolean {
-	if (p.available_count < 0) return false;
-	if (p.track_count === 0) return p.available_count === 0;
-	return (
-		p.available_count / p.track_count <
-		runtimePolicy.hide_broken_playlist_min_available_ratio
+	return playlistMostlyBrokenByCount(
+		p.available_count,
+		runtimePolicy.hide_broken_playlist_min_available_tracks
 	);
 }
 
-function _mostlyBrokenPercent(): number {
-	return Math.round(runtimePolicy.hide_broken_playlist_min_available_ratio * 100);
+function _hideBrokenMinTracks(): number {
+	return runtimePolicy.hide_broken_playlist_min_available_tracks;
 }
 
 export function formatMostlyBrokenTooltip(): string {
-	return `Fewer than ${_mostlyBrokenPercent()}% of tracks in this playlist are playable`;
+	const n = _hideBrokenMinTracks();
+	return `Fewer than ${n} tracks in this playlist are playable`;
 }
 
 export function formatHideBrokenCheckboxTooltip(): string {
+	const n = _hideBrokenMinTracks();
 	return (
 		`Show tracks whose audio file is missing on disk. Unchecking also hides playlists ` +
-		`with fewer than ${_mostlyBrokenPercent()}% playable tracks, including empty ones.`
+		`with fewer than ${n} playable tracks, including empty ones.`
 	);
 }

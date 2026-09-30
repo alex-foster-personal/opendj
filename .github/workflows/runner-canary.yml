@@ -1,0 +1,376 @@
+# Runner canary: the pytest fast-lane shards on third-party hosted runners.
+#
+# Decision record: docs/decisions/ADR-NEW-runner-canary.md. Config, free tiers and
+# their sources: ci/runner-canary.json. Measurement: scripts/runner_canary_report.py.
+#
+# WHERE IT RUNS. Each vendor runs in exactly one repository, its `target_repo` in
+# ci/runner-canary.json: Avrea and Tenki in the source repository, where their apps are
+# installed, and Blacksmith and Ubicloud in the canary org's private mirror, because their
+# runners are organization-only. scripts/runner_canary_mirror.py pushes a chosen `main`
+# SHA to `canary/<sha>` in either one (`--target source|mirror`). The budget gate is
+# guarded on a positive allowlist of those two owners, and every other job needs the gate
+# and carries no status function that could run it past a skip, so anywhere else (a fork,
+# a copy) every job is SKIPPED. Inside the allowlist the gate itself refuses a repository
+# that is no vendor's target, and puts in the matrix only enabled vendors whose target is
+# THIS repository, refusing the run if an enabled vendor targets the other one.
+# tests/scripts/test_runner_canary_workflow.py pins the guard against the config.
+#
+# WHAT IT RUNS. The `test` job of ci.yml (`pytest fast lane (shard N of 5)`), step for
+# step. ci.yml is not touched: extracting the job into a reusable workflow would rename
+# every required shard check to `<caller> / <callee>`, so this file carries a copy and
+# tests/scripts/test_runner_canary_workflow.py fails the moment the two drift. The
+# declared differences are exactly: runs-on (the vendor label), timeout-minutes (30),
+# the shard's own wall budget (MDT_PYTEST_TIMEOUT_S, sized under the 30-minute cap),
+# and the three trailing CI-only upload steps (durations and CI Insights), whose
+# artifact names would collide across vendors and whose readers live in the source
+# repository.
+#
+# SAFETY. No pull_request or merge_group trigger and no push to main, so no fork or PR
+# author can reach a vendor VM and no required check changes. No repository secret is read. `permissions: contents: read`; the gate job alone adds `actions: read` to
+# list this repository's own jobs. A vendor absent from vars.CANARY_VENDORS_ENABLED
+# never runs and is never rerouted: `runs-on` is the gate's label map indexed by the
+# matrix vendor, with no `||` fallback.
+name: Runner canary
+
+on:
+  push:
+    branches:
+      - "canary/**"
+  workflow_dispatch:
+    inputs:
+      vendor:
+        description: "One enabled vendor, or all enabled vendors"
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - ubicloud
+          - avrea
+          - tenki
+          - blacksmith
+
+permissions:
+  contents: read
+
+# One canary run in flight at a time, across every vendor, so at most one run per
+# vendor. A newer push waits rather than cancelling a run already spending minutes.
+concurrency:
+  group: runner-canary
+  cancel-in-progress: false
+
+jobs:
+  budget-gate:
+    name: "canary: budget gate"
+    if: github.repository_owner == 'maintainer' || github.repository_owner == 'opendj-ci-canary'
+    # GitHub-hosted, never a vendor label: the gate must run even when every vendor is
+    # out of minutes, and it must not bill a vendor to decide whether that vendor may be
+    # billed. About one hosted minute per canary run, on the repository owner's allowance.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      vendors: ${{ steps.gate.outputs.vendors }}
+      labels: ${{ steps.gate.outputs.labels }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        timeout-minutes: 2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ci/runner-canary.json
+            scripts/runner_canary_budget.py
+          sparse-checkout-cone-mode: false
+
+      - name: Sum this month's vendor minutes and refuse past 80% of a free tier
+        id: gate
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANARY_VENDORS_ENABLED: ${{ vars.CANARY_VENDORS_ENABLED }}
+          # A push covers every enabled vendor; a dispatch names one or `all`.
+          CANARY_REQUESTED_VENDOR: ${{ github.event_name == 'workflow_dispatch' && inputs.vendor || 'all' }}
+        run: python3 scripts/runner_canary_budget.py --config ci/runner-canary.json
+
+  pytest:
+    name: "canary: pytest ${{ matrix.vendor }} (shard ${{ matrix.shard }} of 5)"
+    needs: budget-gate
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: ${{ fromJSON(needs.budget-gate.outputs.vendors) }}
+        shard: [1, 2, 3, 4, 5]
+    runs-on: ${{ fromJSON(needs.budget-gate.outputs.labels)[matrix.vendor] }}
+    timeout-minutes: 30
+    env:
+      UV_NO_SYNC: "1"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMBA_NUM_THREADS: "1"
+    # A copy of ci.yml's `test` job. The rationale comments for each step live there;
+    # tests/scripts/test_runner_canary_workflow.py pins the copy to it.
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        timeout-minutes: 2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Setup Python
+        timeout-minutes: 1
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv for isolated dependency contracts
+        timeout-minutes: 1
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
+      - name: Provision isolated Python test environment
+        timeout-minutes: 2
+        run: |
+          # Exact sync from a hash-pinned lock: zero index requests on a warm cache
+          # (issue #4252). requirements-ci.in adds modal and the pyproject
+          # `observability` extra to requirements.txt; scripts/ci_lock.py compiles it.
+          scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
+
+      - name: System deps for pyrekordbox (SQLCipher) and Mach-O classification
+        timeout-minutes: 4
+        env:
+          MDT_CI_HOST_LOCK_TIMEOUT_S: "150"
+        run: |
+          scripts/ci_apt_present.sh libsqlcipher-dev file bubblewrap just ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev file bubblewrap just ffmpeg'
+
+      - name: Runner preflight - host binaries the suite shells out to
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh file bwrap just pkg-config cargo uv ffmpeg
+
+      - name: The interpreter must run without a borrowed LD_LIBRARY_PATH
+        timeout-minutes: 1
+        run: |
+          env -i PATH=/usr/bin:/bin .venv/bin/python -c 'print("interpreter is self-contained")'
+
+      - name: Keep the numba JIT cache across jobs on this runner
+        timeout-minutes: 1
+        run: |
+          identity="$(.venv/bin/python -m apps.analysis.jit_warmup --identity)"
+          dir="$HOME/.cache/mdt-numba/${RUNNER_NAME:?RUNNER_NAME is unset}/${identity:?identity is empty}"
+          mkdir -p "$dir/cache" "$dir/lock"
+          chmod 700 "$HOME/.cache/mdt-numba" "$dir" "$dir/lock"
+          { echo "NUMBA_CACHE_DIR=$dir/cache"; echo "MDT_NUMBA_WARMUP_DIR=$dir/lock"; } >> "$GITHUB_ENV"
+
+      - name: Warm the numba JIT cache before the suite (#1316)
+        timeout-minutes: 3
+        run: .venv/bin/python -m apps.analysis.jit_warmup --backend librosa --purge-if-stale
+
+      # CANARY DIFFERENCE (the only one inside a step): MDT_PYTEST_TIMEOUT_S is 1440 here,
+      # not ci.yml's 2400, so the shard's own budget (24 min, plus the 60 s kill grace)
+      # fires before this job's 30-minute cap and a slow vendor shard reports a named
+      # TIMEOUT FAILURE rather than a CANCELLED. That leaves 5 minutes for the steps
+      # above on a cold ephemeral VM, which round 0 measures; the per-step bounds above
+      # sum to more than that, so a provisioning hang can still reach the cap here,
+      # and scripts/runner_canary_report.py counts a started job cancelled at the cap
+      # as an infra failure rather than dropping it.
+      - name: Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)
+        id: pytest-shard
+        run: |
+          set -uo pipefail
+          # Remove any report left by an EARLIER run on this persistent
+          # self-hosted workspace before writing a new one (Sol P1 on #3447).
+          # NOTE: the JUnit report is written under RUNNER_TEMP, not into the
+          # workspace, so there is nothing to clear here. See the --junitxml
+          # path below for why that ends the stale-report problem outright
+          # rather than guarding against it (Sol P1 on #3447, rounds 1-4).
+          # MDT_PYTEST_TIMEOUT_S is this SHARD's own wall budget, and it is
+          # load-bearing rather than belt and braces. A `timeout-minutes` kill
+          # on the JOB is reported by GitHub as CANCELLED -- and so is a run
+          # superseded by a newer push on the same ref, and so is a fail-fast
+          # cascade. One conclusion, three causes, and only one of them is the
+          # author's to act on, so every reader had to pull per-job timings to
+          # tell them apart (#1690, measured on #1628, #1010 and #1686; #1686
+          # reported state=FAILURE on a rollup holding zero FAILURE contexts
+          # purely because two shards had been timed out into CANCELLED).
+          #
+          # Bounding the shard instead of the job breaks the tie with no
+          # timings to fetch. `timeout` returns 124, so the step exits non-zero
+          # and the job concludes FAILURE under an annotation that names the
+          # cause; superseded and cascaded runs stay CANCELLED. A genuinely
+          # hung shard still reddens, 24 minutes in.
+          #
+          # 1380 s was measured against this file's own contention record: a
+          # shard read 314 s on a quiet host and 636 s on a busy one, so a
+          # healthy worst case under that same swing reached ~1300 s. That
+          # record is from a 4,100-test suite; this lane collects 14,706 now.
+          #
+          # 1380 -> 1800 (Mon 21 Sep 2026). Re-measured over the 60 most
+          # recent completed ci.yml runs, 78 shard jobs across every runner in
+          # the pytest pool and the main-fix reserve: GREEN shards take a
+          # median of 1,150-1,260 s per runner and up to 1,385 s, and 12 of the
+          # 78 were killed by this budget at 90-98% progress (run 35664779923
+          # shard 4 at 95% after 1380 s, run 35664332373 shard 2 on main at
+          # 98%, both on agentbox-13 back to back). A budget 10% over the
+          # green median is not a hang detector, it is a coin flip on host
+          # load, and it reddened a third of the shards in that window with 0
+          # failing tests. 1800 s clears the slowest kill (~1,500 s to finish
+          # at that rate) by 20%; a genuinely hung shard still reddens, 30
+          # minutes in. The real fix is the pool's throughput (one shard is
+          # ~4x slower here than the 273-289 s hosted figure above); this only
+          # stops the budget from reporting that as a test failure.
+          #
+          # 1800 -> 2400 (Tue 22 Sep 2026). The nucbox-wsl-N runners joined
+          # the `pytest` pool at ~11:50Z and took most shards from then on;
+          # they share one host with the agentbox-N runners (11 of 18
+          # in-progress jobs on that box at once, issue #3802). Measured over
+          # every ci.yml shard job since Mon 21 Sep 12:00Z (1,314 jobs): GREEN
+          # shards take a median 1,171 s of job wall on agentbox (p90 1,330 s,
+          # max 1,637 s) and 1,583 s on nucbox-wsl (p90 1,688 s, max 1,812 s;
+          # 27 of 38 over 1,500 s), and 9 shards were killed by the 1800 s
+          # budget at 83-98% progress with 0 failing tests, 6 of them on
+          # main (runs at 11:15Z-12:15Z, shards 1, 3, 4 and 5, all on
+          # nucbox-wsl) and 3 on this PR (shards 3, 4, 5 at 90%, 98%, 83%).
+          # The slowest kill needed ~2,170 s to finish at its rate; 2400 s
+          # clears it by 10% and the nucbox-wsl green p90 by 40%. A genuinely
+          # hung shard still reddens, 40 minutes in, and a single hung TEST
+          # still fails by name at --timeout=900 long before that.
+          #
+          # The JOB cap is the outer backstop and must clear this budget by the
+          # SUM OF THE PRE-PYTEST STEPS' OWN BOUNDS, which is what stops a hang
+          # in checkout or provisioning from reaching the cap instead. Those
+          # bounds live on each step; tests/scripts/test_ci_shard_matrix.py pins
+          # the budget, their sum and the cap against each other.
+          #
+          # --kill-after: a suite that ignores TERM still dies rather than
+          # running to the job cap. `timeout` puts the command in its own
+          # process group, so pytest's subprocesses are reaped with it (#1338
+          # is what orphaned processes in this workspace cost us).
+          # --timeout=900 below is pytest-timeout's PER-TEST wall clock, so
+          # a single hung test fails by name with its stack instead of taking
+          # the whole shard to this budget (the fast tier's step documents
+          # the incident). 900 s clears every recorded test in the ledger by
+          # a wide margin (the slowest committed duration is ~400 s), so
+          # it only fires on a hang. tests/scripts/test_ci_shard_matrix.py
+          # pins it under the budget.
+          MDT_PYTEST_TIMEOUT_S=1440
+          started=$(date +%s)
+          set +e
+          timeout --kill-after=60 "$MDT_PYTEST_TIMEOUT_S" \
+            .venv/bin/pytest \
+              --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-shard-${{ matrix.shard }}" \
+              --junitxml="${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
+              --collect-floor 3181 \
+              --ledger-coverage-min 0.95 \
+              --splits 5 --group ${{ matrix.shard }} \
+              --splitting-algorithm least_duration \
+              --durations-path .test_durations \
+              --store-durations --clean-durations \
+              --durations=25 \
+              --timeout=900 \
+              --ignore=tests/analysis \
+              --ignore=tests/vocals \
+              --ignore=tests/sync/usb \
+              --ignore=tests/sets \
+              --ignore=tests/quality/test_frontend_typing_gate.py \
+              --ignore=tests/quality/test_frontend_typing_directives.py \
+              --ignore=tests/quality/test_mypy_cache.py \
+              --ignore=tests/perf/test_library_playlist_switch_bench.py
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            elapsed=$(( $(date +%s) - started ))
+            # 124 is `timeout`'s own expiry. 137 is its KILL escalation: the
+            # suite ignored TERM for the full --kill-after, so SIGKILL landed.
+            # Handling only 124 would leave the hard hang -- the exact case
+            # --kill-after exists for -- exiting 137 over a bare "Process
+            # completed with exit code 137", which names nothing and is the
+            # inference this step exists to remove.
+            kill_note="its wall budget was reached"
+            [ "$rc" -eq 124 ] || kill_note="its wall budget was reached and the suite ignored TERM for the 60s kill grace, so it was SIGKILLed"
+            # The leading newline is load-bearing, not cosmetics. pytest's last
+            # progress line has no trailing newline when SIGTERM lands, so a
+            # plain `echo` emits the command PART-WAY THROUGH a log line, and
+            # the runner only parses a workflow command at the START of one.
+            # Measured on this workflow's first live cap-kill (run 34480866849,
+            # shard 2, Thu 10 Sep 2026): the annotation text reached the log but
+            # registered NO check-run annotation, leaving only "Process completed
+            # with exit code 124" -- which is the inference this step exists to
+            # remove. printf forces the command onto its own line.
+            printf '\n::error title=pytest fast lane TIMEOUT (shard %s of 5)::shard %s of 5 exit %s: %s after %ss. This is a TIMEOUT, not a run superseded by a newer push and not a fail-fast cascade -- those two report CANCELLED, this reports FAILURE.\n' \
+              "${{ matrix.shard }}" "${{ matrix.shard }}" "$rc" "$kill_note" "$elapsed"
+            {
+              echo "### pytest fast lane (shard ${{ matrix.shard }} of 5): TIMEOUT"
+              echo
+              echo "The shard was killed by its own wall-clock budget, not by the runner."
+              echo
+              echo "| field | value |"
+              echo "|:--|:--|"
+              echo "| shard budget | ${MDT_PYTEST_TIMEOUT_S}s |"
+              echo "| exit code | ${rc} |"
+              echo "| killed by | ${kill_note} |"
+              echo "| elapsed | ${elapsed}s |"
+              echo "| job cap | 30m, the runner backstop, which is not what fired |"
+              echo
+              echo "A run superseded by a newer push and a fail-fast cascade both report CANCELLED. This reports FAILURE, so the three are distinguishable without pulling per-job timings."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$rc"

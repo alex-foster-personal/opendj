@@ -65,6 +65,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -137,6 +138,8 @@ const ENGINE_COMMAND = [
 ].join(' ');
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	// Named individually, never a glob: this directory holds a dozen suites
 	// with their own servers and real-library fixtures, and a pattern that
@@ -159,7 +162,7 @@ export default defineConfig({
 	expect: { timeout: 20_000 },
 	reporter: [['list']],
 	webServer: {
-		command: ENGINE_COMMAND,
+		command: guardedWebServerCommand('webkit-deckload-engine', ENGINE_COMMAND),
 		cwd: REPOSITORY_ROOT,
 		url: `${WEBKIT_DECKLOAD_ORIGIN}/api/v1/health`,
 		reuseExistingServer: false,
