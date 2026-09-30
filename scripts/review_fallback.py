@@ -224,7 +224,7 @@ def _before_lanes(state: HeadState, now: datetime) -> Decision:
     notice = _notice_at_head(state)
     silent_for = now - state.pushed_at
     if notice is not None:
-        trigger = f"Codex posted its usage-limit notice at {notice.at:%H:%MZ} for {short}"
+        trigger = f"Codex posted its usage-limit notice at {notice.at:%a %d %b %H:%MZ} for {short}"
     elif silent_for >= CFG.CODEX_GRACE:
         trigger = f"Codex silent {int(silent_for.total_seconds() // 60)} min after {short}"
     else:

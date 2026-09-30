@@ -131,7 +131,7 @@ def test_a_notice_six_seconds_after_the_push_runs_sol() -> None:
     state = _state_4538()
     decision = decide(state, _minutes_after(state.pushed_at, 1))
     assert decision.action is Action.RUN_SOL
-    assert "usage-limit notice" in decision.reason
+    assert "usage-limit notice at Wed 30 Sep 21:14Z" in decision.reason
 
 
 @pytest.mark.requirement("REVIEW-12")
