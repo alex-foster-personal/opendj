@@ -461,6 +461,8 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "htmlcov/",
         "coverage-matrix.md",
         "/node_modules/",  # root npm install: @trunkio/launcher (npm run lint / fmt)
+        "node_modules/",  # any depth: the CI runners keep every node_modules (ci_clean_untracked.sh)
+        "target/",  # any depth: cargo output, which the CI runners keep as well
         "apps/webui/frontend/node_modules/",
         "apps/webui/frontend/build/",
         "apps/webui/frontend/.svelte-kit/",
