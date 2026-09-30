@@ -78,4 +78,6 @@ def test_a_test_run_has_a_bounded_timeout(queue: dict[str, Any]) -> None:
 def test_a_known_bad_combination_is_rejected() -> None:
     """Negative control: the depth check must fire on the pre-audit value of 1."""
     with pytest.raises(AssertionError):
-        test_anti_flake_protection_is_complete({"canOptimisticallyMerge": True, "pendingFailureDepth": 1})
+        test_anti_flake_protection_is_complete(
+            {"canOptimisticallyMerge": True, "pendingFailureDepth": 1}
+        )
