@@ -111,9 +111,13 @@ class CFG:
     #: Substrings in codex output that mean THIS seat is spent. Failing over
     #: on these is safe; failing over on any other error would hide a real bug.
     SPENT_MARKERS: tuple[str, ...] = ("hit your usage limit", "usage limit reached")
-    #: Diff bytes handed to the model. A truncated diff is stated in the
-    #: review body rather than quietly reviewed as if complete.
-    MAX_DIFF_BYTES: int = 320_000
+    #: Diff bytes handed to the model; over this the run refuses (see `run`).
+    #: Measured Wed 30 Sep 2026: PR #4240's 519,631-byte reviewable diff took
+    #: 159,969 tokens and 69 s on gpt-5.6 through a Pro seat, about 3.3 bytes
+    #: per token, so 640 KB stays near 200K tokens. The old 320 KB cap refused
+    #: every PR carrying a large recorded fixture or register migration, which
+    #: left the Codex GitHub app as the only reviewer for them.
+    MAX_DIFF_BYTES: int = 640_000
     #: Findings posted per run. A reviewer that opens 60 threads is not read.
     MAX_FINDINGS: int = 12
     #: Seconds for one codex run. Generous: a large diff at high reasoning
