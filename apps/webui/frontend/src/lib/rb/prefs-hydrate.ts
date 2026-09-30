@@ -25,7 +25,11 @@ import {
 	type WheelSensitivityDisk
 } from './wheel-adjust';
 import { hydrateMasterMutedFromDisk } from '../player/master-mute.svelte';
-import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
+import {
+	COMPATIBLE_FILTER_DEFAULTS,
+	validateCompatibleFilterPrefs,
+	type CompatibleFilterPrefs
+} from './compatible-filter-prefs';
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs } from './prefs-types';
 
 export type UiTheme = 'dark' | 'light';
@@ -241,6 +245,25 @@ export interface PrefsHydrateTarget {
 	vocals_filter: boolean;
 	available_offline_filter: boolean;
 	library_watcher_folders: string[];
+	compatible_filter: CompatibleFilterPrefs;
+}
+
+/**
+ * Compatible-filter ranges from GET /api/v1/ui-prefs (LIBUX-28): the disk copy
+ * wins over localStorage, so a fresh browser profile gets the saved ranges.
+ * An invalid object is reported and skipped rather than aborting the rest of
+ * the hydrate; the server already refuses to store one.
+ */
+export function hydrateCompatibleFilter(uiPrefs: PrefsHydrateTarget, body: DiskPrefsPatch): void {
+	if (body.compatible_filter === undefined || body.compatible_filter === null) return;
+	try {
+		uiPrefs.compatible_filter = {
+			...COMPATIBLE_FILTER_DEFAULTS,
+			...validateCompatibleFilterPrefs(body.compatible_filter, 'GET /api/v1/ui-prefs')
+		};
+	} catch (exc) {
+		console.error('[ui-prefs] compatible_filter from disk rejected', exc);
+	}
 }
 
 /** The five boolean lyric prefs hydrate in one loop rather than five ifs. */
@@ -387,6 +410,7 @@ export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
 					(p): p is string => typeof p === 'string'
 				);
 			}
+			hydrateCompatibleFilter(uiPrefs, body);
 			persist();
 		} catch {
 			/* ignore */

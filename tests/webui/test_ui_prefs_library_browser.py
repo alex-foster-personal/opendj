@@ -289,3 +289,115 @@ def test_ui_prefs_refuses_a_wrong_typed_library_browser_key_on_disk(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"theme": "dark", key: "yes"}) + "\n", encoding="utf-8")
     assert prefs_client.get("/api/v1/ui-prefs").status_code == 422
+
+
+COMPATIBLE_FILTER_DEFAULTS: dict[str, Any] = {
+    "camelot_steps": 1,
+    "bpm_window_bpm": 20.0,
+    "bpm_enabled": True,
+    "allow_half_double": True,
+    "bpm_direction": "both",
+}
+
+
+def test_ui_prefs_defaults_include_compatible_filter(prefs_client: TestClient) -> None:
+    body = prefs_client.get("/api/v1/ui-prefs").json()
+    assert body["compatible_filter"] == COMPATIBLE_FILTER_DEFAULTS
+
+
+@pytest.mark.requirement("LIBUX-28")
+def test_ui_prefs_compatible_filter_round_trips_to_disk(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] compatible-filter ranges are PUT [then] a fresh GET and ui-prefs.json return them, [else stop]."""
+    chosen = {
+        "camelot_steps": 2,
+        "bpm_window_bpm": 10,
+        "bpm_enabled": True,
+        "allow_half_double": False,
+        "bpm_direction": "above",
+    }
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": chosen})
+    assert r.status_code == 200
+    expected = {**chosen, "bpm_window_bpm": 10.0}
+    assert r.json()["compatible_filter"] == expected
+    on_disk = json.loads((tmp_path / "data" / "state" / "ui-prefs.json").read_text())
+    assert on_disk["compatible_filter"] == expected
+    assert prefs_client.get("/api/v1/ui-prefs").json()["compatible_filter"] == expected
+
+
+@pytest.mark.requirement("LIBUX-28")
+def test_ui_prefs_compatible_filter_reloads_from_disk_in_a_new_app(
+    tmp_path: Path,
+) -> None:
+    """[if] the engine restarts [then] GET serves the compatible filter written before, [else stop]."""
+    data_dir = tmp_path / "data"
+    state_path = data_dir / "state" / "state.db"
+    state_db.open_rw(state_path).close()
+
+    def _client() -> TestClient:
+        app = create_app(
+            backend=SqliteBackend(state_path),
+            bind_host="127.0.0.1",
+            hostname="test-host",
+            mount_frontend=False,
+            state_db_path=str(state_path),
+        )
+        app.state.data_dir = data_dir
+        return TestClient(app)
+
+    with _client() as first:
+        r = first.put(
+            "/api/v1/ui-prefs",
+            json={"compatible_filter": {"camelot_steps": 0, "bpm_direction": "same"}},
+        )
+        assert r.status_code == 200
+    with _client() as second:
+        body = second.get("/api/v1/ui-prefs").json()["compatible_filter"]
+    assert body == {**COMPATIBLE_FILTER_DEFAULTS, "camelot_steps": 0, "bpm_direction": "same"}
+
+
+def test_ui_prefs_compatible_filter_partial_put_keeps_stored_fields(
+    prefs_client: TestClient,
+) -> None:
+    prefs_client.put(
+        "/api/v1/ui-prefs",
+        json={"compatible_filter": {"bpm_window_bpm": 10, "bpm_direction": "below"}},
+    )
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": {"bpm_enabled": False}})
+    assert r.status_code == 200
+    assert r.json()["compatible_filter"] == {
+        **COMPATIBLE_FILTER_DEFAULTS,
+        "bpm_window_bpm": 10.0,
+        "bpm_direction": "below",
+        "bpm_enabled": False,
+    }
+    # Sibling prefs are untouched by a compatible_filter PUT.
+    assert r.json()["library_density"] == LIBRARY_BROWSER_DEFAULTS["library_density"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    (
+        {"camelot_steps": 3},
+        {"bpm_window_bpm": -1},
+        {"bpm_direction": "sideways"},
+    ),
+)
+def test_ui_prefs_rejects_invalid_compatible_filter(
+    prefs_client: TestClient, bad: dict[str, Any]
+) -> None:
+    r = prefs_client.put("/api/v1/ui-prefs", json={"compatible_filter": bad})
+    assert r.status_code == 422
+
+
+def test_ui_prefs_get_refuses_wrong_typed_compatible_filter_on_disk(
+    prefs_client: TestClient, tmp_path: Path
+) -> None:
+    path = tmp_path / "data" / "state" / "ui-prefs.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"compatible_filter": {"bpm_enabled": "yes"}}) + "\n", encoding="utf-8"
+    )
+    r = prefs_client.get("/api/v1/ui-prefs")
+    assert r.status_code == 422

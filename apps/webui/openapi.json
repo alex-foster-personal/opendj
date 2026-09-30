@@ -5184,6 +5184,50 @@
         "title": "CommitIn",
         "type": "object"
       },
+      "CompatibleFilterOut": {
+        "description": "Compatible-filter ranges (LIBUX-28): Camelot steps plus the BPM window.",
+        "properties": {
+          "allow_half_double": {
+            "default": true,
+            "title": "Allow Half Double",
+            "type": "boolean"
+          },
+          "bpm_direction": {
+            "default": "both",
+            "enum": [
+              "both",
+              "above",
+              "below",
+              "same"
+            ],
+            "title": "Bpm Direction",
+            "type": "string"
+          },
+          "bpm_enabled": {
+            "default": true,
+            "title": "Bpm Enabled",
+            "type": "boolean"
+          },
+          "bpm_window_bpm": {
+            "default": 20.0,
+            "minimum": 0.0,
+            "title": "Bpm Window Bpm",
+            "type": "number"
+          },
+          "camelot_steps": {
+            "default": 1,
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "title": "Camelot Steps",
+            "type": "integer"
+          }
+        },
+        "title": "CompatibleFilterOut",
+        "type": "object"
+      },
       "ConfigIn": {
         "properties": {
           "enabled": {
@@ -21428,6 +21472,9 @@
             "title": "Beat Sync Max",
             "type": "boolean"
           },
+          "compatible_filter": {
+            "$ref": "#/components/schemas/CompatibleFilterOut"
+          },
           "confirm": {
             "additionalProperties": true,
             "title": "Confirm",
@@ -21684,6 +21731,16 @@
               }
             ],
             "title": "Beat Sync Max"
+          },
+          "compatible_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompatibleFilterOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "confirm": {
             "anyOf": [

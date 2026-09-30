@@ -7934,6 +7934,39 @@ export interface components {
             /** Sha */
             sha: string;
         };
+        /**
+         * CompatibleFilterOut
+         * @description Compatible-filter ranges (LIBUX-28): Camelot steps plus the BPM window.
+         */
+        CompatibleFilterOut: {
+            /**
+             * Allow Half Double
+             * @default true
+             */
+            allow_half_double: boolean;
+            /**
+             * Bpm Direction
+             * @default both
+             * @enum {string}
+             */
+            bpm_direction: "both" | "above" | "below" | "same";
+            /**
+             * Bpm Enabled
+             * @default true
+             */
+            bpm_enabled: boolean;
+            /**
+             * Bpm Window Bpm
+             * @default 20
+             */
+            bpm_window_bpm: number;
+            /**
+             * Camelot Steps
+             * @default 1
+             * @enum {integer}
+             */
+            camelot_steps: 0 | 1 | 2;
+        };
         /** ConfigIn */
         ConfigIn: {
             /** Enabled */
@@ -14203,6 +14236,7 @@ export interface components {
              * @default true
              */
             beat_sync_max: boolean;
+            compatible_filter?: components["schemas"]["CompatibleFilterOut"];
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
@@ -14349,6 +14383,7 @@ export interface components {
             available_offline_filter?: boolean | null;
             /** Beat Sync Max */
             beat_sync_max?: boolean | null;
+            compatible_filter?: components["schemas"]["CompatibleFilterOut"] | null;
             /** Confirm */
             confirm?: {
                 [key: string]: unknown;
