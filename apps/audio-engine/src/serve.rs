@@ -2166,7 +2166,8 @@ mod tests {
         // on work that waits for room, with no further input to wake it; and
         // when stdin closes first, the shutdown drain sends it on too rather
         // than refuse work it accepted.
-        let d = std::env::temp_dir().join(format!("odj-staged-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-staged-").tempdir().unwrap();
+        let d = tmp.path().to_path_buf();
         std::fs::create_dir_all(&d).unwrap();
         let wav = d.join("a.wav");
         crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&wav).unwrap()), 48000, &[0.0; 9600]).unwrap();
@@ -2229,7 +2230,6 @@ mod tests {
             // With nothing left waiting, stopping does not sit out the limit.
             assert!(stopped_in < LOAD_DRAIN_LIMIT / 2, "{case}: stopping took {stopped_in:?}");
         }
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -2921,7 +2921,8 @@ mod tests {
         // Codex on 00209c94: commands for a deck whose load is still decoding
         // queued without limit. The load reads a FIFO nobody writes to yet,
         // so it stays pending until the test lets it fail.
-        let dir = std::env::temp_dir().join(format!("odj-serve-parked-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-parked-").tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let fifo = dir.join("slow.wav");
         let _ = std::fs::remove_file(&fifo);
@@ -2972,14 +2973,14 @@ mod tests {
         assert_eq!(all.len(), QUEUE_SLOTS + extra + 1, "one result per command");
         let waited = all.iter().filter(|r| r["error"]["message"].as_str().is_some_and(|m| m.contains("waited on failed"))).count();
         assert_eq!(waited, QUEUE_SLOTS);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn threaded_loads_of_one_file_share_its_samples() {
         // Codex's case: on the wall and device clocks every load decoded its
         // own copy, even of a file another deck held or was still decoding.
-        let dir = std::env::temp_dir().join(format!("odj-serve-share-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-serve-share-").tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let write = |name: &str, v: f32| {
             let p = dir.join(name);
@@ -3012,13 +3013,13 @@ mod tests {
         // Control: another file gets its own samples.
         assert!(!Arc::ptr_eq(&one, &three));
         assert_eq!((one[0], three[0]), (0.1, 0.2));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_load_of_a_file_being_decoded_waits_and_shares_it() {
         // Many threads load one file at once: one decode, one copy.
-        let dir = std::env::temp_dir().join(format!("odj-cache-race-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-race-").tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("a.wav");
         crate::wav::write_f32(&mut io::BufWriter::new(std::fs::File::create(&p).unwrap()), 48000, &vec![0.1; 960_000]).unwrap();
@@ -3038,7 +3039,6 @@ mod tests {
         let samples = Arc::downgrade(&tracks[0].pcm);
         drop(tracks);
         assert!(samples.upgrade().is_none());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

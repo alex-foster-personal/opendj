@@ -56,6 +56,8 @@ KEY_NUDGE_VALUES: tuple[int, ...] = (-1, 1)
 QUANTIZE_GRID_VALUES: tuple[int, ...] = (1, 4, 8)
 ANALYSIS_SOURCE_FEATURES: tuple[str, ...] = ("beatgrid",)
 ANALYSIS_SOURCE_VALUES: tuple[str, ...] = ("rekordbox", "own")
+WAVEFORM_SEEK_SNAP_VALUES: tuple[str, ...] = ("downbeat", "beat", "exact")
+WAVEFORM_DESIGN_VALUES: tuple[str, ...] = ("tri-band", "mono", "line")
 
 # The command types AGENT-03 will ramp. An ordering that carries a target must
 # be one of these, mirroring the guard in the page's own ramp executor
@@ -164,6 +166,11 @@ _VERBS: tuple[Verb, ...] = (
     Verb("cue", "cue", (_DECK,), quick_draws=("cue",)),
     Verb("seek", "seek", (_DECK, arg("position_ms", "number", number_value)),
          quick_draws=("seek",)),
+    Verb("waveform_seek", "waveform_seek", (
+        _DECK,
+        arg("position_ms", "number", number_value),
+        arg("snap", "enum", enum_value(WAVEFORM_SEEK_SNAP_VALUES), "downbeat|beat|exact"),
+    )),
     Verb("loop", "loop", (_DECK, arg("loop", "loop", loop_value, "in_ms out_ms", arity=2)),
          note="Nested pair: opendj loop 1 1000 4000."),
     Verb("loop_exit", "loop", (_DECK,), fixed=(("loop", None),), quick_draws=("loop.exit",)),
@@ -281,6 +288,9 @@ _VERBS: tuple[Verb, ...] = (
     )),
     Verb("show_stems", "show_stems", (_ENABLED,),
          note="DECKUX-19: per-stem mini-waveforms under the deck wavestack."),
+    Verb("set_waveform_design", "set_waveform_design", (
+        arg("design", "enum", enum_value(WAVEFORM_DESIGN_VALUES), "tri-band|mono|line"),
+    )),
     Verb("feedback_mark", "feedback_mark",
          (arg("vote", "enum", enum_value(VOTE_VALUES), "bad|good|great"),)),
     # RESCUE-01 HTTP parity (not command-bus verbs):

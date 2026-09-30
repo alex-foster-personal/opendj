@@ -8,17 +8,16 @@ const API_BASE = 'https://add-to-playlist.example.test';
 let addToPlaylist;
 let originalFetch;
 
-function playlistRow(overrides = {}) {
+function addResponse(stableIds) {
 	return {
 		playlist_id: 'pl-dest',
 		name: 'Warmup',
 		vendor: 'local',
 		vendor_pl_id: 'v-1',
-		items: ['t-existing'],
-		track_count: 1,
 		created_at: '2026-08-01T00:00:00Z',
 		updated_at: '2026-08-01T00:00:01Z',
-		...overrides
+		forbid_duplicates: false,
+		added: stableIds.map((sid, i) => ({ item_id: `item-${i}`, stable_id: sid, order_key: `k${i}` }))
 	};
 }
 
@@ -57,7 +56,7 @@ test('[if] appendTracksToPlaylist is called with dest id and selected ids [then]
 	const calls = [];
 	globalThis.fetch = async (request) => {
 		calls.push(request);
-		return jsonResponse(playlistRow({ items: ['t-existing', 't-a', 't-b'] }), {
+		return jsonResponse(addResponse(['t-a', 't-b']), {
 			headers: { etag: '"rev-2"' }
 		});
 	};

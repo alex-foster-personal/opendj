@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "why": "Playlist membership order_key shapes that the pre-LIBM-132 production code really wrote, so the legacy-key regressions of #3963 run against a database a deployed build produced instead of rows a test UPDATEd into shape. Codex P1, PR #4401.",
+  "files": {
+    "v20-legacy-order-keys.sql": {
+      "sha256": "0dbad677d1743f24b63f7f2af92f67cf780257b3eea448a4a1e3c8735b24e8c7",
+      "bytes": 120127,
+      "schema_version": 20,
+      "pinned": "Wed 30 Sep 2026",
+      "pinned_from": "origin/main 4fcc8e7f48056d0b9e2212bf2c1103f95beb666f (schema v20, the add path before LIBM-132), via capture.py in this directory",
+      "playlists": {
+        "Imported from Spotify": "the Spotify importer's ODJ twin (NULL order_key and NULL item_id on all 12 rows), then three webui adds at positions 3, 8 and 10 and a webui remove of the last one",
+        "Head inserts": "a webui full replace of 5 tracks, then two adds at position 0: the first got the empty key '', the second the key '00000004' shared with the last member, so it landed last",
+        "Batch append": "a webui full replace of 5 tracks, then one 60-track append whose keys extend by 'V' up to 68 characters, past MAX_ORDER_KEY_LEN"
+      },
+      "sanitized": "machines.name, machines.data_root and machines.platform replaced by placeholders; every other value is a generated id, a capture-time timestamp, or a synthetic Fixture* string",
+      "note": "sqlite3 iterdump of the whole captured database. IMMUTABLE: it is what that build wrote, not a view of today's writers. Tests restore it into a disposable copy and open that through the production migration path. Never regenerate it to make a test pass; capture.py refuses to run on a tree whose order_key.between is not the legacy one."
+    }
+  }
+}

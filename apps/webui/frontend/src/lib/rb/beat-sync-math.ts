@@ -460,6 +460,25 @@ export function nextDownbeatAtOrAfter(beats: readonly AnlzBeat[], positionSec: n
 	return index < downbeats.length ? downbeats[index].t : positionSec;
 }
 
+/** Where an armed jump lands on the deck's own transport: a fixed position,
+ * or a resolver called with the engine's LIVE presentation position inside
+ * the scheduling transaction, so a published position that went stale while
+ * a command queued can never pick an arm point already behind the playhead. */
+export type ArmAtPosition = number | ((nowPositionSec: number) => number);
+
+/** Resolve `armAt` against the live `nowPositionSec` and refuse a point behind
+ * it: an armed jump never schedules into the past. Shared by the Web Audio
+ * engine and the Rust engine's hot-cue driver so both refuse identically. */
+export function resolveArmAtPosition(armAt: ArmAtPosition, nowPositionSec: number): number {
+	const armAtPositionSec = typeof armAt === 'function' ? armAt(nowPositionSec) : armAt;
+	if (armAtPositionSec < nowPositionSec) {
+		throw new RangeError(
+			`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
+		);
+	}
+	return armAtPositionSec;
+}
+
 export type HotCueTriggerPlan = { kind: 'immediate' } | { kind: 'armed'; armAtPositionSec: number };
 
 /**
