@@ -27,6 +27,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import type { PerformanceCommand, PerformanceState } from '../../src/lib/rb/performance-ipc.svelte';
+import { MASTER_READY_TIMEOUT_MS } from './support/preview-cue-master-ready';
 
 const TRACK_ROW = '[data-testid="track-row"]';
 
@@ -137,6 +138,28 @@ test('previewing a library track plays it without moving the deck that holds it'
 });
 
 /**
+ * Every bounded wait in the on-air preview test, named so the test-level budget
+ * is DERIVED from them: a flat budget smaller than their sum lets Playwright kill
+ * the test before the master-ready poll gets its two watchdog recovery windows.
+ */
+const DECK_LOAD_WAIT_MS = 45_000;
+const DECK_DURATION_WAIT_MS = 45_000;
+const PREVIEW_STRIP_WAIT_MS = 60_000;
+const PREVIEW_START_WAIT_MS = 30_000;
+/** expect.poll's default timeout, used by the stop-preview poll. */
+const PREVIEW_STOP_WAIT_MS = 5_000;
+/** Opening the performance page before the first bounded wait. */
+const OPEN_PERFORMANCE_ALLOWANCE_MS = 60_000;
+const ON_AIR_TEST_BUDGET_MS =
+	OPEN_PERFORMANCE_ALLOWANCE_MS +
+	DECK_LOAD_WAIT_MS +
+	DECK_DURATION_WAIT_MS +
+	PREVIEW_STRIP_WAIT_MS +
+	MASTER_READY_TIMEOUT_MS +
+	PREVIEW_START_WAIT_MS +
+	PREVIEW_STOP_WAIT_MS;
+
+/**
  * CUEOUT-15, the dangerous case, through the real pointer path: a click on the
  * library mini-waveform of the track that is live on air.
  *
@@ -155,17 +178,17 @@ test('previewing a library track plays it without moving the deck that holds it'
 test('clicking the mini-waveform of the track on air previews it and leaves the master deck alone', async ({
 	page
 }) => {
-	test.setTimeout(180_000);
+	test.setTimeout(ON_AIR_TEST_BUDGET_MS);
 	await _openPerformance(page, { muted: true });
 
 	const onAir = await _stableIdOfRow(page, 0);
 	const row = page.locator(TRACK_ROW).nth(0);
 	await _dispatch(page, { type: 'load', deck: 1, stable_id: onAir });
 	await expect
-		.poll(async () => (await _query(page)).decks[1].stable_id, { timeout: 45_000 })
+		.poll(async () => (await _query(page)).decks[1].stable_id, { timeout: DECK_LOAD_WAIT_MS })
 		.toBe(onAir);
 	await expect
-		.poll(async () => (await _query(page)).decks[1].duration_ms, { timeout: 45_000 })
+		.poll(async () => (await _query(page)).decks[1].duration_ms, { timeout: DECK_DURATION_WAIT_MS })
 		.not.toBeNull();
 
 	// Select through a cell with no handler of its own, then give the local
@@ -173,7 +196,7 @@ test('clicking the mini-waveform of the track on air previews it and leaves the 
 	await row.locator('td.c-time').click();
 	const strip = row.getByTestId('preview-strip');
 	await expect(strip, 'the row never showed a clickable mini-waveform').toBeVisible({
-		timeout: 60_000
+		timeout: PREVIEW_STRIP_WAIT_MS
 	});
 
 	await _dispatch(page, { type: 'play', deck: 1, playing: true });
@@ -183,7 +206,10 @@ test('clicking the mini-waveform of the track on air previews it and leaves the 
 				const deck = (await _query(page)).decks[1];
 				return deck.playing && deck.is_master && deck.position_ms > 500;
 			},
-			{ timeout: 30_000, message: 'deck 1 must be playing, master and moving before the click' }
+			{
+				timeout: MASTER_READY_TIMEOUT_MS,
+				message: 'deck 1 must be playing, master and moving before the click'
+			}
 		)
 		.toBe(true);
 
@@ -209,7 +235,7 @@ test('clicking the mini-waveform of the track on air previews it and leaves the 
 
 	await expect
 		.poll(async () => (await _query(page)).preview.stable_id, {
-			timeout: 30_000,
+			timeout: PREVIEW_START_WAIT_MS,
 			message:
 				'if a library waveform click does not preview the clicked track then the click does nothing audible - broken'
 		})
