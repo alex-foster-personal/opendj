@@ -21,7 +21,7 @@ import json
 import sqlite3
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -38,6 +38,20 @@ class StateAuthoritativeBackupError(svc.VerifiedCopyError):
 
 
 @dataclass(frozen=True)
+class OptionalRestoreTable:
+    """A whole table a group restores only when the backup holds it.
+
+    For a table newer than some backups: a backup taken before it existed
+    restores the rest of the group and leaves the live table as it is. When
+    the backup does hold it, ``ensure_live`` creates it in the live state.db
+    first (lazily created tables may not exist there yet).
+    """
+
+    name: str
+    ensure_live: Callable[[sqlite3.Connection], None]
+
+
+@dataclass(frozen=True)
 class TableRestoreGroup:
     """One CLI ``--table`` name and the physical tables it replaces."""
 
@@ -46,6 +60,7 @@ class TableRestoreGroup:
     delete_sql: tuple[str, ...]
     insert_sql: tuple[str, ...]
     count_sql: tuple[str, ...]
+    optional_tables: tuple[OptionalRestoreTable, ...] = ()
 
 
 def _full_table_group(name: str) -> TableRestoreGroup:
@@ -61,8 +76,28 @@ def _full_table_group(name: str) -> TableRestoreGroup:
     )
 
 
+def _ensure_http_pairings_table(conn: sqlite3.Connection) -> None:
+    """Create ``http_pairings`` with the helper the webui pairing writes use.
+
+    Imported at call time, like the engine lock in :func:`restore_tables`:
+    apps.shared may not import apps.webui statically (.importlinter,
+    shared-is-the-stable-core), and one DDL source keeps the restored table
+    identical to the one the daemon creates.
+    """
+    pairings_sqlite = importlib.import_module("apps.webui.server.pairings_sqlite")
+    pairings_sqlite.ensure_http_pairings_table(conn)
+
+
 RESTORE_REGISTRY: dict[str, TableRestoreGroup] = {
-    "pairings": _full_table_group("pairings"),
+    # PAIR-04: the user-visible pairing records live in http_pairings (what
+    # /api/v1/pairings reads); pairings is the CAT-03 graph mirror. Both are
+    # restored together so the API cannot keep serving damaged rows.
+    "pairings": replace(
+        _full_table_group("pairings"),
+        optional_tables=(
+            OptionalRestoreTable("http_pairings", _ensure_http_pairings_table),
+        ),
+    ),
     "smartlists": _full_table_group("smartlists"),
     "play_orders": TableRestoreGroup(
         cli_name="play_orders",
@@ -194,6 +229,53 @@ def _scoped_live_count(conn: sqlite3.Connection, group: TableRestoreGroup) -> in
     )
 
 
+def _restore_optional_tables(
+    conn: sqlite3.Connection, group: TableRestoreGroup, expected_counts: dict[str, int]
+) -> tuple[int, int]:
+    """Restore the optional tables the backup holds; return (expected, live) row counts."""
+    expected = live = 0
+    for extra in group.optional_tables:
+        if extra.name not in expected_counts:
+            continue
+        extra.ensure_live(conn)
+        (source_rows,) = conn.execute(
+            f'SELECT COUNT(*) FROM restore_src."{extra.name}"'
+        ).fetchone()
+        conn.execute(f'DELETE FROM "{extra.name}"')
+        conn.execute(f'INSERT INTO main."{extra.name}" SELECT * FROM restore_src."{extra.name}"')
+        (live_rows,) = conn.execute(f'SELECT COUNT(*) FROM "{extra.name}"').fetchone()
+        expected += int(source_rows)
+        live += int(live_rows)
+    return expected, live
+
+
+def _restore_group(
+    conn: sqlite3.Connection,
+    group: TableRestoreGroup,
+    expected_counts: dict[str, int],
+    backup: Path,
+) -> None:
+    """Replace one group inside the caller's transaction, then check its row counts."""
+    for table in group.physical_tables:
+        if table not in expected_counts:
+            raise StateAuthoritativeBackupError(
+                f"backup {backup} has no table {table!r} for --table {group.cli_name!r}"
+            )
+    expected_scope = sum(int(conn.execute(sql).fetchone()[0]) for sql in group.count_sql)
+    for delete in group.delete_sql:
+        conn.execute(delete)
+    for insert in group.insert_sql:
+        conn.execute(insert)
+    live_scope = _scoped_live_count(conn, group)
+    optional_expected, optional_live = _restore_optional_tables(conn, group, expected_counts)
+    expected_scope += optional_expected
+    live_scope += optional_live
+    if live_scope != expected_scope:
+        raise StateAuthoritativeBackupError(
+            f"restore of {group.cli_name}: expected {expected_scope} rows, got {live_scope}"
+        )
+
+
 def restore_tables(backup: Path, data_dir: Path, tables: Sequence[str]) -> list[str]:
     """Replace named authoritative table groups from ``backup``; leave the rest untouched."""
     groups = _validate_restore_tables(tables)
@@ -233,25 +315,7 @@ def restore_tables(backup: Path, data_dir: Path, tables: Sequence[str]) -> list[
             conn.execute("PRAGMA foreign_keys = OFF")
             try:
                 for group in groups:
-                    for table in group.physical_tables:
-                        if table not in expected_counts:
-                            raise StateAuthoritativeBackupError(
-                                f"backup {backup} has no table {table!r} for --table "
-                                f"{group.cli_name!r}"
-                            )
-                    expected_scope = sum(
-                        int(conn.execute(sql).fetchone()[0]) for sql in group.count_sql
-                    )
-                    for delete in group.delete_sql:
-                        conn.execute(delete)
-                    for insert in group.insert_sql:
-                        conn.execute(insert)
-                    live_scope = _scoped_live_count(conn, group)
-                    if live_scope != expected_scope:
-                        raise StateAuthoritativeBackupError(
-                            f"restore of {group.cli_name}: expected {expected_scope} rows, "
-                            f"got {live_scope}"
-                        )
+                    _restore_group(conn, group, expected_counts, backup)
                     restored.append(group.cli_name)
                 conn.execute("COMMIT")
             except BaseException:
