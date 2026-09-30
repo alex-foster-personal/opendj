@@ -63,10 +63,21 @@ def _stored_bundle(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 @contextmanager
 def _membership_writes(conn: sqlite3.Connection) -> Iterator[list[str]]:
+    """Every membership write statement ``conn`` runs, once per execution.
+
+    SQLite's statement trace fires again at the start of each trigger
+    subprogram, and Python reports that event with the PARENT statement's
+    text. The write-token triggers (migration v21) run once per changed row,
+    so one DELETE of ten rows is traced 21 times. A repeat of the statement
+    just traced is that re-fire, not a second execution, so it is dropped.
+    """
     writes: list[str] = []
+    last: list[str] = [""]
 
     def trace(statement: str) -> None:
-        if statement.startswith(MEMBERSHIP_WRITE):
+        refire = statement == last[0]
+        last[0] = statement
+        if statement.startswith(MEMBERSHIP_WRITE) and not refire:
             writes.append(statement)
 
     conn.set_trace_callback(trace)
