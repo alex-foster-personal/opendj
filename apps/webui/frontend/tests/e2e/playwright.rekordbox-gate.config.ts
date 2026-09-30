@@ -17,11 +17,14 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 import { REKORDBOX_GATE_E2E_PORT } from './vite.rekordbox-gate.config';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ORIGIN = `http://127.0.0.1:${REKORDBOX_GATE_E2E_PORT}`;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: [
 		'rekordbox-writeback-disabled.spec.ts',
@@ -35,7 +38,7 @@ export default defineConfig({
 	globalTimeout: 180_000,
 	reporter: [['list']],
 	webServer: {
-		command: 'pnpm exec vite --config tests/e2e/vite.rekordbox-gate.config.ts',
+		command: guardedWebServerCommand('rekordbox-gate-vite', 'pnpm exec vite --config tests/e2e/vite.rekordbox-gate.config.ts'),
 		cwd: FRONTEND_ROOT,
 		url: `${ORIGIN}/reconcile`,
 		reuseExistingServer: false,

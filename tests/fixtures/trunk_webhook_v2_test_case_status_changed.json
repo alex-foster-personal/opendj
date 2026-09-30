@@ -1,0 +1,62 @@
+{
+  "_provenance": {
+    "source": "Trunk's published Svix event catalog, event type v2.test_case.status_changed, schema version 1, field `example`",
+    "url": "https://www.svix.com/event-types/us/org_2eQPL41Ew5XSHxiXZIamIUIXg8H/#v2.test_case.status_changed",
+    "linked_from": "https://docs.trunk.io/flaky-tests/webhooks/github-issues-integration ('See the Trunk webhook event catalog')",
+    "extracted_from": "the page's __NEXT_DATA__ JSON, props.pageProps.eventTypes[name == v2.test_case.status_changed].schemas['1']",
+    "event_type_updated_at": "2026-09-14T20:49:18.797700Z",
+    "fetched_at_utc": "2026-09-29T00:24:59Z",
+    "example_sha256": "bba160726743c52008394894293ed38546bac3a27f151953ef4db428d66620cb",
+    "sha256_of": "json.dumps(example, sort_keys=True, separators=(',', ':')).encode()",
+    "not_a_live_delivery": "No real delivery from this repo's Svix endpoint has been captured yet; this is Trunk's own published example, copied verbatim."
+  },
+  "required": [
+    "type",
+    "timestamp",
+    "previous_status",
+    "new_status",
+    "triggered_by",
+    "test_case"
+  ],
+  "test_case_required": [
+    "id",
+    "name",
+    "classname",
+    "codeowners",
+    "file_path",
+    "html_url",
+    "parent",
+    "quarantined",
+    "variant",
+    "failure_rate_last_7d",
+    "pull_requests_impacted_last_7d"
+  ],
+  "example": {
+    "new_status": "FLAKY",
+    "previous_status": "HEALTHY",
+    "repository": {
+      "html_url": "https://github.com/trunk-io/flaky-tests",
+      "id": "a6ea3bad-a0a4-4366-9223-ac74efccb928"
+    },
+    "test_case": {
+      "classname": "ItsAlwaysSunnyOnEarth.Tests.AlwaysSunnyTest",
+      "codeowners": [],
+      "failure_rate_last_7d": 0.18,
+      "file_path": "",
+      "html_url": "https://app.trunk.io/trunk/flaky-tests/test/7461c36c-3ae2-5d3c-803b-0bdcfd875ee1/?repo=trunk-io%2Fflaky-tests",
+      "id": "7461c36c-3ae2-5d3c-803b-0bdcfd875ee1",
+      "name": "AlwaysSunnyTest.TestWeather_Beijing",
+      "parent": "ItsAlwaysSunnyOnEarth.Tests.dll",
+      "pull_requests_impacted_last_7d": 4,
+      "quarantined": false,
+      "variant": ""
+    },
+    "timestamp": "2026-03-27T12:28:40.695Z",
+    "triggered_by": {
+      "monitor_id": "d6edf0b8-2f2b-4caf-8f36-038668585cf6",
+      "monitor_status": "active",
+      "monitor_type": "failure_rate"
+    },
+    "type": "v2.test_case.status_changed"
+  }
+}

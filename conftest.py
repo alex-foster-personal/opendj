@@ -17,6 +17,8 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NoReturn
 
@@ -59,6 +61,7 @@ pytest_plugins = [
     "scripts.pytest_reqs_plugin",
     "scripts.pytest_fast_tier",
     "scripts.pytest_tier_floor",
+    "tests.support.spawned_servers",
 ]
 
 
@@ -304,3 +307,29 @@ def _rekordbox_writeback_gate(request, monkeypatch):
         monkeypatch.setenv(REKORDBOX_WRITEBACK_ENABLED_ENV, "1")
     else:
         monkeypatch.delenv(REKORDBOX_WRITEBACK_ENABLED_ENV, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_threads(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail the test that leaves a background thread it started running.
+
+    sentry_sdk-owned threads are checked everywhere; non-daemon threads only in
+    modules marked ``no_leaked_threads``. Rules and the draining-monitor
+    exemption: tests/support/thread_leaks.py.
+    """
+    from tests.support.thread_leaks import leaked_threads
+
+    baseline = set(threading.enumerate())
+    yield
+    leaks = leaked_threads(
+        baseline,
+        include_non_daemon=request.node.get_closest_marker("no_leaked_threads") is not None,
+    )
+    if leaks:
+        pytest.fail(
+            f"{request.node.nodeid} left {len(leaks)} background thread(s) running: "
+            + "; ".join(leaks)
+            + ". Close what the test started (a sentry_sdk client: "
+            "tests/support/sentry_client.close_sentry_client).",
+            pytrace=False,
+        )
