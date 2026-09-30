@@ -307,6 +307,16 @@ def _kill_tree(pid: int) -> None:
         root.kill()
 
 
+# Sol P1/BLOCKING, PR #4540: the two capture integration tests read footprint
+# through the REAL DarwinProcessMetrics, so a reader that ignored the pid or
+# misread phys_footprint cannot stay green behind a fake. That reader is
+# macOS-only, so elsewhere the coverage is reported UNAVAILABLE, not faked.
+_REAL_NATIVE_METRICS = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="UNAVAILABLE: DarwinProcessMetrics reads phys_footprint through macOS APIs only",
+)
+
+
 def _fake_monotonic_ticking(step: float) -> Any:
     """A `time.monotonic` stand-in that advances by `step` every call.
 
@@ -317,14 +327,15 @@ def _fake_monotonic_ticking(step: float) -> Any:
     discussion_r4138712250: patching the SAMPLING functions themselves (the
     prior version of these two tests) bypasses the real launch-to-pid
     handoff AND the real sampler, so a broken integration between them
-    could stay green. `DarwinProcessMetrics` is swapped for `_FakeNative`
-    for the same reason every other test in this file does (off-Darwin CI).
+    could stay green. The native footprint reader is the real one; see
+    `_REAL_NATIVE_METRICS`.
     """
     counter = itertools.count()
     return lambda: next(counter) * step
 
 
 @pytest.mark.requirement("PERFMODE-15")
+@_REAL_NATIVE_METRICS
 def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url() -> None:
     """[if] a Gig/Trackify capture runs [then] it really samples the browser pid, not the URL, [else stop].
 
@@ -334,8 +345,8 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
     process `mode_ratio_browser.mjs` actually spawned. `_start_browser_session`
     returns a REAL spawned child speaking the genuine protocol
     (`_spawn_gig_trackify_child`); `_sample_steady` runs for REAL (not
-    mocked) against it, with only the wall clock and the Darwin-only native
-    reader faked, so this also proves the real sampler produces real,
+    mocked) against it with the real native footprint reader, only the wall
+    clock faked, so this also proves the real sampler produces real,
     positive per-mode values from that pid.
     """
     child = _spawn_with_descendant(
@@ -344,7 +355,6 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
     try:
         with (
             patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=_native()),
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch(
                 "scripts.perf.capture_mode_ratios.time.monotonic",
@@ -365,6 +375,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
 
 
 @pytest.mark.requirement("PERFMODE-15")
+@_REAL_NATIVE_METRICS
 def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() -> None:
     """[if] a leak capture runs [then] it really samples the browser pid, not the URL, [else stop].
 
@@ -377,7 +388,6 @@ def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() ->
     try:
         with (
             patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=_native()),
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch(
                 "scripts.perf.capture_mode_ratios.time.monotonic",
