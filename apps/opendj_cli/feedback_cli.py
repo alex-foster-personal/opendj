@@ -75,17 +75,23 @@ def run_comments_summary(
     else:
         operator = payload.get("operator")
         if isinstance(operator, dict):
-            print(
-                f"total: {operator.get('total')}\n"
-                f"sent_to_queue: {operator.get('sent_to_queue')}\n"
-                f"in_progress: {operator.get('in_progress')}\n"
-                f"delegated: {operator.get('delegated')}\n"
-                f"fixed: {operator.get('fixed')}\n"
-                f"merged: {operator.get('merged')}"
-            )
+            print(_format_operator(operator, payload.get("fleet_correlation")))
         else:
             print(json.dumps(payload, indent=2, sort_keys=True))
     return EXIT_CONFIRMED
+
+
+def _format_operator(operator: dict[str, Any], fleet_correlation: object) -> str:
+    """Text rendering of the operator buckets, in the UI hover's order.
+
+    blocked and harvested print only when nonzero (as on the hover), so the
+    buckets shown always account for every pin in total.
+    """
+    keys = ["total", "sent_to_queue", "in_progress", "delegated", "fixed", "merged"]
+    keys += [k for k in ("blocked", "harvested") if operator.get(k)]
+    lines = [f"{key}: {operator.get(key)}" for key in keys]
+    lines.append(f"fleet_correlation: {fleet_correlation}")
+    return "\n".join(lines)
 
 
 def run(
@@ -95,8 +101,7 @@ def run(
     lock: Path | None = None,
 ) -> int:
     if not rest:
-        print(_USAGE, file=sys.stderr)
-        return EXIT_FAILED
+        return _fail(as_json, "usage", f"feedback requires a subcommand; {_USAGE}", EXIT_FAILED)
     head, *tail = rest
     if head == "comments" and tail == ["summary"]:
         return run_comments_summary((), as_json=as_json, lock=lock)
@@ -107,5 +112,4 @@ def run(
             f"feedback comments requires a subcommand; {_USAGE}",
             EXIT_FAILED,
         )
-    print(f"unknown feedback subcommand: {head!r}\n{_USAGE}", file=sys.stderr)
-    return EXIT_FAILED
+    return _fail(as_json, "usage", f"unknown feedback subcommand: {head!r}; {_USAGE}", EXIT_FAILED)

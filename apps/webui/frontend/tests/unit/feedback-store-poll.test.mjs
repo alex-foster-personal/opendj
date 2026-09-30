@@ -91,7 +91,8 @@ after(() => {
 });
 
 afterEach(() => {
-  store._resetPinPollStateForTests();
+  store.stopPinWatch();
+  store.feedbackState.pinSummary = null;
   store.feedbackState.availability = "unknown";
   store.feedbackState.pins = [];
 });
@@ -329,4 +330,47 @@ test("the poll tick stops itself once the daemon is known to have no feedback AP
   tick();
 
   assert.equal(cleared, 1, "polling a daemon that answered 404 forever is pointless churn");
+});
+
+// ----- /comments/summary (FB-20, pin 6af63c5e9b7c) --------------------------
+function statusResponse(status) {
+  return new Response(JSON.stringify({ detail: "x" }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("pin 6af63c5e9b7c a poll stores the daemon's /comments/summary", async () => {
+  const summary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => jsonResponse(summary),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  await store.refreshPins();
+  assert.deepEqual(store.feedbackState.pinSummary, summary);
+});
+
+test("pin 6af63c5e9b7c a transient summary failure keeps the last-known counts", async () => {
+  const last = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => statusResponse(503),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = last;
+  await store.refreshPins();
+  assert.deepEqual(store.feedbackState.pinSummary, last, "one bad poll must not erase measured counts");
+});
+
+test("pin 6af63c5e9b7c a 404 for the summary route clears it (daemon without FB-20)", async () => {
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => statusResponse(404),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  await store.refreshPins();
+  assert.equal(store.feedbackState.pinSummary, null);
+  assert.equal(store.feedbackState.availability, "ok", "only the summary route is missing, not feedback");
 });

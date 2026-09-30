@@ -6,8 +6,8 @@
  * viewer, persisted per-viewer) and a stubbed "show other users' pins"
  * (rb-inert, and a performance-bus command that answers not_implemented).
  *
- * Pin 6af63c5e9b7c: operator hover breakdown (FB-20) via commentPinSummary*
- * helpers when GET /comments/summary succeeds; legacy stub only when it does not.
+ * Pin 6af63c5e9b7c: the operator hover breakdown (FB-20) is asserted on the
+ * RENDERED controls in feedback-pin-6af63c5e9b7c-rendered-summary.test.mjs.
  *
  * This is source-text wiring: the pieces of behaviour a Svelte compile step
  * would be needed to actually run are asserted here the same way
@@ -37,10 +37,6 @@ const VISIBILITY_ACTIONS = readFileSync(
 	new URL('../../src/lib/components/rb/FeedbackPinVisibilityActions.svelte', import.meta.url),
 	'utf8'
 );
-const STORE = readFileSync(
-	new URL('../../src/lib/rb/feedback-store.svelte.ts', import.meta.url),
-	'utf8'
-);
 const VISIBILITY_PREFERENCE = readFileSync(
 	new URL('../../src/lib/rb/feedback-pin-visibility.ts', import.meta.url),
 	'utf8'
@@ -66,21 +62,6 @@ test('the main comment button is wrapped in ControlExplainer with an end-user-wo
 		WIDGET,
 		/Give feedback,? ideas,? and suggestions to the developer,? and track them in-app/i,
 		'the explainer heading must be worded for an end user, in the maintainer\'s own phrasing'
-	);
-});
-
-test('pin 6af63c5e9b7c explainer uses operator summary helpers and drops the untracked stub when the server summary is available', () => {
-	assert.match(WIDGET, /commentPinSummaryTitle\(feedbackState\.pins\)/);
-	assert.match(WIDGET, /commentPinSummaryBullets\(feedbackState\.pins\)/);
-	assert.match(
-		STORE,
-		/pinSummaryFromServer/,
-		'must gate the legacy "not tracked" stub on whether /comments/summary succeeded'
-	);
-	assert.match(
-		STORE,
-		/Delegated \/ in-progress \/ queued are not tracked by the comment API yet/,
-		'fallback stub remains for daemons without /comments/summary'
 	);
 });
 

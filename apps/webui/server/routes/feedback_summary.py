@@ -2,18 +2,25 @@
 
 Correlates comment pins with the progress-tree ledger when an issue_url matches
 ``links.issues`` on a node in ``building`` or ``partial`` status.
+
+The ledger is a dev-checkout file (``data/progress-tree.yaml``); a packaged
+desktop payload does not stage it. Its absence is reported as
+``fleet_correlation: "ledger_missing"`` rather than read as "no fleet work", so
+the UI can say the in-progress count excludes fleet correlation instead of
+silently under-counting.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+import yaml
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from .feedback import _COMMENTS_FILE, _dir, _load
 from . import progress as progress_module
+from .feedback import _COMMENTS_FILE, _dir, _load
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -48,11 +55,17 @@ class PinStatusSummaryOut(BaseModel):
     harvested: int = Field(ge=0)
 
 
+FleetCorrelation = Literal["ok", "ledger_missing", "ledger_unreadable"]
+
+
 class CommentSummaryOut(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     operator: PinOperatorBreakdownOut
     lifecycle: PinStatusSummaryOut
+    # Whether operator.in_progress includes progress-tree correlation. Anything
+    # but "ok" means fleet work in flight was NOT measured, not that there is none.
+    fleet_correlation: FleetCorrelation
 
 
 def _parse_issue_url(issue_url: str | None) -> int | None:
@@ -171,29 +184,44 @@ def _summarize_operator(
             counts["delegated"] += 1
         issue_num = _parse_issue_url(item.get("issue_url"))
         fleet_match = issue_num is not None and issue_num in fleet_issues
-        if status == "open" or _pin_visual_partial(item) or fleet_match:
+        # Explicit "open" only: a raw-null pin is untriaged (sent to queue) and
+        # must not also read as active work, even though _pin_status_raw
+        # normalizes it to "open" for the lifecycle view.
+        explicit_open = item.get("status") == "open"
+        if explicit_open or _pin_visual_partial(item) or fleet_match:
             counts["in_progress"] += 1
         if status in ("fixed", "merged", "blocked", "harvested"):
             counts[status] += 1
     return PinOperatorBreakdownOut.model_validate(counts)
 
 
-def _load_fleet_issues() -> frozenset[int]:
+def _load_fleet_issues() -> tuple[frozenset[int], FleetCorrelation]:
     progress_file = progress_module.PROGRESS_FILE
     if not progress_file.is_file():
-        return frozenset()
+        return frozenset(), "ledger_missing"
     try:
         tree, _, _ = progress_module._read_tree_snapshot(progress_file)
-    except Exception:
-        return frozenset()
-    return _fleet_progress_issues(tree)
+        return _fleet_progress_issues(tree), "ok"
+    except (
+        HTTPException,
+        yaml.YAMLError,
+        OSError,
+        UnicodeDecodeError,
+        KeyError,
+        TypeError,
+        AttributeError,
+    ):
+        # A broken ledger must not take the pin hover down with it, but it is
+        # reported as unmeasured, never as zero fleet work.
+        return frozenset(), "ledger_unreadable"
 
 
 @router.get("/comments/summary", response_model=CommentSummaryOut)
 def comments_summary(request: Request) -> CommentSummaryOut:
     items = _load(_dir(request) / _COMMENTS_FILE, "comments")
-    fleet_issues = _load_fleet_issues()
+    fleet_issues, fleet_correlation = _load_fleet_issues()
     return CommentSummaryOut(
         operator=_summarize_operator(items, fleet_issues),
         lifecycle=_summarize_lifecycle(items),
+        fleet_correlation=fleet_correlation,
     )

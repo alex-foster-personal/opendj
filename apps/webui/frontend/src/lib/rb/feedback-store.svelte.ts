@@ -46,12 +46,16 @@ import type { components } from "../api-types";
 import { API_BASE, ApiError, api, unwrap } from "../api/client";
 import { writePinsVisible } from "./feedback-pin-visibility";
 import {
-  describePinLifecycleSummaryFromPins,
-  describePinOperatorExplainerLine,
+  describeFleetCorrelation,
   describePinOperatorSummary,
-  type PinOperatorBreakdown,
+  type CommentSummary,
 } from "./feedback-pin-operator-summary";
-import { makeDebounce, type Debounced, type PinDraft } from "./feedback";
+import {
+  describePinStatusSummary,
+  makeDebounce,
+  type Debounced,
+  type PinDraft,
+} from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
 export type FeedbackPin = components["schemas"]["CommentOut"];
@@ -70,10 +74,10 @@ interface FeedbackState {
   availability: FeedbackAvailability;
   todos: FeedbackTodo[];
   pins: FeedbackPin[];
-  /** Operator bucket counts from GET /comments/summary when the daemon serves it. */
-  pinOperatorSummary: PinOperatorBreakdown | null;
-  /** False when /comments/summary is missing so the widget keeps the legacy stub. */
-  pinSummaryFromServer: boolean;
+  /** Last GET /comments/summary body (FB-20). Null until one succeeds, and
+   * again once the daemon answers 404 for the route, so the widget keeps the
+   * legacy lifecycle line and its honest "not tracked" stub. */
+  pinSummary: CommentSummary | null;
   general: FeedbackGeneralNote | null;
   panelOpen: boolean;
   placementArmed: boolean;
@@ -87,8 +91,7 @@ export const feedbackState: FeedbackState = $state({
   availability: "unknown",
   todos: [],
   pins: [],
-  pinOperatorSummary: null,
-  pinSummaryFromServer: false,
+  pinSummary: null,
   general: null,
   panelOpen: false,
   placementArmed: false,
@@ -96,26 +99,26 @@ export const feedbackState: FeedbackState = $state({
   error: null,
 });
 
-/** Title line for the comment-pin control (FB-20 / pin 6af63c5e9b7c). */
-export function commentPinSummaryTitle(pins: FeedbackPin[]): string {
-  if (feedbackState.pinSummaryFromServer && feedbackState.pinOperatorSummary) {
-    return describePinOperatorSummary(feedbackState.pinOperatorSummary);
-  }
-  return describePinLifecycleSummaryFromPins(pins);
+/** Total + breakdown line for the comment-pin controls (FB-20 / pin
+ * 6af63c5e9b7c): the daemon's operator buckets when it serves
+ * /comments/summary, else the lifecycle counts derived from `pins`. */
+export function commentPinSummaryTitle(pins: readonly FeedbackPin[]): string {
+  const summary = feedbackState.pinSummary;
+  return summary ? describePinOperatorSummary(summary.operator) : describePinStatusSummary(pins);
 }
 
-/** First ControlExplainer bullet for comment pins. */
-export function commentPinSummaryBullets(pins: FeedbackPin[]): string[] {
-  const first =
-    feedbackState.pinSummaryFromServer && feedbackState.pinOperatorSummary
-      ? describePinOperatorExplainerLine(feedbackState.pinOperatorSummary)
-      : describePinLifecycleSummaryFromPins(pins);
+/** Hover/focus explainer bullets for the comment-pin controls. */
+export function commentPinSummaryBullets(pins: readonly FeedbackPin[]): string[] {
   const bullets = [
-    first,
+    commentPinSummaryTitle(pins),
     "Press M to arm comment placement (or Cmd+Shift+M from a text field).",
   ];
-  if (!feedbackState.pinSummaryFromServer) {
+  const summary = feedbackState.pinSummary;
+  if (!summary) {
     bullets.push("Delegated / in-progress / queued are not tracked by the comment API yet.");
+  } else {
+    const fleet = describeFleetCorrelation(summary.fleet_correlation);
+    if (fleet) bullets.push(fleet);
   }
   return bullets;
 }
@@ -508,23 +511,15 @@ export async function submitFollowOnWithAttachment(
 // ----- pin polling (same-tab live refresh, issue #914 review) -------------
 let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
 
+/** GET /comments/summary. Only a 404 (a daemon without the route) clears
+ * the summary; a transient failure keeps the last-known counts, the same
+ * way refreshPins keeps the last-known board, and the next poll retries. */
 async function _refreshPinSummary(): Promise<void> {
   try {
-    const { data } = await api.GET("/api/v1/feedback/comments/summary");
-    if (data?.operator) {
-      feedbackState.pinOperatorSummary = data.operator;
-      feedbackState.pinSummaryFromServer = true;
-      return;
-    }
+    feedbackState.pinSummary = await unwrap(api.GET("/api/v1/feedback/comments/summary"));
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      feedbackState.pinSummaryFromServer = false;
-      feedbackState.pinOperatorSummary = null;
-      return;
-    }
+    if (err instanceof ApiError && err.status === 404) feedbackState.pinSummary = null;
   }
-  feedbackState.pinSummaryFromServer = false;
-  feedbackState.pinOperatorSummary = null;
 }
 
 /** Re-GET pins and re-render. A transient miss leaves the board as it was;
@@ -568,10 +563,4 @@ export function stopPinWatch(): void {
     clearInterval(_pinPollTimer);
     _pinPollTimer = null;
   }
-}
-
-/** Test-only: reset generation guard and any active poll timer between cases. */
-export function _resetPinPollStateForTests(): void {
-  stopPinWatch();
-  _pinGeneration = 0;
 }

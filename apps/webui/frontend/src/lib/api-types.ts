@@ -7913,6 +7913,11 @@ export interface components {
         };
         /** CommentSummaryOut */
         CommentSummaryOut: {
+            /**
+             * Fleet Correlation
+             * @enum {string}
+             */
+            fleet_correlation: "ok" | "ledger_missing" | "ledger_unreadable";
             lifecycle: components["schemas"]["PinStatusSummaryOut"];
             operator: components["schemas"]["PinOperatorBreakdownOut"];
         };

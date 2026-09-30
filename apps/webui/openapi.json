@@ -5109,6 +5109,15 @@
       },
       "CommentSummaryOut": {
         "properties": {
+          "fleet_correlation": {
+            "enum": [
+              "ok",
+              "ledger_missing",
+              "ledger_unreadable"
+            ],
+            "title": "Fleet Correlation",
+            "type": "string"
+          },
           "lifecycle": {
             "$ref": "#/components/schemas/PinStatusSummaryOut"
           },
@@ -5118,7 +5127,8 @@
         },
         "required": [
           "operator",
-          "lifecycle"
+          "lifecycle",
+          "fleet_correlation"
         ],
         "title": "CommentSummaryOut",
         "type": "object"
