@@ -106,13 +106,15 @@ def test_filename_version_matches_clang_sys(filename: str, version: tuple[int, .
 def test_highest_version_wins_over_search_order(tmp_path: Path) -> None:
     old = _lib(tmp_path / "a/libclang-18.so.1")
     new = _lib(tmp_path / "b/libclang-21.so.1")
-    assert probe_mod.pick([old, new], 64)[0].path == new
+    chosen = probe_mod.pick([old, new], 64)[0]
+    assert chosen is not None and chosen.path == new
 
 
 def test_a_tie_goes_to_the_earliest_found(tmp_path: Path) -> None:
     first = _lib(tmp_path / "a/libclang-18.so.1")
     second = _lib(tmp_path / "b/libclang-18.so.18")
-    assert probe_mod.pick([first, second], 64)[0].path == first
+    chosen = probe_mod.pick([first, second], 64)[0]
+    assert chosen is not None and chosen.path == first
 
 
 def test_wrong_elf_class_non_elf_and_absent_files_are_not_candidates(tmp_path: Path) -> None:
@@ -123,7 +125,7 @@ def test_wrong_elf_class_non_elf_and_absent_files_are_not_candidates(tmp_path: P
     text.write_text("not a library")
     absent = tmp_path / "d/libclang-23.so.1"
     chosen, valid = probe_mod.pick([good, thirty_two, text, absent], 64)
-    assert (chosen.path, valid) == (good, 1)
+    assert chosen is not None and (chosen.path, valid) == (good, 1)
     assert probe_mod.pick([thirty_two, text, absent], 64) == (None, 0)
 
 
