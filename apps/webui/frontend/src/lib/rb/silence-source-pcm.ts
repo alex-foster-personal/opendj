@@ -48,9 +48,16 @@ export function rmsAtPlayhead(
 }
 
 /**
- * True when every claimed-live deck with a buffer has playhead RMS below floor.
- * A claimed-live deck with no buffer does not explain silence (fail-safe toward
- * reporting a real dropout).
+ * True when every claimed-live deck has a buffer whose playhead RMS is below
+ * floor. Everything this cannot measure fails safe toward reporting a real
+ * dropout, never toward hiding one:
+ * - a claimed-live deck with no buffer does not explain silence;
+ * - a non-finite playhead does not explain silence (and must not throw: a throw
+ *   here would skip the fold in `noteMasterSilence`, so the watchdog would stop
+ *   counting for as long as the bad position lasted);
+ * - a playhead at or past the decoded end does not explain silence: a deck still
+ *   claiming live there is a stuck transport, which is exactly what the
+ *   watchdog's honest stop exists to catch.
  */
 export function claimedLiveSourceIsSilent(
 	decks: readonly SilenceSourceDeckSnap[],
@@ -61,6 +68,8 @@ export function claimedLiveSourceIsSilent(
 	if (live.length === 0) return false;
 	for (const deck of live) {
 		if (deck.buffer === null) return false;
+		if (!Number.isFinite(deck.position_sec)) return false;
+		if (deck.position_sec * deck.buffer.sampleRate >= deck.buffer.length) return false;
 		if (rmsAtPlayhead(deck.buffer, deck.position_sec, window_sec) >= floor) return false;
 	}
 	return true;

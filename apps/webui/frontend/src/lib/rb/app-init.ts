@@ -36,7 +36,13 @@ import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
-import { DECK_IDS, deckStates, pitchRanges, readSilenceSourceDeckSnaps } from '$lib/rb/audio-engine.svelte';
+import {
+	DECK_IDS,
+	deckAudioClockPositionMs,
+	deckMixBuffer,
+	deckStates,
+	pitchRanges
+} from '$lib/rb/audio-engine.svelte';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -49,6 +55,7 @@ import { setUnexpectedPauseAutoPlayReader } from '$lib/rb/unexpected-pause-repor
 import { handleSilenceDropoutPlan } from '$lib/rb/silence-dropout-act';
 import type { SilenceDropoutDeckSnap } from '$lib/rb/silence-dropout';
 import type { DeckId } from '$lib/rb/deck-slots';
+import type { SilenceSourceDeckSnap } from '$lib/rb/silence-source-pcm';
 
 function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 	return DECK_IDS.map((id: DeckId) => {
@@ -65,6 +72,16 @@ function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 			is_master: deck.is_master
 		};
 	});
+}
+
+/** Source PCM at each deck's audio-clock playhead, for the master silence
+ * watchdog's source gate (issue #4030). Called only on master-quiet samples. */
+function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
+	return DECK_IDS.map((id: DeckId) => ({
+		claims_live: deckStates[id].playing || deckStates[id].audible,
+		buffer: deckMixBuffer(id),
+		position_sec: deckAudioClockPositionMs(id) / 1000
+	}));
 }
 
 function _hasPlayableAutoPlayNext(): boolean {

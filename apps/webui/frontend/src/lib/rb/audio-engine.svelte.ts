@@ -340,7 +340,6 @@ import type {
 // is re-exported below, so every existing importer of
 // $lib/rb/audio-engine.svelte keeps working unchanged.
 
-import type { SilenceSourceDeckSnap } from '$lib/rb/silence-source-pcm';
 export { DECK_IDS, PITCH_RANGES };
 export { detachProcessorForDisposal };
 export {
@@ -493,8 +492,7 @@ interface _DeckRuntime {
 	/** Manual key-shift baseline captured when KEY SYNC latches on; restored
 	 * on disable so the Camelot offset cannot drift away from the latch. */
 	keySyncBaselineSemitones: number | null;
-	/** Decoded mix buffer retained for short sync-seek crossfades. */
-	audioBuffer: AudioBuffer | null;
+	audioBuffer: AudioBuffer | null; // decoded mix, retained for sync-seek crossfades and read by deckMixBuffer
 	/** Library-listed track duration; decoded buffer duration lives in deck state. */
 	metadataDurationMs: number | null;
 	/** Monotonic token; superseding transport/sync commands bump this deck's generation. */
@@ -674,18 +672,7 @@ export function deckPcmEstimatedBytes(): number {
 	}
 	return total;
 }
-
-/** Snapshots for the master silence watchdog source PCM gate (issue #4030). */
-export function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
-	return DECK_IDS.map((deck) => {
-		const st = deckStates[deck];
-		return {
-			claims_live: st.playing || st.audible,
-			buffer: _rt[deck].audioBuffer,
-			position_sec: deckAudioClockPositionMs(deck) / 1000
-		};
-	});
-}
+export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
 
 // ---------------------------------------------------------------- _helpers
 
