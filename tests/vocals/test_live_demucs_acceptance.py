@@ -6,7 +6,8 @@ Regression one-liners:
   - if trickle writes outside the disposable vocal-cache dir then broken
   - if a CUDA or CPU cache entry fails vcache._validate_entry or duration drifts then broken
   - if timeout cleanup leaves any uv/python/demucs/ffmpeg descendant then broken
-  - if manual_recovery_required claim cannot be cleared and re-claimed then broken
+  - manual_recovery_required is NOT a live leg (UNAVAILABLE: no unprivileged SIGKILL-survivor worker);
+    unit coverage in tests/vocals/test_cli_queue.py
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ import hashlib
 import json
 import os
 import shutil
-import signal
 import subprocess
 import threading
 import time
@@ -322,45 +322,3 @@ def test_worker_timeout_leaves_no_worker_descendants(
     assert record is not None
     assert record["released"] is True
     assert not record.get("manual_recovery_required")
-
-
-@live_demucs
-def test_manual_recovery_claim_operable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] manual_recovery_required set [then] lock delete allows reclaim [else stop]."""
-    # Operator recovery: confirm manual_recovery_required, verify no live PIDs,
-    # delete .json.lock, then re-run `python -m apps.vocals one --stable-id <id>`.
-
-    class RunningProcess:
-        pid = os.getpgid(0)
-
-        def wait(self, timeout: float | None = None) -> int:
-            if timeout is not None:
-                raise subprocess.TimeoutExpired("worker", timeout)
-            return 0
-
-    def _kill_group(_pid: int, requested_signal: int) -> None:
-        if requested_signal == signal.SIGKILL:
-            raise PermissionError("forced escalation denial")
-
-    monkeypatch.setattr(vcli, "_WINDOWS", False)
-    monkeypatch.setattr(vcli.os, "killpg", _kill_group)
-    cache_file = vcache.cache_path(tmp_path, "manual-recovery")
-    claim = vcli._claim_track(cache_file)
-    assert claim is not None
-    with pytest.raises(vcli.WorkerCleanupError), vcli._managed_track_claim(claim):
-        vcli._terminate_worker_tree(RunningProcess())  # type: ignore[arg-type]
-    record = vcli._read_claim_record(claim.path)
-    assert record is not None
-    assert record["manual_recovery_required"] is True
-    assert vcli._claim_track(cache_file) is None
-    _clear_manual_recovery_claim(claim.path)
-    successor = vcli._claim_track(cache_file)
-    assert successor is not None
-    vcli._release_track_claim(successor)
-
-
-def _clear_manual_recovery_claim(lock_path: Path) -> None:
-    record = vcli._read_claim_record(lock_path)
-    if record is None or not record.get("manual_recovery_required"):
-        raise ValueError(f"claim is not manual_recovery_required: {lock_path}")
-    lock_path.unlink(missing_ok=True)
