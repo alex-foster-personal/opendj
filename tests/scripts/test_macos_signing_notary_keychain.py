@@ -72,7 +72,7 @@ def _notarize_with(tmp_path: Path, **overrides: str) -> tuple[subprocess.Complet
 
 @pytest.mark.requirement("INSTALL-04")
 def test_notarize_passes_the_configured_notary_keychain(tmp_path: Path) -> None:
-    """if notarize ignores MDT_MACOS_NOTARY_KEYCHAIN then a headless build dies on the locked login keychain -> broken"""
+    """[if] notarize ignores MDT_MACOS_NOTARY_KEYCHAIN [then] a headless build dies on the locked login keychain, [else stop]."""
     keychain = tmp_path / "opendj-signing.keychain-db"
     keychain.write_bytes(b"")
     result, calls = _notarize_with(tmp_path, MDT_MACOS_NOTARY_KEYCHAIN=str(keychain))
@@ -84,7 +84,7 @@ def test_notarize_passes_the_configured_notary_keychain(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("INSTALL-04")
 def test_notarize_without_a_notary_keychain_keeps_the_default_lookup(tmp_path: Path) -> None:
-    """if notarize invents a --keychain when none is configured then GUI-session hosts that resolve the profile from login break -> broken"""
+    """[if] notarize invents --keychain when none is configured [then] GUI-session login-keychain lookup breaks, [else stop]."""
     result, calls = _notarize_with(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "notarytool submit" in calls, calls
@@ -93,7 +93,7 @@ def test_notarize_without_a_notary_keychain_keeps_the_default_lookup(tmp_path: P
 
 @pytest.mark.requirement("INSTALL-04")
 def test_notarize_refuses_a_notary_keychain_that_does_not_exist(tmp_path: Path) -> None:
-    """if notarize submits with a notary keychain path that is not a file then the failure surfaces minutes later as a notary error -> broken"""
+    """[if] notarize submits with a nonexistent keychain path [then] the failure surfaces later as an opaque notary error, [else stop]."""
     missing = tmp_path / "absent.keychain-db"
     result, calls = _notarize_with(tmp_path, MDT_MACOS_NOTARY_KEYCHAIN=str(missing))
     assert result.returncode != 0
