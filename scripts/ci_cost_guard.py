@@ -386,7 +386,7 @@ def main() -> int:
     )
     parser.add_argument("--report-dir", type=Path, default=Path("."))
     parser.add_argument("--threshold", type=float, default=1.0)
-    parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
+    parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"))
     parser.add_argument("--jobs-json", type=Path)
     parser.add_argument("--report-file", type=Path, default=Path("ci-cost-report.md"))
     args = parser.parse_args()
@@ -395,7 +395,7 @@ def main() -> int:
 
     if args.batch:
         if not (args.repository and args.token and args.watched):
-            parser.error("--batch needs --repository, --watched and --token (or GH_TOKEN)")
+            parser.error("--batch needs --repository, --watched and --token (or GITHUB_TOKEN)")
         return run_batch(args)
     if not (args.run_id and args.run_url and args.workflow_name):
         parser.error("single-run mode needs --run-id, --run-url and --workflow-name")
@@ -405,7 +405,7 @@ def main() -> int:
         jobs = payload.get("jobs", payload) if isinstance(payload, dict) else payload
     else:
         if not args.repository or not args.token:
-            parser.error("--repository and --token (or GH_TOKEN) are required without --jobs-json")
+            parser.error("--repository and --token (or GITHUB_TOKEN) are required without --jobs-json")
         jobs = fetch_jobs(args.repository, args.run_id, args.attempt, args.token)
 
     report, result = render_markdown(

@@ -274,7 +274,7 @@ jobs:
       - name: Price every watched completion since the mark
         id: guard
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           PREVIOUS_STARTED: ${{ steps.mark.outputs.previous_started }}
         run: |

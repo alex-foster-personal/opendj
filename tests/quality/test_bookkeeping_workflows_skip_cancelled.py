@@ -177,9 +177,10 @@ def _token_env_read_by(module: str) -> str:
 
 
 def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
-    """The steps mix GH_TOKEN and GITHUB_TOKEN because the modules do; each is read out of
-    the module's own source here, so a step exporting the other name fails before a pass
-    lists nothing (Sol raised the guard step twice on #3844; it was wired, now it is held)."""
+    """Each module's token variable is read out of its own source, so a step exporting
+    another name fails here before a pass lists nothing. The guard read GH_TOKEN while the
+    batch modules read GITHUB_TOKEN; reviewers misread the mix three times on #3844, so all
+    three now read GITHUB_TOKEN, and this holds every step to it."""
     checked = 0
     for path in (CI_COST_GUARD, STABLE_EVIDENCE):
         for job in _workflow(path)["jobs"].values():
@@ -191,6 +192,10 @@ def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
                     ), f"{path.name} step {step.get('name')!r} runs {module} without {variable}"
                     checked += 1
     assert checked >= 5, checked
+    assert {
+        _token_env_read_by(m)
+        for m in ("scripts.ci_cost_guard", "scripts.ci_run_batch", "scripts.stable_evidence_batch")
+    } == {"GITHUB_TOKEN"}
 
 
 def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:
