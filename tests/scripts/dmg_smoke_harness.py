@@ -332,6 +332,10 @@ exit 1
             """#!/usr/bin/env bash
 # `lsof -iTCP:PORT -sTCP:LISTEN -t`: the pid listening on the log's port.
 if [[ " $* " == *" -t "* ]]; then
+  if [[ -n "${DMG_SMOKE_FOREIGN_PORT:-}" && "$*" == *":${DMG_SMOKE_FOREIGN_PORT} "* ]]; then
+    echo 8888
+    exit 0
+  fi
   if [[ -n "${DMG_SMOKE_LISTENER_PID:-}" ]]; then
     echo "$DMG_SMOKE_LISTENER_PID"
     exit 0
@@ -350,7 +354,9 @@ exit 1
 # `ps -ww -o command= -p PID` for the log-port listener: this run's scratch
 # engine (its app path is the last `open` argument) or another instance's.
 if [[ "$*" == *"command="* ]]; then
-  if [[ "${DMG_SMOKE_LISTENER_FROM_SCRATCH:-0}" == "1" ]]; then
+  if [[ " $* " == *" 8888 "* || " $* " == *" 8888" ]]; then
+    app="/Applications/Open DJ.app"
+  elif [[ "${DMG_SMOKE_LISTENER_FROM_SCRATCH:-0}" == "1" ]]; then
     app="$(tail -n 1 "${DMG_SMOKE_OPEN_LOG:?}")"
   else
     app="/Applications/Open DJ.app"
