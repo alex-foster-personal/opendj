@@ -11,7 +11,7 @@ Requirements (mini-PRD):
   prove  ✔︎
     Every .py file the range modifies decodes by its own cookie (so a cookie moved in
     or out of reach is judged by what the bytes then MEAN), parses on both sides and
-    has an equal AST, each docstring either untouched or exactly ruff's re-layout of it:
+    has an equal AST, each docstring's value (as for any string) untouched or exactly ruff's re-layout of it:
     each line's trailing whitespace stripped, the first line's leading whitespace too,
     and the rest re-indented to the statement with their relative indent kept (Black's
     safety check strips every line, which would pass a change to a doctest's relative
@@ -213,9 +213,10 @@ def _ruff_docstring(text: str, indent: str) -> str | None:
     line loses its trailing whitespace, the first its leading whitespace too, and the rest are re-indented. A `"` just
     inside the opening quotes gets one space, a docstring blank after its first line collapses onto it, and a blank one
     keeps one space. Lines split only at newlines, since a tab between words, a form feed or a blank first line is
-    text `__doc__` carries and ruff keeps. None where ruff's output is not modeled, so the docstring must stay as it
-    was: an indent that is not tabs then spaces, a `"` or a backslash just inside the closing quotes, where ruff pads
-    or keeps its quotes, and three double quotes inside, which keep single quotes."""
+    text `__doc__` carries and ruff keeps. None where ruff's output is not modeled, so the docstring's text must stay
+    as it was: an indent that is not tabs then spaces, a `"` or a backslash just inside the closing quotes, where ruff
+    pads or keeps its quotes, and three double quotes inside, which keep single quotes. Its text, not its spelling:
+    the AST holds a string's value, and a same-value respelling is no change to it, docstring or not."""
     lines = [line.rstrip(CFG.RUFF_WHITESPACE) for line in text.split("\n")]
     first = lines[0].lstrip(CFG.RUFF_WHITESPACE)
     if first.startswith('"'):

@@ -18,6 +18,7 @@ Regression lines:
   - if prove fails a docstring ruff left alone where the model of ruff declines it then broken
   - if prove fails ruff padding a `"` just inside a docstring's opening quotes, or pads a `'`, then broken
   - if prove passes ruff padding a docstring's closing quote then broken: it is not modeled
+  - if prove fails a same-value respelling (ruff requoting an escaped docstring, an escape spelled out) then broken
 """
 
 from __future__ import annotations
@@ -214,3 +215,24 @@ def test_prove_control_the_normalizer_does_not_hide_a_real_string_edit(repo: Pat
     base = commit_files(repo, {"m.py": 'def f():\n    x = "a  "\n    return x\n'}, "init")
     head = commit_files(repo, {"m.py": 'def f():\n    x = "a"\n    return x\n'}, "style(format): ruff@0.16.3 m")
     assert format_proof.prove(repo, base, head).exit_code == 1
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ("def f():\n    '''It\\'s ok.'''\n", 'def f():\n    """It\\\'s ok."""\n'),
+        ("x = 'It\\'s'\n", 'x = "It\'s"\n'),
+        ('def f():\n    """a\\tb."""\n', 'def f():\n    """a\tb."""\n'),
+    ],
+    ids=["ruff-requoting-an-escaped-docstring", "ruff-dropping-an-ordinary-string-escape", "escaped-tab-spelled-out"],
+)
+def test_prove_control_a_same_value_respelling_still_proves(repo: Path, before: str, after: str) -> None:
+    """Opposite-direction control, and the line review 1q drew: the contract is the AST, which holds a string's value
+    and not its spelling, as Black's equivalence check does. ruff respells strings, dropping an unneeded escape from
+    an ordinary one and requoting an escaped docstring (the first two are its real output), and only value equality
+    proves them. A docstring is a string, so a same-value respelling proves too: `__doc__`, doctests and every tool
+    reading it see nothing change. The model of ruff bounds only a change of VALUE, where `prove` accepts more."""
+    base = commit_files(repo, {"m.py": before}, "init")
+    head = commit_files(repo, {"m.py": after}, "style(format): ruff@0.16.3 m")
+    result = format_proof.prove(repo, base, head)
+    assert result.exit_code == 0, result.lines
