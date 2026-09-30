@@ -115,10 +115,19 @@ def drop_superseded_completions(
 def completion_time_lookup(
     listed: Iterable[dict[str, Any]], read_run: Callable[[str], dict[str, Any]]
 ) -> Callable[[str], str]:
-    """A run's `updated_at`, from this pass's own listings where it is there, so
-    only a recorded run the listings do not reach costs an API read."""
-    known = {str(run["id"]): str(run["updated_at"]) for run in listed}
-    return lambda run_id: known[run_id] if run_id in known else str(read_run(run_id)["updated_at"])
+    """A run's completion time, from this pass's own listings where it is there, so
+    only a recorded run the listings do not reach costs an API read.
+
+    A run being re-run reports its ACTIVE attempt's `updated_at`, which is no
+    completion at all, so an unfinished run has none (""): the candidate is kept
+    rather than dropped behind a stale green record (Codex P1 on #3844).
+    """
+    known = {str(run["id"]): _completed_at(run) for run in listed}
+    return lambda run_id: known[run_id] if run_id in known else _completed_at(read_run(run_id))
+
+
+def _completed_at(run: dict[str, Any]) -> str:
+    return str(run["updated_at"]) if run.get("status") == "completed" else ""
 
 
 def append_suite_runs(
