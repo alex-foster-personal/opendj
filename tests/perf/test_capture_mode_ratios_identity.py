@@ -34,7 +34,7 @@ def _unbound_loopback_url() -> str:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_a_clean_checkout_serving_its_own_static_build_passes(tmp_path: Path) -> None:
-    """[if] the checkout is clean at the sha and the frontend serves that static build [then] None.
+    """[if] the checkout is clean at the sha and the frontend serves that build [then] None, [else stop].
 
     Positive control for every refusal below: a gate that always refused would
     pass those and fail this.
@@ -66,7 +66,7 @@ def test_a_dirty_checkout_refuses_before_probing_the_frontend(tmp_path: Path) ->
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_a_checkout_moved_to_another_clean_commit_refuses(tmp_path: Path) -> None:
-    """[if] the checkout moved to another clean commit mid-capture [then] refuse, naming both shas."""
+    """[if] the checkout moved to another clean commit mid-capture [then] refuse, naming both shas, [else stop]."""
     repo = _disposable_git_repo(tmp_path)
     sha = cmr._git_sha(repo)
     server, url = _serve_frontend(version=sha, vite_dev=False)
@@ -89,7 +89,7 @@ def test_a_checkout_moved_to_another_clean_commit_refuses(tmp_path: Path) -> Non
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_a_vite_dev_frontend_refuses(tmp_path: Path) -> None:
-    """[if] the frontend is vite-dev [then] refuse: that bundle cannot confirm its own identity."""
+    """[if] the frontend is vite-dev [then] refuse: it cannot confirm its own identity, [else stop]."""
     repo = _disposable_git_repo(tmp_path)
     sha = cmr._git_sha(repo)
     server, url = _serve_frontend(version=None, vite_dev=True)
@@ -104,7 +104,7 @@ def test_a_vite_dev_frontend_refuses(tmp_path: Path) -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_a_frontend_serving_another_build_refuses(tmp_path: Path) -> None:
-    """[if] the frontend serves a different build (e.g. redeployed mid-capture) [then] refuse."""
+    """[if] the frontend serves a different build (redeployed mid-capture) [then] refuse, [else stop]."""
     repo = _disposable_git_repo(tmp_path)
     sha = cmr._git_sha(repo)
     server, url = _serve_frontend(version="some-other-build", vite_dev=False)
