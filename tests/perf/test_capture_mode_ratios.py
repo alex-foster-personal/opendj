@@ -374,21 +374,48 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
         child.wait(timeout=5)
 
 
-@pytest.mark.requirement("PERFMODE-15")
-@_REAL_NATIVE_METRICS
-def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() -> None:
-    """[if] a leak capture runs [then] it really samples the browser pid, not the URL, [else stop].
+# A descendant whose footprint grows by 256 KB every 20 ms of real time,
+# touching every page so phys_footprint (not just a reservation) rises.
+_GROWING_DESCENDANT_PREFIX = (
+    "import subprocess as _sp, sys as _sys\n"
+    "_sp.Popen([_sys.executable, '-c', "
+    "'import time\\nblocks = []\\nfor _ in range(600):\\n"
+    '    blocks.append(b"x" * 262144)\\n    time.sleep(0.02)\\ntime.sleep(30)\'], '
+    "stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
+)
+_REAL_SLEEP = time.sleep
 
-    Same real-sampler substitution as the gig/trackify test above (Sol
-    P1/BLOCKING, PR #4034, discussion_r4138712250): `_start_browser_session`
-    returns a REAL spawned child, and `_sample_leak` runs for real against
-    it over a faked (not mocked) wall clock.
+
+@_REAL_NATIVE_METRICS
+@pytest.mark.requirement("PERFMODE-15")
+def test_capture_trackify_leak_measures_a_growing_browser_descendant() -> None:
+    """[if] the sampled browser tree grows steadily [then] the leak capture reports a positive slope, [else stop].
+
+    Sol P1/BLOCKING, PR #4540: asserting only that the slope is a float let a
+    `_sample_leak` that returned a constant pass. Here a REAL descendant grows
+    by about 12.5 MB/s of real time, each tick really sleeps 20 ms, and the
+    wall clock the slope is computed over advances one probe interval per
+    tick. So only a sampler that reads this tree's real footprint can report
+    the positive slope asserted below.
     """
-    child = _spawn_with_descendant(_PROTOCOL_CHILD, "TRACKIFY_READY", "DONE")
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            _GROWING_DESCENDANT_PREFIX + _PROTOCOL_CHILD,
+            "TRACKIFY_READY",
+            "DONE",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
     try:
         with (
             patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.time.sleep"),
+            patch("scripts.perf.capture_mode_ratios.time.sleep", new=lambda _s: _REAL_SLEEP(0.02)),
             patch(
                 "scripts.perf.capture_mode_ratios.time.monotonic",
                 new=_fake_monotonic_ticking(cmr._PROBE_INTERVAL_S),
@@ -396,7 +423,7 @@ def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url() ->
         ):
             slope = cmr._capture_trackify_leak("http://127.0.0.1:5273", cmr._MIN_LEAK_DURATION_S)
 
-        assert isinstance(slope, float)
+        assert slope > 1.0, f"expected a clearly positive MB/10min slope, got {slope}"
     finally:
         _kill_tree(child.pid)
         child.wait(timeout=5)
