@@ -241,11 +241,58 @@ export function assertEnginePidPinned(expectedPid: number | undefined, currentPi
 export function isEngineCommand(command: string): boolean {
 	const tokens = command.trim().split(/\s+/).filter(Boolean);
 	if (tokens.length === 0) return false;
-	const argv0Basename = tokens[0].split('/').pop() ?? '';
+	const argv0Basename = basename(tokens[0]);
 	if (argv0Basename === 'opendj-engine') return true;
-	if (!/^(python3?(\.\d+)?|uv)$/.test(argv0Basename)) return false;
-	for (let i = 1; i < tokens.length - 1; i++) {
-		if (tokens[i] === '-m' && tokens[i + 1] === 'apps.engine_core') return true;
+	if (PYTHON_BASENAME.test(argv0Basename)) return pythonRunsEngineModule(tokens.slice(1));
+	if (argv0Basename === 'uv') return uvRunsEngineModule(tokens.slice(1));
+	return false;
+}
+
+const PYTHON_BASENAME = /^python3?(\.\d+)?$/;
+const ENGINE_MODULE = 'apps.engine_core';
+/** Python interpreter options that consume the NEXT token as their value. */
+const PYTHON_VALUE_OPTIONS = new Set(['-X', '-W', '--check-hash-based-pycs']);
+
+function basename(path: string): string {
+	return path.split('/').pop() ?? '';
+}
+
+/** Does this Python argv (after argv[0]) run `apps.engine_core` as its program?
+ *
+ * Sol P1/BLOCKING (PR #4540): scanning every later token for `-m
+ * apps.engine_core` let `python proxy.py -m apps.engine_core` pass, where
+ * Python runs `proxy.py` and the module pair is only that script's argument.
+ * Python's program is the FIRST non-option token, so walk the interpreter's
+ * own options and decide there: `-m apps.engine_core` is the engine, and a
+ * script path, `-c`, `-`, or `--` is something else. Anything unrecognized
+ * fails closed (false), which makes the capture refuse rather than sample a
+ * process it could not identify. */
+function pythonRunsEngineModule(args: string[]): boolean {
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg === '-m') return args[i + 1] === ENGINE_MODULE;
+		if (PYTHON_VALUE_OPTIONS.has(arg)) {
+			i++;
+			continue;
+		}
+		if (arg === '-c' || arg === '-' || arg === '--' || !arg.startsWith('-')) return false;
+	}
+	return false;
+}
+
+/** Does `uv run ...` (argv after `uv`) run `apps.engine_core`?
+ *
+ * Only flag-only uv options are skipped: a value-taking option leaves its
+ * value where the command belongs, which is not a Python interpreter, so it
+ * fails closed. */
+function uvRunsEngineModule(args: string[]): boolean {
+	if (args[0] !== 'run') return false;
+	for (let i = 1; i < args.length; i++) {
+		const arg = args[i];
+		if (arg === '-m' || arg === '--module') return args[i + 1] === ENGINE_MODULE;
+		if (arg === '--') return PYTHON_BASENAME.test(basename(args[i + 1] ?? '')) && pythonRunsEngineModule(args.slice(i + 2));
+		if (arg.startsWith('-')) continue;
+		return PYTHON_BASENAME.test(basename(arg)) && pythonRunsEngineModule(args.slice(i + 1));
 	}
 	return false;
 }

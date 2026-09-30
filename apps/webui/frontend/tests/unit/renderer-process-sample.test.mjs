@@ -237,3 +237,32 @@ test('countLiveFamilyMembers throws on unavailable telemetry or an unknown sourc
 		/source/
 	);
 });
+
+test('isEngineCommand rejects Python running a script, -c, or stdin whose ARGUMENTS name the engine module (Sol P1, PR #4540)', () => {
+	for (const command of [
+		'python proxy.py -m apps.engine_core',
+		'python3 -u /tmp/forward.py -m apps.engine_core',
+		'python -c import_forwarder -m apps.engine_core',
+		'python - -m apps.engine_core',
+		'python -- -m apps.engine_core',
+		'uv run python proxy.py -m apps.engine_core',
+		'uv run --no-sync socat -m apps.engine_core',
+		'uv run -m apps.engine_core_proxy'
+	]) {
+		assert.equal(sample.isEngineCommand(command), false, command);
+	}
+});
+
+test('isEngineCommand accepts the engine module behind interpreter and uv options', () => {
+	// Control for the refusals above: an over-strict parser would pass them and fail these.
+	for (const command of [
+		'/Users/dev/code/x/.venv/bin/python3 -m apps.engine_core serve --port 8686',
+		'python3.11 -u -B -m apps.engine_core serve',
+		'python -X dev -W ignore -m apps.engine_core',
+		'uv run --no-sync python -m apps.engine_core serve --port 8686',
+		'uv run -- python3 -m apps.engine_core',
+		'uv run --no-sync -m apps.engine_core'
+	]) {
+		assert.equal(sample.isEngineCommand(command), true, command);
+	}
+});
