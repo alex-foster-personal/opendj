@@ -23,6 +23,8 @@ Regression lines:
     gets no graceful shutdown, then broken
   - if a guarded Playwright webServer sets gracefulShutdown (a group signal the guard
     would repeat) then broken
+  - if a stalled github.com git fetch in a pull_request CI env delays the guarded
+    webServer's start, or the runner exits unseen before it binds, then broken
 """
 
 from __future__ import annotations
@@ -287,6 +289,11 @@ def test_the_guard_refuses_to_start_unless_it_leads_its_group(tmp_path: Path) ->
 # ---------------------------------------------------------------- playwright side
 
 
+# captureGitInfo off: on GitHub Actions, Playwright's git-commit-info plugin runs
+# BEFORE any webServer starts and, for a pull_request event, does a network
+# `git fetch origin <base sha>`. Its 3 s timeout SIGTERMs git but then waits for
+# every pipe to close, so a stalled fetch starved this webServer past 90 s
+# (6 of 12 fast-tier failures, 19:00Z Mon 28 Sep to 07:20Z Tue 29 Sep 2026).
 PLAYWRIGHT_CONFIG = """
 import {{ defineConfig }} from '@playwright/test';
 import {{ guardedWebServerCommand }} from '../tests/e2e/support/guarded-web-server';
@@ -294,6 +301,7 @@ export default defineConfig({{
     testDir: '.',
     testMatch: 'hang.spec.ts',
     timeout: 300_000,
+    captureGitInfo: {{ commit: false, diff: false }},
     webServer: [{{
         command: guardedWebServerCommand('orphan-test', {command!r}),
         url: 'http://127.0.0.1:{port}',
@@ -302,6 +310,11 @@ export default defineConfig({{
     }}],
 }});
 """
+
+# Healthy start measured on agentbox Tue 29 Sep 2026: p50 1 s idle, p50 3.4 s and
+# max 6 s at load 46 on 16 threads. Matches the config's own webServer timeout.
+WEBSERVER_START_BOUND_S = 60
+GITHUB_REMOTE_PREFIXES = ("https://github.com/", "git@github.com:", "ssh://git@github.com/")
 
 
 def _port_holder(port: int) -> int | None:
@@ -314,17 +327,66 @@ def _port_holder(port: int) -> int | None:
     return int(out[0]) if out else None
 
 
+def _silent_listener() -> socket.socket:
+    """Accepts TCP connections and never answers: a stalled egress, on any host."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    sock.listen(8)
+    return sock
+
+
+def _ci_env_with_stalled_github(tmp_path: Path, black_hole: socket.socket) -> dict[str, str]:
+    """The pull_request CI environment, with every github.com git remote pointed
+    at ``black_hole``, so any git network step before the webServer hangs here
+    exactly as a stalled fetch did on the CI hosts."""
+    event = tmp_path / "event.json"
+    event.write_text(
+        json.dumps({"pull_request": {"title": "t", "number": 1, "base": {"sha": "0" * 40}}})
+    )
+    stalled = f"https://127.0.0.1:{black_hole.getsockname()[1]}/"
+    rewrites = {f"GIT_CONFIG_KEY_{i}": f"url.{stalled}.insteadOf" for i in range(3)}
+    values = {f"GIT_CONFIG_VALUE_{i}": p for i, p in enumerate(GITHUB_REMOTE_PREFIXES)}
+    return {
+        **os.environ,
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_PATH": str(event),
+        "GIT_CONFIG_COUNT": str(len(GITHUB_REMOTE_PREFIXES)),
+        **rewrites,
+        **values,
+        "DEBUG": "pw:webserver",
+        "DEBUG_GIT_COMMIT_INFO": "1",
+    }
+
+
+def _wait_for_webserver(runner: subprocess.Popen[bytes], port: int, log: Path) -> int:
+    """The webServer's pid; fails at once, with the runner's log, if the runner exits first."""
+    deadline = time.monotonic() + WEBSERVER_START_BOUND_S
+    while (holder := _port_holder(port)) is None:
+        assert runner.poll() is None, (
+            f"playwright exited {runner.returncode} before its webServer bound {port}:\n"
+            + log.read_text()[-4000:]
+        )
+        assert time.monotonic() < deadline, (
+            f"no webServer on {port} after {WEBSERVER_START_BOUND_S}s:\n" + log.read_text()[-4000:]
+        )
+        time.sleep(0.1)
+    return holder
+
+
 @pytest.mark.skipif(
     not PLAYWRIGHT_BIN.exists(), reason="frontend node_modules not installed (pnpm install)"
 )
 @pytest.mark.skipif(shutil.which("lsof") is None, reason="needs lsof to find the port holder")
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGKILL], ids=["SIGTERM", "SIGKILL"])
 def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
-    cleanup_pids: list[int], sig: signal.Signals
+    tmp_path: Path, cleanup_pids: list[int], sig: signal.Signals
 ) -> None:
     port = _free_port()
     work = FRONTEND / f".tmp-orphan-guard-{uuid.uuid4().hex[:8]}"
     work.mkdir()
+    log = tmp_path / "playwright.log"
+    runner: subprocess.Popen[bytes] | None = None
+    black_hole = _silent_listener()
     try:
         server_command = f"{sys.executable} -m http.server {port} --bind 127.0.0.1"
         (work / "guard.config.ts").write_text(
@@ -334,15 +396,15 @@ def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
             "import { test } from '@playwright/test';\n"
             "test('hang', async () => { await new Promise((r) => setTimeout(r, 290_000)); });\n"
         )
-        runner = subprocess.Popen(
-            [str(PLAYWRIGHT_BIN), "test", "-c", str(work / "guard.config.ts")],
-            cwd=FRONTEND,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        wait_for(lambda: _port_holder(port) is not None, 90, f"webServer on {port}")
-        holder = _port_holder(port)
-        assert holder is not None
+        with log.open("wb") as out:
+            runner = subprocess.Popen(
+                [str(PLAYWRIGHT_BIN), "test", "-c", str(work / "guard.config.ts")],
+                cwd=FRONTEND,
+                env=_ci_env_with_stalled_github(tmp_path, black_hole),
+                stdout=out,
+                stderr=subprocess.STDOUT,
+            )
+        holder = _wait_for_webserver(runner, port, log)
         cleanup_pids.append(holder)
         runner.send_signal(sig)
         runner.wait(timeout=30)
@@ -352,6 +414,10 @@ def test_guarded_webserver_dies_when_the_playwright_runner_is_killed(
             f"webServer {holder} to die with the runner ({sig.name})",
         )
     finally:
+        if runner is not None and runner.poll() is None:
+            runner.kill()  # a failed wait must not leave the runner (and its server) behind
+            runner.wait(timeout=30)
+        black_hole.close()
         shutil.rmtree(work, ignore_errors=True)
 
 

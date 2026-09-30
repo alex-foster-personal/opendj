@@ -103,6 +103,8 @@ export const SOAK_OVERRUN_SLACK_MS = 300_000;
 const TEST_TIMEOUT_MS = SOAK_DURATION_MS + SOAK_OVERRUN_SLACK_MS + 120_000;
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'audio-soak.spec.ts',
 	fullyParallel: false,
