@@ -6,6 +6,7 @@
  * downstream of every other module in this group.
  */
 
+import type { ArmAtPosition } from './beat-sync-math';
 import type { DeckId } from './deck-slots';
 
 export type MasterMode = 'auto' | 'locked';
@@ -116,7 +117,7 @@ export interface AudioEngine {
 	armHotCueTrigger(
 		deck: DeckId,
 		targetPositionMs: number,
-		armAtPositionSec: number,
+		armAtPositionSec: ArmAtPosition,
 		pressT0Ms?: number
 	): Promise<number>;
 	/** LATENCY-02: arm QUANTIZED LAUNCH on the follower's next shared beat 1. */

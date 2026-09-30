@@ -38,7 +38,7 @@ from tests.opendj_cli import ts_contract
 _SAMPLE_TOKENS = (
     "1", "8", "true", "0.5", "sample", "0 1000", "1:5000",
     "A", "bad", "beat", "low", "next", "top", "vocal",
-    "beatgrid", "own", "practice", "hybrid",
+    "beatgrid", "own", "practice", "hybrid", "tri-band",
 )
 
 
@@ -139,6 +139,26 @@ def test_head_delay_ms_uses_the_0_to_500_ms_domain_not_unit() -> None:
     }
     with pytest.raises(InvocationError, match=r"0\.\.500"):
         parse_invocation(["head_delay_ms", "501"])
+
+
+def test_waveform_seek_builds_the_bus_command_with_snap() -> None:
+    assert parse_invocation(["waveform_seek", "2", "12500", "downbeat"]).command == {
+        "type": "waveform_seek",
+        "deck": 2,
+        "position_ms": 12500.0,
+        "snap": "downbeat",
+    }
+    with pytest.raises(InvocationError, match="downbeat\\|beat\\|exact"):
+        parse_invocation(["waveform_seek", "1", "0", "instant"])
+
+
+def test_set_waveform_design_builds_the_bus_command() -> None:
+    assert parse_invocation(["set_waveform_design", "tri-band"]).command == {
+        "type": "set_waveform_design",
+        "design": "tri-band",
+    }
+    with pytest.raises(InvocationError, match="tri-band\\|mono\\|line"):
+        parse_invocation(["set_waveform_design", "rainbow"])
 
 
 def test_leftover_tokens_are_refused_rather_than_dropped() -> None:
