@@ -19,8 +19,16 @@ Controls:
   pays a library scan (the round 2 finding, back through the page size);
 * the probe for that must see the election when a page does cross it;
 * ``PULL_LIMIT`` stays within what the hub serves (``MAX_PULL_LIMIT``);
-* a push body of ``PUSH_BATCH_ROWS`` track rows 200 bytes wider than the
-  10k fixture's (580 B each) stays under a 1 MiB proxy default.
+* a push of WIDE track rows (long ``title``, ``artists_json``, ``file_path``)
+  closes each request at ``PUSH_BODY_MAX_BYTES``, under a 1 MiB proxy
+  default, rather than at the row cap alone;
+* a proxy that still refuses a body as too large (413) gets it again in
+  halves, and one row it refuses alone fails loud, naming the row.
+
+The proxy is :class:`_ProxiedHub`: the real hub router behind a body limit,
+weighing each POST exactly as :class:`apps.sync_hub.transport.HttpTransport`
+encodes it. It fakes no hub answer; a body over its limit never reaches the
+hub, which is what a reverse proxy's 413 means.
 """
 
 from __future__ import annotations
@@ -28,15 +36,16 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.shared.state import db as state_db
-from apps.sync_hub import client, engine, identity_verdicts, protocol, service
+from apps.sync_hub import client, engine, identity_verdicts, protocol, service, transport
 from apps.sync_hub.engine_identity_map import effective_identity_remap
 from tests.cloudsync.enrollment_transport import TestClientTransport
 from tests.cloudsync.test_hub_sync import _DEV_B, _T0, _T1
@@ -49,21 +58,87 @@ SMALL_LIBRARY = 300
 LARGE_LIBRARY = 1_200
 ROWS_PER_REQUEST = 1_000
 PROXY_BODY_LIMIT_BYTES = 1_048_576
-WIDER_TITLE = "w" * 200
+#: A proxy tighter than the client's own bound, so the 413 split must run.
+TIGHT_PROXY_LIMIT_BYTES = 256 * 1024
+#: Characters added to each of ``title``, ``artists_json`` and ``file_path``:
+#: about 1.5 KB a row, so ``PUSH_BATCH_ROWS`` of them is well over 1 MiB.
+WIDE_TEXT_CHARS = 500
 
 
 # ----- fixtures -----------------------------------------------------------------
 
 
-@pytest.fixture
-def hub(tmp_path: Path) -> Iterator[TestClientTransport]:
+def _hub_app(hub_dir: Path) -> FastAPI:
     app = FastAPI()
-    app.state.state_db_path = str(client.state_db_path(tmp_path / "hub"))
-    app.state.sync_hub_data_dir = str(tmp_path / "hub")
+    app.state.state_db_path = str(client.state_db_path(hub_dir))
+    app.state.sync_hub_data_dir = str(hub_dir)
     app.state.sync_hub_machine_name = "hub"
     app.include_router(service.router, prefix="/api/v1")
-    with TestClient(app) as http:
+    return app
+
+
+@pytest.fixture
+def hub(tmp_path: Path) -> Iterator[TestClientTransport]:
+    with TestClient(_hub_app(tmp_path / "hub")) as http:
         yield TestClientTransport(http)
+
+
+class _ProxiedHub(TestClientTransport):
+    """The real hub router behind a reverse proxy with a request body limit.
+
+    Every POST is encoded as :class:`apps.sync_hub.transport.HttpTransport`
+    encodes it and weighed; one over ``body_limit`` is answered 413 without
+    reaching the hub, as nginx's ``client_max_body_size`` does. The rest go
+    to the real router unchanged.
+    """
+
+    __test__ = False
+
+    def __init__(self, http: TestClient, *, body_limit: int | None) -> None:
+        super().__init__(http)
+        self._body_limit = body_limit
+        #: Bytes of every push body the hub received, in order.
+        self.delivered_push_bytes: list[int] = []
+        #: Bytes of every push body the proxy refused, in order.
+        self.refused_push_bytes: list[int] = []
+
+    def post(self, path: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+        body = json.dumps(dict(payload)).encode("utf-8")
+        is_push = path.endswith("/push")
+        if self._body_limit is not None and len(body) > self._body_limit:
+            if is_push:
+                self.refused_push_bytes.append(len(body))
+            raise transport.refused(
+                f"POST {path}", 413, '{"detail":"request entity too large"}'
+            )
+        if is_push:
+            self.delivered_push_bytes.append(len(body))
+        response = self._http.post(
+            path, content=body, headers={"content-type": "application/json"}
+        )
+        return self._decoded(response, f"POST {path}")
+
+
+def _widen(data_dir: Path, tracks: int, *, extra_chars: int) -> None:
+    """A spoke library of ``tracks`` whose text columns are ``extra_chars`` longer."""
+    conn = state_db.open_rw(client.state_db_path(data_dir))
+    try:
+        _seed_library(conn, tracks)
+        conn.execute(
+            "UPDATE tracks SET title = title || ?, artists_json = ?, file_path = ?",
+            (
+                "t" * extra_chars,
+                json.dumps(["a" * extra_chars]),
+                "/Music/" + "p" * extra_chars + ".mp3",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _sync_through(proxy: _ProxiedHub, data_dir: Path) -> client.SyncResult:
+    return client.run_sync(data_dir, "http://hub.invalid", transport=proxy, name=data_dir.name)
 
 
 def _first_syncs(hub: TestClientTransport, tmp_path: Path, tracks: int) -> tuple[int, int, int]:
@@ -160,28 +235,59 @@ def test_the_pull_limit_is_one_the_hub_serves() -> None:
     assert 0 < client.PULL_LIMIT <= service.MAX_PULL_LIMIT
 
 
-def test_a_full_push_body_stays_under_a_proxy_default(tmp_path: Path) -> None:
-    print("if one push request of wide track rows exceeds a 1 MiB proxy body limit, then broken")
-    conn = _open_hub(tmp_path / "body")
-    try:
-        rows = [
-            protocol.RowChange(
-                table=change.table,
-                pk=change.pk,
-                values={**change.values, "title": f"{WIDER_TITLE}{index}"},
-            )
-            for index, change in enumerate(_new_tracks(conn, client.PUSH_BATCH_ROWS))
-        ]
-    finally:
-        conn.close()
-    body = json.dumps(
-        {"rows": [row.to_wire() for row in rows], "machine_id": "m" * 32},
-        separators=(",", ":"),
-    ).encode()
-    assert len(body) < PROXY_BODY_LIMIT_BYTES, (
-        f"{client.PUSH_BATCH_ROWS} rows make a {len(body):,}-byte push body, over "
-        f"{PROXY_BODY_LIMIT_BYTES:,}: a proxy with a default body limit refuses every push"
+@pytest.mark.requirement("CLOUDSYNC-27")
+def test_wide_rows_close_each_push_at_the_body_bound(tmp_path: Path) -> None:
+    print("if one push request of wide track rows exceeds PUSH_BODY_MAX_BYTES, then broken")
+    assert client.PUSH_BODY_MAX_BYTES < PROXY_BODY_LIMIT_BYTES
+    spoke = tmp_path / "wide"
+    _widen(spoke, client.PUSH_BATCH_ROWS, extra_chars=WIDE_TEXT_CHARS)
+    with TestClient(_hub_app(tmp_path / "hub")) as http:
+        proxy = _ProxiedHub(http, body_limit=None)
+        result = _sync_through(proxy, spoke)
+    assert result.accepted == result.pushed >= client.PUSH_BATCH_ROWS, (
+        "nothing to weigh: the push did not deliver the library"
     )
+    by_rows = math.ceil(result.pushed / client.PUSH_BATCH_ROWS)
+    assert result.push_requests > by_rows, (
+        f"{result.pushed} wide rows went in {result.push_requests} request(s), "
+        f"no more than the row cap alone makes ({by_rows}): no batch closed on bytes"
+    )
+    widest = max(proxy.delivered_push_bytes)
+    assert widest <= client.PUSH_BODY_MAX_BYTES, (
+        f"a push body of {widest:,} bytes is over PUSH_BODY_MAX_BYTES "
+        f"{client.PUSH_BODY_MAX_BYTES:,}: a proxy with a 1 MiB default refuses it"
+    )
+
+
+@pytest.mark.requirement("CLOUDSYNC-27")
+def test_a_push_the_proxy_refuses_as_too_large_is_resent_in_halves(tmp_path: Path) -> None:
+    print("if a push refused with HTTP 413 is not split and re-sent, then broken")
+    assert TIGHT_PROXY_LIMIT_BYTES < client.PUSH_BODY_MAX_BYTES
+    spoke = tmp_path / "wide"
+    _widen(spoke, client.PUSH_BATCH_ROWS, extra_chars=WIDE_TEXT_CHARS)
+    with TestClient(_hub_app(tmp_path / "hub")) as http:
+        proxy = _ProxiedHub(http, body_limit=TIGHT_PROXY_LIMIT_BYTES)
+        result = _sync_through(proxy, spoke)
+    assert proxy.refused_push_bytes, "the proxy refused nothing, so no split was tested"
+    assert result.accepted == result.pushed >= client.PUSH_BATCH_ROWS, (
+        f"{result.pushed} rows offered, {result.accepted} accepted behind a "
+        f"{TIGHT_PROXY_LIMIT_BYTES:,}-byte proxy"
+    )
+    assert max(proxy.delivered_push_bytes) <= TIGHT_PROXY_LIMIT_BYTES
+
+
+@pytest.mark.requirement("CLOUDSYNC-27")
+def test_one_row_the_proxy_refuses_alone_fails_loud(tmp_path: Path) -> None:
+    print("if a single row over the proxy limit fails without naming the row, then broken")
+    spoke = tmp_path / "one-huge-row"
+    _widen(spoke, 1, extra_chars=TIGHT_PROXY_LIMIT_BYTES)
+    with TestClient(_hub_app(tmp_path / "hub")) as http:
+        proxy = _ProxiedHub(http, body_limit=TIGHT_PROXY_LIMIT_BYTES)
+        with pytest.raises(client.SyncTransportError) as excinfo:
+            _sync_through(proxy, spoke)
+    assert excinfo.value.status_code == 413
+    assert "ONE tracks row ['stored-0']" in str(excinfo.value), str(excinfo.value)
+    assert proxy.refused_push_bytes and not proxy.delivered_push_bytes
 
 
 # ----- overshoot controls -------------------------------------------------------
