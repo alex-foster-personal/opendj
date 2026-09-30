@@ -1,9 +1,10 @@
 """Issue #4396: a no-op sync must not re-hash every table, and must still see every change.
 
 The gate (:mod:`apps.sync_hub.digest_gate`) reuses a digest only when the
-changelog seqs, the schema cookie, the identity remap and every digested
-table's trigger-maintained write token are all unchanged. These tests prove
-both halves against the real hub router and real state DBs:
+changelog seqs, every `sqlite_master` definition (rollback-safe, not
+`PRAGMA schema_version`), the identity remap and every digested table's
+trigger-maintained write token are all unchanged. These tests prove both
+halves against the real hub router and real state DBs:
 
 * PRESENCE of the saving: a settled no-op sync walks zero digests and is
   served from the gate on both sides, counted by the gate's own production
