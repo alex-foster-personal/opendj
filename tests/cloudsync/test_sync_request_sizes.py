@@ -238,7 +238,7 @@ def test_the_pull_limit_is_one_the_hub_serves() -> None:
     assert 0 < client.PULL_LIMIT <= service.MAX_PULL_LIMIT
 
 
-@pytest.mark.requirement("CLOUDSYNC-27")
+@pytest.mark.requirement("CLOUDSYNC-28")
 def test_wide_rows_close_each_push_at_the_body_bound(tmp_path: Path) -> None:
     print("if one push request of wide track rows exceeds PUSH_BODY_MAX_BYTES, then broken")
     assert client.PUSH_BODY_MAX_BYTES < PROXY_BODY_LIMIT_BYTES
@@ -262,7 +262,7 @@ def test_wide_rows_close_each_push_at_the_body_bound(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.requirement("CLOUDSYNC-27")
+@pytest.mark.requirement("CLOUDSYNC-28")
 def test_a_push_the_proxy_refuses_as_too_large_is_resent_in_halves(tmp_path: Path) -> None:
     print("if a push refused with HTTP 413 is not split and re-sent, then broken")
     assert TIGHT_PROXY_LIMIT_BYTES < client.PUSH_BODY_MAX_BYTES
@@ -279,7 +279,7 @@ def test_a_push_the_proxy_refuses_as_too_large_is_resent_in_halves(tmp_path: Pat
     assert max(proxy.delivered_push_bytes) <= TIGHT_PROXY_LIMIT_BYTES
 
 
-@pytest.mark.requirement("CLOUDSYNC-27")
+@pytest.mark.requirement("CLOUDSYNC-28")
 def test_one_row_the_proxy_refuses_alone_fails_loud(tmp_path: Path) -> None:
     print("if a single row over the proxy limit fails without naming the row, then broken")
     spoke = tmp_path / "one-huge-row"
