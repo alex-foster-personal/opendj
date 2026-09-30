@@ -17,6 +17,7 @@ ordering and short-circuiting, not those functions' internals.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -91,3 +92,47 @@ def test_main_refuses_a_foreign_or_dirty_frontend_build(tmp_path: Path) -> None:
         pytest.raises(SystemExit, match="foreign sha"),
     ):
         cmr.main(_main_argv(tmp_path / "ledger.json"))
+
+
+def _run_main_with_post_capture_version(tmp_path: Path, post_reason: str | None) -> Path:
+    """main() with --gig-baseline: the pre-capture gates pass, sampling is stubbed,
+    and the frontend version check answers `post_reason` on its SECOND call."""
+    ledger = tmp_path / "ledger.json"
+    if not ledger.exists():
+        ledger.write_text('{\n  "entries": []\n}\n')
+    sample = {"footprint_mb": 1000.0, "cpu_percent": 50.0, "sample_count": 4.0}
+    with (
+        patch("scripts.perf.capture_mode_ratios._require_macos"),
+        patch("scripts.perf.capture_mode_ratios._verify_capturing_checkout_clean", return_value=None),
+        patch("scripts.perf.capture_mode_ratios._frontend_mode", return_value="static-build"),
+        patch(
+            "scripts.perf.capture_mode_ratios._verify_frontend_build_version",
+            side_effect=[None, post_reason],
+        ),
+        patch(
+            "scripts.perf.capture_mode_ratios._capture_gig_then_trackify",
+            return_value=(sample, {**sample, "footprint_mb": 400.0}, ["a" * 40]),
+        ),
+    ):
+        cmr.main([*_main_argv(ledger), "--gig-baseline"])
+    return ledger
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_main_refuses_rows_when_the_frontend_changes_during_sampling(tmp_path: Path) -> None:
+    """[if] the served frontend no longer matches after sampling [then] main() refuses and
+    writes no row [⛔️ if rows are appended under the pre-capture sha].
+
+    Sol P1/BLOCKING, PR #4034, discussion_r4149791234.
+    """
+    with pytest.raises(SystemExit, match="post-capture reverification failed.*foreign sha"):
+        _run_main_with_post_capture_version(tmp_path, "frontend serves a foreign sha")
+    assert json.loads((tmp_path / "ledger.json").read_text())["entries"] == []
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_main_appends_rows_when_identity_still_holds_after_sampling(tmp_path: Path) -> None:
+    """Control: [if] every gate still passes after sampling [then] both ratio rows land."""
+    ledger = _run_main_with_post_capture_version(tmp_path, None)
+    kpis = [row["kpi"] for row in json.loads(ledger.read_text())["entries"]]
+    assert kpis == ["trackify_mode_footprint_ratio", "trackify_mode_cpu_ratio"]

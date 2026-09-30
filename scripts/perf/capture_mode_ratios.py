@@ -370,6 +370,23 @@ _METHOD = (
 )
 
 
+def _capture_identity_reason(frontend: str, sha: str) -> str | None:
+    """Every identity gate, or None when all pass: this checkout clean at `sha`,
+    and `frontend` a static build (never vite-dev) whose own version is `sha`."""
+    checkout_reason = _verify_capturing_checkout_clean()
+    if checkout_reason is not None:
+        return checkout_reason
+    if _git_sha() != sha:
+        return f"the capturing checkout moved off {sha} to {_git_sha()}"
+    if _frontend_mode(frontend) == "vite-dev":
+        return (
+            "capture_mode_ratios refuses a vite-dev frontend: /_app/version.json 404s in "
+            "dev mode, so it cannot confirm its own build identity (mirrors "
+            "capture_library_targets.py's vite-dev refusal, PR #4034, discussion_r4132371694)"
+        )
+    return _verify_frontend_build_version(frontend, sha)
+
+
 def main(argv: list[str] | None = None) -> int:
     _require_macos()
     parser = argparse.ArgumentParser(description="Capture Trackify mode KPI ratios")
@@ -393,19 +410,10 @@ def main(argv: list[str] | None = None) -> int:
     # checks capture_library_targets.py's `_verify_capture_targets` runs for
     # PERFMODE-14, scoped to what this capture actually has (no engine target
     # here, only a served frontend).
-    checkout_reason = _verify_capturing_checkout_clean()
-    if checkout_reason is not None:
-        raise SystemExit(f"refusing to capture: {checkout_reason}")
     sha = _git_sha()
-    if _frontend_mode(args.frontend) == "vite-dev":
-        raise SystemExit(
-            "capture_mode_ratios refuses a vite-dev frontend: /_app/version.json 404s in "
-            "dev mode, so it cannot confirm its own build identity (mirrors "
-            "capture_library_targets.py's vite-dev refusal, PR #4034, discussion_r4132371694)"
-        )
-    frontend_reason = _verify_frontend_build_version(args.frontend, sha)
-    if frontend_reason is not None:
-        raise SystemExit(f"refusing to capture: {frontend_reason}")
+    identity_reason = _capture_identity_reason(args.frontend, sha)
+    if identity_reason is not None:
+        raise SystemExit(f"refusing to capture: {identity_reason}")
 
     meta = session_meta(sha=sha)
     rows: list[dict[str, Any]] = []
@@ -464,6 +472,15 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
+    # Sol P1/BLOCKING (PR #4034, discussion_r4149791234): the leak capture can
+    # run for an hour, so re-run every identity gate after sampling and before
+    # any row is appended, as capture_library_mode.py does.
+    post_reason = _capture_identity_reason(args.frontend, sha)
+    if post_reason is not None:
+        raise SystemExit(
+            "post-capture reverification failed (frontend or checkout changed during "
+            f"the capture): {post_reason}"
+        )
     append_ledger_rows(args.ledger, rows)
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0

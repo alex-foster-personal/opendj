@@ -209,8 +209,16 @@ def _rows_from_capture_result(
     # phase's denominator without leaving a trace on an otherwise-clean
     # `measured: true` row. Refuse to score any row where either phase
     # reports a failure, rather than silently averaging over survivors.
+    # Sol P1/BLOCKING (PR #4034, discussion_r4149791223): the count is
+    # REQUIRED, not defaulted. A producer that stops emitting it (contract
+    # drift) must fail loudly here, never read as zero failed ticks.
     for mode, capture in (("gig", gig), ("library", library)):
-        failure_count = capture.get("sample_failure_count", 0)
+        failure_count = capture.get("sample_failure_count")
+        if type(failure_count) is not int or failure_count < 0:
+            raise ValueError(
+                f"{mode} phase sample_failure_count is {failure_count!r}, not a non-negative "
+                "integer; refusing to score a row whose failed-tick count is unknown"
+            )
         if failure_count:
             raise ValueError(
                 f"{mode} phase had {failure_count} failed sample tick(s) during the dwell; "
