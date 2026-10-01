@@ -75,7 +75,10 @@ async function doNext(page: Page, label: string): Promise<void> {
 }
 
 async function openPanel(page: Page): Promise<void> {
-	const ribbon = page.getByRole('button', { name: /stems |lyrics / });
+	// The job ribbon itself (LibraryJobsChrome.svelte), by its own class. A
+	// role-and-name match on /stems |lyrics / also takes the library health
+	// dots and the stem-cache dot, whose labels name the same lanes.
+	const ribbon = page.locator('button.job-ribbon');
 	await expect(ribbon).toBeVisible({ timeout: 15_000 });
 	await ribbon.click();
 	await expect(page.getByTestId('library-job-queue-panel')).toBeVisible();
@@ -122,6 +125,14 @@ function removeStemBundle(stableId: string): void {
 }
 
 test.beforeEach(async ({ page }) => {
+	// This suite runs a REAL engine, which lists the host's own USB volumes.
+	// On a machine with a stick or an external disk mounted the "USB sticks"
+	// panel opens by itself over the job queue panel and takes its clicks.
+	// The suite is about library jobs, so the host's volumes are answered as
+	// none (same body as the engine's empty scan).
+	await page.route('**/api/v1/usb/volumes', (route) =>
+		route.fulfill({ json: { volumes: [], scanned_at: 0 } })
+	);
 	await page.goto('/performance');
 	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible({
 		timeout: 30_000

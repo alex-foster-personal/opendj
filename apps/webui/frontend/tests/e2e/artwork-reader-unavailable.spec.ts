@@ -336,6 +336,54 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/v1/ingest/coverage**', (route) =>
 		route.fulfill({ json: { total_tracks: 1, on_disk: 1, unreachable: 0, missing: { vocals: 1, stems: 1 }, generated_at: 0 } })
 	);
+	// TrackTable asks the engine once per page session to bring stored beatgrid
+	// verdicts up to date (api-grid-flags.ts `ensureGridQualityScan`). Declared
+	// as a KNOWN request; `idle` is the engine's answer when nothing is running.
+	await page.route('**/api/v1/beatgrid-flags/scan', (route) =>
+		route.fulfill({
+			json: { state: 'idle', running_scope: null, last_result: null, last_error: null }
+		})
+	);
+	// StemCacheHealthDot.svelte reads the stem cache's disk state on mount and
+	// every 60 s. Declared as a KNOWN request, with every field the wire type
+	// (StemCacheStatusOut) requires and an empty, healthy cache.
+	await page.route('**/api/v1/stems/cache/status', (route) =>
+		route.fulfill({
+			json: {
+				state: 'healthy',
+				stems_dir: '/e2e/stems',
+				disk_total_bytes: 1_000_000_000_000,
+				disk_free_bytes: 500_000_000_000,
+				floor_bytes: 20_000_000_000,
+				shortfall_bytes: 0,
+				cache_bytes: 0,
+				budget_bytes: 480_000_000_000,
+				over_budget_bytes: 0,
+				bundle_count: 0,
+				evictable_bundle_count: 0,
+				evictable_bytes: 0,
+				would_evict_count: 0,
+				would_evict_bytes: 0,
+				local_only_count: 0,
+				local_only_bytes: 0,
+				local_only_stable_ids: [],
+				upload_queue_count: 0,
+				protected_count: 0,
+				can_rehydrate: false,
+				blocked_reason: null,
+				settings: {
+					auto_evict: false,
+					enforce_interval_s: 300,
+					floor_fraction: 0.02,
+					floor_gib: 20,
+					max_cache_gib: null
+				},
+				enforcer_running: false,
+				last_enforcement: null,
+				last_error: null
+			}
+		})
+	);
 	await page.route('**/api/v1/reconcile/summary', (route) =>
 		route.fulfill({ json: { total_tracks: 1, total_broken: 0, orphan_broken: 0, playlists: [] } })
 	);
