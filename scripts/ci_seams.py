@@ -264,7 +264,7 @@ def seam_traffic(pr_files: Iterable[Sequence[str]]) -> SeamTraffic:
     ledger_crossings = sum(
         1
         for kinds, seams in zip(kind_sets, touched_sets, strict=True)
-        if len(seams) > 1 and len(_seams_of(kinds - {Kind.LEDGER})) < len(seams)
+        if len(seams) > 1 and len(_seams_of(kinds - {Kind.LEDGER})) < 2
     )
     order = sorted(ALL_SEAMS)
     return SeamTraffic(

@@ -6,8 +6,6 @@
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
 	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
 	import { selectVisibleToasts } from '$lib/toast-tray-policy';
-
-	const visibleToasts = $derived(selectVisibleToasts(toasts));
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import {
@@ -58,6 +56,8 @@
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
+
+	const visibleToasts = $derived(selectVisibleToasts(toasts));
 
 	let { children } = $props();
 
