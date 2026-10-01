@@ -1,0 +1,5 @@
+2026-09-30T19:06:21.6983607Z =========================== short test summary info ============================
+2026-09-30T19:06:21.6990208Z SKIPPED [1] tests/perf/test_amdahl_report_stems.py:110: UNAVAILABLE: no ring on this machine has ever held a failed stem-upgrade row. The locked deck-stems-fail.json fixture is constructed with invented timings, so it cannot prove the production writer schema (Codex P1/BLOCKING, #705, discussion_r3923604587).
+2026-09-30T19:06:21.7021143Z FAILED tests/scripts/test_pre_pr_gate.py::test_the_pytest_environment_is_the_one_ci_builds - AssertionError: []
+2026-09-30T19:06:22.7016476Z = 1 failed, 3504 passed, 73 skipped, 14341 deselected, 1 xfailed, 22 warnings in 1062.56s (0:17:42) =
+2026-09-30T19:06:25.1902723Z ##[error]Process completed with exit code 1.
