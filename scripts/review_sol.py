@@ -186,6 +186,7 @@ def substitute_alternatives(
                 substituted_by=stand_in,
                 carried_from=verdict.carried_from,
                 carried_paths=verdict.carried_paths,
+                carry_proof=verdict.carry_proof,
             )
         )
     return out
