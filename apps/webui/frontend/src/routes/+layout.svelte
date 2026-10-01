@@ -55,7 +55,6 @@
 	import { entitlements } from '$lib/api/entitlements.svelte';
 	import BuildIdentity from '$lib/components/rb/BuildIdentity.svelte';
 	import BrandLaunch from '$lib/components/BrandLaunch.svelte';
-	import PerformanceAppNav from '$lib/components/PerformanceAppNav.svelte';
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
@@ -303,10 +302,9 @@
 {/if}
 
 {#if isFullBleedRoute}
+	<!-- Nothing but the route: the way out of /performance is the top bar's
+	     mode picker (Library), and the app-shell sidebar from there. -->
 	{@render children()}
-	{#if isPerformance}
-		<PerformanceAppNav />
-	{/if}
 {:else}
 <div class="app-shell">
 	<aside class="sidebar">
