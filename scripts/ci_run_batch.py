@@ -92,6 +92,22 @@ def fetch_run(
     return fetch(f"https://api.github.com/repos/{repository}/actions/runs/{run_id}")
 
 
+def fetch_attempt(
+    repository: str,
+    run_id: str,
+    attempt: int,
+    token: str,
+    agent: str,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """One attempt of a run: a listing shows only the latest, so an earlier attempt's
+    conclusion is read here."""
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    return fetch(
+        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}"
+    )
+
+
 def fetch_completed_runs(
     repository: str,
     created_since: str,

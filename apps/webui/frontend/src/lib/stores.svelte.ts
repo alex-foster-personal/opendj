@@ -148,6 +148,13 @@ function _nonExitingCount(): number {
 	return toasts.filter((t) => t.exiting !== true).length;
 }
 
+function _announceToastEviction(logId: string): void {
+	if (typeof window === 'undefined') return;
+	if (typeof window.dispatchEvent !== 'function') return;
+	if (typeof CustomEvent === 'undefined') return;
+	window.dispatchEvent(new CustomEvent<string>('toast:evicted', { detail: logId }));
+}
+
 function _enforceToastTrayCap(): void {
 	while (_nonExitingCount() > TOAST_MAX_VISIBLE) {
 		const index = oldestNonExitingIndex(toasts);
@@ -155,6 +162,7 @@ function _enforceToastTrayCap(): void {
 		const victim = toasts[index];
 		victim.exiting = true;
 		_clearTimer(victim.id);
+		_announceToastEviction(victim.logId);
 	}
 }
 

@@ -66,7 +66,10 @@ except ModuleNotFoundError as exc:
 GATING_WORKFLOW = "CI"
 # CI Cost Guard and Stable evidence left this set on Tue 22 Sep 2026: each is a
 # scheduled batch pass now, not a per-SHA follower, so there is nothing of them
-# to supersede.
+# to supersede. Error sink rides the cost guard's pass since RUN-COUNT round 3, so
+# nothing is named this any more and the bookkeeping path below is inert; removing
+# it, and the FIX-409 lines that pin it, is its own change
+# (ADR-NEW-error-sink-rides-the-cost-guard).
 BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
 
