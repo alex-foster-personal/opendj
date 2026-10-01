@@ -366,7 +366,10 @@ describe('createCueAlignController', () => {
 		const controller = cueAlign.createCueAlignController(h.effects, h.calibration);
 		await controller.run({ interactive: false });
 		assert.equal(h.calibration.step, 'failed');
-		assert.match(h.calibration.error, /measurement unstable \(spread 15 ms\), try again with less room noise/);
+		assert.match(h.calibration.error, /^measurement unstable \(spread 15 ms\): the headphones latency itself changed between runs/,
+			'if the unstable error does not name the measured reason then every cause reads as the same failure - broken');
+		assert.doesNotMatch(h.calibration.error, /less room noise/,
+			'pin 9a722fd1: a quiet room with clearly heard chirps must not be told to reduce room noise - broken');
 		assert.match(h.calibration.error, /\(speakers 200, 200, 200 ms; headphones 900, 915, 900 ms\)/,
 			'if the unstable error hides the per-bus lags then nobody can tell which bus wandered - broken');
 		assert.deepEqual(h.calibration.diagnostics, {
