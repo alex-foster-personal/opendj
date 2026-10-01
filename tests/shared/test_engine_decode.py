@@ -73,6 +73,7 @@ def engine() -> Path:
         return resolve_engine_decoder()
     except EngineDecoderUnavailable as exc:
         pytest.skip(f"no odj-audio build in this checkout: {exc}")
+        raise  # unreachable: skip raises; keeps the return type total for mypy
 
 
 def test_probe_reads_the_stated_length(tmp_path: Path, engine: Path) -> None:
