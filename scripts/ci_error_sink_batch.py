@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 from scripts.ci_cost_guard import (
-    earlier_failed_attempts,
     reruns_no_pass_listed,
     sink_failure_records,
 )
