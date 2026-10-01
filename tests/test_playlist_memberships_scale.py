@@ -160,7 +160,8 @@ def test_single_row_add_write_count(client: TestClient, db_path: Path) -> None:
     assert len(after) == SCALE + 1
     for row in before:
         assert row in after
-    assert r.json()["items"][-1] == "t-extra"
+    assert after[-1][1] == "t-extra"
+    assert [row["stable_id"] for row in r.json()["added"]] == ["t-extra"]
 
 
 @pytest.mark.requirement("LIBM-03")

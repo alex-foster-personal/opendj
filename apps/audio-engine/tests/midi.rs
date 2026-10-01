@@ -66,7 +66,7 @@ impl Session {
     }
 }
 
-fn two_decks(tag: &str) -> std::path::PathBuf {
+fn two_decks(tag: &str) -> TestDir {
     let d = temp_dir(tag);
     write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 20.0));
     write_wav(&d, "b.wav", 48000, &sine(48000, 660.0, 20.0));
