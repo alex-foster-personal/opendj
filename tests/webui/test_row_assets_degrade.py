@@ -14,7 +14,9 @@ Regression one-liners:
   - if a row on the uncached path reads or fills the path-keyed preview or vocals memory then broken
   - if a hard-linked analysis file is read or remembered then broken
   - if an analysis file larger than 16 MiB is read then broken
-  - if a share root remounted as a new real directory stays refused then broken
+  - if a listing trusts a share root that became another directory, by rename or through a symlinked parent, then broken
+  - if the explicit re-anchor call trusts a root below a symlinked ancestor then broken
+  - if the explicit re-anchor call leaves the resolved-form anchor or a descriptor behind then broken
   - if a share root that is, or became, a symlink is trusted without being asked to then broken
   - if a row whose chain stopped early is read again on the next page then broken
   - if a missing share root reports a cover as unresolved then broken
@@ -276,34 +278,187 @@ def test_the_size_bound_fits_real_files_with_headroom(share: Path) -> None:
     assert len(row_assets._ROW_ASSETS) == 1, "a file at the bound is read"
 
 
-# ----- P2-b: a remounted share root -------------------------------------------
+# ----- a share root that became another directory (LIBM-139, round 5) ---------
+
+
+def _nested_share(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """``crate/share``: the shape of a remote-mode share root, one level down."""
+    root = (tmp_path / "crate" / "share").resolve()
+    build(root, INSIDE)
+    use_root(monkeypatch, root)
+    forget_everything()
+    return root
+
+
+def _swap_parent_for_a_symlink(root: Path, tmp_path: Path) -> None:
+    build(tmp_path / "evil" / "share", OUTSIDE)
+    os.rename(root.parent, tmp_path / "crate-moved-aside")
+    os.symlink(tmp_path / "evil", root.parent)
 
 
 @pytest.mark.requirement("LIBM-139")
-def test_a_remounted_real_root_is_trusted_afresh_and_logged_once(
+def test_a_symlinked_parent_does_not_get_another_tree_served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _nested_share(monkeypatch, tmp_path)
+    try:
+        assert level_of(call()) == INSIDE
+        anchored = fd_anchored_walk._ROOT_ANCHORS[str(root)]
+        _swap_parent_for_a_symlink(root, tmp_path)
+        assert (root / ANLZ_DIR / "ANLZ0000.DAT").is_file(), "control: the path now names the other tree"
+        for _attempt in range(2):
+            refused = call()
+            assert level_of(refused) is None
+            assert refused.artwork_status == "unresolved"
+        assert fd_anchored_walk._ROOT_ANCHORS[str(root)] == anchored
+        assert platform_paths.resolve_asset_path(ADP).reason == "unsafe:root-identity-changed"
+    finally:
+        forget_everything()
+        fd_anchored_walk.reset_root_anchors()
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_a_root_swapped_by_rename_is_refused_until_the_explicit_call(
     share: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     assert level_of(call()) == INSIDE
+    anchored = fd_anchored_walk._ROOT_ANCHORS[str(share)]
     os.rename(share, tmp_path / "unplugged")
     build(share, OTHER_LIBRARY)  # the same path, a new real directory
-    with caplog.at_level(logging.WARNING, logger="apps.shared.fd_anchored_walk"):
-        assert level_of(call()) == OTHER_LIBRARY
-        assert level_of(call()) == OTHER_LIBRARY
-    said = [r for r in caplog.records if "anchored afresh" in r.getMessage()]
-    assert len(said) == 1
-    anchored = os.stat(share)
-    assert row_assets._ROW_ASSETS._root == (str(share), anchored.st_dev, anchored.st_ino)
-    assert len(row_assets._ROW_ASSETS) == 1, "the old root's rows are gone"
-    resolved = platform_paths.resolve_asset_path(ADP)
-    assert resolved.resolved is not None, "the file routes follow the new anchor"
+    with caplog.at_level(logging.ERROR, logger="apps.shared.fd_anchored_walk"):
+        for _attempt in range(2):
+            refused = call()
+            assert level_of(refused) is None
+            assert refused.artwork_status == "unresolved"
+    assert any("refusing to walk" in r.getMessage() for r in caplog.records)
+    assert fd_anchored_walk._ROOT_ANCHORS[str(share)] == anchored, "a listing never moves the anchor"
+    assert platform_paths.resolve_asset_path(ADP).reason == "unsafe:root-identity-changed"
+
+    assert fd_anchored_walk.reanchor_root(share) is True
+    here = os.stat(share)
+    assert fd_anchored_walk._ROOT_ANCHORS[str(share)] == (here.st_dev, here.st_ino)
+    assert level_of(call()) == OTHER_LIBRARY
+    assert row_assets._ROW_ASSETS._root == (str(share), here.st_dev, here.st_ino)
+    assert platform_paths.resolve_asset_path(ADP).resolved is not None
 
 
 @pytest.mark.requirement("LIBM-139")
-def test_anchoring_afresh_forgets_every_remembered_row(share: Path) -> None:
+def test_the_explicit_call_refuses_a_symlinked_ancestor_and_says_which(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _nested_share(monkeypatch, tmp_path)
+    try:
+        assert level_of(call()) == INSIDE
+        anchored = dict(fd_anchored_walk._ROOT_ANCHORS)
+        _swap_parent_for_a_symlink(root, tmp_path)
+        with pytest.raises(fd_anchored_walk.RootReanchorRefused) as refusal:
+            fd_anchored_walk.reanchor_root(root)
+        assert str(root.parent) in str(refusal.value) and "symbolic link" in str(refusal.value)
+        assert anchored == fd_anchored_walk._ROOT_ANCHORS, "a refusal leaves the anchors alone"
+        assert level_of(call()) is None, "and the listing still refuses the other tree"
+    finally:
+        forget_everything()
+        fd_anchored_walk.reset_root_anchors()
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_the_explicit_call_accepts_real_ancestors(tmp_path: Path) -> None:
+    """Control for the refusal above: the same nested shape, nothing swapped."""
+    root = (tmp_path / "crate" / "share").resolve()
+    root.mkdir(parents=True)
+    try:
+        assert fd_anchored_walk.reanchor_root(root) is True
+        here = os.stat(root)
+        assert fd_anchored_walk._ROOT_ANCHORS[str(root)] == (here.st_dev, here.st_ino)
+    finally:
+        fd_anchored_walk.reset_root_anchors()
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_the_explicit_call_forgets_every_remembered_row(share: Path) -> None:
     call()
     assert len(row_assets._ROW_ASSETS) == 1
-    os.close(fd_anchored_walk.reanchor_real_root(share))  # type: ignore[arg-type]
+    assert fd_anchored_walk.reanchor_root(share) is True
     assert len(row_assets._ROW_ASSETS) == 0
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_the_explicit_call_on_a_missing_root_changes_nothing(share: Path, tmp_path: Path) -> None:
+    call()
+    anchored = dict(fd_anchored_walk._ROOT_ANCHORS)
+    os.rename(share, tmp_path / "unplugged")
+    assert fd_anchored_walk.reanchor_root(share) is False
+    assert fd_anchored_walk.reanchor_root(tmp_path / "never" / "there") is False
+    assert anchored == fd_anchored_walk._ROOT_ANCHORS
+    assert len(row_assets._ROW_ASSETS) == 1
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_the_explicit_call_refuses_a_root_that_is_a_file_or_not_absolute(tmp_path: Path) -> None:
+    (tmp_path / "a-file").write_bytes(b"x")
+    for bad in (tmp_path / "a-file", tmp_path / "a-file" / "below", Path("relative/share"), tmp_path / ".." / "x"):
+        with pytest.raises(fd_anchored_walk.RootReanchorRefused):
+            fd_anchored_walk.reanchor_root(bad)
+    assert fd_anchored_walk._ROOT_ANCHORS == {}
+
+
+def _open_descriptors() -> int:
+    return len(os.listdir("/dev/fd"))
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_the_explicit_call_leaks_no_descriptor_when_the_root_cannot_be_examined(
+    share: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fault raised by the real ``fstat`` call site, on the opened root only."""
+    real_fstat = os.fstat
+    before = _open_descriptors()
+    assert fd_anchored_walk.reanchor_root(share) is True
+    assert _open_descriptors() == before, "control: a successful call holds nothing open"
+    wanted = os.stat(share)
+
+    def failing_on_the_root(fd: int) -> os.stat_result:
+        got = real_fstat(fd)
+        if (got.st_dev, got.st_ino) == (wanted.st_dev, wanted.st_ino):
+            raise OSError("fstat failed on the opened root")
+        return got
+
+    monkeypatch.setattr(fd_anchored_walk.os, "fstat", failing_on_the_root)
+    with pytest.raises(OSError, match="fstat failed"):
+        fd_anchored_walk.reanchor_root(share)
+    monkeypatch.undo()
+    assert _open_descriptors() == before
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_the_explicit_call_moves_the_resolved_form_anchor_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A symlinked share root is reached under two names (the link, and what it
+    resolves to); each has its own anchor, and both must follow the call."""
+    target = (tmp_path / "library").resolve()
+    build(target, INSIDE)
+    link = tmp_path / "share-link"
+    os.symlink(target, link)
+    use_root(monkeypatch, link)
+    forget_everything()
+    try:
+        assert level_of(call()) == INSIDE
+        fd_anchored_walk.resolve_under_root(target / ANLZ_DIR, target)  # anchors the resolved form
+        os.rename(target, tmp_path / "library-unplugged")
+        build(target, OTHER_LIBRARY)
+        with pytest.raises(fd_anchored_walk.RootIdentityChanged):
+            fd_anchored_walk.resolve_under_root(target / ANLZ_DIR, target)
+        assert level_of(call()) is None
+        assert fd_anchored_walk.reanchor_root(link) is True
+        here = os.stat(target)
+        assert fd_anchored_walk._ROOT_ANCHORS[str(link)] == (here.st_dev, here.st_ino)
+        assert fd_anchored_walk._ROOT_ANCHORS[str(target)] == (here.st_dev, here.st_ino)
+        assert fd_anchored_walk.resolve_under_root(target / ANLZ_DIR, target) == target / ANLZ_DIR
+        assert level_of(call()) == OTHER_LIBRARY
+    finally:
+        forget_everything()
+        fd_anchored_walk.reset_root_anchors()
 
 
 @pytest.mark.requirement("LIBM-139")
@@ -315,24 +470,6 @@ def test_a_real_root_replaced_by_a_symlink_stays_refused(share: Path, tmp_path: 
     refused = call()
     assert level_of(refused) is None
     assert refused.artwork_status == "unresolved"
-
-
-@pytest.mark.requirement("LIBM-139")
-def test_reanchor_refuses_a_symlink_and_accepts_a_real_directory(tmp_path: Path) -> None:
-    real = tmp_path / "real"
-    real.mkdir()
-    link = tmp_path / "link"
-    os.symlink(real, link)
-    with pytest.raises(OSError):
-        fd_anchored_walk.reanchor_real_root(link)
-    assert str(link) not in fd_anchored_walk._ROOT_ANCHORS
-    fd = fd_anchored_walk.reanchor_real_root(real)
-    assert fd is not None
-    os.close(fd)
-    here = os.stat(real)
-    assert fd_anchored_walk._ROOT_ANCHORS[str(real)] == (here.st_dev, here.st_ino)
-    assert fd_anchored_walk.reanchor_real_root(tmp_path / "absent") is None
-    fd_anchored_walk.reset_root_anchors()
 
 
 @pytest.mark.requirement("LIBM-139")

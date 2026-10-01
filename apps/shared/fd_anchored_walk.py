@@ -52,6 +52,8 @@ root while still tolerating one that was a symlink from the start.
 """
 from __future__ import annotations
 
+import contextlib
+import errno
 import logging
 import os
 import stat
@@ -189,36 +191,109 @@ def reset_root_anchors() -> None:
         forget()
 
 
-def reanchor_real_root(root: Path) -> int | None:
-    """Trust ``root`` afresh if it is a real directory right now; return it opened.
+class RootReanchorRefused(OSError):
+    """:func:`reanchor_root` would not trust the root; ``str()`` says why."""
 
-    For a root whose identity changed because the volume it lives on was
-    unplugged and mounted again: the same path, a new device or inode, nothing
-    hostile. The hostile case the anchor exists for is a root swapped for a
-    SYMLINK to somewhere else, and that case stays refused: the root is opened
-    ``O_NOFOLLOW`` here, so a symlink raises ``OSError`` and the anchor is left
-    as it was. What a real directory at the configured path holds is still
-    walked with every segment ``O_NOFOLLOW``, so nothing outside it is reached.
 
-    The new anchor is the identity of the descriptor returned, which the caller
-    owns and closes. Everything remembered under the old identity is forgotten
-    (the reset hooks run). None when the root does not exist. A root that is
-    legitimately a symlink is re-trusted only by :func:`reset_root_anchors`.
+def _open_real_directory_in(parent_fd: int, part: str, walked: Path, root: Path) -> int:
+    """Open ``part`` below ``parent_fd`` if it is a real directory, never a symlink."""
+    try:
+        fd = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        why = (
+            "is a symbolic link" if exc.errno == errno.ELOOP
+            else f"cannot be opened ({type(exc).__name__})"
+        )
+        raise RootReanchorRefused(
+            f"{str(walked)!r}, a directory above the root {str(root)!r}, {why}; "
+            "every directory above the root must be a real directory"
+        ) from exc
+    try:
+        is_directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+    except BaseException:
+        os.close(fd)
+        raise
+    if not is_directory:
+        os.close(fd)
+        raise RootReanchorRefused(f"{str(walked)!r}, above the root {str(root)!r}, is not a directory")
+    return fd
+
+
+def _open_real_parent(root: Path) -> int:
+    """Open ``root``'s parent directory, refusing a symlink anywhere on the way.
+
+    The walk starts at the filesystem root, the one directory no path can
+    re-point, and opens every component below it ``O_NOFOLLOW`` relative to
+    the descriptor of the one above. ``O_NOFOLLOW`` on a whole path guards
+    only its last component, so opening ``crate/share`` that way follows a
+    ``crate`` that was swapped for a symlink to another tree.
+    """
+    if not root.is_absolute() or ".." in root.parts or len(root.parts) < 2:
+        raise RootReanchorRefused(f"{str(root)!r} is not an absolute path below the filesystem root")
+    fd = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    walked = Path(root.anchor)
+    for part in root.parts[1:-1]:
+        walked = walked / part
+        try:
+            child = _open_real_directory_in(fd, part, walked, root)
+        finally:
+            os.close(fd)
+        fd = child
+    return fd
+
+
+def reanchor_root(root: Path) -> bool:
+    """Trust ``root`` as the directory it is now. Only ever called on request.
+
+    This is the deliberate reset issue 1402 left to the root's owner: nothing
+    that merely reads below a root calls it, so a root that became another
+    directory stays refused until someone says the new one is intended.
+
+    Every directory ABOVE the root is opened ``O_NOFOLLOW`` from the
+    filesystem root (:func:`_open_real_parent`), and a symlink among them is
+    refused with :class:`RootReanchorRefused`, whose text names it. The root
+    itself may be a symlink, as a configured share root legitimately is: the
+    caller is vouching for where it points now.
+
+    The anchor recorded is the identity of the directory this call opened, not
+    of whatever the path names on a later look, under both names the root is
+    reached by (the path as given, and its resolved form). Everything
+    remembered under the old identity is forgotten (the reset hooks run).
+
+    False, with nothing changed, when the root or a directory above it does
+    not exist.
     """
     try:
-        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        parent_fd = _open_real_parent(root)
     except FileNotFoundError:
-        return None
-    opened = os.fstat(root_fd)
-    _ROOT_ANCHORS[str(root)] = (opened.st_dev, opened.st_ino)
+        return False
+    try:
+        try:
+            root_fd = os.open(root.name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise RootReanchorRefused(
+                f"the root {str(root)!r} cannot be opened as a directory ({type(exc).__name__})"
+            ) from exc
+        try:
+            opened = os.fstat(root_fd)
+        finally:
+            os.close(root_fd)
+    finally:
+        os.close(parent_fd)
+    identity = (opened.st_dev, opened.st_ino)
+    _ROOT_ANCHORS[str(root)] = identity
+    with contextlib.suppress(OSError, RuntimeError):  # a symlink loop has no second name
+        _ROOT_ANCHORS[str(root.resolve())] = identity
     for forget in _ANCHOR_RESET_HOOKS:
         forget()
     log.warning(
-        "root %r is a different real directory than the one first trusted "
-        "(a remount); anchored afresh at dev=%d ino=%d",
-        str(root), opened.st_dev, opened.st_ino,
+        "root %r anchored afresh on request at dev=%d ino=%d", str(root), identity[0], identity[1]
     )
-    return root_fd
+    return True
 
 
 def path_from_fd(fd: int) -> Path:

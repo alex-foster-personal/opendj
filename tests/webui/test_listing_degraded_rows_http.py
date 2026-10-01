@@ -11,7 +11,9 @@ Regression one-liners:
   - if a zero-byte, garbage, truncated or bad-header analysis file fails the page then broken
   - if a malformed row's neighbors lose their preview, vocals or cover then broken
   - if a lyrics-cache path that is a file fails the page then broken
-  - if a share root remounted as a new real directory keeps answering without previews then broken
+  - if a listing serves a share root swapped by rename, or reached through a symlinked parent, then broken
+  - if the re-anchor call does not bring a share root swapped by rename back then broken
+  - if the re-anchor call trusts a share root below a symlinked parent, or refuses without saying why, then broken
   - if a re-pointed symlinked share root is served before the re-anchor call then broken
   - if the re-anchor call does not bring a re-pointed symlinked share root back then broken
 """
@@ -188,30 +190,66 @@ def test_a_lyrics_cache_path_that_is_a_file_is_no_lyrics_not_a_failed_page(
     assert degraded["one_track"]["body"]["lyrics_available"] is False
 
 
-# ----- P2-b: a remounted root, and a symlinked one ----------------------------
+# ----- a root that became another directory, and a symlinked one ----------------------------
+
+
+def _assert_nothing_served(page: dict[str, Any], name: str) -> None:
+    for i, row in _by_row(page).items():
+        assert row["preview_b64"] is None, f"{name} row {i}: a changed root is not served"
+        assert row["artwork_available"] is False, f"{name} row {i}"
 
 
 @pytest.mark.requirement("LIBM-139")
-def test_a_share_root_remounted_as_a_new_directory_is_read_on_the_next_page(
+def test_a_share_root_swapped_by_rename_is_refused_until_the_reanchor_call(tmp_path: Path) -> None:
+    data_dir, home = _seed(tmp_path)
+    share = share_root_under(home)
+    _build_share(share, LEVEL)
+    swapped_in = tmp_path / "the-directory-swapped-in"
+    _build_share(swapped_in, OTHER_LEVEL)
+    steps: list[dict[str, Any]] = [
+        {"op": "get", "name": "before", "url": PAGE},
+        {"op": "rename", "path": str(share), "to": str(tmp_path / "unplugged")},
+        {"op": "rename", "path": str(swapped_in), "to": str(share)},
+        {"op": "get", "name": "refused", "url": PAGE},
+        {"op": "get", "name": "still_refused", "url": PAGE},
+        {"op": "post", "name": "reanchor", "url": REANCHOR},
+        {"op": "get", "name": "after", "url": PAGE},
+    ]
+    result = run_boot_probe(data_dir, home, steps, tmp_path)
+    assert _by_row(result["before"])[0]["preview_b64"] == _expected_preview(LEVEL)
+    for name in ("refused", "still_refused"):
+        _assert_nothing_served(result[name], name)
+    assert result["reanchor"] == {"status": 200, "body": {"exists": True}}
+    after = _by_row(result["after"])
+    for i in HEALTHY:
+        assert after[i]["preview_b64"] == _expected_preview(OTHER_LEVEL), f"row {i}"
+        assert after[i]["artwork_status"] == "ok", f"row {i}"
+
+
+@pytest.mark.requirement("LIBM-139")
+def test_a_symlinked_parent_is_served_by_neither_the_listing_nor_the_reanchor_call(
     tmp_path: Path,
 ) -> None:
     data_dir, home = _seed(tmp_path)
     share = share_root_under(home)
     _build_share(share, LEVEL)
-    remounted = tmp_path / "the-volume-after-remount"
-    _build_share(remounted, OTHER_LEVEL)
+    evil = tmp_path / "evil"
+    _build_share(evil / share.name, OTHER_LEVEL)
     steps: list[dict[str, Any]] = [
         {"op": "get", "name": "before", "url": PAGE},
-        {"op": "rename", "path": str(share), "to": str(tmp_path / "unplugged")},
-        {"op": "rename", "path": str(remounted), "to": str(share)},
-        {"op": "get", "name": "after", "url": PAGE},
+        {"op": "rename", "path": str(share.parent), "to": str(tmp_path / "parent-moved-aside")},
+        {"op": "symlink", "path": str(share.parent), "target": str(evil)},
+        {"op": "get", "name": "refused", "url": PAGE},
+        {"op": "post", "name": "reanchor", "url": REANCHOR},
+        {"op": "get", "name": "still_refused", "url": PAGE},
     ]
     result = run_boot_probe(data_dir, home, steps, tmp_path)
     assert _by_row(result["before"])[0]["preview_b64"] == _expected_preview(LEVEL)
-    after = _by_row(result["after"])
-    for i in HEALTHY:
-        assert after[i]["preview_b64"] == _expected_preview(OTHER_LEVEL), f"row {i}"
-        assert after[i]["artwork_status"] == "ok", f"row {i}"
+    assert result["reanchor"]["status"] == 409
+    why = result["reanchor"]["body"]["detail"]
+    assert "symbolic link" in why and str(share.parent) in why
+    for name in ("refused", "still_refused"):
+        _assert_nothing_served(result[name], name)
 
 
 @pytest.mark.requirement("LIBM-139")

@@ -105,6 +105,11 @@ def refresh_share_root() -> Path:
     return SHARE_ROOT
 
 
+def reanchor_share_root() -> bool:
+    """Trust the share root as the directory it is now (``fd_anchored_walk.reanchor_root``)."""
+    return fd_anchored_walk.reanchor_root(SHARE_ROOT)
+
+
 SHARE_ROOT: Path = compute_share_root()
 
 # ----- djay Pro -------------------------------------------------------------

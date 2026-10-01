@@ -296,15 +296,11 @@ class RowAssetSession:
         try:
             self._root_fd = fd_anchored_walk.open_anchored_root(self._root_path)
         except fd_anchored_walk.RootIdentityChanged as exc:
-            # A volume remounted at the same path is a new real directory, and
-            # an ordinary event. A root that is a symlink is not re-trusted
-            # here: only ``refresh_share_root`` (the re-anchor route) does that.
-            try:
-                self._root_fd = fd_anchored_walk.reanchor_real_root(self._root_path)
-            except OSError:
-                fd_anchored_walk.log_root_identity_changed(exc)
-                self._root_state = "changed"
-                return
+            # Never trusted afresh from here: a listing is a read, and anything
+            # can cause one. Only ``POST /library/share-root/reanchor`` re-anchors.
+            fd_anchored_walk.log_root_identity_changed(exc)
+            self._root_state = "changed"
+            return
         except OSError:
             self._root_state = "changed"
             return

@@ -9,8 +9,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
+from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared import paths as shared_paths
-from apps.shared import platform_paths
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server.library_readiness import (
@@ -48,16 +48,22 @@ def reanchor_share_root() -> ShareRootReanchorOut:
 
     The engine remembers which directory the share root was when it first
     read it, and refuses to read below a root that has since become a
-    different one (LIBM-137). A volume remounted as a real directory at the
-    same path is picked up on its own by the next track listing. A share root
-    that is a symlink and now points somewhere else is not, because that is
-    also what an attack looks like: this call is how its owner says the new
-    target is intended. It recomputes the configured root, drops the recorded
-    identity so the next read anchors afresh, and empties the listing's row
-    memory. ``exists`` says whether the root is a directory right now.
+    different one (LIBM-137): a volume mounted again at the same path, a
+    directory swapped in by rename, a symlinked share root pointed somewhere
+    else. Nothing re-trusts it on its own, because each of those is also what
+    an attack looks like. This call is how the root's owner says the new
+    directory is intended; it records that directory's identity and empties
+    the listing's row memory.
+
+    ``exists`` is false, and nothing changes, when the share root is not there.
+    The call is refused with 409, and ``detail`` says why, when a directory
+    ABOVE the share root is a symlink: only the share root itself may be one.
     """
-    root = platform_paths.refresh_share_root()
-    return ShareRootReanchorOut(exists=root.is_dir())
+    try:
+        exists = platform_paths.reanchor_share_root()
+    except fd_anchored_walk.RootReanchorRefused as refusal:
+        raise HTTPException(status_code=409, detail=f"share root not re-anchored: {refusal}") from refusal
+    return ShareRootReanchorOut(exists=exists)
 
 
 @router.get("/wheel")
