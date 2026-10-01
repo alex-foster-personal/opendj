@@ -53,3 +53,4 @@ def live_stick_root(environ: Mapping[str, str]) -> Path:
         "real-stick acceptance coverage (AGENTS.md: never silently skip acceptance for "
         "missing data)."
     )
+    raise AssertionError("pytest.fail returned instead of raising")

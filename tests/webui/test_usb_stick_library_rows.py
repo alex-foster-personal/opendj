@@ -47,7 +47,12 @@ def _rows(client: TestClient) -> dict[int, dict[str, object]]:
 
 
 def _file_present(client: TestClient) -> dict[int, bool]:
-    return {pdb_id: row["file_present"] for pdb_id, row in _rows(client).items()}
+    present: dict[int, bool] = {}
+    for pdb_id, row in _rows(client).items():
+        flag = row["file_present"]
+        assert isinstance(flag, bool), (pdb_id, flag, "file_present must be a boolean")
+        present[pdb_id] = flag
+    return present
 
 
 def test_listing_file_present_predicts_what_the_audio_route_serves(

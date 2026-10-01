@@ -160,19 +160,24 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
                 f"no rekordbox export at {'/'.join(EXPORT_PDB_PARTS)} on this stick",
                 volume_uuid=volume_uuid,
             )
-        library = _parse_library(stick, fingerprint)
-        parsed = _CachedLibrary(
-            fingerprint=fingerprint,
-            library=library,
-            artwork_available=frozenset(
-                track.pdb_id for track in library.tracks if _artwork_available(stick, track)
-            ),
-            audio_present=frozenset(
-                track.pdb_id for track in library.tracks if _audio_present(stick, track)
-            ),
-        )
+        parsed = _parsed_library(stick, fingerprint)
         _libraries[volume_uuid] = parsed
         return _opened(stick, parsed, cache_hit=False)
+
+
+def _parsed_library(stick: MountedStick, fingerprint: tuple[int, int]) -> _CachedLibrary:
+    """Parse the export once, with the per-track file checks the routes reuse."""
+    library = _parse_library(stick, fingerprint)
+    return _CachedLibrary(
+        fingerprint=fingerprint,
+        library=library,
+        artwork_available=frozenset(
+            track.pdb_id for track in library.tracks if _artwork_available(stick, track)
+        ),
+        audio_present=frozenset(
+            track.pdb_id for track in library.tracks if _audio_present(stick, track)
+        ),
+    )
 
 
 def _opened(stick: MountedStick, cached: _CachedLibrary, *, cache_hit: bool) -> OpenedStickLibrary:
