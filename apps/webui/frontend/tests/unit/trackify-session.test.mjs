@@ -108,9 +108,15 @@ describe('trackify session teardown vs a concurrent Gig mount (PERFMODE-15)', { 
 		assert.ok(tierCap > entry.TRACKIFY_ANLZ_ENTRY_CAP, 'control: the tier allows more than Trackify keeps');
 
 		const uninstall = entry.installTrackifySession();
-		assert.equal(entry.effectiveAnlzEntryCap(), entry.TRACKIFY_ANLZ_ENTRY_CAP);
-
-		await uninstall();
+		let mountedCap;
+		try {
+			mountedCap = entry.effectiveAnlzEntryCap();
+		} finally {
+			// Always tear down: a live session keeps its 250 ms autoplay poll
+			// armed, which holds the test process open on a failed assertion.
+			await uninstall();
+		}
+		assert.equal(mountedCap, entry.TRACKIFY_ANLZ_ENTRY_CAP);
 		// Overshoot control: Gig and Library get their tier cap back.
 		assert.equal(entry.effectiveAnlzEntryCap(), tierCap);
 	});
