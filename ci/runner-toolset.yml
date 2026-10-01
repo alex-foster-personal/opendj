@@ -305,7 +305,7 @@ entries:
     needed_by: [pytest]
     install: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64.complete | sort -V | tail -1) && d=${d%.complete} && \"$d/bin/python3\" -m pip install pytest==9.1.1"
     verify: "d=$(ls -d /opt/hostedtoolcache/Python/3.11.*/x64.complete | sort -V | tail -1) && d=${d%.complete} && \"$d/bin/python3\" -m pytest --version"
-    notes: "tests/scripts/test_ci_fixer_e2e_dry_run.py runs a bare `python3 -m pytest`, which resolves to this interpreter. Removable once PR #4181 (sys.executable) merges"
+    notes: "was for tests/scripts/test_ci_fixer_e2e_dry_run.py's bare `python3 -m pytest`; that test moved to fleet-af Thu 1 Oct 2026 and uses sys.executable (#4181). Still pinned as a known past miss"
 
   #----- Playwright browsers (repo pin: playwright 1.61.1 in pnpm-lock.yaml) ---
   # revisions derived from playwright-core@1.61.1/browsers.json; re-derive on every playwright bump
