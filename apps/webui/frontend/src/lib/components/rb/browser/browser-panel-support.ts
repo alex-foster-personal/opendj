@@ -3,7 +3,12 @@ export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
 export { anyDeckPlaying, createPlayingGate } from '$lib/rb/playing-gate';
-export { resolveRowMarkerAnlz, resolveRowVocals } from '$lib/rb/row-vocals';
+export {
+	resolveRowMarkerAnlz,
+	resolveRowPreviewStrip,
+	resolveRowStripLoading,
+	resolveRowVocals
+} from '$lib/rb/row-vocals';
 export {
 	isAppropriateNext,
 	resolveSearchFilterFallback,
@@ -35,7 +40,7 @@ export {
 } from '$lib/rb/auto-play';
 export { getSpotifyPendingTracks, type SpotifyPendingTrack } from '$lib/rb/spotify-api';
 export { fillAllTracksPane } from './fill-all-tracks';
-export { fillPlaylistPane, PLAYLIST_FIRST_PAGE } from './fill-playlist-pane';
+export { fillPlaylistPane } from './fill-playlist-pane';
 export { fillAutolistPane } from './fill-autolist';
 export {
 	autolistNode,

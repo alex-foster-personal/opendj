@@ -229,7 +229,10 @@ def test_repair_bundle_reads_a_shared_playlist_once(tmp_path: Path) -> None:
         bundles = engine.hub_track_bundles(conn, ids[:10])
     finally:
         conn.close()
-    assert (one, ten) == (1, 1), (
+    # One track's bundle reads the playlist's membership a fixed number of
+    # times (the member list, and since round 4 its tracks' verdicts in one
+    # read); ten tracks sharing the playlist must not read it again.
+    assert one >= 1 and ten == one, (
         f"one track read the shared playlist's members {one}x, ten tracks {ten}x"
     )
     playlists = [change for change in bundles if change.table == "playlists"]

@@ -1,7 +1,7 @@
 # Contributing to music-dj-tools
 
 Thanks for taking the time to contribute. This doc is the short list of
-rules that keep the project coherent across many sub-agent and human
+rules that keep the project coherent across many human and agent
 contributors. Read it once; the conventions are load-bearing.
 
 ## Table of contents
@@ -9,10 +9,10 @@ contributors. Read it once; the conventions are load-bearing.
 1. [Project structure](#project-structure)
 2. [Dev setup](#dev-setup)
 3. [Running tests and lint](#running-tests-and-lint)
-4. [Branching convention](#branching-convention)
+4. [Branching and pull requests](#branching-and-pull-requests)
 5. [Conventional commits](#conventional-commits)
 6. [The six-rail safety pattern](#the-six-rail-safety-pattern)
-7. [Proposing a new phase](#proposing-a-new-phase)
+7. [Proposing a larger change](#proposing-a-larger-change)
 8. [House rules](#house-rules)
 9. [Developer Certificate of Origin](#developer-certificate-of-origin)
 10. [Licensing](#licensing)
@@ -38,106 +38,106 @@ apps/
   launcher/      Tauri cmd-K launcher
 open-dj/         cross-format metadata spec (v0.2)
 docs/            operator-facing docs
-.planning/       phase docs, orchestration playbooks, review queues
 tests/           pytest suites; fixtures under tests/fixtures/
 scripts/         one-off tools, build helpers, fixture builders
 ```
 
 ## Dev setup
 
-Python 3.11 is the pinned floor. Local dev on 3.14 works for non-voice
-features; see [`docs/operator-setup.md`](docs/operator-setup.md) for the
-full story and for feature-specific system deps (ffmpeg, chromaprint,
-etc.).
+One verified path. You need macOS, [git](https://git-scm.com/) and
+[uv](https://docs.astral.sh/uv/getting-started/installation/). `uv` fetches Python 3.11.15
+(the version in `.python-version`) for you. See
+[`docs/operator-setup.md`](docs/operator-setup.md) for feature-specific system dependencies
+(ffmpeg, chromaprint and so on).
 
 ```bash
-cd /path/to/music-dj-tools
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --no-build-isolation -r requirements.txt
-python -m pyrekordbox download-key   # one-time: cache master.db decryption key
+git clone https://github.com/alex-foster-personal/opendj.git
+cd opendj
+
+uv sync --frozen --extra dev --python 3.11.15
+
+corepack enable
+cd apps/webui/frontend
+pnpm install --frozen-lockfile
 ```
 
-`--no-build-isolation` is required because `madmom`'s own build-requires ask
-for `numpy>2`, while this venv pins `numpy<2`; building against the ambient
-venv keeps the compiled extensions on the numpy that is actually installed.
+`uv.lock` is the reproducible Python environment. Use `uv run <command>` to run inside
+`.venv`. Never use `pip`: dependencies change through `uv add`, `uv remove` and `uv lock`,
+with the lockfile in the same commit. The frontend needs Node.js 22.14 or newer and **pnpm
+only** (there is no `package-lock.json` for the frontend). `corepack` ships with Node.js 22; if
+yours does not include it, install the pnpm version named by `packageManager` in
+`apps/webui/frontend/package.json` some other way.
+
+Rekordbox's key for `master.db` comes from `pyrekordbox` and is cached under `~/.pyrekordbox/`
+on first decrypt. There is no separate key-download step; see the Install section of
+[`README.md`](README.md).
 
 ## Running tests and lint
 
-```bash
-make test         # pytest -q over the whole suite
-make cov          # adds coverage (term + HTML report in htmlcov/)
-make integration  # pytest -m integration (slower, disk-touching)
-make reqs-check   # verify requirements.txt matches reqs.json lock
-make ci           # what CI runs: reqs-check + cov
-make fixture      # rebuild the Rekordbox test fixture DB
-```
-
-Lint and formatting tools are not yet wired into `make`. Match the
-existing code style; CI will grow ruff + mypy incrementally. PRs that
-reformat unrelated code will be asked to split that out.
-
-Optional local linting via [Trunk](https://docs.trunk.io/code-quality) (config in
-`.trunk/trunk.yaml`, not a merge gate; `just quality` stays authoritative):
+Run only the tests for the area you changed:
 
 ```bash
-npm ci            # once: installs the trunk launcher into ./node_modules
-npm run lint      # trunk check --no-fix: new issues on lines changed vs main only, read-only
-npm run lint:fix  # trunk check with autofix, for interactive use
-npm run fmt       # trunk fmt: changed files only; near no-op today (see below)
+uv run pytest tests/<area> -n 4          # backend, scoped
+cd apps/webui/frontend
+pnpm test:unit                           # frontend unit tests
+pnpm check                               # svelte-check (types)
 ```
 
-`npm run fmt` currently has only dotenv-linter to run: black, prettier, ruff format,
-shfmt, taplo and rustfmt are disabled because none is an existing gate and each
-rewrites whole files. Enabling one is a separate decision.
+The full suite is large; CI runs it, so you rarely need to.
 
-Trunk's git hooks are disabled on purpose (shared checkouts); run it on demand.
-Without a TTY (agents, CI) a bare `trunk check` applies autofixes without asking, so
-`npm run lint` passes `--no-fix`; run `npm run lint:fix` when you want the fixes applied.
+### Fixtures you may not have
 
-## Branching convention
+The Rekordbox and USB-export fixtures live on an external fixture host that most contributors
+do not have. A test that needs one **fails loudly when the host is unavailable**, so a missing
+fixture never reads as a green run. If you knowingly lack the host, set
+`MDT_ALLOW_MISSING_FIXTURES=1` (exactly `1`; any other value keeps the failure) and those
+tests skip instead:
 
-Starting with the v1.1 cycle, no change lands on `master` directly.
-Every change, including one-line docs tweaks, goes through a pull
-request from a feature, seed, fix, or docs branch:
+```bash
+MDT_ALLOW_MISSING_FIXTURES=1 uv run pytest tests/<area> -n 4
+```
+
+The variable only covers an unavailable host. A fixture that is present but stale or corrupt
+(a checksum or contract mismatch) still fails. `MUX_FIXTURE_HOST` points the fixture
+resolver at a different host.
+
+### Optional packages
+
+Tests for optional features skip cleanly when their package is missing: `scipy`, `librosa`,
+`soundfile`, `modal`, and `sentry-sdk` (the `observability` extra, `uv sync --extra
+observability`). Do not add heavy ML packages (torch, demucs) to the repository environment;
+they run from standalone PEP 723 scripts under `uv run`.
+
+### Lint
+
+```bash
+make lint                                # pinned ruff over apps, tests, scripts
+make lint LINT_PATHS="path/to/file.py"   # only the files you touched
+```
+
+`make lint` reports the absolute count, which is not zero today; the CI gate only fails when a
+count grows. Do not whole-file format files you did not otherwise change: a formatting diff
+mixed into a real edit hides the edit and conflicts with every open pull request on that file.
+Match the style of the surrounding code.
+
+## Branching and pull requests
+
+No change lands on `main` directly. Every change, including a one-line docs tweak, goes
+through a pull request from a branch (from a fork if you do not have write access):
 
 ```
-feat/<slug>     # new feature or phase
+feat/<slug>     # new feature
 fix/<slug>      # non-trivial bug fix
-seed/<seed-id>  # exploratory branch spawned from .planning/seeds/
 docs/<slug>     # docs only
 chore/<slug>    # tooling, CI, dependency bumps
 refactor/<slug> # behaviour-preserving code move
 test/<slug>     # tests only
 ```
 
-v1 and earlier work lived on `master` with no PR trail. That history is
-kept as-is; the milestone tags (`v1.0-rc*`, `v1.0`) are the audit
-record. The convention starts from v1.1.
-
-Server-side branch protection is not enabled (this repo is private on
-GitHub Free, which does not support the protection API). The client
-side stand-in is the pre-push hook at
-[`scripts/githooks/pre-push-master-guard.sh`](scripts/githooks/pre-push-master-guard.sh).
-Install it once after cloning:
-
-```bash
-ln -sf ../../scripts/githooks/pre-push-master-guard.sh .git/hooks/pre-push
-```
-
-Reviewer lease enforcement (issue #272) uses a separate optional hook that refuses
-pushes when another fleet holds `reviewer:codex` or `reviewer:claude` on the open
-PR for that branch. Install it instead of, or chained with, the master guard:
-
-```bash
-ln -sf ../../scripts/githooks/pre-push-reviewer-lease.sh .git/hooks/pre-push
-```
-
-If both hooks are needed, call each from one dispatcher script. See
-`scripts/review_lease.py` and `.planning/FANOUT-CONVENTIONS.md`.
-
-The full rationale, grammar, and lifecycle are in
-[`docs/branching.md`](docs/branching.md).
+Before opening the pull request: run the scoped tests for what you touched, keep the diff
+to one logical change, and write the description in plain language (what changed, why, and
+how you checked it). Maintainers merge once required checks pass and review threads are
+resolved.
 
 ## Conventional commits
 
@@ -153,8 +153,8 @@ Every commit message follows
 ```
 
 Common types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `build`,
-`ci`. Scopes are usually a phase number (`feat(7):`), an app module
-(`fix(sync):`), or a governance area (`docs(governance):`).
+`ci`. Scopes are usually an app module (`fix(sync):`) or an area such
+as `docs(governance):`.
 
 ## The six-rail safety pattern
 
@@ -201,22 +201,11 @@ Voice intents that are destructive are additionally gated behind
 `--enable-destructive`. New destructive CLI surfaces should follow the
 same pattern.
 
-## Proposing a new phase
+## Proposing a larger change
 
-Non-trivial features land as numbered phases, not as ad-hoc branches.
-If you want to propose one:
-
-1. Skim
-   [`.planning/orchestration/gsd-orchestrator-playbook.md`](.planning/orchestration/gsd-orchestrator-playbook.md)
-   for the phase lifecycle (discuss -> plan -> execute -> review -> UAT).
-2. Open an issue titled `phase(proposal): <slug>` with: one-paragraph
-   scope, the safety rails it touches, the expected test fixtures, and a
-   rough exit criterion.
-3. For smaller changes, just open a PR. The issue-first rule is only for
-   changes that want a new phase folder under `.planning/phases/`.
-
-Existing phase docs under `.planning/phases/NN-slug/` are the best
-reference for the level of detail expected.
+For a non-trivial feature, open an issue first with: one paragraph of scope, the safety rails
+it touches, the test fixtures it needs, and a rough exit criterion. For smaller changes, just
+open a pull request.
 
 ## House rules
 
@@ -232,19 +221,21 @@ the list may only shrink.
 
 - **No U+2014 or U+2013 characters** in any prose we author (code
   comments, docs, commit messages, issue text). Use a period, a comma, a
-  colon, or parentheses. The audit trail in `.planning/milestones/`
-  tracks this convention across phases.
-- **Doppler for every secret. Never a `.env` file.** Spotify, cloud
-  replicate, Picovoice, Groq, and anything else that needs a credential
-  goes through `doppler run -- ...`. See
-  [`docs/operator-setup.md`](docs/operator-setup.md) for the project and
-  config names. New code that reads from `os.environ` without a Doppler
-  wrapper in the Makefile will be sent back.
+  colon, or parentheses.
+- **Use American English spelling** (color, analyze, behavior, license).
+- **Nothing is mocked.** A control with no real data source renders inert
+  rather than showing invented data, and code fails loudly instead of falling
+  back silently.
+- **Secrets come from the environment, never from committed files.** Spotify,
+  cloud replicate, Picovoice, Groq, and anything else that needs a credential
+  is read from environment variables injected at run time (the Makefile
+  targets use `doppler run -- ...`; any secrets manager that exports the same
+  variables works). Never commit a `.env` file or a key. See
+  [`docs/operator-setup.md`](docs/operator-setup.md) for the variable names.
 - **Fixture-first testing.** Anything that reads a real library
   (Rekordbox master.db, djay MediaLibrary.db, Serato crates, Traktor NML)
-  gets a tiny deterministic fixture committed under `tests/fixtures/`.
+  gets a tiny deterministic fixture under `tests/fixtures/`.
   Tests that reach into the operator's actual library are not acceptable.
-  `make fixture` rebuilds the Rekordbox fixture.
 - **Plain English, short sentences.** This applies to docs, commit
   messages, and code comments. If a sentence needs two clauses, split
   it.
@@ -279,7 +270,7 @@ This runs, in order:
 2. `make lint` -- `ruff check apps tests scripts`.
 3. `make build-dist` -- `python -m build` producing wheel + sdist under `dist/`.
 4. `make reqs-check` -- verifies `reqs.json` is in sync with
-   `.planning/REQUIREMENTS.md` (`python -m scripts.build_reqs_json --check`).
+   the requirements source (`python -m scripts.build_reqs_json --check`).
 5. A best-effort `gh release view v1.0.1` sanity check (non-fatal; skipped
    if `gh` is unauthenticated or the release is not visible).
 
@@ -296,15 +287,7 @@ be licensed under its [Apache License 2.0](LICENSE).
 ## Related documents
 
 - [`README.md`](README.md) for the product-level overview.
-- [`docs/branching.md`](docs/branching.md) for the post-v1 branching
-  and PR convention.
 - [`SECURITY.md`](SECURITY.md) for how to report vulnerabilities.
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for community conduct.
 - [`docs/operator-setup.md`](docs/operator-setup.md) for feature-by-feature
-  system dependencies and Doppler configuration.
-- [`docs/prior-art-and-communities.md`](docs/prior-art-and-communities.md)
-  for the open-source prior art we read, cite, and cross-check against.
-- [`.planning/MAINTAINER-REVIEW-QUEUE.md`](.planning/MAINTAINER-REVIEW-QUEUE.md) for
-  the pending review items that gate v1.
-- [`.planning/orchestration/gsd-orchestrator-playbook.md`](.planning/orchestration/gsd-orchestrator-playbook.md)
-  for the phase-lifecycle orchestration model.
+  system dependencies and credential configuration.

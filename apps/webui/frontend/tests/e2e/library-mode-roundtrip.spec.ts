@@ -1,5 +1,8 @@
 // requirement: PERFMODE-14
 // [if] Gig loads decks then Library then Gig [then] decks return empty unless rescue applies
+// [if] Gig -> Library -> Gig happens in-app (no reload) [then] a deck loads and plays again, past the
+//   silence watchdog's window, at the master volume it had before [⛔️ if the teardown's hard mute
+//   leaks into the remounted Gig and the watchdog cuts the deck ~2 s in]
 
 import { expect, test } from '@playwright/test';
 import { existsSync } from 'node:fs';
@@ -22,6 +25,13 @@ async function _selectLibraryMode(page: import('@playwright/test').Page): Promis
 	const libraryCard = picker.locator('a.mode-card[data-testid="mode-card"]').filter({ hasText: 'Library' });
 	await libraryCard.click();
 	await page.waitForURL((url) => url.pathname === '/');
+}
+
+/** Back to Gig through the Library layout's own Performance nav link: a
+ * client-side navigation, so the document (and the engine singleton) survives. */
+async function _returnToGigInApp(page: import('@playwright/test').Page): Promise<void> {
+	await page.getByRole('link', { name: 'Performance', exact: true }).click();
+	await page.waitForURL((url) => url.pathname === '/performance');
 }
 
 function _deckSnapshot(
@@ -216,4 +226,89 @@ test('RESCUE-02 still restores after Gig -> Library -> Gig', async ({ page, requ
 			return stableId;
 		})
 		.toBe(FIXTURE_STABLE_ID);
+});
+
+test('an in-app Library round trip re-arms the engine: a deck loads and plays again', async ({ page }) => {
+	// The two round-trip tests above return to Gig with page.goto, a full
+	// reload that builds a fresh engine singleton, so they cannot see a
+	// teardown that leaves the SAME singleton unable to re-arm. This one stays
+	// in one document: Library disposes the engine, then Gig must rebuild the
+	// AudioContext and play. The mute set by ?muted=1 survives dispose on
+	// purpose, so this stays silent.
+	test.skip(!HAS_MANIFEST, 'fixture manifest required for library round-trip');
+
+	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	await page.evaluate(async (stableId) => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC missing');
+		await ipc.dispatch({ type: 'load', deck: 1, stable_id: stableId });
+	}, FIXTURE_STABLE_ID);
+	const readMasterVolume = () => page.evaluate(() => window.musicDjToolsPerformance?.query().mixer.master);
+	const masterBefore = await readMasterVolume();
+	expect(masterBefore, 'the master volume must be readable before the round trip').toBeGreaterThan(0);
+
+	await _selectLibraryMode(page);
+	await page.waitForFunction(() => window.__mdtLibraryModeIdle === true);
+	const idle = await page.evaluate(() => window.musicDjToolsLibraryMode?.read_idle_probe());
+	expect(idle?.audio_context_count).toBe(0);
+
+	const documentMarker = await page.evaluate(() => {
+		(window as unknown as { __roundTripMarker?: number }).__roundTripMarker = 1;
+		return 1;
+	});
+	await _returnToGigInApp(page);
+	expect(
+		await page.evaluate(() => (window as unknown as { __roundTripMarker?: number }).__roundTripMarker),
+		'if the marker is gone then the return to Gig reloaded the page and this test proves nothing a goto test does not'
+	).toBe(documentMarker);
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	const decksAfterReturn = await page.evaluate(() =>
+		[1, 2, 3, 4].map((deckId) => window.musicDjToolsPerformance?.query().decks[deckId as 1 | 2 | 3 | 4]?.stable_id)
+	);
+	expect(decksAfterReturn).toEqual([null, null, null, null]);
+	expect(
+		await readMasterVolume(),
+		'if the master is 0 then the teardown hard mute leaked into the remounted Gig (the in-app return mounts /performance twice)'
+	).toBe(masterBefore);
+
+	await page.evaluate(async (stableId) => {
+		const ipc = window.musicDjToolsPerformance;
+		if (ipc === undefined) throw new Error('performance IPC missing');
+		await ipc.dispatch({ type: 'load', deck: 1, stable_id: stableId });
+		await ipc.dispatch({ type: 'play', deck: 1, playing: true });
+	}, FIXTURE_STABLE_ID);
+	await page.waitForFunction(
+		(stableId) => {
+			const deck = window.musicDjToolsPerformance?.query().decks[1];
+			return deck?.stable_id === stableId && deck.playing === true;
+		},
+		FIXTURE_STABLE_ID,
+		{ timeout: 20_000 }
+	);
+	const readPosition = () =>
+		page.evaluate(() => window.musicDjToolsPerformance?.query().decks[1].position_ms ?? -1);
+	const start = await readPosition();
+	// Past SILENT_WHILE_PLAYING_MS (2 s) with margin: a deck playing into a
+	// muted master advances about 2 s, then the silence watchdog stops it.
+	await expect
+		.poll(readPosition, {
+			message: 'if position stalls near 2 s then the silence watchdog cut a deck that was playing into no signal',
+			timeout: 15_000
+		})
+		.toBeGreaterThan(start + 4_000);
+	expect(await page.evaluate(() => window.musicDjToolsPerformance?.query().decks[1].playing)).toBe(true);
+	const perfKinds = await page.evaluate(() => {
+		const read = (window as Window & { __mdtPerfLog?: () => readonly { kind: string }[] }).__mdtPerfLog;
+		if (read === undefined) throw new Error('__mdtPerfLog missing, so the silence check below would read nothing');
+		return read().map((row) => row.kind);
+	});
+	expect(perfKinds, 'control: the rebuilt graph armed its xrun sentinel, so the log is being written').toContain(
+		'xrun-sentinel-armed'
+	);
+	expect(perfKinds).not.toContain('silent-while-playing');
+	const context = await page.evaluate(() => window.musicDjToolsLibraryMode?.read_idle_probe());
+	expect(context?.audio_context_count).toBe(1);
+	expect(context?.deck_nodes_present).toBe(true);
+	expect(context?.deck_pcm_bytes, 'the reloaded deck holds its decoded buffer again').toBeGreaterThan(0);
 });

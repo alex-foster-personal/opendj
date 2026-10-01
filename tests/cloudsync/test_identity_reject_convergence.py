@@ -328,8 +328,8 @@ def test_remap_chain_follows_hub_survivor(tmp_path: Path) -> None:
         remap = effective_identity_remap(conn)
         assert _follow_remap(remap, _PK_A) == _PK_C
         held = sync_set.HeldKeys(conn)
-        assert _PK_B in held.identity_losers
-        assert _PK_C not in held.identity_losers
+        assert held.is_identity_loser(_PK_B)
+        assert not held.is_identity_loser(_PK_C)
     finally:
         conn.close()
 

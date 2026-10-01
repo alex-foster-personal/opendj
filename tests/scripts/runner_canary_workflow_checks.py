@@ -46,18 +46,41 @@ WORKFLOW_DIR = CANARY_PATH.parent
 CANARY_REF = "refs/heads/canary/" + "0" * 40
 
 
-#: ci.yml `test` steps the canary deliberately omits. All three are trailing, non-verdict
-#: uploads: their artifact names would collide across vendors in one run, and their readers
-#: (the shard rebalance and the Mergify CI Insights job) live in the source repository.
+#: ci.yml `test` steps the canary deliberately omits, all trailing. The first three are
+#: non-verdict uploads: their artifact names would collide across vendors in one run, and
+#: their readers (the shard rebalance and the CI Insights job) live in the source
+#: repository. The fourth is the Trunk-quarantine verdict, which reads a list job the
+#: canary does not have (ADR-NEW-trunk-flaky-quarantine-on); the canary instead keeps its
+#: pytest step failing on its own, see CI_ONLY_PYTEST_KEYS.
 CI_ONLY_STEPS = (
     "Upload this shard's measured durations",
+    "Upload the PR test selection record (DEVOPS-20 escape measurement)",
     "Stage this shard's JUnit report for the isolated CI Insights job",
     "Upload this shard's JUnit report for CI Insights",
+    "Fast lane verdict (pytest exit code, Trunk quarantine applied)",
 )
+
+
+#: Keys ci.yml's pytest step carries that the canary's must NOT: continue-on-error defers
+#: ci.yml's verdict to the step above, and the canary has no such step, so there it would
+#: turn every red shard green.
+CI_ONLY_PYTEST_KEYS = ("continue-on-error",)
 
 
 #: The one in-step difference: the shard's own wall budget, sized under the 30-minute cap.
 PYTEST_BUDGET_SUBSTITUTION = ("MDT_PYTEST_TIMEOUT_S=2400\n", "MDT_PYTEST_TIMEOUT_S=1440\n")
+
+
+#: Round 1 (Thu 1 Oct 2026). Two declared ADDITIONS the canary carries that ci.yml's
+#: `test` job does not have at all -- the inverse of CI_ONLY_STEPS/PYTEST_BUDGET_
+#: SUBSTITUTION above, which declare what ci.yml has and the canary omits or shrinks.
+#: Self-hosted runners get both for free (a provisioned host, MUX_FIXTURE_HOST); a
+#: vendor VM is a cold ephemeral image and must never receive the real external
+#: fixture host, so it needs its own pnpm and an explicit opt-in to skip the fixtures
+#: it cannot have. drift_problems() subtracts exactly these two before comparing the
+#: rest, so anything else added, removed, or moved still fails the comparison.
+CANARY_ONLY_PNPM_STEP_NAME = "Enable pinned pnpm (vendor VMs have no self-hosted preinstall)"
+CANARY_ONLY_ENV: dict[str, str] = {"MDT_ALLOW_MISSING_FIXTURES": "1"}
 
 
 STATUS_FUNCTIONS = re.compile(r"\b(always|cancelled|failure|success)\s*\(")
@@ -247,13 +270,29 @@ def _canary_expected_steps(ci_doc: dict[str, Any]) -> list[dict[str, Any]]:
     pytest_step = next(s for s in kept if s.get("name") == CONFIG["pytest_step_name"])
     assert pytest_step["run"].count(old) == 1, "ci.yml's shard budget line moved"
     pytest_step["run"] = pytest_step["run"].replace(old, new)
+    for key in CI_ONLY_PYTEST_KEYS:
+        assert key in pytest_step, f"declared CI-only pytest key {key!r} no longer in ci.yml"
+        del pytest_step[key]
     return kept
 
 
 def drift_problems(ci_doc: dict[str, Any], canary_doc: dict[str, Any]) -> list[str]:
     problems = []
     expected = _canary_expected_steps(ci_doc)
-    actual = canary_doc["jobs"][SHARD_JOB]["steps"]
+    actual = list(canary_doc["jobs"][SHARD_JOB]["steps"])
+
+    # Subtract the one declared step ADDITION before the positional comparison below,
+    # so its presence (anywhere) is required but its position is not pinned, while an
+    # absent, duplicated, or renamed copy still fails loudly.
+    pnpm_indices = [i for i, s in enumerate(actual) if s.get("name") == CANARY_ONLY_PNPM_STEP_NAME]
+    if len(pnpm_indices) != 1:
+        problems.append(
+            f"canary carries {len(pnpm_indices)} steps named "
+            f"{CANARY_ONLY_PNPM_STEP_NAME!r}, expected exactly 1"
+        )
+    else:
+        del actual[pnpm_indices[0]]
+
     if len(expected) != len(actual):
         problems.append(f"canary has {len(actual)} shard steps, ci.yml implies {len(expected)}")
     for index, (want, got) in enumerate(zip(expected, actual, strict=False)):
@@ -261,9 +300,32 @@ def drift_problems(ci_doc: dict[str, Any], canary_doc: dict[str, Any]) -> list[s
             problems.append(
                 f"step {index} ({want.get('name') or want.get('uses')}) differs from ci.yml"
             )
-    if ci_doc["jobs"]["test"].get("env") != canary_doc["jobs"][SHARD_JOB].get("env"):
-        problems.append("shard env differs from ci.yml's test job env")
+
+    ci_env = dict(ci_doc["jobs"]["test"].get("env") or {})
+    canary_env = dict(canary_doc["jobs"][SHARD_JOB].get("env") or {})
+    for key, value in CANARY_ONLY_ENV.items():
+        actual_value = canary_env.pop(key, None)
+        if actual_value != value:
+            problems.append(
+                f"shard env {key!r} is {actual_value!r}, expected declared addition {value!r}"
+            )
+    if ci_env != canary_env:
+        problems.append("shard env differs from ci.yml's test job env beyond the declared addition")
     return problems
+
+
+def fixture_skip_flag_problems(config: dict[str, Any], canary_doc: dict[str, Any]) -> list[str]:
+    """The report's unequal-work cap (Sol P1 on 0e7388c6f) keys on the config flag, so the
+    flag must say exactly what the workflow env does, in both directions."""
+    env = canary_doc["jobs"][SHARD_JOB].get("env") or {}
+    skips = env.get("MDT_ALLOW_MISSING_FIXTURES") == "1"
+    if config["vendor_skips_external_fixtures"] is not skips:
+        return [
+            f"ci/runner-canary.json vendor_skips_external_fixtures is "
+            f"{config['vendor_skips_external_fixtures']!r}, but the canary shard env "
+            f"{'sets' if skips else 'does not set'} MDT_ALLOW_MISSING_FIXTURES=1"
+        ]
+    return []
 
 
 def _branch_filter_matches(pattern: str, branch: str) -> bool:

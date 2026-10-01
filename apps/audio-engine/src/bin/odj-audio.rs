@@ -593,11 +593,12 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
 
-    fn dir(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("odj-claim-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    /// A fresh directory, deleted when the guard drops (on panic too). Bind
+    /// the guard for the whole test: `let (_guard, d) = dir(..)`.
+    fn dir(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let guard = tempfile::Builder::new().prefix(&format!("odj-audio-test-claim-{name}-")).tempdir().unwrap();
+        let d = guard.path().to_path_buf();
+        (guard, d)
     }
 
     fn w(p: PathBuf, what: &str) -> (PathBuf, String) {
@@ -611,7 +612,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn outputs_the_volume_holds_as_one_file_are_refused_and_nothing_is_left() {
-        let d = dir("alias");
+        let (_guard, d) = dir("alias");
         std::fs::create_dir_all(d.join("real")).unwrap();
         std::os::unix::fs::symlink(d.join("real"), d.join("link")).unwrap();
         std::fs::write(d.join("keep.wav"), b"old").unwrap();
@@ -627,7 +628,6 @@ mod tests {
         assert!(!d.join("new").exists(), "a directory the claim made was left");
         // Control: a file that was there before is neither removed nor emptied.
         assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -635,7 +635,7 @@ mod tests {
         // Codex on d959eae8: the reads were asked only before a render, so
         // an output relinked to the plan or a track while it ran was then
         // emptied. The claim asks again, against the output as opened.
-        let d = dir("relinked");
+        let (_guard, d) = dir("relinked");
         std::fs::write(d.join("track.wav"), b"track").unwrap();
         std::fs::write(d.join("plan.json"), b"plan").unwrap();
         let reads = Reads { paths: vec![d.join("plan.json"), d.join("track.wav"), d.join("gone.wav")], files: vec![] };
@@ -658,7 +658,6 @@ mod tests {
         // Control: an output that is not a read is claimed, next to reads
         // that exist and one that no longer does.
         assert_eq!(claim_outputs(&[w(d.join("fresh.wav"), "--out")], &reads).unwrap().len(), 1);
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -666,7 +665,7 @@ mod tests {
         // Codex on d07e4db1: only the input paths were asked again, so a
         // track renamed away and replaced at its path, with the output then
         // linked to the file that was read, passed the claim and was emptied.
-        let d = dir("renamed");
+        let (_guard, d) = dir("renamed");
         std::fs::write(d.join("track.wav"), b"track").unwrap();
         let read = SourceId::of(&std::fs::File::open(d.join("track.wav")).unwrap()).unwrap();
         std::fs::rename(d.join("track.wav"), d.join("old.wav")).unwrap();
@@ -684,12 +683,11 @@ mod tests {
         std::fs::hard_link(d.join("track.wav"), d.join("now.wav")).unwrap();
         let only_id = Reads { paths: vec![], files: reads.files.clone() };
         assert_eq!(claim_outputs(&[w(d.join("now.wav"), "--out")], &only_id).unwrap().len(), 1);
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
     fn a_render_holds_its_plan_and_tracks_as_opened() {
-        let d = dir("render-reads");
+        let (_guard, d) = dir("render-reads");
         std::fs::write(d.join("plan.json"), b"{}").unwrap();
         std::fs::write(d.join("a.wav"), b"a").unwrap();
         let id = |n: &str| SourceId::of(&std::fs::File::open(d.join(n)).unwrap()).unwrap();
@@ -711,7 +709,6 @@ mod tests {
         assert_eq!(std::fs::read(d.join("plan-old.json")).unwrap(), b"{}");
         std::fs::hard_link(d.join("plan.json"), d.join("out2.wav")).unwrap();
         assert_eq!(claim_outputs(&[w(d.join("out2.wav"), "--out")], &only_ids).unwrap().len(), 1);
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -719,7 +716,7 @@ mod tests {
         // Codex on b87a0f49: two runs racing on one absent output both saw
         // it absent, so the second counted the first's file as its own and
         // removed it when a later output of its own was refused.
-        let d = dir("raced");
+        let (_guard, d) = dir("raced");
         std::fs::write(d.join("plan.json"), b"plan").unwrap();
         let reads = Reads { paths: vec![d.join("plan.json")], files: vec![] };
         let writes = [w(d.join("mix.wav"), "--out"), w(d.join("plan.json"), "deck 1's output")];
@@ -753,7 +750,6 @@ mod tests {
         assert!(err.unwrap_err().contains("plan.json"), "a directory made first failed the claim");
         assert!(d.join("new").is_dir(), "the other run's directory was removed");
         assert!(!d.join("new").join("mix.wav").exists(), "a file the claim made was left");
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -761,7 +757,7 @@ mod tests {
         // Codex on bb0d2322: creation was decided atomically, but the undo
         // removed by path, so an output this claim created, then replaced by
         // another run, was removed as if it were still this claim's.
-        let d = dir("replaced");
+        let (_guard, d) = dir("replaced");
         std::fs::write(d.join("plan.json"), b"plan").unwrap();
         let reads = Reads { paths: vec![d.join("plan.json")], files: vec![] };
         let writes = [w(d.join("new").join("mix.wav"), "--out"), w(d.join("plan.json"), "deck 1's output")];
@@ -803,20 +799,18 @@ mod tests {
         std::fs::remove_dir(d.join("new")).unwrap();
         assert!(claim_outputs(&writes, &reads).is_err());
         assert!(!d.join("new").exists(), "what the claim made was left");
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     // Control: distinct outputs are all claimed, one handle each, in order,
     // and an existing file keeps its bytes until it is written.
     #[test]
     fn distinct_outputs_are_all_claimed() {
-        let d = dir("distinct");
+        let (_guard, d) = dir("distinct");
         std::fs::write(d.join("keep.wav"), b"old").unwrap();
         let writes = [w(d.join("keep.wav"), "--out"), w(d.join("n").join("deck1.wav"), "deck 1's output"), w(d.join("n").join("deck2.wav"), "deck 2's output")];
         let files = claim_outputs(&writes, &Reads::default()).unwrap();
         assert_eq!(files.len(), 3);
         assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
         assert!(d.join("n").join("deck1.wav").exists() && d.join("n").join("deck2.wav").exists());
-        let _ = std::fs::remove_dir_all(&d);
     }
 }

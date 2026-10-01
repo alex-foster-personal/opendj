@@ -7,11 +7,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-import soundfile as sf
 
-from apps.stems.artifacts import STEM_PARTS, load_stem_bundle
-from apps.vocals import cache as vcache
-from apps.vocals import from_stems as vfrom_stems
+sf = pytest.importorskip("soundfile", reason="needs the optional soundfile package")
+
+from apps.stems.artifacts import STEM_PARTS, load_stem_bundle  # noqa: E402
+from apps.vocals import cache as vcache  # noqa: E402
+from apps.vocals import from_stems as vfrom_stems  # noqa: E402
 
 pytestmark = [
     pytest.mark.requirement("CAT-05"),
