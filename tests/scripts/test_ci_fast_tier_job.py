@@ -257,7 +257,7 @@ def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
 
 @pytest.mark.requirement("DEVOPS-18")
 def test_fast_job_skips_the_same_queue_draft_the_shards_route_to_mq() -> None:
-    """if the fast job's queue-draft test drifts from the shards' then a draft runs it, or a PR head loses it
+    """[if] the fast skip and the shards' mq clause name different drafts [then] broken, [else stop].
 
     The skip and the `mq` routing must name one draft. A copy that drifts either
     runs the ungating legs on drafts again or silently drops them from real PR heads.
