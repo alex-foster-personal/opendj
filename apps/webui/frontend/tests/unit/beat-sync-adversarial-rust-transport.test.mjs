@@ -74,7 +74,7 @@ beforeEach(() => {
 		m.pitchRanges[d] = 8;
 		m.mixerState.channels[d].fader = 1;
 		m.mixerState.channels[d].trim = 0.5;
-		m.mixerState.channels[d].assign = 'thru';
+		m.mixerState.channels[d].assign = 'THRU';
 	}
 	m.mixerState.crossfader = 0.5;
 	m.mixerState.master = 1;
