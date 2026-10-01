@@ -37,6 +37,7 @@ class World:
         self.blank: set[str] = set()
         self.unreadable: set[str] = set()
         self.locked: set[str] = set()
+        self.declined: dict[str, dict[str, str]] = {lane: {} for lane, _b in aa.LANE_ORDER}
         self.tag_runs: list[str] = []
 
     def refresh_tags(self, sid: str) -> bool:
@@ -72,6 +73,7 @@ class World:
                 playing_fn=lambda: self.playing,
                 blank_tags_fn=lambda: set(self.blank),
                 refresh_tags_fn=self.refresh_tags,
+                declined_fn=lambda lane, _backend: dict(self.declined[lane]),
             )
         )
 
@@ -274,3 +276,17 @@ def test_a_busy_state_db_defers_the_tag_read_instead_of_failing_it() -> None:
     _run_to_green(drain)
     assert world.tag_runs == ["a", "a"], "if a locked write is not retried then broken"
     assert drain.coverage()["lanes"]["tags"]["failed"] == 0
+
+
+def test_a_declined_key_is_counted_apart_from_done_and_never_rerun() -> None:
+    """[if] a key record declined (no_tonal_center) [then] coverage says declined, not done, [else stop]."""
+    world = World(["a", "b"])
+    world.strips = {"a", "b"}
+    for lane in world.done:
+        world.done[lane] = {"a", "b"}
+    world.declined["key"] = {"b": "no_tonal_center: ambiguous_margin"}
+    drain = world.drain()
+    assert drain.tick() == "green", "if a declined record is re-run then broken"
+    key = drain.coverage()["lanes"]["key"]
+    assert (key["done"], key["declined"], key["missing"]) == (1, 1, 0)
+    assert key["declined_reasons"] == {"no_tonal_center: ambiguous_margin": 1}

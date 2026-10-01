@@ -66,6 +66,7 @@ from .request_guard import (
     origin_guard_middleware,
 )
 from .routes import ahead_analysis as ahead_analysis_routes
+from .routes import enrich as enrich_routes
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -634,6 +635,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         library_jobs_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
+        enrich_routes.router,
         coverage_terminal_routes.router,
         analysis_source_routes.router,
         auth_routes.router,

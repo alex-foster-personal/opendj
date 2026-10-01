@@ -225,6 +225,10 @@ class AheadSources:
     blank_tags_fn: Callable[[], set[str]]
     #: Re-read one row's file tags; False when the file still reads nothing.
     refresh_tags_fn: Callable[[str], bool]
+    #: (lane, backend) -> {sid: reason} for current records whose lane DECLINED
+    #: (status failed: key no_tonal_center, beatgrid grid_fit_*). They are
+    #: produced, so never re-run, but they are not a value either.
+    declined_fn: Callable[[str, str], dict[str, str]]
 
 
 class AheadDrain:
@@ -381,8 +385,18 @@ class AheadDrain:
                 unmapped, [sid for sid in unmapped if self._src.has_strip_fn(sid)], self._strip_failed
             )
         }
+        present_set = set(present)
         for lane, backend in LANE_ORDER:
             counts = coverage_counts(present, self._src.done_fn(lane, backend), self._lane_failed[lane])
+            declined = {
+                sid: why for sid, why in self._src.declined_fn(lane, backend).items() if sid in present_set
+            }
+            reasons: dict[str, int] = {}
+            for why in declined.values():
+                reasons[why] = reasons.get(why, 0) + 1
+            counts["done"] -= len(declined)
+            counts["declined"] = len(declined)
+            counts["declined_reasons"] = reasons
             counts["unavailable"] = self._status.unavailable.get(lane)
             lanes[lane] = counts
         return {
@@ -451,6 +465,27 @@ def _done_ids(conn_factory: Callable[[], sqlite3.Connection], backend: str) -> s
     finally:
         conn.close()
     return {row[0] for row in rows}
+
+
+def _declined_ids(
+    conn_factory: Callable[[], sqlite3.Connection], lane: str, backend: str
+) -> dict[str, str]:
+    version = producer_version(backend)
+    conn = conn_factory()
+    try:
+        rows = conn.execute(
+            "SELECT stable_id, json_extract(record_json, '$.lanes.' || ? || '.reason') FROM analysis "
+            "WHERE backend = ? AND backend_version = ? "
+            "AND json_extract(record_json, '$.lanes.' || ? || '.status') = 'failed'",
+            (lane, backend, version, lane),
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return {}
+        raise
+    finally:
+        conn.close()
+    return {row[0]: str(row[1]) for row in rows}
 
 
 def producer_version(backend: str) -> str:
@@ -598,6 +633,7 @@ def build_for_app(app: Any) -> AheadDrain:
             playing_fn=DeckGate(mirror),
             blank_tags_fn=blank_tags,
             refresh_tags_fn=refresh_tags,
+            declined_fn=lambda lane, backend: _declined_ids(ingest_routes.open_ro, lane, backend),
         )
     )
 
