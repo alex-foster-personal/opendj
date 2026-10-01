@@ -30,7 +30,16 @@ test('the export holds every registry map, in registry order', async () => {
 	// bindings, so an empty or partial registry cannot pass as "in sync".
 	assert.deepEqual(
 		doc.maps.map((m) => m.nameMatch),
-		['DDJ-FLX10', 'DDJ-400', '\\bMixtour\\s+Pro\\b', '\\bMixtour\\b(?!\\s+Pro\\b)', 'DDJ-FLX4']
+		['DDJ-FLX10', 'DDJ-400', '\\bMixtour\\s+Pro\\b', '\\bMixtour\\b(?:$|[^\\s]|\\s+(?:$|[^P\\s]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))', 'DDJ-FLX4']
 	);
 	for (const m of doc.maps) assert.ok(m.bindings.length > 0, `${m.nameMatch} has no bindings`);
+});
+
+test('no exported nameMatch uses regex look-around (the native engine cannot compile it)', async () => {
+	// odj-audio compiles nameMatch with regex_lite, which has no look-around; the dmg's hello check
+	// then refuses the whole map file (Thu 1 Oct 2026, the plain Mixtour map's (?!...)).
+	const doc = JSON.parse(await renderExport());
+	for (const m of doc.maps) {
+		assert.ok(!/\(\?<?[=!]/.test(m.nameMatch), `${m.vendor} nameMatch uses look-around: ${m.nameMatch}`);
+	}
 });

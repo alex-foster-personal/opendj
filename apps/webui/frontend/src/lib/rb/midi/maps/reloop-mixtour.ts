@@ -189,7 +189,9 @@ export const MIXTOUR_VU_VELOCITY_STEPS: ReadonlyArray<{ min01: number; velocity:
  * broad `Mixtour` matching used to route Pro SYNC as classic LOAD. */
 export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	vendor: 'Reloop',
-	nameMatch: '\\bMixtour\\b(?!\\s+Pro\\b)',
+	// No look-around: the native engine's regex (regex_lite) rejects it and the dmg's odj-audio hello
+	// check fails. Equivalent to \bMixtour\b not followed by whitespace + the word Pro.
+	nameMatch: '\\bMixtour\\b(?:$|[^\\s]|\\s+(?:$|[^P\\s]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))',
 	bindings: [..._deckBindings(1, 1), ..._deckBindings(2, 2), ..._GLOBAL_BINDINGS],
 	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)],
 	hints: [..._deckHints(1, 1), ..._deckHints(2, 2)]
