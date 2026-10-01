@@ -142,6 +142,38 @@ def _unresolved_bucket(
     return "off_machine"
 
 
+def _live_track_rows(conn: sqlite3.Connection) -> list[tuple[str, object]]:
+    tracks_sql = (
+        "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
+        if has_soft_deletes(conn, "tracks")
+        else "SELECT stable_id, file_path FROM tracks"
+    )
+    return [(str(sid), fp) for sid, fp in conn.execute(tracks_sql)]
+
+
+def _owner_machine_id(conn: sqlite3.Connection, machine_id: str | None) -> str:
+    """The machine whose locations count, or "" when the schema has none."""
+    return machine_id or (
+        sync_stamp.local_machine_id(conn)
+        if state_locations._locations_machine_scoped(conn)
+        else ""
+    )
+
+
+def _path_candidates(file_path: object, alternates: Sequence[str]) -> list[str]:
+    """The row's own path first, then each alternate location not already listed."""
+    raw = [str(file_path)] if file_path and str(file_path).strip() else []
+    return [*raw, *(p for p in alternates if p not in raw)]
+
+
+def _require_buckets_cover_every_row(scan: LibraryPlayability) -> None:
+    bucketed = sum(count for name, count in scan.counts().items() if name != "total")
+    if bucketed != scan.total:
+        raise RuntimeError(
+            f"playability buckets sum to {bucketed}, not the {scan.total} live rows"
+        )
+
+
 #-----------------------------------------------------------------------------
 # the scan
 #-----------------------------------------------------------------------------
@@ -152,18 +184,9 @@ def scan_playability(
     mounted: set[str] | None = None,
 ) -> LibraryPlayability:
     """Classify every live track row. Read-only; stats paths, never audio."""
-    tracks_sql = (
-        "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
-        if has_soft_deletes(conn, "tracks")
-        else "SELECT stable_id, file_path FROM tracks"
-    )
-    rows = [(str(sid), fp) for sid, fp in conn.execute(tracks_sql)]
+    rows = _live_track_rows(conn)
     stable_ids = [sid for sid, _fp in rows]
-    owner = machine_id or (
-        sync_stamp.local_machine_id(conn)
-        if state_locations._locations_machine_scoped(conn)
-        else ""
-    )
+    owner = _owner_machine_id(conn, machine_id)
     resolved = state_locations.bulk_local_audio_paths(
         conn, stable_ids, machine_id=owner or None
     )
@@ -184,8 +207,7 @@ def scan_playability(
         if path is not None:
             present.append((stable_id, str(path)))
             continue
-        raw = [str(file_path)] if file_path and str(file_path).strip() else []
-        candidates = [*raw, *(p for p in alternates.get(stable_id, []) if p not in raw)]
+        candidates = _path_candidates(file_path, alternates.get(stable_id, []))
         bucket = _unresolved_bucket(stable_id, candidates, claimed, volumes)
         if bucket == "broken_here":
             broken_here.append(stable_id)
@@ -201,11 +223,7 @@ def scan_playability(
         streaming=tally["streaming"],
         pathless=tally["pathless"],
     )
-    bucketed = sum(count for name, count in scan.counts().items() if name != "total")
-    if bucketed != scan.total:
-        raise RuntimeError(
-            f"playability buckets sum to {bucketed}, not the {scan.total} live rows"
-        )
+    _require_buckets_cover_every_row(scan)
     return scan
 
 
