@@ -127,6 +127,17 @@ def _perf_note_line(entry: dict[str, Any]) -> str:
     return f"{entry['kpi']} = {shown} ({where}). {note}".strip()
 
 
+def _in_capture_order(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """By date, then by capture time within a date (Codex, PR #4474, P2/BLOCKING).
+
+    Append order is publish order, not capture order: hosts publish through one
+    branch, so a backlog can land after a later capture from another host, and the
+    (date, round) collapse keeps the last real reading. The sort is stable, so rows
+    without `captured_at` sort first on their date and keep their append order.
+    """
+    return sorted(entries, key=lambda row: (row["date"], str(row.get("captured_at") or "")))
+
+
 @router.get("/perf-kpi")
 def get_perf_kpi_ledger() -> dict[str, Any]:
     """The perf ledger as cards: same kpis + snapshots shape as /bench/kpi.
@@ -148,8 +159,7 @@ def get_perf_kpi_ledger() -> dict[str, Any]:
     notes: dict[tuple[str, str], list[str]] = {}
     units: dict[str, str] = {}
     readings: dict[str, int] = {}
-    # sorted() is stable, so rows sharing a date keep their append order.
-    for entry in sorted(entries, key=lambda row: row["date"]):
+    for entry in _in_capture_order(entries):
         key = (entry["date"], str(entry.get("round", "")))
         snapshot = snapshots.setdefault(key, {
             "ts": entry["date"],

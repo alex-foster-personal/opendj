@@ -64,7 +64,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from apps.sync_hub import sync_set
+from apps.sync_hub import digest_gate, sync_set
 from apps.sync_hub.machine_wire_limits import (
     MachineWireLimitError,
     validate_machine_wire_fields,
@@ -101,6 +101,7 @@ from apps.sync_hub.protocol_common import (
     pk_columns,
     stored_stamp_faults,
     table_columns,
+    table_columns_memo,
     validate_hash_pending_row,
 )
 from apps.sync_hub.quarantine_log import quarantine_pass, record_quarantine
@@ -451,7 +452,22 @@ def table_digest(
 
 
 def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
-    """Digest every table in :data:`DIGEST_TABLES`, plus a rollup.
+    """:func:`compute_sync_digest`, reused while nothing it reads has changed.
+
+    Issue #4396: a no-op sync used to re-walk every row of every table on
+    both machines. :func:`apps.sync_hub.digest_gate.gated_digest` returns
+    the previous answer only when the changelog seqs, the schema, the
+    identity remap and every table's trigger-maintained write token prove it
+    current, and walks in full whenever they cannot. Callers keep the same
+    contract, including holding one transaction across the call.
+    """
+    return digest_gate.gated_digest(
+        conn, seq, lambda: compute_sync_digest(conn, seq=seq)
+    )
+
+
+def compute_sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
+    """Digest every table in :data:`DIGEST_TABLES`, plus a rollup. Always walks.
 
     ``seq`` is carried through untouched: the caller reads it from the
     changelog inside the same transaction as this call, so the digest and
@@ -542,7 +558,6 @@ __all__ = [
     "DELETED_AT",
     "DIGEST_TABLES",
     "EPOCH",
-    "IdentityReject",
     "MEMBERSHIP_SPEC",
     "MEMBERSHIP_TABLE",
     "MODIFIED_AT",
@@ -555,6 +570,7 @@ __all__ = [
     "SYNC_TABLES",
     "TRACK_FIELDS_TABLE",
     "UPDATED_AT",
+    "IdentityReject",
     "MachineRow",
     "RowChange",
     "StampFault",
@@ -566,6 +582,7 @@ __all__ = [
     "canonical_row",
     "canonical_timestamp",
     "canonical_values",
+    "compute_sync_digest",
     "decode_row_pk",
     "describe_faults",
     "encode_row_pk",
@@ -576,5 +593,6 @@ __all__ = [
     "stored_stamp_faults",
     "sync_digest",
     "table_columns",
+    "table_columns_memo",
     "table_digest",
 ]

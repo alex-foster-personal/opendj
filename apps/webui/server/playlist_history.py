@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 HISTORY_LIMIT: int = 50
 
-EditOp = Literal["create", "duplicate", "rename", "memberships", "delete"]
+EditOp = Literal["create", "duplicate", "rename", "memberships", "delete", "add_items"]
 InverseOp = Literal["delete", "create", "rename", "memberships"]
 
 
@@ -66,7 +66,12 @@ class PlaylistSnapshot:
 
 @dataclass
 class PlaylistEditCommand:
-    """One user-visible playlist mutation, with before/after snapshots."""
+    """One user-visible playlist mutation, with before/after snapshots.
+
+    An ``add_items`` command (LIBM-132) records the inserted rows in ``added``
+    instead of membership snapshots; its ``after`` is the header only, so
+    ``after.items`` is empty and says nothing about the membership.
+    """
 
     command_id: str
     op: EditOp
@@ -74,9 +79,10 @@ class PlaylistEditCommand:
     ts: str
     before: PlaylistSnapshot | None
     after: PlaylistSnapshot | None
+    added: list[dict[str, str]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "command_id": self.command_id,
             "op": self.op,
             "playlist_id": self.playlist_id,
@@ -84,11 +90,15 @@ class PlaylistEditCommand:
             "before": None if self.before is None else self.before.to_dict(),
             "after": None if self.after is None else self.after.to_dict(),
         }
+        if self.added is not None:
+            out["added"] = [dict(member) for member in self.added]
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PlaylistEditCommand:
         before_raw = data.get("before")
         after_raw = data.get("after")
+        added_raw = data.get("added")
         return cls(
             command_id=data["command_id"],
             op=data["op"],
@@ -96,6 +106,7 @@ class PlaylistEditCommand:
             ts=data["ts"],
             before=None if before_raw is None else PlaylistSnapshot.from_dict(before_raw),
             after=None if after_raw is None else PlaylistSnapshot.from_dict(after_raw),
+            added=None if added_raw is None else [dict(member) for member in added_raw],
         )
 
 
@@ -142,6 +153,7 @@ _LABEL: dict[EditOp, str] = {
     "rename": "Rename '{before}' to '{after}'",
     "memberships": "Edit tracks in '{after}'",
     "delete": "Delete '{before}'",
+    "add_items": "Add {count} track(s) to '{after}'",
 }
 
 
@@ -166,7 +178,11 @@ def label_for(command: PlaylistEditCommand) -> str:
     except KeyError as exc:
         raise ValueError(f"unknown playlist edit op: {command.op!r}") from exc
     after = command.after if command.after is not None else command.before
-    return template.format(before=_snap_name(command.before), after=_snap_name(after))
+    return template.format(
+        before=_snap_name(command.before),
+        after=_snap_name(after),
+        count=len(command.added or []),
+    )
 
 
 def snapshots_match(

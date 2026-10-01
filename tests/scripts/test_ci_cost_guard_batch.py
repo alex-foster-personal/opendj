@@ -15,7 +15,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from scripts.ci_cost_guard import batch_since, render_batch_summary, select_batch_runs
+from scripts.ci_cost_guard import render_batch_summary, select_batch_runs
+from scripts.ci_run_batch import (
+    batch_since,
+    created_slices,
+)
 
 pytestmark = pytest.mark.requirement("OPS-36")
 
@@ -112,3 +116,16 @@ def test_the_summary_lists_every_priced_run_and_alerts_only_above_threshold_or_u
     assert alerts[0]["title"] == "CI cost alert: run 2 estimated at $0.400"
     assert alerts[1]["title"] == "CI cost telemetry alert: unpriced runner in run 3"
     assert alerts[0]["report_file"] == "r2.md"
+
+
+# ----- the listing: sliced below GitHub's 1,000-result cap on filtered searches ------
+
+
+def test_created_slices_cover_the_window_end_to_end() -> None:
+    now = datetime(2026, 9, 22, 22, 30, tzinfo=UTC)
+    slices = created_slices("2026-09-22T20:00:00Z", now, timedelta(hours=1))
+    assert slices == [
+        ("2026-09-22T20:00:00Z", "2026-09-22T21:00:00Z"),
+        ("2026-09-22T21:00:00Z", "2026-09-22T22:00:00Z"),
+        ("2026-09-22T22:00:00Z", "2026-09-22T22:30:00Z"),
+    ]

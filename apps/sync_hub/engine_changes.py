@@ -120,6 +120,7 @@ def _members_for_playlist(
     """The whole membership bundle for ``playlist_id``, or None to hold the
     playlist back. See :func:`apps.sync_hub.sync_set.membership_reason`.
     """
+    held.decide_member_tracks(playlist_id)
     columns = protocol.table_columns(conn, MEMBERSHIP_TABLE)
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} "
@@ -200,6 +201,17 @@ def _rows_for_table(
 
 
 def _changelog_rows(
+    conn: sqlite3.Connection,
+    entries: Sequence[tuple[Any, Any, Any]],
+    *,
+    changelog: str,
+) -> tuple[Offer, int]:
+    """:func:`_walk_changelog_entries`, reading each table's columns once."""
+    with protocol.table_columns_memo(conn):
+        return _walk_changelog_entries(conn, entries, changelog=changelog)
+
+
+def _walk_changelog_entries(
     conn: sqlite3.Connection,
     entries: Sequence[tuple[Any, Any, Any]],
     *,

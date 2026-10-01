@@ -20,6 +20,17 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
+from scripts.ci_run_batch import (
+    batch_since,
+    created_floor,
+    fetch_completed_runs,
+    headers,
+    iso,
+    parse_time,
+    reconcile_created_since,
+    reconcile_listing,
+)
+
 
 @dataclass(frozen=True)
 class RunnerSku:
@@ -38,14 +49,10 @@ STANDARD_SKUS = {
 }
 
 
-def _parse_time(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
 def elapsed_seconds(started_at: str | None, completed_at: str | None) -> float | None:
     if not started_at or not completed_at:
         return None
-    return max(0.0, (_parse_time(completed_at) - _parse_time(started_at)).total_seconds())
+    return max(0.0, (parse_time(completed_at) - parse_time(started_at)).total_seconds())
 
 
 def infer_standard_sku(labels: Iterable[str]) -> RunnerSku | None:
@@ -197,15 +204,6 @@ def render_markdown(
     return "\n".join(lines), result
 
 
-def _headers(token: str) -> dict[str, str]:
-    return {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "music-dj-tools-ci-cost-guard",
-    }
-
-
 def fetch_jobs(repository: str, run_id: str, attempt: str, token: str) -> list[dict[str, Any]]:
     jobs: list[dict[str, Any]] = []
     page = 1
@@ -214,7 +212,7 @@ def fetch_jobs(repository: str, run_id: str, attempt: str, token: str) -> list[d
             f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
             f"/attempts/{attempt}/jobs?per_page=100&page={page}"
         )
-        request = Request(url, headers=_headers(token))
+        request = Request(url, headers=headers(token, "ci-cost-guard"))
         with urlopen(request, timeout=30) as response:
             payload = json.load(response)
         batch = payload.get("jobs") or []
@@ -232,25 +230,6 @@ def fetch_jobs(repository: str, run_id: str, attempt: str, token: str) -> list[d
 # pool is saturated. The batch prices the same runs from one job per cadence.
 
 
-def _iso(value: datetime) -> str:
-    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def batch_since(previous_started: str | None, now: datetime, floor: timedelta) -> str:
-    """The high-water mark: the previous pass's start, never later than `now - floor`.
-
-    The mark lives nowhere but GitHub's own record of this workflow's runs
-    (`run_started_at` of the last completed pass). The floor makes two passes
-    overlap even if a pass is late, and an overlap is harmless: the alert
-    issue's title carries the run id and the workflow refuses to open a second.
-    """
-    floored = now - floor
-    if previous_started is None:
-        return _iso(floored)
-    previous = _parse_time(previous_started)
-    return _iso(min(previous, floored))
-
-
 def select_batch_runs(
     runs: Iterable[dict[str, Any]], watched: set[str], e2e_events: set[str], since: str
 ) -> list[dict[str, Any]]:
@@ -262,14 +241,14 @@ def select_batch_runs(
     (`tests/test_ci_cost_guard_workflow_coverage.py` derives that from
     e2e.yml), which is the same rule the per-completion gate used to apply.
     """
-    mark = _parse_time(since)
+    mark = parse_time(since)
     selected: list[dict[str, Any]] = []
     for run in runs:
         if run.get("name") not in watched or run.get("status") != "completed":
             continue
         if run["name"] == "E2E" and run.get("event") not in e2e_events:
             continue
-        if _parse_time(run["updated_at"]) < mark:
+        if parse_time(run["updated_at"]) < mark:
             continue
         selected.append(run)
     return selected
@@ -306,52 +285,57 @@ def render_batch_summary(
     return "\n".join(lines) + "\n", alerts
 
 
-def fetch_completed_runs(repository: str, created_since: str, token: str) -> list[dict[str, Any]]:
-    """Completed runs created at or after `created_since`, newest first, all pages."""
-    runs: list[dict[str, Any]] = []
-    page = 1
-    while True:
-        url = (
-            f"https://api.github.com/repos/{repository}/actions/runs"
-            f"?status=completed&per_page=100&page={page}&created=%3E%3D{created_since}"
-        )
-        request = Request(url, headers=_headers(token))
-        with urlopen(request, timeout=30) as response:
-            payload = json.load(response)
-        batch = payload.get("workflow_runs") or []
-        runs.extend(batch)
-        if len(batch) < 100:
-            return runs
-        page += 1
-
-
 def run_batch(args: argparse.Namespace) -> int:
     now = datetime.now(tz=UTC)
     floor = timedelta(minutes=args.overlap_minutes)
     since = batch_since(args.previous_started or None, now, floor)
-    # A run completes at most `lookback` after it was created; the listing
-    # filters on created_at, the selection on updated_at.
-    created_since = _iso(_parse_time(since) - timedelta(hours=args.lookback_hours))
+    created_since = created_floor(since, timedelta(hours=args.lookback_hours))
     watched = {name.strip() for name in args.watched.split(",") if name.strip()}
     e2e_events = {name.strip() for name in args.e2e_events.split(",") if name.strip()}
-    runs = fetch_completed_runs(args.repository, created_since, args.token)
+    runs = fetch_completed_runs(
+        args.repository, created_since, args.token, "ci-cost-guard", workflow_names=watched
+    )
+    reconciled = (
+        reconcile_listing(
+            args.repository,
+            reconcile_created_since(now, timedelta(days=args.reconcile_horizon_days)),
+            created_since,
+            args.token,
+            workflow_names=watched,
+        )
+        if args.reconcile_horizon_days is not None
+        else []
+    )
+    # Pricing is one jobs read per run, so a reconcile prices only the re-runs that
+    # completed in the last few days, not every re-run it lists.
+    priced_since = iso(now - timedelta(days=args.reconcile_price_days or 0))
+    selected = {
+        str(run["id"]): run
+        for listing, mark in ((runs, since), (reconciled, priced_since))
+        for run in select_batch_runs(listing, watched, e2e_events, mark)
+    }
     priced: list[dict[str, Any]] = []
-    for run in select_batch_runs(runs, watched, e2e_events, since):
+    for run in selected.values():
         attempt = str(run.get("run_attempt") or 1)
         jobs = fetch_jobs(args.repository, str(run["id"]), attempt, args.token)
         report, result = render_markdown(
-            workflow_name=run["name"], run_url=run["html_url"], run_id=str(run["id"]),
-            threshold=args.threshold, jobs=jobs,
+            workflow_name=run["name"],
+            run_url=run["html_url"],
+            run_id=str(run["id"]),
+            threshold=args.threshold,
+            jobs=jobs,
         )
         report_file = args.report_dir / f"ci-cost-report-{run['id']}.md"
         report_file.write_text(report, encoding="utf-8")
-        priced.append({
-            "run": run,
-            "total_cost": result["total_cost"],
-            "over_threshold": result["over_threshold"],
-            "unknown_jobs": result["unknown_jobs"],
-            "report_file": str(report_file),
-        })
+        priced.append(
+            {
+                "run": run,
+                "total_cost": result["total_cost"],
+                "over_threshold": result["over_threshold"],
+                "unknown_jobs": result["unknown_jobs"],
+                "report_file": str(report_file),
+            }
+        )
     summary, alerts = render_batch_summary(priced, args.threshold, since)
     print(summary)
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "")
@@ -388,16 +372,30 @@ def main() -> int:
     parser.add_argument("--previous-started", default="", help="run_started_at of the last pass")
     parser.add_argument("--overlap-minutes", type=int, default=30)
     parser.add_argument("--lookback-hours", type=int, default=3)
+    parser.add_argument(
+        "--reconcile-horizon-days",
+        type=int,
+        default=None,
+        help="a reconcile pass: also list re-runs of runs created this many days back",
+    )
+    parser.add_argument(
+        "--reconcile-price-days",
+        type=int,
+        default=None,
+        help="a reconcile pass prices the re-runs that completed this many days back",
+    )
     parser.add_argument("--report-dir", type=Path, default=Path("."))
     parser.add_argument("--threshold", type=float, default=1.0)
-    parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
+    parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"))
     parser.add_argument("--jobs-json", type=Path)
     parser.add_argument("--report-file", type=Path, default=Path("ci-cost-report.md"))
     args = parser.parse_args()
+    if (args.reconcile_horizon_days is None) != (args.reconcile_price_days is None):
+        parser.error("--reconcile-horizon-days and --reconcile-price-days go together")
 
     if args.batch:
         if not (args.repository and args.token and args.watched):
-            parser.error("--batch needs --repository, --watched and --token (or GH_TOKEN)")
+            parser.error("--batch needs --repository, --watched and --token (or GITHUB_TOKEN)")
         return run_batch(args)
     if not (args.run_id and args.run_url and args.workflow_name):
         parser.error("single-run mode needs --run-id, --run-url and --workflow-name")
@@ -407,7 +405,7 @@ def main() -> int:
         jobs = payload.get("jobs", payload) if isinstance(payload, dict) else payload
     else:
         if not args.repository or not args.token:
-            parser.error("--repository and --token (or GH_TOKEN) are required without --jobs-json")
+            parser.error("--repository and --token (or GITHUB_TOKEN) are required without --jobs-json")
         jobs = fetch_jobs(args.repository, args.run_id, args.attempt, args.token)
 
     report, result = render_markdown(

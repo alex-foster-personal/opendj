@@ -82,17 +82,29 @@ Optional local linting via [Trunk](https://docs.trunk.io/code-quality) (config i
 
 ```bash
 npm ci            # once: installs the trunk launcher into ./node_modules
-npm run lint      # trunk check: new issues on lines changed vs main only
+npm run lint      # trunk check --no-fix: new issues on lines changed vs main only, read-only
+npm run lint:fix  # trunk check with autofix, for interactive use
 npm run fmt       # trunk fmt: changed files only; near no-op today (see below)
 ```
 
-`npm run fmt` currently has only dotenv-linter to run: black, prettier, ruff format,
-shfmt, taplo and rustfmt are disabled because none is an existing gate and each
-rewrites whole files. Enabling one is a separate decision.
+`npm run fmt` currently has only dotenv-linter to run. The formatters are chosen
+and are being switched on in parts by issue #4456 (`specs/formatter-adoption.md`):
+`ruff format` at width 120 for Python, prettier (tabs, single quotes, no trailing
+comma, width 100) for the frontend, and `shfmt -i 4 -ci` for shell. Black, isort,
+taplo, Markdown rewriting, oxipng and svgo stay off.
+
+Until that pass lands, do not whole-file format files you did not otherwise
+change. A formatting diff mixed into a real edit hides the edit and costs every
+open PR on that file a conflict. Formatting lands only as `style(format):`
+commits from issue #4456, each proven with `just fmt-proof <base>` and listed in
+`.git-blame-ignore-revs`. GitHub's blame skips those commits automatically; use
+`just blame <file>` for the same locally. Do not set `blame.ignoreRevsFile` in
+git config: it is shared by every worktree, and git fails in any checkout that
+predates the file.
 
 Trunk's git hooks are disabled on purpose (shared checkouts); run it on demand.
-Without a TTY (agents, CI) `trunk check` applies autofixes without asking, so
-pass `npm run lint -- --no-fix` for a read-only run.
+Without a TTY (agents, CI) a bare `trunk check` applies autofixes without asking, so
+`npm run lint` passes `--no-fix`; run `npm run lint:fix` when you want the fixes applied.
 
 ## Branching convention
 

@@ -17,12 +17,20 @@ disagree on how much:
     clips, median). That is the TARGET FOR V2, when our grids stand on their
     own rather than next to rekordbox's.
 
-KPIs. `KPIS` names the round-4 metric each target is read from, the value
+KPIs. `KPIS` names the bench metric each target is read from, the value
 measured at the served design, and the v2 target. The targets are proposals
 set with the offset decision, not measurements. The measured values are
-checked against the committed `ops/beatbench/round-4/results.json` by
+checked against the committed `KPI_ROUND` results.json by
 `tests/analysis_beatgrid/test_grid_design.py`, so a re-scored round that moves
-a number fails there until this table is updated with it.
+a number fails there until this table is updated with it. Round 6 (the
+every-downbeat bar-phase vote, `bar_phase.vote_bar_phase`) moved two: F
+0.837 -> 0.851 because 3 more fixed tracks are gridded instead of failing
+closed, and downbeat 72.6 -> 73.8 percent.
+
+THE DOWNBEAT DENOMINATOR. The scorer's downbeat mean skips tracks the grid
+failed closed on (193 of 200 fixed in round 6, 190 in round 4). Counting
+those as 0, the same rows read 71.2 percent (round 4: 69.0), and 137 of 200
+fixed tracks land every bar-1 on rekordbox's (round 4: 133).
 
 -Claude
 """
@@ -38,7 +46,7 @@ OFFSET_SERVED_S = 0.015
 OFFSET_V2_TARGET_S = 0.008
 
 #: The bench round the KPIs below were measured in, and its served row.
-KPI_ROUND = "ops/beatbench/round-4"
+KPI_ROUND = "ops/beatbench/round-6"
 KPI_SERVED_CANDIDATE = "line_round_offset"
 
 
@@ -81,7 +89,7 @@ KPIS: tuple[Kpi, ...] = (
         name="fixed-tempo F-measure at 70 ms vs rekordbox",
         partition="fixed",
         metric="f_measure_mean",
-        measured=0.837,
+        measured=0.851,
         v2_target=0.9,
         higher_is_better=True,
         reference="rekordbox PQTZ",
@@ -90,7 +98,7 @@ KPIS: tuple[Kpi, ...] = (
         name="fixed-tempo downbeat agreement vs rekordbox (%)",
         partition="fixed",
         metric="downbeat_agreement_mean",
-        measured=72.6,
+        measured=73.8,
         v2_target=85.0,
         higher_is_better=True,
         reference="rekordbox PQTZ",

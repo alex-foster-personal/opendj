@@ -1,7 +1,7 @@
 """Preview-branch drift check (DEVOPS-05).
 
 The live review preview (branch ``chrome-loop-preview-live``, worktree
-``/Users/dev/Music/music-dj-tools-wt-p0-audio`` on the Air, engine :8728,
+``/Users/dev/code/music-dj-tools-wt-p0-audio`` on the Air, engine :8728,
 vite :9448) must never serve code that no PR gate has seen. Policy:
 ``docs/ops/periodic-checks.md``.
 

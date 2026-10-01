@@ -17,7 +17,22 @@
  */
 
 import type { AnlzData } from '$lib/rb/anlz-types';
-import type { Vocals } from '$lib/rb/api-rb';
+import { decodePreviewStrip, type PreviewStripData, type Vocals } from '$lib/rb/api-rb';
+
+/** Pure cache read for preview-strip resolution (no fetch entry points). */
+export type RowStripCacheEntry =
+	| { status: 'loading' }
+	| {
+			status: 'ready';
+			data: {
+				local_waveform?: {
+					status: string;
+					preview_b64: string | null;
+					preview_max: number | null;
+				} | null;
+			};
+	  }
+	| { status: 'error'; code: string };
 
 /** The only reads this resolver is allowed to make. Both are pure lookups. */
 export interface RowVocalsSources {
@@ -89,6 +104,58 @@ export function resolveRowMarkerAnlz(sources: RowMarkerAnlzSources): Record<stri
 		if (out[row.stable_id] !== undefined) continue;
 		const cached = sources.cachedAnlz(row.stable_id);
 		if (cached !== undefined) out[row.stable_id] = cached;
+	}
+	return out;
+}
+
+/** The only reads the preview-strip resolver is allowed to make. All pure. */
+export interface RowPreviewStripSources {
+	rows: { stable_id: string; strip: PreviewStripData | null }[];
+	cachedAnlzEntry: (stable_id: string) => RowStripCacheEntry | undefined;
+}
+
+/**
+ * Preview-strip bytes per stable_id for the library PreviewStrip column,
+ * without per-row fetches. Listing-hydrated `row.strip` wins; otherwise a
+ * ready cache entry with a decoded local waveform is decoded here.
+ */
+export function resolveRowPreviewStrip(sources: RowPreviewStripSources): Record<string, PreviewStripData | null> {
+	const out: Record<string, PreviewStripData | null> = {};
+	for (const row of sources.rows) {
+		if (row.strip !== null) {
+			out[row.stable_id] = row.strip;
+			continue;
+		}
+		const entry = sources.cachedAnlzEntry(row.stable_id);
+		if (
+			entry?.status === 'ready' &&
+			entry.data.local_waveform?.status === 'decoded'
+		) {
+			out[row.stable_id] = decodePreviewStrip(
+				entry.data.local_waveform.preview_b64,
+				entry.data.local_waveform.preview_max
+			);
+		} else {
+			out[row.stable_id] = null;
+		}
+	}
+	return out;
+}
+
+/**
+ * Loading spinner state per stable_id for PreviewStrip. True only while the
+ * shared cache entry is actively loading; absent cache or ready/error stays
+ * not-loading so virtual rows never fan out /anlz themselves.
+ */
+export function resolveRowStripLoading(sources: RowPreviewStripSources): Record<string, boolean> {
+	const out: Record<string, boolean> = {};
+	for (const row of sources.rows) {
+		if (row.strip !== null) {
+			out[row.stable_id] = false;
+			continue;
+		}
+		const entry = sources.cachedAnlzEntry(row.stable_id);
+		out[row.stable_id] = entry?.status === 'loading';
 	}
 	return out;
 }
