@@ -14,12 +14,14 @@
  *   requestAnimationFrame), throttled here to `PHASE_LOCK_WEBAUDIO_INTERVAL_SEC`
  *   of AudioContext time. Positions are the engine's own schedule projection
  *   on the audio clock at one shared context time, not the presented UI mirror.
- * - A lock is DROPPED (never trimmed) once anything it assumed stops holding:
+ * - A lock is DROPPED (never trimmed again) once anything it assumed stops holding:
  *   another master, Beat Sync off or the master role lost (`ownsTempo`), the
  *   deck stopped, another track or load, the master's tempo moved, or the
  *   follower's tempo was written by anything but this lock (a re-sync, a ramp).
  *   A user tempo action on a playing follower is refused by the engine while
  *   Beat Sync owns it, and every other tempo writer shows up in that check.
+ *   A lock dropped mid-trim schedules its base back once (`_release`) when
+ *   the deck still plays that trim and is not now the master.
  * - A lock is SKIPPED (kept, not trimmed) while either deck's schedule is not
  *   settled: queued or pending revisions, an unpresented revision, a re-anchor
  *   ramp in force, an armed quantized launch. A trim therefore never races a
@@ -49,6 +51,8 @@ export interface WebAudioPhaseLockPorts {
 	deckIds: readonly PhaseLockDeckId[];
 	/** The playing sync master, or null. */
 	syncMaster(): PhaseLockDeckId | null;
+	/** The deck holding the master role, playing or not (`_ownedMaster`). */
+	masterDeck(): PhaseLockDeckId | null;
 	/** Beat Sync currently owns this deck's tempo (`_syncOwnsFollowerTempo`). */
 	ownsTempo(deck: PhaseLockDeckId): boolean;
 	playing(deck: PhaseLockDeckId): boolean;
@@ -94,7 +98,7 @@ export interface WebAudioPhaseLock {
 
 /** Why a lock was dropped, or why it was left alone this tick. */
 export type WebAudioPhaseLockStep =
-	| { deck: PhaseLockDeckId; kind: 'dropped'; reason: string }
+	| { deck: PhaseLockDeckId; kind: 'dropped'; reason: string; released?: true }
 	| { deck: PhaseLockDeckId; kind: 'waiting'; reason: 'busy' | 'unsettled' }
 	| { deck: PhaseLockDeckId; kind: 'decided'; decision: PhaseLockDecision; sent: boolean };
 
@@ -153,6 +157,24 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 		return null;
 	}
 
+	/**
+	 * A lock dropped with its trim in force takes the trim with it ("a trim
+	 * never outlives its error"): the base goes back through the same
+	 * tempo-only schedule. Only for a deck still PLAYING the lock's load (the
+	 * schedule path starts transport), not now the master (#1134: a promoted
+	 * deck's tempo is the one its followers lock to), and still heading to
+	 * the lock's own last write: a tempo anything else wrote is left alone.
+	 */
+	function _release(deck: PhaseLockDeckId, lock: WebAudioPhaseLock): boolean {
+		if (lock.sent === lock.base || ports.masterDeck() === deck || !ports.playing(deck)) return false;
+		if (ports.loadToken(deck) !== lock.loadToken || ports.stableId(deck) !== lock.stableId) return false;
+		if (!_sameTempo(ports.desiredTempo(deck), lock.sent)) return false;
+		void ports.scheduleTempo(deck, lock.base).catch((error: unknown) => {
+			ports.reportError(deck, `phase lock release failed: ${_message(error)}`);
+		});
+		return true;
+	}
+
 	/** Superseded tempo, read only once both schedules are settled. */
 	function _superseded(deck: PhaseLockDeckId, lock: WebAudioPhaseLock): string | null {
 		if (!_sameTempo(ports.desiredTempo(lock.master), lock.masterTempo)) return 'master tempo moved';
@@ -206,7 +228,7 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 			const broken = _broken(deck, lock, master);
 			if (broken !== null) {
 				locks.delete(deck);
-				steps.push({ deck, kind: 'dropped', reason: broken });
+				steps.push({ deck, kind: 'dropped', reason: broken, ...(_release(deck, lock) ? { released: true as const } : {}) });
 				continue;
 			}
 			if (!ports.settled(deck) || !ports.settled(lock.master)) {

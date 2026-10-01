@@ -66,6 +66,7 @@ function fakeEngine({ followerRateError = 0, scheduleDelaySync = true } = {}) {
 	const ports = {
 		deckIds: [1, 2, 3, 4],
 		syncMaster: () => master,
+		masterDeck: () => master,
 		ownsTempo: (d) => decks[d].owns,
 		playing: (d) => decks[d].playing,
 		loadToken: (d) => decks[d].loadToken,
@@ -242,6 +243,73 @@ test('control: an unbroken lock is NOT dropped (the supersede checks can say no)
 	assert.ok(lock.snapshot().has(2));
 });
 
+/** A lock with a trim in force (10 ms ahead, settled). */
+async function trimmingLock() {
+	const e = fakeEngine();
+	const lock = mod.createWebAudioPhaseLock(e.ports);
+	lock.record(2, JOIN);
+	e.decks[2].pos += 0.01 * BASE;
+	lock.tick(e.now);
+	await flush();
+	const trimmed = lock.snapshot().get(2).sent;
+	assert.ok(trimmed < BASE, 'precondition: a slow-down trim is in force');
+	assert.equal(e.decks[2].tempo, trimmed, 'precondition: the deck plays the trim');
+	e.log.schedules.length = 0;
+	e.advance(0.05);
+	return { e, lock, trimmed };
+}
+
+test('release: a lock dropped mid-trim schedules its base back once (no lasting 0.3% offset)', async () => {
+	for (const [name, mutate] of Object.entries({
+		'Beat Sync off': (e) => (e.decks[2].owns = false),
+		'no playing master': (e) => e.setMaster(null)
+	})) {
+		const { e, lock } = await trimmingLock();
+		mutate(e);
+		const [step] = lock.tick(e.now);
+		assert.deepEqual([step.kind, step.released], ['dropped', true], name);
+		assert.deepEqual(e.log.schedules, [{ deck: 2, ratio: BASE }], name);
+		e.advance(0.05);
+		lock.tick(e.now);
+		assert.equal(e.log.schedules.length, 1, `${name}: released once, the lock is gone`);
+	}
+});
+
+test('control: a dropped trim is NOT released when the tempo is no longer the lock\'s', async () => {
+	const cases = {
+		// #1134: a promoted deck's tempo is the master's; its followers lock to it.
+		'promoted to master': (e) => {
+			e.setMaster(2);
+			e.decks[2].owns = false;
+		},
+		// The schedule path starts transport: a stopped deck is never scheduled.
+		stopped: (e) => (e.decks[2].playing = false),
+		reload: (e) => (e.decks[2].loadToken += 1),
+		'another track': (e) => (e.decks[2].id = 'other'),
+		'tempo written elsewhere': (e) => {
+			e.decks[2].owns = false;
+			e.decks[2].tempo = 1.02;
+		}
+	};
+	for (const [name, mutate] of Object.entries(cases)) {
+		const { e, lock } = await trimmingLock();
+		mutate(e);
+		const [step] = lock.tick(e.now);
+		assert.equal(step.kind, 'dropped', name);
+		assert.equal(step.released, undefined, name);
+		assert.deepEqual(e.log.schedules, [], name);
+	}
+});
+
+test('a failed release is reported, not thrown into the frame', async () => {
+	const { e, lock } = await trimmingLock();
+	e.ports.scheduleTempo = () => Promise.reject(new Error('processor gone'));
+	e.decks[2].owns = false;
+	lock.tick(e.now);
+	await flush();
+	assert.deepEqual(e.log.errors, [{ deck: 2, message: 'phase lock release failed: processor gone' }]);
+});
+
 test('a trim in flight is superseded by a re-sync: its late completion does not touch the new lock', async () => {
 	const e = fakeEngine({ scheduleDelaySync: false });
 	const lock = mod.createWebAudioPhaseLock(e.ports);
@@ -402,6 +470,7 @@ test('SOURCE: sync clears the lock on entry and records the plan base on success
 test('SOURCE: trims and re-seeks go through the engine schedule and sync paths', () => {
 	const ports = engineBlockAfter('const _phaseLock = createWebAudioPhaseLock({');
 	assert.match(ports, /ownsTempo: _syncOwnsFollowerTempo/);
+	assert.match(ports, /masterDeck: _ownedMaster,/, 'the release reads the master ROLE, not only a playing master');
 	assert.match(ports, /positionSec: _projectPositionAt/);
 	assert.match(ports, /scheduleTempo: \(deck, ratio\) => _scheduleDeck\(deck, _futureScheduleTime\(deck\), \(when\) => _projectPositionAt\(deck, when\), true, ratio\)/);
 	assert.match(ports, /resync: \(master, deck\) => _synchronizeFollowers\(master, \[deck\]\)/);
