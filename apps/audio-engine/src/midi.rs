@@ -122,8 +122,27 @@ pub enum Action {
 }
 
 /// The page actions this engine forwards rather than applies.
-const PAGE_ACTIONS: &[&str] =
-    &["deck_hot_cue", "channel_cue", "headphone_mix", "headphone_level", "master_cue", "browse_encoder", "browse_load"];
+/// The Mixtour Pro port (d0e93e437d) added the controller_pad .. deck_tempo_nudge
+/// group to the shared map; the page applies all of them, so they forward too.
+const PAGE_ACTIONS: &[&str] = &[
+    "deck_hot_cue",
+    "channel_cue",
+    "headphone_mix",
+    "headphone_level",
+    "master_cue",
+    "browse_encoder",
+    "browse_load",
+    "controller_pad",
+    "controller_pad_mode",
+    "deck_auto_loop_toggle",
+    "deck_key_nudge",
+    "deck_key_sync_toggle",
+    "deck_loop_scale",
+    "deck_manual_loop_cycle",
+    "deck_stem_eq_toggle",
+    "deck_sync_toggle",
+    "deck_tempo_nudge",
+];
 
 #[derive(Clone, Debug)]
 pub struct Binding {
@@ -697,6 +716,22 @@ pub fn ports_json(claimed: &[(String, String)], unclaimed: &[String]) -> Value {
 mod tests {
     use super::*;
 
+    /// The shipped map must parse: the dmg's odj-audio hello check refuses a
+    /// map naming an action this engine does not know (Thu 1 Oct 2026, the
+    /// Mixtour Pro map's deck_sync_toggle).
+    #[test]
+    fn builtin_maps_parse() {
+        MapSet::builtin().unwrap();
+    }
+
+    #[test]
+    fn mixtour_page_actions_are_forwarded_not_refused() {
+        for ty in ["deck_sync_toggle", "deck_manual_loop_cycle", "deck_auto_loop_toggle", "controller_pad"] {
+            let got = action_of(&serde_json::json!({"type": ty, "deck": 1}), "t");
+            assert!(matches!(got, Ok(Action::Page)), "{ty} -> {got:?}");
+        }
+    }
+
     const FLX4: &str = "Pioneer DJ DDJ-FLX4 MIDI 1";
 
     fn router() -> Router {
@@ -730,7 +765,7 @@ mod tests {
     fn the_builtin_export_holds_every_page_map() {
         let m = MapSet::builtin().unwrap();
         let names: Vec<&str> = m.builtin.iter().map(|m| m.name_match.as_str()).collect();
-        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", "Mixtour", "DDJ-FLX4"]);
+        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", r"\bMixtour\s+Pro\b", r"\bMixtour\b(?:$|[^\s]|\s+(?:$|[^P\s]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\w))", "DDJ-FLX4"]);
         // Every binding in the export loaded (none silently skipped).
         let v: Value = serde_json::from_str(BUILTIN_MAPS_JSON).unwrap();
         for (map, raw) in m.builtin.iter().zip(v["maps"].as_array().unwrap()) {
@@ -744,7 +779,9 @@ mod tests {
         let m = MapSet::builtin().unwrap();
         assert_eq!(m.resolve(FLX4).unwrap().name_match, "DDJ-FLX4");
         assert_eq!(m.resolve("ddj-flx10").unwrap().name_match, "DDJ-FLX10");
-        assert_eq!(m.resolve("Reloop Mixtour Pro").unwrap().name_match, "Mixtour");
+        // Since the Mixtour Pro port each Reloop model resolves to its own map.
+        assert_eq!(m.resolve("Reloop Mixtour Pro").unwrap().name_match, r"\bMixtour\s+Pro\b");
+        assert_eq!(m.resolve("Reloop Mixtour").unwrap().name_match, r"\bMixtour\b(?:$|[^\s]|\s+(?:$|[^P\s]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\w))");
         assert!(m.resolve("IAC Driver Bus 1").is_none());
     }
 
