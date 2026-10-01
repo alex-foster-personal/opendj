@@ -14,9 +14,9 @@ file has a stable shape):
     or ``## v2 Requirements`` (whichever comes first).
   * ``## v1.1 Requirements`` (optional) - same bullet shape as v1; collects until
     ``## v2 Requirements``.
-  * ``## v2 Requirements`` — collects until ``## v3 Requirements`` / ``## Out of
+  * ``## v2 Requirements`` - collects until ``## v3 Requirements`` / ``## Out of
     Scope`` / ``## Traceability``, whichever comes first.
-  * ``## v3 Requirements`` (optional) — same free-text-category, no-checkbox-
+  * ``## v3 Requirements`` (optional) - same free-text-category, no-checkbox-
     required bullet shape as v2 (a scope-move bucket, not a new release phase);
     collects until ``## Out of Scope`` / ``## Traceability``. Present in
     ``reqs.json`` only when the section exists, exactly like ``v1.1``. A v3 id
