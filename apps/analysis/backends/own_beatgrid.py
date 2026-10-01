@@ -82,6 +82,7 @@ from ..record import AnalysisRecord
 from . import register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
 from .genre_hint import library_genre
+from .grid_fit_setting import grid_fit_mode
 
 log = logging.getLogger("apps.analysis.backends.own_beatgrid")
 
@@ -107,13 +108,6 @@ DEFAULT_DEVICE = "cpu"
 #: never returns is worse than one that says which track it stopped on.
 TIMEOUT_ENV = "MDT_BEATGRID_TIMEOUT_S"
 
-#: Which grid the lane serves: `raw` (the model's peak times, the default until
-#: the grid-fit bench round is reviewed) or `line` (the fitted, BPM-rounded,
-#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`) or
-#: `const_regions` (the same, with the line chosen by the constant-region
-#: recipe in `apps.analysis_beatgrid.const_regions`). A fitted record says
-#: which in its payload's `grid_fit` block.
-GRID_FIT_ENV = "MDT_BEATGRID_GRID_FIT"
 DEFAULT_TIMEOUT_S = 1800
 
 
@@ -494,6 +488,8 @@ class OwnBeatgridBackfillBackend:
                 f"the canonical decode fingerprint cannot be taken on this host: {exc}"
             ) from exc
         device = os.environ.get(DEVICE_ENV, "").strip() or DEFAULT_DEVICE
+        # Before the runner, so a bad setting fails before a model run is spent.
+        grid_fit = grid_fit_mode()
         # Fingerprint BEFORE the runner, because the record must name the
         # bytes the beats were derived FROM. Taken afterwards it names
         # whatever is on disk when the runner happens to finish, which for a
@@ -534,7 +530,7 @@ class OwnBeatgridBackfillBackend:
                 audio_path=audio_path,
                 model_sha256=model_sha256,
                 decode_fingerprint=decode_fingerprint,
-                grid_fit=os.environ.get(GRID_FIT_ENV, "").strip() or GRID_FIT_RAW,
+                grid_fit=grid_fit,
                 genre=library_genre(stable_id),
             )
         except TrackUnreadable:
