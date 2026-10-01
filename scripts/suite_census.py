@@ -23,7 +23,8 @@ A failing test inside the suite is data, not a census failure.
 
 Usage:
     python -m scripts.suite_census run --paths tests/scripts --workers 4 --out-dir .tmp/census
-    python -m scripts.suite_census analyze --db .tmp/census/.coverage --junit .tmp/census/junit.xml --out-dir .tmp/census
+    python -m scripts.suite_census analyze --db .tmp/census/.coverage --junit .tmp/census/junit.xml \
+        --cores-dir .tmp/census/cores --out-dir .tmp/census
 """
 
 from __future__ import annotations
@@ -32,6 +33,8 @@ import argparse
 import heapq
 import json
 import math
+import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -42,10 +45,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TypedDict
 
+from scripts.pytest_child_coverage import CORE_DIR_ENV
+
 SOURCES = ("apps", "scripts")
 PER_TEST_TIMEOUT_S = 600
 PYTEST_MEASURED_EXITS = (0, 1)  # all passed, or some tests failed: both are measurements
 EXIT_UNKNOWN = 3
+# Cores whose per-test contexts were validated by the control. ``SysMonitor`` (CPython 3.12+)
+# dropped a later test's context in round 0, so it is refused until a control passes under it.
+VALIDATED_CORES = frozenset({"CTracer", "PyTracer"})
 
 Arc = tuple[int, int, int]  # (file_id, from_line, to_line)
 
@@ -275,6 +283,17 @@ def analyze(db: Path, junit: Path) -> Census:
 # ----- run
 
 
+def verify_cores(cores_dir: Path) -> list[str]:
+    """Every test process's recorded coverage core, refused unless all are validated (Sol P1, #4777)."""
+    cores = sorted(f.read_text(encoding="utf-8").strip() for f in cores_dir.glob("*.core"))
+    if not cores:
+        raise CensusUnknown(f"no coverage core recorded under {cores_dir}; the core that ran is unproven")
+    unvalidated = sorted(set(cores) - VALIDATED_CORES)
+    if unvalidated:
+        raise CensusUnknown(f"coverage core {unvalidated} is not validated for per-test contexts")
+    return cores
+
+
 VERDICT_FILES = ("census.json", "rows.json")
 
 
@@ -293,7 +312,7 @@ def clear_previous_outputs(out_dir: Path) -> None:
 def _write_coveragerc(out_dir: Path) -> Path:
     rc = out_dir / "coveragerc"
     rc.write_text(
-        "[run]\nbranch = true\nrelative_files = true\nparallel = true\npatch = subprocess\n"
+        "[run]\nbranch = true\ncore = ctrace\nrelative_files = true\nparallel = true\npatch = subprocess\n"
         f"source = {', '.join(SOURCES)}\nomit = */tests/*\ndata_file = {out_dir.resolve() / '.coverage'}\n",
         encoding="utf-8",
     )
@@ -328,9 +347,12 @@ def run_suite(paths: list[str], workers: int, out_dir: Path) -> tuple[int, float
         f"--timeout={PER_TEST_TIMEOUT_S}",
         "-q",
     ]
+    cores_dir = out_dir / "cores"
+    shutil.rmtree(cores_dir, ignore_errors=True)
+    env = {**os.environ, CORE_DIR_ENV: str(cores_dir)}
     started = time.monotonic()
     with (out_dir / "pytest.log").open("w", encoding="utf-8") as log:
-        exit_code = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=False).returncode
+        exit_code = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, check=False).returncode
     return exit_code, round(time.monotonic() - started, 1)
 
 
@@ -358,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
     an_p = sub.add_parser("analyze", help="analyze an existing coverage DB and junit file")
     an_p.add_argument("--db", type=Path, required=True)
     an_p.add_argument("--junit", type=Path, required=True)
+    an_p.add_argument("--cores-dir", type=Path, required=True, help="the cores/ dir the run recorded")
     an_p.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -374,14 +397,15 @@ def main(argv: list[str] | None = None) -> int:
         if exit_code not in PYTEST_MEASURED_EXITS:
             print(f"[ERROR] pytest exited {exit_code}; see {args.out_dir / 'pytest.log'}", file=sys.stderr)
             return 1
-        db, junit = args.out_dir / ".coverage", args.out_dir / "junit.xml"
+        db, junit, cores_dir = args.out_dir / ".coverage", args.out_dir / "junit.xml", args.out_dir / "cores"
     elif args.cmd == "analyze":
-        db, junit = args.db, args.junit
+        db, junit, cores_dir = args.db, args.junit, args.cores_dir
         args.out_dir.mkdir(parents=True, exist_ok=True)
         clear_previous_outputs(args.out_dir)
     else:
         raise AssertionError(f"unhandled command {args.cmd}")
     try:
+        extra["cores"] = sorted(set(verify_cores(cores_dir)))
         census = analyze(db, junit)
     except CensusUnknown as exc:
         print(f"[UNKNOWN] {exc}", file=sys.stderr)

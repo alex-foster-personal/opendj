@@ -120,7 +120,11 @@ def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     plugin = ["-p", "scripts.pytest_child_coverage"] if label_children else []
-    env = {**os.environ, "PYTHONPATH": f"{tmp_path}{os.pathsep}{REPO_ROOT}"}
+    env = {
+        **os.environ,
+        "PYTHONPATH": f"{tmp_path}{os.pathsep}{REPO_ROOT}",
+        child.CORE_DIR_ENV: str(tmp_path / "cores"),
+    }
     env.pop("COVERAGE_PROCESS_CONFIG", None)
     result = subprocess.run(
         [
@@ -198,10 +202,37 @@ def test_the_cli_reports_unknown_with_exit_3_for_a_db_without_test_contexts(tmp_
     no_contexts = f"import coverage; c = coverage.Coverage(data_file={str(empty)!r}); c.start(); c.stop(); c.save()"
     subprocess.run([sys.executable, "-c", no_contexts], check=True)
     assert (
-        census.main(["analyze", "--db", str(empty), "--junit", str(junit), "--out-dir", str(tmp_path / "out")])
+        census.main(
+            [
+                "analyze",
+                "--db",
+                str(empty),
+                "--junit",
+                str(junit),
+                "--cores-dir",
+                str(tmp_path / "cores"),
+                "--out-dir",
+                str(tmp_path / "out"),
+            ]
+        )
         == census.EXIT_UNKNOWN
     )
-    assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(tmp_path / "out")]) == 0
+    assert (
+        census.main(
+            [
+                "analyze",
+                "--db",
+                str(db),
+                "--junit",
+                str(junit),
+                "--cores-dir",
+                str(tmp_path / "cores"),
+                "--out-dir",
+                str(tmp_path / "out"),
+            ]
+        )
+        == 0
+    )
     summary = json.loads((tmp_path / "out" / "census.json").read_text(encoding="utf-8"))
     assert summary["buckets"]["REDUNDANT_IN_SET"]["cases"] == 2  # test_b and TestPair::test_same
 
@@ -238,13 +269,41 @@ def test_a_failed_census_leaves_no_earlier_verdict_behind(tmp_path: Path) -> Non
     """Sol P2 on #4777: a reused out-dir must not keep a previous run's census.json."""
     db, junit = _run_control(tmp_path, label_children=True)
     out = tmp_path / "out"
-    assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == 0
+    assert (
+        census.main(
+            [
+                "analyze",
+                "--db",
+                str(db),
+                "--junit",
+                str(junit),
+                "--cores-dir",
+                str(tmp_path / "cores"),
+                "--out-dir",
+                str(out),
+            ]
+        )
+        == 0
+    )
     assert (out / "census.json").exists() and (out / "rows.json").exists()
     junit.write_text(
         junit.read_text(encoding="utf-8").replace('name="test_c_unique"', 'name="renamed"'), encoding="utf-8"
     )
     assert (
-        census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == census.EXIT_UNKNOWN
+        census.main(
+            [
+                "analyze",
+                "--db",
+                str(db),
+                "--junit",
+                str(junit),
+                "--cores-dir",
+                str(tmp_path / "cores"),
+                "--out-dir",
+                str(out),
+            ]
+        )
+        == census.EXIT_UNKNOWN
     )
     assert not (out / "census.json").exists()
     assert not (out / "rows.json").exists()
@@ -257,6 +316,27 @@ def test_a_new_run_clears_leftover_coverage_fragments(tmp_path: Path) -> None:
     census.clear_previous_outputs(tmp_path)
     assert not stale.exists()
     assert not (tmp_path / "census.json").exists()
+
+
+@pytest.mark.requirement("DEVOPS-21")
+def test_the_census_records_the_core_that_actually_ran(tmp_path: Path) -> None:
+    """[if] the census measured a run [then] it proves each test process used a validated core, [else stop].
+
+    Sol P1 on #4777: the sysmon core can drop a later test's context, so asking for ctrace is not
+    enough; the core that really ran is recorded by the plugin and checked."""
+    _run_control(tmp_path, label_children=True)
+    cores = census.verify_cores(tmp_path / "cores")
+    assert cores and set(cores) <= census.VALIDATED_CORES
+
+
+@pytest.mark.parametrize("recorded", [None, "SysMonitor"])
+def test_an_unvalidated_or_unrecorded_core_is_unknown(tmp_path: Path, recorded: str | None) -> None:
+    cores = tmp_path / "cores"
+    cores.mkdir()
+    if recorded is not None:
+        (cores / "123.core").write_text(recorded, encoding="utf-8")
+    with pytest.raises(census.CensusUnknown, match="core"):
+        census.verify_cores(cores)
 
 
 # ----- set cover, both directions

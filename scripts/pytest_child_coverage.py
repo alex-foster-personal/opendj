@@ -20,11 +20,14 @@ import base64
 import json
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
+import coverage
 import pytest
 
 PROCESS_CONFIG_ENV = "COVERAGE_PROCESS_CONFIG"
 CHILD_CONTEXT_SUFFIX = "|subprocess"
+CORE_DIR_ENV = "SUITE_CENSUS_CORE_DIR"  # where each test process records the coverage core it ran
 
 
 def child_context_config(encoded: str, nodeid: str) -> str:
@@ -34,6 +37,25 @@ def child_context_config(encoded: str, nodeid: str) -> str:
         raise KeyError(f"{PROCESS_CONFIG_ENV} has no 'context' key; keys: {sorted(config)}")
     config["context"] = f"{nodeid}{CHILD_CONTEXT_SUFFIX}"
     return base64.b64encode(json.dumps(config).encode()).decode()
+
+
+def _record_core_once() -> None:
+    """Write the core this process really traces with (``CTracer``, ``PyTracer``, ``SysMonitor``).
+
+    Asking for a core in the rc file is a request; this is the measurement the census checks.
+    Raises when the census asked for a record but no coverage is running in a test process.
+    """
+    core_dir = os.environ.get(CORE_DIR_ENV)
+    if core_dir is None:
+        return
+    record = Path(core_dir) / f"{os.getpid()}.core"
+    if record.exists():
+        return
+    current = coverage.Coverage.current()
+    if current is None:
+        raise RuntimeError(f"{CORE_DIR_ENV} is set but no coverage is running in pid {os.getpid()}")
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(str(dict(current.sys_info())["core"]), encoding="utf-8")
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -46,6 +68,7 @@ def pytest_runtest_protocol(item: pytest.Item) -> Iterator[None]:
     item that needs them and tear down inside the last one, which is the same item pytest-cov's
     in-process ``--cov-context=test`` credits them to.
     """
+    _record_core_once()
     encoded = os.environ.get(PROCESS_CONFIG_ENV)
     if encoded is None:
         yield
