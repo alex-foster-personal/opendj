@@ -70,7 +70,9 @@ from scripts.review_gh import TriageError
 #: `--unified=3` against diff.context;
 #: `--src-prefix`/`--dst-prefix` against diff.noprefix and diff.mnemonicPrefix;
 #: `--no-relative` against diff.relative; `--submodule=short` against
-#: diff.submodule; color, external diff, textconv and renames off.
+#: diff.submodule; `--ignore-submodules=none` against diff.ignoreSubmodules
+#: and per-submodule ignore settings, so a gitlink change is always seen;
+#: color, external diff, textconv and renames off.
 NET_DIFF_FLAGS: tuple[str, ...] = (
     "--binary",
     "--full-index",
@@ -80,11 +82,12 @@ NET_DIFF_FLAGS: tuple[str, ...] = (
     "--no-renames",
     "--no-relative",
     "--submodule=short",
+    "--ignore-submodules=none",
     "--unified=3",
     "--src-prefix=a/",
     "--dst-prefix=b/",
 )
-NAME_FLAGS: tuple[str, ...] = ("--name-only", "-z", "--no-renames", "--no-relative")
+NAME_FLAGS: tuple[str, ...] = ("--name-only", "-z", "--no-renames", "--no-relative", "--ignore-submodules=none")
 
 
 class CarryUnknown(Exception):

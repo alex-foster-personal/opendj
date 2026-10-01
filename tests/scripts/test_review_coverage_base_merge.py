@@ -265,3 +265,17 @@ def test_merge_with_main_as_first_parent_does_not_carry(repo: Path, reviewed: st
     assert git(repo, "rev-parse", f"{head}^1") == git(repo, "rev-parse", "main")
 
     assert_no_carry(repo, reviewed, head)
+
+
+@pytest.mark.requirement("REVIEW-12")
+def test_gitlink_smuggled_into_merge_does_not_carry_when_submodules_are_ignored(repo: Path, reviewed: str) -> None:
+    """[if] a merge adds a submodule pointer while diff.ignoreSubmodules=all [then] no carry, [else stop]."""
+    git(repo, "config", "diff.ignoreSubmodules", "all")
+    advance_main(repo, OTHER, "other v2\n")
+    git(repo, "merge", "-q", "--no-commit", "main")
+    git(repo, "update-index", "--add", "--cacheinfo", f"160000,{reviewed},vendor/sub")
+    git(repo, "commit", "-q", "--no-edit")
+    head = git(repo, "rev-parse", "HEAD")
+    assert git(repo, "ls-tree", head, "--", "vendor/sub").startswith("160000 commit"), "gitlink must be in the merge"
+
+    assert_no_carry(repo, reviewed, head)
