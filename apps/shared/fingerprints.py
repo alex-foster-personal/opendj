@@ -31,7 +31,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.shared.tag_reader import TagReadError, read_tags
 
 # pyacoustid import is lazy so the module can be imported even when the
 # package is missing (useful for test environments that stub it out). The
@@ -133,6 +132,11 @@ def compute(path: Path) -> Fingerprint:
 
 def _safe_bitrate(path: Path) -> int | None:
     """Return bitrate in kbps, or ``None`` if the tag reader cannot parse it."""
+    # Lazy on purpose: the quality gate's sync-drift evaluator imports this
+    # module from an environment with NO third-party packages
+    # (tests/quality/test_sync_drift_imports.py), and tinytag is one.
+    from apps.shared.tag_reader import TagReadError, read_tags
+
     try:
         return read_tags(path).bitrate_kbps
     except TagReadError:
