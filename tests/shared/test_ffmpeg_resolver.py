@@ -14,6 +14,9 @@ Regression one-liners:
     than that caller's own unavailable-type, then broken
   - if a relative MDT_FFMPEG is returned as given, so subprocess PATH-searches
     the bare name and launches nothing or the wrong binary, then broken
+  - if the bundled ODJ_FFMPEG_BIN loses to a PATH ffmpeg then broken
+  - if the bundled ODJ_FFMPEG_BIN beats an MDT_FFMPEG override then broken
+  - if a set-but-broken ODJ_FFMPEG_BIN falls back to PATH then broken
 """
 
 from __future__ import annotations
@@ -30,6 +33,12 @@ from apps.analysis.pcm_fingerprint import FingerprintUnavailable, _resolve_or_ra
 from apps.analysis_waveform.decode import LocalDecodeUnavailable
 from apps.analysis_waveform.decode import resolve_ffmpeg as decode_resolve
 from apps.shared import ffmpeg as shared_ffmpeg
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_bundled_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A payload launch exports ODJ_FFMPEG_BIN; no test may inherit one."""
+    monkeypatch.delenv(shared_ffmpeg.BUNDLED_ENV, raising=False)
 
 
 def _make_executable(path: Path) -> Path:
@@ -166,3 +175,69 @@ def test_a_relative_override_is_returned_absolute_and_is_launchable(tmp_path: Pa
         f"relative override driver failed:\nstdout={completed.stdout}\nstderr={completed.stderr}"
     )
     assert completed.stdout.strip() == str(workdir / "customff")
+
+
+# ----- bundled payload ffmpeg (ODJ_FFMPEG_BIN) ---------------------------------
+
+
+def test_bundled_beats_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the payload ships ffmpeg and PATH has one too [then] the bundled one wins."""
+    monkeypatch.delenv("MDT_FFMPEG", raising=False)
+    bundled = _make_executable(tmp_path / "payload-ffmpeg")
+    path_dir = tmp_path / "path"
+    path_dir.mkdir()
+    _make_executable(path_dir / "ffmpeg")
+    monkeypatch.setenv("PATH", str(path_dir))
+    monkeypatch.setenv(shared_ffmpeg.BUNDLED_ENV, str(bundled))
+    assert shared_ffmpeg.resolve_ffmpeg() == str(bundled)
+
+
+def test_override_beats_bundled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] MDT_FFMPEG and the bundled path are both set [then] MDT_FFMPEG wins."""
+    override = _make_executable(tmp_path / "operator-ffmpeg")
+    bundled = _make_executable(tmp_path / "payload-ffmpeg")
+    monkeypatch.setenv("MDT_FFMPEG", str(override))
+    monkeypatch.setenv(shared_ffmpeg.BUNDLED_ENV, str(bundled))
+    assert shared_ffmpeg.resolve_ffmpeg() == str(override)
+
+
+def test_broken_bundled_raises_rather_than_using_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the payload's ffmpeg is missing [then] raise naming ODJ_FFMPEG_BIN, PATH unread."""
+    monkeypatch.delenv("MDT_FFMPEG", raising=False)
+    monkeypatch.setenv(shared_ffmpeg.BUNDLED_ENV, str(tmp_path / "gone"))
+    _make_executable(tmp_path / "ffmpeg")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(shared_ffmpeg.FfmpegUnavailable, match=shared_ffmpeg.BUNDLED_ENV):
+        shared_ffmpeg.resolve_ffmpeg()
+
+
+def test_consumers_see_the_bundled_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] the bundled path is set [then] waveform and fingerprint resolve it too."""
+    monkeypatch.delenv("MDT_FFMPEG", raising=False)
+    bundled = _make_executable(tmp_path / "payload-ffmpeg")
+    monkeypatch.setenv(shared_ffmpeg.BUNDLED_ENV, str(bundled))
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    assert decode_resolve() == str(bundled)
+    assert _resolve_or_raise() == str(bundled)
+
+
+def test_mutation_control_path_first_order_is_caught(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the resolver consulted PATH before the bundled path [then] test_bundled_beats_path fails.
+
+    Re-runs that test against a mutated resolver (PATH first) and requires it
+    to fail, so the ordering test is known to bite rather than passing under
+    any order.
+    """
+    def path_first() -> str:
+        found = shared_ffmpeg.shutil.which(shared_ffmpeg.FFMPEG_BINARY)
+        if found:
+            return found
+        return os.environ[shared_ffmpeg.BUNDLED_ENV]
+
+    monkeypatch.setattr(shared_ffmpeg, "resolve_ffmpeg", path_first)
+    with pytest.raises(AssertionError):
+        test_bundled_beats_path(tmp_path, monkeypatch)
