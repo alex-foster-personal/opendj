@@ -110,13 +110,16 @@ EXPECTED = {
 }
 
 
-def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
+def _run_control_process(
+    tmp_path: Path, *, label_children: bool, patch_subprocess: bool = True
+) -> subprocess.CompletedProcess[str]:
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "__init__.py").write_text(PKG, encoding="utf-8")
     (tmp_path / "test_ctrl.py").write_text(CONTROL_TESTS, encoding="utf-8")
     rc = tmp_path / "coveragerc"
+    patch = "patch = subprocess\n" if patch_subprocess else ""
     rc.write_text(
-        f"[run]\nbranch = true\nparallel = true\npatch = subprocess\nsource = pkg\ndata_file = {tmp_path / '.coverage'}\n",
+        f"[run]\nbranch = true\nparallel = true\n{patch}source = pkg\ndata_file = {tmp_path / '.coverage'}\n",
         encoding="utf-8",
     )
     plugin = ["-p", "scripts.pytest_child_coverage"] if label_children else []
@@ -126,7 +129,7 @@ def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
         child.CORE_DIR_ENV: str(tmp_path / "cores"),
     }
     env.pop("COVERAGE_PROCESS_CONFIG", None)
-    result = subprocess.run(
+    return subprocess.run(
         [
             sys.executable,
             "-m",
@@ -154,6 +157,10 @@ def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
         text=True,
         check=False,
     )
+
+
+def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
+    result = _run_control_process(tmp_path, label_children=label_children)
     assert result.returncode == 0, result.stdout + result.stderr
     return tmp_path / ".coverage", tmp_path / "junit.xml"
 
@@ -313,7 +320,7 @@ def test_a_new_run_clears_leftover_coverage_fragments(tmp_path: Path) -> None:
     stale = tmp_path / ".coverage.crashed-host.123.abc"
     stale.write_text("stale", encoding="utf-8")
     (tmp_path / "census.json").write_text("{}", encoding="utf-8")
-    census.clear_previous_outputs(tmp_path)
+    census.clear_run_inputs(tmp_path)
     assert not stale.exists()
     assert not (tmp_path / "census.json").exists()
 
@@ -337,6 +344,57 @@ def test_an_unvalidated_or_unrecorded_core_is_unknown(tmp_path: Path, recorded: 
         (cores / "123.core").write_text(recorded, encoding="utf-8")
     with pytest.raises(census.CensusUnknown, match="core"):
         census.verify_cores(cores)
+
+
+@pytest.mark.requirement("DEVOPS-21")
+def test_a_census_without_subprocess_instrumentation_fails_loud(tmp_path: Path) -> None:
+    """[if] a census runs without child-process instrumentation [then] the run fails, [else stop].
+
+    Sol P1 on #4777: the hook used to skip labelling silently, publishing child-only tests as
+    NO_COVERAGE under a successful verdict."""
+    result = _run_control_process(tmp_path, label_children=True, patch_subprocess=False)
+    assert result.returncode != 0
+    assert "COVERAGE_PROCESS_CONFIG" in result.stdout + result.stderr
+
+
+def test_the_plugin_outside_a_census_runs_tests_normally(tmp_path: Path) -> None:
+    """Control for the opposite overshoot: no census dir and no coverage is not an error."""
+    (tmp_path / "test_plain.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k not in (child.CORE_DIR_ENV, child.PROCESS_CONFIG_ENV)}
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "test_plain.py",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "scripts.pytest_child_coverage",
+            "-o",
+            "addopts=",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_analyze_never_deletes_the_coverage_data_it_reads(tmp_path: Path) -> None:
+    """Sol P2 on #4777: analyze clears verdict files only; fragments are a run's to clear."""
+    db, junit = _run_control(tmp_path, label_children=True)
+    out = tmp_path / "out"
+    out.mkdir()
+    fragment = out / ".coverage.kept-input"
+    fragment.write_bytes(db.read_bytes())
+    args = ["analyze", "--db", str(fragment), "--junit", str(junit), "--cores-dir", str(tmp_path / "cores")]
+    assert census.main([*args, "--out-dir", str(out)]) == 0
+    assert fragment.exists()
 
 
 # ----- set cover, both directions

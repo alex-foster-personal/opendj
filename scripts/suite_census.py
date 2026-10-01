@@ -297,14 +297,21 @@ def verify_cores(cores_dir: Path) -> list[str]:
 VERDICT_FILES = ("census.json", "rows.json")
 
 
-def clear_previous_outputs(out_dir: Path) -> None:
-    """Remove an earlier run's verdict and coverage fragments so a failed run cannot pass for it.
+def clear_verdicts(out_dir: Path) -> None:
+    """Remove an earlier census.json and rows.json so a failed run cannot pass for an earlier one.
 
-    A reused out-dir kept a previous census.json beside a failed run's log (Sol P2, #4777), and a
-    crashed run's ``.coverage.*`` fragments would be combined into the next run's data.
+    A reused out-dir kept a previous census.json beside a failed run's log (Sol P2, #4777).
     """
     for name in VERDICT_FILES:
         (out_dir / name).unlink(missing_ok=True)
+
+
+def clear_run_inputs(out_dir: Path) -> None:
+    """Before a run only: drop the old data file and crashed runs' ``.coverage.*`` fragments,
+    which coverage would otherwise combine into the new data. ``analyze`` never calls this: its
+    ``--db`` may be one of those files (Sol P2, #4777)."""
+    clear_verdicts(out_dir)
+    (out_dir / ".coverage").unlink(missing_ok=True)
     for fragment in out_dir.glob(".coverage.*"):
         fragment.unlink()
 
@@ -321,8 +328,7 @@ def _write_coveragerc(out_dir: Path) -> Path:
 
 def run_suite(paths: list[str], workers: int, out_dir: Path) -> tuple[int, float]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    clear_previous_outputs(out_dir)
-    (out_dir / ".coverage").unlink(missing_ok=True)
+    clear_run_inputs(out_dir)
     rc = _write_coveragerc(out_dir)
     cmd = [
         sys.executable,
@@ -401,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "analyze":
         db, junit, cores_dir = args.db, args.junit, args.cores_dir
         args.out_dir.mkdir(parents=True, exist_ok=True)
-        clear_previous_outputs(args.out_dir)
+        clear_verdicts(args.out_dir)
     else:
         raise AssertionError(f"unhandled command {args.cmd}")
     try:

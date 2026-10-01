@@ -70,6 +70,10 @@ def pytest_runtest_protocol(item: pytest.Item) -> Iterator[None]:
     """
     _record_core_once()
     encoded = os.environ.get(PROCESS_CONFIG_ENV)
+    if encoded is None and os.environ.get(CORE_DIR_ENV) is not None:
+        # a census asked for child attribution and coverage is not instrumenting children:
+        # skipping would publish child-only tests as NO_COVERAGE under a passing verdict (Sol P1)
+        raise RuntimeError(f"census run but {PROCESS_CONFIG_ENV} is unset: set `patch = subprocess` in the coverage rc")
     if encoded is None:
         yield
         return
