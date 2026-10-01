@@ -291,7 +291,10 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
 
     def uncapped() -> tuple[list[dict], int]:
         (pull,) = rc._paginated_json_pages(f"repos/{rc.REPO}/pulls/{pr}")
-        compare = f"repos/{rc.REPO}/compare/{pull['base']['ref']}...{head_sha}?per_page={COMPARE_PAGE_SIZE}"
+        # One snapshot: the count is this head's, and both compare ends are SHAs, so a base
+        # branch that moves between pages cannot change which commits are listed.
+        rc._require_head_unchanged(head_sha, pull["head"]["sha"])
+        compare = f"repos/{rc.REPO}/compare/{pull['base']['sha']}...{head_sha}?per_page={COMPARE_PAGE_SIZE}"
         return [c for page in rc._paginated_json_pages(compare) for c in page["commits"]], pull["commits"]
 
     verdict = measure(
