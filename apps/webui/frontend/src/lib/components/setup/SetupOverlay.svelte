@@ -249,6 +249,13 @@
 		void setupWizard.ensureLoaded();
 	});
 
+	/** Done reads `status.last_import`, and `status` was read when the overlay
+	 * opened, before the import ran. Hand the live row to the store, which
+	 * re-reads status once when this wizard's own job settles. */
+	$effect(() => {
+		void setupWizard.refreshStatusAfterImport(job);
+	});
+
 	/** The jobs store is the progress feed. Attached only while the overlay is
 	 * open and only when the daemon offers the jobs API, so a legacy boot
 	 * never opens a socket it cannot use. Attached for the whole overlay (not

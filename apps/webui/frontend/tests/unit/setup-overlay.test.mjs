@@ -599,3 +599,12 @@ test('the user is told where they are, not left to count pills', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /Step \{position\} of \{total\}/);
 });
+
+test('the overlay hands the live import row to the status re-read', () => {
+	// The store owns the rule (refreshStatusAfterImport, tested in
+	// setup-wizard.test.mjs); the overlay is the only place the live job row
+	// exists, so it must be the one feeding it. Without this the Done step
+	// shows the status read when the overlay opened, before the import.
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\$effect\(\(\) => \{\s*void setupWizard\.refreshStatusAfterImport\(job\);\s*\}\);/);
+});
