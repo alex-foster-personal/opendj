@@ -2667,6 +2667,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/share-root/reanchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reanchor Share Root
+         * @description Trust the rekordbox share root as it is now, and forget what was read under it.
+         *
+         *     The engine remembers which directory the share root was when it first
+         *     read it, and refuses to read below a root that has since become a
+         *     different one (LIBM-137). A volume remounted as a real directory at the
+         *     same path is picked up on its own by the next track listing. A share root
+         *     that is a symlink and now points somewhere else is not, because that is
+         *     also what an attack looks like: this call is how its owner says the new
+         *     target is intended. It recomputes the configured root, drops the recorded
+         *     identity so the next read anchors afresh, and empties the listing's row
+         *     memory. ``exists`` says whether the root is a directory right now.
+         */
+        post: operations["reanchor_share_root_api_v1_library_share_root_reanchor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/wheel": {
         parameters: {
             query?: never;
@@ -13730,6 +13760,14 @@ export interface components {
             /** Tracks */
             tracks: number;
         };
+        /**
+         * ShareRootReanchorOut
+         * @description Answer of ``POST /library/share-root/reanchor``.
+         */
+        ShareRootReanchorOut: {
+            /** Exists */
+            exists: boolean;
+        };
         /** ShiftModifier */
         ShiftModifier: {
             /**
@@ -21122,6 +21160,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reanchor_share_root_api_v1_library_share_root_reanchor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareRootReanchorOut"];
                 };
             };
         };

@@ -19000,6 +19000,20 @@
         "title": "SetupStatusOut",
         "type": "object"
       },
+      "ShareRootReanchorOut": {
+        "description": "Answer of ``POST /library/share-root/reanchor``.",
+        "properties": {
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "exists"
+        ],
+        "title": "ShareRootReanchorOut",
+        "type": "object"
+      },
       "ShiftModifier": {
         "additionalProperties": false,
         "properties": {
@@ -32035,6 +32049,28 @@
           }
         },
         "summary": "Get Library Readiness",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/api/v1/library/share-root/reanchor": {
+      "post": {
+        "description": "Trust the rekordbox share root as it is now, and forget what was read under it.\n\nThe engine remembers which directory the share root was when it first\nread it, and refuses to read below a root that has since become a\ndifferent one (LIBM-137). A volume remounted as a real directory at the\nsame path is picked up on its own by the next track listing. A share root\nthat is a symlink and now points somewhere else is not, because that is\nalso what an attack looks like: this call is how its owner says the new\ntarget is intended. It recomputes the configured root, drops the recorded\nidentity so the next read anchors afresh, and empties the listing's row\nmemory. ``exists`` says whether the root is a directory right now.",
+        "operationId": "reanchor_share_root_api_v1_library_share_root_reanchor_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareRootReanchorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reanchor Share Root",
         "tags": [
           "library"
         ]

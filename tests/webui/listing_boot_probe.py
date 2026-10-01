@@ -22,6 +22,9 @@ change the filesystem between two requests and see what the next one says:
     {"op": "write", "path": "...", "hex": "...", "mtime_ns": 1}
     {"op": "unlink", "path": "..."}
     {"op": "swap_dir_for_symlink", "path": "...", "target": "..."}
+    {"op": "rename", "path": "...", "to": "..."}
+    {"op": "symlink", "path": "...", "target": "..."}  (replaces a link already there)
+    {"op": "post", "name": "reanchor", "url": "/api/v1/library/share-root/reanchor"}
 
     python -m tests.webui.listing_boot_probe <spec.json>
 """
@@ -142,6 +145,12 @@ def _mutate(step: dict[str, Any]) -> None:
     elif step["op"] == "swap_dir_for_symlink":
         path.rename(path.with_name(path.name + ".moved-aside"))
         path.symlink_to(step["target"], target_is_directory=True)
+    elif step["op"] == "rename":
+        path.rename(step["to"])
+    elif step["op"] == "symlink":
+        if path.is_symlink():
+            path.unlink()
+        path.symlink_to(step["target"])
     else:
         raise SystemExit(f"unknown probe step: {step['op']!r}")
 
@@ -164,6 +173,9 @@ def main(spec_path: str) -> None:
             for step in spec["steps"]:
                 if step["op"] == "get":
                     results[step["name"]] = _get(client, trace, step["url"])
+                elif step["op"] == "post":
+                    answer = client.post(step["url"])
+                    results[step["name"]] = {"status": answer.status_code, "body": answer.json()}
                 else:
                     _mutate(step)
     Path(spec["out"]).write_text(json.dumps(results), encoding="utf-8")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import stat
 import threading
 from pathlib import Path
 from typing import Any, Literal
@@ -91,20 +92,39 @@ def _stems_dir(request: Request) -> Path:
     return Path(configured)
 
 
+def _lyrics_available(cache_directory: str, stable_id: str) -> bool:
+    """True when ``<stable_id>.json`` is a plain file directly inside the cache.
+
+    One ``lstat`` by name, so (decisions, LIBM-137 round 4):
+
+    * letter case follows the volume, exactly as the lyrics read's own lookup
+      of the same name does, so the flag and the read cannot disagree;
+    * a symlinked entry is "no lyrics", wherever it points: the flag never
+      vouches for a file it did not look at;
+    * an id that is not one file name (empty, a path separator, a NUL, a
+      character no file name can hold) is "no lyrics" and reaches nothing;
+    * any error (the cache path is a file, the directory is unreadable, the
+      volume went away) is "no lyrics" for that id, never a failed page.
+    """
+    if not stable_id or "/" in stable_id or os.sep in stable_id:
+        return False
+    try:
+        entry = os.lstat(os.path.join(cache_directory, f"{stable_id}.json"))
+    except (OSError, ValueError):
+        return False
+    return stat.S_ISREG(entry.st_mode)
+
+
 def _lyrics_available_bulk(data_dir: Path, stable_ids: list[str]) -> dict[str, bool]:
-    """Which ids have a lyrics-cache file: one directory read for the page.
+    """Which ids have a lyrics-cache file: one ``lstat`` per id, no directory read.
 
     Before LIBM-137 this resolved the cache directory and the entry path once
-    per id (two ``Path.resolve()`` walks each, 43 ms per 500 rows). A name
-    that is not a plain file directly inside the cache directory is "no
-    lyrics", which also covers an id that could never name one.
+    per id (two ``Path.resolve()`` walks each, 43 ms per 500 rows). The cost
+    is per id asked about, never per entry in the cache, so the one-track
+    routes pay for one name.
     """
-    try:
-        with os.scandir(lyrics_cache.cache_dir(data_dir)) as entries:
-            cached = {entry.name for entry in entries if entry.is_file(follow_symlinks=False)}
-    except FileNotFoundError:
-        cached = set()
-    return {sid: f"{sid}.json" in cached for sid in stable_ids}
+    cache_directory = str(lyrics_cache.cache_dir(data_dir))
+    return {sid: _lyrics_available(cache_directory, sid) for sid in stable_ids}
 
 
 def _auto_cues_available_bulk(

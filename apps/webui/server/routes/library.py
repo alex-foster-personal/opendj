@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
 from apps.shared import paths as shared_paths
+from apps.shared import platform_paths
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
 from apps.webui.server.library_readiness import (
@@ -32,6 +34,30 @@ def _stem_roots(request: Request) -> tuple[Path, ...]:
     if configured is not None:
         return tuple(Path(root) for root in configured)
     return stem_roots(DEFAULT_STEMS_DIR)
+
+
+class ShareRootReanchorOut(BaseModel):
+    """Answer of ``POST /library/share-root/reanchor``."""
+
+    exists: bool
+
+
+@router.post("/share-root/reanchor", response_model=ShareRootReanchorOut)
+def reanchor_share_root() -> ShareRootReanchorOut:
+    """Trust the rekordbox share root as it is now, and forget what was read under it.
+
+    The engine remembers which directory the share root was when it first
+    read it, and refuses to read below a root that has since become a
+    different one (LIBM-137). A volume remounted as a real directory at the
+    same path is picked up on its own by the next track listing. A share root
+    that is a symlink and now points somewhere else is not, because that is
+    also what an attack looks like: this call is how its owner says the new
+    target is intended. It recomputes the configured root, drops the recorded
+    identity so the next read anchors afresh, and empties the listing's row
+    memory. ``exists`` says whether the root is a directory right now.
+    """
+    root = platform_paths.refresh_share_root()
+    return ShareRootReanchorOut(exists=root.is_dir())
 
 
 @router.get("/wheel")

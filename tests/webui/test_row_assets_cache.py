@@ -112,7 +112,7 @@ def forget_everything() -> None:
 
 
 def call(meta: RbRowMeta | None = None) -> row_assets.RowAssets:
-    return row_assets.rb_row_assets(meta or _meta(), resolver=AssetResolver())
+    return row_assets.rb_row_assets(meta or _meta(), resolver=AssetResolver(), stable_id="sid-under-test")
 
 
 @pytest.fixture

@@ -17,8 +17,12 @@ rerunning the check. Nothing here keeps a path or a verdict:
   directory's descriptor and read from that descriptor. No path is reopened, so
   a swap during the read cannot put outside bytes into the value.
 * A row is remembered only when nothing on its paths was refused. A symlink, an
-  unreadable directory, an oversized file or a changed root yields this
-  request's answer and no entry.
+  unreadable directory, an oversized or hard-linked file, or a changed root
+  yields this request's answer and no entry.
+* A file that cannot be DECODED is not a refusal: it was read cleanly and it is
+  malformed, so that source has nothing, the chain moves on, and the answer is
+  remembered like any other (``row_assets_uncached.decoded_preview``). It never
+  fails the page.
 * A hit opens nothing. It is served only while the root still has the identity
   it had, every directory on the row's paths is still a real directory with the
   same inode, and every file the read looked at still has the same type, inode,
@@ -48,12 +52,19 @@ from types import TracebackType
 from typing import Any
 
 from apps.adapters.rekordbox import config
-from apps.adapters.rekordbox import paths as rb_paths
 from apps.adapters.rekordbox.models import RbRowMeta
 from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared.platform_paths import AssetResolver
 
 from . import anlz
+from .row_assets_uncached import (
+    MAX_ASSET_BYTES,
+    decoded_preview,
+    decoded_vocals,
+    pvdi_vocals,
+    rb_artwork_facts,
+    uncached_row,
+)
 from .row_hydration_cache import (
     _ABSENT,
     RootKey,
@@ -72,8 +83,10 @@ log = logging.getLogger(__name__)
 #: first. The memory this bounds is measured in the round 3 report.
 ROW_ASSET_CACHE_MAX_ENTRIES: int = 40_000
 
-#: Largest analysis file read into memory. Real ANLZ files are under 2 MB.
-MAX_ASSET_BYTES: int = 64 * 1024 * 1024
+__all__ = [
+    "MAX_ASSET_BYTES", "RowAssetSession", "RowAssets", "bulk_rb_row_assets",
+    "pvdi_vocals", "rb_artwork_facts", "rb_row_assets",
+]
 
 _PREVIEW_SUFFIXES: tuple[str, ...] = tuple(suffix for suffix, _reader in anlz._PREVIEW_SOURCES)
 _NOT_ANALYZED: str = sys.intern('{"status": "not_analyzed"}')
@@ -96,14 +109,10 @@ class RowAssets:
 class _ReadBytes:
     """Bytes already read through the walk, shaped like the path the readers take."""
 
-    label: str
     data: bytes
 
     def read_bytes(self) -> bytes:
         return self.data
-
-    def __str__(self) -> str:
-        return self.label
 
 
 # ----- the plan: which paths a row's vendor strings name ----------------------
@@ -139,9 +148,14 @@ def _share_parts(vendor_path: str) -> tuple[str, ...] | None:
     Only ``/PIONEER/...`` maps onto the share root without consulting the path
     map or the filesystem (``platform_paths.resolve_library_path``), so only
     that form can be keyed on its own string. Anything unusual in it (an empty
-    component, ``.``, ``..``, a NUL) is left to the uncached resolver.
+    component, ``.``, ``..``, a NUL, a character no file name can hold) is left
+    to the uncached path, which answers for such a row without failing.
     """
     if not vendor_path.startswith("/PIONEER/") or "\x00" in vendor_path:
+        return None
+    try:
+        os.fsencode(vendor_path)
+    except UnicodeEncodeError:  # a lone surrogate: every open and stat would raise
         return None
     parts = tuple(vendor_path.split("/")[1:])
     if len(parts) < 2 or any(part in ("", ".", "..") for part in parts):
@@ -237,7 +251,7 @@ class _Leaves:
         self._note(name, st)
         if payload is None:
             if stat.S_ISREG(st.st_mode):
-                self.refused = f"{name}: larger than {MAX_ASSET_BYTES} bytes"
+                self.refused = f"{name}: hard-linked, or larger than {MAX_ASSET_BYTES} bytes"
             return None
         self._data[name] = payload
         return payload
@@ -291,9 +305,15 @@ class RowAssetSession:
         try:
             self._root_fd = fd_anchored_walk.open_anchored_root(self._root_path)
         except fd_anchored_walk.RootIdentityChanged as exc:
-            fd_anchored_walk.log_root_identity_changed(exc)
-            self._root_state = "changed"
-            return
+            # A volume remounted at the same path is a new real directory, and
+            # an ordinary event. A root that is a symlink is not re-trusted
+            # here: only ``refresh_share_root`` (the re-anchor route) does that.
+            try:
+                self._root_fd = fd_anchored_walk.reanchor_real_root(self._root_path)
+            except OSError:
+                fd_anchored_walk.log_root_identity_changed(exc)
+                self._root_state = "changed"
+                return
         except OSError:
             self._root_state = "changed"
             return
@@ -333,7 +353,7 @@ class RowAssetSession:
     # -- cold --
 
     def _read_analysis(
-        self, plan: _Plan, seen: dict[str, bytes]
+        self, plan: _Plan, seen: dict[str, bytes], stable_id: str
     ) -> tuple[str | None, int | None, str]:
         """Preview strip and PVDI vocals JSON, read through the walk."""
         assert self._root_fd is not None
@@ -347,12 +367,12 @@ class RowAssetSession:
         if dir_fd is None:
             return None, None, _NOT_ANALYZED
         try:
-            return self._read_analysis_leaves(plan, dir_fd, seen)
+            return self._read_analysis_leaves(plan, dir_fd, seen, stable_id)
         finally:
             os.close(dir_fd)
 
     def _read_analysis_leaves(
-        self, plan: _Plan, dir_fd: int, seen: dict[str, bytes]
+        self, plan: _Plan, dir_fd: int, seen: dict[str, bytes], stable_id: str
     ) -> tuple[str | None, int | None, str]:
         prefix = "/".join(plan.analysis_dirs)
         leaves = _Leaves(dir_fd, prefix, seen)
@@ -363,14 +383,17 @@ class RowAssetSession:
         if vendor_st is not None and stat.S_ISLNK(vendor_st.st_mode):
             raise _Refused(f"{plan.analysis_leaf}: is a symlink")
 
-        label = f"{self._root_path}/{prefix}"
+        # A malformed file is this source having nothing, not a failed page:
+        # the chain moves on, and the answer is as stable as the file is.
         candidates = plan.analysis_candidates
         preview: tuple[str | None, int | None] = (None, None)
-        for (_suffix, reader), name in zip(anlz._PREVIEW_SOURCES, candidates, strict=True):
+        for (suffix, reader), name in zip(anlz._PREVIEW_SOURCES, candidates, strict=True):
             payload = leaves.read(name)
-            cols = None if payload is None else reader(_ReadBytes(f"{label}/{name}", payload))
-            if cols is not None:
-                preview = anlz.encode_preview_strip(cols)
+            strip = None if payload is None else decoded_preview(
+                reader, _ReadBytes(payload), suffix, stable_id
+            )
+            if strip is not None:
+                preview = strip
                 break
         else:
             log.warning("preview_strip: no preview in PWV6/PWV4/PWAV for %s", prefix)
@@ -378,8 +401,7 @@ class RowAssetSession:
         twoex = leaves.read(candidates[0])
         vocals = _NOT_ANALYZED
         if twoex is not None:
-            source = _ReadBytes(f"{label}/{candidates[0]}", twoex)
-            vocals = json.dumps(anlz._decode_vocals_payload(source))
+            vocals = json.dumps(decoded_vocals(_ReadBytes(twoex), stable_id))
         leaves.witness_unread(candidates)
         if leaves.refused is not None:
             raise _RefusedWith(leaves.refused, (*preview, vocals))
@@ -402,11 +424,11 @@ class RowAssetSession:
         try:
             found: list[os.stat_result | None] = []
             for name in plan.artwork_leaves:
-                st = fd_anchored_walk.stat_leaf(dir_fd, name)
-                if st is not None and stat.S_ISLNK(st.st_mode):
+                leaf = fd_anchored_walk.stat_leaf(dir_fd, name)
+                if leaf is not None and stat.S_ISLNK(leaf.st_mode):
                     raise _Refused(f"{name}: is a symlink")
-                seen[f"{prefix}/{name}"] = _ABSENT if st is None else file_witness(st)
-                found.append(st)
+                seen[f"{prefix}/{name}"] = _ABSENT if leaf is None else file_witness(leaf)
+                found.append(leaf)
         except OSError as exc:
             raise _Refused(f"artwork: {exc}") from exc
         finally:
@@ -416,7 +438,7 @@ class RowAssetSession:
             return False, "file_missing"
         return True, "ok"
 
-    def _read(self, plan: _Plan) -> tuple[RowValue, bytes | None]:
+    def _read(self, plan: _Plan, stable_id: str) -> tuple[RowValue, bytes | None]:
         """Read one row through the walk: its value, and its witnesses when
         nothing was refused (None means "do not remember this")."""
         seen: dict[str, bytes] = {}
@@ -426,7 +448,7 @@ class RowAssetSession:
         vocals = _NOT_ANALYZED
         if plan.analysis_leaves:
             try:
-                preview_b64, preview_max, vocals = self._read_analysis(plan, seen)
+                preview_b64, preview_max, vocals = self._read_analysis(plan, seen, stable_id)
             except _RefusedWith as partial:
                 cacheable = False
                 preview_b64, preview_max, vocals = partial.value
@@ -446,11 +468,14 @@ class RowAssetSession:
 
     # -- the row --
 
-    def assets(self, meta: RbRowMeta) -> RowAssets:
-        """Preview strip, PVDI vocals and artwork verdict of one mapped row."""
+    def assets(self, meta: RbRowMeta, stable_id: str) -> RowAssets:
+        """Preview strip, PVDI vocals and artwork verdict of one mapped row.
+
+        ``stable_id`` is what a row that cannot be decoded is logged under.
+        """
         plan = _plan_for(meta)
         if plan is None:
-            return _uncached_row_assets(meta, self._resolver)
+            return RowAssets(*uncached_row(meta, self._resolver, stable_id))
         self._open_root()
         if self._root_state == "missing":
             artwork = "file_missing" if plan.artwork_leaves else "no_image_path"
@@ -464,7 +489,7 @@ class RowAssetSession:
             if hit[0] == self._current_witnesses(plan):
                 return _row_assets(hit[1])
             self._cache.discard(self._root_key, key)
-        value, witnesses = self._read(plan)
+        value, witnesses = self._read(plan, stable_id)
         if witnesses is not None:
             self._cache.put(self._root_key, key, witnesses, value)
         return _row_assets(value)
@@ -475,60 +500,10 @@ def _row_assets(value: RowValue) -> RowAssets:
     return RowAssets(preview_b64, preview_max, artwork_available, artwork_status, json.loads(vocals))
 
 
-# ----- the uncached path: anything that is not a plain share-relative row -----
-
-
-def pvdi_vocals(
-    analysis_data_path: str | None, *, resolver: AssetResolver | None = None
-) -> dict[str, Any]:
-    """The PVDI ``vocals`` payload from a row's .2EX, ``not_analyzed`` without one."""
-    if analysis_data_path:
-        mapped = rb_paths.resolve_asset_path(analysis_data_path, resolver=resolver)
-        if mapped.resolved is not None:
-            twoex = rb_paths._asset_sibling(
-                mapped, mapped.resolved.with_suffix(".2EX"), resolver=resolver
-            )
-            if twoex.resolved is not None:
-                return anlz.vocals_payload(twoex.resolved)
-    return {"status": "not_analyzed"}
-
-
-def rb_artwork_facts(
-    meta: RbRowMeta, *, resolver: AssetResolver | None = None
-) -> tuple[bool | None, str]:
-    """Wire pair for a rekordbox-mapped row: its pre-rendered small cover.
-
-    The cover itself goes through the containment walk, as the artwork route's
-    own lookup does, so a cover that is a symlink reads as unresolved here too.
-    """
-    if meta.image_path is None:
-        return False, "no_image_path"
-    mapped = rb_paths.resolve_asset_path(meta.image_path, resolver=resolver)
-    if mapped.resolved is None:
-        return False, "unresolved"
-    small = rb_paths._asset_sibling(
-        mapped, mapped.resolved.parent / config.ARTWORK_FILENAMES["s"], resolver=resolver
-    )
-    if small.resolved is None:
-        return False, "unresolved"
-    if not small.resolved.is_file():
-        return False, "file_missing"
-    return True, "ok"
-
-
-def _uncached_row_assets(meta: RbRowMeta, resolver: AssetResolver) -> RowAssets:
-    preview_b64, preview_max = anlz.preview_strip(meta.analysis_data_path, resolver=resolver)
-    artwork_available, artwork_status = rb_artwork_facts(meta, resolver=resolver)
-    return RowAssets(
-        preview_b64, preview_max, artwork_available, artwork_status,
-        pvdi_vocals(meta.analysis_data_path, resolver=resolver),
-    )
-
-
-def rb_row_assets(meta: RbRowMeta, *, resolver: AssetResolver) -> RowAssets:
+def rb_row_assets(meta: RbRowMeta, *, resolver: AssetResolver, stable_id: str) -> RowAssets:
     """One row on its own. A bulk caller uses :func:`bulk_rb_row_assets`."""
     with RowAssetSession(resolver) as session:
-        return session.assets(meta)
+        return session.assets(meta, stable_id)
 
 
 def bulk_rb_row_assets(
@@ -540,4 +515,4 @@ def bulk_rb_row_assets(
     not plain share-relative paths still go through it.
     """
     with RowAssetSession(resolver) as session:
-        return {stable_id: session.assets(meta) for stable_id, meta in metas.items()}
+        return {stable_id: session.assets(meta, stable_id) for stable_id, meta in metas.items()}
