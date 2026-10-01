@@ -16,8 +16,11 @@
  *       typed timeout error and no alternate audio path is selected
  *     [if] a timeout or processor error becomes terminal [then] later
  *       commands reject before invoking the worklet
- *   ✔︎ Transfer copied mono/stereo PCM into the processor.
+ *   ✔︎ Transfer mono/stereo PCM into the processor: copied by default, moved
+ *     when the caller gives the buffer up (stretch-pcm-handoff.ts).
  *     [if] decoded audio has more than two channels [then] loading rejects
+ *     [if] a load asks for 'transfer' on an engine that can move channels
+ *       [then] no channel is copied and the load reports 'transfer'
  *   ✔︎ Retiring a deck terminates its source worklet and releases transferred PCM.
  *     [if] dispose completes [then] the port is closed and later commands fail
  */
@@ -27,6 +30,7 @@ import type {
 	SignalsmithStretchSchedule
 } from 'signalsmith-stretch';
 import { recordWorkletAck } from '$lib/rb/worklet-ack-stats';
+import { pcmChannelsForWorklet, probeChannelTransfer, type PcmHandoff } from './stretch-pcm-handoff';
 import {
 	STRETCH_COMMAND_TIMEOUT_MS,
 	STRETCH_CREATE_TIMEOUT_MS,
@@ -402,15 +406,20 @@ export class StretchDeckProcessor {
 		}
 	}
 
-	async load(buffer: AudioBuffer): Promise<void> {
+	/**
+	 * `'copy'` leaves `buffer` usable. `'transfer'` GIVES IT UP: its channels
+	 * are detached and read as empty afterwards, so only a caller with no
+	 * later reader may ask for it. Resolves to what actually happened.
+	 */
+	async load(buffer: AudioBuffer, requested: PcmHandoff = 'copy'): Promise<PcmHandoff> {
 		this.#assertOperational();
 		assertStretchLoadIsFresh(this.#loadedDurationSec);
 		validateStretchBufferMetadata(buffer, this.#context.sampleRate);
-		const channels = Array.from({ length: buffer.numberOfChannels }, (_unused, channel) => {
-			const samples = new Float32Array(buffer.length);
-			buffer.copyFromChannel(samples, channel);
-			return samples;
-		});
+		const { channels, handoff } = pcmChannelsForWorklet(
+			buffer,
+			requested,
+			requested === 'transfer' && _engineMovesChannels(this.#context)
+		);
 		await this.schedule(this.#context.currentTime, STRETCH_RESET_CHANGE);
 		await this.#command(() => this.#node.dropBuffers(), 'drop buffers');
 		const transfer = channels.map((channel) => channel.buffer);
@@ -425,6 +434,7 @@ export class StretchDeckProcessor {
 		}
 		this.#loadedDurationSec = loadedEndSec;
 		this.#loadedSampleRateHz = buffer.sampleRate;
+		return handoff;
 	}
 
 	async latencySec(): Promise<number> {
@@ -459,6 +469,19 @@ export class StretchDeckProcessor {
 	async #command<T>(command: () => Promise<T>, operation: string): Promise<T> {
 		return this.#gate.run(operation, command, this.#commandTimeoutMs);
 	}
+}
+
+let _channelMoveVerdict: boolean | null = null;
+
+/** Probed once per page: an engine property, not a context property. */
+function _engineMovesChannels(context: AudioContext): boolean {
+	_channelMoveVerdict ??= probeChannelTransfer(
+		() => context.createBuffer(1, 8, context.sampleRate),
+		typeof structuredClone === 'function'
+			? (view) => structuredClone(view, { transfer: [view.buffer] })
+			: null
+	);
+	return _channelMoveVerdict;
 }
 
 export { ensureStretchWorkletReady, resetStretchWorkletReadyForTests } from './stretch-worklet-ready';

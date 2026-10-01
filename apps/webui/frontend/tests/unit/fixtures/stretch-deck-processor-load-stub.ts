@@ -10,7 +10,9 @@ export class StretchDeckProcessor {
 		return {
 			connect(_destination: AudioNode) {},
 			disconnect() {},
-			async load(_buffer: AudioBuffer) {},
+			async load(_buffer: AudioBuffer, _requested: 'copy' | 'transfer' = 'copy') {
+				return 'copy' as const;
+			},
 			async latencySec() {
 				return 0.12;
 			},
