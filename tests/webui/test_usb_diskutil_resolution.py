@@ -1,5 +1,7 @@
 """USB volume discovery finds diskutil by absolute path, never through PATH.
 
+[if] USB discovery looks diskutil up through PATH [then] fail, [else stop].
+
 Found on the launchd-run preview engine (Thu 1 Oct 2026): the agent's PATH
 was ``~/.local/bin:/opt/homebrew/...:/usr/local/bin:/usr/bin:/bin``, which
 has no ``/usr/sbin``, so ``shutil.which("diskutil")`` answered None and every
