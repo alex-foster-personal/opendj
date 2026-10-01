@@ -2573,8 +2573,11 @@
 	/* LIBUX-33: every cell clips to its own column. A column may only set
 	 * `overflow: visible` when an inner element clips its text instead
 	 * (.c-title -> .title-text); tests/unit/track-table-cell-clip.test.mjs
-	 * holds that list. */
-	td {
+	 * holds that list. `:global(td)` because a cell can be rendered by a
+	 * child component (LyricColumn's td never matched a scoped `td`, so it
+	 * did not clip either); `:where()` keeps the rule at a bare td's
+	 * specificity so every `.c-*` column rule below still overrides it. */
+	:where(tbody > tr) > :global(td) {
 		padding: 0 var(--tt-td-pad-x);
 		border-bottom: none;
 		white-space: nowrap;

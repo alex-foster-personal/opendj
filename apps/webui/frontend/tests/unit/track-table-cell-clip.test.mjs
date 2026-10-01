@@ -19,7 +19,7 @@
  * - if a free-text cell drops its title then a clipped value cannot be read
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
@@ -27,10 +27,16 @@ const table = readFileSync(
 	fileURLToPath(new URL('../../src/lib/components/rb/browser/TrackTable.svelte', import.meta.url)),
 	'utf8'
 );
-const style = table.slice(table.lastIndexOf('<style>'));
+const browserDir = new URL('../../src/lib/components/rb/browser/', import.meta.url);
+/** Child components that render a table cell of their own. */
+const CELL_COMPONENTS = readdirSync(fileURLToPath(browserDir))
+	.filter((f) => f.endsWith('.svelte') && f !== 'TrackTable.svelte')
+	.map((f) => ({ f, src: readFileSync(fileURLToPath(new URL(f, browserDir)), 'utf8') }))
+	.filter(({ src }) => /<td\b/.test(src));
 
-/** Every `selector { body }` rule in the stylesheet, comments stripped. */
-function rules() {
+/** Every `selector { body }` rule in a component's stylesheet, comments stripped. */
+function rules(src = table) {
+	const style = src.slice(src.lastIndexOf('<style>'));
 	const css = style.replace(/\/\*[\s\S]*?\*\//g, '');
 	const out = [];
 	const re = /([^{}]+)\{([^{}]*)\}/g;
@@ -51,12 +57,25 @@ const INNER_CLIP = {
 	'.c-art': null
 };
 
+/** The shared cell rule: unscoped td under the table's own rows. */
+const SHARED_TD = ':where(tbody > tr) > :global(td)';
+
 test('the shared td rule clips with an ellipsis', () => {
-	const td = rules().find((r) => r.selector === 'td');
-	assert.ok(td, 'no bare td rule in TrackTable');
+	const td = rules().find((r) => r.selector === SHARED_TD);
+	assert.ok(td, `no shared ${SHARED_TD} rule in TrackTable`);
 	assert.match(td.body, /overflow\s*:\s*hidden/);
 	assert.match(td.body, /white-space\s*:\s*nowrap/);
 	assert.match(td.body, /text-overflow\s*:\s*ellipsis/);
+});
+
+test('cells rendered by child components are reached by the shared rule', () => {
+	assert.ok(CELL_COMPONENTS.length > 0, 'expected LyricColumn to render its own td');
+	// A scoped `td` selector cannot match another component's element.
+	assert.match(SHARED_TD, /:global\(td\)/);
+	for (const { f, src } of CELL_COMPONENTS) {
+		const offenders = rules(src).filter((r) => /overflow\s*:\s*visible/.test(r.body));
+		assert.deepEqual(offenders.map((r) => r.selector), [], `${f} cell stops clipping`);
+	}
 });
 
 test('no cell column overrides the clip unless an inner element clips instead', () => {
