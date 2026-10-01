@@ -78,12 +78,13 @@ class CFG:
     PYTEST_BUDGET_LEDGER_SECONDS = 600.0
     PYTEST_WORKERS = "4"
     PYTEST_TIMEOUT_SECONDS = "120"
-    #: The pytest environment CI builds (ci.yml "Python deps" step), so a pre-PR red is a red
-    #: CI would also see. `uv sync --extra dev` is NOT that environment: measured Sat 26 Sep
-    #: 2026 on nucbox, 6 affected tests failed on a clean main under it and passed under this.
+    #: The pytest environment CI builds (ci.yml "Provision isolated Python test environment"),
+    #: so a pre-PR red is a red CI would also see. `uv sync --extra dev` is NOT that
+    #: environment: measured Sat 26 Sep 2026 on nucbox, 6 affected tests failed on a clean
+    #: main under it and passed under this. Since issue #4252 CI fills it by an exact sync
+    #: from the hash-pinned lock, which also carries modal and the observability extra.
     CI_PYTHON = "3.11"
-    CI_REQUIREMENTS = "requirements.txt"
-    CI_EXTRA_PACKAGES = ("modal", "sentry-sdk>=2.0,<3")
+    CI_LOCK = "pylock.ci.toml"
 
 
 @dataclass(frozen=True)
@@ -331,32 +332,21 @@ class Tests:
         return sum(s for node, s in ledger.items() if node.split("::", 1)[0] in chosen)
 
     @staticmethod
+    def provision_argv() -> list[str]:
+        """The exact command ci.yml runs to build its pytest environment."""
+        return ["scripts/ci_venv.sh", CFG.CI_PYTHON, "--lock", CFG.CI_LOCK]
+
+    @staticmethod
     def provision() -> Verdict | None:
         """Build CI's pytest environment in this worktree's .venv; None when ready."""
-        steps = (
-            ["scripts/ci_venv.sh", CFG.CI_PYTHON],
-            [
-                "uv",
-                "pip",
-                "install",
-                "--exact",
-                "--upgrade",
-                "--quiet",
-                "--python",
-                str(Tests.venv_python()),
-                "-r",
-                CFG.CI_REQUIREMENTS,
-                *CFG.CI_EXTRA_PACKAGES,
-            ],
-        )
-        for argv in steps:
-            completed = _run(argv)
-            if completed.returncode != 0:
-                _echo(completed)
-                return Verdict(
-                    "UNMEASURED",
-                    f"`{' '.join(argv[:3])}` exited {completed.returncode}; no pytest environment",
-                )
+        argv = Tests.provision_argv()
+        completed = _run(argv)
+        if completed.returncode != 0:
+            _echo(completed)
+            return Verdict(
+                "UNMEASURED",
+                f"`{' '.join(argv)}` exited {completed.returncode}; no pytest environment",
+            )
         return None
 
     @staticmethod
