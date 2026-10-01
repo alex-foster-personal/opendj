@@ -157,13 +157,24 @@ class _ProcessTreeSampler:
         return footprint_mb, proc.cpu_percent(interval=None)
 
     def _sum_live(self, procs: list[psutil.Process]) -> tuple[float, float, int]:
-        """Footprint and CPU of the processes still alive; one that exits mid-sample is skipped."""
+        """Footprint and CPU of every process in `procs`; only one that has exited is skipped.
+
+        A live process that cannot be read raises (Sol P1/BLOCKING, PR #4888):
+        `DarwinProcessMetrics.read` raises ProcessLookupError for every failure,
+        EPERM included, so a failed read counts as an exit only once
+        `is_running()` confirms the process is gone. Anything else would drop
+        a live member's cost from a row that still claims its whole family.
+        """
         footprint_mb = cpu_percent = 0.0
         live = 0
         for proc in procs:
             try:
                 proc_footprint, proc_cpu = self._read(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, ProcessLookupError):
+            except (psutil.NoSuchProcess, ProcessLookupError) as exc:
+                if proc.is_running():
+                    raise RuntimeError(
+                        f"pid {proc.pid} is still running but its footprint/CPU could not be read: {exc}"
+                    ) from exc
                 continue
             footprint_mb += proc_footprint
             cpu_percent += proc_cpu

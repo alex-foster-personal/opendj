@@ -45,7 +45,8 @@ _IDS = [f"{deck}" * 40 for deck in "abcd"]
 # descendant to find: the launcher stands in for mode_ratio_browser.mjs (its
 # child for Chromium), the engine for the engine (its child for a stem worker).
 _PARENT_WITH_CHILD = (
-    "import subprocess, sys, time\n"
+    "import signal, subprocess, sys, time\n"
+    "signal.signal(signal.SIGCHLD, signal.SIG_IGN)  # reap at once: a killed child leaves no zombie\n"
     "subprocess.Popen(['sleep', '30'])\n"
     "print('ready', flush=True)\n"
     "time.sleep(30)\n"
@@ -69,17 +70,36 @@ def _tree() -> Iterator[tuple[int, int]]:
 
 
 class _PerPidNative:
-    """phys_footprint by pid; records which pids were read. Unknown pids read 999 MB."""
+    """phys_footprint by pid; records which pids were read. Unknown pids read 999 MB.
 
-    def __init__(self, footprint_mb_by_pid: dict[int, float], *, unreadable: int | None = None) -> None:
+    `unreadable` fails the read the way `DarwinProcessMetrics.read` fails on
+    EPERM (ProcessLookupError) while the process stays alive; `exits` kills the
+    process for real, waits until it is gone, then fails the read the same way.
+    """
+
+    def __init__(
+        self,
+        footprint_mb_by_pid: dict[int, float],
+        *,
+        unreadable: int | None = None,
+        exits: int | None = None,
+    ) -> None:
         self._by_pid = footprint_mb_by_pid
         self._unreadable = unreadable
+        self._exits = exits
         self.pids_read: list[int] = []
 
     def read(self, pid: int) -> SimpleNamespace:
         self.pids_read.append(pid)
         if pid == self._unreadable:
-            raise psutil.AccessDenied(pid)
+            raise ProcessLookupError(1, "Operation not permitted", pid)
+        if pid == self._exits:
+            psutil.Process(pid).kill()
+            deadline = time.monotonic() + 5
+            while psutil.pid_exists(pid) and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert not psutil.pid_exists(pid), f"pid {pid} did not exit"
+            raise ProcessLookupError(3, "No such process", pid)
         return SimpleNamespace(phys_footprint=int(self._by_pid.get(pid, 999.0) * _MB))
 
 
@@ -151,8 +171,29 @@ def test_sample_raises_when_the_engine_root_cannot_be_read() -> None:
     """[if] the engine root's footprint is unreadable [then] sample() raises, not a zero engine, [else stop]."""
     with _tree() as (launcher, browser_child), _tree() as (engine, _engine_child):
         native = _PerPidNative({browser_child: 222.0}, unreadable=engine)
-        with pytest.raises(psutil.AccessDenied):
+        with pytest.raises(ProcessLookupError):
             _sampler(launcher, native, engine).sample()
+
+
+@pytest.mark.requirement("PERFMODE-15")
+@pytest.mark.parametrize("half", ["engine", "browser"])
+def test_sample_raises_when_a_live_descendant_cannot_be_read(half: str) -> None:
+    """[if] a live stem worker or Chromium child cannot be read [then] sample() raises, never drops it, [else stop]."""
+    with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
+        target = engine_child if half == "engine" else browser_child
+        native = _PerPidNative({browser_child: 222.0, engine: 333.0, engine_child: 444.0}, unreadable=target)
+        with pytest.raises(RuntimeError, match=f"pid {target} is still running"):
+            _sampler(launcher, native, engine).sample()
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_sample_skips_a_descendant_that_exits_mid_sample() -> None:
+    """[if] a stem worker exits between the tree walk and its read [then] it is skipped, not an error, [else stop]."""
+    with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
+        native = _PerPidNative({browser_child: 222.0, engine: 333.0, engine_child: 444.0}, exits=engine_child)
+        reading = _sampler(launcher, native, engine).sample()
+    assert reading["engine_footprint_mb"] == pytest.approx(333.0)
+    assert reading["browser_footprint_mb"] == pytest.approx(222.0)
 
 
 @pytest.mark.requirement("PERFMODE-15")
