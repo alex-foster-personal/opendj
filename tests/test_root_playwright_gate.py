@@ -6,6 +6,7 @@ invoked the suite. These checks keep the runnable root command and the E2E
 workflow tied together.
 """
 
+import re
 from pathlib import Path
 
 import yaml
@@ -111,6 +112,22 @@ def test_playlist_switch_latency_spec_is_ignored_by_the_root_suite() -> None:
     without a production build."""
     source = ROOT_CONFIG.read_text()
     assert "'**/library-playlist-switch-latency.spec.ts'" in source
+
+
+def test_every_playlist_switch_config_spec_is_ignored_by_the_root_suite() -> None:
+    """if any spec the playlist-switch-latency config selects is reachable from
+    pnpm test:e2e then it runs against the root suite's fixture, which has no
+    "Perf 1k" playlist (LIBM-134's fill spec failed that way on PR #4582)."""
+    config = (
+        REPO / "apps/webui/frontend/tests/e2e/playwright.playlist-switch-latency.config.ts"
+    ).read_text()
+    match = re.search(r"testMatch: \[([^\]]*)\]", config)
+    assert match, "playlist-switch-latency config has no testMatch list"
+    specs = re.findall(r"'([^']+\.spec\.ts)'", match.group(1))
+    assert "library-playlist-fill-pages.spec.ts" in specs, specs
+    source = ROOT_CONFIG.read_text()
+    missing = [spec for spec in specs if f"'**/{spec}'" not in source]
+    assert not missing, f"root playwright.config.ts does not ignore {missing}"
 
 
 def test_smoke_console_exemption_stays_specific_to_the_update_failure() -> None:

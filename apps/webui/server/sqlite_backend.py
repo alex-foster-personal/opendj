@@ -67,6 +67,7 @@ from .backend import (
     Page,
     Pairing,
     Playlist,
+    PlaylistPage,
     Provenance,
     QueueItem,
     QueueKind,
@@ -87,6 +88,7 @@ from .pairings_sqlite import (
     delete_http_pairing,
     list_http_pairings,
 )
+from .playlist_page import playlist_from_header, read_playlist_header, read_playlist_page
 
 log = logging.getLogger(__name__)
 
@@ -725,16 +727,8 @@ class SqliteBackend:
             if not self._table_exists(conn, "playlists"):
                 _warn_fallback_once("get_playlist", "no playlists table")
                 return self._fallback.get_playlist(playlist_id)
-            row = conn.execute(
-                "SELECT playlist_id, name, vendor, vendor_pl_id, "
-                "       created_at, updated_at, forbid_duplicates "
-                "FROM playlists WHERE playlist_id = ? AND deleted_at IS NULL",
-                (playlist_id,),
-            ).fetchone()
-            if row is None:
-                raise NotFoundError(f"playlist not found: {playlist_id}")
-            items: list[str] = []
-            item_ids: list[str] = []
+            row = read_playlist_header(conn, playlist_id)
+            member_rows = []
             if self._table_exists(conn, "playlist_memberships"):
                 member_rows = conn.execute(
                     "SELECT stable_id, item_id FROM playlist_memberships "
@@ -743,15 +737,21 @@ class SqliteBackend:
                     "position",
                     (playlist_id,),
                 ).fetchall()
-                items = [r[0] for r in member_rows]
-                item_ids = [r[1] or "" for r in member_rows]
-        return Playlist(
-            playlist_id=row["playlist_id"], name=row["name"],
-            vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"], items=items,
-            item_ids=item_ids,
-            created_at=row["created_at"], updated_at=row["updated_at"],
-            forbid_duplicates=bool(row["forbid_duplicates"]),
+        return playlist_from_header(
+            row, [r[0] for r in member_rows], [r[1] or "" for r in member_rows],
         )
+
+    def get_playlist_page(
+        self, playlist_id: str, *, limit: int, offset: int,
+    ) -> PlaylistPage:
+        """One ordered window of the live membership (LIBM-133, playlist_page.py)."""
+        with self._ro() as conn:
+            if not self._table_exists(conn, "playlists"):
+                _warn_fallback_once("get_playlist_page", "no playlists table")
+                return self._fallback.get_playlist_page(
+                    playlist_id, limit=limit, offset=offset,
+                )
+            return read_playlist_page(conn, playlist_id, limit=limit, offset=offset)
 
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
         with self._ro() as conn:

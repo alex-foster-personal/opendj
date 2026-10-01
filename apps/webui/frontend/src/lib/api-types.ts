@@ -7251,6 +7251,8 @@ export interface components {
             lane_label?: string | null;
             /** Manifest Path */
             manifest_path?: string | null;
+            /** Pid */
+            pid?: number | null;
             /** Product Name */
             product_name?: string | null;
             /**

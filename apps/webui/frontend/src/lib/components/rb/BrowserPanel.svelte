@@ -72,7 +72,6 @@
 		type SpotifyPendingTrack,
 		fillAllTracksPane,
 		fillPlaylistPane,
-		PLAYLIST_FIRST_PAGE,
 		fillAutolistPane,
 		autolistNode,
 		isAutolistId,
@@ -2063,12 +2062,8 @@
 				await fillPlaylistPane({
 					pane: p,
 					seq,
-					pageSize: PLAYLIST_FIRST_PAGE,
-					fetchPage: (offset) =>
-						listPlaylistTracksPage(node.playlist_id, {
-							limit: PLAYLIST_FIRST_PAGE,
-							offset
-						}),
+					fetchPage: (offset, limit) =>
+						listPlaylistTracksPage(node.playlist_id, { limit, offset }),
 					mapRow: (wire, order) => _rowFromPlaylistWire(wire, order),
 					progressTotal: node.track_count,
 					onFirstPaint: () => {
