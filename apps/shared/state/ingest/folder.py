@@ -353,13 +353,17 @@ def _write_file_tag_metadata(
             stable_id, field_name, value, source="inferred",
             confidence=0.7, modified_at=modified_at,
         )
-    for field_name, value in (("bpm", metadata.bpm), ("key", metadata.key)):
-        if value is None:
+    analysed: tuple[tuple[str, float | str | None], ...] = (
+        ("bpm", metadata.bpm),
+        ("key", metadata.key),
+    )
+    for field_name, tag_value in analysed:
+        if tag_value is None:
             continue
         if state_provenance.read_field(writer.raw_conn, stable_id, field_name) is not None:
             continue
         writer.set_field(
-            stable_id, field_name, value, source="inferred",
+            stable_id, field_name, tag_value, source="inferred",
             confidence=0.7, modified_at=modified_at,
         )
         if field_name == "bpm":

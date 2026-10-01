@@ -29,6 +29,12 @@ from tests.fixtures import tagged_audio as ta
 pytestmark = [pytest.mark.requirement("TAGIO-02"), pytest.mark.requires_ffmpeg]
 
 
+def _tag(path: Path) -> id3v2.Id3Tag:
+    tag = id3v2.read_tag(path)
+    assert tag is not None, f"{path} has no ID3v2 tag"
+    return tag
+
+
 def _decodes(path: Path) -> bool:
     result = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
@@ -52,7 +58,7 @@ def test_written_frames_are_seen_by_an_independent_reader(tmp_path: Path, fmt: s
     assert (read.bpm, read.genre, read.comment) == (128.0, "Tëchno ☃", "über peak ☃")
     assert read.first_other("camelot") == "9A"
     assert read.artist == ta.STANDARD_TAGS["artist"]  # untouched frame survives
-    assert id3v2.read_tag(mp3).version == int(fmt[-1])  # version is kept
+    assert _tag(mp3).version == int(fmt[-1])  # version is kept
     assert _decodes(mp3)
 
 
@@ -71,13 +77,13 @@ def test_a_file_with_no_tag_gets_one_and_keeps_its_audio(tmp_path: Path) -> None
     mp3 = ta.make_untagged_audio(tmp_path, "mp3-v23")
     raw = mp3.read_bytes()
     if raw[:3] == b"ID3":  # ffmpeg may still emit an empty tag; strip it for this case
-        raw = raw[id3v2.read_tag(mp3).original_size:]
+        raw = raw[_tag(mp3).original_size:]
         mp3.write_bytes(raw)
     assert id3v2.read_tag(mp3) is None
     tag = id3v2.load_or_new(mp3)
     tag.set_text("TIT2", "fresh")
     id3v2.save(mp3, tag)
-    assert id3v2.read_tag(mp3).version == 3
+    assert _tag(mp3).version == 3
     assert ta.audio_after_id3(mp3) == raw
     assert tag_reader.read_tags(mp3).title == "fresh"
 
@@ -85,11 +91,11 @@ def test_a_file_with_no_tag_gets_one_and_keeps_its_audio(tmp_path: Path) -> None
 def test_untouched_frames_are_preserved_byte_for_byte(tmp_path: Path) -> None:
     """[if] one frame is upserted [then] every other frame keeps its bytes, [else stop]."""
     mp3 = ta.make_tagged_audio(tmp_path, "mp3-v24")
-    original = {(f.frame_id, f.data) for f in id3v2.read_tag(mp3).frames}
+    original = {(f.frame_id, f.data) for f in _tag(mp3).frames}
     tag = id3v2.load_or_new(mp3)
     tag.set_text("TKEY", "11B")
     id3v2.save(mp3, tag)
-    after = {(f.frame_id, f.data) for f in id3v2.read_tag(mp3).frames}
+    after = {(f.frame_id, f.data) for f in _tag(mp3).frames}
     assert {f for f in original if f[0] != "TKEY"} <= after
 
 
@@ -99,11 +105,11 @@ def test_a_write_that_fits_keeps_the_audio_offset(tmp_path: Path) -> None:
     tag = id3v2.load_or_new(mp3)
     tag.set_text("TIT2", "a much longer title that forces a rewrite with padding" * 4)
     id3v2.save(mp3, tag)
-    padded_size = id3v2.read_tag(mp3).original_size
+    padded_size = _tag(mp3).original_size
     tag = id3v2.load_or_new(mp3)
     tag.set_text("TIT2", "short")
     id3v2.save(mp3, tag)
-    assert id3v2.read_tag(mp3).original_size == padded_size
+    assert _tag(mp3).original_size == padded_size
 
 
 def test_geob_round_trips_with_serato_layout(tmp_path: Path) -> None:
@@ -114,10 +120,10 @@ def test_geob_round_trips_with_serato_layout(tmp_path: Path) -> None:
         tag = id3v2.load_or_new(mp3)
         tag.set_geob("Serato Markers2", payload)
         id3v2.save(mp3, tag)
-    frames = [f for f in id3v2.read_tag(mp3).frames if f.frame_id == "GEOB"]
+    frames = [f for f in _tag(mp3).frames if f.frame_id == "GEOB"]
     assert len(frames) == 1
     assert frames[0].data.startswith(b"\x00application/octet-stream\x00\x00Serato Markers2\x00")
-    assert id3v2.read_tag(mp3).geob() == [("application/octet-stream", "", "Serato Markers2", payload)]
+    assert _tag(mp3).geob() == [("application/octet-stream", "", "Serato Markers2", payload)]
 
 
 def test_popm_rating_round_trips(tmp_path: Path) -> None:
@@ -126,7 +132,7 @@ def test_popm_rating_round_trips(tmp_path: Path) -> None:
     tag = id3v2.load_or_new(mp3)
     tag.set_popm("x@local", 204)
     id3v2.save(mp3, tag)
-    assert id3v2.read_tag(mp3).popm_rating() == 204
+    assert _tag(mp3).popm_rating() == 204
 
 
 def test_a_failed_write_leaves_the_original_file_intact(
@@ -163,7 +169,7 @@ def test_a_v24_unsynchronised_frame_is_decoded(tmp_path: Path) -> None:
     frame = b"TIT2" + size + b"\x00\x02" + body
     mp3 = tmp_path / "u.mp3"
     mp3.write_bytes(_raw_tag(4, frame) + b"\xff\xfb\x90\x00" * 4)
-    tag = id3v2.read_tag(mp3)
+    tag = _tag(mp3)
     assert tag.frames[0].data == b"\x00A\xff\xe0B"
     assert tag.frames[0].format_flags == 0
 
@@ -184,7 +190,7 @@ def test_a_frame_running_past_the_tag_is_an_error(tmp_path: Path) -> None:
     mp3 = tmp_path / "bad.mp3"
     mp3.write_bytes(_raw_tag(3, frame) + b"\xff\xfb\x90\x00" * 4)
     with pytest.raises(id3v2.Id3Error, match="runs past"):
-        id3v2.read_tag(mp3)
+        _tag(mp3)
 
 
 def test_an_opaque_compressed_frame_is_kept_verbatim(tmp_path: Path) -> None:
@@ -196,5 +202,5 @@ def test_an_opaque_compressed_frame_is_kept_verbatim(tmp_path: Path) -> None:
     tag = id3v2.load_or_new(mp3)
     tag.set_text("TIT2", "added")
     id3v2.save(mp3, tag)
-    kept = [f for f in id3v2.read_tag(mp3).frames if f.frame_id == "TXXX"]
+    kept = [f for f in _tag(mp3).frames if f.frame_id == "TXXX"]
     assert [(f.format_flags, f.data) for f in kept] == [(0x80, compressed_body)]
