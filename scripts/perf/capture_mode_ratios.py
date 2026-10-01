@@ -26,15 +26,15 @@ import psutil
 from scripts.diagnostics.probe_log_store import _linear_slope_mb_per_hour
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf.capture_build_identity import (
+    _REPO,
     _frontend_mode,
     _git_sha,
     _verify_capturing_checkout_at,
     _verify_frontend_build_version,
 )
-from scripts.perf.capture_kpi_ledger import build_row, session_meta
+from scripts.perf.capture_kpi_ledger import CaptureMeta, build_row, session_meta
 from scripts.perf.capture_ledger import append_ledger_rows
 
-_REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "mode_ratio_browser.mjs"
 _MIN_SAMPLE_S = 60
@@ -220,6 +220,11 @@ def _read_gig_stable_ids(proc: subprocess.Popen[str]) -> list[str]:
         ids = json.loads(line[len(prefix) :])
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"GIG_STABLE_IDS payload is not valid JSON: {line!r}") from exc
+    return _validate_gig_stable_ids(ids)
+
+
+def _validate_gig_stable_ids(ids: object) -> list[str]:
+    """Exactly `_GIG_DECKS` non-empty string ids, or a RuntimeError naming the defect."""
     if not isinstance(ids, list) or len(ids) != _GIG_DECKS:
         raise RuntimeError(f"GIG_STABLE_IDS must hold exactly {_GIG_DECKS} ids, got {ids!r}")
     if not all(isinstance(stable_id, str) and stable_id for stable_id in ids):
@@ -384,6 +389,65 @@ def _capture_identity_reason(
     return _verify_frontend_build_version(frontend, expected_sha)
 
 
+def _gig_baseline_rows(
+    gig: dict[str, float],
+    trackify: dict[str, float],
+    gig_stable_ids: object,
+    meta: CaptureMeta,
+) -> list[dict[str, Any]]:
+    """The footprint and CPU ratio rows for one Gig-then-Trackify capture.
+
+    Refuses a capture that cannot name its four Gig decks or has a zero
+    denominator: neither is an auditable measurement.
+    """
+    stable_ids = _validate_gig_stable_ids(gig_stable_ids)
+    if gig["footprint_mb"] <= 0 or gig["cpu_percent"] <= 0:
+        raise SystemExit("gig baseline denominators missing or zero; refusing ratio write")
+    footprint_ratio = 1.0 - (trackify["footprint_mb"] / gig["footprint_mb"])
+    cpu_ratio = 1.0 - (trackify["cpu_percent"] / gig["cpu_percent"])
+    note = (
+        f"PERFMODE-15 trackify ratios; gig_fp={gig['footprint_mb']:.2f}MB "
+        f"trackify_fp={trackify['footprint_mb']:.2f}MB "
+        f"gig_cpu={gig['cpu_percent']:.2f}% trackify_cpu={trackify['cpu_percent']:.2f}% "
+        f"samples_gig={int(gig['sample_count'])} "
+        f"samples_trackify={int(trackify['sample_count'])} "
+        f"gig_stable_ids={stable_ids!r}"
+    )
+    return [
+        build_row(
+            kpi=kpi,
+            value=round(value, 4),
+            unit="ratio",
+            method=_METHOD,
+            meta=meta,
+            note=note,
+            measured=True,
+        )
+        for kpi, value in (
+            ("trackify_mode_footprint_ratio", footprint_ratio),
+            ("trackify_mode_cpu_ratio", cpu_ratio),
+        )
+    ]
+
+
+def _append_rows_after_reverification(
+    ledger: Path, rows: list[dict[str, Any]], frontend: str, sha: str, repo_root: Path = _REPO
+) -> None:
+    """Re-run every identity gate after sampling, then append; never append on a refusal.
+
+    Sol P1/BLOCKING (PR #4034, discussion_r4149791234): the leak capture can
+    run for an hour, so every identity gate runs again after sampling and
+    before any row is appended, as capture_library_mode.py does.
+    """
+    post_reason = _capture_identity_reason(frontend, sha, repo_root)
+    if post_reason is not None:
+        raise SystemExit(
+            "refusing to write rows: post-capture reverification failed (checkout or "
+            f"frontend changed during the capture): {post_reason}"
+        )
+    append_ledger_rows(ledger, rows)
+
+
 def main(argv: list[str] | None = None) -> int:
     _require_macos()
     parser = argparse.ArgumentParser(description="Capture Trackify mode KPI ratios")
@@ -417,40 +481,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.gig_baseline:
         gig, trackify, gig_stable_ids = _capture_gig_then_trackify(args.frontend, args.duration_s)
-        if gig["footprint_mb"] <= 0 or gig["cpu_percent"] <= 0:
-            raise SystemExit("gig baseline denominators missing or zero; refusing ratio write")
-        footprint_ratio = 1.0 - (trackify["footprint_mb"] / gig["footprint_mb"])
-        cpu_ratio = 1.0 - (trackify["cpu_percent"] / gig["cpu_percent"])
-        note = (
-            f"PERFMODE-15 trackify ratios; gig_fp={gig['footprint_mb']:.2f}MB "
-            f"trackify_fp={trackify['footprint_mb']:.2f}MB "
-            f"gig_cpu={gig['cpu_percent']:.2f}% trackify_cpu={trackify['cpu_percent']:.2f}% "
-            f"samples_gig={int(gig['sample_count'])} "
-            f"samples_trackify={int(trackify['sample_count'])} "
-            f"gig_stable_ids={gig_stable_ids!r}"
-        )
-        rows.extend(
-            [
-                build_row(
-                    kpi="trackify_mode_footprint_ratio",
-                    value=round(footprint_ratio, 4),
-                    unit="ratio",
-                    method=_METHOD,
-                    meta=meta,
-                    note=note,
-                    measured=True,
-                ),
-                build_row(
-                    kpi="trackify_mode_cpu_ratio",
-                    value=round(cpu_ratio, 4),
-                    unit="ratio",
-                    method=_METHOD,
-                    meta=meta,
-                    note=note,
-                    measured=True,
-                ),
-            ]
-        )
+        rows.extend(_gig_baseline_rows(gig, trackify, gig_stable_ids, meta))
 
     if args.leak_duration_s > 0:
         slope = _capture_trackify_leak(args.frontend, args.leak_duration_s)
@@ -469,13 +500,7 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
-    post_capture_reason = _capture_identity_reason(args.frontend, sha)
-    if post_capture_reason is not None:
-        raise SystemExit(
-            "refusing to write rows: post-capture reverification failed (checkout or "
-            f"frontend changed during the capture): {post_capture_reason}"
-        )
-    append_ledger_rows(args.ledger, rows)
+    _append_rows_after_reverification(args.ledger, rows, args.frontend, sha)
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0
 
