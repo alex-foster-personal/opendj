@@ -13,6 +13,8 @@
  * - if the Done screen does not report the imported count -> broken (#3422, test.fail).
  * - if "Start playing" on the Done screen does not close the wizard -> broken
  *   (#3422, test.fail: the same skip-then-close path that bounces "Skip for now").
+ * - if a first-run screen shows a new user an endpoint path, an error code or
+ *   an env-var name -> broken (#2590, test.fail).
  */
 import { expect, test } from '@playwright/test';
 
@@ -124,5 +126,22 @@ test.describe('onboarding gauntlet: happy path', () => {
 		await page.waitForTimeout(7_000);
 		await expect(setupDialog(page)).toHaveCount(0);
 		await allTracksRowCount(page, TRACKS);
+	});
+
+	test('first-run screens show a new user no endpoints, error codes or env-var names (#2590)', async ({ page }) => {
+		test.fail(true, 'issue #2590: the wizard footnote names /api/v1/setup and detection shows raw codes');
+		await landAndTimeWizard(page, engine.origin);
+		const dialog = setupDialog(page);
+		const seen: string[] = [await dialog.innerText()];
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog.getByLabel('A rekordbox collection on this machine').check();
+		await expect(dialog.getByRole('heading', { name: 'What is on this machine' })).toBeVisible();
+		seen.push(await dialog.innerText());
+		await dialog.getByLabel('A folder of audio files (no rekordbox needed)').check();
+		seen.push(await dialog.innerText());
+
+		const internals = [/\/api\/v1\//, /\brekordbox_not_found\b/, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{3,}\b/];
+		const leaks = seen.flatMap((text) => internals.filter((pattern) => pattern.test(text)).map(String));
+		expect(leaks, 'internals visible on a first-run screen').toEqual([]);
 	});
 });
