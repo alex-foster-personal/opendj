@@ -36,6 +36,7 @@
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
 		analysisIssuesFor,
+		bpmGridHoverText,
 		errColumnTitle,
 		gridFlagFor,
 		camelotKeyColor,
@@ -259,7 +260,7 @@
 		if (row.bpm_status === 'available-not-selected') {
 			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
 		}
-		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`;
+		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row)}`;
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer

@@ -1,4 +1,4 @@
-export { analysisIssuesFor, errColumnTitle, gridFlagFor } from '$lib/rb/analysis-issues';
+export { analysisIssuesFor, bpmGridHoverText, errColumnTitle, gridFlagFor } from '$lib/rb/analysis-issues';
 export { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 export { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 export { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
