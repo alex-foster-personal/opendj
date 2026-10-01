@@ -305,6 +305,13 @@ class AheadDrain:
         for sid in targets:
             try:
                 read = self._src.refresh_tags_fn(sid)
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) and "busy" not in str(exc):
+                    raise
+                # A contended write (seen at boot beside the folder rescan) is
+                # about the moment, not the track: the next tick retries it.
+                log.info("ahead analysis: tags for %s deferred, state db busy: %s", sid, exc)
+                continue
             except Exception as exc:  # noqa: BLE001 - recorded per track, surfaced in coverage
                 errors[sid] = f"{type(exc).__name__}: {exc}"
                 continue

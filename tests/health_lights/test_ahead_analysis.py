@@ -13,6 +13,8 @@ Regression lines:
 """
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from apps.webui.server import ahead_analysis as aa
@@ -34,10 +36,14 @@ class World:
         self.lane_error: str | None = None
         self.blank: set[str] = set()
         self.unreadable: set[str] = set()
+        self.locked: set[str] = set()
         self.tag_runs: list[str] = []
 
     def refresh_tags(self, sid: str) -> bool:
         self.tag_runs.append(sid)
+        if sid in self.locked:
+            self.locked.discard(sid)
+            raise sqlite3.OperationalError("database is locked")
         if sid in self.unreadable:
             return False
         self.blank.discard(sid)
@@ -256,3 +262,15 @@ def test_a_still_unreadable_file_is_tried_once_not_looped() -> None:
     assert world.tag_runs == ["a"], "if an unreadable file is re-read every tick then broken"
     tags = drain.coverage()["lanes"]["tags"]
     assert tags["failed"] == 1 and tags["failed_reasons"] == {"the file still reads no tags": 1}
+
+
+def test_a_busy_state_db_defers_the_tag_read_instead_of_failing_it() -> None:
+    """Live on demon-llama: one boot-time 'database is locked' was recorded as
+    that track's verdict and never retried."""
+    world = World(["a"])
+    world.blank = {"a"}
+    world.locked = {"a"}
+    drain = world.drain()
+    _run_to_green(drain)
+    assert world.tag_runs == ["a", "a"], "if a locked write is not retried then broken"
+    assert drain.coverage()["lanes"]["tags"]["failed"] == 0
