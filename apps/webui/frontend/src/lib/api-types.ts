@@ -7632,6 +7632,13 @@ export interface components {
         };
         /** BrokenTrackList */
         BrokenTrackList: {
+            /** Next Offset */
+            next_offset?: number | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
             /** Total */
             total: number;
             /** Tracks */
@@ -23570,6 +23577,10 @@ export interface operations {
             query?: {
                 /** @description Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing. */
                 playlist_id?: string | null;
+                /** @description Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library. */
+                limit?: number | null;
+                /** @description Rows to skip in the (title, stable_id) ordering. */
+                offset?: number;
             };
             header?: never;
             path?: never;
