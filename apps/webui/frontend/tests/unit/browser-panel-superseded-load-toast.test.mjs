@@ -37,7 +37,6 @@ const PANEL = fileURLToPath(
 
 let contract;
 let fillPlaylistPane;
-let PLAYLIST_FIRST_PAGE;
 before(async () => {
 	contract = await loadTypeScriptModule(
 		'src/lib/components/rb/browser/pane-contract.svelte.ts'
@@ -46,7 +45,6 @@ before(async () => {
 		'src/lib/components/rb/browser/fill-playlist-pane.ts'
 	);
 	fillPlaylistPane = fillMod.fillPlaylistPane;
-	PLAYLIST_FIRST_PAGE = fillMod.PLAYLIST_FIRST_PAGE;
 });
 
 /** Builds the real `_loadPane`, evaluated straight from BrowserPanel.svelte,
@@ -90,7 +88,6 @@ function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 		'_rowFromListWire',
 		'listTracksHydrated',
 		'fillPlaylistPane',
-		'PLAYLIST_FIRST_PAGE',
 		'listPlaylistTracksPage',
 		'recordPlaylistSwitchFirstRowsMs',
 		'recordOpenToLibraryRows',
@@ -131,7 +128,6 @@ function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 			throw new Error('listTracksHydrated must not be called');
 		},
 		fillPlaylistPane,
-		PLAYLIST_FIRST_PAGE,
 		listPlaylistTracksPage,
 		() => {},
 		() => {},
@@ -192,4 +188,30 @@ test('control: a genuine, non-superseded load failure still toasts', async () =>
 	assert.match(toasts[0].msg, /playlist load failed:.*network exploded/);
 	assert.equal(toasts[0].kind, 'error');
 	assert.match(p.error, /network exploded/);
+});
+
+test('LIBM-134: the real _loadPane passes the fill policy limit through to the route', async () => {
+	const p = contract.createPaneStore();
+	const calls = [];
+	const total = 1030;
+	const loadPane = makeLoadPane({
+		listPlaylistTracksPage: async (playlistId, { limit, offset }) => {
+			calls.push({ playlistId, limit, offset });
+			const n = Math.max(0, Math.min(limit, total - offset));
+			const tracks = Array.from({ length: n }, (_, i) => ({ stable_id: `t${offset + i}` }));
+			const next = offset + n;
+			return { page: { tracks, total, next_offset: next >= total ? null : next }, etag: '"e"' };
+		},
+		pushToast: () => {
+			throw new Error('a clean fill must not toast');
+		}
+	});
+
+	await loadPane(p, node('Big'));
+
+	assert.deepEqual(
+		calls.map((c) => [c.offset, c.limit]),
+		[[0, 30], [30, 500], [530, 500]]
+	);
+	assert.equal(p.rows.length, total);
 });
