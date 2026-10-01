@@ -45,7 +45,10 @@ export default defineConfig({
 	use: {
 		baseURL: frontend.origin,
 		viewport: { width: 1280, height: 800 },
-		trace: 'retain-on-failure',
+		// Tracing records DOM snapshots in the very processes this capture
+		// measures, so it would inflate both modes' footprint; the capture's
+		// own KPI_CAPTURE_RESULT carries the failure reason instead.
+		trace: 'off',
 		screenshot: 'only-on-failure'
 	},
 	projects: [

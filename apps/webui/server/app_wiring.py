@@ -138,6 +138,7 @@ from .routes import sql_playground as sql_playground_routes
 from .routes import state as state_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
+from .routes import stem_cache as stem_cache_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
@@ -151,6 +152,7 @@ from .routes import vocals as vocals_routes
 from .routes import voice_probe as voice_probe_routes
 from .routes import worktree_ports as worktree_ports_routes
 from .share_gate import ShareConfig, share_gate_middleware
+from .stem_cache_enforcer import StemCacheEnforcer
 from .usage_telemetry import UsageStore
 
 log = logging.getLogger(__name__)
@@ -227,6 +229,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     # auto-analyze watcher above via the finally, not leak its thread.
     lyric_watcher: lyric_index_autostart.LyricIndexWatcher | None = None
     cloudsync_scheduler: CloudSyncScheduler | None = None
+    stem_cache_enforcer: StemCacheEnforcer | None = None
     try:
         lyric_watcher = getattr(app.state, "lyric_index_watcher", None)
         if lyric_watcher is None:
@@ -242,6 +245,14 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
                 cloudsync_scheduler = CloudSyncScheduler(app)
                 app.state.cloudsync_scheduler = cloudsync_scheduler
             cloudsync_scheduler.start()
+        # STEM-39: armed with stem hydration. A tick evicts nothing unless a
+        # hydration source is armed AND the disk is under its floor.
+        if getattr(app.state, "stem_cache_enforcer_armed", False):
+            stem_cache_enforcer = getattr(app.state, "stem_cache_enforcer", None)
+            if stem_cache_enforcer is None:
+                stem_cache_enforcer = StemCacheEnforcer(app)
+                app.state.stem_cache_enforcer = stem_cache_enforcer
+            stem_cache_enforcer.start()
         jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
         if jobs_watcher is None:
             db = Path(app.state.state_db_path)
@@ -277,6 +288,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         drain = getattr(app.state, "coverage_drain", None)
         if drain is not None:
             drain.stop()
+        if stem_cache_enforcer is not None:
+            stem_cache_enforcer.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()
@@ -418,6 +431,11 @@ def _bind_stem_hydration(app: FastAPI, *, data_dir: Path, enabled: bool) -> None
     app.state.stem_hydration_data_dir = None
     app.state.stem_hydration_unarmed_reason = None
     app.state.stem_hydration_unarmed_kind = None
+    # STEM-39: the disk-aware cache budget is read against this data dir by
+    # the status route on every app, and enforced on a timer only on an app
+    # the daemon entry point armed for hydration.
+    app.state.stem_cache_data_dir = Path(data_dir)
+    app.state.stem_cache_enforcer_armed = enabled
     # Legacy test injection points; production uses stem_hydration_source.
     app.state.stem_hydration_cfg = None
     app.state.stem_hydration_s3 = None
@@ -551,6 +569,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         autolists_routes.router,
         stems_routes.router,
         stems_assets_routes.router,
+        stem_cache_routes.router,
         stem_tiers_routes.router,
         rb_djay_sync_routes.router,
         reconcile_routes.router,
