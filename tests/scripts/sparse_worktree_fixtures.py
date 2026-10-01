@@ -37,7 +37,9 @@ KEPT = (
 )
 # A CGNAT address inside an excluded image: the publication audit must still find it.
 LEAK_PATH = "blog/next-hero-set/hero.png"
-LEAK_TEXT = b"render notes for 100.101.102.103\n"
+# Split so this file itself never carries the address (the audit scans tests too).
+_CGNAT = "100." + "101.102.103"
+LEAK_TEXT = f"render notes for {_CGNAT}\n".encode()
 # Prose linking INTO the excluded media, plus one genuinely dangling link as the
 # control that the link probe can still say "dangling" in both trees.
 LINKING_DOC = "docs/landscape/01-session/notes.md"
