@@ -103,6 +103,9 @@ function _setPlaying(deck: DeckId, playing: boolean): void {
 	st.transport_pending = false;
 }
 
+/** The page clock, in seconds. */
+const _nowSec = (): number => performance.now() / 1000;
+
 /**
  * Lock `follower` to `master`. `play` starts it on the lock; `reanchor`
  * re-phases a follower that is already locked, seeking only when its phase
@@ -147,7 +150,10 @@ async function _join(
 		base: join.tempo,
 		normalization: join.plan.tempoNormalization,
 		sent: join.tempo,
-		busy: false
+		busy: false,
+		joinedAtSec: _nowSec(),
+		overLineTicks: 0,
+		userOffsetMs: 0
 	};
 }
 
@@ -166,6 +172,14 @@ interface PhaseLock {
 	sent: number;
 	/** A trim or re-seek is in flight; the next tick waits for it. */
 	busy: boolean;
+	/** Page-clock time of the join: a re-join is never sooner than
+	 * PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC after it. */
+	joinedAtSec: number;
+	/** Consecutive ticks the error has been past the re-join line. */
+	overLineTicks: number;
+	/** The phase offset the DJ dialed in since the join, wall-clock ms. No Rust
+	 * mode control moves a locked follower yet, so this stays 0. */
+	userOffsetMs: number;
 }
 
 const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};
@@ -236,7 +250,10 @@ export function phaseLockTick(): void {
 				followerBaseTempo: lock.base,
 				normalization: lock.normalization,
 				pitchRangePct: pitchRanges[deck],
-				trimming: lock.sent !== lock.base
+				trimming: lock.sent !== lock.base,
+				sinceJoinSec: _nowSec() - lock.joinedAtSec,
+				overLineTicks: lock.overLineTicks,
+				userOffsetMs: lock.userOffsetMs
 			});
 		} catch (e) {
 			// Thrown inside the state mirror: drop this lock and say why rather
@@ -245,6 +262,10 @@ export function phaseLockTick(): void {
 			st.sync_error = `phase lock: ${e instanceof Error ? e.message : String(e)}`;
 			continue;
 		}
+		// On an uneven grid the base follows the local tempo; every trim and the
+		// release are relative to the base now.
+		lock.base = decision.base;
+		lock.overLineTicks = decision.overLineTicks;
 		if (decision.action === 'reseek') {
 			// A follower in its own loop is the DJ's: it is not seeked out of it.
 			if (st.loop?.engaged) continue;
@@ -543,8 +564,6 @@ export function cancelArmedJump(deck: DeckId): void {
 	if (t !== undefined) clearTimeout(t);
 	delete armedJumps[deck];
 }
-
-const _nowSec = (): number => performance.now() / 1000;
 
 /**
  * The page's hot-cue logic (`hot_cue_*` in performance-ipc) driving this
