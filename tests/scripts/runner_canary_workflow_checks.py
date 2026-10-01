@@ -313,6 +313,20 @@ def drift_problems(ci_doc: dict[str, Any], canary_doc: dict[str, Any]) -> list[s
     return problems
 
 
+def fixture_skip_flag_problems(config: dict[str, Any], canary_doc: dict[str, Any]) -> list[str]:
+    """The report's unequal-work cap (Sol P1 on 0e7388c6f) keys on the config flag, so the
+    flag must say exactly what the workflow env does, in both directions."""
+    env = canary_doc["jobs"][SHARD_JOB].get("env") or {}
+    skips = env.get("MDT_ALLOW_MISSING_FIXTURES") == "1"
+    if config["vendor_skips_external_fixtures"] is not skips:
+        return [
+            f"ci/runner-canary.json vendor_skips_external_fixtures is "
+            f"{config['vendor_skips_external_fixtures']!r}, but the canary shard env "
+            f"{'sets' if skips else 'does not set'} MDT_ALLOW_MISSING_FIXTURES=1"
+        ]
+    return []
+
+
 def _branch_filter_matches(pattern: str, branch: str) -> bool:
     """GitHub's branch filter glob: `**` crosses `/`, `*` does not. `!` negation refused."""
     assert not pattern.startswith("!"), f"negated filter {pattern!r} is not modelled"
