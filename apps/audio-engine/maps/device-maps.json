@@ -977,7 +977,7 @@
   },
   {
    "vendor": "Reloop",
-   "nameMatch": "\\bMixtour\\b(?!\\s+Pro\\b)",
+   "nameMatch": "\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))",
    "bindings": [
     {"source":{"ch":1,"kind":"note","id":12},"action":{"type":"deck_play_toggle","deck":1}},
     {"source":{"ch":1,"kind":"note","id":11},"action":{"type":"deck_cue","deck":1}},

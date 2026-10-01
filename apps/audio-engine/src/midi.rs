@@ -121,9 +121,29 @@ pub enum Action {
     Page,
 }
 
-/// The page actions this engine forwards rather than applies.
-const PAGE_ACTIONS: &[&str] =
-    &["deck_hot_cue", "channel_cue", "headphone_mix", "headphone_level", "master_cue", "browse_encoder", "browse_load"];
+/// The page actions this engine forwards rather than applies. The second
+/// group arrived with the Mixtour Pro map: each one reads page-owned state
+/// (beat sync, key sync, pad mode, the loop state machine), so the page's
+/// `handleMidiAction` stays their one implementation.
+const PAGE_ACTIONS: &[&str] = &[
+    "deck_hot_cue",
+    "channel_cue",
+    "headphone_mix",
+    "headphone_level",
+    "master_cue",
+    "browse_encoder",
+    "browse_load",
+    "deck_sync_toggle",
+    "deck_key_sync_toggle",
+    "deck_auto_loop_toggle",
+    "deck_manual_loop_cycle",
+    "deck_loop_scale",
+    "deck_key_nudge",
+    "deck_tempo_nudge",
+    "deck_stem_eq_toggle",
+    "controller_pad_mode",
+    "controller_pad",
+];
 
 #[derive(Clone, Debug)]
 pub struct Binding {
@@ -698,6 +718,10 @@ mod tests {
     use super::*;
 
     const FLX4: &str = "Pioneer DJ DDJ-FLX4 MIDI 1";
+    const PRO: &str = r"\bMixtour\s+Pro\b";
+    const CLASSIC: &str = r"\bMixtour\b(?:$|\S|\s+(?:$|[^\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\w))";
+    /// Shared with the page's unit suite, so both matchers answer one list.
+    const NAME_MATCH_CASES: &str = include_str!("../tests/fixtures/name-match-cases.json");
 
     fn router() -> Router {
         Router::new(MapSet::builtin().unwrap())
@@ -730,7 +754,7 @@ mod tests {
     fn the_builtin_export_holds_every_page_map() {
         let m = MapSet::builtin().unwrap();
         let names: Vec<&str> = m.builtin.iter().map(|m| m.name_match.as_str()).collect();
-        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", "Mixtour", "DDJ-FLX4"]);
+        assert_eq!(names, ["DDJ-FLX10", "DDJ-400", PRO, CLASSIC, "DDJ-FLX4"]);
         // Every binding in the export loaded (none silently skipped).
         let v: Value = serde_json::from_str(BUILTIN_MAPS_JSON).unwrap();
         for (map, raw) in m.builtin.iter().zip(v["maps"].as_array().unwrap()) {
@@ -744,8 +768,93 @@ mod tests {
         let m = MapSet::builtin().unwrap();
         assert_eq!(m.resolve(FLX4).unwrap().name_match, "DDJ-FLX4");
         assert_eq!(m.resolve("ddj-flx10").unwrap().name_match, "DDJ-FLX10");
-        assert_eq!(m.resolve("Reloop Mixtour Pro").unwrap().name_match, "Mixtour");
         assert!(m.resolve("IAC Driver Bus 1").is_none());
+    }
+
+    /// What one port name resolves to, as the fixture spells it.
+    fn mixtour_kind(m: &MapSet, port: &str) -> &'static str {
+        match m.resolve(port).map(|d| d.name_match.as_str()) {
+            Some(CLASSIC) => "classic",
+            Some(PRO) => "pro",
+            None => "none",
+            Some(other) => panic!("{port:?} resolved to an unexpected map {other:?}"),
+        }
+    }
+
+    fn name_cases() -> Vec<(String, String)> {
+        let v: Value = serde_json::from_str(NAME_MATCH_CASES).unwrap();
+        let cases: Vec<(String, String)> = v["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["port"].as_str().unwrap().to_string(), c["want"].as_str().unwrap().to_string()))
+            .collect();
+        // The fixture must exercise all three outcomes, or a truncated file
+        // would pass as "every case agreed".
+        for want in ["classic", "pro", "none"] {
+            assert!(cases.iter().any(|(_, w)| w == want), "the fixture holds no {want} case");
+        }
+        cases
+    }
+
+    #[test]
+    fn mixtour_and_mixtour_pro_never_resolve_to_each_other() {
+        let m = MapSet::builtin().unwrap();
+        // The same two maps with the classic one FIRST: the exclusion lives in
+        // the pattern, so it must not depend on the export's order.
+        let mut swapped = MapSet::builtin().unwrap();
+        swapped.builtin.reverse();
+        let classic = m.builtin.iter().find(|d| d.name_match == CLASSIC).expect("the classic Mixtour map");
+        let pro = m.builtin.iter().find(|d| d.name_match == PRO).expect("the Mixtour Pro map");
+        for (port, want) in name_cases() {
+            assert_eq!(mixtour_kind(&m, &port), want, "export order, port {port:?}");
+            assert_eq!(mixtour_kind(&swapped, &port), want, "reversed order, port {port:?}");
+            // Each pattern on its own, in both directions.
+            assert_eq!(classic.matches(&port), want == "classic", "classic pattern alone, port {port:?}");
+            assert_eq!(pro.matches(&port), want == "pro", "Pro pattern alone, port {port:?}");
+        }
+    }
+
+    #[test]
+    fn every_exported_name_match_compiles_in_this_engine() {
+        // regex_lite has no look-around or backreferences, and the page's
+        // RegExp accepts both, so a map can load there and be refused here.
+        let v: Value = serde_json::from_str(BUILTIN_MAPS_JSON).unwrap();
+        let maps = v["maps"].as_array().unwrap();
+        assert!(maps.len() >= 5, "expected every page map in the export, found {}", maps.len());
+        for raw in maps {
+            let pattern = raw["nameMatch"].as_str().expect("nameMatch is a string");
+            if let Err(e) = regex_lite::Regex::new(&format!("(?i){pattern}")) {
+                panic!("exported nameMatch {pattern:?} does not compile in regex_lite: {e}");
+            }
+        }
+        // Control: the guard fires on the pattern that caused this, through
+        // the same loader the engine uses.
+        let lookahead = json!({"vendor": "X", "nameMatch": "\\bMixtour\\b(?!\\s+Pro\\b)", "bindings": []});
+        let e = DeviceMap::from_json(&lookahead).unwrap_err();
+        assert!(e.contains("not a valid pattern"), "{e}");
+    }
+
+    #[test]
+    fn the_mixtour_pro_page_actions_are_forwarded_not_refused() {
+        let mut r = router();
+        // Pro deck 1 SYNC, read from the export rather than hard-coded here.
+        let v: Value = serde_json::from_str(BUILTIN_MAPS_JSON).unwrap();
+        let pro = v["maps"].as_array().unwrap().iter().find(|m| m["nameMatch"] == PRO).expect("the Mixtour Pro map");
+        let sync = pro["bindings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["action"]["type"] == "deck_sync_toggle" && b["action"]["deck"] == 1 && b["shift"] != true)
+            .expect("a deck 1 SYNC binding");
+        assert_eq!(sync["source"]["kind"], "note");
+        let ch = sync["source"]["ch"].as_u64().unwrap() as u8;
+        let id = sync["source"]["id"].as_u64().unwrap() as u8;
+        let out = feed(&mut r, "Reloop Mixtour Pro", &[0x90 | (ch - 1), id, 0x7f]);
+        match out.as_slice() {
+            [Routed::Page { action, .. }] => assert_eq!(action, &sync["action"]),
+            other => panic!("expected the SYNC action forwarded to the page, got {other:?}"),
+        }
     }
 
     // Recorded FLX4 wire bytes, from the [PDF] rows the TS map cites
