@@ -42,8 +42,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from pyrekordbox.anlz import AnlzFile
-
 from apps.adapters.rekordbox import config
 from apps.adapters.rekordbox.errors import _open_ro
 from apps.adapters.rekordbox.models import RbRowMeta
@@ -146,6 +144,10 @@ def _grid_identity(
 def read_pqtz_grid(dat_path: Path) -> tuple[list[float], list[float]] | None:
     """`(beat times s, per-beat bpm)` from a rekordbox ANLZ file's PQTZ tag,
     or None when the file carries no PQTZ tag."""
+    # Imported here, not at module scope: the standalone engine imports this
+    # module with pyrekordbox absent (STANDALONE-01) and never reaches a scan.
+    from pyrekordbox.anlz import AnlzFile
+
     anlz = AnlzFile.parse_file(str(dat_path))
     pqtz = next((tag for tag in anlz.tags if tag.type == "PQTZ"), None)
     if pqtz is None:
