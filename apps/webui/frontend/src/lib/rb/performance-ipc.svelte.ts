@@ -1550,18 +1550,21 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
 }
 
 /** Live-derive `remaining_ms` from the AudioContext clock rather than
- * trusting a cached countdown, then self-clear once the schedule has landed -
- * the same "recompute, don't cache" rule `deckTransportClock` follows. */
+ * trusting a cached countdown - the same "recompute, don't cache" rule
+ * `deckTransportClock` follows. A landed schedule reads as null.
+ *
+ * These snapshots are READ paths: queryPerformanceState() runs inside
+ * `$derived` (WaveRow.svelte, Deck.svelte), and Svelte throws
+ * `state_unsafe_mutation` on any `$state` write from there. So an expired
+ * record is never cleared here; it is reported as null and left for the
+ * command paths (the next arm, unload, or session teardown) to overwrite. */
 function _waveformSeekArmedSnapshot(
 	deckId: DeckId
 ): { target_position_ms: number; remaining_ms: number } | null {
 	const armed = waveformSeekArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		waveformSeekArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -1571,10 +1574,7 @@ function _hotCueArmedSnapshot(
 	const armed = hotCueArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		hotCueArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { slot: armed.slot, target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
 }
 
@@ -1584,10 +1584,7 @@ function _quantizedLaunchArmedSnapshot(
 	const armed = quantizedLaunchArmed[deckId];
 	if (armed === null) return null;
 	const remainingMs = (armed.launch_at_context_sec - _quantizedLaunchDriver.contextTimeNowSec()) * 1000;
-	if (remainingMs <= 0) {
-		quantizedLaunchArmed[deckId] = null;
-		return null;
-	}
+	if (remainingMs <= 0) return null;
 	return { remaining_ms: remainingMs, launch_at_context_sec: armed.launch_at_context_sec };
 }
 
@@ -2063,7 +2060,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		if (command.playing) {
 			if (command.start_at_context_sec !== undefined) {
 				await engine.play(command.deck, pressT0Ms, command.start_at_context_sec);
-			} else if (quantizedLaunchArmed[command.deck] !== null && command.quantize !== true) {
+			} else if (_quantizedLaunchArmedSnapshot(command.deck) !== null && command.quantize !== true) {
+				// The snapshot, not the raw record: a launch that has already
+				// landed is not cleared by reads, and must not turn this press
+				// into a disarm.
 				quantizedLaunchArmed[command.deck] = null;
 				_quantizedLaunchDriver.clear(command.deck);
 			} else if (command.quantize === true) {
