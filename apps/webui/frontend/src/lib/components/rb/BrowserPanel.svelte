@@ -2303,12 +2303,6 @@
 		file_availability?: BrowserRow['file_availability'];
 	};
 
-	/** PERF-RB-01: disk truth not probed yet (file_exists null). Refused with
-	 * its own reason, never reported as a missing file. */
-	function _availabilityPending(row: LoadableRow): boolean {
-		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
-	}
-
 	function loadRow(
 		row: LoadableRow,
 		deck: DeckId | null,
@@ -2549,15 +2543,12 @@
 			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
-		if (_availabilityPending(row)) {
-			pushToast('preview: availability still checking (wait for disk probe)', 'error');
-			return;
-		}
 		if (isRemovedStickRow(row)) {
 			pushToast('preview: Stick removed', 'error');
 			return;
 		}
-		if (!row.file_exists) {
+		// Pin c90b8036d495: null means not probed yet, and the preview is the probe.
+		if (row.file_exists === false) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
 		}
@@ -2595,16 +2586,14 @@
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
 				return;
 			}
-			if (_availabilityPending(row)) {
-				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
-				return;
-			}
 			if (isRemovedStickRow(row)) {
 				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
-			if (!row.file_exists) {
-				// FR-1: broken-link rows stay selectable but never load.
+			if (row.file_exists === false) {
+				// FR-1: broken-link rows stay selectable but never load. A row
+				// whose disk truth is not probed yet (null) is NOT refused: the
+				// load is the probe (pin c90b8036d495).
 				pushToast('cannot load: audio file missing on disk (broken link)', 'error');
 				return;
 			}
