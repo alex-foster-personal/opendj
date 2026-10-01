@@ -1894,6 +1894,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/enrich/decisions/{lane}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Decision */
+        put: operations["put_decision_api_v1_enrich_decisions__lane__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/enrich/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Summary */
+        get: operations["get_summary_api_v1_enrich_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entitlements": {
         parameters: {
             query?: never;
@@ -8934,18 +8968,6 @@ export interface components {
             batch: string;
             /** Filename */
             filename: string;
-        };
-        /** DecisionIn */
-        DecisionIn: {
-            /**
-             * Action
-             * @enum {string}
-             */
-            action: "merge" | "keep-all" | "skip";
-            /** Cluster Key */
-            cluster_key: string;
-            /** Survivor */
-            survivor: string;
         };
         /** DecisionOut */
         DecisionOut: {
@@ -16419,6 +16441,23 @@ export interface components {
              */
             vendor: "rekordbox" | "djay";
         };
+        /** DecisionIn */
+        apps__webui__server__routes__dedup_review__DecisionIn: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "merge" | "keep-all" | "skip";
+            /** Cluster Key */
+            cluster_key: string;
+            /** Survivor */
+            survivor: string;
+        };
+        /** DecisionIn */
+        apps__webui__server__routes__enrich__DecisionIn: {
+            /** Answer */
+            answer: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -19884,7 +19923,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DecisionIn"];
+                "application/json": components["schemas"]["apps__webui__server__routes__dedup_review__DecisionIn"];
             };
         };
         responses: {
@@ -19979,6 +20018,65 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    put_decision_api_v1_enrich_decisions__lane__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lane: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["apps__webui__server__routes__enrich__DecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_summary_api_v1_enrich_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
