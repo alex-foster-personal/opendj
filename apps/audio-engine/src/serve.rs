@@ -2520,8 +2520,16 @@ mod tests {
             });
             // Control: a working output keeps a session with stdin open going.
             writeln!(writer, "{line}").unwrap();
-            assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "{line}: serve ended with its output working");
-            assert!(String::from_utf8(out.text.0.lock().unwrap().clone()).unwrap().contains(r#""type":"result""#));
+            let has_result = || String::from_utf8(out.text.0.lock().unwrap().clone()).unwrap().contains(r#""type":"result""#);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !has_result() && Instant::now() < deadline {
+                if let Ok(r) = rx.recv_timeout(Duration::from_millis(5)) {
+                    panic!("{line}: serve ended with its output working: {r:?}");
+                }
+            }
+            assert!(has_result(), "{line}: the result never arrived with the output working");
+            // A loaded host can only make this pass more easily, never fail it.
+            assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "{line}: serve ended after its result with the output working");
             out.fail.store(true, Ordering::Relaxed);
             writeln!(writer, "{line}").unwrap();
             let r = rx.recv_timeout(Duration::from_secs(10)).unwrap_or_else(|_| panic!("{line}: serve kept running with its output closed"));

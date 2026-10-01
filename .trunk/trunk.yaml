@@ -31,15 +31,18 @@ lint:
     - osv-scanner@2.6.0
     - renovate@44.115.13
     # Same version as ops/quality/requirements.txt so trunk and `just quality`
-    # agree; ruff reads [tool.ruff] from pyproject.toml. Lint only: trunk ships
-    # ruff's format command disabled, and the repo forbids whole-file ruff format.
+    # agree; ruff reads [tool.ruff] from pyproject.toml. Lint only for now: trunk
+    # ships ruff's format command disabled, and it stays disabled until issue
+    # #4456's Python parts land. Ratified formatter: ruff format, line-length 120
+    # and the *.md exclusion from pyproject.toml (specs/formatter-adoption.md).
     - ruff@0.16.3
     - shellcheck@0.11.0
     - trufflehog@3.97.9
     - yamllint@1.38.0
     - zizmor@1.30.1
   disabled:
-    # ruff owns import order (select "I") and there is no Python formatter gate.
+    # ruff owns import order (select "I") and ruff format is the ratified Python
+    # formatter (issue #4456), so black and isort stay off.
     - black
     - isort
     # The mypy ratchet needs its pinned isolated env (`just typecheck`); trunk's
@@ -49,7 +52,10 @@ lint:
     - bandit
     # Only CKV_GHA_7 on workflow_dispatch inputs here; zizmor/actionlint cover workflows.
     - checkov
-    # apps/webui/frontend has no prettier config; it would restyle the whole frontend.
+    # Ratified for apps/webui/frontend only: prettier 3.9.9 + prettier-plugin-svelte
+    # 4.1.1, useTabs, singleQuote, trailingComma none, printWidth 100 (issue #4456).
+    # Enabled by that part together with its .prettierrc; trunk's default file list
+    # also covers markdown, yaml, json and html, which must stay unformatted.
     - prettier
     # No cargo fmt/clippy gate in CI; clippy failed to build all 5 crates in the sample.
     - clippy
@@ -60,8 +66,11 @@ lint:
     - gitleaks
     # pinact 5 rejects the `-format` flag trunk plugins v1.11.0 passes; all actions are SHA-pinned already.
     - pinact
-    # Whole-file formatters with no existing gate: they would churn untouched lines.
+    # Ratified as shfmt 3.14.1 `-i 4 -ci` (issue #4456), enabled by the shell part.
+    # Its run command gets overridden then: trunk's default is `shfmt -w -s`, and
+    # the -s simplify rewrite was not part of what was ratified.
     - shfmt
+    # No TOML formatter was chosen (issue #4456): churn with no gate.
     - taplo
     # Rewrite PNG/SVG evidence assets in place.
     - oxipng
