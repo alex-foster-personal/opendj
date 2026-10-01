@@ -383,6 +383,23 @@ def _claude_record(pr: str, sha: str) -> Path:
     return CFG.STATE_DIR / f"pr{pr}-{sha}.claude-attempted"
 
 
+def claim_claude_attempt(record: Path) -> bool:
+    """Create `record` exclusively; False when another sweep already holds it.
+
+    O_EXCL makes check and create one atomic step, so two concurrent sweeps at
+    the same head cannot both pass an existence check and both spend a Claude
+    review. The claim is taken BEFORE the run: a crash mid-run still counts as
+    the one try."""
+    record.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(record, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "w") as handle:
+        handle.write(f"{datetime.now(UTC).isoformat()}\n")
+    return True
+
+
 def _report(pr: str, decision: Decision) -> Decision:
     print(f"{TAG} #{pr} {decision.action}: {decision.reason}", flush=True)
     return decision
@@ -404,9 +421,8 @@ def process_pr(pr: str, dry_run: bool) -> Decision:
     if decision.action != Action.RUN_CLAUDE:
         return decision
     _require_head(pr, state.head_sha)
-    # Recorded BEFORE the run: a crash mid-run must still count as the one try.
-    record.parent.mkdir(parents=True, exist_ok=True)
-    record.write_text(f"{datetime.now(UTC).isoformat()}\n")
+    if not claim_claude_attempt(record):
+        return _report(pr, decide(state, now, sol=sol, claude_attempted=True))
     code, _ = _run_lane("scripts.claude_review", pr)
     claude = LaneResult(code)
     return _report(pr, decide(state, now, sol=sol, claude_attempted=True, claude=claude))

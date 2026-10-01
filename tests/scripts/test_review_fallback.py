@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from scripts.review_fallback import (
     FallbackError,
     HeadState,
     LaneResult,
+    claim_claude_attempt,
     codex_artifacts,
     codex_artifacts_on,
     decide,
@@ -288,6 +290,31 @@ def test_claude_exit_0_is_covered_and_exit_3_is_exhausted() -> None:
     sol = LaneResult(3)
     assert _after_notice(sol=sol, claude_attempted=True, claude=LaneResult(0)) is Action.COVERED
     assert _after_notice(sol=sol, claude_attempted=True, claude=LaneResult(3)) is Action.EXHAUSTED
+
+
+@pytest.mark.requirement("REVIEW-12")
+def test_the_first_claude_claim_at_a_head_wins_and_writes_the_record(tmp_path: Path) -> None:
+    """[if] no sweep has claimed this head [then] the claim succeeds and leaves a record, [else stop]."""
+    record = tmp_path / "state" / "pr4546-abc.claude-attempted"
+    assert claim_claude_attempt(record) is True
+    assert record.read_text().strip()
+
+
+@pytest.mark.requirement("REVIEW-12")
+def test_a_second_claude_claim_at_the_same_head_loses(tmp_path: Path) -> None:
+    """[if] another sweep already claimed this head [then] this one does not run Claude, [else stop]."""
+    record = tmp_path / "pr4546-abc.claude-attempted"
+    assert claim_claude_attempt(record) is True
+    first = record.read_text()
+    assert claim_claude_attempt(record) is False
+    assert record.read_text() == first, "the losing claim must not rewrite the winner's record"
+
+
+def test_concurrent_claude_claims_have_exactly_one_winner(tmp_path: Path) -> None:
+    record = tmp_path / "pr4546-abc.claude-attempted"
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        wins = list(pool.map(lambda _: claim_claude_attempt(record), range(64)))
+    assert wins.count(True) == 1
 
 
 @pytest.mark.parametrize("lane", ["sol", "claude"])
