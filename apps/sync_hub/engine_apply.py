@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -374,14 +375,10 @@ def _replace_members(
     ``tests/cloudsync/test_replace_members_soft_delete.py``.
     """
     columns = protocol.table_columns(conn, MEMBERSHIP_TABLE)
-    conn.execute(f"DELETE FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?", (playlist_id,))
-    sql = (
-        f"INSERT INTO {MEMBERSHIP_TABLE} ({', '.join(columns)}) "
-        f"VALUES ({', '.join('?' for _ in columns)})"
-    )
     stored_tracks = _stored_track_ids(
         conn, [str(member.get("stable_id") or "") for member in members]
     )
+    kept: list[tuple[Any, ...]] = []
     for member in members:
         offered = set(member)
         if offered != set(columns):
@@ -403,13 +400,62 @@ def _replace_members(
                 MEMBERSHIP_TABLE, playlist_id, member.get("position"), track_id,
             )
             continue
+        kept.append(tuple(member[column] for column in columns))
+    if _bundle_unchanged(conn, playlist_id, columns, kept):
+        return
+    _write_members(conn, playlist_id, columns, kept)
+
+
+def _write_members(
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    columns: Sequence[str],
+    kept: Sequence[tuple[Any, ...]],
+) -> None:
+    """Replace the playlist's stored bundle with ``kept``, one row per member."""
+    conn.execute(f"DELETE FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?", (playlist_id,))
+    sql = (
+        f"INSERT INTO {MEMBERSHIP_TABLE} ({', '.join(columns)}) "
+        f"VALUES ({', '.join('?' for _ in columns)})"
+    )
+    position = columns.index("position")
+    for values in kept:
         try:
-            conn.execute(sql, tuple(member[column] for column in columns))
+            conn.execute(sql, values)
         except sqlite3.IntegrityError as exc:
             raise SyncApplyError(
                 f"{MEMBERSHIP_TABLE}: playlist {playlist_id} position "
-                f"{member.get('position')!r} violates a constraint ({exc})"
+                f"{values[position]!r} violates a constraint ({exc})"
             ) from exc
+
+
+def _bundle_unchanged(
+    conn: sqlite3.Connection,
+    playlist_id: str,
+    columns: Sequence[str],
+    kept: Sequence[tuple[Any, ...]],
+) -> bool:
+    """True when the stored bundle holds exactly ``kept``, value and type alike.
+
+    Then deleting it and inserting ``kept`` would leave the table as it is:
+    a first sync of the 10,000-track fixture did that twice on the spoke,
+    10,042 deletes and 10,042 inserts each, when the pull brought its own
+    playlist back and when identity repair re-sent it (LIBM-120 L6 round 7).
+    Types are compared as well as values, so ``3`` and ``3.0`` differ and a
+    bundle whose values only compare equal is still replaced: a skip is
+    taken only when the replace provably changes nothing.
+    """
+    stored = conn.execute(
+        f"SELECT {', '.join(columns)} FROM {MEMBERSHIP_TABLE} WHERE playlist_id = ?",
+        (playlist_id,),
+    ).fetchall()
+    if len(stored) != len(kept):
+        return False
+    return Counter(map(_typed, stored)) == Counter(map(_typed, kept))
+
+
+def _typed(values: Sequence[Any]) -> tuple[tuple[type, Any], ...]:
+    return tuple((type(value), value) for value in values)
 
 
 def _stored_track_ids(conn: sqlite3.Connection, track_ids: Sequence[str]) -> frozenset[str]:

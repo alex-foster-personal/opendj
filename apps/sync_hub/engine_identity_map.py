@@ -2,7 +2,7 @@
 
 ``rewrite_incoming_change`` only sees remaps from the CURRENT ``hub_apply``.
 A first-sync splits tracks and playlists across HTTP batches
-(``PUSH_BATCH_ROWS`` is 200), so a playlist naming a collapse loser 409s
+(``PUSH_BATCH_ROWS`` rows each), so a playlist naming a collapse loser 409s
 with FOREIGN KEY. This table is bookkeeping, not in the sync set.
 
 Spoke-side, content-identity duplicates in ONE library have to remap their

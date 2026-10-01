@@ -29,12 +29,12 @@ from apps.stems.artifacts import (
 from apps.webui.server.routes.stems import router
 
 REAL_MP3_BUNDLE = Path(
-    "/private/tmp/claude-502/-Users-maintainer-code-music-dj-tools-lanes/"
+    "/private/tmp/claude-502/-Users-dev-code-music-dj-tools-lanes/"
     "ebd907a5-4922-486d-b381-b825be5f341b/scratchpad/realstems/"
     "002acb181dceb41f9efc5ceb11b1d16560918f84"
 )
 REAL_FLAC_BUNDLE = Path(
-    "/private/tmp/claude-502/-Users-maintainer-code-music-dj-tools-lanes/"
+    "/private/tmp/claude-502/-Users-dev-code-music-dj-tools-lanes/"
     "ebd907a5-4922-486d-b381-b825be5f341b/scratchpad/realstems/"
     "331f7de0240e1abf924f5f9d0b183ff1f2c86cfa"
 )

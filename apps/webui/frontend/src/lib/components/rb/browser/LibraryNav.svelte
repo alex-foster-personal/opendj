@@ -60,9 +60,38 @@
 		showPlaylistTools={activeTab === 'playlists'}
 		onPlaylistTreeViewChange={handlePlaylistTreeViewChange}
 	/>
+	{#if activeTab === 'autolists'}
+		<TreeContextMenu
+			bind:this={treeContextMenu}
+			onselect={() => {}}
+			ondeletesmartlist={(sl) => deleteSmartlistUi?.(sl)}
+			oncreatesmartlist={() => void handleNewSmartlist()}
+			onrenamesmartlist={(sl) => treeSmartlistSection?.beginRename(sl)}
+			onduplicatesmartlist={(sl) => treeSmartlistSection?.duplicateFromMenu(sl)}
+		/>
+	{/if}
 	{#if autolistsMounted}
-		<div class="autolist-browser-wrap" class:hidden={activeTab !== 'autolists'}>
-			<AutolistBrowser onselectionchange={(sel, title) => onautolistchange?.(sel, title)} />
+		<div
+			class="autolists-body"
+			class:hidden={activeTab !== 'autolists'}
+			data-testid="autolists-body"
+		>
+			<div class="autolist-browser-wrap">
+				<AutolistBrowser onselectionchange={(sel, title) => onautolistchange?.(sel, title)} />
+			</div>
+			{#if activeTab === 'autolists'}
+				<div class="autolists-scroll" data-testid="autolists-scroll">
+					<TreeSmartlistSection
+						bind:this={treeSmartlistSection}
+						selectedId={playlistTreeProps.selectedId}
+						onselectsmartlist={playlistTreeProps.onselectsmartlist}
+						{treeContextMenu}
+						onDeleteReady={(fn) => {
+							deleteSmartlistUi = fn;
+						}}
+					/>
+				</div>
+			{/if}
 		</div>
 	{/if}
 	{#if activeTab === 'playlists'}
@@ -73,27 +102,7 @@
 		/>
 	{:else if activeTab === 'taglists'}
 		<TaglistTree selectedId={playlistTreeProps.selectedId} onselect={playlistTreeProps.onselect} />
-	{:else if activeTab === 'autolists'}
-		<TreeContextMenu
-			bind:this={treeContextMenu}
-			onselect={() => {}}
-			ondeletesmartlist={(sl) => deleteSmartlistUi?.(sl)}
-			oncreatesmartlist={() => void handleNewSmartlist()}
-			onrenamesmartlist={(sl) => treeSmartlistSection?.beginRename(sl)}
-			onduplicatesmartlist={(sl) => treeSmartlistSection?.duplicateFromMenu(sl)}
-		/>
-		<div class="autolists-scroll">
-			<TreeSmartlistSection
-				bind:this={treeSmartlistSection}
-				selectedId={playlistTreeProps.selectedId}
-				onselectsmartlist={playlistTreeProps.onselectsmartlist}
-				{treeContextMenu}
-				onDeleteReady={(fn) => {
-					deleteSmartlistUi = fn;
-				}}
-			/>
-		</div>
-	{:else}
+	{:else if activeTab !== 'autolists'}
 		<UsbSourceList />
 	{/if}
 	<UsbPanel />
@@ -107,13 +116,33 @@
 		min-height: 0;
 		height: 100%;
 	}
-	.autolist-browser-wrap.hidden {
+	.autolists-body.hidden {
 		display: none;
 	}
-	.autolists-scroll {
-		flex: 1;
+	.autolists-body {
+		flex: 1 1 0;
 		min-height: 0;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.autolist-browser-wrap {
+		flex: 0 1 auto;
+		min-height: 0;
+		max-height: 50%;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+	.autolists-scroll {
+		flex: 1 1 0;
+		min-height: 44px;
 		overflow-y: auto;
 		padding: 2px 0;
+	}
+	@media (max-height: 799px) {
+		.autolist-browser-wrap {
+			max-height: 40%;
+		}
 	}
 </style>

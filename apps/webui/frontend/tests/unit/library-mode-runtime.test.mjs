@@ -28,6 +28,30 @@ export { registerAudioContext, resetAudioContextRegistryForTest } from '$lib/rb/
 	}
 }
 
+const STEM_POOL_PROBE_ENTRY_REL = 'tests/unit/.tmp_library_mode_stem_pool_probe_entry.ts';
+
+/** `releaseGigRuntime` and `disposeStemDecoderPools` bundled TOGETHER, so they
+ * share the same `flac-decoder-pool.ts` module-level state (`_liveDecoders`,
+ * `_pools`) -- `loadTypeScriptModule` esbuild-bundles its whole dependency
+ * tree per call, so a separately loaded `flac-decoder-pool.ts` module in
+ * another test file is a DIFFERENT instance and could never observe what
+ * `releaseGigRuntime` disposes. */
+async function loadRuntimeWithStemPool() {
+	const entryAbs = join(FRONTEND_ROOT, STEM_POOL_PROBE_ENTRY_REL);
+	writeFileSync(
+		entryAbs,
+		`export * from '$lib/rb/library-mode-runtime';
+export { takeDecoder, returnDecoder, activeStemWorkerCount } from '$lib/player/decode/flac-decoder-pool';
+`
+	);
+	try {
+		const text = await bundleTypeScriptModule(STEM_POOL_PROBE_ENTRY_REL);
+		return await importBundledSource(text, STEM_POOL_PROBE_ENTRY_REL);
+	} finally {
+		rmSync(entryAbs, { force: true });
+	}
+}
+
 test('readLibraryModeIdleProbe reports leaked audio contexts when engine state is uninitialized', async () => {
 	const mod = await loadRuntimeWithRegistry();
 	mod.resetAudioContextRegistryForTest();
@@ -45,6 +69,7 @@ test('readLibraryModeIdleProbe returns serializable counts', () => {
 	assert.equal(typeof probe.anlz_cache_entry_count, 'number');
 	assert.equal(typeof probe.prefetch_ready_count, 'number');
 	assert.equal(typeof probe.deck_nodes_present, 'boolean');
+	assert.equal(probe.deck_pcm_bytes, 0, 'an engine that never loaded a deck holds no decoded PCM');
 });
 
 test('releaseGigRuntime is idempotent', async () => {
@@ -62,6 +87,77 @@ test('releaseGigRuntime is idempotent', async () => {
 		}
 	});
 	assert.deepEqual(calls, ['dispose']);
+});
+
+test('releaseGigRuntime still propagates a disposal rejection whose reason is undefined', async () => {
+	// Sol P1, PR #4034, discussion_r4131311112: the rejection was tracked as
+	// `let disposeError: unknown` and rethrown via `disposeError !== undefined`,
+	// which cannot tell "disposeEngine() rejected with undefined" apart from
+	// "disposeEngine() succeeded" -- a real `Promise.reject()` (no argument)
+	// or `throw undefined` silently looked like success, so the release went
+	// on to clear the performance session and publish Library idle over a
+	// disposal that never finished.
+	runtime.resetLibraryModeRuntimeForTest();
+	await assert.rejects(
+		() =>
+			runtime.releaseGigRuntime({
+				disposeEngine: async () => {
+					throw undefined;
+				}
+			}),
+		(error) => error === undefined,
+		'the undefined rejection reason must propagate, not be swallowed as success'
+	);
+});
+
+test('releaseGigRuntime still disposes the engine and restores mute after a stem-pool cleanup failure', async () => {
+	// Codex P2, PR #4034, discussion_r4133146896: `disposeStemDecoderPools()`
+	// deliberately propagates its own failure (flac-decoder-pool-dispose.test.mjs
+	// covers that contract in isolation), but pre-fix an un-caught rejection here
+	// aborted the whole IIFE before `disposeEngine()` or the mute-restoration
+	// callbacks ever ran -- leaving the route hard-muted at 0 with a stale
+	// pending-master capture forever, on top of whatever the stem failure was.
+	const mod = await loadRuntimeWithStemPool();
+	mod.resetLibraryModeRuntimeForTest();
+
+	const decoder = {
+		ready: Promise.resolve(),
+		decodeFile: async () => ({ channelData: [new Float32Array(1)], samplesDecoded: 1, sampleRate: 44100 }),
+		reset: async () => {},
+		free: async () => {
+			throw new Error('stem worker unreachable');
+		}
+	};
+	const taken = await mod.takeDecoder(() => decoder, 'test-release-gig-runtime');
+	mod.returnDecoder(taken, 'test-release-gig-runtime');
+	assert.equal(mod.activeStemWorkerCount(), 1);
+
+	let disposed = false;
+	let onDisposedCalled = false;
+	await assert.rejects(
+		() =>
+			mod.releaseGigRuntime({
+				disposeEngine: async () => {
+					disposed = true;
+				},
+				onDisposed: () => {
+					onDisposedCalled = true;
+				}
+			}),
+		/stem worker unreachable/,
+		'the stem-pool failure must still propagate, not be swallowed'
+	);
+	assert.equal(disposed, true, 'disposeEngine() must still run despite the earlier stem-pool failure');
+	assert.equal(
+		onDisposedCalled,
+		true,
+		'the mute-restoration callback must still run despite the earlier stem-pool failure'
+	);
+	// A decoder whose free() rejected stays counted as live (the same contract
+	// flac-decoder-pool-dispose.test.mjs asserts directly).
+	assert.equal(mod.activeStemWorkerCount(), 1);
+
+	mod.resetLibraryModeRuntimeForTest();
 });
 
 test('releaseGigRuntime aborts a stale release rather than disposing a remounted Gig engine', async () => {

@@ -1,0 +1,67 @@
+<!doctype html>
+<!--
+  Open DJ doc style: IN-APP ERROR SCREEN template.
+  Shape taken from the desktop engine-startup page (apps/desktop/setup/index.html):
+  what is wrong in one line, the facts that were tried, what Open DJ is (only if the
+  reader needs it to act), what to do, one button, and a "What exactly was tested" footer.
+  An in-app page must render with no network and no engine, so it ships its own copy
+  of odj-doc.css, the woff2 and Anybody-OFL.txt beside it; never a CDN.
+  How to use: copy this file, replace every {{PLACEHOLDER}}, remove the slot comments.
+  Voice rules: say what is wrong, never "something went wrong". Two honest outcomes only;
+  no spinner that never ends. Every number gets a title attribute. American spelling.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open DJ</title>
+<link rel="stylesheet" href="odj-doc.css">
+</head>
+<body>
+<main>
+<header class="mast" aria-label="Open DJ">
+  <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 367.72,144.28 A 188,188 0 0,0 101.85,410.15 Z" fill="var(--mark-dark)"/><path d="M 410.15,101.85 A 188,188 0 0,1 144.28,367.72 Z" fill="var(--mark-light)"/></svg>
+  <span class="wordmark">Open DJ</span><span class="stage" title="Open DJ is alpha software: features and stored formats can change between releases. Keep a library backup.">alpha</span>
+</header>
+
+<!-- H1: what is wrong, in one line, naming the thing the user knows ("Open DJ cannot reach its engine"). -->
+<h1>{{WHAT_IS_WRONG}}</h1>
+<!-- Lede: what still works, then what does not. -->
+<p class="lede">{{WHAT_STILL_WORKS}} {{WHAT_IS_NOT_ANSWERING}}</p>
+
+<!-- Facts card: exactly what was tried and what came back. Counts carry a title explaining the number. -->
+<dl class="facts">
+  <dt>{{TRIED_LABEL}}</dt><dd><code>{{TRIED_VALUE}}</code></dd>
+  <dt>Result</dt><dd>{{RESULT_DETAIL}}</dd>
+  <dt><span title="{{WHAT_THE_COUNT_MEANS}}">Attempts</span></dt><dd class="num" title="{{WHAT_THE_COUNT_MEANS}}">{{ATTEMPT_COUNT}}</dd>
+</dl>
+
+<!-- Optional: what the product is, only if the reader needs that model to act. Delete otherwise. -->
+<h2>What Open DJ is</h2>
+<p>{{SHORT_PRODUCT_MODEL}}</p>
+<!-- Note: why reaching this screen is specific rather than generic, so the reader trusts the steps. -->
+<p class="note">{{WHY_THIS_SCREEN_MEANS_SOMETHING_SPECIFIC}}</p>
+
+<h2>What to do</h2>
+<!-- Steps: most likely fix first. Commands in their own code blocks. -->
+<ol class="steps">
+  <li>{{MOST_LIKELY_FIX}}</li>
+  <li>{{ALTERNATIVE_FIX}}
+    <pre><code>{{COMMAND}}</code></pre></li>
+  <li>{{WHAT_HAPPENS_ON_ITS_OWN}}</li>
+</ol>
+
+<!-- One button. Its label is the action; the status line says what it did. -->
+<div class="actions">
+  <button type="button" id="retry">{{BUTTON_ACTION}}</button>
+  <span class="status" id="retry-status" role="status" aria-live="polite" title="{{WHAT_THE_STATUS_NUMBER_MEANS}}"></span>
+</div>
+
+<!-- Footer: the exact probe, and what it does NOT prove. -->
+<details class="tested">
+  <summary>What exactly was tested</summary>
+  <p>{{THE_EXACT_PROBE}} {{WHAT_IT_PROVES}} {{WHAT_IT_DOES_NOT_PROVE}}</p>
+</details>
+</main>
+</body>
+</html>

@@ -85,6 +85,7 @@ export default defineConfig({
 		'**/missing-tracks-folder.spec.ts', // playwright.rekordbox-gate.config.ts
 		'**/boot-burst.spec.ts', // playwright.boot-burst.config.ts (real library benchmark)
 		'**/library-playlist-switch-latency.spec.ts', // playwright.playlist-switch-latency.config.ts (PERF-UI-05 gate)
+		'**/library-playlist-fill-pages.spec.ts', // playwright.playlist-switch-latency.config.ts (LIBM-134, its 1k fixture)
 		'**/stem-decode-bench.spec.ts', // playwright.stem-decode-bench.config.ts (production-build bench)
 		'**/comment-hotkey-browser.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)
 		'**/comment-pin-io-modal.spec.ts', // playwright.comment-hotkey-gate.config.ts (real backend)

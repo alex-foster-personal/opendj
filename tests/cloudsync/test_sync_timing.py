@@ -11,7 +11,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.shared.state import db as state_db
 from apps.sync_hub import client, service
+from apps.sync_hub.sync_timing import PhaseTimer
 from tests.cloudsync.test_hub_sync import _seed_common_track, _sync, _TestClientTransport
 
 
@@ -82,6 +84,42 @@ def test_hello_delay_increases_hello_and_total_timings(
     assert result.timings is not None
     assert result.timings.hello_s >= 0.2
     assert result.timings.total_s >= result.timings.hello_s
+
+
+_TRANSACTION_CONTROL = frozenset({"BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE"})
+
+
+@pytest.mark.requirement("PERF-CAPTURE-01")
+def test_local_digest_delay_increases_local_digest_and_total_timings(
+    spoke_a: Path, hub: _TestClientTransport
+) -> None:
+    """[if] local sync_digest is slowed [then] local_digest_s rises, [else stop]."""
+    prior = _sync(spoke_a, hub, "spoke-a")
+    delay_s = 0.2
+    conn = state_db.open_rw(client.state_db_path(spoke_a))
+    slept = False
+
+    def on_statement(sql: str) -> None:
+        nonlocal slept
+        verb = sql.lstrip().split(None, 1)[0].upper()
+        if verb in _TRANSACTION_CONTROL:
+            return
+        if not conn.in_transaction or slept:
+            return
+        slept = True
+        time.sleep(delay_s)
+
+    try:
+        conn.set_trace_callback(on_statement)
+        timer = PhaseTimer()
+        client._digests(hub, conn, prior.machine_id, timer=timer)
+        timings = timer.finish(prior, needs_full_offer_at_start=False)
+    finally:
+        conn.set_trace_callback(None)
+        conn.close()
+
+    assert timings.local_digest_s >= delay_s
+    assert timings.total_s >= timings.local_digest_s
 
 
 def test_digest_delay_increases_digest_timing(
