@@ -93,6 +93,14 @@ def _resolved_imports(imports: Iterable[str], known: Mapping[str, str]) -> set[s
     return resolved
 
 
+def _own_packages(name: str, known: Mapping[str, str]) -> set[str]:
+    """The package initializers that run before module `name` itself: importing
+    `a.b.c` runs `a/__init__` and `a/b/__init__` first, and pytest runs a test
+    module's package initializers when it collects the module (Sol's P2 on #4677)."""
+    parts = name.split(".")
+    return {".".join(parts[:i]) for i in range(1, len(parts)) if ".".join(parts[:i]) in known}
+
+
 def _read(root: Path, path: str) -> str:
     try:
         return (root / path).read_text(encoding="utf-8")
@@ -116,7 +124,11 @@ def frontend_consumers(root: Path, needles: tuple[str, ...]) -> frozenset[str]:
     if not reached:
         raise PlanError(f"no tracked Python file mentions {list(needles)}; the reader is not measuring")
     imports = {
-        path: {known[name] for name in _resolved_imports(imported_modules(text, path, IMPORT_ROOTS), known)}
+        path: {
+            known[name]
+            for name in _resolved_imports(imported_modules(text, path, IMPORT_ROOTS), known)
+            | _own_packages(module_name(path), known)
+        }
         for path, text in texts.items()
     }
     changed = True
