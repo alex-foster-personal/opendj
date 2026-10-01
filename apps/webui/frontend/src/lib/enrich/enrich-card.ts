@@ -98,7 +98,7 @@ export function analysisLines(summary: EnrichSummary): CardLine[] {
 				lane,
 				tone: 'working',
 				text: `${label}: ${n(c.done)} of ${n(c.total)} done, the rest running in the background`,
-				title: null
+				title: `Counted over the ${n(c.total)} tracks whose audio is on this computer`
 			});
 		}
 		if (declined > 0 && (c.missing > 0 || c.failed > 0)) {
