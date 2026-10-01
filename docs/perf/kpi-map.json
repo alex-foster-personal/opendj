@@ -381,7 +381,8 @@
         "cloudsync_hello_s",
         "cloudsync_push_s",
         "cloudsync_pull_s",
-        "cloudsync_digest_s"
+        "cloudsync_digest_s",
+        "cloudsync_local_digest_s"
       ],
       "missing_kpi": "no run_sync capture in the ledger; the instrument could not reach a hub on this host",
       "lower_is_better": true,
@@ -416,9 +417,10 @@
         "cloudsync_hello_s",
         "cloudsync_push_s",
         "cloudsync_pull_s",
-        "cloudsync_digest_s"
+        "cloudsync_digest_s",
+        "cloudsync_local_digest_s"
       ],
-      "capture_method": "run_sync PhaseTimer (hello, push, pull, digest, total); first vs no-op classified on the result",
+      "capture_method": "run_sync PhaseTimer (hello, push, pull, local_digest, digest, total); first vs no-op classified on the result",
       "absent_verdict": "UNKNOWN"
     },
     "LIB-MODE": {
