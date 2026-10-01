@@ -63,8 +63,11 @@ def _module_name(relative: Path) -> str | None:
     return ".".join(parts) if parts else None
 
 
-def _imports_of(path: Path) -> set[str]:
+def _imports_of(path: Path, root: Path = REPO) -> set[str]:
     """Every dotted name this file imports, including `from x import y` as `x.y`.
+
+    Relative imports resolve against `root` (the tree being graphed, not always this
+    checkout), and `from . import sibling` records `pkg.sibling` as well as `pkg`.
 
     A file that does not parse contributes nothing rather than aborting the graph: a
     syntax error is the test suite's problem to report, not this script's.
@@ -79,11 +82,13 @@ def _imports_of(path: Path) -> set[str]:
             found.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             if node.level:
-                base = list(path.relative_to(REPO).parent.parts)
+                base = list(path.relative_to(root).parent.parts)
                 if node.level > 1:
                     base = base[: len(base) - (node.level - 1)]
                 prefix = ".".join(base)
-                found.add(f"{prefix}.{node.module}" if node.module else prefix)
+                module = f"{prefix}.{node.module}" if node.module else prefix
+                found.add(module)
+                found.update(f"{module}.{alias.name}" for alias in node.names)
             elif node.module:
                 found.add(node.module)
                 found.update(f"{node.module}.{alias.name}" for alias in node.names)
@@ -116,7 +121,7 @@ def build_graph(root: Path = REPO) -> tuple[dict[str, set[str]], dict[str, Path]
         me = _module_name(path.relative_to(root))
         if not me:
             continue
-        for target in _imports_of(path):
+        for target in _imports_of(path, root):
             parts = target.split(".")
             # An attribute import resolves to the longest prefix that is a real module.
             for cut in range(len(parts), 0, -1):
