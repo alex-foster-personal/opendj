@@ -15,7 +15,7 @@ import re
 import pytest
 
 from apps.analysis import config as analysis_config
-from apps.analysis.backends.own_beatgrid import GRID_FIT_ENV, grid_fit_mode
+from apps.analysis.backends.grid_fit_setting import GRID_FIT_ENV, grid_fit_mode
 
 
 @pytest.fixture(autouse=True)
