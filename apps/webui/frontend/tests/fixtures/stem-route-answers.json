@@ -1,5 +1,5 @@
 {
-	"_provenance": "Captured from the real GET /api/v1/tracks/{sid}/stems route (apps/webui/server/routes/stems.py) on Thu 24 Sep 2026. tests/webui/test_stem_route_answers_fixture.py re-captures every entry from the live route and fails if this file drifts. not_found.body.message is cut before its machine-specific stems roots.",
+	"_provenance": "Captured from the real GET /api/v1/tracks/{sid}/stems route (apps/webui/server/routes/stems.py) on Thu 24 Sep 2026. tests/webui/test_stem_route_answers_fixture.py re-captures every entry from the live route and fails if this file drifts. not_found.body.message is cut before its machine-specific stems roots. hydrating.body.progress carries live counters: files_total is compared exactly, files_done and bytes_done are compared as zero because the fetch is racing the read.",
 	"hydrating": {
 		"status": 200,
 		"body": {
@@ -7,7 +7,8 @@
 			"code": "STEM_BUNDLE_HYDRATING",
 			"stable_id": "sid-1",
 			"message": "bundle not local yet; fetching from R2",
-			"hydrating": true
+			"hydrating": true,
+			"progress": { "files_total": 5, "files_done": 0, "bytes_done": 0 }
 		}
 	},
 	"ready": {
@@ -36,7 +37,8 @@
 			"code": "STEM_BUNDLE_NOT_FOUND",
 			"stable_id": "sid-1",
 			"message": "no stem bundle exists for 'sid-1'",
-			"hydrating": false
+			"hydrating": false,
+			"progress": null
 		}
 	},
 	"hydration_failed": {
