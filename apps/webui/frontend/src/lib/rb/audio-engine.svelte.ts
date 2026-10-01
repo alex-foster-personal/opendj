@@ -133,11 +133,10 @@ import {
 	fetchStemAudioArrayBuffers,
 	STEM_LAYOUT_PART_NAMES,
 	getTrack,
-	patchTrack,
+	saveTrackRating,
 	RbApiError
 } from '$lib/rb/api-rb';
 import { awaitStemArtifact, stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-hydrate-wait';
-import { isUsbTrackId, loadStickSessionEdits } from '$lib/rb/track-source';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -1031,16 +1030,9 @@ export async function rateDeckTrack(deck: DeckId, next: number): Promise<void> {
 	const stable_id = deckStates[deck].stable_id;
 	if (stable_id === null) return;
 	try {
-		if (isUsbTrackId(stable_id)) {
-			(await loadStickSessionEdits()).setSessionRating(stable_id, next);
-			// The on-demand import is a yield: the same guard as the library path.
-			if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = next;
-			return;
-		}
-		const etag = (await getTrack(stable_id)).etag;
-		const { track, etag: fresh } = await patchTrack(stable_id, etag, { rating: next });
-		void fresh;
-		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = track.rating ?? null;
+		const rating = await saveTrackRating(stable_id, next);
+		// Every path awaits (a request, or the stick store's on-demand import).
+		if (deckStates[deck].stable_id === stable_id) deckStates[deck].rating = rating;
 	} catch (exc) {
 		if (exc instanceof ConflictError) {
 			if (deckStates[deck].stable_id === stable_id) {

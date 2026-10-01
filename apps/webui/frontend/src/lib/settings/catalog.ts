@@ -7,6 +7,7 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
+import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -14,8 +15,8 @@ import {
 	WHEEL_SENSITIVITY_STEP
 } from '$lib/rb/wheel-adjust';
 
-export type { SettingDef, SettingGroupId } from './catalog-types';
-import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
+export type { LinkSettingDef, SettingDef, SettingGroupId } from './catalog-types';
+import type { LinkSettingDef, SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
 import { DJAY_PARITY_STUBS, REKORDBOX_PARITY_STUBS } from './catalog-parity-stubs';
 
 /** Canonical PARITY-TODO stub title. Declared here, not just in
@@ -216,9 +217,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
-	{ id: 'rb.midi_enabled', label: 'MIDI controllers', group: 'performance', implemented: true, control: { kind: 'boolean' },
-		keywords: ['midi', 'controller', 'webmidi', 'ddj', 'device'], title: 'Enable WebMIDI controller input',
-		detail: 'When on, the app requests browser MIDI access on load and routes mapped controllers to decks and mixer. Persisted to ui-prefs (PARITY-12).' },
+	MIDI_ENABLED_SETTING,
 	{
 		id: 'show_stems',
 		label: 'Stem mini-waveforms',
@@ -590,8 +589,6 @@ function _wheelSensitivityControl(defaultValue: number): SettingControl {
 export function groupLabel(id: SettingGroupId): string {
 	return SETTING_GROUPS.find((g) => g.id === id)?.label ?? id;
 }
-
-export type LinkSettingDef = SettingDef & { control: { kind: 'link'; href: string } };
 
 /** Implemented link-kind rows in catalog order for a settings group. */
 export function catalogLinkSettings(group: SettingGroupId): LinkSettingDef[] {

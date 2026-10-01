@@ -239,12 +239,8 @@ class CoverageDrain:
         return state
 
     def _tick(self) -> str:
-        if not self._config.enabled():
-            return self._settle("disabled")
-        if self._stopped:
-            return self._settle("stopped")
-        if self._playing_fn():
-            return self._settle("paused_playing")
+        if (idle := self._idle_reason()) is not None:
+            return self._settle(idle)
         snapshot, self._carried = self._carried or self._snapshot_fn(), None
         self._absorb(snapshot)
         steps_on = self._config.steps()
@@ -256,30 +252,55 @@ class CoverageDrain:
         now = self._clock()
         ledger = self._outcomes.load()
         retry_times: list[float] = []
+        for step, targets in self._phases(snapshot):
+            if not self._step_may_run(step, steps_on):
+                continue
+            for stable_id, audio_path in targets:
+                signature = outcomes_mod.audio_token(Path(audio_path))
+                prior = ledger.get((step, stable_id))
+                if outcomes_mod.may_attempt(prior, signature, now=now):
+                    return self._run_unless_yielding(step, stable_id, audio_path, signature)
+                if prior is not None and prior.attempts < outcomes_mod.MAX_ATTEMPTS:
+                    retry_times.append(outcomes_mod.next_attempt_at(prior))
+        return self._settle_blocked(snapshot, retry_times)
+
+    def _run_unless_yielding(
+        self, step: str, stable_id: str, audio_path: str, signature: str
+    ) -> str:
+        if step in YIELDING_STEPS and (held := self._yield_reason(step)):
+            return self._settle(*held)
+        return self._run(step, stable_id, audio_path, signature)
+
+    def _settle_blocked(self, snapshot: CoverageSnapshot, retry_times: list[float]) -> str:
+        self._status.next_retry_at = min(retry_times) if retry_times else None
+        return self._settle("blocked", self._blocked_reason(snapshot, bool(retry_times)))
+
+    def _idle_reason(self) -> str | None:
+        """Why this tick does no work before measuring anything, or None."""
+        if not self._config.enabled():
+            return "disabled"
+        if self._stopped:
+            return "stopped"
+        if self._playing_fn():
+            return "paused_playing"
+        return None
+
+    def _phases(self, snapshot: CoverageSnapshot) -> list[tuple[str, Sequence[Target]]]:
+        """Each step with its targets, in the order the drain works them."""
         cloud_targets = self._cloud_targets(snapshot)
         self._cloud_ids = frozenset(sid for sid, _path in cloud_targets)
         # Bundles are fetched for vocals only after lyrics: a fetch is seconds
         # and megabytes, and the quick, visible work should not wait on it.
         phases = [(step, self._targets(step, snapshot)) for step in JOB_ORDER]
         phases.insert(JOB_ORDER.index("lyrics") + 1, ("vocals", cloud_targets))
-        for step, targets in phases:
-            if (
-                step not in self._jobs
-                or step in self._status.unavailable_steps
-                or not steps_on.get(step, True)
-            ):
-                continue
-            for stable_id, audio_path in targets:
-                signature = outcomes_mod.audio_token(Path(audio_path))
-                prior = ledger.get((step, stable_id))
-                if outcomes_mod.may_attempt(prior, signature, now=now):
-                    if step in YIELDING_STEPS and (held := self._yield_reason(step)):
-                        return self._settle(*held)
-                    return self._run(step, stable_id, audio_path, signature)
-                if prior is not None and prior.attempts < outcomes_mod.MAX_ATTEMPTS:
-                    retry_times.append(outcomes_mod.next_attempt_at(prior))
-        self._status.next_retry_at = min(retry_times) if retry_times else None
-        return self._settle("blocked", self._blocked_reason(snapshot, bool(retry_times)))
+        return phases
+
+    def _step_may_run(self, step: str, steps_on: Mapping[str, bool]) -> bool:
+        return (
+            step in self._jobs
+            and step not in self._status.unavailable_steps
+            and steps_on.get(step, True)
+        )
 
     def _green(self, snapshot: CoverageSnapshot, steps_on: Mapping[str, bool]) -> bool:
         """Done: the lights' own rule, plus analysis when this drain owns it."""
