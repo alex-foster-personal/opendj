@@ -72,10 +72,20 @@ async function renderOnsets(
 			masterDelay.delayTime.value = delayFrames / sampleRate;
 			const headphoneDelay = context.createDelay(1);
 			headphoneDelay.delayTime.value = 0;
+			// The profile comes from the same decision the engine makes, fed the
+			// real destination's channel count: a fix that always falls back to
+			// stereo fails here.
+			const resolution = topology.resolveDjOutputProfile(
+				'master12-cue34',
+				context.destination.maxChannelCount
+			);
+			if (resolution.profile !== 'master12-cue34' || resolution.fallback !== null) {
+				throw new Error(`a 4-channel output did not resolve to djio: ${JSON.stringify(resolution)}`);
+			}
 			const wired = topology.wireAudioOutputTopology({
 				context,
 				routing: null,
-				profile: 'master12-cue34',
+				profile: resolution.profile,
 				masterGain,
 				masterMuteGain,
 				masterDelay,
