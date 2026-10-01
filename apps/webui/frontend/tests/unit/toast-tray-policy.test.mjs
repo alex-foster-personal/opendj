@@ -38,7 +38,24 @@ test('selectVisibleToasts still shows exiting toasts for animation', () => {
 		{ id: 4, exiting: false }
 	];
 	const visible = policy.selectVisibleToasts(all);
+	assert.ok(visible.length <= 3);
 	assert.ok(visible.some((t) => t.id === 1 && t.exiting === true));
+});
+
+test('selectVisibleToasts caps total DOM nodes when multiple are exiting', () => {
+	/** [if] five toasts with two exiting [then] at most three visible [else stop]. */
+	const all = [
+		{ id: 1, exiting: true },
+		{ id: 2, exiting: true },
+		{ id: 3, exiting: false },
+		{ id: 4, exiting: false },
+		{ id: 5, exiting: false }
+	];
+	const visible = policy.selectVisibleToasts(all);
+	assert.ok(visible.length <= 3);
+	const nonExitingVisible = visible.filter((t) => t.exiting !== true);
+	assert.equal(nonExitingVisible.length, 1);
+	assert.equal(nonExitingVisible[0].id, 5);
 });
 
 test('oldestNonExitingIndex finds the first active toast', () => {

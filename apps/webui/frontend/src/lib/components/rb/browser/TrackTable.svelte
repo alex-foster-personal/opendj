@@ -23,7 +23,16 @@
 	// provider.total.
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import {
+		artworkUrl,
+		artworkStatusLabel,
+		type PreviewStripData,
+		type Vocals
+	} from '$lib/rb/api-rb';
+	import {
+		rememberOptionalResources,
+		shouldFetchArtwork
+	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
 		analysisIssuesFor,
@@ -87,7 +96,6 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
-	import SpinnerIcon from './SpinnerIcon.svelte';
 	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
@@ -297,6 +305,8 @@
 		loadedIds,
 		vocalsById,
 		markerAnlzById,
+		previewStripById,
+		stripLoadingById,
 		sortKey,
 		sortDir,
 		emptyMessage,
@@ -354,6 +364,11 @@
 		/** Strip marker ANLZ ALREADY in memory (loaded decks / anlz cache),
 		 * resolved by BrowserPanel (LIBUX-12); absent = markerless strip. */
 		markerAnlzById: Record<string, AnlzData>;
+		/** Preview strip bytes ALREADY in memory (listing hydrate / anlz cache),
+		 * resolved by BrowserPanel; absent = dash until warmed elsewhere. */
+		previewStripById: Record<string, PreviewStripData | null>;
+		/** True only while a warmed cache entry is still loading (never per-row fetch). */
+		stripLoadingById: Record<string, boolean>;
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
@@ -997,8 +1012,23 @@
 		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
-	function _hideBrokenImg(event: Event): void {
-		(event.currentTarget as HTMLImageElement).style.display = 'none';
+	let artworkLoadFailed = $state<ReadonlySet<string>>(new Set());
+
+	function _onArtworkLoad(event: Event): void {
+		(event.currentTarget as HTMLImageElement).classList.add('art-loaded');
+	}
+
+	function _onArtworkError(stableId: string): void {
+		rememberOptionalResources(stableId, { artwork: false });
+		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
+	}
+
+	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
+		return (
+			artworkAvailable === true &&
+			shouldFetchArtwork(stableId) &&
+			!artworkLoadFailed.has(stableId)
+		);
 	}
 
 	// ----------------------------------------- drag-to-reorder (native DnD)
@@ -1716,7 +1746,8 @@
 						{/if}
 						<td class="c-preview">
 							<PreviewStrip
-								strip={row.strip}
+								strip={row.strip ?? previewStripById[row.stable_id] ?? null}
+								stripLoading={stripLoadingById[row.stable_id] ?? false}
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
@@ -1741,12 +1772,15 @@
 						>
 							<span class="art-slate" aria-hidden="true"></span>
 							{#if row.artwork_available === true}
-								<img
-									src={artworkUrl(row.stable_id, 's')}
-									alt=""
-									loading="lazy"
-									onerror={_hideBrokenImg}
-								/>
+								{#if _showArtworkImg(row.stable_id, row.artwork_available)}
+									<img
+										src={artworkUrl(row.stable_id, 's')}
+										alt=""
+										loading="lazy"
+										onload={_onArtworkLoad}
+										onerror={() => _onArtworkError(row.stable_id)}
+									/>
+								{/if}
 							{/if}
 						</td>
 						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
@@ -1779,11 +1813,7 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{#if isLoading}
-											<SpinnerIcon size={9} />
-										{:else}
-											{d}
-										{/if}
+										{d}
 									</button>
 								{/each}
 								{#if removable}
@@ -3003,10 +3033,14 @@
 	.c-art img {
 		position: absolute;
 		inset: 0;
-		width: var(--tt-art);
-		height: var(--tt-art);
+		width: 100%;
+		height: 100%;
 		object-fit: cover;
+		object-position: center 66.67%;
 		display: block;
+	}
+	.c-art:has(img.art-loaded) .art-slate {
+		display: none;
 	}
 
 	.empty {

@@ -62,9 +62,9 @@ Requirements (mini-PRD):
   → per-night budget (--max-minutes) - PARITY-TODO follow-up, not here.
 
 Exact command lines:
-  python -m apps.vocals scan --data-dir /Users/user/Music/music-dj-tools/data
+  python -m apps.vocals scan --data-dir /Users/user/code/music-dj-tools/data
   python -m apps.vocals trickle --limit 1 --live \\
-      --data-dir /Users/user/Music/music-dj-tools/data
+      --data-dir /Users/user/code/music-dj-tools/data
   python -m apps.vocals from-stems --dry-run
   python -m apps.vocals from-stems --live
 
@@ -292,7 +292,7 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
                 master.execute(
                     "SELECT ID, Title, Length, FolderPath, AnalysisDataPath "
                     "FROM djmdContent "
-                    f"WHERE ID IN ({marks}) AND rb_local_deleted = 0",
+                    f"WHERE ID IN ({marks}) AND +rb_local_deleted = 0",
                     chunk,
                 ).fetchall()
             )

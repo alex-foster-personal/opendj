@@ -18,18 +18,21 @@ would need its own filesystem race.
   - [if] stop is called while a round is in flight [then] it is awaited,
     never abandoned, [else stop].
 """
+
 from __future__ import annotations
 
 import asyncio
 import itertools
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
 from apps.engine_core.setup import folder_rescan_scheduler as fr_scheduler
 from apps.engine_core.setup import record as setup_record
 from apps.shared.state.ingest.folder_rescan import FolderRescanReport
+from tests import waits
 
 _FAST = fr_scheduler.FolderRescanCfg(
     INTERVAL_S=0.2,
@@ -38,15 +41,18 @@ _FAST = fr_scheduler.FolderRescanCfg(
     BEAT_INTERVAL_S=0.05,
     STOP_TIMEOUT_S=15.0,
 )
+#: Budget for the scheduler's own pacing, charged only while no round is in
+#: flight (see :func:`tests.waits.until_scheduler_idle_budget`). With ``_FAST`` the loop owes the
+#: next round within one backoff delay plus a beat, at most 0.85 s.
 _DEADLINE_S = 10.0
 
 
-async def _until(predicate, what: str) -> None:
-    deadline = time.monotonic() + _DEADLINE_S
-    while not predicate():
-        if time.monotonic() > deadline:
-            raise AssertionError(f"timed out after {_DEADLINE_S}s waiting for {what}")
-        await asyncio.sleep(0.02)
+async def _until(
+    scheduler: fr_scheduler.FolderRescanScheduler, predicate: Callable[[], bool], what: str
+) -> None:
+    await waits.until_scheduler_idle_budget(
+        (scheduler,), predicate, what, idle_budget_s=_DEADLINE_S
+    )
 
 
 def _mark_folder_import(data_dir: Path, roots: list[str]) -> None:
@@ -133,9 +139,7 @@ def test_state_db_open_failure_is_a_retryable_round_failure(tmp_path: Path) -> N
     _mark_folder_import(tmp_path, [str(tmp_path / "music")])
     scheduler = fr_scheduler.FolderRescanScheduler(tmp_path, cfg=_FAST)
 
-    with mock.patch.object(
-        fr_scheduler.state_db, "open_rw", side_effect=OSError("busy")
-    ):
+    with mock.patch.object(fr_scheduler.state_db, "open_rw", side_effect=OSError("busy")):
         outcome = scheduler.run_round([tmp_path / "music"])
 
     assert outcome == "error"
@@ -159,7 +163,9 @@ def test_folder_import_landing_after_boot_is_picked_up_without_restart(tmp_path:
             await asyncio.sleep(5 * _FAST.BEAT_INTERVAL_S)
             assert scheduler.rounds_started == 0
             _mark_folder_import(tmp_path, ["/music/root"])
-            await _until(lambda: scheduler.rounds_started >= 1, "a round after config appeared")
+            await _until(
+                scheduler, lambda: scheduler.rounds_started >= 1, "a round after config appeared"
+            )
         finally:
             await scheduler.stop()
 
@@ -198,10 +204,12 @@ def test_a_slow_round_never_overlaps_another(tmp_path: Path) -> None:
         )
         await scheduler.start()
         try:
-            await asyncio.to_thread(first_entered.wait, _DEADLINE_S)
+            await _until(scheduler, first_entered.is_set, "round 1 to enter reconcile")
             await asyncio.sleep(10 * _FAST.BEAT_INTERVAL_S + 2 * _FAST.INTERVAL_S)
             release_first.set()
-            await _until(lambda: scheduler.rounds_completed >= 3, "three completed rounds")
+            await _until(
+                scheduler, lambda: scheduler.rounds_completed >= 3, "three completed rounds"
+            )
         finally:
             release_first.set()
             await scheduler.stop()
@@ -228,7 +236,7 @@ def test_failing_rounds_back_off(tmp_path: Path) -> None:
         )
         await scheduler.start()
         try:
-            await _until(lambda: len(starts) >= 3, "three failed rounds")
+            await _until(scheduler, lambda: len(starts) >= 3, "three failed rounds")
         finally:
             await scheduler.stop()
         return scheduler.consecutive_failures
@@ -257,7 +265,7 @@ def test_a_success_after_failures_resets_the_backoff(tmp_path: Path) -> None:
         )
         await scheduler.start()
         try:
-            await _until(lambda: scheduler.rounds_completed >= 3, "recovery round")
+            await _until(scheduler, lambda: scheduler.rounds_completed >= 3, "recovery round")
         finally:
             await scheduler.stop()
         return scheduler.consecutive_failures
@@ -286,7 +294,7 @@ def test_stop_awaits_an_in_flight_round_rather_than_abandoning_it(tmp_path: Path
             tmp_path, cfg=_FAST, reconcile_fn=slow_reconcile
         )
         await scheduler.start()
-        await asyncio.to_thread(entered.wait, _DEADLINE_S)
+        await _until(scheduler, entered.is_set, "the round to enter reconcile")
 
         async def do_stop() -> None:
             await scheduler.stop()
@@ -333,9 +341,7 @@ def test_status_reports_the_last_report_after_a_real_round(tmp_path: Path) -> No
     assert (tmp_path / "state" / "state.db").exists()
 
 
-def test_a_denied_root_warning_is_logged_not_just_recorded(
-    tmp_path: Path, caplog
-) -> None:
+def test_a_denied_root_warning_is_logged_not_just_recorded(tmp_path: Path, caplog) -> None:
     """AC: 'fails loudly, never silently'. A field on ``report.warning`` that
     nobody polls is silent in practice, so ``run_round`` must also emit a log
     line -- the channel that reaches a process's own logs/alerting without

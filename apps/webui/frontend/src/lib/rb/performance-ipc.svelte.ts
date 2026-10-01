@@ -63,7 +63,8 @@ import {
 } from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { hasTrustedBeatGrid } from '$lib/player/grid-features';
-import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
+import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat, type ArmAtPosition } from '$lib/rb/beat-sync-math';
+import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
@@ -83,6 +84,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
@@ -104,7 +106,13 @@ import {
 	setPendingLoadPlayIntent,
 	type DeckId
 } from '$lib/rb/deck-slots';
-import { setLibraryPanelCollapsed, setShowStems, type LibraryPanel } from '$lib/rb/prefs.svelte';
+import {
+	setLibraryPanelCollapsed,
+	setShowStems,
+	setWaveformDesign,
+	type LibraryPanel
+} from '$lib/rb/prefs.svelte';
+import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -198,7 +206,8 @@ export type PerformanceCommand =
 			stable_id: string;
 			refuseIfMaster?: boolean;
 			stems?: boolean;
-			// Caller shows its own failure toast (Trackify skip); deck_errors still update.
+			// Caller shows its own failure toast (Trackify skip): mutes this dispatcher's
+			// toast AND the engine's (#4036); deck_errors and the server report remain.
 			suppressCommandErrorToast?: boolean;
 	  }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
@@ -212,6 +221,8 @@ export type PerformanceCommand =
 	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
+	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
+	| { type: 'set_waveform_design'; design: WaveformDesign }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
 	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
@@ -370,6 +381,8 @@ export interface PerformanceDeckSnapshot {
 	 * downbeat (BeatSyncMax, playing, unlooped); null when nothing is armed
 	 * or once the deferred jump has landed. */
 	hot_cue_armed: { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null;
+	/** DECKUX-21: deferred waveform seek waiting for the next downbeat. */
+	waveform_seek_armed: { target_position_ms: number; remaining_ms: number } | null;
 	/** LATENCY-02: QUANTIZED LAUNCH armed countdown; null once launched or cleared. */
 	quantized_launch_armed: { remaining_ms: number; launch_at_context_sec: number } | null;
 	command_error: string | null;
@@ -459,6 +472,7 @@ export interface PerformanceState {
 	};
 	ui: {
 		show_stems: boolean;
+		waveform_design: WaveformDesign;
 	};
 }
 
@@ -683,6 +697,11 @@ const hotCueArmed: Record<
 	{ slot: HotCueSlot; target_position_ms: number; target_context_time: number } | null
 > = $state({ 1: null, 2: null, 3: null, 4: null });
 
+const waveformSeekArmed: Record<
+	DeckId,
+	{ target_position_ms: number; target_context_time: number } | null
+> = $state({ 1: null, 2: null, 3: null, 4: null });
+
 const quantizedLaunchArmed: Record<DeckId, { launch_at_context_sec: number } | null> = $state({
 	1: null,
 	2: null,
@@ -741,8 +760,9 @@ export interface PerformanceHotCueDriver {
 	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
 	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
-	 * operator-felt press stamp. */
-	arm(deck: DeckId, positionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number>;
+	 * operator-felt press stamp. A resolver `armAt` is called with the
+	 * engine's live position inside the scheduling transaction. */
+	arm(deck: DeckId, positionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number>;
 	contextTimeNowSec(): number;
 }
 
@@ -761,14 +781,19 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 		};
 	},
 	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
-	arm: (deck, positionMs, armAtPositionSec, pressT0Ms) =>
-		engine.armHotCueTrigger(deck, positionMs, armAtPositionSec, pressT0Ms),
+	arm: (deck, positionMs, armAt, pressT0Ms) => engine.armHotCueTrigger(deck, positionMs, armAt, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
+/** Rust engine mode (NAE-13) drives hot cues through its own driver
+ * (`rustHotCueDriver`); Web Audio uses the engine-owned one above. */
+export function installPerformanceHotCueDriver(driver: PerformanceHotCueDriver): void {
+	_hotCueDriver = driver;
+}
+
 /** Narrow test seam for exercising the public IPC command protocol without
- * initializing Web Audio. Production always uses the engine-owned driver. */
+ * initializing Web Audio. */
 export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueDriver): () => void {
 	const previous = _hotCueDriver;
 	_hotCueDriver = driver;
@@ -1217,6 +1242,12 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		_exactKeys(record, ['type', 'enabled']);
 		return { type, enabled: _boolean('enabled', record.enabled) };
 	}
+	if (type === 'set_waveform_design') {
+		_exactKeys(record, ['type', 'design']);
+		const design = parseWaveformDesign(record.design);
+		if (design === undefined) throw new TypeError('design is required');
+		return { type, design };
+	}
 	if (type === 'feedback_mark') {
 		_exactKeys(record, ['type', 'vote']);
 		if (record.vote !== 'bad' && record.vote !== 'good' && record.vote !== 'great') {
@@ -1300,6 +1331,15 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		const position_ms = _finite('position_ms', record.position_ms);
 		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 		return { type, deck, position_ms };
+	} else if (type === 'waveform_seek') {
+		_exactKeys(record, ['type', 'deck', 'position_ms', 'snap']);
+		const position_ms = _finite('position_ms', record.position_ms);
+		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
+		const snap = record.snap;
+		if (snap !== 'downbeat' && snap !== 'beat' && snap !== 'exact') {
+			throw new TypeError(`waveform_seek snap must be downbeat|beat|exact; got ${String(snap)}`);
+		}
+		return { type, deck, position_ms, snap };
 	} else if (type === 'loop') {
 		_exactKeys(record, ['type', 'deck', 'loop']);
 		if (record.loop === null) return { type, deck, loop: null };
@@ -1488,6 +1528,19 @@ function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjecti
 /** Live-derive `remaining_ms` from the AudioContext clock rather than
  * trusting a cached countdown, then self-clear once the schedule has landed -
  * the same "recompute, don't cache" rule `deckTransportClock` follows. */
+function _waveformSeekArmedSnapshot(
+	deckId: DeckId
+): { target_position_ms: number; remaining_ms: number } | null {
+	const armed = waveformSeekArmed[deckId];
+	if (armed === null) return null;
+	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
+	if (remainingMs <= 0) {
+		waveformSeekArmed[deckId] = null;
+		return null;
+	}
+	return { target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
+}
+
 function _hotCueArmedSnapshot(
 	deckId: DeckId
 ): { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null {
@@ -1628,6 +1681,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		})),
 		hot_cue_reversal: hotCueReversals[deckId],
 		hot_cue_armed: _hotCueArmedSnapshot(deckId),
+		waveform_seek_armed: _waveformSeekArmedSnapshot(deckId),
 		quantized_launch_armed: _quantizedLaunchArmedSnapshot(deckId),
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
@@ -1729,7 +1783,8 @@ export function queryPerformanceState(): PerformanceState {
 		analysis_source_decks: { ...analysisSourceState.deckFeatures },
 		feedback_marks: performanceFeedbackSummary(),
 		ui: {
-			show_stems: uiPrefs.show_stems
+			show_stems: uiPrefs.show_stems,
+			waveform_design: uiPrefs.waveform_design
 		}
 	};
 }
@@ -1822,6 +1877,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
 		command.type === 'show_stems' ||
+		command.type === 'set_waveform_design' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -1857,6 +1913,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'play' ||
 		command.type === 'cue' ||
 		command.type === 'seek' ||
+		command.type === 'waveform_seek' ||
 		// Arming resolves as soon as the graph's pending-segment queue accepts
 		// the future schedule (no timer holds this scope across the wait -
 		// see armHotCueTrigger), so grouping with seek/play cannot stall.
@@ -1888,6 +1945,9 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
+	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
+	if (await executeInRustEngine(command, pushToast)) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
@@ -1912,13 +1972,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// releases on its own ceiling if a load never settles.
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
-			const loadOptions = command.stems === undefined ? undefined : { stems: command.stems };
-			await engine.load(command.deck, command.stable_id, loadOptions);
+			await engine.load(command.deck, command.stable_id, {
+				stems: command.stems,
+				suppressFailureToast: command.suppressCommandErrorToast
+			});
 		} finally {
 			deckLoadSettled();
 		}
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		waveformSeekArmed[command.deck] = null;
 		quantizedLaunchArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
@@ -1944,6 +2007,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		waveformSeekArmed[command.deck] = null;
 		quantizedLaunchArmed[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) {
@@ -1969,7 +2033,47 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.pressCue(command.deck, pressT0Ms);
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'seek') {
+		waveformSeekArmed[command.deck] = null;
 		await engine.quantizedSeek(command.deck, command.position_ms);
+	} else if (command.type === 'waveform_seek') {
+		const state = getDeckState(command.deck);
+		const beats = state.anlz?.beatgrid.beats ?? [];
+		const loopEngaged = state.loop !== null && state.loop.engaged;
+		const positionSec = state.position_ms / 1000;
+		const trustAnlz = state.anlz ?? {
+			beatgrid: { source: 'rekordbox', beats: [...beats], beat_count: beats.length, status: 'ok' }
+		};
+		const plan = planWaveformSeek(
+			uiPrefs.beat_sync_max && hasTrustedBeatGrid(trustAnlz),
+			state.playing,
+			loopEngaged,
+			positionSec,
+			beats,
+			command.snap
+		);
+		if (plan.kind === 'immediate') {
+			waveformSeekArmed[command.deck] = null;
+			hotCueArmed[command.deck] = null;
+			await _hotCueDriver.jump(command.deck, command.position_ms, pressT0Ms);
+		} else {
+			hotCueArmed[command.deck] = null;
+			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+			// The plan above only decides WHETHER to defer. The arm point is
+			// re-resolved from the engine's live position inside the scheduling
+			// transaction: `state.position_ms` is a published snapshot that keeps
+			// falling behind while this command queues, and a click at or just
+			// after a downbeat must roll to the next one, not throw (#4011).
+			const targetContextTime = await _hotCueDriver.arm(
+				command.deck,
+				command.position_ms,
+				(nowPositionSec) => nextDownbeatAtOrAfter(beats, nowPositionSec),
+				pressT0Ms
+			);
+			waveformSeekArmed[command.deck] = {
+				target_position_ms: command.position_ms,
+				target_context_time: targetContextTime
+			};
+		}
 	} else if (command.type === 'loop') {
 		await engine.setLoop(command.deck, command.loop);
 	} else if (command.type === 'beat_loop') {
@@ -2085,6 +2189,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
 	} else if (command.type === 'show_stems') {
 		setShowStems(command.enabled);
+	} else if (command.type === 'set_waveform_design') {
+		setWaveformDesign(command.design);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.
@@ -2164,8 +2270,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 		if (plan.kind === 'immediate') {
 			hotCueArmed[command.deck] = null;
+			waveformSeekArmed[command.deck] = null;
 			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
 		} else {
+			waveformSeekArmed[command.deck] = null;
 			// Mark BEFORE the row can file: the eventual schedule reads this same
 			// stamp via press-stamp.ts's claimArmedHotCuePress to distinguish an
 			// armed (deferred-to-downbeat) wait from an immediate press row.
@@ -2342,6 +2450,13 @@ function _invalidateCommandSession(generation: number): void {
 	_commandStatusGeneration += 1;
 	_commandScheduler.invalidateQueued(`performance command session ${generation} was invalidated`);
 	_resetCommandStatus();
+	// Armed records carry a target time on the route-owned AudioContext, which
+	// dies with this session: a record surviving into the next mount would be
+	// measured against an uninitialised or brand-new clock (#4011 review).
+	for (const deckId of DECK_IDS) {
+		waveformSeekArmed[deckId] = null;
+		hotCueArmed[deckId] = null;
+	}
 }
 
 function _currentCommandSession(): number {

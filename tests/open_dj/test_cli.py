@@ -113,6 +113,8 @@ class TestDiff:
         assert rc == 2
 
 
+# REQ: OPEN-03
+# REQ: OPEN-03a
 @pytest.mark.requirement("OPEN-03")
 def test_no_subcommand_prints_help(
     capsys: pytest.CaptureFixture[str],

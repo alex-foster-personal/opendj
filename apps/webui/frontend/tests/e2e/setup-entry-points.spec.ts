@@ -88,6 +88,9 @@ import { spendBootLanding } from './support/boot-landing';
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
  * platform-correct modifier is what gets pressed. */
 const SETTINGS_CHORD = process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma';
+// A same-origin tab opens in well under a second on every gate host; 15 s is
+// generous headroom for a loaded runner while leaving most of the test budget.
+const NEW_TAB_TIMEOUT_MS = 15_000;
 
 const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
 const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run setup' });
@@ -569,6 +572,8 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
+	// requirement: INSTALL-29
+	// [if] user opens foldout [then] url link and copy controls work, [else stop].
 	test('the build identity chip states this app address in its foldout', async ({
 		page,
 		context,
@@ -588,7 +593,30 @@ test.describe('setup entry points', () => {
 		const urlLink = chip.locator('a.url');
 		await expect(urlLink).toBeVisible();
 		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		await expect(urlLink).toHaveAttribute('target', '_blank');
+		const href = await urlLink.getAttribute('href');
+		if (href === null) throw new Error('the build identity url link lost its href after it was asserted');
+		// Bounded on purpose. Twice on Mon 28 Sep 2026 (runs 36393773779 and
+		// 36415901881, both on agbox2) WebKit took this click, focused the link
+		// and opened no tab at all: no page event and no request for the URL.
+		// An unbounded wait spent the whole test budget and reported only
+		// "Test timeout", which says nothing about which step failed.
+		const pagePromise = context.waitForEvent('page', { timeout: NEW_TAB_TIMEOUT_MS });
+		await urlLink.click();
+		const engineTab = await pagePromise.catch(async (cause: unknown) => {
+			const focused = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160) ?? 'nothing');
+			throw new Error(
+				`clicking the build identity url link opened no tab within ${NEW_TAB_TIMEOUT_MS} ms ` +
+					`on ${browserName} (focus after the click: ${focused})`,
+				{ cause }
+			);
+		});
+		await engineTab.waitForLoadState('domcontentloaded');
+		expect(engineTab.url().replace(/\/$/, '')).toBe(href.replace(/\/$/, ''));
+		await engineTab.close();
 		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
+		const copyIcon = chip.getByRole('button', { name: 'Copy build identity to clipboard' });
+		await expect(copyIcon).toBeVisible();
 		// 'clipboard-read' and 'clipboard-write' are Chromium permission names.
 		// WebKit rejects the grant outright ("Unknown permission:
 		// clipboard-write"), and this spec also runs under the webkit artifact
@@ -612,6 +640,19 @@ test.describe('setup entry points', () => {
 				}, {
 					timeout: 30_000,
 					message: 'the copied report must carry the engine git_sha once GET /api/v1/build-info lands'
+				})
+				.toMatch(/git_sha:/);
+		}
+		await copyIcon.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			await expect
+				.poll(async () => {
+					await copyIcon.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the clipboard icon must copy the full build identity report'
 				})
 				.toMatch(/git_sha:/);
 		}

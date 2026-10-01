@@ -13,6 +13,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 import { resolveEndpoints, seedDataDir } from './midi-maps-e2e-endpoints';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -35,6 +36,8 @@ const engineEnv = {
 };
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'midi-maps-resync.spec.ts',
 	fullyParallel: false,
@@ -46,7 +49,7 @@ export default defineConfig({
 	reporter: [['list']],
 	webServer: [
 		{
-			command: `uv run --no-sync python -m apps.engine_core serve --data-dir ${dataDir} --host 127.0.0.1 --port ${endpoints.backendPort}`,
+			command: guardedWebServerCommand('midi-maps-resync-engine', `uv run --no-sync python -m apps.engine_core serve --data-dir ${dataDir} --host 127.0.0.1 --port ${endpoints.backendPort}`),
 			cwd: REPOSITORY_ROOT,
 			url: `${endpoints.backendOrigin}/api/v1/health`,
 			reuseExistingServer: false,
@@ -54,7 +57,7 @@ export default defineConfig({
 			env: engineEnv
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.midi-maps.config.ts',
+			command: guardedWebServerCommand('midi-maps-resync-vite', 'pnpm exec vite --config tests/e2e/vite.midi-maps.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: `${endpoints.frontendOrigin}/performance`,
 			reuseExistingServer: false,

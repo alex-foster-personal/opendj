@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from apps.shared.state.order_key import (
     PrecisionExhausted,
     allocate_keys,
-    from_index,
+    renumbered_keys,
 )
 
 from .backend import BackendError, NotFoundError
@@ -245,9 +245,9 @@ def _allocate_or_renumber(
             before_item_id=before_item_id,
             after_item_id=after_item_id,
         )
-        updates = [
-            (m.item_id, from_index(i)) for i, m in enumerate(new_order)
-        ]
+        updates = list(
+            zip([m.item_id for m in new_order], renumbered_keys(len(new_order)), strict=True)
+        )
         return updates, True, False
 
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Cancel superseded queued trunk CI and bookkeeping workflow runs.
 
-Issue #2922: workflow_run followers (CI Cost Guard, Stable evidence, Error sink)
+Issue #2922: workflow_run followers (Error sink; CI Cost Guard and Stable evidence until
+Tue 22 Sep 2026, when each became a scheduled batch pass)
 queue on the self-hosted agentbox pool with per-upstream concurrency groups that
 never coalesce across superseded main pushes. This sweeper keeps only the trunk
 tip and the oldest/newest queued CI push runs, then cancels queued bookkeeping
@@ -40,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -62,15 +64,18 @@ except ModuleNotFoundError as exc:
     raise
 
 GATING_WORKFLOW = "CI"
-# CI Cost Guard left this set on Tue 22 Sep 2026: it is a scheduled batch pass
-# now, not a per-SHA follower, so there is nothing of it to supersede.
-BOOKKEEPING_WORKFLOWS = frozenset(
-    {
-        "Stable evidence",
-        "Error sink",
-    }
-)
+# CI Cost Guard and Stable evidence left this set on Tue 22 Sep 2026: each is a
+# scheduled batch pass now, not a per-SHA follower, so there is nothing of them
+# to supersede.
+BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
+
+# A moving queue is expected (see `_paginated_runs`), so one inconsistent multi-page
+# census is not yet a precondition failure: re-read up to this many times, sleeping
+# CENSUS_RETRY_SLEEP_SECONDS between attempts, and only fail closed once every
+# attempt disagreed.
+CENSUS_MAX_ATTEMPTS = 3
+CENSUS_RETRY_SLEEP_SECONDS = 1.5
 
 _NOT_YET_QUEUED_CANCEL_MARKERS = ("HTTP 409", "not been queued yet")
 
@@ -188,25 +193,34 @@ def _paginated_runs(
     census and a disagreeing count is only a warning. Across MORE than one page a
     disagreement can also mean the queue moved between page requests, and offset
     paging then skips or repeats a run at the boundary; a skipped CI run whose SHA
-    should be retained would let a bookkeeping run sharing that SHA be cancelled,
-    so a moving multi-page census stays fail-closed (PreconditionError, exit 10).
+    should be retained would let a bookkeeping run sharing that SHA be cancelled.
+    A moving queue is expected, so one inconsistent multi-page read is re-read up
+    to CENSUS_MAX_ATTEMPTS times (sleeping CENSUS_RETRY_SLEEP_SECONDS between
+    attempts) before this stays fail-closed (PreconditionError, exit 10) -- only
+    a CONSISTENT read is ever accepted, never a fallback to the disagreeing one.
     `fetch_json` is the GitHub GET; a test hands in captured real payloads keyed by
     the path this asks (no monkeypatching)."""
     fetch = _gh_api_json if fetch_json is None else fetch_json
-    runs, total_count, pages = _list_runs_once(path, fetch)
-    if len(runs) == total_count:
-        return runs
-    if pages > 1:
-        raise PreconditionError(
-            f"{path} reported total_count={total_count} but {pages} pages hold {len(runs)} runs;"
-            " the queue moved between page requests, so this census could have skipped a run"
-        )
-    print(
-        f"[WARN] {path} reported total_count={total_count} but its single page holds"
-        f" {len(runs)} runs; the count lags the listing, the page is the census",
-        file=sys.stderr,
-    )
-    return runs
+    attempts = 0
+    while True:
+        attempts += 1
+        runs, total_count, pages = _list_runs_once(path, fetch)
+        if len(runs) == total_count:
+            return runs
+        if pages == 1:
+            print(
+                f"[WARN] {path} reported total_count={total_count} but its single page holds"
+                f" {len(runs)} runs; the count lags the listing, the page is the census",
+                file=sys.stderr,
+            )
+            return runs
+        if attempts >= CENSUS_MAX_ATTEMPTS:
+            raise PreconditionError(
+                f"{path} reported total_count={total_count} but {pages} pages hold"
+                f" {len(runs)} runs; the queue moved between page requests on all"
+                f" {attempts} attempts, so this census could have skipped a run"
+            )
+        time.sleep(CENSUS_RETRY_SLEEP_SECONDS)
 
 
 def _list_runs_once(

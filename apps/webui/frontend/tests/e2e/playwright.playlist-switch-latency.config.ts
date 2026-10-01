@@ -13,6 +13,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -74,8 +75,10 @@ const ENGINE_COMMAND = [
 ].join(' ');
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
-	testMatch: ['library-playlist-switch-latency.spec.ts'],
+	testMatch: ['library-playlist-switch-latency.spec.ts', 'library-playlist-fill-pages.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
@@ -84,7 +87,7 @@ export default defineConfig({
 	expect: { timeout: 30_000 },
 	reporter: [['list']],
 	webServer: {
-		command: ENGINE_COMMAND,
+		command: guardedWebServerCommand('playlist-switch-latency-engine', ENGINE_COMMAND),
 		cwd: REPOSITORY_ROOT,
 		url: `${PLAYLIST_SWITCH_BENCH_ORIGIN}/api/v1/health`,
 		reuseExistingServer: false,
