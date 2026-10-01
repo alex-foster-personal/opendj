@@ -122,6 +122,15 @@ AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
 
 
+#: The last `enforce` FAIL's detail, for review_blocker's one-line BLOCKER; empty when the
+#: last run did not fail. Module state on purpose: triage hands back only an exit code.
+_LAST_FAILURE: list[str] = []
+
+
+def last_failure() -> str | None:
+    return _LAST_FAILURE[-1] if _LAST_FAILURE else None
+
+
 @dataclass(frozen=True)
 class DualReview:
     ok: bool | None  # None = could not measure
@@ -224,6 +233,8 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
     """
     from scripts import review_coverage as rc
 
+    _LAST_FAILURE.clear()
+
     def reviewed_at_head() -> dict[str, bool]:
         reviews = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/reviews")
         inline = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/comments")
@@ -248,5 +259,6 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
     if verdict.ok:
         print(f"[review-coverage] control-plane dual review (REVIEW-13) ok: {verdict.detail}")
         return 0
+    _LAST_FAILURE.append(verdict.detail)
     print(f"[review-coverage] FAIL: control-plane dual review (REVIEW-13): {verdict.detail}")
     return 1

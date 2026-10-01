@@ -576,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except review_coverage.TriageError as exc:
         # Could not measure is not a verdict, and must not read as either one.
-        print(f"[review-coverage] COULD NOT MEASURE: {exc}", file=sys.stderr)
+        review_blocker.unknown(f"[review-coverage] COULD NOT MEASURE: {exc}")
         return 3
     except (LedgerReadError, HeadMovedError, BaseRetargetedError) as exc:
         # Same rule for the thread fetch's own guards: a broken ledger read, or
