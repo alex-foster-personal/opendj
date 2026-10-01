@@ -311,6 +311,7 @@ import {
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
+import { createWebAudioPhaseLock } from './phase-lock-webaudio';
 import {
 	_effectivePresentedScheduleAt,
 	acknowledgePresentedTransportSchedule,
@@ -2055,6 +2056,7 @@ function _tick(): void {
 			_updateSlipPosition(deck);
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
+		_phaseLock.tick(_ctx.currentTime); // NAE-19: keep Beat Sync followers on phase (throttled to 30 Hz)
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
 		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
 		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
@@ -2394,6 +2396,7 @@ async function _synchronizeFollowers(
 	options: _SyncOptions = {}
 ): Promise<void> {
 	if (followers.length === 0 && options.masterSchedule === undefined) return;
+	for (const deck of followers) _phaseLock.clear(deck); // no trim between this plan and its lock
 	// Every guard the two beatgrid-resync callers apply to their PORTS is asked
 	// before this function is entered; none of them survives the awaits INSIDE
 	// it. `_resumeContext()` alone is an open-ended wait, and everything below
@@ -2644,7 +2647,10 @@ async function _synchronizeFollowers(
 				cause: outcomes.find((outcome) => outcome.status === 'rejected')
 			});
 		}
-		for (const item of planned) item.st.sync_error = null;
+		for (const item of planned) {
+			item.st.sync_error = null;
+			_phaseLock.record(item.deck, { master, masterTempo: masterTempoRatio, base: item.plan.followerTempoRatio, normalization: item.plan.tempoNormalization });
+		}
 		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
 		// a pure function; the engine only performs the effects it returns.
 		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
@@ -2673,6 +2679,17 @@ const _beatgridResyncPorts: BeatgridResyncPorts = {
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };
+// NAE-19 continuous phase lock: bookkeeping and ports in phase-lock-webaudio.ts.
+const _phaseLock = createWebAudioPhaseLock({
+	deckIds: DECK_IDS, syncMaster: _syncMaster, ownsTempo: _syncOwnsFollowerTempo, playing: (deck) => deckStates[deck].playing,
+	loadToken: (deck) => _rt[deck].loadToken, stableId: (deck) => deckStates[deck].stable_id,
+	settled: (deck) => { const rt = _rt[deck]; return rt.pending.length === 0 && rt.scheduleIntentCount === 0 && !_presentationPending(rt) && !_reanchorRampPending(rt) && _quantizedLaunchAt[deck] === null; },
+	desiredTempo: (deck) => _rt[deck].pending.at(-1)?.tempoRatio ?? _rt[deck].controlTempoRatio,
+	beats: (deck) => deckStates[deck].anlz?.beatgrid.beats ?? [], positionSec: _projectPositionAt,
+	pitchRangePct: (deck) => pitchRanges[deck], loopEngaged: (deck) => deckStates[deck].loop?.engaged === true,
+	scheduleTempo: (deck, ratio) => _scheduleDeck(deck, _futureScheduleTime(deck), (when) => _projectPositionAt(deck, when), true, ratio),
+	resync: (master, deck) => _synchronizeFollowers(master, [deck]), reportError: (deck, message) => (deckStates[deck].sync_error = message)
+});
 const _beatgridGuards = createBeatgridResyncGuards({
 	ports: _beatgridResyncPorts,
 	deckRuntime: (deck) => _rt[deck],
@@ -2933,6 +2950,7 @@ class RbAudioEngine implements AudioEngine {
 		const processors: _DeckProcessor[] = [];
 		const nodes: AudioNode[] = [];
 		_engineSession += 1;
+		_phaseLock.clearAll();
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			rt.loadToken += 1;

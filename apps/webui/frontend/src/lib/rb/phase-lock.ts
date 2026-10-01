@@ -24,10 +24,9 @@
  * than through one BPM. No `$lib` state is read: both engines pass views.
  *
  * Wired in Rust engine mode (`phaseLockTick` in rust-transport.ts, on each
- * engine state frame). The Web Audio engine is not wired yet: its tempo
- * writes are scheduled revisions on the AudioContext clock (`_scheduleDeck`)
- * with re-anchor ramps and ownership generations, and a periodic writer there
- * needs its own base-tempo bookkeeping beside them - see PARITY-TODO.
+ * engine state frame) and in the Web Audio engine (`phase-lock-webaudio.ts`,
+ * from the presentation tick in audio-engine.svelte.ts, with its own base-tempo
+ * bookkeeping beside the scheduled revisions and re-anchor ramps).
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { TempoNormalization } from '$lib/rb/beat-sync-math';
