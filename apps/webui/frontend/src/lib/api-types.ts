@@ -2667,6 +2667,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/share-root/reanchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reanchor Share Root
+         * @description Trust the rekordbox share root as it is now, and forget what was read under it.
+         *
+         *     The engine remembers which directory the share root was when it first
+         *     read it, and refuses to read below a root that has since become a
+         *     different one (LIBM-137): a volume mounted again at the same path, a
+         *     directory swapped in by rename, a symlinked share root pointed somewhere
+         *     else. Nothing re-trusts it on its own, because each of those is also what
+         *     an attack looks like. This call is how the root's owner says the new
+         *     directory is intended; it records that directory's identity and empties
+         *     the listing's row memory.
+         *
+         *     ``exists`` is false, and nothing changes, when the share root is not there.
+         *     The call is refused with 409, and ``detail`` says why, when a directory
+         *     ABOVE the share root is a symlink: only the share root itself may be one.
+         */
+        post: operations["reanchor_share_root_api_v1_library_share_root_reanchor_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/wheel": {
         parameters: {
             query?: never;
@@ -13730,6 +13763,14 @@ export interface components {
             /** Tracks */
             tracks: number;
         };
+        /**
+         * ShareRootReanchorOut
+         * @description Answer of ``POST /library/share-root/reanchor``.
+         */
+        ShareRootReanchorOut: {
+            /** Exists */
+            exists: boolean;
+        };
         /** ShiftModifier */
         ShiftModifier: {
             /**
@@ -21122,6 +21163,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reanchor_share_root_api_v1_library_share_root_reanchor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareRootReanchorOut"];
                 };
             };
         };

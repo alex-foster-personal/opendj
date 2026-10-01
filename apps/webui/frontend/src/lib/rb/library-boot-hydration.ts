@@ -4,6 +4,10 @@
  * Fires ui-prefs and the first All Tracks page as soon as the layout module
  * loads, before BrandLaunch's first frame. BrowserPanel joins the same
  * in-flight promises instead of re-fetching.
+ *
+ * LIBM-138: the first page is small, so the first rows do not wait on 500 of
+ * them, and the walk tells the boot scheduler when it starts and ends so
+ * deferred boot requests stay off the engine until the listing is in.
  */
 
 import {
@@ -12,10 +16,16 @@ import {
 	type PlaylistSummaryHydrated,
 	type TracksPageHydrated
 } from '$lib/rb/api-rb';
+import { bootScheduler } from '$lib/rb/boot-scheduler';
 import { hydrateConfirmPrefsFromDisk } from '$lib/rb/prefs.svelte';
 
-/** Per-request page size for the boot tracks prefetch and BrowserPanel. */
+/** Per-request page size for BrowserPanel's listing pages after the first. */
 export const LIBRARY_BOOT_PAGE_SIZE = 500;
+
+/** Rows in the first All Tracks page: more than a tall viewport shows, and a
+ * fifth of the engine work of a full page (measured Thu 1 Oct 2026: 0.15 s
+ * for 100 rows against 1.1 to 1.6 s for 500 on the same engine). */
+export const LIBRARY_BOOT_FIRST_PAGE_SIZE = 100;
 
 export interface LibraryBootPrefetch {
 	readonly startedAt: number;
@@ -29,11 +39,13 @@ export type BootTracksPrefetch = LibraryBootPrefetch;
 
 let bootPrefetch: LibraryBootPrefetch | null = null;
 
-type FetchBootTracksPage = (limit: number) => Promise<TracksPageHydrated>;
+type FetchBootTracksPage = (limit: number, cursor?: string) => Promise<TracksPageHydrated>;
 type FetchBootPlaylists = () => Promise<PlaylistSummaryHydrated[]>;
 type PrefsHydrator = () => Promise<void>;
 
-let fetchBootTracksPage: FetchBootTracksPage = (limit) => listTracksHydrated({ limit });
+let fetchBootTracksPage: FetchBootTracksPage = (limit, cursor) =>
+	listTracksHydrated({ limit, cursor });
+let settleBootListingWalk: (() => void) | null = null;
 let fetchBootPlaylists: FetchBootPlaylists = () => listPlaylistsHydrated({ fast: true });
 let fallbackTracksFetch: FetchBootTracksPage = (limit) => listTracksHydrated({ limit });
 let fallbackPlaylistsFetch: FetchBootPlaylists = () => listPlaylistsHydrated({ fast: true });
@@ -41,7 +53,7 @@ let prefsHydrator: PrefsHydrator = () => hydrateConfirmPrefsFromDisk();
 
 /** Test seam: inject a fake tracks fetch without mocking production api-rb. */
 export function setFetchBootTracksPageForTests(fn: FetchBootTracksPage | null): void {
-	fetchBootTracksPage = fn ?? ((limit) => listTracksHydrated({ limit }));
+	fetchBootTracksPage = fn ?? ((limit, cursor) => listTracksHydrated({ limit, cursor }));
 }
 
 /** Test seam: inject a fake playlists fetch without mocking production api-rb. */
@@ -67,6 +79,7 @@ export function setFallbackPlaylistsFetchForTests(fn: FetchBootPlaylists | null)
 /** Test-only reset for the boot singleton and injected seams. */
 export function resetLibraryBootHydrationForTests(): void {
 	bootPrefetch = null;
+	bootListingWalkSettled();
 	setFetchBootTracksPageForTests(null);
 	setFetchBootPlaylistsForTests(null);
 	setPrefsHydratorForTests(null);
@@ -81,14 +94,23 @@ function bootNowMs(): number {
 	return Date.now();
 }
 
-/** Idempotent: second and later calls are no-ops. */
-export function startLibraryBootHydration(): void {
+/** Whether a boot on `pathname` mounts the pane that walks All Tracks. Only
+ * that pane ends the walk, so only there may the walk hold deferred boot work:
+ * anywhere else the hold would sit until the scheduler's ceiling. */
+export function routeRunsBootListingWalk(pathname: string): boolean {
+	return pathname.replace(/\/+$/, '') === '/performance';
+}
+
+/** Idempotent: second and later calls are no-ops. `listingWalkRuns` is false
+ * on a route with no All Tracks pane: the prefetch still fires, nothing holds. */
+export function startLibraryBootHydration(listingWalkRuns = true): void {
 	if (bootPrefetch !== null) return;
 	const startedAt = bootNowMs();
+	if (listingWalkRuns) settleBootListingWalk = bootScheduler.listingWalkStarted();
 	bootPrefetch = {
 		startedAt,
 		prefsPromise: prefsHydrator(),
-		tracksPromise: fetchBootTracksPage(LIBRARY_BOOT_PAGE_SIZE),
+		tracksPromise: fetchBootTracksPage(LIBRARY_BOOT_FIRST_PAGE_SIZE),
 		playlistsPromise: fetchBootPlaylists()
 	};
 }
@@ -131,16 +153,40 @@ export function canBootAllTracksEarly(args: {
 	return true;
 }
 
-/** First-page tracks fetch: join boot prefetch or fall back to a live GET. */
-export async function fetchBootTracksFirstPage(
-	cursor: string | undefined
-): Promise<TracksPageHydrated> {
-	if (cursor !== undefined) {
-		return listTracksHydrated({ limit: LIBRARY_BOOT_PAGE_SIZE, cursor });
-	}
+/** Whether the boot All Tracks walk is still holding deferred boot work. */
+export function bootListingWalkInFlight(): boolean {
+	return settleBootListingWalk !== null;
+}
+
+/** The boot All Tracks walk is over: its last page arrived, a page failed, or
+ * the boot opened another pane. Lets deferred boot work through. Idempotent. */
+export function bootListingWalkSettled(): void {
+	settleBootListingWalk?.();
+	settleBootListingWalk = null;
+}
+
+async function _bootTracksPage(cursor: string | undefined): Promise<TracksPageHydrated> {
+	if (cursor !== undefined) return fetchBootTracksPage(LIBRARY_BOOT_PAGE_SIZE, cursor);
 	try {
 		return await bootTracksPrefetch().tracksPromise;
 	} catch {
-		return fallbackTracksFetch(LIBRARY_BOOT_PAGE_SIZE);
+		return fallbackTracksFetch(LIBRARY_BOOT_FIRST_PAGE_SIZE);
 	}
+}
+
+/** One All Tracks page: the first joins the boot prefetch (or falls back to a
+ * live GET), the rest are fetched by cursor. Ends the boot walk on the last
+ * page or on a failure, which is still thrown to the caller. */
+export async function fetchBootTracksFirstPage(
+	cursor: string | undefined
+): Promise<TracksPageHydrated> {
+	let page: TracksPageHydrated;
+	try {
+		page = await _bootTracksPage(cursor);
+	} catch (error) {
+		bootListingWalkSettled();
+		throw error;
+	}
+	if (page.next_cursor === null) bootListingWalkSettled();
+	return page;
 }
