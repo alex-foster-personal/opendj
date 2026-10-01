@@ -22,7 +22,7 @@ type = layers
 containers =
     apps
 layers =
-    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : fleet_mcp : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : webui
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : webui
     shared
 exhaustive = true
 ; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
@@ -61,7 +61,7 @@ type = layers
 containers =
     apps
 layers =
-    engine_core : fleet_mcp : opendj_cli
+    engine_core : opendj_cli
     webui
     adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
 exhaustive = true
