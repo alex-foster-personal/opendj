@@ -15,7 +15,7 @@
 		type PinDraft,
 		type PinSeen
 	} from '$lib/rb/feedback';
-	import { parseShowHarvestedPins, SHOW_HARVESTED_PINS_KEY } from '$lib/rb/feedback-pin-board';
+	import { isPinOnPage, parseShowHarvestedPins, SHOW_HARVESTED_PINS_KEY } from '$lib/rb/feedback-pin-board';
 	import { readPinsVisible, writePinsVisible, onPinsVisibleChanged } from '$lib/rb/feedback-pin-visibility';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { readPinSeen, writePinSeen } from '$lib/rb/feedback-pin-seen';
@@ -72,6 +72,7 @@
 		pinsVisible
 			? feedbackState.pins.filter((p) => {
 					if (!isPinDrawn(p)) return false;
+					if (!isPinOnPage(p, pathname)) return false;
 					if (p.author === 'agent' && !uiPrefs.show_agent_pins) return false;
 					if (p.status === 'harvested' && !showHarvestedPins) return false;
 					return true;
