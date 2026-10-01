@@ -160,10 +160,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from scripts.sparse_worktree import require_materialized
-
 try:
     from scripts import quality_latency, shell_construct_lint
+    from scripts.sparse_worktree import require_materialized
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.quality_gate") from None
