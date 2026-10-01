@@ -105,7 +105,7 @@ def scope_ids(scope: ScanScope) -> list[str]:
     try:
         if scope == "present":
             return [sid for sid, _path in library_playable.scan_playability(conn).present]
-        elif scope == "all":
+        if scope == "all":
             return [
                 str(row[0])
                 for row in conn.execute(

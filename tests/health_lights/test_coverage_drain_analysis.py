@@ -10,6 +10,8 @@ Regression lines:
   - if a recently loaded track is not analyzed before the rest then broken
   - if a machine-wide analysis failure burns per-track attempts then broken
   - if a drain without an analysis job behaves differently than before then broken
+
+[if] the drain runs analysis out of turn, in parallel or impolitely [then] fail, [else stop].
 """
 from __future__ import annotations
 

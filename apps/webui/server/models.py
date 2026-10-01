@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .models_grid_quality import GridQualityRowOut
+
 FileAvailabilityStatus = Literal[
     "present",
     "absent",
@@ -155,22 +157,6 @@ class CloudTransferOut(BaseModel):
         if self.bytes_total is not None and self.bytes_transferred > self.bytes_total:
             raise ValueError("bytes_transferred must not exceed bytes_total")
         return self
-
-
-class GridQualityRowOut(BaseModel):
-    """A track row's stored beatgrid verdict (GRIDFLAG-02).
-
-    Read back from the grid-quality store; a listing never parses a grid.
-    ``unknown`` means nobody could judge the grid (``reason`` says why) and
-    must never be drawn as ``ok`` or as a flag. ``message`` is the sentence
-    the deck's Beat Sync badge shows for the same grid; null for ``ok``.
-    """
-
-    grid_class: Literal["ok", "suspect", "variable_tempo", "unknown"]
-    reason: str | None = None
-    # The user hid this track's flag (track field ``grid_flag_dismissed``).
-    dismissed: bool = False
-    message: str | None = None
 
 
 class TrackListItemOut(TrackOut):

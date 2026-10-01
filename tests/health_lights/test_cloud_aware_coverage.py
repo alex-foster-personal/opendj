@@ -7,6 +7,8 @@ Regression lines:
   - if a machine with no cloud at all reads as unknown instead of pending then broken
   - if an index entry without a manifest counts as in cloud then broken
   - if local + in_cloud ever differs from done then broken
+
+[if] a stem bundle evicted to R2 and fetchable here counts as pending [then] fail, [else stop].
 """
 from __future__ import annotations
 

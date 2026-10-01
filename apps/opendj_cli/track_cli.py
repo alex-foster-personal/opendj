@@ -64,11 +64,11 @@ def run(
     verb, *args = rest
     if verb == KEY_SEGMENTS_VERB:
         return _key_segments(args, as_json=as_json, default_state_db=state_db)
-    elif verb == GRID_FLAGS_VERB:
+    if verb == GRID_FLAGS_VERB:
         return _grid_flags(args)
-    elif verb == GRID_SCAN_VERB:
+    if verb == GRID_SCAN_VERB:
         return _grid_scan(args)
-    elif verb == GRID_FLAG_VERB:
+    if verb == GRID_FLAG_VERB:
         return _grid_flag(args)
     print(f"unknown track verb: {verb!r}\n{_USAGE}", file=sys.stderr)
     return 1

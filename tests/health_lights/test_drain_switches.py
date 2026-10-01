@@ -9,6 +9,8 @@ Regression lines:
   - if analysis starts while memory pressure is high then broken
   - if memory pressure stops vocals or lyrics then broken
   - if swap that is merely allocated holds analysis back then broken
+
+[if] a switched-off step runs or memory pressure fails to hold analysis [then] fail, [else stop].
 """
 from __future__ import annotations
 

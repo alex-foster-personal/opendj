@@ -9,6 +9,8 @@ Regression lines:
   - if a cleared mark is put straight back by the automatic check then broken
   - if a marked track that later gains a bundle is not counted done then broken
   - if a mark survives the audio file being replaced then broken
+
+[if] a track that can never have stems stays pending forever [then] fail, [else stop].
 """
 from __future__ import annotations
 

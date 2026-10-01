@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
@@ -140,7 +140,8 @@ def _track_facts(stable_ids: list[str]) -> dict[str, tuple[str | None, str | Non
                 if json.loads(value_json) is True
             }
             for sid, title, artists_json in conn.execute(
-                f"SELECT stable_id, title, artists_json FROM tracks WHERE stable_id IN ({placeholders})",
+                "SELECT stable_id, title, artists_json FROM tracks "
+                f"WHERE deleted_at IS NULL AND stable_id IN ({placeholders})",
                 tuple(chunk),
             ):
                 artists = json.loads(artists_json) if artists_json else []
@@ -156,7 +157,7 @@ def _matches(item: BeatgridFlagItem, grid_class: GridClassFilter, include_dismis
         return False
     if grid_class == "all":
         return True
-    elif grid_class == "flagged":
+    if grid_class == "flagged":
         return item.grid_class in FLAGGED_GRID_CLASSES
     return item.grid_class == grid_class
 
@@ -167,9 +168,9 @@ def _matches(item: BeatgridFlagItem, grid_class: GridClassFilter, include_dismis
 @router.get("", response_model=BeatgridFlagsOut)
 def list_beatgrid_flags(
     request: Request,
-    grid_class: GridClassFilter = Query("flagged"),
+    grid_class: Annotated[GridClassFilter, Query()] = "flagged",
     include_dismissed: bool = Query(False),
-    availability: Availability = Query("present"),
+    availability: Annotated[Availability, Query()] = "present",
     limit: int = Query(500, ge=1, le=20000),
 ) -> BeatgridFlagsOut:
     """Tracks by beatgrid class, with the numbers behind each verdict.
@@ -231,7 +232,7 @@ def get_scan_status(request: Request) -> BeatgridScanStatus:
 @router.post("/scan", response_model=BeatgridScanStatus)
 def start_scan(
     request: Request,
-    scope: ScanScope = Query("present"),
+    scope: Annotated[ScanScope, Query()] = "present",
     wait: bool = Query(False),
 ) -> BeatgridScanStatus:
     """Bring stored verdicts up to date. Incremental: an unchanged grid is

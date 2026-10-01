@@ -129,12 +129,13 @@ test('SOURCE: the Err cell, the sort key and the dismiss control are wired', () 
 	const table = read('components/rb/browser/TrackTable.svelte');
 	assert.match(table, /gridFlag=\{gridFlagFor\(row\)\}/);
 	assert.match(table, /title=\{errColumnTitle\(row\)\}/);
-	assert.match(table, /ongridflagdismiss=\{\(dismissed\) => void _setGridFlagDismissed\(row, dismissed\)\}/);
+	assert.match(table, /ongridflagdismiss=\{\(dismissed\) => _setGridFlagDismissed\(row, dismissed\)\}/);
 	assert.match(table, /onsort\('grid'\)/, 'the Err header sorts flagged tracks to the top');
 	const contract = read('components/rb/browser/pane-contract.svelte.ts');
 	assert.match(contract, /key === 'grid'\) return gridFlagSortValue\(row\)/);
 	const popover = read('components/rb/browser/AnalysisDotsPopover.svelte');
 	assert.match(popover, /data-testid="grid-flag-dismiss"/);
+	assert.match(popover, /Beatgrid flag not \$\{dismissed \? 'dismissed' : 'restored'\}/, 'a refused dismiss is toasted');
 	assert.match(popover, /not implemented - see PARITY-TODO/, 'no handler means inert with a tooltip');
 	const dots = read('components/rb/browser/AnalysisDots.svelte');
 	assert.match(dots, /class:unknown=/, 'an unknown grid is drawn differently from ok');

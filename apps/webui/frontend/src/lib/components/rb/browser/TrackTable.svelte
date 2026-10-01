@@ -60,7 +60,6 @@
 	} from './track-table-support';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
 	import { ensureGridQualityScan, setGridFlagDismissed } from '$lib/rb/api-grid-flags';
-	import { pushToast } from '$lib/stores.svelte';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import {
 		previewCue,
@@ -311,15 +310,12 @@
 	});
 
 	/** GRIDFLAG-04: hide or restore one row's beatgrid flag (a persisted user
-	 * track field). The row is updated only after the engine confirmed it. */
+	 * track field). The row is updated only after the engine confirmed it; a
+	 * failure rejects, and the popover that asked reports it. */
 	async function _setGridFlagDismissed(row: BrowserRow, dismissed: boolean): Promise<void> {
-		try {
-			const result = await setGridFlagDismissed(row.stable_id, dismissed);
-			if (row.grid_quality) row.grid_quality = { ...row.grid_quality, dismissed: result.dismissed };
-			if (row.etag !== '') row.etag = result.etag;
-		} catch (error) {
-			pushToast(`Beatgrid flag not ${dismissed ? 'dismissed' : 'restored'}: ${String(error)}`, 'error');
-		}
+		const result = await setGridFlagDismissed(row.stable_id, dismissed);
+		if (row.grid_quality) row.grid_quality = { ...row.grid_quality, dismissed: result.dismissed };
+		if (row.etag !== '') row.etag = result.etag;
 	}
 
 	function _jobRowStyle(stableId: string): string | undefined {
@@ -1717,7 +1713,7 @@
 								stableId={row.stable_id}
 								title={errColumnTitle(row)}
 								gridFlag={gridFlagFor(row)}
-								ongridflagdismiss={(dismissed) => void _setGridFlagDismissed(row, dismissed)}
+								ongridflagdismiss={(dismissed) => _setGridFlagDismissed(row, dismissed)}
 							/>
 						</td>
 						<!-- CloudSync presence, local availability, and transfer bytes are

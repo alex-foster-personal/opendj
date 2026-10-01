@@ -114,7 +114,7 @@
 		 * (dismissed or not). Shows the dismiss / restore control. */
 		gridFlag?: GridFlag | null;
 		/** Persist the dismissal. Absent = the control renders inert. */
-		ongridflagdismiss?: (dismissed: boolean) => void;
+		ongridflagdismiss?: (dismissed: boolean) => Promise<void>;
 	} = $props();
 
 	/** Small debounce so a fast pointer skim across a virtualized column of
@@ -270,6 +270,15 @@
 		ordering = null;
 	}
 
+	/** GRIDFLAG-04: ask the owner to hide or restore the flag; a refusal is said out loud. */
+	async function _toggleGridFlag(dismissed: boolean): Promise<void> {
+		try {
+			await ongridflagdismiss?.(dismissed);
+		} catch (error) {
+			pushToast(`Beatgrid flag not ${dismissed ? 'dismissed' : 'restored'}: ${String(error)}`, 'error');
+		}
+	}
+
 	async function refreshOrders(): Promise<void> {
 		if (stableId === null) return;
 		const sid = stableId;
@@ -414,7 +423,7 @@
 							: gridFlag.dismissed
 								? 'Show this beatgrid flag again for this track'
 								: 'Hide this beatgrid flag for this track. The grid is not changed, and you can restore the flag here.'}
-						onclick={() => ongridflagdismiss?.(!gridFlag.dismissed)}
+						onclick={() => void _toggleGridFlag(!gridFlag.dismissed)}
 					>
 						{gridFlag.dismissed ? 'Restore beatgrid flag' : 'Dismiss beatgrid flag'}
 					</button>

@@ -41,6 +41,7 @@ def _seed_present(library: Library, stable_id: str) -> Path:
 
 @pytest.mark.requirement("HEALTH-03")
 def test_every_step_partitions_the_present_denominator(library: Library) -> None:
+    """[if] a coverage step does not partition the present denominator [then] fail, [else stop]."""
     for stable_id in ("a", "b", "c"):
         _seed_present(library, stable_id)
     fx.seed_track(library.state_db, "elsewhere", "/Users/someone-else/Music/x.mp3")
@@ -61,6 +62,7 @@ def test_every_step_partitions_the_present_denominator(library: Library) -> None
 
 @pytest.mark.requirement("HEALTH-04")
 def test_no_lyrics_available_is_terminal_not_pending(library: Library) -> None:
+    """[if] a track with no lyrics available still counts as pending [then] fail, [else stop]."""
     for stable_id in ("sung", "instrumental", "untried"):
         _seed_present(library, stable_id)
     fx.write_lyrics(library.lyrics_cache, "sung")
@@ -78,6 +80,7 @@ def test_no_lyrics_available_is_terminal_not_pending(library: Library) -> None:
 
 @pytest.mark.requirement("HEALTH-04")
 def test_no_stems_source_is_terminal_and_carries_vocals_with_it(library: Library) -> None:
+    """[if] a no-source stems verdict is not terminal for stems and vocals [then] fail, [else stop]."""
     audio = _seed_present(library, "unstemmable")
     _seed_present(library, "untried")
     store = coverage_outcomes.OutcomeStore(coverage_outcomes.store_path(library.data_dir))
@@ -96,6 +99,7 @@ def test_no_stems_source_is_terminal_and_carries_vocals_with_it(library: Library
 
 @pytest.mark.requirement("HEALTH-04")
 def test_a_recorded_no_source_expires_when_the_audio_changes(library: Library) -> None:
+    """[if] a recorded no-source verdict survives an audio change [then] fail, [else stop]."""
     audio = _seed_present(library, "replaced")
     store = coverage_outcomes.OutcomeStore(coverage_outcomes.store_path(library.data_dir))
     store.record_no_source("stems", "replaced", coverage_outcomes.audio_token(audio), "bad file", now=1.0)
@@ -107,6 +111,7 @@ def test_a_recorded_no_source_expires_when_the_audio_changes(library: Library) -
 
 @pytest.mark.requirement("HEALTH-04")
 def test_no_executor_anywhere_makes_missing_stems_terminal(library: Library) -> None:
+    """[if] missing stems stay pending with no executor anywhere [then] fail, [else stop]."""
     _seed_present(library, "a")
     library.app.state.stems_source_refusal_fn = lambda: "local stems are off for this build"
 
@@ -119,6 +124,7 @@ def test_no_executor_anywhere_makes_missing_stems_terminal(library: Library) -> 
 
 @pytest.mark.requirement("HEALTH-03")
 def test_stem_bundles_are_validated_once_until_they_change(library: Library) -> None:
+    """[if] a stem bundle is re-validated on every request [then] fail, [else stop]."""
     for stable_id in ("a", "b"):
         _seed_present(library, stable_id)
         fx.write_stem_bundle(library.stems, stable_id)
@@ -135,7 +141,10 @@ def test_stem_bundles_are_validated_once_until_they_change(library: Library) -> 
 
 @pytest.mark.requirement("HEALTH-03")
 def test_a_changed_bundle_is_revalidated(library: Library) -> None:
-    """Overshoot control: the cache must not freeze a verdict past a change."""
+    """Overshoot control: the cache must not freeze a verdict past a change.
+
+    [if] a bundle that changed on disk keeps its cached verdict [then] fail, [else stop].
+    """
     _seed_present(library, "a")
     bundle = fx.write_stem_bundle(library.stems, "a")
     assert _coverage(library)["done"]["stems"] == 1
@@ -154,6 +163,7 @@ def test_a_changed_bundle_is_revalidated(library: Library) -> None:
 def test_reconcile_summary_and_coverage_agree_on_playable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """[if] reconcile summary and coverage disagree on the playable count [then] fail, [else stop]."""
     data_dir = tmp_path / "data"
     state_db = fx.make_state_db(data_dir)
     music = tmp_path / "music"

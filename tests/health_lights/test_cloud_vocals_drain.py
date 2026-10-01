@@ -8,6 +8,8 @@ Regression lines:
   - if the same bundle is downloaded twice while the evictor keeps removing it then broken
   - if a hub outage spends one of a track's three attempts then broken
   - if the drain removes a bundle a deck has open, or one R2 does not confirm, then broken
+
+[if] the drain fetches more than one cloud bundle per job or fights the evictor [then] fail, [else stop].
 """
 from __future__ import annotations
 

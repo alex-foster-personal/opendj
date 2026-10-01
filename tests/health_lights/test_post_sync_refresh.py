@@ -3,6 +3,8 @@
 Regression lines:
   - if a sync that pulled rows publishes no library.changed then broken
   - if a sync that pulled nothing publishes library.changed then broken
+
+[if] a sync that pulled rows publishes no library.changed [then] fail, [else stop].
 """
 from __future__ import annotations
 

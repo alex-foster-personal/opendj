@@ -291,7 +291,7 @@ def grid_flag_clause(quality: GridQuality) -> str:
             f"{_fixed(quality.steady_line_bpm, 2)} BPM line (the grid is uneven, "
             "the music is not)"
         )
-    elif quality.grid_class == "variable_tempo":
+    if quality.grid_class == "variable_tempo":
         markers = quality.tempo_marker_count
         marker_text = ""
         if markers is not None:
@@ -311,26 +311,26 @@ def grid_quality_message(
         if quality.reason is None:
             raise ValueError("an unknown grid always says why")
         return f"Beatgrid not checked: {UNKNOWN_REASON_TEXT[quality.reason]}"
-    elif quality.grid_class == "ok":
+    if quality.grid_class == "ok":
         return (
             f"Beatgrid: all {quality.interval_count} beat intervals are within "
             f"{_fixed(thresholds.uneven_interval_tolerance_s * 1000, 0)} ms of the "
             "median (evenly spaced; not checked against the audio)"
         )
-    elif quality.grid_class in FLAGGED_GRID_CLASSES:
+    if quality.grid_class in FLAGGED_GRID_CLASSES:
         return f"Beatgrid: {grid_flag_clause(quality)} - {FLAG_CONSEQUENCE}"
     raise ValueError(f"unhandled grid class: {quality.grid_class!r}")
 
 
 __all__ = [
-    "FLAG_CONSEQUENCE",
     "FLAGGED_GRID_CLASSES",
+    "FLAG_CONSEQUENCE",
     "GRID_CLASSES",
     "REASON_ANLZ_MISSING",
     "REASON_ANLZ_UNREADABLE",
+    "REASON_NOT_SCANNED",
     "REASON_NO_GRID_DATA",
     "REASON_NO_REKORDBOX_GRID",
-    "REASON_NOT_SCANNED",
     "THRESHOLDS",
     "UNKNOWN_REASON_TEXT",
     "GridClass",
