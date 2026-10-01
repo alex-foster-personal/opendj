@@ -116,9 +116,9 @@ test('a re-ask is scanning too, even with a previous answer on screen', () => {
 });
 
 test('the scanning sentence says what is being looked for', () => {
-	// It must not be readable as "we looked and found nothing".
 	assert.match(mod.SCANNING_SENTENCE, /Looking for/);
-	assert.match(mod.SCANNING_SENTENCE, /\.\.\.$/);
+	assert.match(mod.SCANNING_SENTENCE, /\.\.\.$|^[^.]*\.$/);
+	assert.doesNotMatch(mod.SCANNING_SENTENCE, /rekordbox/i);
 });
 
 // ------------------------------------------------------------- the colour
@@ -127,7 +127,7 @@ test('a missing file is red only when it is why nothing can be imported', () => 
 	const healthy = mod.probeRows(detection());
 	const workingCopy = healthy.find((row) => row.key === 'working_copy');
 	assert.equal(workingCopy.danger, false, 'an absent copy with a usable plain copy is fine');
-	assert.match(workingCopy.text, /not present at/);
+	assert.match(workingCopy.text, /not found/);
 
 	const broken = mod.probeRows(nothingFound());
 	assert.equal(broken.find((row) => row.key === 'live_db').danger, true);
@@ -153,7 +153,9 @@ test('an unreachable key is red on its own line', () => {
 	);
 	const key = rows.find((row) => row.key === 'key');
 	assert.equal(key.danger, true);
-	assert.match(key.text, /sqlcipher3/);
+	assert.match(key.text, /not available/i);
+	assert.doesNotMatch(key.text, /sqlcipher3|pyrekordbox/i);
+	assert.ok(key.agentDetail.includes('sqlcipher3'));
 });
 
 test('every probe line carries its hover explanation', () => {
@@ -187,24 +189,24 @@ test('the detect step always offers three ways forward', () => {
 	assert.equal(mod.ESCAPE_ACTIONS[2].label, 'Continue without importing');
 });
 
-test('every escape action names the endpoint it drives', () => {
-	// Agent-native parity: a control a human can press is a request an agent
-	// can make, and the tooltip is where that is written down.
-	assert.match(mod.ESCAPE_ACTIONS[0].title, /\/api\/v1\/setup\/detect\/rekordbox/);
-	assert.match(mod.ESCAPE_ACTIONS[1].title, /\/api\/v1\/setup\/detect\/folder/);
-	assert.match(mod.ESCAPE_ACTIONS[2].title, /\/api\/v1\/setup\/dismiss/);
+test('every escape action keeps agent endpoints out of hover titles', () => {
+	for (const action of mod.ESCAPE_ACTIONS) {
+		assert.doesNotMatch(action.title, /\/api\/v1\//);
+		assert.match(mod.escapeAgentEndpoint(action.id), /\/api\/v1\/setup\//);
+	}
 });
 
 test('a fatal blocker refuses Continue and says so in words', () => {
 	// The refusal string is what the overlay renders INLINE beside the
 	// buttons. An empty or generic one would be the hover-title bug again.
-	const refusal = mod.advanceRefusal('detect', {
+	const refusal = mod.humanRefusal('detect', {
 		source: 'rekordbox',
 		detection: nothingFound(),
 		folderRows: [{ id: 'row-1', path: '', scan: null }],
 		job: null
 	});
-	assert.match(refusal, /rekordbox_not_found/);
+	assert.match(refusal, /cannot start yet/i);
+	assert.doesNotMatch(refusal, /rekordbox_not_found/);
 	// The folder branch must NOT inherit a rekordbox blocker.
 	assert.equal(
 		mod.advanceRefusal('detect', {
@@ -335,7 +337,9 @@ test('a legacy daemon IS a final refusal', async () => {
 	const { contract_rev, engine_version, boot_id, ...legacy } = engineHealth();
 	globalThis.fetch = async () => jsonResponse(legacy);
 	assert.equal(await fresh.capabilities.probe(), 'legacy');
-	assert.match(fresh.finalSetupRefusal(), /setup API not offered/);
+	assert.match(fresh.finalSetupRefusal(), /not available/);
+	assert.doesNotMatch(fresh.finalSetupRefusal(), /\/api\/v1\//);
+	assert.match(fresh.finalSetupRefusalAgent(), /setup API not offered/);
 	assert.equal(fresh.setupProbePending(), false);
 });
 
@@ -425,7 +429,7 @@ test('the refusal renders inline, not only in a hover title', () => {
 	// The <p class="why"> block is the inline copy. Its presence next to the
 	// disabled Continue is the fix for "no available next step".
 	assert.match(overlay, /class="why"/);
-	assert.match(overlay, /Continue is not available: \{nextRefusal\}/);
+	assert.match(overlay, /Continue is not available\. \{nextRefusal\}/);
 	assert.match(overlay, /Use one of the three options above instead/);
 });
 
@@ -457,7 +461,7 @@ test('STANDALONE-08: neither source radio is selected until the operator chooses
 
 test('STANDALONE-08: welcome copy does not assume rekordbox import', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
-	assert.match(overlay, /when you choose to start that import/);
+	assert.match(overlay, /when you\s+choose to start that import/);
 	assert.doesNotMatch(overlay, /Setting it up means\s+reading your existing rekordbox/);
 });
 
@@ -465,13 +469,41 @@ test('STANDALONE-08: the neutral detect step offers dismissal and refuses Contin
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /\{#if step === 'detect' && source === null\}/);
 	assert.match(overlay, /Choose an import source above/);
-	assert.match(overlay, /Continue is not available: \{nextRefusal\}/);
+	assert.match(overlay, /Continue is not available\. \{nextRefusal\}/);
+});
+
+test('human presentation helpers keep forbidden tokens out of operator copy', () => {
+	assert.equal(mod.shortenPath('/Users/dj/Music/House/track.mp3'), '~/Music/House/track.mp3');
+	assert.equal(
+		mod.shortenPath('/home/dj/Music/House/track.mp3'),
+		'~/Music/House/track.mp3'
+	);
+	assert.equal(
+		mod.shortenPath('/Users/maintainer/Library/Application Support/com.opendj.desktop/state/state.db'),
+		'~/.../com.opendj.desktop/state/state.db'
+	);
+	assert.doesNotMatch(mod.humanBlockerSentence('rekordbox_not_found', nothingFound()), /rekordbox_not_found/);
+	assert.doesNotMatch(mod.humanFolderVerdict({
+		path: '/Users/dj/Music',
+		exists: true,
+		readable: true,
+		denied: false,
+		detail: 'readable',
+		audio_files: 3,
+		icloud_placeholders: 0,
+		how_to_grant: '',
+		sample: []
+	}), /\/Users\//);
+	assert.equal(mod.humanImportJobStatus('queued'), 'Import queued');
+	assert.equal(
+		mod.humanImportJobMessage('setup import job-9 is already running'),
+		'Working through your library...'
+	);
 });
 
 test('the wizard gates on the FINAL refusal, never on an unfinished probe', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
-	// setupRefusal() folds "not yet" into "no"; a surface must not read it.
 	assert.doesNotMatch(overlay, /\$derived\(setupRefusal\(\)\)/);
 });
 
@@ -545,7 +577,7 @@ test('denied folder candidates render as refused chips, not hidden', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /\{#if candidate\.readable\}/);
 	assert.match(overlay, /class="folder-chip refused"/);
-	assert.match(overlay, /title=\{candidate\.detail\}/);
+	assert.match(overlay, /data-agent-detail=\{candidate\.detail\}/);
 });
 
 // ---------------------------------------------------------------- forward/back
@@ -598,4 +630,26 @@ test('the breadcrumb walks this branch only, and past steps are real links', () 
 test('the user is told where they are, not left to count pills', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /Step \{position\} of \{total\}/);
+});
+
+test('default setup markup keeps agent diagnostics in a closed disclosure', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /AGENT_DETAILS_LABEL/);
+	assert.match(overlay, /<details class="agent-details">/);
+	assert.doesNotMatch(overlay, /Every step here is an HTTP endpoint/);
+	assert.match(overlay, /data-agent-endpoint="POST \/api\/v1\/setup\/dismiss"/);
+	assert.doesNotMatch(
+		overlay,
+		/title="Close setup and use the app with whatever is already in the library \(POST/
+	);
+});
+
+test('import progress renders human job copy and agent diagnostics separately', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /humanImportJobStatus\(job\.status\)/);
+	assert.match(overlay, /humanImportJobMessage\(job\.message\)/);
+	assert.doesNotMatch(overlay, /job\.status === 'running' \? 'Import in progress' : job\.status/);
+	assert.match(overlay, /data-agent-job-status=\{job\.status\}/);
+	assert.match(overlay, /data-agent-job-message=\{job\.message/);
+	assert.doesNotMatch(overlay, /title="Rekordbox analysis files/);
 });

@@ -346,8 +346,32 @@ test.describe('setup entry points', () => {
 			const button = dialog.getByRole('button', { name: label, exact: true });
 			await expect(button, `${label} must be on screen`).toBeVisible();
 			await expect(button, `${label} must never be disabled`).toBeEnabled();
-			// House rule: a control says what it does and what it will change.
-			await expect(button).toHaveAttribute('title', /\/api\/v1\/setup\//);
+			await expect(button).toHaveAttribute('title', /.+/);
+			await expect(button).not.toHaveAttribute('title', /\/api\/v1\/setup\//);
+			await expect(button).toHaveAttribute('data-agent-endpoint', /\/api\/v1\/setup\//);
+		}
+	});
+
+	test('default setup copy hides internals from operators', async ({ page }) => {
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		const text = await dialog.innerText();
+		expect(text).not.toMatch(/\/api\/v1\//);
+		expect(text).not.toMatch(/rekordbox_not_found/);
+		expect(text).not.toMatch(/OPENROUTER_API_KEY/);
+		expect(text).not.toMatch(/pyrekordbox/);
+		expect(text).not.toMatch(/^\/Users\//m);
+
+		const assistantConfigured = await page.evaluate(async () => {
+			const response = await fetch('/api/v1/assistant/status');
+			const body = (await response.json()) as { configured: boolean };
+			return body.configured === true;
+		});
+		if (assistantConfigured) {
+			await expect(page.locator('.assistant-sidebar')).toBeVisible();
+		} else {
+			await expect(page.locator('.assistant-sidebar')).toHaveCount(0);
 		}
 	});
 

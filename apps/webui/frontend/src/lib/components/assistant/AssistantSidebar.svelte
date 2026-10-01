@@ -10,11 +10,8 @@
 	 * an OpenRouter proxy (apps/engine_core/assistant/api.py). Every path,
 	 * type and refusal code lives in $lib/assistant/assistant-api.
 	 *
-	 * The house rule this component exists under: an assistant that cannot
-	 * reach a model renders a notice, never an input box. A text field that
-	 * accepts a question and answers nothing is the UI equivalent of mocked
-	 * data, and it is worse here than anywhere else in the app because the
-	 * user cannot tell a broken key from a model with nothing to say.
+	 * When no key is configured the panel is hidden entirely for operators;
+	 * agents still read GET /api/v1/assistant/status.
 	 */
 	import {
 		AssistantError,
@@ -23,6 +20,7 @@
 		type AssistantStatus,
 		type ChatMessage
 	} from '$lib/assistant/assistant-api';
+	import { AGENT_DETAILS_LABEL, humanAssistantStatusError } from '$lib/setup/present';
 
 	let { visible }: { visible: boolean } = $props();
 
@@ -41,13 +39,11 @@
 	const canSend = $derived(
 		status?.configured === true && streaming === null && draft.trim().length > 0
 	);
+	const showPanel = $derived(
+		visible && status !== null && status.configured === true && statusError === null
+	);
 
-	/** Ask what the engine can do, the first time the sidebar is shown.
-	 *
-	 * Deliberately not on mount: the sidebar is mounted alongside the wizard
-	 * and may never be opened, and a status request for a panel nobody looked
-	 * at is a request nobody asked for.
-	 */
+	/** Ask what the engine can do, the first time the sidebar is shown. */
 	$effect(() => {
 		if (!visible || status !== null || statusError !== null) return;
 		const probe = new AbortController();
@@ -69,8 +65,6 @@
 	$effect(() => () => controller?.abort());
 
 	function scrollToLatest(): void {
-		// After the DOM has the new text, not before, or this scrolls to where
-		// the log used to end.
 		requestAnimationFrame(() => {
 			if (log) log.scrollTop = log.scrollHeight;
 		});
@@ -91,19 +85,14 @@
 				streaming = (streaming ?? '') + chunk;
 				scrollToLatest();
 			}
-			// An empty stream is a failure, not an answer. Saying so beats
-			// appending a blank bubble the user has to interpret.
 			if (streaming.length === 0) {
-				sendError = 'the model returned an empty reply';
+				sendError = 'The assistant did not return a reply. Try again.';
 			} else {
 				messages = [...messages, { role: 'assistant', content: streaming }];
 			}
 		} catch (error: unknown) {
 			if (controller.signal.aborted) return;
-			sendError =
-				error instanceof AssistantError || error instanceof Error
-					? error.message
-					: String(error);
+			sendError = 'The assistant could not answer right now. Try again.';
 		} finally {
 			streaming = null;
 			controller = null;
@@ -112,8 +101,6 @@
 	}
 
 	function onKeydown(event: KeyboardEvent): void {
-		// Enter sends, Shift+Enter breaks the line -- the convention every
-		// chat input in the world already taught the user.
 		if (event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault();
 			void send();
@@ -121,81 +108,80 @@
 	}
 </script>
 
-{#if visible}
+{#if showPanel}
 	<aside class="assistant-sidebar" aria-label="Setup assistant">
 		<header>
 			<h2>Assistant</h2>
 			{#if status}
-				<span class="model" title="The OpenRouter model answering these questions. Override it with MDT_ASSISTANT_MODEL.">
-					{status.model}
+				<span class="model" title="The model answering these questions">
+					Assistant ready
 				</span>
 			{/if}
 		</header>
 
-		{#if statusError !== null}
-			<p class="notice danger" role="alert">
-				The assistant could not be reached: {statusError}
-			</p>
-		{:else if status === null}
-			<p class="notice muted">Checking whether the assistant is configured...</p>
-		{:else if !status.configured}
-			<p class="notice muted">
-				The assistant is not set up yet. You can finish setup without it.
-			</p>
-		{:else}
-			<div class="log" role="log" aria-live="polite" aria-label="Conversation" bind:this={log}>
-				{#if messages.length === 0 && streaming === null}
-					<p class="muted intro">
-						Your library is importing. Ask anything about it, or about DJ libraries in
-						general, while you wait.
-					</p>
-				{/if}
-				{#each messages as message, index (index)}
-					<p class="bubble {message.role}">{message.content}</p>
-				{/each}
+		<div class="log" role="log" aria-live="polite" aria-label="Conversation" bind:this={log}>
+			{#if messages.length === 0 && streaming === null}
+				<p class="muted intro">
+					Your library is importing. Ask anything about it, or about DJ libraries in
+					general, while you wait.
+				</p>
+			{/if}
+			{#each messages as message, index (index)}
+				<p class="bubble {message.role}">{message.content}</p>
+			{/each}
+			{#if streaming !== null}
+				<p class="bubble assistant pending">
+					{streaming}<span class="caret" aria-hidden="true"></span>
+				</p>
+			{/if}
+		</div>
+
+		{#if sendError !== null}
+			<p class="notice danger" role="alert">{sendError}</p>
+		{/if}
+
+		<form
+			class="composer"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void send();
+			}}
+		>
+			<textarea
+				bind:value={draft}
+				onkeydown={onKeydown}
+				rows="2"
+				placeholder="Ask about your library..."
+				aria-label="Message the assistant"
+			></textarea>
+			<div class="composer-row">
+				<span
+					class="counter"
+					title="Characters streamed back so far in the reply being written."
+				>
+					{streaming !== null ? `${streaming.length} chars` : ''}
+				</span>
 				{#if streaming !== null}
-					<p class="bubble assistant pending">
-						{streaming}<span class="caret" aria-hidden="true"></span>
-					</p>
+					<button type="button" class="ghost" onclick={() => controller?.abort()}>
+						Stop
+					</button>
+				{:else}
+					<button type="submit" disabled={!canSend}>Send</button>
 				{/if}
 			</div>
-
-			{#if sendError !== null}
-				<p class="notice danger" role="alert">{sendError}</p>
-			{/if}
-
-			<form
-				class="composer"
-				onsubmit={(event) => {
-					event.preventDefault();
-					void send();
-				}}
-			>
-				<textarea
-					bind:value={draft}
-					onkeydown={onKeydown}
-					rows="2"
-					placeholder="Ask about your library..."
-					aria-label="Message the assistant"
-				></textarea>
-				<div class="composer-row">
-					<span
-						class="counter"
-						title="Characters streamed back so far in the reply being written. Characters, not tokens: a plain-text stream does not carry a token count, and showing an invented one would be a made-up number."
-					>
-						{streaming !== null ? `${streaming.length} chars` : ''}
-					</span>
-					{#if streaming !== null}
-						<button type="button" class="ghost" onclick={() => controller?.abort()}>
-							Stop
-						</button>
-					{:else}
-						<button type="submit" disabled={!canSend}>Send</button>
-					{/if}
-				</div>
-			</form>
-		{/if}
+		</form>
 	</aside>
+{:else if visible && statusError !== null}
+	<aside class="assistant-unavailable" aria-label="Assistant unavailable">
+		<p class="muted status-note" role="status">{humanAssistantStatusError()}</p>
+		<details class="agent-details-only">
+			<summary>{AGENT_DETAILS_LABEL}</summary>
+			<pre data-agent-assistant-error={statusError}>{statusError}</pre>
+		</details>
+	</aside>
+{:else if visible && status !== null && !status.configured}
+	<!-- Unconfigured: no operator panel. Status remains on GET /api/v1/assistant/status. -->
+	<div hidden data-agent-assistant-configured="false"></div>
 {/if}
 
 <style>
@@ -222,7 +208,6 @@
 	.model {
 		color: var(--muted);
 		font-size: 0.7rem;
-		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 		cursor: help;
 	}
 	.notice {
@@ -236,9 +221,31 @@
 		border-radius: 4px;
 		padding: 0.5rem 0.6rem;
 	}
-	.notice.muted,
 	.muted {
 		color: var(--muted);
+	}
+	.assistant-unavailable {
+		min-width: 12rem;
+		max-width: 24rem;
+		border-left: 1px solid var(--border);
+		padding: 0.8rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.status-note {
+		margin: 0;
+		font-size: 0.8rem;
+		line-height: 1.45;
+	}
+	.agent-details-only {
+		font-size: 0.75rem;
+		color: var(--muted);
+	}
+	.agent-details-only pre {
+		white-space: pre-wrap;
+		margin: 0.35rem 0 0;
+		font-size: 0.72rem;
 	}
 	.log {
 		flex: 1;
@@ -270,8 +277,6 @@
 	.bubble.assistant {
 		border: 1px solid var(--border);
 	}
-	/* The reply is still arriving. Dimmed so a half-written answer never
-	   reads as a finished one. */
 	.bubble.pending {
 		color: var(--muted);
 	}

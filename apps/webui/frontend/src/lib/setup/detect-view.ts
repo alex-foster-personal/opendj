@@ -38,7 +38,15 @@
  *     [if] an escape action is gated on a blocker [then ⛔️] broken
  */
 
-import { formatBytes, isFatalBlocker, type RekordboxDetection } from './setup-api';
+import {
+	agentEscapeEndpoint,
+	humanEscapeTitle,
+	humanKeyLine,
+	humanProbeLabel,
+	humanScanningSentence,
+	shortenPath
+} from './present';
+import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 
 /**
  * What the detect step is doing right now.
@@ -59,7 +67,7 @@ export function detectPhase(
 
 /** The sentence the scanning phase shows. Spelled once so the e2e can pin it
  * and so it can never be confused with a verdict. */
-export const SCANNING_SENTENCE = 'Looking for a rekordbox library on this machine...';
+export const SCANNING_SENTENCE = humanScanningSentence();
 
 /** How loud a blocker sentence is. 'danger' stops the import outright. */
 export type BlockerTone = 'danger' | 'warning';
@@ -78,13 +86,8 @@ export interface ProbeRow {
 	danger: boolean;
 	/** The hover explanation every readout carries (house rule). */
 	title: string;
-}
-
-function _line(label: string, path: string, exists: boolean, size: number | null): string {
-	const bytes = formatBytes(size);
-	return exists
-		? `${label}: ${path}${bytes === null ? '' : ` (${bytes})`}`
-		: `${label}: not present at ${path}`;
+	/** Raw path or detail for agent diagnostics. */
+	agentDetail: string;
 }
 
 /**
@@ -106,60 +109,40 @@ export function probeRows(detection: RekordboxDetection): ProbeRow[] {
 	return [
 		{
 			key: 'live_db',
-			text: _line(
-				'rekordbox database',
-				detection.live_db.path,
-				detection.live_db.exists,
-				detection.live_db.size_bytes ?? null
-			),
+			text: humanProbeLabel('Your DJ collection', detection.live_db.exists),
 			danger: !detection.live_db.exists && nothingToRead,
-			title:
-				'The rekordbox install on this machine. Never opened or copied by ' +
-				'this step -- only stat()ed.'
+			title: 'Whether a DJ collection database was found on this machine.',
+			agentDetail: detection.live_db.path
 		},
 		{
 			key: 'share_dir',
-			text: _line('Analysis folder', detection.share_dir.path, detection.share_dir.exists, null),
+			text: humanProbeLabel('Waveform data folder', detection.share_dir.exists),
 			// Absent is a real problem, but not THIS problem: without it the
 			// tracks still land and only waveforms and beatgrids are missing.
 			danger: false,
-			title:
-				'Where rekordbox keeps its ANLZ analyses (waveforms, beatgrids). ' +
-				'Tracks import without it; waveforms do not draw.'
+			title: 'Whether waveform and beatgrid data was found alongside the collection.',
+			agentDetail: detection.share_dir.path
 		},
 		{
 			key: 'working_copy',
-			text: _line(
-				'Encrypted working copy',
-				detection.working_copy.path,
-				detection.working_copy.exists,
-				detection.working_copy.size_bytes ?? null
-			),
+			text: humanProbeLabel('Saved collection copy', detection.working_copy.exists),
 			danger: !detection.working_copy.exists && nothingToRead,
-			title:
-				'A snapshot of the rekordbox database inside this engine data ' +
-				'dir. Absent is normal until the first import takes one.'
+			title: 'Whether a working copy of the collection is already saved locally.',
+			agentDetail: detection.working_copy.path
 		},
 		{
 			key: 'plain_copy',
-			text: _line(
-				'Decrypted working copy',
-				detection.plain_copy.path,
-				detection.plain_copy.exists,
-				detection.plain_copy.size_bytes ?? null
-			),
+			text: humanProbeLabel('Unlocked collection copy', detection.plain_copy.exists),
 			danger: !detection.plain_copy.exists && nothingToRead,
-			title:
-				'The decrypted snapshot the import reads. Absent is normal until ' +
-				'the first import decrypts one.'
+			title: 'Whether an unlocked copy is ready to read from.',
+			agentDetail: detection.plain_copy.path
 		},
 		{
 			key: 'key',
-			text: `Database key: ${detection.key_detail}`,
+			text: humanKeyLine(!keyMissing),
 			danger: keyMissing,
-			title:
-				'Whether this process can unlock an encrypted rekordbox database ' +
-				'right now, and why not when it cannot.'
+			title: 'Whether the collection can be unlocked for import right now.',
+			agentDetail: detection.key_detail
 		}
 	];
 }
@@ -183,20 +166,24 @@ export const ESCAPE_ACTIONS: readonly EscapeAction[] = [
 	{
 		id: 'redetect',
 		label: 'Look again',
-		title: 'Re-run detection now (GET /api/v1/setup/detect/rekordbox). Reads nothing else.'
+		title: humanEscapeTitle('redetect')
 	},
 	{
 		id: 'folder',
 		label: 'Choose a folder instead',
-		title:
-			'Import a folder of audio files instead of a rekordbox collection ' +
-			'(GET /api/v1/setup/detect/folder). Tags only: no BPM, key or beatgrid.'
+		title: humanEscapeTitle('folder')
 	},
 	{
 		id: 'dismiss',
 		label: 'Continue without importing',
-		title:
-			'Close setup and use the app with an empty library ' +
-			'(POST /api/v1/setup/dismiss). Re-openable from Settings > Run setup.'
+		title: humanEscapeTitle('dismiss')
 	}
 ] as const;
+
+/** Agent endpoint for an escape action. Not shown in default copy. */
+export function escapeAgentEndpoint(id: EscapeAction['id']): string {
+	return agentEscapeEndpoint(id);
+}
+
+/** Shorten a path for any human-visible setup copy. */
+export { shortenPath };

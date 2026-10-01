@@ -53,6 +53,7 @@ import {
 	newFolderRow,
 	type FolderRow,
 } from './folder-rows';
+import { agentApiError, humanAdvanceRefusal, humanApiError } from './present';
 
 export const WIZARD_STEPS = [
 	'welcome',
@@ -213,6 +214,11 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
 	return null;
 }
 
+/** Operator-safe refusal copy for the current step. */
+export function humanRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
+	return humanAdvanceRefusal(step, ctx, advanceRefusal(step, ctx));
+}
+
 /** Percent for a progress bar, clamped. Mirrors progressPct in jobs-store, but
  * this module must not import a UI helper from another surface just for one
  * arithmetic line. */
@@ -240,6 +246,8 @@ class SetupWizard {
 	jobId = $state<string | null>(null);
 	busy = $state(false);
 	error = $state<string | null>(null);
+	/** Raw diagnostic for agents when `error` was sanitized for display. */
+	errorDiagnostic = $state<string | null>(null);
 	/**
 	 * Whether detection has ever answered, tracked separately from the answer
 	 * itself.
@@ -257,6 +265,12 @@ class SetupWizard {
 	goTo(step: WizardStep): void {
 		this.step = step;
 		this.error = null;
+		this.errorDiagnostic = null;
+	}
+
+	private _fail(message: string): void {
+		this.errorDiagnostic = agentApiError(message);
+		this.error = humanApiError(message);
 	}
 
 	next(): void {
@@ -305,7 +319,7 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			// FAILED, not "still looking". The caller re-runs load() once the
 			// capability probe finally identifies an engine, so a daemon that
 			// was merely slow to boot heals itself instead of stranding the
@@ -321,9 +335,10 @@ class SetupWizard {
 			this.status = await getSetupStatus();
 			this.detection = this.status.rekordbox;
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.detectState = 'answered';
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 			this.detectState = 'failed';
 		} finally {
 			this.busy = false;
@@ -340,7 +355,7 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			this.detectState = 'failed';
 			return;
 		}
@@ -349,9 +364,10 @@ class SetupWizard {
 		try {
 			this.detection = await detectRekordbox();
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.detectState = 'answered';
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 			this.detectState = 'failed';
 		} finally {
 			this.busy = false;
@@ -380,6 +396,7 @@ class SetupWizard {
 	useSource(source: ImportSource): void {
 		this.source = source;
 		this.error = null;
+		this.errorDiagnostic = null;
 		if (source === 'rekordbox') this.resetFolderRows();
 		if (source === 'folder') {
 			this.resetFolderRows();
@@ -415,7 +432,7 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			this.folderCandidatesState = 'failed';
 			return;
 		}
@@ -426,7 +443,7 @@ class SetupWizard {
 			this.error = null;
 			this.folderCandidatesState = 'answered';
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 			this.folderCandidatesState = 'failed';
 		}
 	}
@@ -435,14 +452,14 @@ class SetupWizard {
 	async checkFolderRow(id: string): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		const row = this.folderRows.find((entry) => entry.id === id);
 		if (row === undefined) return;
 		const trimmed = row.path.trim();
 		if (trimmed === '') {
-			this.error = 'type a folder path first';
+			this._fail('type a folder path first');
 			return;
 		}
 		const normalized = normalizeSetupFolderPath(trimmed);
@@ -453,8 +470,9 @@ class SetupWizard {
 				entry.id === id ? { ...entry, path: normalized, scan } : entry
 			);
 			this.error = null;
+			this.errorDiagnostic = null;
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -475,12 +493,12 @@ class SetupWizard {
 	async beginFolderImport(): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		const folders = this.importableFolderPaths();
 		if (folders.length === 0) {
-			this.error = 'check at least one folder with audio files in it';
+			this._fail('check at least one folder with audio files in it');
 			return;
 		}
 		this.busy = true;
@@ -488,9 +506,10 @@ class SetupWizard {
 			const job = await startFolderImport({ folders });
 			this.jobId = job.id;
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.goTo('progress');
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -504,12 +523,12 @@ class SetupWizard {
 	 */
 	async beginImport(options: { refreshDecrypt?: boolean } = {}): Promise<void> {
 		if (this.source !== 'rekordbox') {
-			this.error = 'choose rekordbox import before starting';
+			this._fail('choose rekordbox import before starting');
 			return;
 		}
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		this.busy = true;
@@ -519,9 +538,10 @@ class SetupWizard {
 			});
 			this.jobId = job.id;
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.goTo('progress');
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -532,7 +552,7 @@ class SetupWizard {
 	async skip(): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		this.busy = true;
@@ -542,8 +562,9 @@ class SetupWizard {
 			// without reopen() must still find a neutral wizard (Codex P2, #3561).
 			this.source = null;
 			this.error = null;
+			this.errorDiagnostic = null;
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -557,7 +578,7 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		this.busy = true;
@@ -566,11 +587,12 @@ class SetupWizard {
 			this.step = 'welcome';
 			this.source = null;
 			this.error = null;
+			this.errorDiagnostic = null;
 			// Re-arming is a fresh run: whatever detection said last time is
 			// history, and ensureLoaded() must ask again rather than reuse it.
 			this.detectState = 'idle';
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(_message(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -586,6 +608,7 @@ class SetupWizard {
 		this.jobId = null;
 		this.busy = false;
 		this.error = null;
+		this.errorDiagnostic = null;
 		this.detectState = 'idle';
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';

@@ -212,7 +212,7 @@ test('detect refuses Next until detection has answered', () => {
 	assert.match(mod.advanceRefusal('detect', ctx), /has not answered/);
 });
 
-test('a fatal blocker refuses Next and names itself', () => {
+test('a fatal blocker refuses Next and names itself to agents', () => {
 	const ctx = {
 		source: 'rekordbox',
 		detection: detection({ blockers: ['rekordbox_not_found'] }),
@@ -220,6 +220,8 @@ test('a fatal blocker refuses Next and names itself', () => {
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /rekordbox_not_found/);
+	assert.match(mod.humanRefusal('detect', ctx), /cannot start yet/i);
+	assert.doesNotMatch(mod.humanRefusal('detect', ctx), /rekordbox_not_found/);
 });
 
 test('a missing share dir warns but does NOT block the import', () => {
@@ -411,6 +413,7 @@ test('a failed load records the server message and KEEPS what was on screen', as
 	await wizard.load();
 
 	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.errorDiagnostic, 'state db is gone');
 	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
 });
 
@@ -493,7 +496,8 @@ test('beginImport refuses without rekordbox source and makes no import POST', as
 
 	assert.equal(wizard.jobId, null);
 	assert.equal(wizard.step, 'welcome');
-	assert.equal(wizard.error, 'choose rekordbox import before starting');
+	assert.equal(wizard.error, 'Choose to import your DJ collection first.');
+	assert.equal(wizard.errorDiagnostic, 'choose rekordbox import before starting');
 	assert.equal(
 		requests.filter(
 			(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
@@ -533,7 +537,8 @@ test('a refused import leaves the step alone and shows the server sentence', asy
 
 	assert.equal(wizard.step, 'confirm', 'must not show progress for a job that was refused');
 	assert.equal(wizard.jobId, null);
-	assert.equal(wizard.error, 'setup import job-9 is already running');
+	assert.equal(wizard.error, 'An import is already running. Wait for it to finish, then try again.');
+	assert.equal(wizard.errorDiagnostic, 'setup import job-9 is already running');
 });
 
 test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async () => {
@@ -585,7 +590,7 @@ test('checkFolderRow refuses an empty path without issuing a request', async () 
 	wizard.folderRows = [folderRow('   ')];
 	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	assert.equal(requests.length, 0);
-	assert.match(wizard.error, /type a folder path/);
+	assert.match(wizard.error, /Type a folder path/);
 });
 
 test('beginFolderImport refuses before requesting when nothing was scanned', async () => {
@@ -662,6 +667,8 @@ test('a 403 on the folder import keeps the grant instructions verbatim', async (
 	await wizard.beginFolderImport();
 
 	assert.match(wizard.error, /Open System Settings/);
+	assert.match(wizard.error, /~\/Music/);
+	assert.doesNotMatch(wizard.error, /\/Users\//);
 	assert.equal(wizard.step, 'welcome');
 });
 
@@ -714,16 +721,16 @@ test('accessCaveat is null when nothing was blocked', () => {
 	assert.equal(mod.accessCaveat(null), null);
 });
 
-test('accessCaveat names the folders and says the count is partial', () => {
+test('accessCaveat names blocked folders without raw paths in operator copy', () => {
 	const caveat = mod.accessCaveat(
 		permissions({ all_readable: false, denied: ['/Users/dj/Music'] })
 	);
-	assert.match(caveat, /\/Users\/dj\/Music/);
-	assert.match(caveat, /only what could be read/);
+	assert.doesNotMatch(caveat, /\/Users\//);
+	assert.match(caveat, /only what was accessible/);
+	assert.equal(mod.agentAccessDetail(permissions({ all_readable: false, denied: ['/Users/dj/Music'] })), '/Users/dj/Music');
 });
 
 test('folderVerdict never quotes a file count for a denied folder', () => {
-	// 0 from a denied folder is a count of nothing, not a count of the folder.
 	const verdict = mod.folderVerdict(
 		folderScan({ denied: true, readable: false, audio_files: 0 })
 	);
@@ -735,9 +742,15 @@ test('folderVerdict distinguishes empty from missing from unreadable', () => {
 	assert.match(mod.folderVerdict(folderScan({ audio_files: 0 })), /holds no audio files/);
 	assert.match(
 		mod.folderVerdict(folderScan({ exists: false, readable: false })),
-		/Nothing at/
+		/Nothing was found at/
 	);
 	assert.match(
+		mod.folderVerdict(
+			folderScan({ readable: false, detail: 'could not be listed: I/O error' })
+		),
+		/could not be read/
+	);
+	assert.doesNotMatch(
 		mod.folderVerdict(
 			folderScan({ readable: false, detail: 'could not be listed: I/O error' })
 		),
@@ -748,7 +761,7 @@ test('folderVerdict distinguishes empty from missing from unreadable', () => {
 test('folderVerdict reports skipped iCloud placeholders alongside the count', () => {
 	const verdict = mod.folderVerdict(folderScan({ icloud_placeholders: 4 }));
 	assert.match(verdict, /12 audio files/);
-	assert.match(verdict, /4 more are iCloud placeholders/);
+	assert.match(verdict, /iCloud-only files were skipped/);
 });
 
 test('folderIsImportable needs a readable folder with something in it', () => {

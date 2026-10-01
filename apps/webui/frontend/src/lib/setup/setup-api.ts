@@ -19,6 +19,16 @@
  *     [if] a 409 is reworded into a generic failure [then ⛔️] broken
  */
 
+import {
+	agentAccessDetail,
+	agentBlockerDetail,
+	humanAccessCaveat,
+	humanBlockerSentence,
+	humanFolderVerdict,
+	humanLegacySetupRefusal,
+	humanSetupMissing,
+	humanSetupProbePending
+} from './present';
 import type { components } from '../api-types';
 import { capabilities } from '../api/capabilities.svelte';
 import { api, unwrap } from '../api/client';
@@ -56,11 +66,11 @@ export type SetupCode = (typeof SETUP_CODES)[number];
  * stage the server has actually reported; the authoritative list arrives on
  * SetupStatus.stages. */
 export const STAGE_LABELS: Record<string, string> = {
-	detect: 'Find the rekordbox database',
+	detect: 'Find your collection',
 	snapshot: 'Copy it somewhere safe to read',
-	decrypt: 'Decrypt the working copy',
+	decrypt: 'Unlock the collection copy',
 	ingest: 'Read tracks and playlists into the library',
-	analysis: 'Check the waveform analyses are reachable'
+	analysis: 'Check waveform data is reachable'
 };
 
 /** The folder import's stages. Fewer, because there is no database to
@@ -104,6 +114,11 @@ export function setupRefusal(): string | null {
  * that function now delegates here so the two cannot drift.
  */
 export function finalSetupRefusal(): string | null {
+	return capabilities.flavor === 'legacy' ? humanLegacySetupRefusal() : null;
+}
+
+/** Raw agent diagnostic for a final refusal, or null. */
+export function finalSetupRefusalAgent(): string | null {
 	return capabilities.flavor === 'legacy' ? SETUP_MISSING : null;
 }
 
@@ -147,14 +162,10 @@ export async function getFolderCandidates(): Promise<FolderCandidates> {
  * rather than presenting itself as the whole library.
  */
 export function accessCaveat(permissions: Permissions | null): string | null {
-	const denied = permissions?.denied ?? [];
-	if (denied.length === 0) return null;
-	return (
-		`macOS blocked ${denied.length} folder${denied.length === 1 ? '' : 's'} ` +
-		`(${denied.join(', ')}), so any count below covers only what could be ` +
-		'read, not the whole library.'
-	);
+	return humanAccessCaveat(permissions);
 }
+
+export { agentAccessDetail };
 
 /** Enqueue the import. Returns the queued job row, whose id the wizard then
  * watches through the jobs store rather than polling here. */
@@ -209,15 +220,7 @@ export function normalizeSetupFolderPath(path: string): string {
  * permission wall is a count of nothing, not a count of the folder.
  */
 export function folderVerdict(scan: FolderScan): string {
-	if (scan.denied) return `${scan.detail}. ${scan.how_to_grant}`;
-	if (!scan.exists) return `Nothing at ${scan.path}.`;
-	if (!scan.readable) return `${scan.path} could not be read: ${scan.detail}.`;
-	if (scan.audio_files === 0) return `${scan.path} is readable but holds no audio files.`;
-	const placeholders =
-		scan.icloud_placeholders > 0
-			? ` ${scan.icloud_placeholders} more are iCloud placeholders with no local copy, and are skipped.`
-			: '';
-	return `${scan.audio_files} audio file${scan.audio_files === 1 ? '' : 's'} found.${placeholders}`;
+	return humanFolderVerdict(scan);
 }
 
 /** True when this folder can actually be imported. */
@@ -238,19 +241,11 @@ export async function setDismissed(dismissed: boolean): Promise<SetupStatus> {
  * unrecognised code is shown as itself rather than hidden.
  */
 export function blockerSentence(code: string, detection: RekordboxDetection): string {
-	if (code === 'rekordbox_not_found') {
-		return `No rekordbox database found. Looked for ${detection.live_db.path}.`;
-	}
-	if (code === 'rekordbox_key_unavailable') {
-		return `The database is encrypted and no key is available: ${detection.key_detail}`;
-	}
-	if (code === 'rekordbox_share_missing') {
-		return (
-			`No analysis folder at ${detection.share_dir.path}. Tracks will import, ` +
-			'but waveforms and beatgrids will not be available.'
-		);
-	}
-	return code;
+	return humanBlockerSentence(code, detection);
+}
+
+export function blockerAgentDetail(code: string, detection: RekordboxDetection): string {
+	return agentBlockerDetail(code, detection);
 }
 
 /** True when a blocker stops the import outright.
