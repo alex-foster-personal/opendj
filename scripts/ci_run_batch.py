@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.request import Request, urlopen
 
-from scripts.ci_phantom_runs import JobsOf, is_phantom, phantom_line, write_step_summary
+from scripts.ci_phantom_runs import JobsOf, is_phantom, one_page_jobs, phantom_line, write_step_summary
 
 
 def parse_time(value: str) -> datetime:
@@ -117,20 +117,10 @@ def fetch_run_jobs(
     agent: str,
     get_json: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Every job of a run's latest attempt, from ONE page: a run with more jobs than a page
-    holds is refused, because a waiting job on page 2 would read as no waiting job and a
-    live run would be skipped as a phantom."""
+    """A run's latest-attempt jobs, one page or refused (scripts/ci_phantom_runs.py)."""
     fetch = get_json or (lambda url: _get_json(url, token, agent))
-    payload = fetch(
-        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs"
-        f"?filter=latest&per_page={PAGE_SIZE}"
-    )
-    jobs: list[dict[str, Any]] = payload["jobs"]
-    if int(payload["total_count"]) > len(jobs):
-        raise RuntimeError(
-            f"run {run_id} has {payload['total_count']} jobs, more than one {PAGE_SIZE}-job page"
-        )
-    return jobs
+    url = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs?filter=latest&per_page={PAGE_SIZE}"
+    return one_page_jobs(fetch(url), run_id, PAGE_SIZE, RuntimeError)
 
 
 def fetch_completed_runs(

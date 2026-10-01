@@ -67,13 +67,23 @@ def _last_activity(run: Mapping[str, Any]) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def one_page_jobs(payload: object, run_id: int, page_size: int, error: type[Exception]) -> list[dict[str, Any]]:
+    """Every job of a run's latest attempt, from ONE jobs page, or `error`: a run with more
+    jobs than a page holds is refused, because a waiting job on page 2 would read as no
+    waiting job and a live run would be skipped as a phantom."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+        raise error(f"jobs of run {run_id} was not a jobs listing: {payload!r}")
+    jobs: list[dict[str, Any]] = payload["jobs"]
+    if int(payload["total_count"]) > len(jobs):
+        raise error(f"run {run_id} has {payload['total_count']} jobs, more than one {page_size}-job page")
+    return jobs
+
+
 def _has_waiting_job(run: Mapping[str, Any], jobs_of: JobsOf) -> bool:
     return any(job.get("status") in WAITING_JOB_STATUSES for job in jobs_of(int(run["id"])))
 
 
-def is_phantom(
-    run: Mapping[str, Any], now: datetime, *, jobs_of: JobsOf, after: timedelta | None = None
-) -> bool:
+def is_phantom(run: Mapping[str, Any], now: datetime, *, jobs_of: JobsOf, after: timedelta | None = None) -> bool:
     """True when `run` is `in_progress`, idle for more than `after`, and has no waiting job."""
     if run.get("status") != PHANTOM_STATUS:
         return False
