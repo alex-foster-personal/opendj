@@ -46,6 +46,25 @@
 const LAYOUT_NODE = /\/generated\/client-optimized\/nodes\/0\.js$/;
 const BOOT_ENTRY = /\/runtime\/client\/entry\.js$|\/generated\/client-optimized\/app\.js$/;
 
+/**
+ * Layout-shell riders: named, dependency-free pure modules that the
+ * /performance route imports statically and that describe state the layout
+ * shell already owns (the deck engine's stem read model, the listing's grid
+ * source). They are emitted in layout-shell instead of the route chunk.
+ *
+ * Why: the performance surface was 910 to 955 gzip bytes over its budget once
+ * the Thu 1 Oct 2026 preview branches were merged together, the other-lazy
+ * surface had under 1 KB left, and the boot surface had about 10 KB. Anyone
+ * on /performance downloads both chunks, so their bytes do not change; a
+ * visit to another route now carries these modules at boot.
+ *
+ * A rider must import nothing that is outside the two boot chunks (checked
+ * below, loudly), so it cannot pull lazy code to boot or close a chunk cycle,
+ * and it must have no top-level side effects, because it now evaluates with
+ * the layout instead of with the route.
+ */
+const LAYOUT_SHELL_RIDER = /\/src\/lib\/rb\/(?:stem-status|grid-provenance)\.ts$/;
+
 export const BOOT_RUNTIME_CHUNK = 'boot-runtime';
 export const LAYOUT_SHELL_CHUNK = 'layout-shell';
 
@@ -91,6 +110,17 @@ export function bootChunkByModuleId(
 		if (!unnamed.has(moduleId) && !bootClosure.has(moduleId)) {
 			chunkByModuleId.set(moduleId, LAYOUT_SHELL_CHUNK);
 		}
+	}
+	for (const moduleId of moduleIds) {
+		if (!LAYOUT_SHELL_RIDER.test(moduleId) || chunkByModuleId.has(moduleId)) continue;
+		for (const dependency of importedIdsOf(moduleId)) {
+			if (!chunkByModuleId.has(dependency)) {
+				throw new Error(
+					`boot chunks: layout-shell rider ${moduleId} imports ${dependency}, which is outside the boot chunks (a rider must not pull route code to boot)`
+				);
+			}
+		}
+		chunkByModuleId.set(moduleId, LAYOUT_SHELL_CHUNK);
 	}
 	return chunkByModuleId;
 }

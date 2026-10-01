@@ -142,6 +142,47 @@ test('manualChunks names boot members and leaves everything else to Rollup', () 
 	assert.equal(closureReads, 1, 'the closures are computed once per module graph');
 });
 
+// ------------------------------------------------- layout-shell riders ---
+
+const RIDER = '/app/src/lib/rb/stem-status.ts';
+const ROUTE_ONLY = '/app/src/lib/rb/stem-row-helper.ts';
+
+test('[if] a named rider is reached only from a route [then] it rides in layout-shell (control: its neighbor does not)', () => {
+	const graph = { ...GRAPH, [RIDER]: ['/app/src/lib/shared.ts'], [ROUTE_ONLY]: [] };
+	const chunks = bootChunkByModuleId(Object.keys(graph), (id) => graph[id] ?? []);
+	assert.equal(chunks.get(RIDER), LAYOUT_SHELL_CHUNK);
+	assert.equal(chunks.get(ROUTE_ONLY), undefined);
+});
+
+test('[if] a rider imports a module outside the boot chunks [then] the build fails by name', () => {
+	const graph = { ...GRAPH, [RIDER]: ['/app/src/lib/admin-only.ts'] };
+	assert.throws(
+		() => bootChunkByModuleId(Object.keys(graph), (id) => graph[id] ?? []),
+		/layout-shell rider \/app\/src\/lib\/rb\/stem-status\.ts imports \/app\/src\/lib\/admin-only\.ts/
+	);
+});
+
+test('[if] the server graph holds a rider path [then] nothing is named', () => {
+	const serverIds = ['/app/.svelte-kit/generated/server/internal.js', RIDER];
+	assert.equal(bootChunkByModuleId(serverIds, importedIdsOf).size, 0);
+});
+
+test('[if] a shipped rider gains a runtime import or a top-level statement [then] this names it', () => {
+	for (const name of ['stem-status.ts', 'grid-provenance.ts']) {
+		const source = readFileSync(join(FRONTEND, 'src', 'lib', 'rb', name), 'utf8')
+			.replace(/\/\*[\s\S]*?\*\//g, '')
+			.replace(/^\s*\/\/.*$/gm, '');
+		const runtimeImports = [...source.matchAll(/^import\s+(?!type\b).*$/gm)].map((m) => m[0]);
+		assert.deepEqual(runtimeImports, [], `${name} must import types only`);
+		// Top-level statements start in column 0. Only declarations may.
+		const topLevel = source
+			.split('\n')
+			.filter((line) => /^[^\s})\]|]/.test(line))
+			.filter((line) => !/^(?:import type|export (?:type|interface|function|const)|type|interface|function|const)\b/.test(line));
+		assert.deepEqual(topLevel, [], `${name} must hold declarations only at top level`);
+	}
+});
+
 // ------------------------------------------------------- codec-parser ---
 
 const flacEntry = fileURLToPath(import.meta.resolve('@wasm-audio-decoders/flac'));
