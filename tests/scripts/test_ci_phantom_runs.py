@@ -298,18 +298,24 @@ def test_phantom_bound_exceeds_every_workflows_longest_timeout_chain() -> None:
     files = sorted(WORKFLOWS.glob("*.yml"))
     assert len(files) >= 20, "the workflow directory was not found or not read"
     longest = max(_longest_chain_minutes(path) for path in files)
-    assert longest >= 100, f"positive control: the 100-minute job was not seen ({longest})"
+    # Positive control, derived rather than remembered: the walk must see past the longest
+    # single literal timeout, which proves it sums `needs` chains instead of reading one job.
+    single = max(int(m) for path in files for m in re.findall(r"timeout-minutes:\s*(\d+)", path.read_text("utf-8")))
+    assert longest > single, f"positive control: no needs chain summed past the longest single job ({single})"
     assert longest < PHANTOM_AFTER_HOURS * 60, (
         f"a {longest}-minute job chain can legitimately run past the {PHANTOM_AFTER_HOURS} h phantom bound"
     )
 
 
 def test_phantom_bound_exceeds_every_census_lookback_and_the_measured_run_span() -> None:
+    # Every workflow that runs the census, found rather than listed: a retired caller must
+    # not break this test, and a new one must not escape it.
+    callers = [p for p in sorted(WORKFLOWS.glob("*.yml")) if "scripts.ci_run_batch census" in p.read_text("utf-8")]
+    assert any(p.name == "stable-evidence.yml" for p in callers), "positive control: stable-evidence runs the census"
     lookbacks: list[int] = []
-    for name in ("ci-cost-guard.yml", "stable-evidence.yml"):
-        text = (WORKFLOWS / name).read_text(encoding="utf-8")
-        found = re.findall(r'LOOKBACK_HOURS: "(\d+)"', text)
-        assert found, f"{name} sets no LOOKBACK_HOURS"
+    for path in callers:
+        found = re.findall(r'LOOKBACK_HOURS: "(\d+)"', path.read_text(encoding="utf-8"))
+        assert found, f"{path.name} runs the census but sets no LOOKBACK_HOURS"
         lookbacks.extend(int(h) for h in found)
     assert max(lookbacks) < PHANTOM_AFTER_HOURS, (
         "at or below the lookback, every run the census would hold reads as a phantom"
