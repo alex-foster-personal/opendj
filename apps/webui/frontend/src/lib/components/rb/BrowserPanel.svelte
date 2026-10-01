@@ -89,6 +89,7 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
+		startPendingSettle,
 		PlaylistSetTabs,
 		usbPaneSource,
 		isRemovedStickRow,
@@ -418,6 +419,23 @@
 	let searchReturnSnap = $state<NavSnap | null>(null);
 
 	const pane = $derived(panes[activePane]);
+	// PERF-RB-03 (pin cba7bf1dbb05): rows that loaded with disk truth pending
+	// settle on screen, so hide-broken and the tree count agree.
+	$effect(() => {
+		const p = pane;
+		const id = p.playlist_id;
+		void p.rows;
+		if (p.loading || id === null || (p.kind !== 'playlist' && p.kind !== 'smartlist')) return;
+		if (isMissingTracksId(id) || isAutolistId(id)) return;
+		const fetchRows = p.kind === 'smartlist' ? _fetchSmartlistRows : _fetchPlaylistRows;
+		return untrack(() =>
+			startPendingSettle({
+				rows: () => (p.playlist_id === id ? p.rows : []),
+				fetchRows: async () => (await fetchRows(id)).rows,
+				onError: (exc) => console.error(`[pending-settle] ${id}: ${String(exc)}`)
+			})
+		);
+	});
 	const spotifyPlaylists = $derived(playlists.filter((playlist) => playlist.vendor === 'spotify'));
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
