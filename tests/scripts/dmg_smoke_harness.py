@@ -251,6 +251,13 @@ def _curl_shim() -> str:
         """#!/usr/bin/env bash
 set -euo pipefail
 url="${@: -1}"
+# DMG_SMOKE_LIVE_PORT: only that port has a listener; any other 127.0.0.1
+# port is refused exactly as real curl reports it (exit 7, empty body).
+if [[ -n "${DMG_SMOKE_LIVE_PORT:-}" && "$url" == "http://127.0.0.1:"* \
+      && "$url" != "http://127.0.0.1:${DMG_SMOKE_LIVE_PORT}/"* ]]; then
+  echo "${url}" >> "${DMG_SMOKE_REFUSED_LOG:-/dev/null}"
+  exit 7
+fi
 if [[ "$url" == *"/api/v1/preflight" ]]; then
   attempt=1
   if [[ -n "${DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE:-}" ]]; then
@@ -323,11 +330,41 @@ exit 1
         ),
         "lsof": textwrap.dedent(
             """#!/usr/bin/env bash
+# `lsof -iTCP:PORT -sTCP:LISTEN -t`: the pid listening on the log's port.
+if [[ " $* " == *" -t "* ]]; then
+  if [[ -n "${DMG_SMOKE_FOREIGN_PORT:-}" && "$*" == *":${DMG_SMOKE_FOREIGN_PORT} "* ]]; then
+    echo 8888
+    exit 0
+  fi
+  if [[ -n "${DMG_SMOKE_LISTENER_PID:-}" ]]; then
+    echo "$DMG_SMOKE_LISTENER_PID"
+    exit 0
+  fi
+  exit 1
+fi
 if [[ -n "${DMG_SMOKE_ENGINE_PORT:-}" ]]; then
   echo "n*:${DMG_SMOKE_ENGINE_PORT}"
   exit 0
 fi
 exit 1
+"""
+        ),
+        "ps": textwrap.dedent(
+            """#!/usr/bin/env bash
+# `ps -ww -o command= -p PID` for the log-port listener: this run's scratch
+# engine (its app path is the last `open` argument) or another instance's.
+if [[ "$*" == *"command="* ]]; then
+  if [[ " $* " == *" 8888 "* || " $* " == *" 8888" ]]; then
+    app="/Applications/Open DJ.app"
+  elif [[ "${DMG_SMOKE_LISTENER_FROM_SCRATCH:-0}" == "1" ]]; then
+    app="$(tail -n 1 "${DMG_SMOKE_OPEN_LOG:?}")"
+  else
+    app="/Applications/Open DJ.app"
+  fi
+  echo "opendj-engine --name opendj-engine [${app}/Contents/Resources/payload/runtime/bin/python3 apps.engine_core serve]"
+  exit 0
+fi
+exec /bin/ps "$@"
 """
         ),
         "open": textwrap.dedent(
@@ -336,6 +373,16 @@ if [[ "${DMG_SMOKE_OPEN_FAIL:-0}" == "1" ]]; then
   exit 1
 fi
 printf '%s\\n' "$@" > "${DMG_SMOKE_OPEN_LOG:?}"
+# The launched engine's boot line, as the real shell appends it to the shared
+# engine.log; ROTATE=1 first moves the old log aside (the shell's 5 MB rotation).
+if [[ -n "${DMG_SMOKE_OPEN_ENGINE_LOG_LINE:-}" ]]; then
+  engine_log="$HOME/Library/Application Support/com.opendj.desktop/logs/engine.log"
+  mkdir -p "$(dirname "$engine_log")"
+  if [[ "${DMG_SMOKE_OPEN_ROTATES_ENGINE_LOG:-0}" == "1" && -f "$engine_log" ]]; then
+    mv "$engine_log" "$engine_log.rotated"
+  fi
+  printf '%s\\n' "$DMG_SMOKE_OPEN_ENGINE_LOG_LINE" >> "$engine_log"
+fi
 touch "${DMG_SMOKE_SCRATCH_STATE:?}"
 touch "${DMG_SMOKE_OPEN_CALLED:?}"
 exit 0
