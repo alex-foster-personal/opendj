@@ -36,7 +36,10 @@ def test_storage_behavior_is_unchanged(tmp_path: Path) -> None:
     path = tmp_path / "feedback" / "comments.json"
     assert feedback_storage._load(path, "comments") == []
     feedback_storage._save(path, "comments", [{"id": "a", "text": "one"}])
-    assert path.read_text(encoding="utf-8") == '{\n  "comments": [\n    {\n      "id": "a",\n      "text": "one"\n    }\n  ]\n}\n'
+    assert (
+        path.read_text(encoding="utf-8")
+        == '{\n  "comments": [\n    {\n      "id": "a",\n      "text": "one"\n    }\n  ]\n}\n'
+    )
     assert feedback_storage._load(path, "comments") == [{"id": "a", "text": "one"}]
     assert [leftover.name for leftover in path.parent.iterdir()] == ["comments.json"]
     with pytest.raises(HTTPException) as refused:

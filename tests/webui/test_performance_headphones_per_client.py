@@ -173,9 +173,7 @@ def test_closing_a_client_forgets_only_that_client() -> None:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await _publish(client, "operator-tab", _headphones("listed", _NINE_OUTPUTS))
             await _publish(client, "automation-tab", _headphones("permission_denied", _ONE_OUTPUT))
-            closed = await client.delete(
-                "/api/v1/state/ui-mirror", headers={"x-opendj-client-id": "operator-tab"}
-            )
+            closed = await client.delete("/api/v1/state/ui-mirror", headers={"x-opendj-client-id": "operator-tab"})
             assert closed.status_code == 204
             clock.now_s += 1.0
             await _publish(client, "automation-tab", _headphones("permission_denied", _ONE_OUTPUT))
@@ -204,7 +202,14 @@ def test_a_page_that_sends_no_client_id_still_reads_back() -> None:
 
 def test_the_store_ranks_listed_above_every_other_status() -> None:
     """[if] any non-listed status outranks listed [then] a tab that cannot enumerate hides one that can, [else stop]."""
-    for other in ("not_checked", "permission_needed", "permission_denied", "api_missing", "enumeration_failed", "timeout"):
+    for other in (
+        "not_checked",
+        "permission_needed",
+        "permission_denied",
+        "api_missing",
+        "enumeration_failed",
+        "timeout",
+    ):
         clock = _Clock()
         reports = HeadphoneReports(now=clock)
         reports.record("listed-tab", _headphones("listed", _NINE_OUTPUTS))

@@ -109,9 +109,7 @@ class HeadphoneReports:
             return None
         cutoff = self._now() - HEADPHONE_REPORT_STALE_S
         live = {
-            client_id: report
-            for client_id, report in self._reports.items()
-            if report.received_monotonic_s >= cutoff
+            client_id: report for client_id, report in self._reports.items() if report.received_monotonic_s >= cutoff
         }
         if not live:
             return max(self._reports.values(), key=lambda report: report.received_monotonic_s)
