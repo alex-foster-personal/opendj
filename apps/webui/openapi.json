@@ -3112,6 +3112,22 @@
       },
       "BrokenTrackList": {
         "properties": {
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "default": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -5788,6 +5804,10 @@
       "CoverageOut": {
         "description": "Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.\n\n``on_disk`` is the denominator (``availability.present``). Per step,\n``done + terminal + failed + pending == on_disk``. ``missing`` and\n``corrupt`` keep their artifact meaning for the refresh job's targeting:\n``corrupt`` (structurally invalid entries) is a subset of ``missing``.",
         "properties": {
+          "age_s": {
+            "title": "Age S",
+            "type": "number"
+          },
           "availability": {
             "additionalProperties": {
               "type": "integer"
@@ -5856,6 +5876,21 @@
             "title": "Pending",
             "type": "object"
           },
+          "refresh_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Error"
+          },
+          "refreshing": {
+            "title": "Refreshing",
+            "type": "boolean"
+          },
           "stems_index": {
             "additionalProperties": {
               "anyOf": [
@@ -5918,7 +5953,10 @@
           "awaiting_stem_download",
           "stems_index",
           "stems_source_refusal",
-          "generated_at"
+          "generated_at",
+          "age_s",
+          "refreshing",
+          "refresh_error"
         ],
         "title": "CoverageOut",
         "type": "object"
@@ -30898,6 +30936,20 @@
     "/api/v1/ingest/coverage": {
       "get": {
         "operationId": "get_coverage_api_v1_ingest_coverage_get",
+        "parameters": [
+          {
+            "description": "Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request.",
+            "in": "query",
+            "name": "cached",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request.",
+              "title": "Cached",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -30908,6 +30960,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Get Coverage",
@@ -35962,6 +36024,39 @@
               ],
               "description": "Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing.",
               "title": "Playlist Id"
+            }
+          },
+          {
+            "description": "Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Rows to skip in the (title, stable_id) ordering.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip in the (title, stable_id) ordering.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],

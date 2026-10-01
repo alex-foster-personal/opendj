@@ -51,13 +51,14 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import NoReturn
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from apps.analysis import backlog
@@ -66,7 +67,7 @@ from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
-from apps.webui.server import coverage_cloud
+from apps.webui.server import coverage_cache, coverage_cloud
 from apps.webui.server.routes import ingest_coverage
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_job import (
@@ -235,6 +236,18 @@ class CoverageOut(BaseModel):
     stems_index: dict[str, str | None]
     stems_source_refusal: str | None
     generated_at: float
+    #: Seconds since this measurement was taken; 0 unless ``cached`` was asked.
+    age_s: float
+    #: A newer measurement is being taken behind a ``cached`` read.
+    refreshing: bool
+    #: Why the latest background refresh failed. The counts are then the last
+    #: good measurement, ``age_s`` old, and must not be shown as current.
+    refresh_error: str | None
+
+
+def stem_cloud_for(app: FastAPI) -> coverage_cloud.StemCloud:
+    """What R2 holds that this machine can fetch, for coverage AND refresh."""
+    return coverage_cloud.for_app_state(app.state, COVERAGE_DATA_DIR)
 
 
 def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
@@ -245,17 +258,56 @@ def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
     return ingest_coverage.compute_snapshot(
         open_ro, _stem_roots(app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR, COVERAGE_DATA_DIR,
         stems_source_refusal=refusal_fn(),
-        stem_cloud=coverage_cloud.for_app_state(app.state, COVERAGE_DATA_DIR),
+        stem_cloud=stem_cloud_for(app),
     )
 
 
+_coverage_cache_lock = threading.Lock()
+
+
+def _coverage_cache(app: FastAPI) -> coverage_cache.CoverageCache:
+    """One cache per app, so a second app in the process shares nothing."""
+    with _coverage_cache_lock:
+        cache = getattr(app.state, "coverage_cache", None)
+        if cache is None:
+            cache = app.state.coverage_cache = coverage_cache.CoverageCache()
+        return cache
+
+
+def _coverage_fields(app: FastAPI) -> dict[str, object]:
+    snapshot = build_snapshot(app)
+    return {
+        "total_tracks": snapshot.playability.total,
+        **ingest_coverage.response_fields(snapshot),
+    }
+
+
 @router.get("/coverage", response_model=CoverageOut)
-def get_coverage(request: Request) -> CoverageOut:
-    snapshot = build_snapshot(request.app)
+def get_coverage(
+    request: Request,
+    cached: bool = Query(
+        False,
+        description=(
+            "Accept the last measurement instead of waiting for a new one. "
+            "`age_s` says how old it is; when `refreshing` is true a newer one "
+            "is being taken and a read shortly after gets it. Without this "
+            "the library is measured for this request."
+        ),
+    ),
+) -> CoverageOut:
+    app = request.app
+    cache = _coverage_cache(app)
+    reading = (
+        cache.read(lambda: _coverage_fields(app))
+        if cached
+        else cache.measure(lambda: _coverage_fields(app))
+    )
     return CoverageOut.model_validate(
         {
-            "total_tracks": snapshot.playability.total,
-            **ingest_coverage.response_fields(snapshot),
+            **reading.fields,
+            "age_s": reading.age_s,
+            "refreshing": reading.refreshing,
+            "refresh_error": reading.refresh_error,
         }
     )
 
@@ -343,11 +395,21 @@ def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
             )
             job.step_done = 1
             return
-        _run_cli(
-            job,
-            [sys.executable, "-m", "apps.stems", "trickle", "--live",
-             "--limit", str(STEMS_TRICKLE_LIMIT)],
-        )
+        # The CLI ranks and picks its own batch, and it only sees this disk:
+        # left alone it re-renders bundles R2 already holds. Hand it the
+        # job's targets so it can render nothing else.
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", prefix="stems-targets-", suffix=".txt", delete=False
+        ) as ids_file:
+            ids_file.write("".join(f"{stable_id}\n" for stable_id, _path in targets))
+        try:
+            _run_cli(
+                job,
+                [sys.executable, "-m", "apps.stems", "trickle", "--live",
+                 "--limit", str(STEMS_TRICKLE_LIMIT), "--ids-file", ids_file.name],
+            )
+        finally:
+            Path(ids_file.name).unlink(missing_ok=True)
         job.step_done = job.step_total
 
 
@@ -439,7 +501,16 @@ def _library_targets(
     missing, _corrupt = missing_by_step(
         on_disk, open_ro, roots, VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
     )
-    return missing
+    # A bundle evicted to R2 is done, not missing (HEALTH-07): the same split
+    # coverage and the drain use, so a refresh never re-renders one.
+    to_make, in_cloud = ingest_coverage.split_stems_by_place(missing["stems"], job.stem_cloud)
+    if job.stem_cloud.state == "unknown":
+        _log(job, f"stems: the cloud stem index could not be read ({job.stem_cloud.reason}); "
+                  f"all {len(to_make)} tracks with no local bundle are treated as missing")
+    elif in_cloud:
+        _log(job, f"stems: {len(in_cloud)} of {len(missing['stems'])} with no local bundle "
+                  "are in the cloud (fetched back when loaded on a deck), not re-rendered")
+    return {**missing, "stems": to_make}
 
 
 def validate_track_order_target(stable_id: str) -> None:
@@ -509,6 +580,8 @@ def _start_refresh_job(
     body: RefreshIn | None,
     roots: tuple[Path, ...],
     guard: Callable[[], None] | None = None,
+    *,
+    stem_cloud: coverage_cloud.StemCloud,
 ) -> _RefreshJob:
     """Claim the one slot and hand back THE job created, not the slot.
 
@@ -554,7 +627,8 @@ def _start_refresh_job(
         )
         orders = {body.stable_id: body.analysis_kind} if is_track_order and body is not None else {}
         job = _RefreshJob(started_at=time.time(), steps=steps, scope=scope,
-                          batch_dir=batch_dir, skipped_steps=skipped, analysis_orders=orders)
+                          batch_dir=batch_dir, skipped_steps=skipped, analysis_orders=orders,
+                          stem_cloud=stem_cloud)
         _JOBS.current = job
         if scope == UNMAPPED_SCOPE:
             _JOBS.last_unmapped = job
@@ -566,7 +640,11 @@ def _start_refresh_job(
 
 @router.post("/refresh", response_model=RefreshStatusOut, status_code=202)
 def start_refresh(request: Request, body: RefreshIn | None = None) -> RefreshStatusOut:
-    return _status_of(_start_refresh_job(body, _stem_roots(request.app)))
+    return _status_of(
+        _start_refresh_job(
+            body, _stem_roots(request.app), stem_cloud=stem_cloud_for(request.app)
+        )
+    )
 
 
 @router.get("/refresh/status", response_model=RefreshStatusOut)

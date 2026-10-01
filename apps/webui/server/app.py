@@ -228,6 +228,7 @@ def build_auto_analyze_watcher(app: FastAPI) -> analysis_autostart.AutoAnalyzeWa
             ingest_routes.RefreshIn(scope="unmapped"),
             ingest_routes._stem_roots(app),
             lambda: guard(last_attempted_queue()),
+            stem_cloud=ingest_routes.stem_cloud_for(app),
         )
 
         def consumed() -> str | None:

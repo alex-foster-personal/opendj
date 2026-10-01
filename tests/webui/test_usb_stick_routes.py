@@ -127,9 +127,7 @@ def volumes_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     }
     monkeypatch.delenv(BUILD_PROFILE_ENV, raising=False)
     monkeypatch.setattr(usb_mod, "sys", SimpleNamespace(platform="darwin"))
-    monkeypatch.setattr(
-        usb_mod, "shutil", SimpleNamespace(which=lambda name: f"/usr/sbin/{name}")
-    )
+    monkeypatch.setattr(usb_mod, "_pinned_diskutil", lambda: "/usr/sbin/diskutil")
     monkeypatch.setattr(usb_mod, "_VOLUMES_ROOT", root)
     monkeypatch.setattr(usb_mod, "_diskutil_info", lambda mount, _cmd: infos[mount.name])
     return root

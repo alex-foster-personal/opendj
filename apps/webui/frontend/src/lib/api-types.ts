@@ -7632,6 +7632,13 @@ export interface components {
         };
         /** BrokenTrackList */
         BrokenTrackList: {
+            /** Next Offset */
+            next_offset?: number | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
             /** Total */
             total: number;
             /** Tracks */
@@ -8507,6 +8514,8 @@ export interface components {
          *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
          */
         CoverageOut: {
+            /** Age S */
+            age_s: number;
             /** Availability */
             availability: {
                 [key: string]: number;
@@ -8545,6 +8554,10 @@ export interface components {
             pending: {
                 [key: string]: number;
             };
+            /** Refresh Error */
+            refresh_error: string | null;
+            /** Refreshing */
+            refreshing: boolean;
             /** Stems Index */
             stems_index: {
                 [key: string]: string | null;
@@ -20369,7 +20382,10 @@ export interface operations {
     };
     get_coverage_api_v1_ingest_coverage_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request. */
+                cached?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -20383,6 +20399,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23570,6 +23595,10 @@ export interface operations {
             query?: {
                 /** @description Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing. */
                 playlist_id?: string | null;
+                /** @description Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library. */
+                limit?: number | null;
+                /** @description Rows to skip in the (title, stable_id) ordering. */
+                offset?: number;
             };
             header?: never;
             path?: never;
