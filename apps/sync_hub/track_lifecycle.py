@@ -33,13 +33,13 @@ import sqlite3
 from dataclasses import dataclass
 
 from apps.shared.state import sync_stamp
-from apps.sync_hub import protocol
+from apps.sync_hub import protocol, protocol_common
 from apps.sync_hub.engine_common import SyncApplyError
 from apps.sync_hub.engine_identity_map import load_identity_remap
 from apps.sync_hub.protocol import RowChange
 
-TRACKS_TABLE: str = protocol.TRACKS_TABLE
-_LIFECYCLE_COLUMNS: tuple[str, str] = (protocol.DELETED_AT, protocol.RESTORED_AT)
+TRACKS_TABLE: str = protocol_common.TRACKS_TABLE
+_LIFECYCLE_COLUMNS: tuple[str, str] = (protocol_common.DELETED_AT, protocol_common.RESTORED_AT)
 
 # -----------------------------------------------------------------------------
 # types
@@ -92,8 +92,8 @@ def judge(conn: sqlite3.Connection, change: RowChange) -> LifecycleVerdict | Non
     )
     if faults:
         return LifecycleVerdict(incoming_loses=False, faults=faults)
-    stored_key = protocol.lifecycle_key(stored_values)
-    incoming_key = protocol.lifecycle_key(change.values)
+    stored_key = protocol_common.lifecycle_key(stored_values)
+    incoming_key = protocol_common.lifecycle_key(change.values)
     if incoming_key == stored_key:
         return None
     incoming_loses = incoming_key < stored_key

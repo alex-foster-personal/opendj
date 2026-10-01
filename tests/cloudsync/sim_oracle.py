@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.shared.state import sync_stamp
-from apps.sync_hub import protocol
+from apps.sync_hub import protocol, protocol_common
 
 #: ``(table, primary key)``: one logical row across the whole fleet.
 RowKey = tuple[str, str]
@@ -65,7 +65,7 @@ def lww_key(updated_at: str, origin: str) -> LwwKey:
 def track_lifecycle_key(version: Version) -> str:
     """When a track version last moved between removed and live."""
     _title, deleted_at, restored_at = version.content
-    return protocol.lifecycle_key({"deleted_at": deleted_at, "restored_at": restored_at})
+    return protocol_common.lifecycle_key({"deleted_at": deleted_at, "restored_at": restored_at})
 
 
 class LwwOracle:
