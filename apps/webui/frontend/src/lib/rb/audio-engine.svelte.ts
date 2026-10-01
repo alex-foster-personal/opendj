@@ -1081,6 +1081,7 @@ import {
 	filterParamsFromKnob
 } from './audio-engine-guards';
 import {
+	AUTOMATIC_HANDOFF_REASONS,
 	electMaster,
 	onAirGain,
 	SILENCE_GAIN_EPSILON,
@@ -1198,8 +1199,15 @@ function _electionInput(): MasterElectionInput {
 
 function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason }): DeckId | null {
 	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
-	const next = electMaster(_electionInput());
-	_assignMaster(next, options?.reason ?? 'master-left');
+	const previous = _masterDeck, next = electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
+	_assignMaster(next, reason);
+	// An AUTOMATIC handoff re-joins the playing followers as setDeckMaster does;
+	// otherwise each phase lock drops ('master moved') and the decks free-run.
+	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
+		const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
+		_bumpReanchorOperation(next);
+		void _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) }).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
+	}
 	return next;
 }
 

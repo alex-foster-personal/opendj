@@ -1,5 +1,5 @@
 /**
- * ADVERSARIAL (round 3, intentionally RED until fixed): two places where the
+ * ADVERSARIAL (round 3; both were RED, FIXED - see each test): two places where the
  * Web Audio engine ends a follower's continuous phase lock (NAE-19) and never
  * starts it again, so the follower free-runs and drifts (0.05% grid error is
  * 150 ms after five minutes - the drift the lock exists to stop).
@@ -34,6 +34,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { readFrontendSource } from './engine-source.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const ENGINE = 'src/lib/rb/audio-engine.svelte.ts';
 
@@ -59,6 +60,23 @@ test('1. an automatic master election re-joins the playing followers to the new 
 		/_synchronizeFollowers\(|_reanchorFollowers\(|resyncFollowers\(/,
 		'no automatic election path re-joins followers; their phase locks end at the handoff'
 	);
+	// The re-join is gated, not unconditional: only on an automatic reason and
+	// only when the master really moved (a re-join on every election would
+	// re-seek followers on each claim and each no-op re-election).
+	assert.match(elect, /AUTOMATIC_HANDOFF_REASONS\.has\(reason\)/);
+	assert.match(elect, /next !== previous/);
+});
+
+test('control: only the automatic handoff reasons re-join; claims and re-elections do not', async () => {
+	const { AUTOMATIC_HANDOFF_REASONS } = await loadTypeScriptModule('src/lib/rb/master-election.ts');
+	for (const reason of ['master-left', 'natural-end', 'unload']) {
+		assert.ok(AUTOMATIC_HANDOFF_REASONS.has(reason), `${reason} is a handoff`);
+	}
+	// Their callers already join the deck that asked; a second, re-anchoring
+	// join of every follower here would re-seek decks that are in phase.
+	for (const reason of ['manual', 'play-claim', 'first-claim', 'beat-sync-enable', 'unlock-reelect', 'dispose', null]) {
+		assert.ok(!AUTOMATIC_HANDOFF_REASONS.has(reason), `${reason} is not a handoff`);
+	}
 });
 
 test('control: the MANUAL master switch does re-join (so the guard can say yes)', () => {

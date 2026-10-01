@@ -8,8 +8,23 @@ import { TRIM_MAX_GAIN } from '$lib/player/constants';
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
 import { nextPlayingMaster } from '$lib/rb/audio-engine-guards';
+import type { MasterReason } from '$lib/rb/audio-engine-types';
 
 export const SILENCE_GAIN_EPSILON = 1e-4;
+
+/**
+ * Election reasons that move the master AWAY from a deck the followers were
+ * locked to without the user picking the new one: the master paused, faded
+ * out, played out or was unloaded. The engine re-joins the playing Beat Sync
+ * followers to the new master after one of these (NAE-19), as it does after a
+ * manual switch. Claims, Beat Sync enable and unlock re-elections are not
+ * handoffs: their callers already join the deck that asked.
+ */
+export const AUTOMATIC_HANDOFF_REASONS: ReadonlySet<MasterReason> = new Set<MasterReason>([
+	'master-left',
+	'natural-end',
+	'unload'
+]);
 
 export interface MasterElectionDeck {
 	id: DeckId;
