@@ -87,10 +87,11 @@ def test_a_differently_worded_completed_409_also_counts_as_success(
 
 
 def test_the_recheck_asks_about_the_cancelled_runs_own_id(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The control: the re-read must be scoped to THIS run, or it answers a different
-    question than the one the failed cancel raised."""
+    question than the one the failed cancel raised. Also the only place this race is
+    logged: `_cancel_run` prints the notice itself, so every caller gets it for free."""
     asked: list[str] = []
     monkeypatch.setattr(
         mod, "_run_gh", _raising_run_gh("gh: Cannot cancel a workflow run that is completed. (HTTP 409)")
@@ -98,6 +99,8 @@ def test_the_recheck_asks_about_the_cancelled_runs_own_id(
     monkeypatch.setattr(mod, "_gh_api_json", _status_reader(asked, "completed"))
     mod._cancel_run(36803336485)
     assert asked == [f"repos/{mod.REPO}/actions/runs/36803336485"]
+    out = capsys.readouterr().out
+    assert "cancel-already-completed run_id=36803336485 reason=already-completed" in out
 
 
 # ----- the opposite direction: a genuine failure must still raise -----
@@ -150,7 +153,7 @@ def test_not_yet_queued_is_still_resolved_without_a_status_rereard(
 
 
 def test_execute_sweep_counts_an_already_completed_bookkeeping_cancel_as_success(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = _run(36803336485)
     plan = mod.SweepPlan(
@@ -164,10 +167,6 @@ def test_execute_sweep_counts_an_already_completed_bookkeeping_cancel_as_success
     monkeypatch.setattr(mod, "_cancel_run", lambda _run_id: mod.CancelOutcome.ALREADY_COMPLETED)
     report = mod.execute_sweep(plan, dry_run=False)
     assert report.bookkeeping_cancelled == 1
-    assert report.bookkeeping_cancel_already_completed == 1
-    out = capsys.readouterr().out
-    assert "bookkeeping-cancel-already-completed" in out
-    assert "reason=already-completed" in out
 
 
 def test_execute_sweep_counts_an_already_completed_ci_cancel_as_success(
@@ -185,11 +184,10 @@ def test_execute_sweep_counts_an_already_completed_ci_cancel_as_success(
     monkeypatch.setattr(mod, "_cancel_run", lambda _run_id: mod.CancelOutcome.ALREADY_COMPLETED)
     report = mod.execute_sweep(plan, dry_run=False)
     assert report.ci_cancelled == 1
-    assert report.ci_cancel_already_completed == 1
 
 
 def test_closed_pr_sweep_counts_an_already_completed_cancel_as_success(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """This is the exact call site that raised in both live failures: closed-pr-cancel
     reason=no-open-pr on run 36803336485."""
@@ -205,9 +203,6 @@ def test_closed_pr_sweep_counts_an_already_completed_cancel_as_success(
     monkeypatch.setattr(mod, "_cancel_run", lambda _run_id: mod.CancelOutcome.ALREADY_COMPLETED)
     counts = mod.execute_closed_pr_sweep((run,), dry_run=False, still_closed=lambda _: True)
     assert (counts.planned, counts.cancelled) == (1, 1)
-    out = capsys.readouterr().out
-    assert "closed-pr-cancel-already-completed workflow=CI run_id=36803336485" in out
-    assert "reason=already-completed" in out
 
 
 def test_closed_pr_sweep_still_propagates_a_genuine_cancel_failure(
