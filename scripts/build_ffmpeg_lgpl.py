@@ -102,7 +102,7 @@ PARSERS = ("mpegaudio", "aac", "aac_latm", "flac", "vorbis", "opus")
 # fingerprint's resampler positive control runs (pcm_fingerprint.require_resampler).
 FILTERS = (
     "aresample", "aformat", "asplit", "lowpass", "highpass", "bandpass", "equalizer",
-    "amerge", "pan", "ebur128", "volume", "anull", "atrim", "format", "null", "trim",
+    "amerge", "pan", "ebur128", "astats", "volume", "anull", "atrim", "format", "null", "trim",
     "sine",
 )
 # Configure names, not -f names: the -f s16le muxer is pcm_s16le_muxer.

@@ -8,6 +8,7 @@ Regression one-liners:
   - if the guard fires on the real pinned configure line then broken
   - if the payload launcher stops exporting ODJ_FFMPEG_BIN then broken
   - if the configure line ever asks for --enable-gpl or --enable-nonfree then broken
+  - if a filter a lane command line names is missing from the build then broken
 """
 
 from __future__ import annotations
@@ -111,3 +112,22 @@ def test_notice_carries_the_offer_and_the_configure_line() -> None:
     assert " ".join(args) in notice
     assert lgpl.FFMPEG.sha256 in notice and lgpl.SOXR.sha256 in notice
     assert "Written offer" in notice
+
+
+# (lane source, filter that source passes to ffmpeg). astats was left out of the
+# first bundled build, so every own_loudness run died with "No such filter".
+LANE_FILTERS = (
+    ("apps/analysis_loudness/adapter.py", "astats"),
+    ("apps/loudness/scan.py", "ebur128"),
+    ("apps/analysis/backends/own_loudness.py", "aresample"),
+    ("apps/analysis/pcm_fingerprint.py", "aresample"),
+    ("apps/analysis_waveform/decode.py", "asplit"),
+    ("apps/analysis_waveform/decode.py", "aformat"),
+)
+
+
+@pytest.mark.parametrize(("source", "name"), LANE_FILTERS)
+def test_every_lane_filter_is_built(source: str, name: str) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    assert name in (repo / source).read_text(), f"{source} no longer uses {name}; update LANE_FILTERS"
+    assert name in lgpl.FILTERS, f"{source} needs the {name} filter but the bundled build omits it"
