@@ -84,3 +84,47 @@ def test_mode_ratio_browser_opens_only_uninstrumented_pages() -> None:
     code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith(("*", "/", "//")))
     assert "openUninstrumentedPage(" in code
     assert ".newPage(" not in code and ".newContext(" not in code
+
+
+_PREDICATE_THROW_SCRIPT = """
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const { openUninstrumentedPage } = await import(pathToFileURL(process.argv[1]).href);
+const mod = await import(pathToFileURL(createRequire(path.join(process.cwd(), 'package.json')).resolve('@playwright/test')).href);
+const browser = await (mod.default ?? mod).chromium.launch({ headless: true });
+const page = await openUninstrumentedPage(browser);
+const started = Date.now();
+let message = 'did not reject';
+try {
+  await page.waitForFunction(() => { throw new Error('AudioContext was not allowed to start'); }, undefined, { timeout: 20000 });
+} catch (error) {
+  message = String(error.message);
+}
+console.log(JSON.stringify({ elapsed_ms: Date.now() - started, message }));
+await browser.close();
+"""
+
+
+@_requires_reference_mac
+@pytest.mark.requirement("PERFMODE-15")
+def test_a_throwing_predicate_fails_at_once_instead_of_polling_to_timeout() -> None:
+    """[if] a waitForFunction predicate throws an AudioContext error [then] it rejects with that error at once, [else stop]."""
+    completed = subprocess.run(
+        [
+            _node(),
+            "--input-type=module",
+            "-e",
+            _PREDICATE_THROW_SCRIPT,
+            str(_REPO / "scripts" / "perf" / "uninstrumented-page.mjs"),
+        ],
+        cwd=_FRONTEND,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    outcome = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert "AudioContext was not allowed to start" in outcome["message"], outcome
+    assert outcome["elapsed_ms"] < 5000, outcome

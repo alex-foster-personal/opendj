@@ -32,6 +32,32 @@ export function assertUninstrumentedMethod(method) {
 	}
 }
 
+/** A command the protocol itself failed (its `error` field), as opposed to an
+ * exception thrown by the page code `evaluate` ran. */
+export class CdpProtocolError extends Error {
+	constructor(method, protocolMessage) {
+		super(`${method}: ${protocolMessage}`);
+		this.name = 'CdpProtocolError';
+		this.protocolMessage = protocolMessage;
+	}
+}
+
+/** Chromium's protocol messages for an evaluation that raced a navigation. */
+const _CONTEXT_LOSS_MESSAGES = [
+	'Execution context was destroyed',
+	'Cannot find context with specified id',
+	'Cannot find default execution context'
+];
+
+/** True only for a protocol-level context loss; never for a page exception,
+ * whatever its message says (an AudioContext error mentions "context" too). */
+export function isContextLossError(error) {
+	return (
+		error instanceof CdpProtocolError &&
+		_CONTEXT_LOSS_MESSAGES.some((text) => error.protocolMessage.includes(text))
+	);
+}
+
 function _expression(fn, arg) {
 	if (typeof fn !== 'function') throw new TypeError('evaluate expects a function');
 	return `(${fn.toString()})(${arg === undefined ? '' : JSON.stringify(arg)})`;
@@ -68,7 +94,7 @@ export async function openUninstrumentedPage(browser) {
 		if (waiter === undefined) return;
 		pending.delete(message.id);
 		if (message.error !== undefined) {
-			waiter.reject(new Error(`${waiter.method}: ${message.error.message}`));
+			waiter.reject(new CdpProtocolError(waiter.method, message.error.message));
 		} else {
 			waiter.resolve(message.result);
 		}
@@ -107,8 +133,8 @@ export async function openUninstrumentedPage(browser) {
 				value = await evaluate(fn, arg);
 			} catch (error) {
 				// A navigation swaps the execution context under a poll; Playwright
-				// retries those too. A throw from the predicate itself is not that.
-				if (!/context/i.test(String(error?.message))) throw error;
+				// retries those too. A throw from the predicate itself propagates.
+				if (!isContextLossError(error)) throw error;
 			}
 			if (value) return value;
 			if (Date.now() >= deadline) {
