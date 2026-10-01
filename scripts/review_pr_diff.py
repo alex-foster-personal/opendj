@@ -12,6 +12,9 @@ Requirements (mini-PRD):
     [if a 406 on an oversized PR still raises then broken]
   / Any other gh failure is still a TriageError, never a local guess.
     [if an HTTP 502 falls back to the checkout then broken]
+    [if a 406 for any other reason falls back to the checkout then broken]
+  / Bytes that are not UTF-8 are a TriageError, never a diff with characters replaced.
+    [if a changed latin-1 byte reaches a reviewer as U+FFFD then broken]
   / A checkout that lacks either commit is a TriageError, never a partial diff.
     [if a missing head commit yields an empty or wrong diff then broken]
   / The local diff is shaped like GitHub's regardless of the caller's git config.
@@ -28,9 +31,11 @@ from scripts.review_gh import TriageError, _gh
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: What gh reports when GitHub refuses to render a diff for its size. It is the
-#: one failure the checkout can answer instead.
-DIFF_TOO_LARGE = "HTTP 406"
+#: What gh reports when GitHub refuses to render a diff for its size: the reason
+#: AND the status, as GitHub returned them for PR #3837 on Thu 1 Oct 2026. It is
+#: the one failure the checkout can answer instead; a 406 for any other reason
+#: (a media type GitHub does not serve, say) is not it.
+DIFF_TOO_LARGE: tuple[str, ...] = ("the diff exceeded the maximum number of files", "(HTTP 406)")
 
 #: Pin the output shape: `a/` and `b/` prefixes, rename detection, no color, no
 #: external or textconv driver. A caller's own git config must not be able to
@@ -54,7 +59,7 @@ def pr_diff(repo: str, pr: str, repo_root: Path = REPO_ROOT) -> str:
     try:
         return _gh(["api", f"repos/{repo}/pulls/{pr}", "-H", "Accept: application/vnd.github.v3.diff"])
     except TriageError as exc:
-        if DIFF_TOO_LARGE not in str(exc):
+        if not all(part in str(exc) for part in DIFF_TOO_LARGE):
             raise
     head, merge_base = _diff_endpoints(repo, pr)
     return checkout_diff(merge_base, head, repo_root)
@@ -101,4 +106,10 @@ def checkout_diff(merge_base: str, head: str, repo_root: Path = REPO_ROOT) -> st
     if proc.returncode != 0:
         detail = proc.stderr.decode("utf-8", errors="replace").strip()
         raise TriageError(f"git diff {merge_base[:12]} {head[:12]} failed: {detail or '<no stderr>'}")
-    return proc.stdout.decode("utf-8", errors="replace")
+    try:
+        return proc.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise TriageError(
+            f"git diff {merge_base[:12]} {head[:12]} is not valid UTF-8 at byte {exc.start}; "
+            "a review of replaced characters would not be a review of the commit"
+        ) from exc
