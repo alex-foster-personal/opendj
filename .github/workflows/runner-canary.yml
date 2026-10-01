@@ -387,13 +387,14 @@ jobs:
           rc=$?
           set -e
           # Exit 5 (no test item collected) is a FAILURE, except in affected
-          # mode when the JUnit report proves every selected module was
+          # mode when the JUnit report proves EACH selected module was
           # reached and skipped itself at module level, which the full lane
           # reports green for the same modules. An empty selection never gets
           # here: it exited 0 above without starting pytest.
           if [ "$mode" = affected ] && [ "$rc" -eq 5 ]; then
             if .venv/bin/python -m scripts.ci_test_selection junit-all-skipped \
-                "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml"; then
+                "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
+                --modules "$selection_dir/shard-modules.txt"; then
               echo "[selection] exit 5 with every selected module skipped at module level (JUnit evidence): success"
               rc=0
             else

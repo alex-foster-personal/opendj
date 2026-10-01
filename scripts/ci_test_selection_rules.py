@@ -223,6 +223,9 @@ def _names_for(path: str, dotted: str | None) -> set[str]:
         names.add(basename)
     if dotted:
         names.add(dotted)
+        if basename == "__main__.py":
+            # `python -m <package>` runs <package>/__main__.py, and a test names only the package.
+            names.add(dotted.removesuffix(".__main__"))
     return names
 
 

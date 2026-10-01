@@ -36,7 +36,7 @@ shard computes the same assignment.
 Usage (the shard step in .github/workflows/ci.yml):
     python -m scripts.ci_test_selection select --shard 1 --shards 5 --out-dir DIR \\
         --ignore=tests/analysis ...
-    python -m scripts.ci_test_selection junit-all-skipped REPORT.xml
+    python -m scripts.ci_test_selection junit-all-skipped REPORT.xml --modules DIR/shard-modules.txt
 
 `select` prints exactly one line on stdout, the mode, and writes DIR/selection.json (the
 record the escape measurement reads, scripts/ci_selection_escapes.py) and, in affected
@@ -304,21 +304,26 @@ def summary_markdown(record: Record, shard: int, shards: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def junit_all_skipped(report: Path) -> bool:
-    """True only when the report holds at least one testcase and every one was skipped.
+def _dotted(module_path: str) -> str:
+    return module_path.removesuffix(".py").replace("/", ".")
 
-    pytest exits 5 when it collects no test items, and a module that skips itself at module
-    level (`pytest.skip(..., allow_module_level=True)`) collects none. The report is the
-    evidence that pytest reached every selected module and each chose to skip, which is what
-    the full lane reports green for the same modules.
+
+def junit_all_skipped(report: Path, modules: list[str]) -> bool:
+    """True only when EVERY selected module skipped itself at module level, and nothing else ran.
+
+    pytest exits 5 when it collects no test items. A module that skips itself at module level
+    (`pytest.skip(..., allow_module_level=True)`) collects none and leaves one testcase named
+    by its dotted path with a <skipped> child; a module with no tests leaves nothing at all.
+    So exit 5 is excused only when each selected module has that skipped testcase and the
+    report holds no other outcome, which is what the full lane reports green for them.
     """
-    root = ElementTree.parse(report).getroot()
-    cases = root.findall(".//testcase")
-    if not cases:
+    if not modules:
         return False
-    return all(case.find("skipped") is not None for case in cases) and not any(
-        case.find(tag) is not None for case in cases for tag in ("failure", "error")
-    )
+    cases = ElementTree.parse(report).getroot().findall(".//testcase")
+    if not cases or not all(case.find("skipped") is not None for case in cases):
+        return False
+    skipped_modules = {case.get("name", "") for case in cases if not case.get("classname")}
+    return all(_dotted(module) in skipped_modules for module in modules)
 
 
 # ---------------------------------------------------------------------------
@@ -366,15 +371,19 @@ def main(argv: list[str] | None = None) -> int:
     select.add_argument("--shards", type=int, required=True)
     select.add_argument("--out-dir", required=True)
     select.add_argument("--ignore", action="append", default=[], help="a lane --ignore path")
-    junit = commands.add_parser("junit-all-skipped", help="exit 0 iff every testcase skipped")
+    junit = commands.add_parser(
+        "junit-all-skipped", help="exit 0 iff every selected module skipped at module level"
+    )
     junit.add_argument("report")
+    junit.add_argument("--modules", required=True, help="the shard's shard-modules.txt")
     arguments = parser.parse_args(argv)
     if arguments.command == "select":
         if not 1 <= arguments.shard <= arguments.shards:
             parser.error(f"--shard {arguments.shard} is outside 1..{arguments.shards}")
         return _select(arguments)
     if arguments.command == "junit-all-skipped":
-        return 0 if junit_all_skipped(Path(arguments.report)) else 1
+        modules = Path(arguments.modules).read_text(encoding="utf-8").split()
+        return 0 if junit_all_skipped(Path(arguments.report), modules) else 1
     parser.error(f"unknown command {arguments.command!r}")
     return 2
 
