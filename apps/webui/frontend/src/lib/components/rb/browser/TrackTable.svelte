@@ -39,6 +39,8 @@
 		bpmGridHoverText,
 		errColumnTitle,
 		gridFlagFor,
+		gridProvenanceFor,
+		requestGridProvenance,
 		camelotKeyColor,
 		camelotKeyHoverLabel,
 		columnHeaderTitle,
@@ -260,7 +262,7 @@
 		if (row.bpm_status === 'available-not-selected') {
 			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
 		}
-		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row)}`;
+		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row, gridProvenanceFor(row.stable_id))}`;
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer
@@ -1924,6 +1926,7 @@
 							class:bpm-inert={bpmCellInert(row)}
 							style={bpmCellStyle(row.bpm)}
 							title={bpmCellTitle(row)}
+							onpointerenter={() => requestGridProvenance(row.stable_id)}
 						>
 							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
 								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>

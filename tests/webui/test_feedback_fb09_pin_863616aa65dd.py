@@ -56,6 +56,8 @@ def test_pin_863616aa65dd_comment_carries_environment_and_utc_created_at(
         "viewport_height": 800,
         "machine": "test-host",
         "release_version": "0.1.0",
+        "user_email": None,
+        "ui_config": None,
     }
     git_sha = pin["build"]["git_sha"]
     assert git_sha

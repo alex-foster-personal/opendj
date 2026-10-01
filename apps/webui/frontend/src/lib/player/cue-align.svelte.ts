@@ -44,6 +44,7 @@ import {
 	cueLatencyCaptureMs,
 	cueLatencySweep
 } from '$lib/player/cue-latency';
+import { CueAlignMeasurementUnstable, clippedFraction, type MeasuredRun } from '$lib/player/cue-align-unstable';
 import { CUE_ALIGN_MAX_LAG_MS, CUE_ALIGN_RUNS, deriveAlignment, intendedResidualMs } from '$lib/player/cue-align-policy';
 import type { CueCalibrationRecord } from '$lib/player/mixer-config';
 import type { CueAlignStep, CueCalibrationFailure, HeadphoneCalibrationState } from '$lib/rb/mixer-types';
@@ -265,7 +266,7 @@ export function createCueAlignController(
 		mic: MicHandle,
 		gain: number,
 		purpose: CueAlignChirpPurpose = 'measure'
-	): Promise<{ lagMs: number; peak: number }> {
+	): Promise<MeasuredRun> {
 		_throwIfAborted();
 		const signal = (abortController as AbortController).signal;
 		const sampleRate = effects.sampleRate();
@@ -291,7 +292,8 @@ export function createCueAlignController(
 		const scheduledMs = (whenSec - capture.startedAtSec) * 1000;
 		return {
 			lagMs: Math.round(lagMs - scheduledMs),
-			peak: Number.isFinite(peakNormalized) ? peakNormalized : 0
+			peak: Number.isFinite(peakNormalized) ? peakNormalized : 0,
+			clippedFraction: clippedFraction(captured)
 		};
 	}
 
@@ -324,10 +326,10 @@ export function createCueAlignController(
 	 * the next rung: on the real modal the speakers read 0.52 in the ramp and
 	 * 0.34 one rung louder moments later.
 	 */
-	async function _measure(bus: CueAlignBus, mic: MicHandle, gain: number): Promise<{ lagMs: number; gain: number }> {
+	async function _measure(bus: CueAlignBus, mic: MicHandle, gain: number): Promise<{ run: MeasuredRun; gain: number }> {
 		const first = await _probe(bus, mic, gain);
 		effects.onProbe?.({ bus, gain, peak: first.peak, lagMs: first.lagMs, best: first.peak, threshold: CUE_LATENCY_PEAK_MIN });
-		if (first.peak >= CUE_LATENCY_PEAK_MIN) return { lagMs: first.lagMs, gain };
+		if (first.peak >= CUE_LATENCY_PEAK_MIN) return { run: first, gain };
 		const louder = CUE_LATENCY_GAIN_STEPS[CUE_LATENCY_GAIN_STEPS.length - 1];
 		effects.onProbe?.({ bus, gain: louder, peak: null, lagMs: null, best: first.peak, threshold: CUE_LATENCY_PEAK_MIN });
 		const retry = await _probe(bus, mic, louder);
@@ -339,7 +341,7 @@ export function createCueAlignController(
 			best: Math.max(first.peak, retry.peak),
 			threshold: CUE_LATENCY_PEAK_MIN
 		});
-		if (retry.peak >= CUE_LATENCY_PEAK_MIN) return { lagMs: retry.lagMs, gain: louder };
+		if (retry.peak >= CUE_LATENCY_PEAK_MIN) return { run: retry, gain: louder };
 		throw _couldNotHear(bus, Math.max(first.peak, retry.peak));
 	}
 
@@ -405,6 +407,8 @@ export function createCueAlignController(
 		// master when the two are measured seconds apart. The ramps are not paired:
 		// an operator holding the ear cup in between can put many seconds of drift
 		// between them.
+		const masterRuns: MeasuredRun[] = [];
+		const cueRuns: MeasuredRun[] = [];
 		const master: number[] = [];
 		const cue: number[] = [];
 		const offsets: number[] = [];
@@ -412,10 +416,12 @@ export function createCueAlignController(
 		let verifyCueGain = cueLevel.gain;
 		for (let run = 0; run < CUE_ALIGN_RUNS; run += 1) {
 			const masterResult = await _measure('master', mic, masterLevel.gain);
-			master.push(masterResult.lagMs);
+			masterRuns.push(masterResult.run);
+			master.push(masterResult.run.lagMs);
 			verifyMasterGain = Math.max(verifyMasterGain, masterResult.gain);
 			const cueResult = await _measure('cue', mic, cueLevel.gain);
-			cue.push(cueResult.lagMs);
+			cueRuns.push(cueResult.run);
+			cue.push(cueResult.run.lagMs);
 			verifyCueGain = Math.max(verifyCueGain, cueResult.gain);
 			offsets.push(cue[run] - master[run]);
 			calibration.diagnostics.master_measurements_ms = [...master];
@@ -425,10 +431,11 @@ export function createCueAlignController(
 		calibration.diagnostics.spread_ms = spread;
 		if (spread > CUE_ALIGN_MAX_SPREAD_MS) {
 			_recordFailure('inconsistent_measurements');
-			throw new Error(
-				`measurement unstable (spread ${spread} ms), try again with less room noise ` +
-					`(speakers ${master.join(', ')} ms; headphones ${cue.join(', ')} ms)`
-			);
+			// The reason is read off what was measured, never assumed (pin 9a722fd1).
+			throw new CueAlignMeasurementUnstable(spread, masterRuns, cueRuns, {
+				comfortablePeak: CUE_LATENCY_PEAK_TARGET,
+				maxSpreadMs: CUE_ALIGN_MAX_SPREAD_MS
+			});
 		}
 		const masterMs = median3(master);
 		const cueMs = median3(cue);

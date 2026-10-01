@@ -3621,18 +3621,15 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		{#snippet libraryLoadOverlay()}
-			<LibraryLoadIndicator
-				loading={pane.loading}
-				progress={pane.load_progress}
-				searching={pane.searching}
-			/>
-		{/snippet}
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
 			<PlaylistSetTabs playlistId={pane.playlist_id} />
 		{/if}
+		<LibraryLoadIndicator
+			loading={pane.loading}
+			progress={pane.load_progress}
+			searching={pane.searching}
+		/>
 		<TrackTable
-			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
 			selectedOrders={pane.selected_orders}

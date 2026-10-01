@@ -16,6 +16,9 @@
 		submitFollowOnWithAttachment
 	} from '$lib/rb/feedback-store.svelte';
 	import { readShellBuild } from '$lib/rb/build-identity';
+	import { buildPinUiConfig } from '$lib/rb/feedback-pin-ui-config';
+	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { rustMode } from '$lib/audio-engine/rust-mode.svelte';
 	import { attachmentSizeRefusal, pastedImageFile } from '$lib/rb/feedback-pin-attachment';
 	import type { ClientErrorContext } from '$lib/client-error-reporting';
 	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
@@ -215,7 +218,12 @@
 				ui: pinUiKind(),
 				viewport_width: submitted.viewport.width,
 				viewport_height: submitted.viewport.height,
-				author: 'operator'
+				author: 'operator',
+				ui_config: buildPinUiConfig({
+					pathname: submitted.page,
+					prefs: uiPrefs,
+					rustEngine: rustMode.enabled
+				})
 			} as const;
 			const attachment = pendingAttachment;
 			let saved: unknown;

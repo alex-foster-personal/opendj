@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -53,9 +54,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from apps.shared.paths import DATA_DIR, PROJECT_ROOT
+from apps.webui.server.routes.auth import signed_in_user
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -222,6 +224,51 @@ class CommentListOut(BaseModel):
     comments: list[CommentOut]
 
 
+PIN_UI_CONFIG_MAX_SWITCHES = 24
+_PIN_SLUG = r"^[a-z0-9][a-z0-9_-]{0,31}$"
+_PIN_SWITCH_KEY = re.compile(r"^[a-z][a-z0-9_.]{0,47}$")
+_PIN_ROUTE = r"^/[A-Za-z0-9/_.-]{0,119}$"
+_PIN_ROUTE_HOME_PREFIXES = ("/users/", "/home/")
+
+
+class PinUiConfig(BaseModel):
+    """Compact UI configuration at the moment a pin was dropped (pin 49f9d217).
+
+    Closed by construction: unknown keys are refused, every mode is a short
+    lowercase slug, every switch is a boolean, and the route is an app route
+    with no query string. That is what keeps a secret, a path under the
+    user's home, or a track title out of the pin store: there is no field
+    free text could travel in.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    route: str = Field(pattern=_PIN_ROUTE)
+    app_mode: str = Field(pattern=_PIN_SLUG)
+    engine_mode: str = Field(pattern=_PIN_SLUG)
+    perf_tier: str = Field(pattern=_PIN_SLUG)
+    switches: dict[str, StrictBool]
+
+    @field_validator("route")
+    @classmethod
+    def _route_is_not_a_home_path(cls, value: str) -> str:
+        if value.lower().startswith(_PIN_ROUTE_HOME_PREFIXES):
+            raise ValueError("route must be an app route, not a filesystem path")
+        return value
+
+    @field_validator("switches")
+    @classmethod
+    def _switches_are_bounded_slugs(cls, value: dict[str, bool]) -> dict[str, bool]:
+        if len(value) > PIN_UI_CONFIG_MAX_SWITCHES:
+            raise ValueError(
+                f"at most {PIN_UI_CONFIG_MAX_SWITCHES} switches, got {len(value)}"
+            )
+        for key in value:
+            if _PIN_SWITCH_KEY.fullmatch(key) is None:
+                raise ValueError(f"switch name {key!r} is not a lowercase identifier")
+        return value
+
+
 class CommentCreateIn(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -235,15 +282,23 @@ class CommentCreateIn(BaseModel):
     viewport_height: int = Field(ge=1, le=100_000)
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
     agent_kind: str | None = None
+    # Pin 49f9d217: optional so an agent posting a pin over HTTP need not
+    # invent a UI it does not have.
+    ui_config: PinUiConfig | None = None
 
 
 class PinEnvironmentOut(BaseModel):
-    """Non-personal runtime facts needed to reproduce a pinned UI defect.
+    """Runtime facts needed to reproduce a pinned UI defect.
 
     ``machine`` and ``release_version`` are already exposed by the running
-    daemon's settings/health surfaces. The browser contributes only its UI
-    kind and viewport dimensions: no username, user agent, URL query, or
-    other new personal data enters the pin store.
+    daemon's settings/health surfaces. The browser contributes its UI kind,
+    viewport dimensions and a closed ``ui_config`` snapshot (see
+    ``PinUiConfig``): no user agent, URL query, file path or track title.
+
+    ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
+    it from the session cookie, the same identity ``GET /api/v1/auth/me``
+    already returns to this browser; a request body cannot set it. It is null
+    when nobody is signed in, and absent on pins older than this field.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -253,6 +308,8 @@ class PinEnvironmentOut(BaseModel):
     viewport_height: int
     machine: str
     release_version: str
+    user_email: str | None = None
+    ui_config: PinUiConfig | None = None
 
 
 class GeneralNoteOut(BaseModel):
@@ -416,8 +473,9 @@ def _build_stamp(request: Request) -> BuildStampOut:
 
 
 def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentOut:
-    """Combine browser dimensions with daemon facts it already publishes."""
+    """Combine browser facts with daemon facts, including who is signed in."""
 
+    user = signed_in_user(request)
     machine = getattr(request.app.state, "hostname", None)
     release_version = getattr(request.app.state, "version", None)
     if not isinstance(machine, str) or machine == "":
@@ -430,6 +488,8 @@ def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentO
         viewport_height=body.viewport_height,
         machine=machine,
         release_version=release_version,
+        user_email=None if user is None else user.email,
+        ui_config=body.ui_config,
     )
 
 

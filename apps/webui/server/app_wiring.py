@@ -96,6 +96,7 @@ from .routes import feedback_pins as feedback_pins_routes
 from .routes import feedback_replies as feedback_replies_routes
 from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
+from .routes import grid_provenance as grid_provenance_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
 from .routes import ingest_materialize as ingest_materialize_routes
@@ -592,6 +593,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_sync_routes.router,
         share_routes.router,
         rb_assets_routes.router,
+        grid_provenance_routes.router,
         search_routes.router,
         rb_hot_cues_routes.router,
         progress_routes.router,
