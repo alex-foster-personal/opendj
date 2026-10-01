@@ -48,6 +48,17 @@ import { deriveAlignment } from '$lib/player/cue-align-policy';
 import type { CueAlignBus } from '$lib/player/cue-align.svelte';
 import type { CueBridgeWireResult } from '$lib/player/cue-bridge-wiring';
 import { capturedSignalLevel } from '$lib/player/cue-latency';
+import {
+	IO_OPERATION_TIMEOUT_ERROR_NAME,
+	ioDeviceAccessForFailure,
+	ioDeviceAccessForListing,
+	ioDeviceAccessRequestWasNotGranted,
+	ioOperationTimedOut,
+	listIoDevices,
+	savedIoDeviceNotices,
+	systemDefaultOutputOnly,
+	type SavedIoDevice
+} from '$lib/player/io-device-access';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -470,7 +481,11 @@ export async function withHeadphoneOperationTimeout<T>(
 	}
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 	const timeout = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => reject(new Error(`headphone ${operation} timed out after ${timeoutMs}ms`)), timeoutMs);
+		timeoutId = setTimeout(() => {
+			const error = new Error(`headphone ${operation} timed out after ${timeoutMs}ms`);
+			error.name = IO_OPERATION_TIMEOUT_ERROR_NAME;
+			reject(error);
+		}, timeoutMs);
 	});
 	try {
 		return await Promise.race([promise, timeout]);
@@ -849,6 +864,23 @@ export function micUnlockDecision(permission: unknown): MicUnlockDecision {
 	if (permission === 'granted') return 'already_unlocked';
 	if (permission === 'denied') return 'declined';
 	return 'ask';
+}
+
+/**
+ * IOPIN-14: `micUnlockDecision`, corrected by what the listing actually shows.
+ *
+ * `granted` is the Permissions API's claim that names are readable. When the
+ * listing just read is still withheld, the claim did not hold for this
+ * document (observed Thu 1 Oct 2026 in Chromium 149: `granted`, and
+ * enumerateDevices still returned its empty placeholders), and skipping the
+ * stream would leave the operator pressing a grant button that does nothing.
+ * The operator pressed that button, which is the consent, so ask.
+ */
+export function labelUnlockDecision(permission: unknown, namesWithheld: boolean): MicUnlockDecision {
+	if (typeof namesWithheld !== 'boolean') throw new TypeError('namesWithheld must be a boolean');
+	const decision = micUnlockDecision(permission);
+	if (decision === 'already_unlocked' && namesWithheld) return 'ask';
+	return decision;
 }
 
 /** What the operator is told when they have declined the microphone. It is not
@@ -1459,6 +1491,7 @@ function _clearHeadphoneSelection(): void {
 	mixerState.headphones.active = false;
 	mixerState.headphones.routes.cue = { state: 'default', selected: false };
 	_cueClearedByOperator = true;
+	_rememberSavedOutput('cue', null);
 }
 
 /** The browser's own answer, or null when it will not be asked (Safari has no
@@ -1725,26 +1758,87 @@ export function releaseHeadphoneGraphOfFailedBuild(): void {
 	_disposeHeadphoneGraph();
 }
 
+/** Whether this browser or shell can pin an output at all. Asked of the
+ * prototype so the answer does not need an engine context to exist yet. */
+function _outputPinningIsSupported(): boolean {
+	return typeof AudioContext !== 'undefined' && audioContextSinkIdIsSupported(AudioContext.prototype);
+}
+
+let _ioDeviceAccessAttempts = 0;
+
+/** How many enumeration attempts have published an access state. A caller
+ * that asks for an enumeration reads this before and after, so a request that
+ * was rejected before it ever ran is told from one that ran and failed. */
+export function ioDeviceAccessAttempts(): number {
+	return _ioDeviceAccessAttempts;
+}
+
+/**
+ * IOPIN-14: record that the device list could NOT be read, and why.
+ *
+ * The output list keeps what an earlier attempt read, or falls back to the
+ * system default alone: the machine is still playing through something, and
+ * a failed question is never drawn as "no devices".
+ */
+export function publishIoDeviceAccessFailure(
+	status: 'api_missing' | 'enumeration_failed' | 'timeout',
+	error: unknown
+): void {
+	_ioDeviceAccessAttempts += 1;
+	mixerState.headphones.device_access = ioDeviceAccessForFailure({
+		status,
+		error,
+		outputPinning: _outputPinningIsSupported()
+	});
+	if (mixerState.headphones.outputs.length === 0) {
+		mixerState.headphones.outputs = systemDefaultOutputOnly();
+	}
+}
+
+function _savedOutputs(): { master: SavedIoDevice | null; cue: SavedIoDevice | null } {
+	return loadMixerConfig().saved_outputs;
+}
+
+/** Remember the operator's pick by id and name, so a later session can say
+ * what became of it. `null` forgets the role. */
+function _rememberSavedOutput(role: 'master' | 'cue', deviceId: string | null): void {
+	const listed = deviceId === null ? undefined : mixerState.headphones.outputs.find((output) => output.id === deviceId);
+	persistMixerConfig({
+		saved_outputs: {
+			..._savedOutputs(),
+			[role]: listed === undefined ? null : { id: listed.id, label: listed.label }
+		}
+	});
+}
+
 export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Promise<void> {
 	if (monitorSource !== undefined) _lastMonitorSource = monitorSource;
 	const generation = _headphoneGeneration;
-	let devices: MediaDeviceInfo[];
+	let mediaDevices: MediaDevices;
 	try {
-		devices = await withHeadphoneOperationTimeout(
-			'enumerateDevices',
-			requireHeadphoneDeviceApi().enumerateDevices()
-		);
+		mediaDevices = requireHeadphoneDeviceApi();
+	} catch (error) {
+		publishIoDeviceAccessFailure('api_missing', error);
+		throw error;
+	}
+	// Watch before listing: a listing that fails today must still be retried
+	// by the plug-in event that fixes it.
+	_watchHeadphoneDeviceChanges(mediaDevices);
+	let devices: MediaDeviceInfo[];
+	let permission: string | null;
+	try {
+		devices = await withHeadphoneOperationTimeout('enumerateDevices', mediaDevices.enumerateDevices());
+		_assertCurrentHeadphoneOperation(generation, null);
+		permission = await _microphonePermissionState();
 		_assertCurrentHeadphoneOperation(generation, null);
 	} catch (error) {
 		_assertCurrentHeadphoneOperation(generation, null);
+		publishIoDeviceAccessFailure(ioOperationTimedOut(error) ? 'timeout' : 'enumeration_failed', error);
 		throw _headphoneError('headphone output enumeration failed', error);
 	}
-	mixerState.headphones.outputs = devices
-		.filter((device) => device.kind === 'audiooutput')
-		.map((device) => ({ id: device.deviceId, label: device.label }));
-	mixerState.headphones.inputs = devices
-		.filter((device) => device.kind === 'audioinput')
-		.map((device) => ({ id: device.deviceId, label: device.label }));
+	const listing = listIoDevices(devices);
+	mixerState.headphones.outputs = listing.outputs;
+	mixerState.headphones.inputs = listing.inputs;
 	const previousMasterId = mixerState.headphones.selected_master_output_device_id;
 	const previousCueId = mixerState.headphones.selected_output_device_id;
 	if (previousCueId !== null) _rememberedCueId = previousCueId;
@@ -1785,8 +1879,26 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	mixerState.headphones.selected_input_device_id =
 		inputStillPresent ?? preferredAudioInputDeviceId(devices);
 	mixerState.headphones.error = null;
+	_ioDeviceAccessAttempts += 1;
+	const access = ioDeviceAccessForListing({
+		listing,
+		permission,
+		outputPinning: _outputPinningIsSupported()
+	});
+	// A withheld listing proves nothing about which devices are present, so
+	// the saved picks are only compared against a real one.
+	if (access.status === 'listed') {
+		access.notices.push(
+			...savedIoDeviceNotices({
+				saved: _savedOutputs(),
+				outputs: listing.outputs,
+				selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+				selectedCueId: mixerState.headphones.selected_output_device_id
+			})
+		);
+	}
+	mixerState.headphones.device_access = access;
 	applyHeadphoneMix();
-	_watchHeadphoneDeviceChanges(requireHeadphoneDeviceApi());
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
@@ -1826,7 +1938,8 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		// unlock failure is still raised (and shown) afterwards.
 		await refreshHeadphoneOutputs(monitorSource);
 		_assertCurrentHeadphoneOperation(generation, null);
-		const decision = micUnlockDecision(await _microphonePermissionState());
+		const namesWithheld = mixerState.headphones.device_access.status !== 'listed';
+		const decision = labelUnlockDecision(await _microphonePermissionState(), namesWithheld);
 		_assertCurrentHeadphoneOperation(generation, null);
 		if (decision === 'declined') {
 			// Not an error: nothing failed, the operator chose this. Saying so here
@@ -1863,6 +1976,48 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('headphone output acquisition failed', error);
 	}
+}
+
+/**
+ * IOPIN-14, `request` mode only (the dev server): name the devices when I/O
+ * opens, asking for the microphone grant the browser needs IF it has never
+ * been asked.
+ *
+ * The request is made only when the Permissions API answers `prompt`. A
+ * `granted` origin lists without a stream and so without a prompt, which is
+ * what makes this a once-per-origin question; `denied`, and a browser with no
+ * such permission to query, are left to the named state and its button.
+ *
+ * Unlike `acquireHeadphoneOutput` this never selects a device: opening I/O
+ * changes no route (IOPIN-03). The stream is stopped as soon as it opens.
+ */
+export async function requestIoDeviceNames(monitorSource?: MonitorSource): Promise<void> {
+	const generation = _headphoneGeneration;
+	await refreshHeadphoneOutputs(monitorSource);
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (mixerState.headphones.device_access.status !== 'permission_needed') return;
+	const permission = await _microphonePermissionState();
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (permission !== 'prompt') return;
+	let requestError: unknown = null;
+	try {
+		await _unlockHeadphoneOutputLabels(requireHeadphoneDeviceApi());
+	} catch (error) {
+		requestError = error;
+	}
+	_assertCurrentHeadphoneOperation(generation, null);
+	// List again whatever the answer was: a grant names the devices, a refusal
+	// turns the state into `permission_denied` with how to re-allow.
+	await refreshHeadphoneOutputs(monitorSource);
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (requestError === null || ioDeviceAccessRequestWasNotGranted(requestError)) return;
+	if (microphoneIsMissing(requestError)) {
+		mixerState.headphones.error = MIC_ABSENT_NOTICE;
+		return;
+	}
+	// Recorded on the panel and in the diagnostic ring, not thrown: the listing
+	// above is the state, and this is why it is still withheld.
+	_headphoneError('audio device access request failed', requestError);
 }
 
 export async function selectHeadphoneOutput(
@@ -1927,6 +2082,7 @@ export async function selectHeadphoneOutput(
 		mixerState.headphones.output_mode = 'two_outputs';
 		_rememberedCueId = deviceId;
 		_cueClearedByOperator = false;
+		_rememberSavedOutput('cue', deviceId);
 		applyHeadphoneMix();
 		_lastMonitorSource = monitorSource;
 		_startHeadphoneLiveness(nodes);
@@ -1960,6 +2116,7 @@ export async function selectMasterOutput(
 		_lastMonitorSource = monitorSource;
 		mixerState.headphones.selected_master_output_device_id = deviceId;
 		mixerState.headphones.error = null;
+		_rememberSavedOutput('master', deviceId);
 	} catch (error) {
 		mixerState.headphones.selected_master_output_device_id = previousId;
 		if (mixerState.headphones.routes.master.state !== 'unsupported') {
