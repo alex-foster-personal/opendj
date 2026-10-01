@@ -157,10 +157,19 @@ test('IOPIN-12: a djio request on this output loads and plays decks and reports 
 		expect(topology.active_profile, 'stereo master is wired, not the 4-channel layout').toBeNull();
 		expect(topology.fallback?.available_channels).toBe(channels.max);
 		expect(channels.wired, 'the destination is never forced past what the device has').toBeLessThanOrEqual(channels.max);
+		// The toast raised at graph build lasts 15 s, and two loads plus the
+		// audibility poll can outlast it. The I/O panel notice is the surface that
+		// stays for the session, so that is the one asserted here.
+		await page.getByRole('button', { name: 'SHOW AUDIO I/O' }).click();
+		const notice = page
+			.getByRole('dialog', { name: 'Audio I/O settings' })
+			.locator('[data-djio-fallback-notice]');
 		await expect(
-			page.getByText(/Mixtour 4-channel output unavailable/).first(),
-			'if no surface names the fallback then cue 3/4 is silent with no reason'
+			notice,
+			'if no lasting surface names the fallback then cue 3/4 is silent with no reason'
 		).toBeVisible();
+		await expect(notice).toHaveText(topology.fallback!.message);
+		await expect(notice).toHaveText(/Mixtour 4-channel output unavailable/);
 	} else if (channels.max >= 4) {
 		// A 4-channel device is selected on this host: djio must really be wired.
 		expect(topology.active_profile).toBe(DJIO);
