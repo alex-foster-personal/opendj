@@ -57,10 +57,14 @@ test.afterEach(async ({}, testInfo) => {
 
 test.describe('onboarding gauntlet: recovery', () => {
 	test('"Skip for now" closes the wizard into the incomplete note and it stays closed (#3422)', async ({ page }) => {
-		test.fail(true, 'issue #3422: the empty-library reopen predicate raises the wizard again the moment it closes');
 		await landAndTimeWizard(page, engine.origin);
 		const dialog = setupDialog(page);
+		const dismissed = page.waitForResponse((response) => response.url().includes('/api/v1/setup/dismiss'));
 		await dialog.getByRole('button', { name: 'Skip for now' }).click();
+		expect((await dismissed).ok(), 'the engine refused the dismissal').toBe(true);
+		expect(await readSetupStatus(engine.origin)).toMatchObject({ dismissed: true, should_show_wizard: false });
+		// The engine recorded the skip; only the overlay bouncing back is the known defect.
+		test.fail(true, 'issue #3422: the empty-library reopen predicate raises the wizard again the moment it closes');
 		await expect(dialog).toHaveCount(0);
 		await expect(page.getByText('Setup incomplete -- library is', { exact: false })).toBeVisible();
 		await page.waitForTimeout(STAYS_CLOSED_MS);

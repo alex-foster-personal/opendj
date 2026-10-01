@@ -74,6 +74,43 @@ export async function landAndTimeWizard(page: Page, origin: string): Promise<num
 	return Date.now() - started;
 }
 
+export interface PackagedTriggerLanding {
+	timeToWizardMs: number;
+	preflightRequestsHeld: number;
+	preflightResponsesBeforeWizard: number;
+}
+
+/**
+ * Land with GET /api/v1/preflight held back until the wizard is up, so only
+ * the packaged trigger (`runFirstRunGate()` over /setup/status) can open it.
+ * The preflight empty-library fallback in +layout.svelte would otherwise open
+ * it too and mask a broken packaged trigger (mutation M2, round 0). Held, not
+ * mocked: every held request continues to the real engine once the wizard is
+ * visible. Times out red if the packaged trigger never opens the wizard.
+ */
+export async function landWithOnlyThePackagedTrigger(page: Page, origin: string): Promise<PackagedTriggerLanding> {
+	const isPreflight = (url: URL): boolean => url.pathname === '/api/v1/preflight';
+	let release!: () => void;
+	const wizardUp = new Promise<void>((resolve) => (release = resolve));
+	let held = 0;
+	let answered = 0;
+	page.on('response', (response) => {
+		if (isPreflight(new URL(response.url()))) answered += 1;
+	});
+	await page.route(isPreflight, async (route) => {
+		held += 1;
+		await wizardUp;
+		await route.continue();
+	});
+	const started = Date.now();
+	await page.goto(`${origin}/`);
+	await expect(setupDialog(page)).toBeVisible({ timeout: TIME_TO_WIZARD_BUDGET_MS * 4 });
+	const timeToWizardMs = Date.now() - started;
+	const preflightResponsesBeforeWizard = answered;
+	release();
+	return { timeToWizardMs, preflightRequestsHeld: held, preflightResponsesBeforeWizard };
+}
+
 /** Welcome -> "Get started" -> the folder branch of the detect step. */
 export async function chooseFolderBranch(page: Page): Promise<Locator> {
 	const dialog = setupDialog(page);

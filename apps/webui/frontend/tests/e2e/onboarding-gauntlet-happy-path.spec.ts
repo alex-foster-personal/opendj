@@ -26,6 +26,7 @@ import {
 	chooseFolderBranch,
 	continueToDone,
 	landAndTimeWizard,
+	landWithOnlyThePackagedTrigger,
 	minimiseWizard,
 	readSetupStatus,
 	setupDialog,
@@ -65,8 +66,13 @@ test.describe('onboarding gauntlet: happy path', () => {
 		page.on('request', (request) => {
 			if (request.url().includes('/api/v1/setup/status')) statusCalls.push(request.url());
 		});
-		const timeToWizardMs = await landAndTimeWizard(page, engine.origin);
+		// Only the packaged trigger may open the wizard here: preflight is held
+		// until it is up, so the empty-library fallback cannot stand in for it.
+		const landing = await landWithOnlyThePackagedTrigger(page, engine.origin);
+		const timeToWizardMs = landing.timeToWizardMs;
 		testInfo.annotations.push({ type: 'time-to-wizard-ms', description: String(timeToWizardMs) });
+		expect(landing.preflightRequestsHeld, 'control: the preflight hold never intercepted a request').toBeGreaterThan(0);
+		expect(landing.preflightResponsesBeforeWizard, 'a preflight answer reached the page before the wizard').toBe(0);
 		expect(statusCalls.length, 'the packaged first-run gate never asked GET /api/v1/setup/status').toBeGreaterThan(0);
 		expect(timeToWizardMs, `wizard took ${timeToWizardMs} ms`).toBeLessThan(TIME_TO_WIZARD_BUDGET_MS);
 
@@ -93,7 +99,6 @@ test.describe('onboarding gauntlet: happy path', () => {
 	});
 
 	test('the Done screen reports how many tracks the import wrote (#3422)', async ({ page }) => {
-		test.fail(true, 'issue #3422: Done reads last_import only when the overlay opens, so it says no import was recorded');
 		const music = `${engine.musicRoot}/My Music`;
 		writeMusicFolder(music, TRACKS);
 		await landAndTimeWizard(page, engine.origin);
@@ -105,12 +110,14 @@ test.describe('onboarding gauntlet: happy path', () => {
 		const done = await continueToDone(page);
 		const status = await readSetupStatus(engine.origin);
 		expect(status.last_import?.tracks_written).toBe(TRACKS);
+		await expect(done.getByRole('button', { name: 'Start playing' })).toBeVisible();
+		// Everything above is healthy on main; only the Done copy is the known defect.
+		test.fail(true, 'issue #3422: Done reads last_import only when the overlay opens, so it says no import was recorded');
 		await expect(done.getByText('No import was recorded for this data directory')).toHaveCount(0);
 		await expect(done.getByText(`${TRACKS} tracks`, { exact: true })).toBeVisible();
 	});
 
 	test('"Start playing" on the Done screen closes the wizard and leaves it closed', async ({ page }) => {
-		test.fail(true, `issue ${START_PLAYING_ISSUE}: the wizard stays open after a successful first import`);
 		const music = `${engine.musicRoot}/My Music`;
 		writeMusicFolder(music, TRACKS);
 		await landAndTimeWizard(page, engine.origin);
@@ -120,7 +127,11 @@ test.describe('onboarding gauntlet: happy path', () => {
 		expect((await waitForTerminalJob(engine.origin, jobId)).status).toBe('succeeded');
 
 		const done = await continueToDone(page);
-		await done.getByRole('button', { name: 'Start playing' }).click();
+		const startPlaying = done.getByRole('button', { name: 'Start playing' });
+		await expect(startPlaying).toBeEnabled();
+		// Import and Done are healthy on main; only the close is the known defect.
+		test.fail(true, `issue ${START_PLAYING_ISSUE}: the wizard stays open after a successful first import`);
+		await startPlaying.click();
 		await expect(setupDialog(page)).toHaveCount(0, { timeout: 10_000 });
 		// Closed means closed: still closed across two preflight polls (3 s each).
 		await page.waitForTimeout(7_000);
@@ -129,7 +140,6 @@ test.describe('onboarding gauntlet: happy path', () => {
 	});
 
 	test('first-run screens show a new user no endpoints, error codes or env-var names (#2590)', async ({ page }) => {
-		test.fail(true, 'issue #2590: the wizard footnote names /api/v1/setup and detection shows raw codes');
 		await landAndTimeWizard(page, engine.origin);
 		const dialog = setupDialog(page);
 		const seen: string[] = [await dialog.innerText()];
@@ -138,7 +148,12 @@ test.describe('onboarding gauntlet: happy path', () => {
 		await expect(dialog.getByRole('heading', { name: 'What is on this machine' })).toBeVisible();
 		seen.push(await dialog.innerText());
 		await dialog.getByLabel('A folder of audio files (no rekordbox needed)').check();
+		await expect(dialog.getByRole('heading', { name: 'Point at a folder' })).toBeVisible();
 		seen.push(await dialog.innerText());
+		expect(seen.every((text) => text.trim().length > 0), 'a first-run screen rendered no text').toBe(true);
+
+		// The three screens rendered; only what they show is the known defect.
+		test.fail(true, 'issue #2590: the wizard footnote names /api/v1/setup and detection shows raw codes');
 
 		const internals = [/\/api\/v1\//, /\brekordbox_not_found\b/, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{3,}\b/];
 		const leaks = seen.flatMap((text) => internals.filter((pattern) => pattern.test(text)).map(String));
