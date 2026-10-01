@@ -40,7 +40,7 @@ import subprocess
 import sys
 import zipfile
 from dataclasses import asdict, dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from scripts.ci_failure_ids import failed_identities
 from scripts.ci_test_selection import RECORD_NAME
@@ -61,7 +61,7 @@ class Unknown(Exception):
 
 
 class Api(Protocol):
-    def json(self, path: str) -> object: ...
+    def json(self, path: str) -> Any: ...  # parsed GitHub JSON; shape checked at use
     def text(self, path: str) -> str: ...
     def binary(self, path: str) -> bytes: ...
 
@@ -117,6 +117,13 @@ def last_pr_head_run(runs_page: dict, before: str) -> dict | None:
     return max(runs, key=lambda run: run["created_at"], default=None)
 
 
+def _attempt_number(artifact_name: str) -> int:
+    match = _ATTEMPT.search(artifact_name)
+    if match is None:
+        raise Unknown(f"selection artifact {artifact_name!r} has no attempt number")
+    return int(match.group(1))
+
+
 def selection_artifact(artifacts_page: dict, head_sha: str) -> dict | None:
     """The newest attempt's unexpired selection record for this head sha."""
     prefix = f"{ARTIFACT_PREFIX}{head_sha}-attempt-"
@@ -127,7 +134,7 @@ def selection_artifact(artifacts_page: dict, head_sha: str) -> dict | None:
         and not artifact["expired"]
         and _ATTEMPT.search(artifact["name"])
     ]
-    return max(candidates, key=lambda a: int(_ATTEMPT.search(a["name"]).group(1)), default=None)
+    return max(candidates, key=lambda a: _attempt_number(a["name"]), default=None)
 
 
 def record_from_zip(blob: bytes) -> dict:
