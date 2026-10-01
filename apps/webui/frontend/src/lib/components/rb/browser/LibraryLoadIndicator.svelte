@@ -32,6 +32,8 @@
 	 * while loading and progress is still null this shows an indeterminate
 	 * track and received-row count, never a made-up percentage.
 	 */
+	import { loadRowsPerSecond, type LoadRateBaseline } from '$lib/rb/load-rate';
+
 	let {
 		loading,
 		progress,
@@ -42,28 +44,23 @@
 		searching?: boolean;
 	} = $props();
 
-	// Monotonic elapsed-time tracking for the rows/s figure. Resets whenever
+	// LIBUX-37: the rows/s figure is measured from a baseline, set whenever
 	// progress goes null->non-null (a fresh load starting) or loaded goes
 	// backwards (a new load superseding one already in flight for this pane).
-	let startedAt: number | null = $state(null);
-	let lastLoaded = $state(0);
-	let rowsPerSecond = $state(0);
+	// It stays null, and nothing is shown, until the window is long enough.
+	let baseline: LoadRateBaseline | null = null;
+	let rowsPerSecond = $state<number | null>(null);
 
 	$effect(() => {
 		const p = progress;
 		if (p === null) {
-			startedAt = null;
-			lastLoaded = 0;
-			rowsPerSecond = 0;
+			baseline = null;
+			rowsPerSecond = null;
 			return;
 		}
 		const now = performance.now();
-		if (startedAt === null || p.loaded < lastLoaded) {
-			startedAt = now;
-		}
-		lastLoaded = p.loaded;
-		const elapsedS = (now - (startedAt ?? now)) / 1000;
-		rowsPerSecond = elapsedS > 0 ? p.loaded / elapsedS : 0;
+		if (baseline === null || p.loaded < baseline.loaded) baseline = { atMs: now, loaded: p.loaded };
+		rowsPerSecond = loadRowsPerSecond(baseline, now, p.loaded);
 	});
 
 	const pct = $derived.by((): number | null => {
@@ -98,7 +95,7 @@
 			>
 				<div class="lli-bar" style={pct === null ? undefined : `width:${pct}%`}></div>
 			</div>
-			<span class="lli-label">{label}{#if rowsPerSecond > 0}<span class="lli-rate" title="Rows received per second since this load started"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
+			<span class="lli-label">{label}{#if rowsPerSecond !== null}<span class="lli-rate" title="Rows received per second, measured since this load's first page over a window of at least one second"> · {Math.round(rowsPerSecond)} rows/s</span>{/if}</span>
 		{/if}
 	{/if}
 </div>

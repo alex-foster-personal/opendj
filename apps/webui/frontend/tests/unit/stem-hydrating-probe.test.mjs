@@ -91,7 +91,7 @@ test('awaitStemArtifact waits through hydrating and lands the manifest', async (
 	assert.equal(probe.status, 'ready');
 	assert.equal(probe.manifest.model, 'htdemucs');
 	assert.equal(calls.length, 3, 'one GET per poll, stopping at the manifest');
-	assert.deepEqual(clock.slept, [1000, 2000]);
+	assert.deepEqual(clock.slept, [500, 1000]);
 });
 
 test('control: a track with no bundle anywhere settles at once, with no polling', async () => {
@@ -129,9 +129,10 @@ test('a download that never finishes fails loud after maxWaitMs', async () => {
 		wait.awaitStemArtifact('sid-1', { now: clock.now, sleep: clock.sleep, maxWaitMs: 20_000 }),
 		/stem bundle still downloading after 20 s/
 	);
-	// Backoff 1+2+3+5+5+4(clamped to the deadline) = 20 s, then one last look.
-	assert.deepEqual(clock.slept, [1000, 2000, 3000, 5000, 5000, 4000]);
-	assert.equal(calls.length, 7);
+	// 0.5 s, then 1 s nineteen times, then 0.5 s (clamped to the deadline)
+	// = 20 s, then one last look (PERFMODE-18 cadence).
+	assert.deepEqual(clock.slept, [500, ...Array.from({ length: 19 }, () => 1000), 500]);
+	assert.equal(calls.length, 22);
 });
 
 test('a server error while hydrating still rejects instead of settling empty', async () => {

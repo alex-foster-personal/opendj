@@ -9,6 +9,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 
+from apps.webui.server.headphone_reports import client_id_of, headphone_reports
+
 from .commands import page_is_open, submit_single_command
 
 router = APIRouter(prefix="/performance/headphones", tags=["performance-headphones"])
@@ -107,6 +109,10 @@ class HeadphoneStateOut(BaseModel):
     active: bool
     error: str | None
     device_access: IoDeviceAccessOut
+    # CUEOUT-18: which open page this state came from, and how old its report
+    # is. Both null only when the state came from a mirror with no report.
+    reporting_client_id: str | None = None
+    report_age_ms: float | None = None
 
 
 def _require_page(request: Request) -> None:
@@ -128,7 +134,23 @@ def _headphones_from_mirror(request: Request) -> dict[str, Any]:
 
 
 def _headphone_state_out(request: Request) -> HeadphoneStateOut:
+    """The state after a command: the mirror the command's delta was merged into."""
     return HeadphoneStateOut.model_validate(deepcopy(_headphones_from_mirror(request)))
+
+
+def _best_headphone_state_out(request: Request) -> HeadphoneStateOut:
+    """CUEOUT-18: the best-informed current client's state, not the last writer's."""
+    reports = headphone_reports(request.app)
+    report = reports.best()
+    if report is None:
+        return _headphone_state_out(request)
+    return HeadphoneStateOut.model_validate(
+        {
+            **deepcopy(report.headphones),
+            "reporting_client_id": report.client_id,
+            "report_age_ms": round(reports.age_ms(report), 1),
+        }
+    )
 
 
 def _deep_merge(base: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
@@ -152,6 +174,12 @@ def _merge_mirror_delta(request: Request, result: dict[str, Any]) -> None:
     if not isinstance(mirror, dict):
         return
     request.app.state.ui_mirror = _deep_merge(mirror, changed)
+    # The delta lands on the same client's report the mirror document came
+    # from, so a read straight after a command sees it (CUEOUT-18).
+    mixer = changed.get("mixer")
+    headphones = mixer.get("headphones") if isinstance(mixer, dict) else None
+    if isinstance(headphones, dict):
+        headphone_reports(request.app).merge(client_id_of(mirror), headphones)
 
 
 def _validate_unit(value: object) -> float:
@@ -275,9 +303,14 @@ async def _submit_headphone_command(request: Request, command: dict[str, Any]) -
 
 @router.get("", response_model=HeadphoneStateOut)
 async def get_headphones(request: Request) -> HeadphoneStateOut:
-    """Return the live headphone state from the attached performance page."""
+    """Return the live headphone state from the best-informed open performance page.
+
+    With several pages open, a page whose device lists were read (`listed`) is
+    not replaced by another page whose lists were not; `reporting_client_id`
+    and `report_age_ms` say which page answered and how fresh it is.
+    """
     _require_page(request)
-    return _headphone_state_out(request)
+    return _best_headphone_state_out(request)
 
 
 @router.post(

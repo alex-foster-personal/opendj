@@ -361,7 +361,8 @@
 			allTracksCount,
 			playlists.length,
 			libraryAvailability,
-			allTracksReconcileError
+			allTracksReconcileError,
+			panes[0].load_progress
 		)
 	);
 	let vocalsCompletion = $state<LibraryHealthDot>({
@@ -992,6 +993,9 @@
 		};
 		applyShortViewport();
 		shortViewportMq.addEventListener('change', applyShortViewport);
+		// HEALTH-14: the cached coverage read answers in milliseconds, so it
+		// leaves at mount instead of queueing behind the whole paged listing.
+		void _loadIngestCoverage();
 		void _init();
 		const blankSweepTimer = setInterval(
 			() => void _sweepBlankPlaylists(),
@@ -1255,9 +1259,6 @@
 			// resolves when playlist boot throws (#3750).
 			void _loadReconcileSummary();
 		}
-		// This coverage request is deliberately after primary browser initialization:
-		// tree and first track pane must never wait on ingestion accounting.
-		void _loadIngestCoverage();
 	}
 
 	/**
@@ -3781,6 +3782,7 @@
 					class:incomplete={dot.state === 'incomplete'}
 					class:unavailable={dot.state === 'unavailable'}
 					class:error={dot.state === 'error'}
+					class:loading={dot.state === 'loading'}
 					class="health-dot"
 					aria-label={`${dot.label}: ${dot.detail}`}
 				>
@@ -4268,6 +4270,7 @@
 		background: var(--rb-green, #35c04f);
 		box-shadow: 0 0 4px color-mix(in srgb, var(--rb-green, #35c04f) 70%, transparent);
 	}
+	.health-dot.loading > span:first-child { background: color-mix(in srgb, var(--rb-accent) 60%, #3a4048); }
 	.health-dot.incomplete > span:first-child { background: var(--rb-orange); }
 	.health-dot.unavailable > span:first-child { background: var(--rb-text-dim); }
 	.health-dot.error > span:first-child { background: var(--rb-red, #d9534f); }

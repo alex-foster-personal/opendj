@@ -3108,7 +3108,11 @@ export interface paths {
         };
         /**
          * Get Headphones
-         * @description Return the live headphone state from the attached performance page.
+         * @description Return the live headphone state from the best-informed open performance page.
+         *
+         *     With several pages open, a page whose device lists were read (`listed`) is
+         *     not replaced by another page whose lists were not; `reporting_client_id`
+         *     and `report_age_ms` say which page answered and how fresh it is.
          */
         get: operations["get_headphones_api_v1_performance_headphones_get"];
         put?: never;
@@ -10039,6 +10043,10 @@ export interface components {
             output_mode: string;
             /** Outputs */
             outputs: components["schemas"]["HeadphoneOutputDeviceOut"][];
+            /** Report Age Ms */
+            report_age_ms?: number | null;
+            /** Reporting Client Id */
+            reporting_client_id?: string | null;
             /** Selected Input Device Id */
             selected_input_device_id: string | null;
             /** Selected Master Output Device Id */
@@ -24821,7 +24829,10 @@ export interface operations {
     close_ui_mirror_api_v1_state_ui_mirror_delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description The closing page's client id (CUEOUT-18). Its headphone report is forgotten; with no id, every client's report is. */
+                "x-opendj-client-id"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -24833,6 +24844,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

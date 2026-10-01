@@ -9446,6 +9446,28 @@
             "title": "Outputs",
             "type": "array"
           },
+          "report_age_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Age Ms"
+          },
+          "reporting_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reporting Client Id"
+          },
           "selected_input_device_id": {
             "anyOf": [
               {
@@ -33395,7 +33417,7 @@
     },
     "/api/v1/performance/headphones": {
       "get": {
-        "description": "Return the live headphone state from the attached performance page.",
+        "description": "Return the live headphone state from the best-informed open performance page.\n\nWith several pages open, a page whose device lists were read (`listed`) is\nnot replaced by another page whose lists were not; `reporting_client_id`\nand `report_age_ms` say which page answered and how fresh it is.",
         "operationId": "get_headphones_api_v1_performance_headphones_get",
         "responses": {
           "200": {
@@ -37752,9 +37774,39 @@
       "delete": {
         "description": "Mark the performance page closed during its unmount lifecycle.",
         "operationId": "close_ui_mirror_api_v1_state_ui_mirror_delete",
+        "parameters": [
+          {
+            "description": "The closing page's client id (CUEOUT-18). Its headphone report is forgotten; with no id, every client's report is.",
+            "in": "header",
+            "name": "x-opendj-client-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The closing page's client id (CUEOUT-18). Its headphone report is forgotten; with no id, every client's report is.",
+              "title": "X-Opendj-Client-Id"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Close Ui Mirror",

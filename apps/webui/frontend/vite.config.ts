@@ -56,6 +56,18 @@ export default defineConfig(({ command, mode }) => {
 			// This does NOT touch the AudioWorklet processors: they are emitted as
 			// assets (see assetsInlineLimit below), never as chunks, so the minifier
 			// never sees them and the worklet-scope constraints below still hold.
+			// Vite's default target is es2020 with chrome87, edge88, firefox78 and
+			// safari14. esbuild rewrites every optional chain (`a?.b`) into a
+			// `null == (t = a) ? void 0 : t.b` ternary for Chrome and Edge below 91,
+			// because of a V8 defect in those versions. Nothing this app ships on is
+			// that old: the packaged shell is a WKWebView on macOS 11 or later
+			// (Safari 14, which is kept here and has native optional chaining), and
+			// a browser session is a current Chrome. Only the two Chromium floors
+			// move, to the first version esbuild trusts with the syntax.
+			// Measured Thu 1 Oct 2026 on af--preview-mixtour-io d07590614e, gzip as
+			// scripts/bundle-budget.mjs weighs it: library 251,739 -> 249,183,
+			// performance 241,532 -> 238,992, other-lazy 285,882 -> 284,263.
+			target: ['es2020', 'chrome91', 'edge91', 'firefox78', 'safari14'],
 			minify: 'terser' as const,
 			// One exception to "defaults only". Vite forces terser's `safari10`
 			// workarounds on (loop-scoped `let` and `await` naming bugs in Safari

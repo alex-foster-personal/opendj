@@ -90,7 +90,7 @@ def _sign_in(client: TestClient, state_db_path: Path) -> None:
 
 @pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_signed_out_pin_has_no_user(fb: TestClient) -> None:
-    """[if] a signed-out pin carries a user [then] broken."""
+    """[if] a signed-out pin carries a user [then] broken, [else stop]."""
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config=UI_CONFIG))
     assert r.status_code == 201, r.text
     env = r.json()["environment"]
@@ -102,7 +102,7 @@ def test_pin_49f9d217_signed_out_pin_has_no_user(fb: TestClient) -> None:
 def test_pin_49f9d217_signed_in_pin_is_stamped_from_the_session(
     fb: TestClient, state_db_path: Path
 ) -> None:
-    """[if] a signed-in pin carries no user [then] broken."""
+    """[if] a signed-in pin carries no user [then] broken, [else stop]."""
     _sign_in(fb, state_db_path)
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config=UI_CONFIG))
     assert r.status_code == 201, r.text
@@ -114,7 +114,7 @@ def test_pin_49f9d217_signed_in_pin_is_stamped_from_the_session(
 
 @pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_body_cannot_name_the_user(fb: TestClient) -> None:
-    """[if] a body field can set the user [then] broken."""
+    """[if] a body field can set the user [then] broken, [else stop]."""
     r = fb.post(
         "/api/v1/feedback/comments",
         json=_pin(user_email="someone-else@example.com", ui_config=UI_CONFIG),
@@ -125,6 +125,7 @@ def test_pin_49f9d217_body_cannot_name_the_user(fb: TestClient) -> None:
 
 @pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_ui_config_snapshot_round_trips(fb: TestClient) -> None:
+    """[if] a stored pin loses or alters its UI config snapshot [then] broken, [else stop]."""
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config=UI_CONFIG))
     assert r.status_code == 201, r.text
     assert r.json()["environment"]["ui_config"] == UI_CONFIG
@@ -134,6 +135,7 @@ def test_pin_49f9d217_ui_config_snapshot_round_trips(fb: TestClient) -> None:
 
 @pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_snapshot_is_optional_for_agent_callers(fb: TestClient) -> None:
+    """[if] a pin posted with no snapshot is refused or invents one [then] broken, [else stop]."""
     r = fb.post("/api/v1/feedback/comments", json=_pin())
     assert r.status_code == 201, r.text
     assert r.json()["environment"]["ui_config"] is None
@@ -157,7 +159,7 @@ def test_pin_49f9d217_snapshot_is_optional_for_agent_callers(fb: TestClient) -> 
 def test_pin_49f9d217_snapshot_rejects_anything_but_slugs_and_booleans(
     fb: TestClient, label: str, patch: dict[str, object]
 ) -> None:
-    """[if] a secret, a home path or free text can enter the snapshot [then] broken."""
+    """[if] a secret, a home path or free text can enter the snapshot [then] broken, [else stop]."""
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config={**UI_CONFIG, **patch}))
     assert r.status_code == 422, f"{label}: {r.status_code} {r.text}"
     assert fb.get("/api/v1/feedback/comments").json()["comments"] == [], label
