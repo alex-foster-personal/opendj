@@ -46,17 +46,23 @@ def copy_rest(src: BinaryIO, out: BinaryIO, offset: int) -> None:
         out.write(chunk)
 
 
+def copy_range(src: BinaryIO, out: BinaryIO, start: int, end: int) -> None:
+    """Copy ``src`` bytes ``[start, end)`` into ``out``; a short source is an error."""
+    src.seek(start)
+    remaining = end - start
+    while remaining:
+        chunk = src.read(min(COPY_CHUNK, remaining))
+        if not chunk:
+            raise EOFError(f"source ends {remaining} bytes before offset {end}")
+        out.write(chunk)
+        remaining -= len(chunk)
+
+
 def replace_range(path: Path, start: int, end: int, replacement: bytes) -> None:
     """Rewrite ``path`` with its bytes ``[start, end)`` replaced by ``replacement``."""
 
     def build(src: BinaryIO, out: BinaryIO) -> None:
-        remaining = start
-        while remaining:
-            chunk = src.read(min(COPY_CHUNK, remaining))
-            if not chunk:
-                raise EOFError(f"{path}: ends before offset {start}")
-            out.write(chunk)
-            remaining -= len(chunk)
+        copy_range(src, out, 0, start)
         out.write(replacement)
         copy_rest(src, out, end)
 
@@ -68,4 +74,4 @@ def replace_head(path: Path, head: bytes, audio_offset: int) -> None:
     replace_range(path, 0, audio_offset, head)
 
 
-__all__ = ["copy_rest", "replace_head", "replace_range", "rewrite_atomic"]
+__all__ = ["copy_range", "copy_rest", "replace_head", "replace_range", "rewrite_atomic"]

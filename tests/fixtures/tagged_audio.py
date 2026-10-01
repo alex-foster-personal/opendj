@@ -65,20 +65,29 @@ _FORMAT_ARGS: dict[str, tuple[str, list[str], dict[str, str]]] = {
     "m4a": (".m4a", ["-c:a", "aac"], {"tmpo": BPM}),
     # moov in front of mdat: a tag write that grows moov must move chunk offsets.
     "m4a-faststart": (".m4a", ["-c:a", "aac", "-movflags", "+faststart"], {"tmpo": BPM}),
+    # Fragmented (moof / mdat pairs, mfra index), the layout of YouTube / DASH audio.
+    "m4a-fragmented": (
+        ".m4a", ["-c:a", "aac", "-movflags", "+frag_keyframe+empty_moov", "-frag_duration", "300000"], {"tmpo": BPM}
+    ),
     "aiff": (".aiff", ["-write_id3v2", "1"], {"TBPM": BPM, "TKEY": KEY, "TSRC": ISRC}),
     "wav": (".wav", [], {}),
 }
-FORMATS: tuple[str, ...] = tuple(_FORMAT_ARGS)
+#: Formats every reader test covers. The fragmented M4A is a writer fixture only:
+#: its empty_moov carries no duration, which tinytag (rightly) does not invent.
+FORMATS: tuple[str, ...] = tuple(fmt for fmt in _FORMAT_ARGS if fmt != "m4a-fragmented")
 
 
-def make_tagged_audio(directory: Path, fmt: str, *, tags: dict[str, str] | None = None) -> Path:
+def make_tagged_audio(
+    directory: Path, fmt: str, *, tags: dict[str, str] | None = None, duration_s: int = 1
+) -> Path:
     """A 1 s sine in ``fmt`` carrying :data:`STANDARD_TAGS` plus BPM/key/ISRC
     where the container's ffmpeg muxer can write them."""
     suffix, codec_args, extra = _FORMAT_ARGS[fmt]
     path = directory / f"{fmt}{suffix}"
     all_tags = {**STANDARD_TAGS, **extra} if tags is None else tags
     _ffmpeg(
-        ["-f", "lavfi", "-i", "sine=frequency=440:duration=1", *codec_args, *_metadata_args(all_tags), str(path)]
+        ["-f", "lavfi", "-i", f"sine=frequency=440:duration={duration_s}", *codec_args, *_metadata_args(all_tags),
+         str(path)]
     )
     return path
 

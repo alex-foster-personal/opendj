@@ -105,6 +105,56 @@ def _chunk_offsets(path: Path) -> list[int]:
     return out
 
 
+def _top_atoms(path: Path) -> list[tuple[bytes, int, bytes]]:
+    """``(kind, start, raw)`` of every top-level atom, walked with plain struct reads."""
+    raw = path.read_bytes()
+    out, pos = [], 0
+    while pos < len(raw):
+        size, kind = struct.unpack_from(">I4s", raw, pos)
+        out.append((kind, pos, raw[pos : pos + size]))
+        pos += size
+    return out
+
+
+def _tfhd_base_offsets(path: Path) -> list[int]:
+    offsets = []
+    for kind, _start, raw in _top_atoms(path):
+        at = raw.find(b"tfhd") if kind == b"moof" else -1
+        if at != -1 and int.from_bytes(raw[at + 5 : at + 8], "big") & 1:
+            offsets.append(struct.unpack_from(">Q", raw, at + 12)[0])
+    return offsets
+
+
+def _tfra_moof_offsets(path: Path) -> list[int]:
+    raw = next(r for kind, _s, r in _top_atoms(path) if kind == b"mfra")
+    at = raw.find(b"tfra")
+    version, width = raw[at + 4], 8 if raw[at + 4] == 1 else 4
+    sizes, count = struct.unpack_from(">II", raw, at + 12)
+    trailer = sum(((sizes >> s) & 3) + 1 for s in (4, 2, 0))
+    fmt = ">Q" if version == 1 else ">I"
+    first = at + 20 + width
+    return [struct.unpack_from(fmt, raw, first + n * (2 * width + trailer))[0] for n in range(count)]
+
+
+def test_fragmented_growth_moves_every_fragment_offset(tmp_path: Path) -> None:
+    """[if] a fragmented file's moov grows [then] tfhd / tfra offsets follow the moofs, audio identical, [else stop]."""
+    m4a = ta.make_tagged_audio(tmp_path, "m4a-fragmented", duration_s=3)
+    pcm = ta.decoded_audio_sha256(m4a)
+    tfhd_before, tfra_before = _tfhd_base_offsets(m4a), _tfra_moof_offsets(m4a)
+    assert len(tfhd_before) > 1 and len(tfra_before) > 1, "fixture is not multi-fragment"
+    meta = mp4_meta.read(m4a)
+    meta.set_freeform("SERATO_BLOB", "x" * 20_000)
+    mp4_meta.save(m4a, meta)
+
+    moofs = [start for kind, start, _raw in _top_atoms(m4a) if kind == b"moof"]
+    delta = moofs[0] - tfra_before[0]
+    assert delta > 0
+    assert _tfra_moof_offsets(m4a) == moofs == [o + delta for o in tfra_before]
+    assert _tfhd_base_offsets(m4a) == [o + delta for o in tfhd_before]
+    assert ta.decoded_audio_sha256(m4a) == pcm
+    assert ta.ffprobe_tags(m4a)["serato_blob"] == "x" * 20_000
+
+
 def test_a_write_that_fits_changes_nothing_outside_moov(tmp_path: Path) -> None:
     """[if] a write fits the old moov plus padding [then] no byte outside it moves, [else stop]."""
     m4a = ta.make_tagged_audio(tmp_path, "m4a-faststart")

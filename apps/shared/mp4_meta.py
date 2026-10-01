@@ -17,11 +17,14 @@ Mini-PRD
        atoms right after it, padding the rest with a ``free`` atom inside
        ``meta``; only when it cannot fit does data after it move, and then every
        ``stco`` / ``co64`` chunk offset pointing past it is moved by the same
-       amount so the audio samples stay where the index says they are.
+       amount so the audio samples stay where the index says they are; in a
+       fragmented file every moof tfhd base-data-offset and mfra tfra moof
+       offset moves too.
   [if] the new tags fit in the old space [then] no byte outside moov changes
   [if] moov sits before mdat and grows   [then] chunk offsets move and the
        decoded audio is identical
-  [if] a fragmented file would need data moved [then] Mp4Error, nothing written
+  [if] a fragmented file's moov grows [then] fragment offsets move and the
+       decoded audio is identical
   [if] the write fails midway            [then] the original file is intact
 """
 from __future__ import annotations
@@ -30,8 +33,9 @@ import struct
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import BinaryIO
 
-from apps.shared.file_rewrite import replace_range
+from apps.shared.file_rewrite import copy_range, replace_range, rewrite_atomic
 
 ITUNES_MEAN = "com.apple.iTunes"
 DATA_UTF8 = 1
@@ -39,7 +43,7 @@ DATA_SIGNED_INT = 21
 DEFAULT_PADDING = 2048
 FREEFORM = b"----"
 _PADDING_KINDS = {b"free", b"skip"}
-_OFFSET_CONTAINERS = {b"trak", b"mdia", b"minf", b"stbl"}
+_OFFSET_CONTAINERS = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"moof", b"traf", b"mfra"}
 _FRAGMENT_KINDS = {b"moof", b"mfra"}
 _HDLR_MDIR = (
     struct.pack(">I4s", 33, b"hdlr") + bytes(4) + bytes(4) + b"mdir" + b"appl" + bytes(8) + b"\x00"
@@ -163,8 +167,6 @@ class Mp4Meta:
     path: Path
     moov: Atom
     region_end: int  # end of moov plus the free/skip atoms right after it
-    data_after_region: bool  # anything other than padding follows the region
-    fragmented: bool
     items: list[Item] = field(default_factory=list)
 
     def text(self, key: str) -> str | None:
@@ -267,8 +269,6 @@ def read(path: Path) -> Mp4Meta:
         path=path,
         moov=moov_on_disk,
         region_end=top[region - 1].end,
-        data_after_region=region < len(top),
-        fragmented=any(a.kind in _FRAGMENT_KINDS for a in top),
         items=items,
     )
 
@@ -317,28 +317,61 @@ def _render_moov(buf: bytes, header: int, items: list[Item], padding_size: int) 
     return _rebuild(buf, moov, b"udta", 0, new_udta)
 
 
-def _shift_chunk_offsets(buf: bytearray, parent: Atom, region: tuple[int, int], delta: int, where: str) -> None:
-    """Add ``delta`` to every stco/co64 entry at or past ``region[1]`` (in place)."""
-    start, end = region
-    for child in iter_atoms(bytes(buf), parent.payload_start, parent.end, where):
-        if child.kind in _OFFSET_CONTAINERS:
-            _shift_chunk_offsets(buf, child, region, delta, where)
-        elif child.kind in (b"stco", b"co64"):
-            fmt = ">I" if child.kind == b"stco" else ">Q"
-            width = struct.calcsize(fmt)
-            (count,) = struct.unpack_from(">I", buf, child.payload_start + 4)
-            first = child.payload_start + 8
-            if first + count * width > child.end:
-                raise Mp4Error(f"{where}: {child.kind!r} table runs past its atom")
-            for pos in range(first, first + count * width, width):
-                (offset,) = struct.unpack_from(fmt, buf, pos)
-                if start <= offset < end:
-                    raise Mp4Error(f"{where}: a chunk offset points inside moov")
-                if offset >= end:
-                    offset += delta
-                    if fmt == ">I" and offset > 0xFFFFFFFF:
-                        raise Mp4Error(f"{where}: a 32-bit stco offset would overflow; not rewritten")
-                    struct.pack_into(fmt, buf, pos, offset)
+@dataclass(frozen=True)
+class _Shift:
+    """Moves every absolute file offset at or past ``end`` by ``delta``."""
+
+    start: int  # old moov start
+    end: int  # old region end
+    delta: int
+    where: str
+
+    def moved(self, offset: int, width: int) -> int:
+        if self.start <= offset < self.end:
+            raise Mp4Error(f"{self.where}: a sample or fragment offset points inside moov")
+        if offset < self.end:
+            return offset
+        offset += self.delta
+        if offset >= 1 << (8 * width):
+            raise Mp4Error(f"{self.where}: a {8 * width}-bit offset would overflow; nothing was written")
+        return offset
+
+    def patch(self, buf: bytearray, parent: Atom, skip: int = 0) -> None:
+        """Patch, in place, every offset table under ``parent``: stco / co64 in
+        moov, tfhd base-data-offset in moof, tfra moof offsets in mfra."""
+        for child in iter_atoms(bytes(buf), parent.payload_start + skip, parent.end, self.where):
+            body = child.payload_start
+            if child.kind in _OFFSET_CONTAINERS:
+                self.patch(buf, child)
+            elif child.kind in (b"stco", b"co64"):
+                width = 4 if child.kind == b"stco" else 8
+                (count,) = struct.unpack_from(">I", buf, body + 4)
+                self._patch_run(buf, child, body + 8, count, width, stride=width)
+            elif child.kind == b"tfhd" and int.from_bytes(buf[body + 1 : body + 4], "big") & 0x000001:
+                self._patch_run(buf, child, body + 8, 1, 8, stride=8)
+            elif child.kind == b"tfra":
+                version = buf[body]
+                width = 8 if version == 1 else 4
+                (sizes, count) = struct.unpack_from(">II", buf, body + 8)
+                trailer = sum(((sizes >> shift) & 0x3) + 1 for shift in (4, 2, 0))
+                self._patch_run(buf, child, body + 16 + width, count, width, stride=2 * width + trailer)
+
+    def _patch_run(
+        self, buf: bytearray, table: Atom, first: int, count: int, width: int, *, stride: int
+    ) -> None:
+        if first + (count - 1) * stride + width > table.end and count:
+            raise Mp4Error(f"{self.where}: {table.kind!r} table runs past its atom")
+        fmt = ">I" if width == 4 else ">Q"
+        for pos in range(first, first + count * stride, stride):
+            (offset,) = struct.unpack_from(fmt, buf, pos)
+            struct.pack_into(fmt, buf, pos, self.moved(offset, width))
+
+
+def _patched_atom(raw: bytes, shift: _Shift) -> bytes:
+    buf = bytearray(raw)
+    top = next(iter_atoms(raw, 0, len(raw), shift.where))
+    shift.patch(buf, top)
+    return bytes(buf)
 
 
 def save(path: Path, meta: Mp4Meta) -> None:
@@ -351,20 +384,26 @@ def save(path: Path, meta: Mp4Meta) -> None:
     bare = len(_render_moov(buf, meta.moov.header, meta.items, 0))
     room = available - bare
     if room == 0 or room >= 8:
-        new_moov = _render_moov(buf, meta.moov.header, meta.items, room)
-    else:
-        delta = bare + DEFAULT_PADDING - available
-        if meta.fragmented and meta.data_after_region:
-            raise Mp4Error(
-                f"{path}: fragmented MP4 (moof/mfra) whose tags outgrow their space; "
-                "moving its fragments is not supported, nothing was written"
-            )
-        shifted = bytearray(buf)
-        moov = Atom(b"moov", 0, meta.moov.header, len(buf))
-        region = (meta.moov.start, meta.region_end)
-        _shift_chunk_offsets(shifted, moov, region, delta, str(path))
-        new_moov = _render_moov(bytes(shifted), meta.moov.header, meta.items, DEFAULT_PADDING)
-    replace_range(path, meta.moov.start, meta.region_end, new_moov)
+        replace_range(path, meta.moov.start, meta.region_end, _render_moov(buf, meta.moov.header, meta.items, room))
+        return
+    shift = _Shift(meta.moov.start, meta.region_end, bare + DEFAULT_PADDING - available, str(path))
+    new_moov = _render_moov(_patched_atom(buf, shift), meta.moov.header, meta.items, DEFAULT_PADDING)
+    top = _top_level(path)
+    if any(a.kind == b"sidx" and a.end <= meta.moov.start for a in top):
+        raise Mp4Error(f"{path}: a sidx in front of moov would need its references moved; nothing was written")
+    tail = [a for a in top if a.start >= meta.region_end]
+
+    def build(src: BinaryIO, out: BinaryIO) -> None:
+        copy_range(src, out, 0, meta.moov.start)
+        out.write(new_moov)
+        for item in tail:
+            if item.kind in _FRAGMENT_KINDS:
+                src.seek(item.start)
+                out.write(_patched_atom(src.read(item.end - item.start), shift))
+            else:
+                copy_range(src, out, item.start, item.end)
+
+    rewrite_atomic(path, build)
 
 
 __all__ = [
