@@ -14,8 +14,6 @@ an always-WAIT decision can pass the file.
 
 from __future__ import annotations
 
-import os
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -41,6 +39,7 @@ from scripts.review_fallback import (
     pushed_at_from_check_suites,
 )
 from scripts.review_gh import TriageError
+from tests.support.live_github import live_github
 
 CODEX = {"login": "chatgpt-codex-connector[bot]"}
 
@@ -376,27 +375,7 @@ def test_the_cli_needs_exactly_one_target(argv: list[str]) -> None:
 # ----- live gh wiring: no stand-in for gh ----------------------------------
 
 
-MDT_LIVE_GITHUB = os.environ.get("MDT_LIVE_GITHUB") == "1"
-LIVE_GITHUB_UNAVAILABLE = (
-    "UNAVAILABLE: live GitHub API checks not run. This is a capability report, not a "
-    "pass. Enable with MDT_LIVE_GITHUB=1 and gh authenticated (gh auth status)."
-)
-
-
-def live(fn):
-    fn = pytest.mark.skipif(not MDT_LIVE_GITHUB, reason=LIVE_GITHUB_UNAVAILABLE)(fn)
-    return pytest.mark.live_github(fn)
-
-
-@pytest.fixture
-def gh_authenticated() -> None:
-    """Opting in is a claim that gh works, so a failure here fails, never skips."""
-    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        pytest.fail(f"MDT_LIVE_GITHUB=1 but gh is not authenticated: {result.stderr.strip()}")
-
-
-@live
+@live_github
 @pytest.mark.requirement("REVIEW-12")
 def test_a_gh_error_is_raised_never_read_as_no_notice(gh_authenticated: None) -> None:
     """[if] a gh read fails [then] it raises rather than reading as silence, [else stop].
@@ -407,7 +386,7 @@ def test_a_gh_error_is_raised_never_read_as_no_notice(gh_authenticated: None) ->
         codex_artifacts_on("999999999")
 
 
-@live
+@live_github
 def test_the_real_4515_payloads_parse_to_the_recorded_shapes(gh_authenticated: None) -> None:
     """Positive control for the negative one above: the live read finds the
     recorded review and the recorded notice."""
@@ -416,6 +395,6 @@ def test_the_real_4515_payloads_parse_to_the_recorded_shapes(gh_authenticated: N
     assert any(a.at == datetime(2026, 9, 30, 7, 51, 38, tzinfo=UTC) for a in found)
 
 
-@live
+@live_github
 def test_the_real_push_time_of_4515s_final_head(gh_authenticated: None) -> None:
     assert pushed_at(HEAD_4515_FINAL) == PUSH_4515_FINAL

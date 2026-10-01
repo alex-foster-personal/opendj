@@ -1,9 +1,10 @@
 """The CI Insights artifact hand-off between the `test` job and the insights job.
 
-Split out of tests/scripts/test_ci_mergify_insights.py (which holds the
-per-step wiring of the upload, the token probe and the verdict guard) so that
-module stays under the repository's 600-line file cap. Same helpers, same
-ci.yml, same regression style; only the two artifact-transfer checks live here.
+Split out of tests/scripts/test_ci_fast_lane_junit_staging.py (which holds the
+`test` job's report writing and staging) so that module stays under the
+repository's 600-line file cap. Same helpers, same ci.yml, same regression
+style; only the two artifact-transfer checks live here. The guard they read is
+the Trunk Flaky Tests upload's, the only test-health upload.
 
 Regression lines:
   - if the artifact name repeats across attempts then a re-run's isolated job
@@ -17,7 +18,7 @@ Regression lines:
 
 from __future__ import annotations
 
-from tests.scripts.test_ci_mergify_insights import (
+from tests.scripts.test_ci_fast_lane_junit_staging import (
     DOWNLOAD_STEP_ID,
     INSIGHTS_SHARDS,
     SHARD_EXPR,
@@ -36,7 +37,8 @@ def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
     # non-fatally, by design -- leaving the isolated job to download attempt
     # 1's artifact and record it as the current attempt's result.
     upload = next(
-        st for st in _steps(SHARD_JOB)
+        st
+        for st in _steps(SHARD_JOB)
         if str(st.get("uses", "")).startswith("actions/upload-artifact@")
         and "ci-insights" in str(st.get("with", {}).get("name", ""))
     )
@@ -54,8 +56,7 @@ def test_the_artifact_name_is_scoped_to_the_run_attempt() -> None:
     # five download steps must name the LITERAL shard the upload template
     # would produce for that shard -- not the unresolved matrix expression.
     downloads = {
-        shard: _step_by_id(_insights_id(DOWNLOAD_STEP_ID, shard))
-        for shard in INSIGHTS_SHARDS
+        shard: _step_by_id(_insights_id(DOWNLOAD_STEP_ID, shard)) for shard in INSIGHTS_SHARDS
     }
     # The upload template names the shard via the `test` job's OWN matrix
     # expression; each download must name the LITERAL substitution of that

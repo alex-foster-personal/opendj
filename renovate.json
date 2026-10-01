@@ -12,7 +12,7 @@
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 6,
   "dependencyDashboard": true,
-  "dependencyDashboardApproval": true,
+  "dependencyDashboardApproval": false,
   "labels": [
     "post-v1",
     "dependencies"
@@ -35,6 +35,13 @@
   },
   "platformAutomerge": false,
   "packageRules": [
+    {
+      "description": "Majors still wait for a tick on the Dependency Dashboard; minor, patch and lockfile maintenance open on their own (JIK, Wed 1 Oct 2026)",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    },
     {
       "description": "Group non-major updates per ecosystem so a week is ~4 PRs, not 40",
       "matchUpdateTypes": [

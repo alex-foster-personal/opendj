@@ -1,7 +1,8 @@
 """Leak-capture integration test for scripts.perf.capture_mode_ratios.
 
 Split out of test_capture_mode_ratios.py (600-line test-file ratchet, PR
-#4540). Shares that module's real-subprocess protocol helpers.
+#4540). Shares the real-subprocess protocol helpers that PR #4553 moved into
+test_capture_mode_ratios_browser_pid.py.
 """
 
 from __future__ import annotations
@@ -14,11 +15,11 @@ from unittest.mock import patch
 import pytest
 
 from scripts.perf import capture_mode_ratios as cmr
-from tests.perf.test_capture_mode_ratios import (
+from tests.perf.test_capture_mode_ratios_browser_pid import (
     _PROTOCOL_CHILD,
-    _REAL_NATIVE_METRICS,
     _fake_monotonic_ticking,
     _kill_tree,
+    _requires_darwin,
 )
 
 _REAL_SLEEP = time.sleep
@@ -35,7 +36,7 @@ _GROWING_DESCENDANT_PREFIX = (
 )
 
 
-@_REAL_NATIVE_METRICS
+@_requires_darwin
 @pytest.mark.requirement("PERFMODE-15")
 def test_capture_trackify_leak_measures_a_growing_browser_descendant() -> None:
     """[if] the sampled browser tree grows steadily [then] the leak capture reports a positive slope, [else stop].

@@ -1,0 +1,90 @@
+{
+  "_doc": "Runner canary config, read by .github/workflows/runner-canary.yml (budget gate), scripts/runner_canary_mirror.py and scripts/runner_canary_report.py. Decision record: docs/decisions/ADR-NEW-runner-canary.md. Each vendor runs ONLY in its target_repo, which must be source_repository or mirror_repository; the workflow's owner allowlist is the set of those owners. Free tiers were read from each vendor's pricing page on Tue 29 Sep 2026; re-read them before trusting a figure a month later.",
+  "source_repository": "maintainer/music-dj-tools",
+  "mirror_owner": "opendj-ci-canary",
+  "mirror_repository": "opendj-ci-canary/music-dj-tools-canary",
+  "remote_url_templates": [
+    "https://github.com/{repo}.git",
+    "https://github.com/{repo}",
+    "git@github.com:{repo}.git",
+    "git@github.com:{repo}",
+    "ssh://git@github.com/{repo}.git",
+    "ssh://git@github.com/{repo}"
+  ],
+  "remote_url_templates_note": "Every accepted spelling of a target's git remote URL; the first is the URL the mirror push builds. scripts/runner_canary_mirror.py accepts an origin only in one of these spellings, and refuses any url rewrite rule that would change the URL it contacts.",
+  "budget_gate_fraction": 0.8,
+  "shard_count": 5,
+  "shard_timeout_minutes": 30,
+  "pytest_step_name": "Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)",
+  "vendors": {
+    "ubicloud": {
+      "label": "ubicloud-standard-2",
+      "target_repo": "opendj-ci-canary/music-dj-tools-canary",
+      "target_note": "Ubicloud's managed runners install on organizations only, so it runs in the canary org's mirror",
+      "vcpu": 2,
+      "free_minutes_per_month": 1250,
+      "free_minutes_vcpu_basis": 2,
+      "free_tier_note": "$2.50 monthly credit, read as 1,250 minutes of ubicloud-standard-2; the research note that set this also quotes $0.00125/min (2,000 minutes), so 1,250 is the lower, safer reading until a round-0 invoice settles it; a card is required on file",
+      "sources": [
+        "https://www.ubicloud.com/docs/about/pricing",
+        "https://www.ubicloud.com/docs/github-actions-integration/runner-types"
+      ]
+    },
+    "avrea": {
+      "label": "avrea-ubuntu-latest-2-vcpu",
+      "target_repo": "maintainer/music-dj-tools",
+      "target_note": "Avrea requires its app to be installed on the configured source repository",
+      "vcpu": 2,
+      "free_minutes_per_month": 3000,
+      "free_minutes_vcpu_basis": 2,
+      "free_tier_note": "3,000 free minutes a month counted at 2 vCPU; bigger runners consume proportionally",
+      "sources": [
+        "https://avrea.com/pricing",
+        "https://docs.avrea.com/runners/"
+      ]
+    },
+    "tenki": {
+      "label": "tenki-standard-small-2c-4g",
+      "target_repo": "maintainer/music-dj-tools",
+      "target_note": "Tenki requires its app to be installed on the configured source repository",
+      "size_note": "2 vCPU / 4 GB: Starter workspaces are capped at 2 vCPU / 4 GB without a payment method on file. 2 vCPU also matches Avrea and Blacksmith.",
+      "vcpu": 2,
+      "free_minutes_per_month": 2500,
+      "free_minutes_vcpu_basis": 2,
+      "free_tier_note": "$10 monthly credit, about 2,500 minutes at the 2-core $0.004/min rate",
+      "sources": [
+        "https://www.tenki.cloud/pricing",
+        "https://tenki.cloud/docs/runners/x64-runners",
+        "https://tenki.cloud/docs/runners/sizes"
+      ]
+    },
+    "blacksmith": {
+      "label": "blacksmith-2vcpu-ubuntu-2404",
+      "target_repo": "opendj-ci-canary/music-dj-tools-canary",
+      "target_note": "Blacksmith supports organizations only, so it runs in the canary org's mirror",
+      "vcpu": 2,
+      "free_minutes_per_month": 3000,
+      "free_minutes_vcpu_basis": 2,
+      "free_tier_note": "3,000 x64 2 vCPU minutes a month; GitHub organizations only, no personal repositories",
+      "sources": [
+        "https://www.blacksmith.sh/pricing",
+        "https://docs.blacksmith.sh/introduction/quickstart"
+      ]
+    }
+  },
+  "baseline": {
+    "workflow_path": ".github/workflows/ci.yml",
+    "event": "push",
+    "branch": "main"
+  },
+  "success_bars": {
+    "min_paired_commits": 20,
+    "max_verdict_latency_ratio": 0.8,
+    "max_p95_queue_wait_seconds": 60,
+    "max_infra_failures_per_100_jobs": 1.0,
+    "min_outcome_agreement": 1.0
+  },
+  "known_red_shas": [],
+  "vendor_skips_external_fixtures": true,
+  "vendor_skips_external_fixtures_note": "True while .github/workflows/runner-canary.yml sets MDT_ALLOW_MISSING_FIXTURES=1 on the vendor shards (round 1, Thu 1 Oct 2026): a vendor VM never receives the external fixture host, so it skips tests the self-hosted pair runs. scripts/runner_canary_report.py then caps every vendor at UNKNOWN, never PASS, until executed and skipped counts are compared (Sol P1 on 0e7388c6f). tests/scripts/test_runner_canary_workflow.py pins this flag to the workflow env."
+}
