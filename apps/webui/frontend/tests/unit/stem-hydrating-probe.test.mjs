@@ -218,3 +218,15 @@ test('a retry is a POST to the hydrate route, and a refusal rejects with its sta
 	const refused = async () => Response.json({}, { status: 503 });
 	await assert.rejects(wait.requestStemHydration('sid-1', refused), /HTTP 503/);
 });
+
+test('[if] a stick track asks for hydration [then] it is refused before any request (control: a library id still posts)', async () => {
+	const requests = [];
+	const recording = async (url) => {
+		requests.push(String(url));
+		return Response.json({ state: 'fetching' });
+	};
+	await assert.rejects(wait.requestStemHydration('usb-abc', recording), /stem hydrate refused for stick track usb-abc/);
+	assert.deepEqual(requests, []);
+	await wait.requestStemHydration('abc', recording);
+	assert.equal(requests.length, 1);
+});

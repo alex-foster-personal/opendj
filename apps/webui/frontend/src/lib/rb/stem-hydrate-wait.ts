@@ -8,6 +8,7 @@ import { releaseEagerStemDecodeNow } from '$lib/rb/stem-decode-shed';
 import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { StemDeckState, StemFetchProgress } from '$lib/rb/stem-types';
+import { refuseStickRead } from '$lib/rb/track-source';
 
 // The deck engine sits at its import fan-out ceiling, so the rest of the stem
 // landing surface reaches it through this module, which it already imports.
@@ -70,6 +71,8 @@ export async function requestStemHydration(
 	stableId: string,
 	fetcher: typeof fetch = fetch
 ): Promise<void> {
+	// Spec 4b: stick tracks have no stem bundle and no stems route.
+	refuseStickRead(stableId, 'stem hydrate');
 	const path = `/api/v1/tracks/${encodeURIComponent(stableId)}/stems/hydrate`;
 	const response = await fetcher(`${RB_API_BASE}${path}`, { method: 'POST' });
 	if (!response.ok) throw new Error(`stem hydrate request failed: HTTP ${response.status} ${path}`);
