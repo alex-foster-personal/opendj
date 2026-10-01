@@ -13,7 +13,7 @@
  * fallbacks, no invented data.
  */
 
-import { API_BASE, timeoutSignal } from '$lib/api';
+import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
@@ -829,6 +829,19 @@ export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotSta
 	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
 	if (!isUsbTrackId(stable_id)) return slots;
 	return (await loadStickSessionEdits()).withSessionHotCueSlots(stable_id, slots);
+}
+
+/** Set a track's rating and answer the rating now in effect. A library track
+ * fetches a fresh ETag, then PATCHes with If-Match (a ConflictError carries the
+ * current row). A stick track's rating is a session edit with no request (USB
+ * Play spec decision 2). */
+export async function saveTrackRating(stable_id: string, next: number): Promise<number | null> {
+	if (isUsbTrackId(stable_id)) {
+		(await loadStickSessionEdits()).setSessionRating(stable_id, next);
+		return next;
+	}
+	const etag = (await getTrack(stable_id)).etag;
+	return (await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null;
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the
