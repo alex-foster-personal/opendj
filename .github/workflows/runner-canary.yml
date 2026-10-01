@@ -401,6 +401,7 @@ jobs:
                 "${{ matrix.shard }}"
             fi
           fi
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
             elapsed=$(( $(date +%s) - started ))
             # 124 is `timeout`'s own expiry. 137 is its KILL escalation: the
