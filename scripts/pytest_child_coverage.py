@@ -19,10 +19,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
-import coverage
 import pytest
 
 PROCESS_CONFIG_ENV = "COVERAGE_PROCESS_CONFIG"
@@ -51,7 +51,10 @@ def _record_core_once() -> None:
     record = Path(core_dir) / f"{os.getpid()}.core"
     if record.exists():
         return
-    current = coverage.Coverage.current()
+    # Read coverage from sys.modules rather than importing it: a running tracer has already
+    # loaded it, and the quality gate's isolated mypy env has no third-party packages.
+    loaded = sys.modules.get("coverage")
+    current = loaded.Coverage.current() if loaded is not None else None
     if current is None:
         raise RuntimeError(f"{CORE_DIR_ENV} is set but no coverage is running in pid {os.getpid()}")
     record.parent.mkdir(parents=True, exist_ok=True)
