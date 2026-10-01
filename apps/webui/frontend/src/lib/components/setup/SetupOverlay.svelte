@@ -717,9 +717,9 @@
 									type="button"
 									class="secondary"
 									onclick={() => setupWizard.useSource('rekordbox')}
-									title="Go back to looking for an existing DJ collection"
+									title="Go back to looking for a rekordbox collection"
 								>
-									Look for a collection instead
+									Look for rekordbox instead
 								</button>
 								<button
 									type="button"
