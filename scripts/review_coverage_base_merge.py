@@ -21,6 +21,20 @@ patch-id and carry. Hunk-header line numbers are still ignored, so main
 inserting lines elsewhere in a file the PR touches keeps the patch-id, while a
 main change inside a reviewed hunk's context lines does not.
 
+Equal patch-ids alone do not prove the hunk still sits where the reviewer saw
+it: patch-id hashes a hunk's content (context plus change) but not its
+position, by design, so it cannot tell two occurrences of the SAME content
+apart (found live by Sol on this PR, scripts/review_coverage_base_merge.py#167:
+a merge that moves an edit between two repeated blocks with identical
+three-line context produces the same patch-id, even though the edit now
+changes a different block's behavior). A carry therefore also requires every
+hunk's exact context-plus-removed slice (its "pre-image") to occur exactly
+once in the base file it is diffed against, at both the reviewed and the head
+commit. Ignoring the hunk's own line number stays safe (that is what lets an
+unrelated insertion elsewhere carry); trusting a non-unique slice is not, so a
+duplicated pre-image fails closed to no carry rather than being read as a
+match.
+
 The second condition keeps the PASS line's "base merge only" claim true: a
 revert pair pushed after review leaves the net diff unchanged too, but nobody
 reviewed that it nets to nothing, so it does not carry.
@@ -38,6 +52,11 @@ Requirements (mini-PRD):
     [if] a new commit on the PR's own file carries [then broken]
     [if] a conflict resolution that alters the net diff carries [then broken]
     [if] a whitespace-only change to a reviewed line keeps the patch-id [then broken]
+  / A hunk relocated to a different, textually identical, spot does not carry.
+    [if] a merge relocates a hunk between two repeated identical-context blocks
+         and coverage still carries [then broken]
+    [if] an unrelated same-file insertion with no duplicate content blocks
+         carry [then broken]
   / An unmeasurable carry is UNKNOWN, never a carry.
     [if] a missing reviewed-head object or a shallow clone carries [then broken]
 """
@@ -83,6 +102,7 @@ class NetDiff:
     sha: str
     base: str
     patch_id: str
+    diff: bytes
 
 
 @dataclass(frozen=True)
@@ -140,13 +160,63 @@ def patch_id_of(root: Path, diff: bytes) -> str:
 
 def net_diff(root: Path, tip: str, sha: str) -> NetDiff:
     base = _single_merge_base(root, tip, sha)
-    return NetDiff(sha, base, patch_id_of(root, _git(root, "diff", *NET_DIFF_FLAGS, base, sha)))
+    diff = _git(root, "diff", *NET_DIFF_FLAGS, base, sha)
+    return NetDiff(sha, base, patch_id_of(root, diff), diff)
 
 
 def own_commits_since(root: Path, tip: str, reviewed: str, head: str) -> tuple[str, ...]:
     """Non-merge commits on `head` that are neither in `reviewed` nor on main."""
     out = _git(root, "rev-list", "--no-merges", head, f"^{reviewed}", f"^{tip}")
     return tuple(out.decode().split())
+
+
+# ----------------------------------------------------------------------------
+# hunk relocation: a matching patch-id is necessary but not sufficient
+
+
+def _hunk_preimages(diff: bytes) -> tuple[tuple[str, tuple[bytes, ...]], ...]:
+    """Per hunk: (base-side path, the context+removed lines the hunk rewrites).
+
+    That slice is exactly what the hunk claims to sit on top of in the base
+    file. patch-id strips the `@@ -a,b +c,d @@` line numbers before hashing,
+    so two hunks with equal patch-ids can still rewrite DIFFERENT slices when
+    the slice recurs more than once in the base file; this is the raw material
+    for the uniqueness check that catches that (`_unique_in_base`).
+    """
+    hunks: list[tuple[str, tuple[bytes, ...]]] = []
+    path: str | None = None
+    preimage: list[bytes] = []
+
+    def flush() -> None:
+        if path is not None and preimage:
+            hunks.append((path, tuple(preimage)))
+
+    for line in diff.split(b"\n"):
+        if line.startswith(b"--- "):
+            flush()
+            preimage = []
+            path = None if line == b"--- /dev/null" else line[len("--- a/") :].decode()
+        elif line.startswith(b"@@ "):
+            flush()
+            preimage = []
+        elif path is not None and line[:1] in (b" ", b"-"):
+            preimage.append(line[1:])
+    flush()
+    return tuple(hunks)
+
+
+def _unique_in_base(root: Path, base: str, path: str, preimage: tuple[bytes, ...]) -> bool:
+    """Whether `preimage` occurs exactly once as a contiguous block of `path` at `base`."""
+    if not preimage:
+        return True
+    content = tuple(_git(root, "show", f"{base}:{path}").split(b"\n"))
+    width = len(preimage)
+    matches = sum(1 for i in range(len(content) - width + 1) if content[i : i + width] == preimage)
+    return matches == 1
+
+
+def _hunks_map_unambiguously(root: Path, net: NetDiff) -> bool:
+    return all(_unique_in_base(root, net.base, path, preimage) for path, preimage in _hunk_preimages(net.diff))
 
 
 # ----------------------------------------------------------------------------
@@ -165,5 +235,7 @@ def base_merge_carry(root: Path, tip: str, reviewed: str, head: str) -> BaseMerg
     at_reviewed = net_diff(root, tip, reviewed)
     at_head = net_diff(root, tip, head)
     if at_reviewed.patch_id != at_head.patch_id:
+        return None
+    if not (_hunks_map_unambiguously(root, at_reviewed) and _hunks_map_unambiguously(root, at_head)):
         return None
     return BaseMergeCarry(at_reviewed, at_head, tip)

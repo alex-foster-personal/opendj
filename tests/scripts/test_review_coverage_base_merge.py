@@ -176,6 +176,95 @@ def test_diff_noprefix_config_does_not_change_the_patch_id(repo: Path, reviewed:
 
 
 # ----------------------------------------------------------------------------
+# (a2) relocated hunks: equal patch-id is necessary, not sufficient
+# (Sol BLOCKING P1, PR #4599, scripts/review_coverage_base_merge.py#167)
+
+#: Seven lines whose 3-line-context window is identical wherever the block
+#: sits, so two copies in one file give a reviewed hunk's pre-image a second,
+#: textually indistinguishable home.
+_DUP_BLOCK = {0: "alpha", 1: "beta", 2: "gamma", 3: "val = 10", 4: "other = 20", 5: "delta", 6: "epsilon"}
+
+
+def _dup_lines(first_block_val: str) -> str:
+    """40 lines with the dup block at 0-6 (val overridable) and again at 10-16."""
+    edits = {offset: text for offset, text in _DUP_BLOCK.items()}
+    edits[3] = first_block_val
+    edits.update({10 + offset: text for offset, text in _DUP_BLOCK.items()})
+    return _lines(edits)
+
+
+def _dup_lines_block_a_removed() -> str:
+    """Block A's lines replaced by unique text with no match anywhere else; block B untouched."""
+    edits = {i: f"removed{i}" for i in range(7)}
+    edits.update({10 + offset: text for offset, text in _DUP_BLOCK.items()})
+    return _lines(edits)
+
+
+@pytest.mark.requirement("REVIEW-12")
+def test_relocated_hunk_between_duplicate_blocks_does_not_carry(repo: Path) -> None:
+    """[if] a merge relocates a hunk between two repeated identical-context blocks [then] no carry, [else stop].
+
+    Reproduces the live scenario: the PR edits block A's value; main
+    independently deletes block A (leaving identical block B); the merge
+    conflicts on block A and is resolved by porting the edit onto block B
+    instead. The two net diffs share a patch-id (same 7-line pre/post-image,
+    patch-id ignores position), but block A's pre-image sat twice in the base
+    file the reviewer actually saw, so the mapping is unverifiable and the
+    carry must fail closed.
+    """
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, _FILE, _dup_lines("val = 10"))  # the common ancestor: block A and B both val=10
+    _git(repo, "push", "-q", "origin", "main")
+    _git(repo, "checkout", "-q", "-B", "pr")  # fork the PR fresh from that common ancestor
+    reviewed = _commit(repo, _FILE, _dup_lines("val = 999"))  # the PR edits block A only
+
+    _advance_main(repo, _FILE, _dup_lines_block_a_removed())
+
+    merge = subprocess.run(
+        ["git", "-C", str(repo), "merge", "-q", "--no-edit", "main"], capture_output=True, text=True, check=False
+    )
+    assert merge.returncode != 0, "the fixture must produce a real conflict on block A"
+    resolved = _dup_lines_block_a_removed()
+    resolved_lines = resolved.split("\n")
+    resolved_lines[13] = "val = 999"  # port the reviewed edit onto surviving block B
+    (repo / _FILE).write_text("\n".join(resolved_lines), encoding="utf-8")
+    _git(repo, "add", _FILE)
+    _git(repo, "commit", "-q", "--no-edit")
+    head = _git(repo, "rev-parse", "HEAD")
+    assert len(_git(repo, "rev-list", "--parents", "-n", "1", head).split()) == 3, "must be a 2-parent merge commit"
+
+    tip = _git(repo, "rev-parse", "origin/main")
+    at_reviewed = net_diff(repo, tip, reviewed)
+    at_head = net_diff(repo, tip, head)
+    assert at_reviewed.patch_id == at_head.patch_id, "fixture bug: this must reproduce equal patch-ids"
+
+    attempt = _attempt(repo, reviewed, head)
+    assert attempt.verdict is None and attempt.unknown == ()
+
+
+@pytest.mark.requirement("REVIEW-12")
+def test_same_file_insertion_with_no_duplicate_content_still_carries(repo: Path, reviewed: str) -> None:
+    """[if] an unrelated same-file insertion has no duplicate content [then] coverage still carries, [else stop].
+
+    The overshoot control for the relocation fix above: main inserts 5 new,
+    unique lines above the PR's hunk, shifting every `@@` header downstream of
+    them. Nothing in the file is duplicated, so the hunk's pre-image is still
+    unique on both sides and coverage must still carry.
+    """
+    inserted = "\n".join(f"mainline{i}" for i in range(5)) + "\n" + _lines()
+    _advance_main(repo, _FILE, inserted)
+    head = _merge_main(repo)
+    assert _git(repo, "show", f"{head}:{_FILE}").splitlines()[35] == "line30 pr"
+
+    tip = _git(repo, "rev-parse", "origin/main")
+    at_reviewed = net_diff(repo, tip, reviewed)
+    at_head = net_diff(repo, tip, head)
+    assert at_reviewed.patch_id == at_head.patch_id, "fixture bug: the shift alone must not move the patch-id"
+
+    assert _attempt(repo, reviewed, head).verdict is not None
+
+
+# ----------------------------------------------------------------------------
 # (b), (c) and the revert pair: the PR's own change moved, so no carry
 
 
