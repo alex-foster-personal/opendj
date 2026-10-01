@@ -206,6 +206,44 @@ def test_the_cli_reports_unknown_with_exit_3_for_a_db_without_test_contexts(tmp_
     assert summary["buckets"]["REDUNDANT_IN_SET"]["cases"] == 2  # test_b and TestPair::test_same
 
 
+@pytest.mark.requirement("DEVOPS-21")
+@pytest.mark.parametrize("bad_time", [None, "nan", "-1.0", "inf"])
+def test_a_missing_or_invalid_junit_duration_is_unknown(tmp_path: Path, bad_time: str | None) -> None:
+    """[if] a junit testcase has no finite nonnegative time [then] the census is UNKNOWN, [else stop].
+
+    Sol P1 on #4777: a missing time used to become 0 s and feed the totals and the cover."""
+    db, junit = _run_control(tmp_path, label_children=True)
+    text = junit.read_text(encoding="utf-8")
+    start = text.index('name="test_c_unique"')
+    head, tail = text[:start], text[start:]
+    time_attr = tail[tail.index(' time="') : tail.index('"', tail.index(' time="') + 7) + 1]
+    replacement = "" if bad_time is None else f' time="{bad_time}"'
+    junit.write_text(head + tail.replace(time_attr, replacement, 1), encoding="utf-8")
+    with pytest.raises(census.CensusUnknown, match="time"):
+        census.analyze(db, junit)
+
+
+def test_a_failed_census_leaves_no_earlier_verdict_behind(tmp_path: Path) -> None:
+    """Sol P2 on #4777: a reused out-dir must not keep a previous run's census.json."""
+    db, junit = _run_control(tmp_path, label_children=True)
+    out = tmp_path / "out"
+    assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == 0
+    assert (out / "census.json").exists() and (out / "rows.json").exists()
+    junit.write_text(junit.read_text(encoding="utf-8").replace('name="test_c_unique"', 'name="renamed"'), encoding="utf-8")
+    assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == census.EXIT_UNKNOWN
+    assert not (out / "census.json").exists()
+    assert not (out / "rows.json").exists()
+
+
+def test_a_new_run_clears_leftover_coverage_fragments(tmp_path: Path) -> None:
+    stale = tmp_path / ".coverage.crashed-host.123.abc"
+    stale.write_text("stale", encoding="utf-8")
+    (tmp_path / "census.json").write_text("{}", encoding="utf-8")
+    census.clear_previous_outputs(tmp_path)
+    assert not stale.exists()
+    assert not (tmp_path / "census.json").exists()
+
+
 # ----- set cover, both directions
 
 

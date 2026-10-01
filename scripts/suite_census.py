@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import heapq
 import json
+import math
 import sqlite3
 import subprocess
 import sys
@@ -114,13 +115,27 @@ def _junit_test_id(case: ET.Element) -> str:
     raise CensusUnknown(f"junit classname {classname!r} does not start with module {module!r}")
 
 
+def _junit_duration(case: ET.Element, test_id: str) -> float:
+    """The case's measured seconds; a missing, non-finite or negative time is UNKNOWN, never 0."""
+    raw = case.get("time")
+    if raw is None:
+        raise CensusUnknown(f"junit testcase {test_id!r} has no time attribute")
+    try:
+        seconds = float(raw)
+    except ValueError as exc:
+        raise CensusUnknown(f"junit testcase {test_id!r} has unparseable time {raw!r}") from exc
+    if not math.isfinite(seconds) or seconds < 0:
+        raise CensusUnknown(f"junit testcase {test_id!r} has invalid time {raw!r}")
+    return seconds
+
+
 def _load_durations(junit: Path) -> dict[str, float]:
     durations: dict[str, float] = {}
     for case in ET.parse(junit).iter("testcase"):
         test_id = _junit_test_id(case)
         if test_id in durations:
             raise CensusUnknown(f"two junit testcases rebuild to the same id {test_id!r}")
-        durations[test_id] = float(case.get("time") or 0)
+        durations[test_id] = _junit_duration(case, test_id)
     if not durations:
         raise CensusUnknown(f"{junit}: no testcases")
     return durations
@@ -260,6 +275,21 @@ def analyze(db: Path, junit: Path) -> Census:
 # ----- run
 
 
+VERDICT_FILES = ("census.json", "rows.json")
+
+
+def clear_previous_outputs(out_dir: Path) -> None:
+    """Remove an earlier run's verdict and coverage fragments so a failed run cannot pass for it.
+
+    A reused out-dir kept a previous census.json beside a failed run's log (Sol P2, #4777), and a
+    crashed run's ``.coverage.*`` fragments would be combined into the next run's data.
+    """
+    for name in VERDICT_FILES:
+        (out_dir / name).unlink(missing_ok=True)
+    for fragment in out_dir.glob(".coverage.*"):
+        fragment.unlink()
+
+
 def _write_coveragerc(out_dir: Path) -> Path:
     rc = out_dir / "coveragerc"
     rc.write_text(
@@ -272,6 +302,8 @@ def _write_coveragerc(out_dir: Path) -> Path:
 
 def run_suite(paths: list[str], workers: int, out_dir: Path) -> tuple[int, float]:
     out_dir.mkdir(parents=True, exist_ok=True)
+    clear_previous_outputs(out_dir)
+    (out_dir / ".coverage").unlink(missing_ok=True)
     rc = _write_coveragerc(out_dir)
     cmd = [
         sys.executable,
@@ -346,6 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "analyze":
         db, junit = args.db, args.junit
         args.out_dir.mkdir(parents=True, exist_ok=True)
+        clear_previous_outputs(args.out_dir)
     else:
         raise AssertionError(f"unhandled command {args.cmd}")
     try:
