@@ -13,8 +13,10 @@ job instead of fixing one line.
 
 THE RULE, per self-hosted job (hosted/self-hosted classification is shared with
 tests/scripts/test_ci_workflow_stale_install_coverage.py, so the two guards cannot
-disagree about which jobs count): every pip install in a ``run:`` step (shell comments
-ignored, backslash continuations joined) names a VIRTUALENV target explicitly.
+disagree about which jobs count): every pip install in a ``run:`` step (whole-line shell
+comments ignored, backslash continuations joined) names a VIRTUALENV target explicitly.
+Quoted text, trailing ``# ...`` comments and heredoc bodies are NOT masked, so a pip
+install that only appears there is still flagged (fail-closed; see .planning/debt/4576.md).
 
   pip / pip3 / pip3.N install ...            flagged, unless spelled as a venv path
   python[3[.N]] -m pip install ...           flagged, unless the interpreter is a
@@ -102,7 +104,7 @@ HOSTED_JOB = "periodic-checks.yml:duplicate-writer"
 
 
 def _is_venv_path(text: str | None) -> bool:
-    return bool(text) and bool(_VENV_PATH.search(text.strip("\"'")))
+    return text is not None and bool(_VENV_PATH.search(text.strip("\"'")))
 
 
 def pip_installs(run: object) -> list[tuple[str, bool]]:
