@@ -2,16 +2,21 @@
 
 THE RULE (the maintainer, Tue 29 Sep 2026, chosen over human approval): a PR that edits the
 control plane needs SUBMITTED reviews at its current head from two different
-harnesses among Codex, Sol and Claude, neither of them the PR's authoring
-harness. Until this module `just review-triage` passed such a PR on "1 of 3
-AVAILABLE", and #4576 (control plane) merged with only Sol's review. Putting the
-rule in review-triage makes every path that reads that verdict enforce it,
-instead of one more copy in one more caller.
+harnesses among Codex, Sol, Claude, Grok and Cursor, neither of them the PR's
+authoring harness. Until this module `just review-triage` passed such a PR on
+"1 of 3 AVAILABLE", and #4576 (control plane) merged with only Sol's review.
+Putting the rule in review-triage makes every path that reads that verdict
+enforce it, instead of one more copy in one more caller.
+
+REVIEW-18 (Thu 1 Oct 2026): Grok and Cursor subscription lanes post submitted
+reviews under maintainer with lane markers; they count here when login
+and marker both match, like Sol's SOL_LOGINS rule in review_sol.py.
 
 The path list and the author-trailer rule are #4361's (enqueue gate, OPEN at head
 286a755a484a on Thu 1 Oct 2026), so the two cannot disagree once it lands.
-Reviewer recognition is review_coverage's own `_collect_evidence`, passed in by
-the caller, so who counts as Codex, Sol or Claude is decided in one place.
+Reviewer recognition for Codex, Sol and Claude is review_coverage's own
+`_collect_evidence`, passed in by the caller, so who counts is decided in one
+place; Grok and Cursor are recognized here from `/pulls/{n}/reviews` markers.
 
 Requirements (mini-PRD):
   / A control-plane PR with fewer than 2 independent submitted reviews at head fails.
@@ -23,6 +28,9 @@ Requirements (mini-PRD):
     [if] a commit with no harness trailer yields PASS [then] broken
   / It runs BEFORE the docs-only exemption: CLAUDE.md and AGENTS.md are *.md files.
     [if] a CLAUDE.md-only PR passes on the docs-only exemption with one reviewer [then] broken
+  / REVIEW-18: Grok/Cursor subscription reviews at head count as independent harnesses.
+    [if] Sol plus a valid Grok marker at head on a Claude control-plane PR fails [then] broken
+    [if] a Grok author counts its own Grok review [then] broken
 """
 
 from __future__ import annotations
@@ -115,11 +123,23 @@ COMMITS_API_CAP = 250  # GET /pulls/{n}/commits returns at most 250 commits
 AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
     "Claude": frozenset({"Claude"}),
     "Codex": frozenset({"Codex", "Sol"}),
-    "Cursor": frozenset(),
-    "Grok": frozenset(),
+    "Cursor": frozenset({"Cursor"}),
+    "Grok": frozenset({"Grok"}),
 }
 AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
+#: Same trusted-login rule as Sol's SOL_LOGINS in scripts/review_sol.py; login AND marker required.
+SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
+GROK_REVIEW_MARKER = re.compile(
+    r"<!--\s*grok-review\s+v1\s+sha=([0-9a-f]{40})\s+model=(\S+)"
+    r"(?:\s+skipped=[\w.,/-]+)?\s*-->",
+    re.IGNORECASE,
+)
+CURSOR_REVIEW_MARKER = re.compile(
+    r"<!--\s*cursor-review\s+v1\s+sha=([0-9a-f]{40})\s+model=(\S+)"
+    r"(?:\s+skipped=[\w.,/-]+)?\s*-->",
+    re.IGNORECASE,
+)
 
 
 #: The last `enforce` FAIL's detail, for review_blocker's one-line BLOCKER; empty when the
@@ -168,6 +188,55 @@ def author_markers(message: str) -> set[str]:
             break
         markers |= {m.group(1) for x in lines if (m := AUTHOR_MARKER.fullmatch(x))}
     return markers
+
+
+def _normalize_login(login: str) -> str:
+    return login.removesuffix("[bot]").lower()
+
+
+def _grok_model_counts(model: str) -> bool:
+    lowered = model.lower()
+    if lowered == "unknown" or lowered.startswith("requested:"):
+        return False
+    return lowered.startswith("grok-")
+
+
+def _cursor_model_counts(model: str) -> bool:
+    lowered = model.lower()
+    if lowered == "unknown" or lowered.startswith("requested:"):
+        return False
+    return lowered.startswith(("composer-", "cursor-"))
+
+
+def _subscription_lane_at_head(
+    reviews: Sequence[Mapping],
+    head_sha: str,
+    marker: re.Pattern[str],
+    model_ok: Callable[[str], bool],
+) -> bool:
+    want = head_sha.lower()
+    for review in reviews:
+        if str(review.get("state", "")).upper() == "PENDING":
+            continue
+        login = str((review.get("user") or {}).get("login", ""))
+        if _normalize_login(login) not in SUBSCRIPTION_REVIEW_LOGINS:
+            continue
+        body = str(review.get("body") or "")
+        match = marker.search(body)
+        if not match or match.group(1).lower() != want:
+            continue
+        if model_ok(match.group(2)):
+            return True
+    return False
+
+
+def subscription_reviewed_at_head(reviews: Sequence[dict], head_sha: str) -> dict[str, bool]:
+    """Grok and Cursor submitted reviews at head (login + exact-sha marker + model family)."""
+    seq: Sequence[Mapping] = reviews
+    return {
+        "Grok": _subscription_lane_at_head(seq, head_sha, GROK_REVIEW_MARKER, _grok_model_counts),
+        "Cursor": _subscription_lane_at_head(seq, head_sha, CURSOR_REVIEW_MARKER, _cursor_model_counts),
+    }
 
 
 def author_harnesses(commits: Sequence[Mapping]) -> tuple[frozenset[str] | None, str]:
@@ -244,6 +313,7 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
             evidence = rc._collect_evidence(name, reviews, inline, issue, head_sha)
             reviewed = rc._classify_from_evidence(name, evidence).reviewed
             found[name] = reviewed and evidence.submitted_reviews > 0
+        found.update(subscription_reviewed_at_head(reviews, head_sha))
         return found
 
     verdict = measure(
