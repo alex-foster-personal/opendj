@@ -452,7 +452,6 @@ IGNORED_PATHS: tuple[IgnoredPath, ...] = (
         "data-dir",
         "/Music/Recovered/",
         "/odj-private",
-        "scripts/spotdl_watched.py",
         "maintainer/",
         "/refs/",
         "/blog/",
