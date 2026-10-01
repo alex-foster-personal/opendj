@@ -89,7 +89,10 @@ def _resolve_local_path(
     """The first of a track's recorded paths that exists on THIS machine."""
     for candidate in _candidate_paths(file_path, locations):
         mapped = platform_paths.resolve_library_path(candidate, path_map=path_map)
-        if mapped.resolved is not None:
+        # A native absolute path resolves to itself whether or not it exists;
+        # a host that mirrors another Mac's library holds the bytes under an
+        # alternate location, so the first path that EXISTS wins (NATIVE-21).
+        if mapped.resolved is not None and mapped.resolved.exists():
             return str(mapped.resolved)
     return None
 
