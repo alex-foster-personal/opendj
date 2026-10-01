@@ -93,7 +93,7 @@ def test_api_post_items_add_duplicate_allowed(
     ])
     assert code == api_cli.EXIT_OK
     out = json.loads(capsys.readouterr().out)
-    assert out["items"][-1] == "t-004"
+    assert [row["stable_id"] for row in out["added"]] == ["t-004"]
 
     code2 = main([
         "api", "POST", f"/api/v1/playlists/{pid}/items:add",
@@ -101,7 +101,10 @@ def test_api_post_items_add_duplicate_allowed(
     ])
     assert code2 == api_cli.EXIT_OK
     out2 = json.loads(capsys.readouterr().out)
-    assert out2["items"].count("t-004") == 2
+    assert [row["stable_id"] for row in out2["added"]] == ["t-004"]
+    assert out2["added"][0]["item_id"] != out["added"][0]["item_id"]
+    detail = httpx.get(f"{base_url}/api/v1/playlists/{pid}", timeout=30).json()
+    assert detail["items"].count("t-004") == 2
 
 
 def test_api_post_items_add_noop_when_forbid_duplicates(
@@ -148,5 +151,7 @@ def test_api_post_items_add_noop_when_forbid_duplicates(
     ])
     assert code2 == api_cli.EXIT_OK
     out2 = json.loads(capsys.readouterr().out)
-    assert out2["items"].count("t-004") == 1
+    assert out2["added"] == []
+    detail = httpx.get(f"{base_url}/api/v1/playlists/{pid}", timeout=30).json()
+    assert detail["items"].count("t-004") == 1
     assert patch_out["forbid_duplicates"] is True

@@ -108,6 +108,10 @@ def test_create_worktree_starts_at_explicit_origin_base(
     worktree logic itself being correct. See
     test_create_worktree_still_refuses_below_the_disk_floor below for the
     control that proves this override does not disable the guard.
+
+    Regression lines:
+      - if the worker worktree HEAD differs from origin/main then broken
+      - if this test's verdict changes with the host's free disk space then broken
     """
     _, checkout = origin_repo
     target = tmp_path / "worker"
@@ -125,11 +129,18 @@ def test_create_worktree_still_refuses_below_the_disk_floor(
     """[if] real free disk is below the floor [then] worktree creation still
     refuses, [else stop].
 
-    Control for the floor_gb override above: proves the fix is "inject the
-    floor", not "disable the guard". It reads the REAL free space of this
-    host and sets the floor 1000G above it, so the live measurement path is
-    exercised with no monkeypatch, then asserts the refusal fires, names the
-    disk floor, and creates no worktree.
+    The ONE disk-floor test on the worker create path, and the control for
+    the floor_gb override above: proves the fix is "inject the floor", not
+    "disable the guard". It reads the REAL free space of the same path the
+    guard measures (`--repo`, here `checkout`) and sets the floor 1000G above
+    it, so the live measurement path is exercised with no monkeypatch and the
+    verdict cannot depend on how full the host disk is.
+
+    Regression lines:
+      - if a floor above real free space lets creation through then broken
+      - if the refusal does not name the floor value it compared against then broken
+      - if the refusal does not name the reap command (`just wt-reap`) then broken
+      - if a refused creation still leaves a worktree on disk then broken
     """
     _, checkout = origin_repo
     target = tmp_path / "worker"
@@ -141,7 +152,10 @@ def test_create_worktree_still_refuses_below_the_disk_floor(
             floor_gb=floor_above_real_free,
         )
 
-    assert "disk floor breached:" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "disk floor breached:" in err
+    assert f"floor {floor_above_real_free:.0f}G" in err
+    assert "just wt-reap" in err
     assert not target.exists()
 
 

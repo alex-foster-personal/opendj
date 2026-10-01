@@ -53,12 +53,12 @@ Requirements (mini-PRD):
     PR. This module deliberately only provides the reader + loader they need.
 
 Exact command lines:
-  python -m apps.mik availability --data-dir /Users/user/Music/music-dj-tools/data
+  python -m apps.mik availability --data-dir /Users/user/code/music-dj-tools/data
   python -m apps.mik read --json
-  python -m apps.mik match --data-dir /Users/user/Music/music-dj-tools/data
-  python -m apps.mik load --data-dir /Users/user/Music/music-dj-tools/data
-  python -m apps.mik load --data-dir /Users/user/Music/music-dj-tools/data --live
-  python -m apps.mik promote --discover --data-dir /Users/user/Music/music-dj-tools/data
+  python -m apps.mik match --data-dir /Users/user/code/music-dj-tools/data
+  python -m apps.mik load --data-dir /Users/user/code/music-dj-tools/data
+  python -m apps.mik load --data-dir /Users/user/code/music-dj-tools/data --live
+  python -m apps.mik promote --discover --data-dir /Users/user/code/music-dj-tools/data
 
 -Claude
 """

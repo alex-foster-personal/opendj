@@ -53,3 +53,11 @@ SHARD_RUNS_ON = f"{PRE_ROUTE_SHARD_HEAD}{MERGE_QUEUE_DISJUNCT} || {SHARD_TAIL}"
 def without_merge_queue_route(runs_on: str) -> str:
     """`runs_on` with the one merge-queue disjunct removed: the pre-route expression."""
     return runs_on.replace(f"{MERGE_QUEUE_DISJUNCT} || ", "", 1)
+
+
+#: runner-canary.yml's shard job (ADR-NEW-runner-canary): the budget gate's label map
+#: indexed by the matrix vendor, and the matrix vendor list the gate allowed. No fallback
+#: disjunct on purpose: a vendor the gate did not allow has no runner, never another one.
+#: Every value the label map can hold is a vendor label from ci/runner-canary.json.
+CANARY_RUNS_ON = "${{ fromJSON(needs.budget-gate.outputs.labels)[matrix.vendor] }}"
+CANARY_VENDOR_MATRIX = "${{ fromJSON(needs.budget-gate.outputs.vendors) }}"

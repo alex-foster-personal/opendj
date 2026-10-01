@@ -358,9 +358,47 @@ def _trunk_token_holders() -> list[str]:
     return holders
 
 
-def test_only_the_config_sync_job_references_the_trunk_token() -> None:
-    """With or without a checkout: branch-controlled commands must never see the token."""
-    assert _trunk_token_holders() == [f"{CONFIG_WORKFLOW.name}:sync"]
+#: Runs a file from the checked-out tree, which on a pull_request is branch-controlled.
+_RUNS_REPO_CODE = re.compile(r"(python3? -m |uv run|\bjust\b|\./|bash scripts/|pnpm|npm )")
+
+
+def _runs_branch_code(job: dict[str, Any]) -> bool:
+    for step in job.get("steps", []):
+        if str(step.get("uses", "")).startswith("actions/checkout@"):
+            return True
+        if _RUNS_REPO_CODE.search(step.get("run") or ""):
+            return True
+    return False
+
+
+def test_the_config_sync_job_holds_the_trunk_token() -> None:
+    assert f"{CONFIG_WORKFLOW.name}:sync" in _trunk_token_holders()
+
+
+def test_no_other_trunk_token_holder_runs_branch_code() -> None:
+    """With or without a checkout: branch-controlled commands must never see the token.
+
+    The sync job is the one holder allowed a checkout, because it runs only on main and the
+    schedule (pinned below). Every other holder (the quarantine-list fetch and the test-results
+    upload) must neither check out the tree nor run a repo file.
+    """
+    sync = f"{CONFIG_WORKFLOW.name}:sync"
+    offenders = []
+    for holder in _trunk_token_holders():
+        if holder == sync:
+            continue
+        name, job_id = holder.split(":", 1)
+        workflow = yaml.safe_load((WORKFLOWS / name).read_text())
+        if job_id == "<workflow>" or _runs_branch_code(workflow["jobs"][job_id]):
+            offenders.append(holder)
+    assert not offenders, offenders
+
+
+def test_the_branch_code_detector_fires() -> None:
+    """Positive control: a checkout, or a step running a repo module, counts as branch code."""
+    assert _runs_branch_code({"steps": [{"uses": "actions/checkout@abc"}]})
+    assert _runs_branch_code({"steps": [{"run": "python -m scripts.trunk_queue apply"}]})
+    assert not _runs_branch_code({"steps": [{"run": "curl -sS https://api.trunk.io/v1/x"}]})
 
 
 def test_only_mains_reviewed_code_can_hold_the_token() -> None:

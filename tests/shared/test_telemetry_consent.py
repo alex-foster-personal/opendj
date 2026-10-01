@@ -34,8 +34,9 @@ from apps.shared.telemetry.consent import (
     set_consent_granted,
     write_consent,
 )
+from tests.support.sentry_client import close_sentry_client
 
-pytestmark = pytest.mark.requirement("OBS-05")
+pytestmark = [pytest.mark.requirement("OBS-05"), pytest.mark.no_leaked_threads]
 
 DSN = "https://public@o0.ingest.de.sentry.io/1"
 SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -175,7 +176,7 @@ def test_default_on_build_holds_every_send_until_accepted(consent_reset: None) -
             sentry_sdk.capture_exception(exc)
         sentry_sdk.flush()
     finally:
-        sentry_sdk.init(dsn=None)
+        close_sentry_client()
     assert len(captured) == 1, "acceptance must take effect without a restart"
 
 
@@ -194,7 +195,7 @@ def test_consent_granted_at_boot_sends_from_the_first_event(consent_reset: None)
             sentry_sdk.capture_exception(exc)
         sentry_sdk.flush()
     finally:
-        sentry_sdk.init(dsn=None)
+        close_sentry_client()
     assert len(captured) == 1
 
 
@@ -217,5 +218,5 @@ def test_explicit_enable_is_not_held_for_consent(consent_reset: None) -> None:
             sentry_sdk.capture_exception(exc)
         sentry_sdk.flush()
     finally:
-        sentry_sdk.init(dsn=None)
+        close_sentry_client()
     assert len(captured) == 1
