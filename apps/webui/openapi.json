@@ -5185,7 +5185,7 @@
         "type": "object"
       },
       "CompatibleFilterOut": {
-        "description": "Compatible-filter ranges (LIBUX-28): Camelot steps plus the BPM window.",
+        "description": "Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.",
         "properties": {
           "allow_half_double": {
             "default": true,

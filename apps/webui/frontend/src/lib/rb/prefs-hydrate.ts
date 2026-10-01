@@ -249,7 +249,7 @@ export interface PrefsHydrateTarget {
 }
 
 /**
- * Compatible-filter ranges from GET /api/v1/ui-prefs (LIBUX-28): the disk copy
+ * Compatible-filter ranges from GET /api/v1/ui-prefs (LIBUX-32): the disk copy
  * wins over localStorage, so a fresh browser profile gets the saved ranges.
  * An invalid object is reported and skipped rather than aborting the rest of
  * the hydrate; the server already refuses to store one.

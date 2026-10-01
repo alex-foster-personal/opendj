@@ -502,7 +502,7 @@ def _parse_library_watcher_folders(raw: dict[str, Any]) -> list[str]:
     return out
 
 
-# LIBUX-28 compatible filter ranges. Mirrors COMPATIBLE_FILTER_DEFAULTS and
+# LIBUX-32 compatible filter ranges. Mirrors COMPATIBLE_FILTER_DEFAULTS and
 # validateCompatibleFilterPrefs in apps/webui/frontend/src/lib/rb/compatible-filter-prefs.ts.
 _DEFAULT_COMPATIBLE_FILTER: dict[str, Any] = {
     "camelot_steps": 1,
@@ -712,7 +712,7 @@ class WheelSensitivityOut(BaseModel):
 
 
 class CompatibleFilterOut(BaseModel):
-    """Compatible-filter ranges (LIBUX-28): Camelot steps plus the BPM window."""
+    """Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -850,7 +850,7 @@ def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
 
 
 def _merge_compatible_filter(current: dict[str, Any], body: UiPrefsPatch) -> None:
-    """Merge the named compatible-filter fields onto what is stored (LIBUX-28)."""
+    """Merge the named compatible-filter fields onto what is stored (LIBUX-32)."""
     if body.compatible_filter is None:
         return
     current["compatible_filter"] = _parse_compatible_filter(

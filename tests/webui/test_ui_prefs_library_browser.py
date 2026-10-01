@@ -305,7 +305,7 @@ def test_ui_prefs_defaults_include_compatible_filter(prefs_client: TestClient) -
     assert body["compatible_filter"] == COMPATIBLE_FILTER_DEFAULTS
 
 
-@pytest.mark.requirement("LIBUX-28")
+@pytest.mark.requirement("LIBUX-32")
 def test_ui_prefs_compatible_filter_round_trips_to_disk(
     prefs_client: TestClient, tmp_path: Path
 ) -> None:
@@ -326,7 +326,7 @@ def test_ui_prefs_compatible_filter_round_trips_to_disk(
     assert prefs_client.get("/api/v1/ui-prefs").json()["compatible_filter"] == expected
 
 
-@pytest.mark.requirement("LIBUX-28")
+@pytest.mark.requirement("LIBUX-32")
 def test_ui_prefs_compatible_filter_reloads_from_disk_in_a_new_app(
     tmp_path: Path,
 ) -> None:

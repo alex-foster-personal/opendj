@@ -1,4 +1,4 @@
-/** Compatible-filter range prefs (LIBUX-28). */
+/** Compatible-filter range prefs (LIBUX-32). */
 
 export type CompatibleBpmDirection = 'both' | 'above' | 'below' | 'same';
 

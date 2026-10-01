@@ -195,7 +195,7 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPref
 	show_agent_pins: boolean;
 	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
 	show_stems: boolean;
-	/** Compatible-filter range knobs (LIBUX-28). */
+	/** Compatible-filter range knobs (LIBUX-32). */
 	compatible_filter: CompatibleFilterPrefs;
 	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
 	library_watcher_folders: string[];

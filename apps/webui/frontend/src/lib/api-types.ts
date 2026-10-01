@@ -7936,7 +7936,7 @@ export interface components {
         };
         /**
          * CompatibleFilterOut
-         * @description Compatible-filter ranges (LIBUX-28): Camelot steps plus the BPM window.
+         * @description Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window.
          */
         CompatibleFilterOut: {
             /**
