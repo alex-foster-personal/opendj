@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 
 from apps.sync.usb import stick_library as sl
 from apps.webui.server.routes import usb_volumes as usb_mod
-
 from tests.sync.usb.export_pdb_builder import write_export_pdb
 from tests.sync.usb.synthetic_stick import synthetic_export, synthetic_tracks
 
