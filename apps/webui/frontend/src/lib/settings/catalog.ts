@@ -201,7 +201,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Technically-working mode animation',
 		group: 'performance',
 		keywords: ['technically', 'working', 'overlay', 'animate', 'fade', 'edge', 'reveal'],
-		title: 'Fade regions in/out on edge-reveal (cmd+R overlay mode)',
+		title: 'Fade regions in/out on edge-reveal (Ctrl+R overlay mode)',
 		detail:
 			'When on (default), revealing/hiding a region in overlay mode cross-fades. Off swaps instantly, no transition.',
 		implemented: true,
