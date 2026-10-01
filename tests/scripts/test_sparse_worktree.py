@@ -167,3 +167,16 @@ def test_tracked_bytes_keeps_reading_local_edits_from_disk(primary: Path, tmp_pa
     content = sw.tracked_bytes(worktree, sw.tracked_entries(worktree, "blog"))
     assert content["blog/post.md"] == b"edited\n"
     assert content["blog/next-hero-set/hero.png"].startswith(b"render notes"), "control"
+
+
+def test_install_hook_copies_and_refuses_to_clobber(tmp_path: Path) -> None:
+    """[if] install-hook meets a foreign post-checkout [then] it refuses, [else stop]."""
+    repo = tmp_path / "clone"
+    git(tmp_path, "init", "-q", str(repo))
+    installed = sw.install_hook(repo)
+    assert installed.read_bytes() == sw.CFG.HOOK_SOURCE.read_bytes()
+    assert sw.install_hook(repo) == installed, "re-install of the same hook must be a no-op"
+    installed.write_text("#!/bin/sh\necho someone else's hook\n")
+    with pytest.raises(sw.SparseCheckoutError, match="different post-checkout"):
+        sw.install_hook(repo)
+    assert "someone else's hook" in installed.read_text()

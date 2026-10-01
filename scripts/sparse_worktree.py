@@ -6,6 +6,7 @@ Usage::
     python -m scripts.sparse_worktree status    # SPARSE or FULL, and what is left out
     python -m scripts.sparse_worktree sparse    # make THIS linked worktree sparse
     python -m scripts.sparse_worktree full      # restore a full checkout here
+    python -m scripts.sparse_worktree install-hook  # once per clone (`just wt-sparse-hook-install`)
 
 Why: ~70 live worktrees each carried the full 285 MB tracked tree, ~120 MB of
 which is blog hero renders and docs/landscape screenshots that no code, test or
@@ -70,6 +71,7 @@ class CFG:
         "!/docs/landscape/**/*.jpeg",
     )
     OPT_OUT_ENV = "MDT_FULL_WORKTREE"
+    HOOK_SOURCE = Path(__file__).resolve().parent / "githooks" / "post-checkout-sparse-worktree.sh"
     RESTORE_COMMAND = "git sparse-checkout disable"
 
 
@@ -239,6 +241,24 @@ def make_full(repo: Path) -> None:
         raise SparseCheckoutError(f"{repo} still has skip-worktree entries after disable")
 
 
+def install_hook(repo: Path) -> Path:
+    """Copy the hook to the clone's effective hooks dir (core.hooksPath honored), by COPY so
+    it does not track the primary's branch. Refuses to replace a different post-checkout."""
+    target = Path(_git(repo, "rev-parse", "--git-path", "hooks/post-checkout").decode().strip())
+    if not target.is_absolute():
+        target = repo / target
+    source = CFG.HOOK_SOURCE.read_bytes()
+    if target.exists() and target.read_bytes() != source:
+        raise SparseCheckoutError(
+            f"{target} already holds a different post-checkout hook; chain the two by hand "
+            f"(call {CFG.HOOK_SOURCE.name} from it) rather than overwrite it"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source)
+    target.chmod(0o755)
+    return target
+
+
 # ----- cli ------------------------------------------------------------------------------
 
 
@@ -297,10 +317,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="report SPARSE or FULL and what is left out")
     sub.add_parser("sparse", help="make this linked worktree sparse")
     sub.add_parser("full", help=f"restore a full checkout ({CFG.RESTORE_COMMAND})")
+    sub.add_parser("install-hook", help="install the post-checkout hook for this clone")
     args = parser.parse_args(argv)
     repo = args.repo.resolve()
     if args.command == "post-checkout":
         return _post_checkout(repo, args.previous_head, args.checkout_flag)
+    if args.command == "install-hook":
+        print(f"[OK] post-checkout hook installed at {install_hook(repo)}")
+        return 0
     if args.command == "sparse":
         make_sparse(repo)
     elif args.command == "full":
