@@ -17,6 +17,8 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NoReturn
 
@@ -59,6 +61,8 @@ pytest_plugins = [
     "scripts.pytest_reqs_plugin",
     "scripts.pytest_fast_tier",
     "scripts.pytest_tier_floor",
+    "tests.support.spawned_servers",
+    "tests.support.live_github",
 ]
 
 
@@ -276,6 +280,25 @@ def _error_sink_log_is_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("OPENDJ_ERROR_SINK_LOG", str(tmp_path / "opendj-error-sink.jsonl"))
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--standalone",
+        action="store_true",
+        default=False,
+        help=(
+            "Fail when MDT_DATA_DIR contains master.plain.db or state/anlz-cache "
+            "(STANDALONE-01 isolation instrument)"
+        ),
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    if config.getoption("--standalone"):
+        from tests.standalone.guard import assert_data_dir_clean
+
+        assert_data_dir_clean()
+
+
 @pytest.fixture(autouse=True)
 def _rekordbox_writeback_gate(request, monkeypatch):
     """Gate OFF by default; ON only for modules that opt in by marker."""
@@ -285,3 +308,29 @@ def _rekordbox_writeback_gate(request, monkeypatch):
         monkeypatch.setenv(REKORDBOX_WRITEBACK_ENABLED_ENV, "1")
     else:
         monkeypatch.delenv(REKORDBOX_WRITEBACK_ENABLED_ENV, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_leaked_threads(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail the test that leaves a background thread it started running.
+
+    sentry_sdk-owned threads are checked everywhere; non-daemon threads only in
+    modules marked ``no_leaked_threads``. Rules and the draining-monitor
+    exemption: tests/support/thread_leaks.py.
+    """
+    from tests.support.thread_leaks import leaked_threads
+
+    baseline = set(threading.enumerate())
+    yield
+    leaks = leaked_threads(
+        baseline,
+        include_non_daemon=request.node.get_closest_marker("no_leaked_threads") is not None,
+    )
+    if leaks:
+        pytest.fail(
+            f"{request.node.nodeid} left {len(leaks)} background thread(s) running: "
+            + "; ".join(leaks)
+            + ". Close what the test started (a sentry_sdk client: "
+            "tests/support/sentry_client.close_sentry_client).",
+            pytrace=False,
+        )

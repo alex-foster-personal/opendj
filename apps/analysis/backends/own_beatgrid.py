@@ -22,8 +22,9 @@ one thing whose only observable effect is to break the filter.
 
 `beat_this_runner.py` is a PEP 723 script. In a checkout it runs under
 ``uv run --no-project --script``; in a packaged build there is no ``uv``, and
-`native-analysis-queue` provisions an interpreter that already carries the
-``analysis-backfill`` closure. Both are supported and the choice is explicit:
+the payload ships an interpreter carrying the runner's own locked PEP 723
+closure (``scripts/payload_beatgrid.py``, NATIVE-10). Both are supported and
+the choice is explicit:
 set ``MDT_BEATGRID_RUNNER_PYTHON`` to that interpreter and the runner is invoked
 as a plain script under it; leave it unset in a checkout and ``uv`` is used. A
 missing ``uv`` with no interpreter named is a loud failure naming both, never a
@@ -72,6 +73,7 @@ from apps.analysis.pcm_fingerprint import (
     require_resampler,
 )
 from apps.analysis_beatgrid import activations
+from apps.analysis_beatgrid.grid_fit import GRID_FIT_RAW
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
@@ -79,6 +81,7 @@ from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
 from . import register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
+from .genre_hint import library_genre
 
 log = logging.getLogger("apps.analysis.backends.own_beatgrid")
 
@@ -103,6 +106,14 @@ DEFAULT_DEVICE = "cpu"
 #: with a wide margin; a run that exceeds it has hung, and a hung backfill that
 #: never returns is worse than one that says which track it stopped on.
 TIMEOUT_ENV = "MDT_BEATGRID_TIMEOUT_S"
+
+#: Which grid the lane serves: `raw` (the model's peak times, the default until
+#: the grid-fit bench round is reviewed) or `line` (the fitted, BPM-rounded,
+#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`) or
+#: `const_regions` (the same, with the line chosen by the constant-region
+#: recipe in `apps.analysis_beatgrid.const_regions`). A fitted record says
+#: which in its payload's `grid_fit` block.
+GRID_FIT_ENV = "MDT_BEATGRID_GRID_FIT"
 DEFAULT_TIMEOUT_S = 1800
 
 
@@ -314,6 +325,8 @@ def record_from_payload(
     audio_path: Path,
     model_sha256: str,
     decode_fingerprint: str,
+    grid_fit: str = GRID_FIT_RAW,
+    genre: str | None = None,
 ) -> AnalysisRecord:
     """Turn one runner payload into one v2 record. Pure; raises, never guesses.
 
@@ -367,7 +380,7 @@ def record_from_payload(
         raise TrackUnreadable(
             f"beat_this_runner.py could not analyze {audio_path}: {runner_error}"
         )
-    lane = build_beatgrid_lane(result, threshold=threshold)
+    lane = build_beatgrid_lane(result, threshold=threshold, grid_fit=grid_fit, genre=genre)
     # The runner reports the sha256 of ITS OWN model input: Beat This's
     # `load_audio` float32 at whatever rate it chose. The record may not carry
     # that. `decode_fingerprint` is defined over the canonical decode (44100
@@ -521,6 +534,8 @@ class OwnBeatgridBackfillBackend:
                 audio_path=audio_path,
                 model_sha256=model_sha256,
                 decode_fingerprint=decode_fingerprint,
+                grid_fit=os.environ.get(GRID_FIT_ENV, "").strip() or GRID_FIT_RAW,
+                genre=library_genre(stable_id),
             )
         except TrackUnreadable:
             # `record_from_payload` raises this specifically for a

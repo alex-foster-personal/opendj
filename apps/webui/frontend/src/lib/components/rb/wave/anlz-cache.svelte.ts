@@ -10,8 +10,14 @@
  *
  * .svelte.ts extension is REQUIRED for the $state rune (RECON-FRONTEND 10.1).
  */
-import { fetchAnlz, fetchAnlzBypassingHttpCache, RbApiError } from '$lib/rb/api-rb';
+import {
+	fetchAnlz,
+	fetchAnlzBypassingHttpCache,
+	fetchTrackBypassingHttpCache,
+	RbApiError
+} from '$lib/rb/api-rb';
 import { hasAnlzBeatgrid } from '$lib/rb/beatgrid-fallback';
+import { anlzSourceMatchesSelection } from '$lib/rb/beatgrid-source-basis';
 import { recordAnlzPrefetchSampled } from '$lib/rb/library-perf';
 import { currentAnlzFetchGeneration } from '$lib/rb/anlz-fetch-generation';
 import { analysisSourceState } from '$lib/rb/analysis-source-state.svelte';
@@ -240,7 +246,7 @@ function _hasActiveConsumer(stable_id: string): boolean {
  * source" (discussion_r3978049099 P1 BLOCKING). */
 function _disagreesWithConfirmedSource(data: AnlzData): boolean {
 	const confirmed = analysisSourceState.features.beatgrid;
-	return confirmed !== undefined && confirmed !== data.beatgrid_source;
+	return confirmed !== undefined && !anlzSourceMatchesSelection(data, confirmed);
 }
 
 /** Positive form of `_disagreesWithConfirmedSource`, exported for
@@ -725,7 +731,7 @@ export function evictAnlzCacheEntriesServingOtherSource(
 ): boolean {
 	let evictedAny = false;
 	for (const [stable_id, entry] of Object.entries(_cache)) {
-		if (entry.status === 'ready' && entry.data.beatgrid_source !== wantedSource) {
+		if (entry.status === 'ready' && !anlzSourceMatchesSelection(entry.data, wantedSource)) {
 			delete _cache[stable_id];
 			evictedAny = true;
 		}
@@ -752,6 +758,7 @@ export function refreshAnalysisSourceDecks(
 			refreshAnlzCacheEntry,
 			notifyGridlessSettlement,
 			fetchAnlzBypassingHttpCache,
+			fetchTrackBypassingHttpCache,
 			getReadyAnlz: (stable_id) => {
 				const entry = getAnlzEntry(stable_id);
 				return isAnlzEntryUsable(entry) ? entry.data : null;

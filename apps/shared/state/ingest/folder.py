@@ -38,7 +38,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-from apps.shared import audio_files, audio_playable, fs_access, fs_residency
+from apps.shared import audio_files, audio_playable, fs_access, fs_residency, hashing
 from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
@@ -241,6 +241,7 @@ def _write_tracks(
             duration_ms=duration_ms,
             file_path=str(entry.path),
             content_hash=None,
+            audio_hash=hashing.sha256_audio_payload(entry.path),
         )
         if changed:
             report.tracks_inserted += 1

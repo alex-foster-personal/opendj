@@ -218,6 +218,8 @@ def _mark_on_daemon(
             "status": "merged",
             "agent_note": merged_note(by_id[mark.id].get("agent_note"), pr_number, mark.sha),
         }
+        if mark.sha:
+            payload["fixed_in_sha"] = mark.sha
         if dry_run:
             print(f"[DRY] {daemon.machine} {mark.id} -> merged ({mark.reason})")
             continue

@@ -50,6 +50,7 @@ def _write_wav(path: Path, seconds: float, sample_rate: int = 8000) -> None:
         )
 
 
+# REQ: LYR-02
 def test_register_pair_stamps_files_sha256_on_v3_manifest(tmp_path: Path) -> None:
     _write_wav(tmp_path / "x-vocals.wav", 1.0)
     _write_wav(tmp_path / "x-instrumental.wav", 1.0)

@@ -1,6 +1,6 @@
 // requirement: LIBUX-14
 // [if] the rekordbox playlist tree is loading, erroring, or genuinely empty [then] each state renders distinct copy, not the same blank space
-// [if] a playlist is mostly broken (dimmed) [then] hovering the row shows a tooltip that names the 30% playable threshold
+// [if] a playlist is mostly broken (dimmed) [then] hovering the row shows a tooltip that names the min playable-track threshold
 // [if] Hide broken links hides one or more playlists [then] the tree shows a count of how many are hidden
 // requirement: LIBUX-15
 // [if] a user has zero playlists and playlist creation is wired [then] the empty state renders a labeled, clickable call to action instead of inert text
@@ -52,6 +52,7 @@ function renderHidden(count) {
 	return mod.render(mod.Hidden, { props: { hiddenBrokenPlaylistCount: count } }).body;
 }
 
+// REQ: PERF-UI-05
 test('loading: shows playlists-loading and not empty/error/hidden copy', () => {
 	const html = renderStates({ playlistsLoading: true });
 	assert.match(html, /data-testid="playlists-loading"/);
@@ -117,9 +118,19 @@ test('mostly-broken row: broken class and threshold tooltip on PlaylistTree rows
 	assert.match(treeSource, /class:broken=\{node\.mostly_broken\}/);
 	assert.match(
 		treeSource,
-		/title=\{node\.mostly_broken \? _mostlyBrokenTitle\(node\) : undefined\}/
+		/title=\{node\.mostly_broken \? formatMostlyBrokenTooltip\(\) : undefined\}/
 	);
-	assert.match(treeSource, /Fewer than 30% of tracks in this playlist are playable/);
+	assert.match(treeSource, /formatMostlyBrokenTooltip\(\)/);
+	const policy = readFileSync(
+		new URL('../../src/lib/rb/runtime-policy.svelte.ts', import.meta.url),
+		'utf8'
+	);
+	assert.match(policy, /Fewer than \$\{n\} tracks in this playlist are playable/);
+	assert.match(
+		policy,
+		/runtimePolicy\.hide_broken_playlist_min_available_tracks/,
+		'tooltip must use the server-hydrated min playable-track count (shipped default 4)'
+	);
 });
 
 test('all hidden: shows hidden count and not genuine-empty copy', () => {

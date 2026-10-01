@@ -141,12 +141,19 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
     fixed(
         "sync-bookkeeping",
         "Sync watermarks, changelogs and identity remaps",
-        state_tables("sync_state", "hub_changelog", "local_changelog", "sync_identity_remap"),
+        state_tables(
+            "sync_state",
+            "hub_changelog",
+            "local_changelog",
+            "sync_identity_remap",
+            "sync_write_tokens",
+        ),
         "machine_local",
         "Syncing your own sync watermarks would be incoherent (migrations_v6_v8.py). "
         "sync_identity_remap (engine_identity_map.py) holds identity-collapse remaps "
         "across batched hub_apply calls on the shared connection; additive bookkeeping "
-        "for this machine's own apply, not part of the sync set itself.",
+        "for this machine's own apply, not part of the sync set itself. "
+        "sync_write_tokens (migrations_v21.py) gates this machine's own digest walk.",
         (),
     ),
     fixed(
@@ -226,6 +233,16 @@ LOCAL_TABLE_CLASSES: tuple[DataClass, ...] = (
         "A verdict about THIS machine's disk (the path checked and when); "
         "syncing it would tell another machine its files are present.",
         (fk("library-tracks"),),
+    ),
+    fixed(
+        "path-availability-index",
+        "Library path disk-truth index",
+        state_tables("path_availability"),
+        "machine_local",
+        "Stat answers for rekordbox library paths on THIS machine's disk, keyed "
+        "by a resolver namespace that includes the machine id (migrations_v18.py, "
+        "issue #1037). Syncing it would tell another machine its files are present.",
+        (),
     ),
     fixed(
         "launcher-derived",

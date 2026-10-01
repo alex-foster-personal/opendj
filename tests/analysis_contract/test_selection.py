@@ -135,7 +135,7 @@ def test_compare_and_set_toggle_validates_lane_and_states_before_touching_anythi
 def test_toggle_revision_is_monotonic_and_starts_at_zero() -> None:
     assert selection.get_toggle_revision("beatgrid") == 0
     write = selection.write_toggle("beatgrid", "own")
-    assert write == selection.ToggleWrite(previous="unset", revision=1)
+    assert write == selection.ToggleWrite(previous="unset", current="own", revision=1)
     assert selection.get_toggle_revision("beatgrid") == 1
     selection.set_toggle("beatgrid", "rbx")
     assert selection.get_toggle_revision("beatgrid") == 2
@@ -149,7 +149,7 @@ def test_expected_revision_refuses_an_aba_round_trip_the_value_alone_would_miss(
     the CURRENT value equals what it still expects, but the world moved.
     """
     first = selection.write_toggle("beatgrid", "own")
-    assert first == selection.ToggleWrite(previous="unset", revision=1)
+    assert first == selection.ToggleWrite(previous="unset", current="own", revision=1)
     selection.write_toggle("beatgrid", "rbx")  # an external agent, revision 2
     selection.write_toggle("beatgrid", "own")  # back to "own", revision 3
     assert selection.get_toggle("beatgrid") == "own"
@@ -190,7 +190,7 @@ def test_expected_revision_is_ignored_without_expected_value() -> None:
     only means anything paired with `expected`."""
     selection.write_toggle("beatgrid", "own")
     result = selection.write_toggle("beatgrid", "rbx", expected_revision=999)
-    assert result == selection.ToggleWrite(previous="own", revision=2)
+    assert result == selection.ToggleWrite(previous="own", current="rbx", revision=2)
 
 
 def test_get_default_works_on_a_connection_that_cannot_write(tmp_path) -> None:

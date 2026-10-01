@@ -136,7 +136,14 @@ export interface AnlzPhrase {
 	kind: number;
 	/** Raw PSSI mood id. */
 	mood: number;
+	/** Own sections only (`source: 'own'`, kind and mood 0): the model's section label. */
+	label?: string;
+	/** Present only on own sections; PSSI phrases carry no per-phrase source. */
+	source?: 'own';
 }
+
+/** Which producer filled `phrases` (STRUCT-02); rekordbox PSSI always wins when present. */
+export type AnlzPhrasesSource = 'rekordbox' | 'own' | 'none';
 
 /** Optional analyzer hints for future dynamic key and tempo-aware sync. */
 export interface AnlzPerformanceHints {
@@ -204,8 +211,12 @@ export interface AnlzData {
 	beatgrid: AnlzBeatgrid;
 	/** Cues + loops; sparse coverage is real - most tracks show none. */
 	cues: AnlzCue[];
-	/** Phrases; empty array when PSSI absent. */
+	/** Phrases: rekordbox PSSI, else own sections, else an empty array. */
 	phrases: AnlzPhrase[];
+	/** Which producer filled `phrases`; `none` means nothing was measured. */
+	phrases_source?: AnlzPhrasesSource;
+	/** Own-section sidecar status whenever one exists, including a failed one. */
+	own_phrases?: { status: 'ok' | 'failed'; reason: string | null; producer: string | null; producer_version: string | null };
 	/** Own beatgrid payloads only: time-stamped tempo-change markers, empty
 	 * `[]` when static. A rekordbox-sourced payload has no such key at all. */
 	tempo_changes?: AnlzTempoChange[];
@@ -224,4 +235,15 @@ export interface AnlzData {
 	 * this track: `beatgrid` is then the real empty grid, never a silent
 	 * fallback to the rekordbox one, and this names why. */
 	beatgrid_own_unavailable_reason: string | null;
+	/** WHY `beatgrid_source` is what it is for THIS track (rb_assets_beatgrid_source.py
+	 * `beatgrid_source_for_track`). 'unmapped-default' is STANDALONE-06's
+	 * per-track own for a track rekordbox never mapped, which legitimately
+	 * differs from the lane-wide selection; 'selection' means the track
+	 * follows that selection. The engine always sends it; it is optional only
+	 * for payloads the client builds itself, and absence reads as the stricter
+	 * 'selection' (see beatgrid-source-basis.ts). */
+	beatgrid_source_basis?: AnlzBeatgridSourceBasis;
 }
+
+/** See `AnlzData.beatgrid_source_basis`. */
+export type AnlzBeatgridSourceBasis = 'selection' | 'unmapped-default';

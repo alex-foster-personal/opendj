@@ -18,7 +18,17 @@ import {
 	type DeckLayoutDurationMs,
 	type DeckLayoutMode
 } from './deck-layout-prefs';
+import {
+	makePlaylistTreeViewSetters,
+	validatePlaylistTreeViewField,
+	type PlaylistTreeViewMode
+} from './playlist-tree-view-prefs';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
+import {
+	parseWaveformDesign,
+	WAVEFORM_DESIGN_DEFAULT,
+	type WaveformDesign
+} from '$lib/rb/waveform-design';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
@@ -40,9 +50,16 @@ import {
 	type AppModePrefs
 } from './app-mode-prefs';
 import {
+	GIG_HELPER_PREF_DEFAULTS,
+	bindGigHelperPrefSetters,
+	mergeGigHelperPrefsFromParsed,
+	type GigHelperPrefs
+} from './gig-helper-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
+	type AppPosturePref,
 	type AppPosturePrefs
 } from './app-posture-prefs';
 import {
@@ -61,9 +78,11 @@ import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLi
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
+import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AppModeId } from './app-mode';
+export type { GigHelperPref } from './gig-helper-prefs';
 export type { AppPosturePref } from './app-posture-prefs';
 export type { PerfTierPref } from './perf-tier-prefs';
 export type { AutoSyncPrefs, LastPlaylistPref } from './prefs-types';
@@ -89,7 +108,13 @@ export type UiTheme = 'dark' | 'light';
 /** Preferred vendor writeback targets (preference only; CLI writeback today). */
 export type AutoSyncDestination = 'rekordbox' | 'djay' | 'open_dj';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs, LyricsPrefs {
+/** Crossfader curve selection (MIXUX-08). Only magic is live today. */
+export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
+
+/** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
+export type HorizontalWheelKnob = 'filter' | 'color';
+
+export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPrefs, AppModePrefs, LyricsPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -114,6 +139,8 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	/** Library list: keep only tracks with real word-level lyrics spanning
 	 * more than 5 derived lines (pane-contract VOCALS_FILTER_MIN_LINES). */
 	vocals_filter: boolean;
+	/** Library list: keep only tracks with local audio present. */
+	available_offline_filter: boolean;
 	/** Persisted independently so either collapsed rail entry can restore its panel. */
 	next_panel_collapsed: boolean;
 	recommended_panel_collapsed: boolean;
@@ -161,6 +188,10 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	jog_radial_waveform: boolean;
 	/** PIN-AGENT-01: agent findings stay independently visible from operator pins. */
 	show_agent_pins: boolean;
+	/** DECKUX-19: per-stem mini-waveforms under deck wavestack rows. Default off. */
+	show_stems: boolean;
+	/** DECKUX-20: tri-band, mono envelope, or line outline for waveforms. */
+	waveform_design: WaveformDesign;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -186,7 +217,15 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, AppModePrefs,
 	deck_layout_animate: boolean;
 	/** Transition duration in ms when deck_layout_animate is true. */
 	deck_layout_duration_ms: DeckLayoutDurationMs;
+	/** Mirror deck 2 control row horizontally for mixer-facing symmetry (issue #3983). */
+	deck_right_mirror: boolean;
+	/** Playlist sidebar: tree list vs column browser (issue #3983). */
+	playlist_tree_view: PlaylistTreeViewMode;
 	level_calibration: LevelCalibrationPrefs;
+	/** Crossfader curve name; unbuilt curves stay disabled in the UI. */
+	crossfade_curve: CrossfadeCurve;
+	/** Horizontal mouse wheel adjusts filter or color knob on selected channels. */
+	horizontal_wheel_knob: HorizontalWheelKnob;
 }
 
 const DEFAULTS: RbUiPrefs = {
@@ -209,17 +248,24 @@ const DEFAULTS: RbUiPrefs = {
 	technically_working_animate: true,
 	jog_radial_waveform: false,
 	show_agent_pins: true,
+	show_stems: false,
+	waveform_design: WAVEFORM_DESIGN_DEFAULT,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
 	deck_layout: 'more',
 	deck_layout_animate: true,
 	deck_layout_duration_ms: 200,
+	deck_right_mirror: false,
+	playlist_tree_view: 'tree',
 	level_calibration: { red_dbfs: null, red_enabled: false, ceiling_dbfs: null, ceiling_enabled: false },
+	crossfade_curve: 'magic',
+	horizontal_wheel_knob: 'filter',
 	...LYRICS_PREF_DEFAULTS,
 	...LIBRARY_FILTER_PREF_DEFAULTS,
 	...PERF_TIER_PREF_DEFAULTS,
 	...APP_POSTURE_PREF_DEFAULTS,
+	...GIG_HELPER_PREF_DEFAULTS,
 	...APP_MODE_PREF_DEFAULTS
 };
 
@@ -384,11 +430,43 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	if (parsed.show_stems !== undefined && typeof parsed.show_stems !== 'boolean') {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (show_stems is not a boolean) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
+	const crossfadeCurve = parsed.crossfade_curve;
+	if (
+		crossfadeCurve !== undefined &&
+		crossfadeCurve !== 'magic' &&
+		crossfadeCurve !== 'bass_swap' &&
+		crossfadeCurve !== 'linear'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (crossfade_curve must be magic|bass_swap|linear) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
+	const horizontalWheelKnob = parsed.horizontal_wheel_knob;
+	if (
+		horizontalWheelKnob !== undefined &&
+		horizontalWheelKnob !== 'filter' &&
+		horizontalWheelKnob !== 'color'
+	) {
+		throw new Error(
+			`${STORAGE_KEY}: malformed prefs blob (horizontal_wheel_knob must be filter|color) - ` +
+				'clear the localStorage key to recover'
+		);
+	}
 	const {
 		deck_layout: deckLayout,
 		deck_layout_animate: deckLayoutAnimate,
-		deck_layout_duration_ms: deckLayoutDurationMs
+		deck_layout_duration_ms: deckLayoutDurationMs,
+		deck_right_mirror: deckRightMirror
 	} = validateDeckLayoutFields(parsed, STORAGE_KEY);
+	const playlistTreeView = validatePlaylistTreeViewField(parsed.playlist_tree_view, STORAGE_KEY);
 	const lastPlaylist = parseLastPlaylist(parsed.last_playlist, STORAGE_KEY);
 	const autoSync = parseAutoSync(parsed.auto_sync, STORAGE_KEY, DEFAULTS.auto_sync);
 	const confirm = parsed.confirm ?? DEFAULTS.confirm;
@@ -429,13 +507,19 @@ function _load(): RbUiPrefs {
 		preview_beat_sync: parsed.preview_beat_sync ?? DEFAULTS.preview_beat_sync,
 		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
+		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
+		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
 		deck_layout: deckLayout ?? DEFAULTS.deck_layout,
 		deck_layout_animate: deckLayoutAnimate ?? DEFAULTS.deck_layout_animate,
 		deck_layout_duration_ms: deckLayoutDurationMs ?? DEFAULTS.deck_layout_duration_ms,
+		deck_right_mirror: deckRightMirror ?? DEFAULTS.deck_right_mirror,
+		playlist_tree_view: playlistTreeView ?? DEFAULTS.playlist_tree_view,
 		level_calibration: parseLevelCalibration(parsed.level_calibration, STORAGE_KEY, DEFAULTS.level_calibration),
+		crossfade_curve: crossfadeCurve ?? DEFAULTS.crossfade_curve,
+		horizontal_wheel_knob: horizontalWheelKnob ?? DEFAULTS.horizontal_wheel_knob,
 		...LYRICS_PREF_DEFAULTS,
 		...validateLyricsPrefFields(parsed, STORAGE_KEY),
 		...LIBRARY_FILTER_PREF_DEFAULTS,
@@ -443,6 +527,8 @@ function _load(): RbUiPrefs {
 		...mergePerfTierPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_POSTURE_PREF_DEFAULTS,
 		...mergeAppPosturePrefsFromParsed(parsed, STORAGE_KEY),
+		...GIG_HELPER_PREF_DEFAULTS,
+		...mergeGigHelperPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
 		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
 	};
@@ -541,7 +627,8 @@ export const {
 	setNextOnlyFilter,
 	toggleNextOnlyFilter,
 	setRemixesFilter,
-	setVocalsFilter
+	setVocalsFilter,
+	setAvailableOfflineFilter
 } = makeLibraryFilterSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export function setTheme(next: UiTheme): void {
@@ -578,12 +665,47 @@ export function setShowAgentPins(next: boolean): void {
 	void _syncDiskPrefs({ show_agent_pins: next });
 }
 
+export function setShowStems(next: boolean): void {
+	uiPrefs.show_stems = next;
+	_persist();
+	void _syncDiskPrefs({ show_stems: next });
+}
+
+export function setWaveformDesign(next: WaveformDesign): void {
+	parseWaveformDesign(next);
+	uiPrefs.waveform_design = next;
+	_persist();
+}
+
+export function setCrossfadeCurve(next: CrossfadeCurve): void {
+	if (next !== 'magic') {
+		throw new Error(`crossfade curve ${next} is not implemented - see PARITY-TODO`);
+	}
+	uiPrefs.crossfade_curve = next;
+	_persist();
+}
+
+export function setHorizontalWheelKnob(next: HorizontalWheelKnob): void {
+	if (next !== 'filter' && next !== 'color') {
+		throw new Error(`horizontal_wheel_knob must be filter|color, got ${next}`);
+	}
+	uiPrefs.horizontal_wheel_knob = next;
+	_persist();
+}
+
 export const {
 	setDeckLayoutMode,
 	toggleDeckLayoutMode,
 	setDeckLayoutAnimate,
-	setDeckLayoutDurationMs
+	setDeckLayoutDurationMs,
+	setDeckRightMirror
 } = makeDeckLayoutSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
+
+export const { setPlaylistTreeView, togglePlaylistTreeView } = makePlaylistTreeViewSetters(
+	uiPrefs,
+	_persist,
+	(patch) => void _syncDiskPrefs(patch)
+);
 
 export const {
 	setLyricsGlobal,
@@ -596,7 +718,17 @@ export const {
 } = makeLyricsPrefSetters(uiPrefs, _persist, (patch) => void _syncDiskPrefs(patch));
 
 export const { setPerfTier } = bindPerfTierPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
-export const { setAppPosture } = bindAppPosturePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+const { setAppPosture: _setAppPostureRaw } = bindAppPosturePrefSetters(
+	uiPrefs,
+	_persist,
+	(p) => void _syncDiskPrefs(p)
+);
+export function setAppPosture(next: AppPosturePref): void {
+	const previous = uiPrefs.app_posture;
+	_setAppPostureRaw(next);
+	tryOfferGigHelperPromptOnPostureChange(previous, next, uiPrefs.gig_helper);
+}
+export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {

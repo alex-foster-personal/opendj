@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
+import { stopFixtureServer } from './fixtures/stop-fixture-server.mjs';
 
 const ALL_SOURCE_FEATURES = ['beatgrid', 'key', 'waveform', 'loudness', 'vocal'];
 
@@ -227,8 +228,8 @@ before(async () => {
 	});
 });
 
-after(() => {
-	serverProcess?.kill();
+after(async () => {
+	if (serverProcess) await stopFixtureServer(serverProcess, apiBase);
 });
 
 beforeEach(() => {
@@ -1036,19 +1037,15 @@ test(
 		analysisSource.deckStates[1].stable_id = 'real-track-slow-own-grid';
 		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: -1, beats: [] } };
 		try {
+			// Park the slow deck's /anlz on the fixture until we release it, so
+			// ordering does not depend on shared-runner wall-clock scheduling.
+			await holdNextAnlz('real-track-slow-own-grid');
 			const before_ = await requestLog();
-			// This switch's own PUT lands (daemon -> own) before its refresh ever
-			// fetches anything, so the slow deck's real /anlz request below is
-			// genuinely dispatched, and genuinely answered, under 'own' - not a
-			// fabricated response.
 			const switchToOwn = analysisSource.setAnalysisSource('beatgrid', 'own');
 
-			// Wait for the real request to actually reach the server (its own
-			// access log, appended before the route handler runs), rather than a
-			// guessed sleep: proves the slow deck's fetch is genuinely in flight,
-			// under the real ~150ms server delay this file already relies on
-			// elsewhere, before the second switch below reverts the daemon.
-			const deadline = Date.now() + 2000;
+			// Wait until the real /anlz request reached the server (logged before
+			// the route handler runs) while still held at the middleware gate.
+			const deadline = Date.now() + 5000;
 			for (;;) {
 				const seen = (await requestLog()).slice(before_.length);
 				if (seen.some((url) => url.includes('/real-track-slow-own-grid/anlz'))) break;
@@ -1057,23 +1054,20 @@ test(
 				}
 				await new Promise((resolve) => setTimeout(resolve, 5));
 			}
-			// The request is logged before its route handler reads the daemon's
-			// toggle; this closes that (sub-millisecond, outside the artificial
-			// response delay) gap without padding the 150ms budget above.
-			await new Promise((resolve) => setTimeout(resolve, 5));
 
 			// No loaded deck disagrees with 'rekordbox' yet - the first switch's
 			// refresh has not settled, so `deckFeatures` still reads its pre-race
 			// baseline - so this one never fetches anything and wins outright.
 			await analysisSource.setAnalysisSource('beatgrid', 'rekordbox');
+			await releaseHeldAnlz();
 			await switchToOwn; // let the slower, now-superseded switch finish discarding
 
 			assert.equal(
 				analysisSource.deckStates[1].anlz?.beatgrid.beat_count,
 				-1,
-				'the slower switch genuinely fetched a real own grid, but by the time it settled a ' +
-					'faster switch had already restored rekordbox - publishing now would silently ' +
-					'split the deck from the mirror, with no future poll able to detect it'
+				'the superseded slow switch must not publish onto the deck after a faster switch ' +
+					'already restored rekordbox - publishing would silently split the deck from the ' +
+					'mirror, with no future poll able to detect it'
 			);
 			assert.equal(
 				analysisSource.analysisSourceState.deckFeatures.beatgrid,
@@ -1086,6 +1080,85 @@ test(
 				'the superseded refresh must not have published into the shared cache either'
 			);
 		} finally {
+			await releaseHeldAnlz();
+			analysisSource.deckStates[1].stable_id = null;
+			analysisSource.deckStates[1].anlz = null;
+			await daemonSelect('own');
+		}
+	}
+);
+
+test(
+	'a superseded switch whose /tracks fetch lands after the faster switch reverted the daemon ' +
+		'discards quietly instead of throwing (nucbox-wsl-23, run 35731185371)',
+	async () => {
+		// The test above wins its race with the sibling /tracks/{id} fetch answered
+		// under the SAME daemon toggle as /anlz. On a loaded runner the two parallel
+		// fetches are served on different sides of the second switch's PUT, and the
+		// refresh's cross-source guard fired BEFORE its supersession check: the
+		// slower switch, whose answer was going to be discarded anyway, rejected
+		// setAnalysisSource with "the two parallel fetches landed on different sides
+		// of a source switch". Here the fixture holds GET /tracks/{id} until the
+		// faster switch has landed, so that ordering is the only one possible.
+		await daemonSelect('rbx');
+		analysisSource.analysisSourceState.features = mirrorFeatures();
+		analysisSource.analysisSourceState.deckFeatures = { beatgrid: 'rekordbox' };
+		analysisSource.invalidateAnlzCacheEntry('real-track-slow-own-grid');
+		analysisSource.deckStates[1].stable_id = 'real-track-slow-own-grid';
+		analysisSource.deckStates[1].anlz = { beatgrid: { beat_count: -1, beats: [] } };
+		const armed = await fetch(`${apiBase}/test/hold-next-track`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ stable_id: 'real-track-slow-own-grid' })
+		});
+		assert.equal(armed.status, 200, 'fixture server refused to hold the next /tracks fetch');
+		try {
+			const before_ = await requestLog();
+			const switchToOwn = analysisSource.setAnalysisSource('beatgrid', 'own');
+			// Both of the refresh's parallel fetches have reached the server (the
+			// access log is appended before either handler runs, and before the
+			// /tracks one is held); the daemon still reads 'own' for /anlz.
+			const deadline = Date.now() + 2000;
+			for (;;) {
+				const seen = (await requestLog()).slice(before_.length);
+				if (
+					seen.some((url) => url.includes('/real-track-slow-own-grid/anlz')) &&
+					seen.some((url) => url.endsWith('/tracks/real-track-slow-own-grid'))
+				) {
+					break;
+				}
+				if (Date.now() > deadline) {
+					throw new Error('the slow deck refresh never reached the server');
+				}
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			// The faster switch reverts the daemon and wins outright (no loaded deck
+			// disagrees with 'rekordbox' yet, so it fetches nothing).
+			await analysisSource.setAnalysisSource('beatgrid', 'rekordbox');
+			// Only now does the held /tracks/{id} run its handler: bpm provenance
+			// comes back from 'rekordbox' while /anlz was served under 'own'.
+			const released = await fetch(`${apiBase}/test/release-held-track`, { method: 'POST' });
+			assert.equal(released.status, 200);
+			await switchToOwn; // superseded: must resolve, discarding, not reject
+
+			assert.equal(
+				analysisSource.deckStates[1].anlz?.beatgrid.beat_count,
+				-1,
+				'the superseded switch must not have published onto the deck'
+			);
+			assert.equal(
+				analysisSource.analysisSourceState.deckFeatures.beatgrid,
+				'rekordbox',
+				'the faster switch is what the mirror must report'
+			);
+			assert.equal(
+				analysisSource.getAnlzEntry('real-track-slow-own-grid'),
+				undefined,
+				'the superseded refresh must not have published into the shared cache either'
+			);
+		} finally {
+			await fetch(`${apiBase}/test/release-held-track`, { method: 'POST' });
 			analysisSource.deckStates[1].stable_id = null;
 			analysisSource.deckStates[1].anlz = null;
 			await daemonSelect('own');

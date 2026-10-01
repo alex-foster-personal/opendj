@@ -41,7 +41,10 @@ def test_client_error_writes_full_details_to_separate_log(tmp_path: Path) -> Non
         response = client.post("/api/v1/client-errors", json=_payload())
 
     assert response.status_code == 202
-    assert response.json()["stored"] is True
+    body = response.json()
+    assert body["stored"] is True
+    assert body["error_id"].startswith("eid-")
+    assert "sentry_event_id" in body
     paths = list(tmp_path.glob("webui-client-errors-*.log"))
     assert len(paths) == 1
     records = paths[0].read_text(encoding="utf-8").splitlines()
@@ -172,3 +175,81 @@ def test_client_error_log_line_is_warning_not_a_second_sentry_error(
     assert response.status_code == 202
     lines = [r for r in caplog.records if r.getMessage().startswith("browser error")]
     assert [r.levelname for r in lines] == ["WARNING"]
+
+
+def test_any_deck_live_is_accepted_stored_and_forwarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """if the page says a deck was live then the flag reaches the daily log AND
+    the Sentry forward's context, which is where the live-set gate reads it.
+
+    Contract: the field is optional (None for a client that predates it) so a
+    stale page never fails validation, and it is forwarded verbatim rather
+    than defaulted, so "unknown" stays distinguishable from "idle".
+    """
+    forwarded: list[dict[str, object]] = []
+
+    def record_forward(**kwargs: object) -> None:
+        context = kwargs.get("context")
+        assert isinstance(context, dict)
+        forwarded.append(dict(context))
+
+    monkeypatch.setattr(
+        "apps.webui.server.routes.client_errors.capture_browser_error", record_forward
+    )
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    with TestClient(app, base_url=_LOOPBACK) as client:
+        live = client.post("/api/v1/client-errors", json={**_payload(), "any_deck_live": True})
+        legacy = client.post("/api/v1/client-errors", json=_payload())
+    assert live.status_code == 202, live.text
+    assert legacy.status_code == 202, legacy.text
+    assert [ctx["any_deck_live"] for ctx in forwarded] == [True, None]
+    daily = next(tmp_path.glob("webui-client-errors-*.log"))
+    rows = [json.loads(line) for line in daily.read_text().splitlines()]
+    assert [row["any_deck_live"] for row in rows] == [True, None]
+
+
+def test_free_form_context_cannot_override_the_typed_live_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the page's free-form context carries any_deck_live [then] the typed
+    top-level flag is what reaches the forward, [else stop].
+
+    The context dict is untrusted page data merged into the same mapping the
+    live-set gate reads. Codex (#3737): with the context spread LAST, a body
+    of `any_deck_live: true` plus `context: {"any_deck_live": false}` was
+    forwarded as idle and sent mid-set. The typed fields now win.
+    """
+    forwarded: list[dict[str, object]] = []
+
+    def record_forward(**kwargs: object) -> None:
+        context = kwargs.get("context")
+        assert isinstance(context, dict)
+        forwarded.append(dict(context))
+
+    monkeypatch.setattr(
+        "apps.webui.server.routes.client_errors.capture_browser_error", record_forward
+    )
+    app = create_app(
+        backend=InMemoryBackend(),
+        mount_frontend=False,
+        enable_cors=False,
+        client_error_log_dir=tmp_path,
+    )
+    body = {
+        **_payload(),
+        "any_deck_live": True,
+        "context": {"any_deck_live": False, "kind": "spoofed", "deck": "1"},
+    }
+    with TestClient(app, base_url=_LOOPBACK) as client:
+        response = client.post("/api/v1/client-errors", json=body)
+    assert response.status_code == 202, response.text
+    assert forwarded[0]["any_deck_live"] is True
+    assert forwarded[0]["kind"] == _payload()["kind"]
+    # Non-reserved context keys still ride along.
+    assert forwarded[0]["deck"] == "1"

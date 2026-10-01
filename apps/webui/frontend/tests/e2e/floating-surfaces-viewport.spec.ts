@@ -62,6 +62,17 @@ test('hover tile, comment pin, and QuickDraw stay inside the viewport from the b
 	const brX = 1280 - 4;
 	const brY = 720 - 4;
 
+	// FB-18c (#3981) docks an always-on pin + support pair in the bottom-right
+	// corner at the root overlay layer, so it owns the corner pixels this
+	// test probes and intercepts every hover and click aimed there. The dock
+	// is not the subject here (the surfaces' viewport clamp is), so take it
+	// out of hit-testing the same way the pins are hidden further down.
+	const dock = page.locator('.fb-dock');
+	await expect(dock).toBeAttached();
+	await dock.evaluate((el) => {
+		(el as HTMLElement).style.visibility = 'hidden';
+	});
+
 	const analysisTrigger = page
 		.locator('[aria-label="Analysis coverage"], [aria-label="Data-quality issues"]')
 		.first();
@@ -81,7 +92,8 @@ test('hover tile, comment pin, and QuickDraw stay inside the viewport from the b
 	await page.mouse.move(0, 0);
 	await expect(hoverTile).toHaveCount(0, { timeout: 2_000 });
 
-	await page.getByRole('button', { name: 'Drop a comment pin' }).click();
+	// Topbar pin, not FB-18c's dock pin of the same name (#3981).
+	await page.getByRole('banner').getByRole('button', { name: 'Drop a comment pin' }).click();
 	await expect(page.locator('.fb-place-overlay')).toBeVisible({ timeout: 10_000 });
 	await page.locator('.fb-place-overlay').click({ position: { x: brX, y: brY } });
 	await page.locator('.fb-bubble-text').fill('viewport clamp probe');
@@ -95,6 +107,17 @@ test('hover tile, comment pin, and QuickDraw stay inside the viewport from the b
 	await assertInsideWindow(page, pinBody);
 	await page.keyboard.press('Escape');
 	await page.mouse.move(0, 0);
+	// FB-16 (#3888) draws pins in the app-root layer above .perf-root, so the
+	// probe pin now owns this corner pixel; hide pins so the right-click
+	// reaches the performance surface QuickDraw listens on.
+	await page.evaluate(() => {
+		const twin = (window as unknown as Record<string, unknown>).__mdtPinsVisible as
+			| { set: (v: boolean) => void }
+			| undefined;
+		if (twin === undefined) throw new Error('__mdtPinsVisible twin is not installed');
+		twin.set(false);
+	});
+	await expect(pinMarker).toHaveCount(0);
 
 	await page.locator('.perf-root').click({ button: 'right', position: { x: brX, y: brY } });
 	const quickDraw = page.getByTestId('quick-draw-menu');

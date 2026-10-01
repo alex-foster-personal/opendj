@@ -86,6 +86,10 @@ import {
 import { pushToast } from '$lib/stores.svelte';
 import { noteAudioPresentationTick } from '$lib/rb/audio-health.svelte';
 import { decodeDeckLoadAudio, deckLoadAudio } from '$lib/rb/audio-prefetch-cache.svelte';
+import {
+	registerAudioContext,
+	unregisterAudioContext
+} from '$lib/rb/audio-context-registry';
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
 	beginDeckLoad,
@@ -93,7 +97,7 @@ import {
 	recordDeckLoad,
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
-import { recordPerfEvent, recordPerfTiming } from '$lib/rb/perf-event-log';
+import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import {
 	noteMasterSilence,
 	notePresentationClock,
@@ -129,9 +133,9 @@ import {
 	STEM_LAYOUT_PART_NAMES,
 	getTrack,
 	patchTrack,
-	probeStemArtifact,
 	RbApiError
 } from '$lib/rb/api-rb';
+import { awaitStemArtifact, stemBlockCheck, stemsBlockedState } from '$lib/rb/stem-hydrate-wait';
 import type { AnlzWithVocals, DemucsStemPart, HotCueSlotState, Track } from '$lib/rb/api-rb';
 import {
 	anlzMatchesConfirmedSource,
@@ -164,9 +168,10 @@ import {
 	playbackBpm,
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
-	QUANTIZED_LAUNCH
+	QUANTIZED_LAUNCH,
+	resolveArmAtPosition
 } from '$lib/rb/beat-sync-math';
-import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
 	deckHasRealBeatGrid,
@@ -206,7 +211,7 @@ import {
 } from '$lib/rb/stem-graph';
 import { applyStemControl, applyStemEqMode } from '$lib/rb/stem-engine-controls';
 import type { AnlzBeat, AnlzData } from '$lib/rb/anlz-types';
-import type { AudioEngine, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
+import type { AudioEngine, DeckLoadOptions, MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { parseExternalRouting, type DeckId } from '$lib/rb/deck-slots';
 import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
@@ -229,7 +234,7 @@ import {
 import type { PitchRange } from '$lib/player/constants';
 import {
 	_defaultChannel,
-	_defaultHeadphones,
+	_defaultHeadphones, recordMasterWrite,
 	_emptyDeckState,
 	_hotCueRevisionsFrom,
 	deckEffectiveBpm,
@@ -598,8 +603,8 @@ const _rt: Record<DeckId, _DeckRuntime> = {
 };
 
 /**
- * Channel level meter reading, taken POST-EQ and PRE-FADER through an
- * AudioWorklet tap: level, held peak, lit segment count and clip latch.
+ * Channel level meter reading, taken POST-TRIM, POST-EQ, POST-FADER (issue
+ * #3529) through an AudioWorklet tap: level, peak, segment count, clip latch.
  *
  * REPLACED `peekDeckMeter`, which returned `Math.min(1, rms * 5.5)`: linear
  * amplitude against a magic constant, no dB scale, no ballistics, and tapped
@@ -739,7 +744,7 @@ async function rebuildAudioGraphKeepingDecks(): Promise<void> {
 			);
 		},
 		maybeUpgradeStems: (snap, buffer, ctx) => {
-			if (snap.stemsReady && snap.stableId.length > 0) {
+			if ((snap.stemsReady || snap.stemsLoading) && snap.stableId.length > 0) {
 				void _upgradeDeckStems(snap.deck, snap.stableId, _rt[snap.deck].loadToken, ctx, buffer);
 			}
 		}
@@ -755,6 +760,7 @@ function _ensureGraph(): AudioContext {
 	// Construction options travel through ONE named constant so a future
 	// user-facing buffer/latency setting has a single place to write to.
 	_ctx = new AudioContext(AUDIO_CONTEXT_OPTIONS);
+	registerAudioContext(_ctx);
 	stampContextDeviceFloors(_ctx);
 	// A context that is allowed to start running immediately never fires
 	// statechange, so the build stamp above already caught it; one that starts
@@ -1282,14 +1288,14 @@ function _recordProcessorFailure(deck: DeckId, error: unknown): void {
 		position_ms: positionMs,
 		context_state: _ctx?.state ?? 'uninitialized',
 		decoded_duration_ms: decodedDurationMs,
-		metadata_duration_ms: metadataDurationMs
+		metadata_duration_ms: metadataDurationMs,
+		cause_error: error
 	});
 	withPauseOrigin('worklet', () => {
 		_clearLoadedTrackState(st);
 		st.processor_error = message;
 		st.sync_error = message;
 	});
-	pushToast(`Deck ${deck} processor failed - ${message}`, 'error');
 }
 
 export function stretchScheduleChange(
@@ -2794,10 +2800,12 @@ function _drainPendingStemUpgrade(deck: DeckId): void {
 	const rt = _rt[deck];
 	const pending = rt.pendingStemUpgrade;
 	if (pending === null) return;
-	if (pending.token !== rt.loadToken) {
+	const blockedState = stemsBlockedState(); // PERFMODE-15: nothing held from before a stem block may land either
+	if (pending.token !== rt.loadToken || blockedState !== null) {
 		// The deck moved on to another track while these stems were decoding.
 		rt.pendingStemUpgrade = null;
 		_retireProcessor(pending.processor);
+		if (blockedState !== null && pending.token === rt.loadToken) deckStates[deck].stems = blockedState;
 		return;
 	}
 	if (!_deckIsReplaceable(deck)) return;
@@ -2827,19 +2835,15 @@ async function _upgradeDeckStems(
 	const st = deckStates[deck];
 	const t0 = performance.now();
 	const stages: Record<string, number> = {};
-	const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
-		const started = performance.now();
-		try {
-			return await work;
-		} finally {
-			stages[name] = Math.round(performance.now() - started);
-		}
-	};
-	const stale = (): boolean => token !== rt.loadToken;
+	const time = stageTimer(stages);
+	// PERFMODE-15: a mode with stems off (Trackify) settles the deck `unavailable` and ends the upgrade, now or mid-probe.
+	const _stemDecodeBlocked = stemBlockCheck(st, () => token === rt.loadToken);
+	if (_stemDecodeBlocked()) return;
+	const stale = (): boolean => token !== rt.loadToken || ctx !== _ctx || _stemDecodeBlocked(); // a graph rebuild restarts it
 	let built: AlignedStemDeckProcessor | null = null;
 	try {
-		const probe = await time('probeStem', probeStemArtifact(stableId));
-		if (stale()) return;
+		const probe = await time('probeStem', awaitStemArtifact(stableId, { isStale: stale }));
+		if (probe === null || stale()) return;
 		if (probe.status !== 'ready') {
 			// A settled "this track has no bundle". Not an error, and not a
 			// spinner: the deck is finished loading.
@@ -2925,6 +2929,8 @@ async function _upgradeDeckStems(
 	}
 }
 
+export const upgradeDeckStemsForTest = (deck: DeckId, stableId: string, mixBuffer: AudioBuffer): Promise<void> => _upgradeDeckStems(deck, stableId, _rt[deck].loadToken, _ctx as AudioContext, mixBuffer); // Test seam (PERFMODE-15): the lazy stem upgrade exactly as `load` and the graph rebuild run it (node has no context)
+
 /** CUEOUT-15: build and resume the graph for a non-deck source (the library
  * preview), which must work before any deck has loaded. Rejects, never silent. */
 export async function ensureAudioGraphForCue(): Promise<void> {
@@ -2973,12 +2979,13 @@ class RbAudioEngine implements AudioEngine {
 		disarmContextInstrumentation();
 		if (_masterMuteGain !== null) nodes.push(_masterMuteGain);
 		if (_masterDelay !== null) nodes.push(_masterDelay);
+		const closingContext = _ctx;
 		const closing = disposeAudioResources({
 			rafId: _rafId,
 			processors,
 			nodes,
 			masterGain: _masterGain,
-			context: _ctx
+			context: closingContext
 		});
 
 		_rafId = null;
@@ -2990,6 +2997,7 @@ class RbAudioEngine implements AudioEngine {
 		_masterMuteGain = null;
 		_masterDelay = null;
 		_externalMerger = _externalRouteAnalyser = null;
+		if (closingContext !== null) unregisterAudioContext(closingContext);
 		_ctx = null;
 		_masterDeck = null;
 		_masterMode = 'auto';
@@ -3005,8 +3013,12 @@ class RbAudioEngine implements AudioEngine {
 		await closing;
 	}
 
-	async load(deck: DeckId, stable_id: string): Promise<void> {
+	async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {
 		if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+		if (options.stems !== undefined && typeof options.stems !== 'boolean') {
+			throw new TypeError('load: options.stems must be boolean when provided');
+		}
+		const loadStems = options.stems ?? true;
 		const st = deckStates[deck];
 		const rt = _rt[deck];
 		_assertCurrentDeckReplacementAllowed(deck);
@@ -3027,14 +3039,7 @@ class RbAudioEngine implements AudioEngine {
 		// Stage timings + load conditions for DevTools `[perf]`; spanId binds every recordDeckLoad below to THIS load's own span (#1658).
 		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
-		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
-			const t0 = performance.now();
-			try {
-				return await work;
-			} finally {
-				stages[name] = Math.round(performance.now() - t0);
-			}
-		};
+		const time = stageTimer(stages);
 		try {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
@@ -3090,9 +3095,9 @@ class RbAudioEngine implements AudioEngine {
 			buffer = decodedMix;
 			await time('stretchLoad', mixProcessor.load(buffer));
 			processor = mixProcessor;
-			// `loading`, not `unavailable`: the probe has not run yet, so claiming
-			// "no stems" here would be a guess. _upgradeDeckStems settles it.
-			candidateStemState = loadingStemDeckState();
+			// `loading`, not `unavailable`: the probe has not run yet and _upgradeDeckStems settles it. A stems-off load
+			// (Trackify, #3975) never runs that upgrade, so it publishes its settled answer now (PERFMODE-15).
+			candidateStemState = loadStems ? loadingStemDeckState() : (stemsBlockedState() ?? unavailableStemDeckState('stems disabled for this load'));
 			latencySec = await time('processorLatency', processor.latencySec());
 			_assertUniformProcessorBlock(deck, latencySec, ctx.sampleRate);
 			stages.totalBeforeSwap = perfMs();
@@ -3109,11 +3114,10 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
-			const raw =
-				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
-			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, raw);
+			// RbApiError's message already reads `CODE: detail`; prefixing the code again doubled it.
+			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
 			deckLoadErrors[deck] = msg;
-			reportDeckLoadFailure(deck, msg, exc, stages);
+			reportDeckLoadFailure(deck, msg, exc, stages, options);
 			throw exc;
 		}
 		if (
@@ -3152,7 +3156,8 @@ class RbAudioEngine implements AudioEngine {
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
 					const message = String(error);
 					deckLoadErrors[deck] = message;
-					pushToast(`Deck ${deck} load failed - ${message}`, 'error');
+					stages.failedAt = perfMs();
+					reportDeckLoadFailure(deck, message, error, stages, options);
 				}
 				throw error;
 			}
@@ -3245,7 +3250,9 @@ class RbAudioEngine implements AudioEngine {
 		// `loading` on its own. Errors are handled inside, so no rejection can
 		// escape into an unhandled promise.
 		if (loadCtx === null) throw new Error('load: audio context was never resolved');
-		void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		if (loadStems) {
+			void _upgradeDeckStems(deck, stable_id, token, loadCtx, candidateBuffer);
+		}
 			void upgradeDeckBeatgrid(deck, stable_id, st, () => token !== rt.loadToken, (d, landed, publish) => _beatgridGuards.afterBeatgridUpgrade(d, landed, publish, () => token !== rt.loadToken)); // PARITY-10: same deferral for the grid as _upgradeDeckStems above; errors are handled inside, no unhandled rejection
 	}
 
@@ -3513,16 +3520,13 @@ class RbAudioEngine implements AudioEngine {
 	 * Self-referential only: unlike `quantizedSeek`'s syncPlan branch, this
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
+	 * A resolver `armAt` runs on the live projected position before any await.
 	 */
-	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number> {
+	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
-		if (armAtPositionSec < nowPositionSec) {
-			throw new RangeError(
-				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
-			);
-		}
+		const armAtPositionSec = resolveArmAtPosition(armAt, nowPositionSec);
 		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
 		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
@@ -4319,7 +4323,7 @@ class RbAudioEngine implements AudioEngine {
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {
 		assertUnitRange('setMaster value', value);
-		mixerState.master = value;
+		recordMasterWrite(); mixerState.master = value;
 		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
 	}
 
@@ -4376,6 +4380,11 @@ class RbAudioEngine implements AudioEngine {
 
 /** The singleton engine every /performance unit imports. */
 export const engine: RbAudioEngine = new RbAudioEngine();
+
+/** PERFMODE-14: whether the Gig deck graph is still armed. */
+export function gigDeckGraphIsPresent(): boolean {
+	return _ctx !== null;
+}
 
 export function getMasterMode(): MasterMode {
 	return _masterMode;

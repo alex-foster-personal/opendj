@@ -3,28 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 
+import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
-let moduleSequence = 0;
-
-/**
- * Vite's `?url` suffix, modelled for the test bundler. Same contract as the one
- * in load-typescript.mjs: the import resolves to the path as a string, and
- * nothing under test may depend on the value.
- */
-const urlSuffixImports = {
-	name: 'vite-url-suffix',
-	setup(build) {
-		build.onResolve({ filter: /\?url$/ }, (args) => ({
-			path: args.path,
-			namespace: 'vite-url-suffix'
-		}));
-		build.onLoad({ filter: /.*/, namespace: 'vite-url-suffix' }, (args) => ({
-			contents: `export default ${JSON.stringify(args.path.replace(/\?url$/, ''))};`,
-			loader: 'js'
-		}));
-	}
-};
 
 /**
  * A data-URL test module cannot resolve a separately bundled lazy chunk.
@@ -42,7 +25,22 @@ const dynamicImportExternal = {
 	}
 };
 
-function _bundle(entry, { stdin = false } = {}) {
+/**
+ * Pass 1 must leave `svelte` itself as an import. Bundled there, svelte's own
+ * client runtime lands in the text compileModule reads, and its internal
+ * `$window`/`$document` variables trip `dollar_prefix_invalid` (any rune
+ * module that calls `untrack`/`flushSync` hit it). Pass 3 then resolves the
+ * import next to the compiler's own `svelte/internal/client`, so both share
+ * ONE runtime instance - the same scheduler a real component runs under.
+ */
+const svelteExternal = {
+	name: 'svelte-external',
+	setup(build) {
+		build.onResolve({ filter: /^svelte($|\/)/ }, (args) => ({ path: args.path, external: true }));
+	}
+};
+
+function _bundle(entry, { stdin = false, keepSvelteImports = false } = {}) {
 	return build({
 		...(stdin
 			? { stdin: { contents: entry, resolveDir: FRONTEND_ROOT, loader: 'ts', sourcefile: 'rune-entry.ts' } }
@@ -54,7 +52,7 @@ function _bundle(entry, { stdin = false } = {}) {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'browser',
-		plugins: [urlSuffixImports, dynamicImportExternal],
+		plugins: [viteUrlSuffixPlugin, dynamicImportExternal, ...(keepSvelteImports ? [svelteExternal] : [])],
 		target: 'es2022',
 		write: false
 	});
@@ -82,15 +80,44 @@ function _bundle(entry, { stdin = false } = {}) {
  * test needs to poke to drive it.
  */
 export async function loadRuneModule(entrySource) {
-	const runes = await _bundle(entrySource, { stdin: true });
+	let bundled = _bundledBySource.get(entrySource);
+	if (bundled === undefined) {
+		bundled = _bundleRunes(entrySource);
+		_bundledBySource.set(entrySource, bundled);
+	}
+	// A temp file, not a data: URL: see import-bundled-source.mjs.
+	return importBundledSource(await bundled, 'rune-entry');
+}
+
+/**
+ * The three passes, run ONCE per distinct entry source for the life of the
+ * test process.
+ *
+ * Every loadRuneModule call still evaluates a FRESH module instance (one temp
+ * file per import, see import-bundled-source.mjs), so per-test state isolation
+ * is unchanged. Only the bundling is shared: it is a pure function of the entry
+ * source and the on-disk tree, and the tree does not change while a test file
+ * runs. Measured Tue 22 Sep 2026 on main 394e17f2: autoplay-stall-persistence
+ * bundles its single entry 19 times, once per test, and the whole file sat at
+ * the runner's 60 s per-file timeout on loaded agentbox hosts (jobs
+ * 106269849983, 106613353127, 106743215758) with every test in it passing.
+ */
+async function _bundleRunes(entrySource) {
+	const runes = await _bundle(entrySource, { stdin: true, keepSvelteImports: true });
 	const compiled = compileModule(runes.outputFiles[0].text, {
 		generate: 'client',
 		filename: 'rune-entry.svelte.js'
 	});
 	const linked = await _bundle(compiled.js.code, { stdin: true });
-	const source = Buffer.from(linked.outputFiles[0].text).toString('base64');
-	moduleSequence += 1;
-	return import(`data:text/javascript;base64,${source}#${moduleSequence}`);
+	return linked.outputFiles[0].text;
+}
+
+/** Entry source -> promise of its bundled ESM text. See _bundleRunes. */
+const _bundledBySource = new Map();
+
+/** How many distinct entry sources this process has bundled so far. */
+export function runeBundleCount() {
+	return _bundledBySource.size;
 }
 
 /**

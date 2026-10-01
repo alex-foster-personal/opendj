@@ -59,6 +59,7 @@ class CommentUpdateIn(BaseModel):
     status: str | None = Field(default=None, pattern=_PATCHABLE_STATUSES)
     issue_url: str | None = None
     agent_note: str | None = None
+    fixed_in_sha: str | None = Field(default=None, min_length=7, max_length=40)
 
 
 class CommentFollowOnIn(BaseModel):
@@ -186,6 +187,13 @@ def update_comment(comment_id: str, body: CommentUpdateIn, request: Request) -> 
             agent_note = changes.get("agent_note")
             if isinstance(agent_note, str) and agent_note.strip() != "":
                 append_agent_note_to_replies(merged, agent_note, now)
+            new_status = merged.get("status")
+            if new_status in {"fixed", "merged"}:
+                if not merged.get("fixed_in_sha"):
+                    stamp = _build_stamp(request)
+                    merged["fixed_in_sha"] = changes.get("fixed_in_sha") or stamp.git_sha
+                if not merged.get("fixed_at"):
+                    merged["fixed_at"] = now
             validated = CommentOut.model_validate(merged)
             # A synced pin may carry fields a newer build added (ADR-0013):
             # an edit here must not strip them from every machine.

@@ -1,0 +1,14 @@
+{
+ "port": "Pioneer DJ DDJ-FLX4 MIDI 1",
+ "provenance": "Transcribed from the wire numbers apps/webui/frontend/src/lib/rb/midi/maps/ddj-flx4.ts cites from the AlphaTheta DDJ-FLX4 MIDI message list ([PDF] rows named per step). Only the CFX row was sniffed from hardware (B6 17 37, Fri 18 Sep 2026). Not captured from a device in one session.",
+ "steps": [
+  {"what": "deck 2 TEMPO to center, 14-bit MSB then LSB ([PDF] 1-11)", "bytes": [177, 0, 64, 177, 32, 0]},
+  {"what": "deck 2 EQ LOW killed before the mix ([PDF] 3-4)", "bytes": [177, 15, 0]},
+  {"what": "deck 2 PLAY press and release ([PDF] 1-1)", "bytes": [145, 11, 127, 145, 11, 0]},
+  {"what": "deck 2 CH FADER up ([PDF] 3-7)", "bytes": [177, 19, 127]},
+  {"what": "CROSSFADER left, center, right with running status ([PDF] 3-8)", "bytes": [182, 31, 0, 31, 64, 31, 127]},
+  {"what": "bass swap: deck 1 EQ LOW out, deck 2 EQ LOW back to noon ([PDF] 3-4)", "bytes": [176, 15, 0, 177, 15, 64]},
+  {"what": "deck 1 CFX (hardware sniff B6 17 37)", "bytes": [182, 23, 55]},
+  {"what": "deck 1 CUE while playing: back to the cue point, paused ([PDF] 1-2)", "bytes": [144, 12, 127, 144, 12, 0]}
+ ]
+}

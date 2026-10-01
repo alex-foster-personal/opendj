@@ -36,16 +36,21 @@ const PANEL = fileURLToPath(
 );
 
 let contract;
+let fillPlaylistPane;
 before(async () => {
 	contract = await loadTypeScriptModule(
 		'src/lib/components/rb/browser/pane-contract.svelte.ts'
 	);
+	const fillMod = await loadTypeScriptModule(
+		'src/lib/components/rb/browser/fill-playlist-pane.ts'
+	);
+	fillPlaylistPane = fillMod.fillPlaylistPane;
 });
 
 /** Builds the real `_loadPane`, evaluated straight from BrowserPanel.svelte,
  * with its closure-captured helpers supplied as factory arguments so it can
  * run outside the component. */
-function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
+function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 	const source = readFileSync(PANEL, 'utf8');
 	const start = source.indexOf('\tasync function _loadPane(');
 	const end = source.indexOf('\n\t/** Reconstructs the minimal PlaylistNode', start);
@@ -58,18 +63,31 @@ function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
 		)
 		// 1896d37e1 feat(webui): Autolists tab UI (SMART-06) added an autolist
 		// branch with a TS `as` cast, which new Function cannot parse.
-		.replace('wire as PlaylistTrackRowWire', 'wire');
+		.replaceAll('wire as PlaylistTrackRowWire', 'wire');
 	assert.doesNotMatch(
 		functionSource,
 		/: PaneStore|: PlaylistNode|Promise<void>|\bas [A-Z]\w+/,
 		'TypeScript annotation survived stripping'
 	);
+	const helperSource = `
+	function _pushPaneLoadError(p, node, label, error) {
+		pushToast(\`\${label}: \${error}\`, 'error');
+	}
+`;
 	const factory = Function(
 		'panes',
 		'setLastPlaylist',
+		'source',
+		'_writeCollectionQuery',
+		'fillAutolistPane',
+		'autolistSelection',
+		'PAGE_SIZE',
+		'queryAutolists',
 		'fillAllTracksPane',
+		'fetchBootTracksFirstPage',
+		'_rowFromListWire',
+		'listTracksHydrated',
 		'fillPlaylistPane',
-		'PLAYLIST_FIRST_PAGE',
 		'listPlaylistTracksPage',
 		'recordPlaylistSwitchFirstRowsMs',
 		'recordOpenToLibraryRows',
@@ -80,21 +98,37 @@ function makeLoadPane({ fillPlaylistPaneImpl, pushToast }) {
 		'allTracksNonBrokenCount',
 		'pushToast',
 		'_rowFromPlaylistWire',
-		`${functionSource}\nreturn _loadPane;`
+		`${helperSource}${functionSource}\nreturn _loadPane;`
 	);
 	return factory(
 		[], // panes[0] is never this test's pane, so setLastPlaylist must never fire
 		() => {
 			throw new Error('setLastPlaylist must not be called');
 		},
+		'rekordbox',
+		() => {},
+		async () => {
+			throw new Error('fillAutolistPane must not be called');
+		},
+		{},
+		30,
+		async () => {
+			throw new Error('queryAutolists must not be called');
+		},
 		() => {
 			throw new Error('fillAllTracksPane must not be called (node.kind is "playlist")');
 		},
-		fillPlaylistPaneImpl,
-		100,
 		async () => {
-			throw new Error('listPlaylistTracksPage must not be called when fillPlaylistPane is stubbed');
+			throw new Error('fetchBootTracksFirstPage must not be called');
 		},
+		() => {
+			throw new Error('_rowFromListWire must not be called');
+		},
+		async () => {
+			throw new Error('listTracksHydrated must not be called');
+		},
+		fillPlaylistPane,
+		listPlaylistTracksPage,
 		() => {},
 		() => {},
 		() => {},
@@ -120,7 +154,7 @@ test('a load failure that lost the race to a newer load pushes no toast', async 
 	const toasts = [];
 	let rejectFirst;
 	const loadPane = makeLoadPane({
-		fillPlaylistPaneImpl: () => new Promise((_resolve, reject) => (rejectFirst = reject)),
+		listPlaylistTracksPage: () => new Promise((_resolve, reject) => (rejectFirst = reject)),
 		pushToast: (msg, kind) => toasts.push({ msg, kind })
 	});
 
@@ -142,7 +176,9 @@ test('control: a genuine, non-superseded load failure still toasts', async () =>
 	const p = contract.createPaneStore();
 	const toasts = [];
 	const loadPane = makeLoadPane({
-		fillPlaylistPaneImpl: () => Promise.reject(new Error('network exploded')),
+		listPlaylistTracksPage: async () => {
+			throw new Error('network exploded');
+		},
 		pushToast: (msg, kind) => toasts.push({ msg, kind })
 	});
 
@@ -152,4 +188,30 @@ test('control: a genuine, non-superseded load failure still toasts', async () =>
 	assert.match(toasts[0].msg, /playlist load failed:.*network exploded/);
 	assert.equal(toasts[0].kind, 'error');
 	assert.match(p.error, /network exploded/);
+});
+
+test('LIBM-134: the real _loadPane passes the fill policy limit through to the route', async () => {
+	const p = contract.createPaneStore();
+	const calls = [];
+	const total = 1030;
+	const loadPane = makeLoadPane({
+		listPlaylistTracksPage: async (playlistId, { limit, offset }) => {
+			calls.push({ playlistId, limit, offset });
+			const n = Math.max(0, Math.min(limit, total - offset));
+			const tracks = Array.from({ length: n }, (_, i) => ({ stable_id: `t${offset + i}` }));
+			const next = offset + n;
+			return { page: { tracks, total, next_offset: next >= total ? null : next }, etag: '"e"' };
+		},
+		pushToast: () => {
+			throw new Error('a clean fill must not toast');
+		}
+	});
+
+	await loadPane(p, node('Big'));
+
+	assert.deepEqual(
+		calls.map((c) => [c.offset, c.limit]),
+		[[0, 30], [30, 500], [530, 500]]
+	);
+	assert.equal(p.rows.length, total);
 });

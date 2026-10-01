@@ -199,7 +199,9 @@ function json(body, status = 200) {
 function stubFetch({ ownBeats = false } = {}) {
 	globalThis.fetch = async (input) => {
 		const url = input instanceof Request ? input.url : String(input);
-		if (url.includes('/anlz?points=38400') || url.includes('/anlz?points=38')) {
+		// The client sends no points= by default (#3739: the server owns the
+		// default), so match the route, not a query value.
+		if (url.includes('/anlz?')) {
 			return json(emptyRescuedAnlz({ ownBeats }));
 		}
 		if (url.endsWith('/hot-cues')) {

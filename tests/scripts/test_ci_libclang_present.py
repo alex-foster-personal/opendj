@@ -1,0 +1,329 @@
+"""scripts/ci_libclang_present.py finds libclang the way clang-sys does, and CI uses it.
+
+bindgen (signalsmith-stretch, apps/audio-engine) dlopens ONE libclang picked by
+clang-sys 1.9.1's search, and panics 'Unable to find libclang' when that fails
+(PR #4361, agentbox, Wed 30 Sep 2026). The probe is the capability check behind
+both the contracts job's install-if-absent step and the manifest's verify.
+
+Regression lines:
+  - if a libclang under /usr/lib/llvm-21/lib is not found then nucbox-wsl reads as MISSING
+  - if LIBCLANG_PATH is set and anything else is searched then the pick is not clang-sys's
+  - if the newest candidate does not load and the probe passes then CI skips an install it needs
+  - if a real library that is not libclang counts as loaded then a broken host passes
+  - if a host with a real libclang cannot load it through load_clang_version then broken
+  - if a loadable LLVM 17 libclang is not OK to the host audit then verify and CI disagree
+  - if the contracts job builds the wheel or runs cargo before the probe step then broken
+  - if the manifest verify does not carry this exact script then verify and CI disagree
+"""
+
+from __future__ import annotations
+
+import base64
+import ctypes.util
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+from scripts import ci_libclang_present as probe_mod
+from scripts import runner_toolset_verify as rtv
+from scripts.runner_toolset_scan import REPO_ROOT, load_manifest
+from scripts.runner_toolset_verify import expand_verify
+
+SCRIPT = REPO_ROOT / "scripts" / "ci_libclang_present.py"
+CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+PROBE = "scripts.ci_libclang_present"
+INSTALL = "apt-get install -y libclang1"
+
+
+def _lib(path: Path, bits: int = 64) -> Path:
+    """A file with a real ELF header of `bits` class: a candidate, not a loadable library."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x7fELF" + bytes([1 if bits == 32 else 2]) + b"\0" * 59)
+    return path
+
+
+def _never_loads(path: Path) -> str:
+    """Fake-tree files are not libraries: a test that reaches a load must say it fails."""
+    raise OSError(f"{path} is a fake-tree file, not a library")
+
+
+# clang-sys's macOS locations (build/common.rs DIRECTORIES_MACOS and xcode-select).
+MACOS_LIBCLANG = (
+    "/Library/Developer/CommandLineTools/usr/lib/libclang.dylib",
+    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain"
+    "/usr/lib/libclang.dylib",
+)
+SEARCHED = (
+    "LIBCLANG_PATH, llvm-config --prefix, LD_LIBRARY_PATH, LIBRARY_PATH and"
+    f" {', '.join(probe_mod.DIRECTORIES_LINUX)}"
+)
+
+
+def _real_libclang() -> Path:
+    """The host's real libclang (Linux: the probe's own pick), or skip as UNAVAILABLE."""
+    if sys.platform.startswith("linux"):
+        paths = probe_mod.search_directories(os.environ, probe_mod.llvm_config_prefix(os.environ))
+        chosen, _ = probe_mod.pick(paths, 64 if sys.maxsize > 2**32 else 32)
+        if chosen is None:
+            pytest.skip(
+                f"UNAVAILABLE: no libclang on this Linux host where clang-sys looks ({SEARCHED})"
+            )
+        return chosen.path
+    if sys.platform == "darwin":
+        found = [Path(p) for p in MACOS_LIBCLANG if Path(p).is_file()]
+        if not found:
+            pytest.skip(f"UNAVAILABLE: no libclang.dylib at {', '.join(MACOS_LIBCLANG)}")
+        return found[0]
+    pytest.skip(f"UNAVAILABLE: no libclang search modelled for {sys.platform}")
+
+
+def _require_linux_libclang() -> Path:
+    if not sys.platform.startswith("linux"):
+        pytest.skip(f"UNAVAILABLE: the probe models clang-sys's Linux search, not {sys.platform}")
+    return _real_libclang()
+
+
+def _search(root: Path, environ: dict[str, str] | None = None, prefix: str | None = None):
+    return probe_mod.search_directories(environ or {}, prefix, root)
+
+
+# ----- search order (R1) --------------------------------------------------------
+
+
+def test_search_order_is_clang_sys_order(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    local = _lib(root / "usr/local/lib/libclang.so.1")
+    llvm = _lib(root / "usr/lib/llvm-18/lib/libclang-18.so.1")
+    _lib(root / "usr/lib/llvm-18/lib/libclang-cpp.so.18")
+    multiarch = _lib(root / "usr/lib/x86_64-linux-gnu/libclang-18.so.18")
+    ld = _lib(tmp_path / "ld/libclang-17.so")
+    prefixed = _lib(tmp_path / "prefix/lib/libclang.so")
+    found = _search(root, {"LD_LIBRARY_PATH": str(ld.parent)}, str(tmp_path / "prefix"))
+    assert found == [prefixed, ld, local, llvm, multiarch], found
+
+
+def test_llvm_21_alone_is_found_without_libclang_path(tmp_path: Path) -> None:
+    """nucbox-wsl's shape: LLVM 21 only, nothing from LLVM 18, no LIBCLANG_PATH.
+    Enumeration and pick only: whether it loads needs a real library (below)."""
+    lib = _lib(tmp_path / "usr/lib/llvm-21/lib/libclang-21.so.1")
+    chosen, valid = probe_mod.pick(_search(tmp_path), 64)
+    assert chosen is not None and (chosen.path, valid) == (lib, 1)
+
+
+def test_libclang_path_is_the_only_place_searched(tmp_path: Path) -> None:
+    _lib(tmp_path / "root/usr/lib/llvm-21/lib/libclang-21.so.1")
+    given = _lib(tmp_path / "given/libclang-18.so.1")
+    sibling = _lib(tmp_path / "given/libclang.so.1")
+    root = tmp_path / "root"
+    # Pattern order, not name order: libclang.so.* is tried before libclang-*.so.*.
+    assert _search(root, {"LIBCLANG_PATH": str(given.parent)}) == [sibling, given]
+    assert _search(root, {"LIBCLANG_PATH": str(given)}) == [given]
+    assert _search(root, {"LIBCLANG_PATH": str(tmp_path / "absent")}) == []
+
+
+@pytest.mark.parametrize(
+    ("filename", "version"),
+    [
+        ("libclang-18.so.1", (18, 0)),
+        ("libclang-17.so", (17,)),
+        ("libclang.so.1", (1,)),
+        ("libclang.so.21.1", (21, 1)),
+        ("libclang.so", ()),
+    ],
+)
+def test_filename_version_matches_clang_sys(filename: str, version: tuple[int, ...]) -> None:
+    assert probe_mod.parse_version(filename) == version
+
+
+# ----- the pick (R2) ------------------------------------------------------------
+
+
+def test_highest_version_wins_over_search_order(tmp_path: Path) -> None:
+    old = _lib(tmp_path / "a/libclang-18.so.1")
+    new = _lib(tmp_path / "b/libclang-21.so.1")
+    chosen = probe_mod.pick([old, new], 64)[0]
+    assert chosen is not None and chosen.path == new
+
+
+def test_a_tie_goes_to_the_earliest_found(tmp_path: Path) -> None:
+    first = _lib(tmp_path / "a/libclang-18.so.1")
+    second = _lib(tmp_path / "b/libclang-18.so.18")
+    chosen = probe_mod.pick([first, second], 64)[0]
+    assert chosen is not None and chosen.path == first
+
+
+def test_wrong_elf_class_non_elf_and_absent_files_are_not_candidates(tmp_path: Path) -> None:
+    good = _lib(tmp_path / "a/libclang-18.so.1")
+    thirty_two = _lib(tmp_path / "b/libclang-21.so.1", bits=32)
+    text = tmp_path / "c/libclang-22.so.1"
+    text.parent.mkdir()
+    text.write_text("not a library")
+    absent = tmp_path / "d/libclang-23.so.1"
+    chosen, valid = probe_mod.pick([good, thirty_two, text, absent], 64)
+    assert chosen is not None and (chosen.path, valid) == (good, 1)
+    assert probe_mod.pick([thirty_two, text, absent], 64) == (None, 0)
+
+
+# ----- the verdict (R3) ---------------------------------------------------------
+
+
+def test_no_candidate_is_missing(tmp_path: Path) -> None:
+    code, message = probe_mod.probe({}, None, _never_loads, tmp_path, 64)
+    assert code == 1 and message.startswith("[libclang] MISSING"), message
+
+
+def test_the_pick_failing_to_load_is_missing_with_no_fallback(tmp_path: Path) -> None:
+    """clang-sys dlopens its one pick; an older loadable libclang does not rescue it."""
+    _lib(tmp_path / "usr/lib/llvm-18/lib/libclang-18.so.1")
+    newest = _lib(tmp_path / "usr/lib/llvm-21/lib/libclang-21.so.1")
+    tried: list[Path] = []
+
+    def load(path: Path) -> str:
+        tried.append(path)
+        return _never_loads(path)
+
+    code, message = probe_mod.probe({}, None, load, tmp_path, 64)
+    assert code == 1 and str(newest) in message and "does not load" in message, message
+    assert tried == [newest], f"loaded {tried}: clang-sys tries its one pick only"
+
+
+def test_a_load_without_a_version_is_missing(tmp_path: Path) -> None:
+    _lib(tmp_path / "usr/lib/llvm-18/lib/libclang-18.so.1")
+    code, message = probe_mod.probe({}, None, lambda _: "", tmp_path, 64)
+    assert code == 1 and "reported no version" in message, message
+
+
+def test_the_real_loader_rejects_an_absent_file_and_a_fake_elf(tmp_path: Path) -> None:
+    with pytest.raises(OSError):
+        probe_mod.load_clang_version(tmp_path / "libclang-99.so.1")
+    fake = _lib(tmp_path / "usr/lib/llvm-99/lib/libclang-99.so.1")
+    with pytest.raises(OSError):
+        probe_mod.load_clang_version(fake)
+    code, message = probe_mod.probe({}, None, probe_mod.load_clang_version, tmp_path, 64)
+    assert code == 1 and "does not load" in message, message
+
+
+def test_the_real_loader_rejects_a_real_library_that_is_not_libclang() -> None:
+    """Control: dlopen succeeds here, so only the clang_getClangVersion call can say no."""
+    libc = ctypes.util.find_library("c")
+    assert libc, "no libc to load: the control cannot run, which is not a pass"
+    with pytest.raises(AttributeError):
+        probe_mod.load_clang_version(Path(libc))
+
+
+def test_the_real_loader_loads_a_real_libclang() -> None:
+    """Positive control through ctypes and a real libclang; UNAVAILABLE where none exists."""
+    path = _real_libclang()
+    reported = probe_mod.load_clang_version(path)
+    assert probe_mod.CLANG_VERSION_RE.search(reported), f"{path} reported {reported!r}"
+
+
+def test_the_probe_passes_on_this_hosts_real_libclang() -> None:
+    chosen = _require_linux_libclang()
+    code, message = probe_mod.probe(
+        os.environ, probe_mod.llvm_config_prefix(os.environ), probe_mod.load_clang_version
+    )
+    assert code == 0 and re.match(
+        rf"libclang \d[\d.]* loaded from {re.escape(str(chosen))} ", message
+    ), message
+
+
+# ----- wiring: the contracts job and the manifest ---------------------------------
+
+
+def _contracts_steps() -> list[dict]:
+    return yaml.safe_load(CI_YML.read_text(encoding="utf-8"))["jobs"]["contracts"]["steps"]
+
+
+def _step_index(steps: list[dict], needle: str) -> int:
+    hits = [i for i, step in enumerate(steps) if needle in step.get("run", "")]
+    assert len(hits) == 1, f"{needle!r} is run by {len(hits)} contracts steps, want exactly 1"
+    return hits[0]
+
+
+def test_contracts_job_probes_libclang_before_any_bindgen_build() -> None:
+    steps = _contracts_steps()
+    probe_at = _step_index(steps, PROBE)
+    for builder in (
+        "cargo test --manifest-path apps/audio-engine/Cargo.toml",
+        "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+        "make waveform-native-release-check",
+    ):
+        assert probe_at < _step_index(steps, builder), f"{builder!r} runs before the probe"
+
+
+def test_contracts_job_installs_only_when_the_probe_fails_then_reprobes() -> None:
+    run = _contracts_steps()[_step_index(_contracts_steps(), PROBE)]["run"]
+    probe_first, _, fallback = run.partition("||")
+    assert PROBE in probe_first and INSTALL not in probe_first, run
+    assert "scripts/ci_host_lock.sh packages sudo" in fallback and INSTALL in fallback, run
+    assert fallback.index(PROBE) > fallback.index(INSTALL), "no probe after the install"
+
+
+def _libclang_entry() -> dict:
+    entries = [e for e in load_manifest()["entries"] if e["name"].startswith("libclang")]
+    assert len(entries) == 1, [e["name"] for e in entries]
+    return entries[0]
+
+
+def test_manifest_entry_installs_what_ci_installs_and_verifies_with_the_probe() -> None:
+    entry = _libclang_entry()
+    assert entry["install"] == INSTALL
+    payloads = re.findall(r"echo (\S+) \| base64 -d", expand_verify(entry["verify"]))
+    assert [base64.b64decode(p) for p in payloads] == [SCRIPT.read_bytes()]
+
+
+def _audit(entry: dict, rc: int, output: str) -> str:
+    """runner_toolset_verify's verdict for one verify record, as the host audit gives it."""
+    record = base64.b64encode(output.encode()).decode()
+    stdout = (
+        f"{rtv.RECORD} PATHSRC /r\n{rtv.RECORD} V {entry['name']} {rc} {record}\n{rtv.RECORD} END"
+    )
+    [result] = rtv.classify([entry], 0, stdout, "")
+    return result.status
+
+
+def test_the_expanded_verify_is_ok_on_a_host_with_libclang() -> None:
+    """The verify exactly as the host audit ships it; never MISSING taken as a pass."""
+    _require_linux_libclang()
+    entry = _libclang_entry()
+    done = subprocess.run(
+        ["bash", "-o", "pipefail", "-c", expand_verify(entry["verify"])],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode == 0 and re.match(r"libclang \d", output), output
+    assert _audit(entry, done.returncode, output) == "OK", output
+
+
+def test_a_loadable_llvm_17_is_ok_and_a_failed_probe_is_missing() -> None:
+    """Verdict mapping, no load claimed: the probe's success line for an LLVM 17 host is OK
+    (no LLVM 18 floor), and its failure exit stays MISSING whatever it prints."""
+    entry = _libclang_entry()
+    seventeen = "libclang 17.0.6 loaded from /usr/lib/llvm-17/lib/libclang-17.so.1"
+    assert _audit(entry, 0, seventeen) == "OK"
+    assert _audit(entry, 1, "[libclang] MISSING: libclang 21.1.2 would not load") == "MISSING"
+
+
+def test_capability_match_is_only_for_committed_probes() -> None:
+    """`match: capability` compares no version, so it must never silence a package
+    check: only an entry whose verify ships a committed probe script may use it."""
+    loose = [
+        e["name"]
+        for e in load_manifest()["entries"]
+        if e.get("match") == "capability" and "{repo_b64:scripts/" not in e["verify"]
+    ]
+    assert not loose, f"capability match on a verify with no committed probe: {loose}"
+
+
+def test_expand_verify_refuses_a_missing_repo_file() -> None:
+    with pytest.raises(FileNotFoundError):
+        expand_verify('python3 -c "$(echo {repo_b64:scripts/no_such_probe.py} | base64 -d)"')

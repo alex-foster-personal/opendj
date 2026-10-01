@@ -32,6 +32,7 @@ import json
 import re
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from scripts.review_gh import TriageError, _gh
@@ -126,10 +127,7 @@ class Finding:
             f"(https://img.shields.io/badge/{self.severity}-{color}?style=flat)"
         )
         return (
-            f"{badge}\n"
-            f"{self.verdict} {self.severity}: {self.title}\n\n"
-            f"{self.detail}\n\n"
-            f"{marker}\n"
+            f"{badge}\n{self.verdict} {self.severity}: {self.title}\n\n{self.detail}\n\n{marker}\n"
         )
 
 
@@ -264,10 +262,63 @@ def diff_of(pr: str) -> str:
 # test_ci_shard_matrix.py checks it is JSON with >= 3000 non-negative numbers.
 # A full refresh is ~800 KB of diff, which alone exceeds the reviewers' size
 # cap and blocks the PR from ever being reviewed (#2880, Tue 15 Sep 2026).
-GENERATED_DATA_PATHS: frozenset[str] = frozenset({".test_durations"})
-_FILE_HEADER = re.compile(
-    r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$'
+#
+# apps/webui/openapi.json and apps/webui/frontend/src/lib/api-types.ts are
+# the same class of problem, hit for the second time on PR #3679 (Thu 24 Sep
+# 2026): a rebase onto a fast-moving main needs `just openapi-dump` +
+# `pnpm run api:gen` to pick up new backend routes, and that regeneration
+# alone can be several thousand lines. Both files are validated byte-for-byte
+# by dedicated CI jobs that regenerate them from the checked-out code and
+# diff (ci.yml "Contract drift - openapi.json" and "Contract drift - TS
+# client"), so nothing here is unread by a mechanical check; it is only
+# unread by the LLM reviewers, which is what this set exists to declare.
+GENERATED_DATA_PATHS: frozenset[str] = frozenset(
+    {
+        ".test_durations",
+        "apps/webui/openapi.json",
+        "apps/webui/frontend/src/lib/api-types.ts",
+    }
 )
+
+
+# Files generated only BETWEEN markers. docs/perf/performance-register.md renders its flag
+# table from docs/perf/register.d/ fragments, and `python -m scripts.perf_register --check`
+# pins that block byte for byte, but the aspect register and prose around it are
+# hand-written and no check reads them. So its section is dropped only when EVERY changed
+# line is a flag-table line that its own hunk PROVES lies between the markers; one other
+# line, or one it cannot place, keeps the whole section reviewed. The fragments themselves,
+# 0000-before-fragments.md included, are hand-written rows and are never skipped.
+@dataclass(frozen=True)
+class GeneratedBlock:
+    begin_prefix: str
+    end: str
+    is_generated_line: Callable[[str], bool]
+
+    def is_marker(self, text: str) -> bool:
+        return text.startswith(self.begin_prefix) or text == self.end
+
+
+_PERF_FLAG_ROW = re.compile(r"^\| (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} [A-Z][a-z]{2} \d{4} \|")
+_PERF_FLAG_TABLE_HEADER = frozenset(
+    {
+        "| Date | Agent / PR | Aspect | Flag | Triage |",
+        "|------|------------|--------|------|--------|",
+    }
+)
+
+
+def _is_perf_flag_table_line(text: str) -> bool:
+    return bool(_PERF_FLAG_ROW.match(text)) or text in _PERF_FLAG_TABLE_HEADER
+
+
+GENERATED_BLOCK_PATHS: dict[str, GeneratedBlock] = {
+    "docs/perf/performance-register.md": GeneratedBlock(
+        begin_prefix="<!-- BEGIN GENERATED: rows from docs/perf/register.d/",
+        end="<!-- END GENERATED -->",
+        is_generated_line=_is_perf_flag_table_line,
+    ),
+}
+_FILE_HEADER = re.compile(r'^diff --git a/(?:"([^"]+)"|(\S+)) b/(?:"([^"]+)"|(\S+))$')
 _FILE_HEADER_QUOTED = re.compile(r'^diff --git "a/([^"]+)" "b/([^"]+)"$')
 
 
@@ -289,9 +340,7 @@ def reviewed_paths_in_diff(diff: str) -> frozenset[str]:
             continue
         parsed = _parse_file_header(line)
         if not parsed:
-            raise TriageError(
-                f"unparsed diff header (refusing to guess skip state): {line!r}"
-            )
+            raise TriageError(f"unparsed diff header (refusing to guess skip state): {line!r}")
         paths.add(parsed[1])
     return frozenset(paths)
 
@@ -316,9 +365,13 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
     skipped_paths: set[str] = set()
     section: list[str] = []
     skipping = False
+    block: GeneratedBlock | None = None
 
     def flush() -> None:
         nonlocal section, skipping
+        if section and block is not None and _only_generated_changes(section, block):
+            skipping = True
+            skipped_paths.add(section_path)
         if section and not skipping:
             kept.extend(section)
         section = []
@@ -328,15 +381,12 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
             flush()
             parsed = _parse_file_header(line)
             if not parsed:
-                raise TriageError(
-                    f"unparsed diff header (refusing to guess skip state): {line!r}"
-                )
+                raise TriageError(f"unparsed diff header (refusing to guess skip state): {line!r}")
             a_path, b_path = parsed
             section = [line]
-            skipping = (
-                a_path == b_path
-                and b_path in GENERATED_DATA_PATHS
-            )
+            section_path = b_path
+            skipping = a_path == b_path and b_path in GENERATED_DATA_PATHS
+            block = GENERATED_BLOCK_PATHS.get(b_path) if a_path == b_path else None
             if skipping:
                 skipped_paths.add(b_path)
         else:
@@ -344,6 +394,37 @@ def split_generated_data(diff: str) -> tuple[str, frozenset[str]]:
 
     flush()
     return "\n".join(kept), frozenset(skipped_paths)
+
+
+def _only_generated_changes(section: list[str], block: GeneratedBlock) -> bool:
+    """True when the section has hunks and every changed line is generated output its own
+    hunk proves lies inside the block.
+
+    A marker is not a generated line, so in a skippable section markers appear only as
+    context, on both sides alike. A hunk is contiguous, so a changed line is inside exactly
+    when the nearest marker above it in the hunk is BEGIN or the nearest below it is END.
+    A line with no marker in view cannot be placed and keeps the section reviewed.
+    """
+    starts = [i for i, line in enumerate(section) if line.startswith("@@")]
+    if not starts:
+        return False
+    for start, stop in zip(starts, [*starts[1:], len(section)], strict=True):
+        hunk = [line for line in section[start + 1 : stop] if line[:1] in (" ", "+", "-")]
+        if not all(_changed_line_is_placed_inside(hunk, i, block) for i in range(len(hunk))):
+            return False
+    return any(line[:1] in ("+", "-") for line in section[starts[0] + 1 :])
+
+
+def _changed_line_is_placed_inside(hunk: list[str], index: int, block: GeneratedBlock) -> bool:
+    line = hunk[index]
+    text = line[1:]
+    if line[:1] == " ":
+        return True
+    if not block.is_generated_line(text):
+        return False
+    above = next((h[1:] for h in reversed(hunk[:index]) if block.is_marker(h[1:])), None)
+    below = next((h[1:] for h in hunk[index + 1 :] if block.is_marker(h[1:])), None)
+    return (above is not None and above.startswith(block.begin_prefix)) or below == block.end
 
 
 def reviewable_diff(pr: str) -> tuple[str, list[str]]:
@@ -358,7 +439,7 @@ def unreviewed_note(dropped: list[str]) -> list[str]:
     return [
         "",
         f"Not reviewed: {names}, generated data that CI validates mechanically "
-        "(scripts/review_lane.py GENERATED_DATA_PATHS).",
+        "(scripts/review_lane.py GENERATED_DATA_PATHS, GENERATED_BLOCK_PATHS).",
     ]
 
 
@@ -610,6 +691,6 @@ def post_review(
         ],
     }
     endpoint = f"repos/{REPO}/pulls/{pr}/reviews"
-    out = _gh(["api", endpoint, "--input", "-", "-q", ".html_url"], payload)
+    out = _gh(["api", endpoint, "--input", "-", "-q", ".html_url"], payload, as_human=True)
     print(f"{tag} posted {len(inline)} inline thread(s)")
     return out.strip()

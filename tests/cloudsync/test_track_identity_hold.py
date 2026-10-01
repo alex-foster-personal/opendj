@@ -305,6 +305,23 @@ def test_count_unsyncable_inferred_matches_the_hold_predicate(tmp_path: Path) ->
         conn.close()
 
 
+def test_any_identity_hold_handles_five_column_candidate_row(tmp_path: Path) -> None:
+    """An unidentifiable inferred row reaches the identity hold predicate."""
+    conn = state_db.open_rw(client.state_db_path(tmp_path / "spoke"))
+    try:
+        _insert_identified_track(
+            conn, "trk-identity-hold", title="held", updated_at=_T0, origin=_DEV_A
+        )
+        conn.commit()
+
+        assert not sync_set.any_stamp_fault(conn)
+        assert not sync_set.identity_duplicate_remap(conn)
+        assert not sync_set.any_identity_hold(conn)
+        assert not sync_set.any_exclusion_root(conn)
+    finally:
+        conn.close()
+
+
 def test_run_sync_holds_unidentifiable_inferred_and_still_syncs_identity(
     tmp_path: Path,
 ) -> None:

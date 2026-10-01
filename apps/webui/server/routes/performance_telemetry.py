@@ -39,6 +39,14 @@ SAFE_TOTAL_KEYS = frozenset(
         "process_count",
     }
 )
+# Every merged member names where its footprint came from. A `live` member was
+# walked just now (psutil, `rss_mb`); a `probe_log` member is a process from the
+# native probe's last JSONL record that is not live now, and that record can be
+# days old (`stale`). Consumers measuring the current family count `live` only.
+MEMBER_SOURCE_LIVE = "live"
+MEMBER_SOURCE_PROBE_LOG = "probe_log"
+
+
 class DeckPerformanceSample(BaseModel):
     deck_id: Literal[1, 2, 3, 4]
     stable_id: str | None = Field(default=None, max_length=64)
@@ -191,7 +199,7 @@ def _safe_totals(totals: object) -> dict[str, float]:
 def _jsonl_member(process: dict[str, object]) -> dict[str, object]:
     command = process.get("command")
     name = opendj_process_name(command) if isinstance(command, str) else "unnamed"
-    member: dict[str, object] = {"name": name}
+    member: dict[str, object] = {"name": name, "source": MEMBER_SOURCE_PROBE_LOG}
     footprint = process.get("physical_footprint_mb")
     if isinstance(footprint, (int, float)):
         member["physical_footprint_mb"] = round(float(footprint), 1)
@@ -206,7 +214,9 @@ def _merge_members(
     live_pids: set[int],
     jsonl_processes: object,
 ) -> list[dict[str, object]]:
-    members: list[dict[str, object]] = [dict(member) for member in live_members]
+    members: list[dict[str, object]] = [
+        {**member, "source": MEMBER_SOURCE_LIVE} for member in live_members
+    ]
     if not isinstance(jsonl_processes, list):
         return members
     for process in jsonl_processes:

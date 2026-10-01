@@ -52,10 +52,12 @@ router = APIRouter(prefix="/tracks", tags=["tracks"])
 AvailableFilter = Literal["all", "true", "false"]
 
 
-def keep_by_availability(available: AvailableFilter, file_exists: bool) -> bool:
+def keep_by_availability(available: AvailableFilter, file_exists: bool | None) -> bool:
     """True when a row passes the ?available filter (explicit three-state)."""
     if available == "all":
         return True
+    if file_exists is None:
+        return False
     if available == "true":
         return file_exists
     if available == "false":
@@ -69,12 +71,10 @@ def _has_rb_mapping(stable_id: str) -> bool:
     return stable_id in rb_vendor.bulk_rb_meta([stable_id])
 
 
-def _rb_mapping_and_artwork(
-    stable_id: str, file_path: str | None
-) -> tuple[bool, bool | None]:
+def _rb_mapping_and_artwork(stable_id: str) -> tuple[bool, bool | None]:
     """One bulk_rb_meta for both has_rb_mapping and listing's artwork facts."""
     meta_map = rb_vendor.bulk_rb_meta([stable_id])
-    artwork_available, _status = _artwork_facts(meta_map.get(stable_id), file_path)
+    artwork_available, _status = _artwork_facts(meta_map.get(stable_id), stable_id)
     return stable_id in meta_map, artwork_available
 
 
@@ -272,7 +272,7 @@ def list_tracks(
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
     items: list[TrackListItemOut] = []
     for track, row in zip(page.items, rows, strict=False):
-        if not keep_by_availability(available, row["file_exists"]):
+        if not keep_by_availability(available, row.get("file_exists")):
             continue
         base = _track_to_out(
             track,
@@ -288,6 +288,7 @@ def list_tracks(
                 **base,
                 preview_b64=row["preview_b64"],
                 preview_max=row["preview_max"],
+                file_availability=row["file_availability"],
                 file_exists=row["file_exists"],
                 is_remote=bool(row.get("is_remote")),
                 has_remote_copy=bool(row["has_remote_copy"]),
@@ -302,6 +303,8 @@ def list_tracks(
                 lyrics=row.get("lyrics"),
                 is_remix=bool(row.get("is_remix")),
                 is_radio_edit=bool(row.get("is_radio_edit")),
+                genre=row.get("genre"),
+                genre_reason=row.get("genre_reason"),
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)
@@ -329,6 +332,18 @@ class TrackLifecycleOut(BaseModel):
     stable_id: str
     deleted_at: str | None
     memberships: list[TrackMembershipRefOut]
+
+
+class TrackLibraryRevisionOut(BaseModel):
+    revision: str
+
+
+@router.get("/revision", response_model=TrackLibraryRevisionOut)
+def get_library_revision(
+    backend: StateBackend = Depends(get_read_state),  # noqa: B008
+) -> TrackLibraryRevisionOut:
+    """Return a cheap revision probe for clients holding library snapshots."""
+    return TrackLibraryRevisionOut(revision=backend.library_revision())
 
 
 @router.get("/lyrics-cached-ids", response_model=LyricsCachedIdsOut)
@@ -519,9 +534,7 @@ def get_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
-    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
-        stable_id, track.file_path
-    )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(stable_id)
     return _track_to_out(
         track,
         has_rb_mapping=has_rb_mapping,
@@ -605,9 +618,7 @@ def patch_track(
         analysis_db_path=_analysis_db_path(request),
         stems=stems,
     )
-    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(
-        stable_id, updated.file_path
-    )
+    has_rb_mapping, artwork_available = _rb_mapping_and_artwork(stable_id)
     return _track_to_out(
         updated,
         has_rb_mapping=has_rb_mapping,

@@ -151,6 +151,14 @@
  * /performance route's own onMount calls runPerformanceRescueAutoRestore
  * (rescue-restore.svelte.ts), which lists rescue snapshots once and stops
  * there when the list is empty.
+ * PERF-UI-05 playlist boot hydration (issue #3530, #3727): two KNOWN playlist
+ * list reads land inside PAST_BOOT_BURST_MS and must be mocked with
+ * stubPlaylistsRoute (RegExp route, not a Playwright glob on playlists alone,
+ * which misses availability=skip query strings):
+ *   - Boot: GET /api/v1/playlists?availability=skip (library-boot-hydration.ts)
+ *   - Deferred: GET /api/v1/playlists (BrowserPanel
+ *     browser-panel:refresh-playlist-availability task, bootScheduler)
+ *
  * The doubled rb-meta request is NOT a duplicate-fetch defect: scrutinized
  * because the point of this spec is exactly "no artwork request for this
  * track", so a spurious second metadata fetch would have been worth
@@ -170,6 +178,8 @@
  */
 import { expect, test } from '@playwright/test';
 import { BOOT_IDLE_TIMEOUT_MS, BOOT_QUIET_MS } from '../../src/lib/rb/boot-scheduler';
+
+import { stubPlaylistsRoute } from './support/rekordbox-gate-playlist-routes';
 
 /** Real margin past the scheduler's own quiet-period + idle-frame ceiling,
  * so the deferred burst has unquestionably landed before the final asserts
@@ -209,6 +219,8 @@ const TRACK = {
 	preview_b64: null,
 	preview_max: null,
 	file_exists: true,
+	// PERF-RB-01: the listing wire carries the typed status beside the bool.
+	file_availability: 'present',
 	quality: null,
 	play_count: 0,
 	vocals: { status: 'not_analyzed' },
@@ -264,6 +276,18 @@ test('null artwork availability identifies an unavailable reader without request
 							{ key: 'vibe_sensitivity', value: 1, tbd: false },
 							{ key: 'vibe_decay_per_sec', value: 0.1, tbd: false }
 						]
+					},
+					{
+						// Required at boot since #3739 (POLICY-01): the browser
+						// fails fast when any runtime policy key is missing.
+						group: 'Runtime policy',
+						items: [
+							{ key: 'hide_broken_playlist_min_available_tracks', value: 4, tbd: false },
+							{ key: 'anlz_points_default', value: 38400, tbd: false },
+							{ key: 'anlz_points_min', value: 100, tbd: false },
+							{ key: 'anlz_points_max', value: 38400, tbd: false },
+							{ key: 'file_exists_ttl_s', value: 30, tbd: false }
+						]
 					}
 				]
 			}
@@ -318,7 +342,7 @@ test('null artwork availability identifies an unavailable reader without request
 	await page.route('**/api/sets/recorder', (route) =>
 		route.fulfill({ json: { active: false, owned: false, pid: null, recoverable: false, session_id: null } })
 	);
-	await page.route('**/api/v1/playlists', (route) => route.fulfill({ json: [] }));
+	await stubPlaylistsRoute(page, (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/v1/playlist-history', (route) =>
 		route.fulfill({
 			json: { cursor: 0, limit: 50, can_undo: false, can_redo: false, entries: [] }
@@ -398,6 +422,27 @@ test('null artwork availability identifies an unavailable reader without request
 	// response body, so an empty 204 is the honest minimal answer.
 	await page.route('**/api/v1/performance/telemetry/client-samples', (route) =>
 		route.fulfill({ status: 204, json: {} })
+	);
+	// telemetry-consent.ts's `bootTelemetryConsent`, deferred from app-init.ts
+	// (`scheduler.defer('telemetry-consent:fetch', ...)`, PR #3737, Mon 21 Sep
+	// 2026, OBS-05): one GET after the boot window. Answered `declined` so the
+	// consent dialog never mounts and no replay loader is fetched; the gate
+	// cares only that the request is a KNOWN one.
+	await page.route('**/api/v1/telemetry/consent', (route) =>
+		route.fulfill({
+			json: {
+				decision: 'declined',
+				terms_version: '2026-09-21',
+				terms_current_version: '2026-09-21',
+				decided_at: '2026-09-21T00:00:00Z',
+				telemetry_active: false,
+				environment: null,
+				release: null,
+				replay_loader_url: null,
+				replay_session_sample_rate: 1,
+				replay_on_error_sample_rate: 1
+			}
+		})
 	);
 	// RecentlyDeletedFolder.svelte constructs a TreeRecentlyDeleted on mount,
 	// which fetches this eagerly in its constructor

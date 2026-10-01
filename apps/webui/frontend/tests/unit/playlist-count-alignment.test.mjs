@@ -12,15 +12,27 @@ test('playlist rows contain no fabricated EXTRA badge or name-based analysis sta
 	assert.doesNotMatch(source, /_hasExtraBadge|badge-extra|CUE Analysis Playlist/);
 });
 
-test('the real playable count is the final row item after actions and selection badges', () => {
+// REQ: LIBM-105 (issue #3883 AC6; #3534 adds unique library-wide wording)
+test('All Tracks count hover quotes non-broken tracks, not playable (issue #3883 AC6)', () => {
+	assert.match(
+		source,
+		/\$\{allTracksCount\} unique library-wide non-broken tracks, \$\{allTracksBrokenCount\} broken tracks/
+	);
+	assert.doesNotMatch(source, /playable tracks/);
+});
+
+test('the real non-broken count is the final row item after actions and selection badges', () => {
 	// Not anchored to {/each}: a sibling next-step hint (issue #3183) can
 	// follow the row inside the loop body without becoming a row child, so
 	// this only asserts the count is the LAST element INSIDE the row div.
 	assert.match(source, /<span class="count" title=\{_playlistCountTitle\(node\)\}>\{node\.track_count - node\.broken_count\}<\/span>\s*<\/div>/);
-	assert.match(source, /return `\$\{node\.track_count - node\.broken_count\} playable tracks, \$\{node\.broken_count\} broken tracks`;/);
 	assert.match(
 		source,
-		/<span class="name" title=\{node\.mostly_broken \? _mostlyBrokenTitle\(node\) : node\.name\}>\{node\.name\}<\/span>/
+		/return `\$\{node\.track_count - node\.broken_count\} non-broken tracks, \$\{node\.broken_count\} broken tracks`;/
+	);
+	assert.match(
+		source,
+		/<span class="name" title=\{node\.mostly_broken \? formatMostlyBrokenTooltip\(\) : node\.name\}>\{node\.name\}<\/span>/
 	);
 });
 

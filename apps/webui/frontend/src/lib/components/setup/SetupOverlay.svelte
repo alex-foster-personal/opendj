@@ -59,6 +59,7 @@
 		setupOverlay
 	} from '$lib/setup/overlay.svelte';
 	import { SETUP_HOST_ROUTE } from '$lib/setup/run-setup';
+	import { nativeShellKind, pickFolder } from '$lib/shell/native-shell';
 	import {
 		FOLDER_STAGE_LABELS,
 		STAGE_LABELS,
@@ -115,11 +116,15 @@
 	const blockers = $derived(detection?.blockers ?? []);
 	const fatal = $derived(fatalBlockers(detection));
 	const source = $derived(setupWizard.source);
-	const folderScan = $derived(setupWizard.folderScan);
-	const nextRefusal = $derived(advanceRefusal(step, { source, detection, folderScan, job }));
+	const folderRows = $derived(setupWizard.folderRows);
+	const nextRefusal = $derived(advanceRefusal(step, { source, detection, folderRows, job }));
 	/** Why Back is refused here, or null. Same function that gates the button,
 	 * so the tooltip and the disabled state can never disagree. */
-	const backWhy = $derived(backRefusal(step, { source, detection, folderScan, job }));
+	const backWhy = $derived(backRefusal(step, { source, detection, folderRows, job }));
+	const showAddFolderRow = $derived(
+		folderRows.some((row) => row.path.trim() !== '')
+	);
+	const importableFolderCount = $derived(setupWizard.importableFolderPaths().length);
 	/** The route THIS branch walks; the folder import never visits 'confirm'. */
 	const route = $derived(visibleSteps(source));
 	const position = $derived(stepPosition(step, source));
@@ -136,30 +141,24 @@
 	const emptyTracks = $derived(status?.tracks ?? 0);
 
 	let refreshDecrypt = $state(false);
-	let folderInput = $state('');
 
-	/** The global Tauri v2 injects into every window it owns. */
-	const TAURI_GLOBAL = '__TAURI_INTERNALS__';
-
-	function canUseNativeFolderPicker(scope: Record<string, unknown> = globalThis): boolean {
-		return scope[TAURI_GLOBAL] !== undefined && scope[TAURI_GLOBAL] !== null;
+	/** Either desktop shell (Tauri or Electron) offers a native picker; a tab does not. */
+	function canUseNativeFolderPicker(): boolean {
+		return nativeShellKind() !== null;
 	}
 
 	const nativeFolderPicker = canUseNativeFolderPicker();
 
 	/** Open the OS-native directory picker in the desktop shell; browser tabs keep
 	 * the text field as the only path and this handler is never called there. */
-	async function chooseFolder(): Promise<void> {
+	async function chooseFolder(rowId: string): Promise<void> {
 		if (!canUseNativeFolderPicker()) return;
 		try {
-			const { open } = await import('@tauri-apps/plugin-dialog');
-			const selected = await open({
-				directory: true,
-				multiple: false,
-				title: 'Choose a folder'
-			});
+			const selected = await pickFolder('Choose a folder');
 			if (typeof selected === 'string') {
-				folderInput = selected;
+				setupWizard.folderRows = setupWizard.folderRows.map((row) =>
+					row.id === rowId ? { ...row, path: selected, scan: null } : row
+				);
 			}
 		} catch {
 			// A failed plugin load or cancelled dialog must not clear a typed path.
@@ -381,10 +380,10 @@
 					{#if step === 'welcome'}
 						<div class="panel">
 							<p>
-								This engine has a library database of its own. Setting it up means
-								reading your existing rekordbox collection into it: tracks,
-								playlists, BPM, key and rating. Nothing in rekordbox is written to
-								or changed -- the import only ever reads a copy.
+								This engine has a library database of its own. You can populate it
+								from a rekordbox collection or a folder of audio files, but only
+								when you choose to start that import. Nothing in rekordbox is
+								written to or changed -- a rekordbox import only ever reads a copy.
 							</p>
 							{#if status !== null}
 								<p class="counts">
@@ -459,6 +458,56 @@
 						</div>
 					{/if}
 
+					{#if step === 'detect' && source === null}
+						<div class="panel">
+							<p class="muted">
+								Choose an import source above. Nothing is imported until you pick
+								one and explicitly start it.
+							</p>
+							<div class="actions">
+								{@render backButton()}
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => setupWizard.redetect()}
+									title={ESCAPE_ACTIONS[0].title}
+								>
+									{ESCAPE_ACTIONS[0].label}
+								</button>
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => setupWizard.useSource('folder')}
+									title={ESCAPE_ACTIONS[1].title}
+								>
+									{ESCAPE_ACTIONS[1].label}
+								</button>
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => void dismissAndClose()}
+									disabled={setupWizard.busy}
+									title={ESCAPE_ACTIONS[2].title}
+								>
+									{ESCAPE_ACTIONS[2].label}
+								</button>
+								<button
+									type="button"
+									onclick={() => setupWizard.next()}
+									disabled={nextRefusal !== null || setupWizard.busy}
+									title={nextRefusal ?? 'Continue to the import'}
+								>
+									Continue
+								</button>
+							</div>
+							{#if nextRefusal !== null}
+								<p class="why" role="status">
+									Continue is not available: {nextRefusal}.
+								</p>
+							{/if}
+						</div>
+					{/if}
+
 					{#if step === 'detect' && source === 'folder'}
 						<div class="panel">
 							<h3>Point at a folder</h3>
@@ -479,10 +528,7 @@
 											<button
 												type="button"
 												class="folder-chip"
-												onclick={() => {
-													folderInput = candidate.path;
-													void setupWizard.checkFolder(candidate.path);
-												}}
+												onclick={() => setupWizard.applyFolderSuggestion(candidate.path)}
 												disabled={setupWizard.busy || refusal !== null}
 												title="Use {candidate.path}"
 											>
@@ -499,77 +545,115 @@
 									{/each}
 								</div>
 							{/if}
-							<form class="folder-form" onsubmit={(event) => event.preventDefault()}>
-								<div class="folder-path-row">
-									<input
-										type="text"
-										placeholder="/Users/you/Music"
-										bind:value={folderInput}
-										aria-label="Folder to import"
-									/>
-									<button
-										type="button"
-										class="folder-pick"
-										onclick={() => void chooseFolder()}
-										disabled={setupWizard.busy || refusal !== null || !nativeFolderPicker}
-										title={nativeFolderPicker
-											? 'Choose a folder'
-											: 'Choose a folder (available in the Open DJ desktop app)'}
-										aria-label="Choose a folder"
-									>
-										<svg
-											class="folder-pick-icon"
-											width="16"
-											height="16"
-											viewBox="0 0 16 16"
-											aria-hidden="true"
-											focusable="false"
+							<div class="folder-rows">
+								{#each folderRows as row (row.id)}
+									<div class="folder-row">
+										<form
+											class="folder-form"
+											onsubmit={(event) => event.preventDefault()}
 										>
-											<path
-												d="M1.5 3.25A1.25 1.25 0 0 1 2.75 2h3.086a1.25 1.25 0 0 1 .884.366l.78.78A1.25 1.25 0 0 1 8.164 3.5H13.25A1.25 1.25 0 0 1 14.5 4.75v7.5A1.25 1.25 0 0 1 13.25 13.5H2.75A1.25 1.25 0 0 1 1.5 12.25v-9Z"
-												fill="currentColor"
-											/>
-										</svg>
-									</button>
-								</div>
-								<button
-									type="submit"
-									onclick={() => setupWizard.checkFolder(folderInput)}
-									disabled={setupWizard.busy || refusal !== null}
-									title={refusal ?? 'Look inside this folder without importing it'}
-								>
-									Check this folder
-								</button>
-							</form>
+											<div class="folder-path-row">
+												<input
+													type="text"
+													placeholder="/Users/you/Music"
+													bind:value={row.path}
+													aria-label="Folder to import"
+												/>
+												<button
+													type="button"
+													class="folder-pick"
+													onclick={() => void chooseFolder(row.id)}
+													disabled={setupWizard.busy ||
+														refusal !== null ||
+														!nativeFolderPicker}
+													title={nativeFolderPicker
+														? 'Choose a folder'
+														: 'Choose a folder (available in the Open DJ desktop app)'}
+													aria-label="Choose a folder"
+												>
+													<svg
+														class="folder-pick-icon"
+														width="16"
+														height="16"
+														viewBox="0 0 16 16"
+														aria-hidden="true"
+														focusable="false"
+													>
+														<path
+															d="M1.5 3.25A1.25 1.25 0 0 1 2.75 2h3.086a1.25 1.25 0 0 1 .884.366l.78.78A1.25 1.25 0 0 1 8.164 3.5H13.25A1.25 1.25 0 0 1 14.5 4.75v7.5A1.25 1.25 0 0 1 13.25 13.5H2.75A1.25 1.25 0 0 1 1.5 12.25v-9Z"
+															fill="currentColor"
+														/>
+													</svg>
+												</button>
+											</div>
+											<div class="folder-row-actions">
+												<button
+													type="submit"
+													onclick={() => setupWizard.checkFolderRow(row.id)}
+													disabled={setupWizard.busy || refusal !== null}
+													title={refusal ??
+														'Look inside this folder without importing it'}
+												>
+													Check this folder
+												</button>
+												{#if folderRows.length > 1}
+													<button
+														type="button"
+														class="secondary folder-remove"
+														onclick={() => setupWizard.removeFolderRow(row.id)}
+														disabled={setupWizard.busy || refusal !== null}
+														aria-label="Remove folder"
+														title="Remove this folder row"
+													>
+														Remove
+													</button>
+												{/if}
+											</div>
+										</form>
 
-							{#if folderScan !== null}
-								{#if folderScan.denied}
-									<p class="fatal" role="alert">{folderVerdict(folderScan)}</p>
-								{:else}
-									<p class="verdict" role="status">{folderVerdict(folderScan)}</p>
-								{/if}
-								{#if folderScan.readable}
-									<p class="counts">
-										<strong
-											title="Readable audio files found under this folder. iCloud placeholders are counted separately and never opened."
-										>
-											{folderScan.audio_files} audio files
-										</strong>
-										{#if folderScan.icloud_placeholders > 0}
-											,
-											<strong
-												title="Files that exist but whose bytes live in iCloud. They are skipped, never downloaded."
-											>
-												{folderScan.icloud_placeholders} iCloud placeholders skipped
-											</strong>
+										{#if row.scan !== null}
+											{#if row.scan.denied}
+												<p class="fatal" role="alert">{folderVerdict(row.scan)}</p>
+											{:else}
+												<p class="verdict" role="status">{folderVerdict(row.scan)}</p>
+											{/if}
+											{#if row.scan.readable}
+												<p class="counts">
+													<strong
+														title="Readable audio files found under this folder. iCloud placeholders are counted separately and never opened."
+													>
+														{row.scan.audio_files} audio files
+													</strong>
+													{#if row.scan.icloud_placeholders > 0}
+														,
+														<strong
+															title="Files that exist but whose bytes live in iCloud. They are skipped, never downloaded."
+														>
+															{row.scan.icloud_placeholders} iCloud placeholders skipped
+														</strong>
+													{/if}
+												</p>
+												<ul class="probes">
+													{#each row.scan.sample as example (example)}
+														<li><code>{example}</code></li>
+													{/each}
+												</ul>
+											{/if}
 										{/if}
-									</p>
-									<ul class="probes">
-										{#each folderScan.sample as example (example)}
-											<li><code>{example}</code></li>
-										{/each}
-									</ul>
-								{/if}
+									</div>
+								{/each}
+							</div>
+							{#if showAddFolderRow}
+								<button
+									type="button"
+									class="secondary folder-add"
+									onclick={() => setupWizard.addFolderRow()}
+									disabled={setupWizard.busy || refusal !== null}
+									aria-label="Add another folder"
+									title="Add another music folder"
+								>
+									+
+								</button>
 							{/if}
 
 							<div class="actions">
@@ -595,9 +679,14 @@
 									type="button"
 									onclick={() => setupWizard.beginFolderImport()}
 									disabled={nextRefusal !== null || setupWizard.busy}
-									title={nextRefusal ?? 'Import this folder'}
+									title={nextRefusal ??
+										(importableFolderCount > 1
+											? 'Import these folders'
+											: 'Import this folder')}
 								>
-									Import this folder
+									{importableFolderCount > 1
+										? 'Import these folders'
+										: 'Import this folder'}
 								</button>
 							</div>
 							{#if nextRefusal !== null}
@@ -1308,12 +1397,38 @@
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
+	.folder-rows {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		margin-top: 0.75rem;
+	}
+	.folder-row {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
 	.folder-form {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
-		margin-top: 0.75rem;
 		align-items: center;
+	}
+	.folder-row-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+	}
+	.folder-add {
+		margin-top: 0.5rem;
+		min-width: 2.25rem;
+		font-size: 1.1rem;
+		line-height: 1;
+		padding: 0.2rem 0.65rem;
+	}
+	.folder-remove {
+		font-size: 0.85rem;
 	}
 	.folder-path-row {
 		display: flex;

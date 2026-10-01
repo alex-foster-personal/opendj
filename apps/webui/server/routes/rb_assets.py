@@ -19,9 +19,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from apps.analysis import canonical, selection
+from apps.adapters.rekordbox import config as rb_config
+from apps.analysis import canonical
 from apps.analysis.record import AnalysisRecord
-from apps.shared import platform_paths
+from apps.analysis_structure.serve import merge_own_phrases
+from apps.shared import platform_paths, runtime_policy
 
 from .. import rb_vendor
 from ..backend import StateBackend
@@ -34,7 +36,7 @@ from ..rb_vendor_pkg.anlz_missing_analysis import (
 )
 from ..rb_vendor_pkg.own_overlays import apply_own_overlays
 from . import analysis as analysis_routes
-from . import analysis_source as analysis_source_routes
+from .rb_assets_beatgrid_source import beatgrid_source_for_track
 
 router = APIRouter(prefix="/tracks", tags=["rb-assets"])
 
@@ -152,30 +154,6 @@ def get_track_artwork(
         media_type="image/jpeg",
         headers={"Cache-Control": _CACHE_ARTWORK},
     )
-
-
-# The `/anlz` wire contract's `beatgrid_source` predates PARITY-02's lane
-# selection module and uses "rekordbox"/"own"; `apps.analysis.selection`
-# uses "rbx"/"own". Translate at the boundary rather than widen the wire
-# vocabulary to match an internal module.
-_BEATGRID_SOURCE_LABELS: dict[str, str] = {"rbx": "rekordbox", "own": "own"}
-
-
-def _current_beatgrid_source(request: Request) -> str:
-    """The PARITY-02 rbx-vs-own selection currently in effect for beatgrids.
-
-    Reads through :mod:`apps.analysis.selection` (persisted default plus
-    in-memory dev toggle), via the same read-only, missing-file-safe
-    connection its own ``GET /api/v1/analysis/source`` endpoint uses -- a
-    test app that mounts only this router still gets the documented
-    ``"rekordbox"`` default rather than a 500 on a fresh daemon.
-    """
-    conn = analysis_source_routes._open_ro(request)
-    try:
-        source = selection.effective_source(conn, "beatgrid")
-    finally:
-        conn.close()
-    return _BEATGRID_SOURCE_LABELS[source]
 
 
 def _canonical_beatgrid_record(db_path: Path, stable_id: str) -> AnalysisRecord | None:
@@ -357,9 +335,9 @@ def get_track_anlz(
     request: Request,
     stable_id: str,
     points: int = Query(
-        38400,
-        ge=100,
-        le=38400,
+        runtime_policy.ANLZ_POINTS_DEFAULT,
+        ge=runtime_policy.ANLZ_POINTS_MIN,
+        le=runtime_policy.ANLZ_POINTS_MAX,
         description="Max length of each waveform band array after downsampling",
     ),
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
@@ -377,7 +355,10 @@ def get_track_anlz(
     # two independent reads can rescue a 404 into an empty payload this
     # function then stamps with the OTHER, newer source
     # (discussion_r3974235458 P2 BLOCKING).
-    beatgrid_source = _current_beatgrid_source(request)
+    has_rb_mapping = stable_id in rb_vendor.bulk_rb_meta([stable_id])
+    beatgrid_source, beatgrid_source_basis = beatgrid_source_for_track(
+        request, has_rb_mapping=has_rb_mapping
+    )
     state_db_path = _state_db_override(request)
     rescued_missing_analysis_path = False
     try:
@@ -406,14 +387,18 @@ def get_track_anlz(
             # PR #1587). Applied here rather than inside `local_anlz_payload`, which
             # belongs to the waveform lane; this route already owns choosing between
             # the two branches.
-            payload = apply_own_overlays(payload, stable_id, state_db_path)
+            payload = apply_own_overlays(
+                payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+            )
         elif code == "ANALYSIS_NOT_FOUND":
             if vendor_analysis_path_absent(content):
                 rescued_missing_analysis_path = True
                 share = getattr(request.state, "share_audience", "local") == "share"
                 payload = rb_vendor.local_anlz_payload(stable_id, points, share=share)
                 payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
-                payload = apply_own_overlays(payload, stable_id, state_db_path)
+                payload = apply_own_overlays(
+                    payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+                )
                 payload = apply_own_beatgrid_when_vendor_absent(
                     payload, stable_id, state_db_path
                 )
@@ -431,7 +416,9 @@ def get_track_anlz(
                 # from `empty_anlz_payload`'s local-import stub.
                 payload = rb_vendor.empty_anlz_payload(stable_id, points)
                 payload["cues"] = rb_vendor.fetch_cues(content.vendor_id)
-                payload = apply_own_overlays(payload, stable_id, state_db_path)
+                payload = apply_own_overlays(
+                    payload, stable_id, state_db_path, has_rb_mapping=has_rb_mapping
+                )
             if (
                 not rescued_missing_analysis_path
                 and payload["beatgrid"]["source"] != own_beatgrid_overlay.SOURCE_OWN
@@ -453,6 +440,10 @@ def get_track_anlz(
     _resolve_beatgrid_source(
         beatgrid_source, analysis_routes._analysis_db_path(request), stable_id, payload
     )
+    payload["beatgrid_source_basis"] = beatgrid_source_basis
+    # Own sections fill `phrases` only where rekordbox PSSI is empty, on every
+    # branch above, and `phrases_source` names which one was served (STRUCT-02).
+    payload = merge_own_phrases(payload, stable_id, rb_config.DATA_DIR)
     local_waveform = payload.get("local_waveform")
     retryable = isinstance(local_waveform, dict) and local_waveform.get("retryable") is True
     # Never publicly cacheable for an hour: this response varies with things

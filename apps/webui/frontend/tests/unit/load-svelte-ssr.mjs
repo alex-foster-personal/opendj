@@ -28,9 +28,11 @@ import { fileURLToPath } from 'node:url';
 import { build, transform } from 'esbuild';
 import { compile, compileModule } from 'svelte/compiler';
 
+import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
+
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const LIB_ROOT = fileURLToPath(new URL('../../src/lib', import.meta.url));
-let sequence = 0;
 
 /** Compile `.svelte` components and `.svelte.ts` rune modules for the server. */
 const sveltePlugin = {
@@ -75,12 +77,11 @@ export async function loadSvelteSsrModule(entrySource) {
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [sveltePlugin],
+		plugins: [sveltePlugin, viteUrlSuffixPlugin],
 		resolveExtensions: ['.svelte', '.ts', '.js', '.mjs', '.json'],
 		target: 'es2022',
 		write: false
 	});
-	const source = Buffer.from(bundled.outputFiles[0].text).toString('base64');
-	sequence += 1;
-	return import(`data:text/javascript;base64,${source}#${sequence}`);
+	// A temp file, not a data: URL: see import-bundled-source.mjs.
+	return importBundledSource(bundled.outputFiles[0].text, 'svelte-ssr-entry');
 }

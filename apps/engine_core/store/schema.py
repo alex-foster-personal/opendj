@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 6
+SCHEMA_VERSION: int = 11
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -322,6 +322,30 @@ _SYNC_INFRA: tuple[str, ...] = (
     # idx_local_changelog_table.
     "CREATE INDEX IF NOT EXISTS idx_hub_changelog_table "
     "ON hub_changelog(table_name, row_pk)",
+)
+
+
+# ==========================================================================
+# DOMAIN: CloudSync per-table write tokens (legacy v21, issue #4396)
+# Legacy source: apps/shared/state/migrations_v21.py. Its own rung, not an
+# append to _SYNC_INFRA/_V1: an install already stamped at v1 never re-runs
+# rung 1 (see the _V2 docstring below), so appending here would leave the
+# table absent on every pre-existing consolidated install.
+#
+# Only the table is mirrored, not the write-token TRIGGERS
+# (apps.shared.state.migrations_v21.EXPECTED_TRIGGERS) or their seed INSERTs:
+# the table/index equivalence gate (tests/engine_core/test_store_schema.py)
+# this module is checked against does not compare triggers, and unlike this
+# domain's CREATE TABLE the trigger CREATEs and seed INSERTs are not safely
+# re-runnable on an already-adopted DB (no CREATE TRIGGER IF NOT EXISTS twin
+# here, and a seed INSERT would collide with rows the legacy ladder already
+# wrote). They stay out of this dormant consolidation target until it
+# actually needs them.
+# ==========================================================================
+
+_SYNC_WRITE_TOKENS: tuple[str, ...] = (
+    "CREATE TABLE IF NOT EXISTS sync_write_tokens ( table_name TEXT PRIMARY "
+    "KEY, token BLOB NOT NULL ) WITHOUT ROWID",
 )
 
 
@@ -697,6 +721,29 @@ _FEEDBACK: tuple[str, ...] = (
 
 
 # ==========================================================================
+# DOMAIN: path_index -- resolver-namespaced disk-truth cache for listing rows
+# Legacy source: apps/shared/state/migrations_v18.py (_V18, issue #1037,
+# PERF-RB-01). Reproduced verbatim so a database born through this runner can
+# serve the same budgeted availability reads as one born through the legacy
+# ladder.
+# ==========================================================================
+
+_PATH_INDEX: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS path_availability (
+        resolver_namespace TEXT NOT NULL,
+        logical_path       TEXT NOT NULL,
+        materialised_size  INTEGER,
+        checked_at         TEXT NOT NULL,
+        PRIMARY KEY (resolver_namespace, logical_path)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_path_availability_checked "
+    "ON path_availability(checked_at)",
+)
+
+
+# ==========================================================================
 # DOMAIN: curation -- pairing-memory edges + smartlist rules
 # Legacy source: apps/shared/pairings/schema_sql.py (ensure_phase08_tables,
 # called from the pairings repo AND the smartlists repo on construction)
@@ -1046,6 +1093,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "analysis_retention": _ANALYSIS_RETENTION,
     "lyrics": _LYRICS,
     "feedback": _FEEDBACK,
+    "path_index": _PATH_INDEX,
     "curation": _CURATION,
     "play_orders": _PLAY_ORDERS,
     "spotify": _SPOTIFY,
@@ -1053,6 +1101,7 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     "settings": _SETTINGS,
     "dedup": _DEDUP,
     "launcher": _LAUNCHER,
+    "sync_write_tokens": _SYNC_WRITE_TOKENS,
 }
 """Every DURABLE consolidated domain -> its DDL statements, in creation order.
 
@@ -1078,6 +1127,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "analysis_retention": "apps/shared/state/schema.py",
     "lyrics": "apps/shared/state/migrations_v10.py",
     "feedback": "apps/shared/state/migrations_v12.py",
+    "path_index": "apps/shared/state/migrations_v18.py",
     "curation": "apps/shared/pairings/schema_sql.py",
     "play_orders": "apps/shared/play_orders/schema.py",
     "spotify": "apps/spotify/state_writer.py",
@@ -1086,6 +1136,7 @@ LEGACY_SOURCES: dict[str, str] = {
     "dedup": "apps/dedup/schema.py",
     "caches": "apps/shared/fingerprints.py + apps/shared/hashing.py",
     "launcher": "apps/launcher/scripts/bootstrap_db.py",
+    "sync_write_tokens": "apps/shared/state/migrations_v21.py",
 }
 """Domain -> the legacy file its DDL was lifted from, verbatim.
 
@@ -1136,6 +1187,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     ),
     "lyrics": ("lyric_verdict",),
     "feedback": ("feedback_pins",),
+    "path_index": ("path_availability",),
     "curation": ("pairings", "smartlists"),
     "play_orders": ("play_orders", "play_order_entries", "play_orders_schema_meta"),
     "spotify": (
@@ -1147,6 +1199,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     "settings": ("settings",),
     "dedup": ("duplicate_clusters", "track_aliases", "tag_provenance"),
     "launcher": ("tracks_fts", "tracks_frecency"),
+    "sync_write_tokens": ("sync_write_tokens",),
 }
 """Durable domain -> the tables it owns. ``schema_meta`` is excluded on
 purpose: it is migration infrastructure, created by the runner, not domain
@@ -1172,7 +1225,10 @@ ALL_CACHE_TABLES: tuple[str, ...] = tuple(
 #: its own rung. Named here rather than inline so the exclusion and the rung
 #: that compensates for it cannot drift apart silently.
 _POST_V1_DOMAINS: frozenset[str] = frozenset(
-    {"native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback"}
+    {
+        "native_analysis_v1", "enrollment", "lyrics", "credentials", "feedback",
+        "path_index", "sync_write_tokens",
+    }
 )
 
 _V1: list[str] = [
@@ -1224,7 +1280,53 @@ _V6: list[str] = list(_FEEDBACK)
 Its own rung for the reason _V2 and _V3 spell out. ``LEGACY_SHARED_STATE_VERSION``
 stays where scripts/sync_drift_rules.MIRROR_VERSION_DEBT pins it."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6]
+_V7: list[str] = list(_PATH_INDEX)
+"""6 -> 7: the persisted path availability index (legacy ladder v18, PERF-RB-01).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v6 never re-runs an earlier rung."""
+
+_V8: list[str] = [
+    "ALTER TABLE tracks ADD COLUMN audio_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_audio_hash ON tracks(audio_hash) "
+    "WHERE audio_hash IS NOT NULL",
+]
+"""7 -> 8: tag-independent audio identity on tracks (legacy ladder v19, issue #3864).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v7 never re-runs an earlier rung."""
+
+_V9: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) "
+    "WHERE content_hash IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_isrc_upper ON tracks(upper(isrc))",
+]
+"""8 -> 9: indexed CloudSync track identity lookups (legacy ladder v20, issue #4397).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v8 never re-runs an earlier rung."""
+
+_V10: list[str] = list(_SYNC_WRITE_TOKENS)
+"""9 -> 10: sync_write_tokens, the CloudSync digest gate's per-table write
+token (legacy ladder v21, issue #4396).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v9 never re-runs an earlier rung."""
+
+_V11: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_playlist_memberships_live_order "
+    "ON playlist_memberships("
+    "playlist_id, COALESCE(order_key, printf('%08d', position)), position"
+    ") WHERE deleted_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_playlist_memberships_live_stable_id "
+    "ON playlist_memberships(playlist_id, stable_id) WHERE deleted_at IS NULL",
+]
+"""10 -> 11: bounded playlist membership reads (legacy ladder v22, issue #3963).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v10 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
@@ -1633,6 +1735,17 @@ def _create_all(conn: sqlite3.Connection, statements: list[str]) -> None:
         conn.execute(stmt)
 
 
+def _adoption_ddl(conn: sqlite3.Connection) -> list[str]:
+    """Return ladder DDL with an already-present v8 column add removed."""
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    if "audio_hash" not in columns:
+        return ALL_DDL
+    return [
+        stmt for stmt in ALL_DDL
+        if stmt != "ALTER TABLE tracks ADD COLUMN audio_hash TEXT"
+    ]
+
+
 def _rollback_without_masking(
     conn: sqlite3.Connection, original: BaseException
 ) -> None:
@@ -1673,7 +1786,7 @@ def _adopt(conn: sqlite3.Connection) -> tuple[str, ...]:
     (:func:`_assert_adoptable` + :func:`_audit_existing_shapes`).
     """
     was_missing = missing_tables(conn)
-    _create_all(conn, ALL_DDL)
+    _create_all(conn, _adoption_ddl(conn))
     for stmt in _ADOPTION_BACKFILL:
         conn.execute(stmt)
     return was_missing

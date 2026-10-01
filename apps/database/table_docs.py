@@ -13,6 +13,7 @@ satisfy (which tables, why the fts5 shadow tables are excluded).
 
 from __future__ import annotations
 
+from apps.database.column_docs_sync_gate import SYNC_GATE_TABLE_DOC
 from apps.database.enrollment_table_docs import ENROLLMENT_TABLE_DOCS
 
 TABLE_DOCS: dict[str, str] = {
@@ -46,6 +47,14 @@ TABLE_DOCS: dict[str, str] = {
         "track_fields regardless. Safe-default views (tracks_available, "
         "tracks_unavailable, track_fields_available) read this as a "
         "dimension so an aggregate cannot silently include unplayable rows."
+    ),
+    "path_availability": (
+        "Resolver-namespaced cache of disk-truth answers for rekordbox "
+        "library paths (FolderPath / track file_path strings before "
+        "containment mapping). Keys are (resolver_namespace, logical_path); "
+        "materialised_size is NULL when the path is missing or a dataless "
+        "stub. Written by bounded listing hydration and a background "
+        "refresher (issue #1037, PERF-RB-01); survives process restarts."
     ),
     "unmatched_source_analysis": (
         "Staging for an analysed source row (MIK, rekordbox, ...) that "
@@ -214,6 +223,7 @@ TABLE_DOCS: dict[str, str] = {
         "lost rows under clock skew (round 1 finding 3). Never crosses a "
         "machine boundary and never rides hub sync itself."
     ),
+    "sync_write_tokens": SYNC_GATE_TABLE_DOC,
     # ----- apps.shared.state.schema.INFRASTRUCTURE_TABLES -----------------
     "schema_meta": (
         "Migration bookkeeping for apps.shared.state.schema.apply_"

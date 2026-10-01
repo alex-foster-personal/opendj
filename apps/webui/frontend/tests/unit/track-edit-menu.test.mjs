@@ -20,6 +20,7 @@ before(async () => {
 	mod = await loadTypeScriptModule('src/lib/components/rb/browser/track-edit-menu.ts');
 });
 
+// REQ: LIBM-68
 test('Bulk edit, Find/replace and My Tag editor carry run and invoke the opener with the matching kind', () => {
 	const kinds = [];
 	const items = mod.trackEditMenuItems(3, (kind) => kinds.push(kind));

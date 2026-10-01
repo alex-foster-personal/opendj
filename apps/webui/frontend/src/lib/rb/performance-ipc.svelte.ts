@@ -63,7 +63,8 @@ import {
 } from '$lib/rb/analysis-source.svelte';
 import { createPairing } from '$lib/api';
 import { hasTrustedBeatGrid } from '$lib/player/grid-features';
-import { planHotCueTrigger, quantizeToNearestDownbeat } from '$lib/rb/beat-sync-math';
+import { nextDownbeatAtOrAfter, planHotCueTrigger, quantizeToNearestDownbeat, type ArmAtPosition } from '$lib/rb/beat-sync-math';
+import { planWaveformSeek, type WaveformSeekSnap } from '$lib/rb/plan-waveform-seek';
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import { bootScheduler } from '$lib/rb/boot-scheduler';
 import {
@@ -83,6 +84,7 @@ import {
 	type DeckTransportClock,
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
+import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
@@ -104,7 +106,13 @@ import {
 	setPendingLoadPlayIntent,
 	type DeckId
 } from '$lib/rb/deck-slots';
-import { setLibraryPanelCollapsed, type LibraryPanel } from '$lib/rb/prefs.svelte';
+import {
+	setLibraryPanelCollapsed,
+	setShowStems,
+	setWaveformDesign,
+	type LibraryPanel
+} from '$lib/rb/prefs.svelte';
+import { parseWaveformDesign, type WaveformDesign } from '$lib/rb/waveform-design';
 import { copyDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type {
 	DeckAudioSnapshot,
@@ -130,6 +138,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
 import { notifyRescueTransportEvent } from '$lib/rb/rescue-ring-writer.svelte';
@@ -191,7 +200,16 @@ export type PerformanceCommand =
 	// button, Quick Draw's unload action) must still be able to unload the
 	// live master with no other deck to reassign to (r3920297846) - only a
 	// destructive REPLACE (BrowserPanel's _loadOntoDeck) opts in.
-	| { type: 'load'; deck: DeckId; stable_id: string; refuseIfMaster?: boolean }
+	| {
+			type: 'load';
+			deck: DeckId;
+			stable_id: string;
+			refuseIfMaster?: boolean;
+			stems?: boolean;
+			// Caller shows its own failure toast (Trackify skip): mutes this dispatcher's
+			// toast AND the engine's (#4036); deck_errors and the server report remain.
+			suppressCommandErrorToast?: boolean;
+	  }
 	| { type: 'load_play_intent'; deck: DeckId; generation: number; desired_play: boolean }
 	| { type: 'unload'; deck: DeckId; refuseIfMaster?: boolean }
 	| {
@@ -203,6 +221,8 @@ export type PerformanceCommand =
 	  }
 	| { type: 'cue'; deck: DeckId }
 	| { type: 'seek'; deck: DeckId; position_ms: number }
+	| { type: 'waveform_seek'; deck: DeckId; position_ms: number; snap: WaveformSeekSnap }
+	| { type: 'set_waveform_design'; design: WaveformDesign }
 	| { type: 'loop'; deck: DeckId; loop: { in_ms: number; out_ms: number } | null }
 	| { type: 'beat_loop'; deck: DeckId; beats: number; start_ms?: number }
 	| { type: 'beat_jump'; deck: DeckId; beats: number }
@@ -265,6 +285,7 @@ export type PerformanceCommand =
 	 * is stubbed - community comment-pin sync has no cloudsync channel yet. */
 	| { type: 'pins_show_other_users' }
 	| { type: 'library_panels'; panel: LibraryPanel; collapsed: boolean }
+	| { type: 'show_stems'; enabled: boolean }
 	| { type: 'feedback_mark'; vote: 'bad' | 'good' | 'great' }
 	| { type: 'safety_loop_save'; deck: DeckId }
 	| { type: 'safety_loop_arm'; deck: DeckId; armed: boolean }
@@ -360,6 +381,8 @@ export interface PerformanceDeckSnapshot {
 	 * downbeat (BeatSyncMax, playing, unlooped); null when nothing is armed
 	 * or once the deferred jump has landed. */
 	hot_cue_armed: { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null;
+	/** DECKUX-21: deferred waveform seek waiting for the next downbeat. */
+	waveform_seek_armed: { target_position_ms: number; remaining_ms: number } | null;
 	/** LATENCY-02: QUANTIZED LAUNCH armed countdown; null once launched or cleared. */
 	quantized_launch_armed: { remaining_ms: number; launch_at_context_sec: number } | null;
 	command_error: string | null;
@@ -446,6 +469,10 @@ export interface PerformanceState {
 		opt_reveal_active: boolean;
 		eq_raised: boolean;
 		hovered_edges: EdgeRegion[];
+	};
+	ui: {
+		show_stems: boolean;
+		waveform_design: WaveformDesign;
 	};
 }
 
@@ -625,6 +652,12 @@ export interface ToastIpcRow {
 	id: string;
 	kind: 'info' | 'warn' | 'error';
 	message: string;
+	headline: string;
+	detail?: string | undefined;
+	classification?: string | undefined;
+	settings_summary?: string | undefined;
+	exiting?: boolean;
+	expanded: boolean;
 	count: number;
 	created_at: string;
 	/** False while a pointer (or holdToast) is holding it open. */
@@ -662,6 +695,11 @@ const hotCueReversals: Record<DeckId, { slot: HotCueSlot; revision: string; reve
 const hotCueArmed: Record<
 	DeckId,
 	{ slot: HotCueSlot; target_position_ms: number; target_context_time: number } | null
+> = $state({ 1: null, 2: null, 3: null, 4: null });
+
+const waveformSeekArmed: Record<
+	DeckId,
+	{ target_position_ms: number; target_context_time: number } | null
 > = $state({ 1: null, 2: null, 3: null, 4: null });
 
 const quantizedLaunchArmed: Record<DeckId, { launch_at_context_sec: number } | null> = $state({
@@ -722,8 +760,9 @@ export interface PerformanceHotCueDriver {
 	jump(deck: DeckId, positionMs: number, pressT0Ms?: number): Promise<void>;
 	/** Defer the jump to the deck's own next downbeat; returns the absolute
 	 * AudioContext time the schedule lands at. pressT0Ms is Q1's
-	 * operator-felt press stamp. */
-	arm(deck: DeckId, positionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number>;
+	 * operator-felt press stamp. A resolver `armAt` is called with the
+	 * engine's live position inside the scheduling transaction. */
+	arm(deck: DeckId, positionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number>;
 	contextTimeNowSec(): number;
 }
 
@@ -742,14 +781,19 @@ const _defaultHotCueDriver: PerformanceHotCueDriver = {
 		};
 	},
 	jump: (deck, positionMs, pressT0Ms) => engine.quantizedSeek(deck, positionMs, undefined, pressT0Ms),
-	arm: (deck, positionMs, armAtPositionSec, pressT0Ms) =>
-		engine.armHotCueTrigger(deck, positionMs, armAtPositionSec, pressT0Ms),
+	arm: (deck, positionMs, armAt, pressT0Ms) => engine.armHotCueTrigger(deck, positionMs, armAt, pressT0Ms),
 	contextTimeNowSec: () => engine.contextTimeNowSec()
 };
 let _hotCueDriver: PerformanceHotCueDriver = _defaultHotCueDriver;
 
+/** Rust engine mode (NAE-13) drives hot cues through its own driver
+ * (`rustHotCueDriver`); Web Audio uses the engine-owned one above. */
+export function installPerformanceHotCueDriver(driver: PerformanceHotCueDriver): void {
+	_hotCueDriver = driver;
+}
+
 /** Narrow test seam for exercising the public IPC command protocol without
- * initializing Web Audio. Production always uses the engine-owned driver. */
+ * initializing Web Audio. */
 export function installPerformanceHotCueDriverForTest(driver: PerformanceHotCueDriver): () => void {
 	const previous = _hotCueDriver;
 	_hotCueDriver = driver;
@@ -892,6 +936,24 @@ declare global {
 	interface Window {
 		musicDjToolsPerformance?: PerformanceBrowserIpc;
 	}
+}
+
+/** Browser globals used by installPerformanceBrowserIpc and unit tests that set globalThis.window. */
+function _performanceIpcHosts(): (Window & typeof globalThis)[] {
+	const hosts: (Window & typeof globalThis)[] = [];
+	const seen = new Set<object>();
+	const add = (candidate: unknown): void => {
+		if (candidate === null || candidate === undefined || typeof candidate !== 'object') return;
+		if (seen.has(candidate)) return;
+		seen.add(candidate);
+		hosts.push(candidate as Window & typeof globalThis);
+	};
+	add(globalThis.window);
+	if (typeof window !== 'undefined') add(window);
+	if (hosts.length === 0) {
+		throw new Error('performance IPC requires a browser window');
+	}
+	return hosts;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -1194,6 +1256,16 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		}
 		return { type, panel: record.panel, collapsed: _boolean('collapsed', record.collapsed) };
 	}
+	if (type === 'show_stems') {
+		_exactKeys(record, ['type', 'enabled']);
+		return { type, enabled: _boolean('enabled', record.enabled) };
+	}
+	if (type === 'set_waveform_design') {
+		_exactKeys(record, ['type', 'design']);
+		const design = parseWaveformDesign(record.design);
+		if (design === undefined) throw new TypeError('design is required');
+		return { type, design };
+	}
 	if (type === 'feedback_mark') {
 		_exactKeys(record, ['type', 'vote']);
 		if (record.vote !== 'bad' && record.vote !== 'good' && record.vote !== 'great') {
@@ -1203,12 +1275,32 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	}
 	const deck = _deck(record.deck);
 	if (type === 'load') {
-		_exactKeys(record, ['type', 'deck', 'stable_id', 'refuseIfMaster']);
+		_exactKeys(record, [
+			'type',
+			'deck',
+			'stable_id',
+			'refuseIfMaster',
+			'stems',
+			'suppressCommandErrorToast'
+		]);
 		if (typeof record.stable_id !== 'string' || record.stable_id.trim() === '') {
 			throw new TypeError('stable_id must be a non-empty string');
 		}
-		if (record.refuseIfMaster === undefined) return { type, deck, stable_id: record.stable_id };
-		return { type, deck, stable_id: record.stable_id, refuseIfMaster: _boolean('refuseIfMaster', record.refuseIfMaster) };
+		const refuseIfMaster = record.refuseIfMaster === undefined
+			? undefined
+			: _boolean('refuseIfMaster', record.refuseIfMaster);
+		const stems = record.stems === undefined ? undefined : _boolean('stems', record.stems);
+		const suppressCommandErrorToast = record.suppressCommandErrorToast === undefined
+			? undefined
+			: _boolean('suppressCommandErrorToast', record.suppressCommandErrorToast);
+		return {
+			type,
+			deck,
+			stable_id: record.stable_id,
+			...(refuseIfMaster === undefined ? {} : { refuseIfMaster }),
+			...(stems === undefined ? {} : { stems }),
+			...(suppressCommandErrorToast === undefined ? {} : { suppressCommandErrorToast })
+		};
 	} else if (type === 'load_play_intent') {
 		_exactKeys(record, ['type', 'deck', 'generation', 'desired_play']);
 		return { type, deck, generation: _generation(record.generation), desired_play: _boolean('desired_play', record.desired_play) };
@@ -1257,6 +1349,15 @@ function _parseCommand(message: unknown): PerformanceCommand {
 		const position_ms = _finite('position_ms', record.position_ms);
 		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
 		return { type, deck, position_ms };
+	} else if (type === 'waveform_seek') {
+		_exactKeys(record, ['type', 'deck', 'position_ms', 'snap']);
+		const position_ms = _finite('position_ms', record.position_ms);
+		if (position_ms < 0) throw new RangeError('position_ms must be >= 0');
+		const snap = record.snap;
+		if (snap !== 'downbeat' && snap !== 'beat' && snap !== 'exact') {
+			throw new TypeError(`waveform_seek snap must be downbeat|beat|exact; got ${String(snap)}`);
+		}
+		return { type, deck, position_ms, snap };
 	} else if (type === 'loop') {
 		_exactKeys(record, ['type', 'deck', 'loop']);
 		if (record.loop === null) return { type, deck, loop: null };
@@ -1386,11 +1487,11 @@ function _parseCommand(message: unknown): PerformanceCommand {
 // --------------------------------------------------------------- state query
 
 interface _BeatgridProjection {
-	/** The ANLZ payload these arrays were derived from, by IDENTITY. */
-	anlz: DeckState['anlz'];
 	beatgrid: PerformanceDeckSnapshot['beatgrid'];
 	beatgrid_ms: PerformanceDeckSnapshot['beatgrid_ms'];
 }
+
+type _AnlzPayload = NonNullable<DeckState['anlz']>;
 
 /**
  * Per-deck memo of the beatgrid projections, keyed by ANLZ object identity.
@@ -1407,12 +1508,25 @@ interface _BeatgridProjection {
  * Identity is the right key precisely because the engine REPLACES st.anlz
  * (`st.anlz = fresh`) rather than mutating it, so a reload or a hot-cue refresh
  * invalidates this for free and a stale grid cannot outlive its track.
+ *
+ * The key is held WEAKLY (PERFMODE-14). A strong `{anlz, ...}` slot only let go
+ * of a payload on the NEXT query, and Library mode disposes the engine and then
+ * never queries again, so it kept all four decks' ANLZ alive for the whole
+ * Library session: waveform detail as reactive proxies (34 MB of JS heap on
+ * silver, Sat 26 Sep 2026) plus the full-track band images that
+ * wave/render.ts keys weakly on that same waveform. Per-deck maps keep decks
+ * from ever sharing a projection, even when two decks carry one payload.
  */
-const _beatgridProjections: Record<DeckId, _BeatgridProjection | null> = {
-	1: null,
-	2: null,
-	3: null,
-	4: null
+const _beatgridProjections: Record<DeckId, WeakMap<_AnlzPayload, _BeatgridProjection>> = {
+	1: new WeakMap(),
+	2: new WeakMap(),
+	3: new WeakMap(),
+	4: new WeakMap()
+};
+
+const _EMPTY_BEATGRID_PROJECTION: _BeatgridProjection = {
+	beatgrid: _freezeRows([]),
+	beatgrid_ms: _freezeRows([])
 };
 
 /** Deep-freeze the projection. The arrays are now SHARED across every snapshot
@@ -1428,23 +1542,38 @@ function _freezeRows<T>(rows: T[]): T[] {
 }
 
 function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjection {
-	const cached = _beatgridProjections[deckId];
-	if (cached !== null && cached.anlz === deck.anlz) return cached;
-	const beats = deck.anlz?.beatgrid.beats ?? [];
+	const anlz = deck.anlz;
+	if (anlz === null) return _EMPTY_BEATGRID_PROJECTION;
+	const memo = _beatgridProjections[deckId];
+	const cached = memo.get(anlz);
+	if (cached !== undefined) return cached;
+	const beats = anlz.beatgrid.beats;
 	const fresh: _BeatgridProjection = {
-		anlz: deck.anlz,
 		beatgrid: _freezeRows(
 			beats.map((beat) => ({ n: beat.n, bpm: beat.bpm, time_ms: beat.t * 1000 }))
 		),
 		beatgrid_ms: _freezeRows(beats.map((beat) => beat.t * 1000))
 	};
-	_beatgridProjections[deckId] = fresh;
+	memo.set(anlz, fresh);
 	return fresh;
 }
 
 /** Live-derive `remaining_ms` from the AudioContext clock rather than
  * trusting a cached countdown, then self-clear once the schedule has landed -
  * the same "recompute, don't cache" rule `deckTransportClock` follows. */
+function _waveformSeekArmedSnapshot(
+	deckId: DeckId
+): { target_position_ms: number; remaining_ms: number } | null {
+	const armed = waveformSeekArmed[deckId];
+	if (armed === null) return null;
+	const remainingMs = (armed.target_context_time - _hotCueDriver.contextTimeNowSec()) * 1000;
+	if (remainingMs <= 0) {
+		waveformSeekArmed[deckId] = null;
+		return null;
+	}
+	return { target_position_ms: armed.target_position_ms, remaining_ms: remainingMs };
+}
+
 function _hotCueArmedSnapshot(
 	deckId: DeckId
 ): { slot: HotCueSlot; target_position_ms: number; remaining_ms: number } | null {
@@ -1585,6 +1714,7 @@ function _deckSnapshot(deckId: DeckId): PerformanceDeckSnapshot {
 		})),
 		hot_cue_reversal: hotCueReversals[deckId],
 		hot_cue_armed: _hotCueArmedSnapshot(deckId),
+		waveform_seek_armed: _waveformSeekArmedSnapshot(deckId),
 		quantized_launch_armed: _quantizedLaunchArmedSnapshot(deckId),
 		command_error: performanceCommandStatus.deck_errors[deckId],
 		command_pending: performanceCommandStatus.deck_pending[deckId] > 0,
@@ -1684,7 +1814,11 @@ export function queryPerformanceState(): PerformanceState {
 		// $state rune, so handing the live Proxy out breaks structuredClone for
 		// every agent reading this snapshot over IPC.
 		analysis_source_decks: { ...analysisSourceState.deckFeatures },
-		feedback_marks: performanceFeedbackSummary()
+		feedback_marks: performanceFeedbackSummary(),
+		ui: {
+			show_stems: uiPrefs.show_stems,
+			waveform_design: uiPrefs.waveform_design
+		}
 	};
 }
 
@@ -1739,8 +1873,12 @@ export function performanceCommandQueueScopes(
 		command.type === 'headphone_master_select' ||
 		command.type === 'headphone_input_select' ||
 		command.type === 'output_mode' ||
-		// CUEOUT-14: a calibration owns the monitor graph while it chirps.
-		command.type === 'headphone_calibrate'
+		// CUEOUT-14: a calibration owns the monitor graph while it chirps, so the
+		// delay writes wait behind it rather than moving the nodes it is verifying.
+		command.type === 'headphone_calibrate' ||
+		command.type === 'head_delay_ms' ||
+		command.type === 'headphone_alignment_mode' ||
+		command.type === 'master_delay_ms'
 	) {
 		return ['headphone'];
 	}
@@ -1764,9 +1902,6 @@ export function performanceCommandQueueScopes(
 		command.type === 'browser_select_playlist' ||
 		command.type === 'headphone_mix' ||
 		command.type === 'headphone_level' ||
-		command.type === 'head_delay_ms' ||
-		command.type === 'headphone_alignment_mode' ||
-		command.type === 'master_delay_ms' ||
 		// CUEOUT-14: the abort must never queue behind the calibration it stops.
 		command.type === 'headphone_calibrate_abort' ||
 		// CUEOUT-15: the preview owns no deck, so serializing it behind one
@@ -1774,6 +1909,8 @@ export function performanceCommandQueueScopes(
 		command.type === 'preview_cue' ||
 		command.type === 'preview_stop' ||
 		command.type === 'library_panels' ||
+		command.type === 'show_stems' ||
+		command.type === 'set_waveform_design' ||
 		// View state only: no engine write to serialize, so queueing these
 		// behind a deck's command scope would stall a control that cannot
 		// conflict with anything.
@@ -1809,6 +1946,7 @@ export function performanceCommandQueueScopes(
 		command.type === 'play' ||
 		command.type === 'cue' ||
 		command.type === 'seek' ||
+		command.type === 'waveform_seek' ||
 		// Arming resolves as soon as the graph's pending-segment queue accepts
 		// the future schedule (no timer holds this scope across the wait -
 		// see armHotCueTrigger), so grouping with seek/play cannot stall.
@@ -1840,6 +1978,9 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	// Rust engine mode (opt-in, ?engine=rust): audio commands go to odj-audio
+	// instead of the Web Audio engine; see lib/audio-engine/rust-mode.svelte.ts.
+	if (await executeInRustEngine(command, pushToast)) return;
 	if (command.type === 'load') {
 		// refuseIfMaster, rechecked here inside the queued run() slot for
 		// this deck's scope, not just at the UI dispatch boundary: 'master'
@@ -1864,12 +2005,16 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		// releases on its own ceiling if a load never settles.
 		const deckLoadSettled = bootScheduler.deckLoadStarted();
 		try {
-			await engine.load(command.deck, command.stable_id);
+			await engine.load(command.deck, command.stable_id, {
+				stems: command.stems,
+				suppressFailureToast: command.suppressCommandErrorToast
+			});
 		} finally {
 			deckLoadSettled();
 		}
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		waveformSeekArmed[command.deck] = null;
 		quantizedLaunchArmed[command.deck] = null;
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'load_play_intent') {
@@ -1895,6 +2040,7 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.unload(command.deck);
 		hotCueReversals[command.deck] = null;
 		hotCueArmed[command.deck] = null;
+		waveformSeekArmed[command.deck] = null;
 		quantizedLaunchArmed[command.deck] = null;
 	} else if (command.type === 'play') {
 		if (command.playing) {
@@ -1920,7 +2066,47 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await engine.pressCue(command.deck, pressT0Ms);
 		noteRecentDeck(command.deck);
 	} else if (command.type === 'seek') {
+		waveformSeekArmed[command.deck] = null;
 		await engine.quantizedSeek(command.deck, command.position_ms);
+	} else if (command.type === 'waveform_seek') {
+		const state = getDeckState(command.deck);
+		const beats = state.anlz?.beatgrid.beats ?? [];
+		const loopEngaged = state.loop !== null && state.loop.engaged;
+		const positionSec = state.position_ms / 1000;
+		const trustAnlz = state.anlz ?? {
+			beatgrid: { source: 'rekordbox', beats: [...beats], beat_count: beats.length, status: 'ok' }
+		};
+		const plan = planWaveformSeek(
+			uiPrefs.beat_sync_max && hasTrustedBeatGrid(trustAnlz),
+			state.playing,
+			loopEngaged,
+			positionSec,
+			beats,
+			command.snap
+		);
+		if (plan.kind === 'immediate') {
+			waveformSeekArmed[command.deck] = null;
+			hotCueArmed[command.deck] = null;
+			await _hotCueDriver.jump(command.deck, command.position_ms, pressT0Ms);
+		} else {
+			hotCueArmed[command.deck] = null;
+			if (pressT0Ms !== undefined) markArmedHotCuePress(pressT0Ms);
+			// The plan above only decides WHETHER to defer. The arm point is
+			// re-resolved from the engine's live position inside the scheduling
+			// transaction: `state.position_ms` is a published snapshot that keeps
+			// falling behind while this command queues, and a click at or just
+			// after a downbeat must roll to the next one, not throw (#4011).
+			const targetContextTime = await _hotCueDriver.arm(
+				command.deck,
+				command.position_ms,
+				(nowPositionSec) => nextDownbeatAtOrAfter(beats, nowPositionSec),
+				pressT0Ms
+			);
+			waveformSeekArmed[command.deck] = {
+				target_position_ms: command.position_ms,
+				target_context_time: targetContextTime
+			};
+		}
 	} else if (command.type === 'loop') {
 		await engine.setLoop(command.deck, command.loop);
 	} else if (command.type === 'beat_loop') {
@@ -2034,6 +2220,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		await setAnalysisSource(command.feature, command.source);
 	} else if (command.type === 'library_panels') {
 		setLibraryPanelCollapsed(command.panel, command.collapsed);
+	} else if (command.type === 'show_stems') {
+		setShowStems(command.enabled);
+	} else if (command.type === 'set_waveform_design') {
+		setWaveformDesign(command.design);
 	} else if (command.type === 'safety_loop_save') {
 		// Engine-side and synchronous: it captures the deck's currently
 		// engaged loop, and throws when there is none to capture.
@@ -2113,8 +2303,10 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		);
 		if (plan.kind === 'immediate') {
 			hotCueArmed[command.deck] = null;
+			waveformSeekArmed[command.deck] = null;
 			await _hotCueDriver.jump(command.deck, cue.in_ms, pressT0Ms);
 		} else {
+			waveformSeekArmed[command.deck] = null;
 			// Mark BEFORE the row can file: the eventual schedule reads this same
 			// stamp via press-stamp.ts's claimArmedHotCuePress to distinguish an
 			// armed (deferred-to-downbeat) wait from an immediate press row.
@@ -2217,6 +2409,13 @@ function _persistCommandError(
 	const messageText = _errorMessage(error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
+	if (
+		command !== undefined &&
+		command.type === 'load' &&
+		command.suppressCommandErrorToast === true
+	) {
+		return;
+	}
 	let subcontrol = '';
 	if (command !== undefined && 'band' in command) subcontrol = command.band;
 	else if (command !== undefined && 'stem' in command) subcontrol = command.stem;
@@ -2284,6 +2483,13 @@ function _invalidateCommandSession(generation: number): void {
 	_commandStatusGeneration += 1;
 	_commandScheduler.invalidateQueued(`performance command session ${generation} was invalidated`);
 	_resetCommandStatus();
+	// Armed records carry a target time on the route-owned AudioContext, which
+	// dies with this session: a record surviving into the next mount would be
+	// measured against an uninitialised or brand-new clock (#4011 review).
+	for (const deckId of DECK_IDS) {
+		waveformSeekArmed[deckId] = null;
+		hotCueArmed[deckId] = null;
+	}
 }
 
 function _currentCommandSession(): number {
@@ -2642,6 +2848,9 @@ async function _dispatchUnknown(
 		throw error;
 	}
 	const deck = _commandDeck(command);
+	if (command.type === 'load') {
+		onDeckLoadStart(command.deck);
+	}
 	if (_presetClaim !== null) {
 		const error = new Error(
 			`performance preset ${_presetClaim.id} owns controls at ${performancePresetLifecycle.phase}; ` +
@@ -2803,10 +3012,17 @@ function _captureUnknown(deck: unknown): DeckAudioSnapshot {
 	return copyDeckAudioSnapshot(engine.captureDeckAudio(_deck(deck)));
 }
 
+/** Test hook: parse one performance command message. */
+export function parsePerformanceCommandForTest(message: unknown): PerformanceCommand {
+	return _parseCommand(message);
+}
+
 export function installPerformanceBrowserIpc(): () => void {
-	if (typeof window === 'undefined') throw new Error('performance IPC requires a browser window');
-	if (window.musicDjToolsPerformance !== undefined) {
-		throw new Error('performance IPC is already installed');
+	const hosts = _performanceIpcHosts();
+	for (const host of hosts) {
+		if (host.musicDjToolsPerformance !== undefined) {
+			throw new Error('performance IPC is already installed');
+		}
 	}
 	const commandGeneration = _startCommandSession();
 	const ipc: PerformanceBrowserIpc = Object.freeze({
@@ -2831,6 +3047,12 @@ export function installPerformanceBrowserIpc(): () => void {
 				id: toast.logId,
 				kind: toast.kind,
 				message: toast.message,
+				headline: toast.headline,
+				detail: toast.detail,
+				classification: toast.classification,
+				settings_summary: toast.settingsSummary,
+				exiting: toast.exiting === true,
+				expanded: toast.expanded === true,
 				count: toast.count,
 				created_at: toast.createdAt,
 				timer_armed: toastTimerArmed(toast.logId)
@@ -2840,12 +3062,28 @@ export function installPerformanceBrowserIpc(): () => void {
 		releaseToast: (id: unknown) => releaseToast(_toastId(id)),
 		copyToast: (id: unknown) => copyToast(_toastId(id))
 	});
-	window.musicDjToolsPerformance = ipc;
+	for (const host of hosts) {
+		host.musicDjToolsPerformance = ipc;
+	}
 	return () => {
-		if (window.musicDjToolsPerformance !== ipc) {
-			throw new Error('performance IPC ownership changed before cleanup');
+		for (const host of hosts) {
+			if (host.musicDjToolsPerformance !== ipc) {
+				throw new Error('performance IPC ownership changed before cleanup');
+			}
 		}
 		_invalidateCommandSession(commandGeneration);
-		delete window.musicDjToolsPerformance;
+		for (const host of hosts) {
+			if (host.musicDjToolsPerformance === ipc) {
+				delete host.musicDjToolsPerformance;
+			}
+		}
 	};
 }
+
+/**
+ * Re-exported for Trackify (PERFMODE-15): performance-ipc.svelte.ts is
+ * already a stores.svelte importer, so routing pushToast through here keeps
+ * the frontend.max_fan_in count on stores.svelte from growing when a new
+ * consumer needs it (.planning/debt/1141.md precedent).
+ */
+export { pushToast } from '$lib/stores.svelte';

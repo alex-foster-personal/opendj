@@ -56,3 +56,11 @@ export function resolveNewTabIndex(panes: { sticky?: boolean }[]): number | null
 	const free = panes.findIndex((p) => p.sticky !== true);
 	return free === -1 ? null : free;
 }
+
+/** Maximum browser pane tabs (SCREENSHOT-SPEC 5c). */
+export const MAX_PANE_SLOTS = 4;
+
+/** True while another blank pane slot can be opened via Blank List (+). */
+export function canAddPaneSlot(paneCount: number): boolean {
+	return paneCount < MAX_PANE_SLOTS;
+}

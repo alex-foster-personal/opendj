@@ -263,6 +263,7 @@ def test_rekordbox_source_leaves_payload_beatgrid_untouched(anlz_client: TestCli
     """
     [if] rekordbox is selected [then] the served beatgrid is left untouched, [else stop].
     """
+    _set_source(anlz_client, "rbx")
     r = anlz_client.get(f"/api/v1/tracks/{SID_WITH_OWN}/anlz")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -411,11 +412,10 @@ def test_analysis_router_still_wires_up_alongside_the_new_router(analysis_db) ->
     imports and mounts fine next to the new module -- guards against an
     accidental circular import between routes.rb_assets and routes.analysis.
 
-    SID_WITH_OWN now correctly 404s here (r3975326241 P1 BLOCKING): it carries
-    a resolved own_beatgrid canonical pointer, so /beatgrid-fallback must defer
-    to that settled answer rather than serve its older legacy row - a 404 with
-    the real detail code still proves the router executed end to end, which is
-    this test's whole point."""
+    SID_WITH_OWN carries a successful own_beatgrid canonical pointer, so the
+    default /beatgrid-fallback still serves the legacy row while own is not
+    the serving source (STANDALONE-04). A 200 with the legacy backend proves
+    the router executed end to end, which is this test's whole point."""
     app = FastAPI()
     app.state.backend = InMemoryBackend()
     app.state.analysis_db_path = analysis_db
@@ -423,5 +423,6 @@ def test_analysis_router_still_wires_up_alongside_the_new_router(analysis_db) ->
     app.include_router(analysis_router, prefix="/api/v1")
     with TestClient(app) as client:
         r = client.get(f"/api/v1/tracks/{SID_WITH_OWN}/beatgrid-fallback")
-    assert r.status_code == 404, r.text
-    assert r.json()["detail"]["code"] == "BEATGRID_FALLBACK_NOT_FOUND"
+    assert r.status_code == 200, r.text
+    assert r.json()["backend"] == "librosa+madmom"
+    assert r.json()["beatgrid"]["beat_count"] > 0

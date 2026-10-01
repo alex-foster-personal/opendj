@@ -82,10 +82,15 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
+import { spendBootLanding } from './support/boot-landing';
+
 /** The chord, spelled once. Playwright maps Meta to Command on macOS and to
  * the Windows key elsewhere; the handler accepts either meta or ctrl, so the
  * platform-correct modifier is what gets pressed. */
 const SETTINGS_CHORD = process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma';
+// A same-origin tab opens in well under a second on every gate host; 15 s is
+// generous headroom for a loaded runner while leaving most of the test budget.
+const NEW_TAB_TIMEOUT_MS = 15_000;
 
 const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
 const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run setup' });
@@ -153,7 +158,7 @@ async function fatalBlockers(page: Page): Promise<string[]> {
 }
 
 test.describe('setup entry points', () => {
-	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page, request }) => {
+	test('Cmd+, opens settings, and Run setup lands on the wizard', async ({ page }) => {
 		// No rb-meta allowlist here on purpose. This suite's library is entirely
 		// locally imported, so every listing row reports has_rb_mapping false and
 		// the browser issues no rb-meta request at all. The 404 that used to be
@@ -181,23 +186,14 @@ test.describe('setup entry points', () => {
 		await runSetupButton(page).click();
 		await expectWizard(page);
 
+		// BuildIdentity's update check must have been issued and answered by the
+		// engine with the endpoint it is configured to read. The manifest behind
+		// that endpoint lives on github.com and is validated in its own test
+		// below, so an outage there cannot discard this test's local evidence.
 		const updateCheckBody = (await (await updateCheckResponsePromise).json()) as {
 			endpoint: string;
 		};
-		const manifestResponse = await request.get(updateCheckBody.endpoint);
-		expect(manifestResponse.status()).toBe(200);
-		const manifest = (await manifestResponse.json()) as {
-			version?: string;
-			platforms?: Record<string, { url?: string; signature?: string }>;
-		};
-		expect(typeof manifest.version).toBe('string');
-		expect((manifest.version ?? '').length).toBeGreaterThan(0);
-		expect(manifest.platforms).toBeTruthy();
-		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
-		expect(typeof darwinEntry?.url).toBe('string');
-		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
-		expect(typeof darwinEntry?.signature).toBe('string');
-		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
+		expect(updateCheckBody.endpoint).toMatch(/^https:\/\//);
 
 		// The USB panel's 503 is a DESIGNED refusal, not a fault, and it is the
 		// one console error this page can legitimately emit on a CI host.
@@ -217,6 +213,41 @@ test.describe('setup entry points', () => {
 		expect(
 			errors.filter((e) => !e.includes('favicon') && !usbCapabilityRefusal.test(e))
 		).toEqual([]);
+	});
+
+	test('the release manifest the engine names is reachable and well-formed', async ({ request }) => {
+		// Separate from the setup-flow test above on purpose (Codex P2 on #3732):
+		// the endpoint is the release manifest on github.com, not this engine, so
+		// a 5xx here is the CDN or the runner's egress failing to answer, which
+		// says nothing about the build under test. Retry a few times, then report
+		// UNMEASURED (a skip naming the status) rather than a red verdict, without
+		// taking any local assertion down with it. A 200 is asserted in full and a
+		// 404 (a missing manifest) still fails.
+		const updateCheck = await request.get('/api/v1/update/check');
+		expect(updateCheck.status()).toBe(200);
+		const { endpoint } = (await updateCheck.json()) as { endpoint: string };
+		let manifestResponse = await request.get(endpoint);
+		for (let attempt = 1; attempt < 4 && manifestResponse.status() >= 500; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+			manifestResponse = await request.get(endpoint);
+		}
+		test.skip(
+			manifestResponse.status() >= 500,
+			`UNMEASURED: release manifest ${endpoint} answered ${manifestResponse.status()} after 4 attempts`
+		);
+		expect(manifestResponse.status()).toBe(200);
+		const manifest = (await manifestResponse.json()) as {
+			version?: string;
+			platforms?: Record<string, { url?: string; signature?: string }>;
+		};
+		expect(typeof manifest.version).toBe('string');
+		expect((manifest.version ?? '').length).toBeGreaterThan(0);
+		expect(manifest.platforms).toBeTruthy();
+		const darwinEntry = manifest.platforms?.['darwin-aarch64'];
+		expect(typeof darwinEntry?.url).toBe('string');
+		expect((darwinEntry?.url ?? '').length).toBeGreaterThan(0);
+		expect(typeof darwinEntry?.signature).toBe('string');
+		expect((darwinEntry?.signature ?? '').length).toBeGreaterThan(0);
 	});
 
 	test('the accelerator also works on /performance', async ({ page }) => {
@@ -328,6 +359,7 @@ test.describe('setup entry points', () => {
 		const dialog = setupDialog(page);
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog.getByRole('radio', { name: 'A rekordbox collection on this machine' }).check();
 
 		// The scanning state must resolve into a verdict, never stick.
 		await expect(dialog.locator('.probes li').first()).toBeVisible();
@@ -380,6 +412,84 @@ test.describe('setup entry points', () => {
 		await expect(setupDialog(page).locator('.steps .step.current')).toContainText(
 			'Find your music'
 		);
+	});
+
+	test('STANDALONE-08: rekordbox detection alone does not opt in or import', async ({
+		page
+	}) => {
+		// Mutation guard: reverting the initial source to rekordbox must fail here.
+		const importPosts: string[] = [];
+		page.on('request', (request) => {
+			if (request.method() === 'POST' && request.url().includes('/api/v1/setup/import')) {
+				importPosts.push(request.url());
+			}
+		});
+
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+
+		const rekordboxRadio = dialog.getByRole('radio', {
+			name: 'A rekordbox collection on this machine'
+		});
+		const folderRadio = dialog.getByRole('radio', { name: /folder of audio files/ });
+		await expect(rekordboxRadio).not.toBeChecked();
+		await expect(folderRadio).not.toBeChecked();
+		await expect(importPosts).toEqual([]);
+
+		const continueButton = dialog.getByRole('button', { name: 'Continue', exact: true });
+		await expect(continueButton).toBeDisabled();
+		await expect(dialog.locator('.why')).toContainText('choose an import source');
+
+		await rekordboxRadio.check();
+		await expect(rekordboxRadio).toBeChecked();
+		await expect(dialog.locator('.probes li').first()).toBeVisible();
+		await expect(importPosts).toEqual([]);
+		await expect(dialog.locator('.steps .step.current')).toContainText('Find your music');
+
+		const fatal = await fatalBlockers(page);
+		if (fatal.length === 0) {
+			await expect(continueButton).toBeEnabled();
+			await continueButton.click();
+			await expect(dialog.locator('.steps .step.current')).toContainText('Confirm the import');
+		}
+	});
+
+	test('STANDALONE-08: declining import completes setup and is not re-offered', async ({
+		page
+	}) => {
+		// Mutation guard: making dismissed-empty libraries reopen must fail here.
+		await gotoShellReady(page, '/setup');
+		const dialog = setupDialog(page);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Get started' }).click();
+		await dialog
+			.getByRole('button', { name: 'Continue without importing', exact: true })
+			.click();
+
+		await expect(setupDialog(page)).toHaveCount(0);
+		await expect(page.locator('.perf-root').first()).toBeVisible();
+
+		const statusAfterDismiss = await page.evaluate(async () => {
+			const response = await fetch('/api/v1/setup/status');
+			return (await response.json()) as { dismissed: boolean; should_show_wizard: boolean };
+		});
+		expect(statusAfterDismiss.dismissed).toBe(true);
+		expect(statusAfterDismiss.should_show_wizard).toBe(false);
+
+		await page.reload();
+		await page.waitForFunction(
+			() => typeof (window as unknown as { __mdtPerfLog?: unknown }).__mdtPerfLog === 'function',
+			undefined,
+			{ timeout: 30_000 }
+		);
+		await expect(setupDialog(page)).toHaveCount(0);
+
+		// Re-arm for the next test.
+		await page.keyboard.press(SETTINGS_CHORD);
+		await runSetupButton(page).click();
+		await expectWizard(page);
 	});
 
 	test('continuing without importing closes into an honest empty state', async ({ page }) => {
@@ -462,17 +572,89 @@ test.describe('setup entry points', () => {
 			.toBe(false);
 	});
 
-	test('the build identity chip states this app address in its foldout', async ({ page }) => {
+	// requirement: INSTALL-29
+	// [if] user opens foldout [then] url link and copy controls work, [else stop].
+	test('the build identity chip states this app address in its foldout', async ({
+		page,
+		context,
+		browserName
+	}) => {
 		// The reason the chip moved into the tray at all: a tester could not
 		// find the packaged app's URL, because the engine binds an ephemeral
 		// port and nothing on screen said which one.
+		// Spend PERFMODE-11's cold-open redirect first: otherwise it can land
+		// AFTER the chip is expanded, swapping the shell tray's chip for the
+		// /performance one (collapsed) mid-test; support/boot-landing.ts.
+		await spendBootLanding(page);
 		await gotoShellReady(page, '/');
 		const chip = page.locator('.build-identity');
 		await expect(chip).toBeVisible();
 		await chip.getByRole('button').first().click();
-		const url = chip.locator('code.url');
-		await expect(url).toBeVisible();
-		await expect(url).toHaveText(/^https?:\/\/[^\s]+$/);
-		await expect(chip.getByRole('button', { name: 'copy' })).toBeVisible();
+		const urlLink = chip.locator('a.url');
+		await expect(urlLink).toBeVisible();
+		await expect(urlLink).toHaveAttribute('href', /^https?:\/\//);
+		await expect(urlLink).toHaveAttribute('target', '_blank');
+		const href = await urlLink.getAttribute('href');
+		if (href === null) throw new Error('the build identity url link lost its href after it was asserted');
+		// Bounded on purpose. Twice on Mon 28 Sep 2026 (runs 36393773779 and
+		// 36415901881, both on agbox2) WebKit took this click, focused the link
+		// and opened no tab at all: no page event and no request for the URL.
+		// An unbounded wait spent the whole test budget and reported only
+		// "Test timeout", which says nothing about which step failed.
+		const pagePromise = context.waitForEvent('page', { timeout: NEW_TAB_TIMEOUT_MS });
+		await urlLink.click();
+		const engineTab = await pagePromise.catch(async (cause: unknown) => {
+			const focused = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 160) ?? 'nothing');
+			throw new Error(
+				`clicking the build identity url link opened no tab within ${NEW_TAB_TIMEOUT_MS} ms ` +
+					`on ${browserName} (focus after the click: ${focused})`,
+				{ cause }
+			);
+		});
+		await engineTab.waitForLoadState('domcontentloaded');
+		expect(engineTab.url().replace(/\/$/, '')).toBe(href.replace(/\/$/, ''));
+		await engineTab.close();
+		await expect(chip.getByRole('button', { name: 'copy all details' })).toBeVisible();
+		const copyIcon = chip.getByRole('button', { name: 'Copy build identity to clipboard' });
+		await expect(copyIcon).toBeVisible();
+		// 'clipboard-read' and 'clipboard-write' are Chromium permission names.
+		// WebKit rejects the grant outright ("Unknown permission:
+		// clipboard-write"), and this spec also runs under the webkit artifact
+		// config, so the grant and the read-back are Chromium-only. Both
+		// browsers still assert the copy itself: the chip reports 'copied all
+		// details' only after `navigator.clipboard.writeText` resolved.
+		const readsClipboard = browserName === 'chromium';
+		if (readsClipboard) await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+		const copyAll = chip.getByRole('button', { name: 'copy all details' });
+		await copyAll.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			// Copy AGAIN on every poll: the engine identity arrives from
+			// GET /api/v1/build-info after the chip mounts, and a copy taken
+			// before it lands says "still reading" with no git_sha. Re-reading a
+			// clipboard nothing rewrites can never see it arrive.
+			await expect
+				.poll(async () => {
+					await copyAll.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the copied report must carry the engine git_sha once GET /api/v1/build-info lands'
+				})
+				.toMatch(/git_sha:/);
+		}
+		await copyIcon.click();
+		await expect(chip.getByText('copied all details', { exact: true })).toBeVisible();
+		if (readsClipboard) {
+			await expect
+				.poll(async () => {
+					await copyIcon.click();
+					return page.evaluate(() => navigator.clipboard.readText());
+				}, {
+					timeout: 30_000,
+					message: 'the clipboard icon must copy the full build identity report'
+				})
+				.toMatch(/git_sha:/);
+		}
 	});
 });

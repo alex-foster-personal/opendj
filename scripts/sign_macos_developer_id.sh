@@ -33,6 +33,13 @@
 #       payload / verify-dmg-app / dmg.
 #   MDT_MACOS_NOTARY_KEYCHAIN_PROFILE `xcrun notarytool store-credentials`
 #       profile name. Required by notarize.
+#   MDT_MACOS_NOTARY_KEYCHAIN         optional path of the keychain that holds
+#       that profile. Without it notarytool resolves the profile through the
+#       DEFAULT keychain, which is the login keychain and stays locked in an
+#       ssh or launchd session nobody has logged in to at the screen: the
+#       Air, Wed 30 Sep 2026, "keychainLocked(keychainName: \"default\")"
+#       while the profile sat unlocked in opendj-signing.keychain-db. Set, it
+#       must name an existing file, and every notarytool call passes it.
 #
 # Every subcommand fails loudly rather than degrading. There is no path
 # through this script that produces an unsigned artifact and reports success.
@@ -83,6 +90,17 @@ _require_identity() {
 _require_notary_profile() {
     [ -n "${MDT_MACOS_NOTARY_KEYCHAIN_PROFILE:-}" ] || die \
         "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE is not set. Create one with: xcrun notarytool store-credentials"
+}
+
+# notarytool's --keychain, as an argument list, when MDT_MACOS_NOTARY_KEYCHAIN
+# names one. Callers expand "${NOTARY_KEYCHAIN_ARGS[@]+"${NOTARY_KEYCHAIN_ARGS[@]}"}",
+# the bash 3.2-safe form for an array that may be empty under set -u.
+_resolve_notary_keychain() {
+    NOTARY_KEYCHAIN_ARGS=()
+    [ -n "${MDT_MACOS_NOTARY_KEYCHAIN:-}" ] || return 0
+    [ -f "$MDT_MACOS_NOTARY_KEYCHAIN" ] || die \
+        "MDT_MACOS_NOTARY_KEYCHAIN names $MDT_MACOS_NOTARY_KEYCHAIN, which is not a file"
+    NOTARY_KEYCHAIN_ARGS=(--keychain "$MDT_MACOS_NOTARY_KEYCHAIN")
 }
 
 _require_tool() {
@@ -248,6 +266,7 @@ cmd_notarize_app() {
     [ -n "$app" ] || die "usage: $0 notarize-app <app>"
     _require_identity
     _require_notary_profile
+    _resolve_notary_keychain
     _require_tool ditto
     _require_tool xcrun
     _require_tool spctl
@@ -260,7 +279,8 @@ cmd_notarize_app() {
     ditto -c -k --keepParent "$app" "$NOTARY_APP_DIR/app.zip" || die "could not archive app for notarization"
     started=$(date +%s)
     out=$(xcrun notarytool submit "$NOTARY_APP_DIR/app.zip" \
-        --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" --wait 2>&1) || {
+        --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" \
+        ${NOTARY_KEYCHAIN_ARGS[@]+"${NOTARY_KEYCHAIN_ARGS[@]}"} --wait 2>&1) || {
         printf '%s\n' "$out"
         die "notarytool submit failed for app"
     }
@@ -315,6 +335,7 @@ cmd_notarize() {
     [ -n "$dmg" ] || die "usage: $0 notarize <dmg>"
     _require_identity
     _require_notary_profile
+    _resolve_notary_keychain
     _require_tool xcrun
     [ -f "$dmg" ] || die "no dmg at $dmg"
 
@@ -322,7 +343,8 @@ cmd_notarize() {
     echo "[INFO] submitting to the notary service with keychain profile $MDT_MACOS_NOTARY_KEYCHAIN_PROFILE"
     started=$(date +%s)
     out=$(xcrun notarytool submit "$dmg" \
-        --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" --wait 2>&1) || {
+        --keychain-profile "$MDT_MACOS_NOTARY_KEYCHAIN_PROFILE" \
+        ${NOTARY_KEYCHAIN_ARGS[@]+"${NOTARY_KEYCHAIN_ARGS[@]}"} --wait 2>&1) || {
         printf '%s\n' "$out"
         die "notarytool submit failed"
     }

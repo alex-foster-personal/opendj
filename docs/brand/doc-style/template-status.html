@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Open DJ doc style: STATUS PAGE / TASK LIST template.
+  Shape: a counts strip (facts card of counts), then task rows with status pills,
+  ordered by what blocks most, then the "What exactly was tested" footer.
+  How to use: copy this file, fix the stylesheet href if you moved it, replace every
+  {{PLACEHOLDER}}, and remove the slot comments.
+  Voice rules: answer first (is it on track, and what blocks it). Dates carry the
+  weekday, times are UTC. Every count has a title naming its unit and denominator;
+  never quote a rate against a denominator that includes rows that cannot be measured.
+  Every row that can drift gets a source line. American spelling.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Title: two to four words naming the work tracked. -->
+<title>{{SHORT_TITLE}}</title>
+<link rel="stylesheet" href="odj-doc.css">
+</head>
+<body>
+<main>
+<header class="mast" aria-label="Open DJ">
+  <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 367.72,144.28 A 188,188 0 0,0 101.85,410.15 Z" fill="var(--mark-dark)"/><path d="M 410.15,101.85 A 188,188 0 0,1 144.28,367.72 Z" fill="var(--mark-light)"/></svg>
+  <span class="wordmark">Open DJ</span><span class="stage" title="Open DJ is alpha software: features and stored formats can change between releases. Keep a library backup.">alpha</span>
+</header>
+
+<!-- Eyebrow: doc type, weekday date with UTC time, and the sha or snapshot it was measured on. -->
+<p class="eyebrow">Status · {{WEEKDAY_DATE}} {{HH_MM}}Z · {{REPO}} {{SHORT_SHA}}</p>
+<!-- H1: the work being tracked. -->
+<h1>{{WORK_NAME}}</h1>
+<!-- Lede: on track or not, then the single biggest blocker. -->
+<p class="lede">{{ON_TRACK_OR_NOT}} {{BIGGEST_BLOCKER}}</p>
+
+<!-- Counts strip: one row per state. Each number has a title with unit and denominator. -->
+<dl class="facts">
+  <dt>Blocked</dt><dd class="num" title="{{BLOCKED_COUNT_MEANING}}"><span class="pill bad">{{N_BLOCKED}}</span> of {{TOTAL}}</dd>
+  <dt>In progress</dt><dd class="num" title="{{IN_PROGRESS_COUNT_MEANING}}"><span class="pill warn">{{N_IN_PROGRESS}}</span> of {{TOTAL}}</dd>
+  <dt>Done</dt><dd class="num" title="{{DONE_COUNT_MEANING}}"><span class="pill ok">{{N_DONE}}</span> of {{TOTAL}}</dd>
+  <dt>Not started</dt><dd class="num" title="{{NOT_STARTED_COUNT_MEANING}}"><span class="pill neutral">{{N_NOT_STARTED}}</span> of {{TOTAL}}</dd>
+</dl>
+
+<!-- Optional note: the one thing that changes how the reader acts on this page. Delete if none. -->
+<p class="note">{{ONE_THING_TO_ACT_ON}}</p>
+
+<h2>Blocking</h2>
+<!-- Task rows: ordered by what blocks most. Pill: bad = Blocked or Decide, warn = In progress, ok = Done, neutral = Not started. -->
+<ol class="tasks">
+  <li><span class="pill bad">Blocked</span><div><p><strong>{{TASK_CLAIM}}</strong> {{WHAT_IT_WAITS_ON}}</p><p class="src">{{ISSUE_PR_PATH_OR_SESSION}}</p></div></li>
+  <li><span class="pill warn">Building</span><div><p><strong>{{TASK_CLAIM}}</strong> {{OWNER_AND_NEXT_STEP}}</p><p class="src">{{ISSUE_PR_PATH_OR_SESSION}}</p></div></li>
+</ol>
+
+<h2>Done since {{WEEKDAY_DATE_OF_LAST_UPDATE}}</h2>
+<ol class="tasks">
+  <li><span class="pill ok">Done</span><div><p><strong>{{TASK_CLAIM}}</strong> {{HOW_IT_WAS_VERIFIED}}</p><p class="src">{{MERGED_PR_OR_SHA}}</p></div></li>
+  <li><span class="pill neutral">Next</span><div><p><strong>{{TASK_CLAIM}}</strong> {{WHY_IT_IS_NEXT}}</p><p class="src">{{ISSUE}}</p></div></li>
+</ol>
+
+<!-- Footer: always present, always last. Say how the counts were measured, and what was not re-measured. -->
+<details class="tested">
+  <summary>What exactly was tested</summary>
+  <ul>
+    <li>{{HOW_THE_COUNTS_WERE_MEASURED_AND_WHEN}}</li>
+    <li>Not re-measured: {{WHAT_WAS_CARRIED_FORWARD_FROM_AN_EARLIER_READ}}</li>
+  </ul>
+</details>
+</main>
+</body>
+</html>

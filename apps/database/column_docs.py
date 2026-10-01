@@ -48,6 +48,7 @@ from apps.database.column_docs_lyrics import LYRICS_COLUMN_DOCS
 from apps.database.column_docs_native_analysis import NATIVE_ANALYSIS_COLUMN_DOCS
 from apps.database.column_docs_pairing_capture import PAIRING_CAPTURE_COLUMN_DOCS
 from apps.database.column_docs_sibling_apps import SIBLING_APP_COLUMN_DOCS
+from apps.database.column_docs_sync_gate import SYNC_GATE_COLUMN_DOCS
 from apps.database.enrollment_table_docs import ENROLLMENT_COLUMN_DOCS
 from apps.database.table_docs import TABLE_DOCS
 
@@ -92,6 +93,10 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
             "does not populate it) -- this blocks every content-addressed "
             "sync operation until the CLOUDSYNC content-hash-backfill "
             "phase runs (cloudsync-spec.md section 4)."
+        ),
+        "audio_hash": (
+            "Tag-independent SHA-256 of the decoded container audio payload; "
+            "used beside content_hash for CloudSync identity merges."
         ),
         "created_at": "RFC 3339 UTC timestamp of first insert. Never rewritten.",
         "updated_at": (
@@ -399,6 +404,24 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "origin_device_id": "Writing machine's machine_id.",
         "deleted_at": "Tombstone timestamp. NULL = live.",
     },
+    "path_availability": {
+        "resolver_namespace": (
+            "SHA-256 fingerprint of the active path-map entries plus this "
+            "machine's machine-id file. Rows from an old namespace are ignored "
+            "after a path-map change."
+        ),
+        "logical_path": (
+            "Library path string before containment resolution (rekordbox "
+            "FolderPath, tracks.file_path, or track_locations path)."
+        ),
+        "materialised_size": (
+            "Materialised st_size in bytes from fs_residency, or NULL when "
+            "the resolved path is missing, not a file, or a dataless stub."
+        ),
+        "checked_at": (
+            "RFC 3339 UTC timestamp when this row was last probed or written."
+        ),
+    },
     "sync_state": {
         "peer": (
             "Primary key -- identifies the sync peer these watermarks are "
@@ -597,6 +620,8 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
     **LYRICS_COLUMN_DOCS,
     # Migration v12 feedback_pins (FBSYNC-01, ADR-0013).
     **FEEDBACK_COLUMN_DOCS,
+    # Migration v21 sync_write_tokens (issue #4396).
+    **SYNC_GATE_COLUMN_DOCS,
 }
 
 

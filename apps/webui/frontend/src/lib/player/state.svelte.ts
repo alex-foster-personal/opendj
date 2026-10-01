@@ -124,6 +124,8 @@ export function _defaultHeadphones(): HeadphoneState {
 			cue_latency_ms: last === null ? null : last.cue_latency_ms,
 			master_latency_ms: last === null ? null : last.master_latency_ms,
 			offset_ms: last === null ? null : last.cue_latency_ms - last.master_latency_ms,
+			verify_residual_ms: null,
+			probe: null,
 			error: null
 		},
 		outputs: [],
@@ -196,6 +198,18 @@ function _sharedMixerState(): MixerState {
 }
 
 export const mixerState: MixerState = _sharedMixerState();
+
+let _masterWriteRevision = 0;
+
+/** Monotonic token for distinguishing a stale teardown mute from a later write. */
+export function readMasterWriteRevision(): number {
+	return _masterWriteRevision;
+}
+
+/** Called by the one engine-owned master setter before it publishes a value. */
+export function recordMasterWrite(): void {
+	_masterWriteRevision += 1;
+}
 
 /** Per-deck store accessor (contract: singleton engine + accessor). */
 export function getDeckState(deck: DeckId): DeckState {

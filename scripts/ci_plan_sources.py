@@ -82,7 +82,17 @@ def _relative_base(where: str, level: int) -> str:
 
 
 def imported_packages(text: str, where: str) -> set[str]:
-    """The `apps.x` / `scripts.x` / `ops.x` packages a module imports, read with the AST.
+    """The `apps.x` / `scripts.x` / `ops.x` packages a module imports: `imported_modules`
+    cut to two components. Kept for callers that ask about packages; the planner's owner
+    lookups use the full names, because a nested scope (`apps/webui/frontend/`) is invisible
+    at two components (Codex on #3780)."""
+    return {".".join(module.split(".")[:2]) for module in imported_modules(text, where)}
+
+
+def imported_modules(text: str, where: str, top_packages: tuple[str, ...] = _TOP_PACKAGES) -> set[str]:
+    """Every dotted module name under `top_packages` (default `apps`, `scripts`, `ops`) a
+    module imports, read with the AST and returned in FULL. The seam selector also passes
+    `tests`, because a test helper is reached through `tests.` imports.
 
     A regular expression missed `from apps import engine_core` outright and saw only the
     first name in `import apps.foo, apps.bar`. Sol's P1 on #3339, and the reason it was
@@ -110,8 +120,38 @@ def imported_packages(text: str, where: str) -> set[str]:
             # `from apps import engine_core` names the package in the ALIAS, not the module.
             found.update(f"{module}.{alias.name}" for alias in node.names)
             found.add(module)
+    return {part for part in found if part.split(".")[0] in top_packages and "." in part}
+
+
+def mentioned_strings(text: str, where: str) -> set[str]:
+    """Every string literal a module carries in CODE, read with the AST. Round 9.
+
+    The consumers of a scope the import reader cannot see (Svelte, TypeScript, JSON) are the
+    tests that spell its path: `Path("apps/webui/frontend/dist")`, a `pnpm --dir` argument,
+    `WEBUI / "frontend"`. Those are string constants. Comments and docstrings are NOT: the root
+    `tests/conftest.py` says "frontend" twice in comments and consumes nothing, and reading
+    raw text would have made the whole frontend helper-carried, which is FULL on every change
+    and exactly the over-selection this reader exists to remove. A docstring is the first
+    statement of a module, class or function, and is skipped by that position.
+
+    Fails loud on a file that does not parse, for the reason `imported_packages` does.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        raise PlanError(f"cannot parse {where}: {exc}") from None
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            first = node.body[0] if node.body else None
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                docstrings.add(id(first.value))
     return {
-        ".".join(part.split(".")[:2])
-        for part in found
-        if part.split(".")[0] in _TOP_PACKAGES and "." in part
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings
     }

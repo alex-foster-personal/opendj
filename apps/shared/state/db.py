@@ -11,6 +11,7 @@ style (see ``apps/shared/djay_db.py``).
 from __future__ import annotations
 
 import atexit
+import math
 import sqlite3
 import uuid
 from collections.abc import Iterator
@@ -23,17 +24,33 @@ from . import sync_stamp as _sync_stamp
 
 # PRAGMA values used for every writable handle. WAL + NORMAL is the usual
 # recommendation for OLTP-ish workloads; foreign_keys enforces our
-# REFERENCES clauses; busy_timeout rides out a few hundred ms of lock
-# contention without the caller seeing sqlite3.OperationalError.
+# REFERENCES clauses. busy_timeout is set per handle from the caller's
+# ``busy_timeout_s`` (see :func:`open_rw`).
 _RW_PRAGMAS: tuple[tuple[str, object], ...] = (
     ("journal_mode", "WAL"),
     ("synchronous", "NORMAL"),
     ("foreign_keys", "ON"),
-    ("busy_timeout", 5000),
 )
 
-# Matches PRAGMA busy_timeout above; passed to sqlite3.connect as well.
-_RW_CONNECT_TIMEOUT_S: float = 5.0
+# Default busy wait for request-time handles: rides out a few hundred ms of
+# lock contention without the caller seeing sqlite3.OperationalError, and is
+# the ceiling after which a contended API write surfaces as STATE_STORE_BUSY.
+# It equals Python's own ``sqlite3.connect`` default, stated here so no handle
+# relies on that implicit value.
+DEFAULT_BUSY_TIMEOUT_S: float = 5.0
+
+# Busy wait for the one-shot BOOT path (``make_backend``'s read-only schema
+# pre-checks and its migrate-on-open). In WAL mode a reader is blocked only
+# while a peer holds the database file EXCLUSIVE (the last connection to close
+# checkpoints and deletes -wal/-shm under it) or rebuilds the wal-index
+# (recovery). SQLite's busy handler waits out both -- measured: SQLITE_BUSY
+# and SQLITE_BUSY_RECOVERY raise at the timeout, not before -- and both take
+# milliseconds on an idle host. Under a loaded CI runner (load ~24, fast lane
+# shard 4 on nucbox-wsl-16, Sat 26 Sep 2026) a peer boot held one past the
+# implicit 5 s default and a pre-check raised ``database is locked``. Boot
+# runs once, so the longer ceiling costs nothing on the happy path; past it
+# the error still propagates and the boot fails loud.
+BOOT_BUSY_TIMEOUT_S: float = 30.0
 
 
 class StateStoreBusyError(RuntimeError):
@@ -55,9 +72,25 @@ def _ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _apply_rw_pragmas(conn: sqlite3.Connection) -> None:
+def _checked_busy_timeout_s(busy_timeout_s: float) -> float:
+    """Return ``busy_timeout_s`` if it is a finite positive wait; raise otherwise.
+
+    Every handle's lock wait must be BOUNDED: an infinite or non-positive
+    value is a configuration bug, never a request for "wait forever" or
+    "fail instantly".
+    """
+    if not math.isfinite(busy_timeout_s) or busy_timeout_s <= 0:
+        raise ValueError(
+            "busy_timeout_s must be a finite number of seconds above zero, "
+            f"got {busy_timeout_s!r}"
+        )
+    return busy_timeout_s
+
+
+def _apply_rw_pragmas(conn: sqlite3.Connection, busy_timeout_s: float) -> None:
     for key, value in _RW_PRAGMAS:
         conn.execute(f"PRAGMA {key} = {value}")
+    conn.execute(f"PRAGMA busy_timeout = {round(busy_timeout_s * 1000)}")
 
 
 def open_rw(
@@ -65,8 +98,13 @@ def open_rw(
     *,
     apply_schema: bool = True,
     check_same_thread: bool = True,
+    busy_timeout_s: float = DEFAULT_BUSY_TIMEOUT_S,
 ) -> sqlite3.Connection:
     """Open ``path`` read-write; optionally apply migrations.
+
+    ``busy_timeout_s`` bounds how long any statement on this handle waits for
+    a lock held by another connection (:data:`BOOT_BUSY_TIMEOUT_S` on the boot
+    path); past it SQLite raises ``database is locked``.
 
     The parent directory is created if missing so ``init`` can be called on
     a fresh checkout.
@@ -95,8 +133,9 @@ def open_rw(
     later opens constant-time.
 
     After migrations and machine-id backfill,
-    :func:`apps.database.regenerate_agents_md_if_writable` regenerates
-    ``<state_dir>/AGENTS.md`` when the state directory is writable; a docs
+    :func:`apps.shared.state.agents_md_cache.regenerate_agents_md_cached`
+    regenerates ``<state_dir>/AGENTS.md`` when the state directory is
+    writable and the sidecar is not already current for this schema; a docs
     gap on an owned table
     (:class:`apps.database.generate_agents_md.MissingColumnDocsError`)
     still fails the open. Leftover tables that are not in
@@ -109,20 +148,22 @@ def open_rw(
     ``MissingColumnDocsError`` is intentionally not caught here.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
+    busy_timeout_s = _checked_busy_timeout_s(busy_timeout_s)
     _ensure_parent(target)
     conn = sqlite3.connect(
         str(target),
-        timeout=_RW_CONNECT_TIMEOUT_S,
+        timeout=busy_timeout_s,
         isolation_level=None,
         check_same_thread=check_same_thread,
     )
     try:
-        _apply_rw_pragmas(conn)
+        _apply_rw_pragmas(conn, busy_timeout_s)
         if apply_schema:
             _schema.apply_migrations(conn)
             _sync_stamp.backfill_local_machine_id(conn)
-            from apps.database import regenerate_agents_md_if_writable
-            regenerate_agents_md_if_writable(
+            from apps.shared.state.agents_md_cache import regenerate_agents_md_cached
+
+            regenerate_agents_md_cached(
                 conn,
                 target.parent,
                 owned_tables=_schema.ALL_KNOWN_TABLES,
@@ -133,20 +174,28 @@ def open_rw(
     return conn
 
 
-def open_ro(path: Path | None = None) -> sqlite3.Connection:
+def open_ro(
+    path: Path | None = None,
+    *,
+    busy_timeout_s: float = DEFAULT_BUSY_TIMEOUT_S,
+) -> sqlite3.Connection:
     """Open ``path`` read-only with a query_only guard.
 
     Uses the SQLite URI form ``mode=ro`` so write attempts raise
-    :class:`sqlite3.OperationalError` at execute time.
+    :class:`sqlite3.OperationalError` at execute time. ``busy_timeout_s``
+    bounds the wait for a peer's lock, as in :func:`open_rw`.
     """
     target = Path(path) if path is not None else state_paths.STATE_DB
+    busy_timeout_s = _checked_busy_timeout_s(busy_timeout_s)
     if not target.exists():
         raise FileNotFoundError(
             f"state DB not found at {target}; run "
             f"`python -m apps.shared.state.cli init` first."
         )
     uri = f"file:{target}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, isolation_level=None)
+    conn = sqlite3.connect(
+        uri, uri=True, isolation_level=None, timeout=busy_timeout_s,
+    )
     conn.execute("PRAGMA query_only = ON")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn

@@ -14,7 +14,7 @@ resolves to this one class rather than a second copy of it.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -41,6 +41,11 @@ class TestClientTransport:
             {} if bearer is None else {"Authorization": f"Bearer {bearer}"}
         )
 
+    @property
+    def app_state(self) -> Any:
+        """The hub app's ``state``, for a test that must reach its resources."""
+        return self._http.app.state
+
     def _decoded(self, response: Any, label: str) -> dict[str, Any]:
         if response.status_code >= 400:
             raise transport.refused(label, response.status_code, response.text)
@@ -50,7 +55,21 @@ class TestClientTransport:
         response = self._http.post(path, json=dict(payload), headers=self._headers)
         return self._decoded(response, f"POST {path}")
 
-    def get(self, path: str, params: Mapping[str, str]) -> dict[str, Any]:
+    def get(self, path: str, params: Mapping[str, str | Sequence[str]]) -> dict[str, Any]:
+        """``params``' value type matches ``HubTransport.get`` exactly (found
+        by the quality ratchet's ``mypy.errors_tests`` regression on PR
+        #3831's own head, round-3 fix): the old, narrower ``Mapping[str,
+        str]`` meant this class did not actually satisfy the
+        ``HubTransport`` Protocol it claims to implement, so mypy flagged
+        every call site passing an instance of it as ``transport=`` --
+        already true for 5 existing call sites tolerated as debt on main
+        before this fix; a 6th, newly added one in
+        ``test_sync_cli_single_flight.py`` is what turned the tolerated
+        debt into a measured regression. ``dict(params)`` handed to
+        ``TestClient.get`` already accepted a sequence value at runtime
+        (httpx's ``QueryParamTypes`` supports repeated params); only the
+        annotation was too narrow to say so.
+        """
         response = self._http.get(path, params=dict(params), headers=self._headers)
         return self._decoded(response, f"GET {path}")
 

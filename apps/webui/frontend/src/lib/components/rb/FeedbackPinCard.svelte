@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pinBodyPos, pinBodyStyle, pinIsDone, pinStatus } from '$lib/rb/feedback';
 	import { blockedPinDetail, blockedPinRequest } from '$lib/rb/feedback';
+	import { isPinRegressed } from '$lib/rb/feedback-pin-board';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
 	import { linkifyAgentNote } from '$lib/rb/feedback';
 	import {
@@ -11,6 +12,7 @@
 	import { pinThread } from '$lib/rb/feedback-pin-thread';
 	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
+	import { OVERLAY_Z_INDEX } from '$lib/overlays/overlay-stack';
 
 	let {
 		pin,
@@ -45,7 +47,8 @@
 	 * prop change, not just at mount. */
 	const bodyStyle = $derived.by(() => {
 		const pos = measuredPos;
-		return pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		const place = pos !== null ? `left:${pos.x}px;top:${pos.y}px` : pinBodyStyle(pin);
+		return `${place};z-index:${OVERLAY_Z_INDEX.feedbackPinBubble}`;
 	});
 
 	const thread = $derived(pinThread(pin));
@@ -131,6 +134,39 @@
 	<p class="fb-hint">
 		{pinStatus(pin)}{pinVisualState(pin) === 'partial' ? ' (partial)' : ''} - {pin.created_at}
 	</p>
+	{#if pin.anchor}
+		<p class="fb-hint" title="Original anchor captured at drop time">Anchor: {pin.anchor}</p>
+	{/if}
+	<dl class="fb-provenance" data-testid="fb-pin-provenance">
+		<dt title="UTC timestamp when the pin was saved">Created (UTC)</dt>
+		<dd>{pin.created_at}</dd>
+		<dt title="Route path when the pin was dropped">Page</dt>
+		<dd>{pin.page}</dd>
+		{#if pin.build?.git_sha}
+			<dt title="Git commit stamped at save time">Build git sha</dt>
+			<dd>{pin.build.git_sha}</dd>
+		{/if}
+		{#if pin.environment}
+			<dt title="UI surface kind at drop time">UI</dt>
+			<dd>{pin.environment.ui}</dd>
+			<dt title="Viewport width in CSS pixels at drop time">Viewport</dt>
+			<dd>{pin.environment.viewport_width}×{pin.environment.viewport_height}</dd>
+			<dt title="Daemon machine name published in settings/health">Machine</dt>
+			<dd>{pin.environment.machine}</dd>
+			<dt title="Release version separate from git sha">Release</dt>
+			<dd>{pin.environment.release_version}</dd>
+		{/if}
+	</dl>
+	{#if pin.fixed_in_sha}
+		<p class="fb-hint" title="Build where this pin was marked fixed or merged">
+			Fixed in: {pin.fixed_in_sha}
+		</p>
+	{/if}
+	{#if isPinRegressed(pin)}
+		<p class="fb-hint fb-regressed" title="New activity after the pin was marked fixed">
+			Regressed: new reply after fix ({pin.fixed_in_sha})
+		</p>
+	{/if}
 	{#each thread as turn (turn.id)}
 		{#if turn.kind === 'opening'}
 			<p class="fb-body-text">{turn.text}</p>
@@ -246,6 +282,7 @@
 {#if lightboxOpen && pin.attachment}
 	<div
 		class="fb-lightbox"
+		style="z-index: {OVERLAY_Z_INDEX.feedbackPinBubble + 5}"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Screenshot"
@@ -269,7 +306,6 @@
 <style>
 	.fb-pin-body {
 		position: fixed;
-		z-index: 310;
 		width: 240px;
 		max-height: 320px;
 		overflow-y: auto;
@@ -343,10 +379,26 @@
 		color: var(--rb-accent);
 		word-break: break-all;
 	}
+	.fb-provenance {
+		margin: 4px 0 0;
+		padding: 4px 0 0;
+		border-top: 1px solid var(--rb-border);
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 6px;
+		user-select: text;
+	}
+	.fb-provenance dt {
+		color: var(--rb-text-dim);
+		font-weight: 600;
+	}
+	.fb-provenance dd {
+		margin: 0;
+		word-break: break-all;
+	}
 	.fb-lightbox {
 		position: fixed;
 		inset: 0;
-		z-index: 320;
 		display: flex;
 		align-items: center;
 		justify-content: center;

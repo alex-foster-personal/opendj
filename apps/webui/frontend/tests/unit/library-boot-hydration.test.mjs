@@ -61,6 +61,21 @@ test('fetchBootTracksFirstPage falls back when prefetch rejects', async () => {
 	assert.equal(page.items[0].stable_id, 't1');
 });
 
+test('bootPlaylistsPrefetch falls back to fast list when fast prefetch rejects', async () => {
+	hydration.setPrefsHydratorForTests(async () => {});
+	hydration.setFetchBootTracksPageForTests(() => Promise.resolve({ items: [], next_cursor: null }));
+	hydration.setFetchBootPlaylistsForTests(() => Promise.reject(new Error('fast validation fail')));
+	let fallbackCalls = 0;
+	hydration.setFallbackPlaylistsFetchForTests(() => {
+		fallbackCalls += 1;
+		return Promise.resolve([{ playlist_id: 'pl-1', name: 'Strict', track_count: 1, available_count: 1 }]);
+	});
+	hydration.startLibraryBootHydration();
+	const lists = await hydration.bootPlaylistsPrefetch();
+	assert.equal(fallbackCalls, 1);
+	assert.equal(lists[0].playlist_id, 'pl-1');
+});
+
 test('canBootAllTracksEarly refuses playlist and spotify deep-link boots', () => {
 	assert.equal(
 		hydration.canBootAllTracksEarly({
