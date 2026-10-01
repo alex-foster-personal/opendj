@@ -10,6 +10,7 @@ Single-line intent:
     behind shards
   - if the fast job loses `actions: write` or `checks: read` then the fail-fast step 403s
   - if the fast job runs on push then a trunk push can cancel its own verdict
+  - if the fast job runs on a Trunk queue draft then four ungating legs take pytest slots from PR heads
   - if the fast job's pytest drops --tier-min-selected or --ledger-coverage-min then a thin run
     reads green
   - if the fast job stores durations then four partial legs overwrite the ledger
@@ -38,6 +39,14 @@ FAST_RUNS_ON = (
     "&& vars.CI_RUNS_ON_TRUNK || "
     "vars.CI_RUNS_ON_FAST || vars.CI_RUNS_ON_PYTEST || vars.CI_RUNS_ON_E2E || "
     "vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+)
+
+
+# The three-part Trunk queue draft test every CI_RUNS_ON_MERGE_QUEUE clause uses.
+TRUNK_DRAFT = (
+    "startsWith(github.head_ref, 'trunk-merge/') && "
+    "github.event.pull_request.user.login == 'trunk-io[bot]' && "
+    "github.event.pull_request.head.repo.full_name == github.repository"
 )
 
 
@@ -89,7 +98,7 @@ def test_fast_job_is_pull_request_only_with_four_legs() -> None:
     assert job["needs"] == "scope"
     assert job["if"] == (
         "needs.scope.outputs.in_scope == 'true' && "
-        "(github.event_name == 'pull_request' || "
+        "((github.event_name == 'pull_request' && !(" + TRUNK_DRAFT + ")) || "
         "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast'))"
     )
     assert job["strategy"]["matrix"]["leg"] == [1, 2, 3, 4]
@@ -244,3 +253,13 @@ def test_fast_leg_bounds_each_test_under_its_wall_budget() -> None:
     assert any(line.startswith("pytest-timeout") for line in requirements.splitlines()), (
         "pytest-timeout is missing from requirements.txt, which is what CI installs"
     )
+
+
+def test_fast_job_skips_the_same_queue_draft_the_shards_route_to_mq() -> None:
+    """if the fast job's queue-draft test drifts from the shards' then a draft runs it, or a PR head loses it
+
+    The skip and the `mq` routing must name one draft. A copy that drifts either
+    runs the ungating legs on drafts again or silently drops them from real PR heads.
+    """
+    assert TRUNK_DRAFT in _raw_runs_on("test"), "the shard job's mq clause no longer matches TRUNK_DRAFT"
+    assert f"!({TRUNK_DRAFT})" in _jobs()["fast"]["if"]
