@@ -1,5 +1,7 @@
 """The listing's ``lyrics_available`` flag never fails a page (LIBM-137, round 4).
 
+[if] the lyrics flag raises, counts a symlink, or lists the cache directory [then] fail, [else stop].
+
 Regression one-liners:
   - if a lyrics-cache path that is a file, or unreadable, raises out of the flag then broken
   - if a symlinked cache entry counts as lyrics then broken

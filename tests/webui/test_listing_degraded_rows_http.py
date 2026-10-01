@@ -1,5 +1,7 @@
 """One bad row never fails a listing page, through the HTTP route (LIBM-137, round 4).
 
+[if] a listing page with a malformed row, or after a share root change, answers wrongly over HTTP [then] fail, [else stop].
+
 The unit tests in ``test_row_assets_degrade.py`` call the row reader. These
 run the real engine in a child process (``listing_boot_probe``, which exits
 non-zero on any answer but 200) over a small rekordbox-mapped library, and

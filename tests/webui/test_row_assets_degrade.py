@@ -1,5 +1,7 @@
 """One bad row never fails the page, and nothing weak is remembered (LIBM-137, round 4).
 
+[if] a malformed, hard-linked or unnameable row asset fails the page or is remembered unsafely [then] fail, [else stop].
+
 Second independent review of the row asset cache. Same rules as
 ``test_row_assets_cache.py``, whose fixture this file shares: real files, real
 links, and a preview level that says where the bytes came from (5 inside the
