@@ -2,8 +2,10 @@
  * Keyboard + pointer wiring for LIBUX-05 "Technically-working mode".
  *
  * cmd+R (Ctrl+R on non-Mac) - press toggles overlay mode on/off; holding it
- * peeks the full UI back for as long as it is held. Cmd+R is the browser's
- * reload chord, so every branch preventDefaults it.
+ * peeks the full UI back for as long as it is held. Cmd+R is also a browser's
+ * reload chord: the desktop shell claims it and preventDefaults every branch,
+ * while a browser tab leaves Cmd+R to the browser (LIBUX-29, reload-chord.ts)
+ * and toggles on Ctrl+R only.
  * Opt/Alt held - reveals the "no obvious home" group (mixer/topbar/quick
  * draw) over a translucent backdrop. Hold-only: there is no toggle reading.
  * cmd+E (Ctrl+E) - toggles the floating EQ panel. Only meaningful in overlay
@@ -18,7 +20,9 @@
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import { createHoldOrPress } from '$lib/gestures/hold-or-press';
 import { runPerformanceCommandFromUi } from '$lib/rb/performance-ipc.svelte';
+import { pageOwnsReloadChord } from '$lib/rb/reload-chord';
 import { isSettingsOpen } from '$lib/settings/overlay.svelte';
+import { nativeShellKind } from '$lib/shell/native-shell';
 import {
 	hoveredEdgeList,
 	isEqRaised,
@@ -112,6 +116,7 @@ export function installTechnicallyWorkingHotkeys(): () => void {
 	const onKeyDown = (e: KeyboardEvent): void => {
 		if (isSettingsOpen() || _typingTarget(e.target)) return;
 		if (_isModChord(e, 'r')) {
+			if (!pageOwnsReloadChord(e, nativeShellKind())) return;
 			e.preventDefault();
 			e.stopPropagation();
 			rGesture.keyDown();

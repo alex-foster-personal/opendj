@@ -301,3 +301,86 @@ test('the homeless-group backdrop shows only for the Opt reveal, never for a cmd
 	await page.keyboard.up('r');
 	await page.keyboard.up('Control');
 });
+
+// LIBUX-29: in a browser tab Cmd+R is the browser's reload chord. Every test
+// in this file runs in a tab (no desktop shell global), which is the case
+// under test here.
+test('cmd+r in a browser tab is left to the browser and does not enter overlay mode', async ({
+	page
+}) => {
+	const root = page.locator('.perf-root');
+	await page.evaluate(() => {
+		const probe = window as unknown as { __reloadChord: { defaultPrevented: boolean } | null };
+		probe.__reloadChord = null;
+		// Registered on document, so it runs after the window listeners under
+		// test, and it reads the flag after the dispatch has finished.
+		document.addEventListener('keydown', (event) => {
+			if (!event.metaKey || event.key.toLowerCase() !== 'r') return;
+			setTimeout(() => {
+				probe.__reloadChord = { defaultPrevented: event.defaultPrevented };
+			});
+		});
+	});
+
+	await page.keyboard.press('Meta+r');
+	await page.waitForFunction(
+		() => (window as unknown as { __reloadChord: unknown }).__reloadChord !== null
+	);
+	const chord = await page.evaluate(
+		() => (window as unknown as { __reloadChord: { defaultPrevented: boolean } }).__reloadChord
+	);
+	expect(chord.defaultPrevented, 'the page must not swallow the reload chord').toBe(false);
+	// A reload may or may not follow (headless Chromium has no accelerator for
+	// it); either way the surface that is on screen is not in overlay mode.
+	await page.waitForFunction(() => window.musicDjToolsPerformance?.version === 1);
+	await expect(root).not.toHaveClass(/tw-active/);
+	expect((await techState(page)).active).toBe(false);
+});
+
+// LIBUX-30: a hidden region takes its separator rules with it.
+test('overlay mode leaves no deck-column or wave-stack rule painted, and each returns with its edge', async ({
+	page
+}) => {
+	const root = page.locator('.perf-root');
+	const TRANSPARENT = 'rgba(0, 0, 0, 0)';
+	const rules = () =>
+		page.evaluate(() => {
+			const color = (selector: string, side: 'Right' | 'Left' | 'Bottom') => {
+				const element = document.querySelector(selector);
+				if (element === null) throw new Error(`${selector} not found`);
+				const style = getComputedStyle(element);
+				if (Number.parseFloat(style[`border${side}Width`]) <= 0) {
+					throw new Error(`${selector} has no ${side} border to measure`);
+				}
+				return style[`border${side}Color`];
+			};
+			return {
+				left: color('.perf-root .deck-col:first-child', 'Right'),
+				right: color('.perf-root .deck-col:last-child', 'Left'),
+				top: color('.perf-root .rb-wavestack', 'Bottom')
+			};
+		});
+
+	// Positive control: outside overlay mode all three rules are painted, so
+	// "transparent" below is a change and not how they always read.
+	const before = await rules();
+	for (const [edge, color] of Object.entries(before)) {
+		expect(color, `${edge} rule outside overlay mode`).not.toBe(TRANSPARENT);
+	}
+
+	await page.keyboard.down('Control');
+	await page.keyboard.press('r');
+	await page.keyboard.up('Control');
+	await expect(root).toHaveClass(/tw-active/);
+	await page.mouse.move(640, 400);
+	await expect(root).not.toHaveClass(/tw-top-visible/);
+	await expect.poll(rules).toEqual({ left: TRANSPARENT, right: TRANSPARENT, top: TRANSPARENT });
+
+	// Opposite direction: revealing an edge brings back that edge's rule and
+	// only that one, so the fix cannot be "never paint them again".
+	await page.mouse.move(1000, 5);
+	await expect(root).toHaveClass(/tw-top-visible/);
+	await expect
+		.poll(rules)
+		.toEqual({ left: TRANSPARENT, right: TRANSPARENT, top: before.top });
+});
