@@ -99,14 +99,8 @@ import {
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
-import {
-	noteMasterSilence,
-	notePresentationClock,
-	notePresentationTickFailure,
-	readOutputTimestamp as _readOutputTimestamp,
-	resetMasterSilenceWatch,
-	resetPresentationClockStall
-} from '$lib/rb/engine-clock-reports';
+import { awaitPresentedStop, createFrameBackstop, PresentedStopTimeoutError, noteMasterSilence, notePresentationClock, notePresentationTickFailure } from '$lib/rb/engine-clock-reports';
+import { readOutputTimestamp as _readOutputTimestamp, resetMasterSilenceWatch, resetPresentationClockStall } from '$lib/rb/engine-clock-reports';
 import {
 	armAudioContextWatchdog,
 	armDeckMeters,
@@ -1614,6 +1608,7 @@ async function _scheduleDeckSerial(
 		_reanchorRampPending(rt);
 	_commitPendingIfDue(deck);
 	_ensureRaf();
+	_frameBackstop.wake(_ctx, effectiveWhen + masterDelaySeconds(mixerState.headphones.master_delay_ms));
 	return scheduledInputSec;
 }
 
@@ -2033,7 +2028,7 @@ function _tick(): void {
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
 		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
 		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
-		if (anyTransport) noteAudioPresentationTick();
+		if (anyTransport && !_offFrame) noteAudioPresentationTick(); // a paint-rate meter: a backstop run is not a painted frame
 	} catch (error: unknown) {
 		notePresentationTickFailure(error);
 		// Unconditional, and through the guarded entry point: the throw may have
@@ -2047,7 +2042,16 @@ function _tick(): void {
 
 function _ensureRaf(): void {
 	if (_rafId === null) _rafId = requestAnimationFrame(_tick);
+	_frameBackstop.arm();
 }
+
+/** `_tick` off the frame clock (AUDIOLIVE-11): a hidden tab delivers no frames, and deck state must not wait for one. The pending frame is cancelled first so the loop cannot double up. */
+let _offFrame = false;
+function _tickNow(): void {
+	if (_rafId !== null) cancelAnimationFrame(_rafId);
+	_offFrame = true; _tick(); _offFrame = false;
+}
+const _frameBackstop = createFrameBackstop(() => _rafId, _tickNow);
 
 function _clearLoadedTrackState(st: DeckState): void {
 	const deck = st.deck_id, wasMaster = _masterDeck === deck;
@@ -4014,24 +4018,19 @@ class RbAudioEngine implements AudioEngine {
 		const rt = _rt[deck];
 		if (st.stable_id === null && rt.processor === null) return;
 		if (rt.desiredActive) await this.pause(deck);
-		const deadline = performance.now() + 2000;
-		while (performance.now() < deadline) {
+		const stopped = (): boolean => {
+			_tickNow(); // publish from the audio clock: no frame is coming in a hidden tab
 			try {
-				assertDeckReplacementAllowed(deck, {
-					playing: st.playing,
-					audible: st.audible,
-					transportPending: st.transport_pending,
-					controlActive: rt.controlActive,
-					pendingScheduleCount: rt.pending.length,
-					scheduleIntentCount: rt.scheduleIntentCount
-				});
-				break;
+				assertDeckReplacementAllowed(deck, { playing: st.playing, audible: st.audible, transportPending: st.transport_pending, controlActive: rt.controlActive, pendingScheduleCount: rt.pending.length, scheduleIntentCount: rt.scheduleIntentCount });
+				return true;
 			} catch {
-				await new Promise<void>((resolve) => {
-					requestAnimationFrame(() => resolve());
-				});
+				return false;
 			}
-		}
+		};
+		await awaitPresentedStop(stopped, _ctx).catch((error: unknown) => {
+			if (!(error instanceof PresentedStopTimeoutError)) throw error;
+			recordPerfEvent('deck-unload-stop-timeout', `deck ${deck}: ${error.message}; unloading anyway`, deck, 'error');
+		});
 		rt.loadToken += 1;
 		_releasePendingStemUpgrade(rt);
 		const processor = detachProcessorForDisposal(rt);
