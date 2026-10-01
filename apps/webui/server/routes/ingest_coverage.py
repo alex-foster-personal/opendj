@@ -58,6 +58,7 @@ from pathlib import Path
 
 from apps.cloud import stem_index
 from apps.lyrics import fetch_verdicts
+from apps.lyrics import service as lyrics_service
 from apps.webui.server import coverage_cloud, library_playable
 from apps.webui.server import coverage_outcomes as outcomes_mod
 from apps.webui.server.routes import ingest_job
@@ -212,6 +213,23 @@ def split_stems_by_place(
     return to_make, in_cloud
 
 
+def _ids_without_lookup_metadata(
+    conn_factory: Callable[[], sqlite3.Connection], stable_ids: Sequence[str]
+) -> set[str]:
+    conn = conn_factory()
+    try:
+        return lyrics_service.ids_without_lookup_metadata(conn, stable_ids)
+    finally:
+        conn.close()
+
+
+def _audio_no_source(outcome: outcomes_mod.Outcome | None, signature: str) -> bool:
+    """A ledger no_source that is about the audio, not the row's metadata."""
+    return outcomes_mod.is_no_source(outcome, signature) and not (
+        outcome is not None and lyrics_service.is_metadata_reason(outcome.reason)
+    )
+
+
 def compute_snapshot(
     conn_factory: Callable[[], sqlite3.Connection],
     stem_roots: Sequence[Path],
@@ -262,11 +280,16 @@ def compute_snapshot(
     )
     # An unreadable index proves no vocals digest, so a ``no_source`` verdict
     # recorded against one stays pending rather than failing the whole read.
-    lyrics_terminal = lyrics_terminal_ids(
-        data_dir,
-        [sid for sid, _path in missing["lyrics"]],
-        {} if stem_cloud.state == "unknown" else None,
-    ) | _ledger_ids("lyrics", outcomes_mod.is_no_source)
+    lyrics_candidates = [sid for sid, _path in missing["lyrics"]]
+    lyrics_terminal = (
+        lyrics_terminal_ids(data_dir, lyrics_candidates, {} if stem_cloud.state == "unknown" else None)
+        # A row with no artist, title or duration is terminal only while it
+        # lacks them, measured now: a ledger entry saying so was keyed on the
+        # audio file and outlived the tag re-read that fixed the row (all
+        # 1,274 rows on demon-llama, Thu 1 Oct 2026).
+        | _ids_without_lookup_metadata(conn_factory, lyrics_candidates)
+        | _ledger_ids("lyrics", _audio_no_source)
+    )
     terminal = {
         "analysis": _ledger_ids("analysis", outcomes_mod.is_no_source),
         "stems": stems_terminal,
