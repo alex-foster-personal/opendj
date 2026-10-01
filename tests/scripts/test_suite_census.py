@@ -127,7 +127,11 @@ def _buckets(result: census.Census) -> dict[str, str]:
 # ----- end-to-end control
 
 
+@pytest.mark.requirement("DEVOPS-21")
 def test_the_control_suite_buckets_every_test_correctly(tmp_path: Path) -> None:
+    """[if] a test's only coverage comes from a child Python process [then] it is credited to that test, [else stop].
+
+    [if] a child only re-imports the package [then] that test stays NO_COVERAGE."""
     db, junit = _run_control(tmp_path, label_children=True)
     result = census.analyze(db, junit)
     assert _buckets(result) == EXPECTED
@@ -142,7 +146,9 @@ def test_without_the_child_plugin_the_subprocess_test_is_unmeasured(tmp_path: Pa
     assert result.child_contexts == 0
 
 
+@pytest.mark.requirement("DEVOPS-21")
 def test_a_coverage_context_naming_no_junit_test_is_unknown(tmp_path: Path) -> None:
+    """[if] a coverage context names no junit test [then] the census is UNKNOWN, [else stop]."""
     db, junit = _run_control(tmp_path, label_children=True)
     text = junit.read_text(encoding="utf-8")
     junit.write_text(text.replace('name="test_c_unique"', 'name="test_renamed"'), encoding="utf-8")
@@ -150,7 +156,9 @@ def test_a_coverage_context_naming_no_junit_test_is_unknown(tmp_path: Path) -> N
         census.analyze(db, junit)
 
 
+@pytest.mark.requirement("DEVOPS-21")
 def test_the_cli_reports_unknown_with_exit_3_for_a_db_without_test_contexts(tmp_path: Path) -> None:
+    """[if] the coverage data has no per-test contexts [then] the CLI exits 3 (UNKNOWN), [else stop]."""
     db, junit = _run_control(tmp_path, label_children=True)
     empty = tmp_path / "empty.db"
     no_contexts = f"import coverage; c = coverage.Coverage(data_file={str(empty)!r}); c.start(); c.stop(); c.save()"
@@ -167,7 +175,9 @@ def test_the_cli_reports_unknown_with_exit_3_for_a_db_without_test_contexts(tmp_
 # ----- set cover, both directions
 
 
+@pytest.mark.requirement("DEVOPS-21")
 def test_the_cover_drops_a_strict_subset_even_when_it_is_the_cheapest_test() -> None:
+    """[if] a test is a strict coverage subset of another [then] it is REDUNDANT_IN_SET even when cheapest, [else stop]."""
     arcs = {"a": {(1, 1, 2), (1, 2, 3)}, "b": {(1, 1, 2)}, "c": {(1, 9, 10)}}
     assert census.minimal_cover(arcs, {"a": 5.0, "b": 0.0, "c": 1.0}) == {"a", "c"}
 
