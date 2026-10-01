@@ -174,10 +174,12 @@ def list_playlist_tracks(
     Agent parity: ``GET /api/v1/playlists/{playlist_id}/tracks?limit=&offset=``.
     Full detail remains on ``GET /playlists/{playlist_id}``.
     """
-    pl = backend.get_playlist(playlist_id)
+    # LIBM-133: read only the requested window, never the whole playlist.
+    page = backend.get_playlist_page(playlist_id, limit=limit, offset=offset)
+    pl = page.playlist
     response.headers["ETag"] = compute_etag(pl.playlist_id, pl.updated_at)
-    total = len(pl.items)
-    slice_ids = pl.items[offset : offset + limit]
+    total = page.total
+    slice_ids = pl.items
     if not slice_ids:
         next_offset = None if offset >= total else offset + limit
         return PlaylistTracksPage(tracks=[], total=total, next_offset=next_offset)
@@ -193,10 +195,9 @@ def list_playlist_tracks(
             ),
         })
     rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in slice_ids])
-    item_ids = list(pl.item_ids or [])
     tracks: list[TrackRowOut] = []
     for i, row in enumerate(rows):
-        iid = item_ids[offset + i] if offset + i < len(item_ids) else None
+        iid = pl.item_ids[i] if i < len(pl.item_ids) else None
         tracks.append(TrackRowOut(**row, item_id=iid or None))
     next_offset = offset + len(slice_ids)
     if next_offset >= total:

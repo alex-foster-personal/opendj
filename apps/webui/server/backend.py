@@ -134,6 +134,18 @@ class Playlist:
 
 
 @dataclass
+class PlaylistPage:
+    """One ``limit``/``offset`` window of a playlist (LIBM-133).
+
+    ``playlist`` carries the header; its ``items``/``item_ids`` hold only the
+    window, and ``total`` counts every live member.
+    """
+
+    playlist: Playlist
+    total: int
+
+
+@dataclass
 class Pairing:
     pairing_id: str
     from_stable_id: str
@@ -303,6 +315,9 @@ class StateBackend(Protocol):
     def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
+    def get_playlist_page(
+        self, playlist_id: str, *, limit: int, offset: int,
+    ) -> PlaylistPage: ...
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,
@@ -435,6 +450,16 @@ class InMemoryBackend:
         if pl is None:
             raise NotFoundError(f"playlist not found: {playlist_id}")
         return pl
+
+    def get_playlist_page(
+        self, playlist_id: str, *, limit: int, offset: int,
+    ) -> PlaylistPage:
+        pl = self.get_playlist(playlist_id)
+        window = slice(offset, offset + limit)
+        return PlaylistPage(
+            playlist=replace(pl, items=pl.items[window], item_ids=pl.item_ids[window]),
+            total=len(pl.items),
+        )
 
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
         with self._mutex:
