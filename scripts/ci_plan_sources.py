@@ -89,9 +89,7 @@ def imported_packages(text: str, where: str) -> set[str]:
     return {".".join(module.split(".")[:2]) for module in imported_modules(text, where)}
 
 
-def imported_modules(
-    text: str, where: str, top_packages: tuple[str, ...] = _TOP_PACKAGES
-) -> set[str]:
+def imported_modules(text: str, where: str, top_packages: tuple[str, ...] = _TOP_PACKAGES) -> set[str]:
     """Every dotted module name under `top_packages` (default `apps`, `scripts`, `ops`) a
     module imports, read with the AST and returned in FULL. The seam selector also passes
     `tests`, because a test helper is reached through `tests.` imports.
@@ -155,7 +153,5 @@ def mentioned_strings(text: str, where: str) -> set[str]:
     return {
         node.value
         for node in ast.walk(tree)
-        if isinstance(node, ast.Constant)
-        and isinstance(node.value, str)
-        and id(node) not in docstrings
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings
     }

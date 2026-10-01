@@ -159,7 +159,9 @@ def select_tests(
     if frontend is None or not frontend.mentions:
         raise PlanError(f"{FRONTEND_SCOPE} with mentions is missing from ci/test-scopes.yml")
     consumers = frontend_consumers(root, frontend.mentions)
-    always = {path for path in tracked_python_files(root) if is_test_module(path) and ci_plan.matches(path, config.always)}
+    always = {
+        path for path in tracked_python_files(root) if is_test_module(path) and ci_plan.matches(path, config.always)
+    }
     tests = frozenset(path for path in consumers | always if is_test_module(path))
     return Selection(False, tests, f"webui-only: {len(tests)} test modules reach the frontend or are always run")
 
