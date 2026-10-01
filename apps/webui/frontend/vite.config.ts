@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 
 import { claimAndCheckWebuiDevConfig, resolveAllowedHosts } from './webui-port-config';
+import { codecParserTrimPlugin } from './vite-codec-parser-trim';
 import { holdFullReloadPlugin } from './vite-hold-full-reload';
+import { bootManualChunks } from './vite-layout-shell-chunk';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -33,7 +35,7 @@ export default defineConfig(({ command, mode }) => {
 		define: {
 			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen)
 		},
-		plugins: [sveltekit(), holdFullReloadPlugin()],
+		plugins: [sveltekit(), holdFullReloadPlugin(), codecParserTrimPlugin()],
 		build: {
 			// Terser instead of Vite's default esbuild minifier. Measured on
 			// origin/main at 59248abb9, gzip under build/_app/immutable/, which is
@@ -55,6 +57,19 @@ export default defineConfig(({ command, mode }) => {
 			// assets (see assetsInlineLimit below), never as chunks, so the minifier
 			// never sees them and the worklet-scope constraints below still hold.
 			minify: 'terser' as const,
+			// One exception to "defaults only". Vite forces terser's `safari10`
+			// workarounds on (loop-scoped `let` and `await` naming bugs in Safari
+			// 10 and 11). The build target is Vite's default, which starts at
+			// Safari 14, and the packaged shell is a current WKWebView, so the
+			// workaround guards nothing here. Measured Thu 1 Oct 2026 on
+			// af--preview-mixtour-io 7e14328ea0: library 270,039 -> 269,310,
+			// performance 242,107 -> 241,529, other-lazy 293,004 -> 292,698.
+			terserOptions: { safari10: false },
+			rollupOptions: {
+				// See vite-layout-shell-chunk.ts for what this merges, the
+				// measured bytes, and why it does not change behavior.
+				output: { manualChunks: bootManualChunks() }
+			},
 			// AudioWorklet modules must stay REAL FILES. Anything under the
 			// default 4096-byte inline limit is emitted as a `data:` URI, and
 			// `audioWorklet.addModule()` fetches a module script: a data: URI

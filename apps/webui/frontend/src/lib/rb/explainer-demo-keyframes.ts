@@ -39,6 +39,16 @@ export const EXPLAINER_DEMO_ANIMATIONS: Record<string, readonly ExplainerKeyfram
 		{ offset: 0.5, properties: ['transform'] },
 		{ offset: 1, properties: ['transform'] }
 	],
+	'hp-arrow-cue': [
+		{ offset: 0, properties: ['transform'] },
+		{ offset: 0.5, properties: ['transform'] },
+		{ offset: 1, properties: ['transform'] }
+	],
+	'hp-arrow-master': [
+		{ offset: 0, properties: ['transform'] },
+		{ offset: 0.5, properties: ['transform'] },
+		{ offset: 1, properties: ['transform'] }
+	],
 	'hp-route-dot': [
 		{ offset: 0, properties: ['transform', 'opacity'] },
 		{ offset: 0.1, properties: ['transform', 'opacity'] },

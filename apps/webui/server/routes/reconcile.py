@@ -19,6 +19,10 @@ Endpoints
     (title, stable_id) and carry ``playlist_ids`` (every playlist that
     references the track) plus ``vendor_id`` (rekordbox djmdContent ID when
     mapped -- what relocate-files needs to patch FolderPath later).
+    Paged by ``?limit=`` (1..1000) and ``?offset=``: ``total`` is always the
+    whole broken count, ``next_offset`` the offset of the next page or null
+    on the last. Whole track rows are read for the returned page only
+    (LIBM-136); omit ``limit`` for everything from ``offset`` on.
 
 ``GET /api/v1/reconcile/summary`` -> :class:`ReconcileSummary`
     Library-wide broken count plus per-playlist counts, one call:
@@ -60,6 +64,7 @@ their unavailable styling unchanged).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +78,8 @@ from .. import library_playable, rb_vendor
 from ..backend import MAX_LIMIT, Playlist, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
 from ..sqlite_backend import SqliteBackend
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reconcile", tags=["reconcile"])
 
@@ -109,8 +116,13 @@ class BrokenTrackOut(BaseModel):
 
 
 class BrokenTrackList(BaseModel):
+    #: Every broken track the request matches, not the size of this page.
     total: int
     tracks: list[BrokenTrackOut]
+    #: Where this page starts in the (title, stable_id) ordering.
+    offset: int = 0
+    #: ``offset`` of the next page; None when this page reaches the end.
+    next_offset: int | None = None
 
 
 class PlaylistBrokenSummary(BaseModel):
@@ -214,43 +226,91 @@ def _scan_broken(backend: StateBackend) -> tuple[int, list[_BrokenScan]]:
     return len(tracks), broken
 
 
-def _scan_broken_ids(backend: StateBackend) -> tuple[int, set[str]]:
-    """(total scanned tracks, broken stable_ids): the summary's scan.
+@dataclass(frozen=True)
+class _BrokenRef:
+    """One broken track as the lean scan knows it: enough to count it, order
+    it and page it, and nothing that costs a per-track read."""
 
-    The summary quotes counts, so it needs each row's id and path and nothing
-    else. Reading whole ``Track`` rows through ``list_tracks`` also resolved
-    every lane-owned analysis field per track (about 265,000 statements on a
-    9812-row library, 2.8 s of a 3.0 s request, measured Thu 1 Oct 2026), and
-    that cost grew as the analysis drain filled its tables. Same rows
-    (``deleted_at IS NULL``), same predicate as :func:`_scan_broken`.
-    """
+    stable_id: str
+    title: str | None
+    original_path: str
+    vendor_id: str | None
+
+
+def _ref_order(ref: _BrokenRef) -> tuple[str, str]:
+    return ((ref.title or "").casefold(), ref.stable_id)
+
+
+def _lean_track_rows(backend: StateBackend) -> list[tuple[str, str | None, str | None]] | None:
+    """(stable_id, title, file_path) of every live track, or None when the
+    backend is not a state.db with a tracks table."""
     if not isinstance(backend, SqliteBackend):
-        total, broken = _scan_broken(backend)
-        return total, {b.track.stable_id for b in broken}
+        return None
     conn = open_ro(backend.writeback_state_db_path)
     try:
         if conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
         ).fetchone() is None:
-            rows = None
-        else:
-            rows = conn.execute(
-                "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
-            ).fetchall()
+            return None
+        return [
+            (str(sid), title, file_path)
+            for sid, title, file_path in conn.execute(
+                "SELECT stable_id, title, file_path FROM tracks "
+                "WHERE deleted_at IS NULL"
+            )
+        ]
     finally:
         conn.close()
-    if rows is None:    # no tracks table: the backend's own fallback decides
-        total, broken = _scan_broken(backend)
-        return total, {b.track.stable_id for b in broken}
-    metas = rb_vendor.bulk_rb_meta([str(sid) for sid, _path in rows])
-    folders: dict[str, str] = {}
-    for sid, file_path in rows:
-        meta = metas.get(str(sid))
+
+
+def _local_refs(rows: list[tuple[str, str | None, str | None]]) -> list[_BrokenRef]:
+    """One ref per row whose audio is a local path (rekordbox's folder path wins)."""
+    metas = rb_vendor.bulk_rb_meta([sid for sid, _title, _path in rows])
+    refs: list[_BrokenRef] = []
+    for sid, title, file_path in rows:
+        meta = metas.get(sid)
         folder = meta.folder_path if meta is not None else file_path
         if _is_local_path(folder):
-            folders[str(sid)] = str(folder)
-    exists = rb_vendor.bulk_file_exists(folders.values())
-    return len(rows), {sid for sid, folder in folders.items() if not exists[folder]}
+            refs.append(_BrokenRef(
+                stable_id=sid,
+                title=title,
+                original_path=str(folder),
+                vendor_id=meta.vendor_id if meta is not None else None,
+            ))
+    return refs
+
+
+def _scan_broken_refs(backend: StateBackend) -> tuple[int, list[_BrokenRef]]:
+    """(total scanned tracks, broken refs sorted by (title, stable_id)).
+
+    The lean scan behind both endpoints. It reads each row's id, title and
+    path and nothing else. Reading whole ``Track`` rows through
+    ``list_tracks`` also resolved every lane-owned analysis field per track
+    (about 265,000 statements on a 9812-row library, 2.8 s of a 3.0 s
+    request, measured Thu 1 Oct 2026), and that cost grew as the analysis
+    drain filled its tables. Same rows (``deleted_at IS NULL``), same
+    predicate and same order as :func:`_scan_broken`.
+    """
+    rows = _lean_track_rows(backend)
+    if rows is None:
+        # Not a state.db, or one with no tracks table: the backend's own
+        # listing (and its own fallback) decides.
+        total, broken = _scan_broken(backend)
+        return total, [
+            _BrokenRef(b.track.stable_id, b.track.title, b.original_path, b.vendor_id)
+            for b in broken
+        ]
+    candidates = _local_refs(rows)
+    exists = rb_vendor.bulk_file_exists(c.original_path for c in candidates)
+    broken_refs = [c for c in candidates if not exists[c.original_path]]
+    broken_refs.sort(key=_ref_order)
+    return len(rows), broken_refs
+
+
+def _scan_broken_ids(backend: StateBackend) -> tuple[int, set[str]]:
+    """(total scanned tracks, broken stable_ids): the summary's scan."""
+    total, refs = _scan_broken_refs(backend)
+    return total, {ref.stable_id for ref in refs}
 
 
 def _playlist_membership(
@@ -295,6 +355,17 @@ def list_broken_tracks(
             "playlist does not exist). Omit for the library-wide listing."
         ),
     ),
+    limit: int | None = Query(
+        None, ge=1, le=MAX_LIMIT,
+        description=(
+            "Rows in this page. Omit for every row from `offset` on, which "
+            "reads whole track rows for all of them and is slow on a large "
+            "library."
+        ),
+    ),
+    offset: int = Query(
+        0, ge=0, description="Rows to skip in the (title, stable_id) ordering.",
+    ),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> BrokenTrackList:
     if playlist_id is not None:
@@ -304,13 +375,34 @@ def list_broken_tracks(
     else:
         wanted = set()
 
-    _total_tracks, broken = _scan_broken(backend)
+    _total_tracks, refs = _scan_broken_refs(backend)
     if playlist_id is not None:
-        broken = [b for b in broken if b.track.stable_id in wanted]
+        refs = [ref for ref in refs if ref.stable_id in wanted]
 
-    member_of = _playlist_membership(backend.list_playlists())
-    rows = [_to_row(b, member_of.get(b.track.stable_id, [])) for b in broken]
-    return BrokenTrackList(total=len(rows), tracks=rows)
+    end = len(refs) if limit is None else min(offset + limit, len(refs))
+    page = refs[offset:end]
+    # Whole track rows (title, artist, the lane-owned bpm and key) for the
+    # page only: the scan above already knows which rows are broken.
+    tracks = backend.get_tracks_bulk([ref.stable_id for ref in page])
+    member_of = _playlist_membership(backend.list_playlists()) if page else {}
+    rows: list[BrokenTrackOut] = []
+    for ref in page:
+        track = tracks.get(ref.stable_id)
+        if track is None:
+            # Hard-deleted between the scan and this read: a real race on a
+            # live library, and a row that no longer exists is not broken.
+            log.warning("reconcile: %s vanished between scan and read", ref.stable_id)
+            continue
+        rows.append(_to_row(
+            _BrokenScan(track=track, original_path=ref.original_path, vendor_id=ref.vendor_id),
+            member_of.get(ref.stable_id, []),
+        ))
+    return BrokenTrackList(
+        total=len(refs),
+        tracks=rows,
+        offset=offset,
+        next_offset=end if end < len(refs) else None,
+    )
 
 
 @router.get("/summary", response_model=ReconcileSummary)

@@ -8,7 +8,11 @@
  * `reportDeckLoadFailure` never writes to, and every headline assertion would
  * read an empty array.
  */
-export { reportDeckLoadFailure } from '$lib/rb/deck-load-context';
+export {
+	deckLoadFailureHeadline,
+	reportDeckLoadCommandFailure,
+	reportDeckLoadFailure
+} from '$lib/rb/deck-load-context';
 export { toasts } from '$lib/stores.svelte';
 export { ApiError } from '$lib/api/client';
 export { RbApiError } from '$lib/rb/api-rb-error';

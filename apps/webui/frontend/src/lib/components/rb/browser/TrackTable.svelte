@@ -39,6 +39,8 @@
 		bpmGridHoverText,
 		errColumnTitle,
 		gridFlagFor,
+		gridProvenanceFor,
+		requestGridProvenance,
 		camelotKeyColor,
 		camelotKeyHoverLabel,
 		columnHeaderTitle,
@@ -260,7 +262,7 @@
 		if (row.bpm_status === 'available-not-selected') {
 			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
 		}
-		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row)}`;
+		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed. ${bpmGridHoverText(row, gridProvenanceFor(row.stable_id))}`;
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer
@@ -1929,6 +1931,7 @@
 							class:bpm-inert={bpmCellInert(row)}
 							style={bpmCellStyle(row.bpm)}
 							title={bpmCellTitle(row)}
+							onpointerenter={() => requestGridProvenance(row.stable_id)}
 						>
 							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
 								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
@@ -1959,7 +1962,7 @@
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
 						</td>
-						<!-- LIBUX-34: a missing genre is a blank cell; why it is missing
+						<!-- LIBUX-36: a missing genre is a blank cell; why it is missing
 						     (STANDALONE-05) is the hover title, never cell text. -->
 						<td class="c-genre" title={genreText(row) || row.genre_reason || undefined}>
 							{#if splitGenreTags(genreText(row)).length > 0}
@@ -2570,7 +2573,7 @@
 	.master-fold.below {
 		bottom: 4px;
 	}
-	/* LIBUX-33: every cell clips to its own column. A column may only set
+	/* LIBUX-35: every cell clips to its own column. A column may only set
 	 * `overflow: visible` when an inner element clips its text instead
 	 * (.c-title -> .title-text); tests/unit/track-table-cell-clip.test.mjs
 	 * holds that list. `:global(td)` because a cell can be rendered by a

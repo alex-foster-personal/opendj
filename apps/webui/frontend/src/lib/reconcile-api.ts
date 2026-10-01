@@ -39,6 +39,19 @@ export async function listBroken(playlistId?: string): Promise<BrokenTrackList> 
 	);
 }
 
+/**
+ * One page of the broken listing. `total` is always the whole count and
+ * `next_offset` is null on the last page. The route hydrates only the rows it
+ * returns, so a page costs a fraction of the unpaged call above.
+ */
+export async function listBrokenPage(limit: number, offset: number): Promise<BrokenTrackList> {
+	return unwrap(
+		api.GET('/api/v1/reconcile/broken', {
+			params: { query: { limit, offset } }
+		})
+	);
+}
+
 export async function getRelocateCandidates(
 	stableId: string,
 	limit = 5

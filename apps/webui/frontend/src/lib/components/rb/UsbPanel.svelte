@@ -12,6 +12,8 @@
 		setForgotten,
 		usbRowKindLabel,
 		usbRowReasonTag,
+		usbDiscoveryNotice,
+		usbPollDelayMs,
 		usbTracker,
 		type UsbVolumeKnown
 	} from '$lib/rb/usb-tracker.svelte';
@@ -28,6 +30,9 @@
 
 	const open = $derived(usbTracker.panelOpen);
 	const active = $derived(presentNonForgotten());
+	// A refused or unanswered scan is not "no stick present": say which.
+	const discoveryNotice = $derived(usbDiscoveryNotice(usbTracker));
+	const retrySeconds = $derived(usbPollDelayMs(usbTracker.consecutiveFailures) / 1000);
 	const folded = $derived(foldedAway());
 	const prompt = $derived(
 		usbTracker.promptId
@@ -147,7 +152,15 @@
 		{/if}
 
 		<section class="usb-list" aria-label="Present USB volumes">
-			{#if active.length === 0}
+			{#if discoveryNotice !== null}
+				<p
+					class="usb-empty"
+					data-testid="usb-discovery-notice"
+					title={`${discoveryNotice}. Retrying in ${retrySeconds} s (the wait doubles after each failed check, up to 60 s). ${usbTracker.consecutiveFailures} failed check${usbTracker.consecutiveFailures === 1 ? '' : 's'} in a row.`}
+				>
+					{discoveryNotice}
+				</p>
+			{:else if active.length === 0}
 				<p class="usb-empty" title="No non-forgotten music USB volumes currently mounted">
 					No music USB present
 				</p>

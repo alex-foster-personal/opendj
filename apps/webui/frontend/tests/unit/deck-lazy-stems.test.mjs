@@ -174,3 +174,86 @@ test('every processor retirement path releases PCM, not just the audio graph', (
 		);
 	}
 });
+
+// ------------------------------------------------- STEM-47 / STEM-48
+//
+// The report this guards: "song has stems - stems buttons here don't do
+// anything". A bundle that finished while the deck was PLAYING was parked until
+// the deck next stopped, so a track played straight after loading kept dead
+// stem buttons for its whole play.
+//
+//   [if] _upgradeDeckStems parks a finished bundle instead of landing it [then ⛔️]
+//   [if] the landing bypasses landStemUpgrade (the tested ordering) [then ⛔️]
+//   [if] the mix is stopped at a different instant than the stems start [then ⛔️]
+//   [if] a load stage runs with no named phase on the deck [then ⛔️]
+//   [if] a deferred landing is not kept for the next stop [then ⛔️]
+
+/** `async function <name>(` up to the next top-level function or export. */
+function engineFunction(signature) {
+	const start = source.indexOf(signature);
+	assert.ok(start > 0, `${signature} not found - this test is reading the wrong file`);
+	const rest = source.slice(start + signature.length);
+	const next = rest.search(/\n(?:export |async function |function |\/\*\*)/);
+	assert.ok(next > 0, `could not find the end of ${signature}`);
+	return rest.slice(0, next);
+}
+
+test('a finished stem bundle is landed, never parked by the upgrade itself', () => {
+	const upgrade = engineFunction('async function _upgradeDeckStems(');
+	assert.match(upgrade, /await time\('landStems', _landStems\(deck, \{ token, processor: created\.processor, state: readyState \}, ctx, stale\)\)/);
+	assert.ok(
+		!/rt\.pendingStemUpgrade\s*=/.test(upgrade),
+		'_upgradeDeckStems parks the bundle itself: that is the held-until-stop behavior the report is about'
+	);
+	assert.ok(!upgrade.includes('_deckIsReplaceable('), 'the upgrade decides stopped-vs-playing itself instead of landing');
+});
+
+test('the landing goes through the tested handoff module with live deck reads', () => {
+	// The ordering, the shared instant and the settling of a stale or deferred
+	// bundle are behavior, tested in stem-live-handoff.test.mjs. What only the
+	// engine can get wrong is what it hands that module.
+	const landing = engineFunction('function _landStems(');
+	assert.match(landing, /return landStemsOnDeck\(\{/, 'the landing bypasses the tested handoff');
+	assert.match(landing, /runtime: rt, incoming: upgrade\.processor, clock: ctx, stale,/);
+	assert.match(landing, /serialized: \(run\) => _withDeckSwap\(rt, run\)/, 'the landing is not serialized with deck swaps');
+	assert.match(landing, /commitDue: \(\) => _commitPendingIfDue\(deck\)/);
+	// Found live: a backgrounded window never runs the presentation loop, so
+	// st.transport_pending stays true for the whole play and the handoff never ran.
+	assert.match(landing, /rampPending: \(\) => _reanchorRampPending\(rt\)/);
+	assert.ok(!landing.includes('st.transport_pending'), 'the handoff waits on a flag only the rAF loop clears');
+	assert.match(landing, /startChange: \(seg\) => stretchScheduleChange\(seg\.positionSec, true,/);
+	assert.match(landing, /commit: \(when\) => \{\s*rt\.processor = upgrade\.processor;\s*st\.stems = upgrade\.state;/);
+	assert.match(
+		landing,
+		/defer: \(\) => \{\s*rt\.pendingStemUpgrade = upgrade;[\s\S]*?phase: 'waiting'[\s\S]*?_drainPendingStemUpgrade\(deck\);/,
+		'a deferred landing must keep the bundle, say so on the deck, and land at once if the deck already stopped'
+	);
+	assert.match(landing, /retire: \(processor\) => _retireProcessor\(/);
+});
+
+test('every stage of the stem load publishes a named phase', () => {
+	const upgrade = engineFunction('async function _upgradeDeckStems(');
+	for (const phase of [
+		"onHydrating: (progress) => phase('fetching', progress)",
+		"phase('downloading')",
+		"onDeferred: () => phase('waiting', null, STEM_HELD_BY_PRESSURE)",
+		"onStart: () => phase('decoding')"
+	]) {
+		assert.ok(upgrade.includes(phase), `the stem load never publishes: ${phase}`);
+	}
+	const order = ["phase('fetching'", "phase('downloading')", "phase('decoding')"].map((needle) => upgrade.indexOf(needle));
+	assert.deepEqual([...order].sort((a, b) => a - b), order, 'phases are published out of load order');
+	assert.match(engineFunction('function _landStems('), /phase: 'switching'/);
+});
+
+test('the default loading state names its phase, and a phase carries through', () => {
+	assert.deepEqual(stems.loadingStemDeckState().load, { phase: 'probing', progress: null, reason: null });
+	const fetching = stems.loadingStemDeckState({
+		phase: 'fetching',
+		progress: { files_total: 5, files_done: 1, bytes_done: 9 },
+		reason: null
+	});
+	assert.equal(fetching.status, 'loading');
+	assert.deepEqual(fetching.load.progress, { files_total: 5, files_done: 1, bytes_done: 9 });
+	assert.equal(stems.unavailableStemDeckState().load, null, 'a settled state must carry no load phase');
+});

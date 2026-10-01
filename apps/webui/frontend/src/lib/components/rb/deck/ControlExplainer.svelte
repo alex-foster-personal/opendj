@@ -342,8 +342,17 @@
 						<circle cx="24" cy="24" r="10" class="mix-cap" />
 						<line x1="24" y1="24" x2="24" y2="14" class="mix-pointer" />
 					</g>
-					<path d="M44 30 L72 30" class="hp-path cue-path" />
-					<path d="M44 18 L72 18" class="hp-path master-path" />
+					<!-- pin b90e675a: each route is an arrow that scales from its
+					     tail with the knob turn, so the cue arrow shrinks as the
+					     master arrow grows. -->
+					<g class="hp-arrow cue-arrow">
+						<path d="M44 30 L67 30" class="hp-path cue-path" />
+						<path d="M66 26.5 L72 30 L66 33.5 Z" class="hp-head cue-head" />
+					</g>
+					<g class="hp-arrow master-arrow">
+						<path d="M44 18 L67 18" class="hp-path master-path" />
+						<path d="M66 14.5 L72 18 L66 21.5 Z" class="hp-head master-head" />
+					</g>
 					<circle cx="44" cy="30" r="2.5" class="hp-dot cue-dot" />
 					<text x="76" y="22" class="label">M</text>
 					<text x="76" y="34" class="label">C</text>
@@ -592,6 +601,25 @@
 	.master-path {
 		stroke: var(--rb-accent);
 	}
+	.cue-head {
+		fill: var(--rb-orange);
+	}
+	.master-head {
+		fill: var(--rb-accent);
+	}
+	.hp-arrow {
+		will-change: transform;
+	}
+	/* Same duration and easing as mix-knob-turn: the knob sits at its CUE end
+	   at 0/100% and its MASTER end at 50%. */
+	.cue-arrow {
+		transform-origin: 44px 30px;
+		animation: hp-arrow-cue 3s ease-in-out infinite;
+	}
+	.master-arrow {
+		transform-origin: 44px 18px;
+		animation: hp-arrow-master 3s ease-in-out infinite;
+	}
 	.hp-dot {
 		fill: var(--rb-orange);
 		animation: hp-route-dot 3s ease-in-out infinite;
@@ -654,6 +682,24 @@
 		}
 		50% {
 			transform: rotate(45deg);
+		}
+	}
+	@keyframes hp-arrow-cue {
+		0%,
+		100% {
+			transform: scale(1);
+		}
+		50% {
+			transform: scale(0.4);
+		}
+	}
+	@keyframes hp-arrow-master {
+		0%,
+		100% {
+			transform: scale(0.4);
+		}
+		50% {
+			transform: scale(1);
 		}
 	}
 	@keyframes hp-route-dot {

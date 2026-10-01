@@ -35,6 +35,7 @@
 	import { getIngestCoverage } from '$lib/rb/api-ingest';
 	import {
 		coverageDot as _coverageDot,
+		coverageRecheckDelayMs as _coverageRecheckDelayMs,
 		libraryHealthDot as _computeLibraryHealthDot,
 		unknownDot as _unknownDot,
 		type LibraryHealthDot
@@ -1063,6 +1064,9 @@
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
 			clearInterval(healthRefetchTimer);
+			if (_coverageRecheckTimer !== null) clearTimeout(_coverageRecheckTimer);
+			_coverageRecheckTimer = null;
+			_coveragePanelAlive = false;
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -1122,19 +1126,38 @@
 	 * through the library shows up without a reload (HEALTH-03). */
 	const HEALTH_REFETCH_MS = 60_000;
 
+	// HEALTH-12: the dots take the engine's LAST measurement (instant, with its
+	// age) and re-ask soon while a newer one is being taken, instead of waiting
+	// grey on a whole-library re-measure and then a full minute after a miss.
+	let _coverageRechecks = 0;
+	let _coverageRecheckTimer: ReturnType<typeof setTimeout> | null = null;
+	let _coveragePanelAlive = true;
+
 	async function _loadIngestCoverage(): Promise<void> {
+		let outcome: Parameters<typeof _coverageRecheckDelayMs>[0];
 		try {
-			const coverage = await getIngestCoverage();
+			const coverage = await getIngestCoverage({ cached: true });
 			vocalsCompletion = _coverageDot('Vocals completion', coverage, 'vocals');
 			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
 			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
+			outcome = { ok: true, refreshing: coverage.refreshing, refresh_error: coverage.refresh_error };
 		} catch (error: unknown) {
 			// An endpoint that cannot answer is grey "unknown", never a verdict.
 			const why = error instanceof Error ? error.message : String(error);
 			vocalsCompletion = _unknownDot('Vocals completion', why);
 			stemsCompletion = _unknownDot('Stems completion', why);
 			lyricsCompletion = _unknownDot('Lyrics completion', why);
+			outcome = { ok: false };
 		}
+		const delay = _coverageRecheckDelayMs(outcome, _coverageRechecks);
+		if (outcome.ok && !outcome.refreshing && outcome.refresh_error === null) _coverageRechecks = 0;
+		if (delay === null || !_coveragePanelAlive) return;
+		_coverageRechecks += 1;
+		if (_coverageRecheckTimer !== null) clearTimeout(_coverageRecheckTimer);
+		_coverageRecheckTimer = setTimeout(() => {
+			_coverageRecheckTimer = null;
+			void _loadIngestCoverage();
+		}, delay);
 	}
 
 	async function _loadReconcileSummary(): Promise<void> {
@@ -3612,18 +3635,15 @@
 				AutoPlay is using its activation order. Toggle it off and on to use this order.
 			</div>
 		{/if}
-		{#snippet libraryLoadOverlay()}
-			<LibraryLoadIndicator
-				loading={pane.loading}
-				progress={pane.load_progress}
-				searching={pane.searching}
-			/>
-		{/snippet}
 		{#if pane.kind === 'playlist' && pane.playlist_id !== null}
 			<PlaylistSetTabs playlistId={pane.playlist_id} />
 		{/if}
+		<LibraryLoadIndicator
+			loading={pane.loading}
+			progress={pane.load_progress}
+			searching={pane.searching}
+		/>
 		<TrackTable
-			bodyOverlay={libraryLoadOverlay}
 			{provider}
 			selectedIds={pane.selected_ids}
 			selectedOrders={pane.selected_orders}

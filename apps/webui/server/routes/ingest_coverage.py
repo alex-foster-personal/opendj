@@ -195,6 +195,23 @@ def _by_bundle_place(
     )
 
 
+def split_stems_by_place(
+    missing_stems: Sequence[Target], stem_cloud: coverage_cloud.StemCloud
+) -> tuple[list[Target], list[Target]]:
+    """(to make, in cloud) for tracks with no local bundle.
+
+    The ONE place "no local bundle" is split into "nothing has it" and
+    "R2 has it and this machine can fetch it". Coverage, the drain (through
+    the snapshot) and the refresh job all use it, so they cannot disagree
+    about which stems are left to make.
+    """
+    to_make: list[Target] = []
+    in_cloud: list[Target] = []
+    for target in missing_stems:
+        (in_cloud if stem_cloud.holds(target[0]) else to_make).append(target)
+    return to_make, in_cloud
+
+
 def compute_snapshot(
     conn_factory: Callable[[], sqlite3.Connection],
     stem_roots: Sequence[Path],
@@ -216,7 +233,7 @@ def compute_snapshot(
     done = {step: present_ids - missing_ids[step] for step in STEPS}
     stems_local = done["stems"]
     # Evicted, not missing: R2 holds the bundle and this machine can fetch it.
-    stems_in_cloud = {sid for sid in missing_ids["stems"] if stem_cloud.holds(sid)}
+    stems_in_cloud = {sid for sid, _path in split_stems_by_place(missing["stems"], stem_cloud)[1]}
     done["stems"] = stems_local | stems_in_cloud
 
     ledger = outcomes_mod.OutcomeStore(outcomes_mod.store_path(data_dir)).load()
@@ -316,4 +333,5 @@ __all__ = [
     "default_stems_source_refusal",
     "lyrics_terminal_ids",
     "response_fields",
+    "split_stems_by_place",
 ]

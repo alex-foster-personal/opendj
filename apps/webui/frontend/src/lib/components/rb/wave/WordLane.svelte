@@ -19,6 +19,7 @@
 		activeLaneWordIdx,
 		bucketPxPerS,
 		laneWindow,
+		laneWordMaxWidthsPx,
 		sliceLanes,
 		LANE_FONT_PX,
 		type AssignedLanes,
@@ -78,12 +79,18 @@
 		return _assigned;
 	}
 
-	const frame = $derived.by((): { packed: PackedLaneWord[]; activeIdx: number | null } | null => {
+	const frame = $derived.by((): {
+		packed: PackedLaneWord[];
+		maxWidths: (number | null)[];
+		activeIdx: number | null;
+	} | null => {
 		if (widthCss <= 0) return null;
 		const win = laneWindow({ positionMs, pitch, widthCss, windowSeconds: WAVE_WINDOW_S });
 		const assigned = _assignedLanesFor(words, win.pxPerS);
+		const packed = sliceLanes(assigned, win.tLeftSec, win.pxPerS, widthCss);
 		return {
-			packed: sliceLanes(assigned, win.tLeftSec, win.pxPerS, widthCss),
+			packed,
+			maxWidths: laneWordMaxWidthsPx(packed),
 			activeIdx: activeLaneWordIdx(assigned.laneWords, positionMs / 1000)
 		};
 	});
@@ -109,13 +116,15 @@
 	bind:clientWidth={widthCss}
 >
 	{#if frame !== null}
-		{#each frame.packed as packed (packed.word.idx)}
+		{#each frame.packed as packed, i (packed.word.idx)}
+			{@const maxWidth = frame.maxWidths[i]}
 			<span
 				class="lane-word"
 				class:suspect={_isSuspect(packed.word.idx)}
 				class:active={packed.word.idx === frame.activeIdx}
 				style:left={`${packed.x}px`}
 				style:top={`${packed.lane * LANE_HEIGHT_PX}px`}
+				style:max-width={maxWidth === null ? undefined : `${maxWidth}px`}
 				title={_wordTitle(packed.word)}
 				aria-current={packed.word.idx === frame.activeIdx ? 'true' : undefined}
 			>{packed.word.word}</span>
@@ -138,6 +147,16 @@
 		line-height: 12px;
 		white-space: nowrap;
 		pointer-events: none;
+		/* Same backing as the line lane (LyricsLane .lyric-line, pin 6b1da5a8).
+		   The padding is pulled back by an equal negative margin so the first
+		   glyph still sits on the sung onset. */
+		box-sizing: border-box;
+		margin-left: -2px;
+		padding: 0 2px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--rb-bg) 85%, transparent);
 		color: color-mix(in srgb, var(--rb-text) 70%, transparent);
 		text-shadow: 0 1px 2px var(--rb-bg);
 		transition: color 80ms linear, font-weight 80ms linear;

@@ -31,6 +31,7 @@
  */
 import type { AnalysisIssues } from '$lib/rb/job-progress.svelte';
 import type { GridClass } from '$lib/rb/grid-quality';
+import { gridProvenanceHoverText, type GridProvenanceView } from '$lib/rb/grid-provenance';
 import type { BeatgridIssue } from '$lib/rb/library-types';
 
 /** Analysis kinds that have a working detector behind them, today. */
@@ -137,16 +138,13 @@ export function errColumnTitle(row: AnalysisIssueSource): string | undefined {
 	return flag !== null && flag.dismissed ? `Beatgrid flag dismissed - ${message}` : message;
 }
 
-const GRID_SOURCE_GAP =
-	'Which analysis made the grid, and its confidence: not implemented - see PARITY-TODO.';
-
-/** The beatgrid sentence for the row's BPM hover (GRIDFLAG-05): the same
- * stored verdict the Err column shows, plus an honest note that the list
- * row carries no grid source or confidence. A row with no verdict says so
- * and is never worded as ok. */
-export function bpmGridHoverText(row: AnalysisIssueSource): string {
+/** The beatgrid sentences for the row's BPM hover (GRIDFLAG-05, GRIDFLAG-06):
+ * the same stored verdict the Err column shows, then which analysis made the
+ * grid and its confidence, read lazily on hover (pin f85c5881). A row with no
+ * verdict says so and is never worded as ok. */
+export function bpmGridHoverText(row: AnalysisIssueSource, provenance: GridProvenanceView): string {
 	const verdict = errColumnTitle(row) ?? 'Beatgrid: not checked for this track yet.';
-	return `${verdict} ${GRID_SOURCE_GAP}`;
+	return `${verdict} ${gridProvenanceHoverText(provenance)}`;
 }
 
 /** Sort rank for the Err column (ascending = most worth a look first):

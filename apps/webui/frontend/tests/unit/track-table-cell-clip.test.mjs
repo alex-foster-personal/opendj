@@ -1,5 +1,5 @@
 /**
- * LIBUX-33: every library table cell clips to its own column.
+ * LIBUX-35: every library table cell clips to its own column.
  *
  * SOURCE-SHAPE ON PURPOSE (see rating-cell-fit.test.mjs): the fact under test
  * is a CSS contract, and there is no component mount infra here.

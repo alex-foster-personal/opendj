@@ -8,8 +8,8 @@
  *   hover carries the same sentence as the Err column
  * [if] the row carries no verdict [then] the BPM hover says the grid was not
  *   checked, never that it is fine
- * [if] any verdict is shown [then] the hover says which analysis made the
- *   grid and its confidence are not available in the list
+ * [if] any verdict is shown [then] the hover also carries the grid source and
+ *   confidence sentence (GRIDFLAG-06, read lazily on hover)
  *
  * Regression lines:
  * - if a row with no verdict reads as evenly spaced then unknown became ok
@@ -33,46 +33,47 @@ const TABLE = readFileSync(
 	),
 	'utf8'
 );
+const IDLE = { state: 'idle' };
 const verdict = (grid_class, message = null, dismissed = false, reason = null) => ({
 	grid_quality: { grid_class, message, dismissed, reason }
 });
 
 test('an ok grid reads as evenly spaced, spacing only', () => {
-	const text = issues.bpmGridHoverText(verdict('ok'));
+	const text = issues.bpmGridHoverText(verdict('ok'), IDLE);
 	assert.match(text, /evenly spaced/);
 	assert.match(text, /spacing only/);
 });
 
 test('a flagged grid carries the Err column sentence', () => {
 	const row = verdict('suspect', 'Beatgrid: uneven spacing, 12 of 400 beats off');
-	const text = issues.bpmGridHoverText(row);
+	const text = issues.bpmGridHoverText(row, IDLE);
 	assert.ok(text.includes(issues.errColumnTitle(row)));
-	const variable = issues.bpmGridHoverText(verdict('variable_tempo', 'Beatgrid: variable tempo'));
+	const variable = issues.bpmGridHoverText(verdict('variable_tempo', 'Beatgrid: variable tempo'), IDLE);
 	assert.match(variable, /variable tempo/);
 });
 
 test('an unjudged grid carries its reason sentence, never ok', () => {
-	const text = issues.bpmGridHoverText(verdict('unknown', 'Beatgrid: not judged (no grid)'));
+	const text = issues.bpmGridHoverText(verdict('unknown', 'Beatgrid: not judged (no grid)'), IDLE);
 	assert.match(text, /not judged/);
 	assert.doesNotMatch(text, /evenly spaced/);
 });
 
 test('a row with no verdict says the grid was not checked', () => {
 	for (const row of [{}, { grid_quality: null }]) {
-		const text = issues.bpmGridHoverText(row);
+		const text = issues.bpmGridHoverText(row, IDLE);
 		assert.match(text, /Beatgrid: not checked/);
 		assert.doesNotMatch(text, /evenly spaced/);
 	}
 });
 
-test('every variant says source and confidence are not in the list', () => {
+test('every variant says where source and confidence come from', () => {
 	for (const row of [{}, verdict('ok'), verdict('suspect', 'Beatgrid: uneven')]) {
-		assert.match(issues.bpmGridHoverText(row), /not implemented - see PARITY-TODO/);
-		assert.match(issues.bpmGridHoverText(row), /confidence/);
+		assert.match(issues.bpmGridHoverText(row, IDLE), /Grid source and confidence load when you hover/);
+		assert.doesNotMatch(issues.bpmGridHoverText(row, IDLE), /not implemented - see PARITY-TODO/);
 	}
 });
 
 test('the BPM cell hover includes the grid text', () => {
 	const fn = TABLE.slice(TABLE.indexOf('function bpmCellTitle'), TABLE.indexOf('function _nowRatioFor'));
-	assert.match(fn, /bpmGridHoverText\(row\)/);
+	assert.match(fn, /bpmGridHoverText\(row, gridProvenanceFor\(row\.stable_id\)\)/);
 });

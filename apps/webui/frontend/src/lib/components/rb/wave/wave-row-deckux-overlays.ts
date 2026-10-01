@@ -6,8 +6,28 @@ import type { AnlzData } from '$lib/rb/anlz-types';
 import type { AnlzEntry } from './anlz-cache.svelte';
 import type { MasterDownbeatOverlay } from './wave-playhead-render';
 
+const GHOST_SEEK_BLINK_HALF_PERIOD_MS = 120;
+
 export function ghostSeekBlinkVisible(nowMs: number): boolean {
-	return Math.floor(nowMs / 120) % 2 === 0;
+	return Math.floor(nowMs / GHOST_SEEK_BLINK_HALF_PERIOD_MS) % 2 === 0;
+}
+
+/** Ghost-cursor inputs for ONE painted frame (pin 25d6dea6). The ghost is
+ * drawn on the waveform canvas and scrolls with it, so its blink is clocked by
+ * the frame that paints it, never by reactive state: `performance.now()` is
+ * not a reactive dependency, and a `$derived` over it freezes at mount.
+ * `blinkPhase` is the repaint key: null while disarmed so an idle deck is not
+ * repainted on a blink clock. */
+export function ghostSeekFrame(
+	armed: { target_position_ms: number } | null,
+	nowMs: number
+): { ghostSeekMs: number | null; ghostSeekVisible: boolean; blinkPhase: number | null } {
+	if (armed === null) return { ghostSeekMs: null, ghostSeekVisible: false, blinkPhase: null };
+	return {
+		ghostSeekMs: armed.target_position_ms,
+		ghostSeekVisible: ghostSeekBlinkVisible(nowMs),
+		blinkPhase: Math.floor(nowMs / GHOST_SEEK_BLINK_HALF_PERIOD_MS)
+	};
 }
 
 /** The master's analysis from the one source that will be painted: the deck's

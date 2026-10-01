@@ -56,6 +56,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.shared.paths import DATA_DIR, PROJECT_ROOT
+from apps.webui.server.routes.auth import signed_in_user
+from apps.webui.server.routes.feedback_pin_ui_config import PinUiConfig
 
 from .feedback_pin_placement import (
     MAX_NEARBY_ANCHORS,
@@ -245,6 +247,9 @@ class CommentCreateIn(BaseModel):
     viewport_height: int = Field(ge=1, le=100_000)
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
     agent_kind: str | None = None
+    # Pin 49f9d217: optional so an agent posting a pin over HTTP need not
+    # invent a UI it does not have.
+    ui_config: PinUiConfig | None = None
     element_offset: PinElementOffset | None = None
     nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list, max_length=MAX_NEARBY_ANCHORS)
 
@@ -255,12 +260,17 @@ class CommentCreateIn(BaseModel):
 
 
 class PinEnvironmentOut(BaseModel):
-    """Non-personal runtime facts needed to reproduce a pinned UI defect.
+    """Runtime facts needed to reproduce a pinned UI defect.
 
     ``machine`` and ``release_version`` are already exposed by the running
-    daemon's settings/health surfaces. The browser contributes only its UI
-    kind and viewport dimensions: no username, user agent, URL query, or
-    other new personal data enters the pin store.
+    daemon's settings/health surfaces. The browser contributes its UI kind,
+    viewport dimensions and a closed ``ui_config`` snapshot (see
+    ``PinUiConfig``): no user agent, URL query, file path or track title.
+
+    ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
+    it from the session cookie, the same identity ``GET /api/v1/auth/me``
+    already returns to this browser; a request body cannot set it. It is null
+    when nobody is signed in, and absent on pins older than this field.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -270,6 +280,8 @@ class PinEnvironmentOut(BaseModel):
     viewport_height: int
     machine: str
     release_version: str
+    user_email: str | None = None
+    ui_config: PinUiConfig | None = None
 
 
 class GeneralNoteOut(BaseModel):
@@ -433,8 +445,9 @@ def _build_stamp(request: Request) -> BuildStampOut:
 
 
 def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentOut:
-    """Combine browser dimensions with daemon facts it already publishes."""
+    """Combine browser facts with daemon facts, including who is signed in."""
 
+    user = signed_in_user(request)
     machine = getattr(request.app.state, "hostname", None)
     release_version = getattr(request.app.state, "version", None)
     if not isinstance(machine, str) or machine == "":
@@ -447,6 +460,8 @@ def _pin_environment(body: CommentCreateIn, request: Request) -> PinEnvironmentO
         viewport_height=body.viewport_height,
         machine=machine,
         release_version=release_version,
+        user_email=None if user is None else user.email,
+        ui_config=body.ui_config,
     )
 
 

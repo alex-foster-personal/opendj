@@ -5715,6 +5715,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/grid-provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Track Grid Provenance */
+        get: operations["get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/hot-cues": {
         parameters: {
             query?: never;
@@ -5942,6 +5959,57 @@ export interface paths {
          *     references (e.g. two decks on the same track) both need closing.
          */
         post: operations["mark_stem_deck_open_api_v1_tracks__stable_id__stems_deck_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hydrate Stem Bundle
+         * @description Fetch this track's stem bundle from the cloud now, and retry a failure.
+         *
+         *     The manifest route records a failed fetch and answers 502 from then on so
+         *     a hot loop cannot hammer R2 with the same doomed request. This is the
+         *     explicit way back: it drops that record and starts a fresh fetch through
+         *     the same single-flight path, so the cache floor and the evictor apply
+         *     exactly as they do for a deck load. A bundle already on disk is a no-op.
+         *     Returns at once with the resulting state; poll ``.../stems/state``.
+         */
+        post: operations["hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem State
+         * @description Name this track's stem state. Read-only: never starts a download.
+         *
+         *     Agent-native parity for what the deck's stem row shows. Registered BEFORE
+         *     the ``{part}`` route on purpose, which would otherwise read ``state`` as a
+         *     stem part name.
+         */
+        get: operations["get_stem_state_api_v1_tracks__stable_id__stems_state_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7632,6 +7700,13 @@ export interface components {
         };
         /** BrokenTrackList */
         BrokenTrackList: {
+            /** Next Offset */
+            next_offset?: number | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
             /** Total */
             total: number;
             /** Tracks */
@@ -8312,6 +8387,7 @@ export interface components {
              * @enum {string}
              */
             ui: "chrome-loop" | "packaged-app";
+            ui_config?: components["schemas"]["PinUiConfig"] | null;
             /** Viewport Height */
             viewport_height: number;
             /** Viewport Width */
@@ -8513,6 +8589,8 @@ export interface components {
          *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
          */
         CoverageOut: {
+            /** Age S */
+            age_s: number;
             /** Availability */
             availability: {
                 [key: string]: number;
@@ -8551,6 +8629,10 @@ export interface components {
             pending: {
                 [key: string]: number;
             };
+            /** Refresh Error */
+            refresh_error: string | null;
+            /** Refreshing */
+            refreshing: boolean;
             /** Stems Index */
             stems_index: {
                 [key: string]: string | null;
@@ -9815,6 +9897,33 @@ export interface components {
             owner_email: string;
             /** Token */
             token: string;
+        };
+        /** GridProvenanceOut */
+        GridProvenanceOut: {
+            /** Backend */
+            backend: string | null;
+            /** Backend Version */
+            backend_version: string | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "selection" | "unmapped-default";
+            /** Bpm */
+            bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence: number | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "rekordbox" | "own";
+            /** Stable Id */
+            stable_id: string;
+            /** Status */
+            status: ("ok" | "failed" | "missing") | null;
         };
         /**
          * GridQualityRowOut
@@ -12004,12 +12113,17 @@ export interface components {
         };
         /**
          * PinEnvironmentOut
-         * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
+         * @description Runtime facts needed to reproduce a pinned UI defect.
          *
          *     ``machine`` and ``release_version`` are already exposed by the running
-         *     daemon's settings/health surfaces. The browser contributes only its UI
-         *     kind and viewport dimensions: no username, user agent, URL query, or
-         *     other new personal data enters the pin store.
+         *     daemon's settings/health surfaces. The browser contributes its UI kind,
+         *     viewport dimensions and a closed ``ui_config`` snapshot (see
+         *     ``PinUiConfig``): no user agent, URL query, file path or track title.
+         *
+         *     ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
+         *     it from the session cookie, the same identity ``GET /api/v1/auth/me``
+         *     already returns to this browser; a request body cannot set it. It is null
+         *     when nobody is signed in, and absent on pins older than this field.
          */
         PinEnvironmentOut: {
             /** Machine */
@@ -12021,6 +12135,9 @@ export interface components {
              * @enum {string}
              */
             ui: "chrome-loop" | "packaged-app";
+            ui_config?: components["schemas"]["PinUiConfig"] | null;
+            /** User Email */
+            user_email?: string | null;
             /** Viewport Height */
             viewport_height: number;
             /** Viewport Width */
@@ -12069,6 +12186,30 @@ export interface components {
             state: "synced" | "pending_push" | "unreconciled" | "harvested";
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * PinUiConfig
+         * @description Compact UI configuration at the moment a pin was dropped (pin 49f9d217).
+         *
+         *     Closed by construction: unknown keys are refused, every mode is a short
+         *     lowercase slug, every switch is a boolean, and the route is an app route
+         *     with no query string. That is what keeps a secret, a path under the
+         *     user's home, or a track title out of the pin store: there is no field
+         *     free text could travel in.
+         */
+        PinUiConfig: {
+            /** App Mode */
+            app_mode: string;
+            /** Engine Mode */
+            engine_mode: string;
+            /** Perf Tier */
+            perf_tier: string;
+            /** Route */
+            route: string;
+            /** Switches */
+            switches: {
+                [key: string]: boolean;
+            };
         };
         /** PlanEntryOut */
         PlanEntryOut: {
@@ -14082,6 +14223,18 @@ export interface components {
             /** Manifest Path */
             manifest_path: string;
         };
+        /**
+         * StemHydrationProgressOut
+         * @description How far an in-flight cloud fetch has got, read from its temp directory.
+         */
+        StemHydrationProgressOut: {
+            /** Bytes Done */
+            bytes_done: number;
+            /** Files Done */
+            files_done: number;
+            /** Files Total */
+            files_total: number;
+        };
         /** StemIndexBuildIn */
         StemIndexBuildIn: {
             /** Data Dir */
@@ -14177,6 +14330,36 @@ export interface components {
             dry_run: boolean;
         };
         /**
+         * StemStateOut
+         * @description One track's stem bundle, named: where it is and what is happening to it.
+         *
+         *     ``local`` is on this machine and playable; ``cloud`` is only in the R2
+         *     index and a hydrate will fetch it; ``fetching`` is being downloaded now;
+         *     ``error`` is a bundle that should exist and could not be produced;
+         *     ``none`` is no bundle anywhere this engine can see.
+         */
+        StemStateOut: {
+            /**
+             * Deck Open
+             * @default false
+             */
+            deck_open: boolean;
+            /** Error Code */
+            error_code?: string | null;
+            /** Hydration Armed */
+            hydration_armed: boolean;
+            /** Message */
+            message: string;
+            progress?: components["schemas"]["StemHydrationProgressOut"] | null;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "local" | "cloud" | "fetching" | "error" | "none";
+        };
+        /**
          * StemTierOut
          * @description One real separation rung, straight out of apps.stems.tiers.
          */
@@ -14210,6 +14393,7 @@ export interface components {
             hydrating: boolean;
             /** Message */
             message: string;
+            progress?: components["schemas"]["StemHydrationProgressOut"] | null;
             /** Stable Id */
             stable_id: string;
             /**
@@ -20395,7 +20579,10 @@ export interface operations {
     };
     get_coverage_api_v1_ingest_coverage_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request. */
+                cached?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -20409,6 +20596,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23579,6 +23775,10 @@ export interface operations {
             query?: {
                 /** @description Restrict to broken members of one playlist (404 when the playlist does not exist). Omit for the library-wide listing. */
                 playlist_id?: string | null;
+                /** @description Rows in this page. Omit for every row from `offset` on, which reads whole track rows for all of them and is slow on a large library. */
+                limit?: number | null;
+                /** @description Rows to skip in the (title, stable_id) ordering. */
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -26295,6 +26495,37 @@ export interface operations {
             };
         };
     };
+    get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridProvenanceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_hot_cue_slots_api_v1_tracks__stable_id__hot_cues_get: {
         parameters: {
             query?: never;
@@ -26744,6 +26975,82 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_state_api_v1_tracks__stable_id__stems_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemStateOut"];
                 };
             };
             /** @description Validation Error */
