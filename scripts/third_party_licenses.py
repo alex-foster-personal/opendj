@@ -1,0 +1,563 @@
+"""Generate THIRD-PARTY-LICENSES for the shipped Open DJ desktop app.
+
+WHAT THIS PRODUCES
+
+``THIRD-PARTY-LICENSES.txt`` (every shipped component, its license identifier
+and the verbatim license / NOTICE texts its distribution carries) and a
+markdown flag report (every component whose license is copyleft,
+non-commercial or unidentified). The dmg build stages both inside the payload,
+so they land in ``Open DJ.app/Contents/Resources/payload/``.
+
+WHERE EACH ECOSYSTEM'S INVENTORY COMES FROM (the shipped artifact, not the
+declared intent)
+
+- Python: the ``*.dist-info`` directories of the STAGED payload sites
+  (``pylib`` and the beat-grid runner site), read with ``importlib.metadata``.
+  That is what the interpreter will import, so it cannot drift from the lock.
+- JavaScript: the SPA bundles its runtime dependencies, so the inventory is
+  the production dependency closure from ``pnpm-lock.yaml`` plus the
+  framework runtime that vite bundles from devDependencies (svelte,
+  @sveltejs/kit), with texts read from ``node_modules`` (needs a prior
+  ``pnpm install``, which the SPA build already requires). Over-inclusion is
+  the safe direction for attribution.
+- Rust: ``cargo metadata --locked`` for the Tauri shell, the ``odj-audio``
+  engine (feature ``device``, as staged) and the waveform PyO3 extension,
+  following normal dependency edges only (build and dev edges never ship).
+- Bundled data and runtimes that are not package-manager managed: the
+  relocatable CPython, the Beat This! weights notice, the Anybody font, and
+  the native codecs compiled into the JS audio decoders (see SUPPLEMENTS).
+
+Industry-standard equivalents (pip-licenses, license-checker, cargo-about)
+were considered; this stays one stdlib-only module because the build already
+stages every ecosystem and a second tool per ecosystem would be three more
+things to pin. See docs/third-party-licenses.md.
+
+Requirements:
+
+- ✔︎ ✅ 🎯 The payload carries THIRD-PARTY-LICENSES.txt and NOTICE.
+  -> :func:`write_payload_license_files`, called from
+  ``scripts.build_engine_payload.build`` (OSSPUB-04).
+- ✔︎ ✅ 🎯 Every component is classified; copyleft, non-commercial and unknown
+  licenses are listed in the flag report, never silently passed.
+  -> :func:`classify_license`, :func:`flag_report`.
+- ✔︎ ✅ 🎯 A tool that cannot measure fails loudly (missing site, missing
+  node_modules, cargo failure), it never emits an empty inventory.
+
+Acceptance tests:
+
+- [if] the payload site has no dist-info [then] generation raises, [else ⛔️].
+- [if] a component's license is "GPL-3.0-or-later" [then] it appears in the
+  flag report as strong-copyleft, [else ⛔️].
+- [if] a component is "MIT OR GPL-2.0" [then] it is permissive (a permissive
+  option exists), [else ⛔️].
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.metadata as importlib_metadata
+import json
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+LICENSES_FILE_NAME = "THIRD-PARTY-LICENSES.txt"
+REPORT_FILE_NAME = "THIRD-PARTY-LICENSES-FLAGS.md"
+NOTICE_FILE_NAME = "NOTICE"
+ROOT_LICENSE_FILE_NAME = "LICENSE"
+
+PYTHON_SITES_RELATIVE: tuple[str, ...] = ("pylib", "runners/beatgrid/site")
+FRONTEND_RELATIVE = Path("apps/webui/frontend")
+# vite bundles the framework runtime out of devDependencies, so the
+# production-only closure would under-attribute the shipped SPA.
+JS_BUNDLED_FROM_DEV: tuple[str, ...] = ("svelte", "@sveltejs/kit")
+# (crate dir, extra cargo args): the three Rust artifacts a dmg carries.
+RUST_CRATES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("apps/desktop/src-tauri", ()),
+    ("apps/audio-engine", ("--features", "device")),
+    ("apps/webui/server/native/waveform", ()),
+)
+RUST_TARGET_TRIPLE = "aarch64-apple-darwin"
+
+LICENSE_FILE_PATTERN = re.compile(r"(licen[sc]e|copying|notice|copyright|unlicense)", re.IGNORECASE)
+NOTICE_FILE_PATTERN = re.compile(r"notice", re.IGNORECASE)
+
+#: A real inventory renders hundreds of license texts; a stub cannot pass.
+MIN_LICENSES_FILE_CHARS = 100_000
+
+#: Our own packages are not third party.
+FIRST_PARTY_NAMES: frozenset[str] = frozenset(
+    {
+        "music-dj-tools",
+        "music-dj-tools-webui",
+        "music-dj-tools-waveform-native",
+        "music_dj_tools_waveform_native",
+        "odj-audio",
+        "open-dj-desktop",
+        "open-dj",
+    }
+)
+
+
+# ----- classification -----------------------------------------------------
+class Cat:
+    PERMISSIVE = "permissive"
+    WEAK = "weak-copyleft"
+    STRONG = "strong-copyleft"
+    NONCOM = "non-commercial"
+    UNKNOWN = "unknown"
+
+
+_RANK = {Cat.PERMISSIVE: 0, Cat.WEAK: 1, Cat.STRONG: 2, Cat.NONCOM: 3, Cat.UNKNOWN: 4}
+FLAGGED = (Cat.WEAK, Cat.STRONG, Cat.NONCOM, Cat.UNKNOWN)
+
+_PERMISSIVE_MARKERS = (
+    "mit", "mit-0", "bsd", "bsd-2-clause", "bsd-3-clause", "apache", "apache-2.0", "isc", "iscl",
+    "psf", "psf-2.0", "python-2.0", "cnri-python", "zlib", "unlicense", "cc0-1.0", "0bsd", "hpnd",
+    "bsl-1.0", "boost", "public domain", "ofl", "ofl-1.1", "openssl", "curl", "unicode", "blueoak-1.0.0",
+    "wtfpl", "zpl-2.1", "python software foundation", "historical", "ncsa", "pil", "libpng", "x11",
+    "cc-by-4.0", "cc-by-3.0", "afl-2.1", "artistic-2.0", "llvm-exception",
+)
+_STRONG_MARKERS = ("agpl", "sspl", "eupl", "osl-3")
+_NONCOM_MARKERS = ("cc-by-nc", "cc-by-nc-sa", "cc-by-nc-nd", "non-commercial")
+
+
+def _has_marker(lowered: str, markers: tuple[str, ...]) -> bool:
+    """Whole-token match, so "mit" never fires inside "permit" or "limited"."""
+    return any(re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", lowered) for marker in markers)
+
+
+def _token_category(token: str) -> str:
+    lowered = token.strip().lower().strip("()")
+    if not lowered:
+        return Cat.UNKNOWN
+    if _has_marker(lowered, _NONCOM_MARKERS) or "noncommercial" in lowered:
+        return Cat.NONCOM
+    if "lgpl" in lowered or "lesser" in lowered:
+        return Cat.WEAK
+    if "gpl" in lowered or "gnu general public" in lowered or _has_marker(lowered, _STRONG_MARKERS):
+        return Cat.STRONG
+    if any(marker in lowered for marker in ("mpl", "mozilla", "epl", "eclipse", "cddl", "cecill-c")):
+        return Cat.WEAK
+    if _has_marker(lowered, _PERMISSIVE_MARKERS):
+        return Cat.PERMISSIVE
+    return Cat.UNKNOWN
+
+
+def classify_license(expression: str) -> str:
+    """Category of an SPDX-ish expression.
+
+    ``A OR B`` takes the BEST alternative (the licensee may choose); ``A AND
+    B`` and ``A / B`` style joins take the WORST (all apply). Free text that
+    matches nothing is UNKNOWN, never assumed permissive.
+    """
+    alternatives = re.split(r"\s+OR\s+|\s*\|\s*|;\s*", expression.strip(), flags=re.IGNORECASE)
+    ranked: list[str] = []
+    for alternative in alternatives:
+        # "X WITH exception" is still X (an exception only loosens it).
+        without_exceptions = re.sub(r"\s+WITH\s+\S+", "", alternative, flags=re.IGNORECASE)
+        parts = re.split(r"\s+AND\s+|\s*/\s*", without_exceptions, flags=re.IGNORECASE)
+        ranked.append(max((_token_category(part) for part in parts), key=_RANK.__getitem__))
+    return min(ranked, key=_RANK.__getitem__)
+
+
+# ----- model --------------------------------------------------------------
+@dataclass
+class Component:
+    ecosystem: str
+    name: str
+    version: str
+    license: str
+    homepage: str = ""
+    texts: list[tuple[str, str]] = field(default_factory=list)  # (file name, text)
+    note: str = ""
+
+    @property
+    def category(self) -> str:
+        return classify_license(self.license) if self.license else Cat.UNKNOWN
+
+    @property
+    def notices(self) -> list[tuple[str, str]]:
+        return [(n, t) for n, t in self.texts if NOTICE_FILE_PATTERN.search(n)]
+
+    @property
+    def license_texts(self) -> list[tuple[str, str]]:
+        return [(n, t) for n, t in self.texts if not NOTICE_FILE_PATTERN.search(n)]
+
+
+class LicenseInventoryError(RuntimeError):
+    """The inventory could not be measured. Never rendered as a result."""
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def _license_files_in(directory: Path) -> list[tuple[str, str]]:
+    if not directory.is_dir():
+        return []
+    return [
+        (path.name, _read_text(path))
+        for path in sorted(directory.iterdir())
+        if path.is_file() and LICENSE_FILE_PATTERN.search(path.name) and path.suffix not in {".py", ".js", ".json"}
+    ]
+
+
+# ----- python -------------------------------------------------------------
+def _python_license_string(metadata: importlib_metadata.PackageMetadata) -> str:
+    expression = metadata.get("License-Expression")
+    if expression:
+        return expression.strip()
+    free_text = (metadata.get("License") or "").strip()
+    free_text_usable = free_text and "\n" not in free_text and len(free_text) < 100 and free_text.upper() != "UNKNOWN"
+    if free_text_usable and classify_license(free_text) != Cat.UNKNOWN:
+        return free_text
+    classifiers = [
+        c.split("::")[-1].strip()
+        for c in (metadata.get_all("Classifier") or [])
+        if c.startswith("License ::") and c.split("::")[-1].strip() != "OSI Approved"
+    ]
+    if classifiers:
+        return " / ".join(classifiers)
+    return free_text if free_text_usable else ""
+
+
+def python_components(payload_dir: Path) -> list[Component]:
+    components: dict[tuple[str, str], Component] = {}
+    sites = [payload_dir / relative for relative in PYTHON_SITES_RELATIVE]
+    existing = [site for site in sites if site.is_dir()]
+    if not existing:
+        raise LicenseInventoryError(f"none of the Python sites exist under {payload_dir}: {sites}")
+    for site in existing:
+        for dist in importlib_metadata.distributions(path=[str(site)]):
+            name = dist.metadata["Name"]
+            if name is None or name.lower() in FIRST_PARTY_NAMES:
+                continue
+            key = (re.sub(r"[-_.]+", "-", name).lower(), dist.version)
+            if key in components:
+                continue
+            texts: list[tuple[str, str]] = []
+            for file in dist.files or []:
+                if LICENSE_FILE_PATTERN.search(file.name) and ".dist-info" in str(file) and file.suffix not in {".py"}:
+                    located = Path(str(dist.locate_file(file)))
+                    if located.is_file():
+                        texts.append((file.name, _read_text(located)))
+            components[key] = Component(
+                ecosystem="python",
+                name=name,
+                version=dist.version,
+                license=_python_license_string(dist.metadata),
+                homepage=dist.metadata.get("Home-page") or "",
+                texts=texts,
+            )
+    if not components:
+        raise LicenseInventoryError(f"no dist-info found in {existing}")
+    return sorted(components.values(), key=lambda c: c.name.lower())
+
+
+# ----- javascript ---------------------------------------------------------
+def _lock_package_key(snapshot_key: str) -> str:
+    """``'@scope/name@1.2.3(peer@x)'`` -> ``@scope/name@1.2.3``."""
+    return snapshot_key.split("(", 1)[0]
+
+
+def js_closure(frontend_dir: Path) -> tuple[list[str], set[str]]:
+    """(closure keys, keys reached ONLY through optionalDependencies).
+
+    Optional edges are per-platform binaries (esbuild, rollup): the ones not
+    installed on the build host are not in the bundle either.
+    """
+    lock = yaml.safe_load((frontend_dir / "pnpm-lock.yaml").read_text(encoding="utf-8"))
+    importer = lock["importers"]["."]
+    snapshots = lock["snapshots"]
+    by_key = {_lock_package_key(key): value for key, value in snapshots.items()}
+    roots: list[str] = []
+    for name, spec in importer.get("dependencies", {}).items():
+        roots.append(f"{name}@{_lock_package_key(str(spec['version']))}")
+    dev = importer.get("devDependencies", {})
+    for name in JS_BUNDLED_FROM_DEV:
+        if name not in dev:
+            raise LicenseInventoryError(f"{name} is no longer a devDependency of the SPA; update JS_BUNDLED_FROM_DEV")
+        roots.append(f"{name}@{_lock_package_key(str(dev[name]['version']))}")
+    seen: set[str] = set()
+    required: set[str] = set(roots)
+    stack = list(roots)
+    while stack:
+        key = stack.pop()
+        if key in seen:
+            continue
+        seen.add(key)
+        if key not in by_key:
+            raise LicenseInventoryError(f"{key} is missing from pnpm-lock.yaml snapshots")
+        for field_name in ("dependencies", "optionalDependencies"):
+            for dep_name, dep_version in (by_key[key].get(field_name) or {}).items():
+                dep_key = f"{dep_name}@{_lock_package_key(str(dep_version))}"
+                if field_name == "dependencies":
+                    required.add(dep_key)
+                stack.append(dep_key)
+    return sorted(seen), seen - required
+
+
+def js_components(frontend_dir: Path) -> list[Component]:
+    if not (frontend_dir / "node_modules").is_dir():
+        raise LicenseInventoryError(f"{frontend_dir}/node_modules missing: run `pnpm install --frozen-lockfile` first")
+    listing = subprocess.run(
+        ["pnpm", "licenses", "list", "--json", "--long"],
+        cwd=frontend_dir, capture_output=True, text=True, check=False,
+    )
+    if listing.returncode != 0:
+        raise LicenseInventoryError(f"pnpm licenses list failed:\n{listing.stderr}")
+    installed: dict[str, tuple[str, str, Path]] = {}
+    for license_name, packages in json.loads(listing.stdout).items():
+        for package in packages:
+            for version, path in zip(package["versions"], package["paths"], strict=True):
+                installed[f"{package['name']}@{version}"] = (license_name, package.get("homepage", ""), Path(path))
+    components: list[Component] = []
+    closure, optional_only = js_closure(frontend_dir)
+    for key in closure:
+        if key not in installed and key in optional_only:
+            continue
+        if key not in installed:
+            raise LicenseInventoryError(f"{key} is in the lock closure but not installed in node_modules")
+        license_name, homepage, path = installed[key]
+        name, _, version = key.rpartition("@")
+        components.append(Component("javascript", name, version, license_name, homepage, _license_files_in(path)))
+    return sorted(components, key=lambda c: c.name.lower())
+
+
+# ----- rust ---------------------------------------------------------------
+def rust_components(repo_root: Path) -> list[Component]:
+    if shutil.which("cargo") is None:
+        raise LicenseInventoryError("cargo is not on PATH")
+    components: dict[tuple[str, str], Component] = {}
+    for crate_relative, extra_args in RUST_CRATES:
+        crate = repo_root / crate_relative
+        result = subprocess.run(
+            ["cargo", "metadata", "--locked", "--format-version", "1",
+             "--filter-platform", RUST_TARGET_TRIPLE, *extra_args],
+            cwd=crate, capture_output=True, text=True, check=False,
+        )
+        if result.returncode != 0:
+            raise LicenseInventoryError(f"cargo metadata failed in {crate}:\n{result.stderr}")
+        metadata = json.loads(result.stdout)
+        packages = {p["id"]: p for p in metadata["packages"]}
+        nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
+        workspace = set(metadata["workspace_members"])
+        seen: set[str] = set()
+        stack = list(workspace)
+        while stack:
+            package_id = stack.pop()
+            if package_id in seen:
+                continue
+            seen.add(package_id)
+            # kind None is a normal edge; "build" and "dev" never ship.
+            stack.extend(
+                dep["pkg"]
+                for dep in nodes[package_id]["deps"]
+                if any(kind["kind"] is None for kind in dep["dep_kinds"])
+            )
+        for package_id in seen - workspace:
+            package = packages[package_id]
+            key = (package["name"], package["version"])
+            if key in components:
+                continue
+            directory = Path(package["manifest_path"]).parent
+            texts = _license_files_in(directory)
+            if package.get("license_file"):
+                declared = directory / package["license_file"]
+                if declared.is_file() and declared.name not in {name for name, _ in texts}:
+                    texts.append((declared.name, _read_text(declared)))
+            components[key] = Component(
+                "rust", package["name"], package["version"],
+                package.get("license") or "", package.get("homepage") or package.get("repository") or "",
+                texts,
+            )
+    return sorted(components.values(), key=lambda c: c.name.lower())
+
+
+# ----- bundled, not package-manager managed -------------------------------
+def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]:
+    runtime_licenses = sorted((payload_dir / "runtime/lib").glob("python3*/LICENSE.txt"))
+    if not runtime_licenses:
+        raise LicenseInventoryError(f"no CPython LICENSE.txt under {payload_dir}/runtime/lib")
+    beat_this_notice = payload_dir / "models/beatgrid/LICENSE-beat_this.txt"
+    if not beat_this_notice.is_file():
+        raise LicenseInventoryError(f"{beat_this_notice} missing: the weights ship without their notice")
+    font_license = repo_root / FRONTEND_RELATIVE / "static/fonts/Anybody-OFL.txt"
+    if not font_license.is_file():
+        raise LicenseInventoryError(f"{font_license} missing")
+    return [
+        Component(
+            "bundled", "CPython (python-build-standalone)", runtime_licenses[0].parent.name, "PSF-2.0",
+            "https://github.com/astral-sh/python-build-standalone",
+            [("LICENSE.txt", _read_text(runtime_licenses[0]))],
+            note="The relocatable interpreter statically links third-party C libraries (for example "
+                 "OpenSSL, SQLite, zlib, bzip2, xz, libffi, expat); their notices are published with "
+                 "the python-build-standalone release this build resolves.",
+        ),
+        Component(
+            "bundled", "Beat This! final0 checkpoint", "final0", "MIT",
+            "https://github.com/CPJKU/beat_this",
+            [("LICENSE-beat_this.txt", _read_text(beat_this_notice))],
+            note="Weights; upstream states they are MIT. Training-data terms are upstream's to assess.",
+        ),
+        Component(
+            "bundled", "Anybody (variable font, wordmark subset)", "", "OFL-1.1",
+            "https://github.com/etunni/anybody",
+            [("Anybody-OFL.txt", _read_text(font_license))],
+        ),
+        Component(
+            "bundled", "mpg123 (compiled to WebAssembly inside mpg123-decoder)", "", "LGPL-2.1-only",
+            "https://www.mpg123.de/",
+            note="The npm wrapper declares MIT but its README says it is based on mpg123, which is "
+                 "LGPL-2.1; the package carries no license text. A human must confirm the terms of "
+                 "the compiled .wasm (relinking and source-offer obligations).",
+        ),
+    ]
+
+
+# ----- rendering ----------------------------------------------------------
+def collect_all(repo_root: Path, payload_dir: Path) -> list[Component]:
+    return [
+        *python_components(payload_dir),
+        *js_components(repo_root / FRONTEND_RELATIVE),
+        *rust_components(repo_root),
+        *supplement_components(repo_root, payload_dir),
+    ]
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(re.sub(r"\s+", " ", text).encode()).hexdigest()
+
+
+def flag_report(components: list[Component]) -> str:
+    """Two tables: risky licenses, then components that ship with no license text."""
+    flagged = sorted(
+        (c for c in components if c.category in FLAGGED),
+        key=lambda c: (-_RANK[c.category], c.ecosystem, c.name.lower()),
+    )
+    lines = [
+        "## Copyleft, non-commercial and unidentified licenses",
+        "",
+        "| Component | Ecosystem | Version | License | Category | Note |",
+        "|---|---|---|---|---|---|",
+    ]
+    lines += [
+        f"| {c.name} | {c.ecosystem} | {c.version} | {c.license or 'UNKNOWN'} | {c.category} | {c.note} |"
+        for c in flagged
+    ]
+    textless = sorted(
+        (c for c in components if not c.license_texts and c.ecosystem != "bundled"),
+        key=lambda c: (c.ecosystem, c.name.lower()),
+    )
+    lines += [
+        "",
+        "## License identified but no license text file in the distribution",
+        "",
+        "| Component | Ecosystem | Version | License |",
+        "|---|---|---|---|",
+    ]
+    lines += [f"| {c.name} | {c.ecosystem} | {c.version} | {c.license or 'UNKNOWN'} |" for c in textless]
+    return "\n".join(lines) + "\n"
+
+
+def render_licenses(components: list[Component]) -> str:
+    out: list[str] = [
+        "THIRD-PARTY SOFTWARE LICENSES FOR OPEN DJ",
+        "=" * 41,
+        "",
+        "Open DJ is licensed under the Apache License 2.0 (see LICENSE). The app bundles the",
+        "third-party components below. Each keeps its own license; the identifier and the",
+        "license texts its distribution carries follow. Generated by",
+        "scripts/third_party_licenses.py from the shipped payload; do not edit by hand.",
+        "",
+        f"Components: {len(components)}",
+        "",
+        "COMPONENTS",
+        "-" * 10,
+    ]
+    for c in components:
+        out.append(f"{c.name} {c.version} [{c.ecosystem}] -- {c.license or 'UNKNOWN (see texts)'}")
+        if c.note:
+            out.append(f"    note: {c.note}")
+    out += ["", "LICENSE TEXTS", "-" * 13, ""]
+    grouped: dict[str, tuple[str, list[str]]] = {}
+    for c in components:
+        for _name, text in c.license_texts:
+            if not text:
+                continue
+            _, members = grouped.setdefault(_digest(text), (text, []))
+            label = f"{c.name} {c.version}"
+            if label not in members:
+                members.append(label)
+    for text, members in sorted(grouped.values(), key=lambda pair: pair[1][0].lower()):
+        out += ["=" * 78, "Applies to: " + ", ".join(members), "=" * 78, text, ""]
+    out += ["NOTICES REQUIRED BY APACHE-2.0 SECTION 4(d) AND SIMILAR", "-" * 52, ""]
+    notices: dict[str, tuple[str, list[str]]] = {}
+    for c in components:
+        for _name, text in c.notices:
+            if text:
+                _, members = notices.setdefault(_digest(text), (text, []))
+                members.append(f"{c.name} {c.version}")
+    for text, members in sorted(notices.values(), key=lambda pair: pair[1][0].lower()):
+        out += ["=" * 78, "From: " + ", ".join(members), "=" * 78, text, ""]
+    return "\n".join(out) + "\n"
+
+
+def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str, object]:
+    """Stage THIRD-PARTY-LICENSES.txt, the flag report, LICENSE and NOTICE.
+
+    Raises (never returns a partial result) when any inventory cannot be
+    measured, so the dmg build fails rather than shipping without attribution.
+    """
+    components = collect_all(repo_root, payload_dir)
+    (payload_dir / LICENSES_FILE_NAME).write_text(render_licenses(components), encoding="utf-8")
+    (payload_dir / REPORT_FILE_NAME).write_text(flag_report(components), encoding="utf-8")
+    for name in (ROOT_LICENSE_FILE_NAME, NOTICE_FILE_NAME):
+        shutil.copyfile(repo_root / name, payload_dir / name)
+    return {
+        "file": LICENSES_FILE_NAME,
+        "components": len(components),
+        "by_ecosystem": {e: sum(1 for c in components if c.ecosystem == e) for e in sorted({c.ecosystem for c in components})},
+        "flagged": sum(1 for c in components if c.category in FLAGGED),
+        "sha256": hashlib.sha256((payload_dir / LICENSES_FILE_NAME).read_bytes()).hexdigest(),
+    }
+
+
+def verify_bundled_licenses(payload_dir: Path) -> None:
+    """Prove the PRESENCE of the good thing: real attribution files, per ecosystem."""
+    for name in (LICENSES_FILE_NAME, NOTICE_FILE_NAME, ROOT_LICENSE_FILE_NAME):
+        staged = payload_dir / name
+        if not staged.is_file() or staged.stat().st_size == 0:
+            raise LicenseInventoryError(f"{staged} is missing or empty: the app would ship without {name}")
+    inventory = (payload_dir / LICENSES_FILE_NAME).read_text(encoding="utf-8")
+    for ecosystem in ("python", "javascript", "rust", "bundled"):
+        if f"[{ecosystem}]" not in inventory:
+            raise LicenseInventoryError(f"{LICENSES_FILE_NAME} lists no {ecosystem} component: an inventory failed silently")
+    if len(inventory) < MIN_LICENSES_FILE_CHARS:
+        raise LicenseInventoryError(f"{LICENSES_FILE_NAME} is only {len(inventory)} chars: license texts were not rendered")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--payload", type=Path, required=True, help="a staged payload dir (or one with pylib/, runtime/, models/)")
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument("--flags", action="store_true", help="print the copyleft/non-commercial/unknown table and exit")
+    args = parser.parse_args(argv)
+    if args.flags:
+        sys.stdout.write(flag_report(collect_all(args.repo_root, args.payload)))
+        return 0
+    print(json.dumps(write_payload_license_files(args.repo_root, args.payload), indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
