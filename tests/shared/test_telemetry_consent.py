@@ -144,7 +144,7 @@ def test_replay_session_sample_rate_defaults_to_full_and_refuses_junk() -> None:
 def test_default_on_build_holds_every_send_until_accepted(consent_reset: None) -> None:
     """The whole point: a live SDK, an undecided tester, nothing leaves.
     Control in the same test: after acceptance the very next event is sent."""
-    import sentry_sdk
+    sentry_sdk = pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
 
     captured: list[dict] = []
     decision = decide_telemetry({}, build_source="payload", release=SHA, bundled_dsn=DSN)
@@ -181,7 +181,7 @@ def test_default_on_build_holds_every_send_until_accepted(consent_reset: None) -
 
 
 def test_consent_granted_at_boot_sends_from_the_first_event(consent_reset: None) -> None:
-    import sentry_sdk
+    sentry_sdk = pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
 
     captured: list[dict] = []
     decision = decide_telemetry({}, build_source="payload", release=SHA, bundled_dsn=DSN)
@@ -201,7 +201,7 @@ def test_consent_granted_at_boot_sends_from_the_first_event(consent_reset: None)
 
 def test_explicit_enable_is_not_held_for_consent(consent_reset: None) -> None:
     """A fleet host that set OPENDJ_TELEMETRY=1 asked by name."""
-    import sentry_sdk
+    sentry_sdk = pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
 
     captured: list[dict] = []
     decision = decide_telemetry(
