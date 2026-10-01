@@ -307,3 +307,22 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_ffmpeg)
         if not _HAS_SOXR and "requires_soxr" in item.keywords:
             item.add_marker(skip_soxr)
+
+
+@pytest.fixture(autouse=True)
+def _stem_cache_budget_sees_a_roomy_disk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the suite's result independent of this machine's free space.
+
+    ``hydrate_one`` enforces the disk-aware stem cache budget against the
+    REAL volume (STEM-39). On a host under the floor, that would evict a
+    test's own R2-confirmed bundles and turn a pass into a fail by the state
+    of someone's laptop. Every test therefore sees a volume with ample room
+    unless it injects a measurement itself (``disk=`` or its own monkeypatch,
+    which runs after this fixture and wins).
+    """
+    from apps.cloud import stem_cache_budget
+
+    roomy = stem_cache_budget.DiskUsage(
+        total_bytes=1000 * stem_cache_budget.GIB, free_bytes=900 * stem_cache_budget.GIB
+    )
+    monkeypatch.setattr(stem_cache_budget, "measure_disk", lambda _path: roomy)

@@ -13,12 +13,11 @@ hydrated bundle -- never a mocked loader.
   ``"reserved"``, UNLESS ``include_reserved=True`` is passed explicitly.
 * [if] the SAME id is loaded on-demand (:func:`hydrate_one` with its default
   ``skip_reserved=False``) [then] it is NOT skipped.
-* [if] a bundle is open on a deck [then] :func:`enforce_budget` never evicts
+* [if] a bundle is open on a deck [then] budget enforcement never evicts
   it even when it is the least-recently-used bundle over budget.
 """
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import json
 import wave
@@ -27,16 +26,16 @@ from pathlib import Path
 
 import pytest
 
-from apps.cloud import asset_store, policy
+from apps.cloud import asset_store, stem_cache_budget
 from apps.cloud.asset_store import asset_object_key
 from apps.cloud.config import CloudConfig
+from apps.cloud.stem_cache_budget import GIB, DiskUsage
 from apps.cloud.stem_hydration import (
     OPEN_DECK_SERVED_TTL_S,
     OPEN_DECKS,
     HydrationOutcome,
     OpenDeckRegistry,
     bulk_hydrate,
-    enforce_budget,
     hydrate_one,
     load_reserved_ids,
 )
@@ -343,56 +342,83 @@ def test_load_reserved_ids_reads_tracks_array(tmp_path: Path):
 # --- budget-bounded LRU eviction, open-deck protected -------------------------
 
 
-def _make_bundle_on_disk(stems_dir: Path, stable_id: str, *, atime: float) -> None:
+#: A volume with nothing free: every R2-confirmed, unprotected bundle is over
+#: budget, so these tests exercise WHICH bundle goes, not whether one does.
+_FULL_DISK = DiskUsage(total_bytes=460 * GIB, free_bytes=0)
+
+
+def _make_bundle_on_disk(stems_dir: Path, stable_id: str, *, atime: float) -> dict[str, str]:
+    """Write a bundle and return its {filename: sha256} index entry, so a test
+    can declare it R2-confirmed by passing the entry in the index."""
     import os
 
     bundle_dir = stems_dir / stable_id
     bundle_dir.mkdir(parents=True)
-    (bundle_dir / "manifest.json").write_bytes(_manifest_bytes(stable_id))
+    bodies = {"manifest.json": _manifest_bytes(stable_id)}
     for part in ("vocals", "drums", "bass", "other"):
-        path = bundle_dir / f"{part}.wav"
-        path.write_bytes(_wav_bytes())
+        bodies[f"{part}.wav"] = _wav_bytes()
+    entry: dict[str, str] = {}
+    for filename, body in bodies.items():
+        path = bundle_dir / filename
+        path.write_bytes(body)
         os.utime(path, (atime, atime))
+        entry[filename] = hashlib.sha256(body).hexdigest()
+    return entry
+
+
+def _enforce_on_full_disk(stems_dir: Path, index, *, protected=frozenset()):
+    return stem_cache_budget.enforce(
+        stems_dir,
+        data_dir=stems_dir.parent / "data",
+        index=index,
+        protected=protected,
+        can_rehydrate=True,
+        disk=_FULL_DISK,
+    )
 
 
 @pytest.mark.requirement("STEM-14")
-def test_enforce_budget_evicts_least_recently_used_bundle(tmp_path: Path):
-    """[if] the cache exceeds budget [then] enforce_budget evicts the LRU bundle, [else stop]."""
+def test_enforcement_evicts_least_recently_used_bundle_first(tmp_path: Path):
+    """[if] the cache is over budget by one bundle [then] the LRU one goes, [else stop]."""
     stems_dir = tmp_path / "stems"
-    _make_bundle_on_disk(stems_dir, "old", atime=1_000_000)
-    _make_bundle_on_disk(stems_dir, "new", atime=2_000_000)
+    index = {
+        "old": _make_bundle_on_disk(stems_dir, "old", atime=1_000_000),
+        "new": _make_bundle_on_disk(stems_dir, "new", atime=2_000_000),
+    }
     size_per_bundle = sum(f.stat().st_size for f in (stems_dir / "old").iterdir())
-    # Budget for exactly one bundle: the older one must go.
-    outcome = enforce_budget(stems_dir, budget_mb=0)
-    assert "old" in outcome.evicted_stable_ids or "new" in outcome.evicted_stable_ids
-    assert size_per_bundle > 0
+    floor = stem_cache_budget.floor_bytes(
+        _FULL_DISK.total_bytes, stem_cache_budget.StemCacheSettings()
+    )
+    outcome = stem_cache_budget.enforce(
+        stems_dir,
+        data_dir=tmp_path / "data",
+        index=index,
+        protected=frozenset(),
+        can_rehydrate=True,
+        disk=DiskUsage(total_bytes=_FULL_DISK.total_bytes, free_bytes=floor - size_per_bundle),
+    )
+    assert outcome.evicted_stable_ids == ("old",)
+    assert (stems_dir / "new").exists()
 
 
 @pytest.mark.requirement("STEM-14")
-def test_enforce_budget_never_evicts_an_open_deck():
+def test_enforcement_never_evicts_an_open_deck(tmp_path: Path):
     """MUTATION TARGET: pass ``protected=frozenset()`` instead of the real
     open-deck set here and this test goes red.
 
     [if] the oldest bundle belongs to an open deck [then] it is never evicted, [else stop].
     """
-    stems_dir_holder: dict[str, Path] = {}
-
-    def _setup(tmp: Path) -> Path:
-        stems_dir = tmp / "stems"
-        _make_bundle_on_disk(stems_dir, "oldest-but-open", atime=1_000_000)
-        _make_bundle_on_disk(stems_dir, "newer", atime=2_000_000)
-        stems_dir_holder["dir"] = stems_dir
-        return stems_dir
-
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        stems_dir = _setup(Path(tmp))
-        registry = OpenDeckRegistry()
-        registry.mark_open("oldest-but-open")
-        outcome = enforce_budget(stems_dir, budget_mb=0, protected=registry.open_ids())
-        assert "oldest-but-open" not in outcome.evicted_stable_ids
-        assert (stems_dir / "oldest-but-open").exists()
+    stems_dir = tmp_path / "stems"
+    index = {
+        "oldest-but-open": _make_bundle_on_disk(stems_dir, "oldest-but-open", atime=1_000_000),
+        "newer": _make_bundle_on_disk(stems_dir, "newer", atime=2_000_000),
+    }
+    registry = OpenDeckRegistry()
+    registry.mark_open("oldest-but-open")
+    outcome = _enforce_on_full_disk(stems_dir, index, protected=registry.open_ids())
+    assert "oldest-but-open" not in outcome.evicted_stable_ids
+    assert (stems_dir / "oldest-but-open").exists()
+    assert outcome.evicted_stable_ids == ("newer",)
 
 
 @pytest.mark.requirement("STEM-21")
@@ -646,20 +672,12 @@ def test_hydrate_one_failure_removes_only_its_own_temp_dir(
 def test_hydrate_one_protects_its_own_just_hydrated_bundle(
     tmp_path: Path, fake_s3, cfg: CloudConfig, monkeypatch: pytest.MonkeyPatch
 ):
-    """[if] enforce_budget runs right after a hydrate [then] it still lands, [else stop]."""
+    """[if] enforcement runs right after a hydrate on a full disk [then] the bundle still lands, and so does a bundle open on a deck, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
-    artifact = policy.CFG.artifacts["stem_bundle"]
-    zero_budget = dataclasses.replace(
-        policy.CFG,
-        artifacts={
-            **policy.CFG.artifacts,
-            "stem_bundle": dataclasses.replace(artifact, cache_budget_mb=0),
-        },
-    )
-    monkeypatch.setattr(policy, "CFG", zero_budget)
+    monkeypatch.setattr(stem_cache_budget, "measure_disk", lambda _path: _FULL_DISK)
 
-    _make_bundle_on_disk(stems_dir, "open-track", atime=1_000_000)
+    open_entry = _make_bundle_on_disk(stems_dir, "open-track", atime=1_000_000)
     OPEN_DECKS.mark_open("open-track")
     try:
         entry = _seed_bundle(fake_s3, cfg, "new-track")
@@ -667,11 +685,12 @@ def test_hydrate_one_protects_its_own_just_hydrated_bundle(
             "new-track",
             data_dir=data_dir,
             source=DirectR2Source(cfg=cfg, s3=fake_s3),
-            index={"new-track": entry},
+            index={"new-track": entry, "open-track": open_entry},
             stems_dir=stems_dir,
         )
         assert outcome.status == "hydrated"
         assert (stems_dir / "new-track" / "manifest.json").exists()
+        assert (stems_dir / "open-track" / "manifest.json").exists()
     finally:
         OPEN_DECKS.mark_closed("open-track")
 
@@ -690,23 +709,22 @@ def test_open_deck_registry_served_ttl_protects_then_expires():
 
 
 @pytest.mark.requirement("STEM-30")
-def test_enforce_budget_protects_a_recently_served_bundle_without_deck_open():
+def test_enforcement_protects_a_recently_served_bundle_without_deck_open(tmp_path: Path):
     """[if] a bundle was recently served, no open deck [then] protected until TTL, [else stop]."""
-    import tempfile
+    stems_dir = tmp_path / "stems"
+    index = {
+        "served-track": _make_bundle_on_disk(stems_dir, "served-track", atime=1_000_000),
+        "newer": _make_bundle_on_disk(stems_dir, "newer", atime=2_000_000),
+    }
+    registry = OpenDeckRegistry()
+    served_at = 100.0
+    registry.mark_served("served-track", now=served_at)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        stems_dir = Path(tmp) / "stems"
-        _make_bundle_on_disk(stems_dir, "served-track", atime=1_000_000)
-        _make_bundle_on_disk(stems_dir, "newer", atime=2_000_000)
-        registry = OpenDeckRegistry()
-        served_at = 100.0
-        registry.mark_served("served-track", now=served_at)
+    protected = registry.open_ids(now=served_at)
+    outcome = _enforce_on_full_disk(stems_dir, index, protected=protected)
+    assert "served-track" not in outcome.evicted_stable_ids
+    assert (stems_dir / "served-track").exists()
 
-        protected = registry.open_ids(now=served_at)
-        outcome = enforce_budget(stems_dir, budget_mb=0, protected=protected)
-        assert "served-track" not in outcome.evicted_stable_ids
-        assert (stems_dir / "served-track").exists()
-
-        expired_protected = registry.open_ids(now=served_at + OPEN_DECK_SERVED_TTL_S + 1)
-        outcome2 = enforce_budget(stems_dir, budget_mb=0, protected=expired_protected)
-        assert "served-track" in outcome2.evicted_stable_ids
+    expired_protected = registry.open_ids(now=served_at + OPEN_DECK_SERVED_TTL_S + 1)
+    outcome2 = _enforce_on_full_disk(stems_dir, index, protected=expired_protected)
+    assert "served-track" in outcome2.evicted_stable_ids

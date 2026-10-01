@@ -2,8 +2,8 @@
 
 Composes existing primitives rather than duplicating them: content-address
 fetch is :func:`apps.cloud.asset_store.fetch_asset`, the mapping is
-:mod:`apps.cloud.stem_index`, the budget comes from
-:data:`apps.cloud.policy.CFG`, and the strict re-verify after writing is
+:mod:`apps.cloud.stem_index`, the budget is derived from free disk by
+:mod:`apps.cloud.stem_cache_budget`, and the strict re-verify after writing is
 :func:`apps.stems.artifacts.load_stem_bundle` -- ``_load_v1_bundle``
 itself is never touched; this module only ever calls the public loader.
 
@@ -26,6 +26,11 @@ Two entry points:
   ``"reserved"``.
 * [if] a bundle is open on a deck [then] budget enforcement never evicts it,
   regardless of its recency.
+* [if] a hydrate lands [then] the disk-aware budget is enforced at once, and
+  only bundles the R2 index holds byte for byte are ever removed (STEM-39,
+  STEM-40). Supersedes: the fixed-budget ``enforce_budget`` this module used
+  to carry, which read 102400 MB from the policy and evicted any directory
+  under the stems root, local-only renders included.
 """
 
 from __future__ import annotations
@@ -40,8 +45,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from apps.cloud import asset_store, policy, stem_index
-from apps.cloud.eviction import BYTES_PER_MB, HydrationError
+from apps.cloud import asset_store, stem_cache_budget, stem_index
+from apps.cloud.eviction import HydrationError
 from apps.cloud.stem_source import (
     STEM_HUB_INDEX_FAILED,
     STEM_HUB_UNREACHABLE,
@@ -193,14 +198,6 @@ class BulkHydrateReport:
     bytes_fetched: int
 
 
-@dataclass(frozen=True)
-class EvictionOutcome:
-    evicted_stable_ids: tuple[str, ...]
-    bytes_freed: int
-    bytes_remaining: int
-    budget_bytes: int
-
-
 # --- single-bundle hydration ----------------------------------------------------
 
 
@@ -274,7 +271,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             return HydrationOutcome(stable_id, "already_local")
         root.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(
-            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}.tmp-hydrate-")
+            tempfile.mkdtemp(dir=root, prefix=f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}")
         )
         renamed = False
         try:
@@ -324,7 +321,19 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 shutil.rmtree(tmp_dir, ignore_errors=True)
             return HydrationOutcome(stable_id, "error", reason=str(exc))
 
-    enforce_budget(root, protected=OPEN_DECKS.open_ids() | {stable_id})
+    # A hydrate just succeeded, so this machine can demonstrably get an
+    # evicted bundle back: that is what ``can_rehydrate`` asserts.
+    stem_cache_budget.enforce(
+        root,
+        data_dir=data_dir,
+        index=index,
+        protected=OPEN_DECKS.open_ids() | {stable_id},
+        can_rehydrate=True,
+        # Give back only what this hydrate took. A deck is waiting on this
+        # call, and confirming a bundle against R2 means hashing it; the
+        # engine timer clears any larger backlog off the request path.
+        max_evict_bytes=total,
+    )
     return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
 
 
@@ -443,76 +452,16 @@ def bulk_hydrate(
     )
 
 
-# --- budget-bounded LRU eviction, bundle-granular --------------------------------
-
-
-def enforce_budget(
-    stems_dir: Path,
-    *,
-    protected: frozenset[str] = frozenset(),
-    budget_mb: int | None = None,
-) -> EvictionOutcome:
-    """LRU-evict whole bundle directories over the policy budget.
-
-    Bundle-granular, unlike :func:`apps.cloud.eviction.evict_cache`'s
-    file-granular LRU: a stem bundle is 4-5 files that must survive or die
-    together, so evicting half of one would leave an unloadable directory
-    that the strict loader reports as CORRUPT, not simply absent. A
-    bundle's recency is its newest file's atime, so soloing one stem still
-    counts the whole bundle as recently used. ``protected`` (the open-deck
-    set) is never evicted regardless of recency.
-    """
-    budget = (
-        budget_mb
-        if budget_mb is not None
-        else policy.CFG.artifacts[STEM_ASSET_KIND].cache_budget_mb
-    )
-    budget_bytes = budget * BYTES_PER_MB
-    root = Path(stems_dir)
-    if not root.is_dir():
-        return EvictionOutcome((), 0, 0, budget_bytes)
-
-    bundles: list[tuple[float, str, Path, int]] = []
-    total = 0
-    for child in sorted(root.iterdir()):
-        if not child.is_dir() or child.is_symlink():
-            continue
-        newest_atime = 0.0
-        size = 0
-        for file_path in child.rglob("*"):
-            if file_path.is_file():
-                stat_result = file_path.stat()
-                size += stat_result.st_size
-                newest_atime = max(newest_atime, stat_result.st_atime)
-        total += size
-        bundles.append((newest_atime, child.name, child, size))
-
-    bundles.sort(key=lambda item: (item[0], item[1]))
-    evicted: list[str] = []
-    freed = 0
-    for _atime, stable_id, path, size in bundles:
-        if total - freed <= budget_bytes:
-            break
-        if stable_id in protected:
-            continue
-        shutil.rmtree(path)
-        evicted.append(stable_id)
-        freed += size
-    return EvictionOutcome(tuple(evicted), freed, total - freed, budget_bytes)
-
-
 __all__ = [
     "OPEN_DECKS",
     "OPEN_DECK_SERVED_TTL_S",
     "RESERVATION_FILENAME",
     "STEM_ASSET_KIND",
     "BulkHydrateReport",
-    "EvictionOutcome",
     "HydrationOutcome",
     "HydrationStatus",
     "OpenDeckRegistry",
     "bulk_hydrate",
-    "enforce_budget",
     "hydrate_one",
     "load_reserved_ids",
     "reservation_file_path",

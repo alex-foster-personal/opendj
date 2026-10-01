@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.paths import DATA_DIR
+from apps.stems import cache_cli
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -692,6 +693,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bulk_hydrate.add_argument("--json", action="store_true")
     bulk_hydrate.set_defaults(func=cmd_bulk_hydrate)
+
+    cache_cli.register(sub)
 
     return p
 

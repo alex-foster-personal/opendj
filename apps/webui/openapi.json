@@ -18738,6 +18738,382 @@
         "title": "StemBundlePresignResponse",
         "type": "object"
       },
+      "StemCacheEnforceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "title": "StemCacheEnforceIn",
+        "type": "object"
+      },
+      "StemCacheEnforcementOut": {
+        "properties": {
+          "at_utc": {
+            "title": "At Utc",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "budget_bytes": {
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "bytes_freed": {
+            "title": "Bytes Freed",
+            "type": "integer"
+          },
+          "cache_bytes": {
+            "title": "Cache Bytes",
+            "type": "integer"
+          },
+          "disk_free_bytes": {
+            "title": "Disk Free Bytes",
+            "type": "integer"
+          },
+          "disk_total_bytes": {
+            "title": "Disk Total Bytes",
+            "type": "integer"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "evicted_stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evicted Stable Ids",
+            "type": "array"
+          },
+          "floor_bytes": {
+            "title": "Floor Bytes",
+            "type": "integer"
+          },
+          "protected_count": {
+            "title": "Protected Count",
+            "type": "integer"
+          },
+          "queued_for_upload": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queued For Upload",
+            "type": "array"
+          },
+          "shortfall_bytes": {
+            "title": "Shortfall Bytes",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "healthy",
+              "low_disk"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at_utc",
+          "state",
+          "dry_run",
+          "disk_total_bytes",
+          "disk_free_bytes",
+          "floor_bytes",
+          "shortfall_bytes",
+          "cache_bytes",
+          "budget_bytes",
+          "evicted_stable_ids",
+          "bytes_freed",
+          "queued_for_upload",
+          "protected_count",
+          "blocked_reason"
+        ],
+        "title": "StemCacheEnforcementOut",
+        "type": "object"
+      },
+      "StemCacheSettingsIn": {
+        "additionalProperties": false,
+        "description": "Partial update: omitted fields keep their stored value.",
+        "properties": {
+          "auto_evict": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Evict"
+          },
+          "clear_max_cache_gib": {
+            "default": false,
+            "title": "Clear Max Cache Gib",
+            "type": "boolean"
+          },
+          "enforce_interval_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforce Interval S"
+          },
+          "floor_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Fraction"
+          },
+          "floor_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Gib"
+          },
+          "max_cache_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cache Gib"
+          }
+        },
+        "title": "StemCacheSettingsIn",
+        "type": "object"
+      },
+      "StemCacheSettingsOut": {
+        "properties": {
+          "auto_evict": {
+            "description": "Whether low disk evicts R2-confirmed bundles",
+            "title": "Auto Evict",
+            "type": "boolean"
+          },
+          "enforce_interval_s": {
+            "description": "Seconds between engine enforcement ticks",
+            "title": "Enforce Interval S",
+            "type": "number"
+          },
+          "floor_fraction": {
+            "description": "Free-space floor as a fraction of the volume",
+            "title": "Floor Fraction",
+            "type": "number"
+          },
+          "floor_gib": {
+            "description": "Absolute free-space floor, GiB",
+            "title": "Floor Gib",
+            "type": "number"
+          },
+          "max_cache_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional hard cap on the cache, GiB",
+            "title": "Max Cache Gib"
+          }
+        },
+        "required": [
+          "floor_gib",
+          "floor_fraction",
+          "max_cache_gib",
+          "enforce_interval_s",
+          "auto_evict"
+        ],
+        "title": "StemCacheSettingsOut",
+        "type": "object"
+      },
+      "StemCacheStatusOut": {
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why low disk is not being relieved, or null",
+            "title": "Blocked Reason"
+          },
+          "budget_bytes": {
+            "description": "Largest cache that still leaves the floor free",
+            "title": "Budget Bytes",
+            "type": "integer"
+          },
+          "bundle_count": {
+            "title": "Bundle Count",
+            "type": "integer"
+          },
+          "cache_bytes": {
+            "title": "Cache Bytes",
+            "type": "integer"
+          },
+          "can_rehydrate": {
+            "description": "Whether a hydration source is armed",
+            "title": "Can Rehydrate",
+            "type": "boolean"
+          },
+          "disk_free_bytes": {
+            "title": "Disk Free Bytes",
+            "type": "integer"
+          },
+          "disk_total_bytes": {
+            "title": "Disk Total Bytes",
+            "type": "integer"
+          },
+          "enforcer_running": {
+            "title": "Enforcer Running",
+            "type": "boolean"
+          },
+          "evictable_bundle_count": {
+            "description": "In the R2 index and not on a deck",
+            "title": "Evictable Bundle Count",
+            "type": "integer"
+          },
+          "evictable_bytes": {
+            "title": "Evictable Bytes",
+            "type": "integer"
+          },
+          "floor_bytes": {
+            "title": "Floor Bytes",
+            "type": "integer"
+          },
+          "last_enforcement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemCacheEnforcementOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "local_only_bytes": {
+            "title": "Local Only Bytes",
+            "type": "integer"
+          },
+          "local_only_count": {
+            "description": "Not covered by the R2 index; never evicted",
+            "title": "Local Only Count",
+            "type": "integer"
+          },
+          "local_only_stable_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Local Only Stable Ids",
+            "type": "array"
+          },
+          "over_budget_bytes": {
+            "title": "Over Budget Bytes",
+            "type": "integer"
+          },
+          "protected_count": {
+            "description": "Loaded or playing; never evicted",
+            "title": "Protected Count",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/StemCacheSettingsOut"
+          },
+          "shortfall_bytes": {
+            "description": "Bytes short of the floor; 0 when healthy",
+            "title": "Shortfall Bytes",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "healthy",
+              "low_disk"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stems_dir": {
+            "title": "Stems Dir",
+            "type": "string"
+          },
+          "upload_queue_count": {
+            "title": "Upload Queue Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "stems_dir",
+          "disk_total_bytes",
+          "disk_free_bytes",
+          "floor_bytes",
+          "shortfall_bytes",
+          "cache_bytes",
+          "budget_bytes",
+          "over_budget_bytes",
+          "bundle_count",
+          "evictable_bundle_count",
+          "evictable_bytes",
+          "local_only_count",
+          "local_only_bytes",
+          "local_only_stable_ids",
+          "upload_queue_count",
+          "protected_count",
+          "can_rehydrate",
+          "blocked_reason",
+          "settings",
+          "enforcer_running",
+          "last_enforcement",
+          "last_error"
+        ],
+        "title": "StemCacheStatusOut",
+        "type": "object"
+      },
       "StemHydrateIn": {
         "properties": {
           "data_dir": {
@@ -35959,6 +36335,135 @@
           }
         },
         "summary": "Bulk Hydrate Stems",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/cache/enforce": {
+      "post": {
+        "description": "Run the engine's enforcement pass now. Evicts only bundles the R2\nindex holds byte for byte, least recently used first, and stops at the\nfloor; ``dry_run`` reports the plan without removing anything.",
+        "operationId": "enforce_stem_cache_api_v1_stems_cache_enforce_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemCacheEnforceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheEnforcementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Enforce Stem Cache",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/cache/settings": {
+      "get": {
+        "operationId": "get_stem_cache_settings_api_v1_stems_cache_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Get Stem Cache Settings",
+        "tags": [
+          "stems"
+        ]
+      },
+      "put": {
+        "description": "Override the floor, the optional cap, the tick interval or auto-evict.\nOmitted fields keep their stored value; ``clear_max_cache_gib`` removes\nthe cap (``null`` cannot, because it already means \"leave unchanged\").",
+        "operationId": "put_stem_cache_settings_api_v1_stems_cache_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StemCacheSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Put Stem Cache Settings",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/stems/cache/status": {
+      "get": {
+        "description": "Where the stem cache stands against the free-disk floor. Read-only.",
+        "operationId": "get_stem_cache_status_api_v1_stems_cache_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemCacheStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved"
+          },
+          "502": {
+            "description": "STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2"
+          }
+        },
+        "summary": "Get Stem Cache Status",
         "tags": [
           "stems"
         ]

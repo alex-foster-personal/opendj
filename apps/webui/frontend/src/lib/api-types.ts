@@ -4755,6 +4755,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stems/cache/enforce": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enforce Stem Cache
+         * @description Run the engine's enforcement pass now. Evicts only bundles the R2
+         *     index holds byte for byte, least recently used first, and stops at the
+         *     floor; ``dry_run`` reports the plan without removing anything.
+         */
+        post: operations["enforce_stem_cache_api_v1_stems_cache_enforce_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/cache/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stem Cache Settings */
+        get: operations["get_stem_cache_settings_api_v1_stems_cache_settings_get"];
+        /**
+         * Put Stem Cache Settings
+         * @description Override the floor, the optional cap, the tick interval or auto-evict.
+         *     Omitted fields keep their stored value; ``clear_max_cache_gib`` removes
+         *     the cap (``null`` cannot, because it already means "leave unchanged").
+         */
+        put: operations["put_stem_cache_settings_api_v1_stems_cache_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stems/cache/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem Cache Status
+         * @description Where the stem cache stands against the free-disk floor. Read-only.
+         */
+        get: operations["get_stem_cache_status_api_v1_stems_cache_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stems/estimate": {
         parameters: {
             query?: never;
@@ -13457,6 +13522,168 @@ export interface components {
             files: components["schemas"]["StemPresignFileOut"][];
             /** Stable Id */
             stable_id: string;
+        };
+        /** StemCacheEnforceIn */
+        StemCacheEnforceIn: {
+            /**
+             * Dry Run
+             * @default false
+             */
+            dry_run: boolean;
+        };
+        /** StemCacheEnforcementOut */
+        StemCacheEnforcementOut: {
+            /** At Utc */
+            at_utc: string;
+            /** Blocked Reason */
+            blocked_reason: string | null;
+            /** Budget Bytes */
+            budget_bytes: number;
+            /** Bytes Freed */
+            bytes_freed: number;
+            /** Cache Bytes */
+            cache_bytes: number;
+            /** Disk Free Bytes */
+            disk_free_bytes: number;
+            /** Disk Total Bytes */
+            disk_total_bytes: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Evicted Stable Ids */
+            evicted_stable_ids: string[];
+            /** Floor Bytes */
+            floor_bytes: number;
+            /** Protected Count */
+            protected_count: number;
+            /** Queued For Upload */
+            queued_for_upload: string[];
+            /** Shortfall Bytes */
+            shortfall_bytes: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "healthy" | "low_disk";
+        };
+        /**
+         * StemCacheSettingsIn
+         * @description Partial update: omitted fields keep their stored value.
+         */
+        StemCacheSettingsIn: {
+            /** Auto Evict */
+            auto_evict?: boolean | null;
+            /**
+             * Clear Max Cache Gib
+             * @default false
+             */
+            clear_max_cache_gib: boolean;
+            /** Enforce Interval S */
+            enforce_interval_s?: number | null;
+            /** Floor Fraction */
+            floor_fraction?: number | null;
+            /** Floor Gib */
+            floor_gib?: number | null;
+            /** Max Cache Gib */
+            max_cache_gib?: number | null;
+        };
+        /** StemCacheSettingsOut */
+        StemCacheSettingsOut: {
+            /**
+             * Auto Evict
+             * @description Whether low disk evicts R2-confirmed bundles
+             */
+            auto_evict: boolean;
+            /**
+             * Enforce Interval S
+             * @description Seconds between engine enforcement ticks
+             */
+            enforce_interval_s: number;
+            /**
+             * Floor Fraction
+             * @description Free-space floor as a fraction of the volume
+             */
+            floor_fraction: number;
+            /**
+             * Floor Gib
+             * @description Absolute free-space floor, GiB
+             */
+            floor_gib: number;
+            /**
+             * Max Cache Gib
+             * @description Optional hard cap on the cache, GiB
+             */
+            max_cache_gib: number | null;
+        };
+        /** StemCacheStatusOut */
+        StemCacheStatusOut: {
+            /**
+             * Blocked Reason
+             * @description Why low disk is not being relieved, or null
+             */
+            blocked_reason: string | null;
+            /**
+             * Budget Bytes
+             * @description Largest cache that still leaves the floor free
+             */
+            budget_bytes: number;
+            /** Bundle Count */
+            bundle_count: number;
+            /** Cache Bytes */
+            cache_bytes: number;
+            /**
+             * Can Rehydrate
+             * @description Whether a hydration source is armed
+             */
+            can_rehydrate: boolean;
+            /** Disk Free Bytes */
+            disk_free_bytes: number;
+            /** Disk Total Bytes */
+            disk_total_bytes: number;
+            /** Enforcer Running */
+            enforcer_running: boolean;
+            /**
+             * Evictable Bundle Count
+             * @description In the R2 index and not on a deck
+             */
+            evictable_bundle_count: number;
+            /** Evictable Bytes */
+            evictable_bytes: number;
+            /** Floor Bytes */
+            floor_bytes: number;
+            last_enforcement: components["schemas"]["StemCacheEnforcementOut"] | null;
+            /** Last Error */
+            last_error: string | null;
+            /** Local Only Bytes */
+            local_only_bytes: number;
+            /**
+             * Local Only Count
+             * @description Not covered by the R2 index; never evicted
+             */
+            local_only_count: number;
+            /** Local Only Stable Ids */
+            local_only_stable_ids: string[];
+            /** Over Budget Bytes */
+            over_budget_bytes: number;
+            /**
+             * Protected Count
+             * @description Loaded or playing; never evicted
+             */
+            protected_count: number;
+            settings: components["schemas"]["StemCacheSettingsOut"];
+            /**
+             * Shortfall Bytes
+             * @description Bytes short of the floor; 0 when healthy
+             */
+            shortfall_bytes: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "healthy" | "low_disk";
+            /** Stems Dir */
+            stems_dir: string;
+            /** Upload Queue Count */
+            upload_queue_count: number;
         };
         /** StemHydrateIn */
         StemHydrateIn: {
@@ -23888,6 +24115,150 @@ export interface operations {
             };
             /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    enforce_stem_cache_api_v1_stems_cache_enforce_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemCacheEnforceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheEnforcementOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_cache_settings_api_v1_stems_cache_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheSettingsOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_stem_cache_settings_api_v1_stems_cache_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StemCacheSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheSettingsOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_cache_status_api_v1_stems_cache_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemCacheStatusOut"];
+                };
+            };
+            /** @description STEM_CACHE_SETTINGS_INVALID: the stored or submitted settings are malformed; nothing was evicted or saved */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description STEM_INDEX_CORRUPT: the local stem index cache is present but unreadable, so no bundle can be confirmed against R2 */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
