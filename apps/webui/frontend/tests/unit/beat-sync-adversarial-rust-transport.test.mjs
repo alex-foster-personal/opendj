@@ -1,5 +1,5 @@
 /**
- * ADVERSARIAL (round 2, intentionally RED until fixed): Rust engine mode's
+ * ADVERSARIAL (round 2; findings 1 and 2 were RED, FIXED - see each test): Rust engine mode's
  * page-decided Beat Sync (`rust-transport.ts`) driven through the same
  * recording stand-in engine as rust-sync.test.mjs. What is under test is what
  * the page tells the engine.
@@ -192,6 +192,21 @@ test('2. after the master is paused, the remaining synced follower stays phase-l
 		newMaster,
 		`deck ${other} (playing, BEAT SYNC on) has lock ${JSON.stringify(lock ?? null)} after the handoff`
 	);
+});
+
+test('2b. control: a paused LOCKED master hands nothing off, so its followers get no re-join', async () => {
+	await playingMaster(1, grid(128, 0.1, 1200), 60_000);
+	await joinFollower(2, grid(126, 0.05, 1200), 30_000);
+	m.rustMaster.mode = 'locked';
+	sent = [];
+	await m.executeInRustEngine({ type: 'play', deck: 1, playing: false });
+	assert.equal(m.rustMaster.deck, 1, 'a locked master stays master while paused');
+	assert.deepEqual(
+		sent.filter((c) => c.deck === 2),
+		[],
+		'no seek or tempo is sent to a follower when no new master was elected'
+	);
+	assert.equal(m.deckStates[2].sync_error, null);
 });
 
 test('3. a lock dropped mid-trim sends the base back (no permanent 0.3% offset)', async () => {

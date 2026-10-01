@@ -58,6 +58,23 @@ export function electIfAuto(options?: { force?: boolean }): void {
 	_assignMaster(electMaster(electionInputFrom(deckStates, mixerState)));
 }
 
+/**
+ * An AUTOMATIC master change - the master paused, CUE'd, played out or was
+ * unloaded - re-joins every playing synced deck to the new master, as the
+ * manual `_setDeckMaster` does. Without it each follower's phase lock is
+ * dropped as soon as the master moves (`_lockHolds`) and nothing records a
+ * new one, so the decks free-run and drift. A re-anchor join only seeks a
+ * follower that is off phase; the new master was itself locked to the old
+ * one, so this is normally a tempo-only re-lock.
+ */
+export async function electAndRejoin(options?: { force?: boolean }): Promise<void> {
+	const previous = rustMaster.deck;
+	electIfAuto(options);
+	const next = _syncMaster();
+	if (next === null || next === previous) return;
+	await _reanchor(next, _lockedFollowers(next));
+}
+
 function _view(deck: DeckId, positionSec?: number): SyncDeckView {
 	const st = deckStates[deck];
 	return {
@@ -297,7 +314,7 @@ async function _pause(deck: DeckId): Promise<void> {
 	st.position_ms = at;
 	// The memory cue a pause leaves, snapped as the Web Audio engine snaps it.
 	st.cue_ms = rustCuePoint(st, at);
-	if (rustMaster.deck === deck) electIfAuto();
+	if (rustMaster.deck === deck) await electAndRejoin();
 }
 
 /** The CUE button. Playing: back to the cue point and pause. Paused with no
@@ -313,7 +330,7 @@ async function _pressCue(deck: DeckId): Promise<void> {
 		]);
 		_setPlaying(deck, false);
 		st.position_ms = target;
-		if (rustMaster.deck === deck) electIfAuto();
+		if (rustMaster.deck === deck) await electAndRejoin();
 		return;
 	}
 	if (st.cue_ms === null) {
