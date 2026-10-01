@@ -41,6 +41,7 @@ from apps.shared import audio_files, audio_playable, fs_access, fs_residency, ha
 from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
+from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 
@@ -81,6 +82,9 @@ class FolderIngestReport:
     tracks_updated: int = 0
     tracks_unchanged: int = 0
     tracks_skipped: int = 0
+    #: Files that ARE a track the user removed, by id or by audio identity
+    #: (LIBM-140). Left removed; restore one with ``undelete``.
+    tracks_skipped_deleted: int = 0
     tier_counts: dict[str, int] = dataclasses.field(
         default_factory=lambda: {"isrc": 0, "fingerprint": 0, "inferred": 0}
     )
@@ -233,6 +237,19 @@ def _write_tracks(
             continue
         seen.add(stable_id)
 
+        audio_hash = hashing.sha256_audio_payload(entry.path)
+        if (
+            deleted_tracks.find_deleted_match(
+                writer.raw_conn,
+                stable_id=stable_id,
+                content_hash=None,
+                audio_hash=audio_hash,
+            )
+            is not None
+        ):
+            report.tracks_skipped_deleted += 1
+            continue
+
         changed = writer.upsert_track(
             stable_id=stable_id,
             stable_id_tier=tier,
@@ -243,7 +260,7 @@ def _write_tracks(
             duration_ms=duration_ms,
             file_path=str(entry.path),
             content_hash=None,
-            audio_hash=hashing.sha256_audio_payload(entry.path),
+            audio_hash=audio_hash,
         )
         if changed:
             report.tracks_inserted += 1
@@ -355,6 +372,7 @@ def _print_summary(report: FolderIngestReport) -> None:
     print(f"  tracks inserted:    {report.tracks_inserted}")
     print(f"  tracks unchanged:   {report.tracks_unchanged}")
     print(f"  tracks skipped:     {report.tracks_skipped}")
+    print(f"  skipped: deleted by user: {report.tracks_skipped_deleted}")
     print(f"  tracks with NO analysis: {report.tracks_without_analysis}")
     for tier, count in report.tier_counts.items():
         print(f"  tier {tier:<12} {count}")

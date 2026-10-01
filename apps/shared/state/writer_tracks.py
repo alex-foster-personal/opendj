@@ -16,7 +16,7 @@ import sqlite3
 from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from . import locations as _locations
 from . import provenance as _prov
@@ -57,6 +57,16 @@ class _WriterHost(Protocol):
     def machine_id(self) -> str: ...
 
 
+#: Why a ``tracks`` tombstone exists (``tracks.deleted_reason``, schema v23).
+#: ``user``: Remove from library; only an explicit undelete lifts it.
+#: ``missing``: a watched-folder rescan found the file gone; an ingest that
+#: finds the file again lifts it. NULL on a tombstone predates the column and
+#: is read as ``user``, so an old delete stays deleted.
+DeleteReason = Literal["user", "missing"]
+DELETED_BY_USER: DeleteReason = "user"
+DELETED_FILE_MISSING: DeleteReason = "missing"
+
+
 class TrackNotFoundError(LookupError):
     """Raised when ``stable_id`` has no ``tracks`` row."""
 
@@ -67,6 +77,16 @@ class TrackAlreadyRemovedError(RuntimeError):
 
 class TrackNotRemovedError(RuntimeError):
     """Raised when ``undelete_track`` targets a live row."""
+
+
+class TrackRemovedError(RuntimeError):
+    """Raised when ``upsert_track`` targets a row the user removed.
+
+    A removed track comes back through ``undelete_track`` and nothing else
+    (LIBM-140). An ingest asks ``deleted_tracks.find_deleted_match`` first and
+    counts the row as skipped; any other caller reaching a tombstone has a
+    defect, and overwriting the tombstone would hide it.
+    """
 
 
 @dataclass(frozen=True)
@@ -103,15 +123,21 @@ class _TrackWriterMixin:
     ) -> bool:
         """Insert/update ``tracks``. Returns True on change, False on no-op.
 
-        A byte-equal repeat is a no-op (no history, no event) -- unless the
-        row is tombstoned, in which case it is reactivated the same way
-        ``insert_playlist`` reactivates a playlist: a stable_id is
-        deterministic, so a re-ingest (round 2 finding 4b,
-        apps/shared/state/ingest/rekordbox.py) can land on a row this
-        machine previously soft-deleted. Reactivation clears ``deleted_at``
-        and is stamped through ``sync_stamp`` like any other write, so the
-        undelete itself propagates instead of leaving a tombstoned row
-        silently refreshed underneath its own dead marker.
+        A byte-equal repeat is a no-op (no history, no event).
+
+        A row the user removed is NEVER written here, changed or not: this
+        raises :class:`TrackRemovedError` and leaves the tombstone
+        byte-identical (LIBM-140). A ``stable_id`` is deterministic, so a
+        vendor re-ingest lands on the row this machine soft-deleted; before
+        this rule that cleared ``deleted_at`` and stamped the row, which
+        undid every delete on the next rekordbox import and synced the
+        resurrection to the fleet. ``undelete_track`` is the one way back.
+
+        A row tombstoned because its FILE went missing
+        (``deleted_reason='missing'``, a watched-folder rescan) is the one
+        tombstone an upsert lifts: the file is back, which is exactly what the
+        tombstone was waiting for. That lift stamps ``restored_at`` like an
+        explicit restore, so it outranks the tombstone on every machine.
         """
         artists_json = json.dumps(
             list(artists), sort_keys=False, separators=(",", ":"), ensure_ascii=False
@@ -120,8 +146,8 @@ class _TrackWriterMixin:
         with self._tx() as conn:
             existing = conn.execute(
                 "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                "duration_ms, file_path, content_hash, audio_hash, deleted_at FROM tracks "
-                "WHERE stable_id = ?",
+                "duration_ms, file_path, content_hash, audio_hash, deleted_at, "
+                "deleted_reason FROM tracks WHERE stable_id = ?",
                 (stable_id,),
             ).fetchone()
             new_row = (
@@ -135,12 +161,14 @@ class _TrackWriterMixin:
                 content_hash,
                 audio_hash,
             )
-            existing_deleted_at = existing[-1] if existing is not None else None
-            if (
-                existing is not None
-                and tuple(existing[:-1]) == new_row
-                and existing_deleted_at is None
-            ):
+            deleted_at, deleted_reason = existing[-2:] if existing is not None else (None, None)
+            file_is_back = deleted_at is not None and deleted_reason == DELETED_FILE_MISSING
+            if deleted_at is not None and not file_is_back:
+                raise TrackRemovedError(
+                    f"{stable_id} was removed from the library at {deleted_at}; "
+                    "restore it with undelete_track before writing to it"
+                )
+            if existing is not None and tuple(existing[:-2]) == new_row and not file_is_back:
                 return False
             stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
             if existing is None:
@@ -166,16 +194,32 @@ class _TrackWriterMixin:
                     ),
                 )
                 kind = "track.insert"
-            else:
-                reactivated = existing_deleted_at is not None
+            elif file_is_back:
                 conn.execute(
                     "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
                     "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, audio_hash=?, "
-                    "updated_at=?, origin_device_id=?, deleted_at=NULL "
-                    "WHERE stable_id=?",
+                    "updated_at=?, origin_device_id=?, deleted_at=NULL, "
+                    "deleted_reason=NULL, restored_at=? "
+                    "WHERE stable_id=? AND deleted_reason=?",
+                    (
+                        *new_row,
+                        stamp.updated_at,
+                        stamp.origin_device_id,
+                        stamp.updated_at,
+                        stable_id,
+                        DELETED_FILE_MISSING,
+                    ),
+                )
+                kind = "track.undelete"
+            else:
+                conn.execute(
+                    "UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?, "
+                    "album=?, isrc=?, duration_ms=?, file_path=?, content_hash=?, audio_hash=?, "
+                    "updated_at=?, origin_device_id=? "
+                    "WHERE stable_id=? AND deleted_at IS NULL",
                     (*new_row, stamp.updated_at, stamp.origin_device_id, stable_id),
                 )
-                kind = "track.undelete" if reactivated else "track.update"
+                kind = "track.update"
             ev = self._append_event(
                 kind=kind,
                 stable_id=stable_id,
@@ -320,8 +364,15 @@ class _TrackWriterMixin:
                 )
         return changed
 
-    def remove_from_library(self: _WriterHost, stable_id: str) -> TrackLifecycleResult:
+    def remove_from_library(
+        self: _WriterHost, stable_id: str, *, reason: DeleteReason = DELETED_BY_USER
+    ) -> TrackLifecycleResult:
         """Soft-delete a track and its live playlist memberships.
+
+        ``reason`` is recorded in ``tracks.deleted_reason``. The default is the
+        user's own removal, which no ingest undoes. A scan that tombstones a
+        row because its file vanished passes ``DELETED_FILE_MISSING``, the one
+        tombstone ``upsert_track`` lifts when the file is found again.
 
         The audio file on disk is never touched. Membership tombstones use the
         track stamp's ``updated_at`` as ``deleted_at`` so ``undelete_track``
@@ -372,10 +423,11 @@ class _TrackWriterMixin:
                     (stamp.updated_at, stamp.origin_device_id, playlist_id),
                 )
             conn.execute(
-                "UPDATE tracks SET deleted_at=?, updated_at=?, origin_device_id=? "
-                "WHERE stable_id=?",
+                "UPDATE tracks SET deleted_at=?, deleted_reason=?, updated_at=?, "
+                "origin_device_id=? WHERE stable_id=?",
                 (
                     tombstone_ts,
+                    reason,
                     track_stamp.updated_at,
                     track_stamp.origin_device_id,
                     stable_id,
@@ -396,7 +448,13 @@ class _TrackWriterMixin:
         return TrackLifecycleResult(stable_id, tombstone_ts, memberships)
 
     def undelete_track(self: _WriterHost, stable_id: str) -> TrackLifecycleResult:
-        """Clear a track tombstone and restore memberships from this remove."""
+        """Clear a track tombstone and restore memberships from this remove.
+
+        Stamps ``restored_at``: the record that this live row is a deliberate
+        restore, which is what lets it outrank the tombstone on every other
+        machine (``apps.sync_hub.protocol_common.lifecycle_key``). The only
+        other writer of it is ``upsert_track`` lifting a ``missing`` tombstone.
+        """
         with self._tx() as conn:
             row = conn.execute(
                 "SELECT deleted_at FROM tracks WHERE stable_id = ?",
@@ -410,9 +468,14 @@ class _TrackWriterMixin:
             now = self._now_iso()
             track_stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
             conn.execute(
-                "UPDATE tracks SET deleted_at=NULL, updated_at=?, origin_device_id=? "
-                "WHERE stable_id=?",
-                (track_stamp.updated_at, track_stamp.origin_device_id, stable_id),
+                "UPDATE tracks SET deleted_at=NULL, deleted_reason=NULL, restored_at=?, "
+                "updated_at=?, origin_device_id=? WHERE stable_id=?",
+                (
+                    track_stamp.updated_at,
+                    track_stamp.updated_at,
+                    track_stamp.origin_device_id,
+                    stable_id,
+                ),
             )
             restored_rows = conn.execute(
                 "SELECT playlist_id, position FROM playlist_memberships "
@@ -464,10 +527,14 @@ class _TrackWriterMixin:
 
 
 __all__ = [
+    "DELETED_BY_USER",
+    "DELETED_FILE_MISSING",
+    "DeleteReason",
     "TrackAlreadyRemovedError",
     "TrackLifecycleResult",
     "TrackMembershipRef",
     "TrackNotFoundError",
     "TrackNotRemovedError",
+    "TrackRemovedError",
     "_TrackWriterMixin",
 ]
