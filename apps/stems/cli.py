@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 from apps.shared.paths import DATA_DIR
 from apps.stems import cache_cli
@@ -194,7 +194,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
-T = TypeVar("T")
+class _HasStableId(Protocol):
+    @property
+    def stable_id(self) -> str: ...
+
+
+T = TypeVar("T", bound=_HasStableId)
 
 
 def read_ids_file(path: Path) -> set[str]:

@@ -629,6 +629,20 @@ def lane_sources_by_mapping(
     }
 
 
+def _available_not_selected(served: EffectiveField | None, lane: str) -> EffectiveField:
+    """The served rekordbox field, restated as "own analysis exists, not selected"."""
+    reason = f"{lane} analysis available (rekordbox source selected)"
+    if served is None:
+        return EffectiveField(
+            value=None, source="rekordbox", confidence=None, modified_at="",
+            status="available-not-selected", reason=reason,
+        )
+    return EffectiveField(
+        value=served.value, source=served.source, confidence=served.confidence,
+        modified_at=served.modified_at, status="available-not-selected", reason=reason,
+    )
+
+
 def _annotate_available_not_selected(
     conn: sqlite3.Connection,
     ids: list[str],
@@ -665,15 +679,7 @@ def _annotate_available_not_selected(
             own_row = own_rows[sid].get(field_name)
             if own_row is None or own_row.status != "ok":
                 continue
-            served = out[sid].get(field_name)
-            out[sid][field_name] = EffectiveField(
-                value=served.value if served is not None else None,
-                source=served.source if served is not None else "rekordbox",
-                confidence=served.confidence if served is not None else None,
-                modified_at=served.modified_at if served is not None else "",
-                status="available-not-selected",
-                reason=f"{lane} analysis available (rekordbox source selected)",
-            )
+            out[sid][field_name] = _available_not_selected(out[sid].get(field_name), lane)
 
 
 def effective_fields(

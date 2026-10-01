@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -130,7 +131,7 @@ def test_the_job_log_says_how_many_missing_bundles_are_in_the_cloud(
 def test_the_stems_cli_is_handed_exactly_the_jobs_targets(
     library: Library, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    seen: dict[str, object] = {}
+    seen: dict[str, Any] = {}
 
     def fake_run_cli(_job: ingest_mod._RefreshJob, argv: list[str]) -> None:
         ids_file = Path(argv[argv.index("--ids-file") + 1])

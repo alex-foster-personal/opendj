@@ -530,6 +530,27 @@ def _hydration_in_flight(stable_id: str) -> bool:
         return future is not None and not future.done()
 
 
+def _hydration_arming(request: Request) -> tuple[str | None, Path | None]:
+    """(why hydration is not armed, the armed data dir) read from ``app.state``.
+
+    The data dir is returned only when hydration is armed: no recorded
+    unarmed reason, a source (or a config plus a client) and a data dir.
+    """
+    state = request.app.state
+    unarmed_reason: str | None = getattr(state, "stem_hydration_unarmed_reason", None)
+    data_dir = getattr(state, "stem_hydration_data_dir", None)
+    has_source = (
+        getattr(state, "stem_hydration_source", None) is not None
+        or (
+            getattr(state, "stem_hydration_cfg", None) is not None
+            and getattr(state, "stem_hydration_s3", None) is not None
+        )
+    )
+    if unarmed_reason is None and has_source and data_dir is not None:
+        return unarmed_reason, Path(data_dir)
+    return unarmed_reason, None
+
+
 def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
@@ -539,17 +560,8 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     """
     stems_dir = _stems_dir(request)
     deck_open = stable_id in stem_hydration.OPEN_DECKS.open_ids()
-    state = request.app.state
-    unarmed_reason = getattr(state, "stem_hydration_unarmed_reason", None)
-    data_dir = getattr(state, "stem_hydration_data_dir", None)
-    has_source = (
-        getattr(state, "stem_hydration_source", None) is not None
-        or (
-            getattr(state, "stem_hydration_cfg", None) is not None
-            and getattr(state, "stem_hydration_s3", None) is not None
-        )
-    )
-    armed = unarmed_reason is None and has_source and data_dir is not None
+    unarmed_reason, data_dir = _hydration_arming(request)
+    armed = data_dir is not None
 
     def _out(
         name: StemTrackState,
@@ -588,13 +600,13 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
         return _out("error", recorded.message, error_code=recorded.code)
     if unarmed_reason is not None:
         return _out("error", unarmed_reason, error_code="STEM_HYDRATION_NOT_ARMED")
-    if not armed:
+    if data_dir is None:
         return _out(
             "none",
             "no stem bundle on this machine, and cloud stems are not configured here",
         )
     try:
-        index = stem_index.load_cached_index(Path(data_dir))
+        index = stem_index.load_cached_index(data_dir)
     except stem_index.StemIndexError as exc:
         return _out("error", str(exc), error_code="STEM_INDEX_CORRUPT")
     if stable_id in index:

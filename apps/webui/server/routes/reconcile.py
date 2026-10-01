@@ -241,6 +241,45 @@ def _ref_order(ref: _BrokenRef) -> tuple[str, str]:
     return ((ref.title or "").casefold(), ref.stable_id)
 
 
+def _lean_track_rows(backend: StateBackend) -> list[tuple[str, str | None, str | None]] | None:
+    """(stable_id, title, file_path) of every live track, or None when the
+    backend is not a state.db with a tracks table."""
+    if not isinstance(backend, SqliteBackend):
+        return None
+    conn = open_ro(backend.writeback_state_db_path)
+    try:
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
+        ).fetchone() is None:
+            return None
+        return [
+            (str(sid), title, file_path)
+            for sid, title, file_path in conn.execute(
+                "SELECT stable_id, title, file_path FROM tracks "
+                "WHERE deleted_at IS NULL"
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def _local_refs(rows: list[tuple[str, str | None, str | None]]) -> list[_BrokenRef]:
+    """One ref per row whose audio is a local path (rekordbox's folder path wins)."""
+    metas = rb_vendor.bulk_rb_meta([sid for sid, _title, _path in rows])
+    refs: list[_BrokenRef] = []
+    for sid, title, file_path in rows:
+        meta = metas.get(sid)
+        folder = meta.folder_path if meta is not None else file_path
+        if _is_local_path(folder):
+            refs.append(_BrokenRef(
+                stable_id=sid,
+                title=title,
+                original_path=str(folder),
+                vendor_id=meta.vendor_id if meta is not None else None,
+            ))
+    return refs
+
+
 def _scan_broken_refs(backend: StateBackend) -> tuple[int, list[_BrokenRef]]:
     """(total scanned tracks, broken refs sorted by (title, stable_id)).
 
@@ -252,19 +291,7 @@ def _scan_broken_refs(backend: StateBackend) -> tuple[int, list[_BrokenRef]]:
     drain filled its tables. Same rows (``deleted_at IS NULL``), same
     predicate and same order as :func:`_scan_broken`.
     """
-    rows = None
-    if isinstance(backend, SqliteBackend):
-        conn = open_ro(backend.writeback_state_db_path)
-        try:
-            if conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
-            ).fetchone() is not None:
-                rows = conn.execute(
-                    "SELECT stable_id, title, file_path FROM tracks "
-                    "WHERE deleted_at IS NULL"
-                ).fetchall()
-        finally:
-            conn.close()
+    rows = _lean_track_rows(backend)
     if rows is None:
         # Not a state.db, or one with no tracks table: the backend's own
         # listing (and its own fallback) decides.
@@ -273,18 +300,7 @@ def _scan_broken_refs(backend: StateBackend) -> tuple[int, list[_BrokenRef]]:
             _BrokenRef(b.track.stable_id, b.track.title, b.original_path, b.vendor_id)
             for b in broken
         ]
-    metas = rb_vendor.bulk_rb_meta([str(sid) for sid, _title, _path in rows])
-    candidates: list[_BrokenRef] = []
-    for sid, title, file_path in rows:
-        meta = metas.get(str(sid))
-        folder = meta.folder_path if meta is not None else file_path
-        if _is_local_path(folder):
-            candidates.append(_BrokenRef(
-                stable_id=str(sid),
-                title=title,
-                original_path=str(folder),
-                vendor_id=meta.vendor_id if meta is not None else None,
-            ))
+    candidates = _local_refs(rows)
     exists = rb_vendor.bulk_file_exists(c.original_path for c in candidates)
     broken_refs = [c for c in candidates if not exists[c.original_path]]
     broken_refs.sort(key=_ref_order)

@@ -53,13 +53,17 @@ class _Measure:
         return {"on_disk": self.value}
 
 
+def _no_jobs() -> list[Callable[[], None]]:
+    return []
+
+
 def _cache(clock: _Clock, jobs: list[Callable[[], None]], max_age_s: float = 30.0) -> CoverageCache:
     return CoverageCache(max_age_s=max_age_s, clock=clock, spawn=jobs.append)
 
 
 # ----- the cache ------------------------------------------------------------
 def test_first_cached_read_measures_in_the_caller_and_is_age_zero() -> None:
-    clock, jobs, measure = _Clock(), [], _Measure()
+    clock, jobs, measure = _Clock(), _no_jobs(), _Measure()
     reading = _cache(clock, jobs).read(measure)
 
     assert reading.fields == {"on_disk": 1}
@@ -69,7 +73,7 @@ def test_first_cached_read_measures_in_the_caller_and_is_age_zero() -> None:
 
 
 def test_a_recent_value_is_served_with_its_age_and_no_new_measurement() -> None:
-    clock, jobs, measure = _Clock(), [], _Measure()
+    clock, jobs, measure = _Clock(), _no_jobs(), _Measure()
     cache = _cache(clock, jobs)
     cache.read(measure)
     clock.now += 12.5
@@ -82,7 +86,7 @@ def test_a_recent_value_is_served_with_its_age_and_no_new_measurement() -> None:
 
 
 def test_an_old_value_is_served_at_once_while_one_refresh_runs_behind_it() -> None:
-    clock, jobs, measure = _Clock(), [], _Measure()
+    clock, jobs, measure = _Clock(), _no_jobs(), _Measure()
     cache = _cache(clock, jobs)
     cache.read(measure)
     clock.now += 45.0
@@ -105,7 +109,7 @@ def test_an_old_value_is_served_at_once_while_one_refresh_runs_behind_it() -> No
 
 
 def test_a_failed_refresh_is_reported_and_retried_never_swallowed() -> None:
-    clock, jobs, measure = _Clock(), [], _Measure()
+    clock, jobs, measure = _Clock(), _no_jobs(), _Measure()
     cache = _cache(clock, jobs)
     cache.read(measure)
     clock.now += 45.0
@@ -128,7 +132,7 @@ def test_a_failed_refresh_is_reported_and_retried_never_swallowed() -> None:
 
 
 def test_a_first_measurement_that_fails_raises_and_caches_nothing() -> None:
-    clock, jobs, measure = _Clock(), [], _Measure()
+    clock, jobs, measure = _Clock(), _no_jobs(), _Measure()
     cache = _cache(clock, jobs)
     measure.error = RuntimeError("no state.db")
 
@@ -168,7 +172,7 @@ def test_readers_arriving_together_share_one_first_measurement() -> None:
 
 
 def test_measure_always_measures_and_feeds_the_cache() -> None:
-    clock, jobs, measure = _Clock(), [], _Measure()
+    clock, jobs, measure = _Clock(), _no_jobs(), _Measure()
     cache = _cache(clock, jobs)
     cache.read(measure)
     measure.value = 2
