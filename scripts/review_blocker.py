@@ -48,7 +48,7 @@ def first_blocker(
         reason = "PR scope exceeds its issue's declared 'Scope limit:' (see [pr-scope] above)"
     else:
         reason = "review-triage exited 1 without a recognized cause"
-    return f"BLOCKER: {reason}"
+    return "BLOCKER: " + " ".join(reason.split())  # one line, whatever the cause text holds
 
 
 def report(rc: int, coverage_rc: int, failing: Sequence[Thread], debt_error: object, scope_rc: int) -> int:
