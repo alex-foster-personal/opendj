@@ -216,3 +216,79 @@ def test_empty_library(tmp_path: Path,
     assert summary == {"total_tracks": 0, "total_broken": 0,
                        "orphan_broken": 0, "playlists": [],
                        "availability": None}
+
+
+# --- summary scan: counts without whole Track rows (HEALTH-11) ---------------------
+
+
+@pytest.fixture
+def sqlite_backend(tmp_path: Path, library: dict[str, Path]):
+    """A real state.db behind the real SqliteBackend: two present, two gone,
+    one streaming, one pathless, and one soft-deleted row whose file is gone."""
+    import sqlite3
+
+    from apps.webui.server.sqlite_backend import SqliteBackend
+    from tests.health_lights import fixtures as fx
+
+    state_db = fx.make_state_db(tmp_path / "data")
+    for stable_id, file_path in (
+        ("t-ok", str(library["present"])),
+        ("t-ok2", str(library["present2"])),
+        ("t-gone", str(library["gone"])),
+        ("t-gone2", str(library["gone2"])),
+        ("t-stream", "tidal:12345"),
+        ("t-nopath", None),
+        ("t-deleted", str(library["gone"].with_name("deleted.mp3"))),
+    ):
+        fx.seed_track(state_db, stable_id, file_path)
+    conn = sqlite3.connect(state_db)
+    conn.execute("UPDATE tracks SET deleted_at = ? WHERE stable_id = 't-deleted'", (fx.STAMP,))
+    conn.commit()
+    conn.close()
+    return SqliteBackend(state_db)
+
+
+@pytest.mark.requirement("HEALTH-11")
+def test_summary_scan_matches_the_full_scan_on_a_real_state_db(sqlite_backend) -> None:
+    """[if] the lean summary scan and the full /broken scan read the same
+    library [then] they agree on the total and on every broken id."""
+    total, broken = reconcile_routes._scan_broken(sqlite_backend)
+    lean_total, lean_ids = reconcile_routes._scan_broken_ids(sqlite_backend)
+
+    assert {b.track.stable_id for b in broken} == {"t-gone", "t-gone2"}    # the control fires
+    assert lean_ids == {"t-gone", "t-gone2"}
+    assert lean_total == total == 6          # the soft-deleted row is in neither
+
+
+@pytest.mark.requirement("HEALTH-11")
+def test_summary_does_not_read_whole_track_rows(
+    sqlite_backend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] /reconcile/summary is asked [then] it never calls list_tracks:
+    that read resolved every analysis field per track and took seconds."""
+    calls: list[tuple] = []
+    real = sqlite_backend.list_tracks
+
+    def counting(*args, **kwargs):
+        calls.append((args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite_backend, "list_tracks", counting)
+    app = create_app(backend=sqlite_backend, bind_host="127.0.0.1", hostname="test-host",
+                     lock_status_fn=lambda: None, mount_frontend=False)
+    app.include_router(reconcile_routes.router, prefix="/api/v1")
+    with TestClient(app) as c:
+        body = c.get("/api/v1/reconcile/summary").json()
+        assert body["total_tracks"] == 6 and body["total_broken"] == 2
+        assert calls == []
+        # Control: /broken DOES go through list_tracks, so the counter works.
+        assert c.get("/api/v1/reconcile/broken").json()["total"] == 2
+        assert calls != []
+
+
+@pytest.mark.requirement("HEALTH-11")
+def test_summary_scan_falls_back_for_a_backend_without_a_state_db(
+    backend: InMemoryBackend,
+) -> None:
+    total, ids = reconcile_routes._scan_broken_ids(backend)
+    assert (total, ids) == (5, {"t-gone", "t-gone2"})

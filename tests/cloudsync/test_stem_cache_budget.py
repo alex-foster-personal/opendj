@@ -35,8 +35,8 @@ from apps.cloud.stem_cache_budget import (
 from apps.cloud.stem_hydration import OPEN_DECKS, OpenDeckRegistry
 
 VOLUME_BYTES: int = 460 * GIB
-#: 10% of a 460 GiB volume, which is larger than the 30 GiB absolute floor.
-FLOOR_BYTES: int = 46 * GIB
+#: 5% of a 460 GiB volume, which is larger than the 20 GiB absolute floor.
+FLOOR_BYTES: int = 23 * GIB
 
 
 def _wav_bytes(*, frames: int = 8, seed: int = 0) -> bytes:
@@ -93,12 +93,13 @@ def _enforce(stems_dir: Path, data_dir: Path, **kwargs):
 
 
 @pytest.mark.requirement("STEM-39")
-def test_floor_is_the_larger_of_the_absolute_floor_and_ten_percent():
-    """[if] 10% of the volume exceeds 30 GiB [then] 10% is the floor and otherwise 30 GiB is, [else stop]."""
+def test_floor_is_the_larger_of_the_absolute_floor_and_five_percent():
+    """[if] 5% of the volume exceeds 20 GiB [then] 5% is the floor and otherwise 20 GiB is, [else stop]."""
     settings = StemCacheSettings()
-    assert budget.floor_bytes(460 * GIB, settings) == 46 * GIB
-    assert budget.floor_bytes(200 * GIB, settings) == 30 * GIB
-    assert budget.floor_bytes(300 * GIB, settings) == 30 * GIB
+    assert budget.floor_bytes(460 * GIB, settings) == 23 * GIB
+    assert budget.floor_bytes(1000 * GIB, settings) == 50 * GIB
+    assert budget.floor_bytes(200 * GIB, settings) == 20 * GIB
+    assert budget.floor_bytes(400 * GIB, settings) == 20 * GIB
 
 
 @pytest.mark.requirement("STEM-39")
@@ -127,7 +128,7 @@ def test_explicit_cache_cap_only_ever_lowers_the_budget():
     assert budget.derived_budget_bytes(62 * GIB, _disk(free=200 * GIB), capped) == 10 * GIB
     assert budget.derived_budget_bytes(62 * GIB, _disk(free=4 * GIB), capped) == 10 * GIB
     # The cap never RAISES a budget the disk has already pulled below it.
-    assert budget.derived_budget_bytes(5 * GIB, _disk(free=45 * GIB), capped) == 4 * GIB
+    assert budget.derived_budget_bytes(5 * GIB, _disk(free=FLOOR_BYTES - GIB), capped) == 4 * GIB
 
 
 # --- eviction gated on the R2 index (STEM-40) ---------------------------------
@@ -603,3 +604,90 @@ def test_max_evict_bytes_bounds_one_pass_and_the_next_pass_continues(tmp_path: P
 
     unbounded = _enforce(stems_dir, data_dir, index=index, disk=_disk(free=0))
     assert unbounded.evicted_stable_ids == ("middle", "newest")
+
+
+# --- what reaching the floor would evict, and defaults that are not pinned ----------
+
+
+@pytest.mark.requirement("STEM-43")
+def test_status_says_what_reaching_the_floor_would_evict_lru_first(tmp_path: Path):
+    """[if] the cache is over budget by just over one bundle [then] status names two to evict, never a local-only or deck-open one, [else stop]."""
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {
+        name: _make_bundle(stems_dir, name, atime=atime)
+        for name, atime in (("old", 1_000), ("mid", 2_000), ("new", 3_000), ("deck", 500))
+    }
+    _make_bundle(stems_dir, "local-only", atime=100)        # oldest of all, but not in R2
+    one = _bundle_bytes(stems_dir, "old")
+
+    def status(shortfall: int, **overrides):
+        return budget.status(
+            stems_dir, data_dir=data_dir, index=index, protected=frozenset({"deck"}),
+            can_rehydrate=True, disk=_disk(free=FLOOR_BYTES - shortfall), **overrides,
+        )
+
+    over = status(one + 1)
+    assert over["over_budget_bytes"] == one + 1
+    assert (over["would_evict_count"], over["would_evict_bytes"]) == (2, 2 * one)
+    # Controls in both directions: nothing short, nothing to evict; and a
+    # shortfall of exactly one bundle is one bundle, not two.
+    assert (status(0)["would_evict_count"], status(0)["would_evict_bytes"]) == (0, 0)
+    assert status(one)["would_evict_count"] == 1
+    # Paused eviction still reports what turning it on would remove.
+    paused = status(one + 1, settings=StemCacheSettings(auto_evict=False))
+    assert paused["blocked_reason"] == budget.BLOCKED_AUTO_EVICT_OFF
+    assert paused["would_evict_count"] == 2
+    # A shortfall no eviction can cover lists only what is really evictable.
+    assert status(40 * GIB)["would_evict_count"] == 3
+
+
+@pytest.mark.requirement("STEM-43")
+def test_would_evict_matches_what_enforce_then_evicts(tmp_path: Path):
+    """[if] status predicts N bundles [then] the real enforce pass removes exactly those N, [else stop]."""
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {
+        name: _make_bundle(stems_dir, name, atime=atime)
+        for name, atime in (("old", 1_000), ("mid", 2_000), ("new", 3_000))
+    }
+    disk = _disk(free=FLOOR_BYTES - _bundle_bytes(stems_dir, "old") - 1)
+    predicted = budget.status(
+        stems_dir, data_dir=data_dir, index=index, protected=frozenset(),
+        can_rehydrate=True, disk=disk,
+    )
+
+    report = _enforce(stems_dir, data_dir, index=index, disk=disk)
+
+    assert list(report.evicted_stable_ids) == ["old", "mid"]
+    assert predicted["would_evict_count"] == len(report.evicted_stable_ids)
+    assert predicted["would_evict_bytes"] == report.bytes_freed
+
+
+@pytest.mark.requirement("STEM-39")
+def test_saving_one_switch_does_not_pin_the_other_defaults(tmp_path: Path):
+    """[if] only auto_evict is changed and saved [then] the file holds only auto_evict, so a later default floor still applies, [else stop]."""
+    budget.save_settings(tmp_path, StemCacheSettings(auto_evict=False))
+
+    stored = json.loads(budget.settings_path(tmp_path).read_text(encoding="utf-8"))
+    assert stored == {"auto_evict": False}
+    loaded = budget.load_settings(tmp_path)
+    assert loaded == StemCacheSettings(auto_evict=False)
+    assert loaded.floor_gib == budget.DEFAULT_FLOOR_GIB
+    # Control: an explicit floor IS stored and wins over the default.
+    budget.save_settings(tmp_path, StemCacheSettings(floor_gib=30.0, floor_fraction=0.10))
+    assert json.loads(budget.settings_path(tmp_path).read_text(encoding="utf-8")) == {
+        "floor_fraction": 0.10, "floor_gib": 30.0,
+    }
+    assert budget.floor_bytes(460 * GIB, budget.load_settings(tmp_path)) == 46 * GIB
+
+
+@pytest.mark.requirement("STEM-39")
+def test_a_settings_file_written_before_the_default_changed_keeps_its_floor(tmp_path: Path):
+    """[if] a machine stored the old 30 GiB / 10% floor in full [then] it keeps that floor: a stored value is the user's, [else stop]."""
+    path = budget.settings_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"auto_evict": False, "enforce_interval_s": 300.0, "floor_fraction": 0.1,
+                    "floor_gib": 30.0, "max_cache_gib": None}),
+        encoding="utf-8",
+    )
+    assert budget.floor_bytes(460 * GIB, budget.load_settings(tmp_path)) == 46 * GIB

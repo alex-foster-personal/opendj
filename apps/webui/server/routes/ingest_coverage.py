@@ -24,6 +24,13 @@ pending     not yet tried, or failed and still inside its retry budget
 
 A light is green when ``pending == 0 and failed == 0``.
 
+Stems ``done`` has two parts (HEALTH-07): ``local`` (a valid bundle on this
+disk) and ``in cloud`` (no local bundle, but the R2 stem index lists one this
+machine can fetch on demand; ``coverage_cloud``). An evicted bundle is done:
+nothing needs rendering. When the index cannot be read the missing bundles
+stay ``pending`` and ``stem_cloud.state`` is ``unknown``, so the lights that
+depend on the answer render grey: unknown is never counted as done.
+
 Requirements (mini-PRD):
   ✔︎ ✅ 🎯 the four states partition ``present`` for every step
     [if] done + terminal + failed + pending != present [then ⛔️] raise
@@ -34,19 +41,25 @@ Requirements (mini-PRD):
   ✔︎ ✅ 🎯 vocals work is only actionable once stems exist
     [if] a track has no stem bundle and stems are pending
     [then] vocals pending and counted in ``waiting_on_stems``
+  ✔︎ ✅ 🎯 HEALTH-07 an evicted bundle that R2 holds is done, not pending
+    [if] no local bundle and the index lists one [then] stems done, in cloud
+    [if] no local bundle and NOT in the index [then] stems pending
+    [if] the index cannot be read [then] pending, cloud state unknown
+    [if] vocals are missing and the bundle is in cloud
+    [then] vocals pending in ``vocals_cloud_ready``, not ``waiting_on_stems``
 """
 from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.cloud import stem_index
 from apps.lyrics import fetch_verdicts
+from apps.webui.server import coverage_cloud, library_playable
 from apps.webui.server import coverage_outcomes as outcomes_mod
-from apps.webui.server import library_playable
 from apps.webui.server.routes import ingest_job
 
 STEPS: tuple[str, ...] = ("analysis", "stems", "vocals", "lyrics")
@@ -77,6 +90,12 @@ class CoverageSnapshot:
     #: Present tracks with no vocals because their stems are still pending.
     waiting_on_stems: int
     stems_source_refusal: str | None
+    #: Stems ``done`` split: bundles on this disk, and bundles only in R2.
+    stems_local: int = 0
+    stems_in_cloud: int = 0
+    #: Vocals targets whose bundle must be fetched from R2 before deriving.
+    vocals_cloud_ready: list[Target] = field(default_factory=list)
+    stem_cloud: coverage_cloud.StemCloud = coverage_cloud.OFF
     generated_at: float = field(default_factory=time.time)
 
     @property
@@ -102,7 +121,11 @@ def default_stems_source_refusal() -> str | None:
     return local_stems_gate()
 
 
-def lyrics_terminal_ids(data_dir: Path, candidates: Sequence[str]) -> set[str]:
+def lyrics_terminal_ids(
+    data_dir: Path,
+    candidates: Sequence[str],
+    index: Mapping[str, Mapping[str, str]] | None = None,
+) -> set[str]:
     """Ids whose stored fetch verdict says there are no lyrics to fetch.
 
     Reads the store ``LyricsFetchService`` writes, through its own freshness
@@ -112,7 +135,8 @@ def lyrics_terminal_ids(data_dir: Path, candidates: Sequence[str]) -> set[str]:
     verdict_dir = fetch_verdicts.verdict_dir(data_dir)
     if not candidates or not verdict_dir.is_dir():
         return set()
-    index = stem_index.load_cached_index(data_dir)
+    if index is None:
+        index = stem_index.load_cached_index_memo(data_dir)
     terminal: set[str] = set()
     for stable_id in candidates:
         verdict = fetch_verdicts.load_verdict(data_dir, stable_id)
@@ -161,6 +185,16 @@ def _partition(
     return counts, pending
 
 
+def _by_bundle_place(
+    targets: Sequence[Target], local: set[str], in_cloud: set[str]
+) -> tuple[list[Target], list[Target]]:
+    """(targets whose stem bundle is on disk, targets whose bundle is in R2)."""
+    return (
+        [target for target in targets if target[0] in local],
+        [target for target in targets if target[0] in in_cloud],
+    )
+
+
 def compute_snapshot(
     conn_factory: Callable[[], sqlite3.Connection],
     stem_roots: Sequence[Path],
@@ -169,6 +203,7 @@ def compute_snapshot(
     data_dir: Path,
     *,
     stems_source_refusal: str | None,
+    stem_cloud: coverage_cloud.StemCloud = coverage_cloud.OFF,
 ) -> CoverageSnapshot:
     scan = ingest_job.playability(conn_factory)
     present = list(scan.present)
@@ -179,6 +214,10 @@ def compute_snapshot(
     missing_ids = {step: {sid for sid, _path in targets} for step, targets in missing.items()}
     present_ids = {sid for sid, _path in present}
     done = {step: present_ids - missing_ids[step] for step in STEPS}
+    stems_local = done["stems"]
+    # Evicted, not missing: R2 holds the bundle and this machine can fetch it.
+    stems_in_cloud = {sid for sid in missing_ids["stems"] if stem_cloud.holds(sid)}
+    done["stems"] = stems_local | stems_in_cloud
 
     ledger = outcomes_mod.OutcomeStore(outcomes_mod.store_path(data_dir)).load()
     token: dict[str, str] = {}
@@ -196,7 +235,7 @@ def compute_snapshot(
         }
 
     stems_terminal = (
-        set(missing_ids["stems"])
+        set(missing_ids["stems"]) - stems_in_cloud
         if stems_source_refusal is not None
         else _ledger_ids("stems", outcomes_mod.is_no_source)
     )
@@ -204,8 +243,12 @@ def compute_snapshot(
     vocals_terminal = (stems_terminal & missing_ids["vocals"]) | _ledger_ids(
         "vocals", outcomes_mod.is_no_source
     )
+    # An unreadable index proves no vocals digest, so a ``no_source`` verdict
+    # recorded against one stays pending rather than failing the whole read.
     lyrics_terminal = lyrics_terminal_ids(
-        data_dir, [sid for sid, _path in missing["lyrics"]]
+        data_dir,
+        [sid for sid, _path in missing["lyrics"]],
+        {} if stem_cloud.state == "unknown" else None,
     ) | _ledger_ids("lyrics", outcomes_mod.is_no_source)
     terminal = {
         "analysis": _ledger_ids("analysis", outcomes_mod.is_no_source),
@@ -221,7 +264,9 @@ def compute_snapshot(
         counts[step], pending[step] = _partition(
             step, present, done[step], terminal[step], failed[step], len(corrupt[step])
         )
-    vocals_ready = [(sid, path) for sid, path in pending["vocals"] if sid in done["stems"]]
+    vocals_ready, vocals_cloud_ready = _by_bundle_place(
+        pending["vocals"], stems_local, stems_in_cloud
+    )
     return CoverageSnapshot(
         playability=scan,
         on_disk=present,
@@ -231,8 +276,12 @@ def compute_snapshot(
         counts=counts,
         pending=pending,
         vocals_ready=vocals_ready,
-        waiting_on_stems=len(pending["vocals"]) - len(vocals_ready),
+        waiting_on_stems=len(pending["vocals"]) - len(vocals_ready) - len(vocals_cloud_ready),
         stems_source_refusal=stems_source_refusal,
+        stems_local=len(stems_local),
+        stems_in_cloud=len(stems_in_cloud),
+        vocals_cloud_ready=vocals_cloud_ready,
+        stem_cloud=stem_cloud,
     )
 
 
@@ -250,6 +299,10 @@ def response_fields(snapshot: CoverageSnapshot) -> dict[str, object]:
         "failed": {step: counts[step].failed for step in STEPS},
         "pending": {step: counts[step].pending for step in STEPS},
         "waiting_on_stems": snapshot.waiting_on_stems,
+        "local": {"stems": snapshot.stems_local},
+        "in_cloud": {"stems": snapshot.stems_in_cloud},
+        "awaiting_stem_download": len(snapshot.vocals_cloud_ready),
+        "stems_index": snapshot.stem_cloud.as_dict(),
         "stems_source_refusal": snapshot.stems_source_refusal,
         "generated_at": snapshot.generated_at,
     }

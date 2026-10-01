@@ -1664,6 +1664,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/coverage-outcomes/stems/no-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Stems No Source */
+        get: operations["list_stems_no_source_api_v1_coverage_outcomes_stems_no_source_get"];
+        put?: never;
+        /** Mark Stems No Source */
+        post: operations["mark_stems_no_source_api_v1_coverage_outcomes_stems_no_source_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-outcomes/stems/no-source/{stable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear Stems No Source */
+        delete: operations["clear_stems_no_source_api_v1_coverage_outcomes_stems_no_source__stable_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dedup/clusters": {
         parameters: {
             query?: never;
@@ -8312,6 +8347,8 @@ export interface components {
             availability: {
                 [key: string]: number;
             };
+            /** Awaiting Stem Download */
+            awaiting_stem_download: number;
             /** Corrupt */
             corrupt: {
                 [key: string]: number;
@@ -8326,6 +8363,14 @@ export interface components {
             };
             /** Generated At */
             generated_at: number;
+            /** In Cloud */
+            in_cloud: {
+                [key: string]: number;
+            };
+            /** Local */
+            local: {
+                [key: string]: number;
+            };
             /** Missing */
             missing: {
                 [key: string]: number;
@@ -8335,6 +8380,10 @@ export interface components {
             /** Pending */
             pending: {
                 [key: string]: number;
+            };
+            /** Stems Index */
+            stems_index: {
+                [key: string]: string | null;
             };
             /** Stems Source Refusal */
             stems_source_refusal: string | null;
@@ -8800,10 +8849,19 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** DrainConfigIn */
+        /**
+         * DrainConfigIn
+         * @description Partial update: an omitted key keeps its stored value.
+         */
         DrainConfigIn: {
             /** Enabled */
-            enabled: boolean;
+            enabled?: boolean | null;
+            /** Steps */
+            steps?: {
+                [key: string]: boolean;
+            } | null;
+            /** Transient Bundle Cap */
+            transient_bundle_cap?: number | null;
         };
         /** DrainRetryOut */
         DrainRetryOut: {
@@ -8813,6 +8871,10 @@ export interface components {
         };
         /** DrainStatusOut */
         DrainStatusOut: {
+            /** Cloud Vocals */
+            cloud_vocals: {
+                [key: string]: unknown;
+            };
             /** Enabled */
             enabled: boolean;
             /** Failed */
@@ -8835,6 +8897,8 @@ export interface components {
             last_job: {
                 [key: string]: unknown;
             } | null;
+            /** Memory Pressure */
+            memory_pressure: string | null;
             /** Next Retry At */
             next_retry_at: number | null;
             /** Pending */
@@ -8845,10 +8909,28 @@ export interface components {
             reason: string | null;
             /** State */
             state: string;
+            /** Stems Check */
+            stems_check: {
+                [key: string]: unknown;
+            };
+            /** Stems In Cloud */
+            stems_in_cloud: number;
+            /** Stems Index Reason */
+            stems_index_reason: string | null;
+            /** Stems Index State */
+            stems_index_state: string;
             /** Stems Needing Farm */
             stems_needing_farm: string[];
             /** Stems Needing Farm Count */
             stems_needing_farm_count: number;
+            /** Stems No Source */
+            stems_no_source: number;
+            /** Stems Unclassified */
+            stems_unclassified: number;
+            /** Steps Enabled */
+            steps_enabled: {
+                [key: string]: boolean;
+            };
             /** Stop Requested */
             stop_requested: boolean;
             /** Ticks */
@@ -11274,6 +11356,40 @@ export interface components {
         MyTagSweepOut: {
             /** Tracks Updated */
             tracks_updated: number;
+        };
+        /** NoSourceClearOut */
+        NoSourceClearOut: {
+            /** Cleared */
+            cleared: boolean;
+            /** Keep Pending */
+            keep_pending: boolean;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** NoSourceListOut */
+        NoSourceListOut: {
+            /** Keep Pending */
+            keep_pending: string[];
+            /** Marks */
+            marks: components["schemas"]["NoSourceMarkOut"][];
+        };
+        /** NoSourceMarkIn */
+        NoSourceMarkIn: {
+            /** Reason */
+            reason: string;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /** NoSourceMarkOut */
+        NoSourceMarkOut: {
+            /** Applies */
+            applies: boolean | null;
+            /** Reason */
+            reason: string;
+            /** Recorded At */
+            recorded_at: number;
+            /** Stable Id */
+            stable_id: string;
         };
         /** NodePatch */
         NodePatch: {
@@ -13714,6 +13830,13 @@ export interface components {
             stems_dir: string;
             /** Upload Queue Count */
             upload_queue_count: number;
+            /** Would Evict Bytes */
+            would_evict_bytes: number;
+            /**
+             * Would Evict Count
+             * @description Least-recently-used bundles that reaching the floor would remove; each stays in R2 and is fetched back on demand
+             */
+            would_evict_count: number;
         };
         /** StemHydrateIn */
         StemHydrateIn: {
@@ -18799,6 +18922,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+        };
+    };
+    list_stems_no_source_api_v1_coverage_outcomes_stems_no_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoSourceListOut"];
+                };
+            };
+        };
+    };
+    mark_stems_no_source_api_v1_coverage_outcomes_stems_no_source_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoSourceMarkIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoSourceMarkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_stems_no_source_api_v1_coverage_outcomes_stems_no_source__stable_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoSourceClearOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

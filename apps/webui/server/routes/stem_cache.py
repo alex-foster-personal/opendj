@@ -95,6 +95,11 @@ class StemCacheStatusOut(BaseModel):
     bundle_count: int
     evictable_bundle_count: int = Field(description="In the R2 index and not on a deck")
     evictable_bytes: int
+    would_evict_count: int = Field(
+        description="Least-recently-used bundles that reaching the floor would remove; "
+        "each stays in R2 and is fetched back on demand"
+    )
+    would_evict_bytes: int
     local_only_count: int = Field(description="Not covered by the R2 index; never evicted")
     local_only_bytes: int
     local_only_stable_ids: list[str]

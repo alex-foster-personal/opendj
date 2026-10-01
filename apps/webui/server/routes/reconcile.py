@@ -214,6 +214,45 @@ def _scan_broken(backend: StateBackend) -> tuple[int, list[_BrokenScan]]:
     return len(tracks), broken
 
 
+def _scan_broken_ids(backend: StateBackend) -> tuple[int, set[str]]:
+    """(total scanned tracks, broken stable_ids): the summary's scan.
+
+    The summary quotes counts, so it needs each row's id and path and nothing
+    else. Reading whole ``Track`` rows through ``list_tracks`` also resolved
+    every lane-owned analysis field per track (about 265,000 statements on a
+    9812-row library, 2.8 s of a 3.0 s request, measured Thu 1 Oct 2026), and
+    that cost grew as the analysis drain filled its tables. Same rows
+    (``deleted_at IS NULL``), same predicate as :func:`_scan_broken`.
+    """
+    if not isinstance(backend, SqliteBackend):
+        total, broken = _scan_broken(backend)
+        return total, {b.track.stable_id for b in broken}
+    conn = open_ro(backend.writeback_state_db_path)
+    try:
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tracks'"
+        ).fetchone() is None:
+            rows = None
+        else:
+            rows = conn.execute(
+                "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
+            ).fetchall()
+    finally:
+        conn.close()
+    if rows is None:    # no tracks table: the backend's own fallback decides
+        total, broken = _scan_broken(backend)
+        return total, {b.track.stable_id for b in broken}
+    metas = rb_vendor.bulk_rb_meta([str(sid) for sid, _path in rows])
+    folders: dict[str, str] = {}
+    for sid, file_path in rows:
+        meta = metas.get(str(sid))
+        folder = meta.folder_path if meta is not None else file_path
+        if _is_local_path(folder):
+            folders[str(sid)] = str(folder)
+    exists = rb_vendor.bulk_file_exists(folders.values())
+    return len(rows), {sid for sid, folder in folders.items() if not exists[folder]}
+
+
 def _playlist_membership(
     playlists: list[Playlist],
 ) -> dict[str, list[str]]:
@@ -278,8 +317,7 @@ def list_broken_tracks(
 def reconcile_summary(
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> ReconcileSummary:
-    total_tracks, broken = _scan_broken(backend)
-    broken_ids = {b.track.stable_id for b in broken}
+    total_tracks, broken_ids = _scan_broken_ids(backend)
     playlists = backend.list_playlists()
 
     per_playlist = [

@@ -85,6 +85,7 @@ from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
+from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
@@ -136,9 +137,9 @@ from .routes import smartlists as smartlists_routes
 from .routes import spotify as spotify_routes
 from .routes import sql_playground as sql_playground_routes
 from .routes import state as state_routes
+from .routes import stem_cache as stem_cache_routes
 from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
-from .routes import stem_cache as stem_cache_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
 from .routes import telemetry_consent as telemetry_consent_routes
@@ -582,6 +583,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_queue_routes.router,
         library_jobs_routes.router,
         coverage_drain_routes.router,
+        coverage_terminal_routes.router,
         analysis_source_routes.router,
         auth_routes.router,
         ingest_routes.router,
