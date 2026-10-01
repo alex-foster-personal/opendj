@@ -17,9 +17,11 @@ from apps.shared.engine_decode import (
 )
 
 
-def _exe(path: Path) -> Path:
+def _exe(path: Path, commands: str = "decode probe") -> Path:
+    """A stand-in binary whose ``help`` lists ``commands`` the way odj-audio does."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#!/bin/sh\n")
+    usage = "\\n".join(f"  odj-audio {c} PATH" for c in commands.split())
+    path.write_text(f'#!/bin/sh\nprintf "usage:\\n{usage}\\n"\n')
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return path
 
@@ -46,6 +48,18 @@ def test_without_override_the_newest_repo_build_is_used(tmp_path: Path) -> None:
     os.utime(release, (1_000, 1_000))
     os.utime(debug, (2_000, 2_000))
     assert resolve_engine_decoder({}, repo_root=root) == debug
+
+
+def test_a_stale_build_without_the_subcommands_is_passed_over(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    fresh = _exe(root / engine_decode.REPO_TARGET / "release" / engine_decode.EXE_NAME)
+    stale = _exe(root / engine_decode.REPO_TARGET / "debug" / engine_decode.EXE_NAME, "render serve")
+    os.utime(fresh, (1_000, 1_000))
+    os.utime(stale, (2_000, 2_000))
+    # The newer debug build predates decode/probe, so the older release wins.
+    assert resolve_engine_decoder({}, repo_root=root) == fresh
+    with pytest.raises(EngineDecoderUnavailable, match="predates"):
+        resolve_engine_decoder({"ODJ_AUDIO_BIN": str(stale)}, repo_root=root)
 
 
 def test_no_binary_anywhere_raises(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ Acceptance
 [if] ODJ_AUDIO_BIN is set but not executable [then] EngineDecoderUnavailable names it
 [if] ODJ_AUDIO_BIN is unset                  [then] the newest repo release/debug build
 [if] no binary at all                        [then] EngineDecoderUnavailable
+[if] a binary predates decode/probe          [then] it is passed over (repo) or refused (env)
 [if] the file is not audio                   [then] probe_duration_s returns None
 
 Why: the shipped app bundles ``odj-audio`` (``scripts/build_engine_payload.py``
@@ -37,6 +38,7 @@ import ``apps.engine_core`` (``.importlinter``).
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import subprocess
@@ -56,8 +58,40 @@ MP3 with no Xing header (about 0.6 s per 6 minutes, measured in the 20-05
 null test), on a contended host."""
 
 
+#: Subcommands this module calls. A build older than them prints its usage
+#: and exits 2 for each, which would read as "every file is unreadable".
+REQUIRED_COMMANDS: tuple[str, ...] = ("decode", "probe")
+
+
 class EngineDecoderUnavailable(RuntimeError):
     """``odj-audio`` cannot be located or executed. Never a degraded result."""
+
+
+@functools.lru_cache(maxsize=16)
+def _has_commands(path: str, size: int, mtime_ns: int) -> bool:
+    """Whether the binary's usage lists every required subcommand.
+
+    Asked of the binary itself, because a reused CI workspace or an old local
+    cargo build can hold an ``odj-audio`` that predates them (seen on the
+    nucbox runner, Thu 1 Oct 2026). Cached by path, size and mtime, so a
+    rebuilt binary is asked again.
+    """
+    del size, mtime_ns  # cache key only
+    try:
+        done = subprocess.run(  # fixed argv, never a shell
+            [path, "help"], capture_output=True, text=True, errors="replace",
+            check=False, stdin=subprocess.DEVNULL, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and all(
+        f"odj-audio {cmd} " in done.stdout for cmd in REQUIRED_COMMANDS
+    )
+
+
+def _supports(p: Path) -> bool:
+    st = p.stat()
+    return _has_commands(str(p), st.st_size, st.st_mtime_ns)
 
 
 def resolve_engine_decoder(
@@ -68,17 +102,22 @@ def resolve_engine_decoder(
     raw = env.get(BIN_ENV, "").strip()
     if raw:
         p = Path(raw)
-        if p.is_file() and os.access(p, os.X_OK):
-            return p
-        raise EngineDecoderUnavailable(f"{BIN_ENV}={raw!r} is not an executable file")
+        if not (p.is_file() and os.access(p, os.X_OK)):
+            raise EngineDecoderUnavailable(f"{BIN_ENV}={raw!r} is not an executable file")
+        if not _supports(p):
+            raise EngineDecoderUnavailable(
+                f"{BIN_ENV}={raw!r} predates the {'/'.join(REQUIRED_COMMANDS)} subcommands"
+            )
+        return p
     found = [
         p
         for p in (repo_root / REPO_TARGET / profile / EXE_NAME for profile in ("release", "debug"))
-        if p.is_file() and os.access(p, os.X_OK)
+        if p.is_file() and os.access(p, os.X_OK) and _supports(p)
     ]
     if not found:
         raise EngineDecoderUnavailable(
-            f"no {BIN_ENV} and no local odj-audio build; run "
+            f"no {BIN_ENV} and no local odj-audio build with "
+            f"{'/'.join(REQUIRED_COMMANDS)}; run "
             "`cargo build --release --manifest-path apps/audio-engine/Cargo.toml`"
         )
     return max(found, key=lambda p: p.stat().st_mtime)
