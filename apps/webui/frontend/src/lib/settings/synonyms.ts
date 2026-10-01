@@ -22,7 +22,7 @@ export const SETTINGS_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
 	vocals: ['vocals_filter', 'lyrics', 'lines'],
 	karaoke: ['lyrics_global', 'lyrics_waveform_overlay', 'lyrics_deck_line'],
 	lyrics: ['lyrics_global', 'lyrics_library_col', 'lyrics_hover_scrub', 'lyrics_load_strategy'],
-	confirm: ['confirm.delete_playlist', 'confirm.dblclick_load_play'],
+	confirm: ['confirm.delete_playlist', 'confirm.dblclick_load_play', 'confirm.playlist_drop_mode'],
 	prompt: ['confirm'],
 	writeback: ['auto_sync', 'ratings', 'rekordbox', 'djay'],
 	ratings: ['auto_sync', 'writeback'],

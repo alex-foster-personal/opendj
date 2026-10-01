@@ -63,3 +63,17 @@ def test_a_midi_proposal_validates_as_a_boolean(raw: object, expected: bool) -> 
 def test_the_disk_field_name_is_refused() -> None:
     with pytest.raises(ValueError, match="disallowed"):
         settings_ai._validate_proposal("midi_enabled", True)
+
+
+@pytest.mark.parametrize("raw", ["ask", "add", "move"])
+def test_a_drop_mode_proposal_validates_as_its_enum(raw: str) -> None:
+    """Pin 36e2e2a7ccff: the remembered playlist-drop choice is resettable."""
+    assert "confirm.playlist_drop_mode" in _client_keys()
+    assert settings_ai._validate_proposal("confirm.playlist_drop_mode", raw) == raw
+
+
+def test_a_drop_mode_proposal_outside_the_enum_is_refused() -> None:
+    with pytest.raises(ValueError, match="must be one of"):
+        settings_ai._validate_proposal("confirm.playlist_drop_mode", "copy")
+    with pytest.raises(ValueError, match="must be one of"):
+        settings_ai._validate_proposal("confirm.playlist_drop_mode", True)
