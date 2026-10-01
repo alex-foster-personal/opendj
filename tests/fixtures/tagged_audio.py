@@ -15,6 +15,7 @@ would let a reader test pass by reading nothing.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import struct
 import subprocess
@@ -62,6 +63,8 @@ _FORMAT_ARGS: dict[str, tuple[str, list[str], dict[str, str]]] = {
     "ogg": (".ogg", ["-c:a", "libvorbis"], {"BPM": BPM, "INITIALKEY": KEY, "ISRC": ISRC}),
     "opus": (".opus", ["-c:a", "libopus"], {"BPM": BPM, "INITIALKEY": KEY, "ISRC": ISRC}),
     "m4a": (".m4a", ["-c:a", "aac"], {"tmpo": BPM}),
+    # moov in front of mdat: a tag write that grows moov must move chunk offsets.
+    "m4a-faststart": (".m4a", ["-c:a", "aac", "-movflags", "+faststart"], {"tmpo": BPM}),
     "aiff": (".aiff", ["-write_id3v2", "1"], {"TBPM": BPM, "TKEY": KEY, "TSRC": ISRC}),
     "wav": (".wav", [], {}),
 }
@@ -135,6 +138,33 @@ def append_wav_id3_chunk(wav: Path, frames: list[id3v2.Frame], *, version: int =
     wav.write_bytes(bytes(raw))
 
 
+def decoded_audio_sha256(path: Path) -> str:
+    """sha256 of the PCM ffmpeg decodes from ``path``: identical audio, identical hash."""
+    result = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a", "-f", "hash", "-hash", "sha256", "-"],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0 or result.stderr.strip() or not result.stdout.startswith("SHA256="):
+        raise RuntimeError(f"ffmpeg could not decode {path} cleanly: {result.stderr.strip()}")
+    return result.stdout.strip().removeprefix("SHA256=")
+
+
+def ffprobe_tags(path: Path) -> dict[str, str]:
+    """Container and stream tags as ffprobe (an independent parser) sees them, keys lowercased."""
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format_tags:stream_tags", "-of", "json", str(path)],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed on {path}: {result.stderr.strip()}")
+    doc = json.loads(result.stdout)
+    tags: dict[str, str] = {}
+    for stream in doc.get("streams", []):
+        tags.update({k.lower(): v for k, v in stream.get("tags", {}).items()})
+    tags.update({k.lower(): v for k, v in doc.get("format", {}).get("tags", {}).items()})
+    return tags
+
+
 def audio_after_id3(mp3: Path) -> bytes:
     """The bytes after the leading ID3v2 tag: the part a tag write must not touch."""
     tag = id3v2.read_tag(mp3)
@@ -158,7 +188,9 @@ __all__ = [
     "append_wav_id3_chunk",
     "attach_cover_with_ffmpeg",
     "audio_after_id3",
+    "decoded_audio_sha256",
     "ffmpeg_available",
+    "ffprobe_tags",
     "flac_audio_frames",
     "make_tagged_audio",
     "make_untagged_audio",

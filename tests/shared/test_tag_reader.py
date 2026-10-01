@@ -36,6 +36,7 @@ _EXPECTED_EXTRAS: dict[str, tuple[str | None, str | None, str | None]] = {
     "ogg": (ta.BPM, ta.KEY, ta.ISRC),
     "opus": (ta.BPM, ta.KEY, ta.ISRC),
     "m4a": (ta.BPM, None, None),
+    "m4a-faststart": (ta.BPM, None, None),
     "aiff": (ta.BPM, ta.KEY, ta.ISRC),
     "wav": (None, None, None),
 }
