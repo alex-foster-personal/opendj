@@ -26,6 +26,7 @@ import test from 'node:test';
 
 import {
 	RELAUNCH_VERIFY_TIMEOUT_MS,
+	parseFatalQuery,
 	relaunchEngine,
 	relaunchUrl
 } from '../../../../desktop/setup/setup.js';
@@ -169,4 +170,30 @@ test('control: an accepted POST alone is NOT success', async () => {
 		pollIntervalMs: 500
 	});
 	assert.equal(result.ok, false, 'a taken request is not a restarted engine');
+});
+
+// - if the health port only travels in a JS global set BEFORE navigating to
+//   the fatal screen then the new document never sees it and Relaunch always
+//   says "never told which port" (Thu 1 Oct 2026: it had never worked once,
+//   in the Preview or the plain app) -> broken.
+test('the fatal screen reads the health port from its own URL', () => {
+	delete globalThis.__OPENDJ_ENGINE_SUPERVISOR__;
+	const fatal = parseFatalQuery('?fatal=1&exit=1&pid=4242&port=8685&health=51999');
+	assert.equal(fatal.health_port, 51999);
+	assert.equal(fatal.lock_port, 8685);
+});
+
+test('control: no health in the URL and no injected global is null, not a port', () => {
+	delete globalThis.__OPENDJ_ENGINE_SUPERVISOR__;
+	const fatal = parseFatalQuery('?fatal=1&exit=1&pid=4242&port=8685');
+	assert.equal(fatal.health_port, null);
+});
+
+test('an injected global still works when the URL carries no health port (Electron preload)', () => {
+	globalThis.__OPENDJ_ENGINE_SUPERVISOR__ = { health_port: 52001 };
+	try {
+		assert.equal(parseFatalQuery('?fatal=1&exit=1&pid=1&port=2').health_port, 52001);
+	} finally {
+		delete globalThis.__OPENDJ_ENGINE_SUPERVISOR__;
+	}
 });

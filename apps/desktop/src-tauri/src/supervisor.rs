@@ -553,19 +553,22 @@ fn set_window_title(app: &AppHandle, title: &str) {
     });
 }
 
+/// The fatal screen's URL. Everything the page needs travels IN it: a global
+/// eval'd before `navigate` belongs to the old document and is gone by the time
+/// the fatal page runs, which left Relaunch with no health port every time.
+fn fatal_query(exit_code: i32, pid: u32, port: u16, health_port: u16) -> String {
+    format!("index.html?fatal=1&exit={exit_code}&pid={pid}&port={port}&health={health_port}")
+}
+
 fn navigate_fatal_bootstrap(app: &AppHandle, guard: &RuntimeState, health_port: u16) {
     let exit_code = guard.exit_code.unwrap_or(-1);
     let pid = guard.lock_pid.unwrap_or(0);
     let port = guard.lock_port.unwrap_or(0);
     let product = guard.paths.product_name.clone();
-    let script = format!(
-        "globalThis.__OPENDJ_ENGINE_SUPERVISOR__ = {{ engine: 'dead', exit_code: {exit_code}, lock_pid: {pid}, lock_port: {port}, health_port: {health_port} }};"
-    );
-    let query = format!("index.html?fatal=1&exit={exit_code}&pid={pid}&port={port}");
+    let query = fatal_query(exit_code, pid, port, health_port);
     let handle = app.clone();
     let _ = handle.clone().run_on_main_thread(move || {
         if let Some(window) = handle.get_webview_window(WINDOW_LABEL) {
-            let _ = window.eval(&script);
             let target = Url::parse(&format!("tauri://localhost/{query}")).expect("fatal url");
             let _ = window.navigate(target);
             let dead_title = format!("{product} - engine dead");
@@ -634,6 +637,13 @@ pub struct RuntimeSupervisorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fatal_url_carries_the_health_port() {
+        let q = fatal_query(1, 4242, 8685, 51999);
+        assert!(q.contains("&health=51999"), "{q}");
+        assert!(q.starts_with("index.html?fatal=1&"), "{q}");
+    }
 
     #[test]
     fn supervisor_phase_dead_is_distinct_from_running() {
