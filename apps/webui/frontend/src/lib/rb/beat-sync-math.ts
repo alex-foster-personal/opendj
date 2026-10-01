@@ -33,6 +33,16 @@ export type BeatNumber = 1 | 2 | 3 | 4;
 export type SyncMode = 'beat' | 'bar';
 export type TempoNormalization = 0.5 | 1 | 2;
 
+/**
+ * Largest phase-lock trim, as a fraction of the base tempo: 0.3%, 0.38 BPM at
+ * 128 BPM. Below the pitch change a DJ hears on a varispeed deck (about 5
+ * cents), and twice the worst grid-rounding tempo error seen on real PQTZ
+ * (~0.15%, see `_windowedIntervalBpm`), so a real drift of that size is always
+ * out-run. Lives here, not in phase-lock.ts, so the tempo-lock tolerance can
+ * use it without an import cycle; phase-lock.ts re-exports it.
+ */
+export const PHASE_LOCK_MAX_TRIM = 0.003;
+
 export interface FollowerSyncRequest {
 	masterGrid: readonly AnlzBeat[];
 	followerGrid: readonly AnlzBeat[];
@@ -660,25 +670,39 @@ export function beatIsExtrapolated(beat: Pick<AnlzBeat, 'extrapolated'>): boolea
 export const DEFAULT_TEMPO_LOCK_TOLERANCE_BPM = 0.1;
 
 /**
+ * The default tolerance at one fold of the master tempo: the 0.1 BPM display
+ * slack PLUS the largest trim the phase lock itself applies
+ * (PHASE_LOCK_MAX_TRIM of the folded master BPM, 0.38 BPM at 128). A locked,
+ * in-phase follower carrying an ordinary trim must not read "Off tempo"; a
+ * real 1 BPM mismatch at 128 (tolerance 0.48) still does.
+ */
+export function tempoLockToleranceBpm(foldedMasterBpm: number): number {
+	return DEFAULT_TEMPO_LOCK_TOLERANCE_BPM + PHASE_LOCK_MAX_TRIM * foldedMasterBpm;
+}
+
+/**
  * True when candidateBpm is tempo-locked to masterBpm at 1x, 0.5x, or 2x
  * within toleranceBpm - the three ratios Beat Sync itself accepts (see
- * `TempoNormalization`). Null, non-finite, or non-positive inputs mean
- * there is no valid reference to compare against (no elected master, no
- * live BPM yet, or the master deck against itself); those cases return
- * true so the UI never shows a mismatch without a real error to report.
+ * `TempoNormalization`). Without an explicit toleranceBpm, each fold uses
+ * `tempoLockToleranceBpm` so a phase-lock trim is not read as off tempo.
+ * Null, non-finite, or non-positive inputs mean there is no valid reference
+ * to compare against (no elected master, no live BPM yet, or the master deck
+ * against itself); those cases return true so the UI never shows a mismatch
+ * without a real error to report.
  */
 export function isTempoLockedToMaster(
 	candidateBpm: number | null,
 	masterBpm: number | null,
-	toleranceBpm: number = DEFAULT_TEMPO_LOCK_TOLERANCE_BPM
+	toleranceBpm?: number
 ): boolean {
 	if (candidateBpm === null || masterBpm === null) return true;
 	if (!Number.isFinite(candidateBpm) || candidateBpm <= 0) return true;
 	if (!Number.isFinite(masterBpm) || masterBpm <= 0) return true;
 	const normalizations: readonly TempoNormalization[] = [1, 0.5, 2];
-	return normalizations.some(
-		(normalization) => Math.abs(candidateBpm - masterBpm * normalization) <= toleranceBpm
-	);
+	return normalizations.some((normalization) => {
+		const folded = masterBpm * normalization;
+		return Math.abs(candidateBpm - folded) <= (toleranceBpm ?? tempoLockToleranceBpm(folded));
+	});
 }
 
 // ------------------------------------------ beatgrid data-quality (Err col)
@@ -969,6 +993,85 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 	};
 }
 
+
+// --------------------------------------------- grids Beat Sync may wander on
+
+/** A beat interval further than this from the grid's median interval is
+ * uneven. Above what millisecond storage alone produces (two rounded beat
+ * times put an interval up to 1 ms off, and the median up to 1 ms more). */
+export const UNEVEN_GRID_INTERVAL_TOLERANCE_SEC = 0.003;
+
+export interface BeatSyncGridWarning {
+	/** Intervals more than UNEVEN_GRID_INTERVAL_TOLERANCE_SEC off the median. */
+	unevenIntervalCount: number;
+	intervalCount: number;
+	/** Largest interval deviation from the median, in ms (0 when none). */
+	worstDeviationMs: number;
+	/** Track time of the worst interval's first beat. */
+	worstAtSec: number;
+	/** Beats the analyzer extrapolated instead of detecting. */
+	extrapolatedBeatCount: number;
+	/** One line for the deck: what is wrong and what it means for sync. */
+	message: string;
+}
+
+/**
+ * Why Beat Sync may wander on this grid, or null when it has no such reason.
+ *
+ * The continuous phase lock (NAE-19) holds a follower to its GRID. Where the grid's beats are
+ * unevenly spaced, or were extrapolated rather than detected, the grid and
+ * the audio can disagree, and holding to one lets the other be heard off the
+ * beat. That is not a failure to hide: the DJ is told before they lean on it.
+ *
+ * Deliberately not `detectBeatgridIssue`: that compares the PQTZ `bpm` FIELD
+ * to the intervals (a data-quality column), while sync never reads the field.
+ *
+ * [if] the grid is missing or too short to have an interval [then] null -
+ * that state already has its own gridless tip.
+ */
+export function beatSyncGridWarning(beats: readonly AnlzBeat[]): BeatSyncGridWarning | null {
+	if (!Array.isArray(beats) || beats.length < 2) return null;
+	const intervalCount = beats.length - 1;
+	const intervals: number[] = new Array(intervalCount);
+	for (let index = 0; index < intervalCount; index++) {
+		intervals[index] = beats[index + 1].t - beats[index].t;
+	}
+	const medianSec = _medianSorted([...intervals].sort((left, right) => left - right));
+	let unevenIntervalCount = 0;
+	let worstDeviationSec = 0;
+	let worstAtSec = beats[0].t;
+	for (let index = 0; index < intervalCount; index++) {
+		const deviationSec = Math.abs(intervals[index] - medianSec);
+		if (deviationSec <= UNEVEN_GRID_INTERVAL_TOLERANCE_SEC) continue;
+		unevenIntervalCount += 1;
+		if (deviationSec > worstDeviationSec) {
+			worstDeviationSec = deviationSec;
+			worstAtSec = beats[index].t;
+		}
+	}
+	let extrapolatedBeatCount = 0;
+	for (const beat of beats) if (beatIsExtrapolated(beat)) extrapolatedBeatCount += 1;
+	if (unevenIntervalCount === 0 && extrapolatedBeatCount === 0) return null;
+	const worstDeviationMs = worstDeviationSec * 1000;
+	const reasons: string[] = [];
+	if (unevenIntervalCount > 0) {
+		reasons.push(
+			`${unevenIntervalCount} of ${intervalCount} beat intervals are uneven ` +
+				`(worst ${worstDeviationMs.toFixed(0)} ms off at ${worstAtSec.toFixed(1)} s)`
+		);
+	}
+	if (extrapolatedBeatCount > 0) {
+		reasons.push(`${extrapolatedBeatCount} of ${beats.length} beats are extrapolated, not detected`);
+	}
+	return {
+		unevenIntervalCount,
+		intervalCount,
+		worstDeviationMs,
+		worstAtSec,
+		extrapolatedBeatCount,
+		message: `Beatgrid: ${reasons.join('; ')} - Beat Sync may wander on this track`
+	};
+}
 
 // ----------------------------------------------- what the sync tells the DJ
 

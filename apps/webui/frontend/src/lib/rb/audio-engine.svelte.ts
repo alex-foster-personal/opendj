@@ -311,6 +311,7 @@ import {
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
+import { createWebAudioPhaseLock } from './phase-lock-webaudio';
 import {
 	_effectivePresentedScheduleAt,
 	acknowledgePresentedTransportSchedule,
@@ -1073,9 +1074,12 @@ import {
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity,
+	planKeyShiftMutation,
+	type KeyShiftMutationPlan,
 	filterParamsFromKnob
 } from './audio-engine-guards';
 import {
+	AUTOMATIC_HANDOFF_REASONS,
 	electMaster,
 	onAirGain,
 	SILENCE_GAIN_EPSILON,
@@ -1092,7 +1096,9 @@ export {
 	masterSwitchFollowers,
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
-	type TransportMutationActivity
+	type TransportMutationActivity,
+	planKeyShiftMutation,
+	type KeyShiftMutationPlan
 };
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
@@ -1191,8 +1197,15 @@ function _electionInput(): MasterElectionInput {
 
 function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason }): DeckId | null {
 	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
-	const next = electMaster(_electionInput());
-	_assignMaster(next, options?.reason ?? 'master-left');
+	const previous = _masterDeck, next = electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
+	_assignMaster(next, reason);
+	// An AUTOMATIC handoff re-joins the playing followers as setDeckMaster does;
+	// otherwise each phase lock drops ('master moved') and the decks free-run.
+	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
+		const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
+		_bumpReanchorOperation(next);
+		void _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) }).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
+	}
 	return next;
 }
 
@@ -1673,38 +1686,6 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 	);
 }
 
-export interface KeyShiftMutationPlan {
-	kind: 'immediate' | 'scheduled';
-	active: boolean;
-	publishedKeyShiftSemitones: number | null;
-}
-
-/** A stop acknowledged by the processor can remain audible at the output.
- * Key changes must join that revisioned schedule instead of publishing ahead
- * of the listener. */
-export function planKeyShiftMutation(
-	activity: TransportMutationActivity,
-	desiredActive: boolean,
-	requestedKeyShiftSemitones: number
-): KeyShiftMutationPlan {
-	if (typeof desiredActive !== 'boolean') {
-		throw new TypeError('key shift desired active must be boolean');
-	}
-	_assertKeyShift(requestedKeyShiftSemitones);
-	if (transportNeedsScheduledMutation(activity)) {
-		return {
-			kind: 'scheduled',
-			active: desiredActive,
-			publishedKeyShiftSemitones: null
-		};
-	}
-	return {
-		kind: 'immediate',
-		active: false,
-		publishedKeyShiftSemitones: requestedKeyShiftSemitones
-	};
-}
-
 function _desiredKeyShiftSemitones(deck: DeckId): number {
 	const rt = _rt[deck];
 	return rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
@@ -2055,6 +2036,7 @@ function _tick(): void {
 			_updateSlipPosition(deck);
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
+		_phaseLock.tick(_ctx.currentTime); // NAE-19: keep Beat Sync followers on phase (throttled to 30 Hz)
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
 		const intentionalSilence = cueOnlyMonitoringActive(_djOutputProfileActive, mixerState, deckStates) || playingStemsIntentionallySilent(Object.values(deckStates));
 		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now(), intentionalSilence);
@@ -2394,6 +2376,7 @@ async function _synchronizeFollowers(
 	options: _SyncOptions = {}
 ): Promise<void> {
 	if (followers.length === 0 && options.masterSchedule === undefined) return;
+	for (const deck of followers) _phaseLock.clear(deck); // no trim between this plan and its lock
 	// Every guard the two beatgrid-resync callers apply to their PORTS is asked
 	// before this function is entered; none of them survives the awaits INSIDE
 	// it. `_resumeContext()` alone is an open-ended wait, and everything below
@@ -2632,6 +2615,13 @@ async function _synchronizeFollowers(
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
 		);
+		// Lock every follower that DID sync before a partial failure throws (a
+		// failed master schedule leaves no tempo to lock against).
+		for (const item of planned) {
+			if (failedDecks.includes(item.deck) || failedDecks.includes(master)) continue;
+			item.st.sync_error = null;
+			_phaseLock.record(item.deck, { master, masterTempo: masterTempoRatio, base: item.plan.followerTempoRatio, normalization: item.plan.tempoNormalization });
+		}
 		if (failedDecks.length > 0) {
 			succeededDecks = schedules.map((item) => item.deck).filter((deck) => !failedDecks.includes(deck));
 			const message =
@@ -2644,7 +2634,6 @@ async function _synchronizeFollowers(
 				cause: outcomes.find((outcome) => outcome.status === 'rejected')
 			});
 		}
-		for (const item of planned) item.st.sync_error = null;
 		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
 		// a pure function; the engine only performs the effects it returns.
 		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
@@ -2673,6 +2662,17 @@ const _beatgridResyncPorts: BeatgridResyncPorts = {
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };
+// NAE-19 continuous phase lock: bookkeeping and ports in phase-lock-webaudio.ts.
+const _phaseLock = createWebAudioPhaseLock({
+	deckIds: DECK_IDS, syncMaster: _syncMaster, masterDeck: _ownedMaster, ownsTempo: _syncOwnsFollowerTempo, playing: (deck) => deckStates[deck].playing,
+	loadToken: (deck) => _rt[deck].loadToken, stableId: (deck) => deckStates[deck].stable_id,
+	settled: (deck) => { const rt = _rt[deck]; return rt.pending.length === 0 && rt.scheduleIntentCount === 0 && !_presentationPending(rt) && !_reanchorRampPending(rt) && _quantizedLaunchAt[deck] === null; },
+	desiredTempo: (deck) => _rt[deck].pending.at(-1)?.tempoRatio ?? _rt[deck].controlTempoRatio,
+	beats: (deck) => deckStates[deck].anlz?.beatgrid.beats ?? [], positionSec: _projectPositionAt,
+	pitchRangePct: (deck) => pitchRanges[deck], loopEngaged: (deck) => deckStates[deck].loop?.engaged === true,
+	scheduleTempo: (deck, ratio) => _scheduleDeck(deck, _futureScheduleTime(deck), (when) => _projectPositionAt(deck, when), true, ratio),
+	resync: (master, deck) => _synchronizeFollowers(master, [deck]), reportError: (deck, message) => (deckStates[deck].sync_error = message)
+});
 const _beatgridGuards = createBeatgridResyncGuards({
 	ports: _beatgridResyncPorts,
 	deckRuntime: (deck) => _rt[deck],
@@ -2933,6 +2933,7 @@ class RbAudioEngine implements AudioEngine {
 		const processors: _DeckProcessor[] = [];
 		const nodes: AudioNode[] = [];
 		_engineSession += 1;
+		_phaseLock.clearAll();
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			rt.loadToken += 1;
