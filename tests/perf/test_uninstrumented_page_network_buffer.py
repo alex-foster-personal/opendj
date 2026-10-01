@@ -37,15 +37,19 @@ _requires_reference_mac = pytest.mark.skipif(
 )
 
 
-def _probe(page_kind: str) -> dict[str, float]:
+def _node() -> str:
     node = shutil.which("node")
     if node is None or not (_FRONTEND / "node_modules" / "@playwright" / "test").is_dir():
-        pytest.fail(
+        raise RuntimeError(
             "network_buffer_probe needs node and the frontend's node_modules "
             "(pnpm install in apps/webui/frontend, then pnpm exec playwright install chromium)"
         )
+    return node
+
+
+def _probe(page_kind: str) -> dict[str, float]:
     completed = subprocess.run(
-        [node, str(_PROBE), "--page", page_kind],
+        [_node(), str(_PROBE), "--page", page_kind],
         cwd=_FRONTEND,
         capture_output=True,
         text=True,
