@@ -141,6 +141,7 @@ import { abortCueAlignment, startCueAlignment } from '$lib/rb/cue-align-session.
 import type { SortKey } from '$lib/components/rb/browser/browser-sort-ipc';
 import { MUTED_MASTER_VOLUME, type PerformancePresetPhase } from '$lib/rb/performance-preset-constants';
 import { rescueRestoreStatus } from '$lib/rb/performance-rescue-restore.svelte';
+import { reportDeckLoadCommandFailure } from '$lib/rb/deck-load-context';
 import { onDeckLoadStart } from '$lib/rb/mixer-selection.svelte';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 export { uiPrefs };
@@ -2437,6 +2438,10 @@ function _persistCommandError(
 		command.type === 'load' &&
 		command.suppressCommandErrorToast === true
 	) {
+		return;
+	}
+	if (command !== undefined && command.type === 'load') {
+		reportDeckLoadCommandFailure(command.deck, messageText, error);
 		return;
 	}
 	let subcontrol = '';
