@@ -48,7 +48,7 @@ CANARY_REF = "refs/heads/canary/" + "0" * 40
 
 #: ci.yml `test` steps the canary deliberately omits, all trailing. The first three are
 #: non-verdict uploads: their artifact names would collide across vendors in one run, and
-#: their readers (the shard rebalance and the Mergify CI Insights job) live in the source
+#: their readers (the shard rebalance and the CI Insights job) live in the source
 #: repository. The fourth is the Trunk-quarantine verdict, which reads a list job the
 #: canary does not have (ADR-NEW-trunk-flaky-quarantine-on); the canary instead keeps its
 #: pytest step failing on its own, see CI_ONLY_PYTEST_KEYS.
