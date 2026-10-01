@@ -181,3 +181,21 @@ def test_per_track_failures_do_not_close_the_lane() -> None:
     cov = drain.coverage()["lanes"]["loudness"]
     assert cov["unavailable"] is None
     assert cov["failed"] == 4 and cov["missing"] == 0
+
+
+def test_same_host_cause_with_different_files_closes_the_lane() -> None:
+    """[if] every track fails one way, filenames aside [then] the lane is named unavailable, [else stop]."""
+    world = World([f"t{i}" for i in range(4)])
+    world.strips = set(world.present)
+    cause = "Requested resampling engine is unavailable"
+
+    def run_lane(lane: str, _backend: str, ids: list[str]) -> dict[str, str]:
+        world.lane_runs.append((lane, list(ids)))
+        return {sid: f"TrackUnreadable: {sid}.mp3: ffmpeg exited 234 decoding PCM: x ... {cause}" for sid in ids}
+
+    world.run_lane = run_lane  # type: ignore[method-assign]
+    drain = world.drain()
+    drain.tick()
+    unavailable = drain.coverage()["lanes"]["loudness"]["unavailable"]
+    assert unavailable == f"TrackUnreadable: ffmpeg exited 234 decoding PCM ({cause})"
+    assert aa.reason_kind("TrackVanished: /a/b.mp3 was gone") == "TrackVanished: /a/b.mp3 was gone"

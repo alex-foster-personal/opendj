@@ -132,6 +132,26 @@ def next_lane_work(
     return None
 
 
+#: Host-level causes worth naming verbatim when ffmpeg buries them in stderr.
+KNOWN_HOST_CAUSES: tuple[str, ...] = ("Requested resampling engine is unavailable",)
+
+
+def reason_kind(reason: str) -> str:
+    """A failure with its track-specific part removed, so a host-wide cause
+    (every track failing the same way) is recognisable across a chunk.
+
+    ``Cls: <file>: <what failed>: <stderr...>`` becomes ``Cls: <what failed>``
+    plus any known host cause found in the text; anything shaped otherwise
+    (e.g. ``TrackVanished: <path> was gone``) is kept whole, i.e. per track.
+    """
+    parts = reason.split(": ")
+    if len(parts) < 3:
+        return reason
+    kind = f"{parts[0]}: {parts[2]}"
+    causes = [cause for cause in KNOWN_HOST_CAUSES if cause in reason]
+    return f"{kind} ({'; '.join(causes)})" if causes else kind
+
+
 def coverage_counts(
     present: Sequence[str], done: Iterable[str], failed: Mapping[str, str]
 ) -> dict[str, Any]:
@@ -269,7 +289,7 @@ class AheadDrain:
         errors = self._src.run_lane_fn(lane, backend, chunk)
         self._status.lane_batches += 1
         self._status.last_job = {"lane": lane, "ids": chunk, "at": self._clock(), "errors": errors}
-        distinct = set(errors.values())
+        distinct = {reason_kind(why) for why in errors.values()}
         if len(chunk) > 1 and len(errors) == len(chunk) and len(distinct) == 1:
             reason = distinct.pop()
             if self._status.unavailable.get(lane) != reason:
@@ -422,6 +442,12 @@ def run_lane_via_queue(
     return run
 
 
+def _compact_reason(raw: str) -> str:
+    """Cap a reason, keeping any known host cause that sits past the cap."""
+    causes = [cause for cause in KNOWN_HOST_CAUSES if cause in raw and cause not in raw[:240]]
+    return raw[:240] + "".join(f" ... {cause}" for cause in causes)
+
+
 def _item_reasons(db: str, batch_id: str) -> dict[str, str]:
     """Each item's own failure reason, so one track's error is never copied to another."""
     code, out, _err = _queue_cli(["progress", "--batch-id", batch_id], db)
@@ -429,7 +455,7 @@ def _item_reasons(db: str, batch_id: str) -> dict[str, str]:
         return {}
     items = json.loads(out).get("items", [])
     return {
-        str(item["stable_id"]): str(item["reason"])[:300]
+        str(item["stable_id"]): _compact_reason(str(item["reason"]))
         for item in items
         if item.get("reason") and item.get("state") != "done"
     }
