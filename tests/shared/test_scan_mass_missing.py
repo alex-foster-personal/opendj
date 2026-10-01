@@ -32,8 +32,8 @@ pytestmark = pytest.mark.requirement("LIBM-41")
 
 def _mp3(folder: Path, name: str) -> Path:
     path = folder / name
-    # ID3 magic alone is not enough when mutagen is installed: probe_playable_audio
-    # cross-checks duration against size, so include a minimal MPEG frame body.
+    # ID3 magic alone is not enough: probe_playable_audio cross-checks the tag
+    # reader's stated duration against size, so include a minimal MPEG frame body.
     path.write_bytes(b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x00" + b"\x00" * 500)
     return path
 

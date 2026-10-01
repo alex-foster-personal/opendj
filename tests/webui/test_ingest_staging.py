@@ -14,6 +14,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.shared import tag_reader
 from apps.shared.fingerprints import ChromaprintMissing
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.shared.state.db import open_rw as open_state_rw
@@ -63,8 +64,7 @@ def _seed_track(app, sid, path, duration_ms=200_000):
 @pytest.mark.requires_audio_stack
 def test_possible_dup_held_as_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    dur_ms = int(tag_reader.read_tags(Path(src)).duration_s * 1000)
     other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near01", other, duration_ms=dur_ms)
 
@@ -92,8 +92,7 @@ def test_possible_dup_held_as_part(client, app, monkeypatch):
 @pytest.mark.requires_audio_stack
 def test_decide_accept_renames_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    dur_ms = int(tag_reader.read_tags(Path(src)).duration_s * 1000)
     other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near02", other, duration_ms=dur_ms)
 
@@ -124,8 +123,7 @@ def test_decide_accept_renames_part(client, app, monkeypatch):
 @pytest.mark.requires_audio_stack
 def test_decide_reject_unlinks_part(client, app, monkeypatch):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    dur_ms = int(tag_reader.read_tags(Path(src)).duration_s * 1000)
     other = FIXTURES / "src-320.mp3"
     _seed_track(app, "near03", other, duration_ms=dur_ms)
 
@@ -161,8 +159,7 @@ def test_decide_reject_unlinks_part(client, app, monkeypatch):
 @pytest.mark.requires_audio_stack
 def test_confirmed_dup_still_skips_unless_forced(client, app):
     src = FIXTURES / "src-128.mp3"
-    import mutagen
-    dur_ms = int(mutagen.File(src).info.length * 1000)
+    dur_ms = int(tag_reader.read_tags(Path(src)).duration_s * 1000)
     _seed_track(app, "dup01", src, duration_ms=dur_ms)
 
     r = client.post(

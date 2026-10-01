@@ -1778,12 +1778,6 @@ wheels = [
 ]
 
 [[packages]]
-name = "mutagen"
-version = "1.48.1"
-sdist = { url = "https://files.pythonhosted.org/packages/df/70/1675da133ea92227da41bf5b24e1c66be597ff736a1533ade41da986852f/mutagen-1.48.1.tar.gz", upload-time = 2026-06-25T09:47:32Z, size = 1276978, hashes = { sha256 = "8f95637ab9f6f305cec6bd1294e197debe207998e3e068596563c74f86b0a173" } }
-wheels = [{ url = "https://files.pythonhosted.org/packages/47/d8/a29e4e3991765e7ce4ed1f7e4074fe1ba9da03e0048639734de60f9cadb9/mutagen-1.48.1-py3-none-any.whl", upload-time = 2026-06-25T09:47:30Z, size = 195706, hashes = { sha256 = "4f077fe87d3fc7fba259aa63d8c026b18382ca6a42ef37c61e16f1b1b5b82fe7" } }]
-
-[[packages]]
 name = "mypy"
 version = "2.3.1"
 sdist = { url = "https://files.pythonhosted.org/packages/82/6a/878cc1097d4035f82bd516658d0c528d2a9955bc7b363afcbd0b07fea11b/mypy-2.3.1.tar.gz", upload-time = 2026-08-15T03:03:38Z, size = 3992554, hashes = { sha256 = "47c1b1207258513a9d93495f69c8be9de73916186f0e52703e8c461b7a623419" } }
@@ -3349,6 +3343,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/00/dc/6c58154c1c65f758e
 wheels = [{ url = "https://files.pythonhosted.org/packages/43/3f/f88a53f60a472b46f4023f56d204dd7de33d34c5d2acbfa0d70a674e639e/threadpoolctl-3.7.0-py3-none-any.whl", upload-time = 2026-09-15T15:46:19Z, size = 26362, hashes = { sha256 = "cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be" } }]
 
 [[packages]]
+name = "tinytag"
+version = "2.3.2"
+sdist = { url = "https://files.pythonhosted.org/packages/38/0f/fae085b7f19fe0c67b68e6d70098ac6cd046cc498f253f5ee56a3dd03bbc/tinytag-2.3.2.tar.gz", upload-time = 2026-09-07T17:46:08Z, size = 47353, hashes = { sha256 = "021d711cdbdbf840d3b67b976cb34dadc58d2fcfd490eb74ef9602b37b991414" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/6b/54/d378858d14e5c5c7b921cb9ffccf27be3d34f3d6d010c57404ddd634685d/tinytag-2.3.2-py3-none-any.whl", upload-time = 2026-09-07T17:46:07Z, size = 37171, hashes = { sha256 = "ebaf957915266b9c20414a10f8c5170a345aa039a794650d39d66e7d6b96199f" } }]
+
+[[packages]]
 name = "toml"
 version = "0.10.2"
 sdist = { url = "https://files.pythonhosted.org/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", upload-time = 2020-11-01T01:40:22Z, size = 22253, hashes = { sha256 = "b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f" } }
@@ -3840,4 +3840,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "b9c3151a04e630c34fe1f2e76e80f3b440c4fbf09b2bd3e65b01185aad68fb46"
+source-sha256 = "e7bc92d15a57a4a41a7be8a563e96c8e8195373888c57a4a4cf628520139893c"

@@ -25,7 +25,6 @@ Each test is tagged ``@pytest.mark.requirement('OPEN-03c')`` and
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 from typing import Any
@@ -316,10 +315,6 @@ def test_round_trip(fixture_id: str, adapter_name: str, tmp_path) -> None:
     adapter = _load_adapter(adapter_name, audio_root=audio_root)
     if adapter is None:
         pytest.skip(f"adapter {adapter_name!r} not available in Phase 16 scope")
-    if adapter_name == "serato" and importlib.util.find_spec("mutagen") is None:
-        # Serato GEOB cue/beatgrid fidelity needs the tags extra; without it
-        # the round-trip silently drops cue data and the byte compare fails.
-        pytest.skip("serato round-trip needs the tags extra (mutagen)")
 
     expected_doc = json.loads((root / "expected.opendj.json").read_text(encoding="utf-8"))
     caps = _load_yaml(root / "capabilities.yaml")

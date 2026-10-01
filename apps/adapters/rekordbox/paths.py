@@ -34,7 +34,6 @@ from apps.cloud import policy as cloud_policy
 from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.eviction import HydrationError
 from apps.shared import audio_quality, fs_residency, platform_paths
-from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.platform_paths import MappedPath
 from apps.shared.state import locations as track_locations
 from apps.shared.state import sync_stamp
@@ -282,15 +281,11 @@ def local_artwork(stable_id: str) -> tuple[bytes, str]:
     generated or placeholder image, and never resized (there is no
     pre-rendered s/m variant for embedded art, unlike the rekordbox path).
 
-    ``mutagen`` is an opt-in ``[tags]`` extra (GPL vs this wheel's Apache
-    license, see ``apps.shared._mutagen``), so a build that omits it cannot
-    tell a track with no embedded picture apart from one it never checked.
-    Collapsing that into ``ARTWORK_NOT_FOUND`` would be a guessed verdict, so
-    a track with a real, resolvable file but no reader raises 503
-    ``ARTWORK_READER_UNAVAILABLE`` instead -- loud and distinct from "checked,
-    no art". Residency is checked FIRST: a stale path, a missing file, or a
-    streaming URI has no file to read regardless of whether a reader exists,
-    so those still 404 ``ARTWORK_NOT_FOUND`` even when mutagen is absent.
+    The tag reader (tinytag, a core dependency: see
+    ``apps.shared.tag_reader``) ships in every build, so a resolvable file
+    always gets a real answer: its picture, or 404 ``ARTWORK_NOT_FOUND``.
+    Residency is checked FIRST: a stale path, a missing file, or a streaming
+    URI has no file to read.
     """
     file_path, _duration_ms = local_track_row(stable_id)
     resolved = _resolve_local_audio_path(stable_id)
@@ -299,12 +294,6 @@ def local_artwork(stable_id: str) -> tuple[bytes, str]:
             "ARTWORK_NOT_FOUND",
             f"track {stable_id} has no resolvable local file "
             f"(file_path={file_path!r})",
-        )
-    if not HAS_MUTAGEN:
-        raise unavailable(
-            "ARTWORK_READER_UNAVAILABLE",
-            f"track {stable_id} has a resolvable local file but the optional "
-            "'mutagen' tag reader is not installed (pip install music-dj-tools[tags])",
         )
     from apps.shared import audio_files as _audio_files
 
@@ -318,26 +307,21 @@ def local_artwork(stable_id: str) -> tuple[bytes, str]:
     return embedded
 
 
-def local_artwork_available(stable_id: str) -> bool | None:
-    """Tri-state local-track counterpart of ``artwork_available`` for a
-    rekordbox-mapped row (see ``rb_assets.py``'s ``_local_rb_meta``, which
-    already holds ``file_path`` for other fields).
+def local_artwork_available(stable_id: str) -> bool:
+    """Local-track counterpart of ``artwork_available`` for a rekordbox-mapped
+    row (see ``rb_assets.py``'s ``_local_rb_meta``, which already holds
+    ``file_path`` for other fields).
 
-    Mirrors :func:`local_artwork`'s own split instead of collapsing it:
-    residency is checked FIRST, so an unresolvable/missing/streaming
-    ``file_path`` is a real ``False`` -- no file to read regardless of
-    whether a reader exists. Only once a file is confirmed present does a
-    missing ``mutagen`` reader become ``None`` ("could not check") rather
-    than a guessed ``False``. Collapsing that ``None`` into ``False`` is
-    exactly the guessed verdict :func:`local_artwork` refuses to give for
-    its own 503 -- this sibling used to make it anyway (#795).
+    Mirrors :func:`local_artwork`: residency is checked FIRST, so an
+    unresolvable/missing/streaming ``file_path`` is ``False`` -- no file to
+    read -- and a present file answers whether it embeds a safe picture.
     """
     return _artwork_available_for_resolved(_resolve_local_audio_path(stable_id))
 
 
 def bulk_local_artwork_available(
     state: sqlite3.Connection, stable_ids: Sequence[str],
-) -> dict[str, bool | None]:
+) -> dict[str, bool]:
     """:func:`local_artwork_available` for many rows over ONE open state.db.
 
     The listing hot path (issue #3962): the per-row function opens a fresh
@@ -354,12 +338,10 @@ def bulk_local_artwork_available(
     return {sid: _artwork_available_for_resolved(resolved[sid]) for sid in stable_ids}
 
 
-def _artwork_available_for_resolved(resolved: Path | None) -> bool | None:
-    """Residency first, then reader: the tri-state both callers above share."""
+def _artwork_available_for_resolved(resolved: Path | None) -> bool:
+    """Residency first, then reader: the verdict both callers above share."""
     if resolved is None:
         return False
-    if not HAS_MUTAGEN:
-        return None
     from apps.shared import audio_files as _audio_files
 
     return _audio_files.embedded_artwork_available(resolved)

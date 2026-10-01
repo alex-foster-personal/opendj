@@ -14,8 +14,12 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
          insert with reason ``empty file``
     [if] a wav has no PCM frames or truncates on read [then ⛔️] reject
     [if] container magic does not match the extension [then ⛔️] reject
-    [if] mutagen is installed and claims absurd duration or bitrate [then ⛔️]
+    [if] the tag reader states an absurd duration or bitrate [then ⛔️]
          reject
+    [if] the tag reader cannot parse a file whose magic checks passed
+         [then] it is NOT rejected: the decoder, not the tag reader, is the
+         authority on playability, and a library must never lose a track to a
+         metadata parser's blind spot
 
   -> full decode, ffmpeg, librosa, or soundfile. Header + one frame only.
   -> rekordbox adapter ingest (follow-up).
@@ -26,8 +30,7 @@ from __future__ import annotations
 import wave
 from pathlib import Path
 
-from apps.shared._mutagen import HAS_MUTAGEN
-from apps.shared import paths
+from apps.shared import paths, tag_reader
 
 __all__ = ["UnplayableAudioError", "probe_playable_audio"]
 
@@ -66,8 +69,7 @@ def probe_playable_audio(path: Path) -> None:
     elif ext in {".aiff", ".aif"}:
         _probe_aiff_header(header, size_bytes)
 
-    if HAS_MUTAGEN:
-        _probe_mutagen(path, size_bytes)
+    _probe_stated_duration(path, size_bytes)
 
 
 # ----- header helpers -------------------------------------------------------
@@ -185,21 +187,12 @@ def _check_duration_size(duration_s: float, size_bytes: int) -> None:
             )
 
 
-# ----- mutagen cross-check --------------------------------------------------
-def _probe_mutagen(path: Path, size_bytes: int) -> None:
-    import mutagen  # type: ignore  # guarded by HAS_MUTAGEN
-
+# ----- tag-reader cross-check ---------------------------------------------
+def _probe_stated_duration(path: Path, size_bytes: int) -> None:
+    """Reject only on POSITIVE evidence: a stated length the bytes cannot hold."""
     try:
-        tagged = mutagen.File(str(path))
-    except Exception as exc:
-        raise UnplayableAudioError(f"mutagen parse failed: {exc}") from exc
-
-    if tagged is None:
-        raise UnplayableAudioError("mutagen could not identify format")
-
-    info = getattr(tagged, "info", None)
-    length = getattr(info, "length", None) if info is not None else None
-    if length is None or length <= 0:
-        raise UnplayableAudioError("missing or zero duration")
-
-    _check_duration_size(float(length), size_bytes)
+        duration_s = tag_reader.read_tags(path).duration_s
+    except tag_reader.TagReadError:
+        return
+    if duration_s is not None:
+        _check_duration_size(duration_s, size_bytes)

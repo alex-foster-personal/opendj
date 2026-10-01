@@ -1,7 +1,7 @@
 """ID3v2.4 COMM watermark writer (pure stdlib).
 
 Plan 12-01 Step 6 (Open Question 1: picked stdlib path to avoid a new
-dep; eyed3 is LGPL but mutagen is GPL-2 -- stdlib is the safest).
+dep; eyed3 is GPL-3 and mutagen GPL-2 -- stdlib is the safest).
 
 Writes a minimal ID3v2.4 tag with a single COMM frame tagged
 ``eng:legal``. The tag is prepended to an existing MP3 file

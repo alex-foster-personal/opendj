@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import shutil
 import wave
@@ -19,6 +18,7 @@ from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.cloudsync.conftest import InMemoryAssetS3
+from tests.fixtures import tagged_audio as ta
 
 
 @pytest.fixture
@@ -176,7 +176,6 @@ def test_track_out_lyrics_available_for_asr_cache(
     assert response.json()["lyrics_available"] is True
 
 
-@pytest.mark.requires_mutagen
 def test_track_out_artwork_available_false_for_audio_without_picture(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
@@ -392,26 +391,18 @@ def _listing_row_artwork(
     raise AssertionError(f"stable_id {stable_id} missing from listing")
 
 
-@pytest.mark.requires_mutagen
 @pytest.mark.requirement("PARITY-04")
 def test_track_detail_artwork_available_agrees_with_listing_unmapped(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
     """[if] unmapped embedded art [then] list and detail agree on artwork_available, [else stop]."""
-    from mutagen.id3 import APIC
-    from mutagen.mp3 import MP3
-
     fixture = (
         Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
     )
     jpeg_bytes = _minimal_jpeg_bytes()
     audio_path = tmp_path / "embedded-art.mp3"
     shutil.copy2(fixture, audio_path)
-    audio = MP3(audio_path)
-    audio.tags.add(
-        APIC(encoding=3, mime="image/jpeg", type=3, desc="cover", data=jpeg_bytes)
-    )
-    audio.save()
+    ta.add_apic(audio_path, jpeg_bytes, mime="image/jpeg")
 
     stable_id = "c" * 40
     state_dir = tmp_path / "state"
@@ -443,12 +434,10 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped(
 
 
 @pytest.mark.requirement("PARITY-04")
-def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_mutagen(
+def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_art(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
-    """[if] no mutagen reader [then] list and detail agree artwork None, [else stop]."""
-    if importlib.util.find_spec("mutagen") is not None:
-        pytest.skip("mutagen installed; None tri-state runs only without the reader")
+    """[if] an unmapped file embeds no art [then] list and detail both say False, [else stop]."""
 
     wav_path = tmp_path / "local.wav"
     _write_wav(wav_path)
@@ -476,6 +465,6 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_mut
     assert detail_resp.status_code == 200
     detail_art = detail_resp.json()["artwork_available"]
 
-    assert listing_art is None
-    assert detail_art is None
+    assert listing_art is False
+    assert detail_art is False
     assert listing_art == detail_art

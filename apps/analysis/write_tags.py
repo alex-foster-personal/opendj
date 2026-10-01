@@ -1,11 +1,15 @@
 """Write analyser-derived tags back into audio files (META-01 write-back).
 
-Containers (via mutagen):
+Containers (in-house writers, Apache-2.0; see
+``docs/decisions/ADR-NEW-permissive-audio-tag-io.md``):
 
-* MP3 (ID3v2.4): TBPM, TKEY, TXXX:OPENDJ_ENERGY/_SOURCE/_BACKEND_VERSION.
-* MP4 / M4A:     tmpo, ----:com.apple.iTunes:initialkey, and the OPENDJ_*
-                 iTunes free-form atoms.
-* FLAC / OGG:    BPM, INITIALKEY, OPENDJ_* Vorbis comments.
+* MP3 (ID3v2):   TBPM, TKEY, TXXX:OPENDJ_ENERGY/_SOURCE/_BACKEND_VERSION
+                 via :mod:`apps.shared.id3v2`.
+* FLAC:          BPM, INITIALKEY, OPENDJ_* Vorbis comments via
+                 :mod:`apps.shared.flac_meta`.
+* MP4 / M4A, OGG: read (tinytag) but NOT written -- the planner skips them
+                 by name. Their writer was the GPL mutagen, removed for
+                 licensing.
 
 Safety rails (mirror :mod:`apps.reconcile.apply` / ``remove_track``):
 
@@ -14,7 +18,8 @@ Safety rails (mirror :mod:`apps.reconcile.apply` / ``remove_track``):
 3. ``pgrep -if rekordbox|djay`` warn rail (warn-only; writes proceed).
 4. Timestamped JSON backup of each file's tag block pre-write.
 5. Post-write verify: re-open and assert round-trip.
-6. Reversal script at ``data/analysis/reversal/<sid>-<ts>.py``.
+6. Reversal script at ``data/analysis/reversal/<sid>-<ts>.py`` (stdlib only:
+   copies the byte-exact pre-write snapshot back over the file).
 7. Cautious cap: ``MAX_LIVE_TRACKS = 3``.
 
 Dry-run default: writes nothing, prints a diff table.
@@ -32,11 +37,11 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from rich.console import Console
 from rich.table import Table
 
+from apps.shared import flac_meta, id3v2, tag_reader
 from apps.shared.paths import DATA_DIR
 
 from .backends import DEFAULT_BACKEND
@@ -57,6 +62,8 @@ REVERSAL_ROOT: Path = DATA_DIR / "analysis" / "reversal"
 FILE_BACKUP_ROOT: Path = DATA_DIR / "analysis" / "tag-file-backups"
 
 OPENDJ_NAMESPACE = "OPENDJ"
+_OPENDJ_SUFFIXES = ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION")
+WRITABLE_KINDS: frozenset[str] = frozenset({"mp3", "flac"})
 
 
 @dataclass
@@ -95,160 +102,99 @@ def _container_kind(path: Path) -> str:
 
 
 def _read_current_tags(path: Path) -> dict[str, str]:
-    from apps.shared._mutagen import require as _require_mutagen
-
-    _require_mutagen()
     kind = _container_kind(path)
     if kind == "mp3":
         return _read_mp3(path)
-    if kind == "mp4":
-        return _read_mp4(path)
     if kind == "flac":
         return _read_flac(path)
-    if kind == "ogg":
-        return _read_ogg(path)
+    if kind in ("mp4", "ogg"):
+        return _read_via_tag_reader(path)
     raise AssertionError(kind)  # pragma: no cover
 
 
 def _write_tags(path: Path, new: dict[str, str]) -> None:
-    from apps.shared._mutagen import require as _require_mutagen
-
-    _require_mutagen()
     kind = _container_kind(path)
     if kind == "mp3":
         _write_mp3(path, new)
-    elif kind == "mp4":
-        _write_mp4(path, new)
     elif kind == "flac":
         _write_flac(path, new)
-    elif kind == "ogg":
-        _write_ogg(path, new)
+    elif kind in ("mp4", "ogg"):
+        raise ValueError(
+            f"tag write-back to {path.suffix!r} is not supported (MP4 / Ogg "
+            "writes needed the GPL mutagen, removed for licensing); MP3 and "
+            "FLAC are"
+        )
     else:  # pragma: no cover
         raise AssertionError(kind)
+
+
+def _opendj_keys() -> tuple[str, ...]:
+    return tuple(f"{OPENDJ_NAMESPACE}_{suffix}" for suffix in _OPENDJ_SUFFIXES)
 
 
 # --- MP3 -----------------------------------------------------------------
 
 def _read_mp3(path: Path) -> dict[str, str]:
-    from mutagen.id3 import ID3, ID3NoHeaderError
-    try:
-        id3 = ID3(str(path))
-    except ID3NoHeaderError:
+    tag = id3v2.read_tag(path)
+    if tag is None:
         return {}
     out: dict[str, str] = {}
-    if "TBPM" in id3:
-        out["BPM"] = str(id3["TBPM"].text[0])
-    if "TKEY" in id3:
-        out["INITIALKEY"] = str(id3["TKEY"].text[0])
-    for frame in id3.getall("TXXX"):
-        if frame.desc.startswith(OPENDJ_NAMESPACE + "_"):
-            out[frame.desc] = str(frame.text[0])
+    for frame_id, name in (("TBPM", "BPM"), ("TKEY", "INITIALKEY")):
+        value = tag.first_text(frame_id)
+        if value is not None:
+            out[name] = value
+    for key in _opendj_keys():
+        value = tag.txxx(key)
+        if value is not None:
+            out[key] = value
     return out
 
 
 def _write_mp3(path: Path, new: dict[str, str]) -> None:
-    from mutagen.id3 import ID3, TBPM, TKEY, TXXX, ID3NoHeaderError
-    try:
-        id3 = ID3(str(path))
-    except ID3NoHeaderError:
-        id3 = ID3()
-    id3.add(TBPM(encoding=3, text=[new["BPM"]]))
-    id3.add(TKEY(encoding=3, text=[new["INITIALKEY"]]))
-    for suffix in ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION"):
-        desc = f"{OPENDJ_NAMESPACE}_{suffix}"
-        id3.delall(f"TXXX:{desc}")
-        id3.add(TXXX(encoding=3, desc=desc, text=[new[desc]]))
-    id3.save(str(path), v2_version=4)
+    tag = id3v2.load_or_new(path, new_version=4)
+    tag.set_text("TBPM", new["BPM"])
+    tag.set_text("TKEY", new["INITIALKEY"])
+    for key in _opendj_keys():
+        tag.set_txxx(key, new[key])
+    id3v2.save(path, tag)
 
 
-# --- MP4 -----------------------------------------------------------------
+# --- FLAC ----------------------------------------------------------------
 
-def _read_mp4(path: Path) -> dict[str, str]:
-    from mutagen.mp4 import MP4
-    mp4 = MP4(str(path))
-    out: dict[str, str] = {}
-    if "tmpo" in mp4:
-        vals = mp4["tmpo"]
-        if vals:
-            out["BPM"] = str(int(vals[0]))
-    key_atom = "----:com.apple.iTunes:initialkey"
-    if key_atom in mp4:
-        vals = mp4[key_atom]
-        if vals:
-            out["INITIALKEY"] = _mp4_ff_str(vals[0])
-    for suffix in ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION"):
-        atom = f"----:com.apple.iTunes:{OPENDJ_NAMESPACE}_{suffix}"
-        if atom in mp4:
-            vals = mp4[atom]
-            if vals:
-                out[f"{OPENDJ_NAMESPACE}_{suffix}"] = _mp4_ff_str(vals[0])
-    return out
-
-
-def _write_mp4(path: Path, new: dict[str, str]) -> None:
-    from mutagen.mp4 import MP4, MP4FreeForm
-    mp4 = MP4(str(path))
-    mp4["tmpo"] = [round(float(new["BPM"]))]
-    mp4["----:com.apple.iTunes:initialkey"] = [
-        MP4FreeForm(new["INITIALKEY"].encode("utf-8"), dataformat=1)
-    ]
-    for suffix in ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION"):
-        key = f"{OPENDJ_NAMESPACE}_{suffix}"
-        atom = f"----:com.apple.iTunes:{key}"
-        mp4[atom] = [MP4FreeForm(new[key].encode("utf-8"), dataformat=1)]
-    mp4.save()
-
-
-def _mp4_ff_str(val: Any) -> str:
-    if isinstance(val, bytes):
-        return val.decode("utf-8", errors="replace")
-    return str(val)
-
-
-# --- FLAC / OGG ---------------------------------------------------------
-
-_VORBIS_FIELDS = (
-    "BPM", "INITIALKEY",
-    f"{OPENDJ_NAMESPACE}_ENERGY",
-    f"{OPENDJ_NAMESPACE}_ENERGY_SOURCE",
-    f"{OPENDJ_NAMESPACE}_BACKEND_VERSION",
-)
+_VORBIS_FIELDS = ("BPM", "INITIALKEY", *_opendj_keys())
 
 
 def _read_flac(path: Path) -> dict[str, str]:
-    from mutagen.flac import FLAC
-    flac = FLAC(str(path))
+    meta = flac_meta.read(path)
     out: dict[str, str] = {}
-    for k in _VORBIS_FIELDS:
-        if k in flac and flac[k]:
-            out[k] = str(flac[k][0])
+    for key in _VORBIS_FIELDS:
+        value = meta.first(key)
+        if value is not None:
+            out[key] = value
     return out
 
 
 def _write_flac(path: Path, new: dict[str, str]) -> None:
-    from mutagen.flac import FLAC
-    flac = FLAC(str(path))
-    for k, v in new.items():
-        flac[k] = [v]
-    flac.save()
+    meta = flac_meta.read(path)
+    for key, value in new.items():
+        meta.set(key, value)
+    flac_meta.save(path, meta)
 
 
-def _read_ogg(path: Path) -> dict[str, str]:
-    from mutagen.oggvorbis import OggVorbis
-    ogg = OggVorbis(str(path))
+# --- MP4 / OGG (read only) -----------------------------------------------
+
+def _read_via_tag_reader(path: Path) -> dict[str, str]:
+    tags = tag_reader.read_tags(path)
     out: dict[str, str] = {}
-    for k in _VORBIS_FIELDS:
-        if k in ogg and ogg[k]:
-            out[k] = str(ogg[k][0])
+    if tags.bpm is not None:
+        out["BPM"] = f"{tags.bpm:g}"
+    if tags.key is not None:
+        out["INITIALKEY"] = tags.key
+    for key in _opendj_keys():
+        value = tags.first_other(key)
+        if value is not None:
+            out[key] = value
     return out
-
-
-def _write_ogg(path: Path, new: dict[str, str]) -> None:
-    from mutagen.oggvorbis import OggVorbis
-    ogg = OggVorbis(str(path))
-    for k, v in new.items():
-        ogg[k] = [v]
-    ogg.save()
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +214,12 @@ def plan_deltas(
             log.warning("no file mapping (or missing file) for %s", rec.stable_id)
             continue
         try:
+            kind = _container_kind(path)
+            if kind not in WRITABLE_KINDS:
+                raise ValueError(
+                    f"tag write-back to {path.suffix!r} is not supported "
+                    "(MP3 and FLAC are); skipped"
+                )
             old = _read_current_tags(path)
         except ValueError as exc:
             log.warning("%s -- %s", path.name, exc)
@@ -345,9 +297,9 @@ def _snapshot_file(delta: TagDelta, ts: str) -> Path:
 def _atomic_write_tags(path: Path, new: dict[str, str]) -> None:
     """Write tags via tmp copy + fsync + os.replace for crash atomicity.
 
-    Mutagen writes in-place; if the process dies mid-write the file is left
-    in an inconsistent partial state. We instead copy the original to a
-    sibling tmp file, mutate that copy, fsync it, then atomically
+    The writers rewrite the file they are given; working on a sibling tmp
+    copy means a crash mid-write can never touch the original. We copy the
+    original to a sibling tmp file, mutate that copy, fsync it, then atomically
     ``os.replace`` over the original. On failure the tmp is removed and
     the original is untouched. (META-02 / P06-F01.)
     """
@@ -426,113 +378,40 @@ def _write_backup(delta: TagDelta, ts: str) -> Path:
     return bp
 
 
-def _write_reversal_script(delta: TagDelta, ts: str, backup: Path) -> Path:
+def _write_reversal_script(delta: TagDelta, ts: str, snapshot: Path) -> Path:
     # P06-F02: the reversal script must be runnable in disaster-recovery
-    # scenarios where the music-dj-tools checkout is absent or broken.
-    # Inline the tag-write logic (mutagen only) so the file has no
-    # project-internal imports.
+    # scenarios where the music-dj-tools checkout is absent or broken, so it
+    # is stdlib only. It restores the byte-exact pre-write snapshot taken by
+    # ``_snapshot_file`` -- stronger than re-writing the old tag values, and
+    # it needs no tag library at all.
     rp = reversal_path(delta.stable_id, ts)
-    ns = OPENDJ_NAMESPACE
     script = f'''#!/usr/bin/env python3
 """Standalone reversal script generated by apps.analysis.write_tags @ {ts}.
 
-Restores the pre-write tag block for {delta.path.as_posix()}. Depends only on the
-system Python interpreter and ``mutagen`` (``pip install mutagen``). It
-intentionally avoids importing anything from music-dj-tools so that it is
-runnable during DR scenarios where the checkout is unavailable.
+Restores {delta.path.as_posix()} byte-for-byte from the snapshot taken before
+the tag write. Standard library only.
 """
 from __future__ import annotations
 
-import json
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
-OPENDJ_NAMESPACE = {ns!r}
-BACKUP = Path({str(backup)!r})
-AUDIO  = Path({str(delta.path)!r})
-
-_VORBIS_FIELDS = (
-    "BPM", "INITIALKEY",
-    f"{{OPENDJ_NAMESPACE}}_ENERGY",
-    f"{{OPENDJ_NAMESPACE}}_ENERGY_SOURCE",
-    f"{{OPENDJ_NAMESPACE}}_BACKEND_VERSION",
-)
-
-
-def _container_kind(path: Path) -> str:
-    suf = path.suffix.lower()
-    if suf == ".mp3":
-        return "mp3"
-    if suf in (".m4a", ".mp4", ".aac"):
-        return "mp4"
-    if suf == ".flac":
-        return "flac"
-    if suf == ".ogg":
-        return "ogg"
-    raise SystemExit(f"unsupported container: {{path}}")
-
-
-def _write_mp3(path: Path, new: dict) -> None:
-    from mutagen.id3 import ID3, TBPM, TKEY, TXXX, ID3NoHeaderError
-    try:
-        id3 = ID3(str(path))
-    except ID3NoHeaderError:
-        id3 = ID3()
-    id3.add(TBPM(encoding=3, text=[new["BPM"]]))
-    id3.add(TKEY(encoding=3, text=[new["INITIALKEY"]]))
-    for suffix in ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION"):
-        desc = f"{{OPENDJ_NAMESPACE}}_{{suffix}}"
-        id3.delall(f"TXXX:{{desc}}")
-        id3.add(TXXX(encoding=3, desc=desc, text=[new[desc]]))
-    id3.save(str(path), v2_version=4)
-
-
-def _write_mp4(path: Path, new: dict) -> None:
-    from mutagen.mp4 import MP4, MP4FreeForm
-    mp4 = MP4(str(path))
-    mp4["tmpo"] = [int(round(float(new["BPM"])))]
-    mp4["----:com.apple.iTunes:initialkey"] = [
-        MP4FreeForm(new["INITIALKEY"].encode("utf-8"), dataformat=1)
-    ]
-    for suffix in ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION"):
-        key = f"{{OPENDJ_NAMESPACE}}_{{suffix}}"
-        atom = f"----:com.apple.iTunes:{{key}}"
-        mp4[atom] = [MP4FreeForm(new[key].encode("utf-8"), dataformat=1)]
-    mp4.save()
-
-
-def _write_vorbis(path: Path, new: dict, kind: str) -> None:
-    if kind == "flac":
-        from mutagen.flac import FLAC as _C
-    else:
-        from mutagen.oggvorbis import OggVorbis as _C
-    c = _C(str(path))
-    for k, v in new.items():
-        c[k] = [v]
-    c.save()
+SNAPSHOT = Path({str(snapshot)!r})
+AUDIO = Path({str(delta.path)!r})
 
 
 def main() -> int:
-    data = json.loads(BACKUP.read_text(encoding="utf-8"))
-    old = data["old"]
-    template = {{
-        "BPM": old.get("BPM", "0"),
-        "INITIALKEY": old.get("INITIALKEY", ""),
-        f"{{OPENDJ_NAMESPACE}}_ENERGY":
-            old.get(f"{{OPENDJ_NAMESPACE}}_ENERGY", ""),
-        f"{{OPENDJ_NAMESPACE}}_ENERGY_SOURCE":
-            old.get(f"{{OPENDJ_NAMESPACE}}_ENERGY_SOURCE", ""),
-        f"{{OPENDJ_NAMESPACE}}_BACKEND_VERSION":
-            old.get(f"{{OPENDJ_NAMESPACE}}_BACKEND_VERSION", ""),
-    }}
-    kind = _container_kind(AUDIO)
-    if kind == "mp3":
-        _write_mp3(AUDIO, template)
-    elif kind == "mp4":
-        _write_mp4(AUDIO, template)
-    else:
-        _write_vorbis(AUDIO, template, kind)
-    print(f"Restored tag block on {{AUDIO}}")
+    if not SNAPSHOT.is_file():
+        print(f"snapshot missing: {{SNAPSHOT}}", file=sys.stderr)
+        return 1
+    fd, tmp = tempfile.mkstemp(prefix=f".{{AUDIO.name}}.restore-", dir=str(AUDIO.parent))
+    os.close(fd)
+    shutil.copy2(SNAPSHOT, tmp)
+    os.replace(tmp, AUDIO)
+    print(f"Restored {{AUDIO}} from {{SNAPSHOT}}")
     return 0
 
 
@@ -639,7 +518,7 @@ def apply_writes(
                         raise RuntimeError(f"BPM roundtrip drift: {got} != {v}")
                 elif str(got) != str(v):
                     raise RuntimeError(f"tag roundtrip: {k}={got!r} != {v!r}")
-            rev = _write_reversal_script(d, ts, backup)
+            rev = _write_reversal_script(d, ts, snapshot)
             summary.reversal_scripts.append(rev)
             summary.written += 1
         except Exception as exc:

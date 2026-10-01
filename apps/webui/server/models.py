@@ -93,9 +93,10 @@ class TrackOut(BaseModel):
     lyrics_available: bool
     auto_cues_available: bool
     stems_available: bool
-    # Same tri-state as RbMetaOut / listing: True = GET /artwork would 200,
-    # False = would 404 ARTWORK_NOT_FOUND, None = would 503
-    # ARTWORK_READER_UNAVAILABLE. Deck-load GET /tracks/{sid} carries this so
+    # Same field as RbMetaOut / listing: True = GET /artwork would 200,
+    # False = would 404 ARTWORK_NOT_FOUND. None is kept in the type for wire
+    # compatibility only: since the tag reader became a core dependency no
+    # build answers it. Deck-load GET /tracks/{sid} carries this so
     # the browser can skip the img GET (same job as has_rb_mapping /
     # lyrics_available).
     artwork_available: bool | None
@@ -207,7 +208,7 @@ class TrackListItemOut(TrackOut):
     is_remix: bool = False
     is_radio_edit: bool = False
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
-    # the cell is empty (missing tags extra vs no file tag vs no rekordbox genre).
+    # the cell is empty (no file tag vs no rekordbox genre).
     genre: str | None = None
     genre_reason: str | None = None
 

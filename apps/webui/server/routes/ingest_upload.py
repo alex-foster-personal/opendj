@@ -10,8 +10,8 @@ Requirements (mini-PRD):
   ✔︎ ✅ POST upload: stage real bytes + duration & fingerprint dup check.
     [if] the file is not audio or the batch name is invalid [then ⛔️] 422
     [if] the upload is empty [then ⛔️] 422, temp file removed
-    [if] mutagen ([tags] extra) is not installed [then ⛔️] 503
-    TAG_READER_UNAVAILABLE before any bytes are staged
+    [if] the tag reader cannot parse the staged file [then] duration_s is
+    None and no duration-based duplicate check runs (reported, not guessed)
     [if] fingerprint >= threshold match exists and force is not set
     [then] file skipped with duplicate_of reported
     [if] the destination filename already exists in the batch [then ⛔️] 409,
@@ -19,6 +19,7 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 from typing import Annotated, Literal
@@ -26,15 +27,12 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.fingerprints import ChromaprintMissing, compare, compute
 from apps.shared.paths import AUDIO_EXTENSIONS
+from apps.shared.tag_reader import TagReadError, read_tags
 from apps.webui.server.routes import ingest as ingest_cfg
 
-_TAG_READER_UNAVAILABLE_MESSAGE = (
-    "ingest upload requires the optional 'mutagen' tag reader for "
-    "duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
-)
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -63,26 +61,13 @@ class DecideIn(BaseModel):
     action: Literal["accept", "reject"]
 
 
-def _raise_tag_reader_unavailable() -> None:
-    raise HTTPException(
-        status_code=503,
-        detail={
-            "code": "TAG_READER_UNAVAILABLE",
-            "message": _TAG_READER_UNAVAILABLE_MESSAGE,
-        },
-    )
-
-
 def _duration_s(path: Path) -> float | None:
-    from apps.shared._mutagen import require as require_mutagen
-
-    require_mutagen()
-    import mutagen
-
-    mf = mutagen.File(path)
-    if mf is None or mf.info is None:
+    """The staged file's stated length, or None when its tags cannot be parsed."""
+    try:
+        return read_tags(path).duration_s
+    except TagReadError as exc:
+        log.warning("ingest upload: no duration for duplicate check: %s", exc)
         return None
-    return float(mf.info.length)
 
 
 def _dup_candidates(duration_s: float) -> list[tuple[str, str, str, str]]:
@@ -167,8 +152,6 @@ def _stage_one_upload(
             409,
             f"{rel_name!r} is awaiting a duplicate decision in batch {batch!r}",
         )
-    if not HAS_MUTAGEN:
-        _raise_tag_reader_unavailable()
     final.parent.mkdir(parents=True, exist_ok=True)
     with hold.open("wb") as fh:
         shutil.copyfileobj(up.file, fh)
@@ -176,12 +159,7 @@ def _stage_one_upload(
         hold.unlink()
         raise HTTPException(422, f"empty upload: {rel_name}")
 
-    try:
-        duration = _duration_s(hold)
-    except ImportError:
-        if hold.exists():
-            hold.unlink()
-        _raise_tag_reader_unavailable()
+    duration = _duration_s(hold)
     dup, method = (None, "duration")
     if duration is not None:
         dup, method = _best_duplicate(hold, duration)
@@ -212,27 +190,7 @@ def _stage_one_upload(
     )
 
 
-@router.post(
-    "/upload",
-    response_model=UploadOut,
-    responses={
-        503: {
-            "description": (
-                "Optional mutagen tag reader ([tags] extra) is not installed."
-            ),
-            "content": {
-                "application/json": {
-                    "example": {
-                        "detail": {
-                            "code": "TAG_READER_UNAVAILABLE",
-                            "message": _TAG_READER_UNAVAILABLE_MESSAGE,
-                        }
-                    }
-                }
-            },
-        },
-    },
-)
+@router.post("/upload", response_model=UploadOut)
 async def upload(
     files: Annotated[list[UploadFile], File()],
     batch: Annotated[str, Form()],

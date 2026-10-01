@@ -7,9 +7,9 @@ for every unmapped row even when the file itself carries a real embedded
 cover. It now falls back to reading that embedded tag directly, mirroring
 the existing ``/anlz`` and ``/rb-meta`` VENDOR_MAPPING_NOT_FOUND fallbacks.
 
-A real MP3 fixture gets a REAL APIC frame written via mutagen -- never
-synthesised bytes -- so the test proves actual tag parsing, not a stub.
-Needs the optional ``tags`` extra (mutagen); skips (never fails) when absent.
+A real MP3 fixture gets a REAL APIC frame written by the in-house ID3v2
+writer and read back by tinytag -- never synthesised bytes -- so the test
+proves actual tag parsing, not a stub.
 
 Regression one-liners:
   - if /artwork 404s for an unmapped track with real embedded art then broken
@@ -21,9 +21,9 @@ Regression one-liners:
     404s and rb-meta reports it unavailable then broken
   - if a genuinely unknown stable_id stops 404ing TRACK_NOT_FOUND then broken
 
-The mutagen-less 503 ARTWORK_READER_UNAVAILABLE path lives in
-``test_rb_artwork_reader_unavailable.py``, deliberately NOT gated behind
-``requires_mutagen`` -- see that module's docstring.
+The tag reader (tinytag) is a core dependency, so there is no "reader
+unavailable" verdict any more; ``tests/shared/test_no_gpl_tag_library.py``
+proves artwork is read with mutagen made unimportable.
 """
 from __future__ import annotations
 
@@ -37,13 +37,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
+from apps.shared import id3v2
 from apps.shared.state import db as state_db
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
+from tests.fixtures import tagged_audio as ta
 from tests.fixtures.conftest import resolve_required_fixture
 
 pytestmark = [
-    pytest.mark.requires_mutagen,
     pytest.mark.requirement("CAT-05"),
     pytest.mark.rb_parity,
 ]
@@ -88,16 +89,9 @@ def jpeg_bytes() -> bytes:
 
 @pytest.fixture
 def track_with_art(tmp_path: Path, jpeg_bytes: bytes) -> Path:
-    from mutagen.id3 import APIC
-    from mutagen.mp3 import MP3
-
     dst = tmp_path / "has art.mp3"
     shutil.copy2(FIXTURE_ROOT / "src-320.mp3", dst)
-    audio = MP3(dst)
-    audio.tags.add(
-        APIC(encoding=3, mime="image/jpeg", type=3, desc="cover", data=jpeg_bytes)
-    )
-    audio.save()
+    ta.add_apic(dst, jpeg_bytes, mime="image/jpeg")
     return dst
 
 
@@ -212,21 +206,12 @@ def test_oversized_embedded_artwork_is_not_served_or_advertised(
     client: TestClient, track_with_art: Path, jpeg_bytes: bytes
 ) -> None:
     """The route and rb-meta share the embedded-artwork size ceiling."""
-    from mutagen.id3 import APIC
-    from mutagen.mp3 import MP3
-
-    audio = MP3(track_with_art)
-    audio.tags.delall("APIC")
-    audio.tags.add(
-        APIC(
-            encoding=3,
-            mime="image/jpeg",
-            type=3,
-            desc="oversized cover",
-            data=jpeg_bytes + b"\x00" * (4 * 1024 * 1024),
-        )
+    tag = id3v2.load_or_new(track_with_art)
+    tag.remove(lambda frame: frame.frame_id == "APIC")
+    id3v2.save(track_with_art, tag)
+    ta.add_apic(
+        track_with_art, jpeg_bytes + b"\x00" * (4 * 1024 * 1024), mime="image/jpeg", desc="oversized cover"
     )
-    audio.save()
 
     artwork = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork")
     assert artwork.status_code == 404
@@ -235,11 +220,3 @@ def test_oversized_embedded_artwork_is_not_served_or_advertised(
     meta = client.get(f"/api/v1/tracks/{WITH_ART_SID}/rb-meta")
     assert meta.status_code == 200, meta.text
     assert meta.json()["artwork_available"] is False
-
-
-# test_503_reader_unavailable_when_mutagen_missing moved to
-# test_rb_artwork_reader_unavailable.py: this module's pytestmark carries
-# requires_mutagen, which would make the ONE test proving the mutagen-less
-# path itself unrunnable in the one environment it exists to cover (the
-# shipped desktop payload, which omits the optional tags extra). Codex
-# caught this live on PR #773 (P1/BLOCKING).

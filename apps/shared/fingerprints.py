@@ -31,6 +31,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared.tag_reader import TagReadError, read_tags
+
 # pyacoustid import is lazy so the module can be imported even when the
 # package is missing (useful for test environments that stub it out). The
 # real ``compute`` call will raise ``ChromaprintMissing`` if fpcalc is
@@ -130,19 +132,10 @@ def compute(path: Path) -> Fingerprint:
 
 
 def _safe_bitrate(path: Path) -> int | None:
-    """Return bitrate in kbps, or ``None`` if mutagen cannot decode."""
+    """Return bitrate in kbps, or ``None`` if the tag reader cannot parse it."""
     try:
-        import mutagen  # type: ignore
-
-        f = mutagen.File(str(path))
-        if f is None or f.info is None:
-            return None
-        kbps = getattr(f.info, "bitrate", None)
-        if kbps is None:
-            return None
-        # mutagen returns bps for most formats; normalise to kbps.
-        return int(kbps // 1000) if kbps > 10_000 else int(kbps)
-    except Exception:
+        return read_tags(path).bitrate_kbps
+    except TagReadError:
         return None
 
 

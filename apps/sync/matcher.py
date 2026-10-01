@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.djay_db import DjayTrack
+from apps.shared.tag_reader import TagReadError, read_tags
 
 # NOTE: Weight sums to 1.30, not 1.00. This is deliberate and NOT a
 # probability distribution. Each signal independently contributes evidence;
@@ -192,20 +193,17 @@ def _basename_nfc(path: Path | None) -> str | None:
 
 
 def _read_id3(path: Path | None) -> tuple[str, str] | None:
-    """Return ``(title, artist)`` from ID3 tags, or ``None`` on any failure."""
+    """Return ``(title, artist)`` from the file's tags, or ``None`` if unreadable.
+
+    Unreadable means the signal does not fire; it never stops matching.
+    """
     if path is None:
         return None
     try:
-        from mutagen import File as MutagenFile
-
-        audio = MutagenFile(str(path), easy=True)
-        if audio is None:
-            return None
-        title = (audio.get("title") or [""])[0] or ""
-        artist = (audio.get("artist") or [""])[0] or ""
-        return (title, artist)
-    except Exception:
+        tags = read_tags(path)
+    except TagReadError:
         return None
+    return (tags.title or "", tags.artist or "")
 
 
 def _signal_isrc(rb: Any, dj: DjayTrack) -> Signal:

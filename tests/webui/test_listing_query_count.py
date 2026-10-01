@@ -37,6 +37,7 @@ from typing import Any
 
 import pytest
 
+from apps.shared import id3v2
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
 from tests.webui.listing_probe import run_probe
@@ -62,6 +63,17 @@ DETAIL_LARGE = f"/api/v1/playlists/{LARGE_PLAYLIST}"
 SHAPES = ("file", "location", "missing", "streaming", "pathless")
 
 
+#: A real ID3v2.3 tag holding one front-cover APIC frame (PNG magic), written
+#: by the in-house writer, so resolvable rows have artwork the reader finds.
+_ID3_WITH_COVER = id3v2.render(
+    id3v2.Id3Tag(
+        version=3,
+        frames=[id3v2.Frame("APIC", id3v2.encode_apic("image/png", 3, "", b"\x89PNG\r\n\x1a\n" + bytes(32)))],
+    ),
+    padding=0,
+)
+
+
 def _sid(i: int) -> str:
     return f"{i:040x}"
 
@@ -79,7 +91,7 @@ def _seed_library(root: Path, count: int) -> Path:
             shape = SHAPES[i % len(SHAPES)]
             real = audio_dir / f"track {i}.mp3"
             if shape in ("file", "location"):
-                real.write_bytes(b"ID3" + bytes(1024))
+                real.write_bytes(_ID3_WITH_COVER + bytes(1024))
             file_path = {
                 "file": str(real),
                 "location": str(audio_dir / f"moved away {i}.mp3"),
@@ -178,16 +190,12 @@ def test_batched_artwork_verdicts_match_the_per_row_oracle(probe) -> None:
         verdicts[expected] += 1
     for row in listing:
         assert row["artwork_available"] == oracle[row["stable_id"]][0], row["stable_id"]
-    # Control: the resolvable shapes (file, location) must reach a different
-    # verdict than the unresolvable three, or agreement proves nothing about
-    # the batching. With a tag reader the fixture's picture-less files read
-    # False, so only the no-reader build can tell them apart by verdict.
+    # Control: the resolvable shapes (file, location) carry a real embedded
+    # cover, so they must reach a different verdict than the unresolvable
+    # three, or agreement proves nothing about the batching.
     resolvable = 2 * LARGE // len(SHAPES)
-    if probe["has_mutagen"]:
-        assert verdicts == Counter({(False, "no_image_path"): LARGE}), verdicts
-    elif not probe["has_mutagen"]:
-        assert verdicts[(None, "unresolved")] == resolvable, verdicts
-        assert verdicts[(False, "no_image_path")] == LARGE - resolvable, verdicts
+    assert verdicts[(True, "ok")] == resolvable, verdicts
+    assert verdicts[(False, "no_image_path")] == LARGE - resolvable, verdicts
 
 
 def test_fixture_rows_are_really_unmapped(probe) -> None:

@@ -1687,6 +1687,7 @@ dependencies = [
     { name = "rich" },
     { name = "setproctitle" },
     { name = "sqlalchemy" },
+    { name = "tinytag" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1697,7 +1698,6 @@ ai = [
 all = [
     { name = "boto3" },
     { name = "librosa" },
-    { name = "mutagen" },
     { name = "numpy" },
     { name = "openwakeword" },
     { name = "scikit-learn" },
@@ -1738,9 +1738,6 @@ observability = [
 spotify = [
     { name = "spotipy" },
 ]
-tags = [
-    { name = "mutagen" },
-]
 vocals = [
     { name = "demucs" },
     { name = "numpy" },
@@ -1771,8 +1768,7 @@ requires-dist = [
     { name = "librosa", marker = "extra == 'analysis'", specifier = "==0.10.*" },
     { name = "mcp", specifier = ">=2.0,<3" },
     { name = "memray", marker = "sys_platform != 'win32' and extra == 'dev'", specifier = ">=1.14" },
-    { name = "music-dj-tools", extras = ["tags", "analysis", "voice", "cloud", "spotify", "ai", "observability"], marker = "extra == 'all'" },
-    { name = "mutagen", marker = "extra == 'tags'", specifier = ">=1.47,<2" },
+    { name = "music-dj-tools", extras = ["analysis", "voice", "cloud", "spotify", "ai", "observability"], marker = "extra == 'all'" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==2.3.1" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'analysis'", specifier = "<2" },
@@ -1807,21 +1803,13 @@ requires-dist = [
     { name = "soundfile", marker = "extra == 'vocals'", specifier = ">=0.12" },
     { name = "spotipy", marker = "extra == 'spotify'", specifier = ">=2.23.0" },
     { name = "sqlalchemy", specifier = ">=2.0,<2.1" },
+    { name = "tinytag", specifier = ">=2.3.2,<3" },
     { name = "torch", marker = "extra == 'vocals'", specifier = "==2.13.0" },
     { name = "torchaudio", marker = "extra == 'vocals'", specifier = "==2.11.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "webrtcvad", marker = "extra == 'voice'", specifier = ">=2.0.10" },
 ]
-provides-extras = ["tags", "analysis", "voice", "cloud", "spotify", "ai", "vocals", "dev", "observability", "all"]
-
-[[package]]
-name = "mutagen"
-version = "1.47.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/81/e6/64bc71b74eef4b68e61eb921dcf72dabd9e4ec4af1e11891bbd312ccbb77/mutagen-1.47.0.tar.gz", hash = "sha256:719fadef0a978c31b4cf3c956261b3c58b6948b32023078a2117b1de09f0fc99", size = 1274186, upload-time = "2023-09-03T16:33:33.411Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/7a/620f945b96be1f6ee357d211d5bf74ab1b7fe72a9f1525aafbfe3aee6875/mutagen-1.47.0-py3-none-any.whl", hash = "sha256:edd96f50c5907a9539d8e5bba7245f62c9f520aef333d13392a79a4f70aca719", size = 194391, upload-time = "2023-09-03T16:33:29.955Z" },
-]
+provides-extras = ["analysis", "voice", "cloud", "spotify", "ai", "vocals", "dev", "observability", "all"]
 
 [[package]]
 name = "mypy"
@@ -3800,6 +3788,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b7/4d/08c89e34946fce2aec4fbb45c9016efd5f4d7f24af8e5d93296e935631d8/threadpoolctl-3.6.0.tar.gz", hash = "sha256:8ab8b4aa3491d812b623328249fab5302a68d2d71745c8a4c719a2fcaba9f44e", size = 21274, upload-time = "2025-03-13T13:49:23.031Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl", hash = "sha256:43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb", size = 18638, upload-time = "2025-03-13T13:49:21.846Z" },
+]
+
+[[package]]
+name = "tinytag"
+version = "2.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/0f/fae085b7f19fe0c67b68e6d70098ac6cd046cc498f253f5ee56a3dd03bbc/tinytag-2.3.2.tar.gz", hash = "sha256:021d711cdbdbf840d3b67b976cb34dadc58d2fcfd490eb74ef9602b37b991414", size = 47353, upload-time = "2026-09-07T17:46:08.886Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6b/54/d378858d14e5c5c7b921cb9ffccf27be3d34f3d6d010c57404ddd634685d/tinytag-2.3.2-py3-none-any.whl", hash = "sha256:ebaf957915266b9c20414a10f8c5170a345aa039a794650d39d66e7d6b96199f", size = 37171, upload-time = "2026-09-07T17:46:07.434Z" },
 ]
 
 [[package]]

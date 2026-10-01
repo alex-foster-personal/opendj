@@ -2,7 +2,7 @@
 
 Live tag writes must be atomic + recoverable: a mid-write failure must
 leave the audio file byte-identical to its pre-write state. Prior to the
-fix, ``_write_tags`` mutated the file in place via mutagen and a later
+fix, ``_write_tags`` mutated the file in place and a later
 ``_read_current_tags`` / verify failure left the file partially rewritten
 with no way back.
 """
@@ -106,7 +106,7 @@ def test_failed_verify_restores_original_bytes(
 def test_write_tags_failure_leaves_original_intact(
     flac_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If mutagen itself raises, the original file must be untouched."""
+    """If the tag writer itself raises, the original file must be untouched."""
     monkeypatch.setattr(wt, "BACKUP_ROOT", tmp_path / "tb")
     monkeypatch.setattr(wt, "REVERSAL_ROOT", tmp_path / "rv")
     monkeypatch.setattr(wt, "FILE_BACKUP_ROOT", tmp_path / "fb")
@@ -114,7 +114,7 @@ def test_write_tags_failure_leaves_original_intact(
     pre_digest = _sha(flac_fixture)
 
     def explode(_path: Path, _new: dict[str, str]) -> None:
-        raise RuntimeError("synthetic mutagen failure")
+        raise RuntimeError("synthetic tag writer failure")
 
     monkeypatch.setattr(wt, "_write_tags", explode)
 

@@ -1,4 +1,4 @@
-"""Filesystem audio scanner + lightweight metadata reader (mutagen)."""
+"""Filesystem audio scanner + lightweight metadata reader (tinytag, via :mod:`.tag_reader`)."""
 from __future__ import annotations
 
 import os
@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from . import paths
-from ._mutagen import HAS_MUTAGEN
+from . import paths, tag_reader
 
 
 @dataclass(slots=True)
@@ -26,6 +25,9 @@ class AudioMetadata:
     album: str | None = None
     genre: str | None = None
     comment: str | None = None
+    bpm: float | None = None
+    key: str | None = None
+    isrc: str | None = None
     duration_s: float | None = None
     bitrate_kbps: int | None = None
     sample_rate: int | None = None
@@ -58,50 +60,29 @@ def scan_music_files(roots: list[Path] | None = None) -> Iterator[AudioFile]:
                 yield AudioFile(path=full, size_bytes=st.st_size, mtime=st.st_mtime, ext=ext)
 
 
-def _first(tags, key: str) -> str | None:
-    val = tags.get(key) if tags else None
-    if not val:
-        return None
-    # mutagen easy-mode returns lists of strings.
-    if isinstance(val, list):
-        val = val[0] if val else None
-    if val is None:
-        return None
-    s = str(val).strip()
-    return s or None
-
-
 def read_metadata(path: Path) -> AudioMetadata | None:
-    """Read audio metadata via mutagen's easy interface. ``None`` on failure.
+    """Tags and stream properties of ``path``, or ``None`` when unreadable.
 
-    When the optional ``mutagen`` dep (``music-dj-tools[tags]``) is not
-    installed this is a best-effort no-op that returns ``None``; the scanner
-    layer still yields :class:`AudioFile` entries from the filesystem.
+    ``None`` means the file could not be parsed as audio at all (the scanner
+    still yields it as an :class:`AudioFile`, titled from its filename); a
+    parsed file with no tags returns a record whose tag fields are ``None``.
     """
-    if not HAS_MUTAGEN:
-        return None
-    import mutagen  # type: ignore  # guarded above
-
     try:
-        f = mutagen.File(str(path), easy=True)
-    except Exception:  # noqa: BLE001 - malformed tags must not stop scanning
+        tags = tag_reader.read_tags(path)
+    except tag_reader.TagReadError:
         return None
-    if f is None:
-        return None
-
-    info = getattr(f, "info", None)
-    bitrate = getattr(info, "bitrate", None) if info is not None else None
-    bitrate_kbps = int(bitrate / 1000) if bitrate else None
-
     return AudioMetadata(
-        title=_first(f, "title"),
-        artist=_first(f, "artist"),
-        album=_first(f, "album"),
-        genre=_first(f, "genre"),
-        comment=_first(f, "comment"),
-        duration_s=float(info.length) if info and getattr(info, "length", None) else None,
-        bitrate_kbps=bitrate_kbps,
-        sample_rate=int(info.sample_rate) if info and getattr(info, "sample_rate", None) else None,
+        title=tags.title,
+        artist=tags.artist,
+        album=tags.album,
+        genre=tags.genre,
+        comment=tags.comment,
+        bpm=tags.bpm,
+        key=tags.key,
+        isrc=tags.isrc,
+        duration_s=tags.duration_s,
+        bitrate_kbps=tags.bitrate_kbps,
+        sample_rate=tags.sample_rate,
     )
 
 
@@ -143,9 +124,9 @@ def _is_safe_raster_image(header: bytes, mime: str) -> bool:
 def _safe_picture_mime(data: object, mime: str) -> str | None:
     """Normalized mime when ``data`` is a bounded, safe raster payload.
 
-    Mutagen already owns the frame payload. Check its length and only copy the
-    tiny magic-byte prefix before materializing a response-sized ``bytes``
-    object, so oversized tag frames cannot multiply the process's memory use.
+    Check the payload's length and only copy the tiny magic-byte prefix before
+    materializing a response-sized ``bytes`` object, so oversized tag frames
+    cannot multiply the process's memory use.
     """
     try:
         if len(data) > MAX_EMBEDDED_ARTWORK_BYTES:  # type: ignore[arg-type]
@@ -203,77 +184,27 @@ def _has_safe_picture(candidates: Iterator[tuple[object, str, int | None]]) -> b
     return any(_safe_picture_mime(data, mime) is not None for data, mime, _ in candidates)
 
 
-def _picture_candidates(audio: object) -> Iterator[tuple[object, str, int | None]]:
-    """Picture frames in the reader's established FLAC, ID3, then MP4 order."""
-    pictures = getattr(audio, "pictures", None)
-    if pictures:
-        for picture in pictures:
-            yield picture.data, picture.mime or "", getattr(picture, "type", None)
-        return
-    tags = getattr(audio, "tags", None)
-    if tags is None:
-        return
-    yield from _tag_picture_candidates(tags)
-
-
-def _tag_picture_candidates(tags: object) -> Iterator[tuple[object, str, int | None]]:
-    getall = getattr(tags, "getall", None)
-    if getall is not None:
-        for picture in getall("APIC") or ():
-            yield picture.data, picture.mime or "", getattr(picture, "type", None)
-    covers = tags.get("covr") if hasattr(tags, "get") else None
-    if not covers:
-        return
-    from mutagen.mp4 import MP4Cover  # type: ignore
-
-    for cover in covers:
-        mime = (
-            "image/png"
-            if getattr(cover, "imageformat", None) == MP4Cover.FORMAT_PNG
-            else "image/jpeg"
-        )
-        yield cover, mime, None
-
-
 def read_embedded_artwork(path: Path) -> tuple[bytes, str] | None:
     """Real cover-art bytes + mime type embedded in ``path``'s tags, or ``None``.
 
-    Checked in this order: FLAC ``pictures`` (Vorbis comment picture block),
-    ID3 ``APIC`` frames (mp3/wav/aiff), MP4 ``covr`` atom (m4a/mp4). ``None``
-    when the optional ``mutagen`` dep is absent, the file has no tags, no
-    picture frame is present, or the frame fails :func:`_is_safe_raster_image`
-    -- never a synthesised or placeholder image, and never a tag-declared
-    mime trusted verbatim into an HTTP response.
+    Covers FLAC ``PICTURE`` blocks, ID3 ``APIC`` frames (mp3/wav/aiff) and the
+    MP4 ``covr`` atom (m4a/mp4). ``None`` when the file cannot be parsed, has
+    no picture, or every picture fails :func:`_is_safe_raster_image` -- never
+    a synthesised or placeholder image, and never a tag-declared mime trusted
+    verbatim into an HTTP response.
     """
-    if not HAS_MUTAGEN:
-        return None
-    import mutagen  # type: ignore  # guarded above
-
     try:
-        audio = mutagen.File(str(path))
-    except (mutagen.MutagenError, OSError):
+        return _first_safe_picture(tag_reader.embedded_pictures(path))
+    except tag_reader.TagReadError:
         return None
-    if audio is None:
-        return None
-
-    picture = _first_safe_picture(_picture_candidates(audio))
-
-    if picture is None:
-        return None
-    return picture
 
 
 def embedded_artwork_available(path: Path) -> bool:
-    """Whether ``path`` contains a bounded safe picture without copying it."""
-    if not HAS_MUTAGEN:
-        return False
-    import mutagen  # type: ignore  # guarded above
-
+    """Whether ``path`` contains a bounded safe picture."""
     try:
-        audio = mutagen.File(str(path))
-    except (mutagen.MutagenError, OSError):
+        return _has_safe_picture(tag_reader.embedded_pictures(path))
+    except tag_reader.TagReadError:
         return False
-    return audio is not None and _has_safe_picture(_picture_candidates(audio))
 
 
 __all__ = [

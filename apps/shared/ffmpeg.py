@@ -8,7 +8,7 @@ R2 ok   Fail loudly: an absent binary, or a set-but-unusable ``MDT_FFMPEG``,
         back to and no silent PATH lookup behind a broken override.
 R3 ok   :func:`probe_duration_s` reports the length ffmpeg's demuxer states for
         a file, or ``None`` when it states none; never an estimate of ours
-        (NATIVE-10: a payload has no mutagen, so folder imports carry no
+        (NATIVE-10: payloads built before the tag reader shipped carried no
         duration and the backfill queue asks the decoder instead).
 
 Acceptance

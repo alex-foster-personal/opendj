@@ -1,7 +1,9 @@
 """Per-format audio identity regression tests.
 
-The tag blocks are written by mutagen in CI, not Mixed In Key. A Mac capture
-with MIK remains the open acceptance item documented in issue #3864.
+The tag blocks are written in CI by the in-house ID3v2 / FLAC writers (MP3,
+FLAC) and by an ffmpeg stream-copy remux (AIFF, M4A, WAV), not Mixed In Key. A
+Mac capture with MIK remains the open acceptance item documented in issue
+#3864.
 """
 from __future__ import annotations
 
@@ -11,29 +13,38 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared import flac_meta, id3v2
 from apps.shared.hashing import sha256_audio_payload, sha256_file
-
-pytestmark = pytest.mark.requires_mutagen
 
 
 def _tag(path: Path, value: str) -> None:
-    from mutagen import File
-    from mutagen.id3 import TIT2
-
-    audio = File(path)
-    assert audio is not None
-    if audio.tags is None:
-        audio.add_tags()
-    if path.suffix.lower() in {".mp3", ".aiff", ".aif", ".aifc", ".wav"}:
-        audio.tags.add(TIT2(encoding=3, text=[value]))
-    else:
-        audio.tags["title"] = value
-    audio.save()
+    """Rewrite ``path``'s title tag in place, leaving the audio payload alone."""
+    suffix = path.suffix.lower()
+    if suffix == ".mp3":
+        tag = id3v2.load_or_new(path)
+        tag.set_text("TIT2", value)
+        id3v2.save(path, tag)
+        return
+    if suffix == ".flac":
+        meta = flac_meta.read(path)
+        meta.set("TITLE", value)
+        flac_meta.save(path, meta)
+        return
+    remuxed = path.with_name(f"retag-{path.name}")
+    id3_args = ["-write_id3v2", "1"] if suffix in {".aiff", ".aif"} else []
+    subprocess.run(
+        [
+            "ffmpeg", "-loglevel", "error", "-y", "-i", str(path), "-c", "copy",
+            "-map_metadata", "-1", "-metadata", f"title={value}", *id3_args, str(remuxed),
+        ],
+        check=True,
+    )
+    remuxed.replace(path)
 
 
 @pytest.mark.parametrize("extension", ("mp3", "aiff", "flac", "m4a", "wav"))
 def test_library_written_retags_preserve_audio_identity(tmp_path: Path, extension: str) -> None:
-    """if mutagen rewrites tags in each supported format then payload identity is stable"""
+    """if a tag rewrite in each supported format happens then payload identity is stable"""
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg is required to create the per-format payload")
     original = tmp_path / f"original.{extension}"

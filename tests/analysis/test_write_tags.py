@@ -1,4 +1,4 @@
-"""Tag write-back tests (META-01).  MP3 / M4A / FLAC round-trip + safety rails."""
+"""Tag write-back tests (META-01).  MP3 / FLAC round-trip, M4A refusal + safety rails."""
 from __future__ import annotations
 
 import json
@@ -64,15 +64,14 @@ def test_mp3_roundtrip(mp3_fixture: Path) -> None:
     assert abs(float(got["BPM"]) - float(new["BPM"])) < 0.5
 
 
-@pytest.mark.requirement("META-01")
-def test_m4a_roundtrip(m4a_fixture: Path) -> None:
-    new = wt._build_new_tags(_rec("mp4"))
-    wt._write_tags(m4a_fixture, new)
-    got = wt._read_current_tags(m4a_fixture)
-    assert got["INITIALKEY"] == "8A"
-    assert got["OPENDJ_ENERGY"] == "7"
-    # MP4 tmpo is an integer atom.
-    assert abs(float(got["BPM"]) - round(float(new["BPM"]))) < 1.0
+@pytest.mark.requirement("TAGIO-03")
+def test_m4a_write_is_refused_and_the_planner_skips_it(m4a_fixture: Path) -> None:
+    """[if] write-back targets an .m4a [then] it is refused, file unchanged, [else stop]."""
+    before = m4a_fixture.read_bytes()
+    with pytest.raises(ValueError, match="not supported"):
+        wt._write_tags(m4a_fixture, wt._build_new_tags(_rec("mp4")))
+    assert wt.plan_deltas([_rec("mp4")], file_map={"mp4": m4a_fixture}) == []
+    assert m4a_fixture.read_bytes() == before
 
 
 @pytest.mark.requirement("META-01")

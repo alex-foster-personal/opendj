@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,10 +15,6 @@ from apps.shared.tag_writer import (
     read_tags,
     write_tags,
 )
-
-# tag read/write needs the tags extra; skip (never fail) when absent.
-pytestmark = pytest.mark.requires_mutagen
-
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
@@ -90,32 +87,32 @@ def test_mp3_roundtrip(tmp_path: Path) -> None:
     assert got.isrc == "USRC17607839"
 
 
-@pytest.mark.requirement("META-01")
-def test_mp4_roundtrip(tmp_path: Path) -> None:
+@pytest.mark.requirement("TAGIO-03")
+def test_mp4_write_is_refused_and_the_file_is_unchanged(tmp_path: Path) -> None:
+    """[if] a tag write targets an .m4a [then] it raises and nothing changes, [else stop]."""
     dst = _copy_fixture(tmp_path, "src.m4a")
-    plan = UnifiedTags(
-        title="T",
-        artist="A",
-        album="Alb",
-        genre="House",
-        bpm=124.0,
-        key_openkey="9m",
-        key_camelot="9B",
-        energy=6,
-        rating=3,
-        isrc="USRC17607839",
+    before = _sha(dst)
+    for dry_run in (True, False):
+        with pytest.raises(UnsupportedContainer, match=r"\.m4a files is not supported"):
+            write_tags(dst, UnifiedTags(title="T", bpm=124.0), dry_run=dry_run)
+    assert _sha(dst) == before
+
+
+@pytest.mark.requirement("TAGIO-01")
+@pytest.mark.requires_ffmpeg
+def test_mp4_custom_atoms_are_read(tmp_path: Path) -> None:
+    """[if] an m4a carries tags and iTunes atoms [then] read_tags returns them, [else stop]."""
+    dst = tmp_path / "tagged.m4a"
+    subprocess.run(
+        [
+            "ffmpeg", "-v", "error", "-y", "-i", str(FIXTURE_ROOT / "src.m4a"), "-c", "copy",
+            "-metadata", "title=T", "-metadata", "genre=House", "-metadata", "tmpo=124",
+            str(dst),
+        ],
+        check=True,
     )
-    write_tags(dst, plan, dry_run=False)
     got = read_tags(dst)
-    assert got.title == "T"
-    assert got.artist == "A"
-    assert got.genre == "House"
-    assert got.bpm == 124.0
-    assert got.key_openkey == "9m"
-    assert got.key_camelot == "9B"
-    assert got.energy == 6
-    assert got.rating == 3
-    assert got.isrc == "USRC17607839"
+    assert (got.title, got.genre, got.bpm) == ("T", "House", 124.0)
 
 
 @pytest.mark.requirement("META-01")
