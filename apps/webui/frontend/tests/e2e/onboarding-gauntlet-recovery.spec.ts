@@ -126,7 +126,7 @@ test.describe('onboarding gauntlet: recovery', () => {
 		await context.setOffline(false);
 
 		// No reload: the wizard has to find out on its own.
-		await expect(setupDialog(page).getByText('succeeded', { exact: false }).first()).toBeVisible({
+		await expect(setupDialog(page).getByText('Import finished', { exact: false }).first()).toBeVisible({
 			timeout: 30_000
 		});
 	});

@@ -495,7 +495,7 @@
 										checked={source === 'rekordbox'}
 										onchange={() => setupWizard.useSource('rekordbox')}
 									/>
-									An existing DJ collection on this machine
+									A rekordbox collection on this machine
 								</label>
 								<label>
 									<input
@@ -504,7 +504,7 @@
 										checked={source === 'folder'}
 										onchange={() => setupWizard.useSource('folder')}
 									/>
-									A folder of audio files
+									A folder of audio files (no rekordbox needed)
 								</label>
 							</fieldset>
 						</div>
