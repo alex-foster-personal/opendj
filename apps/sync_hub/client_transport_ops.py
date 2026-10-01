@@ -9,7 +9,7 @@ only after those two are defined there, so there is no import cycle.
 """
 from __future__ import annotations
 
-import itertools
+import json
 import logging
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
@@ -36,6 +36,25 @@ from apps.sync_hub.transport import (
 #: GET side, because :meth:`HubTransport.get` carries flat string params and
 #: FastAPI reads a single occurrence into a one-element list.
 _ADVERTISED: tuple[str, ...] = capabilities.THIS_BUILD
+
+#: Most bytes one ``POST /push`` body may take, counted as
+#: :class:`apps.sync_hub.transport.HttpTransport` encodes it (``json.dumps``
+#: defaults, the widest encoding either transport sends). The hub sets no
+#: body limit of its own -- uvicorn, FastAPI and :mod:`apps.sync_hub.service`
+#: impose none -- but a reverse proxy in front of it may, and 1 MiB is the
+#: common default (nginx ``client_max_body_size``). Track rows carry
+#: unbounded text (``title``, ``artists_json``, ``file_path``), so the row cap
+#: alone cannot keep a 1,000-row body under that (LIBM-120 L6 round 6); this
+#: bound closes a batch early instead, with a quarter MiB of headroom for a
+#: proxy that counts headers or framing against the same limit.
+PUSH_BODY_MAX_BYTES: int = 768 * 1024
+
+#: What a proxy or server answers a body over its limit with. A push refused
+#: this way is split and re-sent, like a timed-out one.
+BODY_TOO_LARGE_STATUS: int = 413
+
+#: Bytes ``json.dumps`` puts between two array items with default separators.
+_ITEM_SEPARATOR_BYTES: int = len(", ")
 
 log = logging.getLogger(__name__)
 
@@ -90,24 +109,57 @@ def state_db_path(data_dir: Path) -> Path:
     return Path(data_dir) / "state" / "state.db"
 
 
-def _batched(
-    rows: Sequence[protocol.RowChange], size: int
-) -> Iterator[Sequence[protocol.RowChange]]:
-    """Split ``rows`` into ``size``-row chunks, preserving order.
+def _json_bytes(value: object) -> int:
+    """Bytes ``value`` takes in a request body as :class:`HttpTransport` encodes it."""
+    return len(json.dumps(value).encode("utf-8"))
+
+
+def _push_body(
+    machine_id: str, wire_rows: Sequence[dict[str, Any]], wire_fleet: list[dict[str, object]]
+) -> dict[str, object]:
+    return {
+        "machine_id": machine_id,
+        "schema_version": state_schema.SCHEMA_VERSION,
+        "wire_version": wire_version.WIRE_VERSION,
+        "rows": list(wire_rows),
+        "machines": wire_fleet,
+        "capabilities": list(_ADVERTISED),
+    }
+
+
+def _push_batches(
+    wire_rows: Sequence[dict[str, Any]],
+    *,
+    max_rows: int,
+    max_bytes: int,
+    envelope_bytes: int,
+) -> Iterator[tuple[dict[str, Any], ...]]:
+    """Split ``wire_rows`` into push bodies of at most ``max_rows`` rows and ``max_bytes``.
+
+    ``envelope_bytes`` is the body with no rows: machine id, fleet,
+    capabilities. A row whose body alone is over ``max_bytes`` still travels,
+    alone, so a limit this client cannot see (the hub's or a proxy's) decides
+    it; a 413 on it is then loud (:func:`_push_chunk_with_split`).
 
     Order matters: :func:`apps.sync_hub.engine.spoke_push` returns rows
     parents-first, and each chunk is applied in its own hub transaction, so
     a reordering here would present a child row before the row it references
     and the FK would refuse it.
     """
-    if size < 1:
-        raise ValueError(f"batch size must be >= 1, got {size}")
-    iterator = iter(rows)
-    while True:
-        chunk = tuple(itertools.islice(iterator, size))
-        if not chunk:
-            return
-        yield chunk
+    if max_rows < 1:
+        raise ValueError(f"batch size must be >= 1, got {max_rows}")
+    chunk: list[dict[str, Any]] = []
+    size = envelope_bytes
+    for wire in wire_rows:
+        row_bytes = _json_bytes(wire) + _ITEM_SEPARATOR_BYTES
+        if chunk and (len(chunk) == max_rows or size + row_bytes > max_bytes):
+            yield tuple(chunk)
+            chunk = []
+            size = envelope_bytes
+        chunk.append(wire)
+        size += row_bytes
+    if chunk:
+        yield tuple(chunk)
 
 
 def _fetch_hub_digest(channel: HubTransport, machine_id: str) -> protocol.SyncDigest:
@@ -186,41 +238,47 @@ class _PullOutcome:
     identity_repairs: tuple[IdentityRepairRequest, ...] = ()
 
 
-def _post_push_chunk(
-    channel: HubTransport,
-    machine_id: str,
-    chunk: Sequence[protocol.RowChange],
-    wire_fleet: list[dict[str, object]],
-) -> dict[str, object]:
-    return channel.post(
-        f"{API_PREFIX}/push",
-        {
-            "machine_id": machine_id,
-            "schema_version": state_schema.SCHEMA_VERSION,
-            "wire_version": wire_version.WIRE_VERSION,
-            "rows": [change.to_wire() for change in chunk],
-            "machines": wire_fleet,
-            "capabilities": list(_ADVERTISED),
-        },
-    )
+def _should_split(exc: SyncTransportError) -> bool:
+    """A timeout or a declared body-too-large refusal: a smaller chunk may pass."""
+    return is_timeout_transport(exc) or exc.status_code == BODY_TOO_LARGE_STATUS
 
 
 def _push_chunk_with_split(
     channel: HubTransport,
     machine_id: str,
-    chunk: Sequence[protocol.RowChange],
+    chunk: Sequence[dict[str, Any]],
     wire_fleet: list[dict[str, object]],
-) -> tuple[dict[str, object], int]:
-    """Push one chunk, splitting once on client timeout."""
+) -> tuple[dict[str, Any], int]:
+    """Push one chunk, halving it on a timeout or a 413 until one row is left.
+
+    Depth is bounded by ``log2(len(chunk))``. One row that is still refused
+    as too large cannot be split further, so it raises naming the row: the
+    limit in front of the hub is below what this library needs.
+    """
     try:
-        return _post_push_chunk(channel, machine_id, chunk, wire_fleet), 1
+        return channel.post(f"{API_PREFIX}/push", _push_body(machine_id, chunk, wire_fleet)), 1
     except SyncTransportError as exc:
-        if not is_timeout_transport(exc) or len(chunk) <= 1:
+        if not _should_split(exc):
             raise
+        if len(chunk) <= 1:
+            if exc.status_code != BODY_TOO_LARGE_STATUS:
+                raise
+            row = chunk[0]
+            raise SyncTransportError(
+                f"push of ONE {row.get('table')} row {row.get('pk')} "
+                f"({_json_bytes(row):,} bytes) was refused as too large (HTTP "
+                f"{BODY_TOO_LARGE_STATUS}); it cannot be split further. Raise the "
+                f"body limit of the proxy in front of the hub. Hub answer: {exc}",
+                status_code=exc.status_code,
+                code=exc.code,
+            ) from exc
         mid = len(chunk) // 2
         log.warning(
-            "push timed out on %d row(s); retrying as %d then %d",
+            "push of %d row(s) %s; retrying as %d then %d",
             len(chunk),
+            "was too large (HTTP 413)"
+            if exc.status_code == BODY_TOO_LARGE_STATUS
+            else "timed out",
             mid,
             len(chunk) - mid,
         )
@@ -249,7 +307,8 @@ def _push_in_batches(
     *,
     batch_rows: int,
 ) -> _PushOutcome:
-    """Offer ``rows`` to the hub, ``batch_rows`` at a time.
+    """Offer ``rows`` to the hub, at most ``batch_rows`` and
+    :data:`PUSH_BODY_MAX_BYTES` per request.
 
     Every chunk carries ``fleet`` -- this machine's whole ``machines``
     snapshot -- because the rows reference it: ``track_locations``,
@@ -266,7 +325,13 @@ def _push_in_batches(
     reported: list[Any] = []
     identity_rejects: list[protocol.IdentityReject] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
-    for chunk in _batched(rows, batch_rows):
+    batches = _push_batches(
+        [row.to_wire() for row in rows],
+        max_rows=batch_rows,
+        max_bytes=PUSH_BODY_MAX_BYTES,
+        envelope_bytes=_json_bytes(_push_body(machine_id, [], wire_fleet)),
+    )
+    for chunk in batches:
         try:
             payload, chunk_requests = _push_chunk_with_split(
                 channel, machine_id, chunk, wire_fleet
@@ -486,9 +551,10 @@ def _pull_in_chunks(
 
 
 __all__ = [
+    "BODY_TOO_LARGE_STATUS",
+    "PUSH_BODY_MAX_BYTES",
     "_PullOutcome",
     "_PushOutcome",
-    "_batched",
     "_dedupe_repairs",
     "_int_from",
     "_local_machine_row",
