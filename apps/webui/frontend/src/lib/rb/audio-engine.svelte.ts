@@ -2617,6 +2617,13 @@ async function _synchronizeFollowers(
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
 		);
+		// Lock every follower that DID sync before a partial failure throws (a
+		// failed master schedule leaves no tempo to lock against).
+		for (const item of planned) {
+			if (failedDecks.includes(item.deck) || failedDecks.includes(master)) continue;
+			item.st.sync_error = null;
+			_phaseLock.record(item.deck, { master, masterTempo: masterTempoRatio, base: item.plan.followerTempoRatio, normalization: item.plan.tempoNormalization });
+		}
 		if (failedDecks.length > 0) {
 			succeededDecks = schedules.map((item) => item.deck).filter((deck) => !failedDecks.includes(deck));
 			const message =
@@ -2628,10 +2635,6 @@ async function _synchronizeFollowers(
 			throw new Error(message, {
 				cause: outcomes.find((outcome) => outcome.status === 'rejected')
 			});
-		}
-		for (const item of planned) {
-			item.st.sync_error = null;
-			_phaseLock.record(item.deck, { master, masterTempo: masterTempoRatio, base: item.plan.followerTempoRatio, normalization: item.plan.tempoNormalization });
 		}
 		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
 		// a pure function; the engine only performs the effects it returns.

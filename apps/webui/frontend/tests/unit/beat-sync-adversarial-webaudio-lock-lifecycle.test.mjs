@@ -99,4 +99,11 @@ test('2. a partial schedule failure still records the phase lock of every follow
 		`_phaseLock.record is only reached after the partial-failure throw (record at +${firstRecord}, ` +
 			`throw at +${failureThrow}): succeeded followers lose their lock`
 	);
+	// ...and ONLY those: a follower whose own schedule failed, or every
+	// follower when the master's own schedule failed ('master-max'), has no
+	// planned tempo in force, so a lock recorded for it would trim against a
+	// plan that never ran.
+	const loop = sync.slice(sync.lastIndexOf('for (const item of planned)', firstRecord), firstRecord);
+	assert.match(loop, /failedDecks\.includes\(item\.deck\)/, 'a failed follower is not locked');
+	assert.match(loop, /failedDecks\.includes\(master\)/, 'nothing is locked when the master schedule failed');
 });
