@@ -17,8 +17,7 @@ from typing import Any
 
 import pytest
 
-from apps.analysis import admission, queue_store
-from apps.analysis import queue_runner
+from apps.analysis import admission, queue_runner, queue_store
 from apps.analysis import queue as queue_api
 from apps.analysis.lanes import LaneResult
 from apps.analysis.queue_runner import RunSummary, _RunContext, _settle_one, run_batch

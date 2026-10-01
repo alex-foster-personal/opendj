@@ -66,7 +66,6 @@ from .request_guard import (
     origin_guard_middleware,
 )
 from .routes import ahead_analysis as ahead_analysis_routes
-from .routes import enrich as enrich_routes
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -90,6 +89,7 @@ from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes

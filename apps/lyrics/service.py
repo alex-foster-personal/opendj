@@ -7,9 +7,9 @@ import re
 import sqlite3
 import urllib.parse
 import urllib.request
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Sequence
 from typing import Literal, Protocol
 
 from apps.cloud import stem_index
