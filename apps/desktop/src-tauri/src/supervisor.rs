@@ -18,6 +18,14 @@ use crate::shell_health::{ShellHealthServer, ShellHealthSnapshot, utc_timestamp_
 
 pub const POLL_INTERVAL: Duration = Duration::from_secs(5);
 pub const RECOVERY_TIMEOUT: Duration = Duration::from_secs(30);
+/// Consecutive failed health polls before a LIVE engine is declared hung.
+///
+/// One failed probe is not a death. Under memory pressure (an 8 GB Mac deep
+/// in swap while an analysis drain runs) a healthy engine can miss a 750ms
+/// probe, and declaring it dead on the first miss is what showed a fatal
+/// screen over an engine that went on serving for hours. Six polls at
+/// [`POLL_INTERVAL`] is 30s of silence, the same budget as a restart.
+pub const UNRESPONSIVE_POLLS: u32 = 6;
 const WINDOW_LABEL: &str = "main";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +99,7 @@ struct RuntimeState {
     lock_pid: Option<u32>,
     lock_port: Option<u16>,
     auto_restart_attempted: bool,
+    unhealthy_polls: u32,
     paths: SupervisorPaths,
 }
 
@@ -115,6 +124,7 @@ impl EngineSupervisor {
                 lock_pid: None,
                 lock_port: None,
                 auto_restart_attempted: false,
+                unhealthy_polls: 0,
                 paths,
             })),
             shell_health,
@@ -168,13 +178,46 @@ pub fn start_runtime_supervisor(
     spawn_runtime_supervisor(app, supervised, paths, data_dir)
 }
 
+/// The one thread that acts on the engine.
+///
+/// Every step here must be bounded: the HTTP relaunch request is only a flag
+/// this loop consumes, so anything that blocks `tick` (it once waited forever
+/// on a live child it had wrongly declared dead) silently turns Relaunch into
+/// a 202 that nothing ever acts on.
 fn runtime_loop(app: AppHandle, supervisor: Arc<EngineSupervisor>) {
     loop {
         tick(&app, supervisor.as_ref());
         if supervisor.shell_health.take_relaunch_request() {
-            supervisor.request_relaunch(&app);
+            let phase = supervisor.inner.lock().expect("supervisor mutex").phase;
+            if relaunch_applies(phase) {
+                engine::append_shell_log(
+                    "INFO",
+                    &format!("relaunch requested over shell health (phase {phase:?})"),
+                );
+                supervisor.request_relaunch(&app);
+            } else {
+                engine::append_shell_log(
+                    "INFO",
+                    &format!("relaunch request ignored: engine is {phase:?}"),
+                );
+            }
         }
         thread::sleep(POLL_INTERVAL);
+    }
+}
+
+/// Whether a user's Relaunch should start a fresh engine in this phase.
+///
+/// Every post-death phase does. A running engine is left alone: a stale tab
+/// still showing the fatal page must not be able to kill a healthy set.
+fn relaunch_applies(phase: SupervisorPhase) -> bool {
+    match phase {
+        SupervisorPhase::Running | SupervisorPhase::Reaping => false,
+        SupervisorPhase::Dead
+        | SupervisorPhase::Restarting
+        | SupervisorPhase::AwaitingDiskSpace
+        | SupervisorPhase::Fatal
+        | SupervisorPhase::AwaitingRelaunch => true,
     }
 }
 
@@ -265,6 +308,37 @@ struct DeathInfo {
     signal: Option<i32>,
     lock_pid: Option<u32>,
     lock_port: Option<u16>,
+    /// Set when the engine was alive but stopped answering and the shell
+    /// stopped it: the polls it missed. Distinct from an exit the engine
+    /// chose, so the log never reports a kill by the shell as `code 1`.
+    unresponsive_polls: Option<u32>,
+}
+
+/// What one supervision poll concluded about the engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Liveness {
+    Alive,
+    Gone,
+    Unresponsive,
+}
+
+/// Judge one poll, returning the verdict and the new failed-poll count.
+///
+/// A process that is still there is only declared hung after
+/// [`UNRESPONSIVE_POLLS`] consecutive failed probes; one is noise.
+fn judge_liveness(alive: bool, healthy: bool, unhealthy_polls: u32) -> (Liveness, u32) {
+    if !alive {
+        return (Liveness::Gone, 0);
+    }
+    if healthy {
+        return (Liveness::Alive, 0);
+    }
+    let polls = unhealthy_polls + 1;
+    if polls >= UNRESPONSIVE_POLLS {
+        (Liveness::Unresponsive, polls)
+    } else {
+        (Liveness::Alive, polls)
+    }
 }
 
 impl DeathInfo {
@@ -272,6 +346,12 @@ impl DeathInfo {
     /// naming the shell log uses for every other exit trigger, so a reader
     /// can tell a killed engine from one that exited on its own.
     fn exit_reason(&self) -> String {
+        if let Some(polls) = self.unresponsive_polls {
+            return format!(
+                "engine-unresponsive({polls} failed health polls over {}s; stopped by the shell)",
+                u64::from(polls) * POLL_INTERVAL.as_secs()
+            );
+        }
         match (self.signal, self.exit_code) {
             (Some(signal), _) => format!("engine-exited(signal {signal})"),
             (None, Some(code)) => format!("engine-exited(code {code})"),
@@ -281,57 +361,91 @@ impl DeathInfo {
 }
 
 fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
+    use std::os::unix::process::ExitStatusExt;
     let lock_path = launch::lock_path(&guard.paths.data_dir);
     let lock_holder = launch::read_lock_fields(&lock_path);
+    let prior_polls = guard.unhealthy_polls;
     match guard.supervised.as_mut() {
         Some(Supervised::Spawned(engine)) => {
+            let (pid, port) = (engine.pid(), engine.port());
+            let death = |exit_code, signal, unresponsive_polls| DeathInfo {
+                exit_code,
+                signal,
+                lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(pid)),
+                lock_port: lock_holder.map(|(_, port)| port).or(Some(port)),
+                unresponsive_polls,
+            };
             if let Some(status) = engine.try_reap() {
-                use std::os::unix::process::ExitStatusExt;
-                return Some(DeathInfo {
-                    exit_code: status.code(),
-                    signal: status.signal(),
-                    lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(engine.pid())),
-                    lock_port: lock_holder.map(|(_, port)| port).or(Some(engine.port())),
-                });
+                return Some(death(status.code(), status.signal(), None));
             }
             if engine.is_log_failed() {
-                return Some(DeathInfo {
-                    exit_code: Some(1),
-                    signal: None,
-                    lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(engine.pid())),
-                    lock_port: lock_holder.map(|(_, port)| port).or(Some(engine.port())),
-                });
+                return Some(death(Some(1), None, None));
             }
-            let port = engine.port();
-            if !engine::health_ok(port) {
-                let pid = engine.pid();
-                if !launch::pid_can_act(pid) {
-                    return Some(DeathInfo {
-                        exit_code: Some(1),
-                        signal: None,
-                        lock_pid: Some(pid),
-                        lock_port: Some(port),
-                    });
+            let healthy = engine::health_ok(port);
+            let alive = healthy || launch::pid_can_act(pid);
+            let (verdict, polls) = judge_liveness(alive, healthy, prior_polls);
+            guard.unhealthy_polls = polls;
+            match verdict {
+                Liveness::Alive => {
+                    if polls > 0 {
+                        engine::append_shell_log(
+                            "WARN",
+                            &format!(
+                                "engine pid {pid} missed health poll {polls}/{UNRESPONSIVE_POLLS} \
+                                 (process alive, not declared dead)"
+                            ),
+                        );
+                    }
+                    None
                 }
-                return Some(DeathInfo {
-                    exit_code: Some(1),
-                    signal: None,
-                    lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(pid)),
-                    lock_port: Some(port),
-                });
+                Liveness::Gone => Some(death(Some(1), None, None)),
+                Liveness::Unresponsive => {
+                    let Some(Supervised::Spawned(engine)) = guard.supervised.as_mut() else {
+                        unreachable!("matched Spawned above");
+                    };
+                    engine::append_shell_log(
+                        "WARN",
+                        &format!(
+                            "engine pid {pid} alive but unresponsive for {polls} polls: stopping its process group"
+                        ),
+                    );
+                    engine.shutdown();
+                    let status = engine.try_reap();
+                    Some(death(
+                        status.and_then(|s| s.code()),
+                        status.and_then(|s| s.signal()),
+                        Some(polls),
+                    ))
+                }
             }
-            None
         }
         Some(Supervised::Adopted { pid, port, .. }) => {
-            if !launch::pid_can_act(*pid) || !engine::health_ok(*port) {
-                return Some(DeathInfo {
-                    exit_code: Some(1),
-                    signal: None,
-                    lock_pid: Some(*pid),
-                    lock_port: Some(*port),
-                });
+            let (pid, port) = (*pid, *port);
+            let healthy = engine::health_ok(port);
+            let alive = healthy || launch::pid_can_act(pid);
+            let (verdict, polls) = judge_liveness(alive, healthy, prior_polls);
+            guard.unhealthy_polls = polls;
+            let death = |unresponsive_polls| DeathInfo {
+                exit_code: Some(1),
+                signal: None,
+                lock_pid: Some(pid),
+                lock_port: Some(port),
+                unresponsive_polls,
+            };
+            match verdict {
+                Liveness::Alive => None,
+                Liveness::Gone => Some(death(None)),
+                Liveness::Unresponsive => {
+                    engine::append_shell_log(
+                        "WARN",
+                        &format!(
+                            "adopted engine pid {pid} alive but unresponsive for {polls} polls: stopping it"
+                        ),
+                    );
+                    launch::stop_holder_pid(pid);
+                    Some(death(Some(polls)))
+                }
             }
-            None
         }
         None => None,
     }
@@ -339,10 +453,13 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
 
 fn reap_child(guard: &mut RuntimeState) {
     guard.phase = SupervisorPhase::Reaping;
+    guard.unhealthy_polls = 0;
     if let Some(Supervised::Spawned(engine)) = guard.supervised.as_mut() {
-        if engine.try_reap().is_none() {
-            let _ = engine.wait_reap();
-        }
+        // `shutdown`, never an unbounded wait: it reaps an exited engine
+        // (sweeping the workers it left in its group) and, should a death
+        // ever be declared over a live process again, stops it within ~5s
+        // instead of parking this thread on `wait()` forever.
+        engine.shutdown();
     }
     engine::append_shell_log("INFO", "engine child reaped");
 }
@@ -637,6 +754,7 @@ pub struct RuntimeSupervisorState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::CommandExt;
 
     #[test]
     fn fatal_url_carries_the_health_port() {
@@ -670,7 +788,120 @@ mod tests {
             signal,
             lock_pid: None,
             lock_port: None,
+            unresponsive_polls: None,
         }
+    }
+
+    // - if one failed health probe on a live engine is declared a death then
+    //   a box in swap shows the fatal screen over an engine that is serving
+    //   (demon-llama, Thu 1 Oct 2026: "engine-exited(code 1)" for pid 86496,
+    //   still answering five minutes later) -> broken
+    // - if reaping a declared-dead engine can block on a live child then the
+    //   poll thread parks forever and Relaunch returns 202 into a void
+    //   -> broken
+    // - if a shell-initiated stop is logged as the engine's own exit then the
+    //   log cannot say why the engine went away -> broken
+
+    #[test]
+    fn one_failed_probe_on_a_live_engine_is_not_a_death() {
+        assert_eq!(judge_liveness(true, false, 0), (Liveness::Alive, 1));
+    }
+
+    #[test]
+    fn a_live_engine_is_declared_hung_only_after_the_full_budget() {
+        let mut polls = 0;
+        for _ in 1..UNRESPONSIVE_POLLS {
+            let (verdict, next) = judge_liveness(true, false, polls);
+            assert_eq!(verdict, Liveness::Alive);
+            polls = next;
+        }
+        assert_eq!(
+            judge_liveness(true, false, polls),
+            (Liveness::Unresponsive, UNRESPONSIVE_POLLS)
+        );
+    }
+
+    #[test]
+    fn a_healthy_probe_resets_the_count_and_a_vanished_pid_is_gone_at_once() {
+        assert_eq!(judge_liveness(true, true, 5), (Liveness::Alive, 0));
+        assert_eq!(judge_liveness(false, false, 0), (Liveness::Gone, 0));
+    }
+
+    #[test]
+    fn a_shell_stop_is_named_as_unresponsive_not_as_an_exit_code() {
+        let mut info = death(Some(1), None);
+        info.unresponsive_polls = Some(6);
+        assert_eq!(
+            info.exit_reason(),
+            "engine-unresponsive(6 failed health polls over 30s; stopped by the shell)"
+        );
+    }
+
+    #[test]
+    fn relaunch_applies_in_every_post_death_phase_and_never_to_a_running_engine() {
+        for phase in [
+            SupervisorPhase::Dead,
+            SupervisorPhase::Fatal,
+            SupervisorPhase::Restarting,
+            SupervisorPhase::AwaitingRelaunch,
+            SupervisorPhase::AwaitingDiskSpace,
+        ] {
+            assert!(relaunch_applies(phase), "{phase:?}");
+        }
+        assert!(!relaunch_applies(SupervisorPhase::Running));
+    }
+
+    #[test]
+    fn reaping_a_declared_dead_engine_that_is_still_alive_is_bounded() {
+        let directory =
+            std::env::temp_dir().join(format!("opendj-reap-bounded-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let child = std::process::Command::new("/bin/sleep")
+            .arg("120")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let mut state = RuntimeState {
+            supervised: Some(Supervised::Spawned(engine::Engine::for_test(
+                child, &directory,
+            ))),
+            phase: SupervisorPhase::Dead,
+            dead_at: None,
+            exit_code: Some(1),
+            lock_pid: None,
+            lock_port: None,
+            auto_restart_attempted: false,
+            unhealthy_polls: 0,
+            paths: SupervisorPaths {
+                payload: directory.clone(),
+                data_dir: directory.clone(),
+                log_path: directory.join("engine.log"),
+                product_name: "test".into(),
+            },
+        };
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            reap_child(&mut state);
+            let _ = done_tx.send(());
+            // Keep the engine out of Drop's own shutdown on this thread.
+            std::mem::forget(state);
+        });
+
+        let finished = done_rx.recv_timeout(Duration::from_secs(15)).is_ok();
+        if !finished {
+            unsafe {
+                libc::killpg(pid as i32, libc::SIGKILL);
+            }
+        }
+        let _ = std::fs::remove_dir_all(&directory);
+        assert!(
+            finished,
+            "reap_child blocked on a live child: the poll thread would park forever"
+        );
     }
 
     #[test]
