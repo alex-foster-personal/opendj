@@ -6,11 +6,15 @@ baselines (workload undone, garbage collected), and the diagnostic raw
 `trackify_mode_footprint_slope_mb_per_10min`, fitted to the samples taken while
 a track plays. `--leak-series-out` keeps every sample as a TSV.
 
+The ratio rows (`--gig-baseline`) are over PERFMODE-14's process family: every
+Chromium process plus the engine at `--engine` and its descendants; the
+browser-only ratios ride along in the row note as a diagnostic.
+
 macOS reference capture only. Refuses Linux hosts with an explicit message.
 
 Usage (reference Mac, engine + frontend already running):
   uv run python -m scripts.perf.capture_mode_ratios --mode trackify --gig-baseline \\
-    --frontend http://127.0.0.1:5273 --duration-s 60 --ledger docs/perf/kpi-ledger.json
+    --frontend http://127.0.0.1:8791 --engine http://127.0.0.1:8791 --duration-s 60 --ledger docs/perf/kpi-ledger.json
   uv run python -m scripts.perf.capture_mode_ratios --mode trackify --leak-duration-s 3600 \\
     --frontend http://127.0.0.1:5273 --ledger docs/perf/kpi-ledger.json --leak-series-out series.tsv
 """
@@ -37,15 +41,16 @@ from scripts.perf.capture_build_identity import (
     _verify_capturing_checkout_at,
     _verify_frontend_build_version,
 )
-from scripts.perf.capture_kpi_ledger import CaptureMeta, build_row, session_meta
+from scripts.perf.capture_kpi_ledger import session_meta
 from scripts.perf.capture_ledger import append_ledger_rows
+from scripts.perf.mode_ratio_engine import EngineTarget, reverify_engine_target, verify_engine_target
+from scripts.perf.mode_ratio_rows import gig_baseline_rows as _gig_baseline_rows
+from scripts.perf.mode_ratio_rows import leak_rows as _leak_rows
+from scripts.perf.mode_ratio_rows import validate_gig_stable_ids as _validate_gig_stable_ids
 from scripts.perf.trackify_leak_series import (
-    ADR_REF,
     CHECKPOINT_INTERVAL_S,
     CHECKPOINT_SAMPLE_GAP_S,
     CHECKPOINT_SAMPLES,
-    RAW_SLOPE_KPI,
-    RETAINED_SLOPE_KPI,
     LeakSeries,
     median_baseline_mb,
     next_checkpoint_due,
@@ -100,11 +105,28 @@ class _ProcessTreeSampler:
     "physical_footprint_mb" while actually summing RSS could pass or fail
     the PERFMODE-15 threshold on an artifact of that overcounting rather
     than a real mode difference (Codex review, PR #3676).
+
+    Engine family (round 8, PERFMODE-15 spec): given `engine_root_pid`, the
+    sample also counts the engine and every descendant of it (stem workers),
+    by ancestry like PERFMODE-14's `descendantFamilyPids`, and reports the
+    browser and engine halves separately. The root is pinned: psutil's
+    `is_running()` compares create time, so an engine that exits or whose pid
+    is reused mid-capture raises instead of sampling a different process. The
+    leak capture passes no engine root (its KPI is browser-family only, per
+    ADR-NEW-trackify-leak-kpi-quiescent-baselines).
     """
 
-    def __init__(self, root_pid: int, *, native: DarwinProcessMetrics | None = None) -> None:
+    def __init__(
+        self,
+        root_pid: int,
+        *,
+        engine_root_pid: int | None = None,
+        native: DarwinProcessMetrics | None = None,
+    ) -> None:
         self._root_pid = root_pid
         self._tracked: dict[int, psutil.Process] = {}
+        self._engine_tracked: dict[int, psutil.Process] = {}
+        self._engine_root = _pinned_engine_root(engine_root_pid)
         # Lazy real construction (ctypes, Darwin-only) so tests can inject a
         # duck-typed fake and stay runnable off-macOS, matching this repo's
         # existing DarwinProcessMetrics test convention (test_probe_process_
@@ -118,68 +140,125 @@ class _ProcessTreeSampler:
             raise RuntimeError(
                 f"mode_ratio_browser process {self._root_pid} is not running"
             ) from exc
-        tree = [root, *root.children(recursive=True)]
-        seen_pids = {proc.pid for proc in tree}
-        for pid in list(self._tracked):
-            if pid not in seen_pids:
-                del self._tracked[pid]
-        for proc in tree:
-            if proc.pid not in self._tracked:
-                self._tracked[proc.pid] = proc
-                try:
-                    proc.cpu_percent(interval=None)  # prime the delta baseline
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-        return list(self._tracked.values())
+        return _track(self._tracked, [root, *root.children(recursive=True)])
 
-    def sample(self) -> dict[str, float]:
-        footprint_mb = 0.0
-        cpu_percent = 0.0
+    def _engine_family(self) -> list[psutil.Process]:
+        if self._engine_root is None:
+            return []
+        if not self._engine_root.is_running():
+            raise RuntimeError(
+                f"engine root pid {self._engine_root.pid} exited or was reused mid-capture"
+            )
+        family = [self._engine_root, *self._engine_root.children(recursive=True)]
+        return _track(self._engine_tracked, family)
+
+    def _read(self, proc: psutil.Process) -> tuple[float, float]:
+        footprint_mb = self._native.read(proc.pid).phys_footprint / (1024 * 1024)
+        return footprint_mb, proc.cpu_percent(interval=None)
+
+    def _sum_live(self, procs: list[psutil.Process]) -> tuple[float, float, int]:
+        """Footprint and CPU of the processes still alive; one that exits mid-sample is skipped."""
+        footprint_mb = cpu_percent = 0.0
         live = 0
-        for proc in self._live_tree():
-            if proc.pid == self._root_pid:
-                # `root` is the Node `mode_ratio_browser.mjs` launcher that
-                # SPAWNS Chromium via Playwright, not a member of the
-                # Chromium browser/renderer family this KPI claims to
-                # measure. Its own fixed footprint and CPU would dilute both
-                # savings ratios with a cost that barely moves between modes
-                # (Sol review, PR #3676) -- it is walked for tree discovery
-                # (`_live_tree`) but excluded from the sample itself.
-                continue
+        for proc in procs:
             try:
-                footprint_mb += self._native.read(proc.pid).phys_footprint / (1024 * 1024)
-                cpu_percent += proc.cpu_percent(interval=None)
-                live += 1
+                proc_footprint, proc_cpu = self._read(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied, ProcessLookupError):
                 continue
+            footprint_mb += proc_footprint
+            cpu_percent += proc_cpu
+            live += 1
+        return footprint_mb, cpu_percent, live
+
+    def sample(self) -> dict[str, float]:
+        # `root` is the Node `mode_ratio_browser.mjs` launcher that SPAWNS
+        # Chromium via Playwright, not a member of the Chromium family. Its
+        # own fixed footprint and CPU would dilute both savings ratios with a
+        # cost that barely moves between modes (Sol review, PR #3676) -- it is
+        # walked for tree discovery (`_live_tree`) but excluded here.
+        browser = [proc for proc in self._live_tree() if proc.pid != self._root_pid]
+        engine = self._engine_family()
+        overlap = {proc.pid for proc in browser} & {proc.pid for proc in engine}
+        if overlap:
+            raise RuntimeError(f"pids counted in both the browser and engine family: {sorted(overlap)}")
+        browser_footprint, browser_cpu, live = self._sum_live(browser)
         if live == 0:
             raise RuntimeError(
                 f"mode_ratio_browser process tree rooted at {self._root_pid} "
                 "has no live Chromium descendant to sample (only the launcher itself is running)"
             )
-        return {"physical_footprint_mb": footprint_mb, "cpu_percent": cpu_percent}
+        engine_footprint = engine_cpu = 0.0
+        if engine:
+            # The root must read: a family whose root is unreadable is unmeasured, not small.
+            engine_footprint, engine_cpu = self._read(engine[0])
+            rest_footprint, rest_cpu, _ = self._sum_live(engine[1:])
+            engine_footprint += rest_footprint
+            engine_cpu += rest_cpu
+        return {
+            "physical_footprint_mb": browser_footprint + engine_footprint,
+            "cpu_percent": browser_cpu + engine_cpu,
+            "browser_footprint_mb": browser_footprint,
+            "browser_cpu_percent": browser_cpu,
+            "engine_footprint_mb": engine_footprint,
+            "engine_cpu_percent": engine_cpu,
+            "engine_pid_count": float(len(engine)),
+        }
 
 
-def _sample_steady(root_pid: int, duration_s: int) -> dict[str, float]:
+def _pinned_engine_root(pid: int | None) -> psutil.Process | None:
+    if pid is None:
+        return None
+    try:
+        return psutil.Process(pid)
+    except psutil.NoSuchProcess as exc:
+        raise RuntimeError(f"engine root pid {pid} is not running") from exc
+
+
+def _track(cache: dict[int, psutil.Process], tree: list[psutil.Process]) -> list[psutil.Process]:
+    """Keep one psutil.Process per live pid so cpu_percent reads a delta, not 0.0."""
+    seen_pids = {proc.pid for proc in tree}
+    for pid in list(cache):
+        if pid not in seen_pids:
+            del cache[pid]
+    for proc in tree:
+        if proc.pid not in cache:
+            cache[proc.pid] = proc
+            try:
+                proc.cpu_percent(interval=None)  # prime the delta baseline
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    return [cache[proc.pid] for proc in tree]
+
+
+_STEADY_MEANS = (
+    ("footprint_mb", "physical_footprint_mb"),
+    ("cpu_percent", "cpu_percent"),
+    ("browser_footprint_mb", "browser_footprint_mb"),
+    ("browser_cpu_percent", "browser_cpu_percent"),
+    ("engine_footprint_mb", "engine_footprint_mb"),
+    ("engine_cpu_percent", "engine_cpu_percent"),
+)
+
+
+def _sample_steady(root_pid: int, duration_s: int, engine_root_pid: int | None) -> dict[str, float]:
+    """Mean of every 15 s sample over `duration_s`; the engine fields only when an engine root is given."""
     if duration_s < _MIN_SAMPLE_S:
         raise ValueError(f"duration must be at least {_MIN_SAMPLE_S}s, got {duration_s}")
-    sampler = _ProcessTreeSampler(root_pid)
+    sampler = _ProcessTreeSampler(root_pid, engine_root_pid=engine_root_pid)
     sampler.sample()  # discard the primed-CPU first reading
-    footprints: list[float] = []
-    cpus: list[float] = []
+    samples: list[dict[str, float]] = []
     deadline = time.monotonic() + duration_s
     while time.monotonic() < deadline:
         time.sleep(_PROBE_INTERVAL_S)
-        sample = sampler.sample()
-        footprints.append(sample["physical_footprint_mb"])
-        cpus.append(sample["cpu_percent"])
-    if not footprints or not cpus:
+        samples.append(sampler.sample())
+    if not samples:
         raise RuntimeError("probe returned no footprint or cpu samples")
-    return {
-        "footprint_mb": sum(footprints) / len(footprints),
-        "cpu_percent": sum(cpus) / len(cpus),
-        "sample_count": float(len(footprints)),
-    }
+    steady = {key: sum(s[field] for s in samples) / len(samples) for key, field in _STEADY_MEANS}
+    steady["sample_count"] = float(len(samples))
+    if engine_root_pid is None:
+        return {key: value for key, value in steady.items() if not key.startswith("engine_")}
+    steady["engine_pid_count_max"] = max(s["engine_pid_count"] for s in samples)
+    return steady
 
 
 _MIN_LEAK_DURATION_S = 3600
@@ -241,9 +320,6 @@ def _sample_leak(proc: subprocess.Popen[str], duration_s: int) -> LeakSeries:
     return series
 
 
-_GIG_DECKS = 4
-
-
 def _read_gig_stable_ids(proc: subprocess.Popen[str]) -> list[str]:
     """Read and validate the `GIG_STABLE_IDS <json>` protocol line.
 
@@ -265,15 +341,6 @@ def _read_gig_stable_ids(proc: subprocess.Popen[str]) -> list[str]:
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"GIG_STABLE_IDS payload is not valid JSON: {line!r}") from exc
     return _validate_gig_stable_ids(ids)
-
-
-def _validate_gig_stable_ids(ids: object) -> list[str]:
-    """Exactly `_GIG_DECKS` non-empty string ids, or a RuntimeError naming the defect."""
-    if not isinstance(ids, list) or len(ids) != _GIG_DECKS:
-        raise RuntimeError(f"GIG_STABLE_IDS must hold exactly {_GIG_DECKS} ids, got {ids!r}")
-    if not all(isinstance(stable_id, str) and stable_id for stable_id in ids):
-        raise RuntimeError(f"GIG_STABLE_IDS holds a non-string or empty id: {ids!r}")
-    return ids
 
 
 def _read_browser_line(proc: subprocess.Popen[str], expected: str) -> None:
@@ -364,16 +431,16 @@ def _start_browser_session(frontend: str, mode: str) -> subprocess.Popen[str]:
 
 
 def _capture_gig_then_trackify(
-    frontend: str, duration_s: int
+    frontend: str, duration_s: int, engine_root_pid: int
 ) -> tuple[dict[str, float], dict[str, float], list[str]]:
     proc = _start_browser_session(frontend, "gig-trackify")
     try:
         gig_stable_ids = _read_gig_stable_ids(proc)
         _read_browser_line(proc, "GIG_READY")
-        gig = _sample_steady(proc.pid, duration_s)
+        gig = _sample_steady(proc.pid, duration_s, engine_root_pid)
         _signal_browser(proc)
         _read_browser_line(proc, "TRACKIFY_READY")
-        trackify = _sample_steady(proc.pid, duration_s)
+        trackify = _sample_steady(proc.pid, duration_s, engine_root_pid)
         _signal_browser(proc)
         _finish_browser_session(proc)
         return gig, trackify, gig_stable_ids
@@ -393,25 +460,6 @@ def _capture_trackify_leak(frontend: str, duration_s: int) -> LeakSeries:
     finally:
         if proc.poll() is None:
             proc.kill()
-
-
-_METHOD = (
-    "process-tree physical-footprint/CPU sampling of the Playwright-launched Chromium running "
-    "Gig/Trackify (PERFMODE-15) -- browser/renderer process family only, not the "
-    "packaged app's telemetry endpoint and not the python engine (no per-process "
-    "CPU is exposed for that family by any existing endpoint). This is a NARROWER "
-    "scope than capture_library_mode.py's PERFMODE-14 ratios, which also attribute "
-    "the engine process and its stem-worker descendants: the two ratio families "
-    "exclude different processes and are not directly comparable cross-KPI."
-)
-_RETAINED_METHOD = (
-    f"quiescent-checkpoint baselines ({ADR_REF}): every {CHECKPOINT_INTERVAL_S} s of played "
-    "time Trackify autoplay is turned off, deck 1 unloaded, the main isolate garbage collected "
-    "and a critical memory-pressure notification sent, then the median of "
-    f"{CHECKPOINT_SAMPLES} process-tree phys_footprint samples of the Playwright-launched "
-    "Chromium (browser/renderer family only) is the baseline; the KPI is the least-squares "
-    "slope of the baselines against played time"
-)
 
 
 def _capture_identity_reason(
@@ -438,88 +486,25 @@ def _capture_identity_reason(
     return _verify_frontend_build_version(frontend, expected_sha)
 
 
-def _gig_baseline_rows(
-    gig: dict[str, float],
-    trackify: dict[str, float],
-    gig_stable_ids: object,
-    meta: CaptureMeta,
-) -> list[dict[str, Any]]:
-    """The footprint and CPU ratio rows for one Gig-then-Trackify capture.
-
-    Refuses a capture that cannot name its four Gig decks or has a zero
-    denominator: neither is an auditable measurement.
-    """
-    stable_ids = _validate_gig_stable_ids(gig_stable_ids)
-    if gig["footprint_mb"] <= 0 or gig["cpu_percent"] <= 0:
-        raise SystemExit("gig baseline denominators missing or zero; refusing ratio write")
-    footprint_ratio = 1.0 - (trackify["footprint_mb"] / gig["footprint_mb"])
-    cpu_ratio = 1.0 - (trackify["cpu_percent"] / gig["cpu_percent"])
-    note = (
-        f"PERFMODE-15 trackify ratios; gig_fp={gig['footprint_mb']:.2f}MB "
-        f"trackify_fp={trackify['footprint_mb']:.2f}MB "
-        f"gig_cpu={gig['cpu_percent']:.2f}% trackify_cpu={trackify['cpu_percent']:.2f}% "
-        f"samples_gig={int(gig['sample_count'])} "
-        f"samples_trackify={int(trackify['sample_count'])} "
-        f"gig_stable_ids={stable_ids!r}"
-    )
-    return [
-        build_row(
-            kpi=kpi,
-            value=round(value, 4),
-            unit="ratio",
-            method=_METHOD,
-            meta=meta,
-            note=note,
-            measured=True,
-        )
-        for kpi, value in (
-            ("trackify_mode_footprint_ratio", footprint_ratio),
-            ("trackify_mode_cpu_ratio", cpu_ratio),
-        )
-    ]
-
-
-def _leak_rows(series: LeakSeries, meta: CaptureMeta) -> list[dict[str, Any]]:
-    """The gating retained-slope row and the diagnostic raw-slope row from one run."""
-    retained = series.retained_slope_mb_per_10min()
-    raw = series.raw_slope_mb_per_10min()
-    summary = f"{series.summary()} retained_slope={retained:.4f} raw_slope={raw:.4f}"
-    return [
-        build_row(
-            kpi=RETAINED_SLOPE_KPI,
-            value=round(retained, 4),
-            unit="MB/10min",
-            method=_RETAINED_METHOD,
-            meta=meta,
-            note=f"PERFMODE-15 trackify 1h retained (quiescent-baseline) slope, {ADR_REF}; {summary}",
-            measured=True,
-        ),
-        build_row(
-            kpi=RAW_SLOPE_KPI,
-            value=round(raw, 4),
-            unit="MB/10min",
-            method=_METHOD,
-            meta=meta,
-            note=(
-                "PERFMODE-15 trackify raw playing-footprint slope, diagnostic: includes the playing "
-                f"track's decoded audio, does not gate ({ADR_REF}); checkpointed run, not comparable "
-                f"with uncheckpointed raw rows; {summary}"
-            ),
-            measured=True,
-        ),
-    ]
-
-
 def _append_rows_after_reverification(
-    ledger: Path, rows: list[dict[str, Any]], frontend: str, sha: str, repo_root: Path = _REPO
+    ledger: Path,
+    rows: list[dict[str, Any]],
+    frontend: str,
+    sha: str,
+    repo_root: Path = _REPO,
+    *,
+    engine: EngineTarget | None,
 ) -> None:
     """Re-run every identity gate after sampling, then append; never append on a refusal.
 
     Sol P1/BLOCKING (PR #4034, discussion_r4149791234): the leak capture can
     run for an hour, so every identity gate runs again after sampling and
-    before any row is appended, as capture_library_mode.py does.
+    before any row is appended, as capture_library_mode.py does. With an
+    `engine`, the PERFMODE-14 target gate also runs with its pid pinned.
     """
     post_reason = _capture_identity_reason(frontend, sha, repo_root)
+    if post_reason is None and engine is not None:
+        post_reason = reverify_engine_target(engine, frontend, sha, repo_root)
     if post_reason is not None:
         raise SystemExit(
             "refusing to write rows: post-capture reverification failed (checkout or "
@@ -534,6 +519,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=["trackify"], required=True)
     parser.add_argument("--gig-baseline", action="store_true")
     parser.add_argument("--frontend", type=str, required=True)
+    parser.add_argument(
+        "--engine",
+        type=str,
+        default=None,
+        help="engine origin the page's /api reaches; required with --gig-baseline (PERFMODE-14 family)",
+    )
     parser.add_argument("--duration-s", type=int, default=_MIN_SAMPLE_S)
     parser.add_argument("--leak-duration-s", type=int, default=0)
     parser.add_argument("--leak-series-out", type=Path, default=None)
@@ -557,11 +548,22 @@ def main(argv: list[str] | None = None) -> int:
     if identity_reason is not None:
         raise SystemExit(f"refusing to capture: {identity_reason}")
 
+    engine: EngineTarget | None = None
+    if args.gig_baseline:
+        if args.engine is None:
+            parser.error("--gig-baseline needs --engine: the ratios include the engine family")
+        engine, engine_reason = verify_engine_target(args.engine, args.frontend, sha)
+        if engine_reason is not None:
+            raise SystemExit(f"refusing to capture: {engine_reason}")
+
     meta = session_meta(sha=sha)
     rows: list[dict[str, Any]] = []
 
-    if args.gig_baseline:
-        gig, trackify, gig_stable_ids = _capture_gig_then_trackify(args.frontend, args.duration_s)
+    if engine is not None:
+        gig, trackify, gig_stable_ids = _capture_gig_then_trackify(
+            args.frontend, args.duration_s, engine.pid
+        )
+        print(f"gig {json.dumps(gig)}\ntrackify {json.dumps(trackify)}", file=sys.stderr)
         rows.extend(_gig_baseline_rows(gig, trackify, gig_stable_ids, meta))
 
     if args.leak_duration_s > 0:
@@ -573,7 +575,7 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
-    _append_rows_after_reverification(args.ledger, rows, args.frontend, sha)
+    _append_rows_after_reverification(args.ledger, rows, args.frontend, sha, engine=engine)
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0
 

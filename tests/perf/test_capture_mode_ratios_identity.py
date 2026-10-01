@@ -34,8 +34,26 @@ from tests.perf.test_library_mode_capture_identity import (
 )
 
 _FOUR_GIG_IDS = [f"{deck}" * 40 for deck in "abcd"]
-_GIG_SAMPLE = {"footprint_mb": 1000.0, "cpu_percent": 50.0, "sample_count": 4.0}
-_TRACKIFY_SAMPLE = {"footprint_mb": 400.0, "cpu_percent": 20.0, "sample_count": 4.0}
+_GIG_SAMPLE = {
+    "footprint_mb": 1000.0,
+    "cpu_percent": 50.0,
+    "browser_footprint_mb": 800.0,
+    "browser_cpu_percent": 40.0,
+    "engine_footprint_mb": 200.0,
+    "engine_cpu_percent": 10.0,
+    "engine_pid_count_max": 1.0,
+    "sample_count": 4.0,
+}
+_TRACKIFY_SAMPLE = {
+    "footprint_mb": 400.0,
+    "cpu_percent": 20.0,
+    "browser_footprint_mb": 250.0,
+    "browser_cpu_percent": 15.0,
+    "engine_footprint_mb": 150.0,
+    "engine_cpu_percent": 5.0,
+    "engine_pid_count_max": 1.0,
+    "sample_count": 4.0,
+}
 
 
 @pytest.fixture
@@ -177,7 +195,7 @@ def test_rows_land_when_identity_still_holds_after_a_four_deck_capture(
     """[if] a valid four-deck capture ends with every gate still passing [then] both ratio rows land naming all four decks, [else stop]."""
     sha = _git_head(repo)
     ledger = _empty_ledger(tmp_path)
-    cmr._append_rows_after_reverification(ledger, _four_deck_rows(sha), frontend, sha, repo)
+    cmr._append_rows_after_reverification(ledger, _four_deck_rows(sha), frontend, sha, repo, engine=None)
     entries = _ledger_entries(ledger)
     assert [row["kpi"] for row in entries] == [
         "trackify_mode_footprint_ratio",
@@ -198,7 +216,7 @@ def test_rows_refused_when_the_checkout_goes_dirty_during_sampling(
     rows = _four_deck_rows(sha)
     (repo / "harness-edit.txt").write_text("edited mid-capture\n", encoding="utf-8")
     with pytest.raises(SystemExit, match=r"post-capture reverification failed.*is DIRTY"):
-        cmr._append_rows_after_reverification(ledger, rows, frontend, sha, repo)
+        cmr._append_rows_after_reverification(ledger, rows, frontend, sha, repo, engine=None)
     assert _ledger_entries(ledger) == []
 
 
@@ -212,7 +230,7 @@ def test_rows_refused_when_the_checkout_moves_commit_during_sampling(
     rows = _four_deck_rows(sha)
     _commit_another_change(repo)
     with pytest.raises(SystemExit, match=rf"post-capture reverification failed.*not {sha}"):
-        cmr._append_rows_after_reverification(ledger, rows, frontend, sha, repo)
+        cmr._append_rows_after_reverification(ledger, rows, frontend, sha, repo, engine=None)
     assert _ledger_entries(ledger) == []
 
 
@@ -232,7 +250,7 @@ def test_rows_refused_when_the_frontend_changes_during_sampling(
         with pytest.raises(
             SystemExit, match=r"post-capture reverification failed.*some-other-checkouts-sha"
         ):
-            cmr._append_rows_after_reverification(ledger, rows, swapped_url, sha, repo)
+            cmr._append_rows_after_reverification(ledger, rows, swapped_url, sha, repo, engine=None)
     finally:
         server.shutdown()
         server.server_close()

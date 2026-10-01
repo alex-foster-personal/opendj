@@ -224,7 +224,7 @@ def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
 def test_sample_steady_rejects_a_duration_below_the_floor() -> None:
     """[if] duration_s is below the floor [then] _sample_steady raises first, [else stop]."""
     with pytest.raises(ValueError, match="at least"):
-        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1)
+        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1, None)
 
 
 @pytest.mark.requirement("PERFMODE-15")

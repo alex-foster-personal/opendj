@@ -167,6 +167,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
     child = _spawn_with_descendant(
         _GIG_TRACKIFY_PROTOCOL_CHILD, 'GIG_STABLE_IDS ["a", "b", "c", "d"]'
     )
+    engine = subprocess.Popen(["sleep", "30"])
     try:
         native = _RecordingNative(DarwinProcessMetrics())
 
@@ -180,20 +181,25 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
             ),
         ):
             gig, trackify, gig_stable_ids = cmr._capture_gig_then_trackify(
-                "http://127.0.0.1:5273", cmr._MIN_SAMPLE_S
+                "http://127.0.0.1:5273", cmr._MIN_SAMPLE_S, engine.pid
             )
 
         assert gig_stable_ids == ["a", "b", "c", "d"]
         for result in (gig, trackify):
             assert result["sample_count"] >= 1.0
-            assert result["footprint_mb"] > 0.0
+            assert result["browser_footprint_mb"] > 0.0
+            assert result["engine_footprint_mb"] > 0.0
+            assert result["footprint_mb"] == pytest.approx(
+                result["browser_footprint_mb"] + result["engine_footprint_mb"]
+            )
         # Real reads happened, and none of them were the launcher's own pid
-        # (excluded by _ProcessTreeSampler.sample() by design) -- the only
-        # live descendant is the one spawned sleep process, so a single
-        # distinct pid proves attribution stayed on it throughout.
-        assert native.pids_read
+        # (excluded by _ProcessTreeSampler.sample() by design): exactly the
+        # one live browser descendant and the engine root were read.
         assert child.pid not in native.pids_read
-        assert len(set(native.pids_read)) == 1
+        assert engine.pid in native.pids_read
+        assert len(set(native.pids_read) - {engine.pid}) == 1
     finally:
         _kill_tree(child.pid)
         child.wait(timeout=5)
+        engine.kill()
+        engine.wait(timeout=5)
