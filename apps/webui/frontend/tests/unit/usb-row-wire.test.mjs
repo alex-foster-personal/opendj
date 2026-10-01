@@ -47,7 +47,9 @@ function track(uuid, pdbId, extra = {}) {
 		bpm: 124.5,
 		duration_s: 301.456,
 		rating: 3,
+		play_count: 0,
 		file_path: `/Contents/fixture/${pdbId}.mp3`,
+		file_present: true,
 		has_analysis: true,
 		has_artwork: false,
 		date_added: '2026-01-02',
@@ -198,15 +200,52 @@ describe('usbRowsForNode', () => {
 		assert.equal(codeOf(() => wire.usbRowsForNode(dangling, 'pl-12', true)), 'USB_TRACK_NOT_FOUND');
 	});
 
-	it('withUsbPresence grays rows in place, keeping ids and order', () => {
+	it('withUsbStickRemoved grays rows in place, keeping ids and order', () => {
 		const rows = wire.usbRowsForNode(lib, 'pl-10', true);
-		const grayed = wire.withUsbPresence(rows, false);
+		const grayed = wire.withUsbStickRemoved(rows);
 		assert.deepEqual(
 			grayed.map((r) => [r.stable_id, r.order, r.file_exists, r.file_availability]),
 			rows.map((r) => [r.stable_id, r.order, false, 'awaiting_volume'])
 		);
-		const back = wire.withUsbPresence(grayed, true);
-		assert.ok(back.every((r) => r.file_exists === true && r.file_availability === 'present'));
+	});
+
+	it('a file missing from a mounted stick is a broken row, not a playable one', () => {
+		const volume = { volume_uuid: UUID_A, present: true };
+		const missing = wire.rowFromUsbTrack(track(UUID_A, 1, { file_present: false }), volume, 1);
+		assert.equal(missing.file_exists, false, 'if true then the browser offers a load that 404s');
+		assert.equal(missing.file_availability, 'absent');
+		const there = wire.rowFromUsbTrack(track(UUID_A, 2), volume, 2);
+		assert.equal(there.file_exists, true, 'control: a file on the stick stays playable');
+		assert.equal(there.file_availability, 'present');
+		// A pulled stick outranks the per-file flag: the row waits for the volume.
+		const pulled = wire.rowFromUsbTrack(
+			track(UUID_A, 1, { file_present: false }),
+			{ volume_uuid: UUID_A, present: false },
+			1
+		);
+		assert.equal(pulled.file_availability, 'awaiting_volume');
+	});
+
+	it('carries the export play count onto the row', () => {
+		const volume = { volume_uuid: UUID_A, present: true };
+		assert.equal(wire.rowFromUsbTrack(track(UUID_A, 1, { play_count: 7 }), volume, 1).play_count, 7);
+		assert.equal(wire.rowFromUsbTrack(track(UUID_A, 2), volume, 2).play_count, 0);
+	});
+
+	it('rejects a payload row without file_present or with a bad play_count', () => {
+		const without = (key) => {
+			const t = track(UUID_A, 1);
+			delete t[key];
+			return library(UUID_A, { tracks: [t] });
+		};
+		assert.equal(codeOf(() => wire.parseUsbLibraryWire(without('file_present'))), 'USB_LIBRARY_MALFORMED');
+		assert.equal(codeOf(() => wire.parseUsbLibraryWire(without('play_count'))), 'USB_LIBRARY_MALFORMED');
+		const negative = library(UUID_A, { tracks: [track(UUID_A, 1, { play_count: -1 })] });
+		assert.equal(codeOf(() => wire.parseUsbLibraryWire(negative)), 'USB_LIBRARY_MALFORMED');
+		const ok = wire.parseUsbLibraryWire(
+			library(UUID_A, { tracks: [track(UUID_A, 1, { play_count: 4, file_present: false })] })
+		);
+		assert.deepEqual([ok.tracks[0].play_count, ok.tracks[0].file_present], [4, false]);
 	});
 
 	it('titles a pane with the stick name first', () => {

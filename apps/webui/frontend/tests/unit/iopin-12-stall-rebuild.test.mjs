@@ -1,4 +1,16 @@
-// requirement: IOPIN-12
+// wiring checks for: IOPIN-12 (NOT acceptance evidence)
+//
+// Every case below that builds an audio graph runs against the recording
+// stand-in in fixtures/fake-web-audio.mjs, with a stubbed daemon and a stubbed
+// stretch processor. It records which calls the engine makes and what it does
+// when a build is made to throw. It executes no browser audio, so a green run
+// here does not show that a real AudioContext, worklet, decoder or output
+// topology works. The acceptance evidence for IOPIN-12 is the real-browser
+// pair tests/e2e/iopin-12-real-audio.spec.ts (djio on the real output, the
+// output-stall rebuild under a playing deck) and
+// tests/e2e/audio-output-topology.spec.ts (master 1/2 and cue 3/4 routing on a
+// real four-channel graph). The claims that still have only these wiring
+// checks are listed in .planning/debt/3837.md.
 //
 // The output-stall rebuild (issue #2155: a new AudioContext with the loaded
 // decks re-attached) is the one graph build that runs while decks are loaded.
@@ -134,7 +146,7 @@ async function loadDeckOne() {
 // a failed rebuild never leaves a deck that shows a track it cannot play
 //-----------------------------------------------------------------------------
 
-test('IOPIN-12: a rebuild whose new graph cannot be built unloads the deck it detached, names the cause, and the next load plays', async () => {
+test('IOPIN-12 wiring check: a rebuild whose new graph cannot be built unloads the deck it detached, names the cause, and the next load plays', async () => {
 	installWindow('?extroute=1:3');
 	FakeAudioContext.maxChannelCount = 4;
 	await loadDeckOne();
@@ -163,7 +175,7 @@ test('IOPIN-12: a rebuild whose new graph cannot be built unloads the deck it de
 	assert.equal(audio.getDeckState(1).playing, true, 'and the reloaded deck plays');
 });
 
-test('IOPIN-12: a rebuild whose teardown of the old graph rejects still resets the graph, so the next load builds a fresh one', async () => {
+test('IOPIN-12 wiring check: a rebuild whose teardown of the old graph rejects still resets the graph, so the next load builds a fresh one', async () => {
 	installWindow('');
 	await loadDeckOne();
 	const old = FakeAudioContext.instances.at(-1);
@@ -192,7 +204,7 @@ test('IOPIN-12: a rebuild whose teardown of the old graph rejects still resets t
 	}
 });
 
-test('IOPIN-12 control: a rebuild that succeeds keeps the loaded deck, re-attaches it on the new context, and registers only that context', async () => {
+test('IOPIN-12 wiring control: a rebuild that succeeds keeps the loaded deck, re-attaches it on the new context, and registers only that context', async () => {
 	installWindow('');
 	await loadDeckOne();
 	const old = FakeAudioContext.instances.at(-1);
@@ -210,7 +222,7 @@ test('IOPIN-12 control: a rebuild that succeeds keeps the loaded deck, re-attach
 	);
 });
 
-test('IOPIN-12 control: a rebuild that re-attaches deck 1 and then fails on deck 2 unloads deck 2 only', async () => {
+test('IOPIN-12 wiring control: a rebuild that re-attaches deck 1 and then fails on deck 2 unloads deck 2 only', async () => {
 	installWindow('');
 	await loadDeckOne();
 	await audio.engine.load(2, SID_2);
@@ -243,7 +255,7 @@ test('IOPIN-12 control: a rebuild that re-attaches deck 1 and then fails on deck
 // the rebuild still retires in-flight output selections
 //-----------------------------------------------------------------------------
 
-test('IOPIN-12 control: a master output selection parked across a stall rebuild rejects as stale and publishes nothing', async () => {
+test('IOPIN-12 wiring control: a master output selection parked across a stall rebuild rejects as stale and publishes nothing', async () => {
 	// The overshoot of the failed-build fix: a failed build must not retire the
 	// selection it runs in, but a rebuild still must, or a sink that lands after
 	// the old route is gone publishes onto the rebuilt one.

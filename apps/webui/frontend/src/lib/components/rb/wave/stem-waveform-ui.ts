@@ -13,9 +13,10 @@ export const STEM_WAVE_ROW_MAX = STEM_CONTROLS.length;
 
 export function stemWaveformApiPart(control: StemControl, layout: StemLayout | null): string | null {
 	if (control === 'vocal') return 'vocals';
-	if (control === 'drums') return layout === 'demucs4' ? 'drums' : null;
 	if (control === 'instrumental') return 'instrumental';
-	return null;
+	// drums / bass / other are real parts of a demucs4 bundle only; the
+	// waveform route names them as the bundle does.
+	return layout === 'demucs4' ? control : null;
 }
 
 export function stemWaveRowUnavailableTip(deck: DeckState, stem: StemControl): string | null {

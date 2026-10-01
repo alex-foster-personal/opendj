@@ -1,6 +1,8 @@
 """Live read-only tests against a real rekordbox USB stick when MDT_USB_STICK_ROOT is set.
 
-Skips with a stated reason when ``MDT_USB_STICK_ROOT`` is unset; never writes to the stick.
+Fails closed when ``MDT_USB_STICK_ROOT`` is unset (``MDT_ALLOW_MISSING_FIXTURES=1`` reports
+the stick UNAVAILABLE as a skip instead, see tests/sync/usb/live_stick.py); never writes to
+the stick.
 USBPLAY-08 snapshot helpers and the synthetic stick write guard live here with the real-stick
 suite so the route tests module stays under the 600-line limit.
 """
@@ -24,6 +26,7 @@ from apps.sync.usb import stick_library as sl
 from apps.sync.usb.pioneer.reader import read_export_pdb
 from apps.webui.server.routes import usb_volumes as usb_mod
 from apps.webui.server.routes.rb_hot_cues import HotCueSlotOut
+from tests.sync.usb.live_stick import live_stick_root
 from tests.sync.usb.synthetic_stick import SHARED_ANLZ_DIR
 
 from .test_usb_stick_routes import (
@@ -125,7 +128,6 @@ def test_stick_snapshot_detects_a_change_and_the_routes_make_none(
 
 # ----- live: a real stick, read only -----------------------------------------
 
-_LIVE_ENV = "MDT_USB_STICK_ROOT"
 # The reference test stick's export (read Fri 25 Sep 2026). Another stick
 # needs its own numbers; these are what USBPLAY-03 was measured against.
 _LIVE_COUNTS = {"tracks": 563, "playlists": 10, "playlist_entries": 759}
@@ -143,15 +145,7 @@ def _fresh_state() -> Iterator[None]:
 
 @pytest.fixture
 def live_mount() -> Path:
-    raw = os.environ.get(_LIVE_ENV, "")
-    if not raw:
-        reason = f"{_LIVE_ENV} is unset: no real rekordbox stick to read (set it to the mount path)"
-        print(reason)
-        pytest.skip(reason)
-    root = Path(raw)
-    if not root.joinpath(*sl.EXPORT_PDB_PARTS).is_file():
-        pytest.fail(f"{_LIVE_ENV}={raw!r} is set but has no {'/'.join(sl.EXPORT_PDB_PARTS)}")
-    return root
+    return live_stick_root(os.environ)
 
 
 @pytest.fixture

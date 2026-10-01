@@ -1,10 +1,14 @@
 /**
- * Web Audio and window test doubles shared by the IOPIN-12 suites.
+ * A recording stand-in for Web Audio and window, for the IOPIN-12 WIRING
+ * checks only. Nothing built on it is acceptance evidence.
  *
- * node:test has no AudioContext. Every node records its edges on the owning
- * context so a test can assert what reached the destination, and a connect
- * across contexts throws exactly as the real API does. It fabricates no app
- * data; it stands in for the browser API.
+ * node:test has no AudioContext. Every node here records its edges on the
+ * owning context so a check can assert which calls the engine made and what
+ * it connected to what, and a connect across contexts throws as the real API
+ * does. It renders no audio, decodes nothing and runs no worklet, so it cannot
+ * show that a browser's graph builds or plays. Those claims are proved in a
+ * real browser: tests/e2e/iopin-12-real-audio.spec.ts and
+ * tests/e2e/audio-output-topology.spec.ts.
  */
 
 export class FakeParam {

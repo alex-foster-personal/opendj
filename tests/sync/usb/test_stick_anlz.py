@@ -21,7 +21,7 @@ Acceptance tests (single-line intent):
 
 Every ANLZ file here is SYNTHETIC, built byte by byte below. Nothing is copied
 from a real stick (the repo is public). The live test reads the stick named by
-MDT_USB_STICK_ROOT, read only, and skips with a stated reason when it is unset.
+MDT_USB_STICK_ROOT, read only, and fails closed when it is unset (see live_stick.py).
 
 -Claude
 """
@@ -63,6 +63,7 @@ from tests.sync.usb.anlz_bytes import (
     pwv7,
     write_track,
 )
+from tests.sync.usb.live_stick import live_stick_root
 
 POINTS = 256
 SHARED_DIR = "PIONEER/USBANLZ/P016/00024756"
@@ -397,21 +398,12 @@ def test_cue_rows_validate_as_the_library_hot_cue_model(tmp_path: Path) -> None:
 
 # ----- live stick (read only) ------------------------------------------------------
 
-STICK_ENV = "MDT_USB_STICK_ROOT"
 STICK_BUDGET_MEDIAN_MS = 20.0
 STICK_TIMING_PASSES = 3
 
 
 def _stick_root() -> Path:
-    raw = os.environ.get(STICK_ENV, "")
-    if not raw:
-        reason = f"{STICK_ENV} is unset: live stick ANLZ decode not run (set it to a mounted stick)"
-        print(f"[SKIP] {reason}")
-        pytest.skip(reason)
-    root = Path(raw)
-    if not (root / "PIONEER" / "rekordbox" / "export.pdb").is_file():
-        pytest.fail(f"{STICK_ENV}={raw!r} is set but PIONEER/rekordbox/export.pdb is not there")
-    return root
+    return live_stick_root(os.environ)
 
 
 def test_live_stick_every_track_decodes_within_budget() -> None:

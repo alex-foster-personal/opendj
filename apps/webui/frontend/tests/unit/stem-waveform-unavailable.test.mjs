@@ -37,3 +37,23 @@ test('ready demucs4 drums row is available', () => {
 	};
 	assert.equal(ui.stemWaveRowUnavailableTip(deck, 'drums'), null);
 });
+
+// [if] a demucs4 deck shows BASS / HARM rows [then] each asks the waveform
+// route for its own bundle part, [else] the row is a blank canvas that is
+// neither drawn nor marked unavailable.
+test('every available demucs4 control maps to the waveform part the route serves', () => {
+	assert.equal(ui.stemWaveformApiPart('vocal', 'demucs4'), 'vocals');
+	assert.equal(ui.stemWaveformApiPart('drums', 'demucs4'), 'drums');
+	assert.equal(ui.stemWaveformApiPart('bass', 'demucs4'), 'bass');
+	assert.equal(ui.stemWaveformApiPart('other', 'demucs4'), 'other');
+	assert.equal(ui.stemWaveformApiPart('instrumental', 'demucs4'), 'instrumental');
+});
+
+test('a roformer2 bundle has no drums, bass or other part to ask for', () => {
+	assert.equal(ui.stemWaveformApiPart('vocal', 'roformer2'), 'vocals');
+	assert.equal(ui.stemWaveformApiPart('instrumental', 'roformer2'), 'instrumental');
+	for (const control of ['drums', 'bass', 'other']) {
+		assert.equal(ui.stemWaveformApiPart(control, 'roformer2'), null, control);
+		assert.equal(ui.stemWaveformApiPart(control, null), null, control);
+	}
+});
