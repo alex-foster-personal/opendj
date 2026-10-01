@@ -88,11 +88,10 @@ export interface RbMeta {
 	folder_path: string | null;
 	/** Genre column value from djmdContent join; null when unset. */
 	genre: string | null;
-	/** True/false once actually checked; null only for a local-vendor row
-	 * (vendor: 'local') whose optional mutagen tag reader was never available
-	 * to check with (#795) - an honest unknown, not a guessed false. A
-	 * rekordbox-mapped row is always a definite true/false. Lets the browser
-	 * skip doomed fetches when it IS false. */
+	/** True/false once actually checked. null is kept in the type for wire
+	 * compatibility: since the tag reader became a core dependency every
+	 * build checks a local-vendor row's file (#795). Lets the browser skip
+	 * doomed fetches when it IS false. */
 	artwork_available: boolean | null;
 	/** Why artwork is / isn't available (empty ImagePath is the common miss). */
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';

@@ -78,7 +78,7 @@ export interface BrowserRow extends Pick<
 	/** Inline genre when the listing or playlist row carries it; null =
 	 * fall back to lazily fetched rb_meta. */
 	genre: string | null;
-	/** Explains an empty genre cell (missing tags extra, no file tag, etc.). */
+	/** Explains an empty genre cell (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
 	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
 	file_exists: boolean | null;

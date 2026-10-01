@@ -399,7 +399,7 @@ export interface PlaylistTrackRowWire {
 	loudness_reason?: string | null;
 	duration_ms: number | null;
 	genre: string | null;
-	/** When genre is null, names why (missing tags extra, no file tag, etc.). */
+	/** When genre is null, names why (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
 	comments: string | null;
 	etag: string;
