@@ -1,5 +1,7 @@
 """TAGIO-02: the in-house ID3v2 reader / writer (apps.shared.id3v2).
 
+[if] an ID3 frame is written [then] tinytag sees it, audio intact, [else stop].
+
 Every write is checked by tinytag (an independent reader) and, for the audio
 bytes, by comparing the stream after the tag byte-for-byte; the base files are
 real MP3s encoded and tagged by ffmpeg.

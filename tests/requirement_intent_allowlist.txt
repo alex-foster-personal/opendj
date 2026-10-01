@@ -319,7 +319,6 @@ tests/webui/test_dedup_review.py
 tests/webui/test_local_waveform_decode.py
 tests/webui/test_local_waveform_share_audience.py
 tests/webui/test_rb_artwork_local_track.py
-tests/webui/test_rb_artwork_reader_unavailable.py
 tests/webui/test_rb_hot_cue_write.py
 tests/webui/test_rb_mapping_flag.py
 tests/webui/test_rb_meta_local_track.py

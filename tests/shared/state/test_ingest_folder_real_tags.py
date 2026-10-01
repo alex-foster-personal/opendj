@@ -1,5 +1,7 @@
 """TAGIO-01: a folder import of REAL tagged files carries their tags into state.
 
+[if] tagged files are folder-imported [then] rows carry their tags, [else stop].
+
 No reader is stubbed: every file is encoded and tagged by ffmpeg, walked by
 the real ``collect_audio``, probed and read by the real tag reader. This is
 the path the packaged app runs, which read no tags at all while the reader

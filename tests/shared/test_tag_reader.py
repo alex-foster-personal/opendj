@@ -1,5 +1,7 @@
 """TAGIO-01: tag reads through tinytag, for every container folder import allows.
 
+[if] a container carries tags [then] tinytag reads every field, [else stop].
+
 Fixtures are real audio encoded by ffmpeg with the container's own native tags
 (see ``tests/fixtures/tagged_audio.py``); nothing here reads back a value that
 the code under test wrote.

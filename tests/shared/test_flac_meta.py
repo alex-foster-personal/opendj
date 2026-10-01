@@ -1,5 +1,7 @@
 """TAGIO-03: the in-house FLAC metadata writer (apps.shared.flac_meta).
 
+[if] a FLAC comment is written [then] tinytag sees it, audio intact, [else stop].
+
 Base files are real FLACs encoded and tagged by ffmpeg; every write is read
 back by tinytag (independent) and decoded by ffmpeg.
 

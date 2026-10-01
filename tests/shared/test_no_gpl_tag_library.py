@@ -1,5 +1,7 @@
 """TAGIO-04: the GPL ``mutagen`` cannot come back into the shipped code path.
 
+[if] mutagen re-enters code, deps or payload [then] this fails, [else stop].
+
 Regression one-liners:
   - if any module under apps/ or scripts/ imports mutagen then broken
   - if pyproject.toml declares mutagen in any dependency list or extra then broken
