@@ -1,4 +1,4 @@
-"""Base-merge carry rule for reviewer coverage (REVIEW-12, ADR-NEW-review-coverage-base-merge-carry).
+"""Base-merge carry rule for reviewer coverage (REVIEW-16, ADR-NEW-review-coverage-base-merge-carry).
 
 Coverage is keyed to the PR's current head, so a plain `git merge origin/main`
 into a PR used to void every review even when the PR's own change was

@@ -1,4 +1,4 @@
-"""Base-merge carry (REVIEW-12): unmeasurable reads are UNKNOWN, and triage prints the proof.
+"""Base-merge carry (REVIEW-16): unmeasurable reads are UNKNOWN, and triage prints the proof.
 
 Real throwaway git repositories, see tests/scripts/base_merge_repo.py.
 """
@@ -38,7 +38,7 @@ def reviewed(repo: Path) -> str:
     return make_reviewed(repo)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_missing_reviewed_object_reports_unknown_and_does_not_carry(
     repo: Path, reviewed: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -68,7 +68,7 @@ def test_missing_reviewed_object_reports_unknown_and_does_not_carry(
     assert "carry UNKNOWN" in row.reason and ghost[:11] in row.reason
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_shallow_clone_reports_unknown_and_does_not_carry(repo: Path, reviewed: str, tmp_path: Path) -> None:
     """[if] the checkout is a shallow clone [then] the carry reads UNKNOWN and does not carry, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
@@ -86,7 +86,7 @@ def test_shallow_clone_reports_unknown_and_does_not_carry(repo: Path, reviewed: 
     assert any("shallow clone" in note for note in result.unknown), result.unknown
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_triage_prints_base_merge_pass_line_and_proof(
     repo: Path, reviewed: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

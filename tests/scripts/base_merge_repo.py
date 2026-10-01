@@ -1,4 +1,4 @@
-"""Throwaway git repositories for the base-merge carry tests (REVIEW-12).
+"""Throwaway git repositories for the base-merge carry tests (REVIEW-16).
 
 Real commits, real merges and a real bare `origin` whose main is pinned by
 `ls-remote`. No mocks of git.

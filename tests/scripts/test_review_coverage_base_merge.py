@@ -1,4 +1,4 @@
-"""Base-merge carry for reviewer coverage (REVIEW-12): the disjoint-paths rule.
+"""Base-merge carry for reviewer coverage (REVIEW-16): the disjoint-paths rule.
 
 Real throwaway git repositories in tmp_path: real commits, real merges, a real
 bare `origin` whose main is pinned by `ls-remote`, real merge-bases and diffs.
@@ -45,7 +45,7 @@ def reviewed(repo: Path) -> str:
 # positive controls: main changed only unrelated paths, the merge is clean
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_clean_base_merge_of_unrelated_file_carries_with_proof(repo: Path, reviewed: str) -> None:
     """[if] main changes only an unrelated file and the merge is clean [then] coverage carries, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
@@ -60,7 +60,7 @@ def test_clean_base_merge_of_unrelated_file_carries_with_proof(repo: Path, revie
     assert "disjoint paths: main changed 1, PR changed 1, shared 0" in proof
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_quoted_path_is_read_raw_and_carries(repo: Path) -> None:
     """[if] the PR's file name has spaces and non-ASCII [then] its path reads raw and coverage carries, [else stop]."""
     reviewed = commit(repo, QUOTED, "café v1\n")
@@ -76,7 +76,7 @@ def test_quoted_path_is_read_raw_and_carries(repo: Path) -> None:
 # condition 2: main and the PR share no path
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_main_change_to_pr_file_far_from_hunk_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] main edits a file the PR touches, far from the PR's hunk [then] no carry, [else stop].
 
@@ -91,7 +91,7 @@ def test_main_change_to_pr_file_far_from_hunk_does_not_carry(repo: Path, reviewe
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_main_change_to_quoted_pr_path_does_not_carry(repo: Path) -> None:
     """[if] main edits the PR's spaced, non-ASCII path [then] the overlap is seen and no carry, [else stop]."""
     git(repo, "checkout", "-q", "main")
@@ -128,7 +128,7 @@ def _dup_lines_block_a_removed() -> str:
     return lines(edits)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_relocated_hunk_onto_duplicate_block_does_not_carry(repo: Path) -> None:
     """[if] a merge ports the reviewed edit onto an identical duplicate block [then] no carry, [else stop].
 
@@ -147,7 +147,7 @@ def test_relocated_hunk_onto_duplicate_block_does_not_carry(repo: Path) -> None:
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_edit_ported_to_a_unique_block_main_moved_does_not_carry(repo: Path) -> None:
     """[if] main moves the sole matching block and the merge ports the edit there [then] no carry, [else stop].
 
@@ -168,7 +168,7 @@ def test_edit_ported_to_a_unique_block_main_moved_does_not_carry(repo: Path) -> 
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_hostile_diff_config_does_not_change_the_net_diff(repo: Path, reviewed: str) -> None:
     """[if] diff.context=0, diff.noprefix or core.abbrev is set [then] net diff bytes are unchanged, [else stop]."""
     base = git(repo, "merge-base", "main", reviewed)
@@ -188,7 +188,7 @@ def test_hostile_diff_config_does_not_change_the_net_diff(repo: Path, reviewed: 
     assert net_diff(repo, base, reviewed) == pinned
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_context_zero_config_does_not_mask_a_hand_edit_beside_the_hunk(repo: Path, reviewed: str) -> None:
     """[if] diff.context=0 is set and the merge edits a context line of the hunk [then] no carry, [else stop]."""
     git(repo, "config", "diff.context", "0")
@@ -203,7 +203,7 @@ def test_context_zero_config_does_not_mask_a_hand_edit_beside_the_hunk(repo: Pat
 # condition 3: the merge introduced no hand edits
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_whitespace_hand_edit_to_pr_line_inside_merge_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] a clean-path merge re-indents a reviewed line [then] no carry, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
@@ -212,7 +212,7 @@ def test_whitespace_hand_edit_to_pr_line_inside_merge_does_not_carry(repo: Path,
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_hand_edit_to_untouched_file_inside_merge_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] the merge commit edits a file neither main nor the PR touched [then] no carry, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
@@ -221,7 +221,7 @@ def test_hand_edit_to_untouched_file_inside_merge_does_not_carry(repo: Path, rev
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_hand_edit_to_main_changed_file_inside_merge_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] the merge commit edits a file main changed, beyond main's version [then] no carry, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
@@ -234,7 +234,7 @@ def test_hand_edit_to_main_changed_file_inside_merge_does_not_carry(repo: Path, 
 # condition 1: base merges only, onto the PR's own first-parent chain
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_own_commit_on_pr_file_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] a commit after review changes the PR's own file [then] no carry, [else stop]."""
     commit(repo, FILE, lines({30: "line30 pr", 31: "line31 pr"}))
@@ -244,7 +244,7 @@ def test_own_commit_on_pr_file_does_not_carry(repo: Path, reviewed: str) -> None
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_revert_pair_then_base_merge_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] own commits that net to nothing ride along with a base merge [then] no carry, [else stop]."""
     commit(repo, FILE, lines({30: "line30 pr", 5: "line5 sneaky"}))
@@ -255,7 +255,7 @@ def test_revert_pair_then_base_merge_does_not_carry(repo: Path, reviewed: str) -
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_merge_with_main_as_first_parent_does_not_carry(repo: Path, reviewed: str) -> None:
     """[if] the head is main merged with the PR, main as first parent [then] no carry, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
@@ -267,7 +267,7 @@ def test_merge_with_main_as_first_parent_does_not_carry(repo: Path, reviewed: st
     assert_no_carry(repo, reviewed, head)
 
 
-@pytest.mark.requirement("REVIEW-12")
+@pytest.mark.requirement("REVIEW-16")
 def test_gitlink_smuggled_into_merge_does_not_carry_when_submodules_are_ignored(repo: Path, reviewed: str) -> None:
     """[if] a merge adds a submodule pointer while diff.ignoreSubmodules=all [then] no carry, [else stop]."""
     git(repo, "config", "diff.ignoreSubmodules", "all")
