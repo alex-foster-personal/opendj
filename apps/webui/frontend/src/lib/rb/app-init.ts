@@ -163,7 +163,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 				() => readXrunSessionCounter().xruns
 			);
 			setAudioPrefetchShedRequest((id) => shed.request(id));
-			setEagerStemDecodeShed(shed, () => kernelPressureIsElevated(readMachinePressure()));
+			setEagerStemDecodeShed(shed, () => kernelPressureIsElevated(readMachinePressure()), anyDeckPlaying);
 			setAnlzPrefetchShedRequest((id) => shed.request(id));
 		}
 	});

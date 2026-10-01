@@ -13,8 +13,12 @@
  *     [if] any group is soloed [then] non-solo groups gain 0; mute wins
  */
 
-import { decodeStemParts, stemDecodeLabels } from '$lib/player/decode/flac-stem-decode';
-import { awaitEagerStemDecodeSlot } from '$lib/rb/stem-decode-shed';
+import {
+	decodeStemParts,
+	stemDecodeLabels,
+	stemDecodeWidth
+} from '$lib/player/decode/flac-stem-decode';
+import { awaitEagerStemDecodeSlot, eagerStemDecodeIsLive } from '$lib/rb/stem-decode-shed';
 import { assertUnitRange, stemLinearFromKnob } from '$lib/player/constants';
 import { processorOnsetLeadSec } from '$lib/player/transport/schedule-math';
 import {
@@ -108,11 +112,15 @@ export async function decodeStemBuffers(
 	);
 	const decodeWaitMs = Math.round(performance.now() - waitStartedMs);
 	hooks.onStart?.();
-	const decoded = await decodeStemParts(ctx, encoded, parts);
+	// PERF-STEMDEC-04: one part at a time while a deck is audible, read per part.
+	const decoded = await decodeStemParts(ctx, encoded, parts, {
+		width: () => stemDecodeWidth(parts.length, eagerStemDecodeIsLive())
+	});
 	return {
 		buffers: decoded.buffers,
 		labels: {
 			...stemDecodeLabels(decoded.reports),
+			decode_width: String(decoded.width),
 			decode_start: decodeStart,
 			decode_wait_ms: String(decodeWaitMs)
 		}
