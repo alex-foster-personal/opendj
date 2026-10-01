@@ -51,6 +51,13 @@ from dataclasses import dataclass
 from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
 
+_SOL_MARKER_GROUPS = 4
+if SOL_MARKER.groups != _SOL_MARKER_GROUPS:
+    raise RuntimeError(
+        f"SOL_MARKER shape changed: expected 4 capture groups (sha, seat, model, skipped), "
+        f"got {SOL_MARKER.groups}"
+    )
+
 # fnmatch semantics: `*` also crosses `/`, so `.github/workflows/*` covers the tree.
 ROOT_IMPORT_PATHS: tuple[str, ...] = ("__pycache__/*", "_winapi/*", "msvcrt/*", "nt/*", "org/*")
 CONTROL_PLANE_PATHS: tuple[str, ...] = (
@@ -231,23 +238,31 @@ def _cursor_model_counts(model: str) -> bool:
     return lowered.startswith(("composer-", "cursor-"))
 
 
-def _positional_group(match: re.Match[str], index: int) -> str | None:
-    groups = match.groups()
-    if index < 1 or index > len(groups):
-        return None
-    return groups[index - 1]
-
-
-def _subscription_marker_signature(lane: str, match: re.Match[str]) -> tuple[str, str, str | None]:
+def _subscription_marker_signature(lane: str, match: re.Match[str]) -> tuple[str, str, str, str | None]:
     if lane == "Sol":
-        sha = _positional_group(match, 1)
-        model = _positional_group(match, 3)
-        skipped = _positional_group(match, 4)
-        return ((sha or "").lower(), (model or "").lower(), skipped)
+        if len(match.groups()) != _SOL_MARKER_GROUPS:
+            raise RuntimeError(
+                f"SOL_MARKER shape changed: expected 4 capture groups (sha, seat, model, skipped), "
+                f"got {len(match.groups())}"
+            )
+        sha = match.group(1)
+        seat = match.group(2)
+        model = match.group(3)
+        skipped = match.group(4)
+        return (sha.lower(), seat.lower(), model.lower(), skipped)
     sha = match.group("sha")
     model = match.group("model")
     skipped = match.groupdict().get("skipped")
-    return (sha.lower(), model.lower(), skipped)
+    seat_group = match.groupdict().get("seat")
+    seat = "" if seat_group is None else seat_group.lower()
+    return (sha.lower(), seat, model.lower(), skipped)
+
+
+def _review_body_text(review: Mapping) -> str:
+    body = review["body"]
+    if body is None:
+        return ""
+    return str(body)
 
 
 def _subscription_lanes_with_markers(body: str) -> frozenset[str]:
@@ -404,9 +419,7 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         unambiguous_reviews = [
             review
             for review in reviews
-            if not _subscription_review_body_ambiguous(
-                "" if review.get("body") is None else str(review["body"])
-            )
+            if not _subscription_review_body_ambiguous(_review_body_text(review))
         ]
         found = {}
         for name in rc.EXPECTED_REVIEWERS:
