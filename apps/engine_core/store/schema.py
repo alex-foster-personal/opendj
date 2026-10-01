@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 10
+SCHEMA_VERSION: int = 11
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1313,7 +1313,20 @@ token (legacy ladder v21, issue #4396).
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v9 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10]
+_V11: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_playlist_memberships_live_order "
+    "ON playlist_memberships("
+    "playlist_id, COALESCE(order_key, printf('%08d', position)), position"
+    ") WHERE deleted_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_playlist_memberships_live_stable_id "
+    "ON playlist_memberships(playlist_id, stable_id) WHERE deleted_at IS NULL",
+]
+"""10 -> 11: bounded playlist membership reads (legacy ladder v22, issue #3963).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v10 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.

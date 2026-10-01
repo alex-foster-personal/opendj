@@ -14,6 +14,7 @@ import {
 	pausedMasterSelectionBlockers
 } from '$lib/rb/audio-engine-guards';
 import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
+import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster } from '$lib/rb/master-election';
@@ -419,14 +420,11 @@ export const rustHotCueDriver: PerformanceHotCueDriver = {
 		};
 	},
 	jump: (deck, positionMs) => _seek(deck, positionMs, { quantize: true }),
-	arm: async (deck, positionMs, armAtPositionSec) => {
+	arm: async (deck, positionMs, armAt) => {
 		const st = loadedDeck(deck, 'armHotCueTrigger');
 		const nowPositionSec = playheadMs(deck) / 1000;
-		if (armAtPositionSec < nowPositionSec) {
-			throw new RangeError(
-				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
-			);
-		}
+		// A resolver arm point (waveform seek) is resolved on this live playhead.
+		const armAtPositionSec = resolveArmAtPosition(armAt, nowPositionSec);
 		cancelArmedJump(deck);
 		const delaySec = (armAtPositionSec - nowPositionSec) / st.pitch;
 		const landsAt = _nowSec() + delaySec;

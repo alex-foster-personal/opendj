@@ -24,6 +24,11 @@ import {
 	type PlaylistTreeViewMode
 } from './playlist-tree-view-prefs';
 import type { PreviewBeatSync } from '$lib/player/preview-beat-sync';
+import {
+	parseWaveformDesign,
+	WAVEFORM_DESIGN_DEFAULT,
+	type WaveformDesign
+} from '$lib/rb/waveform-design';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
@@ -194,6 +199,8 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPref
 	compatible_filter: CompatibleFilterPrefs;
 	/** LIBM-129 v2: configured watcher folders (no daemon yet). */
 	library_watcher_folders: string[];
+	/** DECKUX-20: tri-band, mono envelope, or line outline for waveforms. */
+	waveform_design: WaveformDesign;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -253,6 +260,7 @@ const DEFAULTS: RbUiPrefs = {
 	show_stems: false,
 	compatible_filter: { ...COMPATIBLE_FILTER_DEFAULTS },
 	library_watcher_folders: [],
+	waveform_design: WAVEFORM_DESIGN_DEFAULT,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -439,6 +447,7 @@ function _load(): RbUiPrefs {
 				'clear the localStorage key to recover'
 		);
 	}
+	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
 		crossfadeCurve !== undefined &&
@@ -510,6 +519,7 @@ function _load(): RbUiPrefs {
 		jog_radial_waveform: parsed.jog_radial_waveform ?? DEFAULTS.jog_radial_waveform,
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
+		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
@@ -677,6 +687,12 @@ export function setShowStems(next: boolean): void {
 	uiPrefs.show_stems = next;
 	_persist();
 	void _syncDiskPrefs({ show_stems: next });
+}
+
+export function setWaveformDesign(next: WaveformDesign): void {
+	parseWaveformDesign(next);
+	uiPrefs.waveform_design = next;
+	_persist();
 }
 
 export function setCrossfadeCurve(next: CrossfadeCurve): void {

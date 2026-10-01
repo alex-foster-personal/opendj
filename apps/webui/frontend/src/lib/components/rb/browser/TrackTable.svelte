@@ -23,7 +23,12 @@
 	// provider.total.
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import {
+		artworkUrl,
+		artworkStatusLabel,
+		type PreviewStripData,
+		type Vocals
+	} from '$lib/rb/api-rb';
 	import {
 		rememberOptionalResources,
 		shouldFetchArtwork
@@ -92,7 +97,6 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
-	import SpinnerIcon from './SpinnerIcon.svelte';
 	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
@@ -293,6 +297,8 @@
 		loadedIds,
 		vocalsById,
 		markerAnlzById,
+		previewStripById,
+		stripLoadingById,
 		sortKey,
 		sortDir,
 		emptyMessage,
@@ -351,6 +357,11 @@
 		/** Strip marker ANLZ ALREADY in memory (loaded decks / anlz cache),
 		 * resolved by BrowserPanel (LIBUX-12); absent = markerless strip. */
 		markerAnlzById: Record<string, AnlzData>;
+		/** Preview strip bytes ALREADY in memory (listing hydrate / anlz cache),
+		 * resolved by BrowserPanel; absent = dash until warmed elsewhere. */
+		previewStripById: Record<string, PreviewStripData | null>;
+		/** True only while a warmed cache entry is still loading (never per-row fetch). */
+		stripLoadingById: Record<string, boolean>;
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
@@ -1731,7 +1742,8 @@
 						{/if}
 						<td class="c-preview">
 							<PreviewStrip
-								strip={row.strip}
+								strip={row.strip ?? previewStripById[row.stable_id] ?? null}
+								stripLoading={stripLoadingById[row.stable_id] ?? false}
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
@@ -1797,11 +1809,7 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{#if isLoading}
-											<SpinnerIcon size={9} />
-										{:else}
-											{d}
-										{/if}
+										{d}
 									</button>
 								{/each}
 								{#if removable}

@@ -29,7 +29,7 @@ fn two_deck_plan(block: usize) -> serde_json::Value {
     })
 }
 
-fn fixture_dir() -> std::path::PathBuf {
+fn fixture_dir() -> TestDir {
     let d = temp_dir("offline");
     write_wav(&d, "a.wav", 44100, &sine(44100, 220.0, 40.0));
     write_wav(&d, "b.wav", 48000, &sine(48000, 330.0, 40.0));

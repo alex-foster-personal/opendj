@@ -18,6 +18,7 @@
 		type SettingGroupId
 	} from '$lib/settings/catalog';
 	import { applySettingChange, readSettingValue, type AllowedSettingKey } from '$lib/settings/apply';
+	import WaveformDesignPreview from './WaveformDesignPreview.svelte';
 	import { aiApplySetting, aiSearchSettings } from '$lib/settings/ai-client';
 	import {
 		applyBooleanAction,
@@ -557,6 +558,9 @@
 														<option value={opt.value}>{opt.label}</option>
 													{/each}
 												</select>
+												{#if def.id === 'waveform_design'}
+													<WaveformDesignPreview />
+												{/if}
 											{:else if def.control.kind === 'multi_bool'}
 												<div class="so-multi" title={def.title}>
 													{#each def.control.keys as key (key.id)}

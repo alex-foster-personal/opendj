@@ -11561,6 +11561,81 @@
         "title": "MembershipAddIn",
         "type": "object"
       },
+      "MembershipAddOut": {
+        "description": "``:add`` response: the header and the rows inserted, in order.\n\nNo ``items`` / ``track_count``: both are O(members) and no caller reads\nthem (ADR-NEW playlist-add-constant-time). ``added`` is empty when\n``forbid_duplicates`` dropped every requested id.",
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipAddedOut"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "created_at",
+          "updated_at",
+          "forbid_duplicates",
+          "added"
+        ],
+        "title": "MembershipAddOut",
+        "type": "object"
+      },
+      "MembershipAddedOut": {
+        "properties": {
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "order_key": {
+            "title": "Order Key",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "stable_id",
+          "order_key"
+        ],
+        "title": "MembershipAddedOut",
+        "type": "object"
+      },
       "MembershipMoveIn": {
         "properties": {
           "after_item_id": {
@@ -32121,7 +32196,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                  "$ref": "#/components/schemas/MembershipAddOut"
                 }
               }
             },

@@ -41,6 +41,8 @@
 		anyDeckPlaying,
 		createPlayingGate,
 		resolveRowMarkerAnlz,
+		resolveRowPreviewStrip,
+		resolveRowStripLoading,
 		resolveRowVocals,
 		isAppropriateNext,
 		resolveSearchFilterFallback,
@@ -111,9 +113,11 @@
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
 	import {
 		dispatchPerformanceCommand,
+		performanceCommandStatus,
 		registerPerformanceBrowserAdapter,
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
+	import SpinnerIcon from './browser/SpinnerIcon.svelte';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
@@ -421,6 +425,7 @@
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
 	);
+	const deckLoadBusy = $derived(DECK_IDS.some((d) => performanceCommandStatus.deck_pending[d] > 0));
 	// Pin 2ac3a0: playlist deck-membership + multi-pane tints for PlaylistTree,
 	// derived from panes' ALREADY HYDRATED rows only - never a fetch of an
 	// unopened playlist just to colour it in.
@@ -460,6 +465,18 @@
 				const entry = getAnlzEntry(stable_id);
 				return entry !== undefined && entry.status === 'ready' ? entry.data : undefined;
 			}
+		})
+	);
+	const previewStripById = $derived.by(() =>
+		resolveRowPreviewStrip({
+			rows: pane.rows,
+			cachedAnlzEntry: (stable_id: string) => getAnlzEntry(stable_id)
+		})
+	);
+	const stripLoadingById = $derived.by(() =>
+		resolveRowStripLoading({
+			rows: pane.rows,
+			cachedAnlzEntry: (stable_id: string) => getAnlzEntry(stable_id)
 		})
 	);
 	/** Reactively copies a decoded local waveform strip into the selected
@@ -3488,6 +3505,8 @@
 			{loadedIds}
 			{vocalsById}
 			{markerAnlzById}
+			{previewStripById}
+			{stripLoadingById}
 			sortKey={pane.sort_key}
 			sortDir={pane.sort_dir}
 			{emptyMessage}
@@ -3563,6 +3582,12 @@
 			</button>
 		</div>
 		{#if !isLibraryPanelsCollapsed()}
+			<div class="library-panels-strips" class:busy={deckLoadBusy} aria-busy={deckLoadBusy}>
+			{#if deckLoadBusy}
+				<div class="library-panels-load-overlay" data-testid="library-panels-deck-load-spinner">
+					<SpinnerIcon size={14} />
+				</div>
+			{/if}
 			<!-- dj_copilot suggest-next strip: keyed to the deck-1-loaded track. -->
 			<SuggestNextStrip
 				stableId={decks[1].stable_id}
@@ -3584,6 +3609,7 @@
 				onplay={(sid, pressT0Ms) => loadSuggest(sid, { play: true, pressT0Ms })}
 				onhover={(sid) => (suggestHoverId = sid)}
 			/>
+			</div>
 		{/if}
 	</div>
 	<div class="bottom-bar">
@@ -3937,6 +3963,26 @@
 	}
 	.library-panels-collapse-bar.collapsed {
 		justify-content: flex-end;
+	}
+	.library-panels-strips {
+		position: relative;
+		flex: none;
+		width: 100%;
+		min-height: 52px;
+	}
+	.library-panels-strips.busy > :not(.library-panels-load-overlay) {
+		pointer-events: none;
+		opacity: 0.45;
+	}
+	.library-panels-load-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 3;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		background: color-mix(in srgb, var(--rb-panel) 72%, transparent);
 	}
 	.panels-chevron {
 		display: inline-flex;

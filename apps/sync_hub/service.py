@@ -65,6 +65,7 @@ from apps.sync_hub import (
     enrollment,
     entitlement_gate,
     generation,
+    hub_wal_keeper,
     policy_push,
     policy_store,
     protocol,
@@ -164,8 +165,12 @@ def _machine_name(request: Request) -> str | None:
 
 @contextmanager
 def _hub_conn(request: Request) -> Iterator[sqlite3.Connection]:
-    conn = state_db.open_rw(_db_path(request))
+    path = _db_path(request)
+    conn = state_db.open_rw(path)
     try:
+        # Opened after open_rw has created and migrated the DB, so this
+        # close() never checkpoints and deletes the WAL (LIBM-120 L6).
+        hub_wal_keeper.keep_wal_open(request.app.state, path)
         yield conn
     finally:
         conn.close()
