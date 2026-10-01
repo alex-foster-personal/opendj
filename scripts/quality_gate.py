@@ -144,6 +144,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import collections
 import json
 import os
@@ -1622,6 +1623,16 @@ def _unlink_node_modules(base_fe: Path) -> None:
 _GIT_AUTH_ENV_KEYS: tuple[str, ...] = ("GH_TOKEN", "GITHUB_TOKEN")
 
 
+def _git_basic_credential(token: str) -> str:
+    """base64("x-access-token:<token>"), the form actions/checkout sends.
+
+    GitHub's git smart-HTTP endpoint accepts a token only as the Basic
+    password; a Bearer header fails exactly like no credential at all
+    ("could not read Username"), measured live Wed 30 Sep 2026.
+    """
+    return base64.b64encode(f"x-access-token:{token}".encode()).decode()
+
+
 def _origin_auth_env(cwd: Path = REPO) -> dict[str, str]:
     """Env vars that authenticate ONE git invocation against origin, or {}.
 
@@ -1664,7 +1675,7 @@ def _origin_auth_env(cwd: Path = REPO) -> dict[str, str]:
     return {
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": f"http.{prefix}.extraheader",
-        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: bearer {token}",
+        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {_git_basic_credential(token)}",
     }
 
 

@@ -38,7 +38,7 @@ _TOKEN = "test-partial-clone-token"  # fixture value, not a real credential
 
 
 class _GatedGitHTTPHandler(http.server.BaseHTTPRequestHandler):
-    """Proxies real `git http-backend` CGI output, gated on a bearer token.
+    """Proxies real `git http-backend` CGI output, gated on GitHub-style Basic x-access-token auth.
 
     Everything below the auth check is genuine git smart-HTTP behavior --
     the same binary and protocol a real GitHub fetch uses -- so a client
@@ -46,8 +46,10 @@ class _GatedGitHTTPHandler(http.server.BaseHTTPRequestHandler):
     """
 
     def _serve(self) -> None:
-        required = f"bearer {self.server.required_token}"  # type: ignore[attr-defined]
-        if self.headers.get("Authorization", "").lower() != required.lower():
+        # The scheme word is case-insensitive (RFC 9110); the base64 credential is not.
+        expected = qg._git_basic_credential(self.server.required_token)  # type: ignore[attr-defined]
+        scheme, _, credential = self.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() != "basic" or credential != expected:
             body = b"authentication required"
             self.send_response(401)
             self.send_header("WWW-Authenticate", 'Basic realm="git"')
@@ -171,7 +173,7 @@ def test_unauthenticated_worktree_add_reproduces_the_promisor_failure(
     with _auth_gated_origin(srv_root, _TOKEN) as (origin_url, prefix):
         clone_dir = tmp_path / "clone"
         clone = subprocess.run(
-            ["git", "-c", f"http.{prefix}.extraheader=AUTHORIZATION: bearer {_TOKEN}",
+            ["git", "-c", f"http.{prefix}.extraheader=AUTHORIZATION: basic {qg._git_basic_credential(_TOKEN)}",
              "-c", "protocol.version=2",
              "clone", "-q", "--filter=blob:none", "--", origin_url, str(clone_dir)],
             capture_output=True, text=True, check=False,
@@ -208,7 +210,7 @@ def test_measure_owners_at_base_survives_partial_clone_with_gh_token(
     with _auth_gated_origin(srv_root, _TOKEN) as (origin_url, prefix):
         clone_dir = tmp_path / "clone"
         subprocess.run(
-            ["git", "-c", f"http.{prefix}.extraheader=AUTHORIZATION: bearer {_TOKEN}",
+            ["git", "-c", f"http.{prefix}.extraheader=AUTHORIZATION: basic {qg._git_basic_credential(_TOKEN)}",
              "-c", "protocol.version=2",
              "clone", "-q", "--filter=blob:none", "--", origin_url, str(clone_dir)],
             check=True, capture_output=True, text=True,
