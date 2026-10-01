@@ -310,7 +310,10 @@ class Front:
                 f"the node test runner printed no TAP pass/fail tally (exit {returncode})",
             )
         if tally["fail"] or returncode != 0:
-            return Verdict("FAIL", f"frontend unit: {tally['fail']} failed of {files} file(s)")
+            ran = tally["pass"] + tally["fail"]
+            return Verdict(
+                "FAIL", f"frontend unit: {tally['fail']} of {ran} test(s) failed in {files} file(s)"
+            )
         if not tally["pass"]:
             return Verdict("UNMEASURED", f"frontend unit: 0 passed in {files} file(s)")
         return Verdict("PASS", f"frontend unit: {tally['pass']} passed in {files} changed file(s)")
@@ -325,11 +328,18 @@ class Tests:
         return REPO / ".venv" / "bin" / "python"
 
     @staticmethod
-    def ledger_seconds(selection: list[str]) -> float:
-        """CI-recorded seconds for the selected modules; a module the ledger lacks adds 0."""
-        ledger = json.loads((REPO / CFG.DURATIONS_LEDGER).read_text(encoding="utf-8"))
+    def ledger_estimate(selection: list[str], ledger: dict[str, float]) -> tuple[float, list[str]]:
+        """CI-recorded seconds for the selected modules, and the modules the ledger lacks.
+
+        An unrecorded module (typically one the change adds) counts 0s and is NOT a reason to
+        skip it: the budget only keeps a pre-PR run short, and each test is still bounded by
+        PYTEST_TIMEOUT_SECONDS. The caller prints the unrecorded list, so the estimate always
+        names what it could not measure.
+        """
         chosen = set(selection)
-        return sum(s for node, s in ledger.items() if node.split("::", 1)[0] in chosen)
+        seconds = sum(s for node, s in ledger.items() if node.split("::", 1)[0] in chosen)
+        recorded = {node.split("::", 1)[0] for node in ledger}
+        return seconds, sorted(chosen - recorded)
 
     @staticmethod
     def provision_argv() -> list[str]:
@@ -351,7 +361,13 @@ class Tests:
 
     @staticmethod
     def pytest(selection: list[str]) -> Verdict:
-        estimate = Tests.ledger_seconds(selection)
+        ledger = json.loads((REPO / CFG.DURATIONS_LEDGER).read_text(encoding="utf-8"))
+        estimate, unrecorded = Tests.ledger_estimate(selection, ledger)
+        print(
+            f"# budget: {estimate:.0f}s recorded for {len(selection) - len(unrecorded)} of "
+            f"{len(selection)} module(s); {len(unrecorded)} unrecorded, counted as 0s: "
+            f"{' '.join(unrecorded) or '-'}"
+        )
         if estimate > CFG.PYTEST_BUDGET_LEDGER_SECONDS:
             return Verdict(
                 "UNMEASURED",
