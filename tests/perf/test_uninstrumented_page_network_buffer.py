@@ -64,7 +64,7 @@ def _probe(page_kind: str) -> dict[str, float]:
 @_requires_reference_mac
 @pytest.mark.requirement("PERFMODE-15")
 def test_control_a_playwright_page_buffers_the_bodies_it_fetched() -> None:
-    """[if] Playwright's own page fetches 48 MB [then] the renderer still holds most of it, [else the probe is blind]."""
+    """[if] Playwright's own page fetches 48 MB [then] the renderer keeps most of it, so the probe can see buffering, [else stop]."""
     reading = _probe("playwright")
     assert reading["pa_buffer_mb"] >= 0.75 * reading["bodies_mb"], reading
 
