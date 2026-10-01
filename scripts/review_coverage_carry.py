@@ -19,6 +19,7 @@ from scripts.review_claude import CLAUDE, CLAUDE_LOGINS, CLAUDE_MARKER
 from scripts.review_gh import _SHA_IN_BACKTICKS, _STATUS_COMPLETED, TriageError
 from scripts.review_lane import diff_of, evidence_skipped_paths_ok
 from scripts.review_sol import SOL, SOL_LOGINS, SOL_MARKER, _normalize_login
+from scripts.review_subscription import LANES_BY_NAME
 
 
 def debt_file_path(pr: str) -> str:
@@ -169,7 +170,20 @@ def _authored_by_reviewer(name: str, login: str, body: str, matches_login: Calla
         return _normalize_login(login) in SOL_LOGINS and bool(SOL_MARKER.search(body or ""))
     if name == CLAUDE:
         return _normalize_login(login) in CLAUDE_LOGINS and bool(CLAUDE_MARKER.search(body or ""))
+    if lane := LANES_BY_NAME.get(name):
+        return lane.is_thread(login, body)
     return matches_login(login, name)
+
+
+def _lane_marker(name: str) -> re.Pattern[str] | None:
+    """The SHA-carrying marker a CLI lane writes, or None for a bot reviewer."""
+    if name == SOL:
+        return SOL_MARKER
+    elif name == CLAUDE:  # noqa: RET505 - lane kinds stay explicit.
+        return CLAUDE_MARKER
+    elif lane := LANES_BY_NAME.get(name):
+        return lane.marker_re
+    return None
 
 
 def reviewed_shas_for_reviewer(
@@ -181,7 +195,7 @@ def reviewed_shas_for_reviewer(
     matches_login: Callable[[str, str], bool],
 ) -> tuple[str, ...]:
     shas: set[str] = set()
-    marker = SOL_MARKER if name == SOL else CLAUDE_MARKER if name == CLAUDE else None
+    marker = _lane_marker(name)
 
     for review in reviews:
         login = (review.get("user") or {}).get("login", "")

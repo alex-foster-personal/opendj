@@ -470,6 +470,10 @@ def cli_lane_marker_skipped_mismatch(lane: str, body: str, diff: str) -> str | N
         from scripts.review_sol import marker_skipped_mismatch
 
         return marker_skipped_mismatch(body, diff)
+    from scripts.review_subscription import LANES_BY_NAME
+
+    if subscription_lane := LANES_BY_NAME.get(lane):
+        return subscription_lane.marker_skipped_mismatch(body, diff)
     return None
 
 
