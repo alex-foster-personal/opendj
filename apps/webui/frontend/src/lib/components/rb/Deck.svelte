@@ -307,6 +307,11 @@
 		});
 	}
 
+	/** STEM-48: retry a failed stem load, or start one that is being held. */
+	async function loadStems(): Promise<void> {
+		await runPerformanceCommandFromUi({ type: 'stem_load', deck: deckId });
+	}
+
 	async function toggleStemMute(stem: StemControl): Promise<void> {
 		await runPerformanceCommandFromUi({
 			type: 'stem_mute',
@@ -519,6 +524,7 @@
 		{pending}
 		onMute={toggleStemMute}
 		onSolo={toggleStemSolo}
+		onLoad={loadStems}
 	/>
 
 	{#if controlError !== null}
@@ -530,7 +536,7 @@
 		/>
 	{/if}
 
-	<SecondaryLoadBadge status={deck.stems.status} error={deck.stems.error} />
+	<SecondaryLoadBadge status={deck.stems.status} error={deck.stems.error} phase={deck.stems.load?.phase ?? null} />
 
 	{#if deck.last_load_latency_ms !== null}
 		<span

@@ -110,8 +110,81 @@ test('decodeStemBuffers awaits the eager-stem-decode slot before decoding', () =
 		source.indexOf('export function createDefaultStemControls')
 	);
 	assert.ok(body.length > 0, 'if decodeStemBuffers cannot be located this guard asserts nothing');
-	const gateIndex = body.indexOf('awaitEagerStemDecodeSlot()');
+	const gateIndex = body.indexOf('await awaitEagerStemDecodeSlot(');
 	const decodeIndex = body.indexOf('decodeStemParts(');
 	assert.notEqual(gateIndex, -1, 'decodeStemBuffers must await the shed slot');
 	assert.ok(gateIndex < decodeIndex, 'the shed slot must be awaited BEFORE the CPU-heavy decode starts');
+});
+
+// ------------------------------------------------- STEM-47: a named, bounded hold
+//
+// [if] the shed does not defer [then] the start is 'immediate' and the deck is
+//   never told it is waiting
+// [if] the shed defers [then] onDeferred fires once, before the wait
+// [if] the DJ asks for the stems now [then] the held decode starts as 'forced'
+// [if] nothing releases it [then] it starts anyway at the bound, 'timed_out'
+// [if] nothing is held [then] releaseEagerStemDecodeNow reports 0
+
+test('an undeferred decode starts immediately and never reports a hold', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: false }));
+	let deferred = 0;
+	const start = await shedModule.awaitEagerStemDecodeSlot({ onDeferred: () => (deferred += 1) });
+	assert.equal(start, 'immediate');
+	assert.equal(deferred, 0, 'a decode that was never held must not show a waiting state');
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('a deferred decode says so once, and the shed release is reported', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	let deferred = 0;
+	const pending = shedModule.awaitEagerStemDecodeSlot({
+		onDeferred: () => (deferred += 1),
+		setTimer: () => null,
+		clearTimer: () => {}
+	});
+	assert.equal(deferred, 1, 'the hold must be reported synchronously, before any wait');
+	await shedModule.resumeEagerStemDecodeOwedJob();
+	assert.equal(await pending, 'released');
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('the DJ can start a held decode, and is told how many were waiting', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 0, 'nothing is held yet');
+	const timer = { setTimer: () => null, clearTimer: () => {} };
+	const first = shedModule.awaitEagerStemDecodeSlot(timer);
+	const second = shedModule.awaitEagerStemDecodeSlot(timer);
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 2);
+	assert.deepEqual(await Promise.all([first, second]), ['forced', 'forced']);
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('a hold nobody releases ends at the bound instead of lasting the whole track', async () => {
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	let armedMs = null;
+	let fire = null;
+	let cleared = 0;
+	const pending = shedModule.awaitEagerStemDecodeSlot({
+		setTimer: (run, ms) => {
+			armedMs = ms;
+			fire = run;
+			return 'handle';
+		},
+		clearTimer: (handle) => {
+			assert.equal(handle, 'handle');
+			cleared += 1;
+		}
+	});
+	let settled = false;
+	void pending.then(() => (settled = true));
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	assert.equal(settled, false, 'the bound must not fire before its time');
+	assert.equal(armedMs, shedModule.EAGER_STEM_DECODE_MAX_DEFER_MS);
+	assert.ok(armedMs > 0 && armedMs <= 15_000, 'a bound longer than 15 s is the old dead-button report');
+	fire();
+	assert.equal(await pending, 'timed_out');
+	assert.equal(cleared, 1);
+	// The stale resolver left behind must not break a later release.
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 1);
+	shedModule.setEagerStemDecodeShed(null);
 });
