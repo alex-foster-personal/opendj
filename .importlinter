@@ -18,82 +18,84 @@ include_external_packages = True
 ; ---------------------------------------------------------------------------
 [importlinter:contract:shared-is-the-stable-core]
 name = apps.shared imports nothing else from apps
-type = forbidden
-source_modules =
-    apps.shared
-forbidden_modules =
-    apps.adapters
-    apps.analysis
-    apps.audit
-    apps.cloud
-    apps.dedup
-    apps.dj_copilot
-    apps.entitlements
-    apps.feature_flags
-    apps.open_dj
-    apps.pairings
-    apps.play_analytics
-    apps.reconcile
-    apps.sets
-    apps.smartlists
-    apps.spotify
-    apps.stems
-    apps.sync
-    apps.tags
-    apps.vocals
-    apps.voice
-    apps.webui
-; Measured Sun 17 Aug 2026: apps.shared has 17 dependents and 0 dependencies
-; on sibling packages (afferent coupling 17, efferent 0, instability 0.00).
-; That is exactly the shape a shared core should have. This contract exists to
-; keep it that way; a single import here would start a cycle with whichever
-; package it reached into.
+type = layers
+containers =
+    apps
+layers =
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : engine_core : entitlements : equivalence : feature_flags : fleet_mcp : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : opendj_cli : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : webui
+    shared
+exhaustive = true
+; Measured Sun 17 Aug 2026: apps.shared had 17 dependents and 0 dependencies on
+; sibling packages. That is the shape a shared core should have; a single import
+; here starts a cycle with whichever package it reaches into.
+;
+; Until Thu 1 Oct 2026 this was a `forbidden` contract over a package list written
+; in August, so every package added later went unchecked (issue #4600). It is now a
+; two-layer contract with `exhaustive = true`: a package under apps/ that is missing
+; from the first layer FAILS the gate, so the list cannot go stale silently.
+;
+; DEBT (measured Thu 1 Oct 2026, 13 imports the old list could not see). Never add
+; a line: move the code down into shared, or up out of it, instead.
+;   apps.shared -> apps.sync_hub    (10, two modules in apps/shared/state/)
+;   apps.shared -> apps.database    (2, apps/shared/state/agents_md_cache.py)
+;   apps.shared -> apps.diagnostics (1, apps/shared/machine_pressure.py)
+ignore_imports =
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.capabilities
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.client_transport_ops
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.config
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.engine
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.protocol
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.spoke_credential
+    apps.shared.state.backfill_content_hash -> apps.sync_hub.transport
+    apps.shared.state.migrations_v17 -> apps.sync_hub.engine_common
+    apps.shared.state.migrations_v17 -> apps.sync_hub.protocol
+    apps.shared.state.migrations_v17 -> apps.sync_hub.protocol_common
+    apps.shared.state.agents_md_cache -> apps.database
+    apps.shared.state.agents_md_cache -> apps.database.generate_agents_md
+    apps.shared.machine_pressure -> apps.diagnostics.probe_native_metrics
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:webui-is-the-top-layer]
 name = No domain package imports the web UI
-type = forbidden
-source_modules =
-    apps.adapters
-    apps.analysis
-    apps.audit
-    apps.cloud
-    apps.dedup
-    apps.dj_copilot
-    apps.entitlements
-    apps.feature_flags
-    apps.open_dj
-    apps.pairings
-    apps.play_analytics
-    apps.reconcile
-    apps.sets
-    apps.shared
-    apps.smartlists
-    apps.spotify
-    apps.stems
-    apps.sync
-    apps.tags
-    apps.vocals
-    apps.voice
-forbidden_modules =
-    apps.webui
-; apps.webui is the delivery layer: it composes domain packages behind HTTP.
-; When a domain package imports back into it you get a cycle, and the domain
-; package can no longer be exercised, tested, or shipped without the server.
+type = layers
+containers =
+    apps
+layers =
+    engine_core : fleet_mcp : opendj_cli
+    webui
+    adapters : agentbox : analysis : analysis_beatgrid : analysis_bench : analysis_key : analysis_loudness : analysis_structure : analysis_waveform : audit : cloud : database : dedup : diagnostics : dj_copilot : entitlements : equivalence : feature_flags : genre_infer : library_wheel : loudness : lyrics : mik : native_tools : open_dj : pairings : parity : play_analytics : playlist_sets : reconcile : rescue : sets : smartlists : spotify : stems : streaming_transfer : sync : sync_hub : tags : vocals : voice : shared
+exhaustive = true
+; apps.webui is the delivery layer: it composes domain packages behind HTTP. When a
+; domain package imports back into it you get a cycle, and the domain package can
+; no longer be exercised, tested, or shipped without the server. Above it sit the
+; entry points that compose the web UI themselves: the engine shell, the CLI and
+; the fleet MCP server (docs/decisions/ADR-NEW-exhaustive-import-layers.md).
 ;
-; DEBT (measured Sun 17 Aug 2026, three package-level cycles from five
-; imports, all reaching into just two webui modules):
-;   apps.smartlists <-> apps.webui   via webui.server.playlist_writeback
-;   apps.stems      <-> apps.webui   via webui.server.stem_artifacts
-;   apps.vocals     <-> apps.webui   via webui.server.stem_artifacts
-; stem_artifacts inversion completed Mon 14 Sep 2026: moved
-; apps.webui.server.stem_artifacts to apps.stems.artifacts, clearing the
-; apps.stems <-> apps.webui and apps.vocals <-> apps.webui cycles. Only the
-; smartlists <-> webui pair (playlist_writeback) remains outstanding.
-; Never add a line here: add the inversion instead.
+; Until Thu 1 Oct 2026 this was a `forbidden` contract whose SOURCE list was written
+; in August, so engine_core, opendj_cli, fleet_mcp, lyrics and sync_hub imported the
+; web UI unchecked (issue #4600). `exhaustive = true` now fails the gate on any
+; package missing from the layers.
+;
+; DEBT. Never add a line: add the inversion instead.
+;   apps.smartlists -> apps.webui via playlist_writeback (measured Sun 17 Aug 2026;
+;     the stem_artifacts cycles were inverted Mon 14 Sep 2026)
+;   measured Thu 1 Oct 2026, hidden by the old source list:
+;   apps.lyrics -> apps.webui (1), apps.sync_hub -> apps.webui (1)
+;   apps.webui, apps.cloud and apps.adapters -> apps.engine_core (7): engine_core
+;     mixes the shell (app.py) with low-level services (jobs.store, store.schema,
+;     setup, host_info). Moving those services down out of engine_core clears all 7.
 ignore_imports =
     apps.smartlists.djay_writer -> apps.webui.server.playlist_writeback
     apps.smartlists.rb_writer -> apps.webui.server.playlist_writeback
+    apps.lyrics.library_verdicts -> apps.webui.server.stem_artifacts
+    apps.sync_hub.hub_deploy -> apps.webui.server.request_guard
+    apps.webui.server.preflight_checks -> apps.engine_core.setup.detect
+    apps.webui.server.preflight_checks -> apps.engine_core.setup.record
+    apps.webui.server.rb_vendor_pkg.track_rows -> apps.engine_core.jobs.store
+    apps.webui.server.routes.settings -> apps.engine_core.host_info
+    apps.cloud.hydration -> apps.engine_core.jobs.store
+    apps.adapters.rekordbox.paths -> apps.engine_core.jobs.store
+    apps.adapters.rekordbox.reversal -> apps.engine_core.store.schema
 
 ; ---------------------------------------------------------------------------
 [importlinter:contract:production-code-never-imports-tests]
