@@ -155,6 +155,22 @@
 			<dd>{pin.environment.machine}</dd>
 			<dt title="Release version separate from git sha">Release</dt>
 			<dd>{pin.environment.release_version}</dd>
+			{#if pin.environment.user_email}
+				<dt title="Account signed in when the pin was dropped, stamped by the daemon">User</dt>
+				<dd>{pin.environment.user_email}</dd>
+			{/if}
+			{#if pin.environment.ui_config}
+				{@const cfg = pin.environment.ui_config}
+				<dt title="App mode, audio engine and performance tier at drop time">Config</dt>
+				<dd>{cfg.app_mode} / {cfg.engine_mode} / {cfg.perf_tier}</dd>
+				<dt title="Feature switches that were on at drop time">Switches on</dt>
+				<dd>
+					{Object.entries(cfg.switches)
+						.filter(([, on]) => on)
+						.map(([name]) => name)
+						.join(', ') || 'none'}
+				</dd>
+			{/if}
 		{/if}
 	</dl>
 	{#if pin.fixed_in_sha}

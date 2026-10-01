@@ -5134,6 +5134,16 @@
             "title": "Ui",
             "type": "string"
           },
+          "ui_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinUiConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "viewport_height": {
             "maximum": 100000.0,
             "minimum": 1.0,
@@ -14552,7 +14562,7 @@
         "type": "object"
       },
       "PinEnvironmentOut": {
-        "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
+        "description": "Runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes its UI kind,\nviewport dimensions and a closed ``ui_config`` snapshot (see\n``PinUiConfig``): no user agent, URL query, file path or track title.\n\n``user_email`` is the one personal field (pin 49f9d217). The daemon stamps\nit from the session cookie, the same identity ``GET /api/v1/auth/me``\nalready returns to this browser; a request body cannot set it. It is null\nwhen nobody is signed in, and absent on pins older than this field.",
         "properties": {
           "machine": {
             "title": "Machine",
@@ -14569,6 +14579,27 @@
             ],
             "title": "Ui",
             "type": "string"
+          },
+          "ui_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinUiConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
           },
           "viewport_height": {
             "title": "Viewport Height",
@@ -14663,6 +14694,48 @@
           "attachment_bytes"
         ],
         "title": "PinSyncOut",
+        "type": "object"
+      },
+      "PinUiConfig": {
+        "additionalProperties": false,
+        "description": "Compact UI configuration at the moment a pin was dropped (pin 49f9d217).\n\nClosed by construction: unknown keys are refused, every mode is a short\nlowercase slug, every switch is a boolean, and the route is an app route\nwith no query string. That is what keeps a secret, a path under the\nuser's home, or a track title out of the pin store: there is no field\nfree text could travel in.",
+        "properties": {
+          "app_mode": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "title": "App Mode",
+            "type": "string"
+          },
+          "engine_mode": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "title": "Engine Mode",
+            "type": "string"
+          },
+          "perf_tier": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+            "title": "Perf Tier",
+            "type": "string"
+          },
+          "route": {
+            "pattern": "^/[A-Za-z0-9/_.-]{0,119}$",
+            "title": "Route",
+            "type": "string"
+          },
+          "switches": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Switches",
+            "type": "object"
+          }
+        },
+        "required": [
+          "route",
+          "app_mode",
+          "engine_mode",
+          "perf_tier",
+          "switches"
+        ],
+        "title": "PinUiConfig",
         "type": "object"
       },
       "PlanEntryOut": {

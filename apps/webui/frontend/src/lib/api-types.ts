@@ -8309,6 +8309,7 @@ export interface components {
              * @enum {string}
              */
             ui: "chrome-loop" | "packaged-app";
+            ui_config?: components["schemas"]["PinUiConfig"] | null;
             /** Viewport Height */
             viewport_height: number;
             /** Viewport Width */
@@ -11988,12 +11989,17 @@ export interface components {
         };
         /**
          * PinEnvironmentOut
-         * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
+         * @description Runtime facts needed to reproduce a pinned UI defect.
          *
          *     ``machine`` and ``release_version`` are already exposed by the running
-         *     daemon's settings/health surfaces. The browser contributes only its UI
-         *     kind and viewport dimensions: no username, user agent, URL query, or
-         *     other new personal data enters the pin store.
+         *     daemon's settings/health surfaces. The browser contributes its UI kind,
+         *     viewport dimensions and a closed ``ui_config`` snapshot (see
+         *     ``PinUiConfig``): no user agent, URL query, file path or track title.
+         *
+         *     ``user_email`` is the one personal field (pin 49f9d217). The daemon stamps
+         *     it from the session cookie, the same identity ``GET /api/v1/auth/me``
+         *     already returns to this browser; a request body cannot set it. It is null
+         *     when nobody is signed in, and absent on pins older than this field.
          */
         PinEnvironmentOut: {
             /** Machine */
@@ -12005,6 +12011,9 @@ export interface components {
              * @enum {string}
              */
             ui: "chrome-loop" | "packaged-app";
+            ui_config?: components["schemas"]["PinUiConfig"] | null;
+            /** User Email */
+            user_email?: string | null;
             /** Viewport Height */
             viewport_height: number;
             /** Viewport Width */
@@ -12041,6 +12050,30 @@ export interface components {
             state: "synced" | "pending_push" | "unreconciled" | "harvested";
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * PinUiConfig
+         * @description Compact UI configuration at the moment a pin was dropped (pin 49f9d217).
+         *
+         *     Closed by construction: unknown keys are refused, every mode is a short
+         *     lowercase slug, every switch is a boolean, and the route is an app route
+         *     with no query string. That is what keeps a secret, a path under the
+         *     user's home, or a track title out of the pin store: there is no field
+         *     free text could travel in.
+         */
+        PinUiConfig: {
+            /** App Mode */
+            app_mode: string;
+            /** Engine Mode */
+            engine_mode: string;
+            /** Perf Tier */
+            perf_tier: string;
+            /** Route */
+            route: string;
+            /** Switches */
+            switches: {
+                [key: string]: boolean;
+            };
         };
         /** PlanEntryOut */
         PlanEntryOut: {
