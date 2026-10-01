@@ -1,5 +1,5 @@
 /**
- * @pytest.mark.requirement LIBUX-31
+ * @pytest.mark.requirement LIBUX-32
  * Pin 36e2e2a7ccff: a remembered "do this every time" choice needs a place in
  * settings to change or reset it. The playlist-drop choice (add or move) could
  * be remembered from its prompt but had no settings row, so it could never be

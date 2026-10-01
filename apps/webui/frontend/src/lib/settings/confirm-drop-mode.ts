@@ -1,5 +1,5 @@
 /**
- * Settings row for the remembered playlist-drop choice (LIBUX-31, pin
+ * Settings row for the remembered playlist-drop choice (LIBUX-32, pin
  * 36e2e2a7ccff). The pref stores only a remembered choice ('add' | 'move');
  * no stored value means "ask every time", which the row spells `ask`.
  */
