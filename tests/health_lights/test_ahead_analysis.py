@@ -211,3 +211,14 @@ def test_failed_run_unwraps_the_cli_error_message() -> None:
     """[if] the queue CLI prints a wrapped [ERROR] [then] the reason is that message, [else stop]."""
     text = "[ERROR] backend 'x' is not available\non this host: BackendNotAvailable: no\nsoxr"
     assert aa._last_line(text) == "backend 'x' is not available on this host: BackendNotAvailable: no soxr"
+
+
+def test_writer_that_leaves_no_strip_is_not_looped() -> None:
+    """[if] a strip write succeeds but no strip appears [then] it is failed once, [else stop]."""
+    world = World(["a"])
+    world.write_strip = world.strip_runs.append  # type: ignore[method-assign]
+    drain = world.drain()
+    drain.tick()
+    drain.tick()
+    assert world.strip_runs == ["a"]
+    assert drain.coverage()["lanes"]["strip"]["failed"] == 1

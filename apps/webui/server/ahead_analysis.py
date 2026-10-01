@@ -281,6 +281,10 @@ class AheadDrain:
                 self._src.write_strip_fn(sid)
             except Exception as exc:  # noqa: BLE001 - recorded per track, surfaced in coverage
                 return sid, f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}"
+            if not self._src.has_strip_fn(sid):
+                # Without this a writer that "succeeds" but leaves no strip
+                # (a track under 0.8 s) would be re-run every second forever.
+                return sid, "the decode finished but produced no strip"
             return sid, None
 
         with ThreadPoolExecutor(max_workers=STRIP_BATCH, thread_name_prefix="ahead-strip") as pool:
