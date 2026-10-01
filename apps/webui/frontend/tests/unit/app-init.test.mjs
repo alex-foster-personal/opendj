@@ -233,6 +233,11 @@ test('startAppInstruments wires silence source PCM reader', () => {
 	assert.match(source, /setSilenceSourceReader\(readSilenceSourceDeckSnaps\)/);
 	assert.match(
 		source,
+		/master_path_gain: _silenceMasterPathGain\(id\)/,
+		'each source snapshot must carry its mixer gain to the master (AUDIOLIVE-12)'
+	);
+	assert.match(
+		source,
 		/setSilenceSourceReader\(null\)/,
 		'teardown must clear the source reader'
 	);

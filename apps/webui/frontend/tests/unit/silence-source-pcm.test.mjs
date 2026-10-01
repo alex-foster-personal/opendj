@@ -169,3 +169,98 @@ test('decks that do not claim live are ignored', () => {
 	);
 	assert.equal(m.claimedLiveSourceIsSilent([{ claims_live: false, buffer: silent, position_sec: 0 }]), false);
 });
+
+test('a playing deck with its path to the master closed explains master silence', () => {
+	// Fader down, crossfader cut, master at zero, or every stem muted: the deck
+	// plays loud source into the headphones and nothing of it reaches the
+	// master bus, which is ordinary DJ pre-cueing, not a dropout. A closed
+	// path explains silence without its PCM being read, so a missing buffer is
+	// no reason to report either.
+	const m = _mod();
+	const loud = makeBuffer({ length: 44_100, fill: 0.5 });
+	assert.equal(
+		m.claimedLiveSourceIsSilent([
+			{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain: 0 }
+		]),
+		true
+	);
+	assert.equal(
+		m.claimedLiveSourceIsSilent([
+			{ claims_live: true, buffer: null, position_sec: 0, master_path_gain: 0 }
+		]),
+		true
+	);
+	// Control, the overshoot: the same loud deck with its path open still
+	// reports, and so does an absent gain, which reads as fully open.
+	for (const master_path_gain of [1, 0.5, undefined]) {
+		assert.equal(
+			m.claimedLiveSourceIsSilent([
+				{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain }
+			]),
+			false,
+			`gain ${master_path_gain} must not hide a loud source`
+		);
+	}
+});
+
+test('a closed-path deck does not excuse an open-path deck that is loud', () => {
+	const m = _mod();
+	const loud = makeBuffer({ length: 44_100, fill: 0.5 });
+	const silent = makeBuffer({ length: 44_100, fill: 0 });
+	assert.equal(
+		m.claimedLiveSourceIsSilent([
+			{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain: 0 },
+			{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain: 1 }
+		]),
+		false
+	);
+	assert.equal(
+		m.claimedLiveSourceIsSilent([
+			{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain: 0 },
+			{
+				claims_live: true,
+				buffer: silent,
+				position_sec: 0,
+				master_path_gain: 1
+			}
+		]),
+		true
+	);
+});
+
+test('source RMS is scaled by the master path gain and summed across decks', () => {
+	// 0.01 RMS through a fader at 0.05 reaches the master at 0.0005, under the
+	// 0.001 floor; the same source at 0.5 reaches 0.005, over it.
+	const m = _mod();
+	const quiet = makeBuffer({ length: 44_100, fill: 0.01 });
+	const at = (master_path_gain) => ({
+		claims_live: true,
+		buffer: quiet,
+		position_sec: 0,
+		master_path_gain
+	});
+	assert.equal(m.claimedLiveSourceIsSilent([at(0.05)]), true);
+	assert.equal(m.claimedLiveSourceIsSilent([at(0.5)]), false);
+	// Two decks each under the floor alone but over it together: the sum bounds
+	// the mixed RMS from above, so this is not explained.
+	assert.equal(m.claimedLiveSourceIsSilent([at(0.06), at(0.06)]), false);
+});
+
+test('a path gain that cannot be read does not explain silence', () => {
+	const m = _mod();
+	const silent = makeBuffer({ length: 44_100, fill: 0 });
+	for (const master_path_gain of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+		assert.equal(
+			m.claimedLiveSourceIsSilent([
+				{
+					claims_live: true,
+					buffer: silent,
+					position_sec: 0,
+					master_path_gain
+				}
+			]),
+			false,
+			`gain ${master_path_gain}`
+		);
+	}
+});

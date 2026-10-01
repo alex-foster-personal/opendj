@@ -41,8 +41,11 @@ import {
 	deckAudioClockPositionMs,
 	deckMixBuffer,
 	deckStates,
+	mixerState,
 	pitchRanges
 } from '$lib/rb/audio-engine.svelte';
+import { onAirGain } from '$lib/rb/master-election';
+import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
@@ -74,13 +77,37 @@ function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 	});
 }
 
-/** Source PCM at each deck's audio-clock playhead, for the master silence
- * watchdog's source gate (issue #4030). Called only on master-quiet samples. */
+/** Linear gain from a deck to the master analyser tap: the mixer chain, or 0
+ * when a ready stem bundle has every part gained to zero. Same laws the graph
+ * applies (`onAirGain`, `everyStemPartSilent`); EQ is left out because a full
+ * cut is a dB threshold, not a zero, so an EQ-killed deck still reads as open. */
+function _silenceMasterPathGain(id: DeckId): number {
+	if (everyStemPartSilent(deckStates[id])) return 0;
+	const ch = mixerState.channels[id];
+	return onAirGain(
+		{
+			id,
+			loaded: true,
+			playing: true,
+			beat_sync_enabled: false,
+			fader: ch.fader,
+			trim: ch.trim,
+			assign: ch.assign
+		},
+		mixerState.crossfader,
+		mixerState.master
+	);
+}
+
+/** Source PCM at each deck's audio-clock playhead and its gain to the master
+ * bus, for the master silence watchdog's source gate (issue #4030). Called only
+ * on master-quiet samples. */
 function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
 	return DECK_IDS.map((id: DeckId) => ({
 		claims_live: deckStates[id].playing || deckStates[id].audible,
 		buffer: deckMixBuffer(id),
-		position_sec: deckAudioClockPositionMs(id) / 1000
+		position_sec: deckAudioClockPositionMs(id) / 1000,
+		master_path_gain: _silenceMasterPathGain(id)
 	}));
 }
 
