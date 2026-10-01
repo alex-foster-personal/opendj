@@ -32,6 +32,16 @@ class World:
         self.lane_runs: list[tuple[str, list[str]]] = []
         self.strip_runs: list[str] = []
         self.lane_error: str | None = None
+        self.blank: set[str] = set()
+        self.unreadable: set[str] = set()
+        self.tag_runs: list[str] = []
+
+    def refresh_tags(self, sid: str) -> bool:
+        self.tag_runs.append(sid)
+        if sid in self.unreadable:
+            return False
+        self.blank.discard(sid)
+        return True
 
     def write_strip(self, sid: str) -> None:
         self.strip_runs.append(sid)
@@ -54,6 +64,8 @@ class World:
                 done_fn=lambda lane, _backend: set(self.done[lane]),
                 run_lane_fn=self.run_lane,
                 playing_fn=lambda: self.playing,
+                blank_tags_fn=lambda: set(self.blank),
+                refresh_tags_fn=self.refresh_tags,
             )
         )
 
@@ -222,3 +234,25 @@ def test_writer_that_leaves_no_strip_is_not_looped() -> None:
     drain.tick()
     assert world.strip_runs == ["a"]
     assert drain.coverage()["lanes"]["strip"]["failed"] == 1
+
+
+def test_never_read_tags_are_refreshed_before_any_strip() -> None:
+    """[if] a present row was never tag-read [then] it is re-read before strips, [else stop]."""
+    world = World(["a", "b", "c"])
+    world.blank = {"b", "gone"}
+    drain = world.drain()
+    assert drain.tick() == "ran:tags"
+    assert world.tag_runs == ["b"], "if an absent row or a read row is re-read then broken"
+    assert world.strip_runs == [], "if strips run before never-read tags then broken"
+    assert drain.tick() == "ran:strip"
+
+
+def test_a_still_unreadable_file_is_tried_once_not_looped() -> None:
+    world = World(["a"])
+    world.blank = {"a"}
+    world.unreadable = {"a"}
+    drain = world.drain()
+    _run_to_green(drain)
+    assert world.tag_runs == ["a"], "if an unreadable file is re-read every tick then broken"
+    tags = drain.coverage()["lanes"]["tags"]
+    assert tags["failed"] == 1 and tags["failed_reasons"] == {"the file still reads no tags": 1}

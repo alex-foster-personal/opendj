@@ -379,7 +379,7 @@ def local_track_file_tags(stable_id: str) -> tuple[str | None, str | None]:
 
     A folder import persists the genre and comment it read off the file's
     own tags into ``track_fields`` (see
-    :func:`apps.shared.state.ingest.folder._write_file_tag_metadata`). They
+    :func:`apps.shared.state.ingest.folder.write_file_tag_metadata`). They
     are file facts, not rekordbox facts, so they are the only two metadata
     fields an unmapped row can honestly serve.
 
