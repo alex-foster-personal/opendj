@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One scheduled pass posts failed CI/E2E/macOS Packaging runs to the error sink.
 
-Moved from the retired CI Cost Guard workflow into CI Budget Watch (ADR-0121).
+Moved from the retired CI Cost Guard workflow into its own workflow, ci-error-sink.yml (ADR-0121).
 Lists completions since the previous pass's mark via scripts/ci_run_batch.py and
 selects failures with the same helpers as before (RUN-COUNT round 3).
 """

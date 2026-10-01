@@ -2,7 +2,7 @@
 
 Regression lines:
   - if Stable evidence moves off CI_RUNS_ON_LINUX then broken
-  - if CI Budget Watch error sink moves off CI_RUNS_ON_LINUX then broken
+  - if CI error sink moves off CI_RUNS_ON_LINUX then broken
   - if bookkeeping cancel-in-progress flips to true then broken
 """
 
@@ -15,10 +15,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS = {
     "Stable evidence": (REPO / ".github" / "workflows" / "stable-evidence.yml", "append"),
-    "CI Budget Watch error sink": (
-        REPO / ".github" / "workflows" / "ci-budget-watch.yml",
-        "error-sink",
-    ),
+    "CI error sink": (REPO / ".github" / "workflows" / "ci-error-sink.yml", "sink"),
 }
 RUNS_ON_EXPR = '${{ fromJSON(vars.CI_RUNS_ON_LINUX || \'"ubuntu-latest"\') }}'
 

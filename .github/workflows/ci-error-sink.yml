@@ -1,0 +1,209 @@
+name: CI error sink
+
+# One scheduled pass posts the failed completions of CI, E2E and macOS Packaging to
+# the error sink as kind=build rows (OBS-01). It rode the CI Cost Guard's pass
+# (RUN-COUNT round 3) until ADR-0121 retired the guard.
+#
+# WHY ITS OWN WORKFLOW FILE, not a job in ci-budget-watch.yml (Sol P1 x2 on #4844):
+#   - The high-water mark is the `run_started_at` of the last SUCCESSFUL run of this
+#     workflow file. ci-budget-watch.yml also runs a 12-hourly ledger job that skips
+#     the sink and still succeeds, and that success moved the mark past sink passes
+#     that had failed. Here every run is a sink pass, so a success is a sink success.
+#   - The workflow-level concurrency group is this workflow's alone. In the budget
+#     watch the hourly :30 run (cancel-in-progress: true) could cancel the 03:23
+#     reconcile, whose 30-minute timeout outlasts the 7 minutes between them.
+#
+# THE CENSUS. Listing filters on created_at, so a watched run created more than
+# LOOKBACK_HOURS before a pass can complete after the pass's mark moves and never be
+# listed. The census step counts watched first-attempt runs still in flight from before
+# the lookback and the last step fails the pass while any holds, so the mark stays put
+# and the next pass still lists them (scripts/ci_run_batch.py census; a PHANTOM run,
+# `in_progress` and idle for 12 h with no job waiting, never holds: scripts/
+# ci_phantom_runs.py, OPS-46). The measured creation-to-completion span on this repo
+# is 6.0 h (Mon 28 Sep 2026), which is past the 3 h lookback, so the census is not
+# optional.
+#
+# Two passes overlap by at least OVERLAP_MINUTES and an overlap is harmless: the poster
+# dedups, and a pass that fails mid-way does not move the mark.
+
+on:
+  schedule:
+    # Hourly, offset from the hour so it never queues with the ledger job at 00:00 and
+    # 12:00 in ci-budget-watch.yml.
+    - cron: "30 * * * *"
+    # Daily reconcile pass: the plain pass plus the re-runs of runs created up to
+    # RECONCILE_HORIZON_DAYS back.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      reconcile:
+        description: "Run a reconcile pass (also lists recent re-runs of runs created up to 31 days back, about 17 minutes)"
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+# One pass at a time. cancel-in-progress stays false so a running pass (the reconcile
+# above all) is never cut short; a queued pass behind it simply starts from the same mark.
+concurrency:
+  group: ci-error-sink-batch
+  cancel-in-progress: false
+
+env:
+  # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
+  # made actions/checkout fail with EACCES and skip every test step (#1338).
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  sink:
+    name: Post failed completions to the error sink
+    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    # A reconcile pass lists 31 days of runs on top of the plain pass: 30 days read
+    # 22,130 runs in 276 calls and 957 s on Tue 29 Sep 2026.
+    timeout-minutes: ${{ (github.event.schedule == '23 3 * * *' || inputs.reconcile) && 30 || 10 }}
+    env:
+      # The workflows whose failed completions are posted, and the ones the census
+      # holds the mark for: the same set.
+      LISTED_WORKFLOWS: "CI,E2E,macOS Packaging"
+      # Overlap floor between passes (minutes) and how far back a run's creation can be
+      # before its completion (hours); both read by
+      # tests/quality/test_bookkeeping_workflows_skip_cancelled.py against the cron above.
+      OVERLAP_MINUTES: "120"
+      LOOKBACK_HOURS: "3"
+      # A reconcile pass: the daily cron, or a dispatch with reconcile ticked.
+      RECONCILE: ${{ github.event.schedule == '23 3 * * *' || inputs.reconcile == true }}
+      # GitHub re-runs a run up to 30 days after it was created, plus one day for the
+      # reconcile cadence. There is no reconcile mark: every reconcile lists the horizon.
+      RECONCILE_HORIZON_DAYS: "31"
+      # A reconcile posts the re-runs that completed this recently, not all of 30 days
+      # (the job's GITHUB_TOKEN allows 1,000 requests an hour).
+      RECONCILE_PRICE_DAYS: "7"
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            scripts
+            .github/workflows
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      - name: Read the high-water mark from the last successful pass
+        id: mark
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          THIS_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          previous="$(python3 -m scripts.ci_run_batch mark --repository "$REPOSITORY" \
+            --workflow-file ci-error-sink.yml --this-run "$THIS_RUN")"
+          echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
+          echo "[sink] previous successful pass started at: ${previous:-none, using the overlap floor}"
+
+      - name: Count watched runs in flight since before the lookback
+        id: census
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_run_batch census --repository "$REPOSITORY" \
+            --watched "$LISTED_WORKFLOWS" --lookback-hours "$LOOKBACK_HOURS"
+
+      - name: Select failed completions since the mark
+        id: sink
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PREVIOUS_STARTED: ${{ steps.mark.outputs.previous_started }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-sink-reports
+          reconcile=()
+          [ "$RECONCILE" != "true" ] || reconcile=(--reconcile-horizon-days "$RECONCILE_HORIZON_DAYS" --reconcile-price-days "$RECONCILE_PRICE_DAYS")
+          python3 -m scripts.ci_error_sink_batch \
+            --repository "$REPOSITORY" \
+            --listed "$LISTED_WORKFLOWS" \
+            --previous-started "$PREVIOUS_STARTED" \
+            "${reconcile[@]}" \
+            --overlap-minutes "$OVERLAP_MINUTES" \
+            --lookback-hours "$LOOKBACK_HOURS" \
+            --report-dir ci-sink-reports
+
+      - name: Post failed completions to the error sink
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          OPENDJ_TELEMETRY: "0"
+          OPENDJ_HOST_LABEL: github-actions
+          SINK_FAILURES_FILE: ${{ steps.sink.outputs.sink_failures_file }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/jobs/logs"
+          python3 -m scripts.post_build_failure --batch-file "$SINK_FAILURES_FILE" --host "github-actions"
+
+      - name: Fail while the census holds the mark
+        env:
+          HELD: ${{ steps.census.outputs.held }}
+        run: |
+          [ "$HELD" = "0" ] || { echo "::error::held=${HELD:-unmeasured}; the mark stays until those runs complete"; exit 1; }

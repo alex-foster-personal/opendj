@@ -1,7 +1,7 @@
 """OBS-01 Part 1: CI job failures post kind=build to the error sink.
 
-Since ADR-0121 the sink rides CI Budget Watch's `error-sink` job (hourly at :30,
-daily reconcile at 03:23 UTC) instead of the retired cost guard pass.
+Since ADR-0121 the sink runs as its own workflow, ci-error-sink.yml (hourly at :30,
+daily reconcile at 03:23 UTC), instead of riding the retired cost guard's pass.
 
 Regression lines:
   - if a failed CI/E2E/macOS Packaging run cannot reach the poster, then broken
@@ -21,7 +21,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO / ".github" / "workflows"
-BUDGET = WORKFLOWS / "ci-budget-watch.yml"
+ERROR_SINK = WORKFLOWS / "ci-error-sink.yml"
 
 SINK_WORKFLOWS = {"CI", "E2E", "macOS Packaging"}
 HOURLY_CRON = "30 * * * *"
@@ -29,13 +29,13 @@ RECONCILE_CRON = "23 3 * * *"
 
 
 def _workflow() -> dict:
-    document = yaml.safe_load(BUDGET.read_text(encoding="utf-8"))
-    assert isinstance(document, dict), "ci-budget-watch.yml is not a mapping"
+    document = yaml.safe_load(ERROR_SINK.read_text(encoding="utf-8"))
+    assert isinstance(document, dict), "ci-error-sink.yml is not a mapping"
     return document
 
 
 def _sink_job() -> dict:
-    return _workflow()["jobs"]["error-sink"]
+    return _workflow()["jobs"]["sink"]
 
 
 def _names(csv: str) -> set[str]:
@@ -74,7 +74,7 @@ def test_a_failed_watched_workflow_reaches_the_kind_build_poster() -> None:
     poster = _poster_step()
     assert "--batch-file" in poster["run"]
     assert poster["env"]["SINK_FAILURES_FILE"] == "${{ steps.sink.outputs.sink_failures_file }}"
-    body = BUDGET.read_text(encoding="utf-8")
+    body = ERROR_SINK.read_text(encoding="utf-8")
     assert "CI_RUNS_ON_LINUX" in body
     assert "gh variable" not in body
 
@@ -90,12 +90,11 @@ def test_the_sink_job_runs_on_an_hourly_cadence_and_daily_reconcile() -> None:
     crons = [entry["cron"] for entry in triggers["schedule"]]
     assert HOURLY_CRON in crons
     assert RECONCILE_CRON in crons
-    job_if = _sink_job()["if"]
-    assert HOURLY_CRON in job_if and RECONCILE_CRON in job_if
+    assert "if" not in _sink_job(), "every run of this file is a sink pass, so no job is conditional"
 
 
 def test_ci_failure_poster_uses_canonical_host_not_runner_name() -> None:
-    body = BUDGET.read_text(encoding="utf-8")
+    body = ERROR_SINK.read_text(encoding="utf-8")
     assert "${{ runner.name }}" not in body
     poster = _poster_step()
     assert '--host "github-actions"' in poster["run"]
