@@ -223,6 +223,17 @@ def test_a_missing_or_invalid_junit_duration_is_unknown(tmp_path: Path, bad_time
         census.analyze(db, junit)
 
 
+def test_a_zero_duration_is_a_measurement_not_a_gap(tmp_path: Path) -> None:
+    """Control for the opposite overshoot: pytest writes time="0.000" for fast and skipped cases."""
+    db, junit = _run_control(tmp_path, label_children=True)
+    text = junit.read_text(encoding="utf-8")
+    start = text.index('name="test_c_unique"')
+    head, tail = text[:start], text[start:]
+    time_attr = tail[tail.index(' time="') : tail.index('"', tail.index(' time="') + 7) + 1]
+    junit.write_text(head + tail.replace(time_attr, ' time="0.000"', 1), encoding="utf-8")
+    assert census.analyze(db, junit).cases == 8
+
+
 def test_a_failed_census_leaves_no_earlier_verdict_behind(tmp_path: Path) -> None:
     """Sol P2 on #4777: a reused out-dir must not keep a previous run's census.json."""
     db, junit = _run_control(tmp_path, label_children=True)
