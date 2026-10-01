@@ -12,6 +12,7 @@ import {
   watchContinuousPlaybackUntil,
   watchGigDecksPlayingUntil,
 } from "./trackify-playback-watch.mjs";
+import { openUninstrumentedPage } from "./uninstrumented-page.mjs";
 
 async function loadChromium() {
   const resolver = createRequire(path.join(process.cwd(), "package.json"));
@@ -98,7 +99,7 @@ async function waitForQueueIdle(page) {
 }
 
 async function loadGigSteadyState(page) {
-  await page.goto(`${frontend}/performance?muted=1`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${frontend}/performance?muted=1`);
   await waitForPerformanceIpc(page);
   // The first four library rows are not four playable tracks on a real
   // library (most rows can be absent, and `file_exists` can name a path the
@@ -189,12 +190,17 @@ async function loadGigSteadyState(page) {
  * capture_mode_ratios.py samples from) never changes across this handoff,
  * so the process-tree sampler still finds whichever Chromium is currently
  * this process's child at sample time -- no Python-side change needed.
+ *
+ * Both phases drive an uninstrumented page (`uninstrumented-page.mjs`), never
+ * a Playwright `context.newPage()`: Playwright enables the Network domain on
+ * its pages, and the renderer then buffers every response body (each track's
+ * audio file) for DevTools, up to about 200 MB, which this footprint capture
+ * would count as the app's own memory.
  */
 async function openFreshTrackifyBrowser() {
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(`${frontend}/music-player?muted=1`, { waitUntil: "domcontentloaded" });
+  const page = await openUninstrumentedPage(browser);
+  await page.goto(`${frontend}/music-player?muted=1`);
   await waitForTrackifyIpc(page);
   await waitForTrackifyPlaying(page);
   await page.waitForTimeout(5_000);
@@ -204,8 +210,7 @@ async function openFreshTrackifyBrowser() {
 if (mode === "gig-trackify") {
   const gigBrowser = await chromium.launch({ headless: true });
   try {
-    const gigContext = await gigBrowser.newContext();
-    const gigPage = await gigContext.newPage();
+    const gigPage = await openUninstrumentedPage(gigBrowser);
     const gigStableIds = await loadGigSteadyState(gigPage);
     console.log("GIG_STABLE_IDS " + JSON.stringify(gigStableIds));
     console.log("GIG_READY");
