@@ -166,9 +166,12 @@ pub fn open(path: &Path) -> Result<File, ProtoError> {
 /// Decode `file`, already opened from `path` (which names it in errors and
 /// gives the format hint), as `decode_file_within` does: a caller that keyed
 /// the file by its open handle decodes exactly the file it keyed.
-pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
+pub fn decode_open_within(mut file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
     // Taken from the file the samples come from, not from its path again.
     let source = SourceId::of(&file).ok();
+    // symphonia does not apply an MP4 edit list, so its priming frames are
+    // read here and trimmed after the decode (src/mp4edit.rs).
+    let edit = mp4_edit(&mut file, path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -257,7 +260,67 @@ pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<De
     if sample_rate == 0 || pcm.is_empty() {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
+    if let Some(e) = edit.and_then(|e| e.at(sample_rate)) {
+        crate::mp4edit::apply_stereo(&mut pcm, e);
+    }
     Ok(Decoded { sample_rate, pcm, source })
+}
+
+/// The MP4 edit of `file`, leaving it positioned at its start for the decoder.
+/// Best effort: a stream that is not a regular file (a pipe cannot be read
+/// twice) or a header that cannot be read yields no edit, never a failed load.
+fn mp4_edit(file: &mut File, path: &Path) -> Result<Option<crate::mp4edit::RawEdit>, ProtoError> {
+    use std::io::{Seek, SeekFrom};
+    if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
+        return Ok(None);
+    }
+    let edit = crate::mp4edit::read_raw_edit(file).ok().flatten();
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot read {}: {e}", path.display())))?;
+    Ok(edit)
+}
+
+/// What a file's container states about its length, read without decoding.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Probe {
+    pub sample_rate: Option<u32>,
+    /// Playable frames (encoder delay and padding excluded), when stated.
+    pub frames: Option<u64>,
+    /// Leading encoder frames the reader skips, when stated.
+    pub delay: Option<u32>,
+    /// Trailing encoder frames the reader skips, when stated.
+    pub padding: Option<u32>,
+}
+
+/// Read `path`'s header: rate and playable length when the container states
+/// them. Never an estimate: an MP3 with no Xing/Info header states no length,
+/// and `frames` is then `None` for the caller to decode and count.
+pub fn probe_file(path: &Path) -> Result<Probe, ProtoError> {
+    let mut file = open(path)?;
+    let edit = mp4_edit(&mut file, path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .map_err(|e| ProtoError::new(ErrorCode::Decode, format!("unrecognized format in {}: {e}", path.display())))?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio track in {}", path.display())))?;
+    let sample_rate = track.codec_params.as_ref().and_then(|p| p.audio()).and_then(|a| a.sample_rate);
+    let mut frames = track.num_frames.filter(|&n| n > 0);
+    let mut delay = track.delay;
+    // An MP4 edit states the playable length; symphonia's count includes the
+    // priming and padding frames the edit excludes.
+    if let Some(e) = edit.zip(sample_rate).and_then(|(e, r)| e.at(r)) {
+        delay = Some(e.skip as u32);
+        if let Some(keep) = e.keep {
+            frames = Some(keep);
+        }
+    }
+    Ok(Probe { sample_rate, frames, delay, padding: track.padding })
 }
 
 /// The first rate decoded is the track's rate. A later buffer at another

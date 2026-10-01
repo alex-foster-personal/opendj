@@ -700,3 +700,61 @@ fn set_beatgrid_reaches_a_loaded_deck_without_reloading() {
     drop(stdin);
     assert!(child.wait().unwrap().success());
 }
+
+/// `decode` writes the file's PCM to stdout and names what it wrote on stderr.
+#[test]
+fn decode_streams_pcm_and_a_summary() {
+    let d = temp_dir("cli-decode");
+    let wav = write_wav(&d, "a.wav", 44100, &sine(44100, 440.0, 1.0));
+    let out = Command::new(BIN).args(["decode", "--mono", "--format", "s16le"]).arg(&wav).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(out.stdout.len(), 44100 * 2, "one s16 sample per frame in mono");
+    let summary: Value = serde_json::from_str(String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap()).unwrap();
+    assert_eq!(summary, json!({"sample_rate": 44100, "channels": 1, "frames": 44100, "format": "s16le"}));
+
+    // --rate resamples to exactly round(frames * to / from) frames.
+    let out = Command::new(BIN).args(["decode", "--rate", "48000"]).arg(&wav).output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(out.stdout.len(), 48000 * 2 * 4, "stereo f32 at 48 kHz");
+
+    // Not audio: a failure with a reason, and no PCM a reader could mistake for a decode.
+    let junk = d.join("junk.mp3");
+    std::fs::write(&junk, b"not audio at all").unwrap();
+    let out = Command::new(BIN).arg("decode").arg(&junk).output().unwrap();
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+}
+
+/// `probe` reports the length the header states, without decoding.
+#[test]
+fn probe_reports_the_stated_length() {
+    let d = temp_dir("cli-probe");
+    let wav = write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 2.5));
+    let out = Command::new(BIN).arg("probe").arg(&wav).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sample_rate"], 48000);
+    assert_eq!(v["frames"], 120000);
+    assert_eq!(v["duration_s"], 2.5);
+    assert_eq!(v["source"], "header");
+}
+
+/// An AAC m4a decodes in time with the file: its encoder priming frames are
+/// trimmed by the MP4 edit list, which symphonia itself does not apply. The
+/// fixture (ffmpeg's AAC encoder, 1024 priming frames) is one second with a
+/// click at exactly 0.25 s; untrimmed, the click lands 1024 frames late.
+#[test]
+fn an_m4a_decodes_without_its_priming_frames() {
+    let m4a = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms-aac.m4a");
+    let out = Command::new(BIN).args(["decode", "--mono", m4a]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    assert_eq!(pcm.len(), 44100, "the edit's playable length, padding dropped");
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
+    assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
+
+    let out = Command::new(BIN).args(["probe", m4a]).output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["frames"], 44100);
+    assert_eq!(v["delay"], 1024);
+}

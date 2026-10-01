@@ -37,6 +37,8 @@ const USAGE: &str = "usage:
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
+  odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
+  odj-audio probe PATH
   odj-audio version";
 
 struct Args {
@@ -562,6 +564,91 @@ fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen
     Err("this build has no device output; rebuild with --features device".into())
 }
 
+/// The one positional argument left after the flags are taken.
+fn sole_path(args: &mut Args) -> Result<PathBuf, String> {
+    if args.rest.len() != 1 || args.rest[0].starts_with("--") {
+        return Err(format!("expected exactly one PATH\n{USAGE}"));
+    }
+    Ok(PathBuf::from(args.rest.remove(0)))
+}
+
+/// Decode a file to raw PCM on stdout, the way the Python analysis lanes
+/// read `ffmpeg ... -f s16le -`: little-endian, interleaved, at the file's
+/// own rate unless `--rate` resamples it (rubato, as the engine loads it).
+/// `--mono` averages the two sides. One JSON line on stderr after the last
+/// sample names the rate, channels and frames written, so a reader can tell
+/// a complete decode from a truncated pipe.
+fn decode_cmd(mut args: Args) -> Result<(), String> {
+    use std::io::Write;
+    let rate = args.take("--rate")?.map(|r| r.parse::<u32>().map_err(|_| format!("--rate {r} is not a whole number of Hz"))).transpose()?;
+    if rate == Some(0) {
+        return Err("--rate must be above 0".into());
+    }
+    let mono = args.flag("--mono");
+    let format = args.take("--format")?.unwrap_or_else(|| "f32le".into());
+    if format != "f32le" && format != "s16le" {
+        return Err(format!("--format {format} is not f32le or s16le"));
+    }
+    let path = sole_path(&mut args)?;
+    args.done()?;
+    let d = match rate {
+        Some(r) => odj_audio::decode::decode_at(&path, r),
+        None => odj_audio::decode::decode_file(&path),
+    }
+    .map_err(|e| e.message)?;
+    let channels = if mono { 1 } else { 2 };
+    let frames = d.pcm.len() / 2;
+    let mut out = BufWriter::with_capacity(1 << 20, io::stdout().lock());
+    let s16 = format == "s16le";
+    let put = |out: &mut BufWriter<io::StdoutLock<'_>>, v: f32| -> io::Result<()> {
+        if s16 {
+            // ffmpeg's float to s16: scale by 32768, round to nearest, clip.
+            let s = (v * 32768.0).round().clamp(-32768.0, 32767.0) as i16;
+            out.write_all(&s.to_le_bytes())
+        } else {
+            out.write_all(&v.to_le_bytes())
+        }
+    };
+    let w = |e: io::Error| format!("cannot write PCM: {e}");
+    for f in d.pcm.chunks_exact(2) {
+        if mono {
+            put(&mut out, (f[0] + f[1]) * 0.5).map_err(w)?;
+        } else {
+            put(&mut out, f[0]).map_err(w)?;
+            put(&mut out, f[1]).map_err(w)?;
+        }
+    }
+    out.flush().map_err(w)?;
+    eprintln!("{}", json!({"sample_rate": d.sample_rate, "channels": channels, "frames": frames, "format": format}));
+    Ok(())
+}
+
+/// Print one JSON line with the file's rate and length. `frames` comes from
+/// the header when the container states it ("source": "header"), otherwise
+/// from a full decode ("source": "decode"); never an estimate from bitrate.
+fn probe_cmd(mut args: Args) -> Result<(), String> {
+    let path = sole_path(&mut args)?;
+    args.done()?;
+    let p = odj_audio::decode::probe_file(&path).map_err(|e| e.message)?;
+    let (rate, frames, source) = match (p.sample_rate, p.frames) {
+        (Some(r), Some(n)) => (r, n, "header"),
+        _ => {
+            let d = odj_audio::decode::decode_file(&path).map_err(|e| e.message)?;
+            (d.sample_rate, (d.pcm.len() / 2) as u64, "decode")
+        }
+    };
+    let v = json!({
+        "sample_rate": rate,
+        "frames": frames,
+        "duration_s": frames as f64 / rate as f64,
+        "delay": p.delay,
+        "padding": p.padding,
+        "source": source,
+    });
+    println!("{v}");
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let mut argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.is_empty() {
@@ -572,6 +659,8 @@ fn main() -> ExitCode {
     let r = match sub.as_str() {
         "render" => render(args),
         "serve" => serve_cmd(args),
+        "decode" => decode_cmd(args),
+        "probe" => probe_cmd(args),
         "version" => {
             let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
             println!("{v}");
