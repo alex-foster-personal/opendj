@@ -273,3 +273,154 @@ def resolve_under_root(candidate: Path, root: Path) -> Path:
     finally:
         for fd in reversed(opened_fds):
             os.close(fd)
+
+
+# ----- reading through the walk's own descriptors (LIBM-137 round 3) ----------
+#
+# ``resolve_under_root`` hands back a PATH, and its caller opens that path
+# afterwards: the walk proves containment at the instant it ran, and a swap
+# between the walk and that later open is outside it. That is tolerable for one
+# request and wrong for anything that REMEMBERS what it read, because a race
+# won once would then be served on every later request.
+#
+# The functions below close that gap for a caller that wants bytes rather than
+# a path. The root is opened and identity-checked exactly as above, every
+# directory segment is opened ``O_NOFOLLOW`` relative to the descriptor of its
+# parent, and the leaf is opened ``O_NOFOLLOW`` relative to the descriptor of
+# its directory and READ FROM THAT DESCRIPTOR. No path string is ever reopened,
+# so there is no instant at which a swapped segment can redirect the read.
+
+#: ``(st_mode, st_ino, st_dev, st_size, st_mtime_ns, st_ctime_ns)``.
+Identity = tuple[int, int, int, int, int, int]
+
+_LEAF_FLAGS: int = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK if FD_ANCHORED_WALK_SUPPORTED else 0
+_READ_CHUNK: int = 1 << 20
+
+
+def identity_of(st: os.stat_result) -> Identity:
+    """What one inode looked like: type, which inode, and its content stamps.
+
+    ``st_ctime_ns`` is in because ``st_mtime_ns`` can be put back by whoever
+    rewrote the file, and the change time cannot.
+    """
+    return (st.st_mode, st.st_ino, st.st_dev, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _require_plain_segment(name: str) -> None:
+    """Refuse anything that is not one ordinary path component.
+
+    ``os.open("a/b", dir_fd=fd)`` resolves ``a`` the ordinary way, following a
+    symlink there, and ``..`` steps out of the directory the descriptor names.
+    Either would undo the walk, so both are refused before any open.
+    """
+    if name in ("", ".", "..") or "/" in name or "\x00" in name:
+        raise ValueError(f"{name!r} is not a single plain path component")
+
+
+def open_anchored_root(root: Path) -> int | None:
+    """Open ``root`` and enforce its identity anchor; None when it does not exist.
+
+    Raises :class:`RootIdentityChanged` exactly as :func:`resolve_under_root`
+    does. The caller owns the descriptor and closes it.
+    """
+    try:
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    try:
+        _verify_root_anchor(root, root_fd)
+    except BaseException:
+        os.close(root_fd)
+        raise
+    return root_fd
+
+
+def open_directory_under(
+    root_fd: int, parts: tuple[str, ...]
+) -> tuple[int | None, list[os.stat_result]]:
+    """Walk directory ``parts`` below an opened root, one descriptor at a time.
+
+    Returns ``(dir_fd, stats)``: the descriptor of the last directory, which
+    the caller closes, and the ``fstat`` of every segment that opened. The
+    descriptor is None when a segment is missing or is a real non-directory,
+    which is ordinary data and not an escape (``stats`` then stops there).
+
+    Raises ``OSError`` when a segment is a symlink (``ELOOP``) or cannot be
+    opened for any other reason, and ``ValueError`` for a segment that is not
+    one plain component.
+    """
+    for part in parts:
+        _require_plain_segment(part)
+    stats: list[os.stat_result] = []
+    current_fd = root_fd
+    try:
+        for part in parts:
+            try:
+                fd = os.open(part, _LEAF_FLAGS, dir_fd=current_fd)
+            except FileNotFoundError:
+                if current_fd != root_fd:
+                    os.close(current_fd)
+                return None, stats
+            if current_fd != root_fd:
+                os.close(current_fd)
+            current_fd = fd
+            st = os.fstat(fd)
+            stats.append(st)
+            if not stat.S_ISDIR(st.st_mode):
+                os.close(fd)
+                return None, stats
+    except BaseException:
+        if current_fd != root_fd:
+            os.close(current_fd)
+        raise
+    if current_fd == root_fd:
+        return os.dup(root_fd), stats
+    return current_fd, stats
+
+
+def stat_leaf(dir_fd: int, name: str) -> os.stat_result | None:
+    """``lstat`` of ``name`` inside an opened directory; None when it is absent.
+
+    Never follows a final symlink: the caller sees ``S_ISLNK`` and decides.
+    """
+    _require_plain_segment(name)
+    try:
+        return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def read_leaf(dir_fd: int, name: str, max_bytes: int) -> tuple[os.stat_result, bytes | None] | None:
+    """Open ``name`` inside an opened directory and read it from that descriptor.
+
+    None when it is absent. Otherwise ``(fstat, data)``, where the ``fstat`` is
+    taken on the descriptor BEFORE the read, so a write that lands during the
+    read shows up as a changed file to whoever compares it later. ``data`` is
+    None for anything that is not a regular file (never read: a FIFO would
+    block or lie) and for a file larger than ``max_bytes``.
+
+    Raises ``OSError`` when the leaf is a symlink (``ELOOP``) or cannot be
+    opened or read.
+    """
+    _require_plain_segment(name)
+    try:
+        fd = os.open(name, _LEAF_FLAGS, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > max_bytes:
+            return st, None
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, _READ_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                return st, None
+            chunks.append(chunk)
+        return st, b"".join(chunks)
+    finally:
+        os.close(fd)

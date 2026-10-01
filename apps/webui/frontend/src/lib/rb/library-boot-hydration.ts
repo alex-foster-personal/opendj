@@ -94,11 +94,19 @@ function bootNowMs(): number {
 	return Date.now();
 }
 
-/** Idempotent: second and later calls are no-ops. */
-export function startLibraryBootHydration(): void {
+/** Whether a boot on `pathname` mounts the pane that walks All Tracks. Only
+ * that pane ends the walk, so only there may the walk hold deferred boot work:
+ * anywhere else the hold would sit until the scheduler's ceiling. */
+export function routeRunsBootListingWalk(pathname: string): boolean {
+	return pathname.replace(/\/+$/, '') === '/performance';
+}
+
+/** Idempotent: second and later calls are no-ops. `listingWalkRuns` is false
+ * on a route with no All Tracks pane: the prefetch still fires, nothing holds. */
+export function startLibraryBootHydration(listingWalkRuns = true): void {
 	if (bootPrefetch !== null) return;
 	const startedAt = bootNowMs();
-	settleBootListingWalk = bootScheduler.listingWalkStarted();
+	if (listingWalkRuns) settleBootListingWalk = bootScheduler.listingWalkStarted();
 	bootPrefetch = {
 		startedAt,
 		prefsPromise: prefsHydrator(),

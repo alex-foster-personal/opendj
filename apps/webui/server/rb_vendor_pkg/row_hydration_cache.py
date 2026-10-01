@@ -13,20 +13,23 @@ Validity is (source path, mtime): a re-analyzed track gets a new mtime and decod
 again on its next read, and a preview strip that starts resolving to a different
 sibling (.2EX -> .EXT -> .DAT) is a miss rather than a stale hit.
 
-Entries are never evicted. Each cache is bounded by the library's ANLZ file count
+The two mtime caches below are never evicted. Each is bounded by the library's ANLZ file count
 (~10k preview strips at ~500 B, ~4k PVDI carriers at a few hundred bytes of
 regions), a few MB in total -- an eviction policy would cost more than it saves.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
+import stat
+import struct
 import threading
+from collections import OrderedDict
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from apps.shared.platform_paths import AssetResolver, MappedPath, PathMap
+from apps.shared.fd_anchored_walk import identity_of
 
 _V = TypeVar("_V")
 
@@ -78,107 +81,95 @@ _PREVIEW_CACHE: MtimeCache[tuple[str, int]] = MtimeCache()
 _VOCALS_CACHE: MtimeCache[dict[str, Any]] = MtimeCache(copy=True)
 
 
-# ----- stat-witnessed row cache (LIBM-137) ------------------------------------
-#
-# The two caches above still pay for finding their source file: every hit comes
-# after a share-root containment walk (about six opens per asset path), three or
-# four of them per row. Measured Thu 1 Oct 2026 on a 9,713-track library: 8,820
-# opens and 8,283 stats per 500 warm rows, 380 ms of a 590 ms listing page.
-#
-# This one is keyed on the vendor's own path strings, so a hit needs no walk. It
-# is NOT the cross-request containment cache that was rejected on review (see
-# ``AssetResolver``): that one kept a "safe" verdict and the resolved path, and a
-# later request opened the path without rerunning the check. Here a hit opens
-# nothing and hands back no path. It returns data that was derived, earlier, from
-# files the containment walk approved at that time, and only while every path the
-# derivation looked at still names the same inode with the same size and mtime.
-# Swap a directory for a symlink to somewhere else and the witnesses stop
-# matching, which sends the row back through the full walk, where it is refused.
-#
-# There is no time dimension: nothing expires, and nothing is served on age.
+# ===== the listing's row asset cache (LIBM-137; row_assets.py fills it) =====
 
-#: ``(st_mode, st_ino, st_dev, st_size, st_mtime_ns)`` of a path, None when absent.
-Witness = tuple[int, int, int, int, int] | None
+_WITNESS = struct.Struct("<6Q")
+_U64: int = (1 << 64) - 1
+#: Witness of a path that names nothing.
+_ABSENT: bytes = bytes(_WITNESS.size)
+
+# ----- witnesses -------------------------------------------------------------
 
 
-def witness_of(path: str) -> Witness:
-    """What ``path`` names right now, without following a final symlink."""
+def file_witness(st: os.stat_result) -> bytes:
+    """All six identity fields of a file, packed."""
+    return _WITNESS.pack(*(value & _U64 for value in identity_of(st)))
+
+
+def directory_witness(st: os.stat_result) -> bytes:
+    """Type and inode of a directory. Its size and times move with its contents."""
+    return _WITNESS.pack(stat.S_IFMT(st.st_mode), st.st_ino & _U64, st.st_dev & _U64, 0, 0, 0)
+
+
+def digest(witnesses: list[bytes]) -> bytes:
+    """What a row's paths looked like, as the 16 bytes an entry keeps."""
+    return hashlib.blake2b(b"".join(witnesses), digest_size=16).digest()
+
+
+def lstat_below(root_fd: int, relative: str) -> os.stat_result | OSError | None:
+    """``lstat`` below the anchored root: None for a path that names nothing,
+    the error itself for anything else."""
     try:
-        st = os.lstat(path)
+        return os.stat(relative, dir_fd=root_fd, follow_symlinks=False)
     except (FileNotFoundError, NotADirectoryError):
         return None
-    return (st.st_mode, st.st_ino, st.st_dev, st.st_size, st.st_mtime_ns)
+    except OSError as exc:
+        # A symlink loop, an unreadable directory, a volume that went away: the
+        # entry cannot be confirmed, so it must not be served (and the page
+        # must not fail). The row goes back through the walk.
+        return exc
 
 
-class WitnessingResolver(AssetResolver):
-    """Records what each path named at the moment it was resolved.
 
-    Wraps the per-call :class:`AssetResolver`, so rows that share a path still
-    share one containment walk. The witness is taken BEFORE the caller reads the
-    file: a change after that point shows as a mismatch on the next request
-    instead of being cached under the new state.
+#: (preview_b64, preview_max, artwork_available, artwork_status, vocals JSON).
+RowValue = tuple[str | None, int | None, bool | None, str, str]
+RootKey = tuple[str, int, int]
 
-    ``cacheable`` goes False when any path was refused or is not share-relative.
-    A refused path has no witness to revalidate, and only a share-relative path
-    maps without consulting the filesystem or the path map, so only that mapping
-    is safe to key on its input string.
+
+class RowAssetCache:
+    """``(AnalysisDataPath, ImagePath) -> (witnesses, value)`` for ONE share root.
+
+    Bound to the root it was filled under, by path string AND by the device
+    and inode that path opened to: the same vendor strings name different
+    files under another library, so a different root empties the cache.
+    Least recently used, at most ``max_entries`` rows.
     """
 
-    def __init__(self, inner: AssetResolver) -> None:
-        super().__init__()
-        self._inner: AssetResolver = inner
-        self.witnesses: dict[str, Witness] = {}
-        self.cacheable: bool = True
-
-    def resolve_asset_path(
-        self, asset_path: str, *, path_map: PathMap | None = None
-    ) -> MappedPath:
-        return self._record(self._inner.resolve_asset_path(asset_path, path_map=path_map))
-
-    def resolve_asset_sibling(self, mapped: MappedPath, candidate: Path) -> MappedPath:
-        return self._record(self._inner.resolve_asset_sibling(mapped, candidate))
-
-    def witness(self, path: Path) -> None:
-        """Witness a path the caller is about to probe without resolving it."""
-        self.witnesses.setdefault(str(path), witness_of(str(path)))
-
-    def _record(self, mapped: MappedPath) -> MappedPath:
-        if mapped.resolved is None or mapped.reason != "share":
-            self.cacheable = False
-        else:
-            self.witness(mapped.resolved)
-        return mapped
-
-
-class StatWitnessCache(Generic[_V]):
-    """``key -> value``, valid while every witnessed path is unchanged on disk."""
-
-    def __init__(self) -> None:
+    def __init__(self, max_entries: int) -> None:
+        self._max_entries: int = max_entries
         self._lock: threading.Lock = threading.Lock()
-        self._entries: dict[tuple[str, ...], tuple[tuple[tuple[str, Witness], ...], _V]] = {}
+        self._root: RootKey | None = None
+        self._entries: OrderedDict[tuple[str, str], tuple[bytes, RowValue]] = OrderedDict()
 
-    def get(self, key: tuple[str, ...]) -> _V | None:
+    def get(self, root: RootKey, key: tuple[str, str]) -> tuple[bytes, RowValue] | None:
         with self._lock:
-            hit = self._entries.get(key)
-        if hit is None:
-            return None
-        witnesses, value = hit
-        for path, witness in witnesses:
-            if witness_of(path) != witness:
+            if root != self._root:
                 return None
-        return value
+            hit = self._entries.get(key)
+            if hit is not None:
+                self._entries.move_to_end(key)
+            return hit
 
-    def put(self, key: tuple[str, ...], resolver: WitnessingResolver, value: _V) -> None:
-        """Store ``value`` unless the resolver saw a path it cannot witness."""
-        if not resolver.cacheable:
-            return
+    def put(self, root: RootKey, key: tuple[str, str], witnesses: bytes, value: RowValue) -> None:
         with self._lock:
-            self._entries[key] = (tuple(resolver.witnesses.items()), value)
+            if root != self._root:
+                self._entries.clear()
+                self._root = root
+            self._entries[key] = (witnesses, value)
+            self._entries.move_to_end(key)
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+
+    def discard(self, root: RootKey, key: tuple[str, str]) -> None:
+        with self._lock:
+            if root == self._root:
+                self._entries.pop(key, None)
 
     def clear(self) -> None:
-        """Drop every entry. Tests call this to force a cold read."""
+        """Drop every entry: a library switch, or a test forcing a cold read."""
         with self._lock:
             self._entries.clear()
+            self._root = None
 
     def __len__(self) -> int:
         with self._lock:

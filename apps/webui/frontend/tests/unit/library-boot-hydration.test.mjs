@@ -174,3 +174,20 @@ test('canBootAllTracksEarly refuses playlist and spotify deep-link boots', () =>
 		false
 	);
 });
+
+test('a route with no All Tracks pane prefetches and holds nothing', async () => {
+	seedBootWalk({ first: { items: [], next_cursor: 'c1' } });
+	hydration.startLibraryBootHydration(false);
+	assert.equal(hydration.bootListingWalkInFlight(), false, 'nothing there would ever end the walk');
+	const first = await hydration.bootTracksPrefetch().tracksPromise;
+	assert.equal(first.next_cursor, 'c1', 'the prefetch itself still fires');
+});
+
+test('only the performance route runs the boot listing walk', () => {
+	for (const pathname of ['/performance', '/performance/']) {
+		assert.equal(hydration.routeRunsBootListingWalk(pathname), true, pathname);
+	}
+	for (const pathname of ['/', '/settings', '/cloudsync', '/performance/extra', '/prep']) {
+		assert.equal(hydration.routeRunsBootListingWalk(pathname), false, pathname);
+	}
+});

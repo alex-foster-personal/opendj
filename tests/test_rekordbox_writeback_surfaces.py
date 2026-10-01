@@ -96,10 +96,9 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
         "os.unlink/os.mkdir appears"
     ),
     "apps/webui/server/rb_vendor_pkg/row_assets.py": (
-        "names SHARE_ROOT only as part of a cache key, so one vendor path "
-        "string under two share roots is two entries; reads analysis and "
-        "artwork files through the read-only containment walk and lstat, "
-        "writes nothing"
+        "names SHARE_ROOT to open it read-only and to bind its row cache to "
+        "that one root; reads analysis files through the descriptors of the "
+        "read-only containment walk and lstats artwork files, writes nothing"
     ),
     "apps/audit/session_history.py": (
         "reads play history. SHARP EDGE, kept on purpose so the next reader "
