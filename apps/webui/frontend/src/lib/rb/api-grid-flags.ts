@@ -6,6 +6,7 @@
  * per-track dismissal. CLI twin: `opendj track grid-scan` / `grid-flag`.
  */
 import { API_BASE } from '$lib/api';
+import { bootScheduler } from '$lib/rb/boot-scheduler';
 
 export interface GridFlagDismissResult {
 	stable_id: string;
@@ -37,10 +38,17 @@ let _scanRequested: Promise<void> | null = null;
  * one stat), and the engine publishes `library.changed` when a verdict
  * changed, which is what refreshes the rows. A failure is logged and the next
  * call retries; it never blocks the table.
+ *
+ * LIBM-138: the request waits for the boot window to close. The scan it starts
+ * is a background thread on the same single-worker engine the listing walk is
+ * using, so starting it at table mount slowed the rows it is about.
  */
 export function ensureGridQualityScan(): Promise<void> {
 	if (_scanRequested === null) {
-		_scanRequested = fetch(`${API_BASE}/api/v1/beatgrid-flags/scan`, { method: 'POST' })
+		_scanRequested = new Promise<void>((resolve) => {
+			bootScheduler.defer('grid-flags:scan', resolve);
+		})
+			.then(() => fetch(`${API_BASE}/api/v1/beatgrid-flags/scan`, { method: 'POST' }))
 			.then(async (response) => {
 				if (!response.ok) await _fail(response, 'beatgrid scan request');
 			})

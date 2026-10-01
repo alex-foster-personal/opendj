@@ -17,6 +17,7 @@ export function immediateBootScheduler() {
 	return {
 		defer: (_label, task) => task(),
 		deckLoadStarted: () => () => {},
+		listingWalkStarted: () => () => {},
 		start: () => () => {}
 	};
 }
@@ -29,6 +30,7 @@ export function manualBootScheduler() {
 		scheduler: {
 			defer: (_label, task) => queued.push(task),
 			deckLoadStarted: () => () => {},
+			listingWalkStarted: () => () => {},
 			start: () => () => {}
 		},
 		pending: () => queued.length,

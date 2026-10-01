@@ -9,6 +9,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import { api, unwrap } from '$lib/api/client';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		stemCacheHealthDot,
 		type StemCacheStatusView
@@ -30,7 +31,9 @@
 	}
 
 	onMount(() => {
-		void load();
+		// LIBM-138: the first read waits for the boot window; nobody is
+		// watching this dot while the listing fills.
+		bootScheduler.defer('stem-cache-dot:load', () => void load());
 		const timer = setInterval(() => {
 			if (!document.hidden) void load();
 		}, POLL_MS);

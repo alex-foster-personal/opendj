@@ -191,6 +191,49 @@ test('a deck load that never settles cannot strand the queue', () => {
 	assert.deepEqual(ran, ['a'], 'the yield has a ceiling; nothing is ever dropped');
 });
 
+// LIBM-138: the All Tracks walk at boot is the page's primary content, and
+// every deferred request shares one engine with it.
+test('the boot listing walk holds the queue back until it settles', () => {
+	const settle = scheduler.listingWalkStarted();
+	scheduler.defer('a', () => ran.push('a'));
+
+	releaseNormally(clock);
+	assert.deepEqual(ran, [], 'a listing walk in flight must keep the queue closed');
+	clock.tickTimers();
+	assert.deepEqual(ran, [], 'still walking, still held');
+
+	settle();
+	settle();
+	clock.tickTimers();
+	assert.deepEqual(ran, ['a'], 'the queue drains once the walk is over');
+});
+
+test('a listing walk and a deck load both have to settle', () => {
+	const settleWalk = scheduler.listingWalkStarted();
+	const settleDeck = scheduler.deckLoadStarted();
+	scheduler.defer('a', () => ran.push('a'));
+	releaseNormally(clock);
+
+	settleWalk();
+	clock.tickTimers();
+	assert.deepEqual(ran, [], 'the deck is still loading');
+
+	settleDeck();
+	clock.tickTimers();
+	assert.deepEqual(ran, ['a']);
+});
+
+test('a listing walk that never settles cannot strand the queue', () => {
+	scheduler.listingWalkStarted();
+	scheduler.defer('a', () => ran.push('a'));
+	releaseNormally(clock);
+
+	const polls = Math.ceil(mod.DECK_LOAD_YIELD_MAX_MS / mod.DECK_LOAD_YIELD_POLL_MS);
+	for (let i = 0; i < polls + 1 && ran.length === 0; i += 1) clock.tickTimers();
+
+	assert.deepEqual(ran, ['a'], 'an abandoned walk releases at the ceiling');
+});
+
 test('a task deferred after the window has closed runs immediately', () => {
 	scheduler.defer('a', () => ran.push('a'));
 	releaseNormally(clock);

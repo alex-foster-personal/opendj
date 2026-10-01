@@ -64,6 +64,13 @@ BOOT_BURST: tuple[tuple[str, str], ...] = (
     ("GET", "/api/v1/cloudsync/status"),
     ("POST", "/api/v1/beatgrid-flags/scan"),
 )
+#: What the page still sends inside the boot window after round 2 (LIBM-138)
+#: moved the rest behind the listing walk. ``--contend-undeferred`` fires these.
+BOOT_BURST_UNDEFERRED: tuple[tuple[str, str], ...] = (
+    ("GET", "/api/v1/playlists?fast=true"),
+    ("GET", "/api/v1/ingest/coverage?cached=true"),
+    ("GET", "/api/v1/usb/volumes"),
+)
 
 
 def _require_data_dir() -> Path:
@@ -79,7 +86,9 @@ def _page_url(limit: int, cursor: str | None, extra: str) -> str:
     return url if cursor is None else f"{url}&cursor={cursor}"
 
 
-def _fire_boot_burst(client: TestClient, timings: dict[str, Any]) -> list[threading.Thread]:
+def _fire_boot_burst(
+    client: TestClient, timings: dict[str, Any], requests: tuple[tuple[str, str], ...],
+) -> list[threading.Thread]:
     def fire(method: str, url: str) -> None:
         started = time.perf_counter()
         status = client.request(method, url).status_code
@@ -87,7 +96,7 @@ def _fire_boot_burst(client: TestClient, timings: dict[str, Any]) -> list[thread
 
     threads = [
         threading.Thread(target=fire, args=request, name=f"boot-burst-{index}")
-        for index, request in enumerate(BOOT_BURST)
+        for index, request in enumerate(requests)
     ]
     for thread in threads:
         thread.start()
@@ -101,10 +110,11 @@ def _walk(
     first_limit: int,
     extra: str,
     burst: dict[str, Any] | None,
+    burst_requests: tuple[tuple[str, str], ...],
 ) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
     cursor: str | None = None
-    burst_threads = _fire_boot_burst(client, burst) if burst is not None else []
+    burst_threads = _fire_boot_burst(client, burst, burst_requests) if burst is not None else []
     while True:
         page_limit = first_limit if not pages else limit
         trace.reset()
@@ -203,7 +213,15 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--profile", type=int, help="page index to cProfile after the walks")
     parser.add_argument("--contend", action="store_true", help="fire BOOT_BURST as each walk starts")
+    parser.add_argument(
+        "--contend-undeferred", action="store_true",
+        help="fire BOOT_BURST_UNDEFERRED as each walk starts",
+    )
     args = parser.parse_args()
+    if args.contend and args.contend_undeferred:
+        raise SystemExit("--contend and --contend-undeferred are two different bursts: pick one")
+    contended = args.contend or args.contend_undeferred
+    burst_requests = BOOT_BURST_UNDEFERRED if args.contend_undeferred else BOOT_BURST
     data_dir = _require_data_dir()
     state_db = data_dir / "state" / "state.db"
     # The trace is closed before profiling: its connection hook and cProfile
@@ -223,7 +241,7 @@ def main() -> None:
             walks = [
                 _walk(
                     client, trace, args.limit, args.first_limit, args.extra,
-                    bursts[index] if args.contend else None,
+                    bursts[index] if contended else None, burst_requests,
                 )
                 for index in range(args.walks)
             ]
@@ -244,8 +262,10 @@ def main() -> None:
                     app, backend, args.first_limit if args.profile == 0 else args.limit, cursor, 60,
                 )
     summary = _summary(walks)
-    summary["contended"] = args.contend
-    if args.contend:
+    summary["contended"] = (
+        "all" if args.contend else "undeferred" if args.contend_undeferred else "none"
+    )
+    if contended:
         failed = {k: v for burst in bursts for k, v in burst.items() if v[0] >= 400}
         if failed:
             raise SystemExit(f"boot burst requests failed, the contention is not real: {failed}")
