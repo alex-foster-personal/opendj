@@ -22,7 +22,7 @@ TWO INDEPENDENT SYMPTOMS, EITHER SUFFICIENT, mirroring PulseFlag's shape:
 MARGIN_THRESHOLD IS ROUND-1 MEASURED (Fri 2 Oct 2026, demon-llama Preview
 library, 60 tracks with a tag key from MIK/rekordbox, `scripts/key_margin_round.py`).
 The placeholder 0.02 declined 53/60 (88%) and 43 of the first 44 live records:
-the real margin distribution has median 0.0097 and p90 0.021, because the
+the real margin distribution has median about 0.010 and p90 0.021, because the
 runner-up is usually the relative or a fifth-related key, which Krumhansl
 profiles score nearly alike. Exact agreement with the tag key by threshold:
 all 60 at 60%; >= 0.005 keeps 40/60 at 75%; >= 0.01 keeps 30/60 at 80%;
