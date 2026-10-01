@@ -2,16 +2,29 @@
 
 THE RULE (the maintainer, Tue 29 Sep 2026, chosen over human approval): a PR that edits the
 control plane needs SUBMITTED reviews at its current head from two different
-harnesses among Codex, Sol and Claude, neither of them the PR's authoring
-harness. Until this module `just review-triage` passed such a PR on "1 of 3
-AVAILABLE", and #4576 (control plane) merged with only Sol's review. Putting the
-rule in review-triage makes every path that reads that verdict enforce it,
-instead of one more copy in one more caller.
+harnesses among Codex, Sol, Claude, Grok and Cursor, neither of them the PR's
+authoring harness. Until this module `just review-triage` passed such a PR on
+"1 of 3 AVAILABLE", and #4576 (control plane) merged with only Sol's review.
+Putting the rule in review-triage makes every path that reads that verdict
+enforce it, instead of one more copy in one more caller.
+
+REVIEW-18 (Thu 1 Oct 2026): Grok and Cursor subscription lanes post submitted
+reviews under maintainer with lane markers; they count here when login
+and marker both match, like Sol's SOL_LOGINS rule in review_sol.py. Codex has no
+marker lane here and is excluded from this ambiguity rule. A body with more than
+one lane marker among sol, claude, grok, or cursor counts for no harness in
+REVIEW-13's dual-review count; duplicate markers of one lane with differing sha,
+model, seat, or skipped values are likewise ambiguous and count for no harness.
+Claude's marker regex is imported from review_claude.py (same as Sol from review_sol).
+Enforce drops ambiguous submitted reviews before review_coverage collects
+evidence, so Sol and Claude are affected too. A Grok or Cursor review whose
+skipped= list intersects this PR's control-plane hits does not count.
 
 The path list and the author-trailer rule are #4361's (enqueue gate, OPEN at head
 286a755a484a on Thu 1 Oct 2026), so the two cannot disagree once it lands.
-Reviewer recognition is review_coverage's own `_collect_evidence`, passed in by
-the caller, so who counts as Codex, Sol or Claude is decided in one place.
+Reviewer recognition for Codex, Sol and Claude is review_coverage's own
+`_collect_evidence`, passed in by the caller, so who counts is decided in one
+place; Grok and Cursor are recognized here from `/pulls/{n}/reviews` markers.
 
 Requirements (mini-PRD):
   / A control-plane PR with fewer than 2 independent submitted reviews at head fails.
@@ -23,16 +36,46 @@ Requirements (mini-PRD):
     [if] a commit with no harness trailer yields PASS [then] broken
   / It runs BEFORE the docs-only exemption: CLAUDE.md and AGENTS.md are *.md files.
     [if] a CLAUDE.md-only PR passes on the docs-only exemption with one reviewer [then] broken
+  / REVIEW-18: Grok/Cursor subscription reviews at head count as independent harnesses.
+    [if] Sol plus a valid Grok marker at head on a Claude control-plane PR fails [then] broken
+    [if] a Grok author counts its own Grok review [then] broken
+    [if] sol+grok in one body still counts as Sol via enforce [then] broken
 """
 
 from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 
+from scripts.review_claude import CLAUDE_MARKER
 from scripts.review_gh import TriageError
+from scripts.review_sol import SOL_MARKER
+
+_SOL_MARKER_GROUPS = 4
+_CLAUDE_MARKER_GROUPS = 3
+
+
+def _require_marker_group_count(
+    marker_name: str,
+    marker: re.Pattern[str],
+    expected: int,
+    fields: str,
+) -> None:
+    if marker.groups != expected:
+        raise RuntimeError(
+            f"{marker_name} shape changed: expected {expected} capture groups ({fields}), "
+            f"got {marker.groups}"
+        )
+
+
+_require_marker_group_count(
+    "SOL_MARKER", SOL_MARKER, _SOL_MARKER_GROUPS, "sha, seat, model, skipped"
+)
+_require_marker_group_count(
+    "CLAUDE_MARKER", CLAUDE_MARKER, _CLAUDE_MARKER_GROUPS, "sha, model, skipped"
+)
 
 # fnmatch semantics: `*` also crosses `/`, so `.github/workflows/*` covers the tree.
 ROOT_IMPORT_PATHS: tuple[str, ...] = ("__pycache__/*", "_winapi/*", "msvcrt/*", "nt/*", "org/*")
@@ -115,11 +158,32 @@ COMMITS_API_CAP = 250  # GET /pulls/{n}/commits returns at most 250 commits
 AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
     "Claude": frozenset({"Claude"}),
     "Codex": frozenset({"Codex", "Sol"}),
-    "Cursor": frozenset(),
-    "Grok": frozenset(),
+    "Cursor": frozenset({"Cursor"}),
+    "Grok": frozenset({"Grok"}),
 }
 AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
+#: Pull-request review states that count as submitted (excludes PENDING and DISMISSED).
+SUBMITTED_REVIEW_STATES: frozenset[str] = frozenset({"COMMENTED", "APPROVED", "CHANGES_REQUESTED"})
+#: Same trusted-login rule as Sol's SOL_LOGINS in scripts/review_sol.py; login AND marker required.
+SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
+GROK_REVIEW_MARKER = re.compile(
+    r"<!--\s*grok-review\s+v1\s+sha=(?P<sha>[0-9a-f]{40})\s+model=(?P<model>\S+)"
+    r"(?:\s+skipped=(?P<skipped>[\w.,/-]+))?\s*-->",
+    re.IGNORECASE,
+)
+CURSOR_REVIEW_MARKER = re.compile(
+    r"<!--\s*cursor-review\s+v1\s+sha=(?P<sha>[0-9a-f]{40})\s+model=(?P<model>\S+)"
+    r"(?:\s+skipped=(?P<skipped>[\w.,/-]+))?\s*-->",
+    re.IGNORECASE,
+)
+#: All marker lanes used for ambiguity detection (Codex has no marker here).
+_AMBIGUITY_LANE_MARKERS: Mapping[str, re.Pattern[str]] = {
+    "Sol": SOL_MARKER,
+    "Claude": CLAUDE_MARKER,
+    "Grok": GROK_REVIEW_MARKER,
+    "Cursor": CURSOR_REVIEW_MARKER,
+}
 
 
 #: The last `enforce` FAIL's detail, for review_blocker's one-line BLOCKER; empty when the
@@ -168,6 +232,144 @@ def author_markers(message: str) -> set[str]:
             break
         markers |= {m.group(1) for x in lines if (m := AUTHOR_MARKER.fullmatch(x))}
     return markers
+
+
+def _normalize_login(login: str) -> str:
+    return login.removesuffix("[bot]").lower()
+
+
+def _grok_model_counts(model: str) -> bool:
+    lowered = model.lower()
+    if lowered == "unknown" or lowered.startswith("requested:"):
+        return False
+    return lowered.startswith("grok-")
+
+
+def _cursor_model_counts(model: str) -> bool:
+    lowered = model.lower()
+    if lowered == "unknown" or lowered.startswith("requested:"):
+        return False
+    return lowered.startswith(("composer-", "cursor-"))
+
+
+def _subscription_marker_signature(lane: str, match: re.Match[str]) -> tuple[str, str, str, str | None]:
+    if lane == "Sol":
+        sha = match.group(1)
+        seat = match.group(2)
+        model = match.group(3)
+        skipped = match.group(4)
+        return (sha.lower(), seat.lower(), model.lower(), skipped)
+    if lane == "Claude":
+        sha = match.group(1)
+        model = match.group(2)
+        skipped = match.group(3)
+        return (sha.lower(), "", model.lower(), skipped)
+    if lane in ("Grok", "Cursor"):
+        sha = match.group("sha")
+        model = match.group("model")
+        skipped = match.groupdict().get("skipped")
+        seat_group = match.groupdict().get("seat")
+        seat = "" if seat_group is None else seat_group.lower()
+        return (sha.lower(), seat, model.lower(), skipped)
+    raise ValueError(f"unknown marker lane: {lane}")
+
+
+def _review_body_text(review: Mapping) -> str:
+    body = review["body"]
+    if body is None:
+        return ""
+    return str(body)
+
+
+def _subscription_lanes_with_markers(body: str) -> frozenset[str]:
+    present: set[str] = set()
+    for lane, pattern in _AMBIGUITY_LANE_MARKERS.items():
+        if pattern.search(body):
+            present.add(lane)
+    return frozenset(present)
+
+
+def _subscription_review_body_ambiguous(body: str) -> bool:
+    if len(_subscription_lanes_with_markers(body)) > 1:
+        return True
+    for lane, pattern in _AMBIGUITY_LANE_MARKERS.items():
+        matches = list(pattern.finditer(body))
+        if len(matches) <= 1:
+            continue
+        sigs = {_subscription_marker_signature(lane, m) for m in matches}
+        if len(sigs) > 1:
+            return True
+    return False
+
+
+def _normalize_skipped_token(raw: str) -> str:
+    return raw.strip().removeprefix("./").rstrip("/")
+
+
+def _skipped_token_intersects_hits(token: str, control_plane_hit_paths: Collection[str]) -> bool:
+    return any(hit == token or hit.startswith(f"{token}/") for hit in control_plane_hit_paths)
+
+
+def _skipped_intersects_control_plane_hits(
+    skipped_raw: str | None,
+    control_plane_hit_paths: Collection[str],
+) -> bool:
+    if not skipped_raw:
+        return False
+    for part in skipped_raw.split(","):
+        token = _normalize_skipped_token(part)
+        if not token:
+            continue
+        if _skipped_token_intersects_hits(token, control_plane_hit_paths):
+            return True
+    return False
+
+
+def _subscription_lane_at_head(
+    reviews: Sequence[Mapping],
+    head_sha: str,
+    marker: re.Pattern[str],
+    model_ok: Callable[[str], bool],
+    control_plane_hit_paths: Collection[str],
+) -> bool:
+    want = head_sha.lower()
+    for review in reviews:
+        state = str(review["state"]).upper()
+        if state not in SUBMITTED_REVIEW_STATES:
+            continue
+        login = str(review["user"]["login"])
+        if _normalize_login(login) not in SUBSCRIPTION_REVIEW_LOGINS:
+            continue
+        if str(review["commit_id"]).lower() != want:
+            continue
+        body = "" if review["body"] is None else str(review["body"])
+        if _subscription_review_body_ambiguous(body):
+            continue
+        match = marker.search(body)
+        if not match or match.group("sha").lower() != want:
+            continue
+        if _skipped_intersects_control_plane_hits(match.groupdict().get("skipped"), control_plane_hit_paths):
+            continue
+        if model_ok(match.group("model")):
+            return True
+    return False
+
+
+def subscription_reviewed_at_head(
+    reviews: Sequence[dict],
+    head_sha: str,
+    control_plane_hit_paths: Collection[str],
+) -> dict[str, bool]:
+    """Grok and Cursor submitted reviews at head (login + exact-sha marker + model family)."""
+    seq: Sequence[Mapping] = reviews
+    return {
+        "Grok": _subscription_lane_at_head(
+            seq, head_sha, GROK_REVIEW_MARKER, _grok_model_counts, control_plane_hit_paths
+        ),
+        "Cursor": _subscription_lane_at_head(
+            seq, head_sha, CURSOR_REVIEW_MARKER, _cursor_model_counts, control_plane_hit_paths
+        ),
+    }
 
 
 def author_harnesses(commits: Sequence[Mapping]) -> tuple[frozenset[str] | None, str]:
@@ -235,15 +437,23 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
 
     _LAST_FAILURE.clear()
 
+    cp_hits = control_plane_hits(changed_files)
+
     def reviewed_at_head() -> dict[str, bool]:
         reviews = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/reviews")
         inline = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/comments")
         issue = rc._paginated_json_list(f"repos/{rc.REPO}/issues/{pr}/comments")
+        unambiguous_reviews = [
+            review
+            for review in reviews
+            if not _subscription_review_body_ambiguous(_review_body_text(review))
+        ]
         found = {}
         for name in rc.EXPECTED_REVIEWERS:
-            evidence = rc._collect_evidence(name, reviews, inline, issue, head_sha)
+            evidence = rc._collect_evidence(name, unambiguous_reviews, inline, issue, head_sha)
             reviewed = rc._classify_from_evidence(name, evidence).reviewed
             found[name] = reviewed and evidence.submitted_reviews > 0
+        found.update(subscription_reviewed_at_head(unambiguous_reviews, head_sha, cp_hits))
         return found
 
     verdict = measure(
