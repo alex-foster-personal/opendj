@@ -6,17 +6,18 @@
  * 1 Oct 2026 on a loaded host (ops/perf/stem-decode-under-playback-round-0):
  * with deck 1 playing, the four-wide burst made the audio callback arrive
  * late at about 0.90 per second of decode against a 0.10 per second
- * background, and one part at a time brought that to about 0.19 per second.
- * The render thread itself sat near 5% load throughout, so the lateness is
- * the decode threads taking the cores the audio thread needed, not audio
- * work. Narrowing costs a few hundred milliseconds of decode; the hold it
- * replaces cost up to 2,000.
+ * background. Per bundle, pooled over 36 interleaved decodes: 0.47 late
+ * callbacks four wide, 0.13 two wide, 0.14 one wide, the last two at the
+ * background level. The render thread itself sat near 5% load throughout, so
+ * the lateness is the decode threads taking the cores the audio thread
+ * needed, not audio work. Two wide buys everything one wide does and costs
+ * about 200 ms of decode against about 570 (round 2), so two is the width.
  *
  * Pure: the caller says whether a deck is playing.
  */
 
 /** Parts decoded at once while any deck is audible. */
-export const STEM_DECODE_WIDTH_WHILE_PLAYING = 1;
+export const STEM_DECODE_WIDTH_WHILE_PLAYING = 2;
 
 /** The width for a bundle of `partCount` parts: all of them at once on a
  * silent rig, {@link STEM_DECODE_WIDTH_WHILE_PLAYING} while a deck plays. */

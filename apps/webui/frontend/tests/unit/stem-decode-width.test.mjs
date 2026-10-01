@@ -1,18 +1,21 @@
 /**
- * PERF-STEMDEC-04: stem parts decode one at a time while a deck is audible.
+ * PERF-STEMDEC-04: stem parts decode two at a time while a deck is audible.
  *
  * Measured Thu 1 Oct 2026 (ops/perf/stem-decode-under-playback-round-0): with
  * a deck playing, the four-wide decode burst made the audio callback late at
- * about 0.90 per second against a 0.10 per second background; one part at a
- * time measured about 0.19. The hold that used to stand in front of the
- * decode did not move that rate, so the width is the protection.
+ * about 0.90 per second against a 0.10 per second background. Per bundle
+ * that is 0.47 late callbacks four wide against 0.13 two wide and 0.14 one
+ * wide (36 interleaved decodes), so two wide is the narrowest width that
+ * pays for itself. The hold that used to stand in front of the decode did
+ * not move the rate, so the width is the protection.
  *
  * What a node test can prove is the SHAPE: how many decodes are in flight at
  * once, in which order, under which probe. Whether the shape removes the late
  * callbacks is a live measurement and lives in the round reports.
  *
  * Regression lines:
- *   - if more than one part decodes at once while a deck plays then broken
+ *   - if more than two parts decode at once while a deck plays then broken
+ *   - if a playing deck narrows to one part at a time then broken (0.4 s slower for nothing measured)
  *   - if a silent rig decodes fewer than all parts at once then broken (control load regresses)
  *   - if a deck that starts playing mid-bundle does not narrow the parts not yet started then broken
  *   - if a narrowed load becomes or records a lane trial then broken (the verdict would time the width)
@@ -120,14 +123,17 @@ function fakeContext() {
 
 //------------------------------------------------- the width rule
 
-test('a silent rig decodes every part at once; a playing deck narrows to one', () => {
-	assert.equal(widthModule.STEM_DECODE_WIDTH_WHILE_PLAYING, 1);
+// REQ: PERF-STEMDEC-04
+test('a silent rig decodes every part at once; a playing deck narrows to two', () => {
+	assert.equal(widthModule.STEM_DECODE_WIDTH_WHILE_PLAYING, 2);
 	assert.equal(widthModule.stemDecodeWidth(4, false), 4, 'control: nothing playing keeps the fast shape');
 	assert.equal(widthModule.stemDecodeWidth(2, false), 2);
-	assert.equal(widthModule.stemDecodeWidth(4, true), 1);
-	assert.equal(widthModule.stemDecodeWidth(1, true), 1);
+	assert.equal(widthModule.stemDecodeWidth(4, true), 2);
+	assert.equal(widthModule.stemDecodeWidth(2, true), 2);
+	assert.equal(widthModule.stemDecodeWidth(1, true), 1, 'never wider than the bundle');
 });
 
+// REQ: PERF-STEMDEC-04
 test('a part count that is not a positive integer fails instead of picking a width', () => {
 	for (const bad of [0, -1, 1.5, Number.NaN]) {
 		assert.throws(() => widthModule.stemDecodeWidth(bad, true), RangeError, String(bad));
@@ -136,6 +142,7 @@ test('a part count that is not a positive integer fails instead of picking a wid
 
 //------------------------------------------------- the bounded settle
 
+// REQ: PERF-STEMDEC-04
 test('width 1 runs the items strictly one after another, in order', async () => {
 	const { state, run } = gatedRuns();
 	const pending = widthModule.settleWithWidth(PARTS, () => 1, run);
@@ -156,6 +163,7 @@ test('width 1 runs the items strictly one after another, in order', async () => 
 	);
 });
 
+// REQ: PERF-STEMDEC-04
 test('overshoot control: full width starts every item before any finishes', async () => {
 	const { state, run } = gatedRuns();
 	const pending = widthModule.settleWithWidth(PARTS, () => PARTS.length, run);
@@ -165,6 +173,7 @@ test('overshoot control: full width starts every item before any finishes', asyn
 	assert.equal((await pending).narrowest, 4);
 });
 
+// REQ: PERF-STEMDEC-04
 test('width 2 keeps exactly two in flight', async () => {
 	const { state, run } = gatedRuns();
 	const pending = widthModule.settleWithWidth(PARTS, () => 2, run);
@@ -181,14 +190,11 @@ test('width 2 keeps exactly two in flight', async () => {
 	assert.equal(state.peak, 2);
 });
 
+// REQ: PERF-STEMDEC-04
 test('a deck that starts playing mid-bundle narrows the parts not yet started', async () => {
 	const { state, run } = gatedRuns();
 	let playing = false;
-	const pending = widthModule.settleWithWidth(
-		PARTS,
-		() => widthModule.stemDecodeWidth(2, playing),
-		run
-	);
+	const pending = widthModule.settleWithWidth(PARTS, () => (playing ? 1 : 2), run);
 	await tick();
 	assert.deepEqual(state.started, ['vocals', 'drums'], 'two wide while silent');
 	playing = true;
@@ -204,14 +210,11 @@ test('a deck that starts playing mid-bundle narrows the parts not yet started', 
 	assert.equal((await pending).narrowest, 1);
 });
 
+// REQ: PERF-STEMDEC-04
 test('a deck that stops mid-bundle widens the parts not yet started', async () => {
 	const { state, run } = gatedRuns();
 	let playing = true;
-	const pending = widthModule.settleWithWidth(
-		PARTS,
-		() => widthModule.stemDecodeWidth(PARTS.length, playing),
-		run
-	);
+	const pending = widthModule.settleWithWidth(PARTS, () => (playing ? 1 : PARTS.length), run);
 	await tick();
 	assert.deepEqual(state.started, ['vocals']);
 	playing = false;
@@ -222,6 +225,7 @@ test('a deck that stops mid-bundle widens the parts not yet started', async () =
 	assert.equal((await pending).narrowest, 1);
 });
 
+// REQ: PERF-STEMDEC-04
 test('a rejected part is reported in place and the parts after it still run', async () => {
 	const { state, run } = gatedRuns();
 	const pending = widthModule.settleWithWidth(PARTS, () => 1, run);
@@ -241,6 +245,7 @@ test('a rejected part is reported in place and the parts after it still run', as
 	assert.match(settled[0].reason.message, /failed:vocals/);
 });
 
+// REQ: PERF-STEMDEC-04
 test('a run that throws synchronously is a rejection, not an escape', async () => {
 	const { settled } = await widthModule.settleWithWidth(
 		['a', 'b'],
@@ -256,6 +261,7 @@ test('a run that throws synchronously is a rejection, not an escape', async () =
 	);
 });
 
+// REQ: PERF-STEMDEC-04
 test('an invalid width fails the settle and starts nothing', async () => {
 	for (const bad of [0, 1.5, Number.NaN, -2]) {
 		const { state, run } = gatedRuns();
@@ -264,6 +270,7 @@ test('an invalid width fails the settle and starts nothing', async () => {
 	}
 });
 
+// REQ: PERF-STEMDEC-04
 test('no items settles to an empty result', async () => {
 	const result = await widthModule.settleWithWidth([], () => 1, async () => 'never');
 	assert.deepEqual(result.settled, []);
@@ -271,6 +278,7 @@ test('no items settles to an empty result', async () => {
 
 //------------------------------------------------- decodeStemParts honors it
 
+// REQ: PERF-STEMDEC-04
 test('decodeStemParts on the main-thread lane decodes one part at a time when narrowed', async () => {
 	decode.stemDecodeSession.forceLane('main-thread');
 	const fallback = overlapFallback();
@@ -288,6 +296,7 @@ test('decodeStemParts on the main-thread lane decodes one part at a time when na
 	);
 });
 
+// REQ: PERF-STEMDEC-04
 test('decodeStemParts on the workers lane decodes one part at a time when narrowed', async () => {
 	decode.stemDecodeSession.forceLane('workers');
 	const workers = overlapDecoderFactory();
@@ -302,6 +311,7 @@ test('decodeStemParts on the workers lane decodes one part at a time when narrow
 	assert.ok(result.reports.every((report) => report.viaWorker));
 });
 
+// REQ: PERF-STEMDEC-04
 test('overshoot control: with no width given, all four parts overlap as before', async () => {
 	decode.stemDecodeSession.forceLane('main-thread');
 	const fallback = overlapFallback();
@@ -312,6 +322,7 @@ test('overshoot control: with no width given, all four parts overlap as before',
 	assert.equal(result.width, 4);
 });
 
+// REQ: PERF-STEMDEC-04
 test('a narrowed load is never a lane trial and leaves the verdict unmeasured', async () => {
 	// Unsettled lane, eligible FLAC bundle: a full-width load WOULD be the
 	// main-thread trial. The control below proves that, so the narrowed case
@@ -337,6 +348,7 @@ test('a narrowed load is never a lane trial and leaves the verdict unmeasured', 
 	);
 });
 
+// REQ: PERF-STEMDEC-04
 test('a trial that a deck narrows halfway is not recorded as a measurement', async () => {
 	let clock = 0;
 	const now = () => (clock += 10);
@@ -365,6 +377,7 @@ test('a trial that a deck narrows halfway is not recorded as a measurement', asy
 
 //------------------------------------------------- the live-deck probe
 
+// REQ: PERF-STEMDEC-04
 test('the live-deck probe is false until armed, follows the deck, and disarms with the shed', () => {
 	const shed = { request() {}, sync() {}, pending: false, xrunsInWindow: false };
 	shedModule.setEagerStemDecodeShed(null);
@@ -386,6 +399,7 @@ function source(relative) {
 	return readFileSync(fileURLToPath(new URL(`../../${relative}`, import.meta.url)), 'utf8');
 }
 
+// REQ: PERF-STEMDEC-04
 test('decodeStemBuffers decodes at the live-deck width and labels it', () => {
 	const graph = source('src/lib/rb/stem-graph.ts');
 	const body = graph.slice(
@@ -397,10 +411,24 @@ test('decodeStemBuffers decodes at the live-deck width and labels it', () => {
 	assert.match(body, /decode_width: String\(decoded\.width\)/);
 });
 
+// REQ: PERF-STEMDEC-04
 test('app-init arms the live-deck probe with the transport read', () => {
 	const init = source('src/lib/rb/app-init.ts');
 	assert.match(
 		init,
 		/setEagerStemDecodeShed\(\s*shed,[^;]*kernelPressureIsElevated\([^;]*,\s*anyDeckPlaying\s*\);/
 	);
+});
+
+// REQ: PERF-STEMDEC-04
+test('the shipped rule end to end: a playing deck decodes a four-part bundle two at a time', async () => {
+	decode.stemDecodeSession.forceLane('main-thread');
+	const fallback = overlapFallback();
+	const result = await decode.decodeStemParts(fakeContext(), allFlac(), PARTS, {
+		decodeFallback: fallback.fn,
+		width: () => decode.stemDecodeWidth(PARTS.length, true)
+	});
+	assert.equal(fallback.state.calls, 4);
+	assert.equal(fallback.state.peak, 2, 'four wide is the burst; one wide is slower for nothing measured');
+	assert.equal(result.width, 2);
 });
