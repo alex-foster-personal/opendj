@@ -261,16 +261,16 @@
 	});
 
 	async function dismissAndClose(): Promise<void> {
-		await setupWizard.skip();
-		if (setupWizard.error !== null) return;
+		// finish(), not skip(): it re-reads preflight before saying the close
+		// will stick. See the store for the reopen this prevents.
+		if (!(await setupWizard.finish())) return;
 		// Honest close: the library really is whatever was already in it, and
 		// the chip that replaces the panel says so rather than vanishing.
 		closeSetupOverlay({ incomplete: (setupWizard.status?.tracks ?? 0) === 0 });
 	}
 
 	async function finish(): Promise<void> {
-		await setupWizard.skip();
-		if (setupWizard.error !== null) return;
+		if (!(await setupWizard.finish())) return;
 		closeSetupOverlay();
 	}
 
