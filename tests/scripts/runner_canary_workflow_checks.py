@@ -46,14 +46,24 @@ WORKFLOW_DIR = CANARY_PATH.parent
 CANARY_REF = "refs/heads/canary/" + "0" * 40
 
 
-#: ci.yml `test` steps the canary deliberately omits. All three are trailing, non-verdict
-#: uploads: their artifact names would collide across vendors in one run, and their readers
-#: (the shard rebalance and the Mergify CI Insights job) live in the source repository.
+#: ci.yml `test` steps the canary deliberately omits, all trailing. The first three are
+#: non-verdict uploads: their artifact names would collide across vendors in one run, and
+#: their readers (the shard rebalance and the Mergify CI Insights job) live in the source
+#: repository. The fourth is the Trunk-quarantine verdict, which reads a list job the
+#: canary does not have (ADR-NEW-trunk-flaky-quarantine-on); the canary instead keeps its
+#: pytest step failing on its own, see CI_ONLY_PYTEST_KEYS.
 CI_ONLY_STEPS = (
     "Upload this shard's measured durations",
     "Stage this shard's JUnit report for the isolated CI Insights job",
     "Upload this shard's JUnit report for CI Insights",
+    "Fast lane verdict (pytest exit code, Trunk quarantine applied)",
 )
+
+
+#: Keys ci.yml's pytest step carries that the canary's must NOT: continue-on-error defers
+#: ci.yml's verdict to the step above, and the canary has no such step, so there it would
+#: turn every red shard green.
+CI_ONLY_PYTEST_KEYS = ("continue-on-error",)
 
 
 #: The one in-step difference: the shard's own wall budget, sized under the 30-minute cap.
@@ -247,6 +257,9 @@ def _canary_expected_steps(ci_doc: dict[str, Any]) -> list[dict[str, Any]]:
     pytest_step = next(s for s in kept if s.get("name") == CONFIG["pytest_step_name"])
     assert pytest_step["run"].count(old) == 1, "ci.yml's shard budget line moved"
     pytest_step["run"] = pytest_step["run"].replace(old, new)
+    for key in CI_ONLY_PYTEST_KEYS:
+        assert key in pytest_step, f"declared CI-only pytest key {key!r} no longer in ci.yml"
+        del pytest_step[key]
     return kept
 
 
