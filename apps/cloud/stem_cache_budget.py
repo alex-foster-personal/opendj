@@ -66,11 +66,22 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from apps.cloud.stem_cache_settings import (
+    DEFAULT_ENFORCE_INTERVAL_S,
+    DEFAULT_FLOOR_FRACTION,
+    DEFAULT_FLOOR_GIB,
+    SETTINGS_FILENAME,
+    StemCacheSettings,
+    StemCacheSettingsError,
+    load_settings,
+    merged_settings,
+    save_settings,
+    settings_from_mapping,
+    settings_path,
+    write_json_atomically,
+)
+
 GIB: int = 1024**3
-DEFAULT_FLOOR_GIB: float = 20.0
-DEFAULT_FLOOR_FRACTION: float = 0.05
-DEFAULT_ENFORCE_INTERVAL_S: float = 300.0
-SETTINGS_FILENAME: str = "stem-cache-settings.json"
 UPLOAD_QUEUE_FILENAME: str = "stem-upload-queue.json"
 UPLOAD_QUEUE_SCHEMA_VERSION: int = 1
 _HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
@@ -89,130 +100,6 @@ BLOCKED_NOTHING_EVICTABLE: str = "not_enough_evictable_bundles"
 
 CacheState = Literal["healthy", "low_disk"]
 StemAssetIndex = Mapping[str, Mapping[str, str]]
-
-
-class StemCacheSettingsError(ValueError):
-    """Raised when the stem cache settings are malformed."""
-
-
-# ----- settings ----------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class StemCacheSettings:
-    """The overridable knobs. Defaults are the documented policy.
-
-    ``max_cache_gib`` is an optional hard cap for a user who wants the cache
-    small regardless of how much disk is free. It only ever LOWERS the budget.
-    """
-
-    floor_gib: float = DEFAULT_FLOOR_GIB
-    floor_fraction: float = DEFAULT_FLOOR_FRACTION
-    max_cache_gib: float | None = None
-    enforce_interval_s: float = DEFAULT_ENFORCE_INTERVAL_S
-    auto_evict: bool = True
-
-
-def settings_path(data_dir: Path) -> Path:
-    return Path(data_dir) / "state" / SETTINGS_FILENAME
-
-
-def _number(payload: Mapping[str, object], key: str, rule: str) -> float:
-    """``payload[key]`` as a float. A bool is not a number here: ``true``
-    would otherwise pass as 1.0."""
-    value = payload[key]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise StemCacheSettingsError(f"{key} must be a number {rule}; got {value!r}")
-    return float(value)
-
-
-def settings_from_mapping(payload: Mapping[str, object]) -> StemCacheSettings:
-    """Validate a settings mapping. Unknown keys and bad values raise."""
-    known = set(StemCacheSettings.__dataclass_fields__)
-    unknown = set(payload).difference(known)
-    if unknown:
-        raise StemCacheSettingsError(
-            f"unsupported stem cache setting(s): {sorted(unknown)}; known: {sorted(known)}"
-        )
-    merged: dict[str, object] = {**asdict(StemCacheSettings()), **payload}
-    floor_gib = _number(merged, "floor_gib", ">= 0")
-    fraction = _number(merged, "floor_fraction", "in [0, 1)")
-    interval = _number(merged, "enforce_interval_s", "> 0")
-    cap = (
-        None
-        if merged["max_cache_gib"] is None
-        else _number(merged, "max_cache_gib", ">= 0, or null")
-    )
-    auto_evict = merged["auto_evict"]
-    if floor_gib < 0:
-        raise StemCacheSettingsError(f"floor_gib must be >= 0; got {floor_gib!r}")
-    if not 0 <= fraction < 1:
-        raise StemCacheSettingsError(f"floor_fraction must be in [0, 1); got {fraction!r}")
-    if cap is not None and cap < 0:
-        raise StemCacheSettingsError(f"max_cache_gib must be null or >= 0; got {cap!r}")
-    if interval <= 0:
-        raise StemCacheSettingsError(f"enforce_interval_s must be > 0; got {interval!r}")
-    if not isinstance(auto_evict, bool):
-        raise StemCacheSettingsError(f"auto_evict must be true or false; got {auto_evict!r}")
-    return StemCacheSettings(
-        floor_gib=floor_gib,
-        floor_fraction=fraction,
-        max_cache_gib=cap,
-        enforce_interval_s=interval,
-        auto_evict=auto_evict,
-    )
-
-
-def merged_settings(
-    current: StemCacheSettings,
-    overrides: Mapping[str, object],
-    *,
-    clear_max_cache_gib: bool = False,
-) -> StemCacheSettings:
-    """``current`` with ``overrides`` applied and validated. One merge shared
-    by the HTTP route and the CLI verb, so both accept exactly the same
-    partial update. ``clear_max_cache_gib`` removes the optional cap."""
-    values: dict[str, object] = {**asdict(current), **overrides}
-    if clear_max_cache_gib:
-        values["max_cache_gib"] = None
-    return settings_from_mapping(values)
-
-
-def load_settings(data_dir: Path) -> StemCacheSettings:
-    """Read the settings file. Absent is the documented defaults; present but
-    malformed raises, so a typo can never silently restore a default floor."""
-    path = settings_path(data_dir)
-    if not path.is_file():
-        return StemCacheSettings()
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise StemCacheSettingsError(f"{path} is not valid JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise StemCacheSettingsError(f"{path} must hold a JSON object")
-    try:
-        return settings_from_mapping(payload)
-    except StemCacheSettingsError as exc:
-        raise StemCacheSettingsError(f"{path}: {exc}") from exc
-
-
-def save_settings(data_dir: Path, settings: StemCacheSettings) -> Path:
-    """Persist only the fields that differ from the defaults. Writing every
-    field pinned the defaults of the day into the file, so a later default
-    change never reached a machine that had once toggled one switch."""
-    validated = settings_from_mapping(asdict(settings))
-    defaults = asdict(StemCacheSettings())
-    overrides = {k: v for k, v in asdict(validated).items() if v != defaults[k]}
-    path = settings_path(data_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _write_json_atomically(path, overrides)
-    return path
-
-
-def _write_json_atomically(path: Path, payload: object) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(path)
 
 
 # ----- disk and budget math ----------------------------------------------------
@@ -350,7 +237,7 @@ def load_upload_queue(data_dir: Path) -> dict[str, dict[str, object]]:
 def _save_upload_queue(data_dir: Path, queue: dict[str, dict[str, object]]) -> None:
     path = upload_queue_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    _write_json_atomically(
+    write_json_atomically(
         path, {"schema_version": UPLOAD_QUEUE_SCHEMA_VERSION, "bundles": queue}
     )
 
@@ -422,6 +309,79 @@ def _utc_now_iso() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
 
 
+@dataclass(frozen=True)
+class _CachePosition:
+    """One measurement of the cache against the free-disk floor, shared by
+    ``enforce`` and ``status`` so the two cannot disagree on the arithmetic."""
+
+    settings: StemCacheSettings
+    usage: DiskUsage
+    bundles: list[LocalBundle]
+    cache_bytes: int
+    floor_bytes: int
+    shortfall_bytes: int
+    budget_bytes: int
+    over_budget_bytes: int
+
+    @property
+    def state(self) -> CacheState:
+        return "low_disk" if self.shortfall_bytes > 0 else "healthy"
+
+
+def _measure_cache_position(
+    stems_dir: Path,
+    data_dir: Path,
+    settings: StemCacheSettings | None,
+    disk: DiskUsage | None,
+) -> _CachePosition:
+    resolved = settings if settings is not None else load_settings(data_dir)
+    usage = disk if disk is not None else measure_disk(stems_dir)
+    bundles = scan_bundles(stems_dir)
+    cache = sum(bundle.size_bytes for bundle in bundles)
+    floor = floor_bytes(usage.total_bytes, resolved)
+    budget = derived_budget_bytes(cache, usage, resolved)
+    return _CachePosition(
+        settings=resolved,
+        usage=usage,
+        bundles=bundles,
+        cache_bytes=cache,
+        floor_bytes=floor,
+        shortfall_bytes=max(0, floor - usage.free_bytes),
+        budget_bytes=budget,
+        over_budget_bytes=max(0, cache - budget),
+    )
+
+
+def _blocked_before_eviction(
+    need_bytes: int, settings: StemCacheSettings, can_rehydrate: bool
+) -> str | None:
+    """Why nothing may be evicted at all, or None when eviction may proceed."""
+    if need_bytes <= 0:
+        return None
+    if not settings.auto_evict:
+        return BLOCKED_AUTO_EVICT_OFF
+    if not can_rehydrate:
+        return BLOCKED_HYDRATION_NOT_ARMED
+    return None
+
+
+def _protected_count(bundles: list[LocalBundle], protected: frozenset[str]) -> int:
+    return sum(1 for bundle in bundles if bundle.stable_id in protected)
+
+
+def _would_evict(evictable: list[LocalBundle], need_bytes: int) -> tuple[int, int]:
+    """(count, bytes) reaching the floor would remove: least recently used
+    first, the same walk as ``_evict_lru`` minus the content hash (status
+    hashes nothing)."""
+    count, total_bytes = 0, 0
+    for bundle in evictable:
+        if total_bytes >= need_bytes:
+            break
+        count += 1
+        total_bytes += bundle.size_bytes
+    return count, total_bytes
+
+
 def _evict_lru(
     bundles: list[LocalBundle],
     *,
@@ -480,26 +440,17 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     the whole backlog; the timer, which nobody is waiting on, passes nothing
     and catches up in full.
     """
-    resolved = settings if settings is not None else load_settings(data_dir)
-    usage = disk if disk is not None else measure_disk(stems_dir)
-    bundles = scan_bundles(stems_dir)
-    cache = sum(bundle.size_bytes for bundle in bundles)
-    floor = floor_bytes(usage.total_bytes, resolved)
-    budget = derived_budget_bytes(cache, usage, resolved)
-    shortfall = max(0, floor - usage.free_bytes)
-    need = max(0, cache - budget)
+    position = _measure_cache_position(stems_dir, data_dir, settings, disk)
+    bundles, usage = position.bundles, position.usage
+    need = position.over_budget_bytes
     if max_evict_bytes is not None:
         need = min(need, max_evict_bytes)
 
-    blocked: str | None = None
     evicted: list[str] = []
     freed = 0
     content_differs: set[str] = set()
-    if need > 0 and not resolved.auto_evict:
-        blocked = BLOCKED_AUTO_EVICT_OFF
-    elif need > 0 and not can_rehydrate:
-        blocked = BLOCKED_HYDRATION_NOT_ARMED
-    elif need > 0:
+    blocked = _blocked_before_eviction(need, position.settings, can_rehydrate)
+    if need > 0 and blocked is None:
         evicted, freed, content_differs = _evict_lru(
             bundles,
             need_bytes=need,
@@ -521,18 +472,18 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
 
     return EnforceReport(
         at_utc=now_iso,
-        state="low_disk" if shortfall > 0 else "healthy",
+        state=position.state,
         dry_run=dry_run,
         disk_total_bytes=usage.total_bytes,
         disk_free_bytes=usage.free_bytes,
-        floor_bytes=floor,
-        shortfall_bytes=shortfall,
-        cache_bytes=cache,
-        budget_bytes=budget,
+        floor_bytes=position.floor_bytes,
+        shortfall_bytes=position.shortfall_bytes,
+        cache_bytes=position.cache_bytes,
+        budget_bytes=position.budget_bytes,
         evicted_stable_ids=tuple(evicted),
         bytes_freed=freed,
         queued_for_upload=tuple(sorted(queue)),
-        protected_count=sum(1 for bundle in bundles if bundle.stable_id in protected),
+        protected_count=_protected_count(bundles, protected),
         blocked_reason=blocked,
     )
 
@@ -552,14 +503,9 @@ def status(
 ) -> dict[str, object]:
     """Where the cache stands against the floor. Writes nothing and hashes
     nothing, so it is safe to poll from a health indicator."""
-    resolved = settings if settings is not None else load_settings(data_dir)
-    usage = disk if disk is not None else measure_disk(stems_dir)
-    bundles = scan_bundles(stems_dir)
-    cache = sum(bundle.size_bytes for bundle in bundles)
-    floor = floor_bytes(usage.total_bytes, resolved)
-    shortfall = max(0, floor - usage.free_bytes)
-    budget = derived_budget_bytes(cache, usage, resolved)
-    need = max(0, cache - budget)
+    position = _measure_cache_position(stems_dir, data_dir, settings, disk)
+    bundles, usage = position.bundles, position.usage
+    need = position.over_budget_bytes
 
     local_only = [bundle for bundle in bundles if index_gap(bundle, index) is not None]
     local_only_ids = {bundle.stable_id for bundle in local_only}
@@ -569,32 +515,21 @@ def status(
         if bundle.stable_id not in local_only_ids and bundle.stable_id not in protected
     ]
     evictable_bytes = sum(bundle.size_bytes for bundle in evictable)
-    # What reaching the floor would remove: least recently used first, the
-    # same walk as ``_evict_lru`` minus the content hash (status hashes nothing).
-    would_evict_count, would_evict_bytes = 0, 0
-    for bundle in evictable:
-        if would_evict_bytes >= need:
-            break
-        would_evict_count += 1
-        would_evict_bytes += bundle.size_bytes
+    would_evict_count, would_evict_bytes = _would_evict(evictable, need)
 
-    blocked: str | None = None
-    if need > 0 and not resolved.auto_evict:
-        blocked = BLOCKED_AUTO_EVICT_OFF
-    elif need > 0 and not can_rehydrate:
-        blocked = BLOCKED_HYDRATION_NOT_ARMED
-    elif need > 0 and evictable_bytes < need:
+    blocked = _blocked_before_eviction(need, position.settings, can_rehydrate)
+    if need > 0 and blocked is None and evictable_bytes < need:
         blocked = BLOCKED_NOTHING_EVICTABLE
 
     return {
-        "state": "low_disk" if shortfall > 0 else "healthy",
+        "state": position.state,
         "stems_dir": str(stems_dir),
         "disk_total_bytes": usage.total_bytes,
         "disk_free_bytes": usage.free_bytes,
-        "floor_bytes": floor,
-        "shortfall_bytes": shortfall,
-        "cache_bytes": cache,
-        "budget_bytes": budget,
+        "floor_bytes": position.floor_bytes,
+        "shortfall_bytes": position.shortfall_bytes,
+        "cache_bytes": position.cache_bytes,
+        "budget_bytes": position.budget_bytes,
         "over_budget_bytes": need,
         "bundle_count": len(bundles),
         "evictable_bundle_count": len(evictable),
@@ -605,10 +540,10 @@ def status(
         "local_only_bytes": sum(bundle.size_bytes for bundle in local_only),
         "local_only_stable_ids": sorted(local_only_ids),
         "upload_queue_count": len(load_upload_queue(data_dir)),
-        "protected_count": sum(1 for bundle in bundles if bundle.stable_id in protected),
+        "protected_count": _protected_count(bundles, protected),
         "can_rehydrate": can_rehydrate,
         "blocked_reason": blocked,
-        "settings": asdict(resolved),
+        "settings": asdict(position.settings),
     }
 
 
