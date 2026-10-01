@@ -93,7 +93,10 @@ _ABSENT: bytes = bytes(_WITNESS.size)
 
 def file_witness(st: os.stat_result) -> bytes:
     """All six identity fields of a file, packed."""
-    return _WITNESS.pack(*(value & _U64 for value in identity_of(st)))
+    mode, ino, dev, size, mtime_ns, ctime_ns = identity_of(st)
+    return _WITNESS.pack(
+        mode, ino & _U64, dev & _U64, size & _U64, mtime_ns & _U64, ctime_ns & _U64
+    )
 
 
 def directory_witness(st: os.stat_result) -> bytes:

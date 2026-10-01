@@ -168,6 +168,35 @@ def test_only_plain_share_relative_paths_are_planned(vendor_path: str) -> None:
     assert row_assets._share_parts(vendor_path) is None
 
 
+@pytest.mark.parametrize(
+    "leaf", ["ANLZ0000.DAT", "ANLZ0000", ".hidden", "two.dots.DAT", "ANLZ0000.dat"]
+)
+def test_planned_siblings_are_the_ones_the_uncached_path_derives(leaf: str) -> None:
+    from pathlib import PurePosixPath
+
+    from apps.adapters.rekordbox.models import RbRowMeta
+
+    meta = RbRowMeta(
+        vendor_id="1", folder_path=None, analysis_data_path=f"/PIONEER/USBANLZ/{leaf}",
+        comment=None, genre=None, play_count=0, image_path=None,
+    )
+    plan = row_assets._plan_for(meta)
+    assert plan is not None
+    assert plan.analysis_candidates == tuple(
+        PurePosixPath(leaf).with_suffix(suffix).name for suffix in (".2EX", ".EXT", ".DAT")
+    )
+
+
+def test_a_leaf_ending_in_a_dot_takes_the_uncached_path() -> None:
+    from apps.adapters.rekordbox.models import RbRowMeta
+
+    meta = RbRowMeta(
+        vendor_id="1", folder_path=None, analysis_data_path="/PIONEER/USBANLZ/ANLZ0000.",
+        comment=None, genre=None, play_count=0, image_path=None,
+    )
+    assert row_assets._plan_for(meta) is None
+
+
 def test_a_plain_share_relative_path_is_planned() -> None:
     assert row_assets._share_parts("/PIONEER/USBANLZ/P001/0000A001/ANLZ0000.DAT") == (
         "PIONEER", "USBANLZ", "P001", "0000A001", "ANLZ0000.DAT",

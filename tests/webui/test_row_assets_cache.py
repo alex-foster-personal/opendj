@@ -241,6 +241,50 @@ def test_swap_during_the_read_never_serves_or_remembers_outside_bytes(
     assert level_of(call()) == INSIDE
 
 
+@pytest.mark.parametrize("when", ["before the open", "after the open"])
+def test_leaf_swapped_at_the_instant_it_is_opened(
+    share: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, when: str
+) -> None:
+    """The .2EX becomes a symlink to an outside look-alike just before, or just
+    after, the read opens it; then the swap is undone (the ABA shape). Before:
+    the open refuses the symlink. After: the bytes come from the descriptor
+    that was already open on the real file. Either way nothing outside is
+    served, then or on any later request."""
+    out = look_alike_outside(tmp_path)
+    leaf = share / ANLZ_DIR / "ANLZ0000.2EX"
+    parked = tmp_path / "parked.2EX"
+    real_open = os.open
+    swapped: list[bool] = []
+
+    def swap() -> None:
+        swapped.append(True)
+        os.rename(leaf, parked)
+        os.symlink(out / "ANLZ0000.2EX", leaf)
+
+    def racing_open(path, flags, mode=0o777, *, dir_fd=None):  # type: ignore[no-untyped-def]
+        mine = not swapped and dir_fd is not None and os.fspath(path) == "ANLZ0000.2EX"
+        if mine and when == "before the open":
+            swap()
+        fd = real_open(path, flags, mode, dir_fd=dir_fd)
+        if mine and when == "after the open":
+            swap()
+        return fd
+
+    monkeypatch.setattr(fd_anchored_walk.os, "open", racing_open)
+    raced = call()
+    assert swapped, "the swap never fired: this test would prove nothing"
+    assert level_of(raced) == INSIDE
+    monkeypatch.setattr(fd_anchored_walk.os, "open", real_open)
+    assert level_of(call()) == INSIDE, "the symlink is refused; the .DAT is the fallback"
+    assert call().pvdi_vocals == {"status": "not_analyzed"}
+    os.unlink(leaf)
+    os.rename(parked, leaf)  # the swap is undone
+    for _later in range(2):
+        restored = call()
+        assert level_of(restored) == INSIDE
+        assert restored.pvdi_vocals["status"] == "rekordbox"
+
+
 def test_leaf_symlink_to_an_outside_look_alike_is_refused_and_not_remembered(
     share: Path, tmp_path: Path
 ) -> None:
@@ -338,7 +382,10 @@ def test_another_root_with_the_same_vendor_strings_is_read_afresh(
     assert level_of(call()) == INSIDE
     other = (tmp_path / "other-library").resolve()
     build(other, OTHER_LIBRARY)
-    use_root(monkeypatch, other)
+    # No anchor reset here: that would empty the cache and hide what is under
+    # test, which is that an entry answers only for the root it was read under.
+    monkeypatch.setattr(platform_paths, "SHARE_ROOT", other)
+    assert len(row_assets._ROW_ASSETS) == 1
     assert level_of(call()) == OTHER_LIBRARY
 
 
@@ -358,7 +405,8 @@ def test_same_root_path_naming_another_directory_is_read_afresh(
     assert level_of(call()) == INSIDE
     os.rename(share, tmp_path / "old-library")
     build(share, OTHER_LIBRARY)
-    fd_anchored_walk.reset_root_anchors()
+    fd_anchored_walk.reset_root_anchor(share)  # this one root, cache untouched
+    assert len(row_assets._ROW_ASSETS) == 1
     assert level_of(call()) == OTHER_LIBRARY
 
 

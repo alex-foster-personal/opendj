@@ -56,6 +56,7 @@ import logging
 import os
 import stat
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -168,9 +169,24 @@ def reset_root_anchor(root: Path) -> None:
     _ROOT_ANCHORS.pop(str(root), None)
 
 
+#: Run by :func:`reset_root_anchors`. Whoever remembers what it read below a
+#: root registers its "forget everything" here: a reset says the roots may
+#: legitimately name other directories now, so nothing read under the old
+#: ones may be served again. Kept in this module, which nothing reloads.
+_ANCHOR_RESET_HOOKS: list[Callable[[], None]] = []
+
+
+def on_root_anchors_reset(forget: Callable[[], None]) -> None:
+    """Run ``forget`` every time :func:`reset_root_anchors` runs."""
+    if forget not in _ANCHOR_RESET_HOOKS:
+        _ANCHOR_RESET_HOOKS.append(forget)
+
+
 def reset_root_anchors() -> None:
     """Drop every recorded root anchor. See :func:`reset_root_anchor`."""
     _ROOT_ANCHORS.clear()
+    for forget in _ANCHOR_RESET_HOOKS:
+        forget()
 
 
 def path_from_fd(fd: int) -> Path:

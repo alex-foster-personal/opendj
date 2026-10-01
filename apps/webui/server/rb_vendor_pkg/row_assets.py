@@ -44,7 +44,6 @@ import os
 import stat
 import sys
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 from types import TracebackType
 from typing import Any
 
@@ -161,13 +160,10 @@ def _plan_for(meta: RbRowMeta) -> _Plan | None:
         parts = _share_parts(meta.analysis_data_path)
         if parts is None:
             return None
-        leaf = PurePosixPath(parts[-1])
-        try:
-            analysis_candidates = tuple(
-                leaf.with_suffix(suffix).name for suffix in _PREVIEW_SUFFIXES
-            )
-        except ValueError:
-            return None
+        stem, _suffix = os.path.splitext(parts[-1])
+        if parts[-1].endswith("."):
+            return None  # the one name pathlib and splitext derive siblings of differently
+        analysis_candidates = tuple(stem + suffix for suffix in _PREVIEW_SUFFIXES)
         analysis_dirs, analysis_leaf = parts[:-1], parts[-1]
     artwork_dirs: tuple[str, ...] = ()
     artwork_leaves: tuple[str, ...] = ()
@@ -185,7 +181,8 @@ def _plan_for(meta: RbRowMeta) -> _Plan | None:
 
 
 _ROW_ASSETS: RowAssetCache = RowAssetCache(ROW_ASSET_CACHE_MAX_ENTRIES)
-platform_paths.on_share_root_refresh(_ROW_ASSETS.clear)
+# ``platform_paths.refresh_share_root`` resets the anchors, so it lands here.
+fd_anchored_walk.on_root_anchors_reset(_ROW_ASSETS.clear)
 
 
 # ----- one caller's pass over its rows ---------------------------------------

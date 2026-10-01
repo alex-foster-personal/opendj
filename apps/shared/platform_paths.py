@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
@@ -97,25 +97,11 @@ def compute_share_root() -> Path:
     return rekordbox_app_dir() / "share"
 
 
-#: Called by :func:`refresh_share_root`. Anything that remembers what it read
-#: under the share root registers its "forget everything" here, because this
-#: module cannot import the layers that hold such memory.
-_SHARE_ROOT_REFRESH_HOOKS: list[Callable[[], None]] = []
-
-
-def on_share_root_refresh(forget: Callable[[], None]) -> None:
-    """Run ``forget`` every time the share root is recomputed."""
-    if forget not in _SHARE_ROOT_REFRESH_HOOKS:
-        _SHARE_ROOT_REFRESH_HOOKS.append(forget)
-
-
 def refresh_share_root() -> Path:
     """Recompute :data:`SHARE_ROOT` after library-mode env is applied."""
     global SHARE_ROOT
     SHARE_ROOT = compute_share_root()
     fd_anchored_walk.reset_root_anchors()
-    for forget in _SHARE_ROOT_REFRESH_HOOKS:
-        forget()
     return SHARE_ROOT
 
 
