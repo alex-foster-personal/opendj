@@ -1074,6 +1074,8 @@ import {
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity,
+	planKeyShiftMutation,
+	type KeyShiftMutationPlan,
 	filterParamsFromKnob
 } from './audio-engine-guards';
 import {
@@ -1093,7 +1095,9 @@ export {
 	masterSwitchFollowers,
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
-	type TransportMutationActivity
+	type TransportMutationActivity,
+	planKeyShiftMutation,
+	type KeyShiftMutationPlan
 };
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
@@ -1672,38 +1676,6 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 		undefined,
 		keyShiftSemitones
 	);
-}
-
-export interface KeyShiftMutationPlan {
-	kind: 'immediate' | 'scheduled';
-	active: boolean;
-	publishedKeyShiftSemitones: number | null;
-}
-
-/** A stop acknowledged by the processor can remain audible at the output.
- * Key changes must join that revisioned schedule instead of publishing ahead
- * of the listener. */
-export function planKeyShiftMutation(
-	activity: TransportMutationActivity,
-	desiredActive: boolean,
-	requestedKeyShiftSemitones: number
-): KeyShiftMutationPlan {
-	if (typeof desiredActive !== 'boolean') {
-		throw new TypeError('key shift desired active must be boolean');
-	}
-	_assertKeyShift(requestedKeyShiftSemitones);
-	if (transportNeedsScheduledMutation(activity)) {
-		return {
-			kind: 'scheduled',
-			active: desiredActive,
-			publishedKeyShiftSemitones: null
-		};
-	}
-	return {
-		kind: 'immediate',
-		active: false,
-		publishedKeyShiftSemitones: requestedKeyShiftSemitones
-	};
 }
 
 function _desiredKeyShiftSemitones(deck: DeckId): number {
