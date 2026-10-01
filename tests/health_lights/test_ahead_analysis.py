@@ -205,3 +205,9 @@ def test_failed_run_names_its_exception_line() -> None:
     """[if] a queue run dies with a traceback [then] the reason is its exception line, [else stop]."""
     text = "Traceback\n  File x\nBackendNotAvailable: no checkpoint\n  hint: set MDT_FFMPEG at one."
     assert aa._last_line(text) == "BackendNotAvailable: no checkpoint"
+
+
+def test_failed_run_unwraps_the_cli_error_message() -> None:
+    """[if] the queue CLI prints a wrapped [ERROR] [then] the reason is that message, [else stop]."""
+    text = "[ERROR] backend 'x' is not available\non this host: BackendNotAvailable: no\nsoxr"
+    assert aa._last_line(text) == "backend 'x' is not available on this host: BackendNotAvailable: no soxr"

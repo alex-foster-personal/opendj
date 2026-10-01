@@ -426,7 +426,10 @@ def _queue_cli(args: list[str], db: str) -> tuple[int, str, str]:
 
 
 def _last_line(text: str) -> str:
-    """The exception line of a failed run (the last one that names an error)."""
+    """The reason a failed run gave: its ``[ERROR]`` message (unwrapped), else
+    its last exception line, else its last line."""
+    if "[ERROR]" in text:
+        return " ".join(text.rsplit("[ERROR]", 1)[1].split())[:300]
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     named = [line for line in lines if re.match(r"^[A-Z][\w.]*: ", line)]
     pick = named[-1] if named else (lines[-1] if lines else "no output")
