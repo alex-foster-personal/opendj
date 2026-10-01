@@ -15,6 +15,7 @@ marker lane here and is excluded from this ambiguity rule. A body with more than
 one lane marker among sol, claude, grok, or cursor counts for no harness in
 REVIEW-13's dual-review count; duplicate markers of one lane with differing sha,
 model, seat, or skipped values are likewise ambiguous and count for no harness.
+Claude's marker regex is imported from review_claude.py (same as Sol from review_sol).
 Enforce drops ambiguous submitted reviews before review_coverage collects
 evidence, so Sol and Claude are affected too. A Grok or Cursor review whose
 skipped= list intersects this PR's control-plane hits does not count.
@@ -48,15 +49,33 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 
+from scripts.review_claude import CLAUDE_MARKER
 from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
 
 _SOL_MARKER_GROUPS = 4
-if SOL_MARKER.groups != _SOL_MARKER_GROUPS:
-    raise RuntimeError(
-        f"SOL_MARKER shape changed: expected 4 capture groups (sha, seat, model, skipped), "
-        f"got {SOL_MARKER.groups}"
-    )
+_CLAUDE_MARKER_GROUPS = 3
+
+
+def _require_marker_group_count(
+    marker_name: str,
+    marker: re.Pattern[str],
+    expected: int,
+    fields: str,
+) -> None:
+    if marker.groups != expected:
+        raise RuntimeError(
+            f"{marker_name} shape changed: expected {expected} capture groups ({fields}), "
+            f"got {marker.groups}"
+        )
+
+
+_require_marker_group_count(
+    "SOL_MARKER", SOL_MARKER, _SOL_MARKER_GROUPS, "sha, seat, model, skipped"
+)
+_require_marker_group_count(
+    "CLAUDE_MARKER", CLAUDE_MARKER, _CLAUDE_MARKER_GROUPS, "sha, model, skipped"
+)
 
 # fnmatch semantics: `*` also crosses `/`, so `.github/workflows/*` covers the tree.
 ROOT_IMPORT_PATHS: tuple[str, ...] = ("__pycache__/*", "_winapi/*", "msvcrt/*", "nt/*", "org/*")
@@ -158,15 +177,10 @@ CURSOR_REVIEW_MARKER = re.compile(
     r"(?:\s+skipped=(?P<skipped>[\w.,/-]+))?\s*-->",
     re.IGNORECASE,
 )
-CLAUDE_REVIEW_MARKER = re.compile(
-    r"<!--\s*claude-review\s+v1\s+sha=(?P<sha>[0-9a-f]{7,40})\s+model=(?P<model>\S+)"
-    r"(?:\s+skipped=(?P<skipped>[\w.,/-]+))?\s*-->",
-    re.IGNORECASE,
-)
 #: All marker lanes used for ambiguity detection (Codex has no marker here).
 _AMBIGUITY_LANE_MARKERS: Mapping[str, re.Pattern[str]] = {
     "Sol": SOL_MARKER,
-    "Claude": CLAUDE_REVIEW_MARKER,
+    "Claude": CLAUDE_MARKER,
     "Grok": GROK_REVIEW_MARKER,
     "Cursor": CURSOR_REVIEW_MARKER,
 }
@@ -240,22 +254,24 @@ def _cursor_model_counts(model: str) -> bool:
 
 def _subscription_marker_signature(lane: str, match: re.Match[str]) -> tuple[str, str, str, str | None]:
     if lane == "Sol":
-        if len(match.groups()) != _SOL_MARKER_GROUPS:
-            raise RuntimeError(
-                f"SOL_MARKER shape changed: expected 4 capture groups (sha, seat, model, skipped), "
-                f"got {len(match.groups())}"
-            )
         sha = match.group(1)
         seat = match.group(2)
         model = match.group(3)
         skipped = match.group(4)
         return (sha.lower(), seat.lower(), model.lower(), skipped)
-    sha = match.group("sha")
-    model = match.group("model")
-    skipped = match.groupdict().get("skipped")
-    seat_group = match.groupdict().get("seat")
-    seat = "" if seat_group is None else seat_group.lower()
-    return (sha.lower(), seat, model.lower(), skipped)
+    if lane == "Claude":
+        sha = match.group(1)
+        model = match.group(2)
+        skipped = match.group(3)
+        return (sha.lower(), "", model.lower(), skipped)
+    if lane in ("Grok", "Cursor"):
+        sha = match.group("sha")
+        model = match.group("model")
+        skipped = match.groupdict().get("skipped")
+        seat_group = match.groupdict().get("seat")
+        seat = "" if seat_group is None else seat_group.lower()
+        return (sha.lower(), seat, model.lower(), skipped)
+    raise ValueError(f"unknown marker lane: {lane}")
 
 
 def _review_body_text(review: Mapping) -> str:
@@ -286,16 +302,27 @@ def _subscription_review_body_ambiguous(body: str) -> bool:
     return False
 
 
+def _normalize_skipped_token(raw: str) -> str:
+    return raw.strip().removeprefix("./").rstrip("/")
+
+
+def _skipped_token_intersects_hits(token: str, control_plane_hit_paths: Collection[str]) -> bool:
+    return any(hit == token or hit.startswith(f"{token}/") for hit in control_plane_hit_paths)
+
+
 def _skipped_intersects_control_plane_hits(
     skipped_raw: str | None,
     control_plane_hit_paths: Collection[str],
 ) -> bool:
     if not skipped_raw:
         return False
-    skipped_paths = {part.strip() for part in skipped_raw.split(",") if part.strip()}
-    if not skipped_paths:
-        return False
-    return bool(skipped_paths.intersection(control_plane_hit_paths))
+    for part in skipped_raw.split(","):
+        token = _normalize_skipped_token(part)
+        if not token:
+            continue
+        if _skipped_token_intersects_hits(token, control_plane_hit_paths):
+            return True
+    return False
 
 
 def _subscription_lane_at_head(
