@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -133,23 +134,30 @@ def next_lane_work(
 
 
 #: Host-level causes worth naming verbatim when ffmpeg buries them in stderr.
-KNOWN_HOST_CAUSES: tuple[str, ...] = ("Requested resampling engine is unavailable",)
+KNOWN_HOST_CAUSES: tuple[str, ...] = (
+    "Requested resampling engine is unavailable",
+    "cannot run the pinned resample",
+)
 
 
 def reason_kind(reason: str) -> str:
     """A failure with its track-specific part removed, so a host-wide cause
     (every track failing the same way) is recognisable across a chunk.
 
-    ``Cls: <file>: <what failed>: <stderr...>`` becomes ``Cls: <what failed>``
-    plus any known host cause found in the text; anything shaped otherwise
+    A known host cause anywhere in the text wins (``Cls: <cause>``); else
+    ``Cls: <file>: <what failed>: <stderr...>`` becomes ``Cls: <what failed>``;
+    anything shaped otherwise
     (e.g. ``TrackVanished: <path> was gone``) is kept whole, i.e. per track.
     """
     parts = reason.split(": ")
+    causes = [cause for cause in KNOWN_HOST_CAUSES if cause in reason]
+    if causes:
+        label = parts[0] if len(parts) > 1 and " " not in parts[0] else None
+        joined = "; ".join(causes)
+        return f"{label}: {joined}" if label else joined
     if len(parts) < 3:
         return reason
-    kind = f"{parts[0]}: {parts[2]}"
-    causes = [cause for cause in KNOWN_HOST_CAUSES if cause in reason]
-    return f"{kind} ({'; '.join(causes)})" if causes else kind
+    return f"{parts[0]}: {parts[2]}"
 
 
 def coverage_counts(
@@ -418,8 +426,11 @@ def _queue_cli(args: list[str], db: str) -> tuple[int, str, str]:
 
 
 def _last_line(text: str) -> str:
+    """The exception line of a failed run (the last one that names an error)."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return lines[-1][:300] if lines else "no output"
+    named = [line for line in lines if re.match(r"^[A-Z][\w.]*: ", line)]
+    pick = named[-1] if named else (lines[-1] if lines else "no output")
+    return pick[:300]
 
 
 def run_lane_via_queue(

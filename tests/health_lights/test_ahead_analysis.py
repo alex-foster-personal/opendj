@@ -197,5 +197,11 @@ def test_same_host_cause_with_different_files_closes_the_lane() -> None:
     drain = world.drain()
     drain.tick()
     unavailable = drain.coverage()["lanes"]["loudness"]["unavailable"]
-    assert unavailable == f"TrackUnreadable: ffmpeg exited 234 decoding PCM ({cause})"
+    assert unavailable == f"TrackUnreadable: {cause}"
     assert aa.reason_kind("TrackVanished: /a/b.mp3 was gone") == "TrackVanished: /a/b.mp3 was gone"
+
+
+def test_failed_run_names_its_exception_line() -> None:
+    """[if] a queue run dies with a traceback [then] the reason is its exception line, [else stop]."""
+    text = "Traceback\n  File x\nBackendNotAvailable: no checkpoint\n  hint: set MDT_FFMPEG at one."
+    assert aa._last_line(text) == "BackendNotAvailable: no checkpoint"
