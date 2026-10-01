@@ -33,6 +33,11 @@
  *     since run [then] the gate no longer asks for setup [else ⛔️] broken
  *     [if] the fresh reading still says 'fail' [then] finish() refuses with
  *     the engine's detail on `error` [else ⛔️] broken
+ *   ✔︎ 🎯 refreshStatusAfterImport(job) re-reads setup status once this
+ *     wizard's own import job settles, so the Done step reads the import that
+ *     just ran, not the status loaded when the overlay opened.
+ *     [if] the job succeeded and Done still says no import was recorded [then ⛔️] broken
+ *     [if] a running job, or another wizard's job, triggers a status read [then ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -261,6 +266,9 @@ class SetupWizard {
 	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
 	folderCandidates = $state<FolderCandidates['candidates']>([]);
 	folderCandidatesState = $state<'idle' | 'loading' | 'answered' | 'failed'>('idle');
+	/** The job whose settled outcome `status` already reflects. Plain field,
+	 * not $state: nothing renders it, it only stops a re-read per row update. */
+	private _statusReadForJob: string | null = null;
 
 	goTo(step: WizardStep): void {
 		this.step = step;
@@ -335,6 +343,33 @@ class SetupWizard {
 			this.detectState = 'failed';
 		} finally {
 			this.busy = false;
+		}
+	}
+
+	/**
+	 * Re-read setup status once THIS wizard's import job has settled.
+	 *
+	 * `status` is loaded when the overlay opens, which is before any import,
+	 * so its `last_import` describes the data directory as it was then. The
+	 * Done step reads that field, and after a successful import it said "No
+	 * import was recorded for this data directory" (demon-llama preview, Thu
+	 * 1 Oct 2026). The overlay passes the live job row in on every update;
+	 * this reads status once per settled job, whatever the outcome, because a
+	 * failed import changes what the engine has recorded too. Detection is
+	 * left alone: it describes rekordbox, which the import does not change.
+	 */
+	async refreshStatusAfterImport(job: Job | null): Promise<void> {
+		if (job === null || job.id !== this.jobId) return;
+		if (!TERMINAL.includes(job.status)) return;
+		if (this._statusReadForJob === job.id) return;
+		this._statusReadForJob = job.id;
+		try {
+			this.status = await getSetupStatus();
+			this.error = null;
+		} catch (exc) {
+			// Not marked as read, so the next row update can try again.
+			this._statusReadForJob = null;
+			this.error = _message(exc);
 		}
 	}
 
@@ -643,6 +678,7 @@ class SetupWizard {
 		this.detectState = 'idle';
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
+		this._statusReadForJob = null;
 	}
 }
 
