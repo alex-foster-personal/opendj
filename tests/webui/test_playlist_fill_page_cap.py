@@ -50,7 +50,7 @@ def _client(monkeypatch, tmp_path: Path, members: int) -> TestClient:
 
 @pytest.mark.requirement("LIBM-134")
 def test_route_serves_a_full_client_fill_page(monkeypatch, tmp_path: Path):
-    """[if] the client asks for one fill page [then] the route answers 200 with that many rows [else stop]."""
+    """[if] the client asks for one fill page [then] the route answers 200 with that many rows, [else stop]."""
     fill_page = _client_fill_page()
     assert fill_page <= _ROUTE_CAP, f"client fill page {fill_page} exceeds the route cap {_ROUTE_CAP}"
     with _client(monkeypatch, tmp_path, fill_page + 40) as c:
@@ -64,7 +64,7 @@ def test_route_serves_a_full_client_fill_page(monkeypatch, tmp_path: Path):
 
 @pytest.mark.requirement("LIBM-134")
 def test_route_refuses_a_page_over_its_cap(monkeypatch, tmp_path: Path):
-    """[if] a page over the cap is asked for [then] the route answers 422, never an unbounded read [else stop]."""
+    """[if] a page over the cap is asked for [then] the route answers 422, never an unbounded read, [else stop]."""
     with _client(monkeypatch, tmp_path, 3) as c:
         ok = c.get("/api/v1/playlists/pl-fill/tracks", params={"limit": _ROUTE_CAP, "offset": 0})
         over = c.get("/api/v1/playlists/pl-fill/tracks", params={"limit": _ROUTE_CAP + 1, "offset": 0})
