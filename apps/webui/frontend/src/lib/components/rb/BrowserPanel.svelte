@@ -88,7 +88,8 @@
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs,
-		PairingIndex
+		PairingIndex,
+		CompatibleFilterPopover
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -243,7 +244,6 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
-	import CompatibleFilterPopover from './browser/CompatibleFilterPopover.svelte';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,

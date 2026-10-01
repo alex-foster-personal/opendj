@@ -7,6 +7,7 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
+import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -362,43 +363,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},
-	{
-		id: 'confirm.dblclick_load_play',
-		label: 'Confirm double-click Load+play',
-		group: 'confirmations',
-		keywords: ['confirm', 'double', 'click', 'load', 'play', 'prompt'],
-		title: 'Ask before Load+play on double-click',
-		detail: 'Off skips the prompt (do this every time). Missing/default means ask.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
-	{
-		id: 'confirm.delete_playlist',
-		label: 'Confirm playlist delete',
-		group: 'confirmations',
-		keywords: ['confirm', 'delete', 'playlist', 'remove', 'prompt'],
-		title: 'Ask before deleting a playlist',
-		detail: 'Off skips the destructive confirm forever. Missing/default means ask.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
-	{
-		id: 'confirm.playlist_drop_mode',
-		label: 'Playlist drop default',
-		group: 'confirmations',
-		keywords: ['confirm', 'drop', 'playlist', 'add', 'move', 'drag'],
-		title: 'Remembered add vs move for playlist drops',
-		detail: 'Choose Ask to clear the remembered choice and re-prompt on the next drop.',
-		implemented: true,
-		control: {
-			kind: 'enum',
-			options: [
-				{ value: 'ask', label: 'Ask each time' },
-				{ value: 'add', label: 'Always add' },
-				{ value: 'move', label: 'Always move' }
-			]
-		}
-	},
+	...CONFIRMATION_SETTINGS,
 	{
 		id: 'auto_sync',
 		label: 'Auto-sync destinations',
