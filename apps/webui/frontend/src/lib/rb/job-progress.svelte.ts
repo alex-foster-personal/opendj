@@ -115,11 +115,20 @@ export function analysisStatus(done: boolean, phase: JobPhase | null): AnalysisS
 
 /** A real detected data-quality problem for one analysis kind (the browser
  * "Err" column) - never a guessed/fabricated severity. */
-export type AnalysisIssue = { severity: 'warning' | 'error'; detail: string };
+export type AnalysisIssue = {
+	/** `warning` / `error`: a detected problem. `info`: a real property worth
+	 * knowing that is not a defect (a variable-tempo grid). `unknown`: the
+	 * detector could not judge this track, which is neither ok nor a problem
+	 * and is drawn as a hollow dot. */
+	severity: 'warning' | 'error' | 'info' | 'unknown';
+	detail: string;
+};
 export type AnalysisIssues = Partial<Record<AnalysisKind, AnalysisIssue>>;
 export const ANALYSIS_ISSUE_COLORS: Record<AnalysisIssue['severity'], string> = {
 	warning: '#e8973e',
-	error: '#e5484d'
+	error: '#e5484d',
+	info: '#8a94a3',
+	unknown: '#6b7480'
 };
 
 export type UpsertJobInput = Omit<TrackJob, 'updated_at' | 'started_at' | 'progress'> & {

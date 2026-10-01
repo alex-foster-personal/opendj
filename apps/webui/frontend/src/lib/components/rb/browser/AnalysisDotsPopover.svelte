@@ -93,6 +93,7 @@
 	import { runAnalysisOrder } from '$lib/rb/analysis-order';
 	import { pushToast } from '$lib/stores.svelte';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
+	import type { GridFlag } from '$lib/rb/analysis-issues';
 	import AnalysisDots from './AnalysisDots.svelte';
 
 	let {
@@ -100,13 +101,20 @@
 		issues = {},
 		mode = 'coverage',
 		title,
-		stableId = null
+		stableId = null,
+		gridFlag = null,
+		ongridflagdismiss
 	}: {
 		badge?: AnalysisBadge;
 		issues?: AnalysisIssues;
 		mode?: 'coverage' | 'issues';
-		title?: string;
+		title?: string | undefined;
 		stableId?: string | null;
+		/** GRIDFLAG-04: the row's beatgrid flag when its grid is flagged
+		 * (dismissed or not). Shows the dismiss / restore control. */
+		gridFlag?: GridFlag | null;
+		/** Persist the dismissal. Absent = the control renders inert. */
+		ongridflagdismiss?: (dismissed: boolean) => void;
 	} = $props();
 
 	/** Small debounce so a fast pointer skim across a virtualized column of
@@ -236,7 +244,14 @@
 				: { text: 'missing - click to queue', clickable: true, kind };
 		}
 		const issue = issues[kind];
-		if (issue === undefined) return { text: 'no detected issue', clickable: false };
+		if (issue === undefined) {
+			if (kind === 'beatgrid' && gridFlag !== null && gridFlag.dismissed) {
+				return { text: `flag dismissed - ${gridFlag.message}`, clickable: false };
+			}
+			return { text: 'no detected issue', clickable: false };
+		}
+		// Not judged is not an issue to re-queue: say why and stop there.
+		if (issue.severity === 'unknown') return { text: issue.detail, clickable: false };
 		return stableId === null
 			? { text: `${issue.severity}: ${issue.detail}`, clickable: false }
 			: { text: `${issue.severity}: ${issue.detail} - click to re-queue`, clickable: true, kind };
@@ -378,13 +393,33 @@
 								class="pop-dot"
 								style={dotOn(kind) ? `--dot:${dotColor(kind)}` : undefined}
 								class:on={dotOn(kind)}
+								class:unknown={mode === 'issues' && issues[kind]?.severity === 'unknown'}
 							></span>
 							<span class="pop-label">{ANALYSIS_LABELS[kind]}</span>
-							<span class="pop-status">{ordering === kind ? 'queuing…' : row.text}</span>
+							<span class="pop-status" title={row.text}>{ordering === kind ? 'queuing…' : row.text}</span>
 						</button>
 					</li>
 				{/each}
 			</ul>
+			{#if mode === 'issues' && gridFlag !== null}
+				<div class="pop-flag">
+					<div class="pop-flag-text" title={gridFlag.message}>{gridFlag.message}</div>
+					<button
+						type="button"
+						class="pop-flag-btn"
+						data-testid="grid-flag-dismiss"
+						disabled={ongridflagdismiss === undefined}
+						title={ongridflagdismiss === undefined
+							? 'not implemented - see PARITY-TODO'
+							: gridFlag.dismissed
+								? 'Show this beatgrid flag again for this track'
+								: 'Hide this beatgrid flag for this track. The grid is not changed, and you can restore the flag here.'}
+						onclick={() => ongridflagdismiss?.(!gridFlag.dismissed)}
+					>
+						{gridFlag.dismissed ? 'Restore beatgrid flag' : 'Dismiss beatgrid flag'}
+					</button>
+				</div>
+			{/if}
 			{#if stableId === null}
 				<div class="pop-note">No track for this row - ordering is unavailable.</div>
 			{/if}
@@ -456,6 +491,37 @@
 	}
 	.pop-dot.on {
 		background: var(--dot);
+	}
+	.pop-dot.on.unknown {
+		background: transparent;
+		box-shadow: inset 0 0 0 1px var(--dot);
+	}
+	.pop-flag {
+		margin-top: 4px;
+		padding: 4px;
+		border-top: 1px solid var(--rb-border, #2a3038);
+		max-width: 320px;
+	}
+	.pop-flag-text {
+		color: var(--rb-text-dim, #9aa4b2);
+		white-space: normal;
+		margin-bottom: 4px;
+	}
+	.pop-flag-btn {
+		font: inherit;
+		color: inherit;
+		background: transparent;
+		border: 1px solid var(--rb-border, #2a3038);
+		border-radius: 3px;
+		padding: 2px 6px;
+		cursor: pointer;
+	}
+	.pop-flag-btn:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--rb-accent, #3d7dd9) 18%, transparent);
+	}
+	.pop-flag-btn:disabled {
+		cursor: default;
+		opacity: 0.6;
 	}
 	.pop-label {
 		flex: none;

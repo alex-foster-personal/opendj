@@ -24,6 +24,7 @@ import type { AnlzCue, AnlzData, HotCueMutation, HotCueSlotState } from './anlz-
 import type { HotCueSlot } from './hot-cue-types';
 export type { HotCueReversal, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
+import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
@@ -433,6 +434,8 @@ export interface PlaylistTrackRowWire {
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	lyrics?: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
+	grid_quality?: GridQualityRow | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 }
@@ -654,6 +657,8 @@ export type TrackListItemWire = Track & {
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	lyrics?: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
+	grid_quality?: GridQualityRow | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 };

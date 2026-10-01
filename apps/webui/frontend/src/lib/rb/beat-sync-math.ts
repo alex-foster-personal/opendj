@@ -25,6 +25,13 @@
  * never the track-mean of all intervals or the PQTZ bpm field alone.
  */
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
+import {
+	classifyGrid,
+	gridFlagClause,
+	GRID_FLAG_CONSEQUENCE,
+	GRID_QUALITY_THRESHOLDS,
+	type GridClass
+} from '$lib/rb/grid-quality';
 import type { LoopState } from '$lib/rb/deck-state-types';
 
 // -------------------------------------------------------------- contracts
@@ -998,8 +1005,9 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 
 /** A beat interval further than this from the grid's median interval is
  * uneven. Above what millisecond storage alone produces (two rounded beat
- * times put an interval up to 1 ms off, and the median up to 1 ms more). */
-export const UNEVEN_GRID_INTERVAL_TOLERANCE_SEC = 0.003;
+ * times put an interval up to 1 ms off, and the median up to 1 ms more).
+ * The number itself lives in the shared rule (`$lib/rb/grid-quality`). */
+export const UNEVEN_GRID_INTERVAL_TOLERANCE_SEC = GRID_QUALITY_THRESHOLDS.unevenIntervalToleranceSec;
 
 export interface BeatSyncGridWarning {
 	/** Intervals more than UNEVEN_GRID_INTERVAL_TOLERANCE_SEC off the median. */
@@ -1011,6 +1019,9 @@ export interface BeatSyncGridWarning {
 	worstAtSec: number;
 	/** Beats the analyzer extrapolated instead of detecting. */
 	extrapolatedBeatCount: number;
+	/** What the shared rule calls this grid: `suspect` (steady music under an
+	 * uneven grid), `variable_tempo`, or `ok` when only extrapolation warns. */
+	gridClass: GridClass;
 	/** One line for the deck: what is wrong and what it means for sync. */
 	message: string;
 }
@@ -1023,6 +1034,12 @@ export interface BeatSyncGridWarning {
  * the audio can disagree, and holding to one lets the other be heard off the
  * beat. That is not a failure to hide: the DJ is told before they lean on it.
  *
+ * The uneven half is the ONE rule the library's Err-column flag also reads
+ * (`classifyGrid`, GRIDFLAG-01), so a track flagged in the library says the
+ * same sentence here. Extrapolated beats are a deck-only addition: they are a
+ * property of the loaded grid's beats, which the stored library verdict does
+ * not carry.
+ *
  * Deliberately not `detectBeatgridIssue`: that compares the PQTZ `bpm` FIELD
  * to the intervals (a data-quality column), while sync never reads the field.
  *
@@ -1031,45 +1048,27 @@ export interface BeatSyncGridWarning {
  */
 export function beatSyncGridWarning(beats: readonly AnlzBeat[]): BeatSyncGridWarning | null {
 	if (!Array.isArray(beats) || beats.length < 2) return null;
-	const intervalCount = beats.length - 1;
-	const intervals: number[] = new Array(intervalCount);
-	for (let index = 0; index < intervalCount; index++) {
-		intervals[index] = beats[index + 1].t - beats[index].t;
-	}
-	const medianSec = _medianSorted([...intervals].sort((left, right) => left - right));
-	let unevenIntervalCount = 0;
-	let worstDeviationSec = 0;
-	let worstAtSec = beats[0].t;
-	for (let index = 0; index < intervalCount; index++) {
-		const deviationSec = Math.abs(intervals[index] - medianSec);
-		if (deviationSec <= UNEVEN_GRID_INTERVAL_TOLERANCE_SEC) continue;
-		unevenIntervalCount += 1;
-		if (deviationSec > worstDeviationSec) {
-			worstDeviationSec = deviationSec;
-			worstAtSec = beats[index].t;
-		}
-	}
+	const quality = classifyGrid(
+		beats.map((beat) => beat.t),
+		beats.map((beat) => beat.bpm)
+	);
 	let extrapolatedBeatCount = 0;
 	for (const beat of beats) if (beatIsExtrapolated(beat)) extrapolatedBeatCount += 1;
-	if (unevenIntervalCount === 0 && extrapolatedBeatCount === 0) return null;
-	const worstDeviationMs = worstDeviationSec * 1000;
+	const flagged = quality.gridClass === 'suspect' || quality.gridClass === 'variable_tempo';
+	if (!flagged && extrapolatedBeatCount === 0) return null;
 	const reasons: string[] = [];
-	if (unevenIntervalCount > 0) {
-		reasons.push(
-			`${unevenIntervalCount} of ${intervalCount} beat intervals are uneven ` +
-				`(worst ${worstDeviationMs.toFixed(0)} ms off at ${worstAtSec.toFixed(1)} s)`
-		);
-	}
+	if (flagged) reasons.push(gridFlagClause(quality));
 	if (extrapolatedBeatCount > 0) {
 		reasons.push(`${extrapolatedBeatCount} of ${beats.length} beats are extrapolated, not detected`);
 	}
 	return {
-		unevenIntervalCount,
-		intervalCount,
-		worstDeviationMs,
-		worstAtSec,
+		unevenIntervalCount: quality.unevenIntervalCount,
+		intervalCount: quality.intervalCount,
+		worstDeviationMs: quality.worstDeviationMs,
+		worstAtSec: quality.worstAtSec,
 		extrapolatedBeatCount,
-		message: `Beatgrid: ${reasons.join('; ')} - Beat Sync may wander on this track`
+		gridClass: quality.gridClass,
+		message: `Beatgrid: ${reasons.join('; ')} - ${GRID_FLAG_CONSEQUENCE}`
 	};
 }
 
