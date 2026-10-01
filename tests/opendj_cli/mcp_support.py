@@ -46,19 +46,6 @@ def stdio_params(
     )
 
 
-def module_stdio_params(
-    module: str, *args: str, env: dict[str, str] | None = None
-) -> StdioServerParameters:
-    """Params for any ``python -m <module>`` stdio MCP server in this repo.
-
-    The generic sibling of :func:`stdio_params`, which is opendj-specific.
-    Here for the same reason the rest of this module is: a test that built its
-    own params would have to import the client SDK itself, and the repo's mypy
-    measurement scores one error per such import line.
-    """
-    return StdioServerParameters(command=sys.executable, args=["-m", module, *args], env=env)
-
-
 @asynccontextmanager
 async def session(params: StdioServerParameters) -> AsyncIterator[ClientSession]:
     """An initialized session against ``params``, for calls ``call_tool`` cannot make."""
