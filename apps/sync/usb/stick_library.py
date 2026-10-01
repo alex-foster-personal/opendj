@@ -100,6 +100,9 @@ class OpenedStickLibrary:
     #: pdb ids whose artwork both served sizes (``s`` and ``_m``) were on the
     #: stick when this ``export.pdb`` was parsed.
     artwork_available: frozenset[int]
+    #: pdb ids whose audio GET /audio would have served when this
+    #: ``export.pdb`` was parsed: on the stick, inside it, an audio extension.
+    audio_present: frozenset[int]
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,7 @@ class _CachedLibrary:
     fingerprint: tuple[int, int]
     library: StickLibrary
     artwork_available: frozenset[int]
+    audio_present: frozenset[int]
 
 
 _LOCK = threading.Lock()
@@ -163,6 +167,9 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
             artwork_available=frozenset(
                 track.pdb_id for track in library.tracks if _artwork_available(stick, track)
             ),
+            audio_present=frozenset(
+                track.pdb_id for track in library.tracks if _audio_present(stick, track)
+            ),
         )
         _libraries[volume_uuid] = parsed
         return _opened(stick, parsed, cache_hit=False)
@@ -174,6 +181,7 @@ def _opened(stick: MountedStick, cached: _CachedLibrary, *, cache_hit: bool) -> 
         library=cached.library,
         cache_hit=cache_hit,
         artwork_available=cached.artwork_available,
+        audio_present=cached.audio_present,
     )
 
 
@@ -309,15 +317,30 @@ class StickAudioFile:
 
 def stick_audio_file(resolved: ResolvedStickTrack) -> StickAudioFile:
     """The track's audio: contained, audio-extension allowlisted, present."""
-    path = _existing_stick_file(
-        resolved.stick,
-        resolved.track,
-        resolved.track.file_path,
+    path = _audio_file(resolved.stick, resolved.track)
+    return StickAudioFile(path=path, media_type=AUDIO_MEDIA_TYPES[path.suffix.lower()])
+
+
+def _audio_file(stick: MountedStick, track: StickTrack) -> Path:
+    return _existing_stick_file(
+        stick,
+        track,
+        track.file_path,
         allowed_dir=(),
         allowed_suffixes=frozenset(AUDIO_MEDIA_TYPES),
         what="audio file",
     )
-    return StickAudioFile(path=path, media_type=AUDIO_MEDIA_TYPES[path.suffix.lower()])
+
+
+def _audio_present(stick: MountedStick, track: StickTrack) -> bool:
+    """Would GET /audio serve this track? The same check, as a row flag."""
+    try:
+        _audio_file(stick, track)
+    except StickError as exc:
+        if exc.code in ("USB_FILE_MISSING", "USB_PATH_OUTSIDE_VOLUME"):
+            return False
+        raise
+    return True
 
 
 def stick_audio_path(resolved: ResolvedStickTrack) -> Path:

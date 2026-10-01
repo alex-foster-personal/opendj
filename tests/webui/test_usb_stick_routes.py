@@ -79,7 +79,8 @@ NO_UUID_NAME = "NO UUID STICK"
 _TRACK_SUFFIXES = ("", "/audio", "/anlz", "/hot-cues", "/artwork")
 LIBRARY_TRACK_KEYS = {
     "id", "pdb_id", "title", "artist", "album", "genre", "key", "bpm", "duration_s",
-    "rating", "file_path", "has_analysis", "has_artwork", "date_added",
+    "rating", "play_count", "file_path", "file_present", "has_analysis", "has_artwork",
+    "date_added",
 }
 
 
@@ -170,8 +171,8 @@ def test_library_route_returns_the_locked_contract(client: TestClient, mount: Pa
     assert first == {
         "id": f"usb-{STICK_UUID}-1", "pdb_id": 1, "title": "First Synthetic",
         "artist": "Synth Artist", "album": "Synth Album", "genre": "Techno", "key": "Abm",
-        "bpm": 124.5, "duration_s": 301.0, "rating": 4,
-        "file_path": "/Contents/Synth Artist/First Synthetic .mp3",
+        "bpm": 124.5, "duration_s": 301.0, "rating": 4, "play_count": 0,
+        "file_path": "/Contents/Synth Artist/First Synthetic .mp3", "file_present": True,
         "has_analysis": True, "has_artwork": True, "date_added": "2026-09-01",
     }
     assert [p["id"] for p in body["playlists"]] == ["pl-5", "pl-7", "pl-6", "pl-3", "pl-9"]
