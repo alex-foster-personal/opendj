@@ -304,13 +304,33 @@ test('every path to the destination runs through the mute gain and the room dela
 		masterDelayFeeders.length > 0,
 		'if nothing connects to the room delay then the mute-bypass guard is vacuous'
 	);
-	for (const name of masterDelayFeeders) {
-		assert.equal(
-			name,
-			'masterMuteGain',
-			'if anything reaches the room delay without passing the mute gain then ?muted=1 plays out loud'
+	// master12-cue34 delays the master pair alone, so there the mute gain reaches
+	// the room delay through a splitter and a two-channel merger. Each link of
+	// that chain must be fed by the previous one and nothing else. The rendered
+	// proof that a muted graph is silent on all four channels is the real-browser
+	// spec tests/e2e/audio-output-topology.spec.ts.
+	const feedersOf = (target) =>
+		[...topology.matchAll(new RegExp(`(\\w+)\\.connect\\(${target}[,)]`, 'g'))].map(
+			([, name]) => name
 		);
-	}
+	assert.deepEqual(
+		[...new Set(masterDelayFeeders)].sort(),
+		['masterMuteGain', 'roomMerger'],
+		'if anything reaches the room delay without passing the mute gain then ?muted=1 plays out loud'
+	);
+	assert.deepEqual([...new Set(feedersOf('roomMerger'))], ['mutedSplitter']);
+	assert.deepEqual([...new Set(feedersOf('mutedSplitter'))], ['masterMuteGain']);
+	assert.deepEqual(
+		[...new Set(feedersOf('outputMerger'))].sort(),
+		['mutedSplitter', 'roomSplitter'],
+		'if anything else feeds the four-channel output merger then it reaches the device unmuted'
+	);
+	assert.deepEqual([...new Set(feedersOf('roomSplitter'))], ['masterDelay']);
+	assert.deepEqual(
+		[...new Set(feedersOf('dest'))].sort(),
+		['masterDelay', 'outputMerger'],
+		'if anything else reaches the destination then it bypasses the mute'
+	);
 });
 
 test('graph build adopts the mute node rather than re-reading the URL', () => {
