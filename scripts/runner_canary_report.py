@@ -31,6 +31,10 @@ Verdicts, per vendor (decision record: docs/decisions/ADR-NEW-runner-canary.md):
   SHA is configured, or when a known-red SHA was not run on the vendor or has no complete,
   red self-hosted run, even if a bar is missed: a canary not yet shown to go red has not measured
   anything, a miss included (Sol P2 on 27840126b). UNKNOWN is never a pass;
+- UNKNOWN, never PASS, while ci/runner-canary.json declares
+  `vendor_skips_external_fixtures`: the vendor shards then skip the external-fixture tests
+  the self-hosted shards run, so the two sides did unequal work and a vendor could look
+  faster or as correct for doing less (Sol P1 on 0e7388c6f). A FAIL still FAILs;
 - PASS otherwise.
 
 A paired commit has a test verdict (green or red) on every shard on BOTH sides, from attempt
@@ -59,6 +63,8 @@ Requirements (mini-PRD)
   [else stop] ✔︎ ✅ 🎯
 - [if] a pytest step failed with any exit but pytest's 1 (a TIMEOUT's 124, say) [then] infra,
   never a test red; none or two recorded exit codes are UNKNOWN, [else stop] ✔︎ ✅ 🎯
+- [if] the config declares vendor_skips_external_fixtures [then] a would-be PASS is UNKNOWN
+  naming the unequal work, and a FAIL stays FAIL, [else stop] ✔︎ ✅ 🎯
 - [if] an infra failure or slow start lands on a commit with no complete baseline [then]
   it still counts in the operational rates, and never in the ratio or agreement, [else
   stop] ✔︎ ✅ 🎯
@@ -90,6 +96,11 @@ from scripts.runner_canary_rows import (
 EXIT_PASS, EXIT_FAIL, EXIT_UNKNOWN = 0, 1, 3
 CANARY_WORKFLOW = ".github/workflows/runner-canary.yml"
 GH_TIMEOUT_S = 120
+UNEQUAL_WORK_REASON = (
+    "vendor shards skip the external-fixture tests the self-hosted shards run "
+    "(MDT_ALLOW_MISSING_FIXTURES=1, ci/runner-canary.json vendor_skips_external_fixtures): "
+    "unequal work on the two sides, so no PASS until executed and skipped counts are compared"
+)
 
 
 def _first_run_by_sha(rows: Iterable[ShardRow]) -> dict[str, list[ShardRow]]:
@@ -264,6 +275,7 @@ def evaluate_vendor(
     bars: dict[str, float],
     known_red_shas: Iterable[str],
     shard_count: int,
+    vendor_skips_external_fixtures: bool,
 ) -> VendorReport:
     report = VendorReport(vendor=vendor)
     own_rows = [r for r in vendor_rows if r.vendor == vendor and r.outcome != "ours"]
@@ -287,6 +299,8 @@ def evaluate_vendor(
     unknown += control_unknown
     if in_flight:
         unknown.append(f"{in_flight} vendor shard jobs are still in flight; re-run when done")
+    if vendor_skips_external_fixtures:
+        unknown.append(UNEQUAL_WORK_REASON)
 
     if control_green:
         report.verdict, report.reasons = "FAIL", control_green + failed + unknown
@@ -464,6 +478,7 @@ def main(argv: list[str] | None = None) -> int:
             bars=config["success_bars"],
             known_red_shas=known_red,
             shard_count=config["shard_count"],
+            vendor_skips_external_fixtures=config["vendor_skips_external_fixtures"],
         )
         for vendor in vendors
     ]

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("modal", reason="needs the optional modal package")
+
 from scripts.modal_vocal_farm import (
     PREFETCH_DEPTH,
     PREFETCH_MAX_BYTES,

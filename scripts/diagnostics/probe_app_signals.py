@@ -2,7 +2,8 @@
 
 Both are best-effort by design. A probe that dies because the engine is down,
 or because a WebKit LocalStorage file is mid-write, would stop producing the
-process footprints that are its actual job.
+process footprints that are its actual job. The one write that must NOT be
+best-effort, the RED-trend report, lives in ``probe_trend_report``.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ import re
 import sqlite3
 import urllib.error
 import urllib.request
-import uuid
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -25,7 +25,6 @@ PERF_RING_STORAGE_KEY = "mdt.perfEventLog"
 DECK_STATE_STORAGE_KEY = "mdt.deckState"
 DECK_LOAD_COMPLETED_KIND = "deck-load"
 DECK_STATE_EMPTY_KINDS = frozenset({"deck-state-empty", "deck-unload"})
-CLIENT_ERROR_ACCEPTED_STATUS = 202
 DECK_LOAD_RING_BUDGET = 16
 """Mirrors perf-event-log.ts DECK_LOAD_BUDGET. The ring FIFO-evicts the oldest
 `deck-load`-bucket row (a completion or a `deck-load-fail`) once this many are
@@ -48,7 +47,19 @@ own FIFO budget. `other` and `transport-schedule` rows never bear on deck
 state and are ignored here."""
 
 
-def _fetch_json(url: str, timeout: float = 1.5) -> Any:
+ENGINE_OBSERVATION_TIMEOUT_SECONDS = 1.5
+"""Per-request wait for the SAMPLER's engine reads (``engine_metrics``).
+
+Short on purpose: those reads are observations taken inside the 15-second
+sampling loop, three per sample, and a slow engine must cost a sample one
+missing field rather than stall the footprints that are the loop's job. The
+RED-trend report is not an observation and does not use this number.
+"""
+
+
+def fetch_json(url: str, timeout: float) -> Any:
+    """GET ``url`` as JSON. The wait is the caller's decision, never a default."""
+
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.load(response)
@@ -92,101 +103,12 @@ def engine_metrics(family: list[tuple[ProcessRow, str]]) -> dict[str, Any]:
         ("clients", "/telemetry/clients"),
     ):
         try:
-            value = _fetch_json(base + path)
+            value = fetch_json(base + path, ENGINE_OBSERVATION_TIMEOUT_SECONDS)
         except (OSError, ValueError, urllib.error.URLError) as exc:
             result[name] = {"error": type(exc).__name__}
             continue
         result[name] = _job_rollup(value) if name == "jobs" and isinstance(value, list) else value
     return result
-
-
-class TrendReportError(RuntimeError):
-    """The RED trend could not be written to the engine's durable sink.
-
-    It formats its own message from the url and the detail so that every
-    raise site is one short call and the wording cannot drift between them.
-
-    This is deliberately NOT best-effort like the rest of this module. The
-    other readers here are observations: losing one leaves a sample with a
-    missing field and the probe keeps producing footprints. Posting a RED
-    trend is the opposite - it is the durable RECORD of a failure that the
-    caller has already decided is real, and a swallowed failure there means
-    nothing anywhere says the app regressed.
-    """
-
-    def __init__(self, url: str, detail: str) -> None:
-        super().__init__(f"POST {url} could not record the RED trend: {detail}")
-
-
-def report_red_trend(port: int, trend: dict[str, Any]) -> dict[str, Any]:
-    """Use the engine's durable client-error sink for a RED probe trend.
-
-    Returns the accepted receipt, or raises TrendReportError naming the
-    underlying error. It never returns a falsy value for a failure: the caller
-    has to either see a receipt or handle an exception.
-    """
-
-    base_url = f"http://127.0.0.1:{port}/api/v1"
-    health_url = base_url + "/health"
-    try:
-        health = _fetch_json(health_url)
-    except (OSError, ValueError, urllib.error.URLError) as exc:
-        raise TrendReportError(
-            health_url,
-            f"engine identity check failed: {type(exc).__name__}: {exc}",
-        ) from exc
-    if not isinstance(health, dict) or health.get("status") != "ok" or not isinstance(
-        health.get("version"), str
-    ):
-        raise TrendReportError(
-            health_url, "engine identity check returned an invalid health record"
-        )
-
-    payload = {
-        "client_event_id": f"performance-trend-{uuid.uuid4().hex}",
-        "kind": "ui-error",
-        "message": f"performance probe RED: {trend.get('verdict_reason', 'unknown reason')}",
-        "name": "OpenDJPerformanceTrend",
-        "url": "opendj-performance-probe://trend",
-        "client_timestamp": str(trend.get("window", {}).get("last", "")),
-        "user_agent": "opendj-performance-probe",
-        "secure_context": True,
-        "audio_worklet_available": False,
-        "context": {
-            "source": "performance-probe",
-            "verdict": "RED",
-            "orphan_count": int(trend.get("orphan_count", 0)),
-        },
-    }
-    url = base_url + "/client-errors"
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=1.5) as response:
-            status = int(response.status)
-            receipt = json.load(response)
-    except (OSError, ValueError, urllib.error.URLError) as exc:
-        raise TrendReportError(url, f"{type(exc).__name__}: {exc}") from exc
-    if status != CLIENT_ERROR_ACCEPTED_STATUS:
-        raise TrendReportError(
-            url, f"HTTP {status}, expected {CLIENT_ERROR_ACCEPTED_STATUS}"
-        )
-    if not isinstance(receipt, dict) or not isinstance(receipt.get("event_id"), str):
-        raise TrendReportError(url, "engine returned no client-error event id")
-    if receipt.get("stored") is not True:
-        raise TrendReportError(
-            url, "engine accepted the request but did not persist the client-error record"
-        )
-    return {
-        "posted": True,
-        "http_status": status,
-        "client_event_id": payload["client_event_id"],
-        "engine_event_id": receipt["event_id"],
-    }
 
 
 def _is_completed_deck_load(kind: str) -> bool:

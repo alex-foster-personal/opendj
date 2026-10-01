@@ -88,7 +88,9 @@ def test_heartbeat_upserts_one_row_per_client_id() -> None:
 
 
 def test_heartbeat_is_server_stamped_with_a_wall_clock_time() -> None:
-    with _client() as client:
+    # The monotonic clock is frozen so seconds_since_seen is exactly 0.0; the
+    # real one advanced 2 ms between heartbeat and read on a loaded CI host.
+    with _client(UsageStore(monotonic=FakeClock())) as client:
         body = _heartbeat(client).json()
 
     assert body["last_seen_at"].endswith("Z")

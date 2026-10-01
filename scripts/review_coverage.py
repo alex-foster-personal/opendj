@@ -62,6 +62,9 @@ Requirements (mini-PRD):
     the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
     scripts/review_coverage_carry.py). When carry applies, triage prints both
     SHAs and the local ``git diff --name-only`` path list.
+  / Base merges carry coverage when main changed no path the PR touches and
+    the PR's net diff is byte-identical at both heads (REVIEW-16; see
+    scripts/review_coverage_base_merge.py). Unmeasurable reads carry UNKNOWN.
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -113,6 +116,7 @@ except ModuleNotFoundError as exc:
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
+from scripts.review_control_plane import enforce as enforce_control_plane
 from scripts.review_coverage_carry import (
     ReviewCarryInputs,
     print_carry_proofs,
@@ -227,13 +231,10 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 def _changed_files(pr: str) -> list[str]:
-    """Every path this PR's diff touches, across all pages. Feeds the
-    docs-only check in `triage`; a `gh` failure raises `TriageError` exactly
-    like every other call in this module, so a listing failure is a failed
-    MEASUREMENT and never misread as an empty (and therefore non-docs-only)
-    PR.
-    """
-    return [entry["filename"] for entry in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")]
+    """Every path the diff touches, rename sources included (REVIEW-13), across all pages. A `gh`
+    failure raises `TriageError`: a failed listing is never read as an empty, non-docs-only PR."""
+    entries = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")
+    return [p for e in entries for p in (e["filename"], e.get("previous_filename")) if p]
 
 
 @dataclass(frozen=True)
@@ -335,6 +336,7 @@ class ReviewerVerdict:
     substituted_by: str = ""
     carried_from: str = ""  # full debt-only carry source SHA (issues #2907, #2871)
     carried_paths: frozenset[str] = frozenset()  # git diff paths for carry proof
+    carry_proof: tuple[str, ...] = ()  # base-merge carry proof lines (REVIEW-16)
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
@@ -511,6 +513,8 @@ def triage(pr: str) -> int:
     gate_commit = require_gate_current_with_main()
     head_sha = _head_sha(pr)
     changed_files = _changed_files(pr)
+    if control_plane_rc := enforce_control_plane(pr, head_sha, changed_files):
+        return control_plane_rc  # REVIEW-13, before the docs-only exemption: CLAUDE.md is *.md
     if is_docs_only(changed_files):
         # Coverage is the only thing this exemption waives. Re-sample the
         # head before printing, the same race guard the normal path applies

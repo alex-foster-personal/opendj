@@ -83,7 +83,12 @@ def _sign(*args: str, **overrides: str) -> subprocess.CompletedProcess[str]:
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in {"MDT_MACOS_SIGNING_IDENTITY", "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE"}
+        if k
+        not in {
+            "MDT_MACOS_SIGNING_IDENTITY",
+            "MDT_MACOS_NOTARY_KEYCHAIN_PROFILE",
+            "MDT_MACOS_NOTARY_KEYCHAIN",
+        }
     }
     env.update(overrides)
     return subprocess.run(
@@ -545,3 +550,9 @@ def test_the_payload_stage_applies_the_engine_entitlements_and_proves_a_jit() ->
     assert unentitled < entitle < smoke
     entitlements_path = "$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
     assert f'ENGINE_ENTITLEMENTS="{entitlements_path}"' in source
+
+
+# The notary --keychain tests moved to test_macos_signing_notary_keychain.py
+# (this file was at 547 lines; appending them would have crossed the repo's
+# 600-line-per-test-file ratchet). They import `_sign` and
+# `UNRESOLVABLE_IDENTITY` from here.

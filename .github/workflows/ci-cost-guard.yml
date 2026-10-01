@@ -114,6 +114,10 @@ jobs:
       # assumption the skip rests on.
       WATCHED_WORKFLOWS: "CI,E2E,macOS Desktop Compile,macOS Native Companion,macOS Packaging,Periodic checks,Windows Parity (on-demand)"
       E2E_PRICED_EVENTS: "schedule,workflow_dispatch"
+      # The error sink rides this pass (RUN-COUNT round 3, ADR-NEW-error-sink-rides-the-
+      # cost-guard): the failed runs of these workflows, from the listing above, are
+      # posted as kind=build rows. A subset of WATCHED_WORKFLOWS, which the script checks.
+      SINK_WORKFLOWS: "CI,E2E,macOS Packaging"
       # Overlap floor between passes (minutes) and how far back a run's
       # creation can be before its completion (hours); both read by
       # tests/quality/test_bookkeeping_workflows_skip_cancelled.py against the
@@ -286,6 +290,7 @@ jobs:
           python -m scripts.ci_cost_guard --batch \
             --repository "$REPOSITORY" \
             --watched "$WATCHED_WORKFLOWS" \
+            --sink-workflows "$SINK_WORKFLOWS" \
             --e2e-events "$E2E_PRICED_EVENTS" \
             --previous-started "$PREVIOUS_STARTED" \
             "${reconcile[@]}" \
@@ -320,6 +325,23 @@ jobs:
             opened=$((opened + 1))
           done < <(python3 -c 'import json,sys; [print(a["run_id"], a["title"], a["report_file"], sep="\t") for a in json.load(open(sys.argv[1]))]' "$ALERTS_FILE")
           echo "[guard] opened=$opened alert issue(s)"
+
+      # Each failed completion the pass selected becomes one kind=build row on the one
+      # sink (OBS-01), which used to be a workflow_run job per completion (error-sink.yml).
+      # After the alert step, so a sink failure never delays an alert. A record already in
+      # this host's sink is skipped, so the overlap re-reads safely, and every record is
+      # read back after posting: a lost write fails the pass and the mark stays put.
+      # Each host's sink holds a record once; see the ADR on why not once fleet-wide.
+      - name: Post failed completions to the error sink
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          OPENDJ_TELEMETRY: "0"
+          OPENDJ_HOST_LABEL: github-actions
+          SINK_FAILURES_FILE: ${{ steps.guard.outputs.sink_failures_file }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/jobs/logs"
+          python3 -m scripts.post_build_failure --batch-file "$SINK_FAILURES_FILE" --host "github-actions"
 
       # Last, so the pass's own work always lands first.
       - name: Fail while the census holds the mark

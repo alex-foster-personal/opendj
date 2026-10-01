@@ -23,6 +23,7 @@ class SyncTimings:
     push_s: float
     pull_s: float
     digest_s: float
+    local_digest_s: float
     total_s: float
     kind: SyncKind
 
@@ -58,6 +59,7 @@ class PhaseTimer:
             push_s=self._phase_s.get("push", 0.0),
             pull_s=self._phase_s.get("pull", 0.0),
             digest_s=self._phase_s.get("digest", 0.0),
+            local_digest_s=self._phase_s.get("local_digest", 0.0),
             total_s=time.perf_counter() - self._started,
             kind=classify(result, needs_full_offer_at_start=needs_full_offer_at_start),
         )

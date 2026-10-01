@@ -169,11 +169,13 @@ def test_ci_cost_guard_batch_lists_every_completion_including_cancelled() -> Non
     )
 
 
-def _token_env_read_by(module: str) -> str:
+def _token_env_read_by(module: str) -> str | None:
+    """The one token variable a module reads, or None for a module that calls no API
+    (the error sink's poster, which only appends to a local file)."""
     source = (REPO / (module.replace(".", "/") + ".py")).read_text(encoding="utf-8")
     names = set(re.findall(r'os\.environ(?:\.get\(|\[)"(\w*TOKEN)"', source))
-    assert len(names) == 1, f"{module} reads {sorted(names)}; expected one token variable"
-    return names.pop()
+    assert len(names) <= 1, f"{module} reads {sorted(names)}; expected one token variable"
+    return names.pop() if names else None
 
 
 def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
@@ -187,6 +189,8 @@ def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
             for step in job["steps"]:
                 for module in re.findall(r"python3? -m (scripts\.\w+)", step.get("run", "")):
                     variable = _token_env_read_by(module)
+                    if variable is None:
+                        continue
                     assert "GITHUB_TOKEN" in str(step.get("env", {}).get(variable, "")) or (
                         "github.token" in str(step.get("env", {}).get(variable, ""))
                     ), f"{path.name} step {step.get('name')!r} runs {module} without {variable}"

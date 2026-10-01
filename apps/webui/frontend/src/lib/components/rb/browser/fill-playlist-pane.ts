@@ -3,6 +3,11 @@
  *
  * Page 1 publishes and clears the blocking spinner; remaining offset pages
  * append only while the load seq is current.
+ *
+ * LIBM-134: page 1 stays small (first paint, budget L3) and every later page
+ * is PLAYLIST_FILL_PAGE rows, so a 10k-member playlist fills in ~21 requests
+ * rather than ~335. Requests stay sequential: the agentbox3 bench on Thu 1 Oct
+ * 2026 measured 2 in flight no faster and 3-4 slower (the engine is GIL-bound).
  */
 
 import {
@@ -14,6 +19,10 @@ import {
 
 /** First-page size for playlist switch paint (visible rows ~15-25). */
 export const PLAYLIST_FIRST_PAGE = 30;
+
+/** Every page after the first. Must not exceed the route's `limit` cap
+ * (`le=500` on `GET /api/v1/playlists/{id}/tracks`); a pytest pins both. */
+export const PLAYLIST_FILL_PAGE = 500;
 
 export interface PlaylistTracksPage<T> {
 	tracks: T[];
@@ -28,8 +37,10 @@ export interface FillPlaylistPane<Row = unknown> extends ProgressiveLoadPane<Row
 export async function fillPlaylistPane<T, Row>(opts: {
 	pane: FillPlaylistPane<Row>;
 	seq: number;
-	pageSize?: number;
-	fetchPage: (offset: number) => Promise<{ page: PlaylistTracksPage<T>; etag: string }>;
+	fetchPage: (
+		offset: number,
+		limit: number
+	) => Promise<{ page: PlaylistTracksPage<T>; etag: string }>;
 	mapRow: (item: T, order: number) => Row;
 	progressTotal: number | null;
 	onFirstPaint?: () => void;
@@ -37,7 +48,6 @@ export async function fillPlaylistPane<T, Row>(opts: {
 	onFillError?: (error: string) => void;
 }): Promise<void> {
 	const { pane, seq, fetchPage, mapRow, progressTotal } = opts;
-	const pageSize = opts.pageSize ?? PLAYLIST_FIRST_PAGE;
 	const startedAt = performance.now();
 	let painted = false;
 	let offset = 0;
@@ -46,7 +56,8 @@ export async function fillPlaylistPane<T, Row>(opts: {
 
 	try {
 		while (pane.isCurrentLoad(seq)) {
-			const { page, etag } = await fetchPage(offset);
+			const limit = painted ? PLAYLIST_FILL_PAGE : PLAYLIST_FIRST_PAGE;
+			const { page, etag } = await fetchPage(offset, limit);
 			if (!pane.isCurrentLoad(seq)) return;
 			total = page.total;
 			const rows = page.tracks.map((item, i) => mapRow(item, offset + i + 1));

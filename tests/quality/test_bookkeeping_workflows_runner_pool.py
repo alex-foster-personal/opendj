@@ -3,7 +3,6 @@
 Regression lines:
   - if CI Cost Guard moves off CI_RUNS_ON_LINUX then broken
   - if Stable evidence moves off CI_RUNS_ON_LINUX then broken
-  - if Error sink moves off CI_RUNS_ON_LINUX then broken
   - if bookkeeping cancel-in-progress flips to true then broken
 """
 
@@ -17,7 +16,6 @@ REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS = {
     "CI Cost Guard": REPO / ".github" / "workflows" / "ci-cost-guard.yml",
     "Stable evidence": REPO / ".github" / "workflows" / "stable-evidence.yml",
-    "Error sink": REPO / ".github" / "workflows" / "error-sink.yml",
 }
 RUNS_ON_EXPR = '${{ fromJSON(vars.CI_RUNS_ON_LINUX || \'"ubuntu-latest"\') }}'
 
