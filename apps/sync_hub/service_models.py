@@ -166,11 +166,10 @@ class HelloResponse(BaseModel):
     #: Required, no default, for the reason ``ownership`` gives.
     credential: CredentialVerdict
     #: How many live ``tracks`` rows this hub holds, so the caller can tell
-    #: SEEDING from MERGING (CLOUDSYNC-07,
-    #: ``engine_identity.assert_merge_safe``). ``0`` is an affirmative "this
-    #: hub holds no library"; ``None`` means a hub too old to answer, and the
-    #: spoke keeps its strict refusal for that -- absent is never yes
-    #: (:mod:`apps.sync_hub.capabilities`). Gated by ``library-size/v1`` in
+    #: SEEDING from MERGING (CLOUDSYNC-07). ``0`` is an affirmative "this
+    #: hub holds no library"; ``None`` means a hub too old to answer. It is
+    #: REPORTED, not enforced: no spoke refuses a first sync on it since
+    #: ADR-0068 (:mod:`apps.sync_hub.capabilities`). Gated by ``library-size/v1`` in
     #: ``capabilities``, which is how a spoke tells the two apart without
     #: guessing from the value.
     #:

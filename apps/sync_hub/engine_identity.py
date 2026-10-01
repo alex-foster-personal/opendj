@@ -415,8 +415,7 @@ def hub_library_size(conn: sqlite3.Connection) -> int:
     every hub row came back unattributed. An origin-based check would then read
     its OWN seeded rows as a foreign library and refuse that machine's second
     sync. A count cannot be wrong that way: it answers the only question
-    :func:`assert_merge_safe` actually asks, which is whether a library is
-    already here.
+    a caller asks of it, which is whether a library is already here.
     """
     return int(conn.execute("SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL").fetchone()[0])
 
@@ -465,29 +464,11 @@ def assert_identity_ready(conn: sqlite3.Connection) -> None:
     )
 
 
-# ADR: none, because this restores the public keyword names removed by a lint refactor.
-def assert_merge_safe(
-    _conn: sqlite3.Connection,
-    *,
-    hub_library_rows: int | None,  # noqa: ARG001 - retained for keyword callers
-    first_sync: bool,  # noqa: ARG001 - retained for keyword callers
-) -> None:
-    """Apply :func:`assert_identity_ready`, but only where a merge can happen.
-
-    ADR-0068: identity-less inferred rows travel as ``hash_pending``, so the
-    old first-sync refusal no longer applies. This helper remains for tests
-    that still exercise the explicit preflight path via
-    :func:`assert_identity_ready`.
-    """
-    return
-
-
 __all__ = [
     "IdentityDecision",
     "SyncIdentityPreflightError",
     "_follow_remap",
     "assert_identity_ready",
-    "assert_merge_safe",
     "hub_library_size",
     "log_hash_conflict",
     "names_held_parent",

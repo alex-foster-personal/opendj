@@ -75,7 +75,6 @@ from apps.sync_hub.engine_common import (
 from apps.sync_hub.engine_identity import (
     SyncIdentityPreflightError,
     assert_identity_ready,
-    assert_merge_safe,
     hub_library_size,
 )
 from apps.sync_hub.engine_machines import machines_snapshot, merge_machines, upsert_machine
@@ -104,7 +103,6 @@ __all__ = [
     "SyncSchemaMismatch",
     "Watermark",
     "assert_identity_ready",
-    "assert_merge_safe",
     "current_seq",
     "finalize_identity_repairs",
     "hub_apply",
