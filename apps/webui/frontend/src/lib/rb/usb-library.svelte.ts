@@ -3,7 +3,9 @@
  *
  * Owns one cached copy of each opened stick's library, keyed by VolumeUUID,
  * plus the pane side of stick browsing: building a stick pane's rows and
- * keeping them honest when the stick comes and goes.
+ * keeping them honest when the stick comes and goes. The cache serves the
+ * stick TREE; every pane load and refresh re-asks the backend, whose own
+ * size/mtime check on `export.pdb` decides whether anything is re-parsed.
  *
  * Fetch discipline: GET /api/v1/usb/volumes/{volume_id}/library runs ONLY
  * after a user (or agent) action opens a stick or selects a stick pane,
@@ -140,18 +142,39 @@ function _errorView(error: UsbLibraryError): UsbStickView {
 
 // ------------------------------------------------------------ library cache
 
-/** The stick's library, read once per VolumeUUID and then served from cache.
- * Concurrent callers share one request. */
+/** The stick's library for the TREE, read once per VolumeUUID and then served
+ * from cache. Concurrent callers share one request. Panes do not use this:
+ * they go through `revalidateUsbLibrary`. */
 export function ensureUsbLibrary(volumeUuid: string): Promise<UsbLibraryWire> {
 	const cached = _libraries.get(volumeUuid);
 	if (cached !== undefined) return Promise.resolve(cached);
+	return _sharedRead(volumeUuid);
+}
+
+/**
+ * The stick's library for a PANE load or refresh: always asked of the backend.
+ *
+ * The backend stats `export.pdb` on every request and re-parses only when its
+ * size or mtime changed, so this is the one place a rewritten export (same
+ * stick, still mounted) or a swap between two five-second presence polls is
+ * seen. Serving the frontend cache here kept stale playlists, and when a pdb
+ * track id was reassigned it showed one track while the deck loaded another
+ * through the backend's current mapping. Concurrent callers share one request.
+ */
+export function revalidateUsbLibrary(volumeUuid: string): Promise<UsbLibraryWire> {
+	return _sharedRead(volumeUuid);
+}
+
+function _sharedRead(volumeUuid: string): Promise<UsbLibraryWire> {
 	const pending = _inflight.get(volumeUuid);
 	if (pending !== undefined) return pending;
 	// Only a FIRST open records presence: a replug must stay visible to
 	// applyUsbVolumePresence as a false -> true transition, whichever of the
 	// tree remount or the volume watcher runs first.
 	if (!_tracked.has(volumeUuid)) _tracked.set(volumeUuid, true);
-	_setView(volumeUuid, { status: 'loading' });
+	// A revalidation of a stick the tree already shows keeps that tree up:
+	// only a read with nothing cached is a visible "loading".
+	if (!_libraries.has(volumeUuid)) _setView(volumeUuid, { status: 'loading' });
 	const read: Promise<UsbLibraryWire> = _readLibrary(
 		volumeUuid,
 		_epochs.get(volumeUuid) ?? 0
@@ -192,7 +215,12 @@ async function _readLibrary(volumeUuid: string, epoch: number): Promise<UsbLibra
 		return library;
 	} catch (exc) {
 		const error = _stickError(exc);
-		if (current()) _setView(volumeUuid, _errorView(error));
+		if (current()) {
+			// A failed revalidation must not leave the previous library to be
+			// served as if the stick had just answered.
+			_libraries.delete(volumeUuid);
+			_setView(volumeUuid, _errorView(error));
+		}
 		throw error;
 	}
 }
@@ -304,7 +332,7 @@ export async function usbPaneView(paneId: string, shown: PaneView | null): Promi
 		throw new UsbLibraryError('USB_PANE_ID_INVALID', `${paneId} is not a stick pane id`);
 	}
 	try {
-		const library = await ensureUsbLibrary(ref.volumeUuid);
+		const library = await revalidateUsbLibrary(ref.volumeUuid);
 		return {
 			rows: usbRowsForNode(library, ref.nodeKey, true),
 			title: usbNodeTitle(library, ref.nodeKey)
