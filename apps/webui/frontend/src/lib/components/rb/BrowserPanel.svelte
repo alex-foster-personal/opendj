@@ -89,6 +89,7 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
+		settledAvailabilityFromRbMeta,
 		PlaylistSetTabs,
 		usbPaneSource,
 		isRemovedStickRow,
@@ -2240,6 +2241,7 @@
 		_inflight.add(row.stable_id);
 		try {
 			row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
+			_applySettledAvailability(row);
 		} catch (exc) {
 			// A track with no rekordbox vendor mapping is NOT an error any more:
 			// rb-meta answers 200 with the local-vendor payload. A 404 here now
@@ -2311,6 +2313,37 @@
 	 * its own reason, never reported as a missing file. */
 	function _availabilityPending(row: LoadableRow): boolean {
 		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
+	}
+
+	/** Write rb-meta's disk truth onto a pending row (no-op once settled). */
+	function _applySettledAvailability(row: LoadableRow): void {
+		const settled = settledAvailabilityFromRbMeta(
+			{
+				file_exists: row.file_exists,
+				file_availability: row.file_availability ?? 'AVAILABILITY_PENDING'
+			},
+			row.rb_meta ?? null
+		);
+		if (settled !== null) Object.assign(row, settled);
+	}
+
+	/** Settle a pending row from rb-meta, fetching it when the row was never
+	 * visible. Nothing else ever re-asks the server, so without this "wait for
+	 * disk probe" is a wait with no end. Returns true while still pending. */
+	async function _settlePendingAvailability(row: LoadableRow): Promise<boolean> {
+		if (!_availabilityPending(row) || row.stable_id.startsWith('usb-')) {
+			return _availabilityPending(row);
+		}
+		if (row.rb_meta == null) {
+			try {
+				row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
+			} catch (exc) {
+				console.error(`rb-meta availability probe failed for ${row.stable_id}:`, exc);
+				return true;
+			}
+		}
+		_applySettledAvailability(row);
+		return _availabilityPending(row);
 	}
 
 	function loadRow(
@@ -2554,7 +2587,13 @@
 			return;
 		}
 		if (_availabilityPending(row)) {
-			pushToast('preview: availability still checking (wait for disk probe)', 'error');
+			void _settlePendingAvailability(row).then((stillPending) => {
+				if (stillPending) {
+					pushToast('preview: availability still checking (wait for disk probe)', 'error');
+				} else {
+					previewSeek(row, ratio);
+				}
+			});
 			return;
 		}
 		if (isRemovedStickRow(row)) {
@@ -2599,7 +2638,7 @@
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
 				return;
 			}
-			if (_availabilityPending(row)) {
+			if (await _settlePendingAvailability(row)) {
 				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
 				return;
 			}

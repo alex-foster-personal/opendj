@@ -163,3 +163,67 @@ test('pending rows are styled and titled as pending in both browser views', () =
 	assert.match(column, /class:broken=\{row\.file_exists === false\}/);
 	assert.match(column, /class:pending=/);
 });
+
+/*
+ * Found driving the real shell on demon-llama (Thu 1 Oct 2026): All Tracks
+ * hydrated 7,986 of 8,558 rows as AVAILABILITY_PENDING and NOTHING ever
+ * settled them, so "wait for disk probe" was a wait with no end. Every
+ * visible row already fetches /rb-meta, whose file_exists is a full stat
+ * (an API whose type cannot say pending runs a FULL scan), so that answer
+ * settles the row.
+ *
+ * Regression lines:
+ * - if a pending row with rb-meta file_exists true stays pending then it can
+ *   never be loaded or previewed -> broken
+ * - if a SETTLED row is rewritten from rb-meta then the listing's typed
+ *   status (awaiting_volume, streaming) is overwritten -> broken
+ */
+describe('a pending row settles from its rb-meta disk truth', () => {
+	const pending = { file_exists: null, file_availability: 'AVAILABILITY_PENDING' };
+	it('present on disk settles as present', () => {
+		assert.deepEqual(
+			wire.settledAvailabilityFromRbMeta(pending, { file_exists: true, is_streaming: false }),
+			{ file_exists: true, file_availability: 'present' }
+		);
+	});
+	it('missing on disk settles as absent', () => {
+		assert.deepEqual(
+			wire.settledAvailabilityFromRbMeta(pending, { file_exists: false, is_streaming: false }),
+			{ file_exists: false, file_availability: 'absent' }
+		);
+	});
+	it('a streaming row settles as streaming', () => {
+		assert.deepEqual(
+			wire.settledAvailabilityFromRbMeta(pending, { file_exists: false, is_streaming: true }),
+			{ file_exists: false, file_availability: 'streaming' }
+		);
+	});
+	it('a settled row is never rewritten (control)', () => {
+		const settled = { file_exists: false, file_availability: 'awaiting_volume' };
+		assert.equal(
+			wire.settledAvailabilityFromRbMeta(settled, { file_exists: true, is_streaming: false }),
+			null
+		);
+	});
+	it('a pending row with no rb-meta stays pending', () => {
+		assert.equal(wire.settledAvailabilityFromRbMeta(pending, null), null);
+	});
+});
+
+// Regression line: if deck load or preview refuse a pending row without first
+// asking /rb-meta, or visible rows never settle, the refusal is permanent.
+test('BrowserPanel settles a pending row before refusing it', () => {
+	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
+	const settleThenRefuse = panel.indexOf('await _settlePendingAvailability(row)');
+	assert.ok(settleThenRefuse > 0, 'deck load refuses without settling');
+	assert.ok(settleThenRefuse < panel.indexOf(PENDING_LOAD), 'deck load refuses before settling');
+	assert.ok(
+		panel.indexOf('_settlePendingAvailability(row).then(') < panel.indexOf(PENDING_PREVIEW),
+		'preview refuses without settling'
+	);
+	assert.match(
+		panel,
+		/row\.rb_meta = await _fetchRbMetaWithRetry\(row\.stable_id\);\s*_applySettledAvailability\(row\);/,
+		'a visible row never settles from the rb-meta it already fetched'
+	);
+});

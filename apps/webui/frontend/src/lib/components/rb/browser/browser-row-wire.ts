@@ -47,6 +47,23 @@ export function wireAvailability(wire: {
 		: null;
 }
 
+/** A pending row's availability settled from its /rb-meta answer, or null
+ * when there is nothing to settle (row already settled, or no rb-meta yet).
+ *
+ * The listing's row-hydration budget leaves most of a cold collection
+ * AVAILABILITY_PENDING and nothing re-asks; /rb-meta's file_exists is a
+ * full stat (its type cannot say pending), so it is disk truth, not a guess.
+ * A settled row keeps its typed status (awaiting_volume, streaming). */
+export function settledAvailabilityFromRbMeta(
+	row: Pick<BrowserRow, 'file_exists' | 'file_availability'>,
+	meta: { file_exists: boolean; is_streaming: boolean } | null
+): Pick<BrowserRow, 'file_exists' | 'file_availability'> | null {
+	if (meta === null || row.file_availability !== 'AVAILABILITY_PENDING') return null;
+	if (meta.is_streaming) return { file_exists: false, file_availability: 'streaming' };
+	else if (meta.file_exists) return { file_exists: true, file_availability: 'present' };
+	else return { file_exists: false, file_availability: 'absent' };
+}
+
 export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): BrowserRow {
 	const availability = wireAvailability(wire);
 	if (
