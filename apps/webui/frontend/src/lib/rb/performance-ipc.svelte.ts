@@ -2426,19 +2426,28 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	}
 }
 
+/** How `_persistCommandError` already put an error on screen, so the UI
+ * boundary can tell "reported" from "about to vanish" without a second toast.
+ * `toasted` also reached console.error (an error toast writes its own log
+ * row there); `banner_only` is a load whose caller suppressed the toast. */
+const _persistedCommandErrors = new WeakMap<object, 'toasted' | 'banner_only'>();
+
 function _persistCommandError(
 	deck: DeckId | null, error: unknown, command?: PerformanceCommand
 ): void {
 	const messageText = _errorMessage(error);
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
+	const errorObject = typeof error === 'object' && error !== null ? error : null;
 	if (
 		command !== undefined &&
 		command.type === 'load' &&
 		command.suppressCommandErrorToast === true
 	) {
+		if (errorObject !== null) _persistedCommandErrors.set(errorObject, 'banner_only');
 		return;
 	}
+	if (errorObject !== null) _persistedCommandErrors.set(errorObject, 'toasted');
 	let subcontrol = '';
 	if (command !== undefined && 'band' in command) subcontrol = command.band;
 	else if (command !== undefined && 'stem' in command) subcontrol = command.stem;
@@ -3002,8 +3011,22 @@ export async function dispatchPerformanceCommand(
 }
 
 /**
- * UI event boundary: await the same fail-fast dispatcher, then consume the
- * rejection only after it has been persisted in visible reactive state.
+ * What a UI-boundary command came to. `no_session` is the one EXPECTED
+ * refusal: no command session is current, because the route has not started
+ * one yet (it does so after its first async hydration) or has torn it down.
+ * `failed` is everything else, and has always been reported by the time the
+ * caller sees it.
+ */
+export type PerformanceUiCommandResult =
+	| { ok: true }
+	| { ok: false; reason: 'no_session'; error: ScopedCommandInvalidatedError }
+	| { ok: false; reason: 'failed'; error: unknown };
+
+/**
+ * UI event boundary: await the same fail-fast dispatcher and turn its
+ * rejection into a result, never into silence. A failure the dispatcher did
+ * not persist (it skips its report once the session is no longer current) is
+ * persisted here, so no path out of this function drops an error unseen.
  *
  * Q1 / S2: this is where the press clock starts. The default is taken on ENTRY,
  * before `_dispatchUnknown` can park the command behind another scope's tail,
@@ -3014,11 +3037,28 @@ export async function dispatchPerformanceCommand(
 export async function runPerformanceCommandFromUi(
 	command: PerformanceCommand,
 	pressT0Ms: number = performance.now()
-): Promise<void> {
+): Promise<PerformanceUiCommandResult> {
 	try {
 		await dispatchPerformanceCommand(command, pressT0Ms);
-	} catch {
-		// The dispatcher already populated the deck alert and toast.
+		return { ok: true };
+	} catch (error) {
+		if (error instanceof ScopedCommandInvalidatedError) {
+			console.debug(`[performance-ipc] ${command.type} not run, no command session: ${error.message}`);
+			return { ok: false, reason: 'no_session', error };
+		}
+		const reported =
+			typeof error === 'object' && error !== null ? _persistedCommandErrors.get(error) : undefined;
+		if (reported === undefined) {
+			// Toast plus its console.error row: the same channel as every
+			// other command failure.
+			_persistCommandError(null, error);
+		} else if (reported === 'banner_only') {
+			console.error(`[performance-ipc] ${command.type} failed`, error);
+		} else if (reported === 'toasted') {
+			// Already on screen and in the console; a second report would
+			// only double the toast and the forwarded log row.
+		}
+		return { ok: false, reason: 'failed', error };
 	}
 }
 
