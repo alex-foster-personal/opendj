@@ -33,9 +33,10 @@ export interface SilenceSourceDeckSnap {
 
 const DEFAULT_WINDOW_SEC = 0.5;
 
-/** RMS 0..1 of mixed channels over a short window from position_sec. Non-finite
- * when the PCM holds NaN or Infinity: an invalid measurement is returned as
- * such, never as silence, so the caller can refuse to read it as content. */
+/** RMS 0..1 of mixed channels over a short window from position_sec. NaN when
+ * the window starts outside the decoded buffer, and non-finite when the PCM
+ * holds NaN or Infinity: an invalid measurement is returned as such, never as
+ * silence, so the caller can refuse to read it as content. */
 export function rmsAtPlayhead(
 	buffer: AudioBuffer,
 	position_sec: number,
@@ -48,7 +49,7 @@ export function rmsAtPlayhead(
 	}
 	const sampleRate = buffer.sampleRate;
 	const start = Math.floor(position_sec * sampleRate);
-	if (start < 0 || start >= buffer.length) return 0;
+	if (start < 0 || start >= buffer.length) return Number.NaN;
 	const windowSamples = Math.max(1, Math.floor(window_sec * sampleRate));
 	const count = Math.min(windowSamples, buffer.length - start);
 	if (count <= 0) return 0;
@@ -76,7 +77,7 @@ export function rmsAtPlayhead(
  * - an absent, non-finite or negative path gain does not explain silence;
  * - non-finite PCM in the window does not explain silence;
  * - an open-path claimed-live deck with no buffer does not explain silence;
- * - a non-finite playhead does not explain silence (and must not throw: a throw
+ * - a non-finite or negative playhead does not explain silence (and must not throw: a throw
  *   here would skip the fold in `noteMasterSilence`, so the watchdog would stop
  *   counting for as long as the bad position lasted);
  * - a playhead at or past the decoded end does not explain silence: a deck still
@@ -96,7 +97,7 @@ export function claimedLiveSourceIsSilent(
 		if (gain === undefined || !Number.isFinite(gain) || gain < 0) return false;
 		if (gain < CLOSED_PATH_GAIN) continue;
 		if (deck.buffer === null) return false;
-		if (!Number.isFinite(deck.position_sec)) return false;
+		if (!Number.isFinite(deck.position_sec) || deck.position_sec < 0) return false;
 		if (deck.position_sec * deck.buffer.sampleRate >= deck.buffer.length) return false;
 		const rms = rmsAtPlayhead(deck.buffer, deck.position_sec, window_sec);
 		if (!Number.isFinite(rms)) return false;

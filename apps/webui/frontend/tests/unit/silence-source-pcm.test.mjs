@@ -191,11 +191,11 @@ test('a playing deck with its path to the master closed explains master silence'
 		true
 	);
 	// Control, the overshoot: the same loud deck with its path open still
-	// reports, and so does an absent gain, which reads as fully open.
+	// reports, and so does an absent gain, which never explains silence.
 	for (const master_path_gain of [1, 0.5, undefined]) {
 		assert.equal(
 			m.claimedLiveSourceIsSilent([
-				{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain, master_path_gain: 1 }
+				{ claims_live: true, buffer: loud, position_sec: 0, master_path_gain }
 			]),
 			false,
 			`gain ${master_path_gain} must not hide a loud source`
@@ -296,4 +296,29 @@ test('non-finite PCM is an invalid measurement, never silence', () => {
 			`PCM holding ${bad}`
 		);
 	}
+});
+
+test('a playhead before the decoded start does not explain silence', () => {
+	// A negative start index would otherwise read as an empty, silent window
+	// and excuse a loud open-path deck for as long as the bad position lasted.
+	// Control: the same loud deck at a valid playhead does not explain it either,
+	// and a silent deck at a valid playhead does.
+	const m = _mod();
+	const loud = makeBuffer({ length: 44_100, fill: 0.5 });
+	const silent = makeBuffer({ length: 44_100, fill: 0 });
+	for (const buffer of [loud, silent]) {
+		assert.equal(
+			m.claimedLiveSourceIsSilent([
+				{ claims_live: true, buffer, position_sec: -0.25, master_path_gain: 1 }
+			]),
+			false
+		);
+	}
+	assert.equal(Number.isNaN(m.rmsAtPlayhead(loud, -0.25, 0.5)), true);
+	assert.equal(
+		m.claimedLiveSourceIsSilent([
+			{ claims_live: true, buffer: silent, position_sec: 0, master_path_gain: 1 }
+		]),
+		true
+	);
 });
