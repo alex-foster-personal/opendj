@@ -17,6 +17,8 @@ construction and matches no content, so there is no heuristic to leak:
                    non-merge commit sits in R..H outside main
            and (2) main and pr share no path
            and (3) net(B0, R) == net(B1, H), byte for byte
+           and (4) every merge in R..H has exactly the tree of
+                   `git merge-tree --write-tree` of its two parents
 
 With disjoint paths, every PR path has the same content at B0 and B1, so the
 two net diffs have byte-identical pre-images and an exact text compare,
@@ -25,7 +27,10 @@ outside the PR are untouched by the PR at R (B0..R names none of them), and
 (3) forces B1..H to name exactly the same paths as B0..R, so H's tree outside
 the PR equals B1's: no hand edit to any other file rode in with the merge.
 The net diffs need no pathspec: each already contains only its own changed
-paths, which is (3)'s path set restricted to that side.
+paths, which is (3)'s path set restricted to that side. (3) only sees the
+endpoints, so (4) checks every merge on the way: a hand edit or conflict
+resolution in one merge that a later merge restores is still refused
+(Sol P2 on PR #4599).
 
 Superseded after three Sol BLOCKING P1s on PR #4599: equal `git patch-id`s
 plus a unique-pre-image check. Patch-id ignores hunk position by design, and
@@ -48,6 +53,7 @@ Requirements (mini-PRD):
     [if] a main change to a PR-touched file carries, however far from the hunk [then broken]
     [if] a merge that ports a reviewed edit to another block carries [then broken]
     [if] a hand edit inside the merge, to a PR file or any other file, carries [then broken]
+    [if] a hand edit in one merge that a later merge restores carries [then broken]
     [if] a merge whose first parent is main carries [then broken]
   / An unmeasurable carry is UNKNOWN, never a carry.
     [if] a missing reviewed-head object or a shallow clone carries [then broken]
@@ -174,6 +180,25 @@ def first_parent_chain_is_merges_onto(root: Path, reviewed: str, head: str) -> b
     return bool(rows) and all(len(row) >= 3 for row in rows) and rows[-1][1] == reviewed
 
 
+def merges_are_clean(root: Path, reviewed: str, head: str) -> bool:
+    """Whether every first-parent merge in R..H has exactly the tree a clean merge of its parents gives."""
+    for row in _git(root, "rev-list", "--first-parent", "--parents", head, f"^{reviewed}").decode().splitlines():
+        sha, *parents = row.split()
+        if len(parents) != 2:
+            return False
+        proc = subprocess.run(
+            ["git", "-C", str(root), "merge-tree", "--write-tree", *parents], capture_output=True, check=False
+        )
+        if proc.returncode == 1:
+            return False
+        if proc.returncode != 0:
+            detail = proc.stderr.decode(errors="replace").strip() or "<no stderr>"
+            raise CarryUnknown(f"git merge-tree of {sha}'s parents failed ({proc.returncode}): {detail}")
+        if proc.stdout.split(b"\n", 1)[0] != _git(root, "rev-parse", f"{sha}^{{tree}}").strip():
+            return False
+    return True
+
+
 # ----------------------------------------------------------------------------
 # the rule
 
@@ -188,6 +213,8 @@ def base_merge_carry(root: Path, tip: str, reviewed: str, head: str) -> BaseMerg
     if own_commits_since(root, tip, reviewed, head):
         return None
     if not first_parent_chain_is_merges_onto(root, reviewed, head):
+        return None
+    if not merges_are_clean(root, reviewed, head):
         return None
     reviewed_base = single_merge_base(root, tip, reviewed)
     head_base = single_merge_base(root, tip, head)
