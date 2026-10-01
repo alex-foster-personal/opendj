@@ -89,9 +89,12 @@ def imported_packages(text: str, where: str) -> set[str]:
     return {".".join(module.split(".")[:2]) for module in imported_modules(text, where)}
 
 
-def imported_modules(text: str, where: str) -> set[str]:
-    """Every dotted module name under `apps`, `scripts` or `ops` a module imports, read with
-    the AST and returned in FULL.
+def imported_modules(
+    text: str, where: str, top_packages: tuple[str, ...] = _TOP_PACKAGES
+) -> set[str]:
+    """Every dotted module name under `top_packages` (default `apps`, `scripts`, `ops`) a
+    module imports, read with the AST and returned in FULL. The seam selector also passes
+    `tests`, because a test helper is reached through `tests.` imports.
 
     A regular expression missed `from apps import engine_core` outright and saw only the
     first name in `import apps.foo, apps.bar`. Sol's P1 on #3339, and the reason it was
@@ -119,7 +122,7 @@ def imported_modules(text: str, where: str) -> set[str]:
             # `from apps import engine_core` names the package in the ALIAS, not the module.
             found.update(f"{module}.{alias.name}" for alias in node.names)
             found.add(module)
-    return {part for part in found if part.split(".")[0] in _TOP_PACKAGES and "." in part}
+    return {part for part in found if part.split(".")[0] in top_packages and "." in part}
 
 
 def mentioned_strings(text: str, where: str) -> set[str]:
