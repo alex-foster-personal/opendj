@@ -19,9 +19,8 @@
  * 3. The trim outlives its lock. When a lock is dropped mid-trim nothing
  *    sends the base back, so the deck keeps playing up to 0.3% off the tempo
  *    sync chose (phase-lock.ts promises "a trim never outlives its error").
- * 4. A synced PLAY is refused while the master is in its pre-first-beat intro
- *    (`_enclosingBeatIndex`, beat-sync-math.ts:141, throws for a position
- *    before beats[0].t), so the follower does not start at all.
+ * (Finding 4, a synced PLAY refused before the master's first beat, lives in
+ * beat-sync-adversarial-master-intro.test.mjs.)
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -217,16 +216,6 @@ test('3. a lock dropped mid-trim sends the base back (no permanent 0.3% offset)'
 		`deck 2 left at ${lastTempo} vs sync base ${join.tempo} ` +
 			`(${(((lastTempo / join.tempo) - 1) * 100).toFixed(3)}%)`
 	);
-});
-
-test('4. a synced follower can start while the master is in its pre-first-beat intro', async () => {
-	// Master's first beat at 0.5 s (silence/pickup before it), playing at 0.2 s.
-	await playingMaster(1, grid(128, 0.5, 1200), 200);
-	loadDeck(2, grid(126, 0.05, 1200), { beat_sync_enabled: true, position_ms: 30_000 });
-	// Observed on the unfixed code: rejects with "master position 0.22 is
-	// outside the beat grid interval [0.5, ...)" and deck 2 never starts.
-	await m.executeInRustEngine({ type: 'play', deck: 2, playing: true });
-	assert.equal(m.deckStates[2].playing, true);
 });
 
 test('control: a manual master switch re-joins the followers to the new master', async () => {
