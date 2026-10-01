@@ -39,6 +39,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TypedDict
 
 SOURCES = ("apps", "scripts")
 PER_TEST_TIMEOUT_S = 600
@@ -46,6 +47,14 @@ PYTEST_MEASURED_EXITS = (0, 1)  # all passed, or some tests failed: both are mea
 EXIT_UNKNOWN = 3
 
 Arc = tuple[int, int, int]  # (file_id, from_line, to_line)
+
+
+class CaseRow(TypedDict):
+    test: str
+    bucket: str
+    arcs: int
+    unique_arcs: int
+    dur_s: float
 
 
 class CensusUnknown(Exception):
@@ -64,10 +73,10 @@ class Census:
     duration_p90_s: float
     duration_p99_s: float
     slowest_5pct_share: float
-    rows: list[dict] = field(repr=False)
+    rows: list[CaseRow] = field(repr=False)
 
 
-#----- coverage + junit loading
+# ----- coverage + junit loading
 
 
 def _test_id(context: str) -> str | None:
@@ -102,7 +111,7 @@ def _load_durations(junit: Path) -> dict[str, float]:
     return durations
 
 
-#----- set cover
+# ----- set cover
 
 
 def minimal_cover(arcs_by_test: dict[str, set[Arc]], durations: dict[str, float]) -> set[str]:
@@ -145,7 +154,7 @@ def minimal_cover(arcs_by_test: dict[str, set[Arc]], durations: dict[str, float]
     return kept
 
 
-#----- analysis
+# ----- analysis
 
 
 def _percentile(sorted_values: list[float], q: float) -> float:
@@ -167,7 +176,7 @@ def analyze(db: Path, junit: Path) -> Census:
     for arcs in measured.values():
         for arc in arcs:
             owners[arc] += 1
-    rows = []
+    rows: list[CaseRow] = []
     for t in sorted(durations):
         arcs = measured.get(t, set())
         if not arcs:
@@ -176,10 +185,15 @@ def analyze(db: Path, junit: Path) -> Census:
             bucket = "KEEP_COVER"
         else:
             bucket = "REDUNDANT_IN_SET"
-        rows.append({
-            "test": t, "bucket": bucket, "arcs": len(arcs),
-            "unique_arcs": sum(1 for a in arcs if owners[a] == 1), "dur_s": round(durations[t], 3),
-        })
+        rows.append(
+            {
+                "test": t,
+                "bucket": bucket,
+                "arcs": len(arcs),
+                "unique_arcs": sum(1 for a in arcs if owners[a] == 1),
+                "dur_s": round(durations[t], 3),
+            }
+        )
 
     buckets: dict[str, dict[str, float]] = {}
     for name in ("KEEP_COVER", "REDUNDANT_IN_SET", "NO_COVERAGE"):
@@ -187,17 +201,23 @@ def analyze(db: Path, junit: Path) -> Census:
         buckets[name] = {"cases": len(members), "serial_s": round(sum(r["dur_s"] for r in members), 1)}
     times = sorted(r["dur_s"] for r in rows)
     serial = sum(times)
-    slowest = times[int(len(times) * 0.95):]
+    slowest = times[int(len(times) * 0.95) :]
     return Census(
-        cases=len(rows), serial_s=round(serial, 1), union_arcs=len(owners), import_arcs=len(import_arcs),
-        child_contexts=child_contexts, buckets=buckets,
-        duration_p50_s=_percentile(times, 0.5), duration_p90_s=_percentile(times, 0.9),
+        cases=len(rows),
+        serial_s=round(serial, 1),
+        union_arcs=len(owners),
+        import_arcs=len(import_arcs),
+        child_contexts=child_contexts,
+        buckets=buckets,
+        duration_p50_s=_percentile(times, 0.5),
+        duration_p90_s=_percentile(times, 0.9),
         duration_p99_s=_percentile(times, 0.99),
-        slowest_5pct_share=round(sum(slowest) / serial, 3) if serial else 0.0, rows=rows,
+        slowest_5pct_share=round(sum(slowest) / serial, 3) if serial else 0.0,
+        rows=rows,
     )
 
 
-#----- run
+# ----- run
 
 
 def _write_coveragerc(out_dir: Path) -> Path:
@@ -214,11 +234,27 @@ def run_suite(paths: list[str], workers: int, out_dir: Path) -> tuple[int, float
     out_dir.mkdir(parents=True, exist_ok=True)
     rc = _write_coveragerc(out_dir)
     cmd = [
-        sys.executable, "-m", "pytest", *paths, "-n", str(workers), "--dist", "loadgroup",
-        "-p", "no:cacheprovider", "-p", "scripts.pytest_child_coverage",
-        "--cov", f"--cov-config={rc}", "--cov-context=test", "--cov-report=",
-        f"--junitxml={out_dir / 'junit.xml'}", "-o", "junit_family=xunit1",
-        f"--timeout={PER_TEST_TIMEOUT_S}", "-q",
+        sys.executable,
+        "-m",
+        "pytest",
+        *paths,
+        "-n",
+        str(workers),
+        "--dist",
+        "loadgroup",
+        "-p",
+        "no:cacheprovider",
+        "-p",
+        "scripts.pytest_child_coverage",
+        "--cov",
+        f"--cov-config={rc}",
+        "--cov-context=test",
+        "--cov-report=",
+        f"--junitxml={out_dir / 'junit.xml'}",
+        "-o",
+        "junit_family=xunit1",
+        f"--timeout={PER_TEST_TIMEOUT_S}",
+        "-q",
     ]
     started = time.monotonic()
     with (out_dir / "pytest.log").open("w", encoding="utf-8") as log:
@@ -237,7 +273,7 @@ def _write_outputs(census: Census, out_dir: Path, extra: dict) -> None:
     print(json.dumps(summary, indent=1))
 
 
-#----- CLI
+# ----- CLI
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -256,8 +292,13 @@ def main(argv: list[str] | None = None) -> int:
     extra: dict = {"measured_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if args.cmd == "run":
         exit_code, wall_s = run_suite(args.paths, args.workers, args.out_dir)
-        extra |= {"sha": _git_head(), "paths": args.paths, "workers": args.workers,
-                  "pytest_exit": exit_code, "wall_s": wall_s}
+        extra |= {
+            "sha": _git_head(),
+            "paths": args.paths,
+            "workers": args.workers,
+            "pytest_exit": exit_code,
+            "wall_s": wall_s,
+        }
         if exit_code not in PYTEST_MEASURED_EXITS:
             print(f"[ERROR] pytest exited {exit_code}; see {args.out_dir / 'pytest.log'}", file=sys.stderr)
             return 1

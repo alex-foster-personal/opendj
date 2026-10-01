@@ -24,7 +24,7 @@ from scripts import suite_census as census
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-PKG = '''
+PKG = """
 def f(x):
     if x > 0:
         return "pos"
@@ -37,9 +37,9 @@ def g(x):
 
 def h(x):
     return x - 1
-'''
+"""
 
-CONTROL_TESTS = '''
+CONTROL_TESTS = """
 import subprocess, sys
 from pkg import f, g
 
@@ -64,7 +64,7 @@ def test_d_subprocess_only():
 def test_e_child_only_imports():
     out = subprocess.run([sys.executable, "-c", "import pkg"], capture_output=True, text=True)
     assert out.returncode == 0
-'''
+"""
 
 EXPECTED = {
     "test_a_superset": "KEEP_COVER",
@@ -89,10 +89,32 @@ def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
     env = {**os.environ, "PYTHONPATH": f"{tmp_path}{os.pathsep}{REPO_ROOT}"}
     env.pop("COVERAGE_PROCESS_CONFIG", None)
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "test_ctrl.py", "-q", "-p", "no:cacheprovider", "-p", "no:randomly",
-         *plugin, "--cov", f"--cov-config={rc}", "--cov-context=test", "--cov-report=",
-         f"--junitxml={tmp_path / 'junit.xml'}", "-o", "junit_family=xunit1", "-o", "addopts="],
-        cwd=tmp_path, env=env, capture_output=True, text=True, check=False,
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "test_ctrl.py",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:randomly",
+            *plugin,
+            "--cov",
+            f"--cov-config={rc}",
+            "--cov-context=test",
+            "--cov-report=",
+            f"--junitxml={tmp_path / 'junit.xml'}",
+            "-o",
+            "junit_family=xunit1",
+            "-o",
+            "addopts=",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     return tmp_path / ".coverage", tmp_path / "junit.xml"
@@ -102,7 +124,7 @@ def _buckets(result: census.Census) -> dict[str, str]:
     return {row["test"].split("::")[1]: row["bucket"] for row in result.rows}
 
 
-#----- end-to-end control
+# ----- end-to-end control
 
 
 def test_the_control_suite_buckets_every_test_correctly(tmp_path: Path) -> None:
@@ -131,14 +153,18 @@ def test_a_coverage_context_naming_no_junit_test_is_unknown(tmp_path: Path) -> N
 def test_the_cli_reports_unknown_with_exit_3_for_a_db_without_test_contexts(tmp_path: Path) -> None:
     db, junit = _run_control(tmp_path, label_children=True)
     empty = tmp_path / "empty.db"
-    subprocess.run([sys.executable, "-c", f"import coverage; c=coverage.Coverage(data_file={str(empty)!r}); c.start(); c.stop(); c.save()"], check=True)
-    assert census.main(["analyze", "--db", str(empty), "--junit", str(junit), "--out-dir", str(tmp_path / "out")]) == census.EXIT_UNKNOWN
+    no_contexts = f"import coverage; c = coverage.Coverage(data_file={str(empty)!r}); c.start(); c.stop(); c.save()"
+    subprocess.run([sys.executable, "-c", no_contexts], check=True)
+    assert (
+        census.main(["analyze", "--db", str(empty), "--junit", str(junit), "--out-dir", str(tmp_path / "out")])
+        == census.EXIT_UNKNOWN
+    )
     assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(tmp_path / "out")]) == 0
     summary = json.loads((tmp_path / "out" / "census.json").read_text(encoding="utf-8"))
     assert summary["buckets"]["REDUNDANT_IN_SET"]["cases"] == 1
 
 
-#----- set cover, both directions
+# ----- set cover, both directions
 
 
 def test_the_cover_drops_a_strict_subset_even_when_it_is_the_cheapest_test() -> None:
@@ -151,7 +177,7 @@ def test_the_cover_keeps_every_test_that_holds_a_unique_arc() -> None:
     assert census.minimal_cover(arcs, {"a": 9.0, "b": 9.0, "c": 9.0}) == {"a", "b", "c"}
 
 
-#----- child context rewrite
+# ----- child context rewrite
 
 
 def test_the_child_config_is_relabelled_with_the_test_id() -> None:
