@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
 from apps.shared import fd_anchored_walk, platform_paths
@@ -18,6 +18,7 @@ from apps.webui.server.library_readiness import (
     ReadinessAxis,
     query_library_readiness,
 )
+from apps.webui.server.rb_vendor_pkg.track_rows import bulk_preview_strips
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -26,6 +27,7 @@ _AxisKey = Literal[
 ]
 
 MAX_READINESS_ITEMS: int = 1000
+MAX_PREVIEW_STRIP_IDS: int = 200
 DEFAULT_READINESS_ITEMS: int = 200
 
 
@@ -64,6 +66,53 @@ def reanchor_share_root() -> ShareRootReanchorOut:
     except fd_anchored_walk.RootReanchorRefused as refusal:
         raise HTTPException(status_code=409, detail=f"share root not re-anchored: {refusal}") from refusal
     return ShareRootReanchorOut(exists=exists)
+
+
+class PreviewStripsIn(BaseModel):
+    """Body of ``POST /library/preview-strips``."""
+
+    ids: list[str] = Field(min_length=1, max_length=MAX_PREVIEW_STRIP_IDS)
+
+
+class PreviewStripOut(BaseModel):
+    preview_b64: str
+    preview_max: int
+
+
+class PreviewStripsOut(BaseModel):
+    """``strips`` has every asked id: its strip, or null when none is on disk yet.
+
+    ``pending`` lists the null ids the ahead-analysis drain was bumped for and
+    will write, so asking again later can fill them. A null id not in
+    ``pending`` stays null until something else analyzes it.
+    """
+
+    strips: dict[str, PreviewStripOut | None]
+    pending: list[str]
+
+
+@router.post("/preview-strips", response_model=PreviewStripsOut)
+def post_preview_strips(body: PreviewStripsIn, request: Request) -> PreviewStripsOut:
+    """Re-read the Preview strip of up to 200 rows a listing already returned (NATIVE-21).
+
+    Same reads as a listing row, never a decode. A long-lived page's rows
+    keep the strip they were listed with; this is how rows in view catch up
+    with strips written since, without a click or a full re-list.
+    """
+    found = bulk_preview_strips(body.ids)
+    drain = getattr(request.app.state, "ahead_analysis", None)
+    pending: list[str] = []
+    if drain is not None:
+        pending = [sid for sid, strip in found.strips.items() if strip is None and sid in found.unmapped]
+        for sid in pending:
+            drain.bump(sid)
+    return PreviewStripsOut(
+        strips={
+            sid: None if strip is None else PreviewStripOut(preview_b64=strip[0], preview_max=strip[1])
+            for sid, strip in found.strips.items()
+        },
+        pending=pending,
+    )
 
 
 @router.get("/wheel")

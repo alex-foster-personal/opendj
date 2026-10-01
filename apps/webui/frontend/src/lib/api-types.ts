@@ -2680,6 +2680,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/preview-strips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Preview Strips
+         * @description Re-read the Preview strip of up to 200 rows a listing already returned (NATIVE-21).
+         *
+         *     Same reads as a listing row, never a decode. A long-lived page's rows
+         *     keep the strip they were listed with; this is how rows in view catch up
+         *     with strips written since, without a click or a full re-list.
+         */
+        post: operations["post_preview_strips_api_v1_library_preview_strips_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/library/readiness": {
         parameters: {
             query?: never;
@@ -12916,6 +12940,37 @@ export interface components {
              */
             status: "pass" | "fail";
         };
+        /** PreviewStripOut */
+        PreviewStripOut: {
+            /** Preview B64 */
+            preview_b64: string;
+            /** Preview Max */
+            preview_max: number;
+        };
+        /**
+         * PreviewStripsIn
+         * @description Body of ``POST /library/preview-strips``.
+         */
+        PreviewStripsIn: {
+            /** Ids */
+            ids: string[];
+        };
+        /**
+         * PreviewStripsOut
+         * @description ``strips`` has every asked id: its strip, or null when none is on disk yet.
+         *
+         *     ``pending`` lists the null ids the ahead-analysis drain was bumped for and
+         *     will write, so asking again later can fill them. A null id not in
+         *     ``pending`` stays null until something else analyzes it.
+         */
+        PreviewStripsOut: {
+            /** Pending */
+            pending: string[];
+            /** Strips */
+            strips: {
+                [key: string]: components["schemas"]["PreviewStripOut"] | null;
+            };
+        };
         /**
          * Provenance
          * @description Where one binding's wire numbers came from. Required on every binding:
@@ -21257,6 +21312,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LibraryJobItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_preview_strips_api_v1_library_preview_strips_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewStripsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewStripsOut"];
                 };
             };
             /** @description Validation Error */

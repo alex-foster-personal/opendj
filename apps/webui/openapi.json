@@ -16574,6 +16574,75 @@
         "title": "PreflightOut",
         "type": "object"
       },
+      "PreviewStripOut": {
+        "properties": {
+          "preview_b64": {
+            "title": "Preview B64",
+            "type": "string"
+          },
+          "preview_max": {
+            "title": "Preview Max",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "preview_b64",
+          "preview_max"
+        ],
+        "title": "PreviewStripOut",
+        "type": "object"
+      },
+      "PreviewStripsIn": {
+        "description": "Body of ``POST /library/preview-strips``.",
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "PreviewStripsIn",
+        "type": "object"
+      },
+      "PreviewStripsOut": {
+        "description": "``strips`` has every asked id: its strip, or null when none is on disk yet.\n\n``pending`` lists the null ids the ahead-analysis drain was bumped for and\nwill write, so asking again later can fill them. A null id not in\n``pending`` stays null until something else analyzes it.",
+        "properties": {
+          "pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending",
+            "type": "array"
+          },
+          "strips": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PreviewStripOut"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Strips",
+            "type": "object"
+          }
+        },
+        "required": [
+          "strips",
+          "pending"
+        ],
+        "title": "PreviewStripsOut",
+        "type": "object"
+      },
       "Provenance": {
         "additionalProperties": false,
         "description": "Where one binding's wire numbers came from. Required on every binding:\nit is what makes the no-fabricated-numbers house rule mechanical rather\nthan a comment convention, and it drives the confidence badge in the UI.",
@@ -32146,6 +32215,48 @@
         "summary": "Cancel Library Job",
         "tags": [
           "library-jobs"
+        ]
+      }
+    },
+    "/api/v1/library/preview-strips": {
+      "post": {
+        "description": "Re-read the Preview strip of up to 200 rows a listing already returned (NATIVE-21).\n\nSame reads as a listing row, never a decode. A long-lived page's rows\nkeep the strip they were listed with; this is how rows in view catch up\nwith strips written since, without a click or a full re-list.",
+        "operationId": "post_preview_strips_api_v1_library_preview_strips_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewStripsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewStripsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Preview Strips",
+        "tags": [
+          "library"
         ]
       }
     },
