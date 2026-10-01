@@ -210,6 +210,62 @@ def _resolve_ports(
     return port, frontend_port
 
 
+# ----- lifespan helpers: get-or-build the workers retained on app.state -----
+# Each worker is kept ON THE APP rather than rebuilt per lifespan, for the
+# reason spelled out at the top of _lifespan_context.
+
+
+def _retained_cloudsync_scheduler_if_armed(app: FastAPI) -> CloudSyncScheduler | None:
+    if not app.state.cloudsync_scheduler_armed:
+        return None
+    scheduler: CloudSyncScheduler | None = getattr(app.state, "cloudsync_scheduler", None)
+    if scheduler is None:
+        scheduler = CloudSyncScheduler(app)
+        app.state.cloudsync_scheduler = scheduler
+    return scheduler
+
+
+def _retained_stem_cache_enforcer_if_armed(app: FastAPI) -> StemCacheEnforcer | None:
+    if not getattr(app.state, "stem_cache_enforcer_armed", False):
+        return None
+    enforcer: StemCacheEnforcer | None = getattr(app.state, "stem_cache_enforcer", None)
+    if enforcer is None:
+        enforcer = StemCacheEnforcer(app)
+        app.state.stem_cache_enforcer = enforcer
+    return enforcer
+
+
+def _retained_library_jobs_watcher(app: FastAPI) -> library_jobs_autostart.LibraryJobsWatcher:
+    jobs_watcher: library_jobs_autostart.LibraryJobsWatcher | None = getattr(
+        app.state, "library_jobs_watcher", None
+    )
+    if jobs_watcher is None:
+        db = Path(app.state.state_db_path)
+        data_dir = db.parent.parent if db.parent.name == "state" else db.parent
+        roots = getattr(app.state, "stem_roots", None)
+        stems_root = Path(roots[0]) if roots else data_dir / "state" / "stems"
+        jobs_state = getattr(app.state, "auto_user_jobs", None)
+        enabled = bool(jobs_state is not None and jobs_state.enabled)
+        jobs_watcher = library_jobs_autostart.LibraryJobsWatcher(
+            state_db=db,
+            stems_root=stems_root,
+            data_dir=data_dir,
+            enabled=enabled,
+        )
+        app.state.library_jobs_watcher = jobs_watcher
+    return jobs_watcher
+
+
+def _start_coverage_drain_if_armed(app: FastAPI) -> None:
+    # HEALTH-05: built only on an app the daemon entry point ARMED; the
+    # user setting (default on) is read by the drain itself, every tick.
+    if not getattr(app.state, "coverage_drain_armed", False):
+        return
+    if getattr(app.state, "coverage_drain", None) is None:
+        app.state.coverage_drain = coverage_drain.build_for_app(app)
+    app.state.coverage_drain.start()
+
+
 @asynccontextmanager
 async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     from .app import build_auto_analyze_watcher, build_lyric_index_watcher
@@ -241,42 +297,16 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         # FBSYNC-01: built only on an app the daemon entry point ARMED, and
         # even then inert unless MDT_CLOUDSYNC_SCHEDULER=1 and a hub URL are
         # set; retained on the app for the reason the watchers above are.
-        if app.state.cloudsync_scheduler_armed:
-            cloudsync_scheduler = getattr(app.state, "cloudsync_scheduler", None)
-            if cloudsync_scheduler is None:
-                cloudsync_scheduler = CloudSyncScheduler(app)
-                app.state.cloudsync_scheduler = cloudsync_scheduler
+        cloudsync_scheduler = _retained_cloudsync_scheduler_if_armed(app)
+        if cloudsync_scheduler is not None:
             cloudsync_scheduler.start()
         # STEM-39: armed with stem hydration. A tick evicts nothing unless a
         # hydration source is armed AND the disk is under its floor.
-        if getattr(app.state, "stem_cache_enforcer_armed", False):
-            stem_cache_enforcer = getattr(app.state, "stem_cache_enforcer", None)
-            if stem_cache_enforcer is None:
-                stem_cache_enforcer = StemCacheEnforcer(app)
-                app.state.stem_cache_enforcer = stem_cache_enforcer
+        stem_cache_enforcer = _retained_stem_cache_enforcer_if_armed(app)
+        if stem_cache_enforcer is not None:
             stem_cache_enforcer.start()
-        jobs_watcher = getattr(app.state, "library_jobs_watcher", None)
-        if jobs_watcher is None:
-            db = Path(app.state.state_db_path)
-            data_dir = db.parent.parent if db.parent.name == "state" else db.parent
-            roots = getattr(app.state, "stem_roots", None)
-            stems_root = Path(roots[0]) if roots else data_dir / "state" / "stems"
-            jobs_state = getattr(app.state, "auto_user_jobs", None)
-            enabled = bool(jobs_state is not None and jobs_state.enabled)
-            jobs_watcher = library_jobs_autostart.LibraryJobsWatcher(
-                state_db=db,
-                stems_root=stems_root,
-                data_dir=data_dir,
-                enabled=enabled,
-            )
-            app.state.library_jobs_watcher = jobs_watcher
-        jobs_watcher.start()
-        # HEALTH-05: built only on an app the daemon entry point ARMED; the
-        # user setting (default on) is read by the drain itself, every tick.
-        if getattr(app.state, "coverage_drain_armed", False):
-            if getattr(app.state, "coverage_drain", None) is None:
-                app.state.coverage_drain = coverage_drain.build_for_app(app)
-            app.state.coverage_drain.start()
+        _retained_library_jobs_watcher(app).start()
+        _start_coverage_drain_if_armed(app)
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
