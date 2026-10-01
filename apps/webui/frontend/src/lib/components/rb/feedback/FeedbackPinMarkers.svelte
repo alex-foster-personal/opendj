@@ -11,7 +11,6 @@
 		type PinBoardBadge
 	} from '$lib/rb/feedback-pin-board';
 	import { pinVisualState } from '$lib/rb/feedback-pin-partial';
-	import { API_BASE } from '$lib/api';
 	import type { FeedbackPin } from '$lib/rb/feedback-store.svelte';
 
 	let {
@@ -83,13 +82,9 @@
 			</svg>
 		{/if}
 		{#if pin.attachment}
-			<img
-				class="fb-pin-thumb"
-				src={`${API_BASE}${pin.attachment.url}`}
-				alt=""
-				width="28"
-				height="20"
-			/>
+			<!-- FB-23: a mark, not the image. The screenshot is requested when
+			     the pin is opened (FeedbackPinCard), never for every pin at load. -->
+			<span class="fb-pin-thumb" title="Screenshot attached - open the pin to load it"></span>
 		{/if}
 		{#if optionKeyHeld}
 			{#each board.badges as badge (badge)}
@@ -198,7 +193,7 @@
 		display: block;
 		width: 28px;
 		height: 20px;
-		object-fit: cover;
+		background: color-mix(in srgb, currentColor 22%, transparent);
 		border: 1px solid currentColor;
 		border-radius: 1px;
 		margin-top: 2px;

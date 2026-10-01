@@ -217,8 +217,8 @@
 	{/each}
 	{#if pin.attachment && unsyncedAttachmentId === pin.attachment.id}
 		<p class="fb-hint fb-attachment-unsynced" data-testid="fb-attachment-unsynced">
-			Screenshot not on this machine: pin sync carries attachment details, not the image
-			yet.
+			Attachment not on this machine: pin sync carries the screenshot's details, not the
+			image yet.
 		</p>
 	{:else if pin.attachment}
 		{@const attachmentId = pin.attachment.id}
