@@ -14,7 +14,7 @@ import {
 	pausedMasterSelectionBlockers
 } from '$lib/rb/audio-engine-guards';
 import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
-import { resolveArmAtPosition, type TempoNormalization } from '$lib/rb/beat-sync-math';
+import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster } from '$lib/rb/master-election';
@@ -22,6 +22,7 @@ import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/perfor
 import { phaseLockDecision, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
+import type { PhaseLock } from './rust-phase-lock';
 import { DECKS, type DeckId, displayLoops, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
@@ -155,31 +156,6 @@ async function _join(
 		overLineTicks: 0,
 		userOffsetMs: 0
 	};
-}
-
-/**
- * What a join leaves for the continuous phase lock (`phaseLockTick`): the
- * BASE tempo every trim is relative to, and what the join assumed about the
- * master. A lock whose assumptions no longer hold is dropped, never trimmed.
- */
-interface PhaseLock {
-	master: DeckId;
-	masterTempo: number;
-	stableId: string | null;
-	base: number;
-	normalization: TempoNormalization;
-	/** The tempo the engine was last sent for this follower. */
-	sent: number;
-	/** A trim or re-seek is in flight; the next tick waits for it. */
-	busy: boolean;
-	/** Page-clock time of the join: a re-join is never sooner than
-	 * PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC after it. */
-	joinedAtSec: number;
-	/** Consecutive ticks the error has been past the re-join line. */
-	overLineTicks: number;
-	/** The phase offset the DJ dialed in since the join, wall-clock ms. No Rust
-	 * mode control moves a locked follower yet, so this stays 0. */
-	userOffsetMs: number;
 }
 
 const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};

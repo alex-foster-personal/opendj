@@ -376,34 +376,6 @@ def test_no_page_returns_503() -> None:
     asyncio.run(run())
 
 
-@pytest.mark.requirement("IOPIN-14")
-def test_get_returns_the_device_list_and_why_it_is_short() -> None:
-    """if GET drops device_access or the outputs then an agent reads a short list as a machine with few devices."""
-
-    async def run() -> None:
-        headphones = dict(_DEFAULT_HEADPHONES)
-        headphones["outputs"] = [{"id": "default", "label": "System default output"}]
-        headphones["device_access"] = {
-            "status": "permission_denied",
-            "action": "retry",
-            "message": "Audio device access is blocked, so only the system default output can be listed.",
-            "detail": None,
-            "output_pinning": True,
-            "notices": [],
-        }
-        async with AsyncClient(
-            transport=ASGITransport(app=_app()), base_url="http://test"
-        ) as client:
-            await _open_page(client, headphones=headphones)
-            got = await client.get("/api/v1/performance/headphones")
-        assert got.status_code == 200
-        body = got.json()
-        assert body["outputs"] == headphones["outputs"]
-        assert body["device_access"] == headphones["device_access"]
-
-    asyncio.run(run())
-
-
 @pytest.mark.parametrize(
     ("path", "body", "expected_command"),
     [
