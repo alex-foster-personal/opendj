@@ -80,7 +80,7 @@ class TrackNotRemovedError(RuntimeError):
 
 
 class TrackRemovedError(RuntimeError):
-    """Raised when ``upsert_track`` targets a row the user removed.
+    """Raised when ``upsert_track`` or ``claim_track`` targets a removed row.
 
     A removed track comes back through ``undelete_track`` and nothing else
     (LIBM-140). An ingest asks ``deleted_tracks.find_deleted_match`` first and
@@ -524,6 +524,38 @@ class _TrackWriterMixin:
             )
             self.bus.publish(ev)
         return TrackLifecycleResult(stable_id, None, memberships)
+
+    def claim_track(self: _WriterHost, stable_id: str) -> str:
+        """Re-stamp a live track as this machine's own write. Returns the stamp.
+
+        The ``stale-tracks --keep`` remedy (CLOUDSYNC-30, issue #4628): a
+        track another machine wrote, which the fleet has since dropped, is
+        refused by the stale-copy guard (``apps.sync_hub.stale_copy``) until
+        a machine claims it. Claiming changes no value but the stamp, so the
+        next sync offers it as this machine's write and it returns to the
+        fleet. A removed track is not claimed; restore it with
+        ``undelete_track``.
+        """
+        with self._tx() as conn:
+            row = conn.execute(
+                "SELECT deleted_at FROM tracks WHERE stable_id = ?",
+                (stable_id,),
+            ).fetchone()
+            if row is None:
+                raise TrackNotFoundError(stable_id)
+            if row[0] is not None:
+                raise TrackRemovedError(stable_id)
+            now = self._now_iso()
+            stamp = self._stamp(TRACKS_TABLE, (stable_id,), now)
+            conn.execute(
+                "UPDATE tracks SET updated_at=?, origin_device_id=? WHERE stable_id=?",
+                (stamp.updated_at, stamp.origin_device_id, stable_id),
+            )
+            ev = self._append_event(
+                kind="track.claim", stable_id=stable_id, payload={}, ts=now
+            )
+            self.bus.publish(ev)
+        return stamp.updated_at
 
 
 __all__ = [

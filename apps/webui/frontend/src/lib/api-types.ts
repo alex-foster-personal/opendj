@@ -5089,6 +5089,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/stale-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stale Check
+         * @description Which offered live tracks did the fleet drop? Read-only.
+         *
+         *     The spoke asks before it pushes, so it can refuse its own push and name
+         *     every orphan at once instead of meeting the ``/push`` backstop one batch
+         *     at a time. Same rule, same connection state: :mod:`apps.sync_hub.stale_copy`.
+         */
+        post: operations["stale_check_api_v1_sync_stale_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/status": {
         parameters: {
             query?: never;
@@ -12016,6 +12040,11 @@ export interface components {
             machine_id: string;
             /** Machines */
             machines?: components["schemas"]["MachineModel"][];
+            /**
+             * Reseed
+             * @default false
+             */
+            reseed: boolean;
             /** Rows */
             rows: components["schemas"]["RowModel"][];
             /** Schema Version */
@@ -13061,6 +13090,45 @@ export interface components {
             rows: unknown[][];
             /** Truncated */
             truncated: boolean;
+        };
+        /** StaleCandidateModel */
+        StaleCandidateModel: {
+            /** Origin Device Id */
+            origin_device_id: string;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /**
+         * StaleCheckRequest
+         * @description ``POST /stale-check``: which of these live tracks did the fleet drop?
+         */
+        StaleCheckRequest: {
+            /** Candidates */
+            candidates: components["schemas"]["StaleCandidateModel"][];
+            /** Machine Id */
+            machine_id: string;
+            /**
+             * Reseed
+             * @default false
+             */
+            reseed: boolean;
+            /** Schema Version */
+            schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
+        };
+        /** StaleCheckResponse */
+        StaleCheckResponse: {
+            /** Orphans */
+            orphans: string[];
+            /**
+             * Unattributable
+             * @default 0
+             */
+            unattributable: number;
         };
         /** StatusResponse */
         StatusResponse: {
@@ -24078,14 +24146,12 @@ export interface operations {
                     "application/json": components["schemas"]["GateErrorResponse"];
                 };
             };
-            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            /** @description SYNC_STALE_TRACKS: the batch carries live tracks another machine authored that this hub no longer holds (a stale or copied library). Nothing applied. Also SYNC_WIRE_VERSION / SYNC_SCHEMA_VERSION and FOREIGN KEY refusals. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["SyncErrorResponse"];
-                };
+                content?: never;
             };
             /** @description SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows) */
             422: {
@@ -24158,6 +24224,62 @@ export interface operations {
                 };
             };
             /** @description rows refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stale_check_api_v1_sync_stale_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaleCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaleCheckResponse"];
+                };
+            };
+            /** @description stale-check refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description stale-check refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;

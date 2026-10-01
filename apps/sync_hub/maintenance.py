@@ -100,6 +100,7 @@ from apps.shared.sync_runtime_gates import (
 from apps.sync_hub import (
     capabilities,
     client,
+    client_stale_copy,
     config_cli,
     engine,
     enrollment_credentials,
@@ -353,6 +354,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
+    client_stale_copy.add_parser(subcommands, common)
     subcommands.add_parser("generation", parents=[common], help="print this hub's generation token")
     subcommands.add_parser(
         "rotate",
@@ -619,7 +621,9 @@ def _print_hosted(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "feedback-pins", "policy"})
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
+    {"sync", "status", "feedback-pins", "policy", "stale-tracks"}
+)
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -947,6 +951,8 @@ def main(argv: list[str] | None = None) -> int:
         return _feedback_pins(args)
     if args.command == "policy":
         return maintenance_policy.run(args)
+    if args.command == "stale-tracks":
+        return client_stale_copy.run_cli(args)
     # Everything below prints and exits 0; the two above own their own codes.
     handler = PRINTING_COMMANDS.get(args.command)
     if handler is None:

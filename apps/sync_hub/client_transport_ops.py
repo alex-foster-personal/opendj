@@ -115,7 +115,11 @@ def _json_bytes(value: object) -> int:
 
 
 def _push_body(
-    machine_id: str, wire_rows: Sequence[dict[str, Any]], wire_fleet: list[dict[str, object]]
+    machine_id: str,
+    wire_rows: Sequence[dict[str, Any]],
+    wire_fleet: list[dict[str, object]],
+    *,
+    reseed: bool = False,
 ) -> dict[str, object]:
     return {
         "machine_id": machine_id,
@@ -124,6 +128,7 @@ def _push_body(
         "rows": list(wire_rows),
         "machines": wire_fleet,
         "capabilities": list(_ADVERTISED),
+        "reseed": reseed,
     }
 
 
@@ -248,6 +253,8 @@ def _push_chunk_with_split(
     machine_id: str,
     chunk: Sequence[dict[str, Any]],
     wire_fleet: list[dict[str, object]],
+    *,
+    reseed: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Push one chunk, halving it on a timeout or a 413 until one row is left.
 
@@ -256,7 +263,12 @@ def _push_chunk_with_split(
     limit in front of the hub is below what this library needs.
     """
     try:
-        return channel.post(f"{API_PREFIX}/push", _push_body(machine_id, chunk, wire_fleet)), 1
+        return (
+            channel.post(
+                f"{API_PREFIX}/push", _push_body(machine_id, chunk, wire_fleet, reseed=reseed)
+            ),
+            1,
+        )
     except SyncTransportError as exc:
         if not _should_split(exc):
             raise
@@ -283,10 +295,10 @@ def _push_chunk_with_split(
             len(chunk) - mid,
         )
         left, left_requests = _push_chunk_with_split(
-            channel, machine_id, chunk[:mid], wire_fleet
+            channel, machine_id, chunk[:mid], wire_fleet, reseed=reseed
         )
         right, right_requests = _push_chunk_with_split(
-            channel, machine_id, chunk[mid:], wire_fleet
+            channel, machine_id, chunk[mid:], wire_fleet, reseed=reseed
         )
         return {
             "accepted": _int_from(left, "accepted", "push")
@@ -306,6 +318,7 @@ def _push_in_batches(
     fleet: Sequence[protocol.MachineRow],
     *,
     batch_rows: int,
+    reseed: bool = False,
 ) -> _PushOutcome:
     """Offer ``rows`` to the hub, at most ``batch_rows`` and
     :data:`PUSH_BODY_MAX_BYTES` per request.
@@ -334,7 +347,7 @@ def _push_in_batches(
     for chunk in batches:
         try:
             payload, chunk_requests = _push_chunk_with_split(
-                channel, machine_id, chunk, wire_fleet
+                channel, machine_id, chunk, wire_fleet, reseed=reseed
             )
         except SyncTransportError as exc:
             if not client_refusal.is_plan_refusal(exc):
