@@ -62,6 +62,7 @@ pytest_plugins = [
     "scripts.pytest_fast_tier",
     "scripts.pytest_tier_floor",
     "tests.support.spawned_servers",
+    "tests.support.live_github",
 ]
 
 
