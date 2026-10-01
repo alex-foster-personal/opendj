@@ -4,6 +4,7 @@
 		activeLyricLineIndex,
 		lyricLaneGroups,
 		lyricLanePositionPercent,
+		lyricLaneWidthPercent,
 		type LyricLine
 	} from './lyrics-lane';
 
@@ -29,7 +30,7 @@
 	<span class="lyrics-error" title={loadError.message}>LYRICS ERROR</span>
 {:else if lyrics !== null}
 	<div class="lyrics-lane" aria-label="Synced lyrics">
-		{#each groups as group (group.start_ms)}
+		{#each groups as group, groupIndex (group.start_ms)}
 			{@const active = activeIndex >= group.firstIndex && activeIndex <= group.lastIndex}
 			{@const left = lyricLanePositionPercent({
 				lineStartMs: group.start_ms,
@@ -37,11 +38,20 @@
 				pitch,
 				windowSeconds: WAVE_WINDOW_S
 			})}
-			{#if left >= -10 && left <= 110}
+			{@const maxWidth = lyricLaneWidthPercent({
+				lineStartMs: group.start_ms,
+				nextStartMs: groups[groupIndex + 1]?.start_ms ?? null,
+				pitch,
+				windowSeconds: WAVE_WINDOW_S
+			})}
+			<!-- Drawn from its start rightwards, so a line stays on screen
+			     until its END leaves the left edge, not its start. -->
+			{#if left <= 110 && (maxWidth === null ? left >= -100 : left + maxWidth >= 0)}
 				<span
 					class:active
 					class="lyric-line"
 					style:left={`${left}%`}
+					style:max-width={maxWidth === null ? undefined : `${maxWidth}%`}
 					aria-current={active ? 'true' : undefined}
 				>{group.text}</span>
 			{/if}
@@ -61,8 +71,13 @@
 	.lyric-line {
 		position: absolute;
 		bottom: 0;
-		transform: translateX(-50%);
+		box-sizing: border-box;
+		padding: 0 3px;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--rb-bg) 85%, transparent);
 		color: color-mix(in srgb, var(--rb-text) 70%, transparent);
 		font-size: 10px;
 		line-height: 16px;

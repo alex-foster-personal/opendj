@@ -1,4 +1,4 @@
-export { analysisIssuesFor, errColumnTitle, gridFlagFor } from '$lib/rb/analysis-issues';
+export { analysisIssuesFor, bpmGridHoverText, errColumnTitle, gridFlagFor } from '$lib/rb/analysis-issues';
 export { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 export { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 export { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';
@@ -7,6 +7,7 @@ export { buildCurveSegments, segmentPath } from '$lib/rb/autoplay-curve';
 export { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 export { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 export { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+export { libraryWheelScroll } from '$lib/rb/library-wheel-scroll';
 export {
 	bpmHeatColor,
 	bpmHeatLabel,

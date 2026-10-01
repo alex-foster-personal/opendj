@@ -9913,6 +9913,7 @@ export interface components {
             /** Alignment Mode */
             alignment_mode: string;
             calibration: components["schemas"]["HeadphoneCalibrationOut"];
+            device_access: components["schemas"]["IoDeviceAccessOut"];
             /** Error */
             error: string | null;
             /** Head Delay Ms */
@@ -10188,6 +10189,29 @@ export interface components {
             survivor_pk: string;
             /** Table */
             table: string;
+        };
+        /**
+         * IoDeviceAccessOut
+         * @description IOPIN-14: whether the device lists could be read, and what to do if not.
+         *
+         *     `status` is one of not_checked, listed, permission_needed, permission_denied,
+         *     api_missing, enumeration_failed, timeout. Only `listed` means `outputs` and
+         *     `inputs` are the machine's real device names; an agent must read this before
+         *     treating a short list as a machine with few devices.
+         */
+        IoDeviceAccessOut: {
+            /** Action */
+            action: string;
+            /** Detail */
+            detail: string | null;
+            /** Message */
+            message: string | null;
+            /** Notices */
+            notices: string[];
+            /** Output Pinning */
+            output_pinning: boolean;
+            /** Status */
+            status: string;
         };
         /** JobIn */
         JobIn: {

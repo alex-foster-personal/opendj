@@ -10,8 +10,9 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertForState, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
+	import { headphoneLivenessAlertForState, headphoneMixAccent, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
+	import { levelBullets, ioBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
@@ -83,15 +84,20 @@
 	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: headphoneState.output_mode, selectedLabel }));
 	const livenessAlert = $derived(headphoneLivenessAlertForState(headphoneState));
+	// IOPIN-14: the panel says whether the lists could be read before it shows them.
+	const access = $derived(headphoneState.device_access);
+	const accessActionLabel = $derived(
+		access.action === 'grant' ? 'Grant access to list devices' : 'Retry device check'
+	);
+	// The denied notice already says this; one statement of it is enough.
+	const showError = $derived(
+		headphoneState.error !== null && !(access.status === 'permission_denied' && headphoneState.error === MIC_DECLINED_NOTICE)
+	);
 	const mixBullets = [
 		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
 		'Single-click the knob to step toward the other extreme.',
 		'MAIN (practice): master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
 		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.'
-	];
-	const levelBullets = [
-		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
-		'It does not change the room MASTER volume. Default is 1 (full). Turn down if the phones are hot.'
 	];
 	const mainBullets = [
 		'1) Press MAIN for laptop or a single output (practice mode).',
@@ -104,36 +110,11 @@
 		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
 		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
-	const ioBullets = ['Click for Speaker / Headphone CUE quick settings without interrupting audio.'];
-	const delayBullets = [
-		'Mixxx Head Delay, 0-500 ms, on the cue path only. It does not delay the room.',
-		'CALIBRATE fills it from the measured offset when the phones are ahead of the room; type a value to override.',
-		'Two independently clocked devices still drift. Bluetooth is for auditioning, not beatmatching.'
-	];
-	const calibrateBullets = [
-		'Measures how far the headphones lag the room with the built-in mic and splits the difference between HEAD DELAY and ROOM per the alignment mode.',
-		'Live only in two outputs with a HEADPHONE CUE sink selected. Playing decks pause for the chirps and resume after.'
-	];
-	const roomBullets = [
-		'ROOM is the room (MASTER) delay, 0-1500 ms, the last node before the speakers. The phones never pay it.',
-		'The waveform and PLAY light lag by the same amount on purpose, so what you see is what the room hears.'
-	];
-	const rescanBullets = [
-		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
-	];
-	const modeBullets = [
-		'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
-		'two outputs: pin MASTER/MAIN for the room and HEADPHONE CUE for phones; cue does not bleed into the room.',
-		'split cable (SPLIT): one stereo jack; left = master, right = cue. Requires a DJ splitter, not a Y cable.'
-	];
 	const masterPickBullets = [
 		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.'
 	];
 	const cuePickBullets = [
 		'Headphone CUE sink: wired or Bluetooth. Press CALIBRATE afterwards to time it against the room. Live Bluetooth pairing is CUEOUT-12, not this control.'
-	];
-	const inputPickBullets = [
-		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
 
 	function stepHeadDelay(delta: number): void {
@@ -161,6 +142,13 @@
 		if (!(input instanceof HTMLInputElement) || input.value === '') return;
 		const value = Number(input.value);
 		if (Number.isInteger(value) && value >= 0 && value <= 500) ondelay(value);
+	}
+
+	/** The value is a text field (MIXUX-08), so the arrow keys step it here. */
+	function keyDelay(event: KeyboardEvent): void {
+		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+		event.preventDefault();
+		stepHeadDelay(event.key === 'ArrowUp' ? 1 : -1);
 	}
 
 	function scrollDelay(event: WheelEvent): void {
@@ -277,12 +265,23 @@
 				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
 			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
 			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
+				<div class="hp-access" data-io-device-access={access.status}>
+					{#if access.message !== null}
+						<p class="hp-warn" role="status" data-io-device-access-message title={access.detail ?? access.message}>{access.message}{#if access.detail !== null} <span class="hp-access-detail">({access.detail})</span>{/if}</p>
+					{/if}
+					{#if access.action !== 'none'}
+						<button type="button" class="hp-retry" data-io-device-access-action={access.action} onclick={access.action === 'grant' ? onacquire : onrefresh}>{accessActionLabel}</button>
+					{/if}
+					{#each access.notices as notice (notice)}
+						<p class="hp-context" role="status" data-io-device-notice>{notice}</p>
+					{/each}
+				</div>
 				{#if masterLabel !== null || selectedLabel !== null}
 					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}.{/if}</p>
 				{/if}
 					{@render outputMenu()}
 					<p class="hp-context">Signal lights measure app bus or mic input. They do not prove a physical speaker emitted sound.</p>
-				{#if headphoneState.error !== null}
+				{#if showError}
 					<p class="hp-error" role="alert">{headphoneState.error}</p>
 					<button type="button" class="hp-retry" onclick={onacquire}>Retry device access</button>
 				{/if}
@@ -293,7 +292,7 @@
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
 					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span><span>CUE ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span></div>
 					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} showDelayMs={100}>
-						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
+						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onkeydown={keyDelay} onwheel={scrollDelay} /><span>ms</span></label>
 					</ControlExplainer>
 					<p class="hp-context">Click the value, then use ↑/↓ or two-finger scroll. Hover HEAD DELAY for timing guidance.</p>
 					{#if headphoneState.master_delay_ms > 0}<p class="hp-room" data-performance-control="room-delay">ROOM +{headphoneState.master_delay_ms} ms. {roomBullets[0]}</p>{/if}
@@ -318,7 +317,7 @@
 				<select
 					aria-label="master output device"
 					value={headphoneState.selected_master_output_device_id ?? ''}
-					disabled={!headphoneState.supported}
+					disabled={!headphoneState.supported || !access.output_pinning}
 					onchange={(event) => onmaster(event.currentTarget.value)}
 				>
 					<option value="" disabled>choose master</option>
@@ -328,14 +327,13 @@
 				</select>
 			</label>
 		</ControlExplainer>
-		{#if !headphoneState.supported}<p class="hp-context">Device selection needs supported browser or shell audio APIs and microphone permission.</p>{/if}
 		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>HEADPHONE CUE {@render signalIndicator('cue')}</span>
 				<select
 					aria-label="headphone output device"
 					value={headphoneState.selected_output_device_id ?? ''}
-					disabled={!headphoneState.supported}
+					disabled={!headphoneState.supported || !access.output_pinning}
 					onchange={(event) => onselect(event.currentTarget.value)}
 				>
 					<option value="" disabled>HP out</option>
@@ -586,6 +584,8 @@
 		color: var(--rb-accent, #4fb3ff);
 		white-space: nowrap;
 	}
+	.hp-access { display: grid; gap: 4px; justify-items: start; }
+	.hp-access-detail { opacity: 0.75; }
 	.hp-warn {
 		color: var(--rb-warn, #e6a23c);
 		font-size: 10px;

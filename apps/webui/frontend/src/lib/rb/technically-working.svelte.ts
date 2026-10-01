@@ -3,7 +3,7 @@
  * edge-revealed overlay so the maintainer can DJ while working elsewhere on screen.
  *
  * State only - no DOM, no keyboard, no CSS. `technically-working-hotkeys.ts`
- * drives the setters below from cmd+R / Opt / cmd+E and edge-hover tracking;
+ * drives the setters below from Ctrl+R / Opt / cmd+E and edge-hover tracking;
  * `+page.svelte` reads the visibility helpers to decide what renders.
  *
  * LIBUX-02 (hide-able Next/recommended panels, not yet built) is a narrower
@@ -68,7 +68,7 @@ export function hoveredEdgeList(): EdgeRegion[] {
 	return [...hoveredEdges];
 }
 
-/** cmd+R press: toggles overlay mode on/off and stays there (LIBUX-05:
+/** Ctrl+R press: toggles overlay mode on/off and stays there (LIBUX-05:
  * "the components animate into overlay mode and stay there"). */
 export function toggleTechMode(): void {
 	setTechModeActive(!active);
@@ -84,7 +84,7 @@ export function setTechModeActive(next: boolean): void {
 	}
 }
 
-/** cmd+R hold: brings every region back only for as long as it is held. */
+/** Ctrl+R hold: brings every region back only for as long as it is held. */
 export function setPeeking(next: boolean): void {
 	peeking = next;
 }

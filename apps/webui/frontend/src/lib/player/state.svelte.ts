@@ -104,6 +104,7 @@ export function _defaultChannel(deck_id: DeckId): MixerChannelState {
 }
 
 import { loadMixerConfig } from '$lib/player/mixer-config';
+import { ioDeviceAccessNotChecked } from '$lib/player/io-device-access';
 
 /** Exported (name kept) so dispose resets headphones through one definition. */
 export function _defaultHeadphones(): HeadphoneState {
@@ -147,6 +148,7 @@ export function _defaultHeadphones(): HeadphoneState {
 		},
 		outputs: [],
 		inputs: [],
+		device_access: ioDeviceAccessNotChecked(),
 		supported: false,
 		active: false,
 		error: null

@@ -90,6 +90,7 @@
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		settledAvailabilityFromRbMeta,
+		startPendingSettle,
 		PlaylistSetTabs,
 		usbPaneSource,
 		isRemovedStickRow,
@@ -419,6 +420,23 @@
 	let searchReturnSnap = $state<NavSnap | null>(null);
 
 	const pane = $derived(panes[activePane]);
+	// PERF-RB-03 (pin cba7bf1dbb05): rows that loaded with disk truth pending
+	// settle on screen, so hide-broken and the tree count agree.
+	$effect(() => {
+		const p = pane;
+		const id = p.playlist_id;
+		void p.rows;
+		if (p.loading || id === null || (p.kind !== 'playlist' && p.kind !== 'smartlist')) return;
+		if (isMissingTracksId(id) || isAutolistId(id)) return;
+		const fetchRows = p.kind === 'smartlist' ? _fetchSmartlistRows : _fetchPlaylistRows;
+		return untrack(() =>
+			startPendingSettle({
+				rows: () => (p.playlist_id === id ? p.rows : []),
+				fetchRows: async () => (await fetchRows(id)).rows,
+				onError: (exc) => console.error(`[pending-settle] ${id}: ${String(exc)}`)
+			})
+		);
+	});
 	const spotifyPlaylists = $derived(playlists.filter((playlist) => playlist.vendor === 'spotify'));
 	const loadedIds = $derived(
 		new Set(DECK_IDS.map((d) => decks[d].stable_id).filter((v): v is string => v !== null))
@@ -2305,12 +2323,6 @@
 		file_availability?: BrowserRow['file_availability'];
 	};
 
-	/** PERF-RB-01: disk truth not probed yet (file_exists null). Refused with
-	 * its own reason, never reported as a missing file. */
-	function _availabilityPending(row: LoadableRow): boolean {
-		return row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null;
-	}
-
 	/** Write rb-meta's disk truth onto a pending row (no-op once settled). */
 	function _applySettledAvailability(row: LoadableRow): void {
 		const settled = settledAvailabilityFromRbMeta(
@@ -2321,25 +2333,6 @@
 			row.rb_meta ?? null
 		);
 		if (settled !== null) Object.assign(row, settled);
-	}
-
-	/** Settle a pending row from rb-meta, fetching it when the row was never
-	 * visible. Nothing else ever re-asks the server, so without this "wait for
-	 * disk probe" is a wait with no end. Returns true while still pending. */
-	async function _settlePendingAvailability(row: LoadableRow): Promise<boolean> {
-		if (!_availabilityPending(row) || row.stable_id.startsWith('usb-')) {
-			return _availabilityPending(row);
-		}
-		if (row.rb_meta == null) {
-			try {
-				row.rb_meta = await _fetchRbMetaWithRetry(row.stable_id);
-			} catch (exc) {
-				console.error(`rb-meta availability probe failed for ${row.stable_id}:`, exc);
-				return true;
-			}
-		}
-		_applySettledAvailability(row);
-		return _availabilityPending(row);
 	}
 
 	function loadRow(
@@ -2582,21 +2575,12 @@
 			pushToast('preview: streaming track has no local audio to preview', 'error');
 			return;
 		}
-		if (_availabilityPending(row)) {
-			void _settlePendingAvailability(row).then((stillPending) => {
-				if (stillPending) {
-					pushToast('preview: availability still checking (wait for disk probe)', 'error');
-				} else {
-					previewSeek(row, ratio);
-				}
-			});
-			return;
-		}
 		if (isRemovedStickRow(row)) {
 			pushToast('preview: Stick removed', 'error');
 			return;
 		}
-		if (!row.file_exists) {
+		// Pin c90b8036d495: null means not probed yet, and the preview is the probe.
+		if (row.file_exists === false) {
 			pushToast('preview: audio file missing on disk (broken link)', 'error');
 			return;
 		}
@@ -2634,16 +2618,14 @@
 				pushToast('streaming track - deck load not implemented (see PARITY-TODO)', 'error');
 				return;
 			}
-			if (await _settlePendingAvailability(row)) {
-				pushToast('cannot load: availability still checking (wait for disk probe)', 'error');
-				return;
-			}
 			if (isRemovedStickRow(row)) {
 				pushToast('cannot load: Stick removed', 'error');
 				return;
 			}
-			if (!row.file_exists) {
-				// FR-1: broken-link rows stay selectable but never load.
+			if (row.file_exists === false) {
+				// FR-1: broken-link rows stay selectable but never load. A row
+				// whose disk truth is not probed yet (null) is NOT refused: the
+				// load is the probe (pin c90b8036d495).
 				pushToast('cannot load: audio file missing on disk (broken link)', 'error');
 				return;
 			}

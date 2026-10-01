@@ -8,6 +8,7 @@ import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
+import { CONFIRM_SETTINGS } from './confirm-drop-mode';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -200,7 +201,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		label: 'Technically-working mode animation',
 		group: 'performance',
 		keywords: ['technically', 'working', 'overlay', 'animate', 'fade', 'edge', 'reveal'],
-		title: 'Fade regions in/out on edge-reveal (cmd+R overlay mode)',
+		title: 'Fade regions in/out on edge-reveal (Ctrl+R overlay mode)',
 		detail:
 			'When on (default), revealing/hiding a region in overlay mode cross-fades. Off swaps instantly, no transition.',
 		implemented: true,
@@ -350,26 +351,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},
-	{
-		id: 'confirm.dblclick_load_play',
-		label: 'Confirm double-click Load+play',
-		group: 'confirmations',
-		keywords: ['confirm', 'double', 'click', 'load', 'play', 'prompt'],
-		title: 'Ask before Load+play on double-click',
-		detail: 'Off skips the prompt (do this every time). Missing/default means ask.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
-	{
-		id: 'confirm.delete_playlist',
-		label: 'Confirm playlist delete',
-		group: 'confirmations',
-		keywords: ['confirm', 'delete', 'playlist', 'remove', 'prompt'],
-		title: 'Ask before deleting a playlist',
-		detail: 'Off skips the destructive confirm forever. Missing/default means ask.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
+	...CONFIRM_SETTINGS,
 	{
 		id: 'auto_sync',
 		label: 'Auto-sync destinations',
