@@ -85,6 +85,8 @@ class AnalysisPolicy:
 
     #: True while a user-ordered job is running; analysis waits.
     user_jobs_fn: Callable[[], bool] = lambda: False
+    #: Why analysis should wait for memory, or None (``coverage_memory``).
+    memory_pressure_fn: Callable[[], str | None] = lambda: None
     #: Recently loaded or played track ids, most recent first.
     recency_fn: Callable[[], Sequence[str]] = lambda: ()
     #: Stages reported and never run here, with the reason.

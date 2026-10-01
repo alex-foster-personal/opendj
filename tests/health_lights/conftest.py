@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.webui.server.routes import coverage_drain as drain_routes
+from apps.webui.server.routes import coverage_terminal as terminal_routes
 from apps.webui.server.routes import ingest as ingest_mod
 from apps.webui.server.routes import ingest_job
 from tests.health_lights import fixtures as fx
@@ -45,6 +46,7 @@ def library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Library
     app = FastAPI()
     app.include_router(ingest_mod.router, prefix="/api/v1")
     app.include_router(drain_routes.router, prefix="/api/v1")
+    app.include_router(terminal_routes.router, prefix="/api/v1")
     app.state.state_db = state_db
     app.state.stem_roots = (state / "stems",)
     # The farm is reachable in these tests unless a test says otherwise: a

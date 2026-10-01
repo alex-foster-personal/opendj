@@ -46,6 +46,10 @@ function coverage(step, counts, extra = {}) {
 		corrupt: { [step]: corrupt },
 		waiting_on_stems: 0,
 		stems_source_refusal: null,
+		local: { stems: step === 'stems' ? done : 0 },
+		in_cloud: { stems: 0 },
+		awaiting_stem_download: 0,
+		stems_index: { state: 'ok', reason: null },
 		...extra
 	};
 }
@@ -118,6 +122,93 @@ test('a terminally failed job keeps the dot amber and is counted on its own', ()
 	const dot = dots.coverageDot('Vocals completion', coverage('vocals', { done: 10, failed: 2 }), 'vocals');
 	assert.equal(dot.state, 'incomplete');
 	assert.match(dot.detail, /2 failed/);
+});
+
+// REQ: HEALTH-07
+test('evicted stems are done: the Stems dot is green and the hover splits local from in cloud', () => {
+	const dot = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 1139, terminal: 45 }, { local: { stems: 602 }, in_cloud: { stems: 537 } }),
+		'stems'
+	);
+	assert.equal(dot.state, 'complete');
+	assert.match(dot.detail, /602 local, 537 in cloud \(fetched back when loaded on a deck\)/);
+	assert.match(dot.detail, /45 no stems source, 0 pending/);
+	assert.match(dot.detail, /of 1184 present tracks \(denominator: present/);
+});
+
+// REQ: HEALTH-07
+test('overshoot control: a track in neither place keeps the Stems dot amber beside in-cloud ones', () => {
+	const dot = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 10, pending: 1 }, { local: { stems: 4 }, in_cloud: { stems: 6 } }),
+		'stems'
+	);
+	assert.equal(dot.state, 'incomplete');
+	assert.match(dot.detail, /4 local, 6 in cloud/);
+	assert.match(dot.detail, /1 pending/);
+});
+
+// REQ: HEALTH-07
+test('an unreadable cloud index with tracks lacking local stems is grey: not amber, not green', () => {
+	const unreadable = { state: 'unknown', reason: 'the R2 stem index cache cannot be read: bad JSON' };
+	const dot = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 602, pending: 582 }, { stems_index: unreadable }),
+		'stems'
+	);
+	assert.equal(dot.state, 'unavailable');
+	assert.match(dot.detail, /^unknown - 582 tracks have no local stems and the cloud stem index could not be read/);
+	assert.match(dot.detail, /cannot be read: bad JSON/);
+	assert.match(dot.detail, /602 local of 1184 present tracks/);
+	// Control the other way: with nothing pending the verdict does not depend
+	// on the index, so an unreadable index must not grey a finished light.
+	const finished = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 602 }, { stems_index: unreadable }),
+		'stems'
+	);
+	assert.equal(finished.state, 'complete');
+});
+
+// REQ: HEALTH-07
+test('stem counts that do not add up, or a missing index verdict, are grey unknown', () => {
+	const short = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 10 }, { local: { stems: 4 }, in_cloud: { stems: 5 } }),
+		'stems'
+	);
+	assert.equal(short.state, 'unavailable');
+	assert.match(short.detail, /do not sum to done/);
+	const response = coverage('stems', { done: 10 });
+	delete response.stems_index;
+	assert.equal(dots.coverageDot('Stems completion', response, 'stems').state, 'unavailable');
+	// Lyrics do not depend on the stem index at all.
+	const lyrics = coverage('lyrics', { done: 3 });
+	delete lyrics.stems_index;
+	assert.equal(dots.coverageDot('Lyrics completion', lyrics, 'lyrics').state, 'complete');
+});
+
+// REQ: HEALTH-08
+test('vocals hover separates a stem download from a stem render', () => {
+	const dot = dots.coverageDot(
+		'Vocals completion',
+		coverage('vocals', { done: 720, terminal: 45, pending: 419 }, { awaiting_stem_download: 287 }),
+		'vocals'
+	);
+	assert.equal(dot.state, 'incomplete');
+	assert.match(dot.detail, /419 pending \(287 with stems in cloud, fetched one at a time\)/);
+	assert.doesNotMatch(dot.detail, /waiting on stems/);
+	const unread = dots.coverageDot(
+		'Vocals completion',
+		coverage('vocals', { done: 1, pending: 3 }, {
+			waiting_on_stems: 3,
+			stems_index: { state: 'unknown', reason: 'not fetched' }
+		}),
+		'vocals'
+	);
+	assert.equal(unread.state, 'incomplete', 'pending vocals are pending whatever the index says');
+	assert.match(unread.detail, /cloud stem index could not be read \(not fetched\)/);
 });
 
 // REQ: HEALTH-04

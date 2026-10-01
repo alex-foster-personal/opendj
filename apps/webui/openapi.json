@@ -5451,6 +5451,10 @@
             "title": "Availability",
             "type": "object"
           },
+          "awaiting_stem_download": {
+            "title": "Awaiting Stem Download",
+            "type": "integer"
+          },
           "corrupt": {
             "additionalProperties": {
               "type": "integer"
@@ -5476,6 +5480,20 @@
             "title": "Generated At",
             "type": "number"
           },
+          "in_cloud": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "In Cloud",
+            "type": "object"
+          },
+          "local": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Local",
+            "type": "object"
+          },
           "missing": {
             "additionalProperties": {
               "type": "integer"
@@ -5492,6 +5510,20 @@
               "type": "integer"
             },
             "title": "Pending",
+            "type": "object"
+          },
+          "stems_index": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Stems Index",
             "type": "object"
           },
           "stems_source_refusal": {
@@ -5537,6 +5569,10 @@
           "failed",
           "pending",
           "waiting_on_stems",
+          "local",
+          "in_cloud",
+          "awaiting_stem_download",
+          "stems_index",
           "stems_source_refusal",
           "generated_at"
         ],
@@ -6583,15 +6619,46 @@
         "type": "object"
       },
       "DrainConfigIn": {
+        "additionalProperties": false,
+        "description": "Partial update: an omitted key keeps its stored value.",
         "properties": {
           "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
+          "transient_bundle_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transient Bundle Cap"
           }
         },
-        "required": [
-          "enabled"
-        ],
         "title": "DrainConfigIn",
         "type": "object"
       },
@@ -6614,6 +6681,11 @@
       },
       "DrainStatusOut": {
         "properties": {
+          "cloud_vocals": {
+            "additionalProperties": true,
+            "title": "Cloud Vocals",
+            "type": "object"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -6659,6 +6731,17 @@
             ],
             "title": "Last Job"
           },
+          "memory_pressure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Pressure"
+          },
           "next_retry_at": {
             "anyOf": [
               {
@@ -6692,6 +6775,30 @@
             "title": "State",
             "type": "string"
           },
+          "stems_check": {
+            "additionalProperties": true,
+            "title": "Stems Check",
+            "type": "object"
+          },
+          "stems_in_cloud": {
+            "title": "Stems In Cloud",
+            "type": "integer"
+          },
+          "stems_index_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stems Index Reason"
+          },
+          "stems_index_state": {
+            "title": "Stems Index State",
+            "type": "string"
+          },
           "stems_needing_farm": {
             "items": {
               "type": "string"
@@ -6702,6 +6809,21 @@
           "stems_needing_farm_count": {
             "title": "Stems Needing Farm Count",
             "type": "integer"
+          },
+          "stems_no_source": {
+            "title": "Stems No Source",
+            "type": "integer"
+          },
+          "stems_unclassified": {
+            "title": "Stems Unclassified",
+            "type": "integer"
+          },
+          "steps_enabled": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Steps Enabled",
+            "type": "object"
           },
           "stop_requested": {
             "title": "Stop Requested",
@@ -6737,6 +6859,7 @@
         "required": [
           "state",
           "enabled",
+          "steps_enabled",
           "stop_requested",
           "reason",
           "pending",
@@ -6744,6 +6867,14 @@
           "waiting_on_stems",
           "stems_needing_farm",
           "stems_needing_farm_count",
+          "stems_in_cloud",
+          "stems_no_source",
+          "stems_index_state",
+          "stems_index_reason",
+          "stems_unclassified",
+          "cloud_vocals",
+          "stems_check",
+          "memory_pressure",
           "unavailable_steps",
           "farm_only_stages",
           "farm_only_pending",
@@ -12768,6 +12899,110 @@
           "tracks_updated"
         ],
         "title": "MyTagSweepOut",
+        "type": "object"
+      },
+      "NoSourceClearOut": {
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          },
+          "keep_pending": {
+            "title": "Keep Pending",
+            "type": "boolean"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "cleared",
+          "keep_pending"
+        ],
+        "title": "NoSourceClearOut",
+        "type": "object"
+      },
+      "NoSourceListOut": {
+        "properties": {
+          "keep_pending": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keep Pending",
+            "type": "array"
+          },
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/NoSourceMarkOut"
+            },
+            "title": "Marks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "marks",
+          "keep_pending"
+        ],
+        "title": "NoSourceListOut",
+        "type": "object"
+      },
+      "NoSourceMarkIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "reason"
+        ],
+        "title": "NoSourceMarkIn",
+        "type": "object"
+      },
+      "NoSourceMarkOut": {
+        "properties": {
+          "applies": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "recorded_at": {
+            "title": "Recorded At",
+            "type": "number"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "reason",
+          "recorded_at",
+          "applies"
+        ],
+        "title": "NoSourceMarkOut",
         "type": "object"
       },
       "NodePatch": {
@@ -19095,6 +19330,15 @@
           "upload_queue_count": {
             "title": "Upload Queue Count",
             "type": "integer"
+          },
+          "would_evict_bytes": {
+            "title": "Would Evict Bytes",
+            "type": "integer"
+          },
+          "would_evict_count": {
+            "description": "Least-recently-used bundles that reaching the floor would remove; each stays in R2 and is fetched back on demand",
+            "title": "Would Evict Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -19110,6 +19354,8 @@
           "bundle_count",
           "evictable_bundle_count",
           "evictable_bytes",
+          "would_evict_count",
+          "would_evict_bytes",
           "local_only_count",
           "local_only_bytes",
           "local_only_stable_ids",
@@ -28429,6 +28675,108 @@
           }
         },
         "summary": "Drain Stop",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-outcomes/stems/no-source": {
+      "get": {
+        "operationId": "list_stems_no_source_api_v1_coverage_outcomes_stems_no_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoSourceListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Stems No Source",
+        "tags": [
+          "coverage-drain"
+        ]
+      },
+      "post": {
+        "operationId": "mark_stems_no_source_api_v1_coverage_outcomes_stems_no_source_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoSourceMarkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoSourceMarkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Stems No Source",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-outcomes/stems/no-source/{stable_id}": {
+      "delete": {
+        "operationId": "clear_stems_no_source_api_v1_coverage_outcomes_stems_no_source__stable_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoSourceClearOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Stems No Source",
         "tags": [
           "coverage-drain"
         ]
