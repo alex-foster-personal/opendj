@@ -145,6 +145,43 @@ def test_missing_ffprobe_is_unknown_and_named(tmp_path: Path, monkeypatch: pytes
     assert st.classify(audio, None) is None
 
 
+def _ffprobe_that_fails_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str) -> None:
+    """Put an executable named ffprobe first on PATH that exits 1 after printing
+    `line` on stderr, with `{path}` replaced by its last argument."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    script = bin_dir / "ffprobe"
+    template = line.replace("{path}", "${path}")
+    script.write_text(f'#!/bin/sh\nfor path; do :; done\necho "{template}" >&2\nexit 1\n')
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+
+def test_an_older_ffprobe_invalid_argument_for_the_file_is_damage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ffprobe before FFmpeg 7 names a frameless file `<path>: Invalid argument`."""
+    damaged = tmp_path / "damaged.mp3"
+    damaged.write_bytes(b"\x00" * 4096)
+    _ffprobe_that_fails_with(tmp_path, monkeypatch, "{path}: Invalid argument")
+    assert st.probe(damaged) == st.Probe("no_duration", detail="ffprobe: invalid data")
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["{path}: Permission denied", "{path}: Input/output error", "Invalid argument"],
+)
+def test_any_other_ffprobe_failure_stays_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str
+) -> None:
+    """Overshoot control: only the demuxer's own rejection of this file is damage."""
+    damaged = tmp_path / "damaged.mp3"
+    damaged.write_bytes(b"\x00" * 4096)
+    _ffprobe_that_fails_with(tmp_path, monkeypatch, line)
+    result = st.probe(damaged)
+    assert result.kind == "unknown" and "ffprobe exited 1" in str(result.detail)
+
+
 # --- the drain-driven check -------------------------------------------------------
 
 

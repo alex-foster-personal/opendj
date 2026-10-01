@@ -70,6 +70,10 @@ KEEP_PENDING_FILENAME: str = "coverage-stems-keep-pending.json"
 KEEP_PENDING_SCHEMA: int = 1
 FFPROBE_TIMEOUT_S: float = 20.0
 FFPROBE_INVALID_DATA: str = "Invalid data found when processing input"
+# ffprobe before FFmpeg 7 reports a file its demuxer finds no frame in as
+# "<path>: Invalid argument" (measured on the Linux runners, Thu 1 Oct 2026);
+# newer builds say FFPROBE_INVALID_DATA for the same file.
+FFPROBE_INVALID_ARGUMENT: str = "Invalid argument"
 AUTO_PREFIX: str = "auto"
 MANUAL_PREFIX: str = "manual"
 STEP: str = "stems"
@@ -124,9 +128,15 @@ def probe(audio_path: Path) -> Probe:
     except subprocess.TimeoutExpired:
         return Probe("unknown", detail=f"ffprobe timed out after {FFPROBE_TIMEOUT_S:.0f} s")
     if completed.returncode != 0:
-        if FFPROBE_INVALID_DATA in completed.stderr:
-            return Probe("no_duration", detail="ffprobe: invalid data")
         tail = completed.stderr.strip().splitlines()[-1:] or ["no message"]
+        # The file opened above, so the exact "<path>: Invalid argument" line is
+        # the demuxer rejecting its content, not a path that cannot be reached.
+        rejected_by_demuxer = (
+            FFPROBE_INVALID_DATA in completed.stderr
+            or tail[0] == f"{audio_path}: {FFPROBE_INVALID_ARGUMENT}"
+        )
+        if rejected_by_demuxer:
+            return Probe("no_duration", detail="ffprobe: invalid data")
         return Probe("unknown", detail=f"ffprobe exited {completed.returncode}: {tail[0]}")
     raw = json.loads(completed.stdout).get("format", {}).get("duration")
     try:
