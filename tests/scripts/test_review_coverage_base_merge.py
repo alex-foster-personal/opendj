@@ -299,7 +299,7 @@ def test_hand_edit_restored_by_a_later_merge_does_not_carry(repo: Path, reviewed
 
 @pytest.mark.requirement("REVIEW-16")
 def test_two_clean_base_merges_carry(repo: Path, reviewed: str) -> None:
-    """[if] two consecutive clean merges of unrelated main changes read MISS [then broken]."""
+    """[if] two consecutive clean merges bring in only unrelated main changes [then] coverage carries, [else stop]."""
     advance_main(repo, OTHER, "other v2\n")
     merge_main(repo)
     advance_main(repo, OTHER, "other v3\n")
