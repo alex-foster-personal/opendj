@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict
 from apps.shared.paths import DATA_DIR
 from apps.shared.state import db as state_db
 from apps.sync_hub import client as sync_client
+from apps.sync_hub import config as sync_config
 from apps.sync_hub import maintenance as sync_maintenance
 from apps.sync_hub import status as sync_status
 
@@ -156,10 +157,12 @@ class FeedbackStore:
     feedback_root: Path
     data_dir: Path
     state_db_path: Path
-    #: The CloudSync machine name, from the engine's own published hostname
-    #: (``MUSIC_DJ_HOSTNAME`` else the OS hostname). Passed explicitly because
-    #: ``machines.name`` is UNIQUE on the hub: two engines on one host with two
-    #: data dirs need two names, and the hub refuses a duplicate loudly.
+    #: The CloudSync machine name: the one saved in this data dir's
+    #: ``cloudsync-config.json`` (what the scheduler and Sync now register
+    #: under), and only when none is saved the engine's own published hostname
+    #: (``MUSIC_DJ_HOSTNAME`` else the OS hostname). ``machines.name`` is
+    #: UNIQUE: two data dirs on one host need two names, and the hostname may
+    #: already belong to another machine id in a pulled ``machines`` table.
     machine_name: str
 
 
@@ -183,11 +186,15 @@ def store_for_app(app: FastAPI) -> FeedbackStore:
             f"{state_db_path}; both must share one data dir "
             f"(<data-dir>/feedback and <data-dir>/state/state.db)",
         )
+    try:
+        configured_name = sync_config.configured_machine_name(data_dir)
+    except sync_config.CloudSyncConfigError as exc:
+        raise FeedbackSyncError(500, "CLOUDSYNC_CONFIG_INVALID", str(exc)) from exc
     return FeedbackStore(
         feedback_root=feedback_data_dir / "feedback",
         data_dir=data_dir,
         state_db_path=state_db_path,
-        machine_name=str(app.state.hostname),
+        machine_name=configured_name if configured_name is not None else str(app.state.hostname),
     )
 
 
