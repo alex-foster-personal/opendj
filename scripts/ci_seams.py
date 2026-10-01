@@ -189,6 +189,7 @@ class SeamTraffic:
     prs: int
     code_prs: int
     crossing_prs: int
+    ledger_crossings: int
     touched: dict[str, int] = field(default_factory=dict)
     alone: dict[str, int] = field(default_factory=dict)
 
@@ -244,24 +245,33 @@ def plan_seams(event_name: str, head_ref: str, changed_files: Sequence[str]) -> 
 # ----- traffic ----------------------------------------------------------------
 
 
-def seam_traffic(prs: Iterable[Mapping[str, object]]) -> SeamTraffic:
-    """Crossing rate over merged PRs; raises on any unclassified path."""
-    rows = list(prs)
-    unclassified = sorted(
-        {str(path) for pr in rows for path in pr["files"] if classify(str(path)) is Kind.UNCLASSIFIED}  # type: ignore[union-attr]
-    )
+def _seams_of(kinds: Iterable[Kind]) -> frozenset[str]:
+    return frozenset().union(*(_SELECTS.get(kind, frozenset()) for kind in kinds))
+
+
+def seam_traffic(pr_files: Iterable[Sequence[str]]) -> SeamTraffic:
+    """Crossing rate over merged PRs, one changed-file list each; raises on any unclassified
+    path rather than quoting a rate over a corpus it cannot fully read."""
+    rows = list(pr_files)
+    unclassified = sorted({path for files in rows for path in files if classify(path) is Kind.UNCLASSIFIED})
     if unclassified:
         raise ValueError(f"{len(unclassified)} unclassified path(s): {_listed(unclassified)}")
-    touched_sets = [
-        frozenset().union(*(_SELECTS.get(classify(str(path)), frozenset()) for path in pr["files"]))  # type: ignore[union-attr]
-        for pr in rows
-    ]
+    kind_sets = [{classify(path) for path in files} for files in rows]
+    touched_sets = [_seams_of(kinds) for kinds in kind_sets]
     code = [seams for seams in touched_sets if seams]
+    # A crossing that exists only because the ledger selects python: under a repository
+    # split it is still a two-repository change, so it counts, but it is reported apart.
+    ledger_crossings = sum(
+        1
+        for kinds, seams in zip(kind_sets, touched_sets, strict=True)
+        if len(seams) > 1 and len(_seams_of(kinds - {Kind.LEDGER})) < len(seams)
+    )
     order = sorted(ALL_SEAMS)
     return SeamTraffic(
         prs=len(rows),
         code_prs=len(code),
         crossing_prs=sum(1 for seams in code if len(seams) > 1),
+        ledger_crossings=ledger_crossings,
         touched={seam: sum(1 for seams in code if seam in seams) for seam in order},
         alone={seam: sum(1 for seams in code if seams == {seam}) for seam in order},
     )
@@ -288,7 +298,8 @@ def _run_shadow() -> int:
 
 def _run_baseline(corpus: Path) -> int:
     try:
-        traffic = seam_traffic(json.loads(corpus.read_text(encoding="utf-8")))
+        prs = json.loads(corpus.read_text(encoding="utf-8"))
+        traffic = seam_traffic([pr["files"] for pr in prs])
     except ValueError as exc:
         print(f"UNKNOWN: {exc}")
         return UNKNOWN_EXIT
@@ -298,6 +309,7 @@ def _run_baseline(corpus: Path) -> int:
     rate = traffic.crossing_prs / traffic.code_prs
     print(f"denominator: {traffic.prs} PRs, {traffic.code_prs} touch a code seam")
     print(f"crossing: {traffic.crossing_prs} of {traffic.code_prs} code PRs ({rate:.1%})")
+    print(f"  of which {traffic.ledger_crossings} cross only through the requirements ledger")
     for seam in sorted(ALL_SEAMS):
         print(f"  {seam:8} touched by {traffic.touched[seam]:4}, alone in {traffic.alone[seam]:4}")
     return 0
