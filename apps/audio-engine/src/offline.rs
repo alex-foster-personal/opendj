@@ -977,7 +977,8 @@ mod tests {
         // including one held through a slow decode, while holding the map.
         // It skips any entry a load holds a clone of, which is the only way
         // an entry is ever locked, so another file's load goes ahead.
-        let d = std::env::temp_dir().join(format!("odj-cache-independent-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-independent-").tempdir().unwrap();
+        let d = tmp.path().to_path_buf();
         std::fs::create_dir_all(&d).unwrap();
         let write = |name: &str| {
             let p = d.join(name);
@@ -1019,7 +1020,6 @@ mod tests {
         cache.load(&a, &spec).unwrap();
         assert_eq!(cache.files.lock().unwrap().len(), 2, "a file a deck holds was forgotten");
         drop(held_b);
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[cfg(unix)]
@@ -1046,7 +1046,8 @@ mod tests {
                 point(p, "b.wav");
             }
         }
-        let d = std::env::temp_dir().join(format!("odj-cache-swap-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-swap-").tempdir().unwrap();
+        let d = tmp.path().to_path_buf();
         std::fs::create_dir_all(&d).unwrap();
         write(&d.join("a.wav"), 0.25);
         write(&d.join("b.wav"), 0.5);
@@ -1071,7 +1072,6 @@ mod tests {
             assert!(Arc::ptr_eq(&first.pcm, &a.pcm), "{name}: a.wav was decoded again");
             assert_eq!(load("cur.wav").pcm[0], 0.5, "{name}: the repointed path was handed the old samples");
         }
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -1079,7 +1079,8 @@ mod tests {
         // A second load of one file shares the first one's samples; it must
         // share what they were read from too, or a caller asking the track
         // it was handed would find nothing read.
-        let d = std::env::temp_dir().join(format!("odj-cache-source-{}", std::process::id()));
+        let tmp = tempfile::Builder::new().prefix("odj-audio-test-cache-source-").tempdir().unwrap();
+        let d = tmp.path().to_path_buf();
         std::fs::create_dir_all(&d).unwrap();
         let p = d.join("a.wav");
         let mut f = std::io::BufWriter::new(std::fs::File::create(&p).unwrap());
@@ -1096,7 +1097,6 @@ mod tests {
         let (first, second) = (load(&spec, u64::MAX).unwrap(), load(&spec, u64::MAX).unwrap());
         assert!(Arc::ptr_eq(&first.pcm, &second.pcm), "the second load was not a cache hit");
         assert_eq!((first.source.as_ref(), second.source.as_ref()), (Some(&id), Some(&id)));
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

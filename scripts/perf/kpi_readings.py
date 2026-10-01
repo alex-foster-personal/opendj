@@ -57,7 +57,10 @@ def newest_reading(entries: list[dict], kpi: str) -> Reading:
     matches = [e for e in entries if e.get("kpi") == kpi]
     if not matches:
         return Reading(kpi, None, "", None, None, superseded=False)
-    matches.sort(key=lambda e: str(e.get("date") or ""))
+    # Same-date rows by capture time, not append order (Codex, PR #4474,
+    # P2/BLOCKING): hosts publish through one branch, so append order is
+    # publish order. Rows without `captured_at` sort first, in append order.
+    matches.sort(key=lambda e: (str(e.get("date") or ""), str(e.get("captured_at") or "")))
     newest = matches[-1]
     superseded = SUPERSEDED in str(newest.get("note", ""))
     live = [e for e in matches if SUPERSEDED not in str(e.get("note", ""))]

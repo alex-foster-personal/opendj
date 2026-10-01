@@ -111,9 +111,13 @@ class CFG:
     #: Substrings in codex output that mean THIS seat is spent. Failing over
     #: on these is safe; failing over on any other error would hide a real bug.
     SPENT_MARKERS: tuple[str, ...] = ("hit your usage limit", "usage limit reached")
-    #: Diff bytes handed to the model. A truncated diff is stated in the
-    #: review body rather than quietly reviewed as if complete.
-    MAX_DIFF_BYTES: int = 320_000
+    #: Diff bytes handed to the model; over this the run refuses (see `run`).
+    #: Measured Wed 30 Sep 2026: PR #4240's 519,631-byte reviewable diff took
+    #: 159,969 tokens and 69 s on gpt-5.6 through a Pro seat, about 3.3 bytes
+    #: per token, so 640 KB stays near 200K tokens. The old 320 KB cap refused
+    #: every PR carrying a large recorded fixture or register migration, which
+    #: left the Codex GitHub app as the only reviewer for them.
+    MAX_DIFF_BYTES: int = 640_000
     #: Findings posted per run. A reviewer that opens 60 threads is not read.
     MAX_FINDINGS: int = 12
     #: Seconds for one codex run. Generous: a large diff at high reasoning
@@ -227,8 +231,27 @@ def _seat_error_location(seat: str, returncode: int) -> str:
 
 
 def _seat_is_spent(output: str) -> bool:
-    lowered = output.lower()
+    """A wall is codex's own `ERROR:` line, never text the prompt echoes back.
+
+    codex echoes the whole prompt to stderr, diff included. Scanning all of it
+    read a diff context line quoting `SPENT_MARKERS` as a refusal and threw
+    away every review of PR #4544, a run that exited 0 with a parsed result
+    (Thu 1 Oct 2026). Diff lines always start with `+`, `-`, ` ` or `@@`, so
+    a line-start `ERROR:` is codex speaking. Same class as the Claude lane's
+    #1394 fix, which never reached this lane."""
+    lowered = _codex_errors(output).lower()
     return any(m in lowered for m in CFG.SPENT_MARKERS)
+
+
+def _codex_errors(output: str) -> str:
+    """codex's own `ERROR:` lines: the only text that may describe a refusal."""
+    return "\n".join(line for line in output.splitlines() if line.startswith("ERROR:"))
+
+
+def reported_tokens(output: str) -> str:
+    """codex's own token count. It prints it AFTER echoing the prompt, so a diff
+    quoting a count matches first; the last match is codex's."""
+    return (_TOKENS_LINE.findall(output) or ["unknown"])[-1]
 
 
 def seat_wall_report(seat: str, output: str) -> str:
@@ -252,7 +275,7 @@ def seat_wall_report(seat: str, output: str) -> str:
     conclusion to hand a merge lane. The reset time, when codex names one, is
     passed through verbatim rather than paraphrased.
     """
-    when = first_group(_RESET_AT, output).strip().strip('".')
+    when = first_group(_RESET_AT, _codex_errors(output)).strip().strip('".')
     reset = f" Codex names a reset at {when}." if when != "unknown" else ""
     return (
         f"seat {seat} refused this request with a usage limit.{reset} That refusal is "
@@ -383,7 +406,7 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
     )
     output, used, model = review_with_codex(prompt, seat)
     findings = parse_findings(output, run_id, SOL_FENCE, CFG.MAX_FINDINGS)
-    tokens = first_group(_TOKENS_LINE, output)
+    tokens = reported_tokens(output)
     print(f"[sol-review] seat={used} model={model} tokens={tokens} findings={len(findings)}")
     for finding in findings:
         anchor = f"{finding.path}:{finding.line}" if finding.line else finding.path

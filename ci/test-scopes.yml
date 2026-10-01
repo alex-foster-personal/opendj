@@ -39,6 +39,9 @@ full_triggers:
   - "reqs.json"
   - ".mergify.yml"
   - "ci/**"
+  # The perf KPI ledger, cards and map, re-included by `ci.yml` for the same reason: suites
+  # in perf, webui and lyrics read the real files (PR #4473, Wed 30 Sep 2026).
+  - "docs/perf/*.json"
 
 # Scopes a GLOBAL pytest helper (a conftest, or a support module matched by `always`)
 # imports or mentions. Such a helper is loaded by suites across the whole tree, so a
