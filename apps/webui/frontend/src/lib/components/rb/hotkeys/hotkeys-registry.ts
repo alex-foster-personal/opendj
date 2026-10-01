@@ -11,7 +11,7 @@
  * conditionals. Rewiring every handler to import its keys from this module
  * would be an invasive refactor of working, tested code -- including
  * state-machine-shaped modules (technically-working-hotkeys.ts,
- * performance-hotkeys.ts) whose "key" is not a single literal (cmd+R is
+ * performance-hotkeys.ts) whose "key" is not a single literal (Ctrl+R is
  * press=toggle AND hold=peek; Opt is hold-only; Space is latency-stamped).
  *
  * Split that this module actually lands:
@@ -25,7 +25,7 @@
  *   DISPLAY-ONLY TRANSCRIPTION (handler logic stays put):
  *     - performance-hotkeys.ts (Space, Tab, +/-, ), m) -- transport/loop/pin
  *       state machine, latency-stamped Space, loop-target tracking.
- *     - technically-working-hotkeys.ts (Cmd+R, Opt, Cmd+E) -- hold-vs-press
+ *     - technically-working-hotkeys.ts (Ctrl+R, Opt, Cmd+E) -- hold-vs-press
  *       plus pointer-edge hover, routed through performance IPC.
  *     - playlist-history-hotkeys.ts (Cmd+Z / Cmd+Shift+Z) -- shift-gated undo
  *       vs redo on one key, dispatched through performance IPC.
@@ -137,7 +137,7 @@ export const HOTKEY_REGISTRY: readonly HotkeyEntry[] = [
 	},
 	{
 		id: 'tech-mode-r',
-		chord: 'Cmd+R',
+		chord: 'Ctrl+R',
 		description: 'Technically-working mode: press toggles overlay mode, hold peeks the full UI',
 		group: 'Technically-working'
 	},
