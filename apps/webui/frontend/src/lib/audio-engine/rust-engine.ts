@@ -24,7 +24,14 @@ import {
 } from './client';
 import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToast } from './rust-link';
 import { PAGE_DECIDED, rustMode } from './rust-mode.svelte';
-import { cancelArmedJump, decideOnPage, electIfAuto, rustHotCueDriver, rustMaster } from './rust-transport';
+import {
+	cancelArmedJump,
+	decideOnPage,
+	electIfAuto,
+	phaseLockTick,
+	rustHotCueDriver,
+	rustMaster
+} from './rust-transport';
 
 let rafId: number | null = null;
 let connecting: Promise<AudioEngineClient> | null = null;
@@ -291,6 +298,8 @@ export function mirrorEngineState(s: EngineState): void {
 		if (!d.playing) st.position_ms = d.position_ms;
 	}
 	if (masterStopped) electIfAuto();
+	// Each frame is a fresh playhead for both decks: keep followers on phase.
+	phaseLockTick();
 }
 
 function _startRaf(): void {
