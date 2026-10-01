@@ -27,9 +27,17 @@
  *   ✔︎ 🎯 beginFolderImport() posts every validated non-empty folder row, not
  *     only the first.
  *     [if] two importable rows exist [then] folders[] has both [else ⛔️] broken
+ *   ✔︎ 🎯 finish() re-reads preflight after the dismissal, so the root layout's
+ *     empty-library gate judges the library as it is now, not as it was at boot.
+ *     [if] the boot reading said library-attached 'fail' and the import has
+ *     since run [then] the gate no longer asks for setup [else ⛔️] broken
+ *     [if] the fresh reading still says 'fail' [then] finish() refuses with
+ *     the engine's detail on `error` [else ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
+import { LIBRARY_ATTACHED_CHECK_ID, needsSetupForEmptyLibrary } from '../preflight/fresh-install';
+import { checkPreflight, preflightGate } from '../preflight/preflight.svelte';
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
@@ -568,6 +576,52 @@ class SetupWizard {
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/**
+	 * Leave the wizard for good: dismiss engine-side, then RE-READ preflight,
+	 * and say it is safe to close only once the engine's current answer agrees
+	 * the library no longer needs setup. Every door that closes the overlay
+	 * (Start playing, Skip for now, Continue without importing) goes through
+	 * here.
+	 *
+	 * WHY THE RE-READ. The root layout re-raises this overlay whenever
+	 * `needsSetupForEmptyLibrary(preflightGate.checks, open)` holds, and
+	 * preflightGate is polled only while the boot gate is mounted, which it
+	 * never is while setup is open. So the checks it held were the BOOT
+	 * reading, taken over an empty library, and closing after a successful
+	 * import made that effect raise the overlay again in the same tick.
+	 * "Start playing" looked dead: the packaged preview on demon-llama, Thu 1
+	 * Oct 2026, eleven POST /setup/dismiss all 200 and the wizard never left.
+	 *
+	 * A reading that still asks for setup is put on `error` rather than
+	 * closing into a reopen nobody can see happen.
+	 */
+	async finish(): Promise<boolean> {
+		await this.skip();
+		if (this.error !== null) return false;
+		// Held across the re-read so a second click cannot post a second
+		// dismissal while the first is still being confirmed.
+		this.busy = true;
+		try {
+			await checkPreflight();
+		} finally {
+			this.busy = false;
+		}
+		if (preflightGate.error !== null) {
+			this.error =
+				'setup was saved, but the startup checks could not be re-read ' +
+				`(GET /api/v1/preflight), so setup cannot tell whether to close: ${preflightGate.error}`;
+			return false;
+		}
+		if (needsSetupForEmptyLibrary(preflightGate.checks, false)) {
+			const row = preflightGate.checks.find((check) => check.id === LIBRARY_ATTACHED_CHECK_ID);
+			this.error =
+				'setup was saved, but the engine still reports no library attached ' +
+				`(${row?.detail ?? 'no detail given'}), so closing would only reopen setup`;
+			return false;
+		}
+		return true;
 	}
 
 	/** Re-arm the wizard from settings. The inverse of skip(). */

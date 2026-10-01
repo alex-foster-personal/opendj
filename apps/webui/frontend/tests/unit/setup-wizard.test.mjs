@@ -17,6 +17,8 @@
  *   404 that teaches the user nothing
  * - if the access caveat is dropped then a count taken behind a permission
  *   wall travels without saying so
+ * - if finish() closes on the BOOT preflight reading then the root layout
+ *   re-raises setup the moment it closes and Start playing does nothing
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -168,6 +170,7 @@ after(() => {
 
 beforeEach(() => {
 	wizard._resetForTests();
+	mod._resetPreflightForTests();
 	requests = [];
 });
 
@@ -700,6 +703,115 @@ test('STANDALONE-08: declining clears the source, so every reopen door is neutra
 	assert.equal(wizard.error, null);
 	assert.equal(wizard.status.dismissed, true);
 	assert.equal(wizard.source, null, 'a declined import must not survive as a selection');
+});
+
+// ------------------------------------------------------------- finishing
+
+function preflightCheck(id, checkStatus, detail) {
+	return { id, label: id, status: checkStatus, detail, remediation: null };
+}
+
+/** GET /api/v1/preflight with the two rows the empty-library gate reads. */
+function preflightReading(libraryStatus, libraryDetail) {
+	return {
+		status: 'pass',
+		checks: [
+			preflightCheck('engine-alive', 'pass', 'the endpoint answered'),
+			preflightCheck('library-attached', libraryStatus, libraryDetail)
+		]
+	};
+}
+
+/** Answer successive preflight GETs from `readings`, one each, in order. */
+function preflightSequence(readings) {
+	let index = 0;
+	return () => {
+		const reading = readings[Math.min(index, readings.length - 1)];
+		index += 1;
+		return typeof reading === 'number'
+			? jsonResponse({ detail: 'preflight exploded' }, reading)
+			: jsonResponse(reading);
+	};
+}
+
+function requestLine(request) {
+	return `${request.method} ${new URL(request.url).pathname}`;
+}
+
+test('finish re-reads preflight, so the boot reading cannot re-raise setup after an import', async () => {
+	// demon-llama, Thu 1 Oct 2026: 1274 tracks imported, eleven dismissals
+	// all 200, and the overlay never left, because the root layout's gate was
+	// still judging the empty library it saw at boot.
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([
+			preflightReading('fail', '0 tracks in the library'),
+			preflightReading('pass', '1274 tracks')
+		]),
+		'/api/v1/setup/dismiss': status({ dismissed: true, library_empty: false, tracks: 1274 })
+	});
+	await mod.checkPreflight();
+	assert.equal(
+		mod.needsSetupForEmptyLibrary(mod.preflightGate.checks, false),
+		true,
+		'precondition: the boot reading asks for setup'
+	);
+	requests = [];
+
+	const closable = await wizard.finish();
+
+	assert.equal(wizard.error, null);
+	assert.equal(closable, true);
+	assert.deepEqual(requests.map(requestLine), [
+		'POST /api/v1/setup/dismiss',
+		'GET /api/v1/preflight'
+	]);
+	assert.equal(
+		mod.needsSetupForEmptyLibrary(mod.preflightGate.checks, false),
+		false,
+		'after finish the gate must judge the library as it is now'
+	);
+	assert.equal(wizard.busy, false);
+});
+
+test('finish refuses with the engine detail when preflight still says no library', async () => {
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([
+			preflightReading('fail', 'the setup record at /data/setup.json could not be read')
+		]),
+		'/api/v1/setup/dismiss': status({ dismissed: true })
+	});
+
+	const closable = await wizard.finish();
+
+	assert.equal(closable, false);
+	assert.match(wizard.error, /setup record at \/data\/setup\.json could not be read/);
+	assert.equal(wizard.busy, false);
+});
+
+test('finish refuses, loudly, when preflight cannot be re-read', async () => {
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([500]),
+		'/api/v1/setup/dismiss': status({ dismissed: true })
+	});
+
+	const closable = await wizard.finish();
+
+	assert.equal(closable, false);
+	assert.match(wizard.error, /startup checks could not be re-read/);
+	assert.equal(wizard.busy, false);
+});
+
+test('finish asks preflight nothing when the dismissal itself was refused', async () => {
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([preflightReading('pass', '1274 tracks')]),
+		'/api/v1/setup/dismiss': () => jsonResponse({ detail: 'disk full' }, 500)
+	});
+
+	const closable = await wizard.finish();
+
+	assert.equal(closable, false);
+	assert.notEqual(wizard.error, null);
+	assert.deepEqual(requests.map(requestLine), ['POST /api/v1/setup/dismiss']);
 });
 
 test('reopen re-arms the wizard and returns it to the first step', async () => {
