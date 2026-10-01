@@ -61,3 +61,39 @@ test('IOPIN-06: returning to a bank rearms its old physical control state', () =
 	assert.equal(returned.apply, false, 'bank A must not jump from bank B\'s last physical value');
 	assert.deepEqual(returned.ghost, { value: 0.8, target: 0.2 });
 });
+
+// Review thread on takeover-engine-sync.svelte.ts:67 (PR #3837): the glue
+// acknowledges a hardware value BEFORE its command is dispatched, so a
+// rejected command (a preset lifecycle lock) leaves the engine scalar where it
+// was. The policy must not treat that acknowledged-but-unapplied value as
+// picked up: the next observation carries the unchanged engine value, and that
+// mismatch is what re-arms pickup.
+test('IOPIN-06: an acknowledged value the engine never took is re-armed by the next observation', () => {
+	const policy = new AbsoluteTakeoverPolicy();
+	const engineValue = 0.5;
+	// Picked up at the engine value and applied normally.
+	assert.equal(policy.observeAbsolute({ identity, hardwareValue: 0.5, softwareValue: engineValue }).apply, true);
+	policy.noteHardwareApplied(identity, 0.5);
+	// The fader moves; the glue acknowledges 0.7, then the dispatch is rejected.
+	assert.equal(policy.observeAbsolute({ identity, hardwareValue: 0.7, softwareValue: engineValue }).apply, true);
+	policy.noteHardwareApplied(identity, 0.7);
+	// The engine still reads 0.5. Moving further away must be HELD, with the
+	// ghost naming the engine value, never applied as a jump once the lock lifts.
+	const held = policy.observeAbsolute({ identity, hardwareValue: 0.9, softwareValue: engineValue });
+	assert.deepEqual(held, { apply: false, ghost: { value: 0.9, target: 0.5 } });
+	assert.deepEqual(policy.ghostForFunction('mixer:1:trim'), { value: 0.9, target: 0.5 });
+	// It picks up again only by coming back across the engine value.
+	assert.equal(policy.observeAbsolute({ identity, hardwareValue: 0.45, softwareValue: engineValue }).apply, true);
+});
+
+// The opposite direction: when the dispatch DID land, the engine reads the
+// acknowledged value and the control must keep tracking without a re-pickup.
+test('IOPIN-06: an acknowledged value the engine took keeps tracking', () => {
+	const policy = new AbsoluteTakeoverPolicy();
+	assert.equal(policy.observeAbsolute({ identity, hardwareValue: 0.5, softwareValue: 0.5 }).apply, true);
+	policy.noteHardwareApplied(identity, 0.5);
+	assert.equal(policy.observeAbsolute({ identity, hardwareValue: 0.7, softwareValue: 0.5 }).apply, true);
+	policy.noteHardwareApplied(identity, 0.7);
+	const next = policy.observeAbsolute({ identity, hardwareValue: 0.9, softwareValue: 0.7 });
+	assert.deepEqual(next, { apply: true, ghost: null });
+});

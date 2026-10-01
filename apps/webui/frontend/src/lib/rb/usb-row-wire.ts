@@ -32,7 +32,12 @@ export interface UsbTrackWire {
 	bpm: number | null;
 	duration_s: number | null;
 	rating: number;
+	/** rekordbox's DJ play count, as the export stores it. */
+	play_count: number;
 	file_path: string;
+	/** GET /audio would have served this track when the export was read.
+	 * False is a file missing from a mounted stick, not a pulled stick. */
+	file_present: boolean;
 	has_analysis: boolean;
 	has_artwork: boolean;
 	date_added: string | null;
@@ -111,13 +116,16 @@ export function parseUsbPaneId(paneId: string): UsbPaneRef | null {
 
 // ------------------------------------------------------------------- rows
 
-/** Removed-stick rows gray out and refuse loads (TrackTable's `broken`). */
+/** Removed-stick rows and rows whose file is missing from a mounted stick
+ * both gray out and refuse loads (TrackTable's `broken`). A pulled stick
+ * outranks the per-file flag: its rows wait for the volume to come back. */
 export function usbAvailability(
-	present: boolean
+	stickPresent: boolean,
+	filePresent: boolean
 ): Pick<BrowserRow, 'file_exists' | 'file_availability'> {
-	return present
-		? { file_exists: true, file_availability: 'present' }
-		: { file_exists: false, file_availability: 'awaiting_volume' };
+	if (!stickPresent) return { file_exists: false, file_availability: 'awaiting_volume' };
+	else if (!filePresent) return { file_exists: false, file_availability: 'absent' };
+	return { file_exists: true, file_availability: 'present' };
 }
 
 /** One stick track as a browser row. `order` is the 1-based position in the
@@ -151,9 +159,9 @@ export function rowFromUsbTrack(
 		duration_ms: track.duration_s === null ? null : Math.round(track.duration_s * 1000),
 		genre: track.genre,
 		genre_reason: track.genre === null ? 'no genre in the stick export' : null,
-		...usbAvailability(volume.present),
+		...usbAvailability(volume.present, track.file_present),
 		quality: null,
-		play_count: 0,
+		play_count: track.play_count,
 		is_streaming: false,
 		is_remote: false,
 		has_remote_copy: false,
@@ -174,10 +182,12 @@ export function rowFromUsbTrack(
 	};
 }
 
-/** The same rows with the stick's presence flipped (USBPLAY-09): unplugging
- * grays them in place, so the pane keeps its rows, order and selection. */
-export function withUsbPresence(rows: readonly BrowserRow[], present: boolean): BrowserRow[] {
-	const availability = usbAvailability(present);
+/** The same rows for a stick that was unplugged (USBPLAY-09): they gray in
+ * place, so the pane keeps its rows, order and selection. One way only: a
+ * stick that comes back is re-read, because a row cannot say which of its
+ * files were missing before it was pulled. */
+export function withUsbStickRemoved(rows: readonly BrowserRow[]): BrowserRow[] {
+	const availability = usbAvailability(false, false);
 	return rows.map((row) => ({ ...row, ...availability }));
 }
 
@@ -396,6 +406,8 @@ function _track(raw: unknown, i: number): UsbTrackWire {
 	const o = _obj(raw, where);
 	const rating = _num(o, 'rating', where);
 	if (!Number.isInteger(rating) || rating < 0 || rating > 5) _fail(`${where}.rating ${rating} is not 0-5`);
+	const playCount = _num(o, 'play_count', where);
+	if (!Number.isInteger(playCount) || playCount < 0) _fail(`${where}.play_count ${playCount} is not a count`);
 	return {
 		id: _str(o, 'id', where),
 		pdb_id: _num(o, 'pdb_id', where),
@@ -407,7 +419,9 @@ function _track(raw: unknown, i: number): UsbTrackWire {
 		bpm: _numOrNull(o, 'bpm', where),
 		duration_s: _numOrNull(o, 'duration_s', where),
 		rating,
+		play_count: playCount,
 		file_path: _str(o, 'file_path', where),
+		file_present: _bool(o, 'file_present', where),
 		has_analysis: _bool(o, 'has_analysis', where),
 		has_artwork: _bool(o, 'has_artwork', where),
 		date_added: _strOrNull(o, 'date_added', where)

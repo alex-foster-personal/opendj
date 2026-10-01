@@ -15831,6 +15831,8 @@ export interface components {
             duration_s: number | null;
             /** File Path */
             file_path: string;
+            /** File Present */
+            file_present: boolean;
             /** Genre */
             genre: string | null;
             /** Has Analysis */
@@ -15843,6 +15845,8 @@ export interface components {
             key: string | null;
             /** Pdb Id */
             pdb_id: number;
+            /** Play Count */
+            play_count: number;
             /** Rating */
             rating: number;
             /** Title */

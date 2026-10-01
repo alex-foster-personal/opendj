@@ -114,8 +114,14 @@ class UsbStickTrackOut(BaseModel):
     bpm: float | None
     duration_s: float | None
     rating: int
+    #: rekordbox's DJ play count, as the pdb stores it.
+    play_count: int
     #: Stick-relative, exactly as the pdb stores it (never trimmed).
     file_path: str
+    #: GET /audio would have served this track when this export.pdb was
+    #: parsed: the file was on the stick, inside it, with an audio extension.
+    #: False is a broken row (deleted, or never copied), not a pulled stick.
+    file_present: bool
     #: The pdb names an ANLZ path; not a stat of the stick.
     has_analysis: bool
     #: Both served artwork sizes (s and _m) were on the stick when this
@@ -315,7 +321,11 @@ def get_usb_stick_library(volume_id: str, request: Request) -> UsbStickLibraryOu
         name=opened.stick.name.strip(),
         mount_path=str(opened.stick.mount),
         tracks=[
-            _track_out(track, has_artwork=track.pdb_id in opened.artwork_available)
+            _track_out(
+                track,
+                has_artwork=track.pdb_id in opened.artwork_available,
+                file_present=track.pdb_id in opened.audio_present,
+            )
             for track in library.tracks
         ],
         playlists=[
@@ -345,7 +355,7 @@ def get_usb_stick_library(volume_id: str, request: Request) -> UsbStickLibraryOu
     )
 
 
-def _track_out(track: StickTrack, *, has_artwork: bool) -> UsbStickTrackOut:
+def _track_out(track: StickTrack, *, has_artwork: bool, file_present: bool) -> UsbStickTrackOut:
     return UsbStickTrackOut(
         id=track.id,
         pdb_id=track.pdb_id,
@@ -357,7 +367,9 @@ def _track_out(track: StickTrack, *, has_artwork: bool) -> UsbStickTrackOut:
         bpm=track.bpm,
         duration_s=track.duration_s,
         rating=track.rating,
+        play_count=track.play_count,
         file_path=track.file_path,
+        file_present=file_present,
         has_analysis=track.has_analysis,
         has_artwork=has_artwork,
         date_added=track.date_added,

@@ -24693,6 +24693,10 @@
             "title": "File Path",
             "type": "string"
           },
+          "file_present": {
+            "title": "File Present",
+            "type": "boolean"
+          },
           "genre": {
             "anyOf": [
               {
@@ -24731,6 +24735,10 @@
             "title": "Pdb Id",
             "type": "integer"
           },
+          "play_count": {
+            "title": "Play Count",
+            "type": "integer"
+          },
           "rating": {
             "title": "Rating",
             "type": "integer"
@@ -24751,7 +24759,9 @@
           "bpm",
           "duration_s",
           "rating",
+          "play_count",
           "file_path",
+          "file_present",
           "has_analysis",
           "has_artwork",
           "date_added"

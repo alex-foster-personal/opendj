@@ -1,4 +1,19 @@
-// requirement: IOPIN-12
+// wiring checks for: IOPIN-12 (NOT acceptance evidence)
+// The redirect and native-shell MIDI boot groups build no audio graph: they
+// test URL and subscription logic directly and are unaffected by this note.
+//
+// Every case below that builds an audio graph (the fallback, failed-build,
+// output-selection and ui-mirror groups) runs against the recording
+// stand-in in fixtures/fake-web-audio.mjs, with a stubbed daemon and a stubbed
+// stretch processor. It records which calls the engine makes and what it does
+// when a build is made to throw. It executes no browser audio, so a green run
+// here does not show that a real AudioContext, worklet, decoder or output
+// topology works. The acceptance evidence for IOPIN-12 is the real-browser
+// pair tests/e2e/iopin-12-real-audio.spec.ts (djio on the real output, the
+// output-stall rebuild under a playing deck) and
+// tests/e2e/audio-output-topology.spec.ts (master 1/2 and cue 3/4 routing on a
+// real four-channel graph). The claims that still have only these wiring
+// checks are listed in .planning/debt/3837.md.
 //
 // Observed live on the installed Preview build d92bf93f (Fri 25 Sep 2026,
 // 21:27Z): the Mixtour Pro map redirected the page to ?djio=master12-cue34
@@ -99,8 +114,8 @@ function wiredDecks() {
 // the <4-channel path
 //-----------------------------------------------------------------------------
 
-describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 4 channels', () => {
-	test('IOPIN-12: resolveDjOutputProfile falls back below 4 channels and keeps djio at 4 or more', () => {
+describe('IOPIN-12 wiring check: djio degrades to stereo master on an output with fewer than 4 channels', () => {
+	test('IOPIN-12 wiring check: resolveDjOutputProfile falls back below 4 channels and keeps djio at 4 or more', () => {
 		const fallback = topology.resolveDjOutputProfile(DJIO, 2);
 		assert.equal(fallback.requested, DJIO);
 		assert.equal(fallback.profile, null, 'if a 2-channel output keeps the djio profile then the 4-channel wiring throws - broken');
@@ -113,7 +128,7 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 		assert.deepEqual(none, { requested: null, profile: null, fallback: null }, 'no djio request is not a fallback');
 	});
 
-	test('IOPIN-12: a 2-channel output builds a stereo graph with every deck wired and names the fix', async () => {
+	test('IOPIN-12 wiring check: a 2-channel output builds a stereo graph with every deck wired and names the fix', async () => {
 		installWindow(`?djio=${DJIO}`);
 		FakeAudioContext.maxChannelCount = 2;
 		await audio.ensureAudioGraphForCue();
@@ -142,7 +157,7 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 		}, 'agents read the same fallback the I/O panel shows');
 	});
 
-	test('IOPIN-12 control: a 4-channel output still wires master 1/2 and cue 3/4', async () => {
+	test('IOPIN-12 wiring control: a 4-channel output still wires master 1/2 and cue 3/4', async () => {
 		installWindow(`?djio=${DJIO}`);
 		FakeAudioContext.maxChannelCount = 4;
 		await audio.ensureAudioGraphForCue();
@@ -155,7 +170,7 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 		assert.equal(stores.toasts.some((toast) => /Mixtour/.test(toast.message)), false, 'no fallback, no toast');
 	});
 
-	test('IOPIN-12: re-entering djio across rebuilds switches fallback -> djio -> fallback without throwing', async () => {
+	test('IOPIN-12 wiring check: re-entering djio across rebuilds switches fallback -> djio -> fallback without throwing', async () => {
 		installWindow(`?djio=${DJIO}`);
 		for (const [channels, active] of [[2, null], [4, DJIO], [2, null]]) {
 			await audio.engine.dispose();
@@ -170,7 +185,7 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 			'if teardown leaves the fallback status behind then the I/O panel warns about a graph that no longer exists - broken');
 	});
 
-	test('IOPIN-12: repeated fallback builds keep ONE warn toast on screen, counted, and re-raise it once it has expired', async () => {
+	test('IOPIN-12 wiring check: repeated fallback builds keep ONE warn toast on screen, counted, and re-raise it once it has expired', async () => {
 		installWindow(`?djio=${DJIO}`);
 		const fallbackToasts = () => stores.toasts.filter((toast) => toast.kind === 'warn' && /Mixtour 4-channel output unavailable/.test(toast.message));
 		for (let build = 1; build <= 2; build += 1) {
@@ -193,8 +208,8 @@ describe('IOPIN-12: djio degrades to stereo master on an output with fewer than 
 // the dead deck: any failed build must leave the deck recoverable
 //-----------------------------------------------------------------------------
 
-describe('IOPIN-12: a failed graph build never leaves a deck dead', () => {
-	test('IOPIN-12: a throw after deck 1 is published is discarded and the next build wires every deck on a fresh context', async () => {
+describe('IOPIN-12 wiring check: a failed graph build never leaves a deck dead', () => {
+	test('IOPIN-12 wiring check: a throw after deck 1 is published is discarded and the next build wires every deck on a fresh context', async () => {
 		installWindow('');
 		// buildDeckChannelGraph makes 5 biquads per deck (low, mid, high, filterLp,
 		// filterHp) BEFORE it publishes that deck, so biquad 6 is deck 2's first:
@@ -240,7 +255,7 @@ describe('IOPIN-12: a failed graph build never leaves a deck dead', () => {
 		);
 	});
 
-	test('IOPIN-12: the live sequence (throw on the first load, retry on the same deck) leaves deck 2 loadable', async () => {
+	test('IOPIN-12 wiring check: the live sequence (throw on the first load, retry on the same deck) leaves deck 2 loadable', async () => {
 		// The Fri 25 Sep order: the first build throws BEFORE any deck node exists
 		// (there it was the 4-channel check), after the master bus and the headphone
 		// monitor graph were already built on the failed context. The retry must not
@@ -260,7 +275,7 @@ describe('IOPIN-12: a failed graph build never leaves a deck dead', () => {
 // a failed build inside an output selection reports ITS cause
 //-----------------------------------------------------------------------------
 
-describe('IOPIN-12: a graph build that fails inside an output selection reports its real cause', () => {
+describe('IOPIN-12 wiring check: a graph build that fails inside an output selection reports its real cause', () => {
 	const savedNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
 	// The selections build the graph lazily through the engine's monitor source,
 	// inside their own try block. Both triggers below are real URL-borne ones.
@@ -301,7 +316,7 @@ describe('IOPIN-12: a graph build that fails inside an output selection reports 
 	});
 
 	for (const { name, select, search, channels, expected } of cases) {
-		test(`IOPIN-12: ${name} rejects with the build's own error and sets the I/O panel error`, async () => {
+		test(`IOPIN-12 wiring check: ${name} rejects with the build's own error and sets the I/O panel error`, async () => {
 			installWindow(search);
 			FakeAudioContext.maxChannelCount = channels;
 			await assert.rejects(
@@ -327,7 +342,7 @@ describe('IOPIN-12: a graph build that fails inside an output selection reports 
 		});
 	}
 
-	test('IOPIN-12 control: route teardown still retires a selection in flight, so it cannot publish onto the next route', async () => {
+	test('IOPIN-12 wiring control: route teardown still retires a selection in flight, so it cannot publish onto the next route', async () => {
 		// The overshoot of the fix above: a failed build must not retire the
 		// selection it runs in, but teardown still must, or a sink call that
 		// lands after the route is gone publishes onto whatever mounts next.
@@ -576,7 +591,7 @@ describe('IOPIN-12: the native-shell MIDI boot redirects once and never subscrib
 // the I/O panel and agent parity surfaces
 //-----------------------------------------------------------------------------
 
-describe('IOPIN-12: the fallback is visible in the I/O panel and to agents', () => {
+describe('IOPIN-12 wiring check: the fallback is visible in the I/O panel and to agents', () => {
 	// The real HeadphoneCluster, compiled for the server and rendered by
 	// svelte's own renderer (see load-svelte-ssr.mjs for what that can and
 	// cannot prove). Its own bundle, so it reads its own status store.
@@ -611,7 +626,7 @@ describe('IOPIN-12: the fallback is visible in the I/O panel and to agents', () 
 		}
 	}
 
-	test('IOPIN-12: the open I/O panel renders the fallback inline, with a hover title for its channel count', () => {
+	test('IOPIN-12 wiring check: the open I/O panel renders the fallback inline, with a hover title for its channel count', () => {
 		const html = renderIoPanel(panel.resolveDjOutputProfile(DJIO, 2).fallback);
 		const notice = html.match(/<p\b[^>]*\bdata-djio-fallback-notice\b[^>]*>([^<]*)<\/p>/);
 		assert.ok(notice, `if the notice does not render then the I/O panel never says why cue 3/4 is silent - broken; rendered: ${html.slice(0, 400)}`);
@@ -620,13 +635,13 @@ describe('IOPIN-12: the fallback is visible in the I/O panel and to agents', () 
 		assert.match(notice[0], /title="2 = output channels the current macOS output device exposes/, 'numeric readouts carry a hover title');
 	});
 
-	test('IOPIN-12 control: with no fallback the open I/O panel renders no notice at all', () => {
+	test('IOPIN-12 wiring control: with no fallback the open I/O panel renders no notice at all', () => {
 		const html = renderIoPanel(null);
 		assert.match(html, /hp-context/, 'precondition: the open I/O section did render');
 		assert.equal(html.includes('data-djio-fallback-notice'), false, 'if the notice renders without a fallback then a healthy 4-channel set carries a false warning - broken');
 	});
 
-	test('IOPIN-12: the ui-mirror an agent reads carries the same fallback after a 2-channel build', async () => {
+	test('IOPIN-12 wiring check: the ui-mirror an agent reads carries the same fallback after a 2-channel build', async () => {
 		installWindow(`?djio=${DJIO}`);
 		FakeAudioContext.maxChannelCount = 2;
 		await audio.ensureAudioGraphForCue();

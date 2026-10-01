@@ -745,6 +745,13 @@ jobs:
         # the full grid stays skipped: the grid is a quality sweep, not a gate.
         run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
+      - name: Hermetic gate - master12-cue34 output topology
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        # No webServer, no port, no data dir: the djio graph is rendered by a
+        # real four-channel OfflineAudioContext and the samples are read back.
+        run: pnpm exec playwright test --config tests/e2e/playwright.audio-output-topology.config.ts --output test-results/audio-output-topology
+
       # -- Comment-hotkey gate, real backend + fixture library ---------------
       # NOT hermetic like the two steps above: this suite needs a real
       # backend and a real (throwaway, generated-audio) fixture library --
@@ -820,6 +827,30 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" library-jobs \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8704 5277 -- \
             pnpm exec playwright test --config tests/e2e/playwright.library-jobs.config.ts --output test-results/library-jobs
+
+      # -- Onboarding: the boot gate and a new user's first run (SETUP-25) ------
+      # Both suites existed and NO workflow ran them: fresh-install-onboarding
+      # (#2722's auto-open regression) and preflight-gate (PREFLIGHT-01) sat
+      # behind a config only a human ever invoked, and two of their assertions
+      # rotted unseen. Shares 5321/8696 with the comment-hotkey gate, so it
+      # holds THAT lock name: one port, one lock (see the fixed-port lock test).
+      - name: Preflight boot gate + fresh-install onboarding (real backends)
+        working-directory: apps/webui/frontend
+        if: ${{ !cancelled() }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" comment-hotkey-gate \
+            "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 5321 5323 8696 8697 -- \
+            pnpm exec playwright test --config tests/e2e/playwright.preflight-gate.config.ts --output test-results/preflight-gate
+
+      # The onboarding gauntlet (SETUP-21..23, specs/onboarding-gauntlet.md):
+      # every test boots its own brand-new PACKAGED engine on an OS-assigned
+      # port against the production artifact, so it pins no port and needs no
+      # host lock. Known open bugs (#3422) are test.fail, so a fix flips the
+      # case red until its marker is removed, never silently green.
+      - name: Onboarding gauntlet (packaged engine, production build)
+        working-directory: apps/webui/frontend
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
+        run: pnpm exec playwright test --config tests/e2e/playwright.onboarding.config.ts --output test-results/onboarding-gauntlet
 
       - name: Restore the PulseAudio server (unload our null sink, previous default back)
         # Always, even after a red suite: the server may be the host's shared,

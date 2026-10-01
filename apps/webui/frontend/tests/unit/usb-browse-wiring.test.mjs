@@ -20,6 +20,9 @@
  *   "audio file missing on disk" for a stick that was only pulled
  * - [if] the stick pane branch toasts String(exc) [then] the DJ reads the
  *   error class and code instead of "Stick removed"
+ * - [if] a stick row's context menu offers Add to playlist, Edit, Relocate,
+ *   Re-analyze, stem / lyrics jobs or Remove [then] an enabled item sends a
+ *   usb- id to a library-only API
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -165,4 +168,35 @@ test('every numeric readout in the stick tree carries a hover title', () => {
 	const count = between(tree, 'class="count"', '</span');
 	assert.match(count, /title=\{/);
 	assert.match(count, /tracks in this list on the stick/);
+});
+
+test('a stick row keeps only its deck loads in the context menu; a library row keeps every item', async () => {
+	const menu = await loadTypeScriptModule('src/lib/components/rb/browser/track-context-menu.ts');
+	// The ids TrackContextMenu builds, read from the component so a new item
+	// is classified here the day it is added.
+	const component = source('src/lib/components/rb/browser/TrackContextMenu.svelte');
+	const staticIds = [...component.matchAll(/\bid: '([a-z-]+)'/g)].map((m) => m[1]);
+	assert.ok(staticIds.includes('analyze') && staticIds.includes('copy-path'), `ids read: ${staticIds}`);
+	const items = [
+		...[1, 2, 3, 4].map((deck) => ({ id: `load-${deck}`, run: () => {} })),
+		...['add-playlist', 'remove-library', 'relocate', 'show-in-playlists', ...staticIds].map(
+			(id) => ({ id, run: () => {} })
+		)
+	];
+	const stick = menu.menuItemsForTrack('usb-AAAAAAAA-0000-4000-8000-00000000000A-7', items);
+	assert.deepEqual(
+		stick.map((item) => item.id),
+		['load-1', 'load-2', 'load-3', 'load-4'],
+		'a stick row must offer its deck loads and nothing that reaches a library-only API'
+	);
+	const library = menu.menuItemsForTrack('a'.repeat(40), items);
+	assert.deepEqual(library, items, 'control: a library row keeps its whole menu, in order');
+});
+
+test('TrackContextMenu builds every row menu through the stick filter', () => {
+	const component = source('src/lib/components/rb/browser/TrackContextMenu.svelte');
+	const build = between(component, 'function trackMenuItems(', '</script>');
+	const returns = [...build.matchAll(/^\t\treturn\b/gm)];
+	assert.equal(returns.length, 1, 'one return, so no path can skip the filter');
+	assert.match(build, /return menuItemsForTrack\(row\.stable_id, \[/);
 });

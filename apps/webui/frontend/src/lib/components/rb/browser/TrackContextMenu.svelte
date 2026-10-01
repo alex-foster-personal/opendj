@@ -9,6 +9,7 @@
 	import {
 		COPY_PATH_TITLE,
 		loadDeckTitle,
+		menuItemsForTrack,
 		menuTargetIds,
 		REANALYZE_TITLE,
 		runCopyPaths,
@@ -99,7 +100,7 @@
 		menuY: number
 	): ContextMenuItem[] {
 		const addItem = addToPlaylistMenuItem(targetIds, onaddtoplaylist);
-		return [
+		return menuItemsForTrack(row.stable_id, [
 			...DECKS.map((deck) => ({
 				id: `load-${deck}`,
 				label: `Load to deck ${deck}`,
@@ -152,7 +153,7 @@
 				run: removable ? () => onremoverow?.(row) : undefined
 			},
 			removeFromLibraryMenuItem(targetIds, onremovefromlibrary)
-		];
+		]);
 	}
 </script>
 
