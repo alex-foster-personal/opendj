@@ -41,10 +41,10 @@ test('loading until the first status lands', () => {
 	assert.equal(dot.state, 'loading');
 });
 
-test('a failed fetch is an error, not a stale green', () => {
+test('a failed fetch is grey unknown, not a stale green and not a red verdict', () => {
 	const dot = policy.stemCacheHealthDot(status(), 'engine unreachable');
-	assert.equal(dot.state, 'error');
-	assert.equal(dot.detail, 'engine unreachable');
+	assert.equal(dot.state, 'unavailable');
+	assert.equal(dot.detail, 'unknown - engine unreachable');
 });
 
 test('healthy disk is green and quotes free space against the floor', () => {

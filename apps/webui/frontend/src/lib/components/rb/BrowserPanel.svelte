@@ -11,6 +11,7 @@
 	import { replaceState } from '$app/navigation';
 	import { onMount, tick, untrack } from 'svelte';
 	import { viewportFloatingPopover } from '$lib/ui/clamp-to-viewport';
+	import StemCacheHealthDot from './StemCacheHealthDot.svelte';
 	import { getConnectionState, subscribeKind, subscribeResync } from '$lib/api/events-bus';
 	import { shouldRunLibraryFallbackPoll } from '$lib/rb/app-posture';
 	import {
@@ -3750,6 +3751,7 @@
 					<span aria-hidden="true"></span>
 				</button>
 			{/each}
+			<StemCacheHealthDot />
 			<div class="health-popover" role="tooltip" use:viewportFloatingPopover={{ preferred: 'above', gap: 4 }}>
 				{#each [frontendOnline, backendOnline, libraryHealth, vocalsCompletion, stemsCompletion, lyricsCompletion] as dot (dot.label)}
 					<p><strong>{dot.label}</strong><br />{dot.detail}</p>

@@ -43,6 +43,7 @@
 	class="stem-cache-dot"
 	class:complete={dot.state === 'complete'}
 	class:incomplete={dot.state === 'incomplete'}
+	class:unavailable={dot.state === 'unavailable'}
 	class:error={dot.state === 'error'}
 	data-testid="stem-cache-health-dot"
 	data-state={dot.state}
@@ -76,6 +77,9 @@
 	}
 	.stem-cache-dot.incomplete > span {
 		background: var(--rb-orange, #e8912d);
+	}
+	.stem-cache-dot.unavailable > span {
+		background: var(--rb-text-dim);
 	}
 	.stem-cache-dot.error > span {
 		background: var(--rb-red, #d9534f);

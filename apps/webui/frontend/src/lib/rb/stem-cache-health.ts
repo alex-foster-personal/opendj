@@ -62,7 +62,8 @@ export function stemCacheHealthDot(
 ): StemCacheHealthDot {
 	const label = 'Stem cache disk' as const;
 	if (loadError !== null) {
-		return { label, state: 'error', detail: loadError };
+		// Grey, never red: the endpoint could not answer, so nothing was measured.
+		return { label, state: 'unavailable', detail: `unknown - ${loadError}` };
 	}
 	if (status === null) {
 		return { label, state: 'loading', detail: 'checking disk space' };
