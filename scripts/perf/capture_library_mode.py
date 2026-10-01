@@ -375,11 +375,23 @@ def _sample_field_counts(gig: dict[str, Any], library: dict[str, Any]) -> dict[s
 
 
 def _sample_count_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
-    """Name how many real samples each median came from."""
+    """Name how many real samples each (mode, field) median came from.
+
+    Sol P1/BLOCKING, PR #4553, discussion at capture_library_mode.py:381: this
+    used to report ONLY `footprint_samples_mb`'s count under both the
+    `samples_gig`/`samples_library` keys, including on the
+    `library_mode_cpu_ratio` row -- a result with 11 footprint samples and 6
+    CPU samples passed every scoring gate while the note recorded the CPU
+    median as resting on 11 samples too. Every (mode, field) count is named
+    independently; `_sample_field_counts` already refuses a field with zero
+    samples, so a count printed here is always real.
+    """
     counts = _sample_field_counts(gig, library)
     return (
-        f"samples_gig={counts['gig']['footprint_samples_mb']} "
-        f"samples_library={counts['library']['footprint_samples_mb']}"
+        f"samples_gig_footprint={counts['gig']['footprint_samples_mb']} "
+        f"samples_gig_cpu={counts['gig']['cpu_samples_percent']} "
+        f"samples_library_footprint={counts['library']['footprint_samples_mb']} "
+        f"samples_library_cpu={counts['library']['cpu_samples_percent']}"
     )
 
 
