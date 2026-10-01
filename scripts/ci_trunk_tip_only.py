@@ -484,7 +484,7 @@ def _cancel_run(run_id: int) -> CancelOutcome:
     except PreconditionError as exc:
         if _is_not_yet_queued_cancel_conflict(exc):
             return CancelOutcome.SKIPPED_NOT_YET_QUEUED
-        status = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}")  # presence check, not a string match
+        status = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}") if "HTTP 409" in str(exc) else None
         if isinstance(status, dict) and status.get("status") == "completed":
             line = f"cancel-already-completed run_id={run_id} reason=already-completed"
             print(f"::notice::{line}")

@@ -106,18 +106,29 @@ def test_the_recheck_asks_about_the_cancelled_runs_own_id(
 # ----- the opposite direction: a genuine failure must still raise -----
 
 
-def test_a_403_with_the_run_still_queued_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mutation-the-other-way control: if the recheck is ever widened to "any cancel error
-    is fine", this must go red. A permissions failure on a run that has NOT completed is a
-    real failure, not the race this fix tolerates."""
+def test_a_403_still_raises_even_when_the_run_is_completed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol's BLOCKING P1 on #4783. The recovery must be gated on the HTTP 409 itself: a
+    permissions failure is a real failure even if the run happens to be completed by the
+    time anyone looks, and swallowing it would mask a broken token."""
+    asked: list[str] = []
     monkeypatch.setattr(mod, "_run_gh", _raising_run_gh("gh: Resource not accessible (HTTP 403)"))
-    monkeypatch.setattr(mod, "_gh_api_json", _status_reader([], "queued"))
+    monkeypatch.setattr(mod, "_gh_api_json", _status_reader(asked, "completed"))
+    with pytest.raises(PreconditionError):
+        mod._cancel_run(1)
+    assert asked == []
+
+
+def test_a_500_still_raises_even_when_the_run_is_completed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mod, "_run_gh", _raising_run_gh("gh: Internal Server Error (HTTP 500)"))
+    monkeypatch.setattr(mod, "_gh_api_json", _status_reader([], "completed"))
     with pytest.raises(PreconditionError):
         mod._cancel_run(1)
 
 
-def test_a_500_with_the_run_still_in_progress_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mod, "_run_gh", _raising_run_gh("gh: Internal Server Error (HTTP 500)"))
+def test_a_409_with_the_run_still_in_progress_still_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other half of the gate: a 409 alone is not enough, the re-read must confirm
+    completed, so a 409 for any other reason stays loud."""
+    monkeypatch.setattr(mod, "_run_gh", _raising_run_gh("gh: Conflict (HTTP 409)"))
     monkeypatch.setattr(mod, "_gh_api_json", _status_reader([], "in_progress"))
     with pytest.raises(PreconditionError):
         mod._cancel_run(1)
