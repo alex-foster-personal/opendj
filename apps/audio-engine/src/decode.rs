@@ -172,6 +172,7 @@ pub fn decode_open_within(mut file: File, path: &Path, max_frames: u64) -> Resul
     // symphonia does not apply an MP4 edit list, so its priming frames are
     // read here and trimmed after the decode (src/mp4edit.rs).
     let edit = mp4_edit(&mut file, path)?;
+    let lead = leading_tag_bytes(&mut file, path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -180,7 +181,7 @@ pub fn decode_open_within(mut file: File, path: &Path, max_frames: u64) -> Resul
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
-    let mut format = symphonia::default::get_probe()
+    let mut format = probe_for(lead)
         .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(|e| dec_err("unrecognized format in", &e))?;
     let track = format
@@ -280,6 +281,77 @@ fn mp4_edit(file: &mut File, path: &Path) -> Result<Option<crate::mp4edit::RawEd
     Ok(edit)
 }
 
+/// How far symphonia scans for a format marker when no tag is in front: its
+/// own default.
+const PROBE_DEPTH: u64 = 1 << 20;
+
+/// Bytes of ID3v2 tag at the front of `file` (several stacked tags summed),
+/// leaving it positioned at its start. symphonia's probe counts a leading tag
+/// against its 1 MiB scan limit, so an MP3 with a few MB of embedded artwork
+/// failed to open with "no suitable format reader found" while ffmpeg read it
+/// (found by the Platinum Notes thread on a real 320k MP3, Thu 1 Oct 2026).
+/// Best effort, like the MP4 edit: anything unreadable is no tag.
+fn leading_tag_bytes(file: &mut File, path: &Path) -> Result<u64, ProtoError> {
+    use std::io::{Read, Seek, SeekFrom};
+    if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
+        return Ok(0);
+    }
+    let mut lead = 0u64;
+    // A file can carry more than one tag back to back; a few is plenty.
+    for _ in 0..8 {
+        let mut h = [0u8; 10];
+        if file.seek(SeekFrom::Start(lead)).is_err() || file.read_exact(&mut h).is_err() {
+            break;
+        }
+        let Some(n) = id3v2_tag_len(&h) else { break };
+        lead += n;
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot read {}: {e}", path.display())))?;
+    Ok(lead)
+}
+
+/// The full length of an ID3v2 tag from its 10-byte header (header, body and
+/// footer), or `None` when `h` is not one.
+fn id3v2_tag_len(h: &[u8; 10]) -> Option<u64> {
+    if &h[..3] != b"ID3" || h[3] == 0xff || h[4] == 0xff || h[6..].iter().any(|b| b & 0x80 != 0) {
+        return None;
+    }
+    let body = h[6..].iter().fold(0u64, |acc, &b| (acc << 7) | u64::from(b));
+    let footer = if h[5] & 0x10 != 0 { 10 } else { 0 };
+    Some(10 + body + footer)
+}
+
+/// A probe that scans past `lead` bytes of leading tag plus its usual depth.
+/// The shared default probe is used when the tag is small, so a file that is
+/// not audio costs no deeper a scan than before.
+enum ProbeFor {
+    Default(&'static symphonia::core::formats::probe::Probe),
+    Deep(Box<symphonia::core::formats::probe::Probe>),
+}
+
+impl std::ops::Deref for ProbeFor {
+    type Target = symphonia::core::formats::probe::Probe;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ProbeFor::Default(p) => p,
+            ProbeFor::Deep(p) => p,
+        }
+    }
+}
+
+fn probe_for(lead: u64) -> ProbeFor {
+    use symphonia::core::formats::probe::{Probe, ProbeOptions};
+    // Under half the default depth, the tag leaves the default scan room.
+    if lead <= PROBE_DEPTH / 2 {
+        return ProbeFor::Default(symphonia::default::get_probe());
+    }
+    let depth = u32::try_from(lead + PROBE_DEPTH).unwrap_or(u32::MAX);
+    let mut p = Probe::new_with_options(&ProbeOptions { max_probe_depth: depth, ..Default::default() });
+    symphonia::default::register_enabled_formats(&mut p);
+    ProbeFor::Deep(Box::new(p))
+}
+
 /// What a file's container states about its length, read without decoding.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Probe {
@@ -298,12 +370,13 @@ pub struct Probe {
 pub fn probe_file(path: &Path) -> Result<Probe, ProtoError> {
     let mut file = open(path)?;
     let edit = mp4_edit(&mut file, path)?;
+    let lead = leading_tag_bytes(&mut file, path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let format = symphonia::default::get_probe()
+    let format = probe_for(lead)
         .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(|e| ProtoError::new(ErrorCode::Decode, format!("unrecognized format in {}: {e}", path.display())))?;
     let track = format
@@ -364,6 +437,19 @@ fn packet_frames(dur: u64, time_base: Option<TimeBase>, rate: Option<u32>) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_id3v2_header_gives_the_whole_tag_length() {
+        // Body 0x7f syncsafe bytes: 2^28 - 1; here 1 << 7 = 128 bytes.
+        let h = *b"ID3\x03\x00\x00\x00\x00\x01\x00";
+        assert_eq!(id3v2_tag_len(&h), Some(10 + 128));
+        // The footer flag adds another 10 bytes.
+        let f = *b"ID3\x04\x00\x10\x00\x00\x01\x00";
+        assert_eq!(id3v2_tag_len(&f), Some(10 + 128 + 10));
+        // Not a tag: wrong magic, or a size byte with its high bit set.
+        assert_eq!(id3v2_tag_len(b"RIFF\x00\x00\x00\x00\x01\x00"), None);
+        assert_eq!(id3v2_tag_len(b"ID3\x03\x00\x00\x80\x00\x01\x00"), None);
+    }
 
     #[test]
     fn the_first_decoded_rate_is_the_tracks() {

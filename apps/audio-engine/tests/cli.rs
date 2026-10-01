@@ -758,3 +758,36 @@ fn an_m4a_decodes_without_its_priming_frames() {
     assert_eq!(v["frames"], 44100);
     assert_eq!(v["delay"], 1024);
 }
+
+/// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still
+/// opens. symphonia's probe counted the tag against its 1 MiB scan limit and
+/// gave up with "no suitable format reader found", while ffmpeg read the file.
+#[test]
+fn an_mp3_behind_a_large_id3_tag_opens() {
+    let d = temp_dir("cli-big-tag");
+    let mp3 = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms.mp3")).unwrap();
+    // One 3 MB private frame in an ID3v2.3 tag; sizes are syncsafe.
+    let payload = vec![0u8; 3_000_000];
+    let mut frame = b"PRIV".to_vec();
+    frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&[0, 0]);
+    frame.extend_from_slice(&payload);
+    let n = frame.len() as u32;
+    let mut file = b"ID3\x03\x00\x00".to_vec();
+    file.extend_from_slice(&[(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
+    file.extend_from_slice(&frame);
+    file.extend_from_slice(&mp3);
+    let tagged = d.join("tagged.mp3");
+    std::fs::write(&tagged, file).unwrap();
+
+    let out = Command::new(BIN).args(["probe"]).arg(&tagged).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sample_rate"], 44100);
+
+    let out = Command::new(BIN).args(["decode", "--mono"]).arg(&tagged).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
+    assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
+}
