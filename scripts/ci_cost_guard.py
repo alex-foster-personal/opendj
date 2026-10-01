@@ -306,6 +306,42 @@ def earlier_failed_attempts(
     return failed
 
 
+def reruns_no_pass_listed(
+    reconciled: Iterable[dict[str, Any]], lookback: timedelta
+) -> list[dict[str, Any]]:
+    """The reconciled re-runs whose latest attempt completed `lookback` or more after the
+    run was created: the only ones no plain pass could have listed.
+
+    A plain pass lists every run created within `lookback` of its mark, and its mark is
+    at or before every completion it covers, so a run completed inside that reach was
+    listed when it completed (its earlier attempts too). Everything else a reconcile
+    lists, a plain pass already posted.
+    """
+    return [
+        run
+        for run in reconciled
+        if parse_time(run["updated_at"]) - parse_time(run["created_at"]) >= lookback
+    ]
+
+
+def sink_failure_records(
+    listings: Iterable[tuple[Iterable[dict[str, Any]], str]],
+    sink_workflows: set[str],
+    read_attempt: Callable[[Any, int], dict[str, Any]],
+    repository: str,
+) -> list[dict[str, Any]]:
+    """One record per failed run attempt across the pass's listings, each with its mark."""
+    records: dict[tuple[str, int], dict[str, Any]] = {}
+    for listing, mark in listings:
+        runs = list(listing)
+        for run in select_sink_failures(runs, sink_workflows, mark) + earlier_failed_attempts(
+            runs, sink_workflows, mark, read_attempt
+        ):
+            record = sink_failure_record(run, repository)
+            records[(str(record["run_id"]), record["run_attempt"])] = record
+    return list(records.values())
+
+
 def sink_failure_record(run: dict[str, Any], repository: str) -> dict[str, Any]:
     """What the sink step posts for one failed attempt; the attempt is part of its key."""
     attempt = int(run.get("run_attempt") or 1)
@@ -384,14 +420,15 @@ def run_batch(args: argparse.Namespace) -> int:
     def read_attempt(run_id: Any, attempt: int) -> dict[str, Any]:
         return fetch_attempt(args.repository, str(run_id), attempt, args.token, "ci-cost-guard")
 
-    sink_failures = {
-        (str(run["id"]), str(run.get("run_attempt") or 1)): sink_failure_record(
-            run, args.repository
-        )
-        for listing, mark in ((runs, since), (reconciled, priced_since))
-        for run in select_sink_failures(listing, sink_workflows, mark)
-        + earlier_failed_attempts(listing, sink_workflows, mark, read_attempt)
-    }
+    sink_failures = sink_failure_records(
+        (
+            (runs, since),
+            (reruns_no_pass_listed(reconciled, timedelta(hours=args.lookback_hours)), priced_since),
+        ),
+        sink_workflows,
+        read_attempt,
+        args.repository,
+    )
     priced: list[dict[str, Any]] = []
     for run in selected.values():
         attempt = str(run.get("run_attempt") or 1)
@@ -423,7 +460,7 @@ def run_batch(args: argparse.Namespace) -> int:
     alerts_file = args.report_dir / "ci-cost-alerts.json"
     alerts_file.write_text(json.dumps(alerts, indent=2), encoding="utf-8")
     sink_file = args.report_dir / "ci-sink-failures.json"
-    sink_file.write_text(json.dumps(list(sink_failures.values()), indent=2), encoding="utf-8")
+    sink_file.write_text(json.dumps(sink_failures, indent=2), encoding="utf-8")
     output_file = os.environ.get("GITHUB_OUTPUT", "")
     _write_output(output_file, "since", since)
     _write_output(output_file, "sink_failures", str(len(sink_failures)))
