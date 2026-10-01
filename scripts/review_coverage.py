@@ -62,6 +62,9 @@ Requirements (mini-PRD):
     the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
     scripts/review_coverage_carry.py). When carry applies, triage prints both
     SHAs and the local ``git diff --name-only`` path list.
+  / Base merges carry coverage when main changed no path the PR touches and
+    the PR's net diff is byte-identical at both heads (REVIEW-16; see
+    scripts/review_coverage_base_merge.py). Unmeasurable reads carry UNKNOWN.
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -341,6 +344,7 @@ class ReviewerVerdict:
     substituted_by: str = ""
     carried_from: str = ""  # full debt-only carry source SHA (issues #2907, #2871)
     carried_paths: frozenset[str] = frozenset()  # git diff paths for carry proof
+    carry_proof: tuple[str, ...] = ()  # base-merge carry proof lines (REVIEW-16)
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
