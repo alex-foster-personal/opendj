@@ -3,6 +3,7 @@
  * Hover highlight stays in deck-hover.svelte.ts; this module owns click select.
  */
 import type { DeckId } from './deck-slots';
+import { noteRecentDeck } from './recent-deck';
 
 export const mixerSelection = $state<{ selected: DeckId[] }>({ selected: [1] });
 
@@ -14,6 +15,9 @@ export function getSelectedDecks(): readonly DeckId[] {
 	return mixerSelection.selected;
 }
 
+/** A click that leaves `deck` selected also makes it the target of Space and
+ * the other transport shortcuts (DECKUX-25, pin a675881be6c8). A shift-click
+ * that deselects it does not. */
 export function clickSelect(deck: DeckId, shift: boolean): void {
 	if (shift) {
 		const next = new Set(mixerSelection.selected);
@@ -24,9 +28,10 @@ export function clickSelect(deck: DeckId, shift: boolean): void {
 			next.add(deck);
 		}
 		mixerSelection.selected = [...next].sort((a, b) => a - b);
-		return;
+	} else {
+		resetToSingle(deck);
 	}
-	resetToSingle(deck);
+	if (mixerSelection.selected.includes(deck)) noteRecentDeck(deck);
 }
 
 export function resetToSingle(deck: DeckId | null): void {
