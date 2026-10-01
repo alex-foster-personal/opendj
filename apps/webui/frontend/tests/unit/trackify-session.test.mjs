@@ -102,6 +102,19 @@ describe('trackify session teardown vs a concurrent Gig mount (PERFMODE-15)', { 
 		);
 	});
 
+	it('holds the ANLZ cache to one entry while mounted and releases it on teardown', async () => {
+		installFakeEngine();
+		const tierCap = entry.anlzEntryCap();
+		assert.ok(tierCap > entry.TRACKIFY_ANLZ_ENTRY_CAP, 'control: the tier allows more than Trackify keeps');
+
+		const uninstall = entry.installTrackifySession();
+		assert.equal(entry.effectiveAnlzEntryCap(), entry.TRACKIFY_ANLZ_ENTRY_CAP);
+
+		await uninstall();
+		// Overshoot control: Gig and Library get their tier cap back.
+		assert.equal(entry.effectiveAnlzEntryCap(), tierCap);
+	});
+
 	it('control: disposes the engine normally when nothing else mounted during teardown', async () => {
 		const { disposeCalls } = installFakeEngine();
 
