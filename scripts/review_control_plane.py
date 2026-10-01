@@ -34,6 +34,9 @@ Requirements (mini-PRD):
     [if] apps/x.py with one reviewer fails here [then] broken
   / An author that cannot be read is a failed measurement, never a pass.
     [if] a commit with no harness trailer yields PASS [then] broken
+  / A PR with more commits than the listing's cap is read in full, or not judged at all.
+    [if] #3837 (428 commits) reports "may be truncated" [then] broken
+    [if] a full listing short of the PR's own commit count yields a verdict [then] broken
   / It runs BEFORE the docs-only exemption: CLAUDE.md and AGENTS.md are *.md files.
     [if] a CLAUDE.md-only PR passes on the docs-only exemption with one reviewer [then] broken
   / REVIEW-18: Grok/Cursor subscription reviews at head count as independent harnesses.
@@ -152,7 +155,10 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
 )
 CONTROL_PLANE_ROOT_FILES: tuple[str, ...] = ("*.py", "*.pyc", "*.so", "*.pyd")
 DUAL_REVIEW_MIN = 2
-COMMITS_API_CAP = 250  # GET /pulls/{n}/commits returns at most 250 commits
+#: GET /pulls/{n}/commits returns at most 250 commits, and so does GraphQL's
+#: `pullRequest.commits` (measured on #3837 Thu 1 Oct 2026: totalCount 428, 250 paged out).
+COMMITS_API_CAP = 250
+COMPARE_PAGE_SIZE = 100  # GET /compare/{base}...{head} pages its commits, 100 at most per page
 #: Authoring harness (commit trailer) -> reviewer harnesses it may not stand in for.
 #: Sol is GPT driven through the Codex CLI, so a -Codex author excludes Sol too.
 AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
@@ -198,6 +204,12 @@ def last_failure() -> str | None:
 @dataclass(frozen=True)
 class DualReview:
     ok: bool | None  # None = could not measure
+    detail: str
+
+
+@dataclass(frozen=True)
+class CommitList:
+    commits: Sequence[Mapping] | None  # None = not provably every commit of the PR
     detail: str
 
 
@@ -376,9 +388,8 @@ def author_harnesses(commits: Sequence[Mapping]) -> tuple[frozenset[str] | None,
     """Union of every commit's trailer harnesses (REST /pulls/{n}/commits shape).
 
     None when any non-merge commit carries no trailer: an unknown author cannot be excluded.
+    `commits` must be the PR's EVERY commit: `complete_commits` is what proves that.
     """
-    if len(commits) >= COMMITS_API_CAP:
-        return None, f"{len(commits)} commits listed, the API cap; the list may be truncated"
     authored = [c for c in commits if len(c.get("parents") or []) <= 1]
     if not authored:
         return None, "no non-merge commit to read an author trailer from"
@@ -389,6 +400,33 @@ def author_harnesses(commits: Sequence[Mapping]) -> tuple[frozenset[str] | None,
             return None, f"commit {str(commit.get('sha', ''))[:9]} has no author trailer"
         found |= marks
     return frozenset(found), f"author {'+'.join(sorted(found))} (commit trailers)"
+
+
+def complete_commits(
+    capped: Sequence[Mapping],
+    uncapped: Callable[[], tuple[Sequence[Mapping], int]],
+    head_sha: str,
+) -> CommitList:
+    """The PR's every commit, or the reason that could not be proven.
+
+    Under the cap the capped listing is the whole list and `uncapped` is never called. At
+    the cap it may be truncated, so `uncapped` supplies a paged listing AND the commit count
+    the PR itself reports; anything short of that count, repeated, missing a commit the
+    capped listing holds, or not ending at the head under review is unmeasured.
+    """
+    if len(capped) < COMMITS_API_CAP:
+        return CommitList(capped, "")
+    listed, reported = uncapped()
+    shas = [str(c.get("sha", "")) for c in listed]
+    if len(set(shas)) != reported or len(shas) != reported:
+        return CommitList(
+            None, f"{len(set(shas))} distinct commits listed, the PR reports {reported}; the list is incomplete"
+        )
+    if absent := {str(c.get("sha", "")) for c in capped} - set(shas):
+        return CommitList(None, f"commit {sorted(absent)[0][:9]} is absent from the full listing")
+    if shas[-1] != head_sha:
+        return CommitList(None, f"the full listing ends at {shas[-1][:9]}; it does not end at head {head_sha[:9]}")
+    return CommitList(listed, "")
 
 
 def dual_review(
@@ -415,14 +453,19 @@ def dual_review(
 
 def measure(
     changed_files: Sequence[str],
-    commits: Callable[[], list[dict]],
+    commits: Callable[[], CommitList],
     reviewed_at_head: Callable[[], Mapping[str, bool]],
 ) -> DualReview:
     """Read only what a control-plane PR needs; a PR outside it costs no extra call."""
     hits = control_plane_hits(changed_files)
     if not hits:
         return dual_review(hits, frozenset(), "", {})
-    authors, author_detail = author_harnesses(commits())
+    listing = commits()
+    if listing.commits is None:
+        return dual_review(hits, None, listing.detail, {})
+    authors, author_detail = author_harnesses(listing.commits)
+    if authors is None:
+        return dual_review(hits, None, author_detail, {})  # unmeasured already: spend no review reads
     return dual_review(hits, authors, author_detail, reviewed_at_head())
 
 
@@ -456,9 +499,19 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         found.update(subscription_reviewed_at_head(unambiguous_reviews, head_sha, cp_hits))
         return found
 
+    def uncapped() -> tuple[list[dict], int]:
+        (pull,) = rc._paginated_json_pages(f"repos/{rc.REPO}/pulls/{pr}")
+        # One snapshot: the count is this head's, and both compare ends are SHAs, so a base
+        # branch that moves between pages cannot change which commits are listed.
+        rc._require_head_unchanged(head_sha, pull["head"]["sha"])
+        compare = f"repos/{rc.REPO}/compare/{pull['base']['sha']}...{head_sha}?per_page={COMPARE_PAGE_SIZE}"
+        return [c for page in rc._paginated_json_pages(compare) for c in page["commits"]], pull["commits"]
+
     verdict = measure(
         changed_files,
-        commits=lambda: rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/commits"),
+        commits=lambda: complete_commits(
+            rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/commits"), uncapped, head_sha
+        ),
         reviewed_at_head=reviewed_at_head,
     )
     if verdict.ok is None:

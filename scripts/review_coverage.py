@@ -110,6 +110,7 @@ try:
         _checks,
         _head_sha,
         _paginated_json_list,
+        _paginated_json_pages,  # noqa: F401  (review_control_plane's fetch seam)
     )
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
