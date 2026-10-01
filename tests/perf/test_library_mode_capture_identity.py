@@ -47,6 +47,24 @@ def _disposable_git_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def _git_head(repo: Path) -> str:
+    """The disposable repo's own HEAD, read with real git."""
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    )
+    return proc.stdout.strip()
+
+
+def _commit_another_change(repo: Path) -> str:
+    """Move the disposable repo's HEAD to a new commit, leaving the tree clean."""
+    (repo / "moved.txt").write_text("a later commit\n", encoding="utf-8")
+    subprocess.run(["git", "add", "moved.txt"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "move HEAD"], cwd=repo, check=True, capture_output=True
+    )
+    return _git_head(repo)
+
+
 def test_main_refuses_a_capture_when_the_frontend_serves_a_different_build(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -105,6 +105,7 @@ with TestClient(
     out["tracks"] = client.get("/api/v1/tracks?limit=500").json()
     out["health"] = client.get(HEALTH_PATH).json()
     out["readiness"] = client.get("/api/v1/library/readiness?limit=1").json()
+    out["setup_status"] = client.get("/api/v1/setup/status").json()
 
 print(json.dumps(out))
 """
@@ -159,6 +160,51 @@ def _run_probe(script: str, data_dir: Path, **extra_env: str) -> dict[str, Any]:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+def _probe_subdict(probe: dict[str, Any], key: str) -> dict[str, Any]:
+    raw = probe.get(key)
+    return raw if isinstance(raw, dict) else {}
+
+
+def _first_import_failure_evidence(probe: dict[str, Any]) -> dict[str, Any]:
+    """Compact first-import facts for zero-row or wrong-count assertion output."""
+    tracks = _probe_subdict(probe, "tracks")
+    items = tracks.get("items")
+    item_count = len(items) if isinstance(items, list) else None
+    job = _probe_subdict(probe, "job")
+    readiness = _probe_subdict(probe, "readiness")
+    setup = _probe_subdict(probe, "setup_status")
+    last_import_raw = setup.get("last_import")
+    last_import = last_import_raw if isinstance(last_import_raw, dict) else {}
+    health = _probe_subdict(probe, "health")
+    state_db_raw = health.get("state_db")
+    state_db = state_db_raw if isinstance(state_db_raw, dict) else {}
+    return {
+        "tracks_items": item_count,
+        "expected_files": FILES,
+        "job_status": job.get("status"),
+        "job_message": job.get("message"),
+        "job_error": job.get("error"),
+        "readiness_total_tracks": readiness.get("total_tracks"),
+        "readiness_status": readiness.get("status"),
+        "readiness_detail": readiness.get("detail"),
+        "setup_tracks": setup.get("tracks"),
+        "last_import": {
+            k: last_import.get(k)
+            for k in (
+                "files_seen",
+                "files_rejected_unplayable",
+                "tracks",
+                "tracks_written",
+                "status",
+                "error",
+            )
+        },
+        "health_state_db_tracks": state_db.get("tracks"),
+        "backend": probe.get("backend"),
+        "state_db_at_compose": probe.get("state_db_at_compose"),
+    }
+
+
 def _write_wav(path: Path, seconds: float = 0.1) -> None:
     """A real, playable wav: the worker's playability gate reads it."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,14 +245,18 @@ def test_tracks_lists_the_first_import_without_a_restart(
     items = probe["tracks"]["items"]
     assert len(items) == FILES, (
         f"/api/v1/tracks listed {len(items)} of {FILES} imported rows on the "
-        f"engine that ran the import (backend={probe['backend']})"
+        f"engine that ran the import (backend={probe['backend']}); "
+        f"first_import={_first_import_failure_evidence(probe)!r}"
     )
 
 
 def test_health_counts_agree_with_readiness(probe: dict[str, Any]) -> None:
     health_tracks = probe["health"]["state_db"]["tracks"]
     readiness_total = probe["readiness"]["total_tracks"]
-    assert readiness_total == FILES, probe["readiness"]
+    assert readiness_total == FILES, (
+        f"readiness total_tracks={readiness_total}, expected {FILES}; "
+        f"first_import={_first_import_failure_evidence(probe)!r}"
+    )
     assert health_tracks == readiness_total, (
         f"/health state_db.tracks={health_tracks} but readiness "
         f"total_tracks={readiness_total}"
@@ -241,5 +291,12 @@ def test_a_reboot_on_the_populated_dir_serves_the_same_rows(
     assert reboot["backend"] == "SqliteBackend", reboot
     first = sorted(item["stable_id"] for item in probe["tracks"]["items"])
     again = sorted(item["stable_id"] for item in reboot["tracks"]["items"])
-    assert again == first, f"{len(again)} rows after reboot, {len(first)} before"
-    assert reboot["health"]["state_db"]["tracks"] == FILES, reboot["health"]
+    assert again == first, (
+        f"{len(again)} rows after reboot, {len(first)} before; "
+        f"first_import={_first_import_failure_evidence(probe)!r}"
+    )
+    assert reboot["health"]["state_db"]["tracks"] == FILES, (
+        f"reboot /health state_db.tracks={reboot['health']['state_db']['tracks']}, "
+        f"expected {FILES}; reboot_health={reboot['health']!r}; "
+        f"first_import={_first_import_failure_evidence(probe)!r}"
+    )

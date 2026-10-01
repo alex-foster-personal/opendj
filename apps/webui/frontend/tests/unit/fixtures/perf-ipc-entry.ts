@@ -10,5 +10,5 @@
  * here is the exact object `queryPerformanceState` closes over. No stubs: both
  * modules are the real thing.
  */
-export { deckStates } from '$lib/rb/audio-engine.svelte';
+export { deckStates, engine } from '$lib/rb/audio-engine.svelte';
 export { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';

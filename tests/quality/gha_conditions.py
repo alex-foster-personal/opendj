@@ -2,7 +2,7 @@
 
 Covers the grammar the Trunk queue-draft conditions use: `${{ ... }}`, `startsWith`,
 `==`, `!=`, `&&`, `||`, `!` before `(` or a call, parentheses, 'string' literals,
-true/false/null, and `github.*` context paths. Comparison follows GitHub's documented
+true/false/null, and `github.*`, `needs.*` and `inputs.*` context paths. Comparison follows GitHub's documented
 rules (https://docs.github.com/en/actions/reference/workflows-and-actions/expressions):
 "GitHub ignores case when comparing strings", and when the operand types differ both are
 coerced to a number (null 0, true 1, false 0, a string parsed as a JSON number, '' 0,
@@ -51,7 +51,7 @@ ORDINARY_PR = PrEvent("af--some-feature", "some-human")
 ALL_EVENTS = (GENUINE_DRAFT, SPOOFED_BRANCH, SPOOFED_FORK, ORDINARY_PR)
 
 _TOKEN = re.compile(
-    r"\s+|(?P<string>'(?:[^']|'')*')|(?P<path>github(?:\.[\w-]+)+)|(?P<keyword>true|false|null)\b"
+    r"\s+|(?P<string>'(?:[^']|'')*')|(?P<path>(?:github|needs|inputs)(?:\.[\w-]+)+)|(?P<keyword>true|false|null)\b"
     r"|(?P<call>startsWith\()|(?P<op>&&|\|\||==|!=|!(?=\s*(?:\(|startsWith\())|[(),])"
 )
 _PYTHON_OP = {"&&": " and ", "||": " or ", "==": " == ", "!=": " != ", "(": "(", ")": ")", ",": ","}

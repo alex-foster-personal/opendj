@@ -322,11 +322,30 @@ test('at most three toasts are visible when more are pushed', async ({ page }) =
 // REQ: UX-TOAST-03
 // [if] fourth toast evicts oldest [then] exiting class uses ~100ms transition [else stop].
 test('the fourth toast evicts the oldest with an exiting marker', async ({ page }) => {
+	let resolveEviction!: (logId: string) => void;
+	const eviction = new Promise<string>((resolve) => {
+		resolveEviction = resolve;
+	});
+	await page.exposeFunction('recordToastEviction', resolveEviction);
+	await page.evaluate(() => {
+		window.addEventListener(
+			'toast:evicted',
+			(event) => {
+				void (window as typeof window & { recordToastEviction(logId: string): void }).recordToastEviction(
+					(event as CustomEvent<string>).detail
+				);
+			},
+			{ once: true }
+		);
+	});
+
 	const first = await raise(page, 'oldest toast', 'error', 120_000);
 	await raise(page, 'toast two', 'error', 120_000);
 	await raise(page, 'toast three', 'error', 120_000);
 
 	const evidence = await raiseAndSampleExit(page, 'toast four', 'error', 120_000);
+	await expect(eviction).resolves.toBe(first);
+
 	const detail = JSON.stringify(evidence);
 	expect(evidence.exitId, detail).toBe(first);
 	expect(evidence.transformFound, detail).toBe(true);
