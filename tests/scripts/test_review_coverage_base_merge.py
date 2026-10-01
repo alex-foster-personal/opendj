@@ -141,6 +141,40 @@ def test_main_change_inside_pr_hunk_context_does_not_carry(repo: Path, reviewed:
     assert attempt.verdict is None and attempt.unknown == ()
 
 
+@pytest.mark.requirement("REVIEW-12")
+def test_context_zero_config_does_not_mask_a_hunk_context_change(repo: Path, reviewed: str) -> None:
+    """[if] diff.context=0 is configured [then] a context-line change still blocks carry, [else stop].
+
+    `--unified=3` must be pinned on the net diff: with diff.context=0 the
+    unchanged context line around each hunk drops out of both patches
+    equally, so the one real difference between them (main's own edit)
+    disappears identically from each side and the patch-ids wrongly match.
+    """
+    _git(repo, "config", "diff.context", "0")
+    _advance_main(repo, _FILE, _lines({28: "line28 main"}))
+    head = _merge_main(repo)
+
+    attempt = _attempt(repo, reviewed, head)
+    assert attempt.verdict is None and attempt.unknown == ()
+
+
+@pytest.mark.requirement("REVIEW-12")
+def test_diff_noprefix_config_does_not_change_the_patch_id(repo: Path, reviewed: str) -> None:
+    """[if] diff.noprefix is configured [then] the net diff's patch-id is unchanged, [else stop].
+
+    `--src-prefix`/`--dst-prefix` are pinned because the "diff --git a/...
+    b/..." header line is hashed by patch-id, so this config would otherwise
+    move every patch-id on a checkout that sets it.
+    """
+    _advance_main(repo, _OTHER, "other v2\n")
+    head = _merge_main(repo)
+    tip = _git(repo, "rev-parse", "origin/main")
+    pinned = net_diff(repo, tip, head).patch_id
+
+    _git(repo, "config", "diff.noprefix", "true")
+    assert net_diff(repo, tip, head).patch_id == pinned
+
+
 # ----------------------------------------------------------------------------
 # (b), (c) and the revert pair: the PR's own change moved, so no carry
 

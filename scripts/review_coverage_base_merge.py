@@ -53,13 +53,23 @@ from scripts.review_gh import TriageError
 
 #: `--binary` so two different binary edits never share a "Binary files
 #: differ" line; `--no-renames`/`--no-ext-diff`/`--no-textconv` so user git
-#: config cannot change what is hashed.
+#: config cannot change what is hashed. `--unified=3` pins the context width
+#: the carry contract relies on (a reviewed hunk's three surrounding lines):
+#: `diff.context=0` would drop those lines from the diff entirely, so a main
+#: change inside them would vanish from both patch-ids and wrongly carry.
+#: `--src-prefix`/`--dst-prefix` pin the `a/`/`b/` path prefixes so
+#: `diff.noprefix` cannot change the "diff --git" header line that patch-id
+#: hashes. Every flag here exists because a plausible git config value was
+#: proven, not assumed, to change the resulting patch-id.
 NET_DIFF_FLAGS: tuple[str, ...] = (
     "--binary",
     "--no-color",
     "--no-ext-diff",
     "--no-textconv",
     "--no-renames",
+    "--unified=3",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
 )
 PATCH_ID_ARGS: tuple[str, ...] = ("patch-id", "--verbatim")
 
