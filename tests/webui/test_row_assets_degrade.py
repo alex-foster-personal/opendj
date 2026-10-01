@@ -31,7 +31,7 @@ import pytest
 
 from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared.platform_paths import AssetResolver
-from apps.webui.server.rb_vendor_pkg import row_assets
+from apps.webui.server.rb_vendor_pkg import anlz, row_assets
 from apps.webui.server.rb_vendor_pkg import row_hydration_cache as rhc
 from tests.webui.test_row_assets_cache import (
     ADP,
@@ -127,6 +127,22 @@ def test_every_source_malformed_is_a_row_without_a_preview(share: Path, adp: str
     assert (got.preview_b64, got.preview_max) == (None, None)
     assert got.pvdi_vocals == {"status": "not_analyzed"}
     assert got.artwork_status == "ok"
+
+
+@pytest.mark.parametrize("adp", [ADP, ADP_UNCACHED], ids=["walked", "uncached"])
+def test_an_index_error_out_of_a_reader_degrades_the_row(
+    share: Path, adp: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Injected: no file was found that makes the shipped readers index past
+    their buffer, so the first reader is replaced by one that does."""
+
+    def past_the_end(source: object) -> None:
+        raise IndexError("index out of range")
+
+    sources = (("." + "2EX", past_the_end), *anlz._PREVIEW_SOURCES[1:])
+    monkeypatch.setattr(anlz, "_PREVIEW_SOURCES", sources)
+    got = call(_meta(adp=adp))
+    assert level_of(got) == INSIDE, "the .DAT still answers"
 
 
 def test_a_malformed_row_is_remembered_and_heals_when_the_file_does(share: Path) -> None:

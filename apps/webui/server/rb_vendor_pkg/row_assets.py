@@ -471,7 +471,7 @@ class RowAssetSession:
         if self._root_state == "missing":
             artwork = "file_missing" if plan.artwork_leaves else "no_image_path"
             return _row_assets((None, None, False, artwork, _NOT_ANALYZED))
-        if self._root_state == "changed" or self._root_key is None:
+        if self._root_key is None:  # only an opened, anchored root has a key
             artwork = "unresolved" if plan.artwork_leaves else "no_image_path"
             return _row_assets((None, None, False, artwork, _NOT_ANALYZED))
         key = (meta.analysis_data_path or "", meta.image_path or "")
