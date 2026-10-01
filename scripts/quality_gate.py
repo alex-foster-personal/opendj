@@ -162,6 +162,7 @@ from urllib.parse import urlsplit
 
 try:
     from scripts import quality_latency, shell_construct_lint
+    from scripts.sparse_worktree import require_materialized
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.quality_gate") from None
@@ -1177,12 +1178,18 @@ def _tracked_files(repo: Path, roots: tuple[str, ...]) -> list[Path]:
     Symlinks and gitlinks are dropped because jscpd never followed them in a
     directory scan either, and a tracked file deleted in the working tree is
     not there to measure. An empty list is a broken scope, not a clean tree.
+
+    A skip-worktree path (a sparse linked worktree, OPS-45) is not on disk
+    either, but unlike a local deletion it is part of the commit, so jscpd
+    could not measure what CI measures: that refuses loudly, naming the fix.
     """
     _, out = _run(["git", "ls-files", "-z", "--", *roots], cwd=repo)
+    listed = [rel for rel in out.split("\0") if rel]
+    require_materialized(repo, listed, purpose="quality gate jscpd scope")
     files = [
         repo / rel
-        for rel in out.split("\0")
-        if rel and (repo / rel).is_file() and not (repo / rel).is_symlink()
+        for rel in listed
+        if (repo / rel).is_file() and not (repo / rel).is_symlink()
     ]
     if not files:
         raise RuntimeError(
