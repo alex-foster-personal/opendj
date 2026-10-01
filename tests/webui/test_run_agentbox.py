@@ -153,7 +153,7 @@ TAILNET_HOST = "agentbox.example-tailnet.ts.net"
 def test_the_ssh_alias_alone_is_a_complete_allowlist() -> None:
     """No MDT_AGENTBOX_SSH_HOSTS is a configured deployment, not a broken one."""
     assert allowed_ssh_host("agentbox", environ={}) is True
-    assert allowed_ssh_host("198.51.100.7", environ={}) is False
+    assert allowed_ssh_host("203.0.113.10", environ={}) is False
     assert allowed_ssh_host("evil.example", environ={}) is False
 
 
@@ -186,10 +186,10 @@ def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
     assert is_agentbox(hostname="agentbox") is True
     assert is_agentbox(hostname="afmac") is False
     assert allowed_ssh_host("agentbox") is True
-    assert allowed_ssh_host("198.51.100.7") is False
+    assert allowed_ssh_host("203.0.113.10") is False
     assert allowed_ssh_host("evil.example") is False
     with pytest.raises(PortConfigError, match="refusing SSH host"):
-        ssh_agentbox_argv("hostname", ssh_host="198.51.100.7")
+        ssh_agentbox_argv("hostname", ssh_host="203.0.113.10")
     argv = ssh_agentbox_argv("hostname")
     assert argv[:6] == [
         "ssh",
