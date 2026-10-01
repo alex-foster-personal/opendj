@@ -784,7 +784,9 @@ test('finish refuses with the engine detail when preflight still says no library
 	const closable = await wizard.finish();
 
 	assert.equal(closable, false);
-	assert.match(wizard.error, /setup record at \/data\/setup\.json could not be read/);
+	assert.match(wizard.error, /library still looks empty/);
+	assert.doesNotMatch(wizard.error, /\/data\/|\/api\//);
+	assert.match(wizard.errorDiagnostic, /setup record at \/data\/setup\.json could not be read/);
 	assert.equal(wizard.busy, false);
 });
 
@@ -797,7 +799,8 @@ test('finish refuses, loudly, when preflight cannot be re-read', async () => {
 	const closable = await wizard.finish();
 
 	assert.equal(closable, false);
-	assert.match(wizard.error, /startup checks could not be re-read/);
+	assert.match(wizard.error, /could not confirm the library is ready/);
+	assert.match(wizard.errorDiagnostic, /startup checks could not be re-read/);
 	assert.equal(wizard.busy, false);
 });
 

@@ -66,7 +66,13 @@ import {
 	newFolderRow,
 	type FolderRow,
 } from './folder-rows';
-import { agentApiError, humanAdvanceRefusal, humanApiError } from './present';
+import {
+	agentApiError,
+	humanAdvanceRefusal,
+	humanApiError,
+	humanFinishLibraryMissing,
+	humanFinishUnconfirmed
+} from './present';
 
 export const WIZARD_STEPS = [
 	'welcome',
@@ -381,10 +387,11 @@ class SetupWizard {
 		try {
 			this.status = await getSetupStatus();
 			this.error = null;
+			this.errorDiagnostic = null;
 		} catch (exc) {
 			// Not marked as read, so the next row update can try again.
 			this._statusReadForJob = null;
-			this.error = _message(exc);
+			this._fail(_message(exc));
 		}
 	}
 
@@ -644,16 +651,18 @@ class SetupWizard {
 			this.busy = false;
 		}
 		if (preflightGate.error !== null) {
-			this.error =
+			this.errorDiagnostic =
 				'setup was saved, but the startup checks could not be re-read ' +
 				`(GET /api/v1/preflight), so setup cannot tell whether to close: ${preflightGate.error}`;
+			this.error = humanFinishUnconfirmed();
 			return false;
 		}
 		if (needsSetupForEmptyLibrary(preflightGate.checks, false)) {
 			const row = preflightGate.checks.find((check) => check.id === LIBRARY_ATTACHED_CHECK_ID);
-			this.error =
+			this.errorDiagnostic =
 				'setup was saved, but the engine still reports no library attached ' +
 				`(${row?.detail ?? 'no detail given'}), so closing would only reopen setup`;
+			this.error = humanFinishLibraryMissing();
 			return false;
 		}
 		return true;

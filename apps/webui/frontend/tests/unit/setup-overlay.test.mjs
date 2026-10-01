@@ -110,6 +110,16 @@ test('a null detection is SCANNING, never a verdict', () => {
 	assert.equal(mod.detectPhase(null, true), 'scanning');
 });
 
+test('a FAILED detection is not scanning (#3422)', () => {
+	// The scanning sentence beside a red error, forever, was the bug.
+	assert.equal(mod.detectPhase(null, false, true), 'failed');
+	assert.notEqual(mod.detectPhase(null, false, true), 'scanning');
+	// control: a retry in flight IS scanning again, failed or not
+	assert.equal(mod.detectPhase(null, true, true), 'scanning');
+	// control: an earlier answer still on screen stays the verdict
+	assert.equal(mod.detectPhase(detection(), false, true), 'answered');
+});
+
 test('a re-ask is scanning too, even with a previous answer on screen', () => {
 	assert.equal(mod.detectPhase(detection(), true), 'scanning');
 	assert.equal(mod.detectPhase(detection(), false), 'answered');
@@ -479,7 +489,7 @@ test('human presentation helpers keep forbidden tokens out of operator copy', ()
 		'~/Music/House/track.mp3'
 	);
 	assert.equal(
-		mod.shortenPath('/Users/maintainer/Library/Application Support/com.opendj.desktop/state/state.db'),
+		mod.shortenPath('/Users/dj/Library/Application Support/com.opendj.desktop/state/state.db'),
 		'~/.../com.opendj.desktop/state/state.db'
 	);
 	assert.doesNotMatch(mod.humanBlockerSentence('rekordbox_not_found', nothingFound()), /rekordbox_not_found/);

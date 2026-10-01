@@ -153,7 +153,9 @@
 	const pct = $derived(importPct(job));
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
-	const phase = $derived(detectPhase(detection, detectState === 'scanning'));
+	const phase = $derived(
+		detectPhase(detection, detectState === 'scanning', detectState === 'failed')
+	);
 	const rows = $derived(detection === null ? [] : probeRows(detection));
 	/** Live while the panel is minimised, so the chip is never a lie. */
 	const importRunning = $derived(
@@ -757,6 +759,11 @@
 							<h3>What is on this machine</h3>
 							{#if phase === 'scanning'}
 								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
+							{:else if phase === 'failed'}
+								<p class="muted" role="status" data-agent-detect-state="failed">
+									The search for your music did not finish. Look again, or import a
+									folder instead.
+								</p>
 							{:else if detection !== null}
 								<ul class="probes">
 									{#each rows as row (row.key)}
@@ -889,6 +896,17 @@
 							{/if}
 							<div class="actions">
 								{@render backButton()}
+								<!-- #3422: Confirm was the one step whose only exit was Back. -->
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => void dismissAndClose()}
+									disabled={setupWizard.busy}
+									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
+								>
+									{ESCAPE_ACTIONS[2].label}
+								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.beginImport({ refreshDecrypt })}
@@ -1042,11 +1060,11 @@ message={job.message}
 							{#if lastImport !== null && lastImport.kind === 'rekordbox'}
 								<p class="counts">
 									Imported
-									<strong title="Tracks written into the engine's state database">
+									<strong title="Tracks added to your Open DJ library">
 										{lastImport.tracks} tracks
 									</strong>
 									and
-									<strong title="Playlists written into the engine's state database">
+									<strong title="Playlists added to your Open DJ library">
 										{lastImport.playlists} playlists
 									</strong>.
 								</p>
@@ -1076,7 +1094,7 @@ message={job.message}
 							{:else if lastImport !== null && lastImport.kind === 'folder'}
 								<p class="counts">
 									Imported
-									<strong title="Tracks written into the engine's state database">
+									<strong title="Tracks added to your Open DJ library">
 										{lastImport.tracks_written} tracks
 									</strong>
 									from

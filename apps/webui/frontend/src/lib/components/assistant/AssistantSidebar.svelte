@@ -15,6 +15,7 @@
 	 */
 	import {
 		AssistantError,
+		assistantPanelMode,
 		getAssistantStatus,
 		streamChat,
 		type AssistantStatus,
@@ -39,9 +40,7 @@
 	const canSend = $derived(
 		status?.configured === true && streaming === null && draft.trim().length > 0
 	);
-	const showPanel = $derived(
-		visible && status !== null && status.configured === true && statusError === null
-	);
+	const mode = $derived(assistantPanelMode(visible, status, statusError));
 
 	/** Ask what the engine can do, the first time the sidebar is shown. */
 	$effect(() => {
@@ -108,7 +107,7 @@
 	}
 </script>
 
-{#if showPanel}
+{#if mode === 'chat'}
 	<aside class="assistant-sidebar" aria-label="Setup assistant">
 		<header>
 			<h2>Assistant</h2>
@@ -171,7 +170,7 @@
 			</div>
 		</form>
 	</aside>
-{:else if visible && statusError !== null}
+{:else if mode === 'unavailable'}
 	<aside class="assistant-unavailable" aria-label="Assistant unavailable">
 		<p class="muted status-note" role="status">{humanAssistantStatusError()}</p>
 		<details class="agent-details-only">

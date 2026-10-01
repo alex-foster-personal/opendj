@@ -55,14 +55,19 @@ import { isFatalBlocker, type RekordboxDetection } from './setup-api';
  * re-asking", because to an operator they are the same fact: the machine is
  * looking. 'answered' is the only phase allowed to draw a verdict.
  */
-export type DetectPhase = 'scanning' | 'answered';
+export type DetectPhase = 'scanning' | 'answered' | 'failed';
 
 export function detectPhase(
 	detection: RekordboxDetection | null,
-	busy: boolean
+	busy: boolean,
+	failed = false
 ): DetectPhase {
-	if (detection === null) return 'scanning';
-	return busy ? 'scanning' : 'answered';
+	if (busy) return 'scanning';
+	// A detection that FAILED with nothing on screen is not still looking
+	// (#3422): painting the scanning sentence beside a red error says two
+	// opposite things at once, and the first one never clears.
+	if (detection === null) return failed ? 'failed' : 'scanning';
+	return 'answered';
 }
 
 /** The sentence the scanning phase shows. Spelled once so the e2e can pin it

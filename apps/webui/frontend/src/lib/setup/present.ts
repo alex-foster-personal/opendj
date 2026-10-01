@@ -343,3 +343,16 @@ export function humanStageLabel(stage: string, labels: Readonly<Record<string, s
 	const label = labels[stage];
 	return label === undefined || label.trim() === '' ? 'Another import step' : label;
 }
+
+/** finish() saved the dismissal but could not re-read the startup checks. */
+export function humanFinishUnconfirmed(): string {
+	return 'Your choice was saved, but the app could not confirm the library is ready. Try again in a moment.';
+}
+
+/** finish() saved the dismissal but the engine still sees no library. */
+export function humanFinishLibraryMissing(): string {
+	return (
+		'Your choice was saved, but the library still looks empty, so setup would only open ' +
+		'again. Import some music, or try again in a moment.'
+	);
+}
