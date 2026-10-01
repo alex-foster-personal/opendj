@@ -116,8 +116,10 @@ def test_clean_base_merge_carries_naming_sha_and_patch_id(repo: Path, reviewed: 
 
 @pytest.mark.requirement("REVIEW-12")
 def test_main_change_far_from_pr_hunk_in_same_file_carries(repo: Path, reviewed: str) -> None:
-    """[if] main edits the PR's file outside the reviewed hunk's context [then] the
-    patch-id ignores the line shift and coverage carries, [else stop]."""
+    """[if] main edits the PR's file outside the reviewed hunk's context [then] coverage carries, [else stop].
+
+    The patch-id ignores the hunk-header line shift.
+    """
     _advance_main(repo, _FILE, _lines({2: "line2 main"}))
     head = _merge_main(repo)
     assert _git(repo, "show", f"{head}:{_FILE}").splitlines()[2] == "line2 main"
@@ -127,9 +129,11 @@ def test_main_change_far_from_pr_hunk_in_same_file_carries(repo: Path, reviewed:
 
 @pytest.mark.requirement("REVIEW-12")
 def test_main_change_inside_pr_hunk_context_does_not_carry(repo: Path, reviewed: str) -> None:
-    """[if] main edits a context line of the reviewed hunk [then] the net diff changes
-    and coverage does not carry, [else stop]. Decided, not incidental: the reviewer
-    read that context line as it was."""
+    """[if] main edits a context line of the reviewed hunk [then] coverage does not carry, [else stop].
+
+    Decided, not incidental: the net diff changes, and the reviewer read that
+    context line as it was.
+    """
     _advance_main(repo, _FILE, _lines({28: "line28 main"}))
     head = _merge_main(repo)
 
@@ -172,8 +176,10 @@ def test_conflict_resolution_that_alters_net_diff_does_not_carry(repo: Path, rev
 
 @pytest.mark.requirement("REVIEW-12")
 def test_revert_pair_then_base_merge_does_not_carry(repo: Path, reviewed: str) -> None:
-    """[if] own commits that net to nothing ride along with a base merge [then] no carry,
-    because the PASS line claims base merge only, [else stop]."""
+    """[if] own commits that net to nothing ride along with a base merge [then] no carry, [else stop].
+
+    The PASS line claims "base merge only", so a revert pair must not ride along.
+    """
     _commit(repo, _FILE, _lines({30: "line30 pr", 5: "line5 sneaky"}))
     _commit(repo, _FILE, _lines({30: "line30 pr"}))
     _advance_main(repo, _OTHER, "other v2\n")
@@ -185,8 +191,10 @@ def test_revert_pair_then_base_merge_does_not_carry(repo: Path, reviewed: str) -
 
 @pytest.mark.requirement("REVIEW-12")
 def test_whitespace_only_change_moves_the_patch_id(repo: Path) -> None:
-    """[if] re-indenting a reviewed line keeps the patch-id [then broken]: `--stable`
-    alone strips whitespace before hashing, `--verbatim` does not."""
+    """[if] a reviewed line is only re-indented [then] its patch-id changes, [else stop].
+
+    `--stable` alone strips whitespace before hashing; `--verbatim` does not.
+    """
     base = _git(repo, "rev-parse", "HEAD")
     plain = _commit(repo, _FILE, _lines({30: "line30 pr"}))
     indented = _commit(repo, _FILE, _lines({30: "    line30 pr"}))
@@ -238,7 +246,7 @@ def test_missing_reviewed_object_reports_unknown_and_does_not_carry(
 
 @pytest.mark.requirement("REVIEW-12")
 def test_shallow_clone_reports_unknown_and_does_not_carry(repo: Path, reviewed: str, tmp_path: Path) -> None:
-    """[if] a shallow clone renders a base-merge verdict [then broken]: merge-base needs history."""
+    """[if] the checkout is a shallow clone [then] the carry reads UNKNOWN and does not carry, [else stop]."""
     _advance_main(repo, _OTHER, "other v2\n")
     head = _merge_main(repo)
     _git(repo, "push", "-q", "origin", "pr")
@@ -263,7 +271,7 @@ def test_shallow_clone_reports_unknown_and_does_not_carry(repo: Path, reviewed: 
 def test_triage_prints_base_merge_pass_line_and_proof(
     repo: Path, reviewed: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """[if] a base-merge carry PASS omits either full SHA or the patch-id [then broken]."""
+    """[if] a base-merge carry passes [then] triage prints both full SHAs and the patch-id, [else stop]."""
     from scripts import review_coverage
 
     _advance_main(repo, _OTHER, "other v2\n")
