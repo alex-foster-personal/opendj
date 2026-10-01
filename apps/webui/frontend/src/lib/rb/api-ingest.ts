@@ -46,6 +46,13 @@ export type IngestCoverage = {
 	pending: Record<string, number>;
 	waiting_on_stems: number;
 	stems_source_refusal: string | null;
+	/** Stem bundles on this disk; `local.stems + in_cloud.stems === done.stems`. */
+	local: Record<string, number>;
+	/** Stem bundles evicted to R2 that this machine can fetch back. Done, not pending. */
+	in_cloud: Record<string, number>;
+	/** Vocals pending whose bundle is in the cloud (the drain fetches one at a time). */
+	awaiting_stem_download: number;
+	stems_index: { state: 'ok' | 'off' | 'unknown'; reason: string | null };
 	generated_at: number;
 };
 

@@ -18,6 +18,11 @@
  * - A coverage dot is green when nothing is pending or failed over `present`
  *   tracks. "Nothing to make" (no lyrics available, no stems source) is a
  *   finished state, counted on its own so it is never mistaken for done.
+ * - A stem bundle evicted to the cloud is DONE (HEALTH-07): the R2 index
+ *   holds it and a deck fetches it back in seconds. The hover splits done
+ *   into local and in cloud. When the index cannot be read, tracks with no
+ *   local bundle cannot be told apart from evicted ones, so the Stems dot
+ *   is grey rather than amber or green.
  * - An endpoint that cannot answer is grey "unknown". A failed or malformed
  *   measurement is not a verdict in either direction.
  *
@@ -70,7 +75,17 @@ export type CoverageCounts = {
 	corrupt: Record<string, number>;
 	waiting_on_stems: number;
 	stems_source_refusal: string | null;
+	/** Stem bundles on this disk. `local.stems + in_cloud.stems === done.stems`. */
+	local: Record<string, number>;
+	/** Stem bundles evicted to R2 that this machine can fetch back. */
+	in_cloud: Record<string, number>;
+	/** Vocals pending whose stem bundle is in the cloud: the drain fetches one at a time. */
+	awaiting_stem_download: number;
+	/** `ok`: index read. `off`: no cloud on this machine. `unknown`: it could not be read. */
+	stems_index: { state: 'ok' | 'off' | 'unknown'; reason: string | null };
 };
+
+const STEMS_INDEX_STATES = ['ok', 'off', 'unknown'];
 
 const TERMINAL_WORDING: Record<CoverageStep, string> = {
 	vocals: 'no stems source',
@@ -172,18 +187,55 @@ export function coverageDot(
 	if (present === 0) {
 		return { label, state: 'unavailable', detail: 'no present tracks to measure on this machine' };
 	}
-	const waiting =
-		step === 'vocals' && isCount(coverage.waiting_on_stems) && coverage.waiting_on_stems > 0
-			? ` (${coverage.waiting_on_stems} waiting on stems)`
-			: '';
+	let doneWording = `${done} done`;
+	let indexNote = '';
+	let waiting = '';
+	if (step !== 'lyrics') {
+		const index = coverage.stems_index;
+		if (!index || !STEMS_INDEX_STATES.includes(index.state)) {
+			return unknownDot(label, 'the coverage response does not say whether the cloud stem index was read');
+		}
+		const indexUnknown = index.state === 'unknown';
+		const why = index.reason ?? 'no reason given';
+		if (step === 'stems') {
+			const local: unknown = coverage.local?.stems;
+			const inCloud: unknown = coverage.in_cloud?.stems;
+			if (!isCount(local) || !isCount(inCloud) || local + inCloud !== done) {
+				return unknownDot(label, 'the local and in-cloud stem counts are missing or do not sum to done');
+			}
+			if (indexUnknown && pending > 0) {
+				// Not amber: some of these are probably safe in the cloud. Not green:
+				// that is unproven. The measurement could not be taken.
+				return unknownDot(
+					label,
+					`${plural(pending, 'track has', 'tracks have')} no local stems and the cloud stem index could not be read (${why}), ` +
+						`so stems in the cloud cannot be told apart from stems still to make. ${local} local of ${present} present tracks.`
+				);
+			}
+			doneWording = `${local} local, ${inCloud} in cloud (fetched back when loaded on a deck)`;
+		} else {
+			const fetching: unknown = coverage.awaiting_stem_download;
+			if (!isCount(fetching) || !isCount(coverage.waiting_on_stems)) {
+				return unknownDot(label, 'the vocals stem-dependency counts are missing or not whole numbers');
+			}
+			const parts = [
+				fetching > 0 ? `${fetching} with stems in cloud, fetched one at a time` : '',
+				coverage.waiting_on_stems > 0 ? `${coverage.waiting_on_stems} waiting on stems` : ''
+			].filter((part) => part !== '');
+			waiting = parts.length > 0 ? ` (${parts.join('; ')})` : '';
+			if (indexUnknown && coverage.waiting_on_stems > 0) {
+				indexNote = ` The cloud stem index could not be read (${why}), so some of those waiting may only need a download.`;
+			}
+		}
+	}
 	const refusal =
 		step !== 'lyrics' && terminal > 0 && coverage.stems_source_refusal
 			? ` Stems cannot be made here: ${coverage.stems_source_refusal}.`
 			: '';
 	const counts =
-		`${done} done, ${terminal} ${TERMINAL_WORDING[step]}, ${pending} pending${waiting}` +
+		`${doneWording}, ${terminal} ${TERMINAL_WORDING[step]}, ${pending} pending${waiting}` +
 		`${failed > 0 ? `, ${failed} failed` : ''} of ${present} present tracks ` +
-		`(denominator: present = audio resolves on this machine).${refusal}`;
+		`(denominator: present = audio resolves on this machine).${refusal}${indexNote}`;
 	// Corruption is a DISTINCT, always-surfaced state: a subset of the work
 	// still to do, never folded into a quiet amber.
 	if (corrupt > 0) {

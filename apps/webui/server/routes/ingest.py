@@ -66,6 +66,7 @@ from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.webui.server import coverage_cloud
 from apps.webui.server.routes import ingest_coverage
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_job import (
@@ -225,6 +226,13 @@ class CoverageOut(BaseModel):
     failed: dict[str, int]
     pending: dict[str, int]
     waiting_on_stems: int
+    #: Stems ``done`` split (HEALTH-07): on this disk, and only in R2.
+    local: dict[str, int]
+    in_cloud: dict[str, int]
+    #: Vocals that need their bundle fetched from R2 before they can derive.
+    awaiting_stem_download: int
+    #: ``state`` is ok | off | unknown; unknown renders the stems light grey.
+    stems_index: dict[str, str | None]
     stems_source_refusal: str | None
     generated_at: float
 
@@ -237,6 +245,7 @@ def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
     return ingest_coverage.compute_snapshot(
         open_ro, _stem_roots(app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR, COVERAGE_DATA_DIR,
         stems_source_refusal=refusal_fn(),
+        stem_cloud=coverage_cloud.for_app_state(app.state, COVERAGE_DATA_DIR),
     )
 
 
