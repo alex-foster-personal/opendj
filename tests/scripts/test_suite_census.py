@@ -1,7 +1,8 @@
 """scripts/suite_census.py and scripts/pytest_child_coverage.py.
 
 The control is a real 4-test suite run under real coverage in a subprocess: a superset test, a
-subset of it, a unique test, and a test whose only coverage comes from a child Python process.
+subset of it, a unique test, a test whose only coverage comes from a child Python process,
+and a test whose child only re-imports the package (import bodies must not count as coverage).
 Each guard is mutated in both directions: dropping the child-labelling plugin must make the
 subprocess test unmeasured, and the set cover must neither keep a strict subset nor drop a
 test that holds a unique arc.
@@ -58,6 +59,11 @@ def test_c_unique():
 def test_d_subprocess_only():
     out = subprocess.run([sys.executable, "-c", "import pkg; print(pkg.h(11))"], capture_output=True, text=True)
     assert out.stdout.strip() == "10"
+
+
+def test_e_child_only_imports():
+    out = subprocess.run([sys.executable, "-c", "import pkg"], capture_output=True, text=True)
+    assert out.returncode == 0
 '''
 
 EXPECTED = {
@@ -65,6 +71,8 @@ EXPECTED = {
     "test_b_subset_of_a": "REDUNDANT_IN_SET",
     "test_c_unique": "KEEP_COVER",
     "test_d_subprocess_only": "KEEP_COVER",
+    # its child ran only module bodies the parent ran at import time: credited to no test
+    "test_e_child_only_imports": "NO_COVERAGE",
 }
 
 
@@ -101,8 +109,8 @@ def test_the_control_suite_buckets_every_test_correctly(tmp_path: Path) -> None:
     db, junit = _run_control(tmp_path, label_children=True)
     result = census.analyze(db, junit)
     assert _buckets(result) == EXPECTED
-    assert result.child_contexts == 1
-    assert result.cases == 4
+    assert result.child_contexts == 2
+    assert result.cases == 5
 
 
 def test_without_the_child_plugin_the_subprocess_test_is_unmeasured(tmp_path: Path) -> None:
