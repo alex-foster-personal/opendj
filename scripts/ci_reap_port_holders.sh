@@ -50,7 +50,7 @@
 # waits for that lock, so the check has to sit between acquiring it and
 # binding. The trailing command is exec'd once the ports are clear.
 #
-# The runner-side fix is ops/ci/runner-hooks/job-completed.sh, which kills
+# The runner-side fix is the job-completed hook (fleet-af ci--hosts runner role), which kills
 # leftovers the moment a job ends. This is the in-repo net for a host where
 # that hook is missing, and the place a holder gets NAMED.
 #
