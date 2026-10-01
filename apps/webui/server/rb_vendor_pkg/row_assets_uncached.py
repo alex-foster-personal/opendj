@@ -84,15 +84,23 @@ def decoded_vocals(source: anlz.BytesSource, stable_id: str) -> dict[str, Any]:
 # ----- the uncached path ------------------------------------------------------
 
 
-class _Bytes:
-    """Bytes read once, shaped like the path the readers take. No ``__str__``
-    naming the file: a reader's error message is never logged."""
+class ReadBytes:
+    """Bytes read once, shaped like the path the readers take.
+
+    The readers put ``{path}`` in their error messages. This prints as a
+    constant, so a message can never carry a path or the file's bytes.
+    """
+
+    __slots__ = ("_data",)
 
     def __init__(self, data: bytes) -> None:
         self._data: bytes = data
 
     def read_bytes(self) -> bytes:
         return self._data
+
+    def __repr__(self) -> str:
+        return "<analysis file bytes>"
 
 
 def _sibling_bytes(mapped: MappedPath, suffix: str, resolver: AssetResolver | None) -> bytes | None:
@@ -124,8 +132,8 @@ def _uncached_analysis(
         if data is None:
             continue
         if index == 0:  # the .2EX carries the vocal envelope as well
-            vocals = decoded_vocals(_Bytes(data), stable_id)
-        strip = decoded_preview(reader, _Bytes(data), suffix, stable_id)
+            vocals = decoded_vocals(ReadBytes(data), stable_id)
+        strip = decoded_preview(reader, ReadBytes(data), suffix, stable_id)
         if strip is not None:
             preview = strip
             break

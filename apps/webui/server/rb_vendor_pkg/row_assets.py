@@ -59,6 +59,7 @@ from apps.shared.platform_paths import AssetResolver
 from . import anlz
 from .row_assets_uncached import (
     MAX_ASSET_BYTES,
+    ReadBytes,
     decoded_preview,
     decoded_vocals,
     pvdi_vocals,
@@ -103,16 +104,6 @@ class RowAssets:
     #: PVDI vocals only (rekordbox / no_vocals / not_analyzed), before the
     #: demucs fallback. A fresh object per caller: rows go to serializers.
     pvdi_vocals: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class _ReadBytes:
-    """Bytes already read through the walk, shaped like the path the readers take."""
-
-    data: bytes
-
-    def read_bytes(self) -> bytes:
-        return self.data
 
 
 # ----- the plan: which paths a row's vendor strings name ----------------------
@@ -390,7 +381,7 @@ class RowAssetSession:
         for (suffix, reader), name in zip(anlz._PREVIEW_SOURCES, candidates, strict=True):
             payload = leaves.read(name)
             strip = None if payload is None else decoded_preview(
-                reader, _ReadBytes(payload), suffix, stable_id
+                reader, ReadBytes(payload), suffix, stable_id
             )
             if strip is not None:
                 preview = strip
@@ -401,7 +392,7 @@ class RowAssetSession:
         twoex = leaves.read(candidates[0])
         vocals = _NOT_ANALYZED
         if twoex is not None:
-            vocals = json.dumps(decoded_vocals(_ReadBytes(twoex), stable_id))
+            vocals = json.dumps(decoded_vocals(ReadBytes(twoex), stable_id))
         leaves.witness_unread(candidates)
         if leaves.refused is not None:
             raise _RefusedWith(leaves.refused, (*preview, vocals))

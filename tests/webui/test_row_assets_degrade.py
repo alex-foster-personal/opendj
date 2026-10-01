@@ -283,6 +283,14 @@ def test_a_remounted_real_root_is_trusted_afresh_and_logged_once(
 
 
 @pytest.mark.requirement("LIBM-139")
+def test_anchoring_afresh_forgets_every_remembered_row(share: Path) -> None:
+    call()
+    assert len(row_assets._ROW_ASSETS) == 1
+    os.close(fd_anchored_walk.reanchor_real_root(share))  # type: ignore[arg-type]
+    assert len(row_assets._ROW_ASSETS) == 0
+
+
+@pytest.mark.requirement("LIBM-139")
 def test_a_real_root_replaced_by_a_symlink_stays_refused(share: Path, tmp_path: Path) -> None:
     assert level_of(call()) == INSIDE
     build(tmp_path / "attacker", OUTSIDE)
