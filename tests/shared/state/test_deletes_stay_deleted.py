@@ -1,16 +1,12 @@
 """LIBM-140: a track the user removed stays removed until the user restores it.
 
-[if] rekordbox still lists a track the user removed [then] a re-ingest leaves it
-removed and counts it as skipped: deleted by user, [else stop].
+- [if] rekordbox still lists a removed track [then] a re-ingest skips it and counts it, [else stop].
+- [if] the user restores a removed track [then] the next ingest keeps it live, [else stop].
+- [if] a removed recording reappears at a new path with the same audio [then] it stays removed, [else stop].
+- [if] a file the library has never held is ingested [then] it still arrives, [else stop].
 
-[if] the user restores a removed track [then] the next ingest keeps it live
-(the fix must not make a track un-restorable), [else stop].
-
-[if] a removed recording reappears under a new path with the same audio bytes
-[then] it is the same recording and stays removed, [else stop].
-
-[if] a file the library has never held is ingested [then] it still arrives,
-[else stop].
+The second line is the control for the first: the fix must not make a track
+un-restorable. The fourth is the control for the third.
 """
 
 from __future__ import annotations

@@ -5,18 +5,13 @@ Every scenario runs the real hub router and the real ``run_sync``; a sync that
 leaves the two sides different raises ``SyncDigestMismatch``, so a test that
 returns has also proven convergence.
 
-[if] a machine holding a live copy of a removed track syncs for the first time
-[then] the track stays removed on the hub and on every other machine, and the
-machine's own copy becomes removed, [else stop].
+- [if] a stale copy holding a removed track live syncs [then] it stays removed on every machine, [else stop].
+- [if] a track is edited after another machine removed it [then] the older tombstone still wins, [else stop].
+- [if] the user restores a removed track [then] the restore reaches every machine, [else stop].
+- [if] a machine brings tracks the fleet has never held [then] they arrive, [else stop].
 
-[if] a machine edits a track after another machine removed it [then] the
-tombstone still wins although the edit carries the newer stamp, [else stop].
-
-[if] the user restores a removed track [then] the restore reaches every
-machine (the tombstone rule must not make a track un-restorable), [else stop].
-
-[if] a machine brings tracks the fleet has never held [then] they arrive,
-[else stop].
+The stale copy's own row becomes removed too. The third and fourth lines are
+the controls: the rule must not make a track un-restorable or refuse new ones.
 """
 
 from __future__ import annotations
