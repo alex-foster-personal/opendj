@@ -88,11 +88,13 @@ _UV_PIP = re.compile(
 )
 _UV_PYTHON_ARG = re.compile(r"(?<!\S)(?:--python|-p)(?:=|\s+)(?P<val>\"[^\"]*\"|'[^']*'|\S+)")
 _UV_SYSTEM_ARG = re.compile(r"(?<!\S)--(?:system|break-system-packages)(?![\w-])")
+#: Deliberately dumber than the scanner: any line naming pip and install/sync.
+_CRUDE_PIP_LINE = re.compile(r"\bpip[\d.]*\b.*\b(?:install|sync)\b")
 _VENV_PATH = re.compile(r"(?i)(?:^|/)[^/\s]*venv[^/\s]*/bin/")
 
 WAVEFORM_JOB = "periodic-checks.yml:perf-bench-waveform-render"
 WAVEFORM_STEP = "Install waveform native extension"
-HOSTED_PIP_JOB = "periodic-checks.yml:duplicate-writer"
+HOSTED_JOB = "periodic-checks.yml:duplicate-writer"
 
 
 # ---------------------------------------------------------------------------
@@ -192,20 +194,22 @@ def test_scanner_sees_the_maturin_install_as_venv_targeted() -> None:
     assert maturin == [True], installs
 
 
-def test_scanner_sees_venv_installs_across_self_hosted_jobs() -> None:
-    """Every self-hosted `uv pip install --python .venv/...` in the tree is SEEN and
-    allowed. Zero seen would mean the scanner reads nothing, and the invariant above
-    would pass for that reason alone."""
-    seen = [
-        (key, text)
+def test_scanner_sees_every_pip_line_in_self_hosted_jobs() -> None:
+    """Every self-hosted step line that a crude text search says mentions a pip
+    install or sync is one the scanner parses. A scanner that reads nothing would
+    leave the invariant above green for that reason alone; this cannot, because the
+    crude search and the scanner have to agree line by line, and at least the
+    maturin line has to be there."""
+    candidates = [
+        (key, line)
         for key, job in self_hosted_jobs(_workflows()).items()
         for step in job["steps"]
-        for text, venv in pip_installs(step.get("run"))
-        if venv
+        for line in _shell_code(step.get("run")).replace("\\\n", " ").splitlines()
+        if _CRUDE_PIP_LINE.search(line)
     ]
-    keys = {key for key, _ in seen}
-    assert WAVEFORM_JOB in keys, seen
-    assert len(keys) >= 3, f"only {sorted(keys)} seen; the scanner is not reading the workflows"
+    assert any(key == WAVEFORM_JOB for key, _ in candidates), candidates
+    unparsed = [(key, line.strip()) for key, line in candidates if not pip_installs(line)]
+    assert not unparsed, f"pip lines the scanner does not parse: {unparsed}"
 
 
 # ---------------------------------------------------------------------------
@@ -232,19 +236,14 @@ def test_reverting_the_maturin_install_goes_red(line: str) -> None:
 
 
 def test_a_hosted_bare_pip_install_is_exempt_and_bites_once_self_hosted() -> None:
-    workflows = _workflows()
-    job = _job(workflows, HOSTED_PIP_JOB)
-    assert is_github_hosted(job.get("runs-on")), f"{HOSTED_PIP_JOB} is no longer hosted"
-    assert any(not venv for step in job["steps"] for _, venv in pip_installs(step.get("run"))), (
-        f"{HOSTED_PIP_JOB} no longer runs a bare pip install; pick another hosted control"
-    )
-    assert HOSTED_PIP_JOB not in violations(workflows)
+    workflows = copy.deepcopy(_workflows())
+    job = _job(workflows, HOSTED_JOB)
+    assert is_github_hosted(job.get("runs-on")), f"{HOSTED_JOB} is no longer hosted"
+    job["steps"].append({"name": "bare pip", "run": "pip install --quiet pyyaml"})
+    assert HOSTED_JOB not in violations(workflows)
 
-    mutated = copy.deepcopy(workflows)
-    _job(mutated, HOSTED_PIP_JOB)["runs-on"] = (
-        "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
-    )
-    assert HOSTED_PIP_JOB in violations(mutated)
+    job["runs-on"] = "${{ fromJSON(vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
+    assert HOSTED_JOB in violations(workflows)
 
 
 def test_the_fixed_line_moved_to_other_venv_spellings_stays_green() -> None:
