@@ -72,9 +72,50 @@ test('FB-19: Cmd+Shift+M arms even in textarea', () => {
 	);
 });
 
-test('settings open blocks arming', () => {
+// pin 28a5effd: "more places in UI that m doesn't work that ARE NOT text
+// entry". Two were left: a focused <select>, and anything at all while the
+// Settings overlay was open (the router took a `settingsOpen` veto).
+//
+// - if a focused <select> swallows m then the dropdowns in Settings and the
+//   mixer are dead spots for the comment hotkey -> broken
+// - if the Settings overlay vetoes m then no pin can be placed on Settings,
+//   which is exactly where most of the dropdowns live -> broken
+// - if m arms while typing in a text input, textarea or contenteditable then
+//   the letter is stolen from the text -> broken (the overshoot)
+test('pin 28a5effd: plain m arms on a focused select', () => {
+	assert.equal(routing.resolveCommentPinHotkey(key({ target: target('SELECT') })), 'arm');
+	assert.equal(routing.resolveCommentPinHotkey(key({ key: 'M', target: target('SELECT') })), 'arm');
+});
+
+test('pin 28a5effd: the router takes no Settings veto', () => {
 	assert.equal(
-		routing.resolveCommentPinHotkey(key(), { settingsOpen: true }),
-		null
+		routing.resolveCommentPinHotkey.length,
+		1,
+		'the router must take the key event only: a second options argument is how the veto got in'
 	);
+});
+
+test('pin 28a5effd: plain m still never arms while typing', () => {
+	const typing = [
+		target('INPUT', { type: 'text' }),
+		target('INPUT', { type: 'search' }),
+		target('INPUT', { type: 'number' }),
+		target('INPUT', { type: '' }),
+		target('TEXTAREA'),
+		target('DIV', { contentEditable: true }),
+		target('DIV', { role: 'textbox' }),
+		target('INPUT', { role: 'combobox', type: 'text' })
+	];
+	for (const focus of typing) {
+		assert.equal(routing.resolveCommentPinHotkey(key({ target: focus })), null);
+	}
+});
+
+test('pin 28a5effd: the installer does not consult the Settings overlay', async () => {
+	const { readFileSync } = await import('node:fs');
+	const src = readFileSync(
+		new URL('../../src/lib/rb/comment-pin-hotkeys.ts', import.meta.url),
+		'utf8'
+	);
+	assert.doesNotMatch(src, /isSettingsOpen/);
 });
