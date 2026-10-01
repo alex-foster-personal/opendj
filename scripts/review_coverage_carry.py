@@ -7,10 +7,11 @@ earlier ancestor head instead of forcing a paid re-review. Local
 consulted. When carry applies, ``review_coverage.triage()`` prints both SHAs
 and the diff path list (issue #2871).
 
-Rule 2, base-merge (REVIEW-12): when the head advanced only by merging main and
-the PR's net diff against its base has the same `git patch-id --verbatim` at
-both heads. See scripts/review_coverage_base_merge.py. A carry that cannot be
-measured is reported as `carry UNKNOWN` on the MISS row, never as a carry.
+Rule 2, base-merge (REVIEW-12): when the head advanced only by merging main,
+main changed no path the PR touches, and the PR's net diff against its base is
+byte-identical at both heads (the disjoint-paths rule). See
+scripts/review_coverage_base_merge.py. A carry that cannot be measured is
+reported as `carry UNKNOWN` on the MISS row, never as a carry.
 """
 
 from __future__ import annotations

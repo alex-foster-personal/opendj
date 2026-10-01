@@ -62,8 +62,8 @@ Requirements (mini-PRD):
     the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
     scripts/review_coverage_carry.py). When carry applies, triage prints both
     SHAs and the local ``git diff --name-only`` path list.
-  / Base merges carry coverage when the PR's net diff has the same
-    ``git patch-id --verbatim`` at both heads (REVIEW-12; see
+  / Base merges carry coverage when main changed no path the PR touches and
+    the PR's net diff is byte-identical at both heads (REVIEW-12; see
     scripts/review_coverage_base_merge.py). Unmeasurable reads carry UNKNOWN.
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
