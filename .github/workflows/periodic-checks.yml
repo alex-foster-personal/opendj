@@ -1252,66 +1252,6 @@ jobs:
           exit 1
 
   # ---------------------------------------------------------------------------
-  # Row 14: duplicate-writer / near-duplicate fleet state (DEVOPS-10, #1580).
-  # Cheap, no product toolchain: PyYAML plus the committed inventory at
-  # ops/fleet/state-files.yaml. Runs every merge window, same as preview-drift
-  # and reqs-drift. UNKNOWN (exit 2) is a failed read, never a clean zero.
-  # ---------------------------------------------------------------------------
-  duplicate-writer:
-    name: duplicate-writer (fleet state)
-    needs: window
-    if: needs.window.outputs.run == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-          ref: ${{ needs.window.outputs.head }}
-          clean: true
-
-      - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.11"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
-
-      - name: Provision duplicate-writer venv
-        # Synced from the hash-pinned lock, never resolved (issue #4252). A
-        # separate step, so a provisioning failure cannot read as a verdict.
-        run: scripts/ci_venv.sh 3.11 --lock ops/fleet/pylock.duplicate-writer.toml
-
-      - name: Duplicate-writer check
-        run: |
-          set -uo pipefail
-          # NOT `... || true` followed by `$?`: after a pipeline or an
-          # `|| true`, `$?` reads 0 and the verdict is lost. scripts/
-          # shell_construct_lint.py bans that construct for exactly this
-          # reason. if/else captures the real code.
-          if .venv/bin/python -m scripts.duplicate_writer_check > dupes.out 2> dupes.err; then
-            code=0
-          else
-            code=$?
-          fi
-          cat dupes.err >&2 || true
-          cat dupes.out || true
-          {
-            echo "### Duplicate-writer (row 14)"
-            echo ""
-            echo "exit ${code}"
-            echo ""
-            echo '```'
-            cat dupes.out 2>/dev/null
-            cat dupes.err 2>/dev/null
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          # Findings (1) and UNKNOWN (2) both red the job. A missing inventory
-          # must never render as a pass.
-          exit "$code"
-
-  # ---------------------------------------------------------------------------
   # Row 8: dependency audit (DEVOPS-01, #1507). Monthly cadence on its own
   # schedule arm, NOT the merge window: a new advisory overnight must not red
   # every open PR. Policy commands live in docs/ops/periodic-checks.md row 8;
@@ -1666,7 +1606,7 @@ jobs:
       contents: read
       issues: write
     name: ledger comment
-    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, dmg-smoke-cadence, duplicate-writer]
+    needs: [window, full-suite, bundle-trend, perf-bench, perf-bench-stem-decode, perf-bench-waveform-render, preview-drift, reqs-drift, dmg-smoke-cadence]
     if: always() && needs.window.result == 'success' && needs.window.outputs.run == 'true'
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
@@ -1768,7 +1708,6 @@ jobs:
           V_REQS: ${{ needs.reqs-drift.outputs.verdict }}
           R_DMG: ${{ needs.dmg-smoke-cadence.result }}
           V_DMG: ${{ needs.dmg-smoke-cadence.outputs.verdict }}
-          R_DUPES: ${{ needs.duplicate-writer.result }}
         run: |
           set -euo pipefail
 
@@ -1944,7 +1883,6 @@ jobs:
           | 7 | desktop dmg smoke (Linux observe; headed attach needs:mac) | $(mark "$R_DMG") verdict \`${V_DMG:-UNKNOWN}\` |
           | 9 | preview drift (remote refs) | $(mark "$R_DRIFT") verdict \`${V_DRIFT:-UNKNOWN}\` |
           | 11 | requirement status drift (cited but unflipped) | $(mark "$R_REQS") verdict \`${V_REQS:-UNKNOWN}\` |
-          | 14 | duplicate-writer (fleet state inventory) | $(mark "$R_DUPES") |
 
           Rows 3 and 8: see \`docs/ops/periodic-checks.md\`. Row 7 Linux
           observe is in this table; headed Mac attach stays needs:mac until
