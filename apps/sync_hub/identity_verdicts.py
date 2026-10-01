@@ -61,8 +61,9 @@ class CFG:
     PRINTABLE_LOW: str = "!"
     PRINTABLE_HIGH: str = "~"
     #: Verdicts one walk decides row by row before it elects the whole library
-    #: once instead. Four pull pages' worth (``DEFAULT_PULL_LIMIT`` is 500), so a
-    #: page never reaches it and a full walk (offer, digest) pays one scan.
+    #: once instead. Above one pull page (``client.PULL_LIMIT`` is 1,000, the
+    #: hub's ``DEFAULT_PULL_LIMIT`` 500), so a page never reaches it and a full
+    #: walk (offer, digest) pays one scan.
     ELECT_LIBRARY_AFTER_VERDICTS: int = 2_000
 
 
