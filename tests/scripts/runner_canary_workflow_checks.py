@@ -51,6 +51,7 @@ CANARY_REF = "refs/heads/canary/" + "0" * 40
 #: (the shard rebalance and the Mergify CI Insights job) live in the source repository.
 CI_ONLY_STEPS = (
     "Upload this shard's measured durations",
+    "Upload the PR test selection record (DEVOPS-20 escape measurement)",
     "Stage this shard's JUnit report for the isolated CI Insights job",
     "Upload this shard's JUnit report for CI Insights",
 )
