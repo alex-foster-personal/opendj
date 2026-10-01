@@ -25,6 +25,9 @@
  *   is grey rather than amber or green.
  * - An endpoint that cannot answer is grey "unknown". A failed or malformed
  *   measurement is not a verdict in either direction.
+ * - The coverage dots show the engine's LAST measurement at once and say how
+ *   old it is (HEALTH-12). An old measurement keeps its verdict; a refresh
+ *   that failed does not, because the counts are then known to be unchecked.
  *
  * Every count names its denominator: `present` is the set of tracks whose
  * audio resolves on this machine right now.
@@ -83,6 +86,12 @@ export type CoverageCounts = {
 	awaiting_stem_download: number;
 	/** `ok`: index read. `off`: no cloud on this machine. `unknown`: it could not be read. */
 	stems_index: { state: 'ok' | 'off' | 'unknown'; reason: string | null };
+	/** Seconds since these counts were measured (0 for a fresh measurement). */
+	age_s: number;
+	/** A newer measurement is being taken; ask again shortly. */
+	refreshing: boolean;
+	/** Why the latest background refresh failed, or null. */
+	refresh_error: string | null;
 };
 
 const STEMS_INDEX_STATES = ['ok', 'off', 'unknown'];
@@ -160,7 +169,62 @@ export function libraryHealthDot(
 	};
 }
 
+/** "just now", "12 s ago", "4 min ago", "2 h ago". */
+export function coverageAgeText(ageS: number): string {
+	if (ageS < 1) return 'just now';
+	if (ageS < 60) return `${Math.floor(ageS)} s ago`;
+	if (ageS < 3600) return `${Math.floor(ageS / 60)} min ago`;
+	return `${Math.floor(ageS / 3600)} h ago`;
+}
+
+/**
+ * How soon to ask for coverage again, or null to wait for the regular
+ * refetch. A refresh running behind a cached read, a refresh that failed and
+ * a request that failed are each worth asking again soon; `rechecks` counts
+ * the early re-asks already made, and the delays back off and then stop so a
+ * measurement that never settles is not polled in a tight loop.
+ */
+export const COVERAGE_RECHECK_DELAYS_MS: readonly number[] = [3000, 3000, 6000, 12000, 24000];
+
+export function coverageRecheckDelayMs(
+	outcome: { ok: true; refreshing: boolean; refresh_error: string | null } | { ok: false },
+	rechecks: number
+): number | null {
+	const settled = outcome.ok && !outcome.refreshing && outcome.refresh_error === null;
+	if (settled) return null;
+	return COVERAGE_RECHECK_DELAYS_MS[rechecks] ?? null;
+}
+
 export function coverageDot(
+	label: LibraryHealthDot['label'],
+	coverage: CoverageCounts,
+	step: CoverageStep
+): LibraryHealthDot {
+	const age: unknown = coverage.age_s;
+	const refreshError: unknown = coverage.refresh_error;
+	if (
+		typeof age !== 'number' ||
+		!Number.isFinite(age) ||
+		age < 0 ||
+		typeof coverage.refreshing !== 'boolean' ||
+		(refreshError !== null && typeof refreshError !== 'string')
+	) {
+		return unknownDot(label, 'the coverage response does not say how old its counts are');
+	}
+	if (refreshError !== null) {
+		// The counts on hand are the last good measurement, and the attempt to
+		// check them again failed: they are not shown as a verdict.
+		return unknownDot(
+			label,
+			`the last coverage refresh failed (${refreshError}); the counts on hand were measured ${coverageAgeText(age)}`
+		);
+	}
+	const dot = _coverageVerdict(label, coverage, step);
+	const refreshing = coverage.refreshing ? '; a fresh count is being taken' : '';
+	return { ...dot, detail: `${dot.detail} Measured ${coverageAgeText(age)}${refreshing}.` };
+}
+
+function _coverageVerdict(
 	label: LibraryHealthDot['label'],
 	coverage: CoverageCounts,
 	step: CoverageStep

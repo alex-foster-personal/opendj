@@ -160,7 +160,7 @@ async function stubPerformanceApis(
 	await page.route('**/api/v1/client-events', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/client-errors', (route) => route.fulfill({ json: {} }));
 	await page.route('**/api/v1/commands/next', (route) => route.fulfill({ status: 409, json: {} }));
-	await page.route('**/api/v1/ingest/coverage', (route) =>
+	await page.route('**/api/v1/ingest/coverage**', (route) =>
 		route.fulfill({
 			json: { total_tracks: 3, on_disk: 1, unreachable: 2, missing: { vocals: 1, stems: 1 }, generated_at: 0 }
 		})

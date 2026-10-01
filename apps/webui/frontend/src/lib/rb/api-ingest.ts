@@ -54,6 +54,12 @@ export type IngestCoverage = {
 	awaiting_stem_download: number;
 	stems_index: { state: 'ok' | 'off' | 'unknown'; reason: string | null };
 	generated_at: number;
+	/** Seconds since these counts were measured. 0 unless `cached` was asked. */
+	age_s: number;
+	/** A newer measurement is being taken behind a cached read. */
+	refreshing: boolean;
+	/** Why the latest background refresh failed; the counts are then not current. */
+	refresh_error: string | null;
 };
 
 /** Warm coverage answers in under 2 s; a cold engine can take far longer.
@@ -189,12 +195,20 @@ export async function putIngestConfig(enabled: Record<string, boolean>): Promise
 	return cfg;
 }
 
+/**
+ * `cached: true` accepts the engine's last measurement, returned at once with
+ * its `age_s` while a newer one is taken behind it: for the health lights,
+ * which only display. Without it the engine measures the whole library for
+ * this request (seconds): for a caller that acts on the counts.
+ */
 export async function getIngestCoverage(
-	timeoutMs: number = INGEST_COVERAGE_TIMEOUT_MS
+	options: { cached?: boolean; timeoutMs?: number } = {}
 ): Promise<IngestCoverage> {
+	const timeoutMs = options.timeoutMs ?? INGEST_COVERAGE_TIMEOUT_MS;
+	const query = options.cached === true ? '?cached=true' : '';
 	const { signal, clear } = timeoutSignal(timeoutMs);
 	try {
-		const r = await fetch(`${API_BASE}/api/v1/ingest/coverage`, { signal });
+		const r = await fetch(`${API_BASE}/api/v1/ingest/coverage${query}`, { signal });
 		if (!r.ok) await _err(r);
 		return (await r.json()) as IngestCoverage;
 	} catch (error: unknown) {

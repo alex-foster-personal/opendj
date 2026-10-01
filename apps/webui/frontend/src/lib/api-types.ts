@@ -8514,6 +8514,8 @@ export interface components {
          *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
          */
         CoverageOut: {
+            /** Age S */
+            age_s: number;
             /** Availability */
             availability: {
                 [key: string]: number;
@@ -8552,6 +8554,10 @@ export interface components {
             pending: {
                 [key: string]: number;
             };
+            /** Refresh Error */
+            refresh_error: string | null;
+            /** Refreshing */
+            refreshing: boolean;
             /** Stems Index */
             stems_index: {
                 [key: string]: string | null;
@@ -20376,7 +20382,10 @@ export interface operations {
     };
     get_coverage_api_v1_ingest_coverage_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Accept the last measurement instead of waiting for a new one. `age_s` says how old it is; when `refreshing` is true a newer one is being taken and a read shortly after gets it. Without this the library is measured for this request. */
+                cached?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -20390,6 +20399,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CoverageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

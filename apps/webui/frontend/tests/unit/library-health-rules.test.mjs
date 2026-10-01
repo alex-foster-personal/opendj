@@ -50,6 +50,9 @@ function coverage(step, counts, extra = {}) {
 		in_cloud: { stems: 0 },
 		awaiting_stem_download: 0,
 		stems_index: { state: 'ok', reason: null },
+		age_s: 0,
+		refreshing: false,
+		refresh_error: null,
 		...extra
 	};
 }
@@ -260,4 +263,85 @@ test('no present tracks means nothing to measure: grey, not green', () => {
 	const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', {}), 'lyrics');
 	assert.equal(dot.state, 'unavailable');
 	assert.match(dot.detail, /no present tracks to measure/);
+});
+
+// ----- HEALTH-12: a cached measurement says how old it is --------------------
+// Regression lines:
+//   - if a dot shows counts without saying how old they are then broken
+//   - if a failed refresh leaves the old counts on screen as a verdict then broken
+//   - if a response that does not say its age renders a verdict then broken
+//   - if the lights wait a full minute for a refresh that is already running then broken
+//   - if a refresh that never settles is re-asked forever then broken
+
+// REQ: HEALTH-12
+test('a fresh measurement says it was measured just now', () => {
+	const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', { done: 5 }), 'lyrics');
+	assert.equal(dot.state, 'complete');
+	assert.match(dot.detail, /Measured just now\.$/);
+});
+
+// REQ: HEALTH-12
+test('an older measurement keeps its verdict and states its age', () => {
+	const dot = dots.coverageDot(
+		'Lyrics completion',
+		coverage('lyrics', { done: 4, pending: 1 }, { age_s: 252.4, refreshing: true }),
+		'lyrics'
+	);
+	assert.equal(dot.state, 'incomplete', 'an old measurement is still a measurement');
+	assert.match(dot.detail, /Measured 4 min ago; a fresh count is being taken\.$/);
+	const settled = dots.coverageDot(
+		'Lyrics completion',
+		coverage('lyrics', { done: 5 }, { age_s: 12.2 }),
+		'lyrics'
+	);
+	assert.match(settled.detail, /Measured 12 s ago\.$/);
+});
+
+// REQ: HEALTH-12
+test('a failed refresh turns the dot grey instead of quoting the old counts as current', () => {
+	const dot = dots.coverageDot(
+		'Stems completion',
+		coverage('stems', { done: 5 }, { age_s: 90, refresh_error: 'RuntimeError: state.db is locked' }),
+		'stems'
+	);
+	assert.equal(dot.state, 'unavailable');
+	assert.match(dot.detail, /^unknown - /);
+	assert.match(dot.detail, /state\.db is locked/);
+	assert.match(dot.detail, /1 min ago/);
+});
+
+// REQ: HEALTH-12
+test('a response that does not say how old it is renders grey, not a verdict', () => {
+	for (const broken of [{ age_s: undefined }, { age_s: -1 }, { age_s: 'now' }, { refreshing: undefined }]) {
+		const dot = dots.coverageDot('Lyrics completion', coverage('lyrics', { done: 5 }, broken), 'lyrics');
+		assert.equal(dot.state, 'unavailable', JSON.stringify(broken));
+		assert.match(dot.detail, /^unknown - /);
+	}
+});
+
+// REQ: HEALTH-12
+test('coverage age reads in the largest sensible unit', () => {
+	assert.equal(dots.coverageAgeText(0), 'just now');
+	assert.equal(dots.coverageAgeText(0.9), 'just now');
+	assert.equal(dots.coverageAgeText(1), '1 s ago');
+	assert.equal(dots.coverageAgeText(59.9), '59 s ago');
+	assert.equal(dots.coverageAgeText(60), '1 min ago');
+	assert.equal(dots.coverageAgeText(3599), '59 min ago');
+	assert.equal(dots.coverageAgeText(7300), '2 h ago');
+});
+
+// REQ: HEALTH-12
+test('the lights re-ask soon while a refresh runs, back off, and then stand down', () => {
+	const running = { ok: true, refreshing: true, refresh_error: null };
+	assert.deepEqual(
+		[0, 1, 2, 3, 4, 5, 6].map((n) => dots.coverageRecheckDelayMs(running, n)),
+		[3000, 3000, 6000, 12000, 24000, null, null]
+	);
+	// Settled: nothing to re-ask until the regular refetch.
+	assert.equal(dots.coverageRecheckDelayMs({ ok: true, refreshing: false, refresh_error: null }, 0), null);
+	// A refresh that failed, and a request that failed, are both worth one
+	// early retry rather than a full minute of grey.
+	assert.equal(dots.coverageRecheckDelayMs({ ok: true, refreshing: false, refresh_error: 'x' }, 0), 3000);
+	assert.equal(dots.coverageRecheckDelayMs({ ok: false }, 0), 3000);
+	assert.equal(dots.coverageRecheckDelayMs({ ok: false }, 5), null);
 });
