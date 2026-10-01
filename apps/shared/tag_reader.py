@@ -7,8 +7,9 @@ at all. tinytag is MIT, pure Python, has no dependencies, and reads every
 container the library scanner allowlists (MP3/ID3v2, FLAC, MP4/M4A, AIFF, WAV,
 OGG Vorbis, Opus). See ``docs/decisions/ADR-NEW-permissive-audio-tag-io.md``.
 
-Writes do NOT go through here: tinytag is read-only. ID3v2 (MP3) and FLAC
-writes live in :mod:`apps.shared.id3v2` and :mod:`apps.shared.flac_meta`.
+Writes do NOT go through here: tinytag is read-only. ID3v2 (MP3), FLAC, MP4
+and Ogg writes live in :mod:`apps.shared.id3v2`, :mod:`apps.shared.flac_meta`,
+:mod:`apps.shared.mp4_meta` and :mod:`apps.shared.ogg_comment`.
 
 Mini-PRD
 --------

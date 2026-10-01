@@ -7,9 +7,10 @@ Containers (in-house writers, Apache-2.0; see
                  via :mod:`apps.shared.id3v2`.
 * FLAC:          BPM, INITIALKEY, OPENDJ_* Vorbis comments via
                  :mod:`apps.shared.flac_meta`.
-* MP4 / M4A, OGG: read (tinytag) but NOT written -- the planner skips them
-                 by name. Their writer was the GPL mutagen, removed for
-                 licensing.
+* MP4 / M4A:     tmpo, ----:com.apple.iTunes:initialkey / OPENDJ_* free-form
+                 atoms via :mod:`apps.shared.mp4_meta`.
+* Ogg Vorbis / Opus: BPM, INITIALKEY, OPENDJ_* Vorbis comments via
+                 :mod:`apps.shared.ogg_comment`.
 
 Safety rails (mirror :mod:`apps.reconcile.apply` / ``remove_track``):
 
@@ -41,8 +42,9 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from apps.shared import flac_meta, id3v2, tag_reader
+from apps.shared import flac_meta, id3v2, mp4_meta, ogg_comment
 from apps.shared.paths import DATA_DIR
+from apps.shared.vorbis_comment import VorbisCommentError
 
 from .backends import DEFAULT_BACKEND
 from .record import AnalysisRecord
@@ -63,7 +65,7 @@ FILE_BACKUP_ROOT: Path = DATA_DIR / "analysis" / "tag-file-backups"
 
 OPENDJ_NAMESPACE = "OPENDJ"
 _OPENDJ_SUFFIXES = ("ENERGY", "ENERGY_SOURCE", "BACKEND_VERSION")
-WRITABLE_KINDS: frozenset[str] = frozenset({"mp3", "flac"})
+MP4_KEY_ATOM = "initialkey"  # the spelling Mixed In Key and the mutagen writer used
 
 
 @dataclass
@@ -96,7 +98,7 @@ def _container_kind(path: Path) -> str:
         return "mp4"
     if s == ".flac":
         return "flac"
-    if s in (".ogg", ".oga"):
+    if s in (".ogg", ".oga", ".opus"):
         return "ogg"
     raise ValueError(f"Unsupported container for tag write-back: {path.suffix!r}")
 
@@ -105,10 +107,12 @@ def _read_current_tags(path: Path) -> dict[str, str]:
     kind = _container_kind(path)
     if kind == "mp3":
         return _read_mp3(path)
+    if kind == "mp4":
+        return _read_mp4(path)
     if kind == "flac":
-        return _read_flac(path)
-    if kind in ("mp4", "ogg"):
-        return _read_via_tag_reader(path)
+        return _read_vorbis(flac_meta.read(path))
+    if kind == "ogg":
+        return _read_vorbis(ogg_comment.read(path))
     raise AssertionError(kind)  # pragma: no cover
 
 
@@ -116,14 +120,16 @@ def _write_tags(path: Path, new: dict[str, str]) -> None:
     kind = _container_kind(path)
     if kind == "mp3":
         _write_mp3(path, new)
+    elif kind == "mp4":
+        _write_mp4(path, new)
     elif kind == "flac":
-        _write_flac(path, new)
-    elif kind in ("mp4", "ogg"):
-        raise ValueError(
-            f"tag write-back to {path.suffix!r} is not supported (MP4 / Ogg "
-            "writes needed the GPL mutagen, removed for licensing); MP3 and "
-            "FLAC are"
-        )
+        meta = flac_meta.read(path)
+        _set_vorbis(meta, new)
+        flac_meta.save(path, meta)
+    elif kind == "ogg":
+        ogg = ogg_comment.read(path)
+        _set_vorbis(ogg, new)
+        ogg_comment.save(path, ogg)
     else:  # pragma: no cover
         raise AssertionError(kind)
 
@@ -159,13 +165,36 @@ def _write_mp3(path: Path, new: dict[str, str]) -> None:
     id3v2.save(path, tag)
 
 
-# --- FLAC ----------------------------------------------------------------
+# --- MP4 -----------------------------------------------------------------
+
+def _read_mp4(path: Path) -> dict[str, str]:
+    meta = mp4_meta.read(path)
+    out: dict[str, str] = {}
+    tempo = meta.text("tmpo")
+    if tempo is not None:
+        out["BPM"] = tempo
+    for key, name in (("INITIALKEY", MP4_KEY_ATOM), *((k, k) for k in _opendj_keys())):
+        value = meta.freeform(name)
+        if value is not None:
+            out[key] = value
+    return out
+
+
+def _write_mp4(path: Path, new: dict[str, str]) -> None:
+    meta = mp4_meta.read(path)
+    meta.set_tempo(round(float(new["BPM"])))
+    meta.set_freeform(MP4_KEY_ATOM, new["INITIALKEY"])
+    for key in _opendj_keys():
+        meta.set_freeform(key, new[key])
+    mp4_meta.save(path, meta)
+
+
+# --- FLAC / Ogg (Vorbis comments) ----------------------------------------
 
 _VORBIS_FIELDS = ("BPM", "INITIALKEY", *_opendj_keys())
 
 
-def _read_flac(path: Path) -> dict[str, str]:
-    meta = flac_meta.read(path)
+def _read_vorbis(meta: flac_meta.FlacMeta | ogg_comment.OggMeta) -> dict[str, str]:
     out: dict[str, str] = {}
     for key in _VORBIS_FIELDS:
         value = meta.first(key)
@@ -174,27 +203,9 @@ def _read_flac(path: Path) -> dict[str, str]:
     return out
 
 
-def _write_flac(path: Path, new: dict[str, str]) -> None:
-    meta = flac_meta.read(path)
+def _set_vorbis(meta: flac_meta.FlacMeta | ogg_comment.OggMeta, new: dict[str, str]) -> None:
     for key, value in new.items():
         meta.set(key, value)
-    flac_meta.save(path, meta)
-
-
-# --- MP4 / OGG (read only) -----------------------------------------------
-
-def _read_via_tag_reader(path: Path) -> dict[str, str]:
-    tags = tag_reader.read_tags(path)
-    out: dict[str, str] = {}
-    if tags.bpm is not None:
-        out["BPM"] = f"{tags.bpm:g}"
-    if tags.key is not None:
-        out["INITIALKEY"] = tags.key
-    for key in _opendj_keys():
-        value = tags.first_other(key)
-        if value is not None:
-            out[key] = value
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -214,14 +225,8 @@ def plan_deltas(
             log.warning("no file mapping (or missing file) for %s", rec.stable_id)
             continue
         try:
-            kind = _container_kind(path)
-            if kind not in WRITABLE_KINDS:
-                raise ValueError(
-                    f"tag write-back to {path.suffix!r} is not supported "
-                    "(MP3 and FLAC are); skipped"
-                )
             old = _read_current_tags(path)
-        except ValueError as exc:
+        except (ValueError, mp4_meta.Mp4Error, VorbisCommentError) as exc:
             log.warning("%s -- %s", path.name, exc)
             continue
         out.append(TagDelta(

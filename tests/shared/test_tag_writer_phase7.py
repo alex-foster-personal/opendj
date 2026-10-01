@@ -16,6 +16,8 @@ from apps.shared.tag_writer import (
     write_tags,
 )
 
+from tests.fixtures import tagged_audio as ta
+
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
 
@@ -87,15 +89,57 @@ def test_mp3_roundtrip(tmp_path: Path) -> None:
     assert got.isrc == "USRC17607839"
 
 
-@pytest.mark.requirement("TAGIO-03")
-def test_mp4_write_is_refused_and_the_file_is_unchanged(tmp_path: Path) -> None:
-    """[if] a tag write targets an .m4a [then] it raises and nothing changes, [else stop]."""
+_FULL_PLAN = UnifiedTags(
+    title="Unified T",
+    artist="Unified A",
+    album="Unified Alb",
+    genre="Techno",
+    bpm=128.0,
+    key_openkey="8d",
+    key_camelot="8A",
+    energy=7,
+    rating=4,
+    isrc="USRC17607839",
+)
+
+
+def _assert_full_plan(got: object) -> None:
+    assert (got.title, got.artist, got.album, got.genre) == ("Unified T", "Unified A", "Unified Alb", "Techno")
+    assert (got.bpm, got.key_openkey, got.key_camelot) == (128.0, "8d", "8A")
+    assert (got.energy, got.rating, got.isrc) == (7, 4, "USRC17607839")
+
+
+@pytest.mark.requirement("TAGIO-05")
+@pytest.mark.requires_ffmpeg
+def test_mp4_roundtrip_keeps_the_audio(tmp_path: Path) -> None:
+    """[if] a full plan is written to an .m4a [then] every field reads back, audio identical, [else stop]."""
     dst = _copy_fixture(tmp_path, "src.m4a")
+    pcm = ta.decoded_audio_sha256(dst)
     before = _sha(dst)
-    for dry_run in (True, False):
-        with pytest.raises(UnsupportedContainer, match=r"\.m4a files is not supported"):
-            write_tags(dst, UnifiedTags(title="T", bpm=124.0), dry_run=dry_run)
-    assert _sha(dst) == before
+    write_tags(dst, _FULL_PLAN, dry_run=True)
+    assert _sha(dst) == before, "dry-run changed the file"
+    result = write_tags(dst, _FULL_PLAN, dry_run=False)
+    assert set(result.applied) == {f for f in UnifiedTags.__dataclass_fields__ if getattr(_FULL_PLAN, f) is not None}
+    _assert_full_plan(read_tags(dst))
+    probed = ta.ffprobe_tags(dst)
+    assert (probed["initialkey"], probed["camelot"], probed["isrc"], probed["rating"]) == ("8d", "8A", "USRC17607839", "4")
+    assert ta.decoded_audio_sha256(dst) == pcm
+
+
+@pytest.mark.requirement("TAGIO-05")
+@pytest.mark.requires_ffmpeg
+@pytest.mark.parametrize("codec", ["ogg", "opus"])
+def test_ogg_roundtrip_keeps_the_audio(tmp_path: Path, codec: str) -> None:
+    """[if] a full plan is written to Ogg Vorbis / Opus [then] every field reads back, audio identical, [else stop]."""
+    # No INITIALKEY in the base file: tinytag prefers it over KEY, the field
+    # this writer (like the mutagen one before it) uses for the Open Key value.
+    dst = ta.make_tagged_audio(tmp_path, codec, tags=ta.STANDARD_TAGS)
+    pcm = ta.decoded_audio_sha256(dst)
+    write_tags(dst, _FULL_PLAN, dry_run=False)
+    _assert_full_plan(read_tags(dst))
+    probed = ta.ffprobe_tags(dst)
+    assert (probed["bpm"], probed["key"], probed["camelot"], probed["rating"]) == ("128", "8d", "8A", "4")
+    assert ta.decoded_audio_sha256(dst) == pcm
 
 
 @pytest.mark.requirement("TAGIO-01")

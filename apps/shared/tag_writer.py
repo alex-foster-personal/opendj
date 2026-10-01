@@ -7,12 +7,14 @@ used so POPM ratings and TXXX frames are exact. Writes:
 * **ID3v2** -- MP3 (``.mp3``) via :mod:`apps.shared.id3v2` (in-house).
 * **Vorbis comments** -- FLAC (``.flac``) via :mod:`apps.shared.flac_meta`
   (in-house).
-* **MP4 atoms / Ogg** -- ``.m4a`` / ``.mp4`` / ``.aac`` / ``.alac`` / ``.ogg``
-  are READ but writing them raises :class:`UnsupportedContainer`. The writer
-  that covered them was the GPL ``mutagen``, removed for licensing (see
-  ``docs/decisions/ADR-NEW-permissive-audio-tag-io.md``); rewriting an MP4
-  ``moov`` (chunk offsets) or repaging an Ogg stream is not a safe in-house
-  one-off, so it is refused by name rather than attempted.
+* **iTunes atoms** -- MP4 (``.m4a`` / ``.mp4`` / ``.aac`` / ``.alac``) via
+  :mod:`apps.shared.mp4_meta` (in-house): ``©nam`` ``©ART`` ``©alb`` ``©gen``,
+  ``tmpo`` and ``----:com.apple.iTunes:`` free-form atoms, the same atoms the
+  GPL ``mutagen`` writer they replace used.
+* **Vorbis comments** -- Ogg Vorbis / Opus (``.ogg`` / ``.oga`` / ``.opus``)
+  via :mod:`apps.shared.ogg_comment` (in-house).
+
+See ``docs/decisions/ADR-NEW-permissive-audio-tag-io.md``.
 
 Design constraints:
 
@@ -28,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import flac_meta, id3v2, tag_reader
+from . import flac_meta, id3v2, mp4_meta, ogg_comment, tag_reader
 
 POPM_EMAIL = "music-dj-tools@local"
 POPM_BUCKETS: dict[int, int] = {0: 0, 1: 51, 2: 102, 3: 153, 4: 204, 5: 255}
@@ -88,8 +90,7 @@ class WriteResult:
 _MP3 = {".mp3"}
 _MP4 = {".m4a", ".mp4", ".aac", ".alac"}
 _FLAC = {".flac"}
-_OGG = {".ogg"}
-_WRITE_REFUSED = _MP4 | _OGG
+_OGG = {".ogg", ".oga", ".opus"}
 _UNSUPPORTED = {".aiff", ".aif", ".wav"}
 
 
@@ -203,8 +204,8 @@ def _write_mp3(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
     return WriteResult(path=path, applied=applied, dry_run=dry_run)
 
 
-def _write_flac(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
-    meta = flac_meta.read(path)
+def _apply_vorbis_comments(meta: flac_meta.FlacMeta | ogg_comment.OggMeta, u: UnifiedTags) -> dict[str, Any]:
+    """FLAC and Ogg carry the same Vorbis comment fields."""
     applied: dict[str, Any] = {}
     for key, field_name, value in (
         ("TITLE", "title", u.title),
@@ -227,8 +228,52 @@ def _write_flac(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
     if u.rating is not None:
         meta.set("RATING", str(u.rating))
         applied["rating"] = u.rating
+    return applied
+
+
+def _write_flac(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
+    meta = flac_meta.read(path)
+    applied = _apply_vorbis_comments(meta, u)
     if not dry_run:
         flac_meta.save(path, meta)
+    return WriteResult(path=path, applied=applied, dry_run=dry_run)
+
+
+def _write_ogg(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
+    meta = ogg_comment.read(path)
+    applied = _apply_vorbis_comments(meta, u)
+    if not dry_run:
+        ogg_comment.save(path, meta)
+    return WriteResult(path=path, applied=applied, dry_run=dry_run)
+
+
+def _write_mp4(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
+    meta = mp4_meta.read(path)
+    applied: dict[str, Any] = {}
+    for atom_name, field_name, value in (
+        ("\xa9nam", "title", u.title),
+        ("\xa9ART", "artist", u.artist),
+        ("\xa9alb", "album", u.album),
+        ("\xa9gen", "genre", u.genre),
+    ):
+        if value is not None:
+            meta.set_text(atom_name, value)
+            applied[field_name] = value
+    if u.bpm is not None:
+        meta.set_tempo(round(u.bpm))
+        applied["bpm"] = u.bpm
+    for name, field_name, value in (
+        ("INITIALKEY", "key_openkey", u.key_openkey),
+        ("CAMELOT", "key_camelot", u.key_camelot),
+        ("ENERGY", "energy", None if u.energy is None else str(u.energy)),
+        ("RATING", "rating", None if u.rating is None else str(u.rating)),
+        ("ISRC", "isrc", u.isrc),
+    ):
+        if value is not None:
+            meta.set_freeform(name, value)
+            applied[field_name] = getattr(u, field_name)
+    if not dry_run:
+        mp4_meta.save(path, meta)
     return WriteResult(path=path, applied=applied, dry_run=dry_run)
 
 
@@ -237,24 +282,22 @@ def write_tags(
 ) -> WriteResult:
     """Dispatch to the right writer; return a :class:`WriteResult`.
 
-    Raises :class:`UnsupportedContainer` for AIFF / WAV and for the MP4 / Ogg
-    containers no in-house writer covers -- also on ``dry_run``, so a preview
-    never promises a write that cannot happen.
+    Raises :class:`UnsupportedContainer` for AIFF / WAV -- also on
+    ``dry_run``, so a preview never promises a write that cannot happen. A file
+    whose bytes do not match its extension raises the container module's own
+    error (``Mp4Error``, ``OggError``, ``FlacError``) before anything is written.
     """
     ext = _ext(path)
     if ext in _UNSUPPORTED:
         raise UnsupportedContainer(f"Unsupported container: {ext}")
-    if ext in _WRITE_REFUSED:
-        raise UnsupportedContainer(
-            f"writing tags to {ext} files is not supported: MP4 and Ogg tag "
-            "writes needed the GPL mutagen, removed for licensing "
-            "(docs/decisions/ADR-NEW-permissive-audio-tag-io.md); MP3 and "
-            "FLAC writes are supported"
-        )
     if ext in _MP3:
         return _write_mp3(path, unified, dry_run=dry_run)
+    if ext in _MP4:
+        return _write_mp4(path, unified, dry_run=dry_run)
     if ext in _FLAC:
         return _write_flac(path, unified, dry_run=dry_run)
+    if ext in _OGG:
+        return _write_ogg(path, unified, dry_run=dry_run)
     raise UnsupportedContainer(f"No tag writer for: {ext}")
 
 

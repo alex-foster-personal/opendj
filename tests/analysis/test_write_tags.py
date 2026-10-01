@@ -1,4 +1,4 @@
-"""Tag write-back tests (META-01).  MP3 / FLAC round-trip, M4A refusal + safety rails."""
+"""Tag write-back tests (META-01).  MP3 / M4A / FLAC / Ogg round-trip + safety rails."""
 from __future__ import annotations
 
 import json
@@ -64,14 +64,39 @@ def test_mp3_roundtrip(mp3_fixture: Path) -> None:
     assert abs(float(got["BPM"]) - float(new["BPM"])) < 0.5
 
 
-@pytest.mark.requirement("TAGIO-03")
-def test_m4a_write_is_refused_and_the_planner_skips_it(m4a_fixture: Path) -> None:
-    """[if] write-back targets an .m4a [then] it is refused, file unchanged, [else stop]."""
-    before = m4a_fixture.read_bytes()
-    with pytest.raises(ValueError, match="not supported"):
-        wt._write_tags(m4a_fixture, wt._build_new_tags(_rec("mp4")))
-    assert wt.plan_deltas([_rec("mp4")], file_map={"mp4": m4a_fixture}) == []
-    assert m4a_fixture.read_bytes() == before
+@pytest.mark.requirement("TAGIO-05")
+def test_m4a_roundtrip_and_the_planner_includes_it(m4a_fixture: Path) -> None:
+    """[if] write-back targets an .m4a [then] tmpo / initialkey / OPENDJ_* round-trip, [else stop]."""
+    new = wt._build_new_tags(_rec("mp4"))
+    assert [d.path for d in wt.plan_deltas([_rec("mp4")], file_map={"mp4": m4a_fixture})] == [m4a_fixture]
+    wt._write_tags(m4a_fixture, new)
+    got = wt._read_current_tags(m4a_fixture)
+    assert got["BPM"] == "128"  # tmpo is an integer atom
+    assert {k: got[k] for k in new if k != "BPM"} == {k: v for k, v in new.items() if k != "BPM"}
+
+
+@pytest.mark.requirement("TAGIO-05")
+def test_ogg_roundtrip(ogg_fixture: Path) -> None:
+    """[if] write-back targets a libsndfile Ogg Vorbis [then] every field round-trips, [else stop]."""
+    new = wt._build_new_tags(_rec("o"))
+    wt._write_tags(ogg_fixture, new)
+    assert wt._read_current_tags(ogg_fixture) == new
+
+
+@pytest.mark.requirement("TAGIO-05")
+def test_live_m4a_write_passes_the_post_write_verify(
+    m4a_fixture: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """[if] apply_writes runs live on an .m4a [then] it is written and verified, [else stop]."""
+    for root in ("BACKUP_ROOT", "REVERSAL_ROOT", "FILE_BACKUP_ROOT"):
+        monkeypatch.setattr(wt, root, tmp_path / root.lower())
+    delta = wt.TagDelta(
+        path=m4a_fixture, stable_id="live-m4a",
+        old=wt._read_current_tags(m4a_fixture),
+        new=wt._build_new_tags(_rec("live-m4a")),
+    )
+    s = wt.apply_writes([delta], live=True, bulk=False)
+    assert (s.written, s.failed) == (1, 0)
 
 
 @pytest.mark.requirement("META-01")
