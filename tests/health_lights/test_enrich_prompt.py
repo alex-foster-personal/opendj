@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from apps.webui.server import enrich_prompt as ep
+from apps.webui.server.routes import enrich as enrich_routes
 from tests.health_lights import fixtures as fx
 from tests.health_lights.conftest import Library
 
@@ -106,6 +107,7 @@ def test_decisions_round_trip_and_refuse_unknowns(tmp_path: Path) -> None:
 
 
 def test_http_summary_and_decision(library: Library) -> None:
+    library.client.app.include_router(enrich_routes.router, prefix="/api/v1")
     audio = fx.audio_file(library.music, "a.mp3")
     fx.seed_track(library.state_db, "a", str(audio))
     summary = library.client.get("/api/v1/enrich/summary")
