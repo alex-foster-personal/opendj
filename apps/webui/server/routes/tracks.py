@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -32,9 +33,7 @@ from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
     LyricsUnavailableOut,
-    ProvenanceOut,
     QualityRungOut,
-    TrackListItemOut,
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
@@ -93,10 +92,19 @@ def _stems_dir(request: Request) -> Path:
 
 
 def _lyrics_available_bulk(data_dir: Path, stable_ids: list[str]) -> dict[str, bool]:
-    return {
-        sid: lyrics_cache.cache_path(data_dir, sid).is_file()
-        for sid in stable_ids
-    }
+    """Which ids have a lyrics-cache file: one directory read for the page.
+
+    Before LIBM-137 this resolved the cache directory and the entry path once
+    per id (two ``Path.resolve()`` walks each, 43 ms per 500 rows). A name
+    that is not a plain file directly inside the cache directory is "no
+    lyrics", which also covers an id that could never name one.
+    """
+    try:
+        with os.scandir(lyrics_cache.cache_dir(data_dir)) as entries:
+            cached = {entry.name for entry in entries if entry.is_file(follow_symlinks=False)}
+    except FileNotFoundError:
+        cached = set()
+    return {sid: f"{sid}.json" in cached for sid in stable_ids}
 
 
 def _auto_cues_available_bulk(
@@ -180,6 +188,52 @@ def _optional_resource_flags(
     return lyrics, auto_cues, _stems_available(stable_id, stems, request)
 
 
+def _track_fields(
+    track: Track,
+    has_rb_mapping: bool,
+    *,
+    lyrics_available: bool,
+    auto_cues_available: bool,
+    stems_available: bool,
+    artwork_available: bool | None,
+) -> dict[str, Any]:
+    """The ``TrackOut`` fields as plain data, validated once by whoever builds
+    the response model (one track here, a whole page in the listing)."""
+    return {
+        "stable_id": track.stable_id,
+        "title": track.title,
+        "artist": track.artist,
+        "album": track.album,
+        "duration_ms": track.duration_ms,
+        "bpm": track.bpm,
+        "key": track.key,
+        "rating": track.rating,
+        "tags": list(track.tags or []),
+        "notes": track.notes,
+        "last_played_at": track.last_played_at,
+        "tempo_pref": track.tempo_pref,
+        "file_path": track.file_path,
+        "created_at": track.created_at,
+        "updated_at": track.updated_at,
+        "provenance": {
+            k: {
+                "value": v.value,
+                "source": v.source,
+                "confidence": v.confidence,
+                "modified_at": v.modified_at,
+                "status": v.status,
+                "reason": v.reason,
+            }
+            for k, v in (track.provenance or {}).items()
+        },
+        "has_rb_mapping": has_rb_mapping,
+        "lyrics_available": lyrics_available,
+        "auto_cues_available": auto_cues_available,
+        "stems_available": stems_available,
+        "artwork_available": artwork_available,
+    }
+
+
 def _track_to_out(
     track: Track,
     has_rb_mapping: bool,
@@ -189,39 +243,15 @@ def _track_to_out(
     stems_available: bool,
     artwork_available: bool | None,
 ) -> TrackOut:
-    prov_out = {
-        k: ProvenanceOut(
-            value=v.value,
-            source=v.source,
-            confidence=v.confidence,
-            modified_at=v.modified_at,
-            status=v.status,
-            reason=v.reason,
-        )
-        for k, v in (track.provenance or {}).items()
-    }
     return TrackOut(
-        stable_id=track.stable_id,
-        title=track.title,
-        artist=track.artist,
-        album=track.album,
-        duration_ms=track.duration_ms,
-        bpm=track.bpm,
-        key=track.key,
-        rating=track.rating,
-        tags=list(track.tags or []),
-        notes=track.notes,
-        last_played_at=track.last_played_at,
-        tempo_pref=track.tempo_pref,
-        file_path=track.file_path,
-        created_at=track.created_at,
-        updated_at=track.updated_at,
-        provenance=prov_out,
-        has_rb_mapping=has_rb_mapping,
-        lyrics_available=lyrics_available,
-        auto_cues_available=auto_cues_available,
-        stems_available=stems_available,
-        artwork_available=artwork_available,
+        **_track_fields(
+            track,
+            has_rb_mapping,
+            lyrics_available=lyrics_available,
+            auto_cues_available=auto_cues_available,
+            stems_available=stems_available,
+            artwork_available=artwork_available,
+        )
     )
 
 
@@ -250,7 +280,7 @@ def list_tracks(
     cursor: str | None = None,
     limit: int = Query(200, ge=1, le=1000),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
-) -> TracksPage:
+) -> Response:
     flt = TrackFilter(
         q=q,
         bpm_min=bpm_min,
@@ -270,47 +300,54 @@ def list_tracks(
     data_dir = _data_dir_from_state_db(state_db_path)
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
-    items: list[TrackListItemOut] = []
+    items: list[dict[str, Any]] = []
     for track, row in zip(page.items, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
             continue
-        base = _track_to_out(
-            track,
-            has_rb_mapping=row["has_rb_mapping"],
-            lyrics_available=lyrics_by_sid[track.stable_id],
-            auto_cues_available=auto_cues_by_sid[track.stable_id],
-            stems_available=_stems_available(track.stable_id, row["stems"], request),
-            artwork_available=row["artwork_available"],
-        ).model_dump()
-        base["play_count"] = int(row.get("play_count") or 0)
         items.append(
-            TrackListItemOut(
-                **base,
-                preview_b64=row["preview_b64"],
-                preview_max=row["preview_max"],
-                file_availability=row["file_availability"],
-                file_exists=row["file_exists"],
-                is_remote=bool(row.get("is_remote")),
-                is_streaming=row["is_streaming"],
-                streaming_provider=row["streaming_provider"],
-                has_remote_copy=bool(row["has_remote_copy"]),
-                cloud_transfer=row["cloud_transfer"],
-                quality=row["quality"],
-                vocals=row["vocals"],
-                stems=row["stems"],
-                artwork_status=row["artwork_status"],
-                energy=row["energy"],
-                energy_source=row["energy_source"],
-                energy_reason=row["energy_reason"],
-                lyrics=row.get("lyrics"),
-                grid_quality=row["grid_quality"],
-                is_remix=bool(row.get("is_remix")),
-                is_radio_edit=bool(row.get("is_radio_edit")),
-                genre=row.get("genre"),
-                genre_reason=row.get("genre_reason"),
-            )
+            {
+                **_track_fields(
+                    track,
+                    has_rb_mapping=row["has_rb_mapping"],
+                    lyrics_available=lyrics_by_sid[track.stable_id],
+                    auto_cues_available=auto_cues_by_sid[track.stable_id],
+                    stems_available=_stems_available(track.stable_id, row["stems"], request),
+                    artwork_available=row["artwork_available"],
+                ),
+                "play_count": int(row.get("play_count") or 0),
+                "preview_b64": row["preview_b64"],
+                "preview_max": row["preview_max"],
+                "file_availability": row["file_availability"],
+                "file_exists": row["file_exists"],
+                "is_remote": bool(row.get("is_remote")),
+                "is_streaming": row["is_streaming"],
+                "streaming_provider": row["streaming_provider"],
+                "has_remote_copy": bool(row["has_remote_copy"]),
+                "cloud_transfer": row["cloud_transfer"],
+                "quality": row["quality"],
+                "vocals": row["vocals"],
+                "stems": row["stems"],
+                "artwork_status": row["artwork_status"],
+                "energy": row["energy"],
+                "energy_source": row["energy_source"],
+                "energy_reason": row["energy_reason"],
+                "lyrics": row.get("lyrics"),
+                "grid_quality": row["grid_quality"],
+                "is_remix": bool(row.get("is_remix")),
+                "is_radio_edit": bool(row.get("is_radio_edit")),
+                "genre": row.get("genre"),
+                "genre_reason": row.get("genre_reason"),
+            }
         )
-    return TracksPage(items=items, next_cursor=page.next_cursor)
+    # The page is validated ONCE, as a whole, and returned already rendered
+    # (LIBM-137). Before, each row was built as a TrackOut, dumped, rebuilt as a
+    # TrackListItemOut, and then FastAPI validated and encoded the whole page a
+    # third time: 290 ms of a 590 ms page of 500 rows. ``response_model`` on the
+    # decorator still documents the shape; a returned Response is sent as is.
+    page_out = TracksPage.model_validate({"items": items, "next_cursor": page.next_cursor})
+    return Response(
+        content=page_out.model_dump_json(by_alias=True), media_type="application/json"
+    )
 
 
 # Declared BEFORE /{stable_id} so "quality-ladder" is not swallowed as an id.

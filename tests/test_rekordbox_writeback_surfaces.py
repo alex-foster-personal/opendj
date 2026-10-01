@@ -95,6 +95,12 @@ IMPORT_DIRECTION_ONLY: dict[str, str] = {
         "an os.open here gains O_WRONLY/O_CREAT/O_TRUNC, or os.rename/"
         "os.unlink/os.mkdir appears"
     ),
+    "apps/webui/server/rb_vendor_pkg/row_assets.py": (
+        "names SHARE_ROOT only as part of a cache key, so one vendor path "
+        "string under two share roots is two entries; reads analysis and "
+        "artwork files through the read-only containment walk and lstat, "
+        "writes nothing"
+    ),
     "apps/audit/session_history.py": (
         "reads play history. SHARP EDGE, kept on purpose so the next reader "
         "sees it: open_db(REKORDBOX_LIVE_DB) hands back a READ-WRITE handle on "
