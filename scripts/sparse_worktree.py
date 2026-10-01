@@ -171,7 +171,10 @@ def require_materialized(repo: Path, rels: list[str], *, purpose: str) -> None:
     # The whole index in one call, then an intersection: passing `rels` as pathspecs
     # would glob any `*`/`[` in a filename and can overflow argv for a large scope.
     skipped = set(skip_worktree_paths(repo))
-    missing = sorted(rel for rel in rels if rel in skipped)
+    _refuse_skipped(sorted(rel for rel in rels if rel in skipped), purpose=purpose)
+
+
+def _refuse_skipped(missing: list[str], *, purpose: str) -> None:
     if missing:
         raise SparseCheckoutError(
             f"{purpose}: {len(missing)} tracked path(s) are skip-worktree in this sparse "
@@ -209,6 +212,18 @@ def iter_tracked_bytes(repo: Path, entries: list[TrackedEntry]) -> Iterator[tupl
     finally:
         if reader is not None:
             reader.communicate()
+
+
+def require_materialized_under(repo: Path, root: Path, *, purpose: str) -> None:
+    """Refuse a disk-walking tool whose scope holds ANY skip-worktree entry. A directory
+    holding only excluded files is absent from a sparse tree, so its existence check
+    alone would already read differently from a full checkout."""
+    try:
+        rel = root.resolve().relative_to(repo.resolve()).as_posix()
+    except ValueError:
+        return  # outside the repository: nothing there is tracked, so nothing is skipped
+    pathspec = "." if rel == "." else f":(literal){rel}"
+    _refuse_skipped([e.rel for e in tracked_entries(repo, pathspec) if e.skipped], purpose=purpose)
 
 
 def tracked_bytes(repo: Path, entries: list[TrackedEntry]) -> dict[str, bytes]:

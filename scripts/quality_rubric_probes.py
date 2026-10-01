@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from scripts.sparse_worktree import require_materialized, skip_worktree_paths
+from scripts.sparse_worktree import require_materialized_under
 
 # ----- markdown link extraction ------------------------------------------------
 
@@ -88,9 +88,14 @@ def _git_ls_surface_files(surface_root: Path, repo_root: Path) -> list[Path] | N
         return None
     if result.returncode != 0:
         return None
-    # No is_file() filter here: a skip-worktree entry is not on disk either, and
-    # dropping it would read as "absent" (OPS-45); _iter_surface_files decides.
-    return [repo_root / os.fsdecode(raw) for raw in result.stdout.split(b"\0") if raw]
+    files: list[Path] = []
+    for raw in result.stdout.split(b"\0"):
+        if not raw:
+            continue
+        path = repo_root / os.fsdecode(raw)
+        if path.is_file():
+            files.append(path)
+    return files
 
 
 def _walk_surface_files(surface_root: Path) -> list[Path]:
@@ -113,19 +118,15 @@ def _iter_surface_files(
     if not surface_root.is_dir():
         return []
     listed = _git_ls_surface_files(surface_root, repo_root)
-    from_git = listed is not None
     if listed is None:
         listed = _walk_surface_files(surface_root)
-    wanted = [
-        path for path in listed if _surface_file_matches(path, suffix=suffix, name_match=name_match)
+    matched = [
+        path
+        for path in listed
+        if path.is_file()
+        and _surface_file_matches(path, suffix=suffix, name_match=name_match)
     ]
-    if from_git:
-        require_materialized(
-            repo_root,
-            [_repo_relative(path, repo_root) for path in wanted],
-            purpose=f"rubric probe over {_repo_relative(surface_root, repo_root)}",
-        )
-    return sorted(path for path in wanted if path.is_file())
+    return sorted(matched)
 
 
 def _iter_markdown_files(surface_root: Path, repo_root: Path) -> list[Path]:
@@ -155,14 +156,6 @@ def _should_skip_href(href: str) -> bool:
     return lowered.startswith(("http://", "https://", "mailto:"))
 
 
-def _skip_worktree_targets(repo_root: Path) -> set[Path]:
-    """Tracked files a sparse worktree keeps off disk (OPS-45). A link to one is not
-    dangling: the commit carries the target, and a full checkout would find it."""
-    if not (repo_root / ".git").exists():
-        return set()
-    return {(repo_root / rel).resolve() for rel in skip_worktree_paths(repo_root)}
-
-
 def _collect_relative_links(
     surface_root: Path, repo_root: Path
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -171,7 +164,6 @@ def _collect_relative_links(
     md_files = _iter_markdown_files(surface_root, repo_root)
     if not md_files:
         return escapes, dangling
-    skipped = _skip_worktree_targets(repo_root)
     for md_path in md_files:
         text = md_path.read_text(encoding="utf-8", errors="replace")
         for href in _extract_hrefs(text):
@@ -194,7 +186,7 @@ def _collect_relative_links(
                         "detail": "resolves outside surface root",
                     }
                 )
-            elif not target.exists() and target not in skipped:
+            elif not target.exists():
                 dangling.append(
                     {
                         "code": None,
@@ -561,4 +553,7 @@ def run_probe(probe_name: str, surface_root: Path, repo_root: Path) -> list[dict
     probe = PROBE_REGISTRY.get(probe_name)
     if probe is None:
         raise KeyError(f"unknown probe: {probe_name}")
+    # Every probe reads the surface from disk (is_dir, iterdir, read_text), so a sparse
+    # worktree (OPS-45) that keeps part of it off disk would measure less than CI does.
+    require_materialized_under(repo_root, surface_root, purpose=f"rubric probe {probe_name}")
     return probe(surface_root, repo_root)
