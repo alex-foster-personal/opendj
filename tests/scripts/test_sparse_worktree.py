@@ -9,6 +9,8 @@ Real repositories in tmp_path, the real hook through core.hooksPath, no mocks.
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -180,3 +182,68 @@ def test_install_hook_copies_and_refuses_to_clobber(tmp_path: Path) -> None:
     with pytest.raises(sw.SparseCheckoutError, match="different post-checkout"):
         sw.install_hook(repo)
     assert "someone else's hook" in installed.read_text()
+
+
+# ----- failure handling -----------------------------------------------------------------
+# Real git faults, no stubs: a FILE where git needs the `info/` dir makes
+# `sparse-checkout set` fail after it has already switched core.sparseCheckout on,
+# and a held `index.lock` makes `sparse-checkout disable` fail. Both work as root.
+
+
+def _git_dir(worktree: Path) -> Path:
+    return Path(git(worktree, "rev-parse", "--absolute-git-dir").strip())
+
+
+def _head(worktree: Path) -> str:
+    return git(worktree, "rev-parse", "HEAD").strip()
+
+
+def test_failed_sparse_setup_rolls_back_to_a_full_tree(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] `sparse-checkout set` fails mid-way [then] the tree is rolled back FULL, rc 0, [else stop]."""
+    worktree = tmp_path / "wt-set-fails"
+    add_worktree(primary, worktree, env={sw.CFG.OPT_OUT_ENV: "1"})
+    info = _git_dir(worktree) / "info"
+    assert not info.exists(), "fixture premise: a fresh worktree has no info/ dir yet"
+    info.write_text("a file where git needs a directory\n")
+    monkeypatch.delenv(sw.CFG.OPT_OUT_ENV, raising=False)
+    assert sw.main(["--repo", str(worktree), "post-checkout", NULL, _head(worktree), "1"]) == 0
+    stderr = capsys.readouterr().err
+    assert "[WARN] sparse-worktree: sparse failed" in stderr, stderr
+    assert "rolled back to a FULL checkout" in stderr, stderr
+    _assert_full(worktree)
+
+
+def test_failed_full_request_exits_nonzero_and_names_the_state(
+    primary: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """[if] an opt-out cannot undo inherited sparse state [then] rc 1 + ERROR, [else stop]."""
+    worktree = tmp_path / "wt-disable-fails"
+    add_worktree(primary, worktree)
+    assert sw.is_sparse(worktree)
+    (_git_dir(worktree) / "index.lock").write_text("")
+    monkeypatch.setenv(sw.CFG.OPT_OUT_ENV, "1")
+    assert sw.main(["--repo", str(worktree), "post-checkout", NULL, _head(worktree), "1"]) == 1
+    stderr = capsys.readouterr().err
+    assert "[ERROR] sparse-worktree:" in stderr, stderr
+    assert "wt-sparse-status" in stderr, stderr
+    assert sw.is_sparse(worktree), "the ERROR must describe the real state: still sparse"
+
+
+def test_hook_script_passes_a_setup_failure_to_git(primary: Path, tmp_path: Path) -> None:
+    """[if] the python entry exits 1 [then] the hook script exits 1 too, [else stop]."""
+    worktree = tmp_path / "wt-hook-fails"
+    add_worktree(primary, worktree)
+    (_git_dir(worktree) / "index.lock").write_text("")
+    hook = tmp_path / "hooks" / "post-checkout"
+    done = subprocess.run(
+        [str(hook), NULL, _head(worktree), "1"],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, sw.CFG.OPT_OUT_ENV: "1"},
+    )
+    assert done.returncode == 1, (done.returncode, done.stderr)
+    assert "[ERROR] sparse-worktree" in done.stderr, done.stderr

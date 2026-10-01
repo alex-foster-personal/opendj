@@ -16,13 +16,14 @@
 # Opt out for one worktree:   MDT_FULL_WORKTREE=1 git worktree add ...
 # Full checkout in an existing worktree:   git sparse-checkout disable
 #
-# An efficiency rail, not a safety rail: a failure warns on stderr and leaves
-# the worktree full, and never fails `git worktree add` itself.
+# A failed SPARSE setup rolls back to a full tree and exits 0 (an efficiency
+# rail, not a safety rail). A failure that leaves the worktree in a state nobody
+# asked for exits nonzero, so `git worktree add` reports it; the worktree exists.
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 [ -f "$root/scripts/sparse_worktree.py" ] || exit 0
 command -v python3 >/dev/null 2>&1 || { echo "[WARN] sparse-worktree: no python3 on PATH; worktree left full" >&2; exit 0; }
 cd "$root" || exit 0
 python3 -m scripts.sparse_worktree post-checkout "$1" "$2" "$3"
 rc=$?
-[ "$rc" -ne 0 ] && echo "[WARN] sparse-worktree crashed (rc=$rc); worktree left as checked out" >&2
-exit 0
+[ "$rc" -ne 0 ] && echo "[ERROR] sparse-worktree hook failed (rc=$rc); check this worktree with: just wt-sparse-status" >&2
+exit "$rc"

@@ -41,6 +41,12 @@ REQUIREMENTS (OPS-45)
       [if a disk-only tool's scope holds a skip-worktree path then
        require_materialized raises naming the path and `full`]
       [if nothing in scope is skipped then require_materialized is silent]
+  R-4 A setup failure never leaves an unannounced state.            ✔︎ ✅ 🎯
+      [if `sparse-checkout set` fails then the worktree is rolled back to a
+       verified FULL checkout and the hook exits 0 with a WARN]
+      [if a FULL request (opt-out) cannot undo inherited sparse state then
+       the hook exits 1 with an ERROR, and `git worktree add` reports it]
+      [if the python entry exits 1 then the hook script exits 1 too]
 """
 
 from __future__ import annotations
@@ -277,10 +283,29 @@ def install_hook(repo: Path) -> Path:
 # ----- cli ------------------------------------------------------------------------------
 
 
+_SETUP_ERRORS = (subprocess.CalledProcessError, SparseCheckoutError, OSError)
+
+
+def _describe(exc: BaseException) -> str:
+    detail = getattr(exc, "stderr", b"") or b""
+    return f"{exc} {detail.decode(errors='replace').strip()}".strip()
+
+
+def _rolled_back_to_full(repo: Path) -> bool:
+    try:
+        make_full(repo)
+    except _SETUP_ERRORS as exc:
+        print(f"[ERROR] sparse-worktree: rollback to FULL failed ({_describe(exc)})", file=sys.stderr)
+        return False
+    return True
+
+
 def _post_checkout(repo: Path, previous_head: str, checkout_flag: str) -> int:
-    """The hook entry. A failure here must not fail `git worktree add`, which would
-    report an error for a worktree that exists: it warns loudly and leaves the
-    worktree FULL, which is correct, only larger."""
+    """The hook entry. A failed SPARSE setup rolls back to a verified FULL checkout and
+    exits 0: the worktree is then exactly what the opt-out gives, only larger, so
+    `git worktree add` must not report an error for it. A failure that leaves the
+    worktree in a state nobody asked for (a FULL request that did not take, or a
+    rollback that did not) exits 1 naming it, and `git worktree add` returns that."""
     try:
         opt_out = opt_out_requested(os.environ.get(CFG.OPT_OUT_ENV))
     except ValueError as exc:
@@ -300,13 +325,17 @@ def _post_checkout(repo: Path, previous_head: str, checkout_flag: str) -> int:
             print(f"[sparse-worktree] FULL: {CFG.OPT_OUT_ENV}=1", file=sys.stderr)
         elif action is Action.SKIP:
             pass
-    except (subprocess.CalledProcessError, SparseCheckoutError, OSError) as exc:
-        detail = getattr(exc, "stderr", b"") or b""
+    except _SETUP_ERRORS as exc:
+        print(f"[WARN] sparse-worktree: {action.value} failed ({_describe(exc)})", file=sys.stderr)
+        if action is Action.SPARSE and _rolled_back_to_full(repo):
+            print("[WARN] sparse-worktree: rolled back to a FULL checkout", file=sys.stderr)
+            return 0
         print(
-            f"[WARN] sparse-worktree: {action.value} failed ({exc} "
-            f"{detail.decode(errors='replace').strip()}); worktree left as checked out",
+            f"[ERROR] sparse-worktree: {repo} is not in the state asked for ({action.value}); "
+            f"inspect with `just wt-sparse-status`, restore a full tree with `{CFG.RESTORE_COMMAND}`",
             file=sys.stderr,
         )
+        return 1
     return 0
 
 
