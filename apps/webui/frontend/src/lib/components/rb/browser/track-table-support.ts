@@ -1,4 +1,5 @@
 export { analysisIssuesFor, bpmGridHoverText, errColumnTitle, gridFlagFor } from '$lib/rb/analysis-issues';
+export { gridProvenanceFor, requestGridProvenance } from '$lib/rb/grid-provenance.svelte';
 export { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 export { columnHeaderTitle, type LibraryColTipId } from '$lib/rb/column-tips';
 export { masterFoldCenterPx } from '$lib/rb/master-fold-anchor';

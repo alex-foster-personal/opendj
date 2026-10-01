@@ -8946,6 +8946,114 @@
         "title": "GrantOut",
         "type": "object"
       },
+      "GridProvenanceOut": {
+        "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "backend_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Version"
+          },
+          "basis": {
+            "enum": [
+              "selection",
+              "unmapped-default"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "bpm_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm Confidence"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "enum": [
+              "rekordbox",
+              "own"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "failed",
+                  "missing"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "stable_id",
+          "source",
+          "basis",
+          "status",
+          "reason",
+          "backend",
+          "backend_version",
+          "bpm",
+          "bpm_confidence"
+        ],
+        "title": "GridProvenanceOut",
+        "type": "object"
+      },
       "GridQualityRowOut": {
         "description": "A track row's stored beatgrid verdict (GRIDFLAG-02).\n\nRead back from the grid-quality store; a listing never parses a grid.\n``unknown`` means nobody could judge the grid (``reason`` says why) and\nmust never be drawn as ``ok`` or as a flag. ``message`` is the sentence\nthe deck's Beat Sync badge shows for the same grid; null for ``ok``.",
         "properties": {
@@ -39787,6 +39895,48 @@
         "summary": "Get Beatgrid Fallback",
         "tags": [
           "analysis"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/grid-provenance": {
+      "get": {
+        "operationId": "get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GridProvenanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Grid Provenance",
+        "tags": [
+          "rb-assets"
         ]
       }
     },

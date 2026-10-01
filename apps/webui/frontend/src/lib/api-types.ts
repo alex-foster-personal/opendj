@@ -5715,6 +5715,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/grid-provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Track Grid Provenance */
+        get: operations["get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/hot-cues": {
         parameters: {
             query?: never;
@@ -9810,6 +9827,33 @@ export interface components {
             owner_email: string;
             /** Token */
             token: string;
+        };
+        /** GridProvenanceOut */
+        GridProvenanceOut: {
+            /** Backend */
+            backend: string | null;
+            /** Backend Version */
+            backend_version: string | null;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "selection" | "unmapped-default";
+            /** Bpm */
+            bpm: number | null;
+            /** Bpm Confidence */
+            bpm_confidence: number | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "rekordbox" | "own";
+            /** Stable Id */
+            stable_id: string;
+            /** Status */
+            status: ("ok" | "failed" | "missing") | null;
         };
         /**
          * GridQualityRowOut
@@ -26306,6 +26350,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BeatgridFallbackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_grid_provenance_api_v1_tracks__stable_id__grid_provenance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GridProvenanceOut"];
                 };
             };
             /** @description Validation Error */
