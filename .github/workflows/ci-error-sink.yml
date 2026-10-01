@@ -135,9 +135,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          sparse-checkout: |
-            scripts
-            .github/workflows
           clean: false
 
       - name: Remove untracked build debris, keeping dependency dirs

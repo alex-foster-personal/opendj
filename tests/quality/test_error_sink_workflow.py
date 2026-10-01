@@ -103,3 +103,21 @@ def test_ci_failure_poster_uses_canonical_host_not_runner_name() -> None:
     assert re.search(r"mkdir -p \"\$HOME/jobs/logs\"", poster["run"]), (
         "sink_path() picks the nucbox JSONL only when its directory exists"
     )
+
+
+def test_the_checkout_holds_every_package_the_poster_imports() -> None:
+    """Sol P1 on #4844: a `scripts` + `.github/workflows` sparse checkout left out
+    `apps/shared/telemetry`, which scripts.post_build_failure imports, so on a clean runner
+    the post step died with ModuleNotFoundError before posting anything and no pass could
+    advance the mark. The workflow takes a full checkout, as the cost guard it replaces did."""
+    poster_source = (REPO / "scripts" / "post_build_failure.py").read_text(encoding="utf-8")
+    assert "from apps.shared.telemetry" in poster_source, (
+        "positive control: the poster imports a package outside scripts/, so a sparse checkout "
+        "of scripts alone cannot work"
+    )
+    checkout = next(
+        step
+        for step in _sink_job()["steps"]
+        if isinstance(step, dict) and str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert "sparse-checkout" not in checkout.get("with", {})
