@@ -46,9 +46,21 @@ export function stemBlockCheck(deck: { stems: StemDeckState }, isCurrent: () => 
  * from R2. A four-part bundle is tens of MB; ten minutes covers a slow venue
  * link, and the loop stops the moment the deck loads another track. */
 export const STEM_HYDRATE_MAX_WAIT_MS = 10 * 60 * 1000;
-/** Re-ask delays: quick at first (a cached hub answers in seconds), then a
- * steady 5 s, so a long download costs one small GET per deck per 5 s. */
-export const STEM_HYDRATE_POLL_MS: readonly number[] = [1000, 2000, 3000, 5000];
+/** Re-ask delays (PERFMODE-18). The deck learns a fetch finished only on its
+ * next probe, so the delay IS the lag between "the engine has the bundle" and
+ * the deck leaving FETCHING. It was 1, 2, 3 then a steady 5 s, which left a
+ * finished fetch unnoticed for up to 5 s (3 s measured Thu 1 Oct 2026). Now
+ * 500 ms, then 1 s for the first minute, where almost every fetch ends (7 to
+ * 17 s measured); a download still running after that is a slow link, and
+ * falls back to one small GET per deck per 5 s. */
+export const STEM_HYDRATE_POLL_MS: readonly number[] = [500, 1000];
+export const STEM_HYDRATE_SLOW_AFTER_MS = 60_000;
+export const STEM_HYDRATE_SLOW_POLL_MS = 5000;
+
+export function stemHydratePollDelayMs(attempt: number, waitedMs: number): number {
+	if (waitedMs >= STEM_HYDRATE_SLOW_AFTER_MS) return STEM_HYDRATE_SLOW_POLL_MS;
+	return STEM_HYDRATE_POLL_MS[Math.min(attempt, STEM_HYDRATE_POLL_MS.length - 1)];
+}
 
 export type AwaitStemArtifactOptions = {
 	/** True once the deck has moved on; the wait returns `null` at once. */
@@ -110,7 +122,7 @@ export async function awaitStemArtifact(
 					`(${result.error}); reload the track to try again`
 			);
 		}
-		const delay = STEM_HYDRATE_POLL_MS[Math.min(attempt, STEM_HYDRATE_POLL_MS.length - 1)];
+		const delay = stemHydratePollDelayMs(attempt, waited);
 		await sleep(Math.min(delay, Math.max(0, maxWaitMs - waited)));
 		if (isStale()) return null;
 	}

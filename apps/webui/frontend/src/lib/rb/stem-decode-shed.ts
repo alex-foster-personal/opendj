@@ -55,22 +55,45 @@ export function requestEagerStemDecodeSlot(shed: BackgroundDemandShed): Promise<
  * shed singleton directly.
  */
 let _shed: BackgroundDemandShed | null = null;
+let _kernelPressure: (() => boolean) | null = null;
 
-export function setEagerStemDecodeShed(shed: BackgroundDemandShed | null): void {
+/** `kernelPressure` reads whether the kernel itself reports memory pressure
+ * (PERFMODE-18); without it only an xrun counts as real pressure. */
+export function setEagerStemDecodeShed(
+	shed: BackgroundDemandShed | null,
+	kernelPressure: (() => boolean) | null = null
+): void {
 	_shed = shed;
+	_kernelPressure = shed === null ? null : kernelPressure;
 }
 
 /**
- * STEM-47: the longest a deck's OWN stem decode is held back by pressure.
+ * STEM-47, graded by PERFMODE-18: the longest a deck's OWN stem decode is
+ * held back, by how real the pressure is.
  *
  * The shed has no upper bound of its own: it releases when no deck is playing
- * or the pressure clears. On a machine that stays under pressure through a
- * whole set, that left a playing deck's stem buttons dead for the whole track.
- * The DJ loaded this track onto a deck, so its stems are wanted work, not
- * speculative work: the hold is a short courtesy to the audio thread, then the
- * decode starts regardless. Named so the trade is one number in one place.
+ * or the pressure clears. The DJ loaded this track onto a deck, so its stems
+ * are wanted work, not speculative work: the hold is a short courtesy to the
+ * audio thread, then the decode starts regardless.
+ *
+ * The bound was a flat 6 s. Measured Thu 1 Oct 2026: a host whose churn score
+ * sits at 10 to 25 times the early-warning threshold for a whole session,
+ * with the kernel at level 1, deferred every decode and released none, so
+ * each paid all 6 s. Pressure is polled every 10 s, so a hold of a few
+ * seconds almost never sees it clear; what the hold buys is distance from
+ * the play-start transient. Two bounds, one number each:
+ *
+ *   REAL pressure (the kernel reports level 2 or above, or an xrun landed in
+ *   the current window): 2 s. Long enough for the transport start and the
+ *   glitch that tripped it to pass, short enough that the stem buttons are
+ *   live before a DJ who pressed play reaches for them.
+ *
+ *   EARLY WARNING only (churn over its threshold, no kernel signal, no xrun):
+ *   500 ms. Nothing has been damaged; the hold only steps the decode off the
+ *   play dispatch and its schedule lead.
  */
-export const EAGER_STEM_DECODE_MAX_DEFER_MS = 6000;
+export const EAGER_STEM_DECODE_MAX_DEFER_MS = 2000;
+export const EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS = 500;
 
 /** `immediate`: never held. `released`: the shed let it go. `forced`: the DJ
  * asked for it. `timed_out`: held for the full bound, then started anyway. */
@@ -101,13 +124,18 @@ export async function awaitEagerStemDecodeSlot(
 	// is already set when request() returns; anything else is a real hold.
 	_shed.request('eager-stem-decode');
 	if (cause !== null) return 'immediate';
+	// Read at the moment of the hold: the grade is the pressure that caused it.
+	const boundMs =
+		_shed.xrunsInWindow === true || _kernelPressure?.() === true
+			? EAGER_STEM_DECODE_MAX_DEFER_MS
+			: EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS;
 	wait.onDeferred?.();
 	const setTimer = wait.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms));
 	const clearTimer =
 		wait.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
 	let handle: unknown = null;
 	const bound = new Promise<'timed_out'>((resolve) => {
-		handle = setTimer(() => resolve('timed_out'), wait.maxDeferMs ?? EAGER_STEM_DECODE_MAX_DEFER_MS);
+		handle = setTimer(() => resolve('timed_out'), wait.maxDeferMs ?? boundMs);
 	});
 	const start = await Promise.race([slot, bound]);
 	clearTimer(handle);
