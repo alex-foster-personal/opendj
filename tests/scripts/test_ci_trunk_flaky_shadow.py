@@ -28,6 +28,11 @@ Regression lines:
     Trunk recorded nothing
   - if the steps stop gating on the token then every run annotates before the
     secret exists, which is pure noise
+  - if an upload leans on the uploader's pull_request-only defaults for the repo
+    url, head sha or head branch then every main push and dispatch upload fails
+    with missing required arguments while the job stays green
+  - if cli-version is left at latest then a binary chosen at run time runs with
+    the token in scope
 """
 
 from __future__ import annotations
@@ -186,3 +191,28 @@ def test_trunk_guard_names_a_failed_shard_upload() -> None:
     out = _run_guard({1: ("true", "success"), 4: ("true", "failure")})
     assert "Trunk upload UNMEASURED (shard 4 of 5)" in out and "outcome=failure" in out, out
     assert "TRUNK_UPLOAD: success (1 of 5 shard uploads)" in out, out
+
+
+#: Inputs whose uploader defaults read github.event.pull_request only, so they are
+#: empty on a push or dispatch. Each needs a pull_request value AND a fallback.
+HEAD_INPUTS = {
+    "gh-repo-url": "github.repository",
+    "gh-repo-head-sha": "github.sha",
+    "gh-repo-head-branch": "github.ref_name",
+    "gh-repo-head-commit-epoch": "github.event.head_commit.timestamp",
+}
+
+
+def test_uploads_name_the_repo_and_head_on_every_event() -> None:
+    for upload in _uploads():
+        for name, fallback in HEAD_INPUTS.items():
+            value = str(upload["with"].get(name, ""))
+            assert "github.event.pull_request." in value, (upload["id"], name, value)
+            assert fallback in value, (upload["id"], name, value)
+
+
+def test_trunk_cli_version_is_pinned() -> None:
+    for upload in _uploads():
+        version = str(upload["with"].get("cli-version", "latest"))
+        assert re.fullmatch(r"\d+\.\d+\.\d+", version), (upload["id"], version)
+
