@@ -78,7 +78,7 @@ export default defineConfig({
 	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
 	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
-	testMatch: ['library-playlist-switch-latency.spec.ts'],
+	testMatch: ['library-playlist-switch-latency.spec.ts', 'library-playlist-fill-pages.spec.ts'],
 	fullyParallel: false,
 	workers: 1,
 	retries: 0,
