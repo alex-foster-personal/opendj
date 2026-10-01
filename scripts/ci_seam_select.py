@@ -1,5 +1,5 @@
 """Module-level pytest selection for a webui-only change set (SMARTEST-CI round 14,
-docs/decisions/ADR-NEW-seam-ci.md).
+docs/decisions/ADR-NEW-seam-ci.md; round 15 own-ancestor initializer edges).
 
 A frontend change cannot reach Python through an import, only through code that reads
 frontend files. The webui_frontend scope in `ci/test-scopes.yml` declares the strings
@@ -9,7 +9,9 @@ such code spells (`mentions`). So the sound selection for a webui-only diff is:
   the planner's own reader), as the SEED;
 - every module whose import closure reaches a seed, read with `imported_modules` over
   `apps`, `scripts`, `ops` AND `tests` (a test helper is reached through `tests.` imports),
-  where importing `a.b.c` also runs `a/__init__` and `a/b/__init__`;
+  where each import also pulls in the known parents of the imported name (their `__init__`
+  runs first), and every tracked module also depends on its own strict-ancestor package
+  `__init__.py` files (pytest runs those before collecting the module);
 - every test module beneath a selected `conftest.py`, which pytest loads without an import;
 - everything `always` matches.
 
@@ -22,8 +24,9 @@ cannot see, and an unseen consumer must never narrow a run.
 
 Requirements:
 - ✔︎ ✅ 🎯 A webui-only diff selects the frontend's consumers and `always`, not the suite.
-- ✔︎ ✅ 🎯 A test reaching a mentioning source through imports, a package `__init__`, a
-  `tests.` helper or a conftest is selected.
+- ✔︎ ✅ 🎯 A test reaching a mentioning source through imports, an imported module's parent
+  `__init__`, its own ancestor package `__init__`, a `tests.` helper or a conftest is
+  selected.
 - ✔︎ ✅ 🎯 Any change set that is not webui-only selects everything.
 
 Acceptance tests (tests/scripts/test_ci_seam_select.py):
@@ -31,6 +34,8 @@ Acceptance tests (tests/scripts/test_ci_seam_select.py):
   [⛔️ if the frontend could break it unseen].
 - [if] a conftest mentions the frontend [then] every test beneath it is selected
   [⛔️ if a fixture-only consumer is dropped].
+- [if] a test module's own ancestor `__init__.py` mentions the frontend [then] the test
+  module is selected [⛔️ if collection runs that initializer unseen].
 - [if] the diff touches python, infra or a queue draft [then] the selection is full
   [⛔️ if narrowing could reach a Python change].
 """
@@ -93,6 +98,18 @@ def _resolved_imports(imports: Iterable[str], known: Mapping[str, str]) -> set[s
     return resolved
 
 
+def _own_ancestor_inits(path: str, tracked: frozenset[str]) -> set[str]:
+    """Tracked package initializers pytest runs before importing this module (not itself)."""
+    deps: set[str] = set()
+    for parent in PurePosixPath(path).parents:
+        if parent == PurePosixPath("."):
+            continue
+        init = str(parent / "__init__.py")
+        if init in tracked and init != path:
+            deps.add(init)
+    return deps
+
+
 def _read(root: Path, path: str) -> str:
     try:
         return (root / path).read_text(encoding="utf-8")
@@ -106,6 +123,7 @@ def frontend_consumers(root: Path, needles: tuple[str, ...]) -> frozenset[str]:
     every importer of a seed (transitively), and every module beneath a reached conftest.
     Cached per tree, so a replay reads the tree once."""
     files = tracked_python_files(root)
+    tracked = frozenset(files)
     known = {module_name(path): path for path in files}
     texts = {path: _read(root, path) for path in files}
     reached = {
@@ -117,6 +135,7 @@ def frontend_consumers(root: Path, needles: tuple[str, ...]) -> frozenset[str]:
         raise PlanError(f"no tracked Python file mentions {list(needles)}; the reader is not measuring")
     imports = {
         path: {known[name] for name in _resolved_imports(imported_modules(text, path, IMPORT_ROOTS), known)}
+        | _own_ancestor_inits(path, tracked)
         for path, text in texts.items()
     }
     changed = True
