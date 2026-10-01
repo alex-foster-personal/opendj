@@ -20,7 +20,7 @@
 #     (CARGO_SYSTEM_LIBRARIES there) with no apt entry here.
 #   - tests/scripts/test_runner_toolset_repo_pins.py: fails when a `repo:`
 #     entry's version drifts from the file its source names.
-#   - scripts/runner_toolset_verify.py: runs every `verify` on a host as the
+#   - fleet-af runner_toolset/verify.py (moved Thu 1 Oct 2026): runs every `verify` on a host as the
 #     runner user and prints OK / MISMATCH / MISSING / UNKNOWN.
 #   - the Ansible CI-host playbook and the host audit (outside this repo),
 #     which install and check exactly this list.
