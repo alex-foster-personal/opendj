@@ -301,6 +301,8 @@ def follow_on_comment(
                 status="open",
                 author=parent.get("author", "operator"),
                 agent_kind=parent.get("agent_kind"),
+                element_offset=parent.get("element_offset"),
+                nearby_anchors=parent.get("nearby_anchors") or [],
             )
             items.append(child.model_dump())
             _save(path, "comments", items)

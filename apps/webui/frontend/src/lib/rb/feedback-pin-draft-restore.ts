@@ -1,4 +1,18 @@
 import { parsePinDraft, PIN_DRAFT_KEY, type PinDraft } from "./feedback";
+import { parsePinPlacement, type PinPlacement } from "./feedback-pin-position";
+
+/** The parked draft's placement record, read separately from parsePinDraft
+ * so that file stays under its size gate. A half-shaped placement drops only
+ * the placement (the pin then saves viewport-only, as every pin used to);
+ * losing the typed text over it would be the worse failure. */
+function _restorePlacement(raw: string | null): PinPlacement | null {
+  if (raw === null) return null;
+  try {
+    return parsePinPlacement((JSON.parse(raw) as Record<string, unknown>).placement);
+  } catch {
+    return null;
+  }
+}
 /**
  * Restore a parked draft on mount, or report it as belonging to another
  * page. A draft's point/anchor are only meaningful on the page they were
@@ -17,7 +31,7 @@ export function restoreParkedPinDraft(
   pathname: string,
   currentViewport: { width: number; height: number },
 ): {
-  draft: (PinDraft & { viewport: { width: number; height: number }; followOn: { parentId: string; label: string } | null }) | null;
+  draft: (PinDraft & { viewport: { width: number; height: number }; followOn: { parentId: string; label: string } | null; placement: PinPlacement | null }) | null;
   foreign: boolean;
 } {
   const restored = parsePinDraft(raw);
@@ -29,6 +43,7 @@ export function restoreParkedPinDraft(
           ...restored,
           viewport: restored.viewport ?? currentViewport,
           followOn: restored.followOn ?? null,
+          placement: _restorePlacement(raw),
         };
   return { draft, foreign };
 }

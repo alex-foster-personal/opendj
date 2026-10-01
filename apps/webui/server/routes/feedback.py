@@ -53,9 +53,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.shared.paths import DATA_DIR, PROJECT_ROOT
+
+from .feedback_pin_placement import (
+    MAX_NEARBY_ANCHORS,
+    PinElementOffset,
+    PinNearbyAnchor,
+    require_anchor_for_offset,
+)
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -214,6 +221,9 @@ class CommentOut(BaseModel):
     attachment: AttachmentOut | None = None
     # Pin follow-up thread (issue #905): absent or empty on pins before FB-13.
     replies: list[CommentReplyOut] = Field(default_factory=list)
+    # Placement against the UI (feedback_pin_placement.py): absent on older pins.
+    element_offset: PinElementOffset | None = None
+    nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list)
 
 
 class CommentListOut(BaseModel):
@@ -235,6 +245,13 @@ class CommentCreateIn(BaseModel):
     viewport_height: int = Field(ge=1, le=100_000)
     author: Literal["operator", "agent"] = Field(default_factory=lambda: "operator")
     agent_kind: str | None = None
+    element_offset: PinElementOffset | None = None
+    nearby_anchors: list[PinNearbyAnchor] = Field(default_factory=list, max_length=MAX_NEARBY_ANCHORS)
+
+    @model_validator(mode="after")
+    def _offset_has_anchor(self) -> CommentCreateIn:
+        require_anchor_for_offset(self.anchor, self.element_offset)
+        return self
 
 
 class PinEnvironmentOut(BaseModel):
@@ -544,6 +561,8 @@ def create_comment(body: CommentCreateIn, request: Request) -> CommentOut:
         status="open",
         author=body.author,
         agent_kind=body.agent_kind,
+        element_offset=body.element_offset,
+        nearby_anchors=body.nearby_anchors,
     )
     with _COMMENTS_LOCK:
         items = _load(path, "comments")

@@ -31,6 +31,14 @@ function isInsideFloatingSurface(el: Element): boolean {
 	return false;
 }
 
+const PIN_SYSTEM_SELECTOR = [...PIN_SYSTEM_CLASSES].map((cls) => `.${cls}`).join(',');
+
+/** Pin markers, bubbles and the placement overlay: never a pin's anchor or
+ * a nearby anchor, or pins would end up positioned against each other. */
+export function isPinSystemElement(el: Element): boolean {
+	return el.closest(PIN_SYSTEM_SELECTOR) !== null;
+}
+
 function isSkipped(el: Element): boolean {
 	return hasPinSystemClass(el) || isSkippableRoot(el);
 }

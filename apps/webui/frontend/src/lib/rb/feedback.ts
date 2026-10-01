@@ -64,6 +64,7 @@
  */
 
 import { clampToViewport } from "$lib/ui/clamp-to-viewport";
+import type { PinPlacement } from "./feedback-pin-position";
 
 export interface PanelPos {
   x: number;
@@ -535,6 +536,8 @@ export interface PinDraft {
    * dropping it on restore silently downgraded a follow-on draft to a
    * plain top-level draft, which is the bug this field exists to close. */
   followOn?: { parentId: string; label: string } | null;
+  /** Where the click sits relative to the UI (feedback-pin-position.ts). */
+  placement?: PinPlacement | null;
 }
 
 export function serializePinDraft(draft: PinDraft): string {

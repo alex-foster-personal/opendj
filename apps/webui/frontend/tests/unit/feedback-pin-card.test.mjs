@@ -121,7 +121,9 @@ test('a reopened pin card has a close X and only outside pointer presses dismiss
 test('the reopened card repositions from its own measured size, on mount and on resize', () => {
 	assert.match(card, /import \{ pinBodyPos, pinBodyStyle, pinIsDone, pinStatus \} from '\$lib\/rb\/feedback'/);
 	assert.match(card, /getBoundingClientRect\(\)/);
-	assert.match(card, /pinBodyPos\(\s*\n?\s*pin,/);
+	// `point ?? pin`: the card follows the marker's resolved position
+	// (feedback-pin-position.ts) and falls back to the pin's own percentages.
+	assert.match(card, /pinBodyPos\(\s*\n?\s*point \?\? pin,/);
 	assert.match(card, /<svelte:window[^>]*\bonresize=\{_reposition\}/);
 	assert.match(card, /style=\{bodyStyle\}/, 'the div must render the measured position, not the fixed guess');
 });

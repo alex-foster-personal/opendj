@@ -7943,6 +7943,9 @@ export interface components {
              * @enum {string}
              */
             author?: "operator" | "agent";
+            element_offset?: components["schemas"]["PinElementOffset"] | null;
+            /** Nearby Anchors */
+            nearby_anchors?: components["schemas"]["PinNearbyAnchor"][];
             /** Page */
             page: string;
             /** Text */
@@ -7993,6 +7996,7 @@ export interface components {
             build: components["schemas"]["BuildStampOut"];
             /** Created At */
             created_at: string;
+            element_offset?: components["schemas"]["PinElementOffset"] | null;
             environment?: components["schemas"]["PinEnvironmentOut"] | null;
             /** Fixed At */
             fixed_at?: string | null;
@@ -8004,6 +8008,8 @@ export interface components {
             id: string;
             /** Issue Url */
             issue_url?: string | null;
+            /** Nearby Anchors */
+            nearby_anchors?: components["schemas"]["PinNearbyAnchor"][];
             /** Page */
             page: string;
             /** Replies */
@@ -11392,6 +11398,16 @@ export interface components {
             playlist_id: string;
         };
         /**
+         * PinElementOffset
+         * @description The click point inside the ``anchor`` element's box, 0..100 per axis.
+         */
+        PinElementOffset: {
+            /** Dx Pct */
+            dx_pct: number;
+            /** Dy Pct */
+            dy_pct: number;
+        };
+        /**
          * PinEnvironmentOut
          * @description Non-personal runtime facts needed to reproduce a pinned UI defect.
          *
@@ -11421,6 +11437,18 @@ export interface components {
             machine_id: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /**
+         * PinNearbyAnchor
+         * @description A stable neighbour of the pinned element and the pin's px offset from it.
+         */
+        PinNearbyAnchor: {
+            /** Dx Px */
+            dx_px: number;
+            /** Dy Px */
+            dy_px: number;
+            /** Selector */
+            selector: string;
         };
         /**
          * PinSyncOut

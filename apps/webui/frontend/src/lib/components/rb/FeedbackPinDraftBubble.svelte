@@ -9,6 +9,7 @@
 	 */
 	import { tick } from 'svelte';
 	import { pinBodyPos, pinBodyStyle, type PinDraft } from '$lib/rb/feedback';
+	import type { PinPlacement } from '$lib/rb/feedback-pin-position';
 	import {
 		addPin,
 		addPinWithAttachment,
@@ -42,6 +43,7 @@
 			| (PinDraft & {
 					viewport: { width: number; height: number };
 					followOn: { parentId: string; label: string } | null;
+					placement: PinPlacement | null;
 			  })
 			| null;
 		pushToast: PushToast;
@@ -215,7 +217,14 @@
 				ui: pinUiKind(),
 				viewport_width: submitted.viewport.width,
 				viewport_height: submitted.viewport.height,
-				author: 'operator'
+				author: 'operator',
+				// Optional placement against the UI (feedback-pin-position.ts).
+				...(submitted.placement === null
+					? {}
+					: {
+							element_offset: submitted.placement.element_offset,
+							nearby_anchors: submitted.placement.nearby_anchors
+						})
 			} as const;
 			const attachment = pendingAttachment;
 			let saved: unknown;

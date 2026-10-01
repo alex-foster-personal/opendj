@@ -4761,6 +4761,24 @@
             "title": "Author",
             "type": "string"
           },
+          "element_offset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinElementOffset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nearby_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/PinNearbyAnchor"
+            },
+            "maxItems": 3,
+            "title": "Nearby Anchors",
+            "type": "array"
+          },
           "page": {
             "minLength": 1,
             "title": "Page",
@@ -4921,6 +4939,16 @@
             "title": "Created At",
             "type": "string"
           },
+          "element_offset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PinElementOffset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment": {
             "anyOf": [
               {
@@ -4978,6 +5006,13 @@
               }
             ],
             "title": "Issue Url"
+          },
+          "nearby_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/PinNearbyAnchor"
+            },
+            "title": "Nearby Anchors",
+            "type": "array"
           },
           "page": {
             "title": "Page",
@@ -13585,6 +13620,29 @@
         "title": "PinCellIn",
         "type": "object"
       },
+      "PinElementOffset": {
+        "description": "The click point inside the ``anchor`` element's box, 0..100 per axis.",
+        "properties": {
+          "dx_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Dx Pct",
+            "type": "number"
+          },
+          "dy_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Dy Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dx_pct",
+          "dy_pct"
+        ],
+        "title": "PinElementOffset",
+        "type": "object"
+      },
       "PinEnvironmentOut": {
         "description": "Non-personal runtime facts needed to reproduce a pinned UI defect.\n\n``machine`` and ``release_version`` are already exposed by the running\ndaemon's settings/health surfaces. The browser contributes only its UI\nkind and viewport dimensions: no username, user agent, URL query, or\nother new personal data enters the pin store.",
         "properties": {
@@ -13640,6 +13698,36 @@
           "playlist_id"
         ],
         "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinNearbyAnchor": {
+        "description": "A stable neighbour of the pinned element and the pin's px offset from it.",
+        "properties": {
+          "dx_px": {
+            "maximum": 100000.0,
+            "minimum": -100000.0,
+            "title": "Dx Px",
+            "type": "number"
+          },
+          "dy_px": {
+            "maximum": 100000.0,
+            "minimum": -100000.0,
+            "title": "Dy Px",
+            "type": "number"
+          },
+          "selector": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Selector",
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector",
+          "dx_px",
+          "dy_px"
+        ],
+        "title": "PinNearbyAnchor",
         "type": "object"
       },
       "PinSyncOut": {
