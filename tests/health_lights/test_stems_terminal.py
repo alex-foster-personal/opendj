@@ -131,7 +131,8 @@ def test_real_ffprobe_durations_and_damage(tmp_path: Path) -> None:
     assert long.kind == "duration" and long.duration_s == pytest.approx(12.0, abs=0.05)
     damaged = tmp_path / "damaged.mp3"
     damaged.write_bytes(b"\x00" * 4096)
-    assert st.probe(damaged).kind == "no_duration"
+    damaged_probe = st.probe(damaged)
+    assert damaged_probe.kind == "no_duration", damaged_probe.detail
     # A file that is not there is UNKNOWN (an unmounted volume), never damage.
     assert st.probe(tmp_path / "absent.mp3").kind == "unknown"
 
