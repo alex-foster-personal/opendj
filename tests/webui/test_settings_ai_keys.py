@@ -35,8 +35,21 @@ def _client_keys() -> set[str]:
     return keys
 
 
+def _catalog_sources() -> list[str]:
+    """catalog.ts plus the sibling modules it imports setting rows from.
+
+    A row may live in its own file (midi-enabled-setting.ts) and be spliced into
+    the catalog by value import, so the ids are read from every such module.
+    """
+    catalog = (_FRONTEND / "catalog.ts").read_text(encoding="utf-8")
+    siblings = re.findall(r"^import \{[^}]+\} from '\./([\w-]+)';$", catalog, flags=re.MULTILINE)
+    # Instrument check: an import parse that finds nothing would silently drop rows.
+    assert "midi-enabled-setting" in siblings, siblings
+    return [catalog, *((_FRONTEND / f"{name}.ts").read_text(encoding="utf-8") for name in siblings)]
+
+
 def _catalog_ids() -> set[str]:
-    src = (_FRONTEND / "catalog.ts").read_text(encoding="utf-8")
+    src = "\n".join(_catalog_sources())
     ids = set(re.findall(r"\bid: '([^']+)'", src)) | set(re.findall(r"_todo\('([^']+)'", src))
     assert "rb.midi_enabled" in ids, "catalog parse found no MIDI setting"
     return ids
