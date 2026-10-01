@@ -37,7 +37,7 @@ def child_context_config(encoded: str, nodeid: str) -> str:
 
 
 @pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> Iterator[None]:
+def pytest_runtest_protocol(item: pytest.Item) -> Iterator[None]:
     """Label children for the item's setup, call AND teardown.
 
     A function-scoped fixture would start after session-, module- and class-scoped fixture setup

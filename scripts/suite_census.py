@@ -109,10 +109,9 @@ def _junit_test_id(case: ET.Element) -> str:
     module = path.removesuffix(".py").replace("/", ".")
     if classname == module:
         return f"{path}::{name}"
-    elif classname.startswith(module + "."):
+    if classname.startswith(module + "."):
         return f"{path}::{classname[len(module) + 1 :].replace('.', '::')}::{name}"
-    else:
-        raise CensusUnknown(f"junit classname {classname!r} does not start with module {module!r}")
+    raise CensusUnknown(f"junit classname {classname!r} does not start with module {module!r}")
 
 
 def _load_durations(junit: Path) -> dict[str, float]:
