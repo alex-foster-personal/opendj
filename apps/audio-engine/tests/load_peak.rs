@@ -78,5 +78,4 @@ fn a_load_holds_one_copy_of_the_samples() {
         // Control: the measurement sees the samples at all.
         assert!(peak >= samples, "{name}: peaked at {peak} bytes, under the {samples} bytes of samples");
     }
-    let _ = std::fs::remove_dir_all(&d);
 }

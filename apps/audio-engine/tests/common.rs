@@ -2,23 +2,74 @@
 //! Shared fixtures: synthetic tones written as real WAV files, so tests go
 //! through the same decode path the engine uses for a user's tracks.
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::ffi::OsStr;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
 
 use odj_audio::wav;
 
-static N: AtomicU32 = AtomicU32::new(0);
+/// A test's scratch directory, deleted with everything in it when this guard
+/// drops, so it goes on panic and unwind too. Keep the guard bound for as
+/// long as anything, a spawned `odj-audio` included, uses the directory: a
+/// helper hands the guard on, never a bare path to it. Derefs to `PathBuf`,
+/// so `d.join(..)`, `&d` and `d.clone()` (an owned path) read as before.
+pub struct TestDir {
+    path: PathBuf,
+    // Owns the deletion; `path` is a copy so the guard can deref to `PathBuf`.
+    // Taken in `Drop`, which deletes it checked rather than silently.
+    dir: Option<tempfile::TempDir>,
+}
 
-/// A fresh directory under the system temp dir, unique per call.
-pub fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "odj-audio-test-{}-{}-{}",
-        tag,
-        std::process::id(),
-        N.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&d).unwrap();
-    d
+/// A directory that will not delete fails the test that made it: a leaked
+/// handle or a still-running child must not pass green and leave the tree
+/// behind. While a test is already panicking the delete is best-effort, so
+/// the original failure is the one reported.
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let Some(dir) = self.dir.take() else { return };
+        let deleted = dir.close();
+        if !std::thread::panicking() {
+            if let Err(e) = deleted {
+                panic!(
+                    "could not delete test scratch dir {}: {e}",
+                    self.path.display()
+                );
+            }
+        }
+    }
+}
+
+impl Deref for TestDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.path
+    }
+}
+
+impl AsRef<Path> for TestDir {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<OsStr> for TestDir {
+    fn as_ref(&self) -> &OsStr {
+        self.path.as_os_str()
+    }
+}
+
+/// A fresh directory under the system temp dir (`TMPDIR`), unique per call.
+/// Its name keeps the `odj-audio-test-<tag>-<pid>-` prefix so a host reaper
+/// can still match what a killed job left behind.
+pub fn temp_dir(tag: &str) -> TestDir {
+    let dir = tempfile::Builder::new()
+        .prefix(&format!("odj-audio-test-{tag}-{}-", std::process::id()))
+        .tempdir()
+        .unwrap();
+    TestDir {
+        path: dir.path().to_path_buf(),
+        dir: Some(dir),
+    }
 }
 
 /// Interleaved stereo sine, amplitude 0.5.

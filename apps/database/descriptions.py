@@ -120,6 +120,11 @@ TABLES: dict[str, str] = {
         "watermark fences against. Machine-local; it never rides sync "
         "itself."
     ),
+    "sync_write_tokens": (
+        "One digested table's current write token, replaced by a trigger on "
+        "every row write, so the CloudSync digest can skip re-hashing a "
+        "library nothing has touched. Machine-local; it never rides sync."
+    ),
     # ----- enrollment: who OWNS a machine (ADR 12) -----------------------
     "machine_owners": (
         "One machine's owner, as ONE hub recorded it. Never synced: a "

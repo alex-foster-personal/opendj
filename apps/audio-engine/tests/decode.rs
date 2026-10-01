@@ -38,7 +38,6 @@ fn a_corrupt_packet_keeps_the_timeline_after_it() {
     // sample: a shifted tail would not match.
     let tail = 44100 * 2;
     assert_eq!(got.pcm[got.pcm.len() - tail..], clean.pcm[clean.pcm.len() - tail..]);
-    std::fs::remove_dir_all(dir).ok();
 }
 
 /// Byte ranges of the clip's audio packets, from its MP4 sample tables
@@ -151,7 +150,6 @@ fn a_file_whose_every_packet_is_corrupt_does_not_load_as_silence() {
     assert!(got.pcm.len().abs_diff(clean.pcm.len()) <= 1024 * 2, "{} vs {}", got.pcm.len(), clean.pcm.len());
     let before = clean.pcm.len() - 2 * 2048 * 2;
     assert_eq!(got.pcm[..before], clean.pcm[..before]);
-    std::fs::remove_dir_all(dir).ok();
 }
 
 #[test]

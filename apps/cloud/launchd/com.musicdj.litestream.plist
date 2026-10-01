@@ -23,7 +23,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>-lc</string>
-        <string>cd /Users/YOU/Music/music-dj-tools &amp;&amp; doppler run -p general -c dev_personal -- python -m apps.cloud.replicate</string>
+        <string>cd /Users/YOU/code/music-dj-tools &amp;&amp; doppler run -p general -c dev_personal -- python -m apps.cloud.replicate</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

@@ -234,6 +234,9 @@ jobs:
       # as an infra failure rather than dropping it.
       - name: Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)
         id: pytest-shard
+        # TMPDIR mirrors ci.yml (ADR-NEW-ci-test-scratch-on-tmpfs).
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           set -uo pipefail
           # Remove any report left by an EARLIER run on this persistent
@@ -336,6 +339,7 @@ jobs:
               --ignore=tests/perf/test_library_playlist_switch_bench.py
           rc=$?
           set -e
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
             elapsed=$(( $(date +%s) - started ))
             # 124 is `timeout`'s own expiry. 137 is its KILL escalation: the

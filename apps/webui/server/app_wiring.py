@@ -29,6 +29,7 @@ from apps.sets.api import router as sets_router
 from apps.shared.rekordbox_writeback import RekordboxWritebackDisabled
 from apps.shared.state.db import StateStoreBusyError
 from apps.sync_hub import hosted_config as sync_hub_hosted_config
+from apps.sync_hub import hub_wal_keeper
 from apps.sync_hub.service import router as sync_hub_router
 from apps.webui.port_config import (
     PortConfigError,
@@ -275,6 +276,10 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         # playlist_write builds its PlaylistStore lazily from
         # app.state.state_db_path; release its sqlite handle on shutdown.
         playlist_write_routes.close_store(app)
+        # The hub's idle WAL keepers live on app.state for the app's life;
+        # release them so a stopped app holds no handle on the hub database
+        # (exclusive maintenance, Windows file replacement). LIBM-120 L6.
+        hub_wal_keeper.close_wal_keepers(app.state)
 
 
 def _bind_core_state(
