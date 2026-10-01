@@ -5,6 +5,9 @@
  * [if] the engine reports low_disk with a blocked_reason [then] the dot is
  * red and says why nothing was evicted [⛔️ if it reads as "being handled"].
  * [if] low_disk with no blocker [then] amber, eviction in progress.
+ * [if] low_disk and eviction is merely paused in settings [then] amber, and
+ * the hover says what turning it on would evict [⛔️ if a pause reads as a fault].
+ * [if] low_disk at all [then] the hover says the evicted bundles stay in the cloud.
  * [if] healthy [then] green, even when bundles are still waiting to upload
  * [⛔️ if a healthy disk is painted as a warning].
  */
@@ -29,6 +32,8 @@ function status(overrides = {}) {
 		cache_bytes: 62 * GIB,
 		bundle_count: 1596,
 		local_only_count: 0,
+		would_evict_count: 0,
+		would_evict_bytes: 0,
 		blocked_reason: null,
 		last_error: null,
 		...overrides
@@ -62,12 +67,49 @@ test('healthy stays green when bundles are waiting to upload, and says so', () =
 
 test('low disk with no blocker is amber: eviction is relieving it', () => {
 	const dot = policy.stemCacheHealthDot(
-		status({ state: 'low_disk', disk_free_bytes: 4.2 * GIB, shortfall_bytes: 41.8 * GIB }),
+		status({
+			state: 'low_disk',
+			disk_free_bytes: 4.2 * GIB,
+			shortfall_bytes: 41.8 * GIB,
+			would_evict_count: 1240,
+			would_evict_bytes: 41.8 * GIB
+		}),
 		null
 	);
 	assert.equal(dot.state, 'incomplete');
 	assert.match(dot.detail, /low disk: 42 GiB short \(4\.2 GiB free, floor 46 GiB\)/);
-	assert.match(dot.detail, /evicting least recently used stems/);
+	assert.match(dot.detail, /evicting the 1240 least recently used stem bundles \(42 GiB\)/);
+	assert.match(dot.detail, /stay available from the cloud and download again when loaded/);
+});
+
+test('low disk with eviction paused is amber, not red, and says what turning it on evicts', () => {
+	const dot = policy.stemCacheHealthDot(
+		status({
+			state: 'low_disk',
+			disk_free_bytes: 39 * GIB,
+			shortfall_bytes: 7 * GIB,
+			would_evict_count: 208,
+			would_evict_bytes: 7 * GIB,
+			blocked_reason: 'auto_evict_off'
+		}),
+		null
+	);
+	assert.equal(dot.state, 'incomplete');
+	assert.match(dot.detail, /automatic eviction is paused in settings, nothing evicted/);
+	assert.match(dot.detail, /Turning it on would evict the 208 least recently used stem bundles \(7\.0 GiB\)/);
+	assert.match(dot.detail, /stay available from the cloud/);
+});
+
+test('one bundle is singular, and nothing evictable never promises an eviction', () => {
+	const low = { state: 'low_disk', disk_free_bytes: GIB, shortfall_bytes: 45 * GIB };
+	const one = policy.stemCacheHealthDot(
+		status({ ...low, would_evict_count: 1, would_evict_bytes: GIB }),
+		null
+	);
+	assert.match(one.detail, /evicting the 1 least recently used stem bundle \(1\.0 GiB\)/);
+	const none = policy.stemCacheHealthDot(status({ ...low, blocked_reason: 'auto_evict_off' }), null);
+	assert.match(none.detail, /would evict no stem bundle is safe to evict/);
+	assert.doesNotMatch(none.detail, /stay available from the cloud/);
 });
 
 test('low disk blocked on unarmed hydration is red and names the cause', () => {
@@ -87,12 +129,16 @@ test('low disk blocked on unarmed hydration is red and names the cause', () => {
 
 test('each engine blocked_reason has its own wording, and an unknown one is shown raw', () => {
 	const low = { state: 'low_disk', disk_free_bytes: GIB, shortfall_bytes: 45 * GIB };
-	const off = policy.stemCacheHealthDot(status({ ...low, blocked_reason: 'auto_evict_off' }), null);
-	assert.match(off.detail, /automatic eviction is turned off/);
+	const armed = policy.stemCacheHealthDot(
+		status({ ...low, blocked_reason: 'hydration_not_armed' }),
+		null
+	);
+	assert.equal(armed.state, 'error');
 	const stuck = policy.stemCacheHealthDot(
 		status({ ...low, blocked_reason: 'not_enough_evictable_bundles', local_only_count: 1 }),
 		null
 	);
+	assert.equal(stuck.state, 'error');
 	assert.match(stuck.detail, /on a deck or not yet uploaded/);
 	assert.match(stuck.detail, /1 bundle not yet uploaded/);
 	const unknown = policy.stemCacheHealthDot(status({ ...low, blocked_reason: 'new_reason' }), null);

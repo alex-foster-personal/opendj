@@ -6,8 +6,17 @@ The stem cache used to be capped by one fixed number (102400 MB in
 what else is using the disk. Here the budget is DERIVED from the volume: the
 cache may be as large as it likes so long as a floor stays free.
 
-    floor  = max(floor_gib, floor_fraction * volume)      (30 GiB or 10%)
+    floor  = max(floor_gib, floor_fraction * volume)      (20 GiB or 5%)
     budget = cache + free - floor                         (never below 0)
+
+Why 20 GiB or 5% (changed Thu 1 Oct 2026 from 30 GiB or 10%): the floor is
+what the REST of the machine needs free, not a comfort margin. Measured on the
+460 GiB preview laptop: swap peaks at 8.2 GiB while the vocals drain runs, one
+full set's worth of stems hydrated back is about 7 GiB (200 bundles at 34 MB),
+and the state database with its working copies is under 2 GiB. That is 17 GiB,
+so 20 GiB absolute. The old 46 GiB floor there read as low disk at 39 GiB free
+with nothing in the app short of space. The fraction keeps the floor growing
+on large volumes, where other software expects proportionally more headroom.
 
 Two containment rules bound what being wrong can cost, and they are the
 point of this module:
@@ -26,7 +35,7 @@ measurement is injectable. :mod:`apps.cloud.stem_hydration` calls
 
 Requirements (mini-PRD):
   ✔︎ ✅ 🎯 STEM-39 the budget is derived from free disk and a floor.
-    [if] 10% of the volume exceeds 30 GiB [then] 10% is the floor
+    [if] 5% of the volume exceeds 20 GiB [then] 5% is the floor
     [if] free disk shrinks [then] the budget shrinks with it
     [if] the floor cannot be met even with an empty cache [then] budget is 0
   ✔︎ ✅ 🎯 STEM-40 eviction is gated on the R2 index.
@@ -58,8 +67,8 @@ from pathlib import Path
 from typing import Literal
 
 GIB: int = 1024**3
-DEFAULT_FLOOR_GIB: float = 30.0
-DEFAULT_FLOOR_FRACTION: float = 0.10
+DEFAULT_FLOOR_GIB: float = 20.0
+DEFAULT_FLOOR_FRACTION: float = 0.05
 DEFAULT_ENFORCE_INTERVAL_S: float = 300.0
 SETTINGS_FILENAME: str = "stem-cache-settings.json"
 UPLOAD_QUEUE_FILENAME: str = "stem-upload-queue.json"
@@ -188,10 +197,15 @@ def load_settings(data_dir: Path) -> StemCacheSettings:
 
 
 def save_settings(data_dir: Path, settings: StemCacheSettings) -> Path:
+    """Persist only the fields that differ from the defaults. Writing every
+    field pinned the defaults of the day into the file, so a later default
+    change never reached a machine that had once toggled one switch."""
     validated = settings_from_mapping(asdict(settings))
+    defaults = asdict(StemCacheSettings())
+    overrides = {k: v for k, v in asdict(validated).items() if v != defaults[k]}
     path = settings_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    _write_json_atomically(path, asdict(validated))
+    _write_json_atomically(path, overrides)
     return path
 
 
@@ -555,6 +569,14 @@ def status(
         if bundle.stable_id not in local_only_ids and bundle.stable_id not in protected
     ]
     evictable_bytes = sum(bundle.size_bytes for bundle in evictable)
+    # What reaching the floor would remove: least recently used first, the
+    # same walk as ``_evict_lru`` minus the content hash (status hashes nothing).
+    would_evict_count, would_evict_bytes = 0, 0
+    for bundle in evictable:
+        if would_evict_bytes >= need:
+            break
+        would_evict_count += 1
+        would_evict_bytes += bundle.size_bytes
 
     blocked: str | None = None
     if need > 0 and not resolved.auto_evict:
@@ -577,6 +599,8 @@ def status(
         "bundle_count": len(bundles),
         "evictable_bundle_count": len(evictable),
         "evictable_bytes": evictable_bytes,
+        "would_evict_count": would_evict_count,
+        "would_evict_bytes": would_evict_bytes,
         "local_only_count": len(local_only),
         "local_only_bytes": sum(bundle.size_bytes for bundle in local_only),
         "local_only_stable_ids": sorted(local_only_ids),

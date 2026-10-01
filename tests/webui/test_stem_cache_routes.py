@@ -39,7 +39,7 @@ from apps.webui.server.stem_cache_enforcer import StemCacheEnforcer
 from tests.waits import start_uvicorn_in_thread
 
 VOLUME: int = 460 * GIB
-FLOOR: int = 46 * GIB
+FLOOR: int = 23 * GIB
 
 
 def _wav_bytes() -> bytes:
@@ -241,8 +241,8 @@ def test_settings_route_round_trips_a_partial_override(tmp_path: Path):
     """[if] a partial settings update is PUT [then] only that field changes and it reads back, [else stop]."""
     client = TestClient(_app(tmp_path, armed=True))
     assert client.get("/api/v1/stems/cache/settings").json() == {
-        "floor_gib": 30.0,
-        "floor_fraction": 0.1,
+        "floor_gib": 20.0,
+        "floor_fraction": 0.05,
         "max_cache_gib": None,
         "enforce_interval_s": 300.0,
         "auto_evict": True,
@@ -255,7 +255,7 @@ def test_settings_route_round_trips_a_partial_override(tmp_path: Path):
     assert updated.json()["floor_gib"] == 60.0
     assert updated.json()["max_cache_gib"] == 20.0
     # Untouched fields keep their value, and the change is on disk.
-    assert updated.json()["floor_fraction"] == 0.1
+    assert updated.json()["floor_fraction"] == 0.05
     assert stem_cache_budget.load_settings(tmp_path / "data") == StemCacheSettings(
         floor_gib=60.0, max_cache_gib=20.0
     )

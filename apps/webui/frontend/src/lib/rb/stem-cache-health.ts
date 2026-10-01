@@ -7,13 +7,19 @@
  * wording choice lives here, where a unit test can import and call the exact
  * function the component runs.
  *
- * The engine keeps a floor of disk free (30 GiB or 10% of the volume,
+ * The engine keeps a floor of disk free (20 GiB or 5% of the volume,
  * whichever is larger) by evicting least-recently-used stem bundles, but
- * only bundles the R2 index holds byte for byte. So "low disk" has two very
+ * only bundles the R2 index holds byte for byte. So "low disk" has three
  * different meanings and the dot must not blur them:
  *
  *   - low and being relieved: the next engine tick evicts. Amber.
+ *   - low and PAUSED: eviction is switched off in settings. Nothing is
+ *     broken and one switch relieves it, so amber, with what turning it
+ *     back on would evict.
  *   - low and BLOCKED: nothing can be evicted, and the user has to act. Red.
+ *
+ * Every low-disk hover says what eviction removes and that those bundles
+ * stay in the cloud: an eviction the user cannot predict reads as data loss.
  */
 
 export type StemCacheHealthDot = {
@@ -31,6 +37,8 @@ export type StemCacheStatusView = {
 	cache_bytes: number;
 	bundle_count: number;
 	local_only_count: number;
+	would_evict_count: number;
+	would_evict_bytes: number;
 	blocked_reason: string | null;
 	last_error: string | null;
 };
@@ -46,10 +54,19 @@ export function formatGib(bytes: number): string {
 const BLOCKED_WORDING: Record<string, string> = {
 	hydration_not_armed:
 		'nothing evicted: this machine cannot fetch stems back from the cloud yet (CloudSync is off or not enrolled)',
-	auto_evict_off: 'nothing evicted: automatic eviction is turned off in settings',
 	not_enough_evictable_bundles:
 		'cannot reach the floor: the remaining stems are on a deck or not yet uploaded'
 };
+
+/** Paused is a choice, not a fault: amber. Every other blocker is red. */
+const PAUSED_REASON = 'auto_evict_off';
+
+/** What reaching the floor removes, and that it is not lost. */
+function evictionPart(status: StemCacheStatusView): string {
+	const count = status.would_evict_count;
+	if (count <= 0) return 'no stem bundle is safe to evict';
+	return `the ${count} least recently used stem ${count === 1 ? 'bundle' : 'bundles'} (${formatGib(status.would_evict_bytes)}); they stay available from the cloud and download again when loaded on a deck`;
+}
 
 function localOnlyPart(count: number): string {
 	if (count <= 0) return '';
@@ -78,6 +95,13 @@ export function stemCacheHealthDot(
 		return { label, state: 'complete', detail: `${free}; ${cache}${localOnly}` };
 	}
 	const short = `low disk: ${formatGib(status.shortfall_bytes)} short (${free})`;
+	if (status.blocked_reason === PAUSED_REASON) {
+		return {
+			label,
+			state: 'incomplete',
+			detail: `${short}; automatic eviction is paused in settings, nothing evicted. Turning it on would evict ${evictionPart(status)}${localOnly}`
+		};
+	}
 	if (status.blocked_reason !== null) {
 		const why = BLOCKED_WORDING[status.blocked_reason] ?? `blocked: ${status.blocked_reason}`;
 		return { label, state: 'error', detail: `${short}; ${why}${localOnly}` };
@@ -85,6 +109,6 @@ export function stemCacheHealthDot(
 	return {
 		label,
 		state: 'incomplete',
-		detail: `${short}; evicting least recently used stems that are safe in the cloud${localOnly}`
+		detail: `${short}; evicting ${evictionPart(status)}${localOnly}`
 	};
 }
