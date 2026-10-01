@@ -36,6 +36,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from apps.shared import macos_diskutil
 from apps.shared.rekordbox_writeback import require_writeback_enabled
 
 from . import writer_rbox
@@ -354,7 +355,7 @@ def inspect_macos_target(target_root: str | Path) -> TargetIdentity:
         )
     try:
         process = subprocess.run(
-            ["diskutil", "info", "-plist", str(root)],
+            [str(macos_diskutil.DISKUTIL_PATH), "info", "-plist", str(root)],
             capture_output=True,
             check=False,
             timeout=10,

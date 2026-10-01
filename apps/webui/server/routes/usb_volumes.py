@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import shutil
 import subprocess
 import sys
 import threading
@@ -38,6 +37,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
+from apps.shared import macos_diskutil
 from apps.shared.sandbox import STORE_BUILD_REFUSAL_TITLE, is_sandboxed
 from apps.webui.server.routes.usb_classify import (
     VolumeKind,
@@ -188,11 +188,25 @@ def _resolve_discovery(
     )
 
 
+def _pinned_diskutil() -> str | None:
+    command = macos_diskutil.resolve_diskutil()
+    if command is None and sys.platform == "darwin":
+        log.error(
+            "usb volumes: %s is missing or not executable; discovery is "
+            "unavailable until it is (PATH is not searched)",
+            macos_diskutil.DISKUTIL_PATH,
+        )
+    return command
+
+
 def _system_discovery(*, usb_export_gate: UsbExportGate) -> UsbDiscovery:
     return _resolve_discovery(
         platform_name=sys.platform,
         volumes_root=_VOLUMES_ROOT,
-        diskutil_command=shutil.which("diskutil"),
+        # Pinned absolute path, never a PATH lookup: a launchd agent's PATH
+        # has no /usr/sbin, and which("diskutil") then reports a tool that
+        # is installed as missing (503 on every poll, Thu 1 Oct 2026).
+        diskutil_command=_pinned_diskutil(),
         usb_export_gate=usb_export_gate,
     )
 

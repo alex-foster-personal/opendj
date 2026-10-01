@@ -11,6 +11,10 @@ import { pushToast } from '$lib/stores.svelte';
 
 const STORAGE_KEY = 'mdt.rb.usb-volumes.v1';
 const POLL_MS = 5000;
+/** Ceiling of the failure backoff: a refusal that will not clear by itself
+ * (diskutil missing, a build that may not look) costs one request a minute,
+ * not twelve. */
+const POLL_BACKOFF_MAX_MS = 60000;
 
 export type UsbKind = 'rekordbox' | 'djay' | 'music' | 'unknown';
 export type UsbRole = 'usb_stick' | 'mounted_drive' | 'disk_image' | 'other';
@@ -64,6 +68,11 @@ type ApiVolume = {
 
 type ApiList = { volumes: ApiVolume[]; scanned_at: number };
 
+/** Where volume discovery stands. 'unknown' until the first poll answers;
+ * 'unavailable' is the daemon's own 503 refusal (it names a reason);
+ * 'unreachable' is everything else that stopped an answer arriving. */
+export type UsbDiscoveryState = 'unknown' | 'ok' | 'unavailable' | 'unreachable';
+
 // ----- state -------------------------------------------------------------
 
 export const usbTracker = $state({
@@ -72,13 +81,23 @@ export const usbTracker = $state({
 	promptId: null as string | null,
 	polling: false,
 	lastError: null as string | null,
+	discovery: 'unknown' as UsbDiscoveryState,
+	/** The daemon's `detail.reason` on a 503 refusal, e.g. diskutil_unavailable. */
+	unavailableReason: null as string | null,
+	/** The daemon's own sentence for the refusal, when it sent one. */
+	unavailableTitle: null as string | null,
+	/** Polls failed in a row; drives the backoff, 0 after any success. */
+	consecutiveFailures: 0,
 	/** Daemon `scanned_at` of the last successful poll this session; null
 	 * until one lands, while every `present` flag is still last session's. */
 	scannedAt: null as number | null
 });
 
-let _pollTimer: ReturnType<typeof setInterval> | null = null;
+let _pollTimer: ReturnType<typeof setTimeout> | null = null;
 let _started = false;
+/** Bumped by every start and stop, so a poll in flight across a stop (or a
+ * stop then start) cannot schedule a second chain. */
+let _watchGeneration = 0;
 
 // ----- persistence -------------------------------------------------------
 
@@ -253,23 +272,78 @@ export function setForgotten(id: string, forgotten: boolean): void {
 
 // ----- polling / API -----------------------------------------------------
 
+/** Wait before the next poll: POLL_MS while healthy, doubling per failure in
+ * a row up to POLL_BACKOFF_MAX_MS. One success returns it to POLL_MS. */
+export function usbPollDelayMs(consecutiveFailures: number): number {
+	if (consecutiveFailures <= 0) return POLL_MS;
+	return Math.min(POLL_MS * 2 ** consecutiveFailures, POLL_BACKOFF_MAX_MS);
+}
+
+const _REASON_SENTENCES: Record<string, string> = {
+	diskutil_unavailable: 'macOS diskutil was not found at /usr/sbin/diskutil',
+	diskutil_timed_out: 'macOS diskutil did not answer in time',
+	diskutil_query_failed: 'macOS diskutil returned an error',
+	volumes_root_unavailable: '/Volumes is not available on this machine',
+	volumes_root_unreadable: '/Volumes could not be listed'
+};
+
+/** The sentence the USB panel shows instead of an empty list it cannot
+ * vouch for. null when discovery is working or has not answered yet. */
+export function usbDiscoveryNotice(t: {
+	discovery: UsbDiscoveryState;
+	unavailableReason: string | null;
+	unavailableTitle: string | null;
+	lastError: string | null;
+}): string | null {
+	if (t.discovery === 'unavailable') {
+		const reason = t.unavailableReason ?? 'no reason given';
+		const why = t.unavailableTitle ?? _REASON_SENTENCES[reason] ?? reason;
+		return `USB discovery unavailable: ${why}`;
+	} else if (t.discovery === 'unreachable') {
+		return `USB discovery unreachable: ${t.lastError ?? 'no answer from the engine'}`;
+	}
+	return null;
+}
+
+function _scheduleNextPoll(generation: number): void {
+	_pollTimer = setTimeout(() => {
+		_pollTimer = null;
+		void _pollOnce(generation);
+	}, usbPollDelayMs(usbTracker.consecutiveFailures));
+}
+
+async function _pollOnce(generation: number): Promise<void> {
+	await refreshUsbVolumes();
+	if (_started && generation === _watchGeneration) _scheduleNextPoll(generation);
+}
+
 export function startUsbWatch(): void {
 	if (_started) return;
 	_started = true;
+	_watchGeneration += 1;
 	usbTracker.polling = true;
-	void refreshUsbVolumes();
-	_pollTimer = setInterval(() => {
-		void refreshUsbVolumes();
-	}, POLL_MS);
+	void _pollOnce(_watchGeneration);
 }
 
 export function stopUsbWatch(): void {
 	_started = false;
+	_watchGeneration += 1;
 	usbTracker.polling = false;
 	if (_pollTimer !== null) {
-		clearInterval(_pollTimer);
+		clearTimeout(_pollTimer);
 		_pollTimer = null;
 	}
+}
+
+/** `detail.reason` / `detail.ui_title` of the daemon's 503 refusal body. */
+function _refusalDetail(body: unknown): { reason: string | null; title: string | null } {
+	const detail = (body as { detail?: unknown } | null)?.detail;
+	if (detail === null || typeof detail !== 'object') return { reason: null, title: null };
+	const { reason, ui_title } = detail as { reason?: unknown; ui_title?: unknown };
+	return {
+		reason: typeof reason === 'string' ? reason : null,
+		title: typeof ui_title === 'string' ? ui_title : null
+	};
 }
 
 export async function refreshUsbVolumes(): Promise<void> {
@@ -278,12 +352,27 @@ export async function refreshUsbVolumes(): Promise<void> {
 		_ingest(body.volumes ?? []);
 		usbTracker.scannedAt = body.scanned_at;
 		usbTracker.lastError = null;
+		usbTracker.discovery = 'ok';
+		usbTracker.unavailableReason = null;
+		usbTracker.unavailableTitle = null;
+		usbTracker.consecutiveFailures = 0;
 	} catch (exc) {
+		usbTracker.consecutiveFailures += 1;
 		if (exc instanceof ApiError) {
 			usbTracker.lastError = `usb volumes HTTP ${exc.status}`;
+			const refusal = _refusalDetail(exc.body);
+			if (exc.status === 503 && refusal.reason !== null) {
+				usbTracker.discovery = 'unavailable';
+				usbTracker.unavailableReason = refusal.reason;
+				usbTracker.unavailableTitle = refusal.title;
+				return;
+			}
 		} else {
 			usbTracker.lastError = exc instanceof Error ? exc.message : String(exc);
 		}
+		usbTracker.discovery = 'unreachable';
+		usbTracker.unavailableReason = null;
+		usbTracker.unavailableTitle = null;
 	}
 }
 
