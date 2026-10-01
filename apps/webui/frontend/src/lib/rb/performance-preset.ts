@@ -19,6 +19,7 @@ import type {
 import type { DeckId } from '$lib/rb/deck-slots';
 import type { SyncMode } from '$lib/rb/deck-state-types';
 import type { CrossfaderAssign } from '$lib/rb/mixer-types';
+import { frameOrTimeout } from '$lib/rb/frame-backstop';
 import {
 	MUTED_MASTER_VOLUME,
 	type PerformancePresetPhase
@@ -499,10 +500,6 @@ export function assertPerformancePresetPresented(
 	}
 }
 
-function _nextAnimationFrame(): Promise<void> {
-	return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
 export async function waitForPerformancePresetPresented(
 	preset: PerformancePreset,
 	query: () => PerformanceState,
@@ -524,7 +521,7 @@ export async function waitForPerformancePresetPresented(
 			if (!(error instanceof PerformancePresetPendingError)) throw error;
 			lastPending = error;
 		}
-		await _nextAnimationFrame();
+		await frameOrTimeout(); // never a bare frame: a hidden tab delivers none and the deadline above would never be read
 		assertCurrent();
 	}
 	throw new Error(
@@ -577,7 +574,7 @@ export async function waitForPerformancePresetStopped(
 			if (!(error instanceof PerformancePresetPendingError)) throw error;
 			lastPending = error;
 		}
-		await _nextAnimationFrame();
+		await frameOrTimeout(); // never a bare frame: a hidden tab delivers none and the deadline above would never be read
 	}
 	throw new Error(
 		`performance preset ${preset.id} did not stop within ${timeoutMs}ms: ` +
