@@ -255,6 +255,8 @@ export type PerformanceCommand =
 	| { type: 'stem_mute'; deck: DeckId; stem: StemControl; muted: boolean }
 	| { type: 'stem_solo'; deck: DeckId; stem: StemControl; solo: boolean; exclusive?: boolean }
 	| { type: 'stem_eq_mode'; deck: DeckId; enabled: boolean }
+	/** STEM-46/47: get this deck's stems now (retry a failed load, start a held one). */
+	| { type: 'stem_load'; deck: DeckId }
 	| { type: 'stem_gain'; deck: DeckId; stem: StemControl; value: number }
 	| { type: 'slip'; deck: DeckId; enabled: boolean }
 	| { type: 'key_sync'; deck: DeckId; enabled: boolean }
@@ -1429,6 +1431,9 @@ function _parseCommand(message: unknown): PerformanceCommand {
 	} else if (type === 'stem_eq_mode') {
 		_exactKeys(record, ['type', 'deck', 'enabled']);
 		return { type, deck, enabled: _boolean('enabled', record.enabled) };
+	} else if (type === 'stem_load') {
+		_exactKeys(record, ['type', 'deck']);
+		return { type, deck };
 	} else if (type === 'stem_gain') {
 		_exactKeys(record, ['type', 'deck', 'stem', 'value']);
 		return { type, deck, stem: _stem(record.stem), value: _unit('value', record.value) };
@@ -1911,6 +1916,9 @@ export function performanceCommandQueueScopes(
 		command.type === 'fader' ||
 		command.type === 'stem_mute' ||
 		command.type === 'stem_solo' ||
+		// STEM-47: landing stems on a playing deck waits for the transport to
+		// be idle; in the deck's queue it would BE the thing keeping it busy.
+		command.type === 'stem_load' ||
 		command.type === 'assign' ||
 		command.type === 'crossfader' ||
 		command.type === 'master_volume' ||
@@ -2169,6 +2177,8 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 		engine.setStemSolo(command.deck, command.stem, command.solo, pressT0Ms, command.exclusive);
 	} else if (command.type === 'stem_eq_mode') {
 		engine.setStemEqMode(command.deck, command.enabled);
+	} else if (command.type === 'stem_load') {
+		await engine.retryStems(command.deck);
 	} else if (command.type === 'stem_gain') {
 		engine.setStemGain(command.deck, command.stem, command.value);
 	} else if (command.type === 'slip') {

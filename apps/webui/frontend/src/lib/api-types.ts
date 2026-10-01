@@ -5965,6 +5965,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/stems/hydrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hydrate Stem Bundle
+         * @description Fetch this track's stem bundle from the cloud now, and retry a failure.
+         *
+         *     The manifest route records a failed fetch and answers 502 from then on so
+         *     a hot loop cannot hammer R2 with the same doomed request. This is the
+         *     explicit way back: it drops that record and starts a fresh fetch through
+         *     the same single-flight path, so the cache floor and the evictor apply
+         *     exactly as they do for a deck load. A bundle already on disk is a no-op.
+         *     Returns at once with the resulting state; poll ``.../stems/state``.
+         */
+        post: operations["hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/{stable_id}/stems/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stem State
+         * @description Name this track's stem state. Read-only: never starts a download.
+         *
+         *     Agent-native parity for what the deck's stem row shows. Registered BEFORE
+         *     the ``{part}`` route on purpose, which would otherwise read ``state`` as a
+         *     stem part name.
+         */
+        get: operations["get_stem_state_api_v1_tracks__stable_id__stems_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/stems/{part}": {
         parameters: {
             query?: never;
@@ -14146,6 +14197,18 @@ export interface components {
             /** Manifest Path */
             manifest_path: string;
         };
+        /**
+         * StemHydrationProgressOut
+         * @description How far an in-flight cloud fetch has got, read from its temp directory.
+         */
+        StemHydrationProgressOut: {
+            /** Bytes Done */
+            bytes_done: number;
+            /** Files Done */
+            files_done: number;
+            /** Files Total */
+            files_total: number;
+        };
         /** StemIndexBuildIn */
         StemIndexBuildIn: {
             /** Data Dir */
@@ -14241,6 +14304,36 @@ export interface components {
             dry_run: boolean;
         };
         /**
+         * StemStateOut
+         * @description One track's stem bundle, named: where it is and what is happening to it.
+         *
+         *     ``local`` is on this machine and playable; ``cloud`` is only in the R2
+         *     index and a hydrate will fetch it; ``fetching`` is being downloaded now;
+         *     ``error`` is a bundle that should exist and could not be produced;
+         *     ``none`` is no bundle anywhere this engine can see.
+         */
+        StemStateOut: {
+            /**
+             * Deck Open
+             * @default false
+             */
+            deck_open: boolean;
+            /** Error Code */
+            error_code?: string | null;
+            /** Hydration Armed */
+            hydration_armed: boolean;
+            /** Message */
+            message: string;
+            progress?: components["schemas"]["StemHydrationProgressOut"] | null;
+            /** Stable Id */
+            stable_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "local" | "cloud" | "fetching" | "error" | "none";
+        };
+        /**
          * StemTierOut
          * @description One real separation rung, straight out of apps.stems.tiers.
          */
@@ -14274,6 +14367,7 @@ export interface components {
             hydrating: boolean;
             /** Message */
             message: string;
+            progress?: components["schemas"]["StemHydrationProgressOut"] | null;
             /** Stable Id */
             stable_id: string;
             /**
@@ -26872,6 +26966,82 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_stem_state_api_v1_tracks__stable_id__stems_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StemStateOut"];
                 };
             };
             /** @description Validation Error */

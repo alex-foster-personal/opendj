@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.cloud import stem_hydration, stem_index
+from apps.cloud import stem_cache_budget, stem_hydration, stem_index
 from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
 from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
@@ -60,6 +60,9 @@ STEM_PART_HYDRATE_WAIT_S: float = 30.0
 _HYDRATE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="stem-hydrate")
 _INFLIGHT_LOCK = threading.Lock()
 _INFLIGHT: dict[str, Future] = {}
+#: stable_id -> number of files the index lists for the bundle being fetched,
+#: recorded at enqueue so a progress read never has to re-parse the index.
+_INFLIGHT_FILE_TOTALS: dict[str, int] = {}
 #: stable_id -> reason, for a bundle the index says exists but whose last
 #: hydration attempt failed. Consulted BEFORE re-enqueueing so a hot loop of
 #: part requests does not hammer R2 with the same doomed fetch, and so a
@@ -132,6 +135,39 @@ class StemManifestOut(BaseModel):
     parts: dict[str, StemPartOut]
 
 
+class StemHydrationProgressOut(BaseModel):
+    """How far an in-flight cloud fetch has got, read from its temp directory."""
+
+    model_config = ConfigDict(frozen=True)
+
+    files_total: int
+    files_done: int
+    bytes_done: int
+
+
+StemTrackState = Literal["local", "cloud", "fetching", "error", "none"]
+
+
+class StemStateOut(BaseModel):
+    """One track's stem bundle, named: where it is and what is happening to it.
+
+    ``local`` is on this machine and playable; ``cloud`` is only in the R2
+    index and a hydrate will fetch it; ``fetching`` is being downloaded now;
+    ``error`` is a bundle that should exist and could not be produced;
+    ``none`` is no bundle anywhere this engine can see.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    stable_id: str
+    state: StemTrackState
+    message: str
+    hydration_armed: bool
+    progress: StemHydrationProgressOut | None = None
+    error_code: str | None = None
+    deck_open: bool = False
+
+
 class StemUnavailableOut(BaseModel):
     """HTTP 200 empty-state: no stored bundle for this stable_id."""
 
@@ -146,6 +182,8 @@ class StemUnavailableOut(BaseModel):
     #: client that cares can poll again shortly rather than treating this
     #: the same as "no stems exist for this track".
     hydrating: bool = False
+    #: Set only while ``hydrating`` is true: files and bytes fetched so far.
+    progress: StemHydrationProgressOut | None = None
 
 
 def _stems_dir(request: Request) -> Path:
@@ -396,6 +434,7 @@ def _enqueue_hydration(stable_id: str, request: Request) -> Future | None:
             stems_dir=stems_dir,
         )
         _INFLIGHT[stable_id] = future
+        _INFLIGHT_FILE_TOTALS[stable_id] = len(index[stable_id])
         return future
 
 
@@ -452,6 +491,115 @@ def _raise_index_refresh_failed(reason: str) -> None:
         status_code=502,
         detail={"code": "STEM_INDEX_REFRESH_FAILED", "message": reason},
     )
+
+
+def _hydration_progress(stable_id: str, stems_dir: Path) -> StemHydrationProgressOut:
+    """Files and bytes the in-flight fetch has written so far.
+
+    Read from the fetch's own temp directory (``<stable_id>.tmp-hydrate-*``),
+    so it costs a directory listing and never touches the network or the
+    fetch itself. A file still being written counts as done with the bytes it
+    has, which is why this is progress and not a completion check.
+    """
+    files_done = 0
+    bytes_done = 0
+    prefix = f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}"
+    if stems_dir.is_dir():
+        for tmp_dir in stems_dir.iterdir():
+            if not tmp_dir.name.startswith(prefix) or not tmp_dir.is_dir():
+                continue
+            for child in tmp_dir.iterdir():
+                try:
+                    child_stat = child.stat()
+                except FileNotFoundError:
+                    # The fetch published (renamed) the directory mid-listing.
+                    continue
+                if stat.S_ISREG(child_stat.st_mode):
+                    files_done += 1
+                    bytes_done += child_stat.st_size
+    with _INFLIGHT_LOCK:
+        files_total = _INFLIGHT_FILE_TOTALS.get(stable_id, 0)
+    return StemHydrationProgressOut(
+        files_total=files_total, files_done=files_done, bytes_done=bytes_done
+    )
+
+
+def _hydration_in_flight(stable_id: str) -> bool:
+    with _INFLIGHT_LOCK:
+        future = _INFLIGHT.get(stable_id)
+        return future is not None and not future.done()
+
+
+def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
+    """Name the track's stem state WITHOUT starting or re-arming anything.
+
+    Deliberately reads ``app.state`` directly instead of calling
+    :func:`_hydration_deps`, which raises and may re-arm hydration: a state
+    read that changes the state it reports is not a read.
+    """
+    stems_dir = _stems_dir(request)
+    deck_open = stable_id in stem_hydration.OPEN_DECKS.open_ids()
+    state = request.app.state
+    unarmed_reason = getattr(state, "stem_hydration_unarmed_reason", None)
+    data_dir = getattr(state, "stem_hydration_data_dir", None)
+    has_source = (
+        getattr(state, "stem_hydration_source", None) is not None
+        or (
+            getattr(state, "stem_hydration_cfg", None) is not None
+            and getattr(state, "stem_hydration_s3", None) is not None
+        )
+    )
+    armed = unarmed_reason is None and has_source and data_dir is not None
+
+    def _out(
+        name: StemTrackState,
+        message: str,
+        *,
+        progress: StemHydrationProgressOut | None = None,
+        error_code: str | None = None,
+    ) -> StemStateOut:
+        return StemStateOut(
+            stable_id=stable_id,
+            state=name,
+            message=message,
+            hydration_armed=armed,
+            progress=progress,
+            error_code=error_code,
+            deck_open=deck_open,
+        )
+
+    try:
+        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
+    except StemBundleNotFoundError:
+        pass
+    except StemArtifactError as exc:
+        return _out("error", str(exc), error_code="STEM_ARTIFACT_INVALID")
+    else:
+        return _out("local", "stem bundle is on this machine")
+
+    if _hydration_in_flight(stable_id):
+        return _out(
+            "fetching",
+            "fetching the stem bundle from the cloud",
+            progress=_hydration_progress(stable_id, stems_dir),
+        )
+    recorded = _recorded_hydration_error(stable_id)
+    if recorded is not None:
+        return _out("error", recorded.message, error_code=recorded.code)
+    if unarmed_reason is not None:
+        return _out("error", unarmed_reason, error_code="STEM_HYDRATION_NOT_ARMED")
+    if not armed:
+        return _out(
+            "none",
+            "no stem bundle on this machine, and cloud stems are not configured here",
+        )
+    try:
+        index = stem_index.load_cached_index(Path(data_dir))
+    except stem_index.StemIndexError as exc:
+        return _out("error", str(exc), error_code="STEM_INDEX_CORRUPT")
+    if stable_id in index:
+        return _out("cloud", "stem bundle is in the cloud and is fetched on demand")
+    return _out("none", "no stem bundle on this machine or in the cloud")
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:
@@ -537,6 +685,7 @@ def get_stem_manifest(
                 code="STEM_BUNDLE_HYDRATING",
                 message="bundle not local yet; fetching from R2",
                 hydrating=True,
+                progress=_hydration_progress(stable_id, _stems_dir(request)),
             )
         return _unavailable_out(stable_id, exc)
     except StemArtifactError as exc:
@@ -546,6 +695,47 @@ def get_stem_manifest(
         ) from exc
     stem_hydration.OPEN_DECKS.mark_served(stable_id)
     return _manifest_out(bundle)
+
+
+@router.get("/{stable_id}/stems/state", response_model=StemStateOut)
+def get_stem_state(stable_id: str, request: Request) -> StemStateOut:
+    """Name this track's stem state. Read-only: never starts a download.
+
+    Agent-native parity for what the deck's stem row shows. Registered BEFORE
+    the ``{part}`` route on purpose, which would otherwise read ``state`` as a
+    stem part name.
+    """
+    return _stem_state(stable_id, request)
+
+
+@router.post(
+    "/{stable_id}/stems/hydrate",
+    response_model=StemStateOut,
+    responses=STEM_HYDRATION_ERROR_RESPONSES,
+)
+def hydrate_stem_bundle(stable_id: str, request: Request) -> StemStateOut:
+    """Fetch this track's stem bundle from the cloud now, and retry a failure.
+
+    The manifest route records a failed fetch and answers 502 from then on so
+    a hot loop cannot hammer R2 with the same doomed request. This is the
+    explicit way back: it drops that record and starts a fresh fetch through
+    the same single-flight path, so the cache floor and the evictor apply
+    exactly as they do for a deck load. A bundle already on disk is a no-op.
+    Returns at once with the resulting state; poll ``.../stems/state``.
+    """
+    stems_dir = _stems_dir(request)
+    try:
+        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
+    except StemBundleNotFoundError:
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR.pop(stable_id, None)
+        _enqueue_hydration(stable_id, request)
+    except StemArtifactError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
+        ) from exc
+    return _stem_state(stable_id, request)
 
 
 @router.get(
@@ -705,8 +895,10 @@ def mark_stem_deck_closed(stable_id: str) -> dict[str, str]:
 __all__ = [
     "STEM_HYDRATION_ERROR_RESPONSES",
     "STEM_PART_HYDRATE_WAIT_S",
+    "StemHydrationProgressOut",
     "StemManifestOut",
     "StemPartOut",
+    "StemStateOut",
     "StemUnavailableOut",
     "StemWaveformOut",
     "router",
