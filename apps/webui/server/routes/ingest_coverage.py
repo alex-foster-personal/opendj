@@ -16,7 +16,8 @@ done        the artifact exists and validates
 terminal    nothing to make: no lyrics available, or no stems source. Counts
             as finished, and is reported separately so it is never mistaken
             for done
-failed      a drain job failed ``MAX_ATTEMPTS`` times on this audio file.
+failed      a drain job (analysis included) failed ``MAX_ATTEMPTS`` times on
+            this audio file.
             Not retried until the file changes or the failure is cleared
 pending     not yet tried, or failed and still inside its retry budget
 ==========  ================================================================
@@ -207,15 +208,12 @@ def compute_snapshot(
         data_dir, [sid for sid, _path in missing["lyrics"]]
     ) | _ledger_ids("lyrics", outcomes_mod.is_no_source)
     terminal = {
-        "analysis": set(),
+        "analysis": _ledger_ids("analysis", outcomes_mod.is_no_source),
         "stems": stems_terminal,
         "vocals": vocals_terminal,
         "lyrics": lyrics_terminal,
     }
-    failed = {
-        "analysis": set(),
-        **{step: _ledger_ids(step, outcomes_mod.is_failed_terminal) for step in outcomes_mod.STEPS},
-    }
+    failed = {step: _ledger_ids(step, outcomes_mod.is_failed_terminal) for step in STEPS}
 
     counts: dict[str, StepCounts] = {}
     pending: dict[str, list[Target]] = {}

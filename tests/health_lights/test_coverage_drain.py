@@ -268,6 +268,7 @@ def test_an_armed_engine_app_runs_the_real_drain_and_stops_it_on_shutdown(
     fx.write_stem_bundle(data_dir / "state" / "stems", "a")
     fx.write_vocals(data_dir / "state" / "vocal-cache", "a", audio)
     fx.write_lyrics(data_dir / "state" / "lyrics-cache", "a")
+    fx.write_analysis_row(state_db, "a")     # the armed drain owns analysis too
     monkeypatch.setenv("MDT_DATA_DIR", str(data_dir))
     monkeypatch.setattr(ingest_mod, "open_ro", lambda: sqlite3.connect(state_db))
     monkeypatch.setattr(ingest_mod, "COVERAGE_DATA_DIR", data_dir)

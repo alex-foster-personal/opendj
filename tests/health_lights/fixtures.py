@@ -161,3 +161,22 @@ def write_fetch_verdict(data_dir: Path, stable_id: str, outcome: str) -> None:
             recorded_at=STAMP,
         ),
     )
+
+
+def write_analysis_row(state_db: Path, stable_id: str, *, backend: str = "librosa") -> None:
+    """A real row in the real ``analysis`` table (schema from the store)."""
+    from apps.analysis.store import open_conn
+
+    conn = open_conn(state_db)
+    try:
+        conn.execute(
+            "INSERT INTO analysis (stable_id, backend, backend_version, analyzed_at, "
+            "duration_s, sample_rate, bpm, bpm_confidence, key_camelot, key_openkey, "
+            "key_confidence, energy, energy_source, record_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (stable_id, backend, "test", STAMP, 200.0, 44_100, 120.0, 1.0, "8A", "1m",
+             1.0, 5, "test", "{}"),
+        )
+        conn.commit()
+    finally:
+        conn.close()

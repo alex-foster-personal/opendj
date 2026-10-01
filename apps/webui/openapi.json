@@ -6614,6 +6614,20 @@
             "title": "Failed",
             "type": "object"
           },
+          "farm_only_pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Farm Only Pending",
+            "type": "object"
+          },
+          "farm_only_stages": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Farm Only Stages",
+            "type": "object"
+          },
           "jobs_failed": {
             "title": "Jobs Failed",
             "type": "integer"
@@ -6720,6 +6734,8 @@
           "stems_needing_farm",
           "stems_needing_farm_count",
           "unavailable_steps",
+          "farm_only_stages",
+          "farm_only_pending",
           "next_retry_at",
           "last_job",
           "jobs_run",

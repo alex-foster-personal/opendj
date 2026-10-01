@@ -1,6 +1,7 @@
 """HTTP surface of the coverage auto-drain (agent parity for the setting).
 
-  GET  /coverage-drain/status   what the drain is doing and what is left
+  GET  /coverage-drain/status   what the drain is doing and what is left,
+                                incl. analysis stages reported for the farm
   POST /coverage-drain/start    resume after a stop
   POST /coverage-drain/stop     run no further jobs until started
   PUT  /coverage-drain/config   {"enabled": bool} - the persisted setting
@@ -36,6 +37,8 @@ class DrainStatusOut(BaseModel):
     stems_needing_farm: list[str]
     stems_needing_farm_count: int
     unavailable_steps: dict[str, str]
+    farm_only_stages: dict[str, str]
+    farm_only_pending: dict[str, int]
     next_retry_at: float | None
     last_job: dict[str, Any] | None
     jobs_run: int

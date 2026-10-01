@@ -1,11 +1,15 @@
-"""Auto-drain: run missing vocals and lyrics work until the lights are green.
+"""Auto-drain: run missing vocals, lyrics and analysis work until green.
 
 While coverage over ``present`` tracks is incomplete, the engine runs the
 missing work itself, ONE job at a time, off the request thread:
 
 1. vocals, derived on the CPU from a stem bundle that already exists
    (``apps.vocals.from_stems``), then
-2. lyrics (``apps.lyrics.service.LyricsFetchService``).
+2. lyrics (``apps.lyrics.service.LyricsFetchService``), then
+3. analysis (``coverage_drain_analysis``): one track, one worker, lowest
+   priority, recently loaded tracks first. Last because it is the long pole
+   (about 13 s and 2 GB a track) and the first two are seconds each and
+   visible at once; it also yields to user-ordered jobs.
 
 Stems are NEVER generated here. torch/demucs do not enter the repo venv, so a
 track with no stem bundle is only REPORTED as needing the remote farm
@@ -33,6 +37,12 @@ Requirements (mini-PRD):
     [if] the audio file changes [then] the track is tried again
   ✔︎ ✅ 🎯 stops when green (overshoot control)
     [if] coverage is already green [then] the tick runs nothing
+  ✔︎ ✅ 🎯 analysis is drained last, one at a time, and politely (HEALTH-06)
+    [if] vocals or lyrics work is attemptable [then] analysis does not run
+    [if] a user-ordered job is running [then] analysis yields, others do not
+    [if] an analysis job says the MACHINE cannot run it [then] the step is
+      unavailable until retry, and no track's attempts are spent
+    [if] analysis is pending and this drain has an analysis job [then] not green
   ✔︎ ✅ 🎯 agent parity
     [if] start / stop / status / setting [then] HTTP route and CLI verb exist
 """
@@ -55,9 +65,19 @@ from fastapi import FastAPI
 
 from apps.lyrics.service import LyricsFetchService, load_track
 from apps.shared.events import publish
-from apps.shared.sync_runtime_gates import any_deck_playing
+from apps.webui.server import coverage_drain_analysis as analysis_step
 from apps.webui.server import coverage_outcomes as outcomes_mod
-from apps.webui.server.routes.ingest_coverage import CoverageSnapshot
+from apps.webui.server import coverage_recency
+from apps.webui.server.coverage_drain_analysis import (
+    ANALYSIS_NICENESS,
+    LOAD_SETTLE_S,
+    AnalysisPolicy,
+    DeckGate,
+    StepUnavailable,
+    analysis_argv,
+    analysis_job,
+)
+from apps.webui.server.routes.ingest_coverage import CoverageSnapshot, Target
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +96,9 @@ STOP_JOIN_S: float = 5.0
 #: Ids listed in a status response; the count is always exact.
 STATUS_ID_LIMIT: int = 200
 #: Job order. Stems is deliberately absent: see the module docstring.
-JOB_ORDER: tuple[str, ...] = ("vocals", "lyrics")
+JOB_ORDER: tuple[str, ...] = ("vocals", "lyrics", "analysis")
+#: Steps that wait while a user-ordered job is running.
+YIELDING_STEPS: frozenset[str] = frozenset({"analysis"})
 
 JobFn = Callable[[str, str], None]
 
@@ -188,7 +210,8 @@ def vocals_job(data_dir: Path, stem_roots: Sequence[Path]) -> JobFn:
 #-----------------------------------------------------------------------------
 @dataclass
 class DrainStatus:
-    #: idle | green | running | blocked | paused_playing | stopped | disabled
+    #: idle | green | running | blocked | paused_playing | yielding_user_jobs
+    #: | stopped | disabled
     state: str = "idle"
     enabled: bool = True
     stop_requested: bool = False
@@ -201,6 +224,10 @@ class DrainStatus:
     stems_needing_farm_count: int = 0
     #: Steps this install cannot run at all, with the reason.
     unavailable_steps: dict[str, str] = field(default_factory=dict)
+    #: Analysis stages reported and never run here (they need torch), with
+    #: the reason, and how many present tracks have no current record.
+    farm_only_stages: dict[str, str] = field(default_factory=dict)
+    farm_only_pending: dict[str, int] = field(default_factory=dict)
     next_retry_at: float | None = None
     last_job: dict[str, Any] | None = None
     jobs_run: int = 0
@@ -238,7 +265,11 @@ class CoverageDrain:
         self._config = config
         self._clock = clock
         self._on_change = on_change
-        self._status = DrainStatus(unavailable_steps=dict(unavailable_steps or {}))
+        #: Set after construction (``build_for_app``); the default is inert.
+        self.analysis_policy = AnalysisPolicy()
+        #: Steps the install cannot run at all, fixed at build time.
+        self._built_unavailable: dict[str, str] = dict(unavailable_steps or {})
+        self._status = DrainStatus(unavailable_steps=dict(self._built_unavailable))
         self._stopped = False
         #: The snapshot taken to verify the last job, reused once as the next
         #: tick's input so a run of jobs costs one snapshot each, not two.
@@ -271,6 +302,8 @@ class CoverageDrain:
     def retry_failed(self) -> int:
         """Re-arm every failed track. Returns how many were re-armed."""
         cleared = self._outcomes.clear_failures()
+        # A step a job declared unavailable at run time gets another try too.
+        self._status.unavailable_steps = dict(self._built_unavailable)
         self._carried = None
         self._wake.set()
         return cleared
@@ -301,27 +334,50 @@ class CoverageDrain:
             return self._settle("paused_playing")
         snapshot, self._carried = self._carried or self._snapshot_fn(), None
         self._absorb(snapshot)
-        if snapshot.green:
+        if self._green(snapshot):
             return self._settle("green")
 
         now = self._clock()
         ledger = self._outcomes.load()
         retry_times: list[float] = []
-        for step, targets in (("vocals", snapshot.vocals_ready), ("lyrics", snapshot.pending["lyrics"])):
+        for step in JOB_ORDER:
             if step not in self._jobs or step in self._status.unavailable_steps:
                 continue
-            for stable_id, audio_path in targets:
+            for stable_id, audio_path in self._targets(step, snapshot):
                 signature = outcomes_mod.audio_token(Path(audio_path))
                 prior = ledger.get((step, stable_id))
                 if outcomes_mod.may_attempt(prior, signature, now=now):
+                    if step in YIELDING_STEPS and self.analysis_policy.user_jobs_fn():
+                        return self._settle(
+                            "yielding_user_jobs", f"{step} waits while a user-ordered job runs"
+                        )
                     return self._run(step, stable_id, audio_path, signature)
                 if prior is not None and prior.attempts < outcomes_mod.MAX_ATTEMPTS:
                     retry_times.append(outcomes_mod.next_attempt_at(prior))
         self._status.next_retry_at = min(retry_times) if retry_times else None
         return self._settle("blocked", self._blocked_reason(snapshot, bool(retry_times)))
 
+    def _green(self, snapshot: CoverageSnapshot) -> bool:
+        """Done: the lights' own rule, plus analysis when this drain owns it."""
+        counts = snapshot.counts["analysis"]
+        owns_analysis = "analysis" in self._jobs
+        return snapshot.green and not (owns_analysis and (counts.pending or counts.failed))
+
+    def _targets(self, step: str, snapshot: CoverageSnapshot) -> Sequence[Target]:
+        if step == "vocals":
+            return snapshot.vocals_ready
+        if step == "analysis":
+            return analysis_step.recent_first(
+                snapshot.pending[step], self.analysis_policy.recency_fn()
+            )
+        return snapshot.pending[step]
+
     def _absorb(self, snapshot: CoverageSnapshot) -> None:
         status = self._status
+        policy = self.analysis_policy
+        status.farm_only_stages = dict(policy.farm_only_stages)
+        if policy.farm_pending_fn is not None:
+            status.farm_only_pending = policy.farm_pending_fn(snapshot.on_disk)
         status.pending = {step: counts.pending for step, counts in snapshot.counts.items()}
         status.failed = {step: counts.failed for step, counts in snapshot.counts.items()}
         status.waiting_on_stems = snapshot.waiting_on_stems
@@ -358,6 +414,11 @@ class CoverageDrain:
         except NoSource as no_source:
             self._outcomes.record_no_source(step, stable_id, signature, str(no_source), now=started)
             no_source_recorded = True
+        except StepUnavailable as unavailable:
+            # About this machine, not this track: stop the step, spend no attempt.
+            log.warning("coverage drain %s step unavailable: %s", step, unavailable)
+            self._status.unavailable_steps[step] = str(unavailable)
+            return self._settle("blocked", f"{step} cannot run here: {unavailable}")
         except Exception as failure:  # noqa: BLE001 - recorded, backed off, surfaced in status
             log.warning("coverage drain %s job failed for %s: %s", step, stable_id, failure)
             error = f"{type(failure).__name__}: {failure}"
@@ -420,7 +481,7 @@ class CoverageDrain:
                 continue
             if outcome.startswith(("ran:", "failed:")):
                 interval = ACTIVE_INTERVAL_S
-            elif outcome == "paused_playing":
+            elif outcome in ("paused_playing", "yielding_user_jobs"):
                 interval = PAUSED_INTERVAL_S
             else:
                 interval = IDLE_INTERVAL_S
@@ -435,10 +496,17 @@ class CoverageDrain:
 #-----------------------------------------------------------------------------
 def build_for_app(app: FastAPI) -> CoverageDrain:
     """The engine's drain: real jobs, the app's own snapshot and deck mirror."""
+    from apps.sets.paths import SETS_DB
     from apps.webui.server.routes import ingest as ingest_routes
 
     data_dir = ingest_routes.COVERAGE_DATA_DIR
-    refusal = vocals_capability_refusal()
+    refusals = {
+        "vocals": vocals_capability_refusal(),
+        "analysis": analysis_step.analysis_capability_refusal(),
+    }
+
+    def mirror() -> Any:
+        return getattr(app.state, "ui_mirror", None)
 
     def changed(step: str, stable_id: str) -> None:
         # ``library_jobs`` is the kind the user-ordered stems/lyrics lanes
@@ -446,26 +514,46 @@ def build_for_app(app: FastAPI) -> CoverageDrain:
         _ = step
         publish("library.changed", {"kind": "library_jobs", "ids": [stable_id]})
 
-    return CoverageDrain(
+    drain = CoverageDrain(
         snapshot_fn=lambda: ingest_routes.build_snapshot(app),
         jobs={
             "vocals": vocals_job(data_dir, ingest_routes._stem_roots(app)),
             "lyrics": lyrics_job(LyricsFetchService(data_dir)),
+            "analysis": analysis_job(data_dir, backend=ingest_routes.ANALYSIS_BACKEND),
         },
-        playing_fn=lambda: any_deck_playing(getattr(app.state, "ui_mirror", None)),
+        # Playing OR loading: see ``DeckGate``.
+        playing_fn=DeckGate(mirror),
         outcomes=outcomes_mod.OutcomeStore(outcomes_mod.store_path(data_dir)),
         config=DrainConfig(config_path(data_dir)),
-        unavailable_steps={"vocals": refusal} if refusal is not None else None,
+        unavailable_steps={step: why for step, why in refusals.items() if why is not None},
         on_change=changed,
     )
+    drain.analysis_policy = AnalysisPolicy(
+        user_jobs_fn=lambda: analysis_step.user_jobs_active(
+            ingest_routes.open_ro, lambda: ingest_routes.refresh_status().running
+        ),
+        recency_fn=lambda: coverage_recency.recent_track_ids(SETS_DB, mirror()),
+        farm_only_stages=analysis_step.FARM_ONLY_STAGES,
+        farm_pending_fn=lambda present: analysis_step.farm_only_pending(
+            ingest_routes.open_ro, present
+        ),
+    )
+    return drain
 
 
 __all__ = [
+    "ANALYSIS_NICENESS",
     "COVERAGE_DRAIN_ENV",
+    "LOAD_SETTLE_S",
+    "AnalysisPolicy",
     "CoverageDrain",
+    "DeckGate",
     "DrainConfig",
     "DrainStatus",
     "NoSource",
+    "StepUnavailable",
+    "analysis_argv",
+    "analysis_job",
     "arm_from_environ",
     "build_for_app",
     "config_path",

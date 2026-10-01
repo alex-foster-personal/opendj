@@ -8746,6 +8746,14 @@ export interface components {
             failed: {
                 [key: string]: number;
             };
+            /** Farm Only Pending */
+            farm_only_pending: {
+                [key: string]: number;
+            };
+            /** Farm Only Stages */
+            farm_only_stages: {
+                [key: string]: string;
+            };
             /** Jobs Failed */
             jobs_failed: number;
             /** Jobs Run */
