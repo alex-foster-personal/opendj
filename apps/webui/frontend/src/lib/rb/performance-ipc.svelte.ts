@@ -1987,6 +1987,7 @@ function _errorMessage(error: unknown): string {
  */
 async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promise<void> {
 	_recordPerformanceCommand(command);
+	if (command.type === 'master_volume') _operatorMasterVolume = command.value;
 	// A device release can wait behind a load of the very same track ID. The
 	// load generation, checked under the deck queue claim, owns the gesture.
 	if ((command.type === 'loop' || command.type === 'beat_loop') &&
@@ -2509,6 +2510,24 @@ function _invalidateCommandSession(generation: number): void {
 		waveformSeekArmed[deckId] = null;
 		hotCueArmed[deckId] = null;
 	}
+}
+
+/** The value of the last master_volume command this page executed, or null
+ * if none has run. The route's teardown hard mute (`engine.setMaster(0)`) and
+ * a preset's late-settlement mute write the mixer directly, so a live
+ * `mixer.master` of 0 is not by itself an operator's choice; this is. */
+let _operatorMasterVolume: number | null = null;
+
+export function operatorMasterVolume(): number | null {
+	return _operatorMasterVolume;
+}
+
+/** The generation of the live route command session, or null between
+ * mounts. A session-scoped writer binds to the value it saw at install and
+ * stops the moment it changes, so nothing it writes can describe a torn-down
+ * route (hard-muted master, stopped decks). */
+export function activePerformanceCommandSession(): number | null {
+	return _activeCommandSession?.generation ?? null;
 }
 
 function _currentCommandSession(): number {

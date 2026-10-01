@@ -41,7 +41,8 @@ async function verifySessionWriter(page: Page, stableId: string) {
 		const { createSessionSnapshotWriter } = await import(url) as typeof import('../../src/lib/rb/performance-session.svelte');
 		return createSessionSnapshotWriter({ now: Date.now, storage: sessionStorage,
 			location: window.location, replaceState: (url) => history.replaceState(null, '', url),
-			query: () => window.musicDjToolsPerformance!.query(), document, window });
+			query: () => window.musicDjToolsPerformance!.query(), isLive: () => true,
+			operatorMaster: () => null, document, window });
 	}, '/src/lib/rb/performance-session.svelte.ts');
 	const first = await writer.evaluate((writer) => {
 		writer.flush(true);
@@ -175,7 +176,7 @@ for (const deck of [1, 2, 3, 4] as const) {
 		const session = await page.evaluate(async ({ deck, writerUrl, parserUrl }) => {
 			const { buildPerformanceSessionSnapshot } = await import(writerUrl) as typeof import('../../src/lib/rb/performance-session.svelte');
 			const { parsePerformanceSession } = await import(parserUrl) as typeof import('../../src/lib/rb/performance-session-snapshot');
-			const raw = buildPerformanceSessionSnapshot(window.musicDjToolsPerformance!.query(), Date.now());
+			const raw = buildPerformanceSessionSnapshot(window.musicDjToolsPerformance!.query(), Date.now(), null);
 			const parsed = parsePerformanceSession(raw);
 			// Disposable transformations of this real capture, never fixture edits.
 			const legacy = JSON.parse(raw);
