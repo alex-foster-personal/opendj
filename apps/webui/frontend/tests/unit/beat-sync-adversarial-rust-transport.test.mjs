@@ -1,5 +1,5 @@
 /**
- * ADVERSARIAL (round 2; findings 1 and 2 were RED, FIXED - see each test): Rust engine mode's
+ * ADVERSARIAL (round 2; findings 1, 2 and 3 were RED, FIXED - see each test): Rust engine mode's
  * page-decided Beat Sync (`rust-transport.ts`) driven through the same
  * recording stand-in engine as rust-sync.test.mjs. What is under test is what
  * the page tells the engine.
@@ -214,7 +214,7 @@ test('3. a lock dropped mid-trim sends the base back (no permanent 0.3% offset)'
 	const join = await joinFollower(2, grid(126, 0.05, 1200), 30_000);
 	const masterAt = 60_000 + m.SYNC_LEAD_SEC * 1000;
 	positions[1] = masterAt;
-	positions[2] = join.seekMs - 20 * join.tempo; // 20 ms behind: a capped trim
+	positions[2] = join.seekMs - 10 * join.tempo; // 10 ms behind: a trim (under PHASE_LOCK_RESEEK_MS)
 	m.phaseLockTick();
 	await settle();
 	const trim = sent.find((c) => c.type === 'tempo' && c.deck === 2);
@@ -231,6 +231,62 @@ test('3. a lock dropped mid-trim sends the base back (no permanent 0.3% offset)'
 		`deck 2 left at ${lastTempo} vs sync base ${join.tempo} ` +
 			`(${(((lastTempo / join.tempo) - 1) * 100).toFixed(3)}%)`
 	);
+});
+
+/** A follower 10 ms behind with a speed-up trim in force; returns the join and the trim. */
+async function trimmingFollower() {
+	await playingMaster(1, grid(128, 0.1, 1200), 60_000);
+	const join = await joinFollower(2, grid(126, 0.05, 1200), 30_000);
+	positions[1] = 60_000 + m.SYNC_LEAD_SEC * 1000;
+	positions[2] = join.seekMs - 10 * join.tempo;
+	m.phaseLockTick();
+	await settle();
+	const trim = sent.find((c) => c.type === 'tempo' && c.deck === 2);
+	assert.ok(trim && trim.ratio > join.tempo, 'precondition: a speed-up trim is in force');
+	sent = [];
+	return { join, trim };
+}
+
+test('3b. control (#1134): a trimming follower PROMOTED to master keeps its tempo', async () => {
+	const { trim } = await trimmingFollower();
+	await m.executeInRustEngine({ type: 'play', deck: 1, playing: false });
+	assert.equal(m.rustMaster.deck, 2, 'precondition: the follower was elected master');
+	m.phaseLockTick();
+	await settle();
+	// Its tempo is now the master's: sending the old base would move the clock
+	// every other deck locks to.
+	assert.deepEqual(sent.filter((c) => c.type === 'tempo' && c.deck === 2), []);
+	assert.equal(m.deckStates[2].pitch, trim.ratio);
+});
+
+test('3c. control: a tempo the DJ set after Beat Sync went off is left alone', async () => {
+	await trimmingFollower();
+	await m.executeInRustEngine({ type: 'beat_sync', deck: 2, enabled: false });
+	await m.executeInRustEngine({ type: 'tempo', deck: 2, ratio: 1.02 });
+	sent = [];
+	m.phaseLockTick();
+	await settle();
+	assert.deepEqual(sent.filter((c) => c.type === 'tempo' && c.deck === 2), []);
+	assert.equal(m.deckStates[2].pitch, 1.02);
+	assert.equal(m.phaseLocksForTest()[2], undefined, 'the lock is still dropped');
+});
+
+test('3d. control: a lock dropped by a track change sends nothing to the new track', async () => {
+	// Same-BPM grids: the join base is exactly 1, the pitch a fresh load starts at,
+	// so only the track check (not the own-write check) can tell them apart.
+	await playingMaster(1, grid(128, 0.1, 1200), 60_000);
+	const join = await joinFollower(2, grid(128, 0.05, 1200), 30_000);
+	assert.equal(join.tempo, 1, 'precondition: base 1');
+	positions[1] = 60_000 + m.SYNC_LEAD_SEC * 1000;
+	positions[2] = join.seekMs - 10;
+	m.phaseLockTick();
+	await settle();
+	assert.ok(sent.some((c) => c.type === 'tempo' && c.deck === 2 && c.ratio > 1), 'precondition: trimming');
+	sent = [];
+	loadDeck(2, grid(122, 0.2, 1200), { stable_id: 'another-track', pitch: 1 });
+	m.phaseLockTick();
+	await settle();
+	assert.deepEqual(sent.filter((c) => c.deck === 2), []);
 });
 
 test('control: a manual master switch re-joins the followers to the new master', async () => {

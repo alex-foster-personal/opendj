@@ -190,6 +190,25 @@ function _lockHolds(deck: DeckId, lock: PhaseLock, master: DeckId): boolean {
 }
 
 /**
+ * A dropped lock takes its trim with it ("a trim never outlives its error"):
+ * the base tempo goes back when the deck is still on the lock's track, is not
+ * now the master (#1134: a promoted deck's tempo is the master's, which its
+ * own followers are locked to), and still plays the lock's own write - the
+ * last trim, or a frame echo of the base. A tempo the DJ set since is theirs.
+ */
+function _dropLock(deck: DeckId, lock: PhaseLock): void {
+	delete phaseLocks[deck];
+	const st = deckStates[deck];
+	if (lock.sent === lock.base || st.stable_id !== lock.stableId || rustMaster.deck === deck) return;
+	const near = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-6 * b;
+	if (!near(st.pitch, lock.sent) && !near(st.pitch, lock.base)) return;
+	st.pitch = lock.base;
+	void send({ type: 'tempo', deck, ratio: lock.base }).catch((e: unknown) => {
+		st.sync_error = `phase lock release failed: ${e instanceof Error ? e.message : String(e)}`;
+	});
+}
+
+/**
  * The continuous phase lock (NAE-19), run on every engine state frame
  * (30 Hz). A join sets a follower's tempo once; this keeps measuring its phase
  * against the master and sends a small trim on top of the join's base tempo
@@ -202,7 +221,7 @@ export function phaseLockTick(): void {
 		const lock = phaseLocks[deck];
 		if (lock === undefined || lock.busy) continue;
 		if (master === null || !_lockHolds(deck, lock, master)) {
-			delete phaseLocks[deck];
+			_dropLock(deck, lock);
 			continue;
 		}
 		const st = deckStates[deck];
@@ -222,7 +241,7 @@ export function phaseLockTick(): void {
 		} catch (e) {
 			// Thrown inside the state mirror: drop this lock and say why rather
 			// than stop mirroring every deck.
-			delete phaseLocks[deck];
+			_dropLock(deck, lock);
 			st.sync_error = `phase lock: ${e instanceof Error ? e.message : String(e)}`;
 			continue;
 		}
@@ -241,7 +260,10 @@ export function phaseLockTick(): void {
 		void (async () => {
 			try {
 				await send({ type: 'tempo', deck, ratio });
-				if (phaseLocks[deck] === lock) lock.sent = ratio;
+				if (phaseLocks[deck] === lock) {
+					lock.sent = ratio;
+					st.pitch = ratio; // the page's view of its own write (_dropLock reads it)
+				}
 			} catch (e) {
 				if (phaseLocks[deck] === lock) {
 					delete phaseLocks[deck];
