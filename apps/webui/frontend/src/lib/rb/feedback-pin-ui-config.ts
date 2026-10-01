@@ -34,18 +34,25 @@ export const PIN_UI_CONFIG_SWITCHES = [
 	'show_agent_pins'
 ] as const;
 
+/** The fields read off the prefs blob. Typed `unknown` because they are
+ * checked at runtime: the blob is loaded from storage. Naming them here makes
+ * a switch that is not a pref a compile error. */
+export type PinUiConfigPrefs = Readonly<
+	Record<'app_mode' | 'perf_tier' | (typeof PIN_UI_CONFIG_SWITCHES)[number], unknown>
+>;
+
 const ROUTE = /^\/[A-Za-z0-9/_.-]{0,119}$/;
 
 export interface PinUiConfigInput {
 	/** Page the pin was placed on; a query string or fragment is cut. */
 	pathname: string;
 	/** The UI prefs blob. Only the allowlisted fields are read. */
-	prefs: Readonly<Record<string, unknown>>;
+	prefs: PinUiConfigPrefs;
 	/** Whether the page plays through the Rust engine (else Web Audio). */
 	rustEngine: boolean;
 }
 
-function _slug(prefs: Readonly<Record<string, unknown>>, key: string): string {
+function _slug(prefs: PinUiConfigPrefs, key: 'app_mode' | 'perf_tier'): string {
 	const value = prefs[key];
 	if (typeof value !== 'string' || value === '') {
 		throw new Error(`pin ui config: pref ${key} must be a non-empty string`);
