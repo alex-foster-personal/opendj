@@ -73,10 +73,11 @@ from apps.analysis.pcm_fingerprint import (
     require_resampler,
 )
 from apps.analysis_beatgrid import activations
-from apps.analysis_beatgrid.grid_fit import GRID_FIT_RAW
+from apps.analysis_beatgrid.grid_fit import GRID_FIT_CONST_REGIONS, GRID_FIT_MODES, GRID_FIT_RAW
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
+from .. import config as _analysis_config
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
 from . import register
@@ -107,13 +108,20 @@ DEFAULT_DEVICE = "cpu"
 #: never returns is worse than one that says which track it stopped on.
 TIMEOUT_ENV = "MDT_BEATGRID_TIMEOUT_S"
 
-#: Which grid the lane serves: `raw` (the model's peak times, the default until
-#: the grid-fit bench round is reviewed) or `line` (the fitted, BPM-rounded,
-#: offset-corrected line from `apps.analysis_beatgrid.grid_fit`) or
-#: `const_regions` (the same, with the line chosen by the constant-region
-#: recipe in `apps.analysis_beatgrid.const_regions`). A fitted record says
-#: which in its payload's `grid_fit` block.
+#: Which grid the lane serves: `raw` (the model's peak times) or `line` (the
+#: fitted, BPM-rounded, offset-corrected line from
+#: `apps.analysis_beatgrid.grid_fit`) or `const_regions` (the same, with the
+#: line chosen by the constant-region recipe in
+#: `apps.analysis_beatgrid.const_regions`). The setting lives in
+#: `apps/analysis/config.yaml` under `own_beatgrid.grid_fit`; this variable,
+#: when set, overrides it for one process. A fitted record says which in its
+#: payload's `grid_fit` block.
 GRID_FIT_ENV = "MDT_BEATGRID_GRID_FIT"
+
+#: The mode served when neither the variable nor the config names one
+#: (NATIVE-19, JIK, Thu 1 Oct 2026: round 5 and round 7 put it ahead of `raw`
+#: and `line` on every fixed-tempo row).
+DEFAULT_GRID_FIT = GRID_FIT_CONST_REGIONS
 DEFAULT_TIMEOUT_S = 1800
 
 
@@ -124,6 +132,26 @@ class RunnerPayloadError(RuntimeError):
 #-----------------------------------------------------------------------------
 # invocation
 #-----------------------------------------------------------------------------
+
+def grid_fit_mode(config: dict[str, Any] | None = None) -> str:
+    """The grid this lane serves: the env override, else the config, else the default.
+
+    An unknown value raises here, naming where it came from, rather than
+    falling back to a mode nobody chose.
+    """
+    override = os.environ.get(GRID_FIT_ENV, "").strip()
+    if override:
+        mode, source = override, GRID_FIT_ENV
+    else:
+        if config is None:
+            config = _analysis_config.load_config()
+        section = config.get("own_beatgrid") or {}
+        mode = str(section.get("grid_fit") or DEFAULT_GRID_FIT).strip()
+        source = "own_beatgrid.grid_fit in apps/analysis/config.yaml"
+    if mode not in GRID_FIT_MODES:
+        raise ValueError(f"{source} must be one of {GRID_FIT_MODES}, got {mode!r}")
+    return mode
+
 
 def runner_command(
     audio_path: Path,
@@ -494,6 +522,8 @@ class OwnBeatgridBackfillBackend:
                 f"the canonical decode fingerprint cannot be taken on this host: {exc}"
             ) from exc
         device = os.environ.get(DEVICE_ENV, "").strip() or DEFAULT_DEVICE
+        # Before the runner, so a bad setting fails before a model run is spent.
+        grid_fit = grid_fit_mode()
         # Fingerprint BEFORE the runner, because the record must name the
         # bytes the beats were derived FROM. Taken afterwards it names
         # whatever is on disk when the runner happens to finish, which for a
@@ -534,7 +564,7 @@ class OwnBeatgridBackfillBackend:
                 audio_path=audio_path,
                 model_sha256=model_sha256,
                 decode_fingerprint=decode_fingerprint,
-                grid_fit=os.environ.get(GRID_FIT_ENV, "").strip() or GRID_FIT_RAW,
+                grid_fit=grid_fit,
                 genre=library_genre(stable_id),
             )
         except TrackUnreadable:
