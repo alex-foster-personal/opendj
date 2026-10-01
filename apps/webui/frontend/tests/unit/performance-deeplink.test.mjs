@@ -370,6 +370,8 @@ test('6a812c8ac2e5: session snapshot writer throttles interval writes and flushe
 		location,
 		replaceState: (url) => replaceCalls.push(url),
 		query,
+		isLive: () => true,
+		operatorMaster: () => null,
 		throttle_ms: 10_000,
 		document: {
 			hidden: false,

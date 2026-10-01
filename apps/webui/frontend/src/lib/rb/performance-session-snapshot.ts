@@ -57,6 +57,10 @@ export interface PerformanceSessionSnapshot {
 	mixer: {
 		crossfader: number;
 		master: number;
+		/** True only when `master` came from an operator's own master_volume
+		 * command. A 0 without it is a safety mute (route teardown, a failed
+		 * preset) and restore must not replay it. Absent in older snapshots. */
+		master_set_by_operator?: boolean;
 		channels: Record<DeckId, PerformanceSessionMixerChannelSnapshot>;
 	};
 	stems: Record<DeckId, SessionStemControls>;
@@ -81,6 +85,10 @@ export interface PerformanceSessionSnapshotInput {
 	mixer: {
 		crossfader: number;
 		master: number;
+		/** True only when `master` came from an operator's own master_volume
+		 * command. A 0 without it is a safety mute (route teardown, a failed
+		 * preset) and restore must not replay it. Absent in older snapshots. */
+		master_set_by_operator?: boolean;
 		channels: Record<DeckId, PerformanceSessionMixerChannelSnapshot>;
 	};
 	stems: Record<DeckId, SessionStemControls>;
@@ -203,6 +211,9 @@ export function serializePerformanceSession(input: PerformanceSessionSnapshotInp
 		mixer: {
 			crossfader: input.mixer.crossfader,
 			master: input.mixer.master,
+			...(input.mixer.master_set_by_operator === undefined
+				? {}
+				: { master_set_by_operator: input.mixer.master_set_by_operator }),
 			channels: {} as Record<DeckId, PerformanceSessionMixerChannelSnapshot>
 		},
 		stems: {} as Record<DeckId, SessionStemControls>
@@ -280,6 +291,8 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 	) {
 		return null;
 	}
+	const masterSetByOperator = mixerRaw.master_set_by_operator;
+	if (masterSetByOperator !== undefined && typeof masterSetByOperator !== 'boolean') return null;
 
 	const channels: Record<DeckId, PerformanceSessionMixerChannelSnapshot> = {} as Record<
 		DeckId,
@@ -316,6 +329,7 @@ export function parsePerformanceSession(raw: string | null | undefined): Perform
 		mixer: {
 			crossfader: mixerRaw.crossfader,
 			master: mixerRaw.master,
+			...(masterSetByOperator === undefined ? {} : { master_set_by_operator: masterSetByOperator }),
 			channels
 		},
 		stems
