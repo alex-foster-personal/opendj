@@ -21,6 +21,7 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from scripts.review_claude import CLAUDE, CLAUDE_LOGINS, CLAUDE_MARKER
 from scripts.review_coverage_base_merge import (
@@ -32,6 +33,11 @@ from scripts.review_coverage_base_merge import (
 from scripts.review_gh import _SHA_IN_BACKTICKS, _STATUS_COMPLETED, TriageError
 from scripts.review_lane import diff_of, evidence_skipped_paths_ok
 from scripts.review_sol import SOL, SOL_LOGINS, SOL_MARKER, _normalize_login
+
+if TYPE_CHECKING:
+    # Type-only: review_coverage imports this module at load time, so a runtime
+    # import here would be circular (carry_attempt imports it lazily instead).
+    from scripts.review_coverage import ReviewerVerdict
 
 
 def debt_file_path(pr: str) -> str:
@@ -296,7 +302,7 @@ class CarryAttempt:
     """`verdict` is a carried ReviewerVerdict or None; `unknown` names every
     candidate whose carry could not be measured (fail closed, never a carry)."""
 
-    verdict: object | None
+    verdict: ReviewerVerdict | None
     unknown: tuple[str, ...] = ()
 
 
@@ -392,6 +398,6 @@ def try_carry_verdict(
     inline: list[dict],
     issue_comments: list[dict],
     repo_root: Path,
-):
+) -> ReviewerVerdict | None:
     """Return a carried ReviewerVerdict, or None when carry does not apply."""
     return carry_attempt(name, pr, head_sha, reviews, inline, issue_comments, repo_root).verdict
