@@ -1517,11 +1517,11 @@ function _parseCommand(message: unknown): PerformanceCommand {
 // --------------------------------------------------------------- state query
 
 interface _BeatgridProjection {
-	/** The ANLZ payload these arrays were derived from, by IDENTITY. */
-	anlz: DeckState['anlz'];
 	beatgrid: PerformanceDeckSnapshot['beatgrid'];
 	beatgrid_ms: PerformanceDeckSnapshot['beatgrid_ms'];
 }
+
+type _AnlzPayload = NonNullable<DeckState['anlz']>;
 
 /**
  * Per-deck memo of the beatgrid projections, keyed by ANLZ object identity.
@@ -1538,12 +1538,25 @@ interface _BeatgridProjection {
  * Identity is the right key precisely because the engine REPLACES st.anlz
  * (`st.anlz = fresh`) rather than mutating it, so a reload or a hot-cue refresh
  * invalidates this for free and a stale grid cannot outlive its track.
+ *
+ * The key is held WEAKLY (PERFMODE-14). A strong `{anlz, ...}` slot only let go
+ * of a payload on the NEXT query, and Library mode disposes the engine and then
+ * never queries again, so it kept all four decks' ANLZ alive for the whole
+ * Library session: waveform detail as reactive proxies (34 MB of JS heap on
+ * silver, Sat 26 Sep 2026) plus the full-track band images that
+ * wave/render.ts keys weakly on that same waveform. Per-deck maps keep decks
+ * from ever sharing a projection, even when two decks carry one payload.
  */
-const _beatgridProjections: Record<DeckId, _BeatgridProjection | null> = {
-	1: null,
-	2: null,
-	3: null,
-	4: null
+const _beatgridProjections: Record<DeckId, WeakMap<_AnlzPayload, _BeatgridProjection>> = {
+	1: new WeakMap(),
+	2: new WeakMap(),
+	3: new WeakMap(),
+	4: new WeakMap()
+};
+
+const _EMPTY_BEATGRID_PROJECTION: _BeatgridProjection = {
+	beatgrid: _freezeRows([]),
+	beatgrid_ms: _freezeRows([])
 };
 
 /** Deep-freeze the projection. The arrays are now SHARED across every snapshot
@@ -1559,17 +1572,19 @@ function _freezeRows<T>(rows: T[]): T[] {
 }
 
 function _beatgridProjection(deckId: DeckId, deck: DeckState): _BeatgridProjection {
-	const cached = _beatgridProjections[deckId];
-	if (cached !== null && cached.anlz === deck.anlz) return cached;
-	const beats = deck.anlz?.beatgrid.beats ?? [];
+	const anlz = deck.anlz;
+	if (anlz === null) return _EMPTY_BEATGRID_PROJECTION;
+	const memo = _beatgridProjections[deckId];
+	const cached = memo.get(anlz);
+	if (cached !== undefined) return cached;
+	const beats = anlz.beatgrid.beats;
 	const fresh: _BeatgridProjection = {
-		anlz: deck.anlz,
 		beatgrid: _freezeRows(
 			beats.map((beat) => ({ n: beat.n, bpm: beat.bpm, time_ms: beat.t * 1000 }))
 		),
 		beatgrid_ms: _freezeRows(beats.map((beat) => beat.t * 1000))
 	};
-	_beatgridProjections[deckId] = fresh;
+	memo.set(anlz, fresh);
 	return fresh;
 }
 

@@ -122,7 +122,6 @@ _ROOT_FILES: Mapping[str, Kind] = {
             "package.json",
             "package-lock.json",
             "pnpm-lock.yaml",
-            ".mergify.yml",
             ".gitignore",
             ".gitattributes",
             ".env.sample",

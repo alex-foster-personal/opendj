@@ -23,7 +23,11 @@
 # the shard's own wall budget (MDT_PYTEST_TIMEOUT_S, sized under the 30-minute cap),
 # and the three trailing CI-only upload steps (durations and CI Insights), whose
 # artifact names would collide across vendors and whose readers live in the source
-# repository.
+# repository. Round 1 (Thu 1 Oct 2026) adds exactly two declared ADDITIONS the other
+# way: a pinned-pnpm step and MDT_ALLOW_MISSING_FIXTURES=1, neither of which ci.yml's
+# `test` job carries at all (see the inline comments at each). Both directions are
+# pinned by tests/scripts/runner_canary_workflow_checks.py CI_ONLY_STEPS /
+# PYTEST_BUDGET_SUBSTITUTION / CANARY_ONLY_PNPM_STEP_NAME / CANARY_ONLY_ENV.
 #
 # SAFETY. No pull_request or merge_group trigger and no push to main, so no fork or PR
 # author can reach a vendor VM and no required check changes. No repository secret is read. `permissions: contents: read`; the gate job alone adds `actions: read` to
@@ -110,6 +114,15 @@ jobs:
       OPENBLAS_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
       NUMBA_NUM_THREADS: "1"
+      # CANARY-ONLY addition (round 1, tests/scripts/runner_canary_workflow_checks.py
+      # CANARY_ONLY_ENV): self-hosted runners get the LaCie-backed external fixture
+      # host via MUX_FIXTURE_HOST (ci/runner-toolset.yml item 10); a vendor VM never
+      # does and never should (the real user library must not leave this fleet). This
+      # turns the ~254 "External fixture host not mounted" / "Rekordbox fixture host
+      # not available" / "Fixture '...' not available" failures round 0 hit on every
+      # vendor into skips, the same way a developer machine without LaCie mounted
+      # already skips them (tests/fixtures/conftest.py, root conftest.py).
+      MDT_ALLOW_MISSING_FIXTURES: "1"
     # A copy of ci.yml's `test` job. The rationale comments for each step live there;
     # tests/scripts/test_runner_canary_workflow.py pins the copy to it.
     steps:
@@ -172,6 +185,20 @@ jobs:
       - name: Remove untracked build debris, keeping dependency dirs
         timeout-minutes: 2
         run: scripts/ci_clean_untracked.sh
+
+      # CANARY-ONLY addition (round 1, tests/scripts/runner_canary_workflow_checks.py
+      # CANARY_ONLY_PNPM_STEP_NAME): ci.yml's `test` job carries no pnpm setup at all,
+      # because the self-hosted pool provisions it once per host outside this workflow.
+      # A vendor VM is a cold ephemeral image with no such preinstall, so round 0 read
+      # "pnpm is not on PATH" from scripts/quality_gate.py / tests/test_quality_gate.py
+      # on every vendor (6 failures per shard set). Corepack alone, no new third-party
+      # action: these vendor images already carry a hosted-runner-equivalent Node, the
+      # same assumption scripts/cloud_agent_setup.sh makes before activating corepack.
+      - name: Enable pinned pnpm (vendor VMs have no self-hosted preinstall)
+        timeout-minutes: 1
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
 
       - name: Setup Python
         timeout-minutes: 1
