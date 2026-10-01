@@ -6396,6 +6396,66 @@
         "title": "DeletedPlaylistOut",
         "type": "object"
       },
+      "DeletedTrackOut": {
+        "description": "One tombstoned track that has not been restored (LIBM-140).\n\n``reason`` is ``user`` for Remove from library, which no re-import undoes,\nor ``missing`` for a watched-folder file that vanished, which comes back\nby itself when the file does.",
+        "properties": {
+          "artists": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artists",
+            "type": "array"
+          },
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "reason": {
+            "enum": [
+              "user",
+              "missing"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artists",
+          "file_path",
+          "deleted_at",
+          "reason"
+        ],
+        "title": "DeletedTrackOut",
+        "type": "object"
+      },
       "DigestDiffSampleOut": {
         "properties": {
           "newer_side": {
@@ -36757,6 +36817,32 @@
           }
         },
         "summary": "List Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/deleted": {
+      "get": {
+        "description": "Tombstoned tracks and why, newest removal first.\n\nA track the user removed stays removed across every re-import and sync until it\nis restored with ``POST /tracks/{stable_id}:undelete``; this list is how a\nperson or an agent finds the id to restore.",
+        "operationId": "list_deleted_tracks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedTrackOut"
+                  },
+                  "title": "Response List Deleted Tracks",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deleted Tracks",
         "tags": [
           "tracks"
         ]

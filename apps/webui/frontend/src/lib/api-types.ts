@@ -5229,6 +5229,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Deleted Tracks
+         * @description Tombstoned tracks and why, newest removal first.
+         *
+         *     A track the user removed stays removed across every re-import and sync until it
+         *     is restored with ``POST /tracks/{stable_id}:undelete``; this list is how a
+         *     person or an agent finds the id to restore.
+         */
+        get: operations["list_deleted_tracks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/lyrics-cached-ids": {
         parameters: {
             query?: never;
@@ -8398,6 +8422,31 @@ export interface components {
             vendor: string;
             /** Vendor Pl Id */
             vendor_pl_id: string;
+        };
+        /**
+         * DeletedTrackOut
+         * @description One tombstoned track that has not been restored (LIBM-140).
+         *
+         *     ``reason`` is ``user`` for Remove from library, which no re-import undoes,
+         *     or ``missing`` for a watched-folder file that vanished, which comes back
+         *     by itself when the file does.
+         */
+        DeletedTrackOut: {
+            /** Artists */
+            artists: string[];
+            /** Deleted At */
+            deleted_at: string;
+            /** File Path */
+            file_path: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "user" | "missing";
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title: string | null;
         };
         /** DigestDiffSampleOut */
         DigestDiffSampleOut: {
@@ -24416,6 +24465,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deleted_tracks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedTrackOut"][];
                 };
             };
         };
