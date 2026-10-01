@@ -37,12 +37,14 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "auto_sync.open_dj",
         "confirm.delete_playlist",
         "confirm.dblclick_load_play",
+        "confirm.playlist_drop_mode",
     }
 )
 
 _ENUM_VALUES: dict[str, frozenset[str]] = {
     "theme": frozenset({"dark", "light"}),
     "library_density": frozenset({"compact", "cosy"}),
+    "confirm.playlist_drop_mode": frozenset({"ask", "add", "move"}),
 }
 
 

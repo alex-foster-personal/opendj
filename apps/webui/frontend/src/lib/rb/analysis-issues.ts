@@ -137,6 +137,18 @@ export function errColumnTitle(row: AnalysisIssueSource): string | undefined {
 	return flag !== null && flag.dismissed ? `Beatgrid flag dismissed - ${message}` : message;
 }
 
+const GRID_SOURCE_GAP =
+	'Which analysis made the grid, and its confidence: not implemented - see PARITY-TODO.';
+
+/** The beatgrid sentence for the row's BPM hover (GRIDFLAG-05): the same
+ * stored verdict the Err column shows, plus an honest note that the list
+ * row carries no grid source or confidence. A row with no verdict says so
+ * and is never worded as ok. */
+export function bpmGridHoverText(row: AnalysisIssueSource): string {
+	const verdict = errColumnTitle(row) ?? 'Beatgrid: not checked for this track yet.';
+	return `${verdict} ${GRID_SOURCE_GAP}`;
+}
+
 /** Sort rank for the Err column (ascending = most worth a look first):
  * uneven grid, variable tempo, dismissed flag, unknown, ok. null (no verdict
  * on the row) sorts last like every other missing value. */

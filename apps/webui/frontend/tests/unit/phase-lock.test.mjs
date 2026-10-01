@@ -53,6 +53,9 @@ function input(mSec, fSec, extra = {}) {
 		followerPositionSec: fSec,
 		followerBaseTempo: BASE,
 		pitchRangePct: 8,
+		// A lock long past its join, with no tick past the re-join line yet.
+		sinceJoinSec: 600,
+		overLineTicks: 0,
 		...extra
 	};
 }
@@ -119,12 +122,14 @@ test('a trim never leaves the pitch range', () => {
 });
 
 test('a lost lock asks for a re-seek, and the base meanwhile', () => {
-	const d = pl.phaseLockDecision(input(60, inPhase(60) + 0.15 * BASE));
+	// The confirming tick (the gates themselves: phase-lock-jitter.test.mjs).
+	const confirming = { overLineTicks: pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS - 1 };
+	const d = pl.phaseLockDecision(input(60, inPhase(60) + 0.15 * BASE, confirming));
 	assert.equal(d.action, 'reseek');
 	assert.equal(d.tempo, BASE);
 	// The ms line: 16 ms re-joins, 14 ms is still trimmed (both directions).
-	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) - 0.016 * BASE)).action, 'reseek');
-	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) + 0.014 * BASE)).action, 'trim');
+	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) - 0.016 * BASE, confirming)).action, 'reseek');
+	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) + 0.014 * BASE, confirming)).action, 'trim');
 	// Wrapped to the NEAREST master beat, never most of a beat of error.
 	const wrap = pl.phaseErrorMs(input(60, inPhase(60) + 0.9 * MASTER_BEAT_MS * BASE / 1000));
 	assert.ok(Math.abs(wrap + 0.1 * MASTER_BEAT_MS) < 0.01, `0.9 beat ahead is 0.1 behind, got ${wrap}`);
@@ -135,23 +140,39 @@ test('off the grid there is nothing to measure, and the base plays', () => {
 	assert.equal(d.action, 'unmeasured');
 	assert.equal(d.tempo, BASE);
 	assert.throws(() => pl.phaseLockDecision(input(60, 30, { followerBaseTempo: 0 })), /base tempo/);
+	assert.throws(() => pl.phaseLockDecision(input(60, 30, { sinceJoinSec: undefined })), /since the join/);
+	assert.throws(() => pl.phaseLockDecision(input(60, 30, { overLineTicks: 1.5 })), /over-line ticks/);
 });
 
 test('phase is read through each deck own grid, so a variable grid measures true', () => {
-	// The follower speeds up by 0.5% per beat; the same fraction of the same
-	// beat must read as zero error even though no single BPM describes it.
+	// The follower speeds up by 0.02% per beat; the same fraction of the same
+	// beat must read as (nearly) zero error even though no single BPM describes
+	// it. "Nearly": a grid the shared rule calls uneven is read through a
+	// straight line fitted over 17 beats, which sits off a tempo CURVE by 12x
+	// the per-beat change of the beat interval (the mean of k^2 over -8..8 is
+	// 24, times half the change): 1.2 ms here, the bound below. A grid it calls
+	// even is read as stored and measures exactly. Away from the tempo jump
+	// every 50 beats, where a fit rounds the corner (phase-lock-jitter.test.mjs).
+	const PER_BEAT = 0.9998;
 	const variable = [];
 	let t = 0.2;
 	for (let i = 0; i < 400; i++) {
 		variable.push({ n: (i % 4) + 1, bpm: 0, t });
-		t += 0.5 * Math.pow(0.995, i % 50);
+		t += 0.5 * Math.pow(PER_BEAT, i % 50);
 	}
-	for (const mSec of [20.3, 41.77, 90.01]) {
+	for (const mSec of [MASTER[20].t + 0.13, MASTER[75].t + 0.31, MASTER[180].t + 0.02]) {
 		const m = pl.gridBeatPosition(MASTER, mSec);
 		const i = Math.floor(m);
+		assert.ok(i % 50 > 10 && i % 50 < 40, `precondition: beat ${i} is clear of a tempo jump`);
 		const fSec = variable[i].t + (m - i) * (variable[i + 1].t - variable[i].t);
 		const err = pl.phaseErrorMs(input(mSec, fSec, { followerBeats: variable }));
-		assert.ok(Math.abs(err) < 1e-6, `variable grid error at ${mSec}: ${err}`);
+		const curveMs = 12 * 0.5 * Math.pow(PER_BEAT, i % 50) * (1 - PER_BEAT) * 1000;
+		console.log(`# variable grid at beat ${i}: reads ${err.toFixed(3)} ms, straight-line bound ${curveMs.toFixed(3)} ms`);
+		assert.ok(Math.abs(err) < curveMs * 1.2 + 0.05, `variable grid error at ${mSec}: ${err}`);
+		// Control: half a beat off on the same grid is seen as half a beat.
+		const half = variable[i].t + (m - i + 0.5) * (variable[i + 1].t - variable[i].t);
+		const off = pl.phaseErrorMs(input(mSec, half, { followerBeats: variable }));
+		assert.ok(Math.abs(Math.abs(off) - MASTER_BEAT_MS / 2) < 3, `half a beat off reads ${off}`);
 	}
 	// Half-tempo lock: two follower intervals per master beat.
 	const double = grid(256, 0.05, 4000);
@@ -183,6 +204,7 @@ function simulate({ loop, rateError = 0.0005, seconds = 300 }) {
 	let pending = null;
 	let sends = 0;
 	let reseeks = 0;
+	let overLineTicks = 0;
 	let maxAbs = 0;
 	let finalErr = 0;
 	let seed = 12345;
@@ -202,8 +224,9 @@ function simulate({ loop, rateError = 0.0005, seconds = 300 }) {
 		finalErr = trueErr;
 		if (!loop) continue;
 		const d = pl.phaseLockDecision(
-			input(mSec, fSec + (jitterMs() / 1000) * BASE, { trimming: commanded !== BASE })
+			input(mSec, fSec + (jitterMs() / 1000) * BASE, { trimming: commanded !== BASE, overLineTicks })
 		);
+		overLineTicks = d.overLineTicks;
 		if (d.action === 'reseek') reseeks += 1;
 		else if (pl.phaseLockShouldSend(commanded, d.tempo, BASE)) {
 			pending = d.tempo;

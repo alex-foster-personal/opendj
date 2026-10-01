@@ -25,6 +25,7 @@ import {
 	type MeterTap
 } from '$lib/rb/meter-tap';
 import type { CrossfaderAssign, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
+import { ioDeviceAccessNotChecked } from '$lib/player/io-device-access';
 
 const TEST_DECK = 1 as DeckId;
 
@@ -97,6 +98,7 @@ function neutralMixerState(fader: number): MixerState {
 			},
 			outputs: [],
 			inputs: [],
+			device_access: ioDeviceAccessNotChecked(),
 			supported: false,
 			active: false,
 			error: null

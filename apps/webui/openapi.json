@@ -9207,6 +9207,9 @@
           "calibration": {
             "$ref": "#/components/schemas/HeadphoneCalibrationOut"
           },
+          "device_access": {
+            "$ref": "#/components/schemas/IoDeviceAccessOut"
+          },
           "error": {
             "anyOf": [
               {
@@ -9305,7 +9308,8 @@
           "inputs",
           "supported",
           "active",
-          "error"
+          "error",
+          "device_access"
         ],
         "title": "HeadphoneStateOut",
         "type": "object"
@@ -10021,6 +10025,62 @@
           "survivor_pk"
         ],
         "title": "IdentityRejectModel",
+        "type": "object"
+      },
+      "IoDeviceAccessOut": {
+        "description": "IOPIN-14: whether the device lists could be read, and what to do if not.\n\n`status` is one of not_checked, listed, permission_needed, permission_denied,\napi_missing, enumeration_failed, timeout. Only `listed` means `outputs` and\n`inputs` are the machine's real device names; an agent must read this before\ntreating a short list as a machine with few devices.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notices",
+            "type": "array"
+          },
+          "output_pinning": {
+            "title": "Output Pinning",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "action",
+          "message",
+          "detail",
+          "output_pinning",
+          "notices"
+        ],
+        "title": "IoDeviceAccessOut",
         "type": "object"
       },
       "JobIn": {

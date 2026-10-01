@@ -58,6 +58,14 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
     "supported": False,
     "active": False,
     "error": None,
+    "device_access": {
+        "status": "not_checked",
+        "action": "retry",
+        "message": "Audio devices have not been checked yet. Audio plays through the system default output.",
+        "detail": None,
+        "output_pinning": True,
+        "notices": [],
+    },
 }
 
 _DEFAULT_CHANNELS: dict[str, Any] = {

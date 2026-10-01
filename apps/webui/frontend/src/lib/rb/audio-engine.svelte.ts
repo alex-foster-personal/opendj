@@ -252,6 +252,7 @@ import {
 	disposeHeadphoneMonitor,
 	ensureHeadphoneGraph,
 	refreshHeadphoneOutputs as refreshMonitorOutputs,
+	requestIoDeviceNames as requestMonitorDeviceNames,
 	releaseHeadphoneGraphOfFailedBuild,
 	selectAudioInput as selectMonitorAudioInput,
 	selectHeadphoneOutput as selectMonitorOutput,
@@ -4277,6 +4278,8 @@ class RbAudioEngine implements AudioEngine {
 	setMasterDelayMs = setMonitorMasterDelay;
 	setHeadphoneAlignmentMode = setMonitorAlignmentMode;
 	refreshHeadphoneOutputs = (): Promise<void> => refreshMonitorOutputs(_monitorSource);
+	/** IOPIN-14: the I/O-open listing of a dev-server build; asks for device access once per origin. */
+	requestIoDeviceNames = (): Promise<void> => requestMonitorDeviceNames(_monitorSource);
 	/** Must be called from a visible user gesture. May briefly open the
 	 * microphone to label output devices when selectAudioOutput is missing. */
 	acquireHeadphoneOutput = (): Promise<void> => acquireMonitorOutput(_monitorSource);

@@ -1,7 +1,7 @@
 /**
  * Generic hold-vs-press gesture primitive.
  *
- * LIBUX-05 ("Technically-working mode") needs cmd+R to TOGGLE (a quick press)
+ * LIBUX-05 ("Technically-working mode") needs Ctrl+R to TOGGLE (a quick press)
  * while also PEEKING (a sustained hold) - "hold = doesn't stay, press =
  * toggle". LIBUX-04 (hotkeys overlay) draws the identical
  * split across two separate keys ("/" holds, "?" toggles). Rather than wire
