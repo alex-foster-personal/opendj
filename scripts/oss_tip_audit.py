@@ -4,7 +4,8 @@ Companion to docs/oss-going-public-checklist.md. The checklist's REVIEW table wa
 one-off grep whose literal search strings were themselves scrubbed by #910 and #1326, so
 the numbers there cannot be re-derived. This module pins the INVARIANT instead: the
 tracked tree carries no real home directory, no consumer mailbox, no tailnet name and no
-CGNAT address. It is run by tests/scripts/test_oss_tip_audit.py on every CI pass, so a
+CGNAT address, and no login the tree reveals in a home path written as a bare word
+anywhere else (scripts/oss_tip_logins.py). It is run by tests/scripts/test_oss_tip_audit.py on every CI pass, so a
 regression fails a PR rather than surfacing in a public fork.
 
     python -m scripts.oss_tip_audit            # scan the tracked tree, exit 1 on findings

@@ -24,8 +24,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.oss_tip_audit import audit_index, audit_paths
 from scripts.oss_tip_logins import BARE_MATCH_EXEMPT, logins_in_text, revealed_logins
+
+pytestmark = pytest.mark.requirement("OSSPUB-03")
 
 _HOME = "/" + "home" + "/"
 _USERS = "/" + "Users" + "/"
