@@ -144,6 +144,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import collections
 import json
 import os
@@ -152,11 +153,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 try:
     from scripts import quality_latency, shell_construct_lint
@@ -1160,21 +1162,58 @@ def _eval_frontend() -> list[Metric]:
 # ----- evaluator: size + duplication ---------------------------------------
 
 
-def _jscpd_duplication(apps_root: Path) -> Metric:
-    """Run pinned jscpd over `apps_root` and return the duplication metric.
+def _tracked_files(repo: Path, roots: tuple[str, ...]) -> list[Path]:
+    """Every git-tracked regular file under `roots` in `repo`, as absolute paths.
+
+    The gate measures the tree a commit would carry, never whatever else
+    happens to sit on disk. Persistent self-hosted runners keep untracked
+    dependency and build trees between jobs on purpose (scripts/
+    ci_clean_untracked.sh spares every `target` dir, for instance), and on
+    Tue 29 Sep 2026 Cargo `.d` files left under apps/audio-engine/target by
+    a crate main no longer tracks added 11 jscpd clones to PRs that touched
+    nothing jscpd scans. Listing from the index makes that class of debris
+    unreachable instead of excluding one instance of it.
+
+    Symlinks and gitlinks are dropped because jscpd never followed them in a
+    directory scan either, and a tracked file deleted in the working tree is
+    not there to measure. An empty list is a broken scope, not a clean tree.
+    """
+    _, out = _run(["git", "ls-files", "-z", "--", *roots], cwd=repo)
+    files = [
+        repo / rel
+        for rel in out.split("\0")
+        if rel and (repo / rel).is_file() and not (repo / rel).is_symlink()
+    ]
+    if not files:
+        raise RuntimeError(
+            f"git ls-files found no tracked files under {', '.join(roots)} in "
+            f"{repo}; that is a broken scan scope reporting as a clean tree"
+        )
+    return files
+
+
+def _jscpd_duplication(repo: Path, roots: tuple[str, ...] = ("apps",)) -> Metric:
+    """Run pinned jscpd over the tracked files under `roots` in `repo`.
+
+    The file list goes to jscpd through a config file rather than argv,
+    because thousands of paths overflow the Windows command line. CLI flags
+    still apply to it, `--ignore` included (probed against jscpd 5.0.15).
 
     Fresh report directory per call, removed after, for the same reason as
     the deptry report: two concurrent gates must not share a path. A missing
     JSON report is a broken tool, not a clean tree.
     """
+    files = _tracked_files(repo, roots)
     jscpd_dir = Path(tempfile.mkdtemp(prefix="quality-gate-jscpd-"))
     try:
+        config = jscpd_dir / "jscpd-paths.json"
+        config.write_text(json.dumps({"path": [str(f) for f in files]}), encoding="utf-8")
         _pnpm_dlx(
             CFG.JSCPD,
+            "--config", str(config),
             "--reporters", "json", "--output", str(jscpd_dir), "--silent",
             "--min-lines", str(CFG.DUP_MIN_LINES), "--min-tokens", str(CFG.DUP_MIN_TOKENS),
             "--ignore", ",".join(CFG.LOCKFILE_GLOBS + CFG.GENERATED_CONTRACT_GLOBS),
-            str(apps_root),
             allow_fail=True,
         )
         report_path = jscpd_dir / "jscpd-report.json"
@@ -1214,7 +1253,7 @@ def _eval_size() -> list[Metric]:
         Metric("file_size.over_limit_python", py_over, f"files > {CFG.PY_FILE_LIMIT} lines"),
         Metric("file_size.max_frontend", fe_max, "lines", fe_worst),
         Metric("file_size.over_limit_frontend", fe_over, f"files > {CFG.FE_FILE_LIMIT} lines"),
-        _jscpd_duplication(REPO / "apps"),
+        _jscpd_duplication(REPO),
     ]
 
 
@@ -1518,8 +1557,8 @@ def _resolve_base() -> tuple[str | None, str]:
     return sha, ""
 
 
-def _link_node_modules(base_fe: Path) -> None:
-    """Expose this run's node_modules to the merge-base worktree, read-only.
+def _link_node_modules(base_fe: Path, install: Path) -> None:
+    """Expose this run's node_modules `install` to the merge-base worktree, read-only.
 
     A symlink needs SeCreateSymbolicLinkPrivilege on Windows (Developer Mode
     or an elevated shell), so the merge-base run died with WinError 1314 on
@@ -1531,11 +1570,35 @@ def _link_node_modules(base_fe: Path) -> None:
     link = base_fe / "node_modules"
     if sys.platform == "win32":
         subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link), str(FRONTEND / "node_modules")],
+            ["cmd", "/c", "mklink", "/J", str(link), str(install)],
             capture_output=True, text=True, check=True,
         )
     else:
-        link.symlink_to(FRONTEND / "node_modules", target_is_directory=True)
+        link.symlink_to(install, target_is_directory=True)
+
+
+#: pnpm 11 runs `pnpm install` before `pnpm exec` whenever the lockfile disagrees
+#: with node_modules (verify-deps-before-run). In the merge-base run the lockfile
+#: is main's and node_modules is THIS run's, linked in, so that install rewrote the
+#: real install's links relative to the throwaway tree, and all 24 dangled once the
+#: tree was removed (agbox3-3, Tue 29 Sep 2026; a later job on the runner then hit
+#: MODULE_NOT_FOUND). pnpm 11 reads `pnpm_config_*` from the environment and
+#: ignores `npm_config_*` (both measured with pnpm 11.9.0).
+BASE_RUN_PNPM_ENV = {"pnpm_config_verify_deps_before_run": "false"}
+
+
+def _run_in_base(
+    cmd: list[str], base_dir: Path, ambient: Mapping[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Run `cmd` in the merge-base tree, with pnpm barred from installing through the link.
+
+    The one launcher for the base run, so the real-pnpm test in
+    tests/test_quality_gate.py exercises exactly what the gate runs.
+    """
+    return subprocess.run(
+        cmd, cwd=base_dir, capture_output=True, text=True, check=False,
+        env={**ambient, **BASE_RUN_PNPM_ENV},
+    )  # fmt: skip
 
 
 def _unlink_node_modules(base_fe: Path) -> None:
@@ -1553,8 +1616,71 @@ def _unlink_node_modules(base_fe: Path) -> None:
         os.rmdir(link)  # a junction: pathlib reports it as a plain directory
 
 
+#: Read in that order (GH_TOKEN first to match the `gh`-cli convention this
+#: repo already uses elsewhere, e.g. `GH_TOKEN: ${{ github.token }}` in
+#: ci.yml); stripped back out of the env handed to `_run_in_base` below so
+#: the base's own committed gate never sees it either.
+_GIT_AUTH_ENV_KEYS: tuple[str, ...] = ("GH_TOKEN", "GITHUB_TOKEN")
+
+
+def _git_basic_credential(token: str) -> str:
+    """base64("x-access-token:<token>"), the form actions/checkout sends.
+
+    GitHub's git smart-HTTP endpoint accepts a token only as the Basic
+    password; a Bearer header fails exactly like no credential at all
+    ("could not read Username"), measured live Wed 30 Sep 2026.
+    """
+    return base64.b64encode(f"x-access-token:{token}".encode()).decode()
+
+
+def _origin_auth_env(cwd: Path = REPO) -> dict[str, str]:
+    """Env vars that authenticate ONE git invocation against origin, or {}.
+
+    A self-hosted runner's persistent workspace can be a partial (promisor)
+    clone, and `git worktree add` below checks out a real working tree at the
+    merge base -- which, for any file this branch touched, needs a blob the
+    initial checkout never had reason to fetch. Git fetches it lazily from
+    the promisor remote the moment it is needed, and on a private repo with
+    `persist-credentials: false` (ci.yml's checkout step, kept that way on
+    purpose so a PR's own code never inherits write access) that lazy fetch
+    has no credentials at all: "could not read Username for
+    'https://github.com'" (job 110140841841, PR #4426). #3459/#3464 hit the
+    same promisor class in the hotspot `git log` and fixed it with
+    `--no-renames` there; a checkout has no equivalent flag, because
+    materializing files is the whole point, so the fix here supplies
+    credentials instead of avoiding the fetch.
+
+    `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` set
+    `http.<url>.extraheader` for this one process and the internal fetch git
+    spawns as its own child to satisfy the lazy read. Unlike `git config
+    --local` it is never written to .git/config, and unlike `-c` it never
+    appears in argv, which any other process on a shared self-hosted runner
+    can read through ps or /proc/<pid>/cmdline. CI supplies the token via
+    GH_TOKEN, scoped to this job's own `permissions: contents: read` -- the
+    same token every other job already uses for `gh`. A dev machine (or any
+    host where git's own credential helper already handles auth) has no such
+    variable set, so returning [] there changes nothing: git behaves exactly
+    as it always has.
+    """
+    token = next((os.environ[k] for k in _GIT_AUTH_ENV_KEYS if os.environ.get(k)), "")
+    if not token:
+        return {}
+    code, url = _run(["git", "remote", "get-url", "origin"], cwd=cwd, allow_fail=True)
+    if code != 0 or not url.strip():
+        return {}
+    parsed = urlsplit(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        return {}  # ssh/file remotes: no HTTP header to inject, nothing to do
+    prefix = f"{parsed.scheme}://{parsed.netloc}/"
+    return {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"http.{prefix}.extraheader",
+        "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {_git_basic_credential(token)}",
+    }
+
+
 def _measure_owners_at_base(
-    sha: str, owners: list[str]
+    sha: str, owners: list[str], *, repo: Path = REPO
 ) -> tuple[dict[str, float] | None, str]:
     """Measure `owners` against the tree at `sha`; (metrics, "") or (None, why).
 
@@ -1573,13 +1699,26 @@ def _measure_owners_at_base(
     The worktree lives in a throwaway tempdir and is removed in `finally`, so
     an interrupted run leaves at worst an orphaned entry that `git worktree
     prune` clears.
+
+    `repo` defaults to this run's own checkout; it exists as a parameter (not
+    a bare `REPO` reference below) so a real partial-clone repro -- a second,
+    disposable `.git` a test builds on disk -- can drive this exact function
+    instead of a stand-in, per tests/quality_gate_base_compare_partial_clone.py.
     """
     # mkdtemp creates the dir, which `git worktree add` refuses to reuse.
     base_dir = Path(tempfile.mkdtemp(prefix="quality-gate-base-"))
     base_dir.rmdir()
+    # Stripped of any auth token before it ever reaches the base's own
+    # committed gate (spawned via `_run_in_base` below): that subprocess does
+    # not fetch anything, so it has no use for it, and least-privilege says
+    # an unrelated child process should not see it just because it inherited
+    # the parent's environment wholesale.
+    base_env = {k: v for k, v in os.environ.items() if k not in _GIT_AUTH_ENV_KEYS}
     try:
         code, stdout, stderr = _run_capture(
             ["git", "worktree", "add", "--detach", str(base_dir), sha],
+            cwd=repo,
+            env={**os.environ, **_origin_auth_env(cwd=repo)},
         )
         if code != 0:
             detail = (stderr or stdout).strip()
@@ -1591,16 +1730,17 @@ def _measure_owners_at_base(
         if "frontend" in owners:
             # knip and svelte-kit resolve against a node_modules install, which
             # a git worktree does not carry. Reuse this run's install read-only
-            # instead of running pnpm install on a throwaway tree.
+            # instead of running pnpm install on a throwaway tree; read-only is
+            # enforced by `_run_in_base` below, not assumed.
             base_fe = base_dir / "apps" / "webui" / "frontend"
             if (FRONTEND / "node_modules").is_dir():
-                _link_node_modules(base_fe)
+                _link_node_modules(base_fe, FRONTEND / "node_modules")
         out_json = base_dir / "metrics.json"
         cmd = [
             sys.executable, "-m", "scripts.quality_gate",
             "--only", ",".join(owners), "--json", str(out_json),
         ]
-        proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+        proc = _run_in_base(cmd, base_dir, base_env)
         if not out_json.exists():
             # Base's own gate can abort before --json (mypy follow-import into
             # ops/agentic_testing/coach.py is the live case). Overlay this
@@ -1608,7 +1748,7 @@ def _measure_owners_at_base(
             # can still inherit. The tree being measured stays the merge-base.
             dest = base_dir / "scripts" / "quality_gate.py"
             dest.write_text(Path(__file__).read_text(encoding="utf-8"), encoding="utf-8")
-            proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, check=False)
+            proc = _run_in_base(cmd, base_dir, base_env)
         if not out_json.exists():
             return None, (
                 f"merge-base run for {','.join(owners)} exited {proc.returncode} "
@@ -1623,7 +1763,7 @@ def _measure_owners_at_base(
         _unlink_node_modules(base_dir / "apps" / "webui" / "frontend")
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(base_dir)],
-            capture_output=True, text=True, check=False,
+            cwd=repo, capture_output=True, text=True, check=False,
         )
         shutil.rmtree(base_dir, ignore_errors=True)
 

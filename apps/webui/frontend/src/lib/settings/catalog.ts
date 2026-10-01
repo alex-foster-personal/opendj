@@ -5,6 +5,7 @@
 
 import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
+import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import {
 	WHEEL_SENSITIVITY,
@@ -15,6 +16,14 @@ import {
 
 export type { SettingDef, SettingGroupId } from './catalog-types';
 import type { SettingControl, SettingDef, SettingGroup, SettingGroupId } from './catalog-types';
+import { DJAY_PARITY_STUBS, REKORDBOX_PARITY_STUBS } from './catalog-parity-stubs';
+
+/** Canonical PARITY-TODO stub title. Declared here, not just in
+ * catalog-parity-stubs.ts, so the shared-constant drift check (H13 + M20 in
+ * inert-controls.test.mjs) still finds it verbatim in this module. Not
+ * exported: the test reads this file's own source text, it never imports
+ * this constant, and an unused export is its own quality-gate regression. */
+const INERT_TITLE = 'not implemented - see PARITY-TODO';
 
 export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'appearance', label: 'Appearance' },
@@ -27,8 +36,6 @@ export const SETTING_GROUPS: readonly SettingGroup[] = [
 	{ id: 'rekordbox', label: 'Rekordbox (todo)' },
 	{ id: 'djay', label: 'djay Pro (todo)' }
 ];
-
-const TODO = 'not implemented - see PARITY-TODO';
 
 /** Working settings first, then catalog stubs for parity browsing. */
 export const SETTINGS_CATALOG: readonly SettingDef[] = [
@@ -132,6 +139,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'boolean' }
 	},
 	PREVIEW_BEAT_SYNC_SETTING,
+	AUDIO_ENGINE_SETTING,
 	{
 		id: 'perf_tier',
 		label: 'Performance tier',
@@ -218,6 +226,24 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			'When on, each loaded deck paints one mini-waveform row per stem control (VOCAL, INST, DRUMS) using server peak envelopes. Default off. Same path as the show_stems performance command.',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'waveform_design',
+		label: 'Waveform design',
+		group: 'performance',
+		keywords: ['waveform', 'design', 'tri-band', 'mono', 'line', 'wavestack', 'strip'],
+		title: 'Deck and library waveform paint style',
+		detail:
+			'Tri-band matches rekordbox-style stacked frequency bands. Mono draws a single envelope. Line draws a stroke outline. The preview below updates when you change the selection.',
+		implemented: true,
+		control: {
+			kind: 'enum',
+			options: [
+				{ value: 'tri-band', label: 'Tri-band bars' },
+				{ value: 'mono', label: 'Mono envelope' },
+				{ value: 'line', label: 'Line outline' }
+			]
+		}
 	},
 	{
 		id: 'deck_layout',
@@ -508,34 +534,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		control: { kind: 'link', href: '/cloudsync?tab=overview' }
 	},
 
-	// ----- rekordbox parity stubs ----------------------------------------
-	_todo('rb.quantize', 'Quantize', 'rekordbox', ['quantize', 'grid'], 'Global quantize default'),
-	_todo('rb.sync_mode', 'Beat Sync mode default', 'rekordbox', ['sync', 'bar', 'beat'], 'BAR vs BEAT sync default'),
-	_todo('rb.master_tempo', 'Master Tempo default', 'rekordbox', ['key', 'lock', 'tempo'], 'Keep original key when pitching'),
-	_todo('rb.vinyl_mode', 'Vinyl mode', 'rekordbox', ['vinyl', 'scratch', 'cdj'], 'Jog vinyl / CDJ feel'),
-	_todo('rb.jog_sensitivity', 'Jog sensitivity', 'rekordbox', ['jog', 'platter'], 'Platter touch sensitivity'),
-	_todo('rb.hot_cue_colors', 'Hot cue color map', 'rekordbox', ['cue', 'color', 'pad'], 'Pad color scheme'),
-	_todo('rb.pad_mode', 'Pad mode memory', 'rekordbox', ['pad', 'hotcue', 'sampler'], 'Remember last pad bank'),
-	_todo('rb.waveform_zoom', 'Waveform zoom default', 'rekordbox', ['waveform', 'zoom'], 'Default overview zoom'),
-	_todo('rb.grid_edit', 'Allow beat grid edit', 'rekordbox', ['grid', 'beat', 'edit'], 'Enable grid nudge/edit'),
-	_todo('rb.auto_gain', 'Auto gain', 'rekordbox', ['gain', 'loudness'], 'Normalize channel gain on load'),
-	_todo('rb.karaoke', 'Karaoke / vocal mute', 'rekordbox', ['karaoke', 'vocal'], 'Vocal-oriented mute presets'),
-	_todo('rb.export_usb', 'USB export defaults', 'rekordbox', ['usb', 'export', 'device'], 'Device export preferences'),
-	_todo('rb.analysis_quality', 'Analysis quality', 'rekordbox', ['analysis', 'anlz', 'pqtz'], 'BPM/key analysis quality'),
-	_todo('rb.phrase_analysis', 'Phrase analysis', 'rekordbox', ['phrase', 'structure'], 'Enable phrase detection'),
-	_todo('rb.mytag_layout', 'MyTag layout', 'rekordbox', ['mytag', 'tag'], 'MyTag browser layout'),
-	_todo('rb.track_info_fields', 'Track info fields', 'rekordbox', ['info', 'columns'], 'Which columns show in info'),
-	_todo('rb.keyboard_map', 'Keyboard mapping', 'rekordbox', ['keyboard', 'shortcuts', 'midi'], 'Custom key bindings'),
-	_todo('rb.dual_deck_layout', 'Dual deck layout', 'rekordbox', ['layout', '2deck', '4deck'], '2 vs 4 deck chrome'),
-
-	// ----- djay Pro stubs ------------------------------------------------
-	_todo('djay.automix', 'Automix', 'djay', ['automix', 'auto'], 'Automix transitions'),
-	_todo('djay.eq_kill', 'EQ kill switches', 'djay', ['eq', 'kill'], 'Instant EQ kills'),
-	_todo('djay.effects_rack', 'Effects rack layout', 'djay', ['fx', 'effects'], 'FX slot layout'),
-	_todo('djay.stems_ui', 'Stems mixer UI', 'djay', ['stems', 'vocal', 'drums'], 'Stem fader visibility'),
-	_todo('djay.library_source', 'Library source', 'djay', ['itunes', 'apple', 'spotify'], 'External library source'),
-	_todo('djay.streaming', 'Streaming services', 'djay', ['tidal', 'soundcloud', 'beatport'], 'Connected streaming'),
-	_todo('djay.cue_points', 'Cue point style', 'djay', ['cue', 'points'], 'Cue marker style'),
+	...REKORDBOX_PARITY_STUBS,
 	{
 		id: 'crossfade_curve',
 		label: 'Crossfader curve',
@@ -565,13 +564,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			]
 		}
 	},
-	_todo('djay.midi_learn', 'MIDI learn', 'djay', ['midi', 'map', 'controller'], 'Controller MIDI learn'),
-	_todo('djay.audio_device', 'Audio device', 'djay', ['device', 'output', 'asio'], 'Output device selection'),
-	_todo('djay.sample_rate', 'Sample rate', 'djay', ['sample', 'rate', '48000'], 'Engine sample rate'),
-	_todo('djay.buffer_size', 'Buffer size', 'djay', ['buffer', 'latency'], 'Audio buffer / latency'),
-	_todo('djay.recording', 'Session recording', 'djay', ['record', 'rec', 'session'], 'REC defaults'),
-	_todo('djay.video', 'Video deck', 'djay', ['video', 'visual'], 'Video deck enable'),
-	_todo('djay.neumann', 'NEUMANN UI scale', 'djay', ['ui', 'scale', 'retina'], 'Interface scaling')
+	...DJAY_PARITY_STUBS
 ];
 
 /**
@@ -588,25 +581,6 @@ function _wheelSensitivityControl(defaultValue: number): SettingControl {
 		step: WHEEL_SENSITIVITY_STEP,
 		defaultValue,
 		unit: 'x'
-	};
-}
-
-function _todo(
-	id: string,
-	label: string,
-	group: SettingGroupId,
-	keywords: string[],
-	title: string
-): SettingDef {
-	return {
-		id,
-		label,
-		group,
-		keywords,
-		title: TODO,
-		detail: `${title}. ${TODO}`,
-		implemented: false,
-		control: { kind: 'boolean' }
 	};
 }
 

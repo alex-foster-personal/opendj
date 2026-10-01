@@ -29,6 +29,11 @@
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 	import { drawStripWaveform } from './strip-waveform-render';
+	import { resolveDeckStripPreview } from '$lib/rb/deck-strip-preview';
+	import { getAnlzEntry } from '$lib/components/rb/wave/anlz-cache.svelte';
+	import { prefetchDeckStripAnlz } from './strip-anlz-prefetch';
+	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
+	import { decodePreviewStrip } from '$lib/rb/api-rb';
 	import { shouldShowNativeGridMarker } from './strip-native-grid';
 
 	let {
@@ -133,6 +138,35 @@
 		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 
+	// Untracked warm-up: a tracked ensureAnlzPrefetch re-runs this effect on
+	// its own LRU retouch forever (see strip-anlz-prefetch.ts).
+	$effect(() => {
+		prefetchDeckStripAnlz(deck.stable_id);
+	});
+
+	const stripPreview = $derived.by(() => {
+		const sid = deck.stable_id;
+		const entry = sid === null ? undefined : getAnlzEntry(sid);
+		const cachedAnlz = entry !== undefined && entry.status === 'ready' ? entry.data : null;
+		const listingPreview =
+			entry !== undefined &&
+			entry.status === 'ready' &&
+			entry.data.local_waveform?.status === 'decoded'
+				? decodePreviewStrip(
+						entry.data.local_waveform.preview_b64,
+						entry.data.local_waveform.preview_max
+					)
+				: null;
+		return resolveDeckStripPreview({
+			stableId: sid,
+			deckAnlz: deck.anlz,
+			cachedAnlz,
+			listingPreview,
+			deckPending: performanceCommandStatus.deck_pending[deck.deck_id] > 0,
+			cacheLoading: entry !== undefined && entry.status === 'loading'
+		});
+	});
+
 	// Every value read here is a tracked dependency, so the strip repaints
 	// when the engaged loop changes - not only when the analysis arrives.
 	$effect(() => {
@@ -144,10 +178,11 @@
 			widthPx: W,
 			heightPx: H,
 			durationMs: deck.duration_ms,
-			waveform: deck.anlz === null ? null : deck.anlz.waveform,
+			waveform: stripPreview.waveform,
 			vocals,
 			loop: deck.loop,
-			loopCues
+			loopCues,
+			waveformDesign: uiPrefs.waveform_design
 		});
 	});
 
@@ -239,7 +274,9 @@
 	>
 		<canvas bind:this={canvas} width={W} height={H}></canvas>
 
-		{#if deck.anlz_error !== null}
+		{#if stripPreview.loading}
+			<span class="strip-loading" aria-busy="true" title="Loading waveform preview">…</span>
+		{:else if deck.anlz_error !== null}
 			<span class="no-anlz" title="No rekordbox ANLZ for this track - the strip has no waveform, beatgrid, or cue overlay">NO ANALYSIS</span>
 		{:else if ownGridUnavailable !== null}
 			<span class="no-anlz" title={ownGridUnavailable}>NO OWN GRID</span>

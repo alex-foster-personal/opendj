@@ -19,6 +19,15 @@ rolling week:
     python -m scripts.reqs_cited_unflipped \
         --since 2026-09-03T05:41:12Z --until 2026-09-10T19:25:00Z
 
+``--reqs-path`` overrides which ``reqs.json`` payload supplies the pending
+ids, defaulting to this repo's own file. The periodic-checks workflow step
+reads it from ``$REQS_JSON_PATH`` when that env var is set (unset in
+production, so the default is unchanged); a test that must stay independent
+of live v1 burn-down status points it at a pinned snapshot instead:
+
+    python -m scripts.reqs_cited_unflipped \
+        --reqs-path tests/fixtures/github/reqs_cited_unflipped_reqs_snapshot.json
+
 Honest instrument: when the PR source cannot be read it prints UNKNOWN and
 exits 2. It never renders a failed read as "0 cited", because that is the
 exact silent-zero the periodic-checks table forbids. A read that SUCCEEDS and
@@ -198,8 +207,15 @@ def main(
     parser.add_argument(
         "--strict", action="store_true", help="exit 1 when any cited pending id is found"
     )
+    parser.add_argument(
+        "--reqs-path",
+        type=Path,
+        default=None,
+        help="path to the reqs.json payload to read pending ids from (default: this repo's own)",
+    )
     args = parser.parse_args(argv)
     days = args.days if (args.days is not None or args.since) else DEFAULT_DAYS
+    effective_reqs_path = args.reqs_path if args.reqs_path is not None else reqs_path
 
     try:
         window = window_bounds(days, args.since, args.until)
@@ -207,7 +223,7 @@ def main(
         print(f"[reqs-cited-unflipped] UNKNOWN: {exc}", file=sys.stderr)
         return 2
 
-    payload = json.loads(reqs_path.read_text())
+    payload = json.loads(effective_reqs_path.read_text())
     try:
         prs = fetch(window.search)
     except Exception as exc:

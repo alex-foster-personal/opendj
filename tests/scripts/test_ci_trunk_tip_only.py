@@ -1,7 +1,7 @@
 """Tests for :mod:`scripts.ci_trunk_tip_only`.
 
 Regression lines:
-  - if a superseded Stable evidence run stays queued after sweep then broken
+  - if a superseded Error sink run stays queued after sweep then broken
   - if dry_run performs a cancel POST then broken
   - if retained CI push runs are not exactly oldest and newest then broken
 """
@@ -66,7 +66,7 @@ def test_retained_ci_push_runs_keep_oldest_and_newest_only() -> None:
 def test_bookkeeping_for_superseded_sha_is_cancelled() -> None:
     """If bookkeeping head_sha is not retained then it is scheduled for cancellation."""
     runs = [
-        _run(10, name="Stable evidence", head_sha=OTHER_SHA),
+        _run(10, name="Error sink", head_sha=OTHER_SHA),
         _run(11, name="Error sink", head_sha=TRUNK_TIP),
         _run(12, name="Error sink", head_sha=OTHER_SHA),
     ]
@@ -77,7 +77,7 @@ def test_bookkeeping_for_superseded_sha_is_cancelled() -> None:
 
 def test_bookkeeping_for_retained_sha_is_kept() -> None:
     """If bookkeeping head_sha matches trunk tip then it is kept."""
-    runs = [_run(20, name="Stable evidence", head_sha=TRUNK_TIP)]
+    runs = [_run(20, name="Error sink", head_sha=TRUNK_TIP)]
     plan = mod.build_sweep_plan(TRUNK_TIP, runs)
     assert plan.bookkeeping_to_cancel == ()
     assert plan.bookkeeping_kept == 1
@@ -87,7 +87,7 @@ def test_execute_sweep_logs_superseded_by_and_skips_post_in_dry_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dry-run emits superseded_by logs and never POSTs cancellations."""
-    run = _run(30, name="Stable evidence", head_sha=OTHER_SHA)
+    run = _run(30, name="Error sink", head_sha=OTHER_SHA)
     plan = mod.SweepPlan(
         trunk_tip=TRUNK_TIP,
         retained_head_shas=frozenset({TRUNK_TIP}),
@@ -185,8 +185,8 @@ def test_execute_sweep_continues_after_bookkeeping_not_yet_queued_409(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """If one bookkeeping cancel is not yet queued then later targets still cancel."""
-    run_skipped = _run(40, name="CI Cost Guard", head_sha=OTHER_SHA)
-    run_cancelled = _run(41, name="Stable evidence", head_sha=OTHER_SHA)
+    run_skipped = _run(40, name="Error sink", head_sha=OTHER_SHA)
+    run_cancelled = _run(41, name="Error sink", head_sha=OTHER_SHA)
     plan = mod.SweepPlan(
         trunk_tip=TRUNK_TIP,
         retained_head_shas=frozenset({TRUNK_TIP}),
@@ -209,7 +209,7 @@ def test_execute_sweep_continues_after_bookkeeping_not_yet_queued_409(
     assert report.bookkeeping_cancelled == 1
     assert report.bookkeeping_cancel_skipped_not_yet_queued == 1
     captured = capsys.readouterr().out
-    assert "bookkeeping-cancel-skipped workflow=CI Cost Guard run_id=40" in captured
+    assert "bookkeeping-cancel-skipped workflow=Error sink run_id=40" in captured
     assert f"head_sha={OTHER_SHA}" in captured
     assert f"superseded_by={TRUNK_TIP}" in captured
     assert "reason=not-yet-queued" in captured

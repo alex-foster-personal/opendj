@@ -17,7 +17,7 @@ from contextlib import AbstractContextManager
 from typing import Any, Protocol
 
 from .events import EventBus, FakeEventBus
-from .order_key import from_index
+from .order_key import renumbered_keys
 from .sync_stamp import Stamp
 from .types import Event
 from .writer_common import (
@@ -26,6 +26,7 @@ from .writer_common import (
     immediate_transaction,
     next_playlist_revision,
 )
+from .writer_membership_order import write_membership_order_keys
 
 
 class _WriterHost(Protocol):
@@ -151,6 +152,7 @@ class _PlaylistWriterMixin:
                 "DELETE FROM playlist_memberships WHERE playlist_id = ?",
                 (playlist_id,),
             )
+            keys = renumbered_keys(len(stable_ids))
             for position, sid in enumerate(stable_ids):
                 member_stamp = self._stamp(
                     MEMBERSHIPS_TABLE, (playlist_id, position), now,
@@ -164,7 +166,7 @@ class _PlaylistWriterMixin:
                         sid,
                         position,
                         uuid.uuid4().hex,
-                        from_index(position),
+                        keys[position],
                         member_stamp.updated_at,
                         member_stamp.origin_device_id,
                     ),
@@ -514,59 +516,20 @@ class _PlaylistWriterMixin:
         *,
         renumbered: bool = False,
     ) -> None:
-        """UPDATE order_key for named live membership rows only."""
-        if not rows:
-            return
-        transaction = (
-            self._tx() if self._conn.in_transaction
-            else immediate_transaction(self._conn)
-        )
-        with transaction as conn:
-            now = next_playlist_revision(conn, playlist_id, self._now_iso())
-            changed = 0
-            for item_id, new_key in rows:
-                row = conn.execute(
-                    "SELECT position, order_key FROM playlist_memberships "
-                    "WHERE playlist_id = ? AND item_id = ? AND deleted_at IS NULL",
-                    (playlist_id, item_id),
-                ).fetchone()
-                if row is None or row[1] == new_key:
-                    continue
-                position = row[0]
-                member_stamp = self._stamp(
-                    MEMBERSHIPS_TABLE, (playlist_id, position), now,
-                )
-                conn.execute(
-                    "UPDATE playlist_memberships SET order_key=?, updated_at=?, "
-                    "origin_device_id=? WHERE playlist_id=? AND item_id=?",
-                    (
-                        new_key,
-                        member_stamp.updated_at,
-                        member_stamp.origin_device_id,
-                        playlist_id,
-                        item_id,
-                    ),
-                )
-                changed += 1
-            if changed == 0:
-                return
-            stamp = self._stamp(PLAYLISTS_TABLE, (playlist_id,), now)
-            conn.execute(
-                "UPDATE playlists SET updated_at = ?, origin_device_id = ? "
-                "WHERE playlist_id = ?",
-                (stamp.updated_at, stamp.origin_device_id, playlist_id),
-            )
-            ev = self._append_event(
-                kind="playlist.memberships.move",
-                stable_id=None,
-                payload={
-                    "playlist_id": playlist_id,
-                    "count": changed,
-                    "renumbered": renumbered,
-                },
-                ts=now,
-            )
-            self.bus.publish(ev)
+        """UPDATE order_key for named live membership rows only, by item_id."""
+        write_membership_order_keys(self, playlist_id, "item_id", rows, renumbered=renumbered)
+
+    def renumber_playlist_membership_order_keys(
+        self: _WriterHost,
+        playlist_id: str,
+        rows: list[tuple[int, str]],
+    ) -> None:
+        """Rewrite live order_keys by position, the primary key.
+
+        A renumber must reach every live row, and the Spotify importer writes
+        rows with no item_id, so addressing them by item_id would skip them.
+        """
+        write_membership_order_keys(self, playlist_id, "position", rows, renumbered=True)
 
     def append_playlist_history(
         self: _WriterHost, kind: str, payload: dict[str, Any]
@@ -594,3 +557,4 @@ __all__ = [
     "PlaylistNotDeletedError",
     "PlaylistNotFoundError",
 ]
+

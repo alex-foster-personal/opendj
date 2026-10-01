@@ -25,23 +25,19 @@ name: E2E
 on:
   pull_request:
     branches: [main]
-    # Mirrors ci.yml: a docs-only PR cannot change runtime behavior.
-    # Extra ignores: workflow YAML and pytest-only trees cannot change
-    # Playwright behaviour. Scheduling E2E for those would skip the nightly
-    # `extended` job on the PR, and a SKIPPED check is not a pass.
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "handoffs/**"
-      - ".planning/**"
-      - "specs/**"
-      - "blog/**"
-      - ".github/workflows/docs.yml"
-      - ".github/workflows/e2e.yml"
-      - "tests/perf/**"
-      - "tests/docs/**"
+    # EVERY pull request to main triggers this workflow (issue #4168); the
+    # docs-only skip moved inside the run. The `scope` job evaluates
+    # E2E_PATHS_IGNORE in scripts/ci_pr_scope.py against the merge commit and
+    # the gate runs only when it says in scope. A trigger-level filter created
+    # no run at all for a docs-only change, so a merge queue waiting on a named
+    # check (Trunk, draft-PR mode) waited out its timeout. The list: docs, plus
+    # workflow YAML and pytest-only trees that cannot change Playwright behavior.
   push:
     branches: [main]
+    # A push run needs no aggregator to exist, so push keeps its trigger-level
+    # filter. GitHub reads trigger filters only from this file, so this is a
+    # literal copy of E2E_PATHS_IGNORE in scripts/ci_pr_scope.py, pinned equal
+    # to it by tests/scripts/test_ci_required_gate_wiring.py.
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -107,6 +103,100 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # SCOPE (issue #4168). Every pull request triggers this workflow; this job
+  # decides whether its change set is in scope (E2E_PATHS_IGNORE in
+  # scripts/ci_pr_scope.py) and the gate runs only on `in_scope == 'true'`, so a
+  # docs-only change occupies no e2e runner and `e2e verdict` still reports.
+  # ---------------------------------------------------------------------------
+  scope:
+    name: e2e scope (docs-only skip decision)
+    # Seconds of work on the light pool, never the pytest or e2e label: the job
+    # runs `git diff` on the merge commit and one stdlib script. Every event runs
+    # it; only a pull_request can come out of scope.
+    # A Trunk queue draft (trunk-merge/* head, author trunk-io[bot], same-repo
+    # head) prefers the opt-in CI_RUNS_ON_MERGE_QUEUE pool on every job on its
+    # path to a required status, the e2e gate excepted; unset, the chain is
+    # unchanged (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool).
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    outputs:
+      in_scope: ${{ steps.decide.outputs.in_scope }}
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          # 0, not 2: every persistent-runner checkout fetches full history
+          # (docs/decisions/ADR-NEW-uniform-checkout-depth-on-persistent-runners.md),
+          # which is a superset of the depth-2 this job used to need to diff
+          # the pull_request test-merge commit against its first (base) parent.
+          fetch-depth: 0
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout. Runs before the job's first python3;
+      # tests/scripts/test_ci_workflow_stale_install_coverage.py enforces it.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      - name: Decide whether this change set is in e2e.yml's scope
+        id: decide
+        run: python3 -m scripts.ci_required_gate scope --workflow e2e.yml
+
+  # ---------------------------------------------------------------------------
   # TIER 1, BLOCKING on every PR and every push to main.
   #
   # Everything in this job is hermetic: it needs the repo, a production build,
@@ -117,6 +207,8 @@ jobs:
   # ---------------------------------------------------------------------------
   gate:
     name: e2e gate (webkit artifact + hermetic chromium)
+    needs: scope
+    if: needs.scope.outputs.in_scope == 'true'
     # Runner is a repo-variable switch (see ci.yml's `test` job for the full
     # rationale). vars.CI_RUNS_ON_E2E absent -> hosted ubuntu-latest; set to
     # '["self-hosted","linux","e2e"]' it targets agentbox specifically, the
@@ -240,6 +332,8 @@ jobs:
       # SHA-pinned to the v4 tag commit (resolved 2026-04-17), matching ci.yml.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -895,6 +989,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -985,7 +1081,7 @@ jobs:
           scripts/ci_apt_present.sh libsqlcipher-dev ffmpeg || scripts/ci_host_lock.sh packages sudo env -C / sh -c 'apt-get update && apt-get install -y libsqlcipher-dev ffmpeg'
 
       - name: Install Python deps into the project venv
-        run: uv sync
+        run: uv sync --extra dev
 
       - name: Runner preflight - node tools and disk
         # Fail here, naming the runner, rather than mid-install with a cryptic
@@ -1235,3 +1331,96 @@ jobs:
             apps/webui/frontend/playwright-report/**
           if-no-files-found: ignore
           retention-days: 2
+
+  verdict:
+    name: e2e verdict
+    # THE check-run a merge queue or branch protection requires from this
+    # workflow (Trunk Merge Queue's required status, issue #4168). Created on
+    # every run because it needs `always()`; concludes SUCCESS only when the
+    # scope job said out of scope and the gate was skipped, or said in scope and
+    # the gate succeeded (scripts/ci_required_gate.py). Never SKIPPED, since how
+    # a queue reads `skipped` is undocumented. If the gate is ever skipped on
+    # ordinary PR heads by design (PR #4175's queue-draft-only gate), that
+    # condition belongs in the scope decision, not in the gate's own `if`:
+    # tests/scripts/test_ci_required_gate_wiring.py pins the gate's `if` to the
+    # scope output alone, so the verdict can never read a designed skip as red
+    # or an undesigned one as green. `extended` is nightly-only and not gated.
+    needs:
+      - scope
+      - gate
+    if: ${{ always() }}
+    runs-on: ${{ fromJSON((github.event_name == 'pull_request' && startsWith(github.head_ref, 'trunk-merge/') && github.event.pull_request.user.login == 'trunk-io[bot]' && github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNS_ON_MERGE_QUEUE || vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    steps:
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled run can kill checkout's fetch mid ref-update and leave a .git/**/*.lock behind; every
+          # later checkout on this runner then dies in seconds ("reference already exists"), draining the queue
+          # as instant reds (nucbox-wsl-14, Fri 11 Sep 2026: 4 jobs in 5 min). This job has started no git
+          # process yet, so a lock with no live git inside the workspace is stale by construction.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          # 0: every persistent-runner checkout fetches full history
+          # (docs/decisions/ADR-NEW-uniform-checkout-depth-on-persistent-runners.md).
+          fetch-depth: 0
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout. Runs before the job's first python3;
+      # tests/scripts/test_ci_workflow_stale_install_coverage.py enforces it.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      - name: Aggregate the gated jobs into one verdict
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 -m scripts.ci_required_gate verdict

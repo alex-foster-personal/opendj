@@ -21,6 +21,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'stretch-quality.spec.ts',
 	fullyParallel: false,
