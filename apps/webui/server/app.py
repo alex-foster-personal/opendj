@@ -83,6 +83,7 @@ def create_app(  # noqa: PLR0913
     lyric_index: bool = False,
     auto_user_jobs: bool = False,
     auto_coverage_drain: bool = False,
+    auto_ahead_analysis: bool = False,
     feature_flags: FlagStore | None = None,
     cloudsync_scheduler: bool = False,
     stem_hydration: bool = False,
@@ -160,6 +161,7 @@ def create_app(  # noqa: PLR0913
     app.state.cloudsync_scheduler_armed = cloudsync_scheduler
     app.state.auto_user_jobs = library_jobs_autostart.build(enabled=auto_user_jobs)
     app.state.coverage_drain_armed = auto_coverage_drain
+    app.state.ahead_analysis_armed = auto_ahead_analysis
     _install_exception_handlers(app)
     install_request_guard(
         app,
@@ -408,7 +410,7 @@ def _build_default_app() -> FastAPI:
     # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
     # this entrypoint against a fixture data dir with an unmapped track (#949).
     from apps.shared.paths import STATE_DB
-    app = create_app(
+    return create_app(
         backend=backend,
         bind_host=bind_host,
         hostname=hostname,
@@ -420,11 +422,10 @@ def _build_default_app() -> FastAPI:
         cloudsync_scheduler=True,
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
         auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
+        # NATIVE-21: the ahead-of-time analysis drain; create_app leaves it off.
+        auto_ahead_analysis=ahead_analysis.arm_from_environ(os.environ),
         stem_hydration=True,
     )
-    # NATIVE-21: the ahead-of-time analysis drain; create_app leaves it off.
-    app.state.ahead_analysis_armed = ahead_analysis.arm_from_environ(os.environ)
-    return app
 
 
 # Single-item cache mutated in place (not rebound) so ``__getattr__`` below
