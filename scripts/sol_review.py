@@ -231,8 +231,18 @@ def _seat_error_location(seat: str, returncode: int) -> str:
 
 
 def _seat_is_spent(output: str) -> bool:
-    lowered = output.lower()
-    return any(m in lowered for m in CFG.SPENT_MARKERS)
+    """A wall is codex's own `ERROR:` line, never text the prompt echoes back.
+
+    codex echoes the whole prompt to stderr, diff included. Scanning all of it
+    read a diff context line quoting `SPENT_MARKERS` as a refusal and threw
+    away every review of PR #4544, a run that exited 0 with a parsed result
+    (Thu 1 Oct 2026). Diff lines always start with `+`, `-`, ` ` or `@@`, so
+    a line-start `ERROR:` is codex speaking. Same class as the Claude lane's
+    #1394 fix, which never reached this lane."""
+    return any(
+        line.startswith("ERROR:") and any(m in line.lower() for m in CFG.SPENT_MARKERS)
+        for line in output.splitlines()
+    )
 
 
 def seat_wall_report(seat: str, output: str) -> str:
