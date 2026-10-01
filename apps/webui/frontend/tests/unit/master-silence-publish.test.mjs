@@ -167,7 +167,7 @@ describe('the source PCM reader stays off the non-quiet master path', () => {
 	it('silent source under a quiet master is content, not a dropout (AC1, AC4)', () => {
 		const buffer = bufferFilled(0);
 		const { reported, readerCalls } = holdQuietMaster(() => [
-			{ claims_live: true, buffer, position_sec: 2 }
+			{ claims_live: true, buffer, position_sec: 2, master_path_gain: 1 }
 		]);
 		assert.ok(readerCalls > 0, 'the quiet-master path must consult the source reader');
 		assert.equal(reported, false);
@@ -175,14 +175,14 @@ describe('the source PCM reader stays off the non-quiet master path', () => {
 
 	it('loud source under a quiet master still reports (AC3, the overshoot control)', () => {
 		const buffer = bufferFilled(0.5);
-		const { reported } = holdQuietMaster(() => [{ claims_live: true, buffer, position_sec: 2 }]);
+		const { reported } = holdQuietMaster(() => [{ claims_live: true, buffer, position_sec: 2, master_path_gain: 1 }]);
 		assert.equal(reported, true, 'a real dropout must still reach silent-while-playing');
 	});
 
 	it('does not read deck buffers while the master carries signal', () => {
 		const buffer = bufferFilled(0);
 		const { reported, readerCalls } = holdQuietMaster(
-			() => [{ claims_live: true, buffer, position_sec: 2 }],
+			() => [{ claims_live: true, buffer, position_sec: 2, master_path_gain: 1 }],
 			0.5
 		);
 		assert.equal(readerCalls, 0, 'the source scan must stay off the loud-master path');

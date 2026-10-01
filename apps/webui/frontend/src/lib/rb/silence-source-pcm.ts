@@ -25,15 +25,17 @@ export interface SilenceSourceDeckSnap {
 	/**
 	 * Linear gain from this deck's source to the master analyser tap (trim x
 	 * fader x crossfader x master, 0 when every stem part is gained to zero).
-	 * Absent means unknown, read as fully open so the gate can only fall back to
-	 * the source-PCM test and never hide a dropout on a missing reading.
+	 * Trim can boost above 1, so an absent reading is unknown, not "open", and
+	 * never explains silence.
 	 */
 	master_path_gain?: number;
 }
 
 const DEFAULT_WINDOW_SEC = 0.5;
 
-/** RMS 0..1 of mixed channels over a short window from position_sec. */
+/** RMS 0..1 of mixed channels over a short window from position_sec. Non-finite
+ * when the PCM holds NaN or Infinity: an invalid measurement is returned as
+ * such, never as silence, so the caller can refuse to read it as content. */
 export function rmsAtPlayhead(
 	buffer: AudioBuffer,
 	position_sec: number,
@@ -60,8 +62,7 @@ export function rmsAtPlayhead(
 			samples++;
 		}
 	}
-	const rms = Math.sqrt(sum / samples);
-	return Number.isFinite(rms) ? rms : 0;
+	return Math.sqrt(sum / samples);
 }
 
 /**
@@ -72,7 +73,8 @@ export function rmsAtPlayhead(
  * (fader down, crossfader cut, master at zero, every stem muted) contributes 0
  * without its PCM being read. Everything this cannot measure fails safe toward
  * reporting a real dropout, never toward hiding one:
- * - a non-finite or negative path gain does not explain silence;
+ * - an absent, non-finite or negative path gain does not explain silence;
+ * - non-finite PCM in the window does not explain silence;
  * - an open-path claimed-live deck with no buffer does not explain silence;
  * - a non-finite playhead does not explain silence (and must not throw: a throw
  *   here would skip the fold in `noteMasterSilence`, so the watchdog would stop
@@ -90,13 +92,15 @@ export function claimedLiveSourceIsSilent(
 	if (live.length === 0) return false;
 	let expected = 0;
 	for (const deck of live) {
-		const gain = deck.master_path_gain ?? 1;
-		if (!Number.isFinite(gain) || gain < 0) return false;
+		const gain = deck.master_path_gain;
+		if (gain === undefined || !Number.isFinite(gain) || gain < 0) return false;
 		if (gain < CLOSED_PATH_GAIN) continue;
 		if (deck.buffer === null) return false;
 		if (!Number.isFinite(deck.position_sec)) return false;
 		if (deck.position_sec * deck.buffer.sampleRate >= deck.buffer.length) return false;
-		expected += gain * rmsAtPlayhead(deck.buffer, deck.position_sec, window_sec);
+		const rms = rmsAtPlayhead(deck.buffer, deck.position_sec, window_sec);
+		if (!Number.isFinite(rms)) return false;
+		expected += gain * rms;
 		if (expected >= floor) return false;
 	}
 	return true;
