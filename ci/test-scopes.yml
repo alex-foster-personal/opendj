@@ -1,8 +1,9 @@
 # Scopes for SMARTEST-CI's pull request planner (`scripts/ci_plan.py`, round 5).
 #
-# Scope names are the module names `mergify ci scopes` will use, so queue batching by
-# scope needs no renames later. Patterns: a trailing `/` is a path prefix, `*` stops at a
-# directory boundary and `**` crosses one.
+# Scope names double as merge-queue impacted-target names if the queue ever runs in
+# parallel mode (it runs single today: nearly every scope lists every other as a
+# dependent, so lanes would collapse to one). Patterns: a trailing `/` is a path
+# prefix, `*` stops at a directory boundary and `**` crosses one.
 #
 # The planner NARROWS only; anything it cannot place answers FULL, and
 # `tests/scripts/test_ci_plan_config.py` fails when a tracked test module is claimed by
@@ -31,14 +32,17 @@ full_triggers:
   # `.planning/REQUIREMENTS.md` after excluding `.planning/**`, which is that workflow
   # saying the path is an input rather than documentation: `reqs.json` is generated from it
   # and gated against it, and three commits that drifted the ledger skipped the PR gate and
-  # surfaced on main. `reqs.json` and `.mergify.yml` are read by tests the same way.
+  # surfaced on main. `reqs.json` and `ci/trunk-merge-queue.json` are read by tests the
+  # same way.
   # Without these the planner said SKIP_PYTEST for 6 of the last 60 merges that `ci.yml`
   # RAN, and `tests/scripts/test_ci_plan.py` now reads the re-inclusion list from the
   # workflow so a new one cannot be missed here.
   - ".planning/REQUIREMENTS.md"
   - "reqs.json"
-  - ".mergify.yml"
   - "ci/**"
+  # The perf KPI ledger, cards and map, re-included by `ci.yml` for the same reason: suites
+  # in perf, webui and lyrics read the real files (PR #4473, Wed 30 Sep 2026).
+  - "docs/perf/*.json"
 
 # Scopes a GLOBAL pytest helper (a conftest, or a support module matched by `always`)
 # imports or mentions. Such a helper is loaded by suites across the whole tree, so a
@@ -246,7 +250,7 @@ scopes:
     sources: ["docs/", "specs/", "app_docs/", ".planning/", "handoffs/", "blog/"]
     tests: []
     mentions: ["docs", "specs", "app_docs", ".planning", "handoffs", "blog"]
-    dependents: ["agentic_testing", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
+    dependents: ["agentic_testing", "analysis_bench", "analysis_key", "cloudsync", "database", "engine_core", "fixtures", "lyrics", "mik", "open_dj", "perf", "quality", "scripts", "shared", "stems", "webui"]
   - name: agentic_testing
     sources: ["ops/agentic_testing/"]
     tests: ["tests/agentic_testing/"]

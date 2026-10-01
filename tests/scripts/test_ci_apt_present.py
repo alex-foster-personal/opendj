@@ -122,14 +122,23 @@ def test_real_dpkg_reports_an_installed_package_present_and_a_bogus_one_missing(
 # every locked install site in the workflows is fronted by the check
 
 LOCKED_INSTALL = re.compile(r"apt-get install -y ([a-z0-9][a-z0-9 .+-]*?)'?$")
-PRESENCE_PREFIX = re.compile(r"^scripts/ci_apt_present\.sh ([a-z0-9 .+-]+?) \|\| scripts/ci_host_lock\.sh packages ")
+PRESENCE_PREFIX = re.compile(
+    r"^scripts/ci_apt_present\.sh ([a-z0-9 .+-]+?) \|\| scripts/ci_host_lock\.sh packages "
+)
+# A package standing in for a capability is fronted by that capability's own
+# probe, on the line before the install, instead of by a package check: any
+# LLVM's libclang serves bindgen, so libclang1 installs only when none loads
+# (the rest of that step is pinned by tests/scripts/test_ci_libclang_present.py).
+CAPABILITY_PROBES = {"libclang1": "python -m scripts.ci_libclang_present || {"}
 
 
-def _locked_install_sites() -> list[tuple[str, str]]:
+def _locked_install_sites() -> list[tuple[str, str, str]]:
+    """(site, line, the line before it) for every install under the packages lock."""
     return [
-        (f"{path.name}:{lineno}", line.strip())
+        (f"{path.name}:{lineno}", line.strip(), lines[lineno - 2].strip())
         for path in sorted(WORKFLOW_DIR.glob("*.yml"))
-        for lineno, line in enumerate(path.read_text().splitlines(), 1)
+        for lines in [path.read_text().splitlines()]
+        for lineno, line in enumerate(lines, 1)
         if "ci_host_lock.sh packages sudo" in line and "apt-get install -y" in line
     ]
 
@@ -141,11 +150,16 @@ def test_locked_install_sites_exist_to_be_checked() -> None:
 
 def test_every_locked_install_checks_the_same_packages_first() -> None:
     offenders = []
-    for site, line in _locked_install_sites():
+    for site, line, before in _locked_install_sites():
         installed = LOCKED_INSTALL.search(line)
         checked = PRESENCE_PREFIX.match(line)
+        probe = CAPABILITY_PROBES.get(installed.group(1)) if installed else None
+        if probe is not None and before.endswith(probe):
+            continue
         if installed is None or checked is None:
             offenders.append(f"{site}: no presence check in front of the locked install")
         elif checked.group(1).split() != installed.group(1).split():
-            offenders.append(f"{site}: checks [{checked.group(1)}] but installs [{installed.group(1)}]")
+            offenders.append(
+                f"{site}: checks [{checked.group(1)}] but installs [{installed.group(1)}]"
+            )
     assert not offenders, "\n".join(offenders)

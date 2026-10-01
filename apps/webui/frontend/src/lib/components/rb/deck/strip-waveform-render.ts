@@ -11,7 +11,13 @@
  * synthesized; vocal bars paint only for a real PVDI/demucs region; the loop
  * band paints only for an engaged loop the engine actually reports.
  */
-import { drawLoopRegion, VOCAL_BLUE, vocalAlpha } from '../wave/render';
+import {
+	drawLoopRegion,
+	resolveStripWaveformKind,
+	VOCAL_BLUE,
+	vocalAlpha
+} from '../wave/render';
+import type { WaveformDesign } from '$lib/rb/waveform-design';
 import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
 
 // This module is PRESENTATIONAL: it names the shapes it paints instead of
@@ -88,17 +94,38 @@ export interface StripFrame {
 	loop: LoopBandSource | null;
 	/** Stored loop hot cues. They remain visible when no loop is engaged. */
 	loopCues: readonly StripLoopCue[];
+	waveformDesign?: WaveformDesign;
 }
 
 /**
  * Paint one full strip frame. The canvas is cleared first, so this is the
  * single entry point - callers never draw layers themselves.
  */
+/** Paint normalized preview bands only (library mini-strip + deck strip waveform). */
+export function drawStripPreviewBands(
+	ctx: CanvasRenderingContext2D,
+	bands: StripBands,
+	payloadKind: 'tri' | 'mono',
+	widthPx: number,
+	heightPx: number,
+	design: WaveformDesign = 'tri-band'
+): void {
+	const kind = resolveStripWaveformKind(payloadKind, design);
+	_drawPreview(ctx, bands, kind, widthPx, heightPx, design);
+}
+
 export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFrame): void {
 	const { widthPx: w, heightPx: h, durationMs } = frame;
 	ctx.clearRect(0, 0, w, h);
 	if (frame.waveform !== null) {
-		_drawPreview(ctx, frame.waveform.preview, frame.waveform.kind, w, h);
+		drawStripPreviewBands(
+			ctx,
+			frame.waveform.preview,
+			frame.waveform.kind,
+			w,
+			h,
+			frame.waveformDesign ?? 'tri-band'
+		);
 		if (frame.vocals !== null && durationMs !== null && durationMs > 0) {
 			_drawVocalBars(ctx, frame.vocals, durationMs, w);
 		}
@@ -133,11 +160,26 @@ function _drawPreview(
 	bands: StripBands,
 	kind: 'tri' | 'mono',
 	widthPx: number,
-	heightPx: number
+	heightPx: number,
+	design: WaveformDesign
 ): void {
 	const n = bands.length;
 	if (n === 0) return;
 	const w = widthPx / n;
+	if (design === 'line') {
+		ctx.strokeStyle = BAND_MID;
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		for (let i = 0; i < n; i++) {
+			const x = i * w + w / 2;
+			const v = Math.max(bands.low[i], bands.mid[i], bands.high[i]);
+			const y = heightPx - v * heightPx;
+			if (i === 0) ctx.moveTo(x, y);
+			else ctx.lineTo(x, y);
+		}
+		ctx.stroke();
+		return;
+	}
 	for (let i = 0; i < n; i++) {
 		const x = i * w;
 		if (kind === 'tri') {

@@ -7,7 +7,7 @@ Usage::
     python -m scripts.conflict_census --limit 20   # cheaper sample while iterating
 
 Read-only. Nothing is checked out, no branch is fetched into a working tree,
-and the shared checkout at /Users/user/Music/music-dj-tools is never modified,
+and the shared checkout at /Users/user/code/music-dj-tools is never modified,
 so this is safe to run while other agents are working there.
 
 Correlating "PRs that touch the same file" gets this wrong: two PRs can both

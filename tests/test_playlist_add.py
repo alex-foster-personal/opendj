@@ -1,6 +1,9 @@
 """LIBM-20: POST /playlists/{id}/items:add without rewriting membership.
 
 [if] a track is added to a playlist [then] existing membership rows stay unrewritten, [else stop].
+
+The response carries the inserted rows (``added``), never the membership
+(LIBM-132), so order is checked against the database.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
 from apps.smartlists.repo import SmartlistsRepo
 from apps.webui.server.app import create_app
+from apps.webui.server.playlist_add import MEMBERSHIP_ORDER_BY
 from apps.webui.server.routes import playlist_write
 from apps.webui.server.sqlite_backend import SqliteBackend
 
@@ -100,6 +104,26 @@ def dump_members(db_path: Path, playlist_id: str) -> list[tuple]:
         conn.close()
 
 
+def ordered_items(db_path: Path, playlist_id: str) -> list[str]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return [
+            row[0]
+            for row in conn.execute(
+                "SELECT stable_id FROM playlist_memberships "
+                f"WHERE playlist_id=? AND deleted_at IS NULL ORDER BY {MEMBERSHIP_ORDER_BY}",
+                (playlist_id,),
+            )
+        ]
+    finally:
+        conn.close()
+
+
+def added_stable_ids(response_json: dict) -> list[str]:
+    assert "items" not in response_json and "track_count" not in response_json, response_json
+    return [row["stable_id"] for row in response_json["added"]]
+
+
 def _event_kinds(db_path: Path) -> list[str]:
     conn = sqlite3.connect(str(db_path))
     try:
@@ -128,7 +152,9 @@ def test_append_one_track_o1_write(client: TestClient, db_path: Path) -> None:
     new_rows = [row for row in after if row not in before_set]
     assert len(new_rows) == 1
     assert new_rows[0][1] == "t-004"
-    assert r.json()["items"] == ["t-001", "t-002", "t-003", "t-004"]
+    assert added_stable_ids(r.json()) == ["t-004"]
+    assert r.json()["added"][0]["item_id"] == new_rows[0][0]
+    assert ordered_items(db_path, pid) == ["t-001", "t-002", "t-003", "t-004"]
     assert "playlist.memberships.add" in _event_kinds(db_path)
     assert r.headers["ETag"] != old_etag
 
@@ -150,7 +176,8 @@ def test_positioned_insert_neighbors_untouched(client: TestClient, db_path: Path
         assert before_by_stable[sid] == after_by_stable[sid]
     new_row = after_by_stable["t-004"]
     assert before_by_stable["t-001"][3] < new_row[3] < before_by_stable["t-002"][3]
-    assert r.json()["items"] == ["t-001", "t-004", "t-002", "t-003"]
+    assert added_stable_ids(r.json()) == ["t-004"]
+    assert ordered_items(db_path, pid) == ["t-001", "t-004", "t-002", "t-003"]
 
 
 def test_omitted_position_appends_after_last(client: TestClient, db_path: Path) -> None:
@@ -187,7 +214,8 @@ def test_already_member_creates_second_row(client: TestClient, db_path: Path) ->
     t001_rows = [row for row in after if row[1] == "t-001"]
     assert len(t001_rows) == 2
     assert t001_rows[0][0] != t001_rows[1][0]
-    assert r.json()["items"].count("t-001") == 2
+    assert added_stable_ids(r.json()) == ["t-001"]
+    assert ordered_items(db_path, pid).count("t-001") == 2
 
 
 def test_smartlist_refused(client: TestClient, db_path: Path) -> None:
@@ -267,7 +295,8 @@ def test_bulk_all_new(client: TestClient, db_path: Path) -> None:
     assert len(after) == len(before) + 2
     for row in before:
         assert row in after
-    assert r.json()["items"] == ["t-001", "t-002", "t-003"]
+    assert added_stable_ids(r.json()) == ["t-002", "t-003"]
+    assert ordered_items(db_path, pid) == ["t-001", "t-002", "t-003"]
 
 
 @pytest.mark.requirement("LIBM-03")
@@ -285,4 +314,5 @@ def test_bulk_with_one_already_present_adds_both(client: TestClient, db_path: Pa
     assert len(after) == len(before) + 2
     for row in before:
         assert row in after
-    assert r.json()["items"] == ["t-001", "t-002", "t-001", "t-003"]
+    assert added_stable_ids(r.json()) == ["t-001", "t-003"]
+    assert ordered_items(db_path, pid) == ["t-001", "t-002", "t-001", "t-003"]
