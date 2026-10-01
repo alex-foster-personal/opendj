@@ -10,11 +10,11 @@
  * - if the engine's own status does not ask for the wizard (should_show_wizard) -> broken.
  * - if a folder import of generated audio does not reach `succeeded` -> broken.
  * - if All Tracks does not list every imported track without a reload -> broken.
- * - if the Done screen does not report the imported count -> broken (#3422, test.fail).
+ * - if the Done screen does not report the imported count -> broken (#3422).
  * - if "Start playing" on the Done screen does not close the wizard -> broken
- *   (#3422, test.fail: the same skip-then-close path that bounces "Skip for now").
+ *   (#3422: the same skip-then-close path as "Skip for now").
  * - if a first-run screen shows a new user an endpoint path, an error code or
- *   an env-var name -> broken (#2590, test.fail).
+ *   an env-var name -> broken (#2590).
  */
 import { expect, test } from '@playwright/test';
 
@@ -35,11 +35,6 @@ import {
 } from './support/onboarding-wizard';
 
 const TRACKS = 4;
-
-/** "Start playing" runs the same skip-then-close as "Skip for now", so it meets
- * #3422's bounce: found by this suite's round 0 (Thu 1 Oct 2026), see
- * specs/onboarding-gauntlet.md. */
-const START_PLAYING_ISSUE = '#3422';
 
 let engine: OnboardingEngine;
 
@@ -111,8 +106,6 @@ test.describe('onboarding gauntlet: happy path', () => {
 		const status = await readSetupStatus(engine.origin);
 		expect(status.last_import?.tracks_written).toBe(TRACKS);
 		await expect(done.getByRole('button', { name: 'Start playing' })).toBeVisible();
-		// Everything above is healthy on main; only the Done copy is the known defect.
-		test.fail(true, 'issue #3422: Done reads last_import only when the overlay opens, so it says no import was recorded');
 		await expect(done.getByText('No import was recorded for this data directory')).toHaveCount(0);
 		await expect(done.getByText(`${TRACKS} tracks`, { exact: true })).toBeVisible();
 	});
@@ -129,8 +122,6 @@ test.describe('onboarding gauntlet: happy path', () => {
 		const done = await continueToDone(page);
 		const startPlaying = done.getByRole('button', { name: 'Start playing' });
 		await expect(startPlaying).toBeEnabled();
-		// Import and Done are healthy on main; only the close is the known defect.
-		test.fail(true, `issue ${START_PLAYING_ISSUE}: the wizard stays open after a successful first import`);
 		await startPlaying.click();
 		await expect(setupDialog(page)).toHaveCount(0, { timeout: 10_000 });
 		// Closed means closed: still closed across two preflight polls (3 s each).
@@ -152,8 +143,6 @@ test.describe('onboarding gauntlet: happy path', () => {
 		seen.push(await dialog.innerText());
 		expect(seen.every((text) => text.trim().length > 0), 'a first-run screen rendered no text').toBe(true);
 
-		// The three screens rendered; only what they show is the known defect.
-		test.fail(true, 'issue #2590: the wizard footnote names /api/v1/setup and detection shows raw codes');
 
 		const internals = [/\/api\/v1\//, /\brekordbox_not_found\b/, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{3,}\b/];
 		const leaks = seen.flatMap((text) => internals.filter((pattern) => pattern.test(text)).map(String));
