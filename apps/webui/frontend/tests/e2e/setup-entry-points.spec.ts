@@ -80,7 +80,7 @@
  * - [if] a fatal blocker's sentence is not red [then ⛔️] the failure reads as
  *   ordinary prose, which is exactly what a tester reported.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 
 import { spendBootLanding } from './support/boot-landing';
 
@@ -91,6 +91,23 @@ const SETTINGS_CHORD = process.platform === 'darwin' ? 'Meta+Comma' : 'Control+C
 // A same-origin tab opens in well under a second on every gate host; 15 s is
 // generous headroom for a loaded runner while leaving most of the test budget.
 const NEW_TAB_TIMEOUT_MS = 15_000;
+// One live manifest GET on github.com; four attempts plus 2/4/6 s backoffs must stay under the root 30 s test budget.
+const MANIFEST_REQUEST_TIMEOUT_MS = 3_000;
+
+/** Real GET to the external release manifest with a per-request timeout. Transport failures skip as UNMEASURED. */
+async function getReleaseManifest(
+	request: APIRequestContext,
+	endpoint: string
+): Promise<APIResponse> {
+	try {
+		return await request.get(endpoint, { timeout: MANIFEST_REQUEST_TIMEOUT_MS });
+	} catch (cause: unknown) {
+		const message =
+			cause instanceof Error ? cause.message.replace(/\s+/g, ' ').trim() : String(cause);
+		test.skip(true, `UNMEASURED: release manifest ${endpoint} transport error: ${message}`);
+		throw new Error('unreachable after UNMEASURED skip');
+	}
+}
 
 const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
 const setupDialog = (page: Page) => page.getByRole('dialog', { name: 'First-run setup' });
@@ -219,17 +236,18 @@ test.describe('setup entry points', () => {
 		// Separate from the setup-flow test above on purpose (Codex P2 on #3732):
 		// the endpoint is the release manifest on github.com, not this engine, so
 		// a 5xx here is the CDN or the runner's egress failing to answer, which
-		// says nothing about the build under test. Retry a few times, then report
-		// UNMEASURED (a skip naming the status) rather than a red verdict, without
-		// taking any local assertion down with it. A 200 is asserted in full and a
-		// 404 (a missing manifest) still fails.
+		// says nothing about the build under test. Returned 5xx responses and
+		// transport-level inability to measure the external host (timeout, DNS,
+		// connection) are retried or bounded, then reported UNMEASURED rather than
+		// a red verdict, without taking any local assertion down with it. A 200 is
+		// asserted in full and a 404 (a missing manifest) still fails.
 		const updateCheck = await request.get('/api/v1/update/check');
 		expect(updateCheck.status()).toBe(200);
 		const { endpoint } = (await updateCheck.json()) as { endpoint: string };
-		let manifestResponse = await request.get(endpoint);
+		let manifestResponse = await getReleaseManifest(request, endpoint);
 		for (let attempt = 1; attempt < 4 && manifestResponse.status() >= 500; attempt += 1) {
 			await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
-			manifestResponse = await request.get(endpoint);
+			manifestResponse = await getReleaseManifest(request, endpoint);
 		}
 		test.skip(
 			manifestResponse.status() >= 500,
