@@ -1,6 +1,6 @@
 """Bot review-thread triage gate for one pull request.
 
-Every review thread opened by a review bot (Codex, CodeRabbit, Devin) must
+Every review thread opened by a review bot (Codex, Copilot, CodeRabbit, Devin) must
 reach one of three terminal states before or at merge:
 
     FIXED        code changed in response
@@ -18,17 +18,17 @@ The gate additionally REFUSES a blocker written off as debt: P0/P1 and
 anything marked BLOCKING must be FIXED or REBUTTED, and a debt-log reply on
 one of those fails however the thread was closed.
 
-What this script can and cannot prove. It is a SILENCE DETECTOR, not a judge
-of whether a rebuttal is sound or a fix is correct. It answers "did anyone
-reach a disposition here", which is mechanically checkable; it deliberately
-does not try to verify that a FIXED reply's code change is real, because that
-is a reviewer's judgment and a regex claiming otherwise would be worse than
-no check at all.
+What this script can and cannot prove. It is a SILENCE DETECTOR, not a judge of whether a rebuttal
+is sound or a fix is correct. It answers "did anyone reach a disposition here", which is
+mechanically checkable; it deliberately does not try to verify that a FIXED reply's code change is
+real, because that is a reviewer's judgment and a regex claiming otherwise would be worse than no
+check at all.
 
 Requirements (mini-PRD)
 - `/ ` list every bot-authored review thread on a PR via the GraphQL API.
   [if a PR has bot threads and none are listed then broken]
   [if a human-authored thread is counted as a bot thread then broken]
+  [if a Copilot thread (login copilot-pull-request-reviewer, #4240) is not listed then broken]
   [if pagination stops at 100 threads and drops the rest then broken]
 - `/ ` classify each thread RESOLVED / RESOLVED-SILENT / IN-PROGRESS / UNTRIAGED.
   [if a replied-and-resolved thread is reported UNTRIAGED then broken]
@@ -99,7 +99,7 @@ import json
 import sys
 
 try:
-    from scripts import review_coverage
+    from scripts import pr_scope_check, review_blocker, review_coverage
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
@@ -527,11 +527,9 @@ def _as_json(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """`argv` is `None` in normal CLI use, where `argparse` reads `sys.argv`
-    itself. Accepting it explicitly lets a test drive the real entrypoint with
-    real arguments instead of monkeypatching `sys.argv`, banned by AGENTS.md's
-    "No mocks" contract (#805 round 10-continued, Codex, discussion_r3918584365).
-    """
+    """`argv` is `None` in CLI use (argparse reads `sys.argv`). Taking it lets a test drive the
+    real entrypoint with real arguments instead of monkeypatching `sys.argv`, banned by AGENTS.md's
+    "No mocks" contract (#805 round 10-continued, Codex, discussion_r3918584365)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("pr", type=int, help="pull request number")
     parser.add_argument("--owner", default=OWNER, help=f"repo owner (default {OWNER})")
@@ -578,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except review_coverage.TriageError as exc:
         # Could not measure is not a verdict, and must not read as either one.
-        print(f"[review-coverage] COULD NOT MEASURE: {exc}", file=sys.stderr)
+        review_blocker.unknown(f"[review-coverage] COULD NOT MEASURE: {exc}")
         return 3
     except (LedgerReadError, HeadMovedError, BaseRetargetedError) as exc:
         # Same rule for the thread fetch's own guards: a broken ledger read, or
@@ -591,8 +589,10 @@ def main(argv: list[str] | None = None) -> int:
     debt_report = render_debt_verdict(pr.number, pr.head_sha, debt_error, main_side_debt)
     if debt_report:
         print(f"\n{debt_report}")
-    print()
-    return 1 if (pr.failing or coverage or debt_error) else 0
+    # OPS-41: over a declared issue scope is a failure (1); unmeasurable is 3.
+    scope_rc = pr_scope_check.main([str(args.pr), "--owner", args.owner, "--repo", args.repo])
+    rc = max(scope_rc, 1 if (pr.failing or coverage or debt_error) else 0)
+    return review_blocker.report(rc, coverage, pr.failing, debt_error, scope_rc)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,53 @@
+{
+  "repo": {
+    "host": "github.com",
+    "owner": "maintainer",
+    "name": "music-dj-tools"
+  },
+  "targetBranch": "main",
+  "mode": "single",
+  "mergeMethod": "merge_commit",
+  "concurrency": 3,
+  "batch": true,
+  "batchingMinSize": 4,
+  "batchingMaxWaitTimeMinutes": 20,
+  "bisectionConcurrency": 6,
+  "optimizationMode": "bisection_skip_redundant_tests",
+  "canOptimisticallyMerge": true,
+  "pendingFailureDepth": 2,
+  "testingTimeoutMinutes": 120,
+  "directMergeMode": "off",
+  "createPrsForTestingBranches": true,
+  "commentsEnabled": true,
+  "commandsEnabled": true,
+  "statusCheckEnabled": true,
+  "extensionEnabled": true,
+  "labelCommandsEnabled": true,
+  "enqueueingLabel": "queue",
+  "stateLabelsEnabled": true,
+  "notReadyTimeoutHours": 24,
+  "allowedBotSubmitters": [
+    "claude[bot]",
+    "github-actions[bot]",
+    "opendj-debtlog-threads[bot]",
+    "opendj-dep-pr-gate[bot]",
+    "opendj-devops-ci-sentinel[bot]",
+    "opendj-devops-kpi[bot]",
+    "opendj-devops-trunk-merge[bot]",
+    "opendj-gate-fast[bot]",
+    "opendj-governor[bot]",
+    "opendj-idd-core[bot]",
+    "opendj-idd-delegate[bot]",
+    "opendj-log-merge[bot]",
+    "opendj-main-failing-tests[bot]",
+    "opendj-main-merge[bot]",
+    "opendj-merge-gate[bot]",
+    "opendj-ratchet-gate[bot]",
+    "opendj-scout[bot]",
+    "renovate[bot]"
+  ],
+  "requiredStatuses": [
+    "ci gate",
+    "e2e verdict"
+  ]
+}

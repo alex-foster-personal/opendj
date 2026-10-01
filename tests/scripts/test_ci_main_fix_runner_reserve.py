@@ -6,8 +6,16 @@ referenced by ADR-0041). Two runners (nucbox-wsl, nucbox-wsl-2) are reserved
 host-side (nucbox ``~/jobs/runner-governor.sh``, label ``main-fix``, agentbox
 and nucbox stripped so the general pool never contends for them) and the
 ``test`` job's ``runs-on`` prefers ``vars.CI_RUNS_ON_MAIN_FIX`` for exactly
-two cases: a direct push to main, or a pull_request carrying the
-``ci:trunk-repair`` label. Every other PR is unaffected.
+one case: a pull_request carrying the ``ci:trunk-repair`` label. Every other
+event, a push to main included, takes the general chain.
+
+Mon 21 Sep 2026 (ADR-NEW-main-pushes-use-the-general-pytest-pool): the
+original guard also sent every push to main through the two reserved
+runners. Measured that day, main's own shards queued 40-60 minutes behind
+the previous merge's while the seven-runner pytest pool served PRs, so trunk
+could not prove itself and every PR inherited an unmeasured red (#3708
+section 2). The push clause was dropped; the reservation is now spent only
+on the repair PR, which is the run the reserve exists to protect.
 
 PR #2654 ("route pytest fast-lane shards off nucbox to agentbox pool")
 merged into main the same day, after this branch was cut, prepending its own
@@ -27,8 +35,10 @@ non-pull_request event (so a push event never touches
 github.event.pull_request).
 
 Regression lines:
-  - if the main-branch push guard is dropped then a trunk fix loses its
-    reserved pool and starves again exactly as it did today
+  - if the ci:trunk-repair guard is dropped then a trunk fix loses its
+    reserved pool and starves again exactly as it did on Mon 14 Sep 2026
+  - if a main-branch push guard is reintroduced then main's own CI is
+    funnelled through two runners again and trunk stops proving itself
   - if the guard does not short-circuit before github.event.pull_request then
     a push event (which has no pull_request context) can error instead of
     silently falling through
@@ -46,6 +56,8 @@ from pathlib import Path
 
 import yaml
 
+from tests.scripts.ci_runner_routes import LIGHT_RUNS_ON, SHARD_RUNS_ON, SHARD_TAIL
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
@@ -56,13 +68,18 @@ SHARD_JOB = "test"
 #: 34898282105): unset var / false cond both fall through to the rest of the
 #: chain; a set var wins under a true cond; the label-guard clause alone
 #: reads false with no error on a non-pull_request event.
-EXPECTED_RUNS_ON = (
-    "${{ fromJSON(((github.event_name == 'push' && github.ref == "
-    "'refs/heads/main') || (github.event_name == 'pull_request' && "
-    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair')))"
-    " && vars.CI_RUNS_ON_MAIN_FIX || vars.CI_RUNS_ON_PYTEST || "
-    "vars.CI_RUNS_ON_E2E || vars.CI_RUNS_ON_LINUX || "
-    '\'"ubuntu-latest"\') }}'
+#: Sat 26 Sep 2026 (ADR-NEW-trunk-ci-runs-on-agentbox-hosts-only): a guarded
+#: CI_RUNS_ON_TRUNK disjunct now sits between the reserve and #2654's chain. It is
+#: pinned, and evaluated, by tests/scripts/test_ci_trunk_agentbox_pool.py.
+#: Tue 29 Sep 2026 (ADR-NEW-trunk-queue-drafts-use-a-reserved-runner-pool): a
+#: guarded CI_RUNS_ON_MERGE_QUEUE disjunct follows the trunk clause. The composed
+#: string lives in tests/scripts/ci_runner_routes.py, evaluated by
+#: tests/scripts/test_ci_merge_queue_runner_pool.py.
+EXPECTED_RUNS_ON = SHARD_RUNS_ON
+MAIN_FIX_DISJUNCT = (
+    "(github.event_name == 'pull_request' && "
+    "contains(github.event.pull_request.labels.*.name, 'ci:trunk-repair'))"
+    " && vars.CI_RUNS_ON_MAIN_FIX"
 )
 
 #: Every other CI_RUNS_ON_LINUX-driven job in ci.yml. This set must NOT grow
@@ -72,7 +89,9 @@ EXPECTED_RUNS_ON = (
 # ahead of the LINUX pool, pinned by tests/scripts/test_ci_fast_tier_job.py.
 UNCHANGED_LINUX_JOBS = ["contracts", "frontend-build", "frontend", "quality"]
 
-UNCHANGED_RUNS_ON = '${{ fromJSON(vars.CI_RUNS_ON_LINUX || \'"ubuntu-latest"\') }}'
+# Tue 29 Sep 2026: they carry the Trunk-draft merge-queue route in front of the
+# light pool, and still never the main-fix reserve.
+UNCHANGED_RUNS_ON = LIGHT_RUNS_ON
 
 
 def _jobs() -> dict:
@@ -101,11 +120,19 @@ def _raw_runs_on(job_id: str) -> str:
     del job  # only used to assert the job exists
 
 
-def test_main_fix_job_prefers_the_reserved_pool_for_main_pushes_and_trunk_repair_prs() -> None:
-    """if the main-branch/trunk-repair guard is dropped then a fix to red main starves again"""
+def test_main_fix_job_prefers_the_reserved_pool_for_trunk_repair_prs_only() -> None:
+    """if the trunk-repair guard is dropped, or a main-push guard returns, the reserve is lost
+    or misused"""
     assert SHARD_JOB in _jobs(), f"expected a {SHARD_JOB!r} job in ci.yml"
     raw = _raw_runs_on(SHARD_JOB)
     assert raw == EXPECTED_RUNS_ON, f"test job runs-on changed shape, got: {raw}"
+    # The push-to-main clause may guard CI_RUNS_ON_TRUNK (nine agentbox runners),
+    # never the two-runner reserve: the reserve disjunct is the first one, whole.
+    assert raw.startswith("${{ fromJSON(" + MAIN_FIX_DISJUNCT + " || "), raw
+    assert "refs/heads/main" not in MAIN_FIX_DISJUNCT
+    assert raw.count("vars.CI_RUNS_ON_MAIN_FIX") == 1, (
+        "a push to main must never be routed to the main-fix reserve"
+    )
 
 
 def test_guard_checks_event_name_before_dereferencing_pull_request() -> None:
@@ -122,10 +149,9 @@ def test_guard_checks_event_name_before_dereferencing_pull_request() -> None:
 def test_unset_or_non_matching_falls_back_to_the_2654_chain() -> None:
     """if the fallback tail is dropped or reordered then an unset CI_RUNS_ON_MAIN_FIX loses #2654's nucbox-avoidance routing too"""
     raw = _raw_runs_on(SHARD_JOB)
-    assert raw.endswith(
-        "&& vars.CI_RUNS_ON_MAIN_FIX || vars.CI_RUNS_ON_PYTEST || "
-        "vars.CI_RUNS_ON_E2E || vars.CI_RUNS_ON_LINUX || '\"ubuntu-latest\"') }}"
-    ), f"fallback chain must degrade through PYTEST/E2E/LINUX to ubuntu-latest, got: {raw}"
+    assert raw.endswith(f"&& vars.CI_RUNS_ON_MERGE_QUEUE || {SHARD_TAIL}"), (
+        f"fallback chain must degrade through PYTEST/E2E/LINUX to ubuntu-latest, got: {raw}"
+    )
 
 
 def test_no_other_ci_runs_on_linux_job_changed() -> None:

@@ -28,6 +28,7 @@
  */
 
 import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
+import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
@@ -44,7 +45,15 @@ export type { SortDir, SortKey } from './browser-sort-ipc';
  * (shared contract points 1 + 4). Owned by the browser unit; lives here
  * (not types.ts, which is a frozen contract between the original build
  * units). */
-export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' | 'loudness_status' | 'loudness_reason'> {
+export interface BrowserRow extends Pick<
+	TrackRow,
+	| 'key_status'
+	| 'key_reason'
+	| 'bpm_status'
+	| 'bpm_reason'
+	| 'loudness_status'
+	| 'loudness_reason'
+> {
 	stable_id: string;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
@@ -66,11 +75,15 @@ export interface BrowserRow extends Pick<TrackRow, 'key_status' | 'key_reason' |
 	etag: string;
 	comments: string | null;
 	duration_ms: number | null;
-	/** Inline genre (playlist rows only, contract 4); null = not
-	 * provided inline -> fall back to lazily fetched rb_meta. */
+	/** Inline genre when the listing or playlist row carries it; null =
+	 * fall back to lazily fetched rb_meta. */
 	genre: string | null;
-	/** Disk truth from the bulk server-side stat pass (contract 1/4). */
-	file_exists: boolean;
+	/** Explains an empty genre cell (missing tags extra, no file tag, etc.). */
+	genre_reason?: string | null;
+	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
+	file_exists: boolean | null;
+	/** Typed disk-truth lane; pending rows are neither playable nor broken. */
+	file_availability: FileAvailabilityStatus;
 	/** Venue-rung quality, inline on every row from the SAME stat pass.
 	 * null only for synthesized rows that never came off the wire. */
 	quality: TrackQuality | null;
@@ -440,6 +453,12 @@ export function rowHasVocalLyrics(row: BrowserRow): boolean {
 	);
 }
 
+/** Available-offline filter: local audio present, not cloud-only or streaming. */
+export function rowIsLocallyAvailable(row: BrowserRow): boolean {
+	if (row.is_streaming === true || row.spotify_pending === true) return false;
+	return row.file_exists === true;
+}
+
 // ------------------------------------------------------- boot pane selection
 
 // Moved to ./boot-pane-selection (pure, runeless; the karaoke lyric column
@@ -469,11 +488,14 @@ export { getHealthAtBoot, getHealthFreshWithRetry, reconcileBootSnapshot } from 
  * fallback here, since that fallback is BrowserRow-specific).
  *
  * Streaming / Spotify-pending rows (`is_streaming`) stay visible under
- * hide-broken: they are intentional unmatched placeholders, not broken links. */
+ * hide-broken: they are intentional unmatched placeholders, not broken links.
+ * Pending rows (file_exists null, PERF-RB-02) stay visible: nothing showed them missing. */
 export function filterRows(rows: BrowserRow[], query: string, hideBroken: boolean): BrowserRow[] {
 	// FR-1: hide-broken applies before search so both compose.
 	const base = hideBroken
-		? rows.filter((r) => r.file_exists || r.is_streaming === true || r.spotify_pending === true)
+		? rows.filter(
+				(r) => r.file_exists !== false || r.is_streaming === true || r.spotify_pending === true
+			)
 		: rows;
 	if (query.trim() === '') return base;
 	return base.filter((r) =>
@@ -565,7 +587,12 @@ export function applyDecodedStripAcrossPanes(
 // math, a distinct concern from the reactive PaneStore contract above).
 // Re-exported here so BrowserPanel.svelte and the existing tests keep one
 // import site for the pane vocabulary.
-export { reorderPanesInPlace, resolveNewTabIndex } from './pane-tabs';
+export {
+	MAX_PANE_SLOTS,
+	canAddPaneSlot,
+	reorderPanesInPlace,
+	resolveNewTabIndex
+} from './pane-tabs';
 
 // ---------------------------------------------- playlist deck-context tints
 // Pin 2ac3a0: the tint derivations + the tree's CURRENT fold control moved to

@@ -3,6 +3,34 @@ import type { Page } from '@playwright/test';
 /** Destination RMS floor. Silence (gain 0 anywhere downstream) reads exactly 0. */
 export const DESTINATION_RMS_FLOOR = 1e-3;
 
+/**
+ * #4112: bounded wait for a tapped AudioContext to reach `running` before we
+ * call the sample dead.
+ *
+ * The app's own `play()` (`audio-engine.svelte.ts` `_resumeContext`) already
+ * awaits `ctx.resume()` under its own bounded IO timeout before this helper
+ * is ever called, so by the time `sampleDestinationRms` runs the context has
+ * normally been running for a while. This wait is NOT standing in for that
+ * resume - it exists for the gap AFTER a successful resume: a context that
+ * was running can drop back to `suspended` on a host-side event (device
+ * contention, backgrounding) between the caller's own checks and the sample,
+ * and the product's own watchdog (`audio-context-watchdog.ts`) recovers from
+ * exactly that with its own bounded backoff. Giving the tap the same kind of
+ * bounded patience - never an unbounded wait, never a `resume()` call of its
+ * own - lets a transient host hiccup clear before the sample runs, while a
+ * context that never reaches `running` still fails, loudly, on the deadline.
+ *
+ * The deadline covers the watchdog's WHOLE recovery window: every delay in
+ * `CONTEXT_RESUME_BACKOFF_MS` plus one `AUDIO_CONTEXT_IO_TIMEOUT_MS` per
+ * attempt (9,050 + 6 x 2,500 = 24,050 ms today). A shorter deadline fails a
+ * context the product is still legitimately recovering (#4117 review). It is
+ * a literal because Playwright cannot resolve the watchdog's `$lib` imports;
+ * tests/unit/destination-tap-deadline.test.mjs derives the window from the
+ * live product constants and fails if this ever falls below it.
+ */
+export const DESTINATION_CONTEXT_RUNNING_TIMEOUT_MS = 25_000;
+const DESTINATION_CONTEXT_RUNNING_POLL_MS = 25;
+
 type DestTapWindow = Window & { __destTaps?: AnalyserNode[] };
 
 export async function installDestinationTap(page: Page): Promise<void> {
@@ -53,18 +81,25 @@ export async function readDestinationContextStates(page: Page): Promise<string[]
 
 export async function sampleDestinationRms(
 	page: Page,
-	opts: { windowMs: number; intervalMs: number }
+	opts: { windowMs: number; intervalMs: number; runningTimeoutMs?: number }
 ): Promise<{ maxRms: number; meanRms: number; samples: number; contexts: number }> {
 	return page.evaluate(
-		async ({ windowMs, intervalMs }) => {
+		async ({ windowMs, intervalMs, runningTimeoutMs, pollMs }) => {
 			const taps = (window as DestTapWindow).__destTaps ?? [];
 			if (taps.length === 0) {
 				throw new Error('no node was ever connected to an AudioContext.destination');
 			}
-			const running = taps.filter((tap) => tap.context.state === 'running');
+			// Bounded wait, not an unbounded one and not a `resume()` call from
+			// here: see DESTINATION_CONTEXT_RUNNING_TIMEOUT_MS's doc comment.
+			const runningDeadline = performance.now() + runningTimeoutMs;
+			let running = taps.filter((tap) => tap.context.state === 'running');
+			while (running.length === 0 && performance.now() < runningDeadline) {
+				await new Promise((resolve) => setTimeout(resolve, pollMs));
+				running = taps.filter((tap) => tap.context.state === 'running');
+			}
 			if (running.length === 0) {
 				throw new Error(
-					`no running AudioContext; states=${taps.map((t) => t.context.state).join(',')}`
+					`AudioContext never reached running within ${runningTimeoutMs}ms; states=${taps.map((t) => t.context.state).join(',')}`
 				);
 			}
 			let maxRms = 0;
@@ -86,6 +121,11 @@ export async function sampleDestinationRms(
 			}
 			return { maxRms, meanRms: sumRms / samples, samples, contexts: running.length };
 		},
-		opts
+		{
+			windowMs: opts.windowMs,
+			intervalMs: opts.intervalMs,
+			runningTimeoutMs: opts.runningTimeoutMs ?? DESTINATION_CONTEXT_RUNNING_TIMEOUT_MS,
+			pollMs: DESTINATION_CONTEXT_RUNNING_POLL_MS
+		}
 	);
 }

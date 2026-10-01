@@ -19,7 +19,9 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -129,10 +131,18 @@ def test_partial_identity_is_refused_rather_than_half_rendered(tmp_path: Path) -
 def test_repo_checkout_describes_itself_from_live_git() -> None:
     info = resolve_build_info({}, REPO_ROOT)
     assert info.source == "repo"
-    assert info.built_at_kind == "head-commit"
+    assert info.built_at_kind == "engine-start"
     assert len(info.git_sha_full) == 40
     assert info.git_sha == info.git_sha_full[:8]
     assert info.lane_label is None
+
+
+@pytest.mark.requirement("INSTALL-28")
+def test_repo_built_at_is_engine_start_instant() -> None:
+    """[if] repo engine restarts [then] built_at_utc is the resolution instant."""
+    info = resolve_build_info({}, REPO_ROOT)
+    built = datetime.fromisoformat(info.built_at_utc.replace("Z", "+00:00"))
+    assert datetime.now(UTC) - built < timedelta(minutes=2)
 
 
 @pytest.mark.requirement("INSTALL-07")
@@ -163,6 +173,21 @@ def test_route_serves_the_payload_identity(tmp_path: Path) -> None:
         assert body["source"] == "payload"
         assert body["bundle_identifier"] == "com.opendj.desktop.lane-b"
         assert body["git_dirty"] is True
+
+
+def test_route_serves_this_process_own_pid_not_from_the_manifest() -> None:
+    """Sol P1/BLOCKING (PR #4034, discussion_r4137872466): a PERFMODE-14
+    capture cross-checks this field against its own local lsof result for
+    the engine's port, refusing when they disagree -- the one thing a local
+    SSH/TCP forward to a remote engine can never satisfy, since a forwarder
+    is never itself the engine. [if] the route serves a resolved identity
+    [then] its pid is THIS test process's own os.getpid(), because
+    add_build_info_route stamps it at construction regardless of source
+    [⛔️ if pid is None, from a manifest, or from a different process]."""
+    for client in _client({}):
+        response = client.get(BUILD_INFO_PATH)
+        assert response.status_code == 200
+        assert response.json()["pid"] == os.getpid()
 
 
 @pytest.mark.requirement("INSTALL-07")

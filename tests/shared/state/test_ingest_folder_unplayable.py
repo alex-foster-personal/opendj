@@ -76,6 +76,7 @@ def _track_count(state_path: Path) -> int:
         conn.close()
 
 
+# REQ: SETUP-16
 def test_folder_import_rejects_corrupt_wav_fixtures(tmp_path: Path) -> None:
     """[if] corrupt wav fixtures [then] no rows [else stop]."""
     root = tmp_path / "fixtures"

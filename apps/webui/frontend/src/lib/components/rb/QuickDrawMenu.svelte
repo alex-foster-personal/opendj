@@ -43,6 +43,10 @@
 		stableId?: string;
 	};
 	type Root = 'unload' | 'loop' | 'play';
+
+	// QuickDrawMenuLoader fetches this module on the first right-click and
+	// hands that click over, so the menu opens for it instead of for the next.
+	let { initialEvent = null }: { initialEvent?: MouseEvent | null } = $props();
 	type LoopLeaf = 'loop.start_8' | 'loop.exit';
 
 	let open = $state(false);
@@ -63,6 +67,10 @@
 		void fetchStemTiers()
 			.then((t) => {
 				stemTiers = t;
+				// The menu can already be open (the loader replays the click that
+				// fetched this module), and its ctx was built before the ladder
+				// landed, so rebuild it or that first open never shows the stems.
+				if (open && stemTargetId !== null) ctx = _contextItems(null, stemTargetId);
 			})
 			.catch((e) => {
 				// Fail visibly: a silently empty ladder looks like "no stems here".
@@ -218,6 +226,9 @@
 		e.stopPropagation();
 		x = e.clientX;
 		y = e.clientY;
+		// A deck-target menu has no row, so a late ladder or estimate for an
+		// earlier row must not relabel it.
+		stemTargetId = null;
 		ctx = _contextItems(t, null, e);
 		root = 'unload';
 		loopLeaf = null;
@@ -331,6 +342,7 @@
 			_close();
 		};
 		window.addEventListener('pointerdown', onPointerDown, true);
+		if (initialEvent !== null) onContextMenu(initialEvent);
 		return () => window.removeEventListener('pointerdown', onPointerDown, true);
 	});
 </script>

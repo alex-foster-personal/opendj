@@ -8,10 +8,19 @@ import {
 	type HealthHistoryEntry
 } from '../routes/admin/health-history';
 import { auth } from './auth.svelte';
-import { reportClientError, type ClientErrorContext } from './client-error-reporting';
+import { onClientErrorAck, reportClientError, type ClientErrorContext } from './client-error-reporting';
+import { classifyToastError, type ToastErrorClass } from './toast-error-classification';
+import {
+	formatToastPresentation,
+	type ToastPresentation
+} from './toast-presentation';
+import { oldestNonExitingIndex, TOAST_MAX_VISIBLE } from './toast-tray-policy';
 import { readShellBuild } from './rb/build-identity';
 import { mintErrorId } from './rb/error-id';
-import { recordPerfEvent } from './rb/perf-event-log';
+import { gatherToastCopyExtras, type ToastCopyDeckSnapshot } from './toast-copy-context';
+import { isPerformanceRoutePath } from './rb/performance-preset';
+import { lastPerfError } from './rb/silence-dropout';
+import { readPerfEvents, recordPerfEvent } from './rb/perf-event-log';
 import {
 	buildToastReport,
 	describeToastClient,
@@ -42,6 +51,14 @@ export type Toast = {
 	id: number;
 	logId: string;
 	message: string;
+	headline: string;
+	detail?: string | undefined;
+	solutionHint?: string | undefined;
+	expanded?: boolean;
+	clientEventId?: string | undefined;
+	serverEventId?: string | undefined;
+	errorId?: string | undefined;
+	sentryEventId?: string | undefined;
 	action?: ToastAction;
 	/**
 	 * `warn` is the middle rung, added for pin 9bf12adccb45: a BAR beat sync
@@ -54,6 +71,14 @@ export type Toast = {
 	createdAt: string;
 	count: number;
 	groupKey: string | undefined;
+	classification?: ToastErrorClass | undefined;
+	settingsSummary?: string | undefined;
+	hint?: string | undefined;
+	causeStack?: string | undefined;
+	/** Tray eviction animation in progress (UX-TOAST-03). */
+	exiting?: boolean;
+	/** Latest `pushToast` context keys for clipboard copy (issue #3980). */
+	reportContext?: ClientErrorContext;
 };
 
 // The numeric counter now lives in `rb/error-id.ts` and is shared with the deck
@@ -61,6 +86,15 @@ export type Toast = {
 // which is what stops `t-3` matching the third id of every session ever.
 const _toastSession = newToastSessionToken();
 export const toasts = $state<Toast[]>([]);
+
+onClientErrorAck((ack) => {
+	for (const toast of toasts) {
+		if (toast.clientEventId !== ack.client_event_id) continue;
+		toast.serverEventId = ack.server_event_id;
+		if (ack.error_id) toast.errorId = ack.error_id;
+		if (ack.sentry_event_id) toast.sentryEventId = ack.sentry_event_id;
+	}
+});
 // Retain occurrence ids only while their grouped toast remains actionable.
 const _toastLogIds = new Map<number, Set<string>>();
 
@@ -110,6 +144,37 @@ function _removeToast(id: number): void {
 	if (i >= 0) toasts.splice(i, 1);
 }
 
+function _nonExitingCount(): number {
+	return toasts.filter((t) => t.exiting !== true).length;
+}
+
+function _announceToastEviction(logId: string): void {
+	if (typeof window === 'undefined') return;
+	if (typeof window.dispatchEvent !== 'function') return;
+	if (typeof CustomEvent === 'undefined') return;
+	window.dispatchEvent(new CustomEvent<string>('toast:evicted', { detail: logId }));
+}
+
+function _enforceToastTrayCap(): void {
+	while (_nonExitingCount() > TOAST_MAX_VISIBLE) {
+		const index = oldestNonExitingIndex(toasts);
+		if (index < 0) break;
+		const victim = toasts[index];
+		victim.exiting = true;
+		_clearTimer(victim.id);
+		_announceToastEviction(victim.logId);
+	}
+}
+
+/** Remove a toast after its exit animation completes. */
+export function finalizeToastExit(logId: string): void {
+	const toast = _find(logId);
+	if (toast === undefined || toast.exiting !== true) return;
+	_clearTimer(toast.id);
+	_timers.delete(toast.id);
+	_removeToast(toast.id);
+}
+
 function _find(logId: string): Toast | undefined {
 	return toasts.find((t) => t.logId === logId || _toastLogIds.get(t.id)?.has(logId));
 }
@@ -138,7 +203,8 @@ export function pushToast(
 	cause?: unknown,
 	context: ClientErrorContext = {},
 	groupKey?: string,
-	action?: ToastAction
+	action?: ToastAction,
+	presentationOverride?: Partial<ToastPresentation>
 ): void {
 	if (!Number.isFinite(dismissMs) || dismissMs <= 0) {
 		throw new RangeError(`pushToast: dismissMs must be a positive finite number, got ${dismissMs}`);
@@ -162,9 +228,37 @@ export function pushToast(
 	// search for. Minting it after the logs, or again at copy time, would
 	// produce an id that looks like a correlation key and matches nothing.
 	const logId = formatToastId(_toastSession, id);
+	const diagnostic =
+		kind === 'info'
+			? undefined
+			: classifyToastError({
+					kind,
+					message,
+					cause,
+					context,
+					feature: presentationOverride?.feature
+				});
+	const presentation = {
+		...formatToastPresentation({
+			kind,
+			message,
+			cause,
+			feature: presentationOverride?.feature ?? diagnostic?.feature,
+			diagnostic
+		}),
+		...presentationOverride
+	};
+	const causeStack =
+		cause instanceof Error && cause.stack !== undefined && cause.stack !== ''
+			? cause.stack.split('\n').slice(0, 6).join('\n')
+			: undefined;
+	const perfMessage =
+		diagnostic !== undefined && diagnostic.classification !== 'unknown'
+			? `${message} | classification=${diagnostic.classification}`
+			: message;
 	const row = recordPerfEvent(
 		`toast-${kind}`,
-		message,
+		perfMessage,
 		null,
 		// recordPerfEvent's severity scale is already info/warn/error, so the
 		// toast kind maps straight onto it rather than being flattened.
@@ -175,7 +269,26 @@ export function pushToast(
 	// has its own log row; the displayed message/id refer to the latest one.
 	const existing = groupKey === undefined ? undefined :
 		toasts.find((toast) => toast.groupKey === groupKey && toast.kind === kind);
-	const toast = existing ?? { id, logId, message, kind, createdAt: row.t, count: 0, groupKey };
+	const toast =
+		existing ??
+		({
+			id,
+			logId,
+			message,
+			headline: presentation.headline,
+			detail: presentation.detail,
+			solutionHint: presentation.solutionHint,
+			expanded: false,
+			kind,
+			createdAt: row.t,
+			count: 0,
+			groupKey,
+			classification: diagnostic?.classification,
+			settingsSummary: diagnostic?.settingsSummary,
+			hint: diagnostic?.hint,
+			causeStack,
+			exiting: false
+		} satisfies Toast);
 	if (groupKey !== undefined) {
 		const logIds = _toastLogIds.get(toast.id) ?? new Set<string>();
 		logIds.add(logId);
@@ -184,11 +297,23 @@ export function pushToast(
 	Object.assign(toast, {
 		logId,
 		message,
+		headline: presentation.headline,
+		detail: presentation.detail,
+		solutionHint: presentation.solutionHint,
 		createdAt: row.t,
 		count: toast.count + 1,
-		action
+		action,
+		classification: diagnostic?.classification ?? toast.classification,
+		settingsSummary: diagnostic?.settingsSummary ?? toast.settingsSummary,
+		hint: diagnostic?.hint ?? toast.hint,
+		causeStack: causeStack ?? toast.causeStack,
+		exiting: false
 	});
+	if (Object.keys(context).length > 0) {
+		toast.reportContext = { ...context };
+	}
 	if (existing === undefined) toasts.push(toast);
+	_enforceToastTrayCap();
 	// Warm the host lookup now so the eventual click can write the clipboard
 	// synchronously inside its own gesture. See _machineName.
 	void _machineName();
@@ -201,11 +326,13 @@ export function pushToast(
 		// reliable home for the id on its own. The ring row above is written
 		// unconditionally, which is why that is the surface the id is promised
 		// against and this one is the bonus.
-		reportClientError(cause ?? new Error(message), {
+		const clientEventId = reportClientError(cause ?? new Error(message), {
 			source: 'toast',
 			toast_id: logId,
+			...(diagnostic !== undefined ? { classification: diagnostic.classification } : {}),
 			...context
 		});
+		if (clientEventId !== undefined) toast.clientEventId = clientEventId;
 	}
 	if (existing !== undefined && _timers.get(toast.id)?.handle === null) {
 		_timers.set(toast.id, { handle: null, dismissMs });
@@ -254,6 +381,16 @@ export function releaseToast(logId: string): boolean {
 	const timer = _timers.get(toast.id);
 	_armTimer(toast.id, timer?.dismissMs ?? TOAST_DEFAULT_MS);
 	return true;
+}
+
+/** Toggle expanded detail for one toast. Returns the new expanded state. */
+export function toggleToastExpanded(logId: string): boolean {
+	const toast = _find(logId);
+	if (toast === undefined) {
+		throw new Error(`toggleToastExpanded: no toast with id ${logId} is on screen`);
+	}
+	toast.expanded = toast.expanded !== true;
+	return toast.expanded === true;
 }
 
 /** Test/agent seam: is a dismissal timer currently armed for this toast? */
@@ -338,12 +475,54 @@ export async function copyToast(logId: string): Promise<string> {
 	// Query stripped: it can carry ids a report has no business republishing,
 	// and the path is what identifies the surface.
 	const page = href === '' ? UNKNOWN : href.split('?')[0].split('#')[0];
+	const pathname =
+		typeof window === 'undefined' ? '' : (window.location?.pathname ?? '');
+	const occurrenceSuffix =
+		toast.count > 1 ? `\nOccurrences: ${toast.count}` : '';
+	let deckSnapshots: readonly ToastCopyDeckSnapshot[] | undefined;
+	if (isPerformanceRoutePath(pathname)) {
+		try {
+			const engine = await import('./rb/audio-engine.svelte');
+			deckSnapshots = engine.DECK_IDS.map((id) => {
+				const deck = engine.getDeckState(id);
+				return {
+					id,
+					stable_id: deck.stable_id,
+					bpm: deck.bpm,
+					beat_sync_enabled: deck.beat_sync_enabled,
+					sync_mode: deck.sync_mode,
+					is_master: deck.is_master
+				};
+			});
+		} catch {
+			deckSnapshots = undefined;
+		}
+	}
+	const extras = gatherToastCopyExtras({
+		pathname,
+		reportContext: toast.reportContext,
+		readDecks: deckSnapshots === undefined ? undefined : () => deckSnapshots,
+		readLastError: isPerformanceRoutePath(pathname)
+			? () => lastPerfError(readPerfEvents())
+			: undefined
+	});
 	const text = buildToastReport({
 		id: toast.logId,
 		kind: toast.kind,
-		message: toast.count > 1 ? `${toast.message}\nOccurrences: ${toast.count}` : toast.message,
+		headline: toast.headline,
+		message: `${toast.message}${occurrenceSuffix}`,
+		detail: toast.detail,
+		classification: toast.classification,
+		settingsSummary: toast.settingsSummary,
+		hint: toast.hint,
+		stack: toast.causeStack,
+		clientEventId: toast.clientEventId,
+		serverEventId: toast.serverEventId,
+		errorId: toast.errorId,
+		sentryEventId: toast.sentryEventId,
 		createdAt: toast.createdAt,
-		env: await _toastEnvironment(page)
+		env: await _toastEnvironment(page),
+		extras: Object.keys(extras).length > 0 ? extras : undefined
 	});
 	await writeToastReport(
 		text,

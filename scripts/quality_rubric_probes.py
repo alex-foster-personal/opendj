@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from scripts.sparse_worktree import require_materialized_under
+
 # ----- markdown link extraction ------------------------------------------------
 
 _MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -551,4 +553,7 @@ def run_probe(probe_name: str, surface_root: Path, repo_root: Path) -> list[dict
     probe = PROBE_REGISTRY.get(probe_name)
     if probe is None:
         raise KeyError(f"unknown probe: {probe_name}")
+    # Every probe reads the surface from disk (is_dir, iterdir, read_text), so a sparse
+    # worktree (OPS-45) that keeps part of it off disk would measure less than CI does.
+    require_materialized_under(repo_root, surface_root, purpose=f"rubric probe {probe_name}")
     return probe(surface_root, repo_root)

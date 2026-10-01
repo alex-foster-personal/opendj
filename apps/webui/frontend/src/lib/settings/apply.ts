@@ -2,6 +2,7 @@
  * Allowlisted setting mutators. Used by the overlay controls and AI apply.
  * Unknown keys throw (fail-loud).
  */
+import { parseWaveformDesign } from '$lib/rb/waveform-design';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -14,9 +15,15 @@ import {
 	setDeckLayoutAnimate,
 	setDeckLayoutDurationMs,
 	setDeckLayoutMode,
+	setDeckRightMirror,
+	setPlaylistTreeView,
+	setCrossfadeCurve,
 	setHideBrokenLinks,
 	setHideTodoSettings,
+	setHorizontalWheelKnob,
 	setJogRadialWaveform,
+	setShowStems,
+	setWaveformDesign,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -25,7 +32,9 @@ import {
 	setLyricsLoadStrategy,
 	setLyricsWaveformOverlay,
 	setNextOnlyFilter,
+	setAvailableOfflineFilter,
 	setAppPosture,
+	setGigHelper,
 	setPerfTier,
 	setRemixesFilter,
 	setTechnicallyWorkingAnimate,
@@ -38,10 +47,16 @@ import {
 	type LibraryDensity,
 	type LyricsLoadStrategy,
 	type AppPosturePref,
+	type GigHelperPref,
 	type PerfTierPref,
 	type PreviewBeatSync,
 	type UiTheme
 } from '$lib/rb/prefs.svelte';
+import {
+	setStoredEngineChoice,
+	storedEngineChoice,
+	type EngineChoice
+} from '$lib/audio-engine/rust-mode.svelte';
 import {
 	setWheelSensitivity,
 	wheelSensitivity,
@@ -60,6 +75,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'next_only_filter',
 	'remixes_filter',
 	'vocals_filter',
+	'available_offline_filter',
 	'lyrics_global',
 	'lyrics_library_col',
 	'lyrics_hover_scrub',
@@ -69,9 +85,13 @@ export const ALLOWED_SETTING_KEYS = [
 	'hide_todo_settings',
 	'technically_working_animate',
 	'jog_radial_waveform',
+	'show_stems',
+	'waveform_design',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
+	'deck_right_mirror',
+	'playlist_tree_view',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
 	'auto_sync.open_dj',
@@ -79,8 +99,12 @@ export const ALLOWED_SETTING_KEYS = [
 	'confirm.dblclick_load_play',
 	'wheel_sensitivity.mouse',
 	'wheel_sensitivity.trackpad',
+	'crossfade_curve',
+	'horizontal_wheel_knob',
 	'perf_tier',
-	'app_posture'
+	'app_posture',
+	'gig_helper',
+	'audio_engine'
 ] as const;
 
 export type AllowedSettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
@@ -113,6 +137,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.remixes_filter;
 		case 'vocals_filter':
 			return uiPrefs.vocals_filter;
+		case 'available_offline_filter':
+			return uiPrefs.available_offline_filter;
 		case 'lyrics_global':
 			return uiPrefs.lyrics_global;
 		case 'lyrics_library_col':
@@ -131,12 +157,20 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.technically_working_animate;
 		case 'jog_radial_waveform':
 			return uiPrefs.jog_radial_waveform;
+		case 'show_stems':
+			return uiPrefs.show_stems;
+		case 'waveform_design':
+			return uiPrefs.waveform_design;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
 			return uiPrefs.deck_layout_animate;
 		case 'deck_layout_duration_ms':
 			return String(uiPrefs.deck_layout_duration_ms);
+		case 'deck_right_mirror':
+			return uiPrefs.deck_right_mirror;
+		case 'playlist_tree_view':
+			return uiPrefs.playlist_tree_view;
 		case 'auto_sync.rekordbox':
 			return uiPrefs.auto_sync.rekordbox;
 		case 'auto_sync.djay':
@@ -151,12 +185,20 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(wheelSensitivity().mouse);
 		case 'wheel_sensitivity.trackpad':
 			return String(wheelSensitivity().trackpad);
+		case 'crossfade_curve':
+			return uiPrefs.crossfade_curve;
+		case 'horizontal_wheel_knob':
+			return uiPrefs.horizontal_wheel_knob;
 		case 'preview_beat_sync':
 			return uiPrefs.preview_beat_sync;
 		case 'perf_tier':
 			return uiPrefs.perf_tier;
 		case 'app_posture':
 			return uiPrefs.app_posture;
+		case 'gig_helper':
+			return uiPrefs.gig_helper;
+		case 'audio_engine':
+			return storedEngineChoice();
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);
@@ -207,6 +249,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'vocals_filter':
 			setVocalsFilter(_asBool(value, key));
 			return;
+		case 'available_offline_filter':
+			setAvailableOfflineFilter(_asBool(value, key));
+			return;
 		case 'lyrics_global':
 			setLyricsGlobal(_asBool(value, key));
 			return;
@@ -238,6 +283,17 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		case 'jog_radial_waveform':
 			setJogRadialWaveform(_asBool(value, key));
 			return;
+		case 'show_stems':
+			setShowStems(_asBool(value, key));
+			return;
+		case 'waveform_design': {
+			const design = parseWaveformDesign(value);
+			if (design === undefined) {
+				throw new Error(`waveform_design must be tri-band|mono|line, got ${String(value)}`);
+			}
+			setWaveformDesign(design);
+			return;
+		}
 		case 'deck_layout': {
 			if (value !== 'more' && value !== 'less') {
 				throw new Error(`deck_layout must be more|less, got ${String(value)}`);
@@ -256,6 +312,16 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				);
 			}
 			setDeckLayoutDurationMs(n as DeckLayoutDurationMs);
+			return;
+		}
+		case 'deck_right_mirror':
+			setDeckRightMirror(_asBool(value, key));
+			return;
+		case 'playlist_tree_view': {
+			if (value !== 'tree' && value !== 'column') {
+				throw new Error(`playlist_tree_view must be tree|column, got ${String(value)}`);
+			}
+			setPlaylistTreeView(value);
 			return;
 		}
 		case 'auto_sync.rekordbox':
@@ -278,6 +344,20 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			// control's string into a number, or refuse loudly.
 			const kind = key.slice('wheel_sensitivity.'.length) as WheelInputKind;
 			setWheelSensitivity(kind, _asFactor(value, key));
+			return;
+		}
+		case 'crossfade_curve': {
+			if (value !== 'magic') {
+				throw new Error(`crossfade_curve must be magic until curves are built, got ${String(value)}`);
+			}
+			setCrossfadeCurve('magic');
+			return;
+		}
+		case 'horizontal_wheel_knob': {
+			if (value !== 'filter' && value !== 'color') {
+				throw new Error(`horizontal_wheel_knob must be filter|color, got ${String(value)}`);
+			}
+			setHorizontalWheelKnob(value as 'filter' | 'color');
 			return;
 		}
 		case 'preview_beat_sync': {
@@ -306,6 +386,17 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			setAppPosture(value as AppPosturePref);
 			return;
 		}
+		case 'gig_helper': {
+			if (value !== 'unset' && value !== 'off' && value !== 'on') {
+				throw new Error(`gig_helper must be unset|off|on, got ${String(value)}`);
+			}
+			setGigHelper(value as GigHelperPref);
+			return;
+		}
+		case 'audio_engine':
+			// Validates, and throws on anything but webaudio|rust.
+			setStoredEngineChoice(value as EngineChoice);
+			return;
 		default: {
 			const _exhaustive: never = key;
 			throw new Error(`Unhandled setting key: ${_exhaustive}`);

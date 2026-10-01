@@ -89,6 +89,7 @@ async function bottomBarDescendantsHiddenByNav(page: Page): Promise<HiddenDescen
 }
 
 for (const viewport of VIEWPORTS) {
+	// REQ: PERF-UI-04
 	test(`performance app-nav: bottom-bar content stays visible under the nav at ${viewport.width}x${viewport.height}`, async ({
 		page
 	}) => {

@@ -47,6 +47,7 @@ Acceptance tests:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -101,10 +102,12 @@ class BuildInfoUnavailable(RuntimeError):
 class BuildInfoOut(BaseModel):
     """The identity contract the UI and any agent read.
 
-    ``built_at_kind`` exists because the two sources measure different
-    moments: a payload knows when it was packaged, a checkout only knows when
-    HEAD was committed. Labelling which one is on screen costs one field and
-    removes a whole class of "why does this say yesterday" confusion.
+    ``built_at_kind`` exists because the sources measure different moments: a
+    payload knows when it was packaged; a repo checkout stamps the running
+    engine's start instant at identity resolution (``engine-start``). The
+    legacy ``head-commit`` literal remains on the wire for older readers only.
+    Labelling which moment is on screen removes "why does this say yesterday"
+    confusion.
     """
 
     source: Literal["payload", "repo"]
@@ -114,12 +117,27 @@ class BuildInfoOut(BaseModel):
     git_branch: str
     git_dirty: bool
     built_at_utc: str
-    built_at_kind: Literal["payload-build", "head-commit"]
+    built_at_kind: Literal["payload-build", "head-commit", "engine-start"]
     lane_label: str | None = None
     product_name: str | None = None
     bundle_identifier: str | None = None
     app_version: str | None = None
     manifest_path: str | None = None
+    #: This SERVING process's own os.getpid(), stamped at route construction
+    #: (never from the manifest -- a payload build has no pid at build time).
+    #: Sol P1/BLOCKING (PR #4034, discussion_r4137872466): a PERFMODE-14
+    #: capture reaching --engine through a local SSH/TCP forward would pass
+    #: every build-identity check above (they only read HTTP content, which
+    #: a tunnel forwards correctly) while `lsof` resolves the FORWARDER's
+    #: local pid, not the engine's -- silently sampling the wrong process
+    #: family. A capture harness cross-checks this field against its own
+    #: lsof result for the port and refuses when they disagree, which a
+    #: tunnel can never satisfy: this field is always the answering
+    #: process's real pid, and a forwarder is never itself the engine.
+    #: Optional, defaulting to None, so the several existing call sites that
+    #: construct BuildInfoOut directly (tests, update-channel fixtures) do
+    #: not need to supply a meaningless pid; the live route always sets it.
+    pid: int | None = None
 
 
 @dataclass(frozen=True)
@@ -269,10 +287,8 @@ def _from_repo(repo_root: Path) -> BuildInfoOut:
         git_sha_full=sha_full,
         git_branch=_git(repo_root, "rev-parse", "--abbrev-ref", "HEAD"),
         git_dirty=_git(repo_root, "status", "--porcelain") != "",
-        built_at_utc=head_time_as_utc(
-            _git(repo_root, "log", "-1", f"--format={HEAD_TIME_FORMAT}")
-        ),
-        built_at_kind="head-commit",
+        built_at_utc=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        built_at_kind="engine-start",
         app_version=_tauri_app_version(repo_root),
     )
 
@@ -307,6 +323,12 @@ def add_build_info_route(app: FastAPI, *, environ: dict[str, str], repo_root: Pa
         failure: str | None = None
     except BuildInfoUnavailable as exc:
         resolved, failure = None, str(exc)
+
+    if resolved is not None:
+        # This process's own pid, stamped here rather than in a resolver:
+        # it is a runtime fact of whichever process serves the route, not a
+        # build fact either source describes (see BuildInfoOut.pid).
+        resolved = resolved.model_copy(update={"pid": os.getpid()})
 
     setattr(
         app.state,

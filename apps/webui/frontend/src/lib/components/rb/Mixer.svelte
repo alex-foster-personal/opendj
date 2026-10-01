@@ -12,6 +12,7 @@
 	 * knob/fader positions inseparable.
 	 */
 	import { onMount } from 'svelte';
+	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
@@ -24,6 +25,7 @@
 	import { setDeckLayoutMode, uiPrefs } from '$lib/rb/prefs.svelte';
 	import AssignMatrix from './mixer/AssignMatrix.svelte';
 	import ChannelStrip from './mixer/ChannelStrip.svelte';
+	import CrossfadeCurveSelect from './mixer/CrossfadeCurveSelect.svelte';
 	import Crossfader from './mixer/Crossfader.svelte';
 	import HeadphoneCluster from './mixer/HeadphoneCluster.svelte';
 	import CueAlignModal from './mixer/CueAlignModal.svelte';
@@ -147,6 +149,8 @@
 	}
 
 	onMount(() => {
+		// The Rust engine has no Web Audio devices to list (NAE-15).
+		if (rustCommandUnsupported('headphone_outputs_refresh')) return;
 		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
 	});
 </script>
@@ -235,6 +239,7 @@
 		</div>
 		<div class="xfade-row">
 			<AssignMatrix bus="A" {assigns} onassign={handleAssign} />
+			<CrossfadeCurveSelect />
 			<Crossfader value={mixerState.crossfader} onchange={handleCrossfader} />
 			<AssignMatrix bus="B" {assigns} onassign={handleAssign} />
 		</div>

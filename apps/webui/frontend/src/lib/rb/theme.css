@@ -41,6 +41,8 @@
 	--rb-topbar-h: 28px;         /* section 1 */
 	--rb-waverow-h: 43px;        /* section 2, per deck row - 2/3 of the old 64px so
 	                                the library gets the 84px back (4 rows x 21px) */
+	--rb-stemwave-h: 12px;       /* DECKUX-19: one stem mini-waveform row */
+	--rb-stemwave-stack-extra: 0px;
 	--rb-deck-art: 75px;         /* deck header artwork thumb */
 	--rb-strip-h: 28px;          /* deck overview strip (tightened for 75px art) */
 	/* Static A-H pad letter strip on each deck (decorative only today).
@@ -182,6 +184,41 @@ html[data-theme='light'] .perf-root {
 		transform: scaleX(1.15);
 	}
 }
+.perf-root .rb-fader-ghost-thumb {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	height: 12px;
+	border: 1px dashed rgba(255, 255, 255, 0.35);
+	border-radius: 2px;
+	pointer-events: none;
+	z-index: 1;
+	opacity: 0.65;
+}
+.perf-root .rb-fader .fader-chevron {
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%);
+	color: var(--rb-text-dim);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 80ms ease-out;
+	z-index: 3;
+}
+.perf-root .rb-fader:hover .fader-chevron,
+.perf-root .rb-fader:focus-within .fader-chevron {
+	opacity: 0.85;
+}
+.perf-root .rb-fader .fader-chevron-up {
+	top: 2px;
+}
+.perf-root .rb-fader .fader-chevron-down {
+	bottom: 2px;
+}
+.perf-root .rb-fader.rb-fader-rejoin .rb-fader-thumb::after {
+	background: #ff5a5a;
+	box-shadow: 0 0 6px rgba(255, 70, 70, 0.65);
+}
 
 /* -------- lit-button: dim chrome by default, blue glow when .lit -------- */
 .perf-root .rb-lit-button {
@@ -210,6 +247,11 @@ html[data-theme='light'] .perf-root {
 .perf-root .rb-inert {
 	cursor: default;
 	opacity: 0.75; /* authentic look, inert behaviour */
+}
+/* Rust engine mode: a control that engine cannot play yet (NAE-15). */
+.perf-root .rust-inert {
+	cursor: not-allowed;
+	opacity: 0.4;
 }
 
 /* -------- star rating: outline stars per SCREENSHOT-SPEC 6 -------- */

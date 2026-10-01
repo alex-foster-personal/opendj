@@ -16,22 +16,36 @@ Single-line intent:
   - if a v5-shaped state.db boots through create_app then /api/v1/health
     serves 200 with the v8 schema applied [broken if migration only runs on
     a write path, per the #762 incident]
+  - if concurrent stale-db boots race on the same state.db then all reach the
+    current schema without raw SQLite migration errors [broken if only one
+    of N contenders survives, per issue #791]
+  - if a peer holds the state.db file lock past the request-time busy wait
+    then every boot-path open still waits it out and boots [broken if a boot
+    pre-check gives up at 5 s, per the Sat 26 Sep 2026 trunk red]
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from apps.shared.state import db as state_db
 from apps.shared.state import schema as state_schema
+from apps.webui.server import sqlite_backend
+from tests.shared.state.peer_lock import current_wal_state_db, hold_exclusive_lock
 from tests.test_schema_time_travel import _verified_v5_sql
+from tests.webui.pre_v7_state import build_pre_v7_state_db
 
 pytestmark = pytest.mark.requirement("GUARD-09")
 
@@ -242,3 +256,238 @@ def test_boot_aborts_end_to_end_when_migration_cannot_write(
         "a real write failure during migration must not commit; the db "
         "should still be sitting at its pre-failure version"
     )
+
+
+_CONCURRENT_BOOT_WORKER = """
+import json
+import sys
+import time
+from pathlib import Path
+
+gate = Path(sys.argv[1])
+db_path = Path(sys.argv[2])
+
+while not gate.exists():
+    time.sleep(0.005)
+
+from apps.webui.server.sqlite_backend import SqliteBackend, make_backend
+
+backend = make_backend(db_path)
+assert isinstance(backend, SqliteBackend), (
+    f"expected SqliteBackend, got {type(backend).__name__}"
+)
+print(json.dumps({"ok": True}))
+"""
+
+
+def _run_concurrent_make_backend(
+    db_path: Path,
+    *,
+    worker_count: int = 3,
+    timeout_s: float = 180,
+) -> list[subprocess.CompletedProcess[str]]:
+    gate = db_path.parent / "start-gate"
+    if gate.exists():
+        gate.unlink()
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO_ROOT)
+
+    processes: list[subprocess.Popen[str]] = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CONCURRENT_BOOT_WORKER, str(gate), str(db_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            cwd=str(REPO_ROOT),
+        )
+        for _ in range(worker_count)
+    ]
+    try:
+        time.sleep(0.2)
+        gate.touch()
+        results: list[subprocess.CompletedProcess[str]] = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=timeout_s)
+            results.append(
+                subprocess.CompletedProcess(
+                    process.args,
+                    process.returncode,
+                    stdout,
+                    stderr,
+                )
+            )
+        return results
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+        if gate.exists():
+            gate.unlink()
+
+
+def _assert_concurrent_boot_results(
+    results: list[subprocess.CompletedProcess[str]],
+    *,
+    label: str,
+) -> None:
+    for index, result in enumerate(results):
+        assert result.returncode == 0, (
+            f"{label} worker {index} failed (exit {result.returncode})\n"
+            f"stdout: {result.stdout[-2000:]}\nstderr: {result.stderr[-4000:]}"
+        )
+        combined = f"{result.stdout}\n{result.stderr}".lower()
+        assert "duplicate column name" not in combined, (
+            f"{label} worker {index} hit duplicate DDL\nstderr: {result.stderr[-4000:]}"
+        )
+        assert "database is locked" not in combined, (
+            f"{label} worker {index} hit database is locked\nstderr: {result.stderr[-4000:]}"
+        )
+
+
+def _inspect_migrated_db(db_path: Path, *, expected_track_count: int) -> None:
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        version = conn.execute("SELECT MAX(version) FROM schema_meta").fetchone()[0]
+        version_rows = conn.execute("SELECT COUNT(*) FROM schema_meta").fetchone()[0]
+        track_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        conn.close()
+    assert version == state_schema.SCHEMA_VERSION
+    assert version_rows == state_schema.SCHEMA_VERSION
+    assert track_count == expected_track_count
+    assert integrity == "ok"
+
+
+def test_concurrent_make_backend_migrates_stale_db_without_sqlite_race(
+    tmp_path: Path,
+) -> None:
+    """[if] concurrent stale-db boots race on the same state.db [then] all
+    reach the current schema without raw SQLite migration errors, [else stop].
+    """
+    source = tmp_path / "source-v6.db"
+    build_pre_v7_state_db(source)
+
+    pre_conn = sqlite3.connect(str(source), isolation_level=None)
+    try:
+        # Every state.db the app has ever written is WAL: ``open_rw`` pins
+        # ``journal_mode = WAL`` and SQLite persists that in the file header,
+        # so a real stale db arrives at boot already in WAL. The raw fixture
+        # is in rollback mode, and switching to WAL needs an EXCLUSIVE lock
+        # that SQLite hands out without consulting the busy handler; N
+        # processes doing that first-ever switch at once is a different
+        # race (measured 10 of 64 boots on this fixture, none of them inside
+        # apply_migrations) than the one this test pins. See
+        # .planning/debt/3527.md.
+        journal_mode = pre_conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        assert journal_mode == "wal"
+        pre_version = pre_conn.execute(
+            "SELECT MAX(version) FROM schema_meta"
+        ).fetchone()[0]
+        expected_track_count = pre_conn.execute(
+            "SELECT COUNT(*) FROM tracks"
+        ).fetchone()[0]
+    finally:
+        pre_conn.close()
+    assert pre_version == 6
+    assert expected_track_count == 1
+
+    shared_db = tmp_path / "shared" / "state.db"
+    shared_db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, shared_db)
+
+    stale_results = _run_concurrent_make_backend(shared_db)
+    _assert_concurrent_boot_results(stale_results, label="stale-db")
+    _inspect_migrated_db(shared_db, expected_track_count=expected_track_count)
+
+    current_results = _run_concurrent_make_backend(shared_db)
+    _assert_concurrent_boot_results(current_results, label="current-db")
+
+
+def test_current_db_boot_takes_no_write_lock_behind_a_long_writer(
+    tmp_path: Path,
+) -> None:
+    """[if] a db already at SCHEMA_VERSION is opened while another connection
+    holds a long write transaction [then] apply_migrations returns without
+    waiting for or failing on the writer, [else stop].
+
+    Codex P2 on PR #3527: an unconditional ``BEGIN IMMEDIATE`` made every
+    boot against a CURRENT db contend for the writer lock, so a writer held
+    longer than ``busy_timeout`` turned ordinary boots into a raw
+    ``database is locked``. The contender below sets ``busy_timeout = 0`` so
+    any write-lock attempt fails instantly instead of hiding behind the
+    five-second wait.
+    """
+    db_path = tmp_path / "state.db"
+    build_pre_v7_state_db(db_path)
+    state_db.open_rw(db_path).close()
+
+    holder = state_db.open_rw(db_path)
+    contender = sqlite3.connect(str(db_path), isolation_level=None)
+    try:
+        holder.execute("BEGIN IMMEDIATE")
+        contender.execute("PRAGMA busy_timeout = 0")
+        assert state_schema.apply_migrations(contender) == state_schema.SCHEMA_VERSION
+        assert not contender.in_transaction
+    finally:
+        contender.close()
+        holder.execute("ROLLBACK")
+        holder.close()
+
+
+def _timed_under_peer_lock(
+    db_path: Path, hold_s: float, call: Callable[[Path], object],
+) -> float:
+    holder = hold_exclusive_lock(db_path, hold_s)
+    try:
+        started = time.monotonic()
+        call(db_path)
+        return time.monotonic() - started
+    finally:
+        holder.communicate(timeout=hold_s + 30)
+
+
+def test_every_boot_open_waits_out_a_peer_lock_past_the_request_wait(
+    tmp_path: Path,
+) -> None:
+    """[if] a peer holds the state.db file lock past the request-time busy
+    wait while a boot opens the db [then] each boot-path open waits it out
+    and the boot succeeds, [else stop].
+
+    Before the fix each of these opens inherited Python's implicit 5 s and
+    raised ``database is locked``. Every site runs against its own db and its
+    own holder, concurrently, so the whole test costs one hold.
+    """
+    hold_s = state_db.DEFAULT_BUSY_TIMEOUT_S + 1.5
+    assert hold_s < state_db.BOOT_BUSY_TIMEOUT_S, (
+        "the hold must sit between the two bounds to tell them apart"
+    )
+    sites: dict[str, Callable[[Path], object]] = {
+        "make_backend": sqlite_backend.make_backend,
+        "missing-schema-meta pre-check": (
+            sqlite_backend._tracks_table_missing_schema_meta
+        ),
+        "migrate-before-serving open_rw": sqlite_backend._migrate_before_serving,
+        "SqliteBackend stale-schema pre-check": sqlite_backend.SqliteBackend,
+    }
+    dbs = {
+        name: current_wal_state_db(tmp_path / f"site-{index}" / "state.db")
+        for index, name in enumerate(sites)
+    }
+    with ThreadPoolExecutor(max_workers=len(sites)) as pool:
+        futures = {
+            name: pool.submit(_timed_under_peer_lock, dbs[name], hold_s, call)
+            for name, call in sites.items()
+        }
+        waited = {name: future.result() for name, future in futures.items()}
+
+    for name, elapsed in waited.items():
+        # Presence, not absence: the open really was blocked past the old
+        # bound, so a pass here cannot come from a holder that never held.
+        assert elapsed >= state_db.DEFAULT_BUSY_TIMEOUT_S, (
+            f"{name} returned after {elapsed:.2f}s; the peer lock was not in "
+            "force, so this run measured nothing"
+        )

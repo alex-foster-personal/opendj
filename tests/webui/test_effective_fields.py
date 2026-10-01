@@ -185,8 +185,18 @@ def test_the_track_read_model_serves_the_own_key_and_its_status(state) -> None:
     assert track.provenance["key_change_count"].value == 2
 
 
-def test_the_track_read_model_is_unchanged_while_every_lane_is_rbx(state) -> None:
+def test_the_track_read_model_is_unchanged_while_every_lane_is_rbx(
+    state, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Positive control: the override must be conditional, not unconditional."""
+    from apps.webui.server.rb_vendor_pkg import track_rows
+
+    class _Meta:
+        vendor_id = "v1"
+
+    monkeypatch.setattr(
+        track_rows, "bulk_rb_meta", lambda stable_ids: {sid: _Meta() for sid in stable_ids}
+    )
     path, _conn = state
     backend = sb.SqliteBackend(path)
     track = backend.get_track("t1")
@@ -359,13 +369,23 @@ def test_own_lane_reads_missing_even_when_the_projection_table_does_not_exist(
     assert track.provenance["key"].status == "missing"
 
 
-def test_all_rbx_skip_returns_exactly_what_effective_fields_would(state) -> None:
+def test_all_rbx_skip_returns_exactly_what_effective_fields_would(
+    state, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The listing hot path skips the projection query under all-rbx.
 
     That skip is only safe if it is a no-op, so the claim is measured
     rather than argued: the same connection, both paths, same answer.
     """
     from apps.webui.server import sqlite_backend as backend_mod
+    from apps.webui.server.rb_vendor_pkg import track_rows
+
+    class _Meta:
+        vendor_id = "v1"
+
+    monkeypatch.setattr(
+        track_rows, "bulk_rb_meta", lambda stable_ids: {sid: _Meta() for sid in stable_ids}
+    )
 
     _, conn = state
     conn.row_factory = sqlite3.Row  # _fetch_fields reads rows by column name
@@ -386,7 +406,9 @@ def test_all_rbx_skip_returns_exactly_what_effective_fields_would(state) -> None
 # P2 round 5: the etag must separate two representations of one track
 #-----------------------------------------------------------------------------
 
-def test_switching_a_lane_to_own_changes_the_track_etag(state) -> None:
+def test_switching_a_lane_to_own_changes_the_track_etag(
+    state, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Reproduced: the projection row can be OLDER than the base updated_at.
 
     The etag is the maximum of the base stamp and every field stamp, so an
@@ -395,7 +417,14 @@ def test_switching_a_lane_to_own_changes_the_track_etag(state) -> None:
     track serving `8A` -- letting a stale If-Match through.
     """
     from apps.webui.server.etag import compute_etag
+    from apps.webui.server.rb_vendor_pkg import track_rows
 
+    class _Meta:
+        vendor_id = "v1"
+
+    monkeypatch.setattr(
+        track_rows, "bulk_rb_meta", lambda stable_ids: {sid: _Meta() for sid in stable_ids}
+    )
     path, conn = state
     backend = sb.SqliteBackend(path)
     before = backend.get_track("t1")
@@ -423,14 +452,23 @@ def test_switching_a_lane_to_own_changes_the_track_etag(state) -> None:
     assert etag_after != etag_before
 
 
-def test_an_all_rbx_track_keeps_a_byte_identical_etag(state) -> None:
+def test_an_all_rbx_track_keeps_a_byte_identical_etag(
+    state, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The control: the variant must be EMPTY while nothing is promoted.
 
     Every etag in the wild today is `sha1(stable_id:updated_at)`, so an
     unconditional variant would invalidate every client cache on deploy.
     """
     from apps.webui.server.etag import compute_etag
+    from apps.webui.server.rb_vendor_pkg import track_rows
 
+    class _Meta:
+        vendor_id = "v1"
+
+    monkeypatch.setattr(
+        track_rows, "bulk_rb_meta", lambda stable_ids: {sid: _Meta() for sid in stable_ids}
+    )
     path, _ = state
     track = sb.SqliteBackend(path).get_track("t1")
     assert track.selection_tag == ""

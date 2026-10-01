@@ -101,6 +101,20 @@ export interface PlaylistWriteResult {
 	etag: string;
 }
 
+/** One membership row an items:add inserted (MembershipAddedOut). */
+export interface PlaylistAddedMember {
+	item_id: string;
+	stable_id: string;
+	order_key: string;
+}
+
+/** items:add answers the inserted rows, never the whole membership
+ * (LIBM-132, #3963): at 10k members the full list was the add's cost. */
+export interface PlaylistAddResult {
+	added: PlaylistAddedMember[];
+	etag: string;
+}
+
 /** Map a mutation failure onto this module's contract: a stale If-Match
  * (409, top-level ConflictBody) becomes PlaylistConflictError; any other
  * daemon answer keeps the old "<verb> playlist ... failed (status): message"
@@ -142,12 +156,13 @@ export async function replacePlaylistTracks(
 }
 
 /** POST /playlists/{id}/items:add - O(1) append/insert without rewriting
- * existing membership rows (LIBM-20). No If-Match required. */
+ * existing membership rows (LIBM-20). No If-Match required. Returns the
+ * inserted rows only (LIBM-132); refetch the playlist for its membership. */
 export async function addPlaylistItems(
 	playlistId: string,
 	stableIds: string[],
 	position?: number
-): Promise<PlaylistWriteResult> {
+): Promise<PlaylistAddResult> {
 	let data: unknown;
 	let response: Response;
 	const body: { stable_ids: string[]; position?: number } = { stable_ids: stableIds };
@@ -171,8 +186,11 @@ export async function addPlaylistItems(
 	if (!fresh) {
 		throw new Error(`playlist ${playlistId}: POST items:add response carries no ETag header`);
 	}
-	const out = data as PlaylistRowWire;
-	return { items: out.items, etag: fresh };
+	const added = (data as { added?: PlaylistAddedMember[] } | undefined)?.added;
+	if (!Array.isArray(added)) {
+		throw new Error(`playlist ${playlistId}: POST items:add response carries no added rows`);
+	}
+	return { added, etag: fresh };
 }
 
 /** DELETE /playlists/{id}/items/{item_id} - O(1) remove without rewriting

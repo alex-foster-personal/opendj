@@ -208,6 +208,7 @@ def test_scorecard_unknown_on_withheld_rows() -> None:
     assert "login_submit_to_library_usable_s = " not in rendered
 
 
+# REQ: PERF-CAPTURE-03
 @pytest.mark.requirement("PERF-KPI-S13")
 def test_classify_s13_withhold_reason_restored_session() -> None:
     """[if] submit marks are absent [then] reason is restored-session, [else stop]."""
@@ -217,6 +218,7 @@ def test_classify_s13_withhold_reason_restored_session() -> None:
     assert reason.startswith("restored-session:")
 
 
+# REQ: PERF-CAPTURE-03
 @pytest.mark.requirement("PERF-KPI-S13")
 def test_classify_s13_withhold_reason_missing_telemetry() -> None:
     """[if] marks exist but no span POST [then] the reason is missing-telemetry, [else stop]."""
@@ -340,6 +342,8 @@ def test_http_json_turns_a_real_socket_timeout_into_connection_error() -> None:
     assert "TimeoutError" in str(excinfo.value)
 
 
+# REQ: PERF-CAPTURE-03
+@pytest.mark.requirement("PERF-CAPTURE-03")
 def test_engine_socket_timeout_withholds_instead_of_crashing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -350,6 +354,8 @@ def test_engine_socket_timeout_withholds_instead_of_crashing(
     it escaped `_http_json` and the capture died with a traceback instead of
     writing the withheld row S13 promises. Driven here through a real socket
     that accepts and stays silent.
+
+    [if] the engine socket times out [then] S13 writes a withheld row, [else stop].
     """
     ledger = tmp_path / "kpi-ledger.json"
     ledger.write_text(

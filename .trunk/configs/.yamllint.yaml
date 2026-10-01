@@ -1,0 +1,6 @@
+# Correctness rules only. quoted-strings (style) was dropped: it was all 188
+# yamllint hits in a 25-file sample.
+rules:
+  key-duplicates: {}
+  octal-values:
+    forbid-implicit-octal: true

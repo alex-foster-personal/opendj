@@ -143,7 +143,38 @@ import { join, dirname, normalize, relative } from 'node:path';
 // ceiling as documented above. Raising any number below is a deliberate,
 // reviewable act.
 const BUDGETS = [
-  { name: 'library', limit: 256000, measured: 93011, note: 'initial load of "/"' },
+  // RAISED Mon 21 Sep 2026 (+1 KiB, PR #3737, OBS-02/OBS-05): the client error
+  // path now carries the page's live-transport read (`any_deck_live`, so the
+  // engine can hold Sentry sends while a deck plays) and app-init defers the
+  // diagnostics-consent module behind the boot window. That is ~435 bytes of
+  // genuine first-paint weight; the consent module and its dialog themselves
+  // are dynamically imported and land in other-lazy. Clean origin/main
+  // (17c74562) measured 256,059 locally and within 80 bytes of the limit on
+  // CI before this PR, the same "no headroom left" state the performance
+  // budget was in on Wed 2 Sep 2026. Payback: the next library-route weight
+  // reduction retires this KiB, not the consent code.
+  // RAISED Wed 23 Sep 2026 (+1 KiB, PR #3681, multiple-folder first-run setup):
+  // SetupOverlay is imported statically by +layout.svelte, so the folder-row
+  // list (add/remove rows, per-row check, stale-scan guard) is first-paint
+  // weight. Clean origin/main cb401fbee measured 256,747 locally (277 bytes of
+  // headroom); this PR measured 257,513 locally and 257,523 on CI, +766 bytes.
+  // Payback: lazy-loading SetupOverlay (it renders only while the first-run
+  // overlay is open) retires this KiB and the one above.
+  // PR #3645 (DECKUX-19 stem mini-waveforms) adds +333 bytes of first-paint
+  // weight (the show_stems pref, settings row and perf-tier cache scalers)
+  // and lands AFTER #3681, so it takes no raise of its own: both fit under
+  // this one KiB. Merged tree (main 97fc14795 + #3645) measured 257,887 locally;
+  // after #3739 (main 47324919a) it measured 257,987, 61 bytes of headroom left.
+  // RAISED Thu 24 Sep 2026 (+1 KiB, PR #3865, STEM-37 stems on installed spokes):
+  // clean origin/main ccad1999e already measures 258,367 locally, 319 bytes
+  // OVER this limit (merge skew: each PR since #3739 passed alone). This PR
+  // adds +183 on top (the deck's hydrating probe state; the wait loop itself
+  // is in its own module), 258,550 locally and on CI within 35 bytes. The
+  // SetupOverlay payback above still retires all three KiB.
+  // Thu 24 Sep 2026: the SetupOverlay payback (#3862) and the pin-shell deferral
+  // (#3903) landed together; merged tree measured 250,040 locally against the
+  // unchanged 259,072. Not raised: 9,032 bytes of headroom, first since #3737.
+  { name: 'library', limit: 259072, measured: 250249, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -217,7 +248,46 @@ const BUDGETS = [
   // is in the STATIC closure of the root layout, so "/" pays for it at boot. That
   // is a boot-weight question for the perf program, not a CI-green one, and
   // raising a budget that is not failing is not this change's to make.
-  { name: 'other-lazy', limit: 210944, measured: 200328, note: 'all other routes plus deferred shell' },
+  // RAISED Mon 21 Sep 2026: 206 -> 221 KiB for PR #3548 (cue alignment through
+  // a worklet sink). The diff adds exactly five files to this bucket, measured
+  // against a clean detached build of origin/main ac68b743c, both local:
+  //   +3,094  assets/cue-bridge-processor (the AudioWorklet, fetched by URL)
+  //   +2,634  the calibration flow (CueAlignAborted, the operator guidance)
+  //   +1,679  the mic and room-output probe (getUserMedia, device matching)
+  //   +1,007  the headphone output-liveness wrapper
+  //     +707  the cue bridge wiring (AudioWorkletNode construction)
+  //   = +9,121, 205,553 -> 214,670 over 36 -> 41 files.
+  // Every one sits behind a real dynamic import, reached only when headphone
+  // cue is used or the calibration modal opens, so none of it is boot or
+  // first-paint weight. The two cheaper fixes do not apply: nothing is
+  // mis-attributed, and there is no eager import left to demote. The ceiling
+  // follows the +5% ceil-to-KiB rule on 214,670. main alone measured 205,553
+  // against the old 210,944, so the diff, not trunk growth, is what crossed it.
+  // RAISED Thu 24 Sep 2026: 221 -> 245 KiB, the library paybacks landing. The two
+  // deferrals the library notes above promise (#3903: the feedback pin shell
+  // loads after boot; #3862: SetupOverlay is a dynamic import, fetched at shell
+  // boot but off the first paint) move their weight out of `library` and into
+  // this bucket by design. Measured on the merged tree (main 4c65e17b + #3903
+  // 06289e85 + #3862), local, one build: library 274,679 on main -> 250,040
+  // (under its unchanged 259,072 ceiling with 9,032 bytes of headroom, so the
+  // three reviewed KiB above are paid back and NOT raised again); other-lazy
+  // 214,670 -> 238,822 over 41 -> 46 files. The ceiling follows the +5%
+  // ceil-to-KiB rule on 238,822. This is deferred-code weight: none of it is on
+  // the boot or first-paint path, which is the point of moving it here.
+  // Decision record: the CI-infra lane comment on #3913, Thu 24 Sep 2026 12:15Z.
+  // RAISED Tue 29 Sep 2026: 245 -> 260 KiB for PR #4321 (Rust engine mode, NAE-13).
+  // Its first head put the mode's code in `library` and read 260,503 there, over
+  // the 259,072 ceiling. The fix loads that code with a dynamic import only when
+  // the mode is on, which moves it here by design: one chunk of 6,267 gzip (the
+  // engine connection, load, state mirror, page-decided sync and hot cues, and
+  // the socket client). Local build, one pass: library 255,553 (98.6%, not
+  // raised), other-lazy 253,082 over 50 files; without that chunk it is 246,815,
+  // matching CI's 246,855 on the head before, so the chunk, not trunk growth, is
+  // what crossed. None of it is boot or first-paint weight, and no eager import
+  // is left to demote: what stays eager is the engine choice and command sets
+  // the dispatcher and Settings read. The ceiling follows the +5% ceil-to-KiB
+  // rule on 253,082.
+  { name: 'other-lazy', limit: 266240, measured: 253082, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

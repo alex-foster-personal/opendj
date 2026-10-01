@@ -10,6 +10,8 @@
 	//
 	// ALL live state comes from the audio-engine accessor: the engine unit
 	// owns DeckState (types.ts) via the rune module audio-engine.svelte.ts.
+	import { onWheelFaderAdjust } from '$lib/rb/fader-ghost.svelte';
+	import { clickSelect, getSelectedDecks, isSelected } from '$lib/rb/mixer-selection.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';
 	import {
 	DECK_IDS,
@@ -61,6 +63,7 @@
 	import PitchFader from './deck/PitchFader.svelte';
 	import DeckErrorBanner from './deck/DeckErrorBanner.svelte';
 	import DeckLyricLine from './deck/DeckLyricLine.svelte';
+	import { deckLyricRowBudget } from '$lib/rb/lyrics/deck-lyric-row-budget';
 	import SecondaryLoadBadge from './deck/SecondaryLoadBadge.svelte';
 	import StemRow from './deck/StemRow.svelte';
 	import StripWaveform from './deck/StripWaveform.svelte';
@@ -68,6 +71,29 @@
 	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	let { deckId }: { deckId: DeckId } = $props();
+
+	const selected = $derived(isSelected(deckId));
+
+	function handleDeckClick(event: MouseEvent): void {
+		clickSelect(deckId, event.shiftKey);
+	}
+
+	function adjustSelectedFaders(delta: number): void {
+		const decks = getSelectedDecks().includes(deckId) ? getSelectedDecks() : [deckId];
+		for (const deck of decks) {
+			const before = mixerState.channels[deck].fader;
+			const next = Math.min(1, Math.max(0, before + delta));
+			onWheelFaderAdjust(deck, before, next, false);
+			void runPerformanceCommandFromUi({ type: 'fader', deck, value: next });
+		}
+	}
+
+	function handleDeckWheelAdjust(next: number): void {
+		const before = mixerState.channels[deckId].fader;
+		const delta = next - before;
+		if (delta === 0) return;
+		adjustSelectedFaders(delta);
+	}
 
 	const deck: DeckState = $derived(getDeckState(deckId));
 	const pitchRange: PitchRange = $derived(pitchRanges[deckId]);
@@ -146,6 +172,22 @@
 		if (deck.stable_id === null) return null;
 		return deck.position_ms / 1000;
 	}
+
+	let cueFlexEl: HTMLDivElement | null = $state(null);
+	let cueFlexHeightPx = $state(0);
+	const deckLyricRows = $derived(deckLyricRowBudget(cueFlexHeightPx));
+
+	$effect(() => {
+		const el = cueFlexEl;
+		if (el === null || typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				cueFlexHeightPx = entry.contentRect.height;
+			}
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 
 	// ------------------------------------------------- engine call plumbing
 	// Engine methods throw loudly on empty decks (fail-fast contract);
@@ -365,6 +407,7 @@
 	class:drop-hover={dropHover}
 	class:loading={pending}
 	class:deck-focus={deckHoverUi.deckId === deckId}
+	class:selected={selected}
 	class:is-master={deck.is_master}
 	data-deck={deckId}
 	data-deck-hover={deckId}
@@ -372,8 +415,9 @@
 	use:wheelAdjust={{
 		step: WHEEL_STEP.fader,
 		get: () => mixerState.channels[deckId].fader,
-		set: (value) => void runPerformanceCommandFromUi({ type: 'fader', deck: deckId, value })
+		set: handleDeckWheelAdjust
 	}}
+	onclick={handleDeckClick}
 	onpointerenter={(e) => deckHoverEnter(deckIdFromHoverEl(e.currentTarget) ?? deckId)}
 	onpointerleave={(e) => deckHoverLeave(deckIdFromHoverEl(e.currentTarget) ?? deckId, e)}
 	ondragover={onTrackDragOver}
@@ -398,7 +442,10 @@
 
 	<StripWaveform {deck} {pending} onSeek={seekTo} onPlay={playPause} />
 
-	<div class="main-row">
+	<div
+		class="main-row"
+		class:mirror-main-row={deckId === 2 && uiPrefs.deck_right_mirror}
+	>
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">
 			<button class="rb-lit-button rb-inert" disabled title={plannedTitle('grid-adjust')} aria-label={`grid adjust deck ${deckId}`} data-testid={`grid-adjust-deck-${deckId}`}>
@@ -411,7 +458,7 @@
 
 		<!-- The cue host and 2x4 bank absorb spare width to preserve control
 		     alignment; the cue rows stay vertically bounded. -->
-		<div class="cue-flex">
+		<div class="cue-flex" bind:this={cueFlexEl}>
 			<HotCueBank
 				{deck}
 				{pending}
@@ -421,6 +468,17 @@
 				onDelete={hotCueActions.clearHotCueAt}
 				onRestore={hotCueActions.restoreHotCueAt}
 			/>
+			{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null && deckLyricEntry !== null}
+				<div class="deck-lyric-host">
+					<DeckLyricLine
+						track={deckLyrics.track}
+						entryState={deckLyricEntry.state}
+						error={deckLyrics.error}
+						positionSource={presentedPositionSec}
+						rows={deckLyricRows}
+					/>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Keep the compact transport modifiers together, outside the cue bank. -->
@@ -455,16 +513,6 @@
 			onRangeChange={setPitchRangeUi}
 		/>
 	</div>
-
-	{#if uiPrefs.lyrics_deck_line && uiPrefs.lyrics_global && deck.stable_id !== null && deckLyricEntry !== null}
-		<DeckLyricLine
-			track={deckLyrics.track}
-			entryState={deckLyricEntry.state}
-			error={deckLyrics.error}
-			positionSource={presentedPositionSec}
-			rows={1}
-		/>
-	{/if}
 
 	<StemRow
 		{deck}
@@ -562,12 +610,14 @@
 		transition:
 			box-shadow 50ms ease-out,
 			background 50ms ease-out;
-		background: radial-gradient(
-			ellipse 90% 80% at 50% 40%,
-			rgba(255, 255, 255, 0.07) 0%,
-			transparent 70%
-		);
-		box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+		background: var(--rb-deck-hover-bg);
+		box-shadow: var(--rb-deck-hover-inset);
+	}
+	.rb-deck.selected {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+	}
+	.rb-deck.selected.deck-focus {
+		box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
 	}
 	/* Yellow master outline wins over focus stroke for quick ID. */
 	.rb-deck.is-master {
@@ -584,6 +634,9 @@
 		min-height: 0;
 		min-width: 0;
 		overflow: hidden;
+	}
+	.main-row.mirror-main-row {
+		flex-direction: row-reverse;
 	}
 	.grid-adjust {
 		display: flex;
@@ -614,5 +667,14 @@
 		min-width: 0;
 		align-self: stretch;
 		display: flex;
+		flex-direction: row;
+		align-items: stretch;
+		gap: 6px;
+	}
+	.deck-lyric-host {
+		flex: 1 1 0;
+		min-width: 0;
+		display: flex;
+		align-items: center;
 	}
 </style>

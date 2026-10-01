@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
+import shutil
+import signal
 import socket
 import sqlite3
+import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -77,7 +80,12 @@ SID_SLOW_ABSENT = "slow-absent-track"
 #: BLOCKING).
 SID_MIK_BPM = "real-track-mik-bpm-no-own-analysis"
 
-_DB_PATH = Path(__file__).resolve().parent / f".analysis-source-anlz-server-{os.getpid()}.tmp.db"
+#: Per-run scratch dir OUTSIDE the tracked tree. Opening the state db
+#: regenerates a sibling AGENTS.md (apps/shared/state/db.py), so a db kept
+#: beside this file rewrote a tracked file and leaked db/-wal/-shm on every run.
+#: `SCRATCH <dir>` is printed before READY so the hygiene test can prove removal.
+_SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="analysis-source-anlz-server-"))
+_DB_PATH = _SCRATCH_DIR / "state.db"
 
 #: Beats per bar, so ``bar_count`` still reads as bars at the call sites.
 BEATS_PER_BAR = 4
@@ -211,8 +219,14 @@ def create_app() -> FastAPI:
     app.state.analysis_db_path = _DB_PATH
     app.state.requests = []
     app.state.delay_next_analysis_source_get = False
-    app.state.hold_next_anlz_stable_id: str | None = None
-    app.state.hold_next_anlz_release: asyncio.Event | None = None
+    # Plain assignments: mypy rejects an annotation on a non-self attribute
+    # ("Type cannot be declared in assignment to non-self attribute"), and the
+    # quality ratchet counts each one. The shapes are str | None and
+    # asyncio.Event | None; see _hold_if_armed and _register_hold_controls.
+    app.state.hold_next_anlz_stable_id = None
+    app.state.hold_next_anlz_release = None
+    app.state.hold_next_track_stable_id = None
+    app.state.hold_next_track_release = None
     app.include_router(analysis_source_router, prefix="/api/v1")
     app.include_router(rb_assets_router, prefix="/api/v1")
     app.include_router(tracks_router, prefix="/api/v1")
@@ -236,22 +250,15 @@ def create_app() -> FastAPI:
         # test's own before/after delta was off by exactly the poll count).
         if request.url.path != "/test/requests":
             app.state.requests.append(str(request.url))
-        held_sid = app.state.hold_next_anlz_stable_id
-        if (
-            held_sid
-            and request.method == "GET"
-            and request.url.path.endswith(f"/{held_sid}/anlz")
-        ):
-            app.state.hold_next_anlz_stable_id = None
-            release = app.state.hold_next_anlz_release
-            if release is not None:
-                try:
-                    await asyncio.wait_for(release.wait(), timeout=30.0)
-                except TimeoutError:
-                    raise RuntimeError(
-                        f"held /anlz for {held_sid} timed out waiting for "
-                        "/test/release-held-anlz"
-                    ) from None
+        # Both holds sit BEFORE the handler runs, unlike the post-handler
+        # sleeps below: the handler is what reads the daemon's toggle, so a
+        # hold is the only way to make one of a refresh's two parallel fetches
+        # observe a switch that landed after its sibling was served - the
+        # ordering a loaded runner produces by itself (nucbox-wsl-23, run
+        # 35731185371: "the two parallel fetches landed on different sides
+        # of a source switch" thrown by a superseded switch).
+        await _hold_if_armed(app, "anlz", request, lambda sid: f"/{sid}/anlz")
+        await _hold_if_armed(app, "track", request, lambda sid: f"/tracks/{sid}")
         response = await call_next(request)
         if (
             request.method == "GET"
@@ -275,32 +282,78 @@ def create_app() -> FastAPI:
     def _get_requests() -> list[str]:
         return app.state.requests
 
+    @app.post("/test/shutdown")
+    def _shutdown() -> dict[str, bool]:
+        # Cooperative stop: `ChildProcess.kill()` on Windows terminates the process
+        # outright, so neither the SIGTERM handler nor main()'s cleanup would run.
+        app.state.server.should_exit = True
+        return {"stopping": True}
+
     @app.post("/test/delay-next-analysis-source-get")
     def _delay_next_analysis_source_get() -> dict[str, bool]:
         app.state.delay_next_analysis_source_get = True
         return {"armed": True}
 
-    @app.post("/test/hold-next-anlz")
-    async def _hold_next_anlz(request: Request) -> dict[str, str | bool]:
+    _register_hold_controls(app, "anlz")
+    _register_hold_controls(app, "track")
+    return app
+
+
+def _register_hold_controls(app: FastAPI, kind: str) -> None:
+    """`POST /test/hold-next-{kind}` with `{"stable_id": ...}` arms a hold on the
+    next matching GET (`anlz`: `/{sid}/anlz`; `track`: `/tracks/{sid}`), which the
+    request middleware then parks BEFORE its handler runs until
+    `POST /test/release-held-{kind}` (or 30 s, then the held request errors)."""
+
+    @app.post(f"/test/hold-next-{kind}")
+    async def _hold_next(request: Request) -> dict[str, str | bool]:
         body = await request.json()
         stable_id = body.get("stable_id")
         if not stable_id:
             raise ValueError("stable_id is required")
-        app.state.hold_next_anlz_stable_id = stable_id
-        app.state.hold_next_anlz_release = asyncio.Event()
+        setattr(app.state, f"hold_next_{kind}_stable_id", stable_id)
+        setattr(app.state, f"hold_next_{kind}_release", asyncio.Event())
         return {"armed": True, "stable_id": stable_id}
 
-    @app.post("/test/release-held-anlz")
-    def _release_held_anlz() -> dict[str, bool]:
-        release = app.state.hold_next_anlz_release
+    @app.post(f"/test/release-held-{kind}")
+    def _release_held() -> dict[str, bool]:
+        release = getattr(app.state, f"hold_next_{kind}_release")
         if release is not None:
             release.set()
         return {"released": True}
 
-    return app
+
+async def _hold_if_armed(app: FastAPI, kind: str, request: Request, suffix_of) -> None:
+    """Park `request` until the armed hold of `kind` is released, if it is the GET
+    that hold names; a hold is consumed by the first request it matches."""
+    held = getattr(app.state, f"hold_next_{kind}_stable_id")
+    if not held or request.method != "GET" or not request.url.path.endswith(suffix_of(held)):
+        return
+    setattr(app.state, f"hold_next_{kind}_stable_id", None)
+    release = getattr(app.state, f"hold_next_{kind}_release")
+    if release is None:
+        return
+    try:
+        await asyncio.wait_for(release.wait(), timeout=30.0)
+    except TimeoutError:
+        raise RuntimeError(
+            f"held {kind} GET for {held} timed out waiting for /test/release-held-{kind}"
+        ) from None
 
 
 def main() -> int:
+    # Preferred stop is POST /test/shutdown (portable). A SIGTERM fallback still
+    # cleans up on POSIX: uvicorn shuts down, restores the handler installed before
+    # it, then re-raises the signal, and the default handler would skip the cleanup.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        _serve()
+    finally:
+        shutil.rmtree(_SCRATCH_DIR)
+    return 0
+
+
+def _serve() -> None:
     _seed_db(_DB_PATH)
     app = create_app()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -311,11 +364,12 @@ def main() -> int:
     # listen() here queues any early connection in the backlog instead.
     sock.listen()
     port = sock.getsockname()[1]
+    print(f"SCRATCH {_SCRATCH_DIR}", flush=True)
     print(f"READY {port}", flush=True)
     config = uvicorn.Config(app, fd=sock.fileno(), log_level="warning")
     server = uvicorn.Server(config)
+    app.state.server = server
     server.run()
-    return 0
 
 
 if __name__ == "__main__":

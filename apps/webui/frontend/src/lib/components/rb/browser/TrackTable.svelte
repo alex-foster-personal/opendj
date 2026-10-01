@@ -23,7 +23,16 @@
 	// provider.total.
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
-	import { artworkUrl, artworkStatusLabel, type Vocals } from '$lib/rb/api-rb';
+	import {
+		artworkUrl,
+		artworkStatusLabel,
+		type PreviewStripData,
+		type Vocals
+	} from '$lib/rb/api-rb';
+	import {
+		rememberOptionalResources,
+		shouldFetchArtwork
+	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
 		analysisIssuesFor,
@@ -76,7 +85,8 @@
 		createRowVisibilityObserver,
 		TRACK_TABLE_THEAD_PX,
 		masterFoldVisibility,
-		scrollTopForRowIndex
+		scrollTopForRowIndex,
+		scrollTopForDeckLayoutAnchor
 	} from './virtual-window';
 	import {
 		ANALYSIS_COLORS,
@@ -86,7 +96,6 @@
 	} from '$lib/rb/job-progress.svelte';
 	import { audioPrefetchStatus } from '$lib/rb/audio-prefetch-cache.svelte';
 	import { performanceCommandStatus } from '$lib/rb/performance-ipc.svelte';
-	import SpinnerIcon from './SpinnerIcon.svelte';
 	import RelocatePopover from './RelocatePopover.svelte';
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
@@ -178,7 +187,6 @@
 
 	const masterDeck = $derived(DECK_IDS.map((d) => deckStates[d]).find((d) => d.is_master) ?? null);
 	const masterKey = $derived(masterDeck?.key ?? null);
-	const masterKeyColor = $derived(camelotKeyColor(masterKey));
 	const masterBpm = $derived(masterDeck?.bpm ?? null);
 	/** Header BPM color: heat vs itself = on-tempo white when a master exists. */
 	const masterBpmColor = $derived(bpmHeatColor(masterBpm, masterBpm));
@@ -188,7 +196,7 @@
 	);
 
 	function keyCompat(key: string | null): boolean {
-		return camelotKeysAreCompatible(key, masterKey);
+		return camelotKeysAreCompatible(key, keyCompatRef);
 	}
 
 	function keyCompatStyle(key: string | null): string | undefined {
@@ -219,6 +227,27 @@
 	function bpmCellStyle(bpm: number | null): string | undefined {
 		const heat = bpmCellHeat(bpm);
 		return heat === null ? undefined : `color:${heat.color}`;
+	}
+
+	function bpmCellInert(row: BrowserRow): boolean {
+		return (
+			row.bpm_status === 'failed' ||
+			row.bpm_status === 'missing' ||
+			row.bpm_status === 'available-not-selected'
+		);
+	}
+
+	function bpmCellTitle(row: BrowserRow): string {
+		if (row.bpm_status === 'failed') {
+			return row.bpm_reason ?? 'bpm analysis failed';
+		}
+		if (row.bpm_status === 'missing') {
+			return row.bpm_reason ?? 'bpm not analyzed yet';
+		}
+		if (row.bpm_status === 'available-not-selected') {
+			return row.bpm_reason ?? 'beatgrid analysis available but not selected';
+		}
+		return `${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`;
 	}
 
 	/** Red now-line on library preview when this track is on a deck. Prefer
@@ -276,6 +305,8 @@
 		loadedIds,
 		vocalsById,
 		markerAnlzById,
+		previewStripById,
+		stripLoadingById,
 		sortKey,
 		sortDir,
 		emptyMessage,
@@ -315,6 +346,8 @@
 		onstemsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onlyricsdonext = undefined as ((stableIds: string[]) => void) | undefined,
 		onopeneditmodal = undefined,
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey = null as string | null,
 		onremovefromlibrary = undefined,
 		onrelocated = undefined,
 		onaddtoplaylist = undefined
@@ -331,6 +364,11 @@
 		/** Strip marker ANLZ ALREADY in memory (loaded decks / anlz cache),
 		 * resolved by BrowserPanel (LIBUX-12); absent = markerless strip. */
 		markerAnlzById: Record<string, AnlzData>;
+		/** Preview strip bytes ALREADY in memory (listing hydrate / anlz cache),
+		 * resolved by BrowserPanel; absent = dash until warmed elsewhere. */
+		previewStripById: Record<string, PreviewStripData | null>;
+		/** True only while a warmed cache entry is still loading (never per-row fetch). */
+		stripLoadingById: Record<string, boolean>;
 		sortKey: SortKey | null;
 		sortDir: SortDir;
 		emptyMessage: string | null;
@@ -415,7 +453,16 @@
 		suggestHoverId?: string | null;
 		/** Panel-owned status surface, pinned below the column headers. */
 		bodyOverlay?: Snippet;
+		/** When next-only filter is on, highlight keys against this ref (issue #3983). */
+		compatibleReferenceKey?: string | null;
 	} = $props();
+
+	const keyCompatRef = $derived(
+		uiPrefs.next_only_filter && compatibleReferenceKey !== null
+			? compatibleReferenceKey
+			: masterKey
+	);
+	const masterKeyColor = $derived(camelotKeyColor(keyCompatRef));
 
 	/** Measured, not the hardcoded 22px .master-fold uses: the header row's
 	 * height is density-dependent (`--tt-row-h`), so a constant would drift
@@ -731,6 +778,31 @@
 	 * a listener (pin b44c957f082f). */
 	let liveScrollLeft = $state(0);
 	let viewportHeight = $state(0);
+	/** Deck layout toggle anchor: preserve selected row across viewport resize. */
+	let deckLayoutAnchor: {
+		rowIndex: number;
+		priorScrollTop: number;
+		priorViewportHeight: number;
+	} | null = $state(null);
+	let lastDeckLayout = uiPrefs.deck_layout;
+
+	function applyDeckLayoutAnchorScroll(): void {
+		const el = wrapEl;
+		const anchor = deckLayoutAnchor;
+		if (el === null || anchor === null || viewportHeight <= 0) return;
+		const next = scrollTopForDeckLayoutAnchor({
+			rowIndex: anchor.rowIndex,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			viewportHeight,
+			priorScrollTop: anchor.priorScrollTop,
+			priorViewportHeight: anchor.priorViewportHeight
+		});
+		el.scrollTop = next;
+		liveScrollTop = next;
+		onscrollcursor?.(next);
+		deckLayoutAnchor = null;
+	}
 	/** Wrap's own rendered width, for the master-fold badge's right-edge
 	 * clamp - same ResizeObserver as viewportHeight, so this costs nothing
 	 * extra (pin b44c957f082f follow-up). */
@@ -755,6 +827,31 @@
 
 	// ------------------------------------------------- DOM row virtualization
 	$effect(() => {
+		const layout = uiPrefs.deck_layout;
+		if (layout !== lastDeckLayout) {
+			const ids = untrack(() => selectedIds);
+			const map = untrack(() => rowIndexOf);
+			const anchorId = ids.length > 0 ? ids[ids.length - 1] : null;
+			const rowIndex = anchorId === null ? -1 : (map.get(anchorId) ?? -1);
+			if (rowIndex >= 0) {
+				deckLayoutAnchor = {
+					rowIndex,
+					priorScrollTop: untrack(() => liveScrollTop),
+					priorViewportHeight: viewportHeight
+				};
+			}
+			lastDeckLayout = layout;
+		}
+	});
+
+	$effect(() => {
+		if (deckLayoutAnchor === null) return;
+		const duration = uiPrefs.deck_layout_animate ? uiPrefs.deck_layout_duration_ms : 0;
+		const timer = setTimeout(() => applyDeckLayoutAnchorScroll(), duration + 32);
+		return () => clearTimeout(timer);
+	});
+
+	$effect(() => {
 		const el = wrapEl;
 		if (el === null) return;
 		viewportHeight = el.clientHeight;
@@ -764,6 +861,14 @@
 			for (const entry of entries) {
 				viewportHeight = entry.contentRect.height;
 				wrapWidth = entry.contentRect.width;
+				const anchor = deckLayoutAnchor;
+				if (
+					anchor !== null &&
+					entry.contentRect.height > 0 &&
+					entry.contentRect.height !== anchor.priorViewportHeight
+				) {
+					applyDeckLayoutAnchorScroll();
+				}
 			}
 		});
 		ro.observe(el);
@@ -907,8 +1012,23 @@
 		return bpm === null ? '' : String(Math.round(bpm));
 	}
 
-	function _hideBrokenImg(event: Event): void {
-		(event.currentTarget as HTMLImageElement).style.display = 'none';
+	let artworkLoadFailed = $state<ReadonlySet<string>>(new Set());
+
+	function _onArtworkLoad(event: Event): void {
+		(event.currentTarget as HTMLImageElement).classList.add('art-loaded');
+	}
+
+	function _onArtworkError(stableId: string): void {
+		rememberOptionalResources(stableId, { artwork: false });
+		artworkLoadFailed = new Set([...artworkLoadFailed, stableId]);
+	}
+
+	function _showArtworkImg(stableId: string, artworkAvailable: boolean | null): boolean {
+		return (
+			artworkAvailable === true &&
+			shouldFetchArtwork(stableId) &&
+			!artworkLoadFailed.has(stableId)
+		);
 	}
 
 	// ----------------------------------------- drag-to-reorder (native DnD)
@@ -924,6 +1044,7 @@
 		// wording as the double-click path (pins 8ba0b15d975b, 72be3e505510).
 		const refusal = trackDragRefusal({
 			file_exists: row.file_exists,
+			file_availability: row.file_availability,
 			// All Tracks rows start row.is_streaming at null and hydrate the
 			// real value into row.rb_meta later - same effective flag
 			// _loadOntoDeck already checks, so the two refusal paths agree.
@@ -1426,7 +1547,7 @@
 				{/if}
 				{#each visibleRows as row, i (`${row.stable_id}:${row.order}`)}
 					{@const cloudView = trackCloudView({
-						fileExists: row.file_exists,
+						fileExists: row.file_exists === true,
 						isStreaming: row.is_streaming ?? row.rb_meta?.is_streaming ?? false,
 						hasRemoteCopy: row.has_remote_copy === true,
 						transfer:
@@ -1464,11 +1585,17 @@
 						class:rb-row-suggest-hover={suggestHoverId !== null &&
 							row.stable_id === suggestHoverId}
 						class:rb-row-find={findQuery !== '' && rowMatchesFind(row, findQuery)}
-						class:broken={!row.file_exists &&
+						class:broken={row.file_exists === false &&
+							row.file_availability !== 'AVAILABILITY_PENDING' &&
 							!(row.is_streaming ?? row.rb_meta?.is_streaming) &&
 							row.is_remote !== true &&
 							row.spotify_pending !== true &&
 							!row.stable_id.startsWith('spotify-pending:')}
+						class:rb-row-availability-pending={row.file_availability ===
+							'AVAILABILITY_PENDING'}
+						title={row.file_availability === 'AVAILABILITY_PENDING'
+							? 'availability still checking (wait for disk probe)'
+							: undefined}
 						class:rb-row-job={jobProgress.activeFor(row.stable_id) !== null}
 						style={_jobRowStyle(row.stable_id)}
 						onclick={(event) => onRowPointer(event, row)}
@@ -1619,7 +1746,8 @@
 						{/if}
 						<td class="c-preview">
 							<PreviewStrip
-								strip={row.strip}
+								strip={row.strip ?? previewStripById[row.stable_id] ?? null}
+								stripLoading={stripLoadingById[row.stable_id] ?? false}
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
 								duration_ms={row.duration_ms}
@@ -1644,12 +1772,15 @@
 						>
 							<span class="art-slate" aria-hidden="true"></span>
 							{#if row.artwork_available === true}
-								<img
-									src={artworkUrl(row.stable_id, 's')}
-									alt=""
-									loading="lazy"
-									onerror={_hideBrokenImg}
-								/>
+								{#if _showArtworkImg(row.stable_id, row.artwork_available)}
+									<img
+										src={artworkUrl(row.stable_id, 's')}
+										alt=""
+										loading="lazy"
+										onload={_onArtworkLoad}
+										onerror={() => _onArtworkError(row.stable_id)}
+									/>
+								{/if}
 							{/if}
 						</td>
 						<td class="c-title" class:rb-row-loaded={loadedIds.has(row.stable_id)} title={row.title ?? ''} onpointerleave={(e) => _onDeckTriggerPointerLeave(e, row)}>
@@ -1682,11 +1813,7 @@
 										}}
 										ondblclick={(e) => e.stopPropagation()}
 									>
-										{#if isLoading}
-											<SpinnerIcon size={9} />
-										{:else}
-											{d}
-										{/if}
+										{d}
 									</button>
 								{/each}
 								{#if removable}
@@ -1737,9 +1864,18 @@
 							class:bpm-sweet={bpmCellHeat(row.bpm)?.lane === 'sweet'}
 							class:bpm-half={bpmCellHeat(row.bpm)?.lane === 'half'}
 							class:bpm-far={bpmCellHeat(row.bpm)?.lane === 'far'}
+							class:bpm-inert={bpmCellInert(row)}
 							style={bpmCellStyle(row.bpm)}
-							title={`${bpmHeatLabel(bpmCellHeat(row.bpm), masterBpm) ?? 'BPM not analyzed'}${row.bpm === null ? '' : ` Exact BPM: ${row.bpm.toFixed(1)}.`} Dynamic tempo analysis: not analyzed.`}
-						>{_fmtBpm(row.bpm)}</td>
+							title={bpmCellTitle(row)}
+						>
+							{#if row.bpm_status === 'failed' || row.bpm_status === 'missing'}
+								<span class="bpm-status" title={bpmCellTitle(row)}>{row.bpm_status === 'failed' ? 'failed' : 'missing'}</span>
+							{:else if row.bpm_status === 'available-not-selected'}
+								<span class="bpm-status" title={bpmCellTitle(row)}>alt</span>
+							{:else}
+								{_fmtBpm(row.bpm)}
+							{/if}
+						</td>
 						<td
 							class="c-plays"
 							title="play count (rekordbox history + djay)"
@@ -1762,29 +1898,33 @@
 							{row.energy ?? ''}
 						</td>
 						<td class="c-genre">
-							{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
-								{#if i > 0}<span class="genre-sep">, </span>{/if}
-								<button
-									type="button"
-									class="genre-tag"
-									class:active={/^genre:~?/i.test(searchQuery.trim()) &&
-										searchQuery
-											.trim()
-											.replace(/^genre:~?/i, '')
-											.toLowerCase() === tag.toLowerCase()}
-									style={genreTagStyle(tag)}
-									title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
-									onclick={(e) => onGenreTagClick(e, tag)}
-									ondblclick={(e) => {
-										e.stopPropagation();
-										e.preventDefault();
-									}}
-								>
-									{#each hl(tag) as part, j (j)}
-										{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
-									{/each}
-								</button>
-							{/each}
+							{#if splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '').length > 0}
+								{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
+									{#if i > 0}<span class="genre-sep">, </span>{/if}
+									<button
+										type="button"
+										class="genre-tag"
+										class:active={/^genre:~?/i.test(searchQuery.trim()) &&
+											searchQuery
+												.trim()
+												.replace(/^genre:~?/i, '')
+												.toLowerCase() === tag.toLowerCase()}
+										style={genreTagStyle(tag)}
+										title="click to filter by this genre (again clears). double = loose. triple = undo. after filter: 20s library double clears, triple undoes"
+										onclick={(e) => onGenreTagClick(e, tag)}
+										ondblclick={(e) => {
+											e.stopPropagation();
+											e.preventDefault();
+										}}
+									>
+										{#each hl(tag) as part, j (j)}
+											{#if part.hit}<mark class="find-hit">{part.text}</mark>{:else}{part.text}{/if}
+										{/each}
+									</button>
+								{/each}
+							{:else if row.genre_reason}
+								<span class="genre-reason" title={row.genre_reason}>{row.genre_reason}</span>
+							{/if}
 						</td>
 						<td class="c-stems">
 							<StemTags stems={row.stems} />
@@ -1804,8 +1944,7 @@
 		</table>
 		{#if rows.length === 0 && emptyMessage !== null}
 			<div class="empty">
-				{emptyMessage}
-				{#if onemptyretry !== undefined}
+				{emptyMessage}{#if onemptyretry !== undefined}
 					<button type="button" class="empty-retry" onclick={onemptyretry}>Retry search</button>
 				{/if}
 			</div>
@@ -2143,6 +2282,17 @@
 		cursor: default;
 		position: relative;
 	}
+	tbody tr::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 1px;
+		background: #131519;
+		pointer-events: none;
+		z-index: 1;
+	}
 	/* Prefetch markers - top-left of row (same corner as job wash). */
 	.audio-cache-chevron {
 		position: absolute;
@@ -2355,11 +2505,23 @@
 	}
 	td {
 		padding: 0 var(--tt-td-pad-x);
-		border-bottom: 1px solid #131519;
+		border-bottom: none;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		vertical-align: middle;
+	}
+	/* position without a z-index on purpose: `z-index: 0` here made every
+	 * cell its own stacking context (#4009), which trapped a cell's
+	 * `position: fixed` popovers (the analysis-dots hover tile, z-index 9600)
+	 * at that cell's level, so every LATER row's cells painted over them and
+	 * took their pointer events. The row separator (`tbody tr::after`,
+	 * z-index 1) still paints above z-index:auto cells. */
+	tbody td {
+		position: relative;
+	}
+	thead th {
+		border-bottom: 1px solid var(--rb-border);
 	}
 	.c-order {
 		text-align: center;
@@ -2542,6 +2704,15 @@
 		}
 	}
 
+	/* PERF-RB-01: pending rows stay neutral while disk truth is probed. */
+	tbody tr.rb-row-availability-pending td {
+		color: var(--rb-text);
+	}
+	tbody tr.rb-row-availability-pending .c-art img,
+	tbody tr.rb-row-availability-pending .art-slate {
+		opacity: 0.85;
+	}
+
 	/* FR-1: missing-file rows gray out (dim text + dim artwork) but stay
 	 * selectable; deck load is blocked upstream with an explicit toast. */
 	tbody tr.broken td {
@@ -2588,6 +2759,14 @@
 		text-shadow:
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
+	}
+	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
+	 * fixed-height row (22.5px -> 25px), which the virtualization math and
+	 * right-click anchored popovers both assume never happens. */
+	.genre-reason {
+		color: var(--text-muted, #8b949e);
+		font-size: 0.85em;
+		font-style: italic;
 	}
 	.genre-tag.active {
 		color: var(--rb-text);
@@ -2838,8 +3017,11 @@
 		padding: 0;
 		width: var(--tt-art);
 		border-bottom: none;
-		overflow: hidden;
+		overflow: visible;
 		vertical-align: middle;
+	}
+	.c-artist {
+		overflow: visible;
 	}
 	.art-slate {
 		display: block;
@@ -2851,10 +3033,14 @@
 	.c-art img {
 		position: absolute;
 		inset: 0;
-		width: var(--tt-art);
-		height: var(--tt-art);
+		width: 100%;
+		height: 100%;
 		object-fit: cover;
+		object-position: center 66.67%;
 		display: block;
+	}
+	.c-art:has(img.art-loaded) .art-slate {
+		display: none;
 	}
 
 	.empty {

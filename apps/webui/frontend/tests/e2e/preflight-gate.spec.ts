@@ -16,6 +16,7 @@ import {
 } from './playwright.preflight-gate.config';
 
 test.describe('preflight boot gate', () => {
+	// REQ: PREFLIGHT-01
 	test('a healthy library lands straight in the app, no gate shown', async ({ page }) => {
 		await page.goto(`${PREFLIGHT_GATE_HEALTHY_ORIGIN}/`);
 
@@ -25,7 +26,8 @@ test.describe('preflight boot gate', () => {
 
 		// The real app shell is what's on screen instead.
 		await expect(page.getByRole('heading', { name: 'Open DJ' })).toBeVisible();
-		await expect(page.getByRole('link', { name: 'Library' })).toBeVisible();
+		// exact: a 'Library wheel' link now sits beside it in the nav.
+		await expect(page.getByRole('link', { name: 'Library', exact: true })).toBeVisible();
 	});
 
 	test('a library with nothing imported auto-opens setup instead of trapping the user', async ({
@@ -49,7 +51,8 @@ test.describe('preflight boot gate', () => {
 			(check: { id: string }) => check.id === 'library-attached'
 		);
 		expect(libraryRow?.status).toBe('fail');
-		expect(libraryRow?.user_detail).toContain('No music imported yet');
+		// The engine's own copy (apps/webui/server/preflight_checks.py, 1f97fe0dd).
+		expect(libraryRow?.user_detail).toContain('No tracks in your library yet.');
 
 		// A fresh install has nothing recorded to sample, which is an honest
 		// `pending`, never a fabricated pass (this issue's own denominator rule).

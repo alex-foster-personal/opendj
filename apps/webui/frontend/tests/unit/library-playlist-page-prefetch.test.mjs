@@ -14,7 +14,7 @@ afterEach(() => {
 	prefetch.resetPlaylistPagePrefetchForTests();
 });
 
-test('prefetchPlaylistFirstPage is idempotent and shares one in-flight promise', async () => {
+test('prefetchPlaylistFirstPage is idempotent and a switch joins its in-flight promise', async () => {
 	let calls = 0;
 	prefetch.setFetchPlaylistPageForTests(() => {
 		calls += 1;
@@ -26,10 +26,81 @@ test('prefetchPlaylistFirstPage is idempotent and shares one in-flight promise',
 	prefetch.prefetchPlaylistFirstPage('pl-a');
 	prefetch.prefetchPlaylistFirstPage('pl-a');
 	const first = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
-	const second = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
 	assert.equal(calls, 1);
 	assert.equal(first.etag, 'e1');
-	assert.equal(second.etag, 'e1');
+});
+
+test('a prefetched page is joined once: switching back reads the route again', async () => {
+	let calls = 0;
+	prefetch.setFetchPlaylistPageForTests(() => {
+		calls += 1;
+		return Promise.resolve({
+			page: { tracks: [], total: 0, next_offset: null },
+			etag: `e${calls}`
+		});
+	});
+	prefetch.prefetchPlaylistFirstPage('pl-a');
+	const first = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
+	const second = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
+	assert.equal(calls, 2);
+	assert.equal(first.etag, 'e1');
+	assert.equal(second.etag, 'e2', 'a revisit must not be served the first visit\'s rows');
+});
+
+test('a stale prefetch is not joined and a later hover refreshes it', async () => {
+	let clock = 0;
+	prefetch.setPrefetchClockForTests(() => clock);
+	let calls = 0;
+	prefetch.setFetchPlaylistPageForTests(() => {
+		calls += 1;
+		return Promise.resolve({
+			page: { tracks: [], total: 0, next_offset: null },
+			etag: `e${calls}`
+		});
+	});
+	prefetch.prefetchPlaylistFirstPage('pl-s');
+	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS + 1;
+	prefetch.prefetchPlaylistFirstPage('pl-s');
+	assert.equal(calls, 2, 'a hover after the max age starts a fresh prefetch');
+	clock += prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS + 1;
+	const page = await prefetch.fetchPlaylistFirstPage('pl-s', 0);
+	assert.equal(calls, 3);
+	assert.equal(page.etag, 'e3');
+});
+
+test('control: a fresh prefetch is still joined just inside the max age', async () => {
+	let clock = 0;
+	prefetch.setPrefetchClockForTests(() => clock);
+	let calls = 0;
+	prefetch.setFetchPlaylistPageForTests(() => {
+		calls += 1;
+		return Promise.resolve({ page: { tracks: [], total: 0, next_offset: null }, etag: 'e' });
+	});
+	prefetch.prefetchPlaylistFirstPage('pl-f');
+	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS;
+	await prefetch.fetchPlaylistFirstPage('pl-f', 0);
+	assert.equal(calls, 1);
+});
+
+test('a prefetch of a different page size is not joined', async () => {
+	const limits = [];
+	prefetch.setFetchPlaylistPageForTests((_id, limit) => {
+		limits.push(limit);
+		return Promise.resolve({ page: { tracks: [], total: 0, next_offset: null }, etag: 'e' });
+	});
+	prefetch.prefetchPlaylistFirstPage('pl-z', 30);
+	await prefetch.fetchPlaylistFirstPage('pl-z', 0, 50);
+	assert.deepEqual(limits, [30, 50]);
+});
+
+test('a cold switch whose live GET fails does not retry it', async () => {
+	let calls = 0;
+	prefetch.setFetchPlaylistPageForTests(() => {
+		calls += 1;
+		return Promise.reject(new Error('network exploded'));
+	});
+	await assert.rejects(prefetch.fetchPlaylistFirstPage('pl-x', 0), /network exploded/);
+	assert.equal(calls, 1);
 });
 
 test('fetchPlaylistFirstPage falls back when prefetch rejects', async () => {

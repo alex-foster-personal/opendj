@@ -134,6 +134,18 @@ class Playlist:
 
 
 @dataclass
+class PlaylistPage:
+    """One ``limit``/``offset`` window of a playlist (LIBM-133).
+
+    ``playlist`` carries the header; its ``items``/``item_ids`` hold only the
+    window, and ``total`` counts every live member.
+    """
+
+    playlist: Playlist
+    total: int
+
+
+@dataclass
 class Pairing:
     pairing_id: str
     from_stable_id: str
@@ -262,14 +274,50 @@ def compute_mytag_catalog_revision(tracks: Sequence[Track]) -> str:
     return f'"{sha256(encoded).hexdigest()}"'
 
 
+def compute_library_revision(tracks: Sequence[Track]) -> str:
+    """Return a stable revision for the rows exposed by the track library."""
+    catalog = [
+        [track.stable_id, asdict(track)]
+        for track in sorted(tracks, key=lambda item: item.stable_id)
+    ]
+    return _library_revision_digest(catalog)
+
+
+def compute_library_revision_summary(
+    track_count: int,
+    track_updated_at: str,
+    field_updated_at: str,
+    changelog_sequence: int,
+) -> str:
+    """Return a stable revision from the database's cheap change signals."""
+    return _library_revision_digest([
+        "summary",
+        track_count,
+        track_updated_at,
+        field_updated_at,
+        changelog_sequence,
+    ])
+
+
+def _library_revision_digest(catalog: object) -> str:
+    encoded = json.dumps(
+        catalog, separators=(",", ":"), ensure_ascii=False, sort_keys=True
+    ).encode("utf-8")
+    return f'"{sha256(encoded).hexdigest()}"'
+
+
 class StateBackend(Protocol):
     """Narrow surface the web UI needs from the state layer."""
     def list_tracks(self, flt: TrackFilter) -> Page: ...
+    def library_revision(self) -> str: ...
     def get_track(self, stable_id: str) -> Track: ...
     def get_tracks_bulk(self, stable_ids: Sequence[str]) -> dict[str, Track]: ...
     def get_file_paths_bulk(self, stable_ids: Sequence[str]) -> dict[str, str | None]: ...
     def list_playlists(self) -> list[Playlist]: ...
     def get_playlist(self, playlist_id: str) -> Playlist: ...
+    def get_playlist_page(
+        self, playlist_id: str, *, limit: int, offset: int,
+    ) -> PlaylistPage: ...
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]: ...
     def list_pairings(self, *, from_stable_id: str | None = None,
                       to_stable_id: str | None = None,
@@ -360,6 +408,11 @@ class InMemoryBackend:
         next_cursor = page[-1].stable_id if len(page) == limit else None
         return Page(items=page, next_cursor=next_cursor)
 
+    def library_revision(self) -> str:
+        with self._mutex:
+            tracks = list(self._tracks.values())
+        return compute_library_revision(tracks)
+
     def get_track(self, stable_id: str) -> Track:
         with self._mutex:
             track = self._tracks.get(stable_id)
@@ -397,6 +450,16 @@ class InMemoryBackend:
         if pl is None:
             raise NotFoundError(f"playlist not found: {playlist_id}")
         return pl
+
+    def get_playlist_page(
+        self, playlist_id: str, *, limit: int, offset: int,
+    ) -> PlaylistPage:
+        pl = self.get_playlist(playlist_id)
+        window = slice(offset, offset + limit)
+        return PlaylistPage(
+            playlist=replace(pl, items=pl.items[window], item_ids=pl.item_ids[window]),
+            total=len(pl.items),
+        )
 
     def list_track_playlists(self, stable_id: str) -> list[TrackPlaylistHit]:
         with self._mutex:

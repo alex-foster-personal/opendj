@@ -381,3 +381,30 @@ test('withFallbackBeatgrid preserves extrapolated flags from the server payload'
 	const merged = beatgridFallback.withFallbackBeatgrid(anlz, fallback);
 	assert.deepEqual(merged.beatgrid.beats, fallback.beatgrid.beats);
 });
+
+test('resolvePaintAnlz: real payload wins, fallback merges into a gridless one or stands alone', () => {
+	const fallback = {
+		stable_id: 'abc123',
+		source: 'apps.analysis',
+		backend: 'librosa+madmom',
+		backend_version: 'librosa==0.10.0',
+		bpm: 127,
+		bpm_confidence: 0.8,
+		anlz_available: false,
+		beatgrid: { beat_count: 2, beats: REAL_GRID }
+	};
+	assert.equal(beatgridFallback.resolvePaintAnlz(null, null), null);
+	assert.deepEqual(
+		beatgridFallback.resolvePaintAnlz(null, fallback),
+		beatgridFallback.toSyntheticAnlzData(fallback)
+	);
+	const gridless = anlzWithBeats([]);
+	assert.equal(beatgridFallback.resolvePaintAnlz(gridless, null), gridless);
+	const merged = beatgridFallback.resolvePaintAnlz(gridless, fallback);
+	assert.deepEqual(merged.beatgrid, fallback.beatgrid);
+	assert.equal(merged.beatgrid_source, 'own');
+	// A stale ANALYSIS_NOT_FOUND entry beside a deck that holds a real grid:
+	// the real grid wins and nothing throws (withFallbackBeatgrid would).
+	const real = anlzWithBeats(REAL_GRID);
+	assert.equal(beatgridFallback.resolvePaintAnlz(real, fallback), real);
+});

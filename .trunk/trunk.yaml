@@ -1,0 +1,92 @@
+# This file controls the behavior of Trunk: https://docs.trunk.io/cli
+# To learn more about the format of this file, see https://docs.trunk.io/reference/trunk-yaml
+#
+# Local convenience layer, not a merge gate: `npm run lint` (trunk check) and
+# `npm run fmt` (trunk fmt). Hold-the-line is left at its default, so only NEW
+# issues on lines changed versus main are reported. The repo's own gates stay
+# authoritative: `just quality` (ruff/mypy/complexity/arch ratchet) and the
+# report-only security workflow (.github/workflows/security.yml).
+version: 0.1
+cli:
+  version: 1.25.0
+# Trunk provides extensibility via plugins. (https://docs.trunk.io/plugins)
+plugins:
+  sources:
+    - id: trunk
+      ref: v1.11.0
+      uri: https://github.com/trunk-io/plugins
+# Many linters and tools depend on runtimes - configure them here. (https://docs.trunk.io/runtimes)
+runtimes:
+  enabled:
+    - go@1.21.0
+    - node@22.16.0
+    - python@3.14.4
+# This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
+lint:
+  enabled:
+    - actionlint@1.7.12
+    - dotenv-linter@4.0.0
+    - git-diff-check
+    - markdownlint@0.49.1
+    - osv-scanner@2.6.0
+    - renovate@44.115.13
+    # Same version as ops/quality/requirements.txt so trunk and `just quality`
+    # agree; ruff reads [tool.ruff] from pyproject.toml. Lint only for now: trunk
+    # ships ruff's format command disabled, and it stays disabled until issue
+    # #4456's Python parts land. Ratified formatter: ruff format, line-length 120
+    # and the *.md exclusion from pyproject.toml (specs/formatter-adoption.md).
+    - ruff@0.16.3
+    - shellcheck@0.11.0
+    - trufflehog@3.97.9
+    - yamllint@1.38.0
+    - zizmor@1.30.1
+  disabled:
+    # ruff owns import order (select "I") and ruff format is the ratified Python
+    # formatter (issue #4456), so black and isort stay off.
+    - black
+    - isort
+    # The mypy ratchet needs its pinned isolated env (`just typecheck`); trunk's
+    # env counts different errors than ops/quality/baseline.json.
+    - mypy
+    # 632 of 736 sampled hits were B101 assert in tests; semgrep in security.yml covers this.
+    - bandit
+    # Only CKV_GHA_7 on workflow_dispatch inputs here; zizmor/actionlint cover workflows.
+    - checkov
+    # Ratified for apps/webui/frontend only: prettier 3.9.9 + prettier-plugin-svelte
+    # 4.1.1, useTabs, singleQuote, trailingComma none, printWidth 100 (issue #4456).
+    # Enabled by that part together with its .prettierrc; trunk's default file list
+    # also covers markdown, yaml, json and html, which must stay unformatted.
+    - prettier
+    # No cargo fmt/clippy gate in CI; clippy failed to build all 5 crates in the sample.
+    - clippy
+    - rustfmt
+    # Duplicates osv-scanner; its ~1 GB DB download also crashed the trunk daemon on a low-disk Mac.
+    - grype
+    # Duplicates trufflehog (already in security.yml); only hit a test fixture in the sample.
+    - gitleaks
+    # pinact 5 rejects the `-format` flag trunk plugins v1.11.0 passes; all actions are SHA-pinned already.
+    - pinact
+    # Ratified as shfmt 3.14.1 `-i 4 -ci` (issue #4456), enabled by the shell part.
+    # Its run command gets overridden then: trunk's default is `shfmt -w -s`, and
+    # the -s simplify rewrite was not part of what was ratified.
+    - shfmt
+    # No TOML formatter was chosen (issue #4456): churn with no gate.
+    - taplo
+    # Rewrite PNG/SVG evidence assets in place.
+    - oxipng
+    - svgo
+  ignore:
+    # Vendored upstream sources are not ours to lint (mirrors [tool.ruff] extend-exclude).
+    - linters: [ALL]
+      paths:
+        - apps/sync/usb/pioneer/_vendor/**
+actions:
+  disabled:
+    # Left as `trunk init` set it.
+    - trunk-announce
+    # Many concurrent agents share checkouts and pushes: auto-installed git hooks
+    # would silently change every agent's commit/push behavior. Run on demand instead.
+    - trunk-check-pre-push
+    - trunk-fmt-pre-commit
+  enabled:
+    - trunk-upgrade-available

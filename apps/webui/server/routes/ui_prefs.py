@@ -28,6 +28,8 @@ _FILENAME = "ui-prefs.json"
 UiTheme = Literal["dark", "light"]
 PerfTierPref = Literal["auto", "low", "standard", "high"]
 AppPosturePref = Literal["prep", "gig"]
+GigHelperPref = Literal["unset", "off", "on"]
+_DEFAULT_GIG_HELPER: GigHelperPref = "unset"
 AppModePref = Literal["performance", "library-management", "library", "music-player"]
 _DEFAULT_THEME: UiTheme = "dark"
 _DEFAULT_PERF_TIER: PerfTierPref = "auto"
@@ -43,6 +45,7 @@ _DEFAULT_AUTO_SYNC: dict[str, bool] = {
 _DEFAULT_TECH_WORKING_ANIMATE = True
 _DEFAULT_JOG_RADIAL_WAVEFORM = False
 _DEFAULT_SHOW_AGENT_PINS = True
+_DEFAULT_SHOW_STEMS = False
 _DEFAULT_BEAT_SYNC_MAX = True
 _DEFAULT_AUTO_PLAY_ENABLED = True
 _DEFAULT_AUTO_PLAY_ENFORCE_ORDER = False
@@ -58,12 +61,16 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
 
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
+PlaylistTreeView = Literal["tree", "column"]
 _DEFAULT_HIDE_BROKEN_LINKS = False
+_DEFAULT_DECK_RIGHT_MIRROR = False
+_DEFAULT_PLAYLIST_TREE_VIEW: PlaylistTreeView = "tree"
 _DEFAULT_LIBRARY_DENSITY: LibraryDensity = "compact"
 _DEFAULT_LIBRARY_FILTER_BOOLS: dict[str, bool] = {
     "next_only_filter": False,
     "remixes_filter": False,
     "vocals_filter": False,
+    "available_offline_filter": False,
 }
 _DEFAULT_WHEEL_SENSITIVITY: dict[str, float] = {"mouse": 1.0, "trackpad": 1.0 / 3.0}
 _DEFAULT_MIDI_ENABLED = False
@@ -466,6 +473,21 @@ def _parse_app_posture(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_gig_helper(raw: dict[str, Any]) -> str:
+    if "gig_helper" not in raw:
+        return _DEFAULT_GIG_HELPER
+    value = raw["gig_helper"]
+    if value not in ("unset", "off", "on"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "gig_helper must be unset|off|on",
+            },
+        )
+    return value
+
+
 def _load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {
@@ -476,9 +498,11 @@ def _load(path: Path) -> dict[str, Any]:
             "technically_working_animate": _DEFAULT_TECH_WORKING_ANIMATE,
             "jog_radial_waveform": _DEFAULT_JOG_RADIAL_WAVEFORM,
             "show_agent_pins": _DEFAULT_SHOW_AGENT_PINS,
+            "show_stems": _DEFAULT_SHOW_STEMS,
             "level_calibration": dict(_DEFAULT_LEVEL_CALIBRATION),
             "perf_tier": _DEFAULT_PERF_TIER,
             "app_posture": _DEFAULT_APP_POSTURE,
+            "gig_helper": _DEFAULT_GIG_HELPER,
             "app_mode": dict(_DEFAULT_APP_MODE),
             **_TOPBAR_BOOL_DEFAULTS,
             **_lyrics_defaults(),
@@ -540,6 +564,15 @@ def _load(path: Path) -> dict[str, Any]:
                 "message": "show_agent_pins must be a boolean",
             },
         )
+    show_stems = raw.get("show_stems", _DEFAULT_SHOW_STEMS)
+    if not isinstance(show_stems, bool):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "show_stems must be a boolean",
+            },
+        )
     return {
         "confirm": confirm,
         "theme": theme,
@@ -548,9 +581,11 @@ def _load(path: Path) -> dict[str, Any]:
         "technically_working_animate": animate,
         "jog_radial_waveform": jog_radial,
         "show_agent_pins": show_agent_pins,
+        "show_stems": show_stems,
         "level_calibration": _parse_level_calibration(raw.get("level_calibration")),
         "perf_tier": _parse_perf_tier(raw),
         "app_posture": _parse_app_posture(raw),
+        "gig_helper": _parse_gig_helper(raw),
         "app_mode": _parse_app_mode(raw.get("app_mode")),
         **_parse_topbar_bool_prefs(raw),
         **_parse_lyrics(raw),
@@ -608,6 +643,7 @@ class UiPrefsOut(BaseModel):
     technically_working_animate: bool = _DEFAULT_TECH_WORKING_ANIMATE
     jog_radial_waveform: bool = _DEFAULT_JOG_RADIAL_WAVEFORM
     show_agent_pins: bool = _DEFAULT_SHOW_AGENT_PINS
+    show_stems: bool = _DEFAULT_SHOW_STEMS
     level_calibration: LevelCalibrationOut = Field(default_factory=LevelCalibrationOut)
     lyrics_global: bool = _DEFAULT_LYRICS_BOOLS["lyrics_global"]
     lyrics_library_col: bool = _DEFAULT_LYRICS_BOOLS["lyrics_library_col"]
@@ -617,6 +653,7 @@ class UiPrefsOut(BaseModel):
     lyrics_deck_line: bool = _DEFAULT_LYRICS_BOOLS["lyrics_deck_line"]
     perf_tier: PerfTierPref = _DEFAULT_PERF_TIER
     app_posture: AppPosturePref = _DEFAULT_APP_POSTURE
+    gig_helper: GigHelperPref = _DEFAULT_GIG_HELPER
     app_mode: AppModeOut = Field(default_factory=AppModeOut)
     beat_sync_max: bool = _DEFAULT_BEAT_SYNC_MAX
     auto_play_enabled: bool = _DEFAULT_AUTO_PLAY_ENABLED
@@ -628,8 +665,11 @@ class UiPrefsOut(BaseModel):
     next_only_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["next_only_filter"]
     remixes_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["remixes_filter"]
     vocals_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["vocals_filter"]
+    available_offline_filter: bool = _DEFAULT_LIBRARY_FILTER_BOOLS["available_offline_filter"]
     wheel_sensitivity: WheelSensitivityOut = Field(default_factory=WheelSensitivityOut)
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
+    deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
+    playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
 
 
 class UiPrefsPatch(BaseModel):
@@ -642,6 +682,7 @@ class UiPrefsPatch(BaseModel):
     technically_working_animate: bool | None = None
     jog_radial_waveform: bool | None = None
     show_agent_pins: bool | None = None
+    show_stems: bool | None = None
     level_calibration: LevelCalibrationOut | None = None
     lyrics_global: bool | None = None
     lyrics_library_col: bool | None = None
@@ -651,6 +692,7 @@ class UiPrefsPatch(BaseModel):
     lyrics_deck_line: bool | None = None
     perf_tier: PerfTierPref | None = None
     app_posture: AppPosturePref | None = None
+    gig_helper: GigHelperPref | None = None
     app_mode: AppModeOut | None = None
     beat_sync_max: bool | None = None
     auto_play_enabled: bool | None = None
@@ -662,8 +704,11 @@ class UiPrefsPatch(BaseModel):
     next_only_filter: bool | None = None
     remixes_filter: bool | None = None
     vocals_filter: bool | None = None
+    available_offline_filter: bool | None = None
     wheel_sensitivity: WheelSensitivityOut | None = None
     midi_enabled: bool | None = None
+    deck_right_mirror: bool | None = None
+    playlist_tree_view: PlaylistTreeView | None = None
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -739,11 +784,15 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["jog_radial_waveform"] = body.jog_radial_waveform
     if body.show_agent_pins is not None:
         current["show_agent_pins"] = body.show_agent_pins
+    if body.show_stems is not None:
+        current["show_stems"] = body.show_stems
     _merge_lyrics(current, body)
     if body.perf_tier is not None:
         current["perf_tier"] = body.perf_tier
     if body.app_posture is not None:
         current["app_posture"] = body.app_posture
+    if body.gig_helper is not None:
+        current["gig_helper"] = body.gig_helper
     if body.app_mode is not None:
         current["app_mode"] = _parse_app_mode(
             {**current["app_mode"], **body.app_mode.model_dump(exclude_unset=True)}
@@ -767,4 +816,8 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["level_calibration"] = _parse_level_calibration(
             {**current["level_calibration"], **body.level_calibration.model_dump(exclude_unset=True)}
         )
+    if body.deck_right_mirror is not None:
+        current["deck_right_mirror"] = body.deck_right_mirror
+    if body.playlist_tree_view is not None:
+        current["playlist_tree_view"] = body.playlist_tree_view
     return current

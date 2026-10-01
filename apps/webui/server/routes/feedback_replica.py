@@ -76,10 +76,11 @@ class FeedbackReplicaError(RuntimeError):
 class PinVersion:
     """One side's copy of one pin: its doc, LWW key and archive flag.
 
-    ``harvested`` marks a local copy that only the bulk harvest
-    (``POST /feedback/archive``) moved into an archive file. It hides the pin
-    on this machine and is never exported: only the per-pin archive route
-    produces a synced tombstone (PR #1978 review, ADR-0013).
+    ``harvested`` marks a local copy whose live ``status`` is ``harvested``
+    (legacy bulk harvest). That hide is never exported: only the per-pin
+    archive route produces a synced tombstone (PR #1978 review, ADR-0013).
+    Issue #3981 bulk harvest snapshots keep operator ``status`` and are not
+    harvested copies.
     """
 
     doc: dict[str, Any]
@@ -162,20 +163,25 @@ def _archived_versions(root: Path, machine_id: str) -> dict[str, PinVersion]:
     """Every pin an archive file records, newest copy per id.
 
     A pin archived through ``POST /comments/{id}/archive`` carries
-    ``status: archived`` and its own archive time: that is a tombstone. One
-    moved by the bulk harvest (``POST /feedback/archive``) keeps whatever
-    status it had: that is a local ``harvested`` copy, ordered at the file's
-    ``archived_at``, and it never becomes a tombstone.
+    ``status: archived`` and its own archive time: that is a tombstone. A
+    legacy bulk harvest that wrote ``status: harvested`` is a local hide,
+    ordered at the file's ``archived_at``, and never becomes a tombstone.
+    Issue #3981 snapshots keep operator status: provenance only.
     """
     versions: dict[str, PinVersion] = {}
     for path, comment, archived_at in _archive_entries(root):
         if comment.get("status") == ARCHIVED:
             version = _version(comment, machine_id, archived=True)
-        else:
+        elif comment.get("status") == "harvested":
             version = _version(
                 comment, machine_id, archived=True, harvested=True,
                 updated_at=sync_stamp.to_canonical(_harvest_stamp(path, archived_at)),
             )
+        else:
+            # Agent bulk harvest (issue #3981): archive file is provenance only.
+            # Live pins stay on the board with their operator status, so this
+            # copy must not hide as harvested or export as a tombstone.
+            version = _version(comment, machine_id, archived=False, harvested=False)
         versions[version.doc["id"]] = _newer(versions.get(version.doc["id"]), version)
     return versions
 
@@ -206,7 +212,8 @@ def local_versions(root: Path, machine_id: str) -> dict[str, PinVersion]:
     """
     versions = dict(_archived_versions(root, machine_id))
     for comment in _load(root / _COMMENTS_FILE, "comments"):
-        live = _version(comment, machine_id, archived=False)
+        harvested = comment.get("status") == "harvested"
+        live = _version(comment, machine_id, archived=False, harvested=harvested)
         archived = versions.get(live.doc["id"])
         if archived is None or live.updated_at >= archived.updated_at:
             versions[live.doc["id"]] = live
@@ -323,6 +330,14 @@ def _winning_side(
         return "import"
     if _same(mine, theirs):
         return "unchanged"
+    if theirs.archived and not mine.archived and mine.updated_at > theirs.updated_at:
+        log.info(
+            "feedback pins: rejected tombstone for %s: local %s > remote %s",
+            mine.doc.get("id"),
+            mine.updated_at,
+            theirs.updated_at,
+        )
+        return "export"
     if mine.harvested:
         return "import" if theirs.updated_at > mine.updated_at else "unchanged"
     if mine.updated_at == theirs.updated_at and theirs.origin_device_id != machine_id:

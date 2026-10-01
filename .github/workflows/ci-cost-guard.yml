@@ -1,83 +1,50 @@
 name: CI Cost Guard
 
-on:
-  workflow_run:
-    # 'Build docs' was removed Mon 31 Aug 2026: it is a single 10-minute
-    # Linux job that has never approached any threshold, and pricing it
-    # doubled the guard's own run count for no signal. The cumulative view
-    # in ci-budget-watch.yml covers every workflow, this one included.
-    # Full CI was removed Tue 1 Sep 2026 on arithmetic, not preference. This
-    # guard alerts ABOVE $0.30. A workflow whose own timeouts cap it below that
-    # can never trip it, so pricing it buys one billed minute per run and zero
-    # possible signal. Windows Parity was removed the same day and is BACK: the
-    # row below priced it at exactly $0.30 by treating its timeout as an exact
-    # billed duration, but production bills whole ceiling-minutes, so a run
-    # cancelled at the 30-minute timeout bills 31 and DOES trip. Ceilings below
-    # now carry that extra minute per job:
-    #
-    #   Release Check          30 Linux min      = $0.19  cannot, ever
-    #   macOS Packaging        16 macOS min      = $1.05  CAN trip
-    #   macOS Desktop Compile   5 macOS min      = $0.37  CAN trip
-    #   macOS Native Companion 20 macOS min      = $1.30  CAN trip
-    #   E2E                    30 + 45 Linux min = $0.46  CAN trip (see below)
-    #   CI                     20+15+20 Linux min = $0.35 CAN trip
-    #   Windows Parity         30 Windows min    = $0.31  CAN trip on cancellation
-    #   Full CI                20 Linux min      = $0.13  cannot, ever
-    #
-    # THAT TABLE IS NO LONGER LOAD-BEARING. It is a reader's convenience, and
-    # the same table one revision ago was wrong: it priced E2E at one 30-minute
-    # job when the workflow has two, the second being the 45-minute nightly
-    # extended suite, so a scheduled run's ceiling is $0.45 and DOES trip. The
-    # arithmetic is now derived from the workflow files themselves and enforced
-    # by test_every_workflow_that_can_trip_the_guard_is_watched, which fails if
-    # any workflow's own ceiling exceeds the threshold below while its name is
-    # missing from this list. Codex found the E2E row on #713.
-    #
-    # E2E stays watched but is priced only on the events that can reach that
-    # ceiling. Its `extended` job is gated on schedule / workflow_dispatch, so
-    # a push or pull_request run is the 30-minute gate alone at $0.18 and
-    # cannot trip. Pricing those bought 94 billed minutes on 1 Sep, 4.7% of the
-    # monthly allowance, to answer a question whose answer was fixed at 'no'.
-    # The job-level `if` below drops exactly those runs and keeps the ones that
-    # can alert. That gating is itself pinned by a test, because it is the
-    # assumption the skip rests on.
-    workflows:
-      [
-        CI,
-        E2E,
-        macOS Desktop Compile,
-        macOS Native Companion,
-        macOS Packaging,
-        Periodic checks,
-        Windows Parity (on-demand),
-      ]
-    types: [completed]
+# One scheduled pass prices every watched completion since the previous pass's
+# start (RUN-COUNT round 1, Tue 22 Sep 2026, issue #2196). Until then this was
+# a workflow_run workflow: one run and one queued job per completed CI, E2E or
+# packaging run, 96 of the 600 most recent runs, and under a saturated pool
+# each of those jobs held a FIFO position ahead of PR CI (81 of 126 queued runs
+# on Tue 15 Sep 2026). The Actions queue is per job, so folding the job into a
+# sibling workflow_run workflow would have renamed the run around the same
+# queued job; only fewer jobs help, and one job per cadence is fewer.
+#
+# The high-water mark is stored nowhere but GitHub's own record of this
+# workflow: the `run_started_at` of the last SUCCESSFUL pass, read back below.
+# Two passes always overlap by at least the floor, and an overlap is harmless
+# because an alert issue's title carries the run id and the step below refuses
+# to open a second one for the same run. A pass that fails mid-way (API error)
+# does not move the mark, so however many fail in a row, the next success
+# starts from the last pass that finished its batch (scripts/ci_run_batch.py
+# pages back through the history to find it).
+#
+# Alert latency is one cadence at most. The guard's own file previously said
+# why it never runs inside the observed run: a job inside CI would execute the
+# pull request's head with issues: write, and a run cannot price itself before
+# it completes. Both still hold.
 
-# workflow_run executes this file from the default branch. Never check out or
-# execute the triggering run's head SHA: a pull request may contain untrusted
-# code while this workflow has permission to open an alert issue.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    # Daily reconcile pass: the plain pass plus the re-runs of runs created up to
+    # RECONCILE_HORIZON_DAYS back (see the pricing step).
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      reconcile:
+        description: "Run a reconcile pass (also prices recent re-runs of runs created up to 31 days back, about 17 minutes)"
+        type: boolean
+        default: false
+
 permissions:
   actions: read
   contents: read
   issues: write
 
-# issue #2505 asked this group to collapse to one pending run per branch, the
-# way stable-evidence.yml collapses per head_sha, so a burst of upstream
-# completions does not queue one guard run per completion. It stays keyed per
-# run id + attempt instead, on purpose: `scripts/ci_cost_guard.py` prices
-# exactly the one RUN_ID it is given and has no cross-run aggregation, so
-# collapsing the group would let GitHub's own concurrency queue (which keeps
-# only the newest PENDING run per group and drops earlier pending ones,
-# cancel-in-progress or not) silently evict a run's pricing before it ever
-# executes. That is not a lost log line the way a skipped stable-evidence
-# append is: it is a run this guard exists to price, including a run that got
-# cancelled after burning its full timeout (the $0.30 threshold is sized
-# around exactly that case - see the table above). Losing that price silently
-# is worse than the fan-out it would save, so per-run-id grouping stays and
-# is pinned by
-# test_ci_cost_guard_concurrency_group_stays_keyed_per_run.
+# One pass at a time. cancel-in-progress stays false so a running pass is never
+# cut short; a queued pass behind it simply starts from the same mark.
 concurrency:
-  group: ci-cost-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  group: ci-cost-guard-batch
   cancel-in-progress: false
 
 env:
@@ -91,20 +58,84 @@ env:
 
 jobs:
   assess:
-    name: Price completed workflow run
-    # Skip only the E2E runs that provably cannot trip: without the schedule or
-    # a manual dispatch its 45-minute `extended` job does not run at all, so the
-    # ceiling is the 30-minute gate, $0.18. Every other watched workflow is
-    # priced on every event.
-    if: >-
-      github.event.workflow_run.name != 'E2E'
-      || github.event.workflow_run.event == 'schedule'
-      || github.event.workflow_run.event == 'workflow_dispatch'
+    name: Price completed workflow runs
     # Runner is a repo-variable switch; see ci.yml's `test` job for the full
-    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest. One job
+    # per cadence on the shared pool is the whole saving; hosted would cost a
+    # billed minute per pass, 2,880 a month, more than the allowance.
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-
+    # A reconcile pass lists 31 days of runs on top of the plain pass: 30 days read
+    # 22,130 runs in 276 calls and 957 s on Tue 29 Sep 2026.
+    timeout-minutes: ${{ (github.event.schedule == '23 3 * * *' || inputs.reconcile) && 30 || 10 }}
+    env:
+      # The watch list and the E2E rule live here, as data, and
+      # tests/test_ci_cost_guard_workflow_coverage.py derives both from the
+      # workflow files: every workflow whose own ceiling can exceed the
+      # threshold must be listed, no listed name may be one that cannot, and
+      # E2E is priced only on the events whose jobs can reach the ceiling.
+      # 'Build docs' was removed Mon 31 Aug 2026: it is a single 10-minute
+      # Linux job that has never approached any threshold, and pricing it
+      # doubled the guard's own run count for no signal. The cumulative view
+      # in ci-budget-watch.yml covers every workflow, this one included.
+      # Full CI was removed Tue 1 Sep 2026 on arithmetic, not preference. This
+      # guard alerts ABOVE $0.30. A workflow whose own timeouts cap it below that
+      # can never trip it, so pricing it buys one billed minute per run and zero
+      # possible signal. Windows Parity was removed the same day and is BACK: the
+      # row below priced it at exactly $0.30 by treating its timeout as an exact
+      # billed duration, but production bills whole ceiling-minutes, so a run
+      # cancelled at the 30-minute timeout bills 31 and DOES trip. Ceilings below
+      # now carry that extra minute per job:
+      #
+      #   Release Check          30 Linux min      = $0.19  cannot, ever
+      #   macOS Packaging        16 macOS min      = $1.05  CAN trip
+      #   macOS Desktop Compile   5 macOS min      = $0.37  CAN trip
+      #   macOS Native Companion 20 macOS min      = $1.30  CAN trip
+      #   E2E                    30 + 45 Linux min = $0.46  CAN trip (see below)
+      #   CI                     20+15+20 Linux min = $0.35 CAN trip
+      #   Windows Parity         30 Windows min    = $0.31  CAN trip on cancellation
+      #   Full CI                20 Linux min      = $0.13  cannot, ever
+      #
+      # THAT TABLE IS NO LONGER LOAD-BEARING. It is a reader's convenience, and
+      # the same table one revision ago was wrong: it priced E2E at one 30-minute
+      # job when the workflow has two, the second being the 45-minute nightly
+      # extended suite, so a scheduled run's ceiling is $0.45 and DOES trip. The
+      # arithmetic is now derived from the workflow files themselves and enforced
+      # by test_every_workflow_that_can_trip_the_guard_is_watched, which fails if
+      # any workflow's own ceiling exceeds the threshold below while its name is
+      # missing from this list. Codex found the E2E row on #713.
+      #
+      # E2E stays watched but is priced only on the events that can reach that
+      # ceiling. Its `extended` job is gated on schedule / workflow_dispatch, so
+      # a push or pull_request run is the 30-minute gate alone at $0.18 and
+      # cannot trip. Pricing those bought 94 billed minutes on 1 Sep, 4.7% of the
+      # monthly allowance, to answer a question whose answer was fixed at 'no'.
+      # The job-level `if` below drops exactly those runs and keeps the ones that
+      # can alert. That gating is itself pinned by a test, because it is the
+      # assumption the skip rests on.
+      WATCHED_WORKFLOWS: "CI,E2E,macOS Desktop Compile,macOS Native Companion,macOS Packaging,Periodic checks,Windows Parity (on-demand)"
+      E2E_PRICED_EVENTS: "schedule,workflow_dispatch"
+      # The error sink rides this pass (RUN-COUNT round 3, ADR-NEW-error-sink-rides-the-
+      # cost-guard): the failed runs of these workflows, from the listing above, are
+      # posted as kind=build rows. A subset of WATCHED_WORKFLOWS, which the script checks.
+      SINK_WORKFLOWS: "CI,E2E,macOS Packaging"
+      # Overlap floor between passes (minutes) and how far back a run's
+      # creation can be before its completion (hours); both read by
+      # tests/quality/test_bookkeeping_workflows_skip_cancelled.py against the
+      # cron above.
+      OVERLAP_MINUTES: "30"
+      LOOKBACK_HOURS: "3"
+      # A reconcile pass: the daily cron, or a dispatch with reconcile ticked.
+      RECONCILE: ${{ github.event.schedule == '23 3 * * *' || inputs.reconcile == true }}
+      # GitHub re-runs a run up to 30 days after it was created, plus one day for
+      # the reconcile cadence. There is no reconcile mark: every reconcile lists the
+      # whole horizon.
+      RECONCILE_HORIZON_DAYS: "31"
+      # Pricing is one jobs read per run and the job's GITHUB_TOKEN allows 1,000
+      # requests an hour, so a reconcile prices the re-runs that completed this
+      # recently (about 20 a day), not all 578 of 30 days. An outage longer than this
+      # leaves older re-runs unpriced; the alert is advisory, not a release gate.
+      RECONCILE_PRICE_DAYS: "7"
+      THRESHOLD_USD: "0.30"
     steps:
       # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
       # checkout cleans the tree as the runner user, so one root-owned file in
@@ -190,6 +221,8 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
           persist-credentials: false
           # false on purpose: the next step cleans all but the dependency trees.
           clean: false
@@ -206,46 +239,113 @@ jobs:
       # missing binary, rather than 20 steps into the cost calculation with a
       # bare exit 127.
       - name: Preflight - required runner executables present
-        run: scripts/ci_runner_preflight.sh python
+        run: scripts/ci_runner_preflight.sh python python3 gh
 
-      - name: Calculate gross runner cost
+      - name: Read the high-water mark from the last successful pass
+        id: mark
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          THIS_RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          previous="$(python3 -m scripts.ci_run_batch mark --repository "$REPOSITORY" \
+            --workflow-file ci-cost-guard.yml --this-run "$THIS_RUN")"
+          echo "previous_started=$previous" >> "$GITHUB_OUTPUT"
+          echo "[guard] previous successful pass started at: ${previous:-none, using the overlap floor}"
+
+      # Threshold rationale (Mon 31 Aug 2026): the previous $1.00 was
+      # unreachable. CI's worst case is 20+15+20 min of Linux timeouts =
+      # 55 min x $0.006 = $0.33, so no single run could ever trip it and
+      # the guard only ever fired on unpriced runners. $0.30 sits just
+      # under that ceiling: a CI run that burns its timeouts now alerts,
+      # a normal ~6-minute run (~$0.09) stays quiet.
+      # BEFORE the listing: a watched run still in flight that was created before the
+      # lookback would fall out of every later listing, so the pass must not move the
+      # mark past it. Taken first, a run completing mid-pass is in the census or in the
+      # listing, never in neither. One CI run spanned 6.0 h from creation to completion
+      # on Mon 28 Sep 2026. This step only counts; the pass's last step fails on it.
+      - name: Count watched runs in flight since before the lookback
+        id: census
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.ci_run_batch census --repository "$REPOSITORY" \
+            --watched "$WATCHED_WORKFLOWS" --lookback-hours "$LOOKBACK_HOURS"
+
+      - name: Price every watched completion since the mark
         id: guard
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          PREVIOUS_STARTED: ${{ steps.mark.outputs.previous_started }}
+        run: |
+          mkdir -p ci-cost-reports
+          # A re-run keeps its run's created_at, so a run re-run long after creation
+          # is below every plain pass's creation floor (Codex P1 on #3844).
+          reconcile=()
+          [ "$RECONCILE" != "true" ] || reconcile=(--reconcile-horizon-days "$RECONCILE_HORIZON_DAYS" --reconcile-price-days "$RECONCILE_PRICE_DAYS")
+          python -m scripts.ci_cost_guard --batch \
+            --repository "$REPOSITORY" \
+            --watched "$WATCHED_WORKFLOWS" \
+            --sink-workflows "$SINK_WORKFLOWS" \
+            --e2e-events "$E2E_PRICED_EVENTS" \
+            --previous-started "$PREVIOUS_STARTED" \
+            "${reconcile[@]}" \
+            --overlap-minutes "$OVERLAP_MINUTES" \
+            --lookback-hours "$LOOKBACK_HOURS" \
+            --threshold "$THRESHOLD_USD" \
+            --report-dir ci-cost-reports
+
+      # One issue per offending run, never two: the title carries the run id
+      # and an existing open or closed issue with it is the dedupe. The issue and
+      # an error annotation are the alert; the pass itself stays green, because the
+      # mark is the last SUCCESSFUL pass, and a new offender every cadence would
+      # otherwise pin the mark and grow the window until the job times out
+      # (Codex P1 on #3844).
+      - name: Open cost alert issues
+        if: steps.guard.outputs.alerts != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
-          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
-          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
-        # Threshold rationale (Mon 31 Aug 2026): the previous $1.00 was
-        # unreachable. CI's worst case is 20+15+20 min of Linux timeouts =
-        # 55 min x $0.006 = $0.33, so no single run could ever trip it and
-        # the guard only ever fired on unpriced runners. $0.30 sits just
-        # under that ceiling: a CI run that burns its timeouts now alerts,
-        # a normal ~6-minute run (~$0.09) stays quiet.
+          ALERTS_FILE: ${{ steps.guard.outputs.alerts_file }}
         run: |
-          python scripts/ci_cost_guard.py \
-            --repository "$REPOSITORY" \
-            --run-id "$RUN_ID" \
-            --attempt "$RUN_ATTEMPT" \
-            --run-url "$RUN_URL" \
-            --workflow-name "$WORKFLOW_NAME" \
-            --threshold 0.30
+          set -euo pipefail
+          opened=0
+          while IFS=$'\t' read -r run_id title report_file; do
+            existing="$(gh issue list --repo "$REPOSITORY" --state all --search "\"run $run_id\" in:title" --json number --jq 'length')"
+            if [ "$existing" != "0" ]; then
+              echo "[guard] run $run_id already has an alert issue; not opening another"
+              continue
+            fi
+            gh issue create --repo "$REPOSITORY" --title "$title" --body-file "$report_file"
+            echo "::error title=$title::See the generated issue and job summary for the cost breakdown."
+            opened=$((opened + 1))
+          done < <(python3 -c 'import json,sys; [print(a["run_id"], a["title"], a["report_file"], sep="\t") for a in json.load(open(sys.argv[1]))]' "$ALERTS_FILE")
+          echo "[guard] opened=$opened alert issue(s)"
 
-      - name: Open cost alert issue and fail visibly
-        if: steps.guard.outputs.over_threshold == 'true' || steps.guard.outputs.unpriced_jobs == 'true'
+      # Each failed completion the pass selected becomes one kind=build row on the one
+      # sink (OBS-01), which used to be a workflow_run job per completion (error-sink.yml).
+      # After the alert step, so a sink failure never delays an alert. A record already in
+      # this host's sink is skipped, so the overlap re-reads safely, and every record is
+      # read back after posting: a lost write fails the pass and the mark stays put.
+      # Each host's sink holds a record once; see the ADR on why not once fleet-wide.
+      - name: Post failed completions to the error sink
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COST: ${{ steps.guard.outputs.estimated_cost_usd }}
-          REPORT_FILE: ${{ steps.guard.outputs.report_file }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          UNPRICED: ${{ steps.guard.outputs.unpriced_jobs }}
+          PYTHONPATH: ${{ github.workspace }}
+          OPENDJ_TELEMETRY: "0"
+          OPENDJ_HOST_LABEL: github-actions
+          SINK_FAILURES_FILE: ${{ steps.guard.outputs.sink_failures_file }}
         run: |
-          if [[ "$UNPRICED" == "true" ]]; then
-            title="CI cost telemetry alert: unpriced runner in run $RUN_ID"
-          else
-            title="CI cost alert: run $RUN_ID estimated at \$$COST"
-          fi
-          gh issue create --title "$title" --body-file "$REPORT_FILE"
-          echo "::error title=$title::See the generated issue and job summary for the cost breakdown."
-          exit 1
+          set -euo pipefail
+          mkdir -p "$HOME/jobs/logs"
+          python3 -m scripts.post_build_failure --batch-file "$SINK_FAILURES_FILE" --host "github-actions"
+
+      # Last, so the pass's own work always lands first.
+      - name: Fail while the census holds the mark
+        env:
+          HELD: ${{ steps.census.outputs.held }}
+        run: |
+          [ "$HELD" = "0" ] || { echo "::error::held=${HELD:-unmeasured}; the mark stays until those runs complete"; exit 1; }

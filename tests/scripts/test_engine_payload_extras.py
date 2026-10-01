@@ -227,6 +227,7 @@ def _lock_without(lock: str, *packages: str) -> str:
     return "".join(kept)
 
 
+# REQ: INSTALL-25
 @pytest.mark.requirement("INSTALL-25")
 def test_a_requested_extra_missing_from_the_lock_fails_the_build() -> None:
     """The mutation this whole register exists to catch: the export stops
@@ -251,6 +252,7 @@ def test_the_helper_that_strips_a_package_really_strips_it() -> None:
     assert "scipy" in {e.name for e in parse_locked_export(stripped)}
 
 
+# REQ: INSTALL-25
 @pytest.mark.requirement("INSTALL-25")
 def test_a_requested_extra_present_in_the_lock_is_accepted() -> None:
     """The opposite mutation: a guard that fired on a lock that DOES carry
@@ -258,6 +260,7 @@ def test_a_requested_extra_present_in_the_lock_is_accepted() -> None:
     _verify_omitted_extras(parse_locked_export(LOCK_SAMPLE), PYPROJECT)
 
 
+# REQ: INSTALL-25
 @pytest.mark.requirement("INSTALL-25")
 def test_the_real_locked_export_carries_the_analysis_extra() -> None:
     """Against the export the dmg build actually installs from, not a sample."""
@@ -267,6 +270,17 @@ def test_the_real_locked_export_carries_the_analysis_extra() -> None:
     # Negative control: an extra this build still omits must read as absent,
     # or "present" is what this probe says about everything.
     assert "mutagen" not in {e.name for e in entries}
+
+
+@pytest.mark.requirement("OBS-04")
+def test_the_real_locked_export_carries_the_observability_extra() -> None:
+    """The dmg ships sentry-sdk (OBS-04). Against the real export, so a lock
+    that quietly stops carrying it fails here rather than on a tester's Mac."""
+    entries, _dropped = locked_requirements(REPO_ROOT)
+    project_pulled = {e.name for e in entries if "music-dj-tools" in e.via}
+    assert "sentry-sdk" in project_pulled
+    assert "observability" in REQUESTED_OPTIONAL_EXTRAS
+    assert "observability" not in OMITTED_OPTIONAL_EXTRAS
 
 
 @pytest.mark.requirement("INSTALL-25")

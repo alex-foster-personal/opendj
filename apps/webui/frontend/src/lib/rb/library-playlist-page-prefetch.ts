@@ -28,10 +28,24 @@ type FetchPlaylistPage = (
 	offset: number
 ) => Promise<PlaylistPageResult>;
 
-const inflight = new Map<string, Promise<PlaylistPageResult>>();
+/** A prefetch older than this is not joined: the switch fetches fresh rows. */
+export const PLAYLIST_PREFETCH_MAX_AGE_MS = 15_000;
+
+type PrefetchEntry = {
+	promise: Promise<PlaylistPageResult>;
+	pageSize: number;
+	startedAt: number;
+};
+
+/** Prefetches not yet consumed by a switch. A switch takes its entry out, so
+ * every later switch to the same playlist reads the route again: a page is
+ * joined at most once and never served as a cache. */
+const inflight = new Map<string, PrefetchEntry>();
 
 let fetchPlaylistPage: FetchPlaylistPage = (playlistId, limit, offset) =>
 	listPlaylistTracksPage(playlistId, { limit, offset });
+
+let now: () => number = () => performance.now();
 
 /** Test seam: inject a fake page fetch without mocking production api-rb. */
 export function setFetchPlaylistPageForTests(fn: FetchPlaylistPage | null): void {
@@ -39,22 +53,34 @@ export function setFetchPlaylistPageForTests(fn: FetchPlaylistPage | null): void
 		listPlaylistTracksPage(playlistId, { limit, offset }));
 }
 
-/** Test-only reset for the in-flight map and injected seam. */
+/** Test seam: inject the clock that ages prefetches. */
+export function setPrefetchClockForTests(fn: (() => number) | null): void {
+	now = fn ?? (() => performance.now());
+}
+
+/** Test-only reset for the in-flight map and injected seams. */
 export function resetPlaylistPagePrefetchForTests(): void {
 	inflight.clear();
 	setFetchPlaylistPageForTests(null);
+	setPrefetchClockForTests(null);
 }
 
-/** Idempotent: concurrent callers share one in-flight first-page GET. */
+function isFresh(entry: PrefetchEntry): boolean {
+	return now() - entry.startedAt <= PLAYLIST_PREFETCH_MAX_AGE_MS;
+}
+
+/** Idempotent while a fresh prefetch is pending or unconsumed. */
 export function prefetchPlaylistFirstPage(
 	playlistId: string,
 	pageSize = PLAYLIST_PREFETCH_PAGE_SIZE
 ): void {
-	if (inflight.has(playlistId)) return;
+	const existing = inflight.get(playlistId);
+	if (existing !== undefined && isFresh(existing)) return;
 	const promise = fetchPlaylistPage(playlistId, pageSize, 0);
-	inflight.set(playlistId, promise);
+	const entry: PrefetchEntry = { promise, pageSize, startedAt: now() };
+	inflight.set(playlistId, entry);
 	promise.catch(() => {
-		inflight.delete(playlistId);
+		if (inflight.get(playlistId) === entry) inflight.delete(playlistId);
 	});
 }
 
@@ -68,7 +94,9 @@ export function prefetchPlaylistTreeIntent(
 	}
 }
 
-/** First-page fetch: join prefetch when offset is 0, else live GET. */
+/** Page fetch for a switch: at offset 0, consume a fresh prefetch of the same
+ * size if one exists (falling back to a live GET if it failed); otherwise a
+ * live GET. */
 export async function fetchPlaylistFirstPage(
 	playlistId: string,
 	offset: number,
@@ -77,15 +105,14 @@ export async function fetchPlaylistFirstPage(
 	if (offset !== 0) {
 		return fetchPlaylistPage(playlistId, pageSize, offset);
 	}
-	let promise = inflight.get(playlistId);
-	if (promise === undefined) {
-		promise = fetchPlaylistPage(playlistId, pageSize, 0);
-		inflight.set(playlistId, promise);
+	const entry = inflight.get(playlistId);
+	inflight.delete(playlistId);
+	if (entry === undefined || entry.pageSize !== pageSize || !isFresh(entry)) {
+		return fetchPlaylistPage(playlistId, pageSize, 0);
 	}
 	try {
-		return await promise;
-	} catch (error) {
-		inflight.delete(playlistId);
+		return await entry.promise;
+	} catch {
 		return fetchPlaylistPage(playlistId, pageSize, 0);
 	}
 }

@@ -33,6 +33,13 @@ TABLES: dict[str, str] = {
         "when. NO row at all means UNKNOWN, which is why `tracks_available` "
         "excludes it: absence of evidence is not evidence of presence."
     ),
+    "path_availability": (
+        "One rekordbox library path's last stat on THIS machine (materialized "
+        "size, or NULL for not on disk) and when it was taken, keyed by a "
+        "resolver namespace so a changed path map or another machine never "
+        "reads it. A cache for listing hydration (issue #1037): rows older "
+        "than the TTL are stale, and a path with no row is unprobed, not absent."
+    ),
     "track_fields": (
         "One field value for one track from one adapter, so rekordbox, djay "
         "and serato can each hold a different opinion about the same track "
@@ -112,6 +119,11 @@ TABLES: dict[str, str] = {
         "the spoke-local twin of hub_changelog that this machine's push "
         "watermark fences against. Machine-local; it never rides sync "
         "itself."
+    ),
+    "sync_write_tokens": (
+        "One digested table's current write token, replaced by a trigger on "
+        "every row write, so the CloudSync digest can skip re-hashing a "
+        "library nothing has touched. Machine-local; it never rides sync."
     ),
     # ----- enrollment: who OWNS a machine (ADR 12) -----------------------
     "machine_owners": (

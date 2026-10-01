@@ -19,7 +19,7 @@ belong to the AI review layer below and the manual areas in
 |---|---|---|---|
 | Python patterns | **ruff `S` rules** (flake8-bandit) | pre-commit + existing quality ratchet | yes, via ratchet |
 | Python + TS patterns | **Semgrep CE** registry packs + custom rules | PR (diff-aware) | new findings only |
-| Cross-file taint, platform rules | **Semgrep AppSec Platform** (`semgrep ci`) | same-repo PR (diff-aware) + daily full | Block-mode rules only; report-only |
+| Cross-file taint, platform rules | **Semgrep AppSec Platform** (`semgrep ci`) | same-repo PR (diff-aware) + weekly full of `main` (unproven: never completed inside its timeout as of Tue 22 Sep 2026) | Block-mode rules only; report-only |
 | Design / logic | Claude Code **`/security-review`** on high-risk paths | weekly + on PRs touching those paths | advisory |
 
 ### ruff `S`
@@ -59,7 +59,7 @@ Semgrep's free cloud tier (up to 10 contributors) adds cross-file taint analysis
 is its biggest lead over CE (research: CE detected 44-48% vs Pro 72-75% on Semgrep's own
 benchmark). It requires uploading code to Semgrep. **Adopted Tue 15 Sep 2026:** the
 `semgrep` job in `security.yml` runs `semgrep ci` against the Semgrep AppSec Platform on
-same-repo PRs and daily on `main`. Token handling and the reason CE still runs are in
+same-repo PRs and weekly (Monday) on `main`; the full scan was daily until ADR-NEW-semgrep-full-scan-weekly. Token handling and the reason CE still runs are in
 [routine-scanning.md](routine-scanning.md#semgrep-appsec-platform-semgrep-ci).
 
 ### AI security review
@@ -81,5 +81,12 @@ same-repo branches, with a read-only token.
 - [if] `tests/fixtures/security/sast-control/` (a file with one known-bad pattern per
   custom rule, excluded from normal runs) produces zero Semgrep findings in the control
   step [then] fail: the rules or the parser are broken.
+- [if] the control directory holds untracked files (a `__pycache__` written by pytest)
+  [then] the control still passes: its file floor and semgrep targets are the git-tracked
+  list (`git ls-files`), never a filesystem walk.
+- [if] a control file is unmerged (a merge or rebase conflict leaves one index entry per
+  stage) [then] it counts once toward the floor (`git ls-files --deduplicate`).
+- [if] a tracked control file is missing from the working tree or semgrep does not scan it
+  [then] UNKNOWN, and the message names that file.
 - [if] a PR adds `subprocess.run(cmd, shell=True)` under `apps/` [then] the PR fails.
 - [if] the ruff `S` count on a PR exceeds the ratchet baseline [then] the PR fails.

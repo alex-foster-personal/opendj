@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { build, transformSync } from 'esbuild';
 import { compileModule } from 'svelte/compiler';
 
+import { importBundledSource } from './import-bundled-source.mjs';
+import { viteUrlSuffixPlugin } from './vite-url-suffix-plugin.mjs';
+
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const bundled = await build({
 	absWorkingDir: root,
@@ -21,9 +24,9 @@ const bundled = await build({
 			return { contents: compileModule(typed, { filename: path, generate: 'server' }).js.code,
 				resolveDir: path.slice(0, path.lastIndexOf('/')) };
 		});
-	} }]
+	} }, viteUrlSuffixPlugin]
 });
-const stores = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+const stores = await importBundledSource(bundled.outputFiles[0].text, 'toast-repeat-count-stores');
 function clear() {
 	for (const toast of [...stores.toasts]) stores.dismissToast(toast.logId);
 }

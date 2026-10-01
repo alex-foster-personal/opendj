@@ -32,6 +32,12 @@ Our exposure, measured Mon 14 Sep 2026:
 4. **Security scanners run on GitHub-hosted runners** (`ubuntu-latest`) with no repo
    secrets in scope, never on the self-hosted pool. `security.yml` hardcodes the label,
    and `scripts/security/scan_workflows.sh` fails if any of its jobs says otherwise.
+   - Since Mon 21 Sep 2026 the pull_request-event scans additionally run only
+     while the repo variable `CI_HOSTED_SECURITY_JOBS` is `'true'`, so a
+     GitHub-hosted billing block reads as "skipped" on a PR rather than as a
+     scanner verdict; the scheduled scans are not gated and stay loud. The
+     restoration step is in
+     [ci-actions-cost-review-2026-08-16.md](../ci-actions-cost-review-2026-08-16.md#switching-ci-between-self-hosted-and-github-hosted).
    - Why not self-hosted: those runners are persistent and shared with jobs that hold
      write-scoped tokens, the nucbox runners sit on a machine we do not administer, and
      on Tue 15 Sep 2026 `CI_RUNS_ON_UNPRIVILEGED_LINUX` matched zero online runners.

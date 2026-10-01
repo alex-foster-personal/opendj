@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Cancel superseded queued trunk CI and bookkeeping workflow runs.
 
-Issue #2922: workflow_run followers (CI Cost Guard, Stable evidence, Error sink)
+Issue #2922: workflow_run followers (Error sink; CI Cost Guard and Stable evidence until
+Tue 22 Sep 2026, when each became a scheduled batch pass)
 queue on the self-hosted agentbox pool with per-upstream concurrency groups that
 never coalesce across superseded main pushes. This sweeper keeps only the trunk
 tip and the oldest/newest queued CI push runs, then cancels queued bookkeeping
@@ -28,6 +29,9 @@ MINI-PRD
             [then] refuse with a precondition error, never cancel them all [else stop]
        Measured Wed 16 Sep 2026 09:30Z: 13 of 28 unfinished runs were for PRs already
        merged or closed at the SHA under test, holding the 13-slot pytest pool.
+    R5 Completed-run cancel race ................................... done + regression
+       [if] a cancel POST 409s because the run already finished [then] count it
+            cancelled, logged already-completed [else: exit 10 unless not-yet-queued]
 
 USAGE
     uv run --no-sync python -m scripts.ci_trunk_tip_only --dry-run
@@ -40,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -62,14 +67,21 @@ except ModuleNotFoundError as exc:
     raise
 
 GATING_WORKFLOW = "CI"
-BOOKKEEPING_WORKFLOWS = frozenset(
-    {
-        "CI Cost Guard",
-        "Stable evidence",
-        "Error sink",
-    }
-)
+# CI Cost Guard and Stable evidence left this set on Tue 22 Sep 2026: each is a
+# scheduled batch pass now, not a per-SHA follower, so there is nothing of them
+# to supersede. Error sink rides the cost guard's pass since RUN-COUNT round 3, so
+# nothing is named this any more and the bookkeeping path below is inert; removing
+# it, and the FIX-409 lines that pin it, is its own change
+# (ADR-NEW-error-sink-rides-the-cost-guard).
+BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
+
+# A moving queue is expected (see `_paginated_runs`), so one inconsistent multi-page
+# census is not yet a precondition failure: re-read up to this many times, sleeping
+# CENSUS_RETRY_SLEEP_SECONDS between attempts, and only fail closed once every
+# attempt disagreed.
+CENSUS_MAX_ATTEMPTS = 3
+CENSUS_RETRY_SLEEP_SECONDS = 1.5
 
 _NOT_YET_QUEUED_CANCEL_MARKERS = ("HTTP 409", "not been queued yet")
 
@@ -79,6 +91,7 @@ class CancelOutcome(Enum):
 
     CANCELLED = "cancelled"
     SKIPPED_NOT_YET_QUEUED = "skipped_not_yet_queued"
+    ALREADY_COMPLETED = "already_completed"
 
 
 @dataclass(frozen=True)
@@ -169,13 +182,64 @@ def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
     return _paginated_runs(f"repos/{REPO}/actions/runs?branch={branch}&status=queued")
 
 
-def _paginated_runs(path: str) -> list[QueuedRun]:
+def _paginated_runs(
+    path: str, fetch_json: Callable[[str], object] | None = None
+) -> list[QueuedRun]:
+    """Every run the listing serves, paged until a page comes back short.
+
+    GitHub answers total_count from an index that lags the listing: measured live
+    at ~3 s for ten minutes on Tue 22 Sep 2026, 41 of 480 responses (8.5%) carried
+    a count their own runs did not add up to, and during a merge or cancel burst
+    the lag held across consecutive listings (15 over 14 twice; 18 over 17 then
+    20 over 15). Reading that as a paging defect made the sweeper red with every
+    test job green (main runs 35730977563, 35723785363, 35722075764 and
+    35721772426 that day, 4 of its 11 red runs in the last 30), and listing again
+    (#3825) did not cure it.
+
+    A SINGLE page shorter than PAGE_SIZE is complete by construction, so it is the
+    census and a disagreeing count is only a warning. Across MORE than one page a
+    disagreement can also mean the queue moved between page requests, and offset
+    paging then skips or repeats a run at the boundary; a skipped CI run whose SHA
+    should be retained would let a bookkeeping run sharing that SHA be cancelled.
+    A moving queue is expected, so one inconsistent multi-page read is re-read up
+    to CENSUS_MAX_ATTEMPTS times (sleeping CENSUS_RETRY_SLEEP_SECONDS between
+    attempts) before this stays fail-closed (PreconditionError, exit 10) -- only
+    a CONSISTENT read is ever accepted, never a fallback to the disagreeing one.
+    `fetch_json` is the GitHub GET; a test hands in captured real payloads keyed by
+    the path this asks (no monkeypatching)."""
+    fetch = _gh_api_json if fetch_json is None else fetch_json
+    attempts = 0
+    while True:
+        attempts += 1
+        runs, total_count, pages = _list_runs_once(path, fetch)
+        if len(runs) == total_count:
+            return runs
+        if pages == 1:
+            print(
+                f"[WARN] {path} reported total_count={total_count} but its single page holds"
+                f" {len(runs)} runs; the count lags the listing, the page is the census",
+                file=sys.stderr,
+            )
+            return runs
+        if attempts >= CENSUS_MAX_ATTEMPTS:
+            raise PreconditionError(
+                f"{path} reported total_count={total_count} but {pages} pages hold"
+                f" {len(runs)} runs; the queue moved between page requests on all"
+                f" {attempts} attempts, so this census could have skipped a run"
+            )
+        time.sleep(CENSUS_RETRY_SLEEP_SECONDS)
+
+
+def _list_runs_once(
+    path: str, fetch_json: Callable[[str], object]
+) -> tuple[list[QueuedRun], int, int]:
+    """The runs, the total_count page 1 reported, and how many pages were read."""
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
     total_count: int | None = None
     page = 1
     while True:
-        payload = _gh_api_json(f"{path}{sep}per_page={PAGE_SIZE}&page={page}")
+        payload = fetch_json(f"{path}{sep}per_page={PAGE_SIZE}&page={page}")
         if not isinstance(payload, dict) or not isinstance(payload.get("workflow_runs"), list):
             raise PreconditionError(f"{path} page {page} has no workflow_runs list: {payload!r}")
         if total_count is None:
@@ -183,17 +247,10 @@ def _paginated_runs(path: str) -> list[QueuedRun]:
             if not isinstance(total_count, int):
                 raise PreconditionError(f"{path} response has no integer total_count")
         page_items = payload["workflow_runs"]
-        if not page_items:
-            break
         runs.extend(_parse_queued_run(item) for item in page_items)
-        if len(runs) >= total_count:
-            break
+        if len(page_items) < PAGE_SIZE:
+            return runs, total_count, page
         page += 1
-    if len(runs) != total_count:
-        raise PreconditionError(
-            f"{path} reported total_count={total_count} but paging collected {len(runs)} runs"
-        )
-    return runs
 
 
 def _retained_ci_push_run_ids(ci_push_runs: list[QueuedRun]) -> frozenset[int]:
@@ -346,7 +403,7 @@ def execute_closed_pr_sweep(
         print(f"::notice::{line}")
         print(line)
         planned += 1
-        if not dry_run and _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
+        if not dry_run and _cancel_run(run.run_id) in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             cancelled += 1
     return SweepCounts(planned, cancelled)
 
@@ -427,6 +484,12 @@ def _cancel_run(run_id: int) -> CancelOutcome:
     except PreconditionError as exc:
         if _is_not_yet_queued_cancel_conflict(exc):
             return CancelOutcome.SKIPPED_NOT_YET_QUEUED
+        status = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}") if "HTTP 409" in str(exc) else None
+        if isinstance(status, dict) and status.get("status") == "completed":
+            line = f"cancel-already-completed run_id={run_id} reason=already-completed"
+            print(f"::notice::{line}")
+            print(line)
+            return CancelOutcome.ALREADY_COMPLETED
         raise
     return CancelOutcome.CANCELLED
 
@@ -443,7 +506,7 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
             ci_cancelled += 1
             continue
         outcome = _cancel_run(run.run_id)
-        if outcome is CancelOutcome.CANCELLED:
+        if outcome in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             ci_cancelled += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             ci_cancel_skipped_not_yet_queued += 1
@@ -456,7 +519,7 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
             bookkeeping_cancelled += 1
             continue
         outcome = _cancel_run(run.run_id)
-        if outcome is CancelOutcome.CANCELLED:
+        if outcome in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             bookkeeping_cancelled += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             bookkeeping_cancel_skipped_not_yet_queued += 1

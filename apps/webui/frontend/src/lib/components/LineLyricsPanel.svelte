@@ -49,7 +49,7 @@
 	<section class="line-lyrics-panel">
 		<h3 title="Line-synced lyrics source">{headerLabel}</h3>
 		<ol class="line-lyrics-list">
-			{#each lyrics.lines as line (line.start_ms + line.text)}
+			{#each lyrics.lines as line, index (index)}
 				<li>
 					<time datetime={`PT${line.start_ms / 1000}S`} title="Line start time in milliseconds"
 						>{formatMs(line.start_ms)}</time

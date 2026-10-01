@@ -24,6 +24,9 @@
  *   ✔︎ 🎯 every load path records the server's message on failure and leaves
  *     the previous data alone.
  *     [if] a failed refresh blanks an already-rendered detection [then ⛔️] broken
+ *   ✔︎ 🎯 beginFolderImport() posts every validated non-empty folder row, not
+ *     only the first.
+ *     [if] two importable rows exist [then] folders[] has both [else ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -31,20 +34,25 @@ import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
 	finalSetupRefusal,
-	folderIsImportable,
 	getFolderCandidates,
 	getSetupStatus,
 	isFatalBlocker,
+	normalizeSetupFolderPath,
 	scanFolder,
 	setDismissed,
 	setupRefusal,
 	startFolderImport,
 	startImport,
 	type FolderCandidates,
-	type FolderScan,
 	type RekordboxDetection,
 	type SetupStatus,
 } from './setup-api';
+import {
+	folderAdvanceRefusal,
+	importableFolderPathsFromRows,
+	newFolderRow,
+	type FolderRow,
+} from './folder-rows';
 
 export const WIZARD_STEPS = [
 	'welcome',
@@ -68,6 +76,10 @@ export const STEP_TITLES: Record<WizardStep, string> = {
 
 /** Which library the wizard is importing FROM. */
 export type ImportSource = 'rekordbox' | 'folder';
+
+/** Unselected until the operator picks a branch. STANDALONE-08: detection alone
+ * must not imply rekordbox. */
+export type ImportSourceSelection = ImportSource | null;
 
 /** The job kind the import runs as. Mirrors SETUP_IMPORT_KIND. */
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
@@ -100,29 +112,31 @@ export function previousStep(step: WizardStep): WizardStep {
  * rekordbox confirmation screen for a library the user is not importing, so
  * the route has to know which branch it is on.
  */
-export function visibleSteps(source: ImportSource): WizardStep[] {
-	if (source === 'folder') return WIZARD_STEPS.filter((step) => step !== 'confirm');
+export function visibleSteps(source: ImportSourceSelection): WizardStep[] {
+	if (source === 'folder' || source === null) {
+		return WIZARD_STEPS.filter((step) => step !== 'confirm');
+	}
 	return [...WIZARD_STEPS];
 }
 
 /** 1-based position of `step` in this branch's route, for "step 2 of 5". */
-export function stepPosition(step: WizardStep, source: ImportSource): number {
+export function stepPosition(step: WizardStep, source: ImportSourceSelection): number {
 	return visibleSteps(source).indexOf(step) + 1;
 }
 
 /** How many steps this branch has in total. */
-export function stepCount(source: ImportSource): number {
+export function stepCount(source: ImportSourceSelection): number {
 	return visibleSteps(source).length;
 }
 
-export function nextStepFor(step: WizardStep, source: ImportSource): WizardStep {
+export function nextStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
 	const route = visibleSteps(source);
 	const index = route.indexOf(step);
 	if (index === -1) return step;
 	return route[Math.min(index + 1, route.length - 1)];
 }
 
-export function previousStepFor(step: WizardStep, source: ImportSource): WizardStep {
+export function previousStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
 	const route = visibleSteps(source);
 	const index = route.indexOf(step);
 	if (index === -1) return step;
@@ -158,9 +172,9 @@ export function fatalBlockers(detection: RekordboxDetection | null): string[] {
 }
 
 export interface AdvanceContext {
-	source: ImportSource;
+	source: ImportSourceSelection;
 	detection: RekordboxDetection | null;
-	folderScan: FolderScan | null;
+	folderRows: FolderRow[];
 	job: Job | null;
 }
 
@@ -176,16 +190,11 @@ export interface AdvanceContext {
  * folder -- that is the whole point of the folder branch.
  */
 export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
-	if (step === 'detect' && ctx.source === 'folder') {
-		if (ctx.folderScan === null) return 'no folder has been checked yet';
-		if (ctx.folderScan.denied) {
-			return 'macOS is blocking that folder; grant access and check again';
-		}
-		if (!folderIsImportable(ctx.folderScan)) {
-			return `nothing importable in ${ctx.folderScan.path}`;
-		}
-		return null;
+	// STANDALONE-08: [if] RB install detected [then] import only after explicit act, [else stop].
+	if (step === 'detect' && ctx.source === null) {
+		return 'choose an import source first';
 	}
+	if (step === 'detect' && ctx.source === 'folder') return folderAdvanceRefusal(ctx.folderRows);
 	if (step === 'detect') {
 		if (ctx.detection === null) return 'detection has not answered yet';
 		const fatal = fatalBlockers(ctx.detection);
@@ -220,13 +229,12 @@ function _message(exc: unknown): string {
 
 class SetupWizard {
 	step = $state<WizardStep>('welcome');
-	/** rekordbox by default; 'folder' is the no-rekordbox branch. */
-	source = $state<ImportSource>('rekordbox');
+	/** Unselected until the operator picks a branch. STANDALONE-08. */
+	source = $state<ImportSourceSelection>(null);
 	status = $state<SetupStatus | null>(null);
 	detection = $state<RekordboxDetection | null>(null);
-	/** The folder the operator typed, and what the daemon found in it. */
-	folderPath = $state('');
-	folderScan = $state<FolderScan | null>(null);
+	/** Folder-import rows: path input plus the daemon scan for that path. */
+	folderRows = $state<FolderRow[]>([newFolderRow()]);
 	/** The id of the job this wizard started. The row itself lives in
 	 * jobsStore; duplicating it here would give the UI two truths. */
 	jobId = $state<string | null>(null);
@@ -269,7 +277,7 @@ class SetupWizard {
 		const why = backRefusal(this.step, {
 			source: this.source,
 			detection: this.detection,
-			folderScan: this.folderScan,
+			folderRows: this.folderRows,
 			job
 		});
 		if (why !== null) {
@@ -372,8 +380,28 @@ class SetupWizard {
 	useSource(source: ImportSource): void {
 		this.source = source;
 		this.error = null;
-		if (source === 'rekordbox') this.folderScan = null;
-		if (source === 'folder') void this.loadFolderCandidates();
+		if (source === 'rekordbox') this.resetFolderRows();
+		if (source === 'folder') {
+			this.resetFolderRows();
+			void this.loadFolderCandidates();
+		}
+	}
+
+	resetFolderRows(): void {
+		this.folderRows = [newFolderRow()];
+	}
+
+	addFolderRow(): void {
+		this.folderRows = [...this.folderRows, newFolderRow()];
+	}
+
+	removeFolderRow(id: string): void {
+		if (this.folderRows.length <= 1) return;
+		this.folderRows = this.folderRows.filter((row) => row.id !== id);
+	}
+
+	importableFolderPaths(): string[] {
+		return importableFolderPathsFromRows(this.folderRows);
 	}
 
 	/** Load existing music folders worth suggesting. Fires once per wizard-open. */
@@ -403,28 +431,44 @@ class SetupWizard {
 		}
 	}
 
-	/** Look inside the typed folder. Never imports anything. */
-	async checkFolder(path: string): Promise<void> {
+	/** Look inside the typed folder row. Never imports anything. */
+	async checkFolderRow(id: string): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
 			return;
 		}
-		const trimmed = path.trim();
+		const row = this.folderRows.find((entry) => entry.id === id);
+		if (row === undefined) return;
+		const trimmed = row.path.trim();
 		if (trimmed === '') {
 			this.error = 'type a folder path first';
 			return;
 		}
+		const normalized = normalizeSetupFolderPath(trimmed);
 		this.busy = true;
 		try {
-			this.folderPath = trimmed;
-			this.folderScan = await scanFolder(trimmed);
+			const scan = await scanFolder(normalized);
+			this.folderRows = this.folderRows.map((entry) =>
+				entry.id === id ? { ...entry, path: normalized, scan } : entry
+			);
 			this.error = null;
 		} catch (exc) {
 			this.error = _message(exc);
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/** Fill the first empty row, or the last row when every row has a path. */
+	applyFolderSuggestion(path: string): void {
+		const empty = this.folderRows.find((row) => row.path.trim() === '');
+		const target = empty ?? this.folderRows[this.folderRows.length - 1];
+		if (target === undefined) return;
+		this.folderRows = this.folderRows.map((row) =>
+			row.id === target.id ? { ...row, path, scan: null } : row
+		);
+		void this.checkFolderRow(target.id);
 	}
 
 	/** Enqueue the folder import, advancing only once the server accepted it. */
@@ -434,13 +478,14 @@ class SetupWizard {
 			this.error = refusal;
 			return;
 		}
-		if (!folderIsImportable(this.folderScan)) {
-			this.error = 'check a folder with audio files in it first';
+		const folders = this.importableFolderPaths();
+		if (folders.length === 0) {
+			this.error = 'check at least one folder with audio files in it';
 			return;
 		}
 		this.busy = true;
 		try {
-			const job = await startFolderImport({ folders: [this.folderPath] });
+			const job = await startFolderImport({ folders });
 			this.jobId = job.id;
 			this.error = null;
 			this.goTo('progress');
@@ -458,6 +503,10 @@ class SetupWizard {
 	 * the confirm step with the server's own sentence on it.
 	 */
 	async beginImport(options: { refreshDecrypt?: boolean } = {}): Promise<void> {
+		if (this.source !== 'rekordbox') {
+			this.error = 'choose rekordbox import before starting';
+			return;
+		}
 		const refusal = setupRefusal();
 		if (refusal !== null) {
 			this.error = refusal;
@@ -479,6 +528,7 @@ class SetupWizard {
 	}
 
 	/** Skip the wizard. Persisted engine-side so a reload does not re-show it. */
+	// STANDALONE-08: [if] user declines import [then] finish setup without re-offer, [else stop].
 	async skip(): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
@@ -488,6 +538,9 @@ class SetupWizard {
 		this.busy = true;
 		try {
 			this.status = await setDismissed(true);
+			// Declining is final for this run: any door that reopens the overlay
+			// without reopen() must still find a neutral wizard (Codex P2, #3561).
+			this.source = null;
 			this.error = null;
 		} catch (exc) {
 			this.error = _message(exc);
@@ -511,6 +564,7 @@ class SetupWizard {
 		try {
 			this.status = await setDismissed(false);
 			this.step = 'welcome';
+			this.source = null;
 			this.error = null;
 			// Re-arming is a fresh run: whatever detection said last time is
 			// history, and ensureLoaded() must ask again rather than reuse it.
@@ -525,11 +579,10 @@ class SetupWizard {
 	/** Drop everything, for tests. */
 	_resetForTests(): void {
 		this.step = 'welcome';
-		this.source = 'rekordbox';
+		this.source = null;
 		this.status = null;
 		this.detection = null;
-		this.folderPath = '';
-		this.folderScan = null;
+		this.resetFolderRows();
 		this.jobId = null;
 		this.busy = false;
 		this.error = null;
