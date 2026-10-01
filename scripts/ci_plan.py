@@ -5,8 +5,8 @@ Selection becomes a gate only once the miss audit has produced a recall number, 
 not, so the only safe way to be wrong here is to over-select, and every rule below that
 cannot decide answers FULL.
 
-Scope names are the module names Mergify's `mergify ci scopes` will use, so queue batching
-by scope needs no renames later.
+Scope names double as merge-queue impacted-target names if the queue ever runs in
+parallel mode, so that switch needs no renames.
 
 What the verdicts mean:
 

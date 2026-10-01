@@ -3051,6 +3051,17 @@
             ],
             "title": "Manifest Path"
           },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
           "product_name": {
             "anyOf": [
               {
