@@ -362,6 +362,64 @@ test('controller hot-cue pad rounds the presented position to persistent millise
 	assert.throws(() => padRuntime.persistentCuePositionMs(-0.1), RangeError);
 });
 
+// [if] a stick deck's empty hot-cue pad is pressed [then] hot_cue_save is
+// dispatched and reaches the stick session-edit store, exactly as HotCueBank
+// and the IPC gate allow; [if] the deck is an unmapped LIBRARY track [then] it
+// is still refused before dispatch.
+//
+// No track was loaded here, so the real session store answers the save with
+// its own "slots were never read" refusal. That refusal is the evidence: only
+// a command that passed the pad gate AND the IPC gate reaches that store. The
+// pad fires its command without awaiting it, so the rejection is unhandled by
+// design; the runner's own listener is parked for the duration to read it.
+test('controller hot-cue pad saves on a stick deck and still refuses an unmapped library deck', async () => {
+	glue._resetControllerStateForTests();
+	const deck = audioEngine.deckStates[1];
+	const stickId = 'usb-AAAAAAAA-0000-4000-8000-00000000000A-7';
+	const notes = [];
+	const notify = (message, tone) => notes.push({ message, tone });
+	const rejections = [];
+	const onRejection = (reason) => rejections.push(String(reason?.message ?? reason));
+	const runnerListeners = process.listeners('unhandledRejection');
+	process.removeAllListeners('unhandledRejection');
+	process.on('unhandledRejection', onRejection);
+	const priorRevisions = deck.hot_cue_revisions;
+	try {
+		deck.has_rb_mapping = false;
+		deck.hot_cues = [];
+		deck.position_ms = 1234.4;
+		deck.hot_cue_revisions = { ...priorRevisions, A: 'rev-0' };
+
+		deck.stable_id = stickId;
+		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
+		const deadline = Date.now() + 5000;
+		while (rejections.length === 0 && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.deepEqual(notes, [], 'a stick deck must not be told its cue cannot persist');
+		assert.deepEqual(
+			rejections,
+			[`hot cue A: the stick's own slots for ${stickId} were never read`],
+			'the save must reach the stick session store (past the pad gate and the IPC mapping gate)'
+		);
+
+		deck.stable_id = 'b'.repeat(40);
+		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		assert.equal(notes.length, 1, 'an unmapped library deck is still refused');
+		assert.match(notes[0].message, /cannot persist Rekordbox hot cues/);
+		assert.equal(rejections.length, 1, 'a refused library deck dispatches nothing');
+	} finally {
+		process.off('unhandledRejection', onRejection);
+		for (const listener of runnerListeners) process.on('unhandledRejection', listener);
+		deck.stable_id = null;
+		deck.hot_cues = [];
+		deck.position_ms = 0;
+		deck.hot_cue_revisions = priorRevisions;
+		glue._resetControllerStateForTests();
+	}
+});
+
 test('unsupported pad mode warns once and pad input stays inert', () => {
 	glue._resetControllerStateForTests();
 	const beforeCount = stores.toasts.length;

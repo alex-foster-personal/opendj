@@ -13,6 +13,7 @@ import type { HotCueSlot } from '$lib/rb/hot-cue-types';
 import type { ControllerPadMode } from '$lib/rb/midi/midi-types';
 import { dispatchPerformanceCommand } from '$lib/rb/performance-ipc.svelte';
 import { stemDialAssignment, type EqDial } from '$lib/rb/stem-dial-map';
+import { hotCueEditsAllowed } from '$lib/rb/track-source';
 import { CONTROLLER_LOOP_BEATS } from '$lib/rb/midi/controller-loop-pads';
 import { CONTROLLER_NEURAL_STEMS, controllerStemPadsAvailable } from '$lib/rb/midi/controller-stem-pads';
 
@@ -270,7 +271,10 @@ export function runControllerPad(
 			_cmdHotCue(deck, slot, pressT0Ms);
 			return;
 		}
-		if (!deckStates[deck].has_rb_mapping) {
+		// The one predicate HotCueBank's pads and the hot_cue_save IPC gate
+		// share: a stick track keeps its cues in the session, so hardware
+		// must not refuse what the visible pads allow.
+		if (!hotCueEditsAllowed(deckStates[deck].stable_id, deckStates[deck].has_rb_mapping)) {
 			notify(`Deck ${deck}: this track cannot persist Rekordbox hot cues`, 'error');
 			return;
 		}
