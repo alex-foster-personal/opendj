@@ -86,3 +86,9 @@ test('an unarmed drain is said, never shown as complete', () => {
 	const s = summary({}, { analysis: null, analysis_error: 'drain not running' });
 	assert.deepEqual(card.analysisLines(s).map((l) => l.tone), ['unavailable']);
 });
+
+test('one declined track reads in the singular', () => {
+	const s = summary({ key: { done: 8, declined: 1, missing: 1265 } });
+	const note = card.analysisLines(s).find((l) => l.tone === 'note');
+	assert.equal(note.text, 'Key: 1 had no confident answer and is left blank');
+});

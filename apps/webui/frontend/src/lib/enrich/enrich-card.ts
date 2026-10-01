@@ -105,7 +105,7 @@ export function analysisLines(summary: EnrichSummary): CardLine[] {
 			lines.push({
 				lane,
 				tone: 'note',
-				text: `${label}: ${n(declined)} had no confident answer and are left blank`,
+				text: `${label}: ${n(declined)} had no confident answer and ${declined === 1 ? 'is' : 'are'} left blank`,
 				title: reasonsTitle(c.declined_reasons)
 			});
 		}

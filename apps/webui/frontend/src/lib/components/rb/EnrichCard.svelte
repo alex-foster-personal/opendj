@@ -137,7 +137,8 @@
 	.enrich-card {
 		position: fixed;
 		right: 12px;
-		bottom: 12px;
+		/* Clear of the feedback and help buttons that own the bottom-right corner. */
+		bottom: 48px;
 		z-index: 40;
 		width: min(380px, calc(100vw - 24px));
 		display: flex;
