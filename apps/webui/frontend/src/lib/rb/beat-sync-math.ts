@@ -26,6 +26,7 @@
  */
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
+import { PHASE_LOCK_MAX_TRIM } from '$lib/rb/phase-lock';
 
 // -------------------------------------------------------------- contracts
 
@@ -660,25 +661,39 @@ export function beatIsExtrapolated(beat: Pick<AnlzBeat, 'extrapolated'>): boolea
 export const DEFAULT_TEMPO_LOCK_TOLERANCE_BPM = 0.1;
 
 /**
+ * The default tolerance at one fold of the master tempo: the 0.1 BPM display
+ * slack PLUS the largest trim the phase lock itself applies
+ * (PHASE_LOCK_MAX_TRIM of the folded master BPM, 0.38 BPM at 128). A locked,
+ * in-phase follower carrying an ordinary trim must not read "Off tempo"; a
+ * real 1 BPM mismatch at 128 (tolerance 0.48) still does.
+ */
+export function tempoLockToleranceBpm(foldedMasterBpm: number): number {
+	return DEFAULT_TEMPO_LOCK_TOLERANCE_BPM + PHASE_LOCK_MAX_TRIM * foldedMasterBpm;
+}
+
+/**
  * True when candidateBpm is tempo-locked to masterBpm at 1x, 0.5x, or 2x
  * within toleranceBpm - the three ratios Beat Sync itself accepts (see
- * `TempoNormalization`). Null, non-finite, or non-positive inputs mean
- * there is no valid reference to compare against (no elected master, no
- * live BPM yet, or the master deck against itself); those cases return
- * true so the UI never shows a mismatch without a real error to report.
+ * `TempoNormalization`). Without an explicit toleranceBpm, each fold uses
+ * `tempoLockToleranceBpm` so a phase-lock trim is not read as off tempo.
+ * Null, non-finite, or non-positive inputs mean there is no valid reference
+ * to compare against (no elected master, no live BPM yet, or the master deck
+ * against itself); those cases return true so the UI never shows a mismatch
+ * without a real error to report.
  */
 export function isTempoLockedToMaster(
 	candidateBpm: number | null,
 	masterBpm: number | null,
-	toleranceBpm: number = DEFAULT_TEMPO_LOCK_TOLERANCE_BPM
+	toleranceBpm?: number
 ): boolean {
 	if (candidateBpm === null || masterBpm === null) return true;
 	if (!Number.isFinite(candidateBpm) || candidateBpm <= 0) return true;
 	if (!Number.isFinite(masterBpm) || masterBpm <= 0) return true;
 	const normalizations: readonly TempoNormalization[] = [1, 0.5, 2];
-	return normalizations.some(
-		(normalization) => Math.abs(candidateBpm - masterBpm * normalization) <= toleranceBpm
-	);
+	return normalizations.some((normalization) => {
+		const folded = masterBpm * normalization;
+		return Math.abs(candidateBpm - folded) <= (toleranceBpm ?? tempoLockToleranceBpm(folded));
+	});
 }
 
 // ------------------------------------------ beatgrid data-quality (Err col)

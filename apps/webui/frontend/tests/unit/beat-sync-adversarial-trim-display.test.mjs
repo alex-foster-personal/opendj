@@ -1,5 +1,5 @@
 /**
- * ADVERSARIAL (round 4, intentionally RED until fixed): an ordinary phase-lock
+ * ADVERSARIAL (round 4; was RED, FIXED by tempoLockToleranceBpm): an ordinary phase-lock
  * trim makes a correctly synced follower read OFF TEMPO.
  *
  * The phase lock (NAE-19) corrects phase by trimming the follower's tempo up
@@ -85,5 +85,19 @@ test('a follower 6 ms off phase, under the trim the lock itself chose, still rea
 
 test('control: a real 1 BPM mismatch is still reported off tempo', () => {
 	assert.equal(bsm.isTempoLockedToMaster(129, 128), false);
+	assert.equal(bsm.isTempoLockedToMaster(127, 128), false);
 	assert.equal(bsm.isTempoLockedToMaster(64.5, 128), false);
+	assert.equal(bsm.isTempoLockedToMaster(257, 128), false);
+	// ...and just past the trim cap plus the display slack, on every fold.
+	for (const fold of [1, 0.5, 2]) {
+		const folded = 128 * fold;
+		const edge = 0.1 + pl.PHASE_LOCK_MAX_TRIM * folded;
+		assert.equal(bsm.isTempoLockedToMaster(folded + edge * 0.99, 128), true, `fold ${fold} inside`);
+		assert.equal(bsm.isTempoLockedToMaster(folded + edge * 1.01, 128), false, `fold ${fold} outside`);
+	}
+});
+
+test('control: an explicit tolerance is still honored exactly', () => {
+	assert.equal(bsm.isTempoLockedToMaster(128.2, 128, 0.1), false);
+	assert.equal(bsm.isTempoLockedToMaster(128.05, 128, 0.1), true);
 });
