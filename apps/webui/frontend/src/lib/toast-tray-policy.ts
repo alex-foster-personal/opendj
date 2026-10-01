@@ -7,6 +7,10 @@ export const TOAST_MAX_VISIBLE = 3;
 export const TOAST_VIEWPORT_WIDTH_FRACTION = 1 / 3;
 export const TOAST_EXIT_DURATION_MS = 100;
 export const TOAST_EXIT_TRANSLATE_PX = 100;
+/** Shown beside a toast after it is clicked to copy (PVPIN-20, pin 30de7a76291f). */
+export const TOAST_COPIED_NOTE = 'copied - press M to leave a comment for the developer';
+/** How long the copied note stays up; long enough to read the hint. */
+export const TOAST_COPIED_NOTE_MS = 4000;
 
 /** Hard render budget: at most maxVisible nodes; exiting rows count toward the cap, not on top. */
 export function selectVisibleToasts<T extends { exiting?: boolean }>(

@@ -57,6 +57,7 @@ export { ensureAudioPrefetch } from '$lib/rb/audio-prefetch-cache.svelte';
 export { clearSelection, pruneSelection } from './pane-row-selection';
 export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
+export { startPendingSettle } from './pending-availability-settle';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { setTabLabel } from './playlist-set-tabs';
 /** A stick track row whose stick was pulled (USBPLAY-09: the browse store
