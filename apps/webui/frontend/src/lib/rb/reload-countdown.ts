@@ -3,12 +3,15 @@
  *
  * A reload that lands mid-thought costs whatever was on screen - a half-read
  * diff, a state worth screenshotting, a half-typed comment. So while the maintainer is
- * actually looking at the tab, a reload gets a 10 s on-top countdown first.
+ * actually looking at the tab, a reload gets a short 3-2-1 on-top countdown
+ * first. It was 10 s until Thu 1 Oct 2026, when the maintainer asked for 3-2-1: the
+ * preview loop reloads on every integrate, and three seconds is still enough
+ * to see it coming.
  * While the tab is hidden it does not: a countdown nobody can see is latency
  * with a UI on top, so a background reload happens at once.
  *
  * The scheduler is pure and takes its effects, so the unit suite drives it
- * with a fake clock instead of waiting ten real seconds.
+ * with a fake clock instead of waiting real seconds.
  *
  * ## What this can and cannot hold back
  *
@@ -42,7 +45,7 @@
  * reloads immediately - matching plain Vite - if it never was.
  */
 
-export const RELOAD_COUNTDOWN_S = 10;
+export const RELOAD_COUNTDOWN_S = 3;
 
 export interface ReloadEffects {
 	/** False when the tab is hidden or the app is in the background. */

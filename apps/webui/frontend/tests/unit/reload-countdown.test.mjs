@@ -1,17 +1,19 @@
 /**
  * REFRESH-01 (issue #891): a full page reload while the maintainer is looking at the tab
- * gets a 10 s on-top countdown first, so he can screenshot or finish what he
+ * gets a 3 s (3-2-1) on-top countdown first, so he can screenshot or finish what he
  * is doing. A reload while the tab is hidden happens immediately - a countdown
  * nobody can see is just latency.
  *
  * The scheduler is pure and takes its effects, so this drives it with a fake
- * clock and a fake reload rather than waiting ten real seconds.
+ * clock and a fake reload rather than waiting real seconds.
  *
  * Regression lines:
  * - if a visible reload stops counting down then the page vanishes mid-thought
  *   again, which is the whole complaint
- * - if a hidden tab starts counting then a background reload is held up for ten
+ * - if a hidden tab starts counting then a background reload is held up for
  *   seconds for nobody
+ * - if the default length drifts off 3 then the 3-2-1 the maintainer asked for
+ *   (Thu 1 Oct 2026) is gone
  * - if a second trigger restarts or stacks the countdown then two announcements
  *   race and the deadline moves while it is being read
  * - if the last tick does not reload then the overlay is a dead end
@@ -84,15 +86,18 @@ function harness({ visible = true } = {}) {
 }
 
 describe('reload countdown', () => {
-	it('counts 10 down to 0 while the tab is visible, then reloads', () => {
+	it('counts 3-2-1 down to 0 while the tab is visible, then reloads', () => {
 		const h = harness();
 		h.scheduler.schedule('vite full reload');
 		assert.equal(h.reloads, 0, 'reloaded before the countdown even started');
-		assert.deepEqual(h.rendered, ['10:vite full reload']);
-		for (let i = 0; i < 10; i += 1) h.tick();
+		assert.deepEqual(h.rendered, ['3:vite full reload']);
+		h.tick();
+		h.tick();
+		assert.equal(h.reloads, 0, 'reloaded before the last tick');
+		h.tick();
 		assert.deepEqual(
 			h.rendered.map((r) => Number(r.split(':')[0])),
-			[10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
+			[3, 2, 1, 0]
 		);
 		assert.equal(h.reloads, 1);
 		assert.equal(h.cleared, 1, 'the overlay was left on screen');
@@ -114,8 +119,8 @@ describe('reload countdown', () => {
 		h.scheduler.schedule('second');
 		// Still counting down from the FIRST deadline: the number a reader is
 		// looking at must not jump back up.
-		assert.deepEqual(h.rendered, ['10:first', '9:first']);
-		for (let i = 0; i < 9; i += 1) h.tick();
+		assert.deepEqual(h.rendered, ['3:first', '2:first']);
+		for (let i = 0; i < 2; i += 1) h.tick();
 		assert.equal(h.reloads, 1, 'two countdowns reloaded twice');
 	});
 
@@ -134,7 +139,7 @@ describe('reload countdown', () => {
 	});
 
 	it('publishes the default length rather than burying it', () => {
-		assert.equal(mod.RELOAD_COUNTDOWN_S, 10);
+		assert.equal(mod.RELOAD_COUNTDOWN_S, 3);
 	});
 
 	it('completes at once, not on a delay, when the tab is backgrounded mid-count', () => {
