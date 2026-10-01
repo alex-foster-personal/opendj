@@ -949,9 +949,15 @@ jobs:
         with:
           toolchain: "1.96.0"
 
+      # --python pins maturin to this job's .venv. Without it the target is
+      # whatever uv resolves at run time: the .venv by default, but the first
+      # python on PATH (the setup-python toolcache interpreter every job on
+      # this host shares) whenever UV_SYSTEM_PYTHON is set in the runner's
+      # environment. Same class as the stale wheel of Mon 28 Sep 2026 (PR
+      # #4251); tests/scripts/test_ci_workflow_toolcache_pip.py pins it.
       - name: Install waveform native extension
         run: |
-          uv pip install 'maturin>=1.8,<2'
+          uv pip install --python .venv/bin/python 'maturin>=1.8,<2'
           uv run --no-sync maturin develop --release \
             --manifest-path apps/webui/server/native/waveform/Cargo.toml
 
