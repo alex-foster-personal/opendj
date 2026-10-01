@@ -329,8 +329,9 @@ jobs:
       # Each failed completion the pass selected becomes one kind=build row on the one
       # sink (OBS-01), which used to be a workflow_run job per completion (error-sink.yml).
       # After the alert step, so a sink failure never delays an alert. A record already in
-      # the sink is skipped, so the overlap re-reads safely, and every record is read back
-      # after posting: a lost write fails the pass and the mark stays put.
+      # this host's sink is skipped, so the overlap re-reads safely, and every record is
+      # read back after posting: a lost write fails the pass and the mark stays put.
+      # Each host's sink holds a record once; see the ADR on why not once fleet-wide.
       - name: Post failed completions to the error sink
         env:
           PYTHONPATH: ${{ github.workspace }}

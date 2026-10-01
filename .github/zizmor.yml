@@ -7,7 +7,7 @@ rules:
   dangerous-triggers:
     ignore:
       # workflow_run by design. These run the default branch's workflow code, never
-      # check out the triggering run's head, and read its metadata only through env:.
+      # check out the triggering run's head, and read its metadata only through `env`.
       # ci-cost-guard.yml and stable-evidence.yml left workflow_run for a
       # schedule on Tue 22 Sep 2026; error-sink.yml was folded into the cost
       # guard's pass and removed (RUN-COUNT round 3).

@@ -34,14 +34,28 @@ def _sink_key(record: dict[str, Any]) -> str:
     return f" run={record['run_id']} attempt={record['run_attempt']} "
 
 
+def _build_message(line: str) -> str:
+    """The message of a kind=build row; "" for any other row or a torn line."""
+    try:
+        row = json.loads(line)
+    except json.JSONDecodeError:
+        return ""
+    if isinstance(row, dict) and row.get("kind") == "build":
+        return str(row.get("message", ""))
+    return ""
+
+
 def _keys_in_sink(keys: set[str]) -> set[str]:
+    """Keys held by a kind=build row's message; the raw text elsewhere does not count."""
     found: set[str] = set()
     for path in sink_files():
         if not path.is_file():
             continue
         with path.open(encoding="utf-8", errors="replace") as handle:
             for line in handle:
-                found.update(key for key in keys - found if key in line)
+                if any(key in line for key in keys - found):
+                    message = _build_message(line)
+                    found.update(key for key in keys - found if key in message)
     return found
 
 
