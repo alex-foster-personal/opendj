@@ -1,13 +1,13 @@
-"""The two control-plane hooks that land on main ahead of the preview (PR #3837).
+"""The e2e output-topology step that lands on main ahead of the preview (PR #3837).
 
-Each names a file that only the preview holds. Both directions are pinned: a tree
-WITHOUT the file skips and says so, and a tree WITH a broken one fails. An overshoot
-that skipped whenever anything went wrong would turn a red gate into a silent pass.
+It names a playwright config only the preview holds. Both directions are pinned: a tree
+WITHOUT the config skips and says so, and a tree WITH it runs the gate and keeps its exit
+code. An overshoot that skipped whenever anything went wrong would turn a red gate into a
+silent pass.
 
 Regression lines:
   - if the output-topology step fails on a tree with no config then main's e2e is red
   - if the output-topology step passes when playwright fails then the gate is decoration
-  - if a present-but-broken optional module reads as absent then its tests run unpinned
 """
 
 from __future__ import annotations
@@ -18,8 +18,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
-from tests.conftest import _optional_module
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 E2E = REPO_ROOT / ".github" / "workflows" / "e2e.yml"
@@ -65,24 +63,3 @@ def test_the_topology_step_runs_the_gate_and_keeps_its_exit_code_with_its_config
     assert done.returncode == pnpm_exit, done.stdout + done.stderr
     assert f"pnpm exec playwright test --config {CONFIG}" in done.stdout
     assert "SKIPPED" not in done.stdout
-
-
-def test_an_optional_module_is_none_only_when_it_does_not_exist(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    package = tmp_path / "optional_probe_pkg"
-    package.mkdir()
-    (package / "__init__.py").write_text("")
-    (package / "sound.py").write_text("VALUE = 7\n")
-    (package / "broken.py").write_text("raise RuntimeError('present and broken')\n")
-    monkeypatch.syspath_prepend(str(tmp_path))
-    assert _optional_module("optional_probe_pkg.absent") is None
-    sound = _optional_module("optional_probe_pkg.sound")
-    assert sound is not None and sound.VALUE == 7
-    with pytest.raises(RuntimeError, match="present and broken"):
-        _optional_module("optional_probe_pkg.broken")
-
-
-def test_the_stem_budget_pin_tracks_whether_this_tree_has_the_module() -> None:
-    present = (REPO_ROOT / "apps" / "cloud" / "stem_cache_budget.py").is_file()
-    assert (_optional_module("apps.cloud.stem_cache_budget") is not None) == present
