@@ -653,3 +653,12 @@ test('import progress renders human job copy and agent diagnostics separately', 
 	assert.match(overlay, /data-agent-job-message=\{job\.message/);
 	assert.doesNotMatch(overlay, /title="Rekordbox analysis files/);
 });
+
+test('the overlay hands the live import row to the status re-read', () => {
+	// The store owns the rule (refreshStatusAfterImport, tested in
+	// setup-wizard.test.mjs); the overlay is the only place the live job row
+	// exists, so it must be the one feeding it. Without this the Done step
+	// shows the status read when the overlay opened, before the import.
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /\$effect\(\(\) => \{\s*void setupWizard\.refreshStatusAfterImport\(job\);\s*\}\);/);
+});

@@ -941,3 +941,94 @@ test('every stage the server can report has a human label', () => {
 		assert.ok(mod.FOLDER_STAGE_LABELS[stage], `no label for folder stage ${stage}`);
 	}
 });
+
+// ------------------------------------------------- status after the import
+//
+// The Done step reads `status.last_import`. `status` was loaded when the
+// overlay opened, before any import, so after a successful import the Done
+// step said "No import was recorded for this data directory" (demon-llama
+// preview, Thu 1 Oct 2026). The wizard re-reads status once its own import
+// job settles.
+
+function rekordboxImportSummary() {
+	return {
+		kind: 'rekordbox',
+		finished_at: '2026-10-01T06:00:00Z',
+		tracks: 1200,
+		playlists: 34,
+		analyses_linked: 1100,
+		analyses_expected: 1200,
+		share_root: '/Users/dj/Library/Pioneer/rekordbox/share'
+	};
+}
+
+async function openedBeforeImport() {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+	assert.equal(wizard.status.last_import, null, 'precondition: the overlay opened before any import');
+	wizard.jobId = 'job-setup-1';
+	requests = [];
+	routeFetch({
+		'/api/v1/setup/status': status({ library_empty: false, tracks: 1200, last_import: rekordboxImportSummary() })
+	});
+}
+
+test('a settled import re-reads status so the Done step shows the real import', async () => {
+	await openedBeforeImport();
+
+	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }));
+
+	assert.deepEqual(requests.map((request) => request.url), [`${API_BASE}/api/v1/setup/status`]);
+	assert.equal(wizard.status.last_import.tracks, 1200);
+	assert.equal(wizard.status.tracks, 1200);
+	assert.equal(wizard.error, null);
+});
+
+test('a failed import re-reads status too, so Done never shows the pre-import picture', async () => {
+	await openedBeforeImport();
+
+	await wizard.refreshStatusAfterImport(job({ status: 'failed', error: 'decrypt failed' }));
+
+	assert.equal(requests.length, 1);
+});
+
+test('a live import does not re-read status yet', async () => {
+	await openedBeforeImport();
+
+	await wizard.refreshStatusAfterImport(job({ status: 'running', progress: 0.4 }));
+	await wizard.refreshStatusAfterImport(null);
+
+	assert.deepEqual(requests, []);
+	assert.equal(wizard.status.last_import, null);
+});
+
+test('the re-read happens once per settled job, not on every job-row update', async () => {
+	await openedBeforeImport();
+	const settled = job({ status: 'succeeded', progress: 1 });
+
+	await wizard.refreshStatusAfterImport(settled);
+	await wizard.refreshStatusAfterImport({ ...settled, message: 'done' });
+
+	assert.equal(requests.length, 1);
+});
+
+test("someone else's job never re-reads this wizard's status", async () => {
+	await openedBeforeImport();
+
+	await wizard.refreshStatusAfterImport(job({ id: 'job-other', status: 'succeeded' }));
+
+	assert.deepEqual(requests, []);
+});
+
+test('a failed re-read says so and keeps the status it had', async () => {
+	await openedBeforeImport();
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			jsonResponse({ detail: { code: 'boom', message: 'state db is gone' } }, 500)
+	});
+
+	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }));
+
+	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.status.last_import, null, 'previous status must survive a failure');
+});
