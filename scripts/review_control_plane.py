@@ -128,6 +128,8 @@ AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
 }
 AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
+#: Pull-request review states that count as submitted (excludes PENDING and DISMISSED).
+SUBMITTED_REVIEW_STATES: frozenset[str] = frozenset({"COMMENTED", "APPROVED", "CHANGES_REQUESTED"})
 #: Same trusted-login rule as Sol's SOL_LOGINS in scripts/review_sol.py; login AND marker required.
 SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
 GROK_REVIEW_MARKER = re.compile(
@@ -216,12 +218,15 @@ def _subscription_lane_at_head(
 ) -> bool:
     want = head_sha.lower()
     for review in reviews:
-        if str(review.get("state", "")).upper() == "PENDING":
+        state = str(review["state"]).upper()
+        if state not in SUBMITTED_REVIEW_STATES:
             continue
-        login = str((review.get("user") or {}).get("login", ""))
+        login = str(review["user"]["login"])
         if _normalize_login(login) not in SUBSCRIPTION_REVIEW_LOGINS:
             continue
-        body = str(review.get("body") or "")
+        if str(review["commit_id"]).lower() != want:
+            continue
+        body = "" if review["body"] is None else str(review["body"])
         match = marker.search(body)
         if not match or match.group(1).lower() != want:
             continue
