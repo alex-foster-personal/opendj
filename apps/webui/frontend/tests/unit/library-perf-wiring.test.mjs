@@ -101,14 +101,19 @@ test('TrackTable row artwork stays thumbnail-sized', () => {
 	assert.doesNotMatch(src, /artworkUrl\(row\.stable_id, 'orig'\)/);
 });
 
-test('BrowserPanel loads ingestion coverage after primary browser initialization', () => {
+// HEALTH-14 reverses the earlier ordering on purpose: the cached coverage read
+// answers in milliseconds and was waiting about 17.6 s behind the paged
+// listing. What this test still holds is the part that mattered: the boot
+// path never WAITS on coverage. The ordering itself is asserted in
+// health-14-coverage-at-mount.test.mjs.
+test('BrowserPanel sends ingestion coverage at mount and never awaits it on the boot path', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
 	assert.match(src, /import \{ getIngestCoverage \} from '\$lib\/rb\/api-ingest';/);
-	assert.match(
-		src,
-		/await _restoreBootPane\(\);[\s\S]*?finally \{[\s\S]*?playlistsLoading = false;[\s\S]*?\}[\s\S]*?void _loadIngestCoverage\(\);/,
-		'ingest coverage must start only after the playlists and initial pane settle, never on boot critical path'
-	);
+	assert.match(src, /void _loadIngestCoverage\(\);\s*void _init\(\);/);
+	assert.match(src, /getIngestCoverage\(\{ cached: true \}\)/, 'the mount read must be the cached one');
+	const init = src.slice(src.indexOf('async function _init()'), src.indexOf('async function _restoreBootPane'));
+	assert.ok(init.includes('await _restoreBootPane();'), 'control: the _init() body was found');
+	assert.doesNotMatch(init, /_loadIngestCoverage/, 'tree and first pane must never wait on ingestion accounting');
 	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
 		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
 	}

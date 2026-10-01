@@ -120,14 +120,25 @@ export function libraryHealthDot(
 	allTracksCount: number | null,
 	playlistCount: number,
 	availability: unknown,
-	availabilityError: string | null
+	availabilityError: string | null,
+	/** The first pane's paged listing while it is in flight (HEALTH-14). */
+	loadProgress: { loaded: number; total: number | null } | null = null
 ): LibraryHealthDot {
 	const label = 'Library health' as const;
 	if (libraryHealthError !== null) {
 		return { label, state: 'error', detail: libraryHealthError };
 	}
+	// HEALTH-14: the availability check runs after the listing, so while rows
+	// are still arriving the light says how far the listing has got instead
+	// of an unexplained "checking". It stays a loading state, never a verdict.
+	const listing =
+		loadProgress === null
+			? null
+			: loadProgress.total === null
+				? `loading ${loadProgress.loaded} tracks, total not yet known`
+				: `loading ${loadProgress.loaded} of ${loadProgress.total} tracks`;
 	if (allTracksCount === null) {
-		return { label, state: 'loading', detail: 'checking library health' };
+		return { label, state: 'loading', detail: listing ?? 'checking library health' };
 	}
 	// Checked BEFORE any settled counts: a refresh that fails AFTER an
 	// earlier one succeeded keeps the prior counts in the caller, and the
@@ -136,7 +147,14 @@ export function libraryHealthDot(
 		return unknownDot(label, availabilityError);
 	}
 	if (availability === null) {
-		return { label, state: 'loading', detail: 'checking which tracks are on this machine' };
+		return {
+			label,
+			state: 'loading',
+			detail:
+				listing === null
+					? 'checking which tracks are on this machine'
+					: `${listing}; which are on this machine is checked next`
+		};
 	}
 	const counts = availability as Record<string, unknown>;
 	if (typeof availability !== 'object' || !AVAILABILITY_KEYS.every((key) => isCount(counts[key]))) {

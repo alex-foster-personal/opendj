@@ -74,7 +74,13 @@ test('FeedbackPinCard without attachment omits fb-attachment-img and fb-lightbox
 	assert.equal(html.includes('fb-lightbox'), false);
 });
 
-test('FeedbackPinMarkers with attachment renders fb-pin-thumb and url', () => {
+// FB-23: the marker says a screenshot is attached WITHOUT fetching it. Every
+// marker used to carry an <img> on the attachment url, so a page load asked
+// for every pin's screenshot at once (8 requests, 6 of them 404s, measured
+// Thu 1 Oct 2026 on a data dir that holds the pins but not their images).
+//   - if a marker requests its attachment at load then broken
+//   - if a marker with an attachment shows nothing for it then broken
+test('FeedbackPinMarkers with attachment marks it without requesting it', () => {
 	const html = mod.render(mod.Markers, {
 		props: {
 			pins: [pin({ attachment: ATT })],
@@ -82,8 +88,27 @@ test('FeedbackPinMarkers with attachment renders fb-pin-thumb and url', () => {
 			onopen() {}
 		}
 	}).body;
-	assert.match(html, /fb-pin-thumb/);
-	assert.match(html, new RegExp(ATT.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+	assert.match(html, /fb-pin-thumb/, 'the marker still shows that a screenshot is attached');
+	assert.match(html, /Screenshot attached - open the pin to load it/);
+	assert.equal(html.includes(ATT.url), false, 'the marker must not carry the attachment url');
+	assert.equal(html.includes('<img'), false, 'the marker must not load any image');
+});
+
+test('control: the opened card is where the attachment is requested', () => {
+	const html = mod.render(mod.Card, {
+		props: { pin: pin({ attachment: ATT }), onclose() {}, onarchive() {}, onfollowon() {} }
+	}).body;
+	assert.match(html, /<img[^>]*fb-attachment-img/);
+	assert.ok(html.includes(ATT.url));
+});
+
+test('a 404 on the opened card names the state instead of a broken image', () => {
+	const text = readFileSync(CARD_PATH, 'utf8');
+	assert.match(text, /onerror=\{\(\) => \(unsyncedAttachmentId = attachmentId\)\}/);
+	assert.match(
+		text,
+		/unsyncedAttachmentId === pin\.attachment\.id\}[\s\S]{0,200}?fb-attachment-unsynced[\s\S]{0,120}?Attachment not on this machine/
+	);
 });
 
 test('FeedbackPinMarkers without attachment omits fb-pin-thumb', () => {

@@ -19,6 +19,11 @@ import { buildControlsMap, CONTROL_SELECTOR, controlPreferredName } from './ui-m
 
 const MIRROR_PATH = '/api/v1/state/ui-mirror';
 
+/** CUEOUT-18: one id per page load, so the engine can keep two open tabs'
+ * headphone reports apart. Not the Web Crypto UUID call: that needs a
+ * secure context, and the id only has to differ between tabs on one machine. */
+const MIRROR_CLIENT_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 /** `buildUiMirror` runs inside `window.setInterval`, so an uncaught throw
  * here would abort the whole publish - every sibling field (decks, audio
  * health, toasts, the agent-order poll gate) goes dark, not just this one
@@ -73,6 +78,7 @@ export function buildUiMirror(): Record<string, unknown> {
 	const deviceLiveness = outputDeviceLivenessState();
 	return {
 		client_open: true,
+		client_id: MIRROR_CLIENT_ID,
 		published_at: new Date().toISOString(),
 		// The elected master, and so the deck a Duration times against when
 		// no clock is named. Without it an agent cannot resolve its own
@@ -200,6 +206,10 @@ export function installUiMirror(): () => void {
 		registered = false;
 		uninstallOrderPoll();
 		window.clearInterval(interval);
-		void fetch(MIRROR_PATH, { method: 'DELETE', keepalive: true });
+		void fetch(MIRROR_PATH, {
+			method: 'DELETE',
+			keepalive: true,
+			headers: { 'x-opendj-client-id': MIRROR_CLIENT_ID }
+		});
 	};
 }
