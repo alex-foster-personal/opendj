@@ -35,6 +35,7 @@ import type {
 	StemLayout
 } from '$lib/rb/stem-types';
 import { STEM_CONTROL_IDS } from '$lib/rb/stem-types';
+import type { PcmHandoff } from '$lib/rb/stretch-pcm-handoff';
 
 export const STEM_CONTROLS = STEM_CONTROL_IDS;
 export const DEMUCS_PARTS = ['vocals', 'drums', 'bass', 'other'] as const;
@@ -356,16 +357,20 @@ export class AlignedStemDeckProcessor {
 		context: AudioContext,
 		buffers: StemBuffers,
 		options: StretchAdapterOptions
-	): Promise<{ processor: AlignedStemDeckProcessor; alignment: StemAlignment }> {
+	): Promise<{ processor: AlignedStemDeckProcessor; alignment: StemAlignment; pcmHandoff: PcmHandoff }> {
 		const alignment = validateStemBufferAlignment(buffers);
 		const layout = layoutOfBuffers(buffers);
 		const parts = STEM_LAYOUT_PARTS[layout];
 		const processors: Partial<Record<StemPart, StretchDeckProcessor>> = {};
 		const gains: Partial<Record<StemPart, GainNode>> = {};
+		const handoffs: PcmHandoff[] = [];
 		try {
 			for (const part of parts) {
 				const processor = await StretchDeckProcessor.create(context, options);
-				await processor.load(buffers[part] as AudioBuffer);
+				// PERF-STEMDEC-05: `buffers` is CONSUMED. Nothing reads a stem
+				// AudioBuffer after its processor holds the PCM, so the channels
+				// move instead of being copied on the main thread.
+				handoffs.push(await processor.load(buffers[part] as AudioBuffer, 'transfer'));
 				processors[part] = processor;
 				const gain = context.createGain();
 				gain.gain.value = 1;
@@ -399,7 +404,8 @@ export class AlignedStemDeckProcessor {
 				processor: new AlignedStemDeckProcessor(
 					context, processors, gains, latencySec, layout
 				),
-				alignment
+				alignment,
+				pcmHandoff: handoffs.every((handoff) => handoff === 'transfer') ? 'transfer' : 'copy'
 			};
 		} catch (error) {
 			const cleanupFailures: unknown[] = [];

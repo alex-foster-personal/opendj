@@ -2900,7 +2900,7 @@ async function _upgradeDeckStems(
 		built = null; // landed, held as pendingStemUpgrade, or retired as stale: no longer this function's to free
 		if (landed === 'deferred') stages.deferredToStop = 1;
 		stages.total = Math.round(performance.now() - t0);
-		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, { ...decoded.labels, landed });
+		recordPerfTiming(`deck-stems sid=${stableId.slice(0, 12)}`, stages, deck, { ...decoded.labels, landed, pcm_handoff: created.pcmHandoff });
 	} catch (error) {
 		if (built !== null) _retireProcessor(built);
 		if (stale()) return;
