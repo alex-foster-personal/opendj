@@ -10,7 +10,11 @@ enforce it, instead of one more copy in one more caller.
 
 REVIEW-18 (Thu 1 Oct 2026): Grok and Cursor subscription lanes post submitted
 reviews under maintainer with lane markers; they count here when login
-and marker both match, like Sol's SOL_LOGINS rule in review_sol.py.
+and marker both match, like Sol's SOL_LOGINS rule in review_sol.py. A body with
+more than one lane marker (grok, cursor, or sol), or duplicate markers of one
+lane with differing sha, model, or skipped, counts for no subscription lane; a
+Grok or Cursor review whose skipped= list intersects this PR's control-plane hits
+does not count.
 
 The path list and the author-trailer rule are #4361's (enqueue gate, OPEN at head
 286a755a484a on Thu 1 Oct 2026), so the two cannot disagree once it lands.
@@ -37,10 +41,11 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from scripts.review_gh import TriageError
+from scripts.review_sol import SOL_MARKER
 
 # fnmatch semantics: `*` also crosses `/`, so `.github/workflows/*` covers the tree.
 ROOT_IMPORT_PATHS: tuple[str, ...] = ("__pycache__/*", "_winapi/*", "msvcrt/*", "nt/*", "org/*")
@@ -134,14 +139,19 @@ SUBMITTED_REVIEW_STATES: frozenset[str] = frozenset({"COMMENTED", "APPROVED", "C
 SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
 GROK_REVIEW_MARKER = re.compile(
     r"<!--\s*grok-review\s+v1\s+sha=([0-9a-f]{40})\s+model=(\S+)"
-    r"(?:\s+skipped=[\w.,/-]+)?\s*-->",
+    r"(?:\s+skipped=([\w.,/-]+))?\s*-->",
     re.IGNORECASE,
 )
 CURSOR_REVIEW_MARKER = re.compile(
     r"<!--\s*cursor-review\s+v1\s+sha=([0-9a-f]{40})\s+model=(\S+)"
-    r"(?:\s+skipped=[\w.,/-]+)?\s*-->",
+    r"(?:\s+skipped=([\w.,/-]+))?\s*-->",
     re.IGNORECASE,
 )
+_SUBSCRIPTION_LANE_MARKERS: Mapping[str, re.Pattern[str]] = {
+    "Grok": GROK_REVIEW_MARKER,
+    "Cursor": CURSOR_REVIEW_MARKER,
+    "Sol": SOL_MARKER,
+}
 
 
 #: The last `enforce` FAIL's detail, for review_blocker's one-line BLOCKER; empty when the
@@ -210,11 +220,53 @@ def _cursor_model_counts(model: str) -> bool:
     return lowered.startswith(("composer-", "cursor-"))
 
 
+def _subscription_marker_signature(lane: str, match: re.Match[str]) -> tuple[str, str, str | None]:
+    if lane == "Sol":
+        skipped = match.group(4)
+        return (match.group(1).lower(), match.group(3).lower(), skipped)
+    skipped = match.group(3)
+    return (match.group(1).lower(), match.group(2).lower(), skipped)
+
+
+def _subscription_lanes_with_markers(body: str) -> frozenset[str]:
+    present: set[str] = set()
+    for lane, pattern in _SUBSCRIPTION_LANE_MARKERS.items():
+        if pattern.search(body):
+            present.add(lane)
+    return frozenset(present)
+
+
+def _subscription_review_body_ambiguous(body: str) -> bool:
+    if len(_subscription_lanes_with_markers(body)) > 1:
+        return True
+    for lane, pattern in _SUBSCRIPTION_LANE_MARKERS.items():
+        matches = list(pattern.finditer(body))
+        if len(matches) <= 1:
+            continue
+        sigs = {_subscription_marker_signature(lane, m) for m in matches}
+        if len(sigs) > 1:
+            return True
+    return False
+
+
+def _skipped_intersects_control_plane_hits(
+    skipped_raw: str | None,
+    control_plane_hit_paths: Collection[str],
+) -> bool:
+    if not skipped_raw:
+        return False
+    skipped_paths = {part.strip() for part in skipped_raw.split(",") if part.strip()}
+    if not skipped_paths:
+        return False
+    return bool(skipped_paths.intersection(control_plane_hit_paths))
+
+
 def _subscription_lane_at_head(
     reviews: Sequence[Mapping],
     head_sha: str,
     marker: re.Pattern[str],
     model_ok: Callable[[str], bool],
+    control_plane_hit_paths: Collection[str],
 ) -> bool:
     want = head_sha.lower()
     for review in reviews:
@@ -227,20 +279,32 @@ def _subscription_lane_at_head(
         if str(review["commit_id"]).lower() != want:
             continue
         body = "" if review["body"] is None else str(review["body"])
+        if _subscription_review_body_ambiguous(body):
+            continue
         match = marker.search(body)
         if not match or match.group(1).lower() != want:
+            continue
+        if _skipped_intersects_control_plane_hits(match.group(3), control_plane_hit_paths):
             continue
         if model_ok(match.group(2)):
             return True
     return False
 
 
-def subscription_reviewed_at_head(reviews: Sequence[dict], head_sha: str) -> dict[str, bool]:
+def subscription_reviewed_at_head(
+    reviews: Sequence[dict],
+    head_sha: str,
+    control_plane_hit_paths: Collection[str],
+) -> dict[str, bool]:
     """Grok and Cursor submitted reviews at head (login + exact-sha marker + model family)."""
     seq: Sequence[Mapping] = reviews
     return {
-        "Grok": _subscription_lane_at_head(seq, head_sha, GROK_REVIEW_MARKER, _grok_model_counts),
-        "Cursor": _subscription_lane_at_head(seq, head_sha, CURSOR_REVIEW_MARKER, _cursor_model_counts),
+        "Grok": _subscription_lane_at_head(
+            seq, head_sha, GROK_REVIEW_MARKER, _grok_model_counts, control_plane_hit_paths
+        ),
+        "Cursor": _subscription_lane_at_head(
+            seq, head_sha, CURSOR_REVIEW_MARKER, _cursor_model_counts, control_plane_hit_paths
+        ),
     }
 
 
@@ -309,6 +373,8 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
 
     _LAST_FAILURE.clear()
 
+    cp_hits = control_plane_hits(changed_files)
+
     def reviewed_at_head() -> dict[str, bool]:
         reviews = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/reviews")
         inline = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/comments")
@@ -318,7 +384,7 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
             evidence = rc._collect_evidence(name, reviews, inline, issue, head_sha)
             reviewed = rc._classify_from_evidence(name, evidence).reviewed
             found[name] = reviewed and evidence.submitted_reviews > 0
-        found.update(subscription_reviewed_at_head(reviews, head_sha))
+        found.update(subscription_reviewed_at_head(reviews, head_sha, cp_hits))
         return found
 
     verdict = measure(
