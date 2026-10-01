@@ -19,7 +19,17 @@ TWO INDEPENDENT SYMPTOMS, EITHER SUFFICIENT, mirroring PulseFlag's shape:
   almost-equally-good alternative, which is what happens on chroma with no
   single dominant pitch-class center (e.g. a symmetric or noise-like chroma).
 
-THRESHOLDS ARE UNCALIBRATED PLACEHOLDERS, NOT MEASURED. Unlike
+MARGIN_THRESHOLD IS ROUND-1 MEASURED (Fri 2 Oct 2026, demon-llama Preview
+library, 60 tracks with a tag key from MIK/rekordbox, `scripts/key_margin_round.py`).
+The placeholder 0.02 declined 53/60 (88%) and 43 of the first 44 live records:
+the real margin distribution has median 0.0097 and p90 0.021, because the
+runner-up is usually the relative or a fifth-related key, which Krumhansl
+profiles score nearly alike. Exact agreement with the tag key by threshold:
+all 60 at 60%; >= 0.005 keeps 40/60 at 75%; >= 0.01 keeps 30/60 at 80%;
+>= 0.02 keeps 7/60 at 86%. 0.005 is the knee: it keeps two thirds of tracks
+and lifts agreement 15 points over publishing everything.
+
+CONFIDENCE_THRESHOLD IS STILL AN UNCALIBRATED PLACEHOLDER. Unlike
 ACTIVATION_PEAK_THRESHOLD in apps/analysis_beatgrid/flags.py (set from a
 round-0 measurement over 137 tracks), nav1-key-r0 did not run a scored round
 against real chroma before this file was written -- see specs/native-
@@ -49,7 +59,7 @@ from dataclasses import dataclass
 from apps.analysis_key.profiles import KeyEstimate
 
 CONFIDENCE_THRESHOLD = 0.5
-MARGIN_THRESHOLD = 0.02
+MARGIN_THRESHOLD = 0.005
 
 REASON_LOW_CONFIDENCE = "low_confidence"
 REASON_AMBIGUOUS_MARGIN = "ambiguous_margin"
