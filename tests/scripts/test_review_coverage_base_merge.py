@@ -279,3 +279,30 @@ def test_gitlink_smuggled_into_merge_does_not_carry_when_submodules_are_ignored(
     assert git(repo, "ls-tree", head, "--", "vendor/sub").startswith("160000 commit"), "gitlink must be in the merge"
 
     assert_no_carry(repo, reviewed, head)
+
+
+# ----------------------------------------------------------------------------
+# condition 4: every intervening merge is the clean merge of its parents
+
+
+@pytest.mark.requirement("REVIEW-16")
+def test_hand_edit_restored_by_a_later_merge_does_not_carry(repo: Path, reviewed: str) -> None:
+    """[if] one merge hand-edits a file and a later merge restores it [then] no carry, [else stop]."""
+    advance_main(repo, OTHER, "other v2\n")
+    merge_main_with_edit(repo, THIRD, "third smuggled\n")
+    advance_main(repo, OTHER, "other v3\n")
+    head = merge_main_with_edit(repo, THIRD, "third v1\n")
+    assert git(repo, "show", f"{head}:{THIRD}") == "third v1", "the later merge must restore the file"
+
+    assert_no_carry(repo, reviewed, head)
+
+
+@pytest.mark.requirement("REVIEW-16")
+def test_two_clean_base_merges_carry(repo: Path, reviewed: str) -> None:
+    """[if] two consecutive clean merges of unrelated main changes read MISS [then broken]."""
+    advance_main(repo, OTHER, "other v2\n")
+    merge_main(repo)
+    advance_main(repo, OTHER, "other v3\n")
+    head = merge_main(repo)
+
+    assert attempt(repo, reviewed, head).verdict is not None
