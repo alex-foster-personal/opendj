@@ -12,6 +12,7 @@ import {
 	watchReanalyzeBatch
 } from '$lib/rb/reanalyze-batch-feedback';
 import { revealTrack } from '$lib/rb/api-track-reveal';
+import { isUsbTrackId } from '$lib/rb/track-source';
 import { pushToast } from '$lib/stores.svelte';
 
 export const REVEAL_TRACK_TITLE = 'POST /api/v1/tracks/{stable_id}:reveal';
@@ -27,6 +28,19 @@ export type ToastFn = (
 
 export function loadDeckTitle(deck: number, stableId: string): string {
 	return `opendj load ${deck} ${stableId}`;
+}
+
+/**
+ * The menu a row may show. A stick row (Play from USB) is read only and has
+ * no library row behind it, so every item that calls a library-only API (add
+ * to playlist, edit, relocate, reveal, copy path, re-analyze, stem / lyrics
+ * jobs, remove) is dropped rather than left enabled to be refused by the
+ * server. Deck loads are the stick row's real actions. An allowlist, so an
+ * item added to the menu later stays off stick rows until it is proven to
+ * work for them.
+ */
+export function menuItemsForTrack<T extends { id: string }>(stableId: string, items: readonly T[]): T[] {
+	return isUsbTrackId(stableId) ? items.filter((item) => item.id.startsWith('load-')) : [...items];
 }
 
 export function menuTargetIds(
