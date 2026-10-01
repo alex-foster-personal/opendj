@@ -106,7 +106,11 @@ test('if the machine has no microphone then I/O names the absence and keeps the 
 	await headphones.acquireHeadphoneOutput(monitorSource);
 	const hp = playerState.mixerState.headphones;
 	assert.equal(hp.error, headphones.MIC_ABSENT_NOTICE);
-	assert.equal(hp.outputs.length, 1, 'the enumerated sink must still be selectable');
+	// IOPIN-14 lists the system default alongside it, so presence is asserted by id.
+	assert.ok(
+		hp.outputs.some((output) => output.id === 'null-sink' && output.label !== ''),
+		'the enumerated sink must still be selectable, under a readable name'
+	);
 	assert.equal(hp.supported, true, 'the browser supports the API; only the hardware is absent');
 });
 

@@ -1052,6 +1052,14 @@ test('continuous mixer controls execute through IPC immediately and round-trip i
 			}])),
 			outputs: [],
 			inputs: [],
+			device_access: {
+				status: 'not_checked',
+				action: 'retry',
+				message: 'Audio devices have not been checked yet. Audio plays through the system default output.',
+				detail: null,
+				output_pinning: true,
+				notices: []
+			},
 			supported: false,
 			active: false,
 			error: null

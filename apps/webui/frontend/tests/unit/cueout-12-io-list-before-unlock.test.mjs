@@ -88,7 +88,8 @@ test('if the label unlock succeeds then the I/O menu lists the labelled devices'
 	const hp = playerState.mixerState.headphones;
 	assert.deepEqual(
 		hp.outputs.map((output) => output.label),
-		['MacBook Pro Speakers', "Steve's over-ears"]
+		// IOPIN-14: the system default is always listed, first, when the browser names none.
+		['System default output', 'MacBook Pro Speakers', "Steve's over-ears"]
 	);
 	assert.equal(hp.error, null);
 });

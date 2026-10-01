@@ -10,7 +10,7 @@
 		type HeadphoneMixDirection,
 		type HeadphoneMixStepResult
 	} from '$lib/rb/headphone-mix-step';
-	import { headphoneLivenessAlertForState, headphoneMixAccent, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
+	import { headphoneLivenessAlertForState, headphoneMixAccent, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
@@ -83,6 +83,15 @@
 	);
 	const warningText = $derived(twoOutputsWarning({ outputMode: headphoneState.output_mode, selectedLabel }));
 	const livenessAlert = $derived(headphoneLivenessAlertForState(headphoneState));
+	// IOPIN-14: the panel says whether the lists could be read before it shows them.
+	const access = $derived(headphoneState.device_access);
+	const accessActionLabel = $derived(
+		access.action === 'grant' ? 'Grant access to list devices' : 'Retry device check'
+	);
+	// The denied notice already says this; one statement of it is enough.
+	const showError = $derived(
+		headphoneState.error !== null && !(access.status === 'permission_denied' && headphoneState.error === MIC_DECLINED_NOTICE)
+	);
 	const mixBullets = [
 		'Turn MIX left: more channel CUE in the blend. Turn right: more MASTER.',
 		'Single-click the knob to step toward the other extreme.',
@@ -277,12 +286,23 @@
 				<div class="hp-section-heading"><h3>Devices</h3><ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={100}><button type="button" aria-label="Rescan available headphone output devices" onclick={onrefresh}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d={RESCAN_PATH} fill="none" stroke="currentColor" stroke-width="1.2" /><path d={RESCAN_ARROW_PATH} fill="currentColor" /></svg> Rescan</button></ControlExplainer></div>
 			<button type="button" class="hp-acquire" onclick={onacquire}>Choose output / allow device access</button>
 			<p class="hp-context">Device access can open an output chooser or microphone permission prompt. It may change the CUE route; use it deliberately.</p>
+				<div class="hp-access" data-io-device-access={access.status}>
+					{#if access.message !== null}
+						<p class="hp-warn" role="status" data-io-device-access-message title={access.detail ?? access.message}>{access.message}{#if access.detail !== null} <span class="hp-access-detail">({access.detail})</span>{/if}</p>
+					{/if}
+					{#if access.action !== 'none'}
+						<button type="button" class="hp-retry" data-io-device-access-action={access.action} onclick={access.action === 'grant' ? onacquire : onrefresh}>{accessActionLabel}</button>
+					{/if}
+					{#each access.notices as notice (notice)}
+						<p class="hp-context" role="status" data-io-device-notice>{notice}</p>
+					{/each}
+				</div>
 				{#if masterLabel !== null || selectedLabel !== null}
 					<p class="hp-context">{#if masterLabel !== null}MASTER: {masterLabel}. {/if}{#if selectedLabel !== null}CUE: {selectedLabel}.{/if}</p>
 				{/if}
 					{@render outputMenu()}
 					<p class="hp-context">Signal lights measure app bus or mic input. They do not prove a physical speaker emitted sound.</p>
-				{#if headphoneState.error !== null}
+				{#if showError}
 					<p class="hp-error" role="alert">{headphoneState.error}</p>
 					<button type="button" class="hp-retry" onclick={onacquire}>Retry device access</button>
 				{/if}
@@ -318,7 +338,7 @@
 				<select
 					aria-label="master output device"
 					value={headphoneState.selected_master_output_device_id ?? ''}
-					disabled={!headphoneState.supported}
+					disabled={!headphoneState.supported || !access.output_pinning}
 					onchange={(event) => onmaster(event.currentTarget.value)}
 				>
 					<option value="" disabled>choose master</option>
@@ -328,14 +348,13 @@
 				</select>
 			</label>
 		</ControlExplainer>
-		{#if !headphoneState.supported}<p class="hp-context">Device selection needs supported browser or shell audio APIs and microphone permission.</p>{/if}
 		<ControlExplainer title="HEADPHONE CUE" bullets={cuePickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>HEADPHONE CUE {@render signalIndicator('cue')}</span>
 				<select
 					aria-label="headphone output device"
 					value={headphoneState.selected_output_device_id ?? ''}
-					disabled={!headphoneState.supported}
+					disabled={!headphoneState.supported || !access.output_pinning}
 					onchange={(event) => onselect(event.currentTarget.value)}
 				>
 					<option value="" disabled>HP out</option>
@@ -586,6 +605,8 @@
 		color: var(--rb-accent, #4fb3ff);
 		white-space: nowrap;
 	}
+	.hp-access { display: grid; gap: 4px; justify-items: start; }
+	.hp-access-detail { opacity: 0.75; }
 	.hp-warn {
 		color: var(--rb-warn, #e6a23c);
 		font-size: 10px;

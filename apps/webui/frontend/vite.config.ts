@@ -22,8 +22,17 @@ export default defineConfig(({ command, mode }) => {
 	if (devConfig !== null) {
 		process.title = `opendj-frontend --name opendj-frontend --port ${devConfig.frontendPort}`;
 	}
+	// The one switch for what opening the audio I/O view may do (IOPIN-14). The
+	// dev server keeps a fixed origin, so the browser remembers a device-access
+	// grant and asking on open costs one prompt, once. Every built app (the
+	// packaged shell, a production bundle) must not prompt unasked and shows a
+	// grant button instead. Read by `ioDeviceAccessOnOpen`.
+	const ioDeviceAccessOnOpen: 'request' | 'button' = devConfig === null ? 'button' : 'request';
 	return {
 		envDir: REPOSITORY_ROOT,
+		define: {
+			'import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN': JSON.stringify(ioDeviceAccessOnOpen)
+		},
 		plugins: [sveltekit(), holdFullReloadPlugin()],
 		build: {
 			// Terser instead of Vite's default esbuild minifier. Measured on

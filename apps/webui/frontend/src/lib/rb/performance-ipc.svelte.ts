@@ -1765,7 +1765,11 @@ export function queryPerformanceState(): PerformanceState {
 					cue: { ...mixerState.headphones.routes.cue }
 				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
-				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input })),
+				device_access: {
+					...mixerState.headphones.device_access,
+					notices: [...mixerState.headphones.device_access.notices]
+				}
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },

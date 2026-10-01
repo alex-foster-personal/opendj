@@ -44,7 +44,9 @@ test('if the declined notice reads as a failure then a deliberate choice looks l
 // Source guards: the acquire path is browser-only, so the wiring is pinned as text.
 test('if the acquire path unlocks unconditionally then a granted mic is still opened every time', () => {
 	const source = readFileSync(new URL('src/lib/player/headphones.ts', FRONTEND), 'utf8');
-	const decided = source.indexOf('micUnlockDecision(await _microphonePermissionState())');
+	// IOPIN-14: the decision also reads whether the listing is still withheld, so a
+	// `granted` that did not actually yield names is asked rather than skipped.
+	const decided = source.indexOf('labelUnlockDecision(await _microphonePermissionState(), namesWithheld)');
 	const unlocked = source.indexOf('await _unlockHeadphoneOutputLabels(mediaDevices)');
 	assert.ok(decided > 0, 'the acquire path must consult the permission first');
 	assert.ok(unlocked > decided, 'the unlock must come after the decision, not before it');
