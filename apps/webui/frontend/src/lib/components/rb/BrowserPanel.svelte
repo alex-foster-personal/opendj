@@ -115,7 +115,6 @@
 		runPerformanceCommandFromUi
 	} from '$lib/rb/performance-ipc.svelte';
 	import SpinnerIcon from './browser/SpinnerIcon.svelte';
-	import { PLAYLIST_FIRST_PAGE } from './browser/fill-playlist-pane';
 	import {
 		BLANK_PLAYLIST_GRACE_MS,
 		DEFAULT_PLAYLIST_NAME,
@@ -1145,7 +1144,7 @@
 			_prefetchPlaylistTreeIntent(lists);
 			const rememberedPlaylist = uiPrefs.last_playlist;
 			if (rememberedPlaylist !== null && rememberedPlaylist.kind === 'playlist') {
-				prefetchPlaylistFirstPage(rememberedPlaylist.playlist_id, PLAYLIST_FIRST_PAGE);
+				prefetchPlaylistFirstPage(rememberedPlaylist.playlist_id);
 			}
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;

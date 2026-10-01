@@ -53,10 +53,9 @@ before(async () => {
  * with its closure-captured helpers supplied as factory arguments so it can
  * run outside the component. */
 function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
-	// _loadPane reaches the route through the real first-page prefetch join
-	// (issue #3746); route that module's fetch seam to this test's fake.
-	prefetch.resetPlaylistPagePrefetchForTests();
-	prefetch.setFetchPlaylistPageForTests((playlistId, limit, offset) =>
+	// _loadPane reaches the route through the first-page prefetch join
+	// (issue #3746); build one over this test's fake.
+	const playlistPages = prefetch.createPlaylistPagePrefetch((playlistId, limit, offset) =>
 		listPlaylistTracksPage(playlistId, { limit, offset })
 	);
 	const source = readFileSync(PANEL, 'utf8');
@@ -136,7 +135,7 @@ function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 			throw new Error('listTracksHydrated must not be called');
 		},
 		fillPlaylistPane,
-		prefetch.fetchPlaylistFirstPage,
+		playlistPages.fetchFirstPage,
 		() => {},
 		() => {},
 		() => {},

@@ -1,111 +1,111 @@
 // requirement: PERF-UI-05
 import assert from 'node:assert/strict';
-import { afterEach, before, test } from 'node:test';
+import { before, test } from 'node:test';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let prefetch;
+let fill;
 
 before(async () => {
 	prefetch = await loadTypeScriptModule('src/lib/rb/library-playlist-page-prefetch.ts');
+	fill = await loadTypeScriptModule('src/lib/components/rb/browser/fill-playlist-pane.ts');
 });
 
-afterEach(() => {
-	prefetch.resetPlaylistPagePrefetchForTests();
+const emptyPage = (etag) =>
+	Promise.resolve({ page: { tracks: [], total: 0, next_offset: null }, etag });
+
+test('the prefetch page size is the fill first-page size, so a switch can join it', () => {
+	assert.equal(prefetch.PLAYLIST_PREFETCH_PAGE_SIZE, fill.PLAYLIST_FIRST_PAGE);
 });
 
-test('prefetchPlaylistFirstPage is idempotent and a switch joins its in-flight promise', async () => {
+test('prefetchFirstPage is idempotent and a switch joins its in-flight promise', async () => {
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests(() => {
+	const p = prefetch.createPlaylistPagePrefetch(() => {
 		calls += 1;
-		return Promise.resolve({
-			page: { tracks: [], total: 0, next_offset: null },
-			etag: 'e1'
-		});
+		return emptyPage('e1');
 	});
-	prefetch.prefetchPlaylistFirstPage('pl-a');
-	prefetch.prefetchPlaylistFirstPage('pl-a');
-	const first = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
+	p.prefetchFirstPage('pl-a');
+	p.prefetchFirstPage('pl-a');
+	const first = await p.fetchFirstPage('pl-a', 0);
 	assert.equal(calls, 1);
 	assert.equal(first.etag, 'e1');
 });
 
 test('a prefetched page is joined once: switching back reads the route again', async () => {
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests(() => {
+	const p = prefetch.createPlaylistPagePrefetch(() => {
 		calls += 1;
-		return Promise.resolve({
-			page: { tracks: [], total: 0, next_offset: null },
-			etag: `e${calls}`
-		});
+		return emptyPage(`e${calls}`);
 	});
-	prefetch.prefetchPlaylistFirstPage('pl-a');
-	const first = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
-	const second = await prefetch.fetchPlaylistFirstPage('pl-a', 0);
+	p.prefetchFirstPage('pl-a');
+	const first = await p.fetchFirstPage('pl-a', 0);
+	const second = await p.fetchFirstPage('pl-a', 0);
 	assert.equal(calls, 2);
 	assert.equal(first.etag, 'e1');
-	assert.equal(second.etag, 'e2', 'a revisit must not be served the first visit\'s rows');
+	assert.equal(second.etag, 'e2', "a revisit must not be served the first visit's rows");
 });
 
 test('a stale prefetch is not joined and a later hover refreshes it', async () => {
 	let clock = 0;
-	prefetch.setPrefetchClockForTests(() => clock);
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests(() => {
-		calls += 1;
-		return Promise.resolve({
-			page: { tracks: [], total: 0, next_offset: null },
-			etag: `e${calls}`
-		});
-	});
-	prefetch.prefetchPlaylistFirstPage('pl-s');
+	const p = prefetch.createPlaylistPagePrefetch(
+		() => {
+			calls += 1;
+			return emptyPage(`e${calls}`);
+		},
+		() => clock
+	);
+	p.prefetchFirstPage('pl-s');
 	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS + 1;
-	prefetch.prefetchPlaylistFirstPage('pl-s');
+	p.prefetchFirstPage('pl-s');
 	assert.equal(calls, 2, 'a hover after the max age starts a fresh prefetch');
 	clock += prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS + 1;
-	const page = await prefetch.fetchPlaylistFirstPage('pl-s', 0);
+	const page = await p.fetchFirstPage('pl-s', 0);
 	assert.equal(calls, 3);
 	assert.equal(page.etag, 'e3');
 });
 
 test('control: a fresh prefetch is still joined just inside the max age', async () => {
 	let clock = 0;
-	prefetch.setPrefetchClockForTests(() => clock);
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests(() => {
-		calls += 1;
-		return Promise.resolve({ page: { tracks: [], total: 0, next_offset: null }, etag: 'e' });
-	});
-	prefetch.prefetchPlaylistFirstPage('pl-f');
+	const p = prefetch.createPlaylistPagePrefetch(
+		() => {
+			calls += 1;
+			return emptyPage('e');
+		},
+		() => clock
+	);
+	p.prefetchFirstPage('pl-f');
 	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS;
-	await prefetch.fetchPlaylistFirstPage('pl-f', 0);
+	await p.fetchFirstPage('pl-f', 0);
 	assert.equal(calls, 1);
 });
 
 test('a prefetch of a different page size is not joined', async () => {
 	const limits = [];
-	prefetch.setFetchPlaylistPageForTests((_id, limit) => {
+	const p = prefetch.createPlaylistPagePrefetch((_id, limit) => {
 		limits.push(limit);
-		return Promise.resolve({ page: { tracks: [], total: 0, next_offset: null }, etag: 'e' });
+		return emptyPage('e');
 	});
-	prefetch.prefetchPlaylistFirstPage('pl-z', 30);
-	await prefetch.fetchPlaylistFirstPage('pl-z', 0, 50);
+	p.prefetchFirstPage('pl-z', 30);
+	await p.fetchFirstPage('pl-z', 0, 50);
 	assert.deepEqual(limits, [30, 50]);
 });
 
 test('a cold switch whose live GET fails does not retry it', async () => {
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests(() => {
+	const p = prefetch.createPlaylistPagePrefetch(() => {
 		calls += 1;
 		return Promise.reject(new Error('network exploded'));
 	});
-	await assert.rejects(prefetch.fetchPlaylistFirstPage('pl-x', 0), /network exploded/);
+	await assert.rejects(p.fetchFirstPage('pl-x', 0), /network exploded/);
 	assert.equal(calls, 1);
 });
 
-test('fetchPlaylistFirstPage falls back when prefetch rejects', async () => {
+test('fetchFirstPage falls back to a live GET when the prefetch rejects', async () => {
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests(() => {
+	const p = prefetch.createPlaylistPagePrefetch(() => {
 		calls += 1;
 		if (calls === 1) return Promise.reject(new Error('prefetch fail'));
 		return Promise.resolve({
@@ -113,38 +113,32 @@ test('fetchPlaylistFirstPage falls back when prefetch rejects', async () => {
 			etag: 'e2'
 		});
 	});
-	prefetch.prefetchPlaylistFirstPage('pl-b');
-	const page = await prefetch.fetchPlaylistFirstPage('pl-b', 0);
+	p.prefetchFirstPage('pl-b');
+	const page = await p.fetchFirstPage('pl-b', 0);
 	assert.equal(calls, 2);
 	assert.equal(page.page.tracks[0].stable_id, 't1');
 });
 
-test('fetchPlaylistFirstPage uses live GET for non-zero offset', async () => {
+test('fetchFirstPage uses a live GET for a non-zero offset', async () => {
 	let calls = 0;
-	prefetch.setFetchPlaylistPageForTests((_id, _limit, offset) => {
+	const p = prefetch.createPlaylistPagePrefetch((_id, _limit, offset) => {
 		calls += 1;
 		return Promise.resolve({
 			page: { tracks: [], total: 30, next_offset: offset === 0 ? 30 : null },
 			etag: `e-${offset}`
 		});
 	});
-	const page = await prefetch.fetchPlaylistFirstPage('pl-c', 30);
+	const page = await p.fetchFirstPage('pl-c', 30);
 	assert.equal(calls, 1);
 	assert.equal(page.etag, 'e-30');
 });
 
-test('prefetchPlaylistTreeIntent caps eager prefetches', async () => {
+test('prefetchTreeIntent caps eager prefetches', () => {
 	const seen = [];
-	prefetch.setFetchPlaylistPageForTests((playlistId) => {
+	const p = prefetch.createPlaylistPagePrefetch((playlistId) => {
 		seen.push(playlistId);
-		return Promise.resolve({
-			page: { tracks: [], total: 0, next_offset: null },
-			etag: playlistId
-		});
+		return emptyPage(playlistId);
 	});
-	prefetch.prefetchPlaylistTreeIntent(
-		['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
-		3
-	);
+	p.prefetchTreeIntent(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'], 3);
 	assert.deepEqual(seen, ['a', 'b', 'c']);
 });
