@@ -3,9 +3,12 @@
 The oracle knows nothing about sqlite, the hub, fences or the wire. It is
 told every write the simulation makes, as ``(row, Version)``, and answers one
 question: which version of each row SHOULD every machine hold once the fleet
-has settled. That answer is the ADR 04 c3 rule and nothing else: the version
-with the greatest ``(updated_at, origin_device_id)`` wins, and a tombstone is
-just a version whose ``deleted_at`` is set.
+has settled. That answer is the ADR 04 c3 rule: the version with the greatest
+``(updated_at, origin_device_id)`` wins. For a playlist a tombstone is just a
+version whose ``deleted_at`` is set. For a track, wire v7 (CLOUDSYNC-29) puts
+one comparison in front of that: the version whose last removed-or-restored
+event is latest wins, so a tombstone beats every write that is not a later
+restore, and LWW orders only versions that agree on that event.
 
 Membership semantics are ADR 04 c5 whole-playlist granularity: the member
 list is part of the playlist row's content, so the playlist version that
@@ -41,7 +44,7 @@ PLAYLISTS: str = "playlists"
 class Version:
     """One write of one row: its LWW key and the domain content it carried.
 
-    ``content`` for a track is ``(title, deleted_at)``; for a playlist it is
+    ``content`` for a track is ``(title, deleted_at, restored_at)``; for a playlist it is
     ``(name, deleted_at, member stable_ids in position order)``. Stamps are
     canonical so two spellings of one instant compare equal, as they do on
     the wire.
@@ -57,6 +60,12 @@ def canonical_or_none(value: str | None) -> str | None:
 
 def lww_key(updated_at: str, origin: str) -> LwwKey:
     return protocol.lww_key({"updated_at": updated_at, "origin_device_id": origin})
+
+
+def track_lifecycle_key(version: Version) -> str:
+    """When a track version last moved between removed and live."""
+    _title, deleted_at, restored_at = version.content
+    return protocol.lifecycle_key({"deleted_at": deleted_at, "restored_at": restored_at})
 
 
 class LwwOracle:
@@ -87,6 +96,8 @@ class LwwOracle:
         versions = self._versions.get(row)
         if not versions:
             raise KeyError(f"the oracle was never told about {row}")
+        if row[0] == TRACKS:
+            return max(versions, key=lambda version: (track_lifecycle_key(version), version.key))
         return max(versions, key=lambda version: version.key)
 
     def is_known(self, row: RowKey, version: Version) -> bool:
@@ -97,12 +108,12 @@ class LwwOracle:
 def read_versions(conn: sqlite3.Connection) -> dict[RowKey, Version]:
     """Every track and playlist row this machine holds, tombstones included."""
     versions: dict[RowKey, Version] = {}
-    for stable_id, title, deleted_at, updated_at, origin in conn.execute(
-        "SELECT stable_id, title, deleted_at, updated_at, origin_device_id FROM tracks"
+    for stable_id, title, deleted_at, restored_at, updated_at, origin in conn.execute(
+        "SELECT stable_id, title, deleted_at, restored_at, updated_at, origin_device_id FROM tracks"
     ):
         versions[(TRACKS, stable_id)] = Version(
             key=lww_key(updated_at, origin),
-            content=(title, canonical_or_none(deleted_at)),
+            content=(title, canonical_or_none(deleted_at), canonical_or_none(restored_at)),
         )
     members: dict[str, list[str]] = defaultdict(list)
     for playlist_id, stable_id in conn.execute(
@@ -129,4 +140,5 @@ __all__ = [
     "canonical_or_none",
     "lww_key",
     "read_versions",
+    "track_lifecycle_key",
 ]

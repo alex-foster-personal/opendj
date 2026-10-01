@@ -16,7 +16,7 @@ from typing import Any
 
 from apps.shared.state import sync_stamp
 from apps.shared.state.sync_stamp import LOCAL_CHANGELOG_TABLE
-from apps.sync_hub import protocol
+from apps.sync_hub import protocol, track_lifecycle
 from apps.sync_hub.engine_common import (
     HUB_CHANGELOG_TABLE,
     SyncApplyError,
@@ -40,6 +40,7 @@ from apps.sync_hub.engine_identity_map import (
 )
 from apps.sync_hub.engine_watermark import current_seq
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
+from apps.sync_hub.track_lifecycle import TrackHardDeleteRefusedError
 
 #: Same logger name as :mod:`apps.sync_hub.engine_changes`, for the reason
 #: given there: ``caplog.at_level(..., logger="apps.sync_hub.engine")`` is an
@@ -119,6 +120,10 @@ class _Resolution:
     drop_stored_pks: tuple[str, ...] = ()
     rewrite_incoming_to: str | None = None
     identity_conflict: bool = False
+    #: A live ``tracks`` row lost to a stored tombstone (CLOUDSYNC-29): the hub
+    #: re-logs the tombstone so the sender pulls it and stops holding a
+    #: resurrected copy.
+    tombstone_held: bool = False
 
 
 def _stored_stamps(
@@ -285,6 +290,8 @@ def _drop_superseded(
     on the same natural key, and drop their duplicate by this same path.
     """
     row_pk = protocol.encode_row_pk(pk)
+    if spec.name == track_lifecycle.TRACKS_TABLE:
+        track_lifecycle.assert_hard_delete_allowed(conn, str(pk[0]))
     conn.execute(
         f"DELETE FROM {spec.name} WHERE {_pk_predicate(spec)}", tuple(pk)
     )
@@ -588,6 +595,11 @@ def _apply_one(
                 offered_pk=str(change.pk[0]),
                 survivor_pk=verdict.rewrite_incoming_to,
             )
+        if verdict.tombstone_held and record_changelog:
+            # The sender still holds this row live. Its pull runs after its
+            # push, so a fresh changelog entry for the stored tombstone is
+            # what brings it back in line instead of leaving it diverged.
+            _log_hub_change(conn, change, stamp)
         return _ApplyOneOutcome(status="rejected", identity_reject=identity_reject)
     # Survivor PK must exist before children remap onto it. Incoming-wins
     # identity collapse writes the incoming row first, then moves stored
@@ -676,6 +688,36 @@ def _resolution_from_identity(
     return _Resolution(loses=False, drop_stored_pks=decision.stored_pks)
 
 
+def _resolve_same_key(
+    conn: sqlite3.Connection,
+    spec: TableSpec,
+    change: RowChange,
+    stored: tuple[Any, ...],
+    *,
+    hub_authoritative: bool,
+) -> _Resolution:
+    """Order ``change`` against the stored row under its own primary key.
+
+    Removed-versus-live is decided before any stamp (CLOUDSYNC-29): a track
+    tombstone is never dropped by a write that is not a later restore. Only
+    writes on the same side of that event fall through to last-writer-wins.
+    """
+    lifecycle = track_lifecycle.judge(conn, change)
+    if lifecycle is not None:
+        return _Resolution(
+            loses=lifecycle.incoming_loses,
+            faults=lifecycle.faults,
+            tombstone_held=lifecycle.tombstone_held,
+        )
+    stored_key = _sort_key_of(spec.name, stored)
+    if hub_authoritative:
+        # A pull defers to the hub only on an exact tie: a tie cannot hide a
+        # local edit (an edit stamps a newer key), but a strictly older
+        # pulled row would overwrite one.
+        return _Resolution(loses=change.sort_key < stored_key)
+    return _Resolution(loses=change.sort_key <= stored_key)
+
+
 def _resolve_against_stored(
     conn: sqlite3.Connection,
     spec: TableSpec,
@@ -743,13 +785,7 @@ def _resolve_against_stored(
                 )
         if hub_row_authority:
             return _Resolution(loses=False)
-        stored_key = _sort_key_of(spec.name, stored)
-        if hub_authoritative:
-            # A pull defers to the hub only on an exact tie: a tie cannot hide a
-            # local edit (an edit stamps a newer key), but a strictly older
-            # pulled row would overwrite one.
-            return _Resolution(loses=change.sort_key < stored_key)
-        return _Resolution(loses=change.sort_key <= stored_key)
+        return _resolve_same_key(conn, spec, change, stored, hub_authoritative=hub_authoritative)
     return _resolve_against_duplicates(
         conn,
         spec,
@@ -891,6 +927,7 @@ def spoke_apply(
 
 __all__ = [
     "ApplyResult",
+    "TrackHardDeleteRefusedError",
     "finalize_identity_repairs",
     "hub_apply",
     "spoke_apply",
