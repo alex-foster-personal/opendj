@@ -23,7 +23,14 @@
  *   sentinel_xruns      late render callbacks seen by a dedicated sentinel
  *                       worklet reporting every 100 ms, with the worst gap
  *   app_xruns           the app's own always-on sentinel counter delta
- *   longtasks           main-thread tasks over 50 ms (count, total, max)
+ *   longtasks           main-thread tasks over 50 ms (count, total, max).
+ *                       Null unless the observer passed its own positive
+ *                       control in this page (a deliberate 120 ms block that
+ *                       it must report), see longtask_instrument
+ *   late_above_background   in summarize(): late callbacks minus what the
+ *                       idle windows of the SAME condition predict for the
+ *                       same wall time (runCondition measures one idle window
+ *                       before every load)
  *   heap_peak_mb        peak performance.memory.usedJSHeapSize (Chromium only;
  *                       decoded PCM lives outside it, see pcm_mb)
  * Every dropout and long task is attributed to the stem-load phase it fell in.
@@ -50,6 +57,57 @@ const _nativeImport = new Function('url', 'return import(url)');
 
 function _pageModule(path) {
 	return _nativeImport(new URL(path, location.origin).href);
+}
+
+// -------------------------------------------------------- long-task instrument
+
+const LONGTASK_CONTROL_BLOCK_MS = 120;
+let _longTasks = null;
+
+/**
+ * One page-lifetime long-task observer, armed once and proven able to report:
+ * it must see a deliberate block before any zero it returns is believed. A
+ * per-run observer that is disconnected at the end of the run drops whatever
+ * is still queued, and an observer that never fires reads as "no long tasks".
+ */
+async function _armLongTasks() {
+	if (_longTasks !== null) return _longTasks;
+	const state = { entries: [], observer: null, status: 'unsupported', control_seen_ms: null };
+	_longTasks = state;
+	if (typeof PerformanceObserver !== 'function' || !PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
+		return state;
+	}
+	const take = (list) => {
+		for (const entry of list) state.entries.push({ t: entry.startTime, dur: entry.duration });
+	};
+	state.observer = new PerformanceObserver((list) => take(list.getEntries()));
+	state.observer.observe({ type: 'longtask' });
+	state.drain = () => take(state.observer.takeRecords());
+	await _sleep(50);
+	const blockStart = performance.now();
+	while (performance.now() - blockStart < LONGTASK_CONTROL_BLOCK_MS) { /* deliberate block */ }
+	const blockEnd = performance.now();
+	for (let waited = 0; waited < 3000; waited += 100) {
+		await _sleep(100);
+		state.drain();
+		const hit = state.entries.find((entry) => entry.t <= blockEnd && entry.t + entry.dur >= blockStart + 50);
+		if (hit !== undefined) {
+			state.status = 'verified';
+			state.control_seen_ms = Math.round(hit.dur);
+			state.control_window = [blockStart, blockEnd];
+			return state;
+		}
+	}
+	state.status = 'control-failed';
+	return state;
+}
+
+function _longTasksBetween(state, t0, t1) {
+	if (state.status !== 'verified') return null;
+	state.drain();
+	const [c0, c1] = state.control_window;
+	return state.entries.filter((task) =>
+		task.t + task.dur >= t0 && task.t <= t1 && !(task.t <= c1 && task.t + task.dur >= c0));
 }
 
 async function _engine() {
@@ -213,6 +271,26 @@ function _playbackStats(ctx) {
 	return { events: stats.underrunEvents, ms: stats.underrunDuration * 1000 };
 }
 
+function _clockSteps(samples, t0) {
+	const rates = [];
+	for (let i = 1; i < samples.length; i += 1) {
+		const dt = samples[i][0] - samples[i - 1][0];
+		if (dt > 0) rates.push((samples[i][1] - samples[i - 1][1]) / dt);
+	}
+	const rate = _median(rates);
+	if (rate === null) return null;
+	const steps = [];
+	for (let i = 1; i < samples.length; i += 1) {
+		const excess = (samples[i][1] - samples[i - 1][1]) - rate * (samples[i][0] - samples[i - 1][0]);
+		if (Math.abs(excess) > 40) steps.push({ at_ms: Math.round(samples[i][0] - t0), step_ms: Math.round(excess) });
+	}
+	return { rate: +rate.toFixed(4), samples: samples.length, steps };
+}
+
+function _handoffRows() {
+	return window.__mdtPerfLog().filter((e) => e.kind === 'stem-live-handoff');
+}
+
 function _heapMb() {
 	const memory = performance.memory;
 	return memory === undefined ? null : memory.usedJSHeapSize / 1048576;
@@ -220,7 +298,7 @@ function _heapMb() {
 
 /** One measured stem load. Resolves with the run record; never throws for a
  * load that fails, it records the failure instead. */
-export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeoutMs = 120000 }) {
+export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeoutMs = 120000, playWhenMixReady = false }) {
 	if (typeof loadDeck !== 'number') throw new TypeError('scorer: loadDeck must be a number (1..4)');
 	const m = await _engine();
 	if (!m.isMasterMuted()) throw new Error('scorer: master must be muted before loading tracks');
@@ -231,14 +309,8 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 	const playing = Object.keys(m.deckStates).map(Number).filter((deck) => m.deckStates[deck].playing);
 	const playingPosBefore = Object.fromEntries(playing.map((d) => [d, m.deckAudioClockPositionMs(d)]));
 
-	const longtasks = [];
-	let observer = null;
-	if (typeof PerformanceObserver === 'function' && PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
-		observer = new PerformanceObserver((list) => {
-			for (const entry of list.getEntries()) longtasks.push({ t: entry.startTime, dur: entry.duration });
-		});
-		observer.observe({ type: 'longtask' });
-	}
+	const longTaskState = await _armLongTasks();
+	const handoffRowsBefore = _handoffRows();
 
 	const appXrunsBefore = await window.__mdtFlushXruns();
 	const statsBefore = _playbackStats(ctx);
@@ -265,9 +337,21 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 	let readyAt = null;
 	let terminal = null;
 	let lastSample = 0;
+	// The live handoff: the load deck starts playing its mix the moment the mix
+	// is ready, so the stems arrive on a deck that is itself playing.
+	let playAt = null;
+	let playError = null;
+	let posAtPlay = null;
+	const positionSamples = [];
 	while (performance.now() - t0 < timeoutMs) {
 		const now = performance.now();
 		const stems = m.deckStates[loadDeck].stems;
+		if (playWhenMixReady && playAt === null && loadResolvedAt !== null && loadError === null) {
+			playAt = now;
+			posAtPlay = m.deckAudioClockPositionMs(loadDeck);
+			m.engine.play(loadDeck).catch((error) => { playError = String(error); });
+		}
+		if (playAt !== null) positionSamples.push([now, m.deckAudioClockPositionMs(loadDeck)]);
 		const phase = loadResolvedAt === null ? 'mix-load' : _stemPhase(stems);
 		if (readyAt === null && phase !== lastPhase && phase !== 'ready') {
 			transitions.push([phase, now]);
@@ -300,7 +384,8 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 	if (terminal === null) terminal = 'timeout';
 	await loading;
 	const tEnd = performance.now();
-	observer?.disconnect();
+	// Let queued long-task entries reach the observer before they are read.
+	await _sleep(150);
 
 	const appXrunsAfter = await window.__mdtFlushXruns();
 	const statsAfter = _playbackStats(ctx);
@@ -310,7 +395,9 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		typeof e.kind === 'string' && e.kind.startsWith('deck-stems') && e.kind.includes(sid.slice(0, 12))).pop() ?? null;
 	const loadRow = window.__mdtPerfLog().filter((e) =>
 		typeof e.kind === 'string' && e.kind.startsWith('deck-load sid=') && e.kind.includes(sid.slice(0, 12))).pop() ?? null;
-	const inRun = longtasks.filter((task) => task.t + task.dur >= t0 && task.t <= tEnd);
+	const inRunOrNull = _longTasksBetween(longTaskState, t0, tEnd);
+	const inRun = inRunOrNull ?? [];
+	const handoffRowsAfter = _handoffRows();
 	const byPhase = (items, weight) => {
 		const out = {};
 		for (const item of items) {
@@ -335,6 +422,11 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		playing_decks: playing,
 		playing_advanced_ms: Object.fromEntries(playing.map((d) => [d, Math.round(m.deckAudioClockPositionMs(d) - playingPosBefore[d])])),
 		wall_ms: Math.round(tEnd - t0),
+		// A deck that reached the end of its track still reads `playing` but
+		// renders nothing: a run beside it is not a run beside a playing deck.
+		other_decks_kept_playing: playing.length === 0
+			? null
+			: playing.every((d) => m.deckAudioClockPositionMs(d) - playingPosBefore[d] >= 0.9 * (tEnd - t0)),
 		// A hidden tab has its timers throttled, which stretches the app's own
 		// holds and this scorer's polling: a run is only comparable when visible.
 		visibility: [visibilityAtStart, document.visibilityState],
@@ -349,10 +441,32 @@ export async function runStemLoad({ loadDeck, sid, label, settleMs = 2500, timeo
 		sentinel_by_phase: byPhase(sentinelEvents, (r) => r.xruns),
 		app_xruns: appXrunsAfter.xruns - appXrunsBefore.xruns,
 		render_load: _renderLoad(loadProbe, loadFrom, t0),
-		longtask_count: observer === null ? null : inRun.length,
-		longtask_total_ms: observer === null ? null : Math.round(inRun.reduce((sum, task) => sum + task.dur, 0)),
-		longtask_max_ms: observer === null ? null : Math.round(inRun.reduce((max, task) => Math.max(max, task.dur), 0)),
-		longtask_ms_by_phase: byPhase(inRun, (task) => Math.round(task.dur)),
+		longtask_instrument: longTaskState.status,
+		longtask_control_seen_ms: longTaskState.control_seen_ms,
+		longtask_count: inRunOrNull === null ? null : inRun.length,
+		longtask_total_ms: inRunOrNull === null ? null : Math.round(inRun.reduce((sum, task) => sum + task.dur, 0)),
+		longtask_max_ms: inRunOrNull === null ? null : Math.round(inRun.reduce((max, task) => Math.max(max, task.dur), 0)),
+		longtask_ms_by_phase: inRunOrNull === null ? null : byPhase(inRun, (task) => Math.round(task.dur)),
+		play_when_mix_ready: playWhenMixReady,
+		play_error: playError,
+		load_deck_playing_at_end: m.deckStates[loadDeck].playing,
+		// Audio clock advance of the load deck since play, against wall time: a
+		// handoff that stopped or jumped the deck shows as a mismatch.
+		load_deck_advanced_ms: playAt === null ? null : Math.round(m.deckAudioClockPositionMs(loadDeck) - posAtPlay),
+		load_deck_wall_since_play_ms: playAt === null ? null : Math.round(tEnd - playAt),
+		// Steps of the load deck's TRANSPORT clock that disagree with wall time
+		// by more than 40 ms, with when they happened. A beat-sync join at play
+		// start is one; one at `handoff_at_ms` would be the handoff moving the
+		// deck. This is the transport model, NOT the audio: a click or a short
+		// gap in the sound at the switch is not visible here.
+		load_deck_clock_steps: playAt === null ? null : _clockSteps(positionSamples, t0),
+		handoff_at_ms: readyAt === null ? null : Math.round(readyAt - t0),
+		// The engine logs one 'stem-live-handoff' row when stems take over a
+		// playing deck without stopping it. Counted before and after the run.
+		live_handoffs: handoffRowsAfter.length - handoffRowsBefore.length,
+		live_handoff_message: handoffRowsAfter.length > handoffRowsBefore.length
+			? handoffRowsAfter[handoffRowsAfter.length - 1].message ?? null
+			: null,
 		heap_base_mb: heapBase === null ? null : Math.round(heapBase),
 		heap_peak_mb: heapPeak === null ? null : Math.round(heapPeak),
 		pcm_mb: Math.round(m.deckPcmEstimatedBytes() / 1048576)
@@ -401,7 +515,7 @@ export async function runIdle({ label, durationMs = 20000 }) {
 }
 
 /** Runs each sid once on `loadDeck`, unloading between runs. */
-export async function runCondition({ label, loadDeck, sids, restMs = 4000 }) {
+export async function runCondition({ label, loadDeck, sids, restMs = 4000, idleMs = 8000, playWhenMixReady = false }) {
 	const m = await _engine();
 	const out = [];
 	window.__stemLoadProgress = { label, done: 0, of: sids.length, finished: false };
@@ -410,7 +524,9 @@ export async function runCondition({ label, loadDeck, sids, restMs = 4000 }) {
 			await m.engine.unload(loadDeck);
 			await _sleep(restMs);
 		}
-		out.push(await runStemLoad({ loadDeck, sid, label }));
+		// The background window for THIS run, in the same minute and deck state.
+		if (idleMs > 0) await runIdle({ label, durationMs: idleMs });
+		out.push(await runStemLoad({ loadDeck, sid, label, playWhenMixReady }));
 		window.__stemLoadProgress.done += 1;
 	}
 	await m.engine.unload(loadDeck);
@@ -431,8 +547,72 @@ function _worst(values) {
 	return numeric.length === 0 ? null : Math.max(...numeric);
 }
 
+/** P(X >= k) for X ~ Poisson(lambda). */
+export function poissonUpperTail(k, lambda) {
+	if (!(lambda >= 0) || !Number.isInteger(k) || k < 0) throw new RangeError('poissonUpperTail: bad input');
+	if (k === 0) return 1;
+	let term = Math.exp(-lambda);
+	let below = term;
+	for (let i = 1; i < k; i += 1) {
+		term *= lambda / i;
+		below += term;
+	}
+	return Math.max(0, 1 - below);
+}
+
+/** The rate above which `count` or fewer events in `seconds` has probability
+ * 0.05: the highest background rate the idle windows cannot rule out. With no
+ * idle event this is the rule of three (3 / seconds). */
+export function poissonRateUpper95(count, seconds) {
+	if (!(seconds > 0) || !Number.isInteger(count) || count < 0) throw new RangeError('poissonRateUpper95: bad input');
+	let low = 0;
+	let high = count + 10 * Math.sqrt(count + 1) + 10;
+	for (let i = 0; i < 80; i += 1) {
+		const mid = (low + high) / 2;
+		// P(X <= count | mid) = 1 - P(X >= count + 1 | mid)
+		if (1 - poissonUpperTail(count + 1, mid) > 0.05) low = mid;
+		else high = mid;
+	}
+	return high / seconds;
+}
+
+/**
+ * Late callbacks during loads against what the idle windows of the same
+ * condition predict. `p_at_least_observed` assumes independent arrivals;
+ * late callbacks on a busy host arrive in clusters, so the true tail is
+ * heavier and a small p here is weaker evidence than it looks. With no idle
+ * window the result is null: an unmeasured background is not a zero.
+ */
+export function aboveBackground(runs, idles) {
+	const idleSeconds = idles.reduce((sum, idle) => sum + idle.duration_ms, 0) / 1000;
+	if (idleSeconds <= 0) return null;
+	const idleLate = idles.reduce((sum, idle) => sum + idle.sentinel_xruns, 0);
+	const rate = idleLate / idleSeconds;
+	const loadSeconds = runs.reduce((sum, run) => sum + run.wall_ms, 0) / 1000;
+	const observed = runs.reduce((sum, run) => sum + run.sentinel_xruns, 0);
+	const expected = rate * loadSeconds;
+	return {
+		idle_windows: idles.length,
+		idle_seconds: +idleSeconds.toFixed(1),
+		idle_late: idleLate,
+		background_late_per_s: +rate.toFixed(3),
+		load_seconds: +loadSeconds.toFixed(1),
+		late_observed: observed,
+		late_expected_from_background: +expected.toFixed(2),
+		late_above_background: +(observed - expected).toFixed(2),
+		p_at_least_observed: +poissonUpperTail(observed, expected).toFixed(3),
+		// The same question against the HIGHEST background the idle windows
+		// allow. Short idle windows with no event prove little: this is the
+		// figure to read before calling a small excess real.
+		background_late_per_s_upper95: +poissonRateUpper95(idleLate, idleSeconds).toFixed(3),
+		p_at_least_observed_at_upper95: +poissonUpperTail(observed, poissonRateUpper95(idleLate, idleSeconds) * loadSeconds).toFixed(3),
+		idle_worst_gap_ms: _worst(idles.map((idle) => idle.sentinel_worst_gap_ms)),
+		load_worst_gap_ms: _worst(runs.map((run) => run.sentinel_worst_gap_ms))
+	};
+}
+
 /** Median and worst per metric, grouped by condition label. */
-export function summarize(runs) {
+export function summarize(runs, idles = window.__stemIdleRuns ?? []) {
 	const labels = [...new Set(runs.map((run) => run.label))];
 	const metrics = [
 		'ready_ms', 'underrun_events', 'underrun_ms', 'sentinel_xruns', 'sentinel_worst_gap_ms',
@@ -441,10 +621,20 @@ export function summarize(runs) {
 	const stages = ['probeStem', 'fetchStems', 'decodeStems', 'stemProcessorCreate', 'landStems'];
 	return labels.map((label) => {
 		const group = runs.filter((run) => run.label === label);
-		const row = { label, runs: group.length, not_ready: group.filter((run) => run.terminal !== 'ready').length };
+		const row = {
+			label,
+			runs: group.length,
+			not_ready: group.filter((run) => run.terminal !== 'ready').length,
+			// Runs whose "playing" deck had stopped rendering: not evidence for a
+			// with-playback condition. Computed from the fields every round kept.
+			other_deck_stalled: group.filter((run) =>
+				run.playing_decks.some((d) => run.playing_advanced_ms[d] < 0.9 * run.wall_ms)).length
+		};
 		for (const metric of metrics) {
 			const values = group.map((run) => run[metric]);
-			row[metric] = { median: _median(values), worst: _worst(values), sum: values.reduce((s, v) => s + (v ?? 0), 0) };
+			// A sum over a run that could not be measured is not a smaller sum.
+			const measured = values.every((v) => typeof v === 'number');
+			row[metric] = { median: _median(values), worst: _worst(values), sum: measured ? values.reduce((s, v) => s + v, 0) : null };
 		}
 		for (const stage of stages) {
 			const values = group.map((run) => run.stages?.[stage]);
@@ -452,6 +642,12 @@ export function summarize(runs) {
 		}
 		const waits = group.map((run) => Number(run.stage_labels?.decode_wait_ms));
 		row.decode_wait_ms = { median: _median(waits), worst: _worst(waits) };
+		row.background = aboveBackground(group, idles.filter((idle) => idle.label === label));
+		row.longtask_instrument = [...new Set(group.map((run) => run.longtask_instrument))];
+		row.heap_growth_mb = {
+			median: _median(group.map((run) => run.heap_peak_mb - run.heap_base_mb)),
+			worst: _worst(group.map((run) => run.heap_peak_mb - run.heap_base_mb))
+		};
 		return row;
 	});
 }
@@ -547,4 +743,205 @@ export function summarizeSegments(segments) {
 			worst_gap_ms: _worst(group.map((segment) => segment.worst_gap_ms))
 		};
 	});
+}
+
+// ------------------------------------------------ processor creation bench
+
+const STRETCH_SOURCE_URL = '/node_modules/signalsmith-stretch/SignalsmithStretch.mjs';
+const STRETCH_KEY_LITERAL = '})(SignalsmithStretch, "signalsmith-stretch");';
+const STRETCH_INSTANTIATE =
+	'function instantiateArrayBuffer(binaryFile,imports,receiver){return getBinaryPromise(binaryFile).then(binary=>WebAssembly.instantiate(binary,imports)).then(receiver,';
+const STRETCH_CONSTRUCT = 'Module().then(wasmModule => {';
+
+/**
+ * Source transforms of the SHIPPED stretch module, one per candidate. Each is
+ * registered under its own processor name so all of them coexist in one
+ * AudioContext and can be interleaved. A transform whose anchor is missing
+ * throws: a variant that silently equals the baseline would measure nothing.
+ *   as-shipped      whatever the installed (patched) module does today
+ *   per-processor   upstream behavior: every processor decodes the embedded
+ *                   base64 and compiles the module on the audio thread
+ *   compile-once    the worklet scope decodes and compiles once, later
+ *                   processors only instantiate
+ *   main-compiled   the main thread compiles; the WebAssembly.Module reaches
+ *                   the worklet by structured clone in processorOptions
+ */
+const STRETCH_VARIANTS = {
+	'as-shipped': (source) => source,
+	'compile-once': (source) => _swap(source, STRETCH_INSTANTIATE,
+		'function instantiateArrayBuffer(binaryFile,imports,receiver){return (globalThis.__benchStretchModule??=getBinaryPromise(binaryFile).then(binary=>WebAssembly.compile(binary))).then(compiled=>WebAssembly.instantiate(compiled,imports)).then(instance=>({instance})).then(receiver,'),
+	'main-compiled': (source) => _swap(
+		_swap(source, STRETCH_CONSTRUCT, 'Module({benchCompiled: options.processorOptions.compiled}).then(wasmModule => {'),
+		STRETCH_INSTANTIATE,
+		'function instantiateArrayBuffer(binaryFile,imports,receiver){return WebAssembly.instantiate(Module.benchCompiled,imports).then(instance=>({instance})).then(receiver,')
+};
+
+function _swap(source, anchor, replacement) {
+	const parts = source.split(anchor);
+	if (parts.length !== 2) throw new Error(`bench: anchor found ${parts.length - 1} times, wanted 1: ${anchor.slice(0, 60)}`);
+	return parts.join(replacement);
+}
+
+/** The adapter's own disposal order. Without the port close the processor
+ * (and its WASM memory) stays reachable, and about 115 leaked instances later
+ * the worklet cannot allocate another one. */
+async function _disposeStretchNode(node) {
+	node.disconnect();
+	await node.dispose();
+	node.port.onmessage = null;
+	node.port.close();
+}
+
+async function _stretchVariant(ctx, name, source) {
+	const transform = STRETCH_VARIANTS[name];
+	if (transform === undefined) throw new Error(`bench: unknown variant ${name}`);
+	const key = `bench-stretch-${name}`;
+	const code = _swap(transform(source), STRETCH_KEY_LITERAL, `})(SignalsmithStretch, "${key}");`);
+	const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+	const factory = (await _nativeImport(url)).default;
+	factory.moduleUrl = url;
+	let compiled = null;
+	if (name === 'main-compiled') {
+		const base64 = /data:application\/octet-stream;base64,([A-Za-z0-9+/=]+)"/.exec(source);
+		if (base64 === null) throw new Error('bench: embedded wasm not found');
+		compiled = await WebAssembly.compile(Uint8Array.from(atob(base64[1]), (c) => c.charCodeAt(0)));
+	}
+	const options = () => ({
+		numberOfInputs: 1,
+		numberOfOutputs: 1,
+		outputChannelCount: [2],
+		...(compiled === null ? {} : { processorOptions: { compiled } })
+	});
+	// The first node pays addModule (and, for compile-once, the one compile):
+	// that is the app's first deck, not the per-load cost under test.
+	const warm = await factory(ctx, options());
+	await _disposeStretchNode(warm);
+	return { name, create: () => factory(ctx, options()) };
+}
+
+/**
+ * Late render callbacks caused by creating the four stretch processors of one
+ * stem bundle, per candidate, with a deck playing. Candidates are interleaved
+ * and their order rotates each iteration, with an idle window after every
+ * bundle, because the host's background rate moves faster than a candidate
+ * takes to run. Nothing lands on a deck and no audio is loaded: this isolates
+ * processor construction from the PCM transfer that follows it.
+ *
+ * `staggerMs` waits between the four creates of a bundle (0 = back to back).
+ */
+export async function benchProcessorCreation({
+	variants = ['as-shipped', 'compile-once', 'main-compiled'],
+	iterations = 30,
+	idleMs = 1500,
+	staggerMs = [0],
+	perBundle = 4,
+	sid = null,
+	pcmCells = ['pcm-copy-only', 'load:copy', 'load:transfer', 'product-create']
+}) {
+	const m = await _engine();
+	if (!m.isMasterMuted()) throw new Error('scorer: master must be muted');
+	const ctx = _context(m);
+	const probe = await _armProbe(ctx);
+	const loadProbe = await _armLoadProbe(ctx);
+	const response = await fetch(STRETCH_SOURCE_URL);
+	if (!response.ok) throw new Error(`bench: stretch source fetch failed (${response.status})`);
+	const source = await response.text();
+	const built = [];
+	for (const name of variants) built.push(await _stretchVariant(ctx, name, source));
+	const parts = ['vocals', 'drums', 'bass', 'other'];
+	const graph = await _pageModule('/src/lib/rb/stem-graph.ts');
+	const adapter = await _pageModule('/src/lib/rb/stretch-adapter.ts');
+	let encoded = null;
+	if (sid !== null) {
+		encoded = await Promise.all(parts.map(async (part) => {
+			const stem = await fetch(`/api/v1/tracks/${sid}/stems/${part}`);
+			if (!stem.ok) throw new Error(`bench: stem ${part} fetch failed (${stem.status})`);
+			return stem.arrayBuffer();
+		}));
+	}
+	const cells = built.flatMap((variant) => staggerMs.map((gap) => ({ variant, gap })));
+	const segments = [];
+	window.__stemBench = { done: 0, of: iterations, finished: false, segments, error: null };
+	try {
+		for (let i = 0; i < iterations; i += 1) {
+			for (let j = 0; j < cells.length; j += 1) {
+				const { variant, gap } = cells[(i + j) % cells.length];
+				const idleStart = performance.now();
+				await _sleep(idleMs);
+				segments.push(_segment(probe, loadProbe, 'idle', idleStart, performance.now()));
+				const nodes = [];
+				const t0 = performance.now();
+				for (let k = 0; k < perBundle; k += 1) {
+					if (k > 0 && gap > 0) await _sleep(gap);
+					nodes.push(await variant.create());
+				}
+				// Construction work can outlive the ready handshake by a quantum.
+				await _sleep(60);
+				const segment = _segment(probe, loadProbe, `${variant.name}${gap > 0 ? `+stagger${gap}` : ''}`, t0, performance.now());
+				segment.sleep_ms = 60 + gap * (perBundle - 1);
+				segments.push(segment);
+				for (const node of nodes) await _disposeStretchNode(node);
+			}
+			if (sid !== null) {
+				// The PCM handoff, isolated and then in the product path. Every
+				// cell decodes its own bundle (a moved bundle cannot be reused)
+				// one part at a time, then idles, so the decode is outside the
+				// measured window.
+				for (let j = 0; j < pcmCells.length; j += 1) {
+					const cell = pcmCells[(i + j) % pcmCells.length];
+					const decoded = [];
+					for (const bytes of encoded) decoded.push(await ctx.decodeAudioData(bytes.slice(0)));
+					let t0 = performance.now();
+					await _sleep(idleMs);
+					segments.push(_segment(probe, loadProbe, 'idle', t0, performance.now()));
+					t0 = performance.now();
+					let dispose = async () => {};
+					let note = null;
+					if (cell === 'pcm-copy-only') {
+						let copies = decoded.flatMap((buffer) => Array.from({ length: buffer.numberOfChannels }, (_unused, channel) => {
+							const samples = new Float32Array(buffer.length);
+							buffer.copyFromChannel(samples, channel);
+							return samples;
+						}));
+						note = copies.length;
+						copies = null;
+					} else if (cell === 'product-create') {
+						const created = await graph.AlignedStemDeckProcessor.create(
+							ctx, Object.fromEntries(parts.map((part, at) => [part, decoded[at]])),
+							{ onProcessorError: () => {} }
+						);
+						note = created.pcmHandoff;
+						dispose = () => created.processor.dispose();
+					} else {
+						// The product's per-part sequence with only the handoff varied.
+						const requested = cell === 'load:copy' ? 'copy' : 'transfer';
+						const processors = [];
+						const happened = [];
+						for (const buffer of decoded) {
+							const processor = await adapter.StretchDeckProcessor.create(ctx, { onProcessorError: () => {} });
+							happened.push(await processor.load(buffer, requested));
+							const gain = ctx.createGain();
+							processor.connect(gain);
+							processors.push(processor);
+						}
+						note = [...new Set(happened)].join('+');
+						dispose = async () => { for (const processor of processors) await processor.dispose(); };
+					}
+					await _sleep(60);
+					const segment = _segment(probe, loadProbe, cell, t0, performance.now());
+					segment.sleep_ms = 60;
+					segment.note = note;
+					segments.push(segment);
+					await dispose();
+				}
+			}
+			window.__stemBench.done += 1;
+		}
+	} catch (error) {
+		window.__stemBench.error = String(error);
+		throw error;
+	} finally {
+		window.__stemBench.finished = true;
+	}
+	return summarizeSegments(segments);
 }
