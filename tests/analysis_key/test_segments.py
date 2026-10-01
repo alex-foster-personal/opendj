@@ -245,3 +245,20 @@ def test_block_payload_of_a_failed_block_carries_the_reason() -> None:
     assert payload["status"] == "failed"
     assert payload["reason"] == segments.REASON_TOO_FEW_BARS
     assert payload["segments"] == []
+
+
+def test_payload_end_never_rounds_past_the_record_duration() -> None:
+    """Live on demon-llama, Thu 1 Oct 2026: a last segment ending at the
+    decode's length 266.5650793650794 was published as round(x, 5) = 266.56508,
+    which the write boundary refused, and the refusal stopped the key lane."""
+    from apps.analysis.lane_payloads import key_segments_within_duration
+
+    duration_s = 266.5650793650794
+    starts = tuple(i * 8.0 for i in range(32))
+    grid = BarGrid(starts=starts, ends=(*starts[1:], duration_s))
+    block = segments.segment_bars(_bar_chroma(_keys((C_MAJOR, 32))), grid, duration_s=duration_s)
+    payload = block.to_payload()
+    last_end = payload["segments"][-1]["end_s"]
+    assert last_end <= duration_s, "if a published end rounds past duration_s then broken"
+    assert duration_s - last_end < 1e-5, "if the end is clamped further than its 5 dp precision then broken"
+    key_segments_within_duration({"segments": payload}, duration_s)
