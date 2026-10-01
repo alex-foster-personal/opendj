@@ -30,9 +30,11 @@ ci-cost-guard.yml). 12 h is twice that measured span.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 PHANTOM_AFTER_HOURS = 12
 PHANTOM_STATUS = "in_progress"
@@ -93,3 +95,20 @@ def write_step_summary(lines: list[str], *, caller: str) -> None:
         for line in lines:
             handle.write(f"- `{line}`\n")
         handle.write("\n")
+
+
+def skip_phantoms(
+    runs: Sequence[T], probe: Callable[[T], Mapping[str, Any]], now: datetime, *, caller: str
+) -> tuple[list[T], list[T]]:
+    """(live, phantom) over any run type: each phantom is printed as a warning line and
+    named in the job summary, so a caller only has to iterate the live ones."""
+    live: list[T] = []
+    phantom: list[T] = []
+    for run in runs:
+        (phantom if is_phantom(probe(run), now) else live).append(run)
+    lines = [phantom_line(probe(run), now, caller=caller) for run in phantom]
+    for line in lines:
+        print(f"::warning::{line}")
+        print(line)
+    write_step_summary(lines, caller=caller)
+    return live, phantom

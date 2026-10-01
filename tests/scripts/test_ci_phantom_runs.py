@@ -26,9 +26,9 @@ Regression lines:
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 import yaml
@@ -165,8 +165,8 @@ def test_census_cli_still_holds_a_live_run(
 
 class _FrozenDatetime(datetime):
     @classmethod
-    def now(cls, tz: Any = None) -> datetime:
-        return NOW
+    def now(cls, tz: tzinfo | None = None) -> Self:
+        return cls.fromtimestamp(NOW.timestamp(), tz=UTC)
 
 
 # ----- the trunk-tip-only closed-PR sweep -----
@@ -183,6 +183,11 @@ def _pr_run(run_id: int, *, hours_old: float, status: str = "in_progress") -> ti
         created_at=NOW - timedelta(hours=hours_old),
         status=status,
     )
+
+
+def _record(seen: list[int], run_id: int) -> bool:
+    seen.append(run_id)
+    return True
 
 
 def _recording_cancel(posts: list[int]):
@@ -206,7 +211,7 @@ def test_closed_pr_sweep_skips_a_phantom_and_cancels_the_rest(
     counts = tip.execute_closed_pr_sweep(
         (_pr_run(36803336485, hours_old=17), _pr_run(31, hours_old=1)),
         dry_run=False,
-        still_closed=lambda run: rechecked.append(run.run_id) or True,
+        still_closed=lambda run: _record(rechecked, run.run_id),
         now=NOW,
     )
 
@@ -214,8 +219,7 @@ def test_closed_pr_sweep_skips_a_phantom_and_cancels_the_rest(
     assert rechecked == [31], "the phantom costs no recheck call either"
     assert (counts.planned, counts.cancelled, counts.phantom_skipped) == (1, 1, (36803336485,))
     out = capsys.readouterr().out
-    assert "closed-pr-skip workflow=CI run_id=36803336485" in out
-    assert "reason=phantom" in out
+    assert "::warning::phantom-run-skipped caller=closed-PR sweep run_id=36803336485" in out
     assert "run_id=36803336485" in summary.read_text(encoding="utf-8")
 
 
@@ -250,7 +254,7 @@ def test_the_listing_carries_status_into_the_sweep() -> None:
         }
     )
     assert run.status == "in_progress"
-    assert is_phantom(run.as_phantom_probe(), NOW)
+    assert is_phantom({"id": run.run_id, "status": run.status, "created_at": run.created_at}, NOW)
 
 
 # ----- the threshold is derived from this repository, not remembered -----
@@ -301,7 +305,7 @@ def test_phantom_bound_exceeds_every_workflows_longest_timeout_chain() -> None:
 
 
 def test_phantom_bound_exceeds_every_census_lookback_and_the_measured_run_span() -> None:
-    lookbacks = []
+    lookbacks: list[int] = []
     for name in ("ci-cost-guard.yml", "stable-evidence.yml"):
         text = (WORKFLOWS / name).read_text(encoding="utf-8")
         found = re.findall(r'LOOKBACK_HOURS: "(\d+)"', text)
