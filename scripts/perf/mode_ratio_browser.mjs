@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import {
+  gigBaselineDeckFaults,
   watchContinuousPlaybackUntil,
   watchGigDecksPlayingUntil,
 } from "./trackify-playback-watch.mjs";
@@ -31,6 +32,7 @@ const { values } = parseArgs({
 });
 
 const frontend = values.frontend?.replace(/\/$/, "");
+const MAX_LISTING_PAGES = 40;
 const mode = values.mode;
 
 if (!frontend || (mode !== "gig-trackify" && mode !== "trackify-leak")) {
@@ -98,14 +100,38 @@ async function waitForQueueIdle(page) {
 async function loadGigSteadyState(page) {
   await page.goto(`${frontend}/performance?muted=1`, { waitUntil: "domcontentloaded" });
   await waitForPerformanceIpc(page);
-  const stableIds = await page.evaluate(async () => {
-    const response = await fetch("/api/v1/tracks?limit=4");
-    if (!response.ok) throw new Error(`tracks list failed (${response.status})`);
-    const payload = await response.json();
-    const items = Array.isArray(payload.items) ? payload.items : [];
-    if (items.length < 4) throw new Error(`need at least 4 tracks, got ${items.length}`);
-    return items.slice(0, 4).map((row) => row.stable_id);
-  });
+  // The first four library rows are not four playable tracks on a real
+  // library (most rows can be absent, and `file_exists` can name a path the
+  // audio route then answers 404). Page the available listing and keep only
+  // rows whose audio route serves bytes, so the Gig baseline is four decks
+  // actually playing.
+  const stableIds = await page.evaluate(async (maxPages) => {
+    const picked = [];
+    const rejected = [];
+    let cursor = null;
+    for (let pageIndex = 0; pageIndex < maxPages && picked.length < 4; pageIndex += 1) {
+      const query = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
+      const response = await fetch(`/api/v1/tracks?limit=50&available=true${query}`);
+      if (!response.ok) throw new Error(`tracks list failed (${response.status})`);
+      const payload = await response.json();
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      for (const row of items) {
+        if (picked.length >= 4) break;
+        if (row.file_exists !== true) continue;
+        const audio = await fetch(`/api/v1/tracks/${row.stable_id}/audio`, { method: "HEAD" });
+        if (audio.status === 200) picked.push(row.stable_id);
+        else rejected.push(`${row.stable_id.slice(0, 8)}=${audio.status}`);
+      }
+      cursor = typeof payload.next_cursor === "string" ? payload.next_cursor : null;
+      if (cursor === null) break;
+    }
+    if (picked.length < 4) {
+      throw new Error(
+        `need 4 tracks whose audio route serves bytes, got ${picked.length} (rejected: ${rejected.join(", ") || "none"})`
+      );
+    }
+    return picked;
+  }, MAX_LISTING_PAGES);
   for (let deck = 1; deck <= 4; deck += 1) {
     const stableId = stableIds[deck - 1];
     await page.evaluate(
@@ -128,6 +154,29 @@ async function loadGigSteadyState(page) {
     await waitForQueueIdle(page);
   }
   await page.waitForTimeout(5_000);
+  // Queue-idle and HEAD 200 do not prove a load landed, so before GIG_READY
+  // require each deck to hold exactly its picked track with a positive
+  // duration and be playing (Sol P1/BLOCKING, PR #4540). The whole-window
+  // watch after GIG_READY then keeps that true while the sampler runs.
+  const decks = await page.evaluate((count) => {
+    const ipc = window.musicDjToolsPerformance;
+    if (ipc === undefined) throw new Error("performance IPC is not installed");
+    const all = ipc.query().decks;
+    const projected = {};
+    for (let deckId = 1; deckId <= count; deckId += 1) {
+      const deck = all[deckId];
+      projected[deckId] =
+        deck === undefined
+          ? null
+          : { stable_id: deck.stable_id, duration_ms: deck.duration_ms, playing: deck.playing };
+    }
+    return projected;
+  }, stableIds.length);
+  const deckFaults = gigBaselineDeckFaults(decks, stableIds);
+  if (deckFaults.length > 0) {
+    throw new Error(`Gig baseline is not four loaded, playing decks: ${deckFaults.join("; ")}`);
+  }
+  return stableIds;
 }
 
 /**
@@ -157,7 +206,8 @@ if (mode === "gig-trackify") {
   try {
     const gigContext = await gigBrowser.newContext();
     const gigPage = await gigContext.newPage();
-    await loadGigSteadyState(gigPage);
+    const gigStableIds = await loadGigSteadyState(gigPage);
+    console.log("GIG_STABLE_IDS " + JSON.stringify(gigStableIds));
     console.log("GIG_READY");
     // GIG_READY only proves the four load/play commands were issued before
     // the wait started; nothing else verifies all four decks are STILL

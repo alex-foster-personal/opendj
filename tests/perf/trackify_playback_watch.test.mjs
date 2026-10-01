@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
 import {
+	gigBaselineDeckFaults,
 	watchContinuousPlaybackUntil,
 	watchGigDecksPlayingUntil
 } from '../../scripts/perf/trackify-playback-watch.mjs';
@@ -340,5 +341,37 @@ test('a page.evaluate rejection (e.g. the page navigated away) counts as a gap, 
 		await assert.rejects(done, /not continuously playing/);
 	} finally {
 		mock.timers.reset();
+	}
+});
+
+const PICKED = ['aaa', 'bbb', 'ccc', 'ddd'];
+const loadedDecks = () =>
+	Object.fromEntries(
+		PICKED.map((stableId, index) => [
+			index + 1,
+			{ stable_id: stableId, duration_ms: 180_000, playing: true }
+		])
+	);
+
+test('gigBaselineDeckFaults: four decks holding their picked tracks, loaded and playing, have no faults', () => {
+	// Positive control for the refusals below: a check that always faulted would pass them.
+	assert.deepEqual(gigBaselineDeckFaults(loadedDecks(), PICKED), []);
+});
+
+test('gigBaselineDeckFaults: names every deck that is not the picked, loaded, playing track (Sol P1, PR #4540)', () => {
+	const cases = [
+		[(d) => (d[2] = null), /deck 2 is missing/],
+		[(d) => (d[3].stable_id = null), /deck 3 holds null, expected ccc/],
+		[(d) => (d[1].stable_id = 'zzz'), /deck 1 holds zzz, expected aaa/],
+		[(d) => (d[4].duration_ms = null), /deck 4 duration_ms=null/],
+		[(d) => (d[4].duration_ms = 0), /deck 4 duration_ms=0/],
+		[(d) => (d[2].playing = false), /deck 2 is not playing/]
+	];
+	for (const [breakDeck, expected] of cases) {
+		const decks = loadedDecks();
+		breakDeck(decks);
+		const faults = gigBaselineDeckFaults(decks, PICKED);
+		assert.equal(faults.length, 1, `${expected}: ${faults.join('; ')}`);
+		assert.match(faults[0], expected);
 	}
 });

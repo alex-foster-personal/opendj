@@ -193,3 +193,28 @@ export async function watchGigDecksPlayingUntil(page, signal, deckIds, opts = {}
 		{ ...opts, evaluateArg: deckIds }
 	);
 }
+
+/**
+ * Why `decks` (deck id -> {stable_id, duration_ms, playing} or null) is not
+ * the four-deck Gig baseline `expected` names, one string per fault; empty
+ * when every deck holds exactly its picked track, loaded with a positive
+ * duration, and playing. Queue-idle and HEAD 200 do not prove a load landed
+ * (Sol P1/BLOCKING, PR #4540), so mode_ratio_browser.mjs checks this before
+ * printing GIG_READY.
+ */
+export function gigBaselineDeckFaults(decks, expected) {
+	return expected.flatMap((stableId, index) => {
+		const deckId = index + 1;
+		const deck = decks[deckId];
+		if (deck === undefined || deck === null) return [`deck ${deckId} is missing from the IPC state`];
+		const faults = [];
+		if (deck.stable_id !== stableId) {
+			faults.push(`deck ${deckId} holds ${deck.stable_id}, expected ${stableId}`);
+		}
+		if (typeof deck.duration_ms !== 'number' || !(deck.duration_ms > 0)) {
+			faults.push(`deck ${deckId} duration_ms=${deck.duration_ms}`);
+		}
+		if (deck.playing !== true) faults.push(`deck ${deckId} is not playing`);
+		return faults;
+	});
+}
