@@ -241,7 +241,7 @@ test('registry holds every map and registerAllDeviceMaps is idempotent', () => {
 		'DDJ-FLX10',
 		'DDJ-400',
 		'\\bMixtour\\s+Pro\\b',
-		'\\bMixtour\\b(?!\\s+Pro\\b)',
+		'\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))',
 		'DDJ-FLX4'
 	]);
 	registry.registerAllDeviceMaps();

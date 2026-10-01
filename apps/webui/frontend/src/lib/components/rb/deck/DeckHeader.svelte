@@ -19,6 +19,7 @@
 		rateDeckTrack
 	} from '$lib/rb/audio-engine.svelte';
 	import { tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
+	import { beatSyncGridWarning } from '$lib/rb/beat-sync-math';
 	import { queryPerformanceState } from '$lib/rb/performance-ipc.svelte';
 	import { gridFeatureInertTip, gridFeaturesInert } from '$lib/player/grid-features';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
@@ -77,19 +78,27 @@
 	// gridless; Q and Beat Sync stay live. Transport is still not gated.
 	const gridless: boolean = $derived(gridFeaturesInert(deck));
 	const gridInertTip: string = $derived(gridFeatureInertTip(deck));
+	// BEATSYNC-GRID-02: an uneven or extrapolated grid is said out loud, on
+	// the control it affects, before the DJ leans on the lock. Pure math over
+	// the deck's real grid; null for a clean grid and for no grid at all.
+	const gridWarning: string | null = $derived(
+		gridless ? null : (beatSyncGridWarning(deck.anlz?.beatgrid.beats ?? [])?.message ?? null)
+	);
 	const beatSyncTitle: string = $derived(
-		gridless
+		(gridless
 			? gridInertTip
 			: deck.beat_sync_enabled
 				? 'BEAT SYNC ON - lock beat phase to the tempo MASTER (BAR phase, folding if it must)'
-				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase'
+				: 'BEAT SYNC OFF - this deck keeps its own tempo and phase') +
+			(gridWarning === null ? '' : ` | ${gridWarning}`)
 	);
 	const beatSyncBullets: readonly string[] = $derived([
 		'Locks this deck to the MASTER beat grid (BAR: beat 1 aligns with 1, … 4 with 4 whenever the two tempos match outright).',
 		`Needs a real PQTZ grid on both decks. BAR tempo must land in pitch range [${syncBounds.min}, ${syncBounds.max}] (default +-16%).`,
 		'Outside that window sync cannot engage - button reverts; use pitch or pick a closer BPM.',
 		'No grid on this track: the button is inert and transport runs unsynced.',
-		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.'
+		'BAR prefers an exact match, and folds to half/double tempo rather than refusing when that is the only lock available - it warns in orange and stays locked.',
+		'A locked deck is kept on the beat by tempo trims of at most 0.3%, and re-joined when it is more than 15 ms off. An orange ! means this track has an uneven beatgrid, so the lock may wander.'
 	]);
 	const masterMode = $derived(queryPerformanceState().master_mode);
 	const masterTitle: string = $derived(
@@ -466,10 +475,12 @@
 			</ControlExplainer>
 
 			<div class="sync-col">
-				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets}>
+				<ControlExplainer title={beatSyncTitle} bullets={beatSyncBullets} warning={gridWarning}>
 					<button
 						class="rb-lit-button"
 						class:lit={deck.beat_sync_enabled && !gridless}
+						class:grid-uneven={gridWarning !== null}
+						data-grid-warning={gridWarning}
 						disabled={pending || gridless}
 						aria-pressed={deck.beat_sync_enabled}
 						data-performance-control="beat-sync"
@@ -480,6 +491,13 @@
 						onclick={async () => await onBeatSync()}
 					>
 						BEAT SYNC
+						{#if gridWarning !== null}
+							<span
+								class="grid-warn"
+								data-testid={`beat-sync-grid-warning-deck-${deckId}`}
+								title={gridWarning}>!</span
+							>
+						{/if}
 					</button>
 				</ControlExplainer>
 				<ControlExplainer title={masterTitle} bullets={masterBullets}>
@@ -760,6 +778,26 @@
 		flex-direction: column;
 		gap: 2px;
 		flex: 0 0 auto;
+	}
+	/* Uneven-grid marker: sits in the button's corner so the label, and the
+	   header's layout, do not move when a track with a rough grid loads. */
+	.sync-col .grid-uneven {
+		position: relative;
+		border-color: var(--rb-orange, #e8952a);
+	}
+	.grid-warn {
+		position: absolute;
+		top: -5px;
+		right: -3px;
+		min-width: 11px;
+		padding: 0 2px;
+		border-radius: 6px;
+		background: var(--rb-orange, #e8952a);
+		color: #111;
+		font-size: 9px;
+		font-weight: 700;
+		line-height: 11px;
+		text-align: center;
 	}
 	.master-btn.lit {
 		color: #1a1608;

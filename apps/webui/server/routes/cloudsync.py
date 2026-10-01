@@ -299,9 +299,8 @@ def list_machines(
     # with a same-host hub's row on UNIQUE machines.name).
     data_dir = _data_dir(conn)
     try:
-        stored = sync_config.read_config(data_dir)
         register_machine(
-            conn, data_dir=data_dir, name=None if stored is None else stored.machine_name
+            conn, data_dir=data_dir, name=sync_config.configured_machine_name(data_dir)
         )
     except sync_config.CloudSyncConfigError as exc:
         raise HTTPException(status_code=500, detail={

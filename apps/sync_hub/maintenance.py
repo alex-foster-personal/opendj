@@ -111,6 +111,7 @@ from apps.sync_hub import (
     single_flight,
     sync_set,
 )
+from apps.sync_hub import config as sync_config
 from apps.sync_hub import status as sync_status
 from apps.sync_hub.transport import SyncTransportError, classify_transport_failure
 
@@ -175,7 +176,14 @@ def sync(
     this -- two concurrent rounds corrupting the same ``state.db`` is a data
     integrity failure, not a safety judgement call an operator can override.
     A contended flock defers BEFORE any hub I/O, same as the gate above.
+
+    ``name=None`` means "whatever this data dir is configured as"
+    (:func:`apps.sync_hub.config.configured_machine_name`), and only then the
+    hostname. A bare ``sync`` with no ``--name`` therefore keeps the saved
+    name instead of renaming the machine on the hub back to its hostname.
     """
+    if name is None:
+        name = sync_config.configured_machine_name(Path(data_dir))
     reason = refuse_sync_round(data_dir, ui_mirror, force=force)
     if reason is not None:
         raise SyncDeferredError(reason)
@@ -345,7 +353,10 @@ def _parser() -> argparse.ArgumentParser:
     sync_command.add_argument(
         "--name",
         default=None,
-        help="this machine's display name; defaults to the hostname",
+        help=(
+            "this machine's display name; defaults to the machine_name saved in "
+            "cloudsync-config.json, then the hostname"
+        ),
     )
     sync_command.add_argument(
         "--force",
@@ -423,7 +434,8 @@ def _parser() -> argparse.ArgumentParser:
         "--name",
         default=None,
         help=(
-            "this machine's display name; defaults to the hostname. Pass it "
+            "this machine's display name; defaults to the machine_name saved in "
+            "cloudsync-config.json, then the hostname. Pass it "
             "explicitly on WSL: machines.name is UNIQUE and a WSL hostname is "
             "often the Windows host's."
         ),
