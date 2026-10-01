@@ -70,26 +70,22 @@ def _verify_capturing_checkout_clean(repo_root: Path = _REPO) -> str | None:
     return None
 
 
-def _verify_capturing_checkout(repo_root: Path, expected_sha: str) -> str | None:
-    """The capturing checkout is clean AND still at `expected_sha`.
+def _verify_capturing_checkout_at(expected_sha: str, repo_root: Path = _REPO) -> str | None:
+    """None when the capturing checkout is clean AND at `expected_sha`; otherwise why not.
 
-    Cleanliness alone is not identity (Codex P1/BLOCKING, PR #4553,
-    discussion_r4150378530): a clean checkout can move to another commit
-    between the initial sha read and Playwright loading its spec or sampler,
-    and a clean tree at the wrong commit passes a dirty-only gate while the
-    harness runs code the ledger's `app_build_sha` never named. Every capture
-    that labels rows with this checkout's sha calls this, before and after
-    sampling, so the HEAD compare lives here once.
+    Sol P1/BLOCKING, PR #4540: clean is not enough. A checkout switched to
+    ANOTHER clean commit mid-capture runs a different harness while the engine
+    and frontend still serve `expected_sha`, so every served-identity check
+    passes and the rows are attributed to the wrong harness.
     """
     dirty_reason = _verify_capturing_checkout_clean(repo_root)
     if dirty_reason is not None:
         return dirty_reason
-    head_sha = _git_sha(repo_root)
-    if head_sha != expected_sha:
+    checkout_sha = _git_sha(repo_root)
+    if checkout_sha != expected_sha:
         return (
-            f"the capturing checkout at {repo_root} moved off {expected_sha} to "
-            f"{head_sha} -- the harness would run code from a different commit "
-            "than the one its rows are labeled with"
+            f"the capturing checkout at {repo_root} is at {checkout_sha}, not "
+            f"{expected_sha}: the harness that ran is not the build the rows name"
         )
     return None
 

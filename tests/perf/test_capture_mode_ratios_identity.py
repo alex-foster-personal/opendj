@@ -18,6 +18,7 @@ It calls exactly `_capture_identity_reason` before sampling and
 from __future__ import annotations
 
 import json
+import socket
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -69,6 +70,14 @@ def _ledger_entries(ledger: Path) -> list[dict[str, object]]:
     return json.loads(ledger.read_text(encoding="utf-8"))["entries"]
 
 
+def _unbound_loopback_url() -> str:
+    """A loopback origin nothing listens on: probing it raises instead of answering."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
 # ----- pre-capture gate -------------------------------------------------------
 
 
@@ -92,6 +101,20 @@ def test_identity_refuses_a_dirty_capturing_checkout(repo: Path, frontend: str) 
 
 
 @pytest.mark.requirement("PERFMODE-15")
+def test_identity_refuses_a_dirty_checkout_before_probing_the_frontend(repo: Path) -> None:
+    """[if] the checkout is dirty [then] refuse, without touching the frontend, [else stop].
+
+    The frontend URL has no listener, so a gate that probed it before checking
+    the checkout would raise instead of returning the dirty reason (PR #4540).
+    """
+    sha = _git_head(repo)
+    (repo / "uncommitted.txt").write_text("dirty\n", encoding="utf-8")
+    reason = cmr._capture_identity_reason(_unbound_loopback_url(), sha, repo)
+    assert reason is not None
+    assert "DIRTY" in reason
+
+
+@pytest.mark.requirement("PERFMODE-15")
 def test_identity_refuses_a_clean_checkout_that_moved_to_another_commit(
     repo: Path, frontend: str
 ) -> None:
@@ -100,7 +123,7 @@ def test_identity_refuses_a_clean_checkout_that_moved_to_another_commit(
     moved_sha = _commit_another_change(repo)
     reason = cmr._capture_identity_reason(frontend, sha, repo)
     assert reason is not None
-    assert f"moved off {sha} to {moved_sha}" in reason
+    assert f"is at {moved_sha}, not {sha}" in reason
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -188,7 +211,7 @@ def test_rows_refused_when_the_checkout_moves_commit_during_sampling(
     ledger = _empty_ledger(tmp_path)
     rows = _four_deck_rows(sha)
     _commit_another_change(repo)
-    with pytest.raises(SystemExit, match=rf"post-capture reverification failed.*moved off {sha}"):
+    with pytest.raises(SystemExit, match=rf"post-capture reverification failed.*not {sha}"):
         cmr._append_rows_after_reverification(ledger, rows, frontend, sha, repo)
     assert _ledger_entries(ledger) == []
 

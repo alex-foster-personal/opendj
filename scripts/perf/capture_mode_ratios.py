@@ -29,7 +29,7 @@ from scripts.perf.capture_build_identity import (
     _REPO,
     _frontend_mode,
     _git_sha,
-    _verify_capturing_checkout,
+    _verify_capturing_checkout_at,
     _verify_frontend_build_version,
 )
 from scripts.perf.capture_kpi_ledger import CaptureMeta, build_row, session_meta
@@ -365,12 +365,19 @@ _METHOD = (
 )
 
 
-def _capture_identity_reason(frontend: str, sha: str, repo_root: Path = _REPO) -> str | None:
-    """Every identity gate, or None when all pass: the checkout at `repo_root`
-    clean with HEAD at `sha`, and `frontend` a static build (never vite-dev)
-    whose own version is `sha`. `repo_root` defaults to the real checkout;
-    tests pass a disposable git repo they control."""
-    checkout_reason = _verify_capturing_checkout(repo_root, sha)
+def _capture_identity_reason(
+    frontend: str, expected_sha: str, repo_root: Path = _REPO
+) -> str | None:
+    """None when the checkout at `repo_root` is clean at `expected_sha` and
+    `frontend` serves that same static build; otherwise why not.
+
+    `main()` runs this before the capture and again before any row is written
+    (Sol P1/BLOCKING, PR #4540): the capture can run for an hour, and a
+    checkout that moved or went dirty, or a frontend redeployed mid-run, would
+    otherwise mix builds under one clean-looking sha. The checkout is checked
+    first so a dirty tree refuses without touching the network.
+    """
+    checkout_reason = _verify_capturing_checkout_at(expected_sha, repo_root)
     if checkout_reason is not None:
         return checkout_reason
     if _frontend_mode(frontend) == "vite-dev":
@@ -379,7 +386,7 @@ def _capture_identity_reason(frontend: str, sha: str, repo_root: Path = _REPO) -
             "dev mode, so it cannot confirm its own build identity (mirrors "
             "capture_library_targets.py's vite-dev refusal, PR #4034, discussion_r4132371694)"
         )
-    return _verify_frontend_build_version(frontend, sha)
+    return _verify_frontend_build_version(frontend, expected_sha)
 
 
 def _gig_baseline_rows(
@@ -435,8 +442,8 @@ def _append_rows_after_reverification(
     post_reason = _capture_identity_reason(frontend, sha, repo_root)
     if post_reason is not None:
         raise SystemExit(
-            "post-capture reverification failed (frontend or checkout changed during "
-            f"the capture): {post_reason}"
+            "refusing to write rows: post-capture reverification failed (checkout or "
+            f"frontend changed during the capture): {post_reason}"
         )
     append_ledger_rows(ledger, rows)
 
