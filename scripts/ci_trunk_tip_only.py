@@ -62,7 +62,7 @@ try:
         _parse_github_timestamp,
         _run_gh,
     )
-    from scripts.ci_phantom_runs import skip_phantoms
+    from scripts.ci_phantom_runs import JobsOf, skip_phantoms
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.ci_trunk_tip_only") from None
@@ -108,6 +108,7 @@ class QueuedRun:
     head_sha: str
     created_at: datetime
     status: str = ""  # read only by the closed-PR sweep's phantom rule
+    updated_at: datetime | None = None  # likewise: the phantom rule ages a run from this
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,11 @@ def _parse_queued_run(raw: object) -> QueuedRun:
         head_sha=head_sha,
         created_at=_parse_github_timestamp(created_at, "created_at", run_id),
         status=str(raw.get("status") or ""),
+        updated_at=(
+            _parse_github_timestamp(str(raw["updated_at"]), "updated_at", run_id)
+            if raw.get("updated_at")
+            else None
+        ),
     )
 
 
@@ -384,6 +390,7 @@ def execute_closed_pr_sweep(
         lambda run: _open_pr_count(run.head_repo_owner, run.head_branch) == 0
     ),
     now: datetime | None = None,
+    jobs_of: JobsOf | None = None,
 ) -> SweepCounts:
     """Cancel each selected run, logging one line per run. A phantom is named and skipped
     first: GitHub answers its cancel with a 409 that is not the not-yet-queued one, which
@@ -394,9 +401,15 @@ def execute_closed_pr_sweep(
     this list still calls closed. Cancelling it breaks the one contract the sweep has.
     """
     def probe(r: QueuedRun) -> dict[str, object]:
-        return {"id": r.run_id, "name": r.name, "status": r.status, "created_at": r.created_at}
+        return {"id": r.run_id, "name": r.name, "status": r.status, "updated_at": r.updated_at}
 
-    live, phantoms = skip_phantoms(runs, probe, now or datetime.now(UTC), caller="closed-PR sweep")
+    live, phantoms = skip_phantoms(
+        runs,
+        probe,
+        now or datetime.now(UTC),
+        jobs_of=jobs_of or _run_jobs,
+        caller="closed-PR sweep",
+    )
     planned = 0
     cancelled = 0
     for run in live:
@@ -418,6 +431,21 @@ def execute_closed_pr_sweep(
         if not dry_run and _cancel_run(run.run_id) in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             cancelled += 1
     return SweepCounts(planned, cancelled, tuple(run.run_id for run in phantoms))
+
+
+def _run_jobs(run_id: int) -> list[dict[str, object]]:
+    """Every job of a run's latest attempt, from ONE page: a run with more jobs than a page
+    holds is refused, because a waiting job on page 2 would read as no waiting job and a
+    live run would be skipped as a phantom."""
+    payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}/jobs?filter=latest&per_page={PAGE_SIZE}")
+    if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+        raise PreconditionError(f"jobs of run {run_id} was not a jobs listing: {payload!r}")
+    jobs: list[dict[str, object]] = payload["jobs"]
+    if int(payload["total_count"]) > len(jobs):
+        raise PreconditionError(
+            f"run {run_id} has {payload['total_count']} jobs, more than one {PAGE_SIZE}-job page"
+        )
+    return jobs
 
 
 def _open_pr_count(head_repo_owner: str, branch: str) -> int:

@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.request import Request, urlopen
 
-from scripts.ci_phantom_runs import is_phantom, phantom_line, write_step_summary
+from scripts.ci_phantom_runs import JobsOf, is_phantom, phantom_line, write_step_summary
 
 
 def parse_time(value: str) -> datetime:
@@ -108,6 +108,29 @@ def fetch_attempt(
     return fetch(
         f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}"
     )
+
+
+def fetch_run_jobs(
+    repository: str,
+    run_id: int,
+    token: str,
+    agent: str,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Every job of a run's latest attempt, from ONE page: a run with more jobs than a page
+    holds is refused, because a waiting job on page 2 would read as no waiting job and a
+    live run would be skipped as a phantom."""
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    payload = fetch(
+        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs"
+        f"?filter=latest&per_page={PAGE_SIZE}"
+    )
+    jobs: list[dict[str, Any]] = payload["jobs"]
+    if int(payload["total_count"]) > len(jobs):
+        raise RuntimeError(
+            f"run {run_id} has {payload['total_count']} jobs, more than one {PAGE_SIZE}-job page"
+        )
+    return jobs
 
 
 def fetch_completed_runs(
@@ -391,10 +414,16 @@ def fetch_inflight_runs(
     return list(seen.values())
 
 
-def runs_held_back(
-    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
-) -> list[dict[str, Any]]:
-    """Watched runs still in flight that were created before `now - lookback`.
+def split_held_back(
+    inflight: list[dict[str, Any]],
+    watched: set[str],
+    now: datetime,
+    lookback: timedelta,
+    *,
+    jobs_of: JobsOf,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(held, phantoms): watched runs still in flight that were created before
+    `now - lookback`, split by whether each holds the mark.
 
     The listing filters on created_at, so the next pass cannot see a run created before
     its floor; a pass that succeeded now would move the mark past that run's completion
@@ -407,21 +436,17 @@ def runs_held_back(
     reconcile listing's case (`reconcile_listing`), and holding for them would only
     fail plain passes.
 
-    A PHANTOM (scripts/ci_phantom_runs.py: `in_progress` and created more than
-    PHANTOM_AFTER_HOURS ago) never holds: GitHub lost it, it will never complete, and
-    holding for it pinned the pass red forever (runs 36802069871 and 36803336485, Thu 1
-    Oct 2026). `phantoms_held_back` returns those runs so the caller names them.
+    A PHANTOM (scripts/ci_phantom_runs.py: `in_progress`, idle for more than
+    PHANTOM_AFTER_HOURS, and no job waiting for a runner) never holds: GitHub lost it, it
+    will never complete, and holding for it pinned the pass red forever (runs
+    36802069871 and 36803336485, Thu 1 Oct 2026). Each run is classified once, so the
+    jobs read behind that verdict happens once per stale run.
     """
-    return [run for run in _older_than_lookback(inflight, watched, now, lookback)
-            if not is_phantom(run, now)]
-
-
-def phantoms_held_back(
-    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
-) -> list[dict[str, Any]]:
-    """The runs `runs_held_back` would have held but skips as phantoms."""
-    return [run for run in _older_than_lookback(inflight, watched, now, lookback)
-            if is_phantom(run, now)]
+    held: list[dict[str, Any]] = []
+    phantoms: list[dict[str, Any]] = []
+    for run in _older_than_lookback(inflight, watched, now, lookback):
+        (phantoms if is_phantom(run, now, jobs_of=jobs_of) else held).append(run)
+    return held, phantoms
 
 
 def _older_than_lookback(
@@ -473,8 +498,13 @@ def main(argv: list[str] | None = None) -> int:
             workflow_names=watched,
             created_before=iso(now - lookback),
         )
-        held = runs_held_back(inflight, watched, now, lookback)
-        phantoms = phantoms_held_back(inflight, watched, now, lookback)
+        held, phantoms = split_held_back(
+            inflight,
+            watched,
+            now,
+            lookback,
+            jobs_of=lambda run_id: fetch_run_jobs(args.repository, run_id, token, "ci-run-batch"),
+        )
         for run in held:
             print(
                 f"::error::run {run['id']} ({run['name']}, {run['status']}) was created "
