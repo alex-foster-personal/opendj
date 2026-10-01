@@ -1,4 +1,4 @@
-"""FB-09 (pin 49f9d217): a comment pin records who was signed in and a UI config snapshot.
+"""FB-22 (pin 49f9d217): a comment pin records who was signed in and a UI config snapshot.
 
 Requirements (mini-PRD):
   - The signed-in user is stamped by the daemon from the session cookie, never
@@ -88,7 +88,7 @@ def _sign_in(client: TestClient, state_db_path: Path) -> None:
     client.cookies.set(SESSION_COOKIE_NAME, token)
 
 
-@pytest.mark.requirement("FB-09")
+@pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_signed_out_pin_has_no_user(fb: TestClient) -> None:
     """[if] a signed-out pin carries a user [then] broken."""
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config=UI_CONFIG))
@@ -98,7 +98,7 @@ def test_pin_49f9d217_signed_out_pin_has_no_user(fb: TestClient) -> None:
     assert env["user_email"] is None
 
 
-@pytest.mark.requirement("FB-09")
+@pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_signed_in_pin_is_stamped_from_the_session(
     fb: TestClient, state_db_path: Path
 ) -> None:
@@ -112,7 +112,7 @@ def test_pin_49f9d217_signed_in_pin_is_stamped_from_the_session(
     assert "token" not in r.text, "no session or OAuth token may reach the pin store"
 
 
-@pytest.mark.requirement("FB-09")
+@pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_body_cannot_name_the_user(fb: TestClient) -> None:
     """[if] a body field can set the user [then] broken."""
     r = fb.post(
@@ -123,7 +123,7 @@ def test_pin_49f9d217_body_cannot_name_the_user(fb: TestClient) -> None:
     assert r.json()["environment"]["user_email"] is None
 
 
-@pytest.mark.requirement("FB-09")
+@pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_ui_config_snapshot_round_trips(fb: TestClient) -> None:
     r = fb.post("/api/v1/feedback/comments", json=_pin(ui_config=UI_CONFIG))
     assert r.status_code == 201, r.text
@@ -132,14 +132,14 @@ def test_pin_49f9d217_ui_config_snapshot_round_trips(fb: TestClient) -> None:
     assert stored["environment"]["ui_config"] == UI_CONFIG
 
 
-@pytest.mark.requirement("FB-09")
+@pytest.mark.requirement("FB-22")
 def test_pin_49f9d217_snapshot_is_optional_for_agent_callers(fb: TestClient) -> None:
     r = fb.post("/api/v1/feedback/comments", json=_pin())
     assert r.status_code == 201, r.text
     assert r.json()["environment"]["ui_config"] is None
 
 
-@pytest.mark.requirement("FB-09")
+@pytest.mark.requirement("FB-22")
 @pytest.mark.parametrize(
     ("label", "patch"),
     [
