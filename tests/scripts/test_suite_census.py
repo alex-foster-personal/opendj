@@ -240,8 +240,12 @@ def test_a_failed_census_leaves_no_earlier_verdict_behind(tmp_path: Path) -> Non
     out = tmp_path / "out"
     assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == 0
     assert (out / "census.json").exists() and (out / "rows.json").exists()
-    junit.write_text(junit.read_text(encoding="utf-8").replace('name="test_c_unique"', 'name="renamed"'), encoding="utf-8")
-    assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == census.EXIT_UNKNOWN
+    junit.write_text(
+        junit.read_text(encoding="utf-8").replace('name="test_c_unique"', 'name="renamed"'), encoding="utf-8"
+    )
+    assert (
+        census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(out)]) == census.EXIT_UNKNOWN
+    )
     assert not (out / "census.json").exists()
     assert not (out / "rows.json").exists()
 
