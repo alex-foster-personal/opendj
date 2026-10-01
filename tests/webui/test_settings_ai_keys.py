@@ -36,7 +36,13 @@ def _client_keys() -> set[str]:
 
 
 def _catalog_ids() -> set[str]:
-    src = (_FRONTEND / "catalog.ts").read_text(encoding="utf-8")
+    # The catalog composes rows declared in sibling modules (the MIDI row lives
+    # in midi-enabled-setting.ts), so read catalog.ts plus every local module it
+    # imports; reading catalog.ts alone misses those ids.
+    catalog = (_FRONTEND / "catalog.ts").read_text(encoding="utf-8")
+    siblings = re.findall(r"from '\./([\w-]+)';", catalog)
+    assert "midi-enabled-setting" in siblings, siblings
+    src = catalog + "".join((_FRONTEND / f"{name}.ts").read_text(encoding="utf-8") for name in siblings)
     ids = set(re.findall(r"\bid: '([^']+)'", src)) | set(re.findall(r"_todo\('([^']+)'", src))
     assert "rb.midi_enabled" in ids, "catalog parse found no MIDI setting"
     return ids
