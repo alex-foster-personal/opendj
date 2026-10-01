@@ -24,7 +24,14 @@ import {
 } from './client';
 import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToast } from './rust-link';
 import { PAGE_DECIDED, rustMode } from './rust-mode.svelte';
-import { cancelArmedJump, decideOnPage, electIfAuto, rustHotCueDriver, rustMaster } from './rust-transport';
+import {
+	cancelArmedJump,
+	decideOnPage,
+	electAndRejoin,
+	phaseLockTick,
+	rustHotCueDriver,
+	rustMaster
+} from './rust-transport';
 
 let rafId: number | null = null;
 let connecting: Promise<AudioEngineClient> | null = null;
@@ -137,7 +144,7 @@ export async function executeRustCommand(command: PerformanceCommand): Promise<v
 	applyAcknowledged(command);
 	if (command.type === 'unload') {
 		cancelArmedJump(command.deck);
-		if (rustMaster.deck === command.deck) electIfAuto({ force: true });
+		if (rustMaster.deck === command.deck) await electAndRejoin({ force: true });
 	}
 }
 
@@ -290,7 +297,11 @@ export function mirrorEngineState(s: EngineState): void {
 			: (displayLoops[d.deck as DeckId] ?? null);
 		if (!d.playing) st.position_ms = d.position_ms;
 	}
-	if (masterStopped) electIfAuto();
+	// Not awaited: a state frame must not wait on a re-join; `_reanchor`
+	// reports a follower that cannot lock in its own sync_error.
+	if (masterStopped) void electAndRejoin();
+	// Each frame is a fresh playhead for both decks: keep followers on phase.
+	phaseLockTick();
 }
 
 function _startRaf(): void {

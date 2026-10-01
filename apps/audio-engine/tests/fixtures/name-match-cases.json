@@ -1,0 +1,24 @@
+{
+ "note": "Port names and the built-in map each must resolve to, read by BOTH matchers: the Rust engine (src/midi.rs tests) and the page (tests/unit/midi-maps-export.test.mjs). want is classic, pro or none.",
+ "cases": [
+  {"port": "Reloop Mixtour", "want": "classic"},
+  {"port": "Mixtour", "want": "classic"},
+  {"port": "MIXTOUR MIDI 1", "want": "classic"},
+  {"port": "reloop mixtour midi 1", "want": "classic"},
+  {"port": "Reloop Mixtour ", "want": "classic"},
+  {"port": "Mixtour-2", "want": "classic"},
+  {"port": "Mixtour P", "want": "classic"},
+  {"port": "Mixtour Pr", "want": "classic"},
+  {"port": "Mixtour Producer", "want": "classic"},
+  {"port": "Mixtour Port 1", "want": "classic"},
+  {"port": "Reloop Mixtour Pro", "want": "pro"},
+  {"port": "Mixtour Pro", "want": "pro"},
+  {"port": "MIXTOUR PRO MIDI 1", "want": "pro"},
+  {"port": "reloop mixtour  pro", "want": "pro"},
+  {"port": "Reloop Mixtour\tPro Port 2", "want": "pro"},
+  {"port": "Mixtour Pro-2", "want": "pro"},
+  {"port": "Mixtours", "want": "none"},
+  {"port": "Pro Mixer", "want": "none"},
+  {"port": "IAC Driver Bus 1", "want": "none"}
+ ]
+}

@@ -185,13 +185,19 @@ export const MIXTOUR_VU_VELOCITY_STEPS: ReadonlyArray<{ min01: number; velocity:
 
 // -------------------------------------------------------------- device map
 
-/** Reloop Mixtour classic P0 map. The negative lookahead is a safety boundary:
+/** Matches `Mixtour` unless whitespace and the whole word `Pro` follow it.
+ * Written WITHOUT lookaround on purpose: the Rust engine compiles nameMatch
+ * with regex_lite, which has no lookahead, so `(?!\s+Pro\b)` loads in the
+ * page and is refused by the engine. The alternation spells out every way the
+ * text after `Mixtour` can fail to be `\s+Pro\b`, so both engines agree and
+ * the exclusion holds whatever order the maps are registered in. */
+const _CLASSIC_NAME_MATCH = '\\bMixtour\\b(?:$|\\S|\\s+(?:$|[^\\sP]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))';
+
+/** Reloop Mixtour classic P0 map. Excluding the Pro is a safety boundary:
  * broad `Mixtour` matching used to route Pro SYNC as classic LOAD. */
 export const RELOOP_MIXTOUR_MAP: DeviceMap = {
 	vendor: 'Reloop',
-	// No look-around: the native engine's regex (regex_lite) rejects it and the dmg's odj-audio hello
-	// check fails. Equivalent to \bMixtour\b not followed by whitespace + the word Pro.
-	nameMatch: '\\bMixtour\\b(?:$|[^\\s]|\\s+(?:$|[^P\\s]|P(?:$|[^r])|Pr(?:$|[^o])|Pro\\w))',
+	nameMatch: _CLASSIC_NAME_MATCH,
 	bindings: [..._deckBindings(1, 1), ..._deckBindings(2, 2), ..._GLOBAL_BINDINGS],
 	leds: [..._deckHotCueLeds(1, 1), ..._deckHotCueLeds(2, 2)],
 	hints: [..._deckHints(1, 1), ..._deckHints(2, 2)]
