@@ -12,6 +12,7 @@ import {
   watchContinuousPlaybackUntil,
   watchGigDecksPlayingUntil,
 } from "./trackify-playback-watch.mjs";
+import { createLineReader, runLeakProtocol } from "./trackify-quiescent-checkpoint.mjs";
 import { openUninstrumentedPage } from "./uninstrumented-page.mjs";
 
 async function loadChromium() {
@@ -241,13 +242,23 @@ if (mode === "gig-trackify") {
     await trackifyBrowser.close();
   }
 } else {
+  // Leak capture: capture_mode_ratios.py interleaves quiescent checkpoints
+  // (CHECKPOINT/QUIESCENT/RESUME/RESUMED) with playback, and ends with NEXT
+  // (ADR-NEW-trackify-leak-kpi-quiescent-baselines).
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
+  const reader = createLineReader(process.stdin);
   try {
     console.log("TRACKIFY_READY");
-    await watchContinuousPlaybackUntil(trackifyPage, waitForLine());
+    await runLeakProtocol(
+      trackifyPage,
+      () => reader.next(),
+      (line) => console.log(line),
+      watchContinuousPlaybackUntil
+    );
     await waitForTrackifyPlaying(trackifyPage);
     console.log("DONE");
   } finally {
+    reader.close();
     await trackifyBrowser.close();
   }
 }

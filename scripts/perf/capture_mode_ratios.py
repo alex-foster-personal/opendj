@@ -1,4 +1,10 @@
-"""Capture Trackify vs Gig steady-state ratios and 1h leak slope (PERFMODE-15).
+"""Capture Trackify vs Gig steady-state ratios and 1h leak slopes (PERFMODE-15).
+
+The leak run records two slopes (ADR-NEW-trackify-leak-kpi-quiescent-baselines):
+the gating `trackify_mode_retained_slope_mb_per_10min`, fitted to quiescent
+baselines (workload undone, garbage collected), and the diagnostic raw
+`trackify_mode_footprint_slope_mb_per_10min`, fitted to the samples taken while
+a track plays. `--leak-series-out` keeps every sample as a TSV.
 
 macOS reference capture only. Refuses Linux hosts with an explicit message.
 
@@ -6,7 +12,7 @@ Usage (reference Mac, engine + frontend already running):
   uv run python -m scripts.perf.capture_mode_ratios --mode trackify --gig-baseline \\
     --frontend http://127.0.0.1:5273 --duration-s 60 --ledger docs/perf/kpi-ledger.json
   uv run python -m scripts.perf.capture_mode_ratios --mode trackify --leak-duration-s 3600 \\
-    --frontend http://127.0.0.1:5273 --ledger docs/perf/kpi-ledger.json
+    --frontend http://127.0.0.1:5273 --ledger docs/perf/kpi-ledger.json --leak-series-out series.tsv
 """
 
 from __future__ import annotations
@@ -23,7 +29,6 @@ from typing import Any
 
 import psutil
 
-from scripts.diagnostics.probe_log_store import _linear_slope_mb_per_hour
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf.capture_build_identity import (
     _REPO,
@@ -34,6 +39,17 @@ from scripts.perf.capture_build_identity import (
 )
 from scripts.perf.capture_kpi_ledger import CaptureMeta, build_row, session_meta
 from scripts.perf.capture_ledger import append_ledger_rows
+from scripts.perf.trackify_leak_series import (
+    ADR_REF,
+    CHECKPOINT_INTERVAL_S,
+    CHECKPOINT_SAMPLE_GAP_S,
+    CHECKPOINT_SAMPLES,
+    RAW_SLOPE_KPI,
+    RETAINED_SLOPE_KPI,
+    LeakSeries,
+    median_baseline_mb,
+    next_checkpoint_due,
+)
 
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "mode_ratio_browser.mjs"
@@ -169,32 +185,60 @@ def _sample_steady(root_pid: int, duration_s: int) -> dict[str, float]:
 _MIN_LEAK_DURATION_S = 3600
 
 
-def _sample_leak(root_pid: int, duration_s: int) -> float:
+def _send_browser_line(proc: subprocess.Popen[str], line: str) -> None:
+    if proc.stdin is None:
+        raise RuntimeError("mode_ratio_browser stdin is not piped")
+    proc.stdin.write(line + "\n")
+    proc.stdin.flush()
+
+
+def _quiescent_baseline_mb(proc: subprocess.Popen[str], sampler: _ProcessTreeSampler) -> float:
+    """One quiescent checkpoint: the helper undoes the workload and collects garbage
+    (QUIESCENT), the median of CHECKPOINT_SAMPLES footprints is the baseline, then
+    playback resumes (RESUMED). ADR-NEW-trackify-leak-kpi-quiescent-baselines."""
+    _send_browser_line(proc, "CHECKPOINT")
+    _read_browser_line(proc, "QUIESCENT")
+    samples: list[float] = []
+    for index in range(CHECKPOINT_SAMPLES):
+        if index > 0:
+            time.sleep(CHECKPOINT_SAMPLE_GAP_S)
+        samples.append(sampler.sample()["physical_footprint_mb"])
+    _send_browser_line(proc, "RESUME")
+    _read_browser_line(proc, "RESUMED")
+    return median_baseline_mb(samples)
+
+
+def _sample_leak(proc: subprocess.Popen[str], duration_s: int) -> LeakSeries:
+    """Raw samples every _PROBE_INTERVAL_S while Trackify plays, and a quiescent
+    baseline every CHECKPOINT_INTERVAL_S of played time (wall time minus time
+    spent quiescent), from played time 0 through `duration_s`."""
     if duration_s < _MIN_LEAK_DURATION_S:
         raise ValueError(
             f"leak capture must run at least {_MIN_LEAK_DURATION_S}s (the requirement's "
             f"'1 h unattended' window), got {duration_s}s"
         )
-    sampler = _ProcessTreeSampler(root_pid)
+    sampler = _ProcessTreeSampler(proc.pid)
     sampler.sample()  # discard the primed-CPU first reading
-    elapsed: list[float] = []
-    footprints: list[float] = []
+    series = LeakSeries(duration_s=float(duration_s))
     start = time.monotonic()
-    deadline = start + duration_s
-    while time.monotonic() < deadline:
+    next_due = 0.0
+    while True:
+        checkpoint_started = time.monotonic()
+        played = checkpoint_started - start - series.quiescent_s
+        if played >= next_due:
+            baseline = _quiescent_baseline_mb(proc, sampler)
+            series.quiescent_s += time.monotonic() - checkpoint_started
+            series.baselines.append((played, baseline))
+            if played >= duration_s:
+                break
+            next_due = next_checkpoint_due(next_due, duration_s)
+            continue
         time.sleep(_PROBE_INTERVAL_S)
         sample = sampler.sample()
-        elapsed.append(time.monotonic() - start)
-        footprints.append(sample["physical_footprint_mb"])
-    slope_per_hour = _linear_slope_mb_per_hour(elapsed, footprints)
-    print(
-        f"leak samples={len(footprints)} first_mb={footprints[0]:.1f} "
-        f"min_mb={min(footprints):.1f} max_mb={max(footprints):.1f} last_mb={footprints[-1]:.1f}",
-        file=sys.stderr,
-    )
-    if slope_per_hour is None:
-        raise RuntimeError("leak capture produced no computable slope")
-    return slope_per_hour / 6.0
+        series.raw.append((time.monotonic() - start - series.quiescent_s, sample["physical_footprint_mb"]))
+    series.require_complete()
+    print(f"leak {series.summary()}", file=sys.stderr)
+    return series
 
 
 _GIG_DECKS = 4
@@ -266,10 +310,7 @@ def _close_browser_stdin(proc: subprocess.Popen[str]) -> None:
 
 
 def _signal_browser(proc: subprocess.Popen[str]) -> None:
-    if proc.stdin is None:
-        raise RuntimeError("mode_ratio_browser stdin is not piped")
-    proc.stdin.write("NEXT\n")
-    proc.stdin.flush()
+    _send_browser_line(proc, "NEXT")
 
 
 def _finish_browser_session(
@@ -341,14 +382,14 @@ def _capture_gig_then_trackify(
             proc.kill()
 
 
-def _capture_trackify_leak(frontend: str, duration_s: int) -> float:
+def _capture_trackify_leak(frontend: str, duration_s: int) -> LeakSeries:
     proc = _start_browser_session(frontend, "trackify-leak")
     try:
         _read_browser_line(proc, "TRACKIFY_READY")
-        slope = _sample_leak(proc.pid, duration_s)
+        series = _sample_leak(proc, duration_s)
         _signal_browser(proc)
         _finish_browser_session(proc)
-        return slope
+        return series
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -362,6 +403,14 @@ _METHOD = (
     "scope than capture_library_mode.py's PERFMODE-14 ratios, which also attribute "
     "the engine process and its stem-worker descendants: the two ratio families "
     "exclude different processes and are not directly comparable cross-KPI."
+)
+_RETAINED_METHOD = (
+    f"quiescent-checkpoint baselines ({ADR_REF}): every {CHECKPOINT_INTERVAL_S} s of played "
+    "time Trackify autoplay is turned off, deck 1 unloaded, the main isolate garbage collected "
+    "and a critical memory-pressure notification sent, then the median of "
+    f"{CHECKPOINT_SAMPLES} process-tree phys_footprint samples of the Playwright-launched "
+    "Chromium (browser/renderer family only) is the baseline; the KPI is the least-squares "
+    "slope of the baselines against played time"
 )
 
 
@@ -430,6 +479,37 @@ def _gig_baseline_rows(
     ]
 
 
+def _leak_rows(series: LeakSeries, meta: CaptureMeta) -> list[dict[str, Any]]:
+    """The gating retained-slope row and the diagnostic raw-slope row from one run."""
+    retained = series.retained_slope_mb_per_10min()
+    raw = series.raw_slope_mb_per_10min()
+    summary = f"{series.summary()} retained_slope={retained:.4f} raw_slope={raw:.4f}"
+    return [
+        build_row(
+            kpi=RETAINED_SLOPE_KPI,
+            value=round(retained, 4),
+            unit="MB/10min",
+            method=_RETAINED_METHOD,
+            meta=meta,
+            note=f"PERFMODE-15 trackify 1h retained (quiescent-baseline) slope, {ADR_REF}; {summary}",
+            measured=True,
+        ),
+        build_row(
+            kpi=RAW_SLOPE_KPI,
+            value=round(raw, 4),
+            unit="MB/10min",
+            method=_METHOD,
+            meta=meta,
+            note=(
+                "PERFMODE-15 trackify raw playing-footprint slope, diagnostic: includes the playing "
+                f"track's decoded audio, does not gate ({ADR_REF}); checkpointed run, not comparable "
+                f"with uncheckpointed raw rows; {summary}"
+            ),
+            measured=True,
+        ),
+    ]
+
+
 def _append_rows_after_reverification(
     ledger: Path, rows: list[dict[str, Any]], frontend: str, sha: str, repo_root: Path = _REPO
 ) -> None:
@@ -456,6 +536,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--frontend", type=str, required=True)
     parser.add_argument("--duration-s", type=int, default=_MIN_SAMPLE_S)
     parser.add_argument("--leak-duration-s", type=int, default=0)
+    parser.add_argument("--leak-series-out", type=Path, default=None)
     parser.add_argument("--ledger", type=Path, required=True)
     args = parser.parse_args(argv)
 
@@ -484,18 +565,10 @@ def main(argv: list[str] | None = None) -> int:
         rows.extend(_gig_baseline_rows(gig, trackify, gig_stable_ids, meta))
 
     if args.leak_duration_s > 0:
-        slope = _capture_trackify_leak(args.frontend, args.leak_duration_s)
-        rows.append(
-            build_row(
-                kpi="trackify_mode_footprint_slope_mb_per_10min",
-                value=round(slope, 4),
-                unit="MB/10min",
-                method=_METHOD,
-                meta=meta,
-                note=f"PERFMODE-15 trackify 1h leak slope over {args.leak_duration_s}s",
-                measured=True,
-            )
-        )
+        series = _capture_trackify_leak(args.frontend, args.leak_duration_s)
+        if args.leak_series_out is not None:
+            series.write_tsv(args.leak_series_out)
+        rows.extend(_leak_rows(series, meta))
 
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
