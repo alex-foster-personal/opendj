@@ -108,7 +108,7 @@ test('pin be1b8f94f167: browser-sources health dots cover library/vocals/stems/l
 	// "not error", which an 'unavailable' fallback could also satisfy.
 	const lyricsLabel = dotStates.find((s) => s.label.startsWith('Lyrics completion:'))?.label ?? '';
 	expect(lyricsLabel, 'Lyrics completion dot never reached a real coverage verdict').toMatch(
-		/playable complete, \d+ missing, \d+ broken (link|links)/
+		/\d+ done, \d+ no lyrics available, \d+ pending.* of \d+ present tracks/
 	);
 
 	const ariaLabels = dotStates.map((s) => s.label);

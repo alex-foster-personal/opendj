@@ -31,9 +31,11 @@
 		vocalsOf
 	} from '$lib/rb/api-rb';
 	import { getSmartlistTracks, type SmartlistSummary } from '$lib/rb/api-smartlists';
-	import { getIngestCoverage, type IngestCoverage } from '$lib/rb/api-ingest';
+	import { getIngestCoverage } from '$lib/rb/api-ingest';
 	import {
+		coverageDot as _coverageDot,
 		libraryHealthDot as _computeLibraryHealthDot,
+		unknownDot as _unknownDot,
 		type LibraryHealthDot
 	} from '$lib/rb/library-health-dots';
 	import {
@@ -308,6 +310,9 @@
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
+	/** The reconcile summary's per-machine breakdown; 'unknown' when the
+	 * engine answered without one, null until the first answer lands. */
+	let libraryAvailability = $state<Record<string, number> | 'unknown' | null>(null);
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -342,22 +347,17 @@
 	});
 	let libraryHealthError = $state<string | null>(null);
 	/**
-	 * Derived, not assigned. pin a66ee132a14e: this dot used to quote
-	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
-	 * available" on a library where most of those rows are broken links to
-	 * files that are permanently gone. The playable total is
-	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
-	 * AFTER init - assigning the dot at init time is precisely how it came to
-	 * quote the wrong number, so the dot is computed from whatever has landed
-	 * instead of frozen at the first thing that did.
+	 * Derived, not assigned: computed from whatever has landed rather than
+	 * frozen at init. The verdict comes from the reconcile summary's
+	 * per-machine `availability` breakdown (HEALTH-01), never the raw row
+	 * count: green means every track expected on THIS machine resolves.
 	 */
 	const libraryHealth = $derived<LibraryHealthDot>(
 		_computeLibraryHealthDot(
 			libraryHealthError,
 			allTracksCount,
 			playlists.length,
-			allTracksNonBrokenCount,
-			allTracksBrokenCount,
+			libraryAvailability,
 			allTracksReconcileError
 		)
 	);
@@ -1029,6 +1029,12 @@
 			_libraryRefreshGate.request();
 		}, 60_000);
 
+		// The dots re-ask on their own clock, independent of the playing-gated
+		// row refetch above: coverage moves while the drain works, with no
+		// library row changing. Coverage only; the reconcile scan is heavier
+		// and rides the `tracks` event a sync pull publishes.
+		const healthRefetchTimer = setInterval(() => void _loadIngestCoverage(), HEALTH_REFETCH_MS);
+
 		return () => {
 			uninstallBrowserSortIpc();
 			unregisterMidiBrowser();
@@ -1037,6 +1043,7 @@
 			clearInterval(connTimer);
 			clearInterval(blankSweepTimer);
 			clearInterval(libraryFallbackTimer);
+			clearInterval(healthRefetchTimer);
 			unsubscribeTracks();
 			unsubscribePlaylists();
 			unsubscribeSmartlists();
@@ -1092,49 +1099,9 @@
 		}
 	}
 
-	function _coverageDot(
-		label: LibraryHealthDot['label'],
-		coverage: IngestCoverage,
-		step: 'vocals' | 'stems' | 'lyrics'
-	): LibraryHealthDot {
-		const missing = coverage.missing[step];
-		if (typeof missing !== 'number' || !Number.isInteger(missing) || missing < 0) {
-			return { label, state: 'unavailable', detail: `${step} coverage could not be measured` };
-		}
-		if (coverage.on_disk <= 0) {
-			return {
-				label,
-				state: 'unavailable',
-				detail: `no playable tracks to measure, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
-			};
-		}
-		const completed = coverage.on_disk - missing;
-		if (completed < 0) {
-			throw new Error(`${step} coverage missing count exceeds on-disk tracks`);
-		}
-		// Corruption is a DISTINCT, always-surfaced state - never folded into a
-		// quiet 'incomplete'. It is a subset of `missing` (a malformed entry is
-		// not done, whatever else it is), so it is checked after validating
-		// `missing` but before the ordinary complete/incomplete split. lyrics
-		// has no refresh runner (see routes/ingest.py), so a corrupt lyrics
-		// entry has NO repair path except this dot saying so.
-		const corrupt = coverage.corrupt[step];
-		if (typeof corrupt !== 'number' || !Number.isInteger(corrupt) || corrupt < 0) {
-			throw new Error(`${step} coverage corrupt count must be a nonnegative integer`);
-		}
-		if (corrupt > 0) {
-			return {
-				label,
-				state: 'error',
-				detail: `${corrupt} corrupt ${corrupt === 1 ? 'entry' : 'entries'} - ${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
-			};
-		}
-		return {
-			label,
-			state: missing === 0 ? 'complete' : 'incomplete',
-			detail: `${completed}/${coverage.on_disk} playable complete, ${missing} missing, ${coverage.unreachable} broken ${coverage.unreachable === 1 ? 'link' : 'links'}`
-		};
-	}
+	/** How often the dots re-ask on their own, so a drain that is working
+	 * through the library shows up without a reload (HEALTH-03). */
+	const HEALTH_REFETCH_MS = 60_000;
 
 	async function _loadIngestCoverage(): Promise<void> {
 		try {
@@ -1143,10 +1110,11 @@
 			stemsCompletion = _coverageDot('Stems completion', coverage, 'stems');
 			lyricsCompletion = _coverageDot('Lyrics completion', coverage, 'lyrics');
 		} catch (error: unknown) {
-			const detail = error instanceof Error ? error.message : String(error);
-			vocalsCompletion = { label: 'Vocals completion', state: 'error', detail };
-			stemsCompletion = { label: 'Stems completion', state: 'error', detail };
-			lyricsCompletion = { label: 'Lyrics completion', state: 'error', detail };
+			// An endpoint that cannot answer is grey "unknown", never a verdict.
+			const why = error instanceof Error ? error.message : String(error);
+			vocalsCompletion = _unknownDot('Vocals completion', why);
+			stemsCompletion = _unknownDot('Stems completion', why);
+			lyricsCompletion = _unknownDot('Lyrics completion', why);
 		}
 	}
 
@@ -1155,6 +1123,7 @@
 			const summary = await getReconcileSummary();
 			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
+			libraryAvailability = summary.availability ?? 'unknown';
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
 			allTracksReconcileError = error instanceof Error ? error.message : String(error);

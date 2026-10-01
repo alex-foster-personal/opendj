@@ -1,25 +1,28 @@
 /**
- * Library health dot policy. Pure, and the ONLY place the browser panel's
- * "Library health" liveness dot text and state are decided.
+ * Health-light policy. Pure, and the ONLY place the browser panel's dot
+ * states and wording are decided.
  *
- * Split out the same way as `meter-math.ts`: `BrowserPanel.svelte` measures
- * (playlists loaded, the reconcile summary's counts, any reconcile error)
- * and decides nothing; every threshold and wording choice lives here, where
- * it can be unit tested without a component, an AudioContext, or a network
- * mock. Sol thread 3966631804 on PR #1560 flagged an earlier version of the
- * test that sliced this function's source out of the .svelte file and
- * re-evaluated it with `Function(...)` - that reconstructed function was
- * never the production code path. This module exists so the test can import
- * and call the exact function the component runs, with no slicing.
+ * `BrowserPanel.svelte` measures (playlists loaded, the reconcile summary,
+ * the ingest coverage response, any request error) and decides nothing;
+ * every threshold and wording choice lives here, where it can be unit tested
+ * without a component, an AudioContext, or a network mock. The tests import
+ * and call these exact functions.
  *
- * pin a66ee132a14e asks for two things this module answers: the "playlist
- * library found" liveness signal, and a total that never quotes rows whose
- * files are gone - the count must say "non-broken", not "playable", because
- * `_scan_broken()` (apps/webui/server/routes/reconcile.py) excludes
- * streaming and pathless rows from `total_broken` while `_loadOntoDeck()`
- * still refuses to load them, so a naive "playable" label overclaims for
- * exactly those rows. the maintainer's own pin wording: "should always refer to
- * number of non-broken if quoting total".
+ * The rules (HEALTH-01, HEALTH-03, HEALTH-04):
+ *
+ * - Library health is green when every track whose audio is EXPECTED ON THIS
+ *   MACHINE resolves. Rows that live on another machine, wait for an
+ *   unmounted volume, stream, or have no path are reported in the detail and
+ *   never make the dot amber. Amber is only for a link this machine recorded
+ *   as working that no longer resolves.
+ * - A coverage dot is green when nothing is pending or failed over `present`
+ *   tracks. "Nothing to make" (no lyrics available, no stems source) is a
+ *   finished state, counted on its own so it is never mistaken for done.
+ * - An endpoint that cannot answer is grey "unknown". A failed or malformed
+ *   measurement is not a verdict in either direction.
+ *
+ * Every count names its denominator: `present` is the set of tracks whose
+ * audio resolves on this machine right now.
  */
 
 export type LibraryHealthDot = {
@@ -34,13 +37,66 @@ export type LibraryHealthDot = {
 	detail: string;
 };
 
+/** Where every live row's audio stands on this machine (reconcile summary). */
+export type LibraryAvailability = {
+	total: number;
+	present: number;
+	broken_here: number;
+	off_machine: number;
+	awaiting_volume: number;
+	streaming: number;
+	pathless: number;
+};
+
+const AVAILABILITY_KEYS = [
+	'total',
+	'present',
+	'broken_here',
+	'off_machine',
+	'awaiting_volume',
+	'streaming',
+	'pathless'
+] as const;
+
+export type CoverageStep = 'vocals' | 'stems' | 'lyrics';
+
+/** The fields of GET /ingest/coverage the dots read. */
+export type CoverageCounts = {
+	on_disk: number;
+	done: Record<string, number>;
+	terminal: Record<string, number>;
+	failed: Record<string, number>;
+	pending: Record<string, number>;
+	corrupt: Record<string, number>;
+	waiting_on_stems: number;
+	stems_source_refusal: string | null;
+};
+
+const TERMINAL_WORDING: Record<CoverageStep, string> = {
+	vocals: 'no stems source',
+	stems: 'no stems source',
+	lyrics: 'no lyrics available'
+};
+
+function isCount(value: unknown): value is number {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function plural(count: number, one: string, many: string): string {
+	return `${count} ${count === 1 ? one : many}`;
+}
+
+/** Grey: the measurement could not be taken. Never a verdict. */
+export function unknownDot(label: LibraryHealthDot['label'], why: string): LibraryHealthDot {
+	return { label, state: 'unavailable', detail: `unknown - ${why}` };
+}
+
 export function libraryHealthDot(
 	libraryHealthError: string | null,
 	allTracksCount: number | null,
 	playlistCount: number,
-	allTracksNonBrokenCount: number | null,
-	allTracksBrokenCount: number | null,
-	allTracksReconcileError: string | null
+	availability: unknown,
+	availabilityError: string | null
 ): LibraryHealthDot {
 	const label = 'Library health' as const;
 	if (libraryHealthError !== null) {
@@ -49,48 +105,89 @@ export function libraryHealthDot(
 	if (allTracksCount === null) {
 		return { label, state: 'loading', detail: 'checking library health' };
 	}
+	// Checked BEFORE any settled counts: a refresh that fails AFTER an
+	// earlier one succeeded keeps the prior counts in the caller, and the
+	// dot must not go on quoting them once the measurement has failed.
+	if (availabilityError !== null) {
+		return unknownDot(label, availabilityError);
+	}
+	if (availability === null) {
+		return { label, state: 'loading', detail: 'checking which tracks are on this machine' };
+	}
+	const counts = availability as Record<string, unknown>;
+	if (typeof availability !== 'object' || !AVAILABILITY_KEYS.every((key) => isCount(counts[key]))) {
+		return unknownDot(label, 'the engine returned no availability breakdown for this library');
+	}
+	const here = availability as LibraryAvailability;
 	const playlistPart =
-		playlistCount > 0 ? `${playlistCount} ${playlistCount === 1 ? 'playlist' : 'playlists'} found` : 'no playlists found';
-	// Checked BEFORE the settled/unsettled branch below, not nested inside
-	// it: a refresh that fails AFTER an earlier one succeeded keeps the prior
-	// non-null counts (the caller retains them on failure), so nesting this
-	// inside `allTracksNonBrokenCount === null` would let the dot go on
-	// quoting stale counts forever instead of surfacing the failure.
-	if (allTracksReconcileError !== null) {
-		return { label, state: 'error', detail: allTracksReconcileError };
-	}
-	// Until the reconcile summary lands there is no honest non-broken total,
-	// so the dot says the count is still settling rather than quoting the
-	// raw row count in the meantime - quoting it is the bug.
-	if (allTracksNonBrokenCount === null) {
-		return {
-			label,
-			state: allTracksCount > 0 ? 'incomplete' : 'unavailable',
-			// "counting" implies pending work, which is wrong when the
-			// library is already known to be empty (allTracksCount === 0) -
-			// there is nothing left to count.
-			detail:
-				allTracksCount > 0
-					? `${playlistPart}, counting non-broken tracks`
-					: `${playlistPart}, library empty`
-		};
-	}
-	const broken = allTracksBrokenCount ?? 0;
-	const brokenPart =
-		broken > 0 ? `, ${broken} broken ${broken === 1 ? 'link' : 'links'}` : ', no broken links';
-	if (allTracksNonBrokenCount <= 0) {
+		playlistCount > 0 ? `${plural(playlistCount, 'playlist', 'playlists')} found` : 'no playlists found';
+	const elsewhere =
+		`Not counted: ${here.off_machine} on other machines, ${here.awaiting_volume} awaiting a volume, ` +
+		`${here.streaming} streaming, ${here.pathless} without a path.`;
+	const expected = here.present + here.broken_here;
+	if (expected === 0) {
 		return {
 			label,
 			state: 'unavailable',
-			detail:
-				broken > 0
-					? `${playlistPart}, no non-broken tracks - all ${broken} ${broken === 1 ? 'link is' : 'links are'} broken`
-					: `${playlistPart}, no non-broken tracks`
+			detail: `${playlistPart}; no tracks are expected on this machine. ${elsewhere}`
 		};
 	}
+	const brokenPart =
+		here.broken_here > 0
+			? `${plural(here.broken_here, 'broken link', 'broken links')} here`
+			: 'no broken links here';
 	return {
 		label,
-		state: broken > 0 ? 'incomplete' : 'complete',
-		detail: `${playlistPart}, ${allTracksNonBrokenCount} non-broken${brokenPart}`
+		state: here.broken_here > 0 ? 'incomplete' : 'complete',
+		detail:
+			`${playlistPart}; ${here.present} of ${expected} tracks expected on this machine resolve ` +
+			`(denominator: present + broken here), ${brokenPart}. ${elsewhere}`
 	};
+}
+
+export function coverageDot(
+	label: LibraryHealthDot['label'],
+	coverage: CoverageCounts,
+	step: CoverageStep
+): LibraryHealthDot {
+	const done: unknown = coverage.done?.[step];
+	const terminal: unknown = coverage.terminal?.[step];
+	const failed: unknown = coverage.failed?.[step];
+	const pending: unknown = coverage.pending?.[step];
+	const corrupt: unknown = coverage.corrupt?.[step];
+	const present: unknown = coverage.on_disk;
+	if (
+		!isCount(done) ||
+		!isCount(terminal) ||
+		!isCount(failed) ||
+		!isCount(pending) ||
+		!isCount(corrupt) ||
+		!isCount(present)
+	) {
+		return unknownDot(label, `the ${step} coverage counts are missing or not whole numbers`);
+	}
+	if (done + terminal + failed + pending !== present) {
+		return unknownDot(label, `the ${step} coverage states do not sum to the present tracks`);
+	}
+	if (present === 0) {
+		return { label, state: 'unavailable', detail: 'no present tracks to measure on this machine' };
+	}
+	const waiting =
+		step === 'vocals' && isCount(coverage.waiting_on_stems) && coverage.waiting_on_stems > 0
+			? ` (${coverage.waiting_on_stems} waiting on stems)`
+			: '';
+	const refusal =
+		step !== 'lyrics' && terminal > 0 && coverage.stems_source_refusal
+			? ` Stems cannot be made here: ${coverage.stems_source_refusal}.`
+			: '';
+	const counts =
+		`${done} done, ${terminal} ${TERMINAL_WORDING[step]}, ${pending} pending${waiting}` +
+		`${failed > 0 ? `, ${failed} failed` : ''} of ${present} present tracks ` +
+		`(denominator: present = audio resolves on this machine).${refusal}`;
+	// Corruption is a DISTINCT, always-surfaced state: a subset of the work
+	// still to do, never folded into a quiet amber.
+	if (corrupt > 0) {
+		return { label, state: 'error', detail: `${plural(corrupt, 'corrupt entry', 'corrupt entries')} - ${counts}` };
+	}
+	return { label, state: pending === 0 && failed === 0 ? 'complete' : 'incomplete', detail: counts };
 }

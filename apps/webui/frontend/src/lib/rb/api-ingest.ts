@@ -13,7 +13,7 @@
  * API_BASE, fail-fast RbApiError on !ok, no invented data.
  */
 
-import { API_BASE } from '$lib/api';
+import { API_BASE, timeoutSignal } from '$lib/api';
 import { RbApiError } from './api-rb-error';
 
 export type IngestStep = {
@@ -27,6 +27,8 @@ export type IngestStep = {
 
 export type IngestConfig = { steps: IngestStep[]; path: string };
 
+/** GET /ingest/coverage. `on_disk` is the `present` denominator; per step,
+ * `done + terminal + failed + pending === on_disk`. */
 export type IngestCoverage = {
 	total_tracks: number;
 	on_disk: number;
@@ -34,8 +36,22 @@ export type IngestCoverage = {
 	missing: Record<string, number>;
 	/** Per-step count of entries that PARSE-FAIL their real contract (malformed JSON, invalid fields, identity mismatch) - a subset of `missing`, distinct from an ordinary not-yet-run or stale-needs-rerun verdict. */
 	corrupt: Record<string, number>;
+	/** Where every live row's audio stands on this machine. */
+	availability: Record<string, number>;
+	done: Record<string, number>;
+	/** Nothing to make (no lyrics available, no stems source): finished, not done. */
+	terminal: Record<string, number>;
+	/** A drain job failed its last allowed attempt on this audio file. */
+	failed: Record<string, number>;
+	pending: Record<string, number>;
+	waiting_on_stems: number;
+	stems_source_refusal: string | null;
 	generated_at: number;
 };
+
+/** Warm coverage answers in under 2 s; a cold engine can take far longer.
+ * Past this the dots go grey "unknown" and the next refetch asks again. */
+export const INGEST_COVERAGE_TIMEOUT_MS = 15_000;
 
 /** Fired with the fresh config after every successful putIngestConfig, so a
  * module-scope cache of ingest config elsewhere (AnalysisDotsPopover.svelte's
@@ -166,10 +182,22 @@ export async function putIngestConfig(enabled: Record<string, boolean>): Promise
 	return cfg;
 }
 
-export async function getIngestCoverage(): Promise<IngestCoverage> {
-	const r = await fetch(`${API_BASE}/api/v1/ingest/coverage`);
-	if (!r.ok) await _err(r);
-	return (await r.json()) as IngestCoverage;
+export async function getIngestCoverage(
+	timeoutMs: number = INGEST_COVERAGE_TIMEOUT_MS
+): Promise<IngestCoverage> {
+	const { signal, clear } = timeoutSignal(timeoutMs);
+	try {
+		const r = await fetch(`${API_BASE}/api/v1/ingest/coverage`, { signal });
+		if (!r.ok) await _err(r);
+		return (await r.json()) as IngestCoverage;
+	} catch (error: unknown) {
+		if (signal.aborted) {
+			throw new Error(`coverage request timed out after ${timeoutMs / 1000} s`, { cause: error });
+		}
+		throw error;
+	} finally {
+		clear();
+	}
 }
 
 export async function startIngestRefresh(batchDir?: string): Promise<RefreshStatus> {

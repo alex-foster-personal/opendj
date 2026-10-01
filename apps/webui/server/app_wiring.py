@@ -37,7 +37,7 @@ from apps.webui.port_config import (
     resolve_frontend_port,
 )
 
-from . import analysis_autostart, library_jobs_autostart, lyric_index_autostart
+from . import analysis_autostart, coverage_drain, library_jobs_autostart, lyric_index_autostart
 from .backend import (
     BackendError,
     ConflictError,
@@ -66,10 +66,10 @@ from .request_guard import (
     origin_guard_middleware,
 )
 from .routes import analysis as analysis_routes
-from .routes import audio_output_health as audio_output_health_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
 from .routes import analysis_source as analysis_source_routes
+from .routes import audio_output_health as audio_output_health_routes
 from .routes import auth as auth_routes
 from .routes import autolists as autolists_routes
 from .routes import bench as bench_routes
@@ -84,6 +84,7 @@ from .routes import cloudsync_policy as cloudsync_policy_routes
 from .routes import cloudsync_status as cloudsync_status_routes
 from .routes import commands as commands_routes
 from .routes import copilot as copilot_routes
+from .routes import coverage_drain as coverage_drain_routes
 from .routes import dedup_review as dedup_review_routes
 from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
@@ -101,15 +102,14 @@ from .routes import ingest_upload as ingest_upload_routes
 from .routes import library as library_routes
 from .routes import library_jobs as library_jobs_routes
 from .routes import lifecycle as lifecycle_routes
-from .routes import midi_maps as midi_maps_routes
 from .routes import lyrics_search as lyrics_search_routes
 from .routes import lyrics_words as lyrics_words_routes
+from .routes import midi_maps as midi_maps_routes
 from .routes import mytag as mytag_routes
 from .routes import pairing_capture as pairing_capture_routes
 from .routes import pairings as pairings_routes
 from .routes import performance_headphones as performance_headphones_routes
 from .routes import performance_telemetry as performance_telemetry_routes
-from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import play_it as play_it_routes
 from .routes import playlist_history as playlist_history_routes
 from .routes import playlist_sets as playlist_sets_routes
@@ -140,6 +140,7 @@ from .routes import stem_tiers as stem_tiers_routes
 from .routes import stems as stems_routes
 from .routes import stems_assets as stems_assets_routes
 from .routes import telemetry as telemetry_routes
+from .routes import telemetry_consent as telemetry_consent_routes
 from .routes import tracks as tracks_routes
 from .routes import ui_prefs as ui_prefs_routes
 from .routes import usb_export as usb_export_routes
@@ -257,6 +258,12 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.library_jobs_watcher = jobs_watcher
         jobs_watcher.start()
+        # HEALTH-05: built only on an app the daemon entry point ARMED; the
+        # user setting (default on) is read by the drain itself, every tick.
+        if getattr(app.state, "coverage_drain_armed", False):
+            if getattr(app.state, "coverage_drain", None) is None:
+                app.state.coverage_drain = coverage_drain.build_for_app(app)
+            app.state.coverage_drain.start()
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
@@ -267,6 +274,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         path_availability_refresh.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
+        drain = getattr(app.state, "coverage_drain", None)
+        if drain is not None:
+            drain.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()
@@ -552,6 +562,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_backfill_routes.router,
         analysis_queue_routes.router,
         library_jobs_routes.router,
+        coverage_drain_routes.router,
         analysis_source_routes.router,
         auth_routes.router,
         ingest_routes.router,

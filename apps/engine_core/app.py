@@ -70,9 +70,9 @@ from apps.engine_core.lock import EngineLock
 from apps.engine_core.perf_tier_api import add_perf_tier_route
 from apps.engine_core.rescue_api import add_rescue_routes
 from apps.engine_core.setup.api import router as setup_router
+from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.setup.jobs import SETUP_IMPORT_KIND
 from apps.engine_core.setup.library_events import on_setup_import_progress
-from apps.engine_core.setup.folder_rescan_scheduler import folder_rescan_lifespan
 from apps.engine_core.update_channel import add_update_apply_route, add_update_check_route
 from apps.engine_core.ws import TOPIC_HEALTH_CHANGED, WsHub, events_endpoint
 from apps.feature_flags import load_flags
@@ -87,7 +87,7 @@ from apps.stems.live_capability_api import router as live_stems_capability_route
 from apps.sync_hub import first_run as cloudsync_first_run
 from apps.sync_hub.scheduler import scheduler_lifespan
 from apps.webui.library_assets import ensure_stem_storage, stem_storage
-from apps.webui.server import analysis_autostart, library_jobs_autostart
+from apps.webui.server import analysis_autostart, coverage_drain, library_jobs_autostart
 from apps.webui.server.app import _SpaStaticFiles
 from apps.webui.server.app import create_app as legacy_create_app
 from apps.webui.server.backend import StateBackend
@@ -309,6 +309,10 @@ def _compose_legacy(cfg: EngineConfig) -> FastAPI:
         # standalone webui daemon; without it the installed app queued jobs
         # that stayed pending forever.
         auto_user_jobs=library_jobs_autostart.arm_from_environ(os.environ),
+        # HEALTH-05: run missing vocals/lyrics work until the health lights
+        # are green. MUSIC_DJ_COVERAGE_DRAIN (on/off) arms the loop; the user
+        # setting in coverage-drain.json (default on) decides whether it runs.
+        auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
         # STEM-31 / ADR-0051: on-demand stem hydration (ADR-0024). Armed is not
         # running: it stays inert in local mode or when hydration cannot arm.
         stem_hydration=True,

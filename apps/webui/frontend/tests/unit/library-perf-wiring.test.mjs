@@ -103,7 +103,7 @@ test('TrackTable row artwork stays thumbnail-sized', () => {
 
 test('BrowserPanel loads ingestion coverage after primary browser initialization', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /import \{ getIngestCoverage, type IngestCoverage \} from '\$lib\/rb\/api-ingest';/);
+	assert.match(src, /import \{ getIngestCoverage \} from '\$lib\/rb\/api-ingest';/);
 	assert.match(
 		src,
 		/await _restoreBootPane\(\);[\s\S]*?finally \{[\s\S]*?playlistsLoading = false;[\s\S]*?\}[\s\S]*?void _loadIngestCoverage\(\);/,
@@ -112,15 +112,27 @@ test('BrowserPanel loads ingestion coverage after primary browser initialization
 	for (const meaning of ['Library health', 'Vocals completion', 'Stems completion']) {
 		assert.ok(src.includes(meaning), `the health detail popover must retain ${meaning}`);
 	}
-	assert.match(src, /state: missing === 0 \? 'complete' : 'incomplete'/);
-	assert.match(src, /state: 'unavailable'/);
-	assert.match(src, /state: 'error'/);
+	// The verdicts live in the pure module (HEALTH-01/03/04); the panel only
+	// measures. A failed coverage request is grey "unknown", never a verdict.
+	const rules = source('src/lib/rb/library-health-dots.ts');
+	assert.match(rules, /state: pending === 0 && failed === 0 \? 'complete' : 'incomplete'/);
+	assert.match(rules, /state: 'unavailable'/);
+	assert.match(rules, /state: 'error'/);
+	assert.match(src, /vocalsCompletion = _unknownDot\('Vocals completion', why\);/);
+	assert.doesNotMatch(src, /function _coverageDot\(/, 'the panel must not keep its own copy of the rule');
 });
 
 test('coverage counts only reachable audio and refetches through the library refresh gate', () => {
 	const src = source('src/lib/components/rb/BrowserPanel.svelte');
-	assert.match(src, /const completed = coverage\.on_disk - missing;/);
-	assert.match(src, /\$\{coverage\.unreachable\} broken \$\{coverage\.unreachable === 1 \? 'link' : 'links'\}/);
+	const rules = source('src/lib/rb/library-health-dots.ts');
+	assert.match(rules, /done \+ terminal \+ failed \+ pending !== present/);
+	assert.match(rules, /of \$\{present\} present tracks/);
+	assert.match(
+		src,
+		/const healthRefetchTimer = setInterval\(\(\) => void _loadIngestCoverage\(\), HEALTH_REFETCH_MS\);/,
+		'the dots must re-ask on their own clock while the drain works'
+	);
+	assert.match(src, /clearInterval\(healthRefetchTimer\);/);
 	assert.match(
 		src,
 		/async function _refreshLibraryRowsOnce\(\): Promise<void> \{\s*await Promise\.all\(\[_loadIngestCoverage\(\), _loadReconcileSummary\(\), _refreshPlaylists\(\)\]\);/

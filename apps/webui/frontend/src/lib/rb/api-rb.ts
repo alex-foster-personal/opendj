@@ -13,7 +13,7 @@
  * fallbacks, no invented data.
  */
 
-import { API_BASE } from '$lib/api';
+import { API_BASE, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
@@ -586,9 +586,28 @@ export async function listPlaylistTracksPage(
 /** Validated generated-contract summary of playable and broken library rows. */
 export type ReconcileSummary = components['schemas']['ReconcileSummary'];
 
+/** The summary scans every row; past this the Library health dot goes grey
+ * "unknown" instead of waiting on a request that may never answer. */
+export const RECONCILE_SUMMARY_TIMEOUT_MS = 30_000;
+
 /** Fetch aggregate reconciliation counts without inventing a usable library state. */
-export async function getReconcileSummary(): Promise<ReconcileSummary> {
-	const summary = await unwrap(api.GET('/api/v1/reconcile/summary'));
+export async function getReconcileSummary(
+	timeoutMs: number = RECONCILE_SUMMARY_TIMEOUT_MS
+): Promise<ReconcileSummary> {
+	const { signal, clear } = timeoutSignal(timeoutMs);
+	let summary: ReconcileSummary;
+	try {
+		summary = await unwrap(api.GET('/api/v1/reconcile/summary', { signal }));
+	} catch (error: unknown) {
+		if (signal.aborted) {
+			throw new Error(`reconcile summary request timed out after ${timeoutMs / 1000} s`, {
+				cause: error
+			});
+		}
+		throw error;
+	} finally {
+		clear();
+	}
 	const { total_tracks, total_broken } = summary;
 	if (
 		typeof total_tracks !== 'number' ||
