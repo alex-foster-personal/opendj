@@ -232,7 +232,8 @@ def _restore_tracked_ledger(
     BLOCKING, found by review on PR #3827 (Codex): with the default
     ``MDT_PERF_KPI_LEDGER``, `run_nightly` appends this run's rows straight
     into the CHECKED-OUT, git-tracked ``docs/perf/kpi-ledger.json`` -- the
-    same file ``scripts/autoreposync.sh:852-862`` inspects before pulling.
+    same file autoreposync (fleet-af ``repos--autoreposync/scripts/autoreposync.sh``)
+    inspects before pulling.
     Leaving that local modification in place afterward serves no purpose
     except to leave `repo_root` permanently dirty, which is exactly what
     `autoreposync.sh` skips, so the FIRST scheduled run could silently stop

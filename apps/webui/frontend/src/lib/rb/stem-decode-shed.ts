@@ -56,15 +56,25 @@ export function requestEagerStemDecodeSlot(shed: BackgroundDemandShed): Promise<
  */
 let _shed: BackgroundDemandShed | null = null;
 let _kernelPressure: (() => boolean) | null = null;
+let _isLive: (() => boolean) | null = null;
 
 /** `kernelPressure` reads whether the kernel itself reports memory pressure
- * (PERFMODE-18); without it only an xrun counts as real pressure. */
+ * (PERFMODE-18); without it every hold is the short one. `isLive` reads
+ * whether any deck is audible (PERF-STEMDEC-04). */
 export function setEagerStemDecodeShed(
 	shed: BackgroundDemandShed | null,
-	kernelPressure: (() => boolean) | null = null
+	kernelPressure: (() => boolean) | null = null,
+	isLive: (() => boolean) | null = null
 ): void {
 	_shed = shed;
 	_kernelPressure = shed === null ? null : kernelPressure;
+	_isLive = shed === null ? null : isLive;
+}
+
+/** PERF-STEMDEC-04: a deck is audible right now, so a stem decode must leave
+ * the cores to the audio thread. False until app-init.ts arms the probe. */
+export function eagerStemDecodeIsLive(): boolean {
+	return _isLive?.() === true;
 }
 
 /**
@@ -83,14 +93,19 @@ export function setEagerStemDecodeShed(
  * seconds almost never sees it clear; what the hold buys is distance from
  * the play-start transient. Two bounds, one number each:
  *
- *   REAL pressure (the kernel reports level 2 or above, or an xrun landed in
- *   the current window): 2 s. Long enough for the transport start and the
- *   glitch that tripped it to pass, short enough that the stem buttons are
- *   live before a DJ who pressed play reaches for them.
+ *   KERNEL pressure (level 2 or above): 2 s. The machine is short of memory
+ *   and the decode is about to allocate four tracks of PCM.
  *
- *   EARLY WARNING only (churn over its threshold, no kernel signal, no xrun):
- *   500 ms. Nothing has been damaged; the hold only steps the decode off the
- *   play dispatch and its schedule lead.
+ *   Anything else that made the shed defer (churn over its threshold, or an
+ *   xrun in the current window): 500 ms. The hold only steps the decode off
+ *   the play dispatch and its schedule lead.
+ *
+ * An xrun in the window took the 2 s bound until PERF-STEMDEC-04. Measured
+ * the same day (ops/perf/stem-decode-under-playback-round-0): a loaded host
+ * logs a late audio callback about every 10 s with nothing loading, so that
+ * signal was true for 8 of 10 loads and each paid 2 s, while the late
+ * callbacks inside the decode came at the same rate held or not. What
+ * protects the playing deck is the decode width, not the wait.
  */
 export const EAGER_STEM_DECODE_MAX_DEFER_MS = 2000;
 export const EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS = 500;
@@ -126,7 +141,7 @@ export async function awaitEagerStemDecodeSlot(
 	if (cause !== null) return 'immediate';
 	// Read at the moment of the hold: the grade is the pressure that caused it.
 	const boundMs =
-		_shed.xrunsInWindow === true || _kernelPressure?.() === true
+		_kernelPressure?.() === true
 			? EAGER_STEM_DECODE_MAX_DEFER_MS
 			: EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS;
 	wait.onDeferred?.();

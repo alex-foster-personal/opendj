@@ -36,6 +36,10 @@
  *   in-flight load is second-guessed mid-flight
  * - [if] a failed stick load toasts the raw error class [then] the DJ reads
  *   "UsbLibraryError: USB_STICK_NOT_MOUNTED" instead of "Stick removed"
+ * - [if] a pane load or refresh is served from the frontend cache without
+ *   asking the backend [then] an export rewritten while the stick stays
+ *   mounted (or swapped between two presence polls) keeps its stale rows, and
+ *   a reassigned track id shows one track while the deck loads another
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -62,7 +66,9 @@ function track(uuid, pdbId) {
 		bpm: 120,
 		duration_s: 200,
 		rating: 0,
+		play_count: 0,
 		file_path: `/Contents/fixture/${pdbId}.mp3`,
+		file_present: true,
 		has_analysis: true,
 		has_artwork: false,
 		date_added: null
@@ -306,6 +312,67 @@ test('opening a stick reads it once, then serves the cache', async () => {
 	store.openUsbStick({ id: `vol:${UUID_A}` });
 	await Promise.all([store.ensureUsbLibrary(UUID_A), store.ensureUsbLibrary(UUID_A)]);
 	assert.equal(libraryHits(UUID_A) - before, 1, 'a cached stick must not be read again');
+});
+
+test('a pane load or refresh asks the backend again, so a rewritten export replaces stale rows', async () => {
+	const allPanes = [];
+	const pane = await loadedPane(UUID_A, 'all', allPanes);
+	assert.deepEqual(
+		pane.rows.map((row) => row.stable_id),
+		[1, 2, 3].map((n) => `usb-${UUID_A}-${n}`)
+	);
+	// export.pdb is rewritten while the stick stays mounted: the presence
+	// watcher sees no change, and the backend (which stats export.pdb on every
+	// request) now serves the new library.
+	const rewritten = stickLibrary(UUID_A, 'STICK A ');
+	rewritten.tracks = [1, 3, 4, 5].map((n) => track(UUID_A, n));
+	rewritten.counts = { ...rewritten.counts, tracks: 4 };
+	mounted.set(UUID_A, rewritten);
+
+	let before = libraryHits(UUID_A);
+	await store.refreshUsbPane(pane);
+	assert.equal(libraryHits(UUID_A) - before, 1, 'a refresh must ask the backend, not the frontend cache');
+	assert.deepEqual(
+		pane.rows.map((row) => row.stable_id),
+		[1, 3, 4, 5].map((n) => `usb-${UUID_A}-${n}`),
+		'the refreshed pane shows the rewritten export'
+	);
+	assert.equal(store.usbLibrary.sticks[`vol:${UUID_A}`].trackCount, 4, 'the stick tree follows');
+
+	before = libraryHits(UUID_A);
+	const second = await loadedPane(UUID_A, 'pl-1', allPanes);
+	assert.equal(libraryHits(UUID_A) - before, 1, 'opening a pane must ask the backend too');
+	assert.deepEqual(
+		second.rows.map((row) => row.stable_id),
+		[`usb-${UUID_A}-3`, `usb-${UUID_A}-1`]
+	);
+
+	// The opposite direction: re-opening the stick in the tree is still the
+	// cache, and two refreshes at once still share one request.
+	before = libraryHits(UUID_A);
+	store.openUsbStick({ id: `vol:${UUID_A}` });
+	await store.ensureUsbLibrary(UUID_A);
+	assert.equal(libraryHits(UUID_A) - before, 0, 'a tree open of a cached stick must not read again');
+	assert.equal(store.usbLibrary.sticks[`vol:${UUID_A}`].status, 'ready', 'no loading flash on a tree re-open');
+	await Promise.all([store.refreshUsbPane(pane), store.refreshUsbPane(second)]);
+	assert.equal(libraryHits(UUID_A) - before, 1, 'concurrent revalidations share one request');
+});
+
+test('a revalidation that fails drops the stale library instead of serving it', async () => {
+	const allPanes = [];
+	const pane = await loadedPane(UUID_A, 'all', allPanes);
+	assert.equal(pane.rows.length, 3);
+	// The stick is gone but the presence poll has not seen it yet.
+	mounted.delete(UUID_A);
+	await store.refreshUsbPane(pane);
+	assert.ok(pane.title.endsWith('(stick removed)'), pane.title);
+	assert.ok(pane.rows.every((row) => row.file_exists === false), 'rows gray in place');
+	assert.equal(store.usbLibrary.sticks[`vol:${UUID_A}`].status, 'error');
+	await assert.rejects(store.ensureUsbLibrary(UUID_A), /USB_STICK_NOT_MOUNTED/, 'no stale cache is served');
+	// Back on the next read.
+	mounted.set(UUID_A, stickLibrary(UUID_A, 'STICK A '));
+	await store.refreshUsbPane(pane);
+	assert.ok(pane.rows.every((row) => row.file_exists === true));
 });
 
 test('concurrent first reads of one stick share a single request', async () => {

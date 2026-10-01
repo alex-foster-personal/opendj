@@ -282,6 +282,54 @@ test('IOPIN-06 pickup gates real action-glue scalar dispatch while relative brow
 	unregister();
 });
 
+// Review thread on takeover-engine-sync.svelte.ts:67 (PR #3837), replayed on
+// the real glue, policy, dispatcher and preset lifecycle lock: a fader value
+// acknowledged while the lock rejects its command must not let the next
+// movement jump the scalar once the lock is released.
+test('IOPIN-06 a MIDI value rejected by the preset lifecycle lock does not bypass pickup afterwards', async () => {
+	const trimAction = { type: 'mixer_channel', deck: 3, target: 'trim' };
+	const send = async (value01) => {
+		glue.handleMidiAction(
+			trimAction,
+			{ kind: 'continuous', value01, raw: Math.round(value01 * 127) },
+			'lock-test-device',
+			undefined,
+			'cc:3:11'
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+	};
+	const trim = () => audioEngine.mixerState.channels[3].trim;
+	const rejections = [];
+	const onRejection = (reason) => rejections.push(String(reason?.message ?? reason));
+	const runnerListeners = process.listeners('unhandledRejection');
+	process.removeAllListeners('unhandledRejection');
+	process.on('unhandledRejection', onRejection);
+	const presetId = 'takeover-lock-test';
+	try {
+		audioEngine.mixerState.channels[3].trim = 0.5;
+		await send(0.5);
+		await send(0.52);
+		assert.equal(trim(), 0.52, 'control: an unlocked, picked-up fader tracks');
+
+		await performanceIpc.preparePerformancePresetTransaction(presetId, async () => {});
+		await send(0.7);
+		assert.equal(trim(), 0.52, 'control: the lock rejected the command');
+		assert.equal(rejections.length, 1, `the rejection is the lock's: ${rejections}`);
+		assert.match(rejections[0], /owns controls at awaiting_audio; command trim rejected/);
+		performanceIpc.abortPreparedPerformancePreset(presetId, 'test release');
+
+		await send(0.9);
+		assert.equal(trim(), 0.52, 'the next movement must be held, not jump to 0.9');
+		await send(0.5);
+		assert.equal(trim(), 0.5, 'coming back across the engine value picks up again');
+		assert.equal(rejections.length, 1, 'nothing else was rejected');
+	} finally {
+		performanceIpc.abortPreparedPerformancePreset(presetId, 'test cleanup');
+		process.off('unhandledRejection', onRejection);
+		for (const listener of runnerListeners) process.on('unhandledRejection', listener);
+	}
+});
+
 test('eq action without band fails fast', () => {
 	assert.throws(
 		() =>
@@ -360,6 +408,64 @@ test('controller hot-cue pad rounds the presented position to persistent millise
 	assert.equal(padRuntime.persistentCuePositionMs(0.4), 0);
 	assert.throws(() => padRuntime.persistentCuePositionMs(Number.NaN), RangeError);
 	assert.throws(() => padRuntime.persistentCuePositionMs(-0.1), RangeError);
+});
+
+// [if] a stick deck's empty hot-cue pad is pressed [then] hot_cue_save is
+// dispatched and reaches the stick session-edit store, exactly as HotCueBank
+// and the IPC gate allow; [if] the deck is an unmapped LIBRARY track [then] it
+// is still refused before dispatch.
+//
+// No track was loaded here, so the real session store answers the save with
+// its own "slots were never read" refusal. That refusal is the evidence: only
+// a command that passed the pad gate AND the IPC gate reaches that store. The
+// pad fires its command without awaiting it, so the rejection is unhandled by
+// design; the runner's own listener is parked for the duration to read it.
+test('controller hot-cue pad saves on a stick deck and still refuses an unmapped library deck', async () => {
+	glue._resetControllerStateForTests();
+	const deck = audioEngine.deckStates[1];
+	const stickId = 'usb-AAAAAAAA-0000-4000-8000-00000000000A-7';
+	const notes = [];
+	const notify = (message, tone) => notes.push({ message, tone });
+	const rejections = [];
+	const onRejection = (reason) => rejections.push(String(reason?.message ?? reason));
+	const runnerListeners = process.listeners('unhandledRejection');
+	process.removeAllListeners('unhandledRejection');
+	process.on('unhandledRejection', onRejection);
+	const priorRevisions = deck.hot_cue_revisions;
+	try {
+		deck.has_rb_mapping = false;
+		deck.hot_cues = [];
+		deck.position_ms = 1234.4;
+		deck.hot_cue_revisions = { ...priorRevisions, A: 'rev-0' };
+
+		deck.stable_id = stickId;
+		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
+		const deadline = Date.now() + 5000;
+		while (rejections.length === 0 && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.deepEqual(notes, [], 'a stick deck must not be told its cue cannot persist');
+		assert.deepEqual(
+			rejections,
+			[`hot cue A: the stick's own slots for ${stickId} were never read`],
+			'the save must reach the stick session store (past the pad gate and the IPC mapping gate)'
+		);
+
+		deck.stable_id = 'b'.repeat(40);
+		padRuntime.runControllerPad('pad-usb', 1, 1, false, true, notify);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		assert.equal(notes.length, 1, 'an unmapped library deck is still refused');
+		assert.match(notes[0].message, /cannot persist Rekordbox hot cues/);
+		assert.equal(rejections.length, 1, 'a refused library deck dispatches nothing');
+	} finally {
+		process.off('unhandledRejection', onRejection);
+		for (const listener of runnerListeners) process.on('unhandledRejection', listener);
+		deck.stable_id = null;
+		deck.hot_cues = [];
+		deck.position_ms = 0;
+		deck.hot_cue_revisions = priorRevisions;
+		glue._resetControllerStateForTests();
+	}
 });
 
 test('unsupported pad mode warns once and pad input stays inert', () => {

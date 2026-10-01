@@ -29,6 +29,9 @@ MINI-PRD
             [then] refuse with a precondition error, never cancel them all [else stop]
        Measured Wed 16 Sep 2026 09:30Z: 13 of 28 unfinished runs were for PRs already
        merged or closed at the SHA under test, holding the 13-slot pytest pool.
+    R5 Completed-run cancel race ................................... done + regression
+       [if] a cancel POST 409s because the run already finished [then] count it
+            cancelled, logged already-completed [else: exit 10 unless not-yet-queued]
 
 USAGE
     uv run --no-sync python -m scripts.ci_trunk_tip_only --dry-run
@@ -66,7 +69,10 @@ except ModuleNotFoundError as exc:
 GATING_WORKFLOW = "CI"
 # CI Cost Guard and Stable evidence left this set on Tue 22 Sep 2026: each is a
 # scheduled batch pass now, not a per-SHA follower, so there is nothing of them
-# to supersede.
+# to supersede. Error sink rides the cost guard's pass since RUN-COUNT round 3, so
+# nothing is named this any more and the bookkeeping path below is inert; removing
+# it, and the FIX-409 lines that pin it, is its own change
+# (ADR-NEW-error-sink-rides-the-cost-guard).
 BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
 
@@ -85,6 +91,7 @@ class CancelOutcome(Enum):
 
     CANCELLED = "cancelled"
     SKIPPED_NOT_YET_QUEUED = "skipped_not_yet_queued"
+    ALREADY_COMPLETED = "already_completed"
 
 
 @dataclass(frozen=True)
@@ -396,7 +403,7 @@ def execute_closed_pr_sweep(
         print(f"::notice::{line}")
         print(line)
         planned += 1
-        if not dry_run and _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
+        if not dry_run and _cancel_run(run.run_id) in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             cancelled += 1
     return SweepCounts(planned, cancelled)
 
@@ -477,6 +484,12 @@ def _cancel_run(run_id: int) -> CancelOutcome:
     except PreconditionError as exc:
         if _is_not_yet_queued_cancel_conflict(exc):
             return CancelOutcome.SKIPPED_NOT_YET_QUEUED
+        status = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}") if "HTTP 409" in str(exc) else None
+        if isinstance(status, dict) and status.get("status") == "completed":
+            line = f"cancel-already-completed run_id={run_id} reason=already-completed"
+            print(f"::notice::{line}")
+            print(line)
+            return CancelOutcome.ALREADY_COMPLETED
         raise
     return CancelOutcome.CANCELLED
 
@@ -493,7 +506,7 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
             ci_cancelled += 1
             continue
         outcome = _cancel_run(run.run_id)
-        if outcome is CancelOutcome.CANCELLED:
+        if outcome in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             ci_cancelled += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             ci_cancel_skipped_not_yet_queued += 1
@@ -506,7 +519,7 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
             bookkeeping_cancelled += 1
             continue
         outcome = _cancel_run(run.run_id)
-        if outcome is CancelOutcome.CANCELLED:
+        if outcome in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             bookkeeping_cancelled += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             bookkeeping_cancel_skipped_not_yet_queued += 1

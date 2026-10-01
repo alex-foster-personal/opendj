@@ -137,6 +137,12 @@ def _sink_archives(dest: Path) -> list[Path]:
     )
 
 
+def sink_files(dest: Path | None = None) -> list[Path]:
+    """The sink and its archives, oldest first: what a reader scans to see every record."""
+    current = dest or sink_path()
+    return [*_sink_archives(current), current]
+
+
 def _prune_sink_archives(dest: Path) -> None:
     archives = _sink_archives(dest)
     while len(archives) > SINK_MAX_ARCHIVES:

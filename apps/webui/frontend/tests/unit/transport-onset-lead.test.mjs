@@ -475,7 +475,7 @@ test('the configured block must be the block the processor actually adopted', ()
 test('the configure call sits at creation, before any audio can exist', () => {
 	const text = moduleSource('lib/rb/stretch-adapter.ts');
 	const configureAt = text.indexOf('node.configure({ blockMs })');
-	const loadAt = text.indexOf('async load(buffer: AudioBuffer): Promise<void> {');
+	const loadAt = text.indexOf("async load(buffer: AudioBuffer, requested: PcmHandoff = 'copy'): Promise<PcmHandoff> {");
 	assert.ok(configureAt !== -1 && loadAt !== -1);
 	assert.ok(
 		configureAt < loadAt,

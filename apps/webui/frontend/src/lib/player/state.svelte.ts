@@ -218,6 +218,18 @@ function _sharedMixerState(): MixerState {
 
 export const mixerState: MixerState = _sharedMixerState();
 
+let _masterWriteRevision = 0;
+
+/** Monotonic token for distinguishing a stale teardown mute from a later write. */
+export function readMasterWriteRevision(): number {
+	return _masterWriteRevision;
+}
+
+/** Called by the one engine-owned master setter before it publishes a value. */
+export function recordMasterWrite(): void {
+	_masterWriteRevision += 1;
+}
+
 /** Per-deck store accessor (contract: singleton engine + accessor). */
 export function getDeckState(deck: DeckId): DeckState {
 	return deckStates[deck];

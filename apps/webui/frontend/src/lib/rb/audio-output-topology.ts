@@ -166,7 +166,14 @@ export function wireAudioOutputTopology(input: {
 	dest.channelInterpretation = 'discrete';
 	masterMuteGain.channelCount = 4;
 	_makeDiscrete(masterMuteGain);
-	masterDelay.channelCount = 4;
+	// The room delay (CUEOUT-14) is for master 1/2 only: cue 3/4 already
+	// carries its own headphone delay, and a second delay there makes cue
+	// monitoring late. So the four muted channels are split, the master pair
+	// alone passes through masterDelay, and the pairs are merged again. The
+	// mute stays ahead of the split so it still silences every channel, and
+	// masterDelay stays the last node before the device on the master pair, so
+	// a signal injected there (the cue-align chirp) is still past every gain.
+	masterDelay.channelCount = 2;
 	_makeDiscrete(masterDelay);
 	const merger = context.createChannelMerger(4);
 	merger.channelInterpretation = 'discrete';
@@ -179,12 +186,33 @@ export function wireAudioOutputTopology(input: {
 	cueSplitter.connect(merger, 0, 2);
 	cueSplitter.connect(merger, 1, 3);
 	merger.connect(masterMuteGain);
-	masterMuteGain.connect(masterDelay);
-	masterDelay.connect(dest);
+	const mutedSplitter = context.createChannelSplitter(4);
+	masterMuteGain.connect(mutedSplitter);
+	const roomMerger = context.createChannelMerger(2);
+	mutedSplitter.connect(roomMerger, 0, 0);
+	mutedSplitter.connect(roomMerger, 1, 1);
+	roomMerger.connect(masterDelay);
+	const roomSplitter = context.createChannelSplitter(2);
+	masterDelay.connect(roomSplitter);
+	const outputMerger = context.createChannelMerger(4);
+	outputMerger.channelInterpretation = 'discrete';
+	roomSplitter.connect(outputMerger, 0, 0);
+	roomSplitter.connect(outputMerger, 1, 1);
+	mutedSplitter.connect(outputMerger, 2, 2);
+	mutedSplitter.connect(outputMerger, 3, 3);
+	outputMerger.connect(dest);
 	return {
 		externalMerger: null,
 		externalRouteAnalyser: null,
-		ownedNodes: [masterSplitter, cueSplitter, merger],
+		ownedNodes: [
+			masterSplitter,
+			cueSplitter,
+			merger,
+			mutedSplitter,
+			roomMerger,
+			roomSplitter,
+			outputMerger
+		],
 		multichannelMonitorActive: true
 	};
 }

@@ -52,10 +52,13 @@ root while still tolerating one that was a symlink from the start.
 """
 from __future__ import annotations
 
+import contextlib
+import errno
 import logging
 import os
 import stat
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -168,9 +171,129 @@ def reset_root_anchor(root: Path) -> None:
     _ROOT_ANCHORS.pop(str(root), None)
 
 
+#: Run by :func:`reset_root_anchors`. Whoever remembers what it read below a
+#: root registers its "forget everything" here: a reset says the roots may
+#: legitimately name other directories now, so nothing read under the old
+#: ones may be served again. Kept in this module, which nothing reloads.
+_ANCHOR_RESET_HOOKS: list[Callable[[], None]] = []
+
+
+def on_root_anchors_reset(forget: Callable[[], None]) -> None:
+    """Run ``forget`` every time :func:`reset_root_anchors` runs."""
+    if forget not in _ANCHOR_RESET_HOOKS:
+        _ANCHOR_RESET_HOOKS.append(forget)
+
+
 def reset_root_anchors() -> None:
     """Drop every recorded root anchor. See :func:`reset_root_anchor`."""
     _ROOT_ANCHORS.clear()
+    for forget in _ANCHOR_RESET_HOOKS:
+        forget()
+
+
+class RootReanchorRefused(OSError):
+    """:func:`reanchor_root` would not trust the root; ``str()`` says why."""
+
+
+def _open_real_directory_in(parent_fd: int, part: str, walked: Path, root: Path) -> int:
+    """Open ``part`` below ``parent_fd`` if it is a real directory, never a symlink."""
+    try:
+        fd = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        why = (
+            "is a symbolic link" if exc.errno == errno.ELOOP
+            else f"cannot be opened ({type(exc).__name__})"
+        )
+        raise RootReanchorRefused(
+            f"{str(walked)!r}, a directory above the root {str(root)!r}, {why}; "
+            "every directory above the root must be a real directory"
+        ) from exc
+    try:
+        is_directory = stat.S_ISDIR(os.fstat(fd).st_mode)
+    except BaseException:
+        os.close(fd)
+        raise
+    if not is_directory:
+        os.close(fd)
+        raise RootReanchorRefused(f"{str(walked)!r}, above the root {str(root)!r}, is not a directory")
+    return fd
+
+
+def _open_real_parent(root: Path) -> int:
+    """Open ``root``'s parent directory, refusing a symlink anywhere on the way.
+
+    The walk starts at the filesystem root, the one directory no path can
+    re-point, and opens every component below it ``O_NOFOLLOW`` relative to
+    the descriptor of the one above. ``O_NOFOLLOW`` on a whole path guards
+    only its last component, so opening ``crate/share`` that way follows a
+    ``crate`` that was swapped for a symlink to another tree.
+    """
+    if not root.is_absolute() or ".." in root.parts or len(root.parts) < 2:
+        raise RootReanchorRefused(f"{str(root)!r} is not an absolute path below the filesystem root")
+    fd = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    walked = Path(root.anchor)
+    for part in root.parts[1:-1]:
+        walked = walked / part
+        try:
+            child = _open_real_directory_in(fd, part, walked, root)
+        finally:
+            os.close(fd)
+        fd = child
+    return fd
+
+
+def reanchor_root(root: Path) -> bool:
+    """Trust ``root`` as the directory it is now. Only ever called on request.
+
+    This is the deliberate reset issue 1402 left to the root's owner: nothing
+    that merely reads below a root calls it, so a root that became another
+    directory stays refused until someone says the new one is intended.
+
+    Every directory ABOVE the root is opened ``O_NOFOLLOW`` from the
+    filesystem root (:func:`_open_real_parent`), and a symlink among them is
+    refused with :class:`RootReanchorRefused`, whose text names it. The root
+    itself may be a symlink, as a configured share root legitimately is: the
+    caller is vouching for where it points now.
+
+    The anchor recorded is the identity of the directory this call opened, not
+    of whatever the path names on a later look, under both names the root is
+    reached by (the path as given, and its resolved form). Everything
+    remembered under the old identity is forgotten (the reset hooks run).
+
+    False, with nothing changed, when the root or a directory above it does
+    not exist.
+    """
+    try:
+        parent_fd = _open_real_parent(root)
+    except FileNotFoundError:
+        return False
+    try:
+        try:
+            root_fd = os.open(root.name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise RootReanchorRefused(
+                f"the root {str(root)!r} cannot be opened as a directory ({type(exc).__name__})"
+            ) from exc
+        try:
+            opened = os.fstat(root_fd)
+        finally:
+            os.close(root_fd)
+    finally:
+        os.close(parent_fd)
+    identity = (opened.st_dev, opened.st_ino)
+    _ROOT_ANCHORS[str(root)] = identity
+    with contextlib.suppress(OSError, RuntimeError):  # a symlink loop has no second name
+        _ROOT_ANCHORS[str(root.resolve())] = identity
+    for forget in _ANCHOR_RESET_HOOKS:
+        forget()
+    log.warning(
+        "root %r anchored afresh on request at dev=%d ino=%d", str(root), identity[0], identity[1]
+    )
+    return True
 
 
 def path_from_fd(fd: int) -> Path:
@@ -273,3 +396,157 @@ def resolve_under_root(candidate: Path, root: Path) -> Path:
     finally:
         for fd in reversed(opened_fds):
             os.close(fd)
+
+
+# ----- reading through the walk's own descriptors (LIBM-137 round 3) ----------
+#
+# ``resolve_under_root`` hands back a PATH, and its caller opens that path
+# afterwards: the walk proves containment at the instant it ran, and a swap
+# between the walk and that later open is outside it. That is tolerable for one
+# request and wrong for anything that REMEMBERS what it read, because a race
+# won once would then be served on every later request.
+#
+# The functions below close that gap for a caller that wants bytes rather than
+# a path. The root is opened and identity-checked exactly as above, every
+# directory segment is opened ``O_NOFOLLOW`` relative to the descriptor of its
+# parent, and the leaf is opened ``O_NOFOLLOW`` relative to the descriptor of
+# its directory and READ FROM THAT DESCRIPTOR. No path string is ever reopened,
+# so there is no instant at which a swapped segment can redirect the read.
+
+#: ``(st_mode, st_ino, st_dev, st_size, st_mtime_ns, st_ctime_ns)``.
+Identity = tuple[int, int, int, int, int, int]
+
+_LEAF_FLAGS: int = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK if FD_ANCHORED_WALK_SUPPORTED else 0
+_READ_CHUNK: int = 1 << 20
+
+
+def identity_of(st: os.stat_result) -> Identity:
+    """What one inode looked like: type, which inode, and its content stamps.
+
+    ``st_ctime_ns`` is in because ``st_mtime_ns`` can be put back by whoever
+    rewrote the file, and the change time cannot.
+    """
+    return (st.st_mode, st.st_ino, st.st_dev, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _require_plain_segment(name: str) -> None:
+    """Refuse anything that is not one ordinary path component.
+
+    ``os.open("a/b", dir_fd=fd)`` resolves ``a`` the ordinary way, following a
+    symlink there, and ``..`` steps out of the directory the descriptor names.
+    Either would undo the walk, so both are refused before any open.
+    """
+    if name in ("", ".", "..") or "/" in name or "\x00" in name:
+        raise ValueError(f"{name!r} is not a single plain path component")
+
+
+def open_anchored_root(root: Path) -> int | None:
+    """Open ``root`` and enforce its identity anchor; None when it does not exist.
+
+    Raises :class:`RootIdentityChanged` exactly as :func:`resolve_under_root`
+    does. The caller owns the descriptor and closes it.
+    """
+    try:
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    try:
+        _verify_root_anchor(root, root_fd)
+    except BaseException:
+        os.close(root_fd)
+        raise
+    return root_fd
+
+
+def open_directory_under(
+    root_fd: int, parts: tuple[str, ...]
+) -> tuple[int | None, list[os.stat_result]]:
+    """Walk directory ``parts`` below an opened root, one descriptor at a time.
+
+    Returns ``(dir_fd, stats)``: the descriptor of the last directory, which
+    the caller closes, and the ``fstat`` of every segment that opened. The
+    descriptor is None when a segment is missing or is a real non-directory,
+    which is ordinary data and not an escape (``stats`` then stops there).
+
+    Raises ``OSError`` when a segment is a symlink (``ELOOP``) or cannot be
+    opened for any other reason, and ``ValueError`` for a segment that is not
+    one plain component.
+    """
+    for part in parts:
+        _require_plain_segment(part)
+    stats: list[os.stat_result] = []
+    current_fd = root_fd
+    try:
+        for part in parts:
+            try:
+                fd = os.open(part, _LEAF_FLAGS, dir_fd=current_fd)
+            except FileNotFoundError:
+                if current_fd != root_fd:
+                    os.close(current_fd)
+                return None, stats
+            if current_fd != root_fd:
+                os.close(current_fd)
+            current_fd = fd
+            st = os.fstat(fd)
+            stats.append(st)
+            if not stat.S_ISDIR(st.st_mode):
+                os.close(fd)
+                return None, stats
+    except BaseException:
+        if current_fd != root_fd:
+            os.close(current_fd)
+        raise
+    if current_fd == root_fd:
+        return os.dup(root_fd), stats
+    return current_fd, stats
+
+
+def stat_leaf(dir_fd: int, name: str) -> os.stat_result | None:
+    """``lstat`` of ``name`` inside an opened directory; None when it is absent.
+
+    Never follows a final symlink: the caller sees ``S_ISLNK`` and decides.
+    """
+    _require_plain_segment(name)
+    try:
+        return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def read_leaf(dir_fd: int, name: str, max_bytes: int) -> tuple[os.stat_result, bytes | None] | None:
+    """Open ``name`` inside an opened directory and read it from that descriptor.
+
+    None when it is absent. Otherwise ``(fstat, data)``, where the ``fstat`` is
+    taken on the descriptor BEFORE the read, so a write that lands during the
+    read shows up as a changed file to whoever compares it later. ``data`` is
+    None for anything that is not a regular file (never read: a FIFO would
+    block or lie), for a file larger than ``max_bytes``, and for a file with
+    more than one name (``st_nlink > 1``): a hard link is the one way a name
+    inside the root can be an inode that also lives outside it, and no symlink
+    check sees it. Real rekordbox trees hold none (0 in 81,075 files surveyed).
+
+    Raises ``OSError`` when the leaf is a symlink (``ELOOP``) or cannot be
+    opened or read.
+    """
+    _require_plain_segment(name)
+    try:
+        fd = os.open(name, _LEAF_FLAGS, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink > 1 or st.st_size > max_bytes:
+            return st, None
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, _READ_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                return st, None
+            chunks.append(chunk)
+        return st, b"".join(chunks)
+    finally:
+        os.close(fd)

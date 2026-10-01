@@ -14,6 +14,7 @@
 		chipState as chipStateOf,
 		chipTitle
 	} from '$lib/components/cloudsync/cloudsync-view';
+	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import { publishCloudSyncChipState } from '$lib/rb/cloudsync-chip-state.svelte';
 
 	let status = $state<CloudSyncStatus | null>(null);
@@ -73,7 +74,8 @@
 	// Re-read on an interval (a heartbeat that goes stale after load must turn
 	// the chip off) and at once when /cloudsync runs Sync now or saves config.
 	onMount(() => {
-		void load();
+		// LIBM-138: the first read waits for the boot window to close.
+		bootScheduler.defer('cloudsync-chip:load', () => void load());
 		const timer = setInterval(() => {
 			if (!document.hidden) void load();
 		}, CHIP_POLL_MS);

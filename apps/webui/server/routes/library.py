@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from apps.library_wheel.query import AXES, LibraryWheelError, query_library_wheel
+from apps.shared import fd_anchored_walk, platform_paths
 from apps.shared import paths as shared_paths
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
@@ -32,6 +34,36 @@ def _stem_roots(request: Request) -> tuple[Path, ...]:
     if configured is not None:
         return tuple(Path(root) for root in configured)
     return stem_roots(DEFAULT_STEMS_DIR)
+
+
+class ShareRootReanchorOut(BaseModel):
+    """Answer of ``POST /library/share-root/reanchor``."""
+
+    exists: bool
+
+
+@router.post("/share-root/reanchor", response_model=ShareRootReanchorOut)
+def reanchor_share_root() -> ShareRootReanchorOut:
+    """Trust the rekordbox share root as it is now, and forget what was read under it.
+
+    The engine remembers which directory the share root was when it first
+    read it, and refuses to read below a root that has since become a
+    different one (LIBM-137): a volume mounted again at the same path, a
+    directory swapped in by rename, a symlinked share root pointed somewhere
+    else. Nothing re-trusts it on its own, because each of those is also what
+    an attack looks like. This call is how the root's owner says the new
+    directory is intended; it records that directory's identity and empties
+    the listing's row memory.
+
+    ``exists`` is false, and nothing changes, when the share root is not there.
+    The call is refused with 409, and ``detail`` says why, when a directory
+    ABOVE the share root is a symlink: only the share root itself may be one.
+    """
+    try:
+        exists = platform_paths.reanchor_share_root()
+    except fd_anchored_walk.RootReanchorRefused as refusal:
+        raise HTTPException(status_code=409, detail=f"share root not re-anchored: {refusal}") from refusal
+    return ShareRootReanchorOut(exists=exists)
 
 
 @router.get("/wheel")

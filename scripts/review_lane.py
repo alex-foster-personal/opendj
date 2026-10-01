@@ -36,6 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from scripts.review_gh import TriageError, _gh
+from scripts.review_pr_diff import pr_diff
 from scripts.review_prompt import ALL_FENCES, RUN_ID_PLACEHOLDER, Fence
 
 REPO = "maintainer/music-dj-tools"
@@ -254,7 +255,7 @@ def pinned_head(pr: str) -> str:
 
 
 def diff_of(pr: str) -> str:
-    return _gh(["api", f"repos/{REPO}/pulls/{pr}", "-H", "Accept: application/vnd.github.v3.diff"])
+    return pr_diff(REPO, pr)
 
 
 # Machine-written data that CI validates mechanically rather than by reading.

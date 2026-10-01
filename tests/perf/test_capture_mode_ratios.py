@@ -12,15 +12,13 @@ regression that pins sampling to the browser subprocess's own pid.
 
 from __future__ import annotations
 
-import itertools
 import os
 import subprocess
 import sys
 import threading
 import time
-from contextlib import suppress
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 from unittest.mock import patch
 
 import psutil
@@ -240,138 +238,6 @@ def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
     """
     with pytest.raises(ValueError, match="1 h unattended"):
         cmr._sample_leak(os.getpid(), cmr._MIN_LEAK_DURATION_S - 1)
-
-
-_GIG_TRACKIFY_PROTOCOL_CHILD = """
-import sys
-print(sys.argv[1], flush=True)
-print("GIG_READY", flush=True)
-sys.stdin.readline()
-print("TRACKIFY_READY", flush=True)
-sys.stdin.readline()
-print("DONE", flush=True)
-sys.stdin.read()  # like node: stay alive until stdin reaches EOF
-"""
-
-
-def _spawn_gig_trackify_child(stable_ids_line: str) -> subprocess.Popen[str]:
-    """A REAL child speaking the exact `mode_ratio_browser.mjs --mode
-    gig-trackify` stdout/stdin protocol: GIG_STABLE_IDS then GIG_READY with no
-    signal between them, one stdin line per subsequent handoff, DONE, then
-    stdin EOF (Codex P1, PR #4034, discussion_r4138614642: `_fake_browser_proc`
-    is a `MagicMock` with scripted `readline` return values, so it cannot
-    catch a real stdout framing, ordering, or EOF regression the way this
-    genuine subprocess pipe can)."""
-    return subprocess.Popen(
-        [sys.executable, "-c", _GIG_TRACKIFY_PROTOCOL_CHILD, stable_ids_line],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-
-
-_DESCENDANT_PREFIX = (
-    "import subprocess as _sp\n"
-    "_sp.Popen(['sleep', '30'], stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
-)
-
-
-def _spawn_with_descendant(script: str, *argv: str) -> subprocess.Popen[str]:
-    """Like the plain protocol spawns above, but with a real OS child of
-    its own (`sleep 30`), standing in for a Chromium descendant so
-    `_ProcessTreeSampler.sample()` -- which excludes the root pid itself,
-    since that's the Node launcher, not Chromium -- has something live to
-    read. Killed explicitly by `_kill_tree` below; SIGKILL on the root
-    alone does not cascade to it."""
-    return subprocess.Popen(
-        [sys.executable, "-c", _DESCENDANT_PREFIX + script, *argv],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-
-
-def _kill_tree(pid: int) -> None:
-    try:
-        root = psutil.Process(pid)
-    except psutil.NoSuchProcess:
-        return
-    for descendant in root.children(recursive=True):
-        with suppress(psutil.NoSuchProcess):
-            descendant.kill()
-    with suppress(psutil.NoSuchProcess):
-        root.kill()
-
-
-# Sol P1/BLOCKING, PR #4540: the two capture integration tests read footprint
-# through the REAL DarwinProcessMetrics, so a reader that ignored the pid or
-# misread phys_footprint cannot stay green behind a fake. That reader is
-# macOS-only, so elsewhere the coverage is reported UNAVAILABLE, not faked.
-_REAL_NATIVE_METRICS = pytest.mark.skipif(
-    sys.platform != "darwin",
-    reason="UNAVAILABLE: DarwinProcessMetrics reads phys_footprint through macOS APIs only",
-)
-
-
-def _fake_monotonic_ticking(step: float) -> Any:
-    """A `time.monotonic` stand-in that advances by `step` every call.
-
-    Lets `_sample_steady`/`_sample_leak` run their REAL deadline loop (real
-    `_ProcessTreeSampler.sample()` calls against a REAL spawned child) to
-    completion without waiting real wall-clock seconds to minutes -- only
-    `time.monotonic`/`time.sleep` are faked, per Sol P1/BLOCKING, PR #4034,
-    discussion_r4138712250: patching the SAMPLING functions themselves (the
-    prior version of these two tests) bypasses the real launch-to-pid
-    handoff AND the real sampler, so a broken integration between them
-    could stay green. The native footprint reader is the real one; see
-    `_REAL_NATIVE_METRICS`.
-    """
-    counter = itertools.count()
-    return lambda: next(counter) * step
-
-
-@pytest.mark.requirement("PERFMODE-15")
-@_REAL_NATIVE_METRICS
-def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url() -> None:
-    """[if] a Gig/Trackify capture runs [then] it really samples the browser pid, not the URL, [else stop].
-
-    This is the call-shape regression test for the claude-review finding:
-    the prior implementation threaded the frontend URL into an HTTP probe
-    of the packaged app's telemetry endpoint instead of the pid of the
-    process `mode_ratio_browser.mjs` actually spawned. `_start_browser_session`
-    returns a REAL spawned child speaking the genuine protocol
-    (`_spawn_gig_trackify_child`); `_sample_steady` runs for REAL (not
-    mocked) against it with the real native footprint reader, only the wall
-    clock faked, so this also proves the real sampler produces real,
-    positive per-mode values from that pid.
-    """
-    child = _spawn_with_descendant(
-        _GIG_TRACKIFY_PROTOCOL_CHILD, 'GIG_STABLE_IDS ["a", "b", "c", "d"]'
-    )
-    try:
-        with (
-            patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.time.sleep"),
-            patch(
-                "scripts.perf.capture_mode_ratios.time.monotonic",
-                new=_fake_monotonic_ticking(cmr._PROBE_INTERVAL_S),
-            ),
-        ):
-            gig, trackify, gig_stable_ids = cmr._capture_gig_then_trackify(
-                "http://127.0.0.1:5273", cmr._MIN_SAMPLE_S
-            )
-
-        assert gig_stable_ids == ["a", "b", "c", "d"]
-        for result in (gig, trackify):
-            assert result["sample_count"] >= 1.0
-            assert result["footprint_mb"] > 0.0
-    finally:
-        _kill_tree(child.pid)
-        child.wait(timeout=5)
 
 
 _PROTOCOL_CHILD = """

@@ -153,6 +153,7 @@
 		bootPlaylistsPrefetch,
 		bootTracksPrefetch,
 		canBootAllTracksEarly,
+		bootListingWalkSettled,
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
@@ -1188,6 +1189,8 @@
 			spotify_selected_id: spotifySelectedId
 		});
 		let bootPaneRestored = false;
+		// LIBM-138: a boot that opens another pane never walks All Tracks.
+		if (!bootAllTracksEarly) bootListingWalkSettled();
 		const healthPromise = getHealthAtBoot(getHealth);
 		const playlistsPromise = bootPlaylistsPrefetch();
 		try {
