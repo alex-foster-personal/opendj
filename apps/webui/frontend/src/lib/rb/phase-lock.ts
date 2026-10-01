@@ -30,7 +30,7 @@
  * bookkeeping beside the scheduled revisions and re-anchor ramps).
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
-import type { TempoNormalization } from '$lib/rb/beat-sync-math';
+import { PHASE_LOCK_MAX_TRIM, type TempoNormalization } from '$lib/rb/beat-sync-math';
 
 /**
  * Errors smaller than this are left alone (the tempo goes back to base). The
@@ -56,13 +56,8 @@ export const PHASE_LOCK_RELEASE_MS = 1;
  */
 export const PHASE_LOCK_CORRECTION_BEATS = 4;
 
-/**
- * Largest trim, as a fraction of the base tempo: 0.3%, 0.38 BPM at 128 BPM.
- * Below the pitch change a DJ hears on a varispeed deck (about 5 cents), and
- * twice the worst grid-rounding tempo error seen on real PQTZ (~0.15%, see
- * `_windowedIntervalBpm`), so a real drift of that size is always out-run.
- */
-export const PHASE_LOCK_MAX_TRIM = 0.003;
+// Largest trim (0.3% of base); defined in beat-sync-math.ts, see there.
+export { PHASE_LOCK_MAX_TRIM };
 
 /**
  * The wrapped phase error is at most half a beat; past a quarter of one the

@@ -26,13 +26,22 @@
  */
 import type { AnlzBeat, AnlzCue } from '$lib/rb/anlz-types';
 import type { LoopState } from '$lib/rb/deck-state-types';
-import { PHASE_LOCK_MAX_TRIM } from '$lib/rb/phase-lock';
 
 // -------------------------------------------------------------- contracts
 
 export type BeatNumber = 1 | 2 | 3 | 4;
 export type SyncMode = 'beat' | 'bar';
 export type TempoNormalization = 0.5 | 1 | 2;
+
+/**
+ * Largest phase-lock trim, as a fraction of the base tempo: 0.3%, 0.38 BPM at
+ * 128 BPM. Below the pitch change a DJ hears on a varispeed deck (about 5
+ * cents), and twice the worst grid-rounding tempo error seen on real PQTZ
+ * (~0.15%, see `_windowedIntervalBpm`), so a real drift of that size is always
+ * out-run. Lives here, not in phase-lock.ts, so the tempo-lock tolerance can
+ * use it without an import cycle; phase-lock.ts re-exports it.
+ */
+export const PHASE_LOCK_MAX_TRIM = 0.003;
 
 export interface FollowerSyncRequest {
 	masterGrid: readonly AnlzBeat[];
