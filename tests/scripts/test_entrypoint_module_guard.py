@@ -50,7 +50,6 @@ GUARDED_ENTRYPOINTS = [
     "scripts/build_engine_payload.py",
     "scripts/ci_cost_ledger.py",
     "scripts/ci_eval_suite.py",
-    "scripts/ci_fixer.py",
     "scripts/ci_health_check.py",
     "scripts/feedback_prompts_export.py",
     "scripts/iteration_metrics_report.py",
