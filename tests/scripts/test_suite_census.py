@@ -37,11 +37,40 @@ def g(x):
 
 def h(x):
     return x - 1
+
+
+def k(x):
+    return x + 7
+
+
+def m(x):
+    return x * 3
 """
 
 CONTROL_TESTS = """
 import subprocess, sys
-from pkg import f, g
+import pytest
+from pkg import f, g, m
+
+
+@pytest.fixture(scope="module")
+def child_ran_k():
+    out = subprocess.run([sys.executable, "-c", "import pkg; print(pkg.k(1))"], capture_output=True, text=True)
+    return out.stdout.strip()
+
+
+def test_f_uses_a_module_fixture_child(child_ran_k):
+    assert child_ran_k == "8"
+
+
+class TestPair:
+    def test_same(self):
+        assert f(1) == "pos"
+
+
+class TestOther:
+    def test_same(self):
+        assert m(4) == 12
 
 
 def test_a_superset():
@@ -73,6 +102,11 @@ EXPECTED = {
     "test_d_subprocess_only": "KEEP_COVER",
     # its child ran only module bodies the parent ran at import time: credited to no test
     "test_e_child_only_imports": "NO_COVERAGE",
+    # its only coverage is a child spawned by a MODULE-scoped fixture (Sol P1, #4777)
+    "test_f_uses_a_module_fixture_child": "KEEP_COVER",
+    # same method name in two classes: both keep their own identity (Sol P2, #4777)
+    "TestPair::test_same": "REDUNDANT_IN_SET",
+    "TestOther::test_same": "KEEP_COVER",
 }
 
 
@@ -121,7 +155,7 @@ def _run_control(tmp_path: Path, *, label_children: bool) -> tuple[Path, Path]:
 
 
 def _buckets(result: census.Census) -> dict[str, str]:
-    return {row["test"].split("::")[1]: row["bucket"] for row in result.rows}
+    return {row["test"].split("::", 1)[1]: row["bucket"] for row in result.rows}
 
 
 # ----- end-to-end control
@@ -135,8 +169,8 @@ def test_the_control_suite_buckets_every_test_correctly(tmp_path: Path) -> None:
     db, junit = _run_control(tmp_path, label_children=True)
     result = census.analyze(db, junit)
     assert _buckets(result) == EXPECTED
-    assert result.child_contexts == 2
-    assert result.cases == 5
+    assert result.child_contexts == 3
+    assert result.cases == 8
 
 
 def test_without_the_child_plugin_the_subprocess_test_is_unmeasured(tmp_path: Path) -> None:
@@ -169,7 +203,7 @@ def test_the_cli_reports_unknown_with_exit_3_for_a_db_without_test_contexts(tmp_
     )
     assert census.main(["analyze", "--db", str(db), "--junit", str(junit), "--out-dir", str(tmp_path / "out")]) == 0
     summary = json.loads((tmp_path / "out" / "census.json").read_text(encoding="utf-8"))
-    assert summary["buckets"]["REDUNDANT_IN_SET"]["cases"] == 1
+    assert summary["buckets"]["REDUNDANT_IN_SET"]["cases"] == 2  # test_b and TestPair::test_same
 
 
 # ----- set cover, both directions
@@ -180,6 +214,20 @@ def test_the_cover_drops_a_strict_subset_even_when_it_is_the_cheapest_test() -> 
     """[if] a test is a strict coverage subset of another [then] it is REDUNDANT_IN_SET even when cheapest, [else stop]."""
     arcs = {"a": {(1, 1, 2), (1, 2, 3)}, "b": {(1, 1, 2)}, "c": {(1, 9, 10)}}
     assert census.minimal_cover(arcs, {"a": 5.0, "b": 0.0, "c": 1.0}) == {"a", "c"}
+
+
+@pytest.mark.requirement("DEVOPS-21")
+def test_a_strict_subset_is_dropped_even_when_its_superset_is_never_selected() -> None:
+    """[if] a cheap test is a strict subset of an expensive one [then] it is not kept, [else stop].
+
+    Sol P2 on #4777: a={1,2} expensive, b={1} and c={2,3} cheap. Greedy alone keeps b and c."""
+    arcs = {"a": {(1, 1, 2), (1, 2, 3)}, "b": {(1, 1, 2)}, "c": {(1, 2, 3), (1, 3, 4)}}
+    assert "b" not in census.minimal_cover(arcs, {"a": 9.0, "b": 0.0, "c": 0.0})
+
+
+def test_of_two_identical_tests_exactly_one_is_kept() -> None:
+    arcs = {"x": {(1, 1, 2)}, "y": {(1, 1, 2)}}
+    assert len(census.minimal_cover(arcs, {"x": 1.0, "y": 1.0})) == 1
 
 
 def test_the_cover_keeps_every_test_that_holds_a_unique_arc() -> None:

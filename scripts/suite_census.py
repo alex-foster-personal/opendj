@@ -101,11 +101,27 @@ def _load_arcs(db: Path) -> tuple[dict[str, set[Arc]], set[Arc], int]:
     return by_test, import_arcs, child_contexts
 
 
+def _junit_test_id(case: ET.Element) -> str:
+    """Rebuild the pytest nodeid, class path included (xunit1 ``file`` + dotted ``classname``)."""
+    path, classname, name = case.get("file"), case.get("classname", ""), case.get("name")
+    if not path or not name:
+        raise CensusUnknown(f"junit testcase without file or name: {case.attrib}")
+    module = path.removesuffix(".py").replace("/", ".")
+    if classname == module:
+        return f"{path}::{name}"
+    elif classname.startswith(module + "."):
+        return f"{path}::{classname[len(module) + 1 :].replace('.', '::')}::{name}"
+    else:
+        raise CensusUnknown(f"junit classname {classname!r} does not start with module {module!r}")
+
+
 def _load_durations(junit: Path) -> dict[str, float]:
     durations: dict[str, float] = {}
     for case in ET.parse(junit).iter("testcase"):
-        path = case.get("file") or case.get("classname", "").replace(".", "/") + ".py"
-        durations[f"{path}::{case.get('name')}"] = float(case.get("time") or 0)
+        test_id = _junit_test_id(case)
+        if test_id in durations:
+            raise CensusUnknown(f"two junit testcases rebuild to the same id {test_id!r}")
+        durations[test_id] = float(case.get("time") or 0)
     if not durations:
         raise CensusUnknown(f"{junit}: no testcases")
     return durations
@@ -114,9 +130,34 @@ def _load_durations(junit: Path) -> dict[str, float]:
 # ----- set cover
 
 
+def dominated_tests(arcs_by_test: dict[str, set[Arc]], durations: dict[str, float]) -> set[str]:
+    """Tests whose arcs another test also covers: a strict superset, or an identical set held by a
+    cheaper test (ties broken by id). Every dominated test's arcs stay covered by one that is not."""
+    holders: dict[Arc, set[str]] = defaultdict(set)
+    for t, arcs in arcs_by_test.items():
+        for arc in arcs:
+            holders[arc].add(t)
+    dominated: set[str] = set()
+    for t, arcs in arcs_by_test.items():
+        rarest = min(arcs, key=lambda arc: len(holders[arc]))
+        for u in holders[rarest] - {t}:
+            if not arcs <= arcs_by_test[u]:
+                continue
+            if len(arcs) < len(arcs_by_test[u]) or (durations.get(u, 0.0), u) < (durations.get(t, 0.0), t):
+                dominated.add(t)
+                break
+    return dominated
+
+
 def minimal_cover(arcs_by_test: dict[str, set[Arc]], durations: dict[str, float]) -> set[str]:
-    """Tests whose arcs reproduce the union; asserts the result before returning it."""
+    """Tests whose arcs reproduce the union; asserts the result before returning it.
+
+    Dominated tests are removed before selection, so a strict subset is never kept (Sol P2, #4777),
+    then a lazy greedy cover runs and a reverse prune drops anything the rest already holds.
+    """
     union: set[Arc] = set().union(*arcs_by_test.values())
+    dominated = dominated_tests(arcs_by_test, durations)
+    arcs_by_test = {t: arcs for t, arcs in arcs_by_test.items() if t not in dominated}
     remaining = set(union)
 
     def _score(t: str) -> float:
