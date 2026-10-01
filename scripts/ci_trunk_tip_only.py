@@ -29,6 +29,19 @@ MINI-PRD
             [then] refuse with a precondition error, never cancel them all [else stop]
        Measured Wed 16 Sep 2026 09:30Z: 13 of 28 unfinished runs were for PRs already
        merged or closed at the SHA under test, holding the 13-slot pytest pool.
+    R5 Completed-run cancel race ................................... done + regression
+       [if] a cancel POST is refused because the run already finished between the
+            listing and this call (any wording GitHub uses for that 409)
+            [then] re-read the run and count it cancelled, logged as already-completed
+                   [else stop]
+       [if] a cancel POST fails for any reason OTHER than the target run having
+            actually completed (re-read, not string-matched)
+            [then] exit 10 with the original precondition error [else stop]
+       Two wordings hit live on main 77b54cbe2004: "Cannot cancel a workflow run
+       that is completed" and "Cannot cancel a workflow run that is not in
+       progress", both HTTP 409 for the same already-finished run (36803336485).
+       A fixed phrase match would have missed the second; re-reading the run's own
+       status is what GitHub itself agrees on.
 
 USAGE
     uv run --no-sync python -m scripts.ci_trunk_tip_only --dry-run
@@ -88,6 +101,7 @@ class CancelOutcome(Enum):
 
     CANCELLED = "cancelled"
     SKIPPED_NOT_YET_QUEUED = "skipped_not_yet_queued"
+    ALREADY_COMPLETED = "already_completed"
 
 
 @dataclass(frozen=True)
@@ -123,8 +137,10 @@ class SweepReport:
     retained_ci_run_ids: tuple[int, ...]
     ci_cancelled: int
     ci_cancel_skipped_not_yet_queued: int
+    ci_cancel_already_completed: int
     bookkeeping_cancelled: int
     bookkeeping_cancel_skipped_not_yet_queued: int
+    bookkeeping_cancel_already_completed: int
     bookkeeping_kept: int
 
 
@@ -399,8 +415,22 @@ def execute_closed_pr_sweep(
         print(f"::notice::{line}")
         print(line)
         planned += 1
-        if not dry_run and _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
+        if dry_run:
+            continue
+        outcome = _cancel_run(run.run_id)
+        if outcome is CancelOutcome.CANCELLED:
             cancelled += 1
+        elif outcome is CancelOutcome.ALREADY_COMPLETED:
+            cancelled += 1
+            already_line = (
+                f"closed-pr-cancel-already-completed workflow={run.name} run_id={run.run_id} "
+                f"head_branch={run.head_branch} head_sha={run.head_sha} "
+                "reason=already-completed"
+            )
+            print(f"::notice::{already_line}")
+            print(already_line)
+        elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
+            pass
     return SweepCounts(planned, cancelled)
 
 
@@ -469,9 +499,35 @@ def _cancel_skip_log_line(run: QueuedRun, trunk_tip: str) -> str:
     )
 
 
+def _cancel_already_completed_log_line(run: QueuedRun, trunk_tip: str) -> str:
+    return (
+        f"bookkeeping-cancel-already-completed workflow={run.name} run_id={run.run_id} "
+        f"head_sha={run.head_sha} superseded_by={trunk_tip} reason=already-completed"
+    )
+
+
 def _is_not_yet_queued_cancel_conflict(exc: PreconditionError) -> bool:
     message = str(exc)
     return all(marker in message for marker in _NOT_YET_QUEUED_CANCEL_MARKERS)
+
+
+def _run_status(run_id: int) -> str:
+    """The run's CURRENT status, read fresh right after a refused cancel.
+
+    This is the presence check, not a second string match: GitHub phrases a
+    completed-run 409 differently depending on the run's exact prior state ("is
+    completed" vs "is not in progress", both seen live for the same run id), so a
+    fixed phrase can under-match. Only a confirmed status == "completed" on THIS
+    run counts the race as resolved; anything else means the cancel failed for a
+    real reason and must stay loud.
+    """
+    payload = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}")
+    if not isinstance(payload, dict):
+        raise PreconditionError(f"actions/runs/{run_id} response was not an object: {payload!r}")
+    status = payload.get("status")
+    if not isinstance(status, str) or not status:
+        raise PreconditionError(f"actions/runs/{run_id} has no status: {payload!r}")
+    return status
 
 
 def _cancel_run(run_id: int) -> CancelOutcome:
@@ -480,6 +536,8 @@ def _cancel_run(run_id: int) -> CancelOutcome:
     except PreconditionError as exc:
         if _is_not_yet_queued_cancel_conflict(exc):
             return CancelOutcome.SKIPPED_NOT_YET_QUEUED
+        if _run_status(run_id) == "completed":
+            return CancelOutcome.ALREADY_COMPLETED
         raise
     return CancelOutcome.CANCELLED
 
@@ -488,8 +546,10 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
     """Apply cancellations for one plan, emitting structured logs."""
     ci_cancelled = 0
     ci_cancel_skipped_not_yet_queued = 0
+    ci_cancel_already_completed = 0
     bookkeeping_cancelled = 0
     bookkeeping_cancel_skipped_not_yet_queued = 0
+    bookkeeping_cancel_already_completed = 0
 
     for run in plan.ci_to_cancel:
         if dry_run:
@@ -498,6 +558,9 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
         outcome = _cancel_run(run.run_id)
         if outcome is CancelOutcome.CANCELLED:
             ci_cancelled += 1
+        elif outcome is CancelOutcome.ALREADY_COMPLETED:
+            ci_cancelled += 1
+            ci_cancel_already_completed += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             ci_cancel_skipped_not_yet_queued += 1
 
@@ -511,6 +574,12 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
         outcome = _cancel_run(run.run_id)
         if outcome is CancelOutcome.CANCELLED:
             bookkeeping_cancelled += 1
+        elif outcome is CancelOutcome.ALREADY_COMPLETED:
+            bookkeeping_cancelled += 1
+            bookkeeping_cancel_already_completed += 1
+            already_line = _cancel_already_completed_log_line(run, plan.trunk_tip)
+            print(f"::notice::{already_line}")
+            print(already_line)
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             bookkeeping_cancel_skipped_not_yet_queued += 1
             skip_line = _cancel_skip_log_line(run, plan.trunk_tip)
@@ -522,8 +591,10 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
         retained_ci_run_ids=tuple(sorted(plan.retained_ci_run_ids)),
         ci_cancelled=ci_cancelled,
         ci_cancel_skipped_not_yet_queued=ci_cancel_skipped_not_yet_queued,
+        ci_cancel_already_completed=ci_cancel_already_completed,
         bookkeeping_cancelled=bookkeeping_cancelled,
         bookkeeping_cancel_skipped_not_yet_queued=bookkeeping_cancel_skipped_not_yet_queued,
+        bookkeeping_cancel_already_completed=bookkeeping_cancel_already_completed,
         bookkeeping_kept=plan.bookkeeping_kept,
     )
 
@@ -577,9 +648,11 @@ def main(argv: list[str] | None = None) -> int:
         f"retained_ci_run_ids={list(report.retained_ci_run_ids)} "
         f"ci_cancelled={report.ci_cancelled} "
         f"ci_cancel_skipped_not_yet_queued={report.ci_cancel_skipped_not_yet_queued} "
+        f"ci_cancel_already_completed={report.ci_cancel_already_completed} "
         f"bookkeeping_cancelled={report.bookkeeping_cancelled} "
         f"bookkeeping_cancel_skipped_not_yet_queued="
         f"{report.bookkeeping_cancel_skipped_not_yet_queued} "
+        f"bookkeeping_cancel_already_completed={report.bookkeeping_cancel_already_completed} "
         f"bookkeeping_kept={report.bookkeeping_kept} "
         f"closed_pr_planned={closed_pr.planned} closed_pr_cancelled={closed_pr.cancelled}"
     )
