@@ -415,26 +415,24 @@ def run_lane_via_queue(
         batch_id = json.loads(out)["batch_id"]
         code, out, err = _queue_cli(["run", "--batch-id", batch_id, "--backend", backend], db)
         done = _done_ids(conn_factory, backend)
-        still = [sid for sid in ids if sid not in done]
-        reason = _item_error(db, batch_id) or f"queue run exit {code}: {_last_line(err or out)}"
-        return dict.fromkeys(still, reason)
+        reasons = _item_reasons(db, batch_id)
+        fallback = f"queue run exit {code}: {_last_line(err or out)}"
+        return {sid: reasons.get(sid) or fallback for sid in ids if sid not in done}
 
     return run
 
 
-def _item_error(db: str, batch_id: str) -> str | None:
+def _item_reasons(db: str, batch_id: str) -> dict[str, str]:
+    """Each item's own failure reason, so one track's error is never copied to another."""
     code, out, _err = _queue_cli(["progress", "--batch-id", batch_id], db)
     if code != 0:
-        return None
-    try:
-        items = json.loads(out).get("items", [])
-    except (ValueError, AttributeError):
-        return None
-    for item in items:
-        error = item.get("reason")
-        if error and item.get("state") != "done":
-            return str(error)[:300]
-    return None
+        return {}
+    items = json.loads(out).get("items", [])
+    return {
+        str(item["stable_id"]): str(item["reason"])[:300]
+        for item in items
+        if item.get("reason") and item.get("state") != "done"
+    }
 
 
 def build_for_app(app: Any) -> AheadDrain:

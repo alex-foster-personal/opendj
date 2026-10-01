@@ -164,3 +164,20 @@ def test_arm_is_a_fail_fast_enum() -> None:
         aa.arm_from_environ({aa.AHEAD_ENV: "maybe"})
 
 
+
+
+def test_per_track_failures_do_not_close_the_lane() -> None:
+    """[if] tracks in a chunk fail for different reasons [then] the lane stays open, [else stop]."""
+    world = World([f"t{i}" for i in range(4)])
+    world.strips = set(world.present)
+
+    def run_lane(lane: str, _backend: str, ids: list[str]) -> dict[str, str]:
+        world.lane_runs.append((lane, list(ids)))
+        return {sid: f"TrackVanished: {sid}" for sid in ids}
+
+    world.run_lane = run_lane  # type: ignore[method-assign]
+    drain = world.drain()
+    drain.tick()
+    cov = drain.coverage()["lanes"]["loudness"]
+    assert cov["unavailable"] is None
+    assert cov["failed"] == 4 and cov["missing"] == 0
