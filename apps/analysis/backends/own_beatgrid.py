@@ -277,14 +277,10 @@ def _duration_s(
 
 
 def _drop_beats_past(payload: dict[str, Any], duration_s: float) -> None:
-    """Drop grid beats (and tempo markers) that lie past ``duration_s``.
-
-    ``duration_s`` is ``n_frames / fps``, which truncates the final partial
-    frame, while a fitted constant-tempo line can place its last beat inside
-    that partial frame (live: 268.11095 s against 268.1 s). The record
-    contract refuses a beat past the record's length, and a beat in the last
-    20 ms is not one anybody can play against, so it is not published.
-    """
+    """Drop beats and tempo markers past ``duration_s`` (= ``n_frames / fps``,
+    which truncates the last partial frame a fitted line can still place a
+    beat in: live 268.11095 s vs 268.1 s). The contract refuses them, and a
+    beat in the last 20 ms is not one anybody can play against."""
     payload["beats"] = [beat for beat in payload["beats"] if float(beat["t"]) <= duration_s]
     payload["tempo_changes"] = [
         marker for marker in payload.get("tempo_changes", ()) if float(marker["at_s"]) <= duration_s

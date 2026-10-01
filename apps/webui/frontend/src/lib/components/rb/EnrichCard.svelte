@@ -56,7 +56,7 @@
 
 	async function load(): Promise<void> {
 		try {
-			summary = (await unwrap(api.GET('/api/v1/enrich/summary'))) as unknown as EnrichSummary;
+			summary = (await unwrap(api.GET('/api/v1/enrich/summary'))) as EnrichSummary;
 			loadError = null;
 		} catch (error) {
 			loadError = `GET /api/v1/enrich/summary failed: ${error instanceof Error ? error.message : String(error)}`;

@@ -61,6 +61,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
+
 log = logging.getLogger(__name__)
 
 AHEAD_ENV: str = "MUSIC_DJ_AHEAD_ANALYSIS"
@@ -277,11 +279,7 @@ class AheadDrain:
         with self._bump_lock:
             bumped = list(self._bumped)
         present = self._src.present_fn()
-        blank = self._src.blank_tags_fn()
-        tag_targets = [
-            sid for sid in front_first([sid for sid in present if sid in blank], bumped)
-            if sid not in self._tags_failed
-        ][:TAG_BATCH]
+        tag_targets = self._tag_targets(present, bumped)
         if tag_targets:
             self._refresh_tags(tag_targets)
             return "ran:tags"
@@ -303,6 +301,11 @@ class AheadDrain:
         backend = dict(LANE_ORDER)[lane]
         self._run_lane(lane, backend, chunk)
         return f"ran:{lane}"
+
+    def _tag_targets(self, present: list[str], bumped: list[str]) -> list[str]:
+        blank = self._src.blank_tags_fn()
+        never_read = [sid for sid in present if sid in blank]
+        return [sid for sid in front_first(never_read, bumped) if sid not in self._tags_failed][:TAG_BATCH]
 
     def _refresh_tags(self, targets: list[str]) -> None:
         errors: dict[str, str] = {}
@@ -450,63 +453,6 @@ class AheadDrain:
 #-----------------------------------------------------------------------------
 # engine wiring: real sources
 #-----------------------------------------------------------------------------
-def _done_ids(conn_factory: Callable[[], sqlite3.Connection], backend: str) -> set[str]:
-    version = producer_version(backend)
-    conn = conn_factory()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT stable_id FROM analysis WHERE backend = ? AND backend_version = ?",
-            (backend, version),
-        ).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc):
-            return set()
-        raise
-    finally:
-        conn.close()
-    return {row[0] for row in rows}
-
-
-def _declined_ids(
-    conn_factory: Callable[[], sqlite3.Connection], lane: str, backend: str
-) -> dict[str, str]:
-    version = producer_version(backend)
-    conn = conn_factory()
-    try:
-        rows = conn.execute(
-            "SELECT stable_id, json_extract(record_json, '$.lanes.' || ? || '.reason') FROM analysis "
-            "WHERE backend = ? AND backend_version = ? "
-            "AND json_extract(record_json, '$.lanes.' || ? || '.status') = 'failed'",
-            (lane, backend, version, lane),
-        ).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc):
-            return {}
-        raise
-    finally:
-        conn.close()
-    return {row[0]: str(row[1]) for row in rows}
-
-
-def producer_version(backend: str) -> str:
-    """The CURRENT producer version, from each lane's light version module
-    (importing the backend itself would pull model code into the engine)."""
-    from apps.analysis_beatgrid import version as beatgrid_version
-    from apps.analysis_key import version as key_version
-    from apps.analysis_loudness import backfill as loudness_backfill
-    from apps.analysis_waveform import version as waveform_version
-
-    versions = {
-        "own_loudness.backfill": loudness_backfill.PRODUCER_VERSION,
-        "own_waveform.backfill": waveform_version.PRODUCER_VERSION,
-        "own_beatgrid.backfill": beatgrid_version.PRODUCER_VERSION,
-        "own_key.backfill": key_version.PRODUCER_VERSION,
-    }
-    if backend not in versions:
-        raise ValueError(f"ahead analysis has no producer version for {backend!r}")
-    return versions[backend]
-
-
 def _queue_cli(args: list[str], db: str) -> tuple[int, str, str]:
     argv = [sys.executable, "-m", "apps.analysis.queue_cli", "--db", db, "--json", *args]
     proc = subprocess.run(
@@ -540,7 +486,7 @@ def run_lane_via_queue(
             return dict.fromkeys(ids, f"enqueue failed: {_last_line(err or out)}")
         batch_id = json.loads(out)["batch_id"]
         code, out, err = _queue_cli(["run", "--batch-id", batch_id, "--backend", backend], db)
-        done = _done_ids(conn_factory, backend)
+        done = done_ids(conn_factory, backend)
         reasons = _item_reasons(db, batch_id)
         fallback = f"queue run exit {code}: {_last_line(err or out)}"
         return {sid: reasons.get(sid) or fallback for sid in ids if sid not in done}
@@ -628,12 +574,12 @@ def build_for_app(app: Any) -> AheadDrain:
             mapped_fn=mapped,
             has_strip_fn=has_strip,
             write_strip_fn=write_strip,
-            done_fn=lambda _lane, backend: _done_ids(ingest_routes.open_ro, backend),
+            done_fn=lambda _lane, backend: done_ids(ingest_routes.open_ro, backend),
             run_lane_fn=run_lane_via_queue(db, ingest_routes.open_ro),
             playing_fn=DeckGate(mirror),
             blank_tags_fn=blank_tags,
             refresh_tags_fn=refresh_tags,
-            declined_fn=lambda lane, backend: _declined_ids(ingest_routes.open_ro, lane, backend),
+            declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
         )
     )
 
