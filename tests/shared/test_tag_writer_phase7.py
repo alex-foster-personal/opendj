@@ -10,6 +10,7 @@ import pytest
 
 from apps.shared.tag_writer import (
     POPM_BUCKETS,
+    TagRead,
     UnifiedTags,
     UnsupportedContainer,
     read_tags,
@@ -103,7 +104,7 @@ _FULL_PLAN = UnifiedTags(
 )
 
 
-def _assert_full_plan(got: object) -> None:
+def _assert_full_plan(got: TagRead) -> None:
     assert (got.title, got.artist, got.album, got.genre) == ("Unified T", "Unified A", "Unified Alb", "Techno")
     assert (got.bpm, got.key_openkey, got.key_camelot) == (128.0, "8d", "8A")
     assert (got.energy, got.rating, got.isrc) == (7, 4, "USRC17607839")
