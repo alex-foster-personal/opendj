@@ -74,7 +74,7 @@ test('I/O mode and delay controls dispatch into the shared engine read model', a
 	await expect.poll(() => page.evaluate(() => window.musicDjToolsPerformance?.query().mixer.headphones.output_mode)).toBe('split_cable');
 	await panel.getByRole('button', { name: 'Two outputs output mode' }).click();
 	await expect.poll(() => page.evaluate(() => window.musicDjToolsPerformance?.query().mixer.headphones.output_mode)).toBe('two_outputs');
-	const delay = panel.getByRole('spinbutton', { name: 'head delay milliseconds' });
+	const delay = panel.getByRole('textbox', { name: 'head delay milliseconds' });
 	await delay.fill('37');
 	await expect.poll(() => page.evaluate(() => window.musicDjToolsPerformance?.query().mixer.headphones.head_delay_ms)).toBe(37);
 	await delay.press('ArrowUp');

@@ -12,6 +12,7 @@
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertForState, headphoneMixAccent, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
+	import { levelBullets, ioBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
@@ -98,10 +99,6 @@
 		'MAIN (practice): master stays full on speakers; MIX blends cue on top. Two outputs: MIX is headphones only.',
 		'Left is full CUE (orange). Right is full MASTER (blue). Default is full CUE.'
 	];
-	const levelBullets = [
-		'Headphone GAIN (Mixxx Head Gain). Scales the CUE path: the phones in two outputs, the cue ear in SPLIT, and the cue blend in MAIN.',
-		'It does not change the room MASTER volume. Default is 1 (full). Turn down if the phones are hot.'
-	];
 	const mainBullets = [
 		'1) Press MAIN for laptop or a single output (practice mode).',
 		'2) Turn CUE on for each channel you want in the headphone blend.',
@@ -113,36 +110,11 @@
 		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
 		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
-	const ioBullets = ['Click for Speaker / Headphone CUE quick settings without interrupting audio.'];
-	const delayBullets = [
-		'Mixxx Head Delay, 0-500 ms, on the cue path only. It does not delay the room.',
-		'CALIBRATE fills it from the measured offset when the phones are ahead of the room; type a value to override.',
-		'Two independently clocked devices still drift. Bluetooth is for auditioning, not beatmatching.'
-	];
-	const calibrateBullets = [
-		'Measures how far the headphones lag the room with the built-in mic and splits the difference between HEAD DELAY and ROOM per the alignment mode.',
-		'Live only in two outputs with a HEADPHONE CUE sink selected. Playing decks pause for the chirps and resume after.'
-	];
-	const roomBullets = [
-		'ROOM is the room (MASTER) delay, 0-1500 ms, the last node before the speakers. The phones never pay it.',
-		'The waveform and PLAY light lag by the same amount on purpose, so what you see is what the room hears.'
-	];
-	const rescanBullets = [
-		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
-	];
-	const modeBullets = [
-		'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
-		'two outputs: pin MASTER/MAIN for the room and HEADPHONE CUE for phones; cue does not bleed into the room.',
-		'split cable (SPLIT): one stereo jack; left = master, right = cue. Requires a DJ splitter, not a Y cable.'
-	];
 	const masterPickBullets = [
 		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.'
 	];
 	const cuePickBullets = [
 		'Headphone CUE sink: wired or Bluetooth. Press CALIBRATE afterwards to time it against the room. Live Bluetooth pairing is CUEOUT-12, not this control.'
-	];
-	const inputPickBullets = [
-		'Used to unlock output names and by CALIBRATE to time the chirps. Never pick a headphone/HFP mic.'
 	];
 
 	function stepHeadDelay(delta: number): void {
@@ -170,6 +142,13 @@
 		if (!(input instanceof HTMLInputElement) || input.value === '') return;
 		const value = Number(input.value);
 		if (Number.isInteger(value) && value >= 0 && value <= 500) ondelay(value);
+	}
+
+	/** The value is a text field (MIXUX-08), so the arrow keys step it here. */
+	function keyDelay(event: KeyboardEvent): void {
+		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+		event.preventDefault();
+		stepHeadDelay(event.key === 'ArrowUp' ? 1 : -1);
 	}
 
 	function scrollDelay(event: WheelEvent): void {
@@ -313,7 +292,7 @@
 					<p class="hp-context">Headphones can lead or lag MASTER, especially over Bluetooth. Delay the early path to align them.</p>
 					<div class="hp-delay-visual" aria-hidden="true"><span>MASTER ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span><span>CUE ━━━━━<svg viewBox="0 0 16 16" width="7" height="7"><path d={PLAY_TRIANGLE_PATH} fill="currentColor" /></svg></span></div>
 					<ControlExplainer title="HEAD DELAY" bullets={warningText === null ? delayBullets : [...delayBullets, warningText]} showDelayMs={100}>
-						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onwheel={scrollDelay} /><span>ms</span></label>
+						<label class="hp-delay"><span>HEAD DELAY</span><span class="hp-delay-stepper" role="group" aria-label="head delay stepper"><button type="button" class="hp-delay-step" aria-label="increase head delay" onclick={() => stepHeadDelay(1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 5 L5 1 L9 5" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button><button type="button" class="hp-delay-step" aria-label="decrease head delay" onclick={() => stepHeadDelay(-1)}><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1 L5 5 L9 1" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></button></span><input type="text" inputmode="numeric" pattern="[0-9]*" value={headphoneState.head_delay_ms} aria-label="head delay milliseconds" data-performance-control="head-delay" oninput={updateDelay} onkeydown={keyDelay} onwheel={scrollDelay} /><span>ms</span></label>
 					</ControlExplainer>
 					<p class="hp-context">Click the value, then use ↑/↓ or two-finger scroll. Hover HEAD DELAY for timing guidance.</p>
 					{#if headphoneState.master_delay_ms > 0}<p class="hp-room" data-performance-control="room-delay">ROOM +{headphoneState.master_delay_ms} ms. {roomBullets[0]}</p>{/if}
