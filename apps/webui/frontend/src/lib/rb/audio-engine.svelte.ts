@@ -219,6 +219,7 @@ import { buildDeckAudioSnapshot, estimateDeckPcmBytes } from '$lib/rb/deck-audio
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
+import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/rb/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
@@ -395,6 +396,7 @@ export {
 	supersedingScheduleTime
 };
 export { pausedSeekClock };
+export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock };
 // The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
 // its device boundary and its algebra. Deliberately NOT re-exported here: no
 // module in src ever reached its pure surface through this barrel, and a
