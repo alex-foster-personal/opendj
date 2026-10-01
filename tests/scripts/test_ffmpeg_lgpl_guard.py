@@ -9,6 +9,7 @@ Regression one-liners:
   - if the payload launcher stops exporting ODJ_FFMPEG_BIN then broken
   - if the configure line ever asks for --enable-gpl or --enable-nonfree then broken
   - if a filter a lane command line names is missing from the build then broken
+  - if changing the configure line does not change the cache artifact name then broken
 """
 
 from __future__ import annotations
@@ -131,3 +132,10 @@ def test_every_lane_filter_is_built(source: str, name: str) -> None:
     repo = Path(__file__).resolve().parents[2]
     assert name in (repo / source).read_text(), f"{source} no longer uses {name}; update LANE_FILTERS"
     assert name in lgpl.FILTERS, f"{source} needs the {name} filter but the bundled build omits it"
+
+
+def test_configure_change_changes_the_cache_name() -> None:
+    base = lgpl.configure_args(Path("/p"))
+    assert lgpl.artifact_name(base) == lgpl.artifact_name(list(base))
+    assert lgpl.artifact_name(base) != lgpl.artifact_name([*base, "--enable-filter=astats"])
+    assert lgpl.ARTIFACT_NAME == lgpl.artifact_name(lgpl.configure_args(lgpl._PREFIX_PLACEHOLDER))

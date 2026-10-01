@@ -87,9 +87,6 @@ MACOS_MIN = "12.0"
 CACHE_ROOT = Path(
     os.environ.get("MDT_FFMPEG_BUILD_CACHE", Path.home() / "Library/Caches/opendj-ffmpeg-build")
 )
-#: Bump when the configure line changes, so a stale artifact is never reused.
-BUILD_REVISION = 2
-ARTIFACT_NAME = f"ffmpeg-{FFMPEG.version}-soxr-{SOXR.version}-lgpl-r{BUILD_REVISION}"
 
 DECODERS = (
     "mp3", "mp3float", "aac", "aac_latm", "alac", "flac", "vorbis", "opus",
@@ -140,6 +137,23 @@ def configure_args(prefix: Path) -> list[str]:
         f"--extra-cflags={flags}",
         f"--extra-ldflags=-mmacosx-version-min={MACOS_MIN} -L{prefix}/lib",
     ]
+
+
+#: Stands in for the real prefix when hashing, so the name never depends on the cache path.
+_PREFIX_PLACEHOLDER = Path("/opendj-ffmpeg-prefix")
+
+
+def artifact_name(args: list[str]) -> str:
+    """Cache name keyed on the whole configure line, so ANY flag change rebuilds.
+
+    A hand-bumped revision number let an added filter (astats) ship without a
+    recompile: the old artifact passed the licence guard and was reused.
+    """
+    digest = hashlib.sha256("\0".join(args).encode()).hexdigest()[:12]
+    return f"ffmpeg-{FFMPEG.version}-soxr-{SOXR.version}-lgpl-{digest}"
+
+
+ARTIFACT_NAME = artifact_name(configure_args(_PREFIX_PLACEHOLDER))
 
 
 # ----- guard ------------------------------------------------------------------
