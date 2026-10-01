@@ -512,7 +512,7 @@
 	<div class="spacer-left"></div>
 
 	<ControlExplainer title="LINK" bullets={linkBullets} demo="link" showDelayMs={60}>
-		<button class="link-btn rb-inert" disabled aria-label="LINK">LINK</button>
+		<button class="link-btn rb-inert" disabled aria-label="LINK">LINK*</button>
 	</ControlExplainer>
 
 	<div class="spacer"></div>
