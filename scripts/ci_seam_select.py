@@ -99,7 +99,11 @@ def _resolved_imports(imports: Iterable[str], known: Mapping[str, str]) -> set[s
 
 
 def _own_ancestor_inits(path: str, tracked: frozenset[str]) -> set[str]:
-    """Tracked package initializers pytest runs before importing this module (not itself)."""
+    """Tracked package initializers pytest runs before importing this module (not itself).
+
+    pytest runs a test package's initializer when it collects a module in it (Sol's P2 on
+    #4677); importing `a.b.c` runs parent `__init__` files first, which `_resolved_imports`
+    already covers for explicit imports."""
     deps: set[str] = set()
     for parent in PurePosixPath(path).parents:
         if parent == PurePosixPath("."):
