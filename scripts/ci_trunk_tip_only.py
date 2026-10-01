@@ -27,6 +27,9 @@ MINI-PRD
             [then] cancel it and log reason=no-open-pr [else stop]
        [if] the open-PR list is empty while PR runs exist
             [then] refuse with a precondition error, never cancel them all [else stop]
+       [if] the run is a phantom (in_progress, created over PHANTOM_AFTER_HOURS ago)
+            [then] skip it, log reason=phantom and name it in the job summary; never
+            POST a cancel GitHub answers with 409 on every pass [else stop]
        Measured Wed 16 Sep 2026 09:30Z: 13 of 28 unfinished runs were for PRs already
        merged or closed at the SHA under test, holding the 13-slot pytest pool.
     R5 Completed-run cancel race ................................... done + regression
@@ -47,7 +50,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from urllib.parse import quote
 
@@ -60,6 +63,12 @@ try:
         _gh_api_json,
         _parse_github_timestamp,
         _run_gh,
+    )
+    from scripts.ci_phantom_runs import (
+        PHANTOM_AFTER_HOURS,
+        is_phantom,
+        phantom_line,
+        write_step_summary,
     )
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
@@ -105,6 +114,17 @@ class QueuedRun:
     head_repo_owner: str
     head_sha: str
     created_at: datetime
+    # GitHub's run status at listing time; only the closed-PR sweep reads it, to tell a
+    # phantom (scripts/ci_phantom_runs.py) from a live run.
+    status: str = ""
+
+    def as_phantom_probe(self) -> dict[str, object]:
+        return {
+            "id": self.run_id,
+            "name": self.name,
+            "status": self.status,
+            "created_at": self.created_at,
+        }
 
 
 @dataclass(frozen=True)
@@ -143,6 +163,7 @@ def _parse_queued_run(raw: object) -> QueuedRun:
     head_repo_owner = (head_repo or {}).get("owner", {}).get("login")
     head_sha = raw.get("head_sha")
     created_at = raw.get("created_at")
+    status = raw.get("status")
     missing = [
         label
         for label, value in (
@@ -175,6 +196,7 @@ def _parse_queued_run(raw: object) -> QueuedRun:
         head_repo_owner=head_repo_owner,
         head_sha=head_sha,
         created_at=_parse_github_timestamp(created_at, "created_at", run_id),
+        status=status if isinstance(status, str) else "",
     )
 
 
@@ -369,6 +391,8 @@ class SweepCounts:
 
     planned: int
     cancelled: int
+    # Phantom runs the sweep named and skipped instead of POSTing a cancel GitHub refuses.
+    phantom_skipped: tuple[int, ...] = ()
 
 
 def execute_closed_pr_sweep(
@@ -378,16 +402,34 @@ def execute_closed_pr_sweep(
     still_closed: Callable[[QueuedRun], bool] = (
         lambda run: _open_pr_count(run.head_repo_owner, run.head_branch) == 0
     ),
+    now: datetime | None = None,
 ) -> SweepCounts:
     """Cancel each selected run, logging one line per run.
 
     The branch is rechecked immediately before each cancellation. The open-PR snapshot can
     go stale while the sweep runs, and a pull request REOPENED in that window owns a run
     this list still calls closed. Cancelling it breaks the one contract the sweep has.
+
+    A phantom run is skipped before anything else. GitHub answers its cancel with HTTP 409
+    (runs 36802069871 and 36803336485, Thu 1 Oct 2026), which is not the not-yet-queued
+    409 `_cancel_run` tolerates, so the sweep raised on every pass and every closed-PR run
+    listed after the phantom stayed uncancelled.
     """
+    at = now or datetime.now(UTC)
     planned = 0
     cancelled = 0
+    phantoms: list[int] = []
     for run in runs:
+        if is_phantom(run.as_phantom_probe(), at):
+            line = (
+                f"closed-pr-skip workflow={run.name} run_id={run.run_id} "
+                f"head_branch={run.head_branch} reason=phantom "
+                f"threshold_hours={PHANTOM_AFTER_HOURS}"
+            )
+            print(f"::warning::{line}")
+            print(line)
+            phantoms.append(run.run_id)
+            continue
         if not still_closed(run):
             line = (
                 f"closed-pr-skip workflow={run.name} run_id={run.run_id} "
@@ -405,7 +447,16 @@ def execute_closed_pr_sweep(
         planned += 1
         if not dry_run and _cancel_run(run.run_id) in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             cancelled += 1
-    return SweepCounts(planned, cancelled)
+    if phantoms:
+        write_step_summary(
+            [
+                phantom_line(run.as_phantom_probe(), at, caller="trunk-tip-only closed-PR sweep")
+                for run in runs
+                if run.run_id in phantoms
+            ],
+            caller="trunk-tip-only closed-PR sweep",
+        )
+    return SweepCounts(planned, cancelled, tuple(phantoms))
 
 
 def _open_pr_count(head_repo_owner: str, branch: str) -> int:
@@ -591,7 +642,8 @@ def main(argv: list[str] | None = None) -> int:
         f"bookkeeping_cancel_skipped_not_yet_queued="
         f"{report.bookkeeping_cancel_skipped_not_yet_queued} "
         f"bookkeeping_kept={report.bookkeeping_kept} "
-        f"closed_pr_planned={closed_pr.planned} closed_pr_cancelled={closed_pr.cancelled}"
+        f"closed_pr_planned={closed_pr.planned} closed_pr_cancelled={closed_pr.cancelled} "
+        f"closed_pr_phantom_skipped={list(closed_pr.phantom_skipped)}"
     )
     return EXIT_OK
 

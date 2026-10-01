@@ -27,6 +27,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.request import Request, urlopen
 
+from scripts.ci_phantom_runs import is_phantom, phantom_line, write_step_summary
+
 
 def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -404,7 +406,27 @@ def runs_held_back(
     its old created_at whether or not a pass waits for it, so re-runs are the daily
     reconcile listing's case (`reconcile_listing`), and holding for them would only
     fail plain passes.
+
+    A PHANTOM (scripts/ci_phantom_runs.py: `in_progress` and created more than
+    PHANTOM_AFTER_HOURS ago) never holds: GitHub lost it, it will never complete, and
+    holding for it pinned the pass red forever (runs 36802069871 and 36803336485, Thu 1
+    Oct 2026). `phantoms_held_back` returns those runs so the caller names them.
     """
+    return [run for run in _older_than_lookback(inflight, watched, now, lookback)
+            if not is_phantom(run, now)]
+
+
+def phantoms_held_back(
+    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
+) -> list[dict[str, Any]]:
+    """The runs `runs_held_back` would have held but skips as phantoms."""
+    return [run for run in _older_than_lookback(inflight, watched, now, lookback)
+            if is_phantom(run, now)]
+
+
+def _older_than_lookback(
+    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
+) -> list[dict[str, Any]]:
     cutoff = now - lookback
     return sorted(
         (
@@ -452,17 +474,28 @@ def main(argv: list[str] | None = None) -> int:
             created_before=iso(now - lookback),
         )
         held = runs_held_back(inflight, watched, now, lookback)
+        phantoms = phantoms_held_back(inflight, watched, now, lookback)
         for run in held:
             print(
                 f"::error::run {run['id']} ({run['name']}, {run['status']}) was created "
                 f"{run['created_at']}, before the {args.lookback_hours}h lookback; this pass "
                 "will fail so the mark stays and the next pass still lists it"
             )
-        print(f"[census] in_flight={len(inflight)} held={len(held)}")
+        lines = [phantom_line(run, now, caller="ci_run_batch census") for run in phantoms]
+        for line in lines:
+            print(f"::warning::{line}; it does not hold the mark")
+        write_step_summary(lines, caller="ci_run_batch census")
+        phantom_ids = ",".join(str(run["id"]) for run in phantoms)
+        print(
+            f"[census] in_flight={len(inflight)} held={len(held)} "
+            f"phantom={len(phantoms)} phantom_ids={phantom_ids or 'none'}"
+        )
         output_file = os.environ.get("GITHUB_OUTPUT", "")
         if output_file:
             with open(output_file, "a", encoding="utf-8") as handle:
                 handle.write(f"held={len(held)}\n")
+                handle.write(f"phantom={len(phantoms)}\n")
+                handle.write(f"phantom_ids={phantom_ids}\n")
         return 0
     raise AssertionError(f"unhandled command {args.command}")
 
