@@ -15,13 +15,13 @@ through an in-process TestClient to pin the backend choice; this one pins
 the agent-facing contract end to end.
 
 Single-line intent:
-  - if a fresh packaged engine's status does not ask for the wizard then broken
-  - if detection on a machine with no rekordbox does not say rekordbox_not_found then broken
-  - if the user's ~/Music is not offered as a candidate folder then broken
-  - if a missing folder is accepted for import instead of refused with a code then broken
-  - if the folder import job does not succeed and land every file as a track then broken
-  - if status after the import still asks for the wizard, or misreports the count, then broken
-  - if dismissing over the API does not stick then broken
+  - [if] a fresh packaged engine's status does not ask for the wizard [then] fail, [else stop].
+  - [if] detection with no rekordbox lacks rekordbox_not_found [then] fail, [else stop].
+  - [if] the user's ~/Music is not offered as a candidate folder [then] fail, [else stop].
+  - [if] a missing folder is queued for import, not refused with a code [then] fail, [else stop].
+  - [if] the folder import fails or lands fewer tracks than files [then] fail, [else stop].
+  - [if] post-import status still shows the wizard or miscounts [then] fail, [else stop].
+  - [if] dismissing the wizard over the API does not stick [then] fail, [else stop].
 """
 
 from __future__ import annotations
