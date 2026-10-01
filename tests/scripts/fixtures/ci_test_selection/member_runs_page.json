@@ -1,0 +1,31 @@
+{
+  "total_count": 28,
+  "workflow_runs": [
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-30T05:25:55Z",
+      "event": "pull_request",
+      "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+      "head_sha": "586f0ead506de2c22f368718df7b20fe1bcc0313",
+      "id": 36673368018,
+      "name": "CI",
+      "pull_requests": [],
+      "run_attempt": 1,
+      "status": "completed",
+      "workflow_id": 262078015
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-30T05:07:14Z",
+      "event": "pull_request",
+      "head_branch": "af--smart-ci-s2r2--stable-evidence-batch",
+      "head_sha": "53aaf39f8d6e7d59c69acb47b3b25211a86dc6d2",
+      "id": 36671944130,
+      "name": "CI",
+      "pull_requests": [],
+      "run_attempt": 1,
+      "status": "completed",
+      "workflow_id": 262078015
+    }
+  ]
+}

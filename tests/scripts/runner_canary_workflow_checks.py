@@ -54,6 +54,7 @@ CANARY_REF = "refs/heads/canary/" + "0" * 40
 #: pytest step failing on its own, see CI_ONLY_PYTEST_KEYS.
 CI_ONLY_STEPS = (
     "Upload this shard's measured durations",
+    "Upload the PR test selection record (DEVOPS-20 escape measurement)",
     "Stage this shard's JUnit report for the isolated CI Insights job",
     "Upload this shard's JUnit report for CI Insights",
     "Fast lane verdict (pytest exit code, Trunk quarantine applied)",
