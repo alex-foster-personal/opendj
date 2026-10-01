@@ -69,7 +69,9 @@ test('a follower 6 ms off phase, under the trim the lock itself chose, still rea
 		followerBeats: FOLLOWER,
 		followerPositionSec: join.followerPositionSec - 0.006 * join.followerTempoRatio,
 		followerBaseTempo: join.followerTempoRatio,
-		pitchRangePct: 8
+		pitchRangePct: 8,
+		sinceJoinSec: 600,
+		overLineTicks: 0
 	});
 	assert.equal(decision.action, 'trim', 'precondition: a normal trim, not a re-seek');
 	const master = liveBpm(MASTER, 60, 1);

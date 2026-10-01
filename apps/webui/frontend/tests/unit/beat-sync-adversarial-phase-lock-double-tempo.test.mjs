@@ -86,7 +86,10 @@ function lockDecision(p) {
 		followerPositionSec: p.followerPositionSec,
 		followerBaseTempo: p.followerTempoRatio,
 		normalization: p.tempoNormalization,
-		pitchRangePct: 8
+		pitchRangePct: 8,
+		sinceJoinSec: 600,
+		// One tick short of a confirmed re-join: a wrong measure re-seeks HERE.
+		overLineTicks: pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS - 1
 	});
 }
 
@@ -153,7 +156,9 @@ test('control: half tempo (normalization 0.5) is measured correctly on either pa
 			followerPositionSec: p.followerPositionSec,
 			followerBaseTempo: p.followerTempoRatio,
 			normalization: 0.5,
-			pitchRangePct: 8
+			pitchRangePct: 8,
+			sinceJoinSec: 600,
+			overLineTicks: pl.PHASE_LOCK_REJOIN_CONFIRM_TICKS - 1
 		});
 		assert.equal(d.action, 'base', `master at ${masterAt}: ${d.errorMs}`);
 	}

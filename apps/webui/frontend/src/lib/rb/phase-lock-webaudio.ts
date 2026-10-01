@@ -29,6 +29,12 @@
  *   the next trim is considered.
  * - A trim goes through the same tempo-only schedule `setTempoRatio` uses
  *   (`scheduleTempo`). A `reseek` re-runs the join (`resync`), which seeks.
+ * - The lock carries what the decision needs between ticks: the base (which
+ *   FOLLOWS the local tempo on an uneven grid, see `rb/phase-lock.ts`), how
+ *   long ago the join was and how many ticks the error has been past the
+ *   re-join line (a re-join is confirmed, and never sooner than
+ *   `PHASE_LOCK_REJOIN_MIN_INTERVAL_SEC` after a join), and the offset the DJ
+ *   dialed in (`nudge`), which the lock holds instead of correcting.
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { TempoNormalization } from '$lib/rb/beat-sync-math';
@@ -94,6 +100,12 @@ export interface WebAudioPhaseLock {
 	sent: number;
 	/** A trim is in flight; the next tick waits for it. */
 	busy: boolean;
+	/** AudioContext time of the first tick after the join; null before it. */
+	joinedAtContextTime: number | null;
+	/** Consecutive ticks the error has been past the re-join line. */
+	overLineTicks: number;
+	/** The phase offset the DJ dialed in since the join, wall-clock ms. */
+	userOffsetMs: number;
 }
 
 /** Why a lock was dropped, or why it was left alone this tick. */
@@ -132,8 +144,25 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 			loadToken: ports.loadToken(deck),
 			stableId: ports.stableId(deck),
 			sent: join.base,
-			busy: false
+			busy: false,
+			joinedAtContextTime: null,
+			overLineTicks: 0,
+			userOffsetMs: 0
 		});
+	}
+
+	/**
+	 * The DJ moved `deck` by `deltaMs` of wall clock against its master (jog,
+	 * nudge; positive = ahead). The lock holds the deck there from now on. The
+	 * caller moves the audio; this only stops the lock from undoing it.
+	 */
+	function nudge(deck: PhaseLockDeckId, deltaMs: number): void {
+		if (!Number.isFinite(deltaMs)) {
+			throw new RangeError(`phase lock: nudge must be finite, got ${deltaMs}`);
+		}
+		const lock = locks.get(deck);
+		if (lock === undefined) throw new RangeError(`phase lock: deck ${deck} has no lock to nudge`);
+		lock.userOffsetMs += deltaMs;
 	}
 
 	function clear(deck: PhaseLockDeckId): void {
@@ -241,6 +270,7 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 				steps.push({ deck, kind: 'dropped', reason: superseded });
 				continue;
 			}
+			if (lock.joinedAtContextTime === null) lock.joinedAtContextTime = contextTime;
 			let decision: PhaseLockDecision;
 			try {
 				decision = phaseLockDecision({
@@ -252,7 +282,10 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 					followerBaseTempo: lock.base,
 					normalization: lock.normalization,
 					pitchRangePct: ports.pitchRangePct(deck),
-					trimming: lock.sent !== lock.base
+					trimming: lock.sent !== lock.base,
+					sinceJoinSec: contextTime - lock.joinedAtContextTime,
+					overLineTicks: lock.overLineTicks,
+					userOffsetMs: lock.userOffsetMs
 				});
 			} catch (error) {
 				// Inside the presentation frame: drop this lock and say why rather
@@ -262,6 +295,10 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 				steps.push({ deck, kind: 'dropped', reason: _message(error) });
 				continue;
 			}
+			// On an uneven grid the base follows the local tempo; every trim, the
+			// release and "a trim is in force" are relative to the base now.
+			lock.base = decision.base;
+			lock.overLineTicks = decision.overLineTicks;
 			if (decision.action === 'reseek') {
 				// A follower in its own loop is the DJ's: it is not seeked out of it.
 				if (ports.loopEngaged(deck)) {
@@ -289,5 +326,5 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 		return new Map([...locks].map(([deck, lock]) => [deck, { ...lock }]));
 	}
 
-	return { record, clear, clearAll, tick, snapshot };
+	return { record, clear, clearAll, nudge, tick, snapshot };
 }

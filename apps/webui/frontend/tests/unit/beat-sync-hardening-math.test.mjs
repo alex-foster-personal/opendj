@@ -197,6 +197,7 @@ function simulate({ masterGrid, followerGrid, seconds, lock, jitterMs = 0, seed 
 	let worst = 0;
 	let reseeks = 0;
 	let sends = 0;
+	let overLineTicks = 0;
 	for (let k = 0; k < seconds * 30; k++) {
 		const input = {
 			masterBeats: masterGrid,
@@ -206,13 +207,16 @@ function simulate({ masterGrid, followerGrid, seconds, lock, jitterMs = 0, seed 
 			followerPositionSec: f + noise(),
 			followerBaseTempo: base,
 			pitchRangePct: 8,
-			trimming: sent !== base
+			trimming: sent !== base,
+			sinceJoinSec: 600,
+			overLineTicks
 		};
 		const truth = pl.phaseErrorMs({ ...input, masterPositionSec: m, followerPositionSec: f });
 		if (truth === null) break;
 		if (k * tick > 8) worst = Math.max(worst, Math.abs(truth));
 		if (lock) {
 			const d = pl.phaseLockDecision(input);
+			overLineTicks = d.overLineTicks;
 			if (d.action === 'reseek') reseeks += 1;
 			else if (pl.phaseLockShouldSend(sent, d.tempo, base)) {
 				sent = d.tempo;

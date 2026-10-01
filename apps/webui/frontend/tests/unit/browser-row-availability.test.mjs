@@ -20,6 +20,9 @@
  * - if hide-broken hides pending rows then most of a cold playlist vanishes
  * - if deck load / preview / drag call a pending row "missing on disk" then
  *   the operator goes hunting for a file that is fine -> broken
+ * - if deck load / preview / drag refuse a pending row at all then a new
+ *   user is told to wait for a probe they never asked for -> broken
+ *   (pin c90b8036d495)
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -32,8 +35,9 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const read = (p) => readFileSync(fileURLToPath(new URL(`../../${p}`, import.meta.url)), 'utf8');
 const FIXTURE = 'tests/unit/fixtures/playlist-pending-availability-captured.json';
 const MANIFEST = 'tests/unit/fixtures/playlist-pending-availability-captured.manifest.json';
-const PENDING_LOAD = 'cannot load: availability still checking (wait for disk probe)';
-const PENDING_PREVIEW = 'preview: availability still checking (wait for disk probe)';
+const PENDING_PHRASE = 'availability still checking (wait for disk probe)';
+const MISSING_LOAD = 'cannot load: audio file missing on disk (broken link)';
+const MISSING_PREVIEW = 'preview: audio file missing on disk (broken link)';
 
 let wire;
 let contract;
@@ -119,11 +123,13 @@ describe('the mapper still refuses a broken contract', () => {
 	});
 });
 
-describe('pending rows have their own reason, not "missing"', () => {
-	it('drag refuses a pending row as pending', () => {
+// Pin c90b8036d495: a pending row is a row nobody has stat'ed yet, which is
+// not a reason to refuse it. The load itself is the probe.
+describe('pending rows load; only a known-absent file is refused', () => {
+	it('drag allows a pending row', () => {
 		const row = wire.rowFromPlaylistWire(pendingOf(captured)[0], 1);
-		assert.equal(refusal.trackDragRefusal(row), PENDING_LOAD);
-		assert.doesNotMatch(refusal.trackDragRefusal(row), /missing/);
+		assert.equal(row.file_exists, null);
+		assert.equal(refusal.trackDragRefusal(row), null);
 	});
 
 	it('drag still calls an absent row missing (control)', () => {
@@ -132,24 +138,32 @@ describe('pending rows have their own reason, not "missing"', () => {
 			/missing on disk/
 		);
 	});
+
+	it('drag still refuses a streaming row (control)', () => {
+		assert.match(
+			refusal.trackDragRefusal({ file_exists: null, is_streaming: true }),
+			/streaming track/
+		);
+	});
 });
 
 // REQ: PERF-RB-02
-test('BrowserPanel maps through the shared module and words pending refusals', () => {
+test('BrowserPanel maps through the shared module and never refuses a pending row', () => {
 	const panel = read('src/lib/components/rb/BrowserPanel.svelte');
 	assert.ok(!panel.includes('function _rowFromPlaylistWire('), 'a private mapper came back');
 	assert.ok(!panel.includes('function _rowFromListWire('), 'a private mapper came back');
 	assert.match(panel, /rowFromPlaylistWire as _rowFromPlaylistWire/);
-	assert.ok(panel.includes(PENDING_LOAD), 'deck load lost its pending reason');
-	assert.ok(panel.includes(PENDING_PREVIEW), 'preview lost its pending reason');
-	// Pending is checked BEFORE the missing-file branch in both paths, or a
-	// null file_exists falls into "missing on disk".
-	for (const [pendingPhrase, missingPhrase] of [
-		[PENDING_LOAD, 'cannot load: audio file missing on disk (broken link)'],
-		[PENDING_PREVIEW, 'preview: audio file missing on disk (broken link)']
-	]) {
-		assert.ok(panel.indexOf(pendingPhrase) < panel.indexOf(missingPhrase), pendingPhrase);
+	assert.ok(!panel.includes(PENDING_PHRASE), 'a pending row is refused with a toast again');
+	// The missing-file refusal is still there (control), and it fires on a
+	// KNOWN-absent file only: `!row.file_exists` would call a pending row
+	// (file_exists null) missing.
+	for (const missingPhrase of [MISSING_LOAD, MISSING_PREVIEW]) {
+		const at = panel.indexOf(missingPhrase);
+		assert.ok(at > 0, missingPhrase);
+		const guard = panel.slice(panel.lastIndexOf('if (', at), at);
+		assert.match(guard, /row\.file_exists === false/, missingPhrase);
 	}
+	assert.ok(!panel.includes('!row.file_exists'), 'a null file_exists reads as missing');
 	const support = read('src/lib/components/rb/browser/browser-panel-support.ts');
 	assert.match(support, /rowFromPlaylistWire.*from '\.\/browser-row-wire'/);
 });

@@ -311,7 +311,7 @@ export type PerformanceCommand =
 	| { type: 'hot_cue_trigger'; deck: DeckId; slot: HotCueSlot }
 	// LIBUX-05 "technically-working mode": UI-only overlay state, no engine
 	// write to serialize, but still a real UI action - every one of these has
-	// a cmd+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
+	// a Ctrl+R / Opt / cmd+E keyboard equivalent in technically-working-hotkeys.ts,
 	// so agent-native parity requires the same commands here.
 	| { type: 'tech_mode_toggle' }
 	| { type: 'tech_mode_peek'; peeking: boolean }
@@ -1765,7 +1765,11 @@ export function queryPerformanceState(): PerformanceState {
 					cue: { ...mixerState.headphones.routes.cue }
 				},
 				outputs: mixerState.headphones.outputs.map((output) => ({ ...output })),
-				inputs: mixerState.headphones.inputs.map((input) => ({ ...input }))
+				inputs: mixerState.headphones.inputs.map((input) => ({ ...input })),
+				device_access: {
+					...mixerState.headphones.device_access,
+					notices: [...mixerState.headphones.device_access.notices]
+				}
 			},
 			channels: {
 				1: { ...mixerState.channels[1] },

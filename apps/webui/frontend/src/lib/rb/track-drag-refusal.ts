@@ -37,9 +37,10 @@ export function trackDragRefusal(row: DraggableRow): string | null {
 	if (row.is_streaming === true) {
 		return 'streaming track - deck load not implemented (see PARITY-TODO)';
 	}
-	if (row.file_availability === 'AVAILABILITY_PENDING' || row.file_exists === null) {
-		return 'cannot load: availability still checking (wait for disk probe)';
-	}
+	// A row whose disk truth is not probed yet (file_exists null,
+	// AVAILABILITY_PENDING) is NOT refused: "wait for disk probe" means nothing
+	// to someone who just wants the track on a deck, and the load itself is the
+	// probe (pin c90b8036d495). Only a file KNOWN to be absent is refused.
 	if (row.file_exists === false) {
 		return 'cannot load: audio file missing on disk (broken link)';
 	}

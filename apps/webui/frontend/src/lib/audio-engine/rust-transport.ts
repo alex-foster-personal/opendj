@@ -14,7 +14,7 @@ import {
 	pausedMasterSelectionBlockers
 } from '$lib/rb/audio-engine-guards';
 import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
-import { resolveArmAtPosition, type TempoNormalization } from '$lib/rb/beat-sync-math';
+import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster } from '$lib/rb/master-election';
@@ -22,6 +22,7 @@ import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/perfor
 import { phaseLockDecision, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
+import type { PhaseLock } from './rust-phase-lock';
 import { DECKS, type DeckId, displayLoops, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
@@ -103,6 +104,9 @@ function _setPlaying(deck: DeckId, playing: boolean): void {
 	st.transport_pending = false;
 }
 
+/** The page clock, in seconds. */
+const _nowSec = (): number => performance.now() / 1000;
+
 /**
  * Lock `follower` to `master`. `play` starts it on the lock; `reanchor`
  * re-phases a follower that is already locked, seeking only when its phase
@@ -147,25 +151,11 @@ async function _join(
 		base: join.tempo,
 		normalization: join.plan.tempoNormalization,
 		sent: join.tempo,
-		busy: false
+		busy: false,
+		joinedAtSec: _nowSec(),
+		overLineTicks: 0,
+		userOffsetMs: 0
 	};
-}
-
-/**
- * What a join leaves for the continuous phase lock (`phaseLockTick`): the
- * BASE tempo every trim is relative to, and what the join assumed about the
- * master. A lock whose assumptions no longer hold is dropped, never trimmed.
- */
-interface PhaseLock {
-	master: DeckId;
-	masterTempo: number;
-	stableId: string | null;
-	base: number;
-	normalization: TempoNormalization;
-	/** The tempo the engine was last sent for this follower. */
-	sent: number;
-	/** A trim or re-seek is in flight; the next tick waits for it. */
-	busy: boolean;
 }
 
 const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};
@@ -236,7 +226,10 @@ export function phaseLockTick(): void {
 				followerBaseTempo: lock.base,
 				normalization: lock.normalization,
 				pitchRangePct: pitchRanges[deck],
-				trimming: lock.sent !== lock.base
+				trimming: lock.sent !== lock.base,
+				sinceJoinSec: _nowSec() - lock.joinedAtSec,
+				overLineTicks: lock.overLineTicks,
+				userOffsetMs: lock.userOffsetMs
 			});
 		} catch (e) {
 			// Thrown inside the state mirror: drop this lock and say why rather
@@ -245,6 +238,10 @@ export function phaseLockTick(): void {
 			st.sync_error = `phase lock: ${e instanceof Error ? e.message : String(e)}`;
 			continue;
 		}
+		// On an uneven grid the base follows the local tempo; every trim and the
+		// release are relative to the base now.
+		lock.base = decision.base;
+		lock.overLineTicks = decision.overLineTicks;
 		if (decision.action === 'reseek') {
 			// A follower in its own loop is the DJ's: it is not seeked out of it.
 			if (st.loop?.engaged) continue;
@@ -543,8 +540,6 @@ export function cancelArmedJump(deck: DeckId): void {
 	if (t !== undefined) clearTimeout(t);
 	delete armedJumps[deck];
 }
-
-const _nowSec = (): number => performance.now() / 1000;
 
 /**
  * The page's hot-cue logic (`hot_cue_*` in performance-ipc) driving this

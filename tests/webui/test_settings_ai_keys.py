@@ -35,21 +35,14 @@ def _client_keys() -> set[str]:
     return keys
 
 
-def _catalog_sources() -> list[str]:
-    """catalog.ts plus the sibling modules it imports setting rows from.
-
-    A row may live in its own file (midi-enabled-setting.ts) and be spliced into
-    the catalog by value import, so the ids are read from every such module.
-    """
-    catalog = (_FRONTEND / "catalog.ts").read_text(encoding="utf-8")
-    siblings = re.findall(r"^import \{[^}]+\} from '\./([\w-]+)';$", catalog, flags=re.MULTILINE)
-    # Instrument check: an import parse that finds nothing would silently drop rows.
-    assert "midi-enabled-setting" in siblings, siblings
-    return [catalog, *((_FRONTEND / f"{name}.ts").read_text(encoding="utf-8") for name in siblings)]
-
-
 def _catalog_ids() -> set[str]:
-    src = "\n".join(_catalog_sources())
+    # The catalog composes rows declared in sibling modules (the MIDI row lives
+    # in midi-enabled-setting.ts), so read catalog.ts plus every local module it
+    # imports; reading catalog.ts alone misses those ids.
+    catalog = (_FRONTEND / "catalog.ts").read_text(encoding="utf-8")
+    siblings = re.findall(r"from '\./([\w-]+)';", catalog)
+    assert "midi-enabled-setting" in siblings, siblings
+    src = catalog + "".join((_FRONTEND / f"{name}.ts").read_text(encoding="utf-8") for name in siblings)
     ids = set(re.findall(r"\bid: '([^']+)'", src)) | set(re.findall(r"_todo\('([^']+)'", src))
     assert "rb.midi_enabled" in ids, "catalog parse found no MIDI setting"
     return ids
@@ -76,3 +69,17 @@ def test_a_midi_proposal_validates_as_a_boolean(raw: object, expected: bool) -> 
 def test_the_disk_field_name_is_refused() -> None:
     with pytest.raises(ValueError, match="disallowed"):
         settings_ai._validate_proposal("midi_enabled", True)
+
+
+@pytest.mark.parametrize("raw", ["ask", "add", "move"])
+def test_a_drop_mode_proposal_validates_as_its_enum(raw: str) -> None:
+    """Pin 36e2e2a7ccff: the remembered playlist-drop choice is resettable."""
+    assert "confirm.playlist_drop_mode" in _client_keys()
+    assert settings_ai._validate_proposal("confirm.playlist_drop_mode", raw) == raw
+
+
+def test_a_drop_mode_proposal_outside_the_enum_is_refused() -> None:
+    with pytest.raises(ValueError, match="must be one of"):
+        settings_ai._validate_proposal("confirm.playlist_drop_mode", "copy")
+    with pytest.raises(ValueError, match="must be one of"):
+        settings_ai._validate_proposal("confirm.playlist_drop_mode", True)

@@ -11,8 +11,10 @@
 	 * This keeps preset automation, agent control, audio truth, and visible
 	 * knob/fader positions inseparable.
 	 */
-	import { onMount } from 'svelte';
-	import { rustCommandUnsupported } from '$lib/audio-engine/rust-mode.svelte';
+	import { onMount, untrack } from 'svelte';
+	import { listIoDevicesOnOpen, refreshIoDeviceList } from '$lib/rb/io-device-refresh';
+	import { ioDeviceAccessOnOpen } from '$lib/player/io-device-access';
+	import { ioSurface } from '$lib/rb/io-surface.svelte';
 	import { engine, getDeckState, mixerState } from '$lib/rb/audio-engine.svelte';
 	import {
 		performanceCommandStatus,
@@ -147,10 +149,17 @@
 		void runPerformanceCommandFromUi({ type: 'headphone_input_select', device_id });
 	}
 
-	onMount(() => {
-		// The Rust engine has no Web Audio devices to list (NAE-15).
-		if (rustCommandUnsupported('headphone_outputs_refresh')) return;
-		void runPerformanceCommandFromUi({ type: 'headphone_outputs_refresh' });
+	// IOPIN-14: list the devices at mount and again whenever the I/O view opens.
+	// Neither changes a route, so they bypass the command dispatcher: its session
+	// does not exist yet at mount, which is how the old mount-time listing was
+	// refused without a word. Rescan is the operator's own command and stays on
+	// the dispatcher. Mount never asks for device access; whether OPEN may is the
+	// build's one switch, set in vite.config.ts (dev server: ask once per origin;
+	// every built app: only the grant button asks).
+	const ioOpenMode = ioDeviceAccessOnOpen(import.meta.env.VITE_IO_DEVICE_ACCESS_ON_OPEN);
+	onMount(() => void refreshIoDeviceList());
+	$effect(() => {
+		if (ioSurface.open) untrack(() => void listIoDevicesOnOpen(ioOpenMode));
 	});
 </script>
 
