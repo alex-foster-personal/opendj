@@ -58,6 +58,14 @@ _DEFAULT_HEADPHONES: dict[str, Any] = {
     "supported": False,
     "active": False,
     "error": None,
+    "device_access": {
+        "status": "not_checked",
+        "action": "retry",
+        "message": "Audio devices have not been checked yet. Audio plays through the system default output.",
+        "detail": None,
+        "output_pinning": True,
+        "notices": [],
+    },
 }
 
 _DEFAULT_CHANNELS: dict[str, Any] = {
@@ -364,6 +372,34 @@ def test_no_page_returns_503() -> None:
         assert "performance page" in got.json()["detail"]
         assert posted.status_code == 503
         assert "performance page" in posted.json()["detail"]
+
+    asyncio.run(run())
+
+
+@pytest.mark.requirement("IOPIN-14")
+def test_get_returns_the_device_list_and_why_it_is_short() -> None:
+    """if GET drops device_access or the outputs then an agent reads a short list as a machine with few devices."""
+
+    async def run() -> None:
+        headphones = dict(_DEFAULT_HEADPHONES)
+        headphones["outputs"] = [{"id": "default", "label": "System default output"}]
+        headphones["device_access"] = {
+            "status": "permission_denied",
+            "action": "retry",
+            "message": "Audio device access is blocked, so only the system default output can be listed.",
+            "detail": None,
+            "output_pinning": True,
+            "notices": [],
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=_app()), base_url="http://test"
+        ) as client:
+            await _open_page(client, headphones=headphones)
+            got = await client.get("/api/v1/performance/headphones")
+        assert got.status_code == 200
+        body = got.json()
+        assert body["outputs"] == headphones["outputs"]
+        assert body["device_access"] == headphones["device_access"]
 
     asyncio.run(run())
 

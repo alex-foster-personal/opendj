@@ -73,6 +73,23 @@ class HeadphoneCalibrationOut(BaseModel):
     error: str | None
 
 
+class IoDeviceAccessOut(BaseModel):
+    """IOPIN-14: whether the device lists could be read, and what to do if not.
+
+    `status` is one of not_checked, listed, permission_needed, permission_denied,
+    api_missing, enumeration_failed, timeout. Only `listed` means `outputs` and
+    `inputs` are the machine's real device names; an agent must read this before
+    treating a short list as a machine with few devices.
+    """
+
+    status: str
+    action: str
+    message: str | None
+    detail: str | None
+    output_pinning: bool
+    notices: list[str]
+
+
 class HeadphoneStateOut(BaseModel):
     mix: float
     level: float
@@ -89,6 +106,7 @@ class HeadphoneStateOut(BaseModel):
     supported: bool
     active: bool
     error: str | None
+    device_access: IoDeviceAccessOut
 
 
 def _require_page(request: Request) -> None:
