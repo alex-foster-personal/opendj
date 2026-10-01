@@ -239,10 +239,19 @@ def _seat_is_spent(output: str) -> bool:
     (Thu 1 Oct 2026). Diff lines always start with `+`, `-`, ` ` or `@@`, so
     a line-start `ERROR:` is codex speaking. Same class as the Claude lane's
     #1394 fix, which never reached this lane."""
-    return any(
-        line.startswith("ERROR:") and any(m in line.lower() for m in CFG.SPENT_MARKERS)
-        for line in output.splitlines()
-    )
+    lowered = _codex_errors(output).lower()
+    return any(m in lowered for m in CFG.SPENT_MARKERS)
+
+
+def _codex_errors(output: str) -> str:
+    """codex's own `ERROR:` lines: the only text that may describe a refusal."""
+    return "\n".join(line for line in output.splitlines() if line.startswith("ERROR:"))
+
+
+def reported_tokens(output: str) -> str:
+    """codex's own token count. It prints it AFTER echoing the prompt, so a diff
+    quoting a count matches first; the last match is codex's."""
+    return (_TOKENS_LINE.findall(output) or ["unknown"])[-1]
 
 
 def seat_wall_report(seat: str, output: str) -> str:
@@ -266,7 +275,7 @@ def seat_wall_report(seat: str, output: str) -> str:
     conclusion to hand a merge lane. The reset time, when codex names one, is
     passed through verbatim rather than paraphrased.
     """
-    when = first_group(_RESET_AT, output).strip().strip('".')
+    when = first_group(_RESET_AT, _codex_errors(output)).strip().strip('".')
     reset = f" Codex names a reset at {when}." if when != "unknown" else ""
     return (
         f"seat {seat} refused this request with a usage limit.{reset} That refusal is "
@@ -397,7 +406,7 @@ def run(pr: str, seat: str, dry_run: bool, force: bool) -> int:
     )
     output, used, model = review_with_codex(prompt, seat)
     findings = parse_findings(output, run_id, SOL_FENCE, CFG.MAX_FINDINGS)
-    tokens = first_group(_TOKENS_LINE, output)
+    tokens = reported_tokens(output)
     print(f"[sol-review] seat={used} model={model} tokens={tokens} findings={len(findings)}")
     for finding in findings:
         anchor = f"{finding.path}:{finding.line}" if finding.line else finding.path
