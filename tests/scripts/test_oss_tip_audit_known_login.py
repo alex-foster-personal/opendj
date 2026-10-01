@@ -5,6 +5,8 @@ named the nucbox WSL account as a bare word (Thu 1 Oct 2026). scripts/oss_tip_lo
 harvests every login the published tree puts in a home-directory position, records
 included, and reports a whole-word occurrence of one in any scanned file.
 
+- [if] a login revealed only by a record is written bare in a scanned doc [then] the audit reports known-login and exits 1, [else stop].
+
 Regression lines:
 - if a login revealed only by a write-once record is not reported bare in a doc then broken
 - if a bare login is reported when nothing in the tree reveals it then broken (the
