@@ -146,8 +146,8 @@ test('mutual sync: switching the master between two synced decks re-joins the ne
 	assert.equal(m.rustMaster.deck, 2);
 	assert.ok(sent.some((c) => c.type === 'tempo' && c.deck === 1), 'deck 1 now follows deck 2');
 	assert.ok(!sent.some((c) => c.deck === 2 && c.type !== 'tempo'), 'the new master is not moved');
+	assert.equal(m.phaseLocksForTest()[1]?.master, 2, 'the join records the new lock');
 	m.phaseLockTick();
-	assert.equal(m.phaseLocksForTest()[1]?.master, 2);
 	assert.equal(m.phaseLocksForTest()[2], undefined, 'the old follower lock is gone');
 });
 

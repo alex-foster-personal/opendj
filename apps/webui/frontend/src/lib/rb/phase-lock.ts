@@ -16,8 +16,9 @@
  * - outside it, a proportional nudge that would remove the error over
  *   `PHASE_LOCK_CORRECTION_BEATS` master beats, capped at
  *   `PHASE_LOCK_MAX_TRIM` of the base and never outside the pitch range;
- * - past `PHASE_LOCK_RESEEK_BEATS` the lock is lost, and the caller re-runs
- *   the join (a seek) instead of trimming for tens of seconds.
+ * - past `PHASE_LOCK_RESEEK_BEATS` or `PHASE_LOCK_RESEEK_MS`, whichever is
+ *   smaller, the lock is lost, and the caller re-runs the join (a seek)
+ *   instead of trimming an audible flam for tens of seconds.
  *
  * Phase is measured through EACH deck's own grid (fractional beat index from
  * its beat timestamps), so a variable grid is followed beat by beat rather
@@ -69,6 +70,15 @@ export const PHASE_LOCK_MAX_TRIM = 0.003;
  * to pull it back, so the caller re-seeks through the join instead.
  */
 export const PHASE_LOCK_RESEEK_BEATS = 0.25;
+
+/**
+ * ...and, whatever the tempo, past this many ms. The capped trim corrects
+ * only PHASE_LOCK_MAX_TRIM of a second per second (3 ms/s), so the quarter
+ * beat alone left every error between a flam (~10 ms) and 117 ms to be walked
+ * back audibly for up to ~34 s. At 15 ms a trimmed error is under the 10 ms
+ * flam line within ~1.7 s; anything larger is one re-join instead.
+ */
+export const PHASE_LOCK_RESEEK_MS = 15;
 
 /** A new trim is sent only when it moved by more than this fraction of the
  * base (or returns to base), so the loop does not send one command per tick:
@@ -135,9 +145,15 @@ export function phaseErrorMs(input: PhaseLockInput): number | null {
 	const m = gridBeatPosition(input.masterBeats, input.masterPositionSec);
 	const f = gridBeatPosition(input.followerBeats, input.followerPositionSec);
 	if (m === null || f === null) return null;
-	// The follower's position in MASTER beats, wrapped to the nearest one.
-	const diff = f / (input.normalization ?? 1) - m;
-	return (diff - Math.round(diff)) * _masterBeatWallMs(input, m);
+	// The follower's position in MASTER beats, wrapped to the nearest phase
+	// point. A double-tempo follower (normalization 2) meets a master beat on
+	// EVERY one of its own beats, so its phase points are half a master beat
+	// apart: wrapping to whole master beats read an odd-anchored, in-phase
+	// follower as half a beat off and re-seeked it forever.
+	const normalization = input.normalization ?? 1;
+	const unit = Math.min(1, 1 / normalization);
+	const diff = f / normalization - m;
+	return (diff - unit * Math.round(diff / unit)) * _masterBeatWallMs(input, m);
 }
 
 /** The trim decision for one tick. Throws on a malformed input (a bug). */
@@ -153,7 +169,7 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 	if (errorMs === null) return { action: 'unmeasured', tempo: base, errorMs: null };
 	const m = gridBeatPosition(input.masterBeats, input.masterPositionSec) as number;
 	const beatWallMs = _masterBeatWallMs(input, m);
-	if (Math.abs(errorMs) > PHASE_LOCK_RESEEK_BEATS * beatWallMs) {
+	if (Math.abs(errorMs) > Math.min(PHASE_LOCK_RESEEK_BEATS * beatWallMs, PHASE_LOCK_RESEEK_MS)) {
 		return { action: 'reseek', tempo: base, errorMs };
 	}
 	const deadband = input.trimming ? PHASE_LOCK_RELEASE_MS : PHASE_LOCK_DEADBAND_MS;

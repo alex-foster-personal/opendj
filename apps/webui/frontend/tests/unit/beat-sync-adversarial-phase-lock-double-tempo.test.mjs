@@ -1,6 +1,6 @@
 /**
- * ADVERSARIAL (round 1, intentionally RED until fixed): the continuous phase
- * lock (NAE-19) measures a FALSE half-master-beat error on a correctly joined
+ * ADVERSARIAL (round 1; was RED, FIXED by the phase-lock.ts wrap-unit change):
+ * the continuous phase lock (NAE-19) measured a FALSE half-master-beat error on a correctly joined
  * double-tempo follower, so it re-seeks a deck that is already in phase.
  *
  * Setup a DJ hits: master at ~87 BPM (half-time hip-hop, or any track
@@ -157,4 +157,25 @@ test('control: half tempo (normalization 0.5) is measured correctly on either pa
 		});
 		assert.equal(d.action, 'base', `master at ${masterAt}: ${d.errorMs}`);
 	}
+});
+
+test('control: at normalization 1 a half-beat offset still reads half a beat (the fix only widens N=2)', () => {
+	// Overshoot guard: wrapping EVERY pair in half-beat units would make a
+	// follower playing on the master's off-beats read as in phase.
+	const m128 = grid(128, 0.1, 1200);
+	const f126 = grid(126, 0.05, 1200);
+	const mb = pl.gridBeatPosition(m128, 60);
+	const i = Math.floor(mb);
+	const offBeat = f126[i].t + (mb - i + 0.5) * (f126[i + 1].t - f126[i].t);
+	const error = pl.phaseErrorMs({
+		masterBeats: m128,
+		masterPositionSec: 60,
+		masterTempo: 1,
+		followerBeats: f126,
+		followerPositionSec: offBeat,
+		followerBaseTempo: 128 / 126,
+		normalization: 1,
+		pitchRangePct: 8
+	});
+	assert.ok(Math.abs(Math.abs(error) - 234.375) < 0.5, `off-beat follower reads ${error} ms`);
 });

@@ -9,7 +9,8 @@
  *   trim would accumulate into a permanent tempo change
  * - if a follower AHEAD is not slowed (or one behind not sped up) then broken
  * - if a trim exceeds the cap, or the deck's pitch range, then broken
- * - if a lost lock (a quarter beat off) is trimmed instead of re-seeked then broken
+ * - if a lost lock (a quarter beat, or PHASE_LOCK_RESEEK_MS, off - whichever
+ *   is smaller) is trimmed instead of re-seeked then broken
  * - if a 0.05% rate error is not held within 5 ms over five minutes then
  *   broken; the control without the loop must drift past 100 ms, or the
  *   simulation is not testing anything
@@ -93,8 +94,12 @@ test('ahead slows the follower, behind speeds it up, proportionally then capped'
 	assert.ok(behind.tempo > BASE);
 
 	for (const sign of [1, -1]) {
-		const far = pl.phaseLockDecision(input(60, inPhase(60) + sign * 0.08 * BASE));
-		assert.equal(far.action, 'trim', '80 ms is still under a quarter beat');
+		// 12 ms: past the 0.3% cap (which saturates near 5.6 ms) and still under
+		// PHASE_LOCK_RESEEK_MS. It was 80 ms before the re-seek line moved from a
+		// quarter beat alone to min(quarter beat, 15 ms): an 80 ms error is now a
+		// re-join, not a 27 s trim (beat-sync-adversarial-phase-lock-recovery).
+		const far = pl.phaseLockDecision(input(60, inPhase(60) + sign * 0.012 * BASE));
+		assert.equal(far.action, 'trim', '12 ms is still under the re-seek line');
 		const cap = BASE * (1 - sign * pl.PHASE_LOCK_MAX_TRIM);
 		assert.ok(Math.abs(far.tempo - cap) < 1e-12, `capped at ${cap}, got ${far.tempo}`);
 	}
@@ -103,12 +108,12 @@ test('ahead slows the follower, behind speeds it up, proportionally then capped'
 test('a trim never leaves the pitch range', () => {
 	// A base already at the top of a +-6% range: speeding up is clamped there.
 	const d = pl.phaseLockDecision(
-		input(60, inPhase(60) - 0.05 * BASE, { followerBaseTempo: 1.06, pitchRangePct: 6 })
+		input(60, inPhase(60) - 0.012 * BASE, { followerBaseTempo: 1.06, pitchRangePct: 6 })
 	);
 	assert.equal(d.action, 'trim');
 	assert.equal(d.tempo, 1.06);
 	const lo = pl.phaseLockDecision(
-		input(60, inPhase(60) + 0.05 * BASE, { followerBaseTempo: 0.94, pitchRangePct: 6 })
+		input(60, inPhase(60) + 0.012 * BASE, { followerBaseTempo: 0.94, pitchRangePct: 6 })
 	);
 	assert.ok(Math.abs(lo.tempo - 0.94) < 1e-12, `clamped at the bottom, got ${lo.tempo}`);
 });
@@ -117,6 +122,9 @@ test('a lost lock asks for a re-seek, and the base meanwhile', () => {
 	const d = pl.phaseLockDecision(input(60, inPhase(60) + 0.15 * BASE));
 	assert.equal(d.action, 'reseek');
 	assert.equal(d.tempo, BASE);
+	// The ms line: 16 ms re-joins, 14 ms is still trimmed (both directions).
+	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) - 0.016 * BASE)).action, 'reseek');
+	assert.equal(pl.phaseLockDecision(input(60, inPhase(60) + 0.014 * BASE)).action, 'trim');
 	// Wrapped to the NEAREST master beat, never most of a beat of error.
 	const wrap = pl.phaseErrorMs(input(60, inPhase(60) + 0.9 * MASTER_BEAT_MS * BASE / 1000));
 	assert.ok(Math.abs(wrap + 0.1 * MASTER_BEAT_MS) < 0.01, `0.9 beat ahead is 0.1 behind, got ${wrap}`);

@@ -1,6 +1,6 @@
 /**
- * ADVERSARIAL (round 1, intentionally RED until fixed): a phase error just
- * under PHASE_LOCK_RESEEK_BEATS is walked back by the capped trim for tens of
+ * ADVERSARIAL (round 1; was RED, FIXED by PHASE_LOCK_RESEEK_MS): a phase error
+ * just under PHASE_LOCK_RESEEK_BEATS was walked back by the capped trim for tens of
  * seconds, all of it an audible flam.
  *
  * `phaseLockDecision` (src/lib/rb/phase-lock.ts) re-seeks only past a quarter
