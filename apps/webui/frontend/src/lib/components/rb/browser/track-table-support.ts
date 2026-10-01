@@ -7,6 +7,7 @@ export { buildCurveSegments, segmentPath } from '$lib/rb/autoplay-curve';
 export { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
 export { installTrackDragGhost, removeTrackDragGhost } from '$lib/rb/drag-ghost';
 export { trackDragRefusal } from '$lib/rb/track-drag-refusal';
+export { libraryWheelScroll } from '$lib/rb/library-wheel-scroll';
 export {
 	bpmHeatColor,
 	bpmHeatLabel,

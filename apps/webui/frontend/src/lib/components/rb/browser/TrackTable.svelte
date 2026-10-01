@@ -51,6 +51,7 @@
 		installTrackDragGhost,
 		removeTrackDragGhost,
 		trackDragRefusal,
+		libraryWheelScroll,
 		bpmHeatColor,
 		bpmHeatLabel,
 		classifyBpmHeat,
@@ -1270,6 +1271,7 @@
 	<div
 		class="table-wrap"
 		bind:this={wrapEl}
+		use:libraryWheelScroll
 		onscroll={(e) => {
 			const top = e.currentTarget.scrollTop;
 			liveScrollTop = top;
