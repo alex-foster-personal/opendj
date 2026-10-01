@@ -94,6 +94,8 @@ class Track:
     # PREF-01: {"regular": float|None, "min": float|None, "max": float|None},
     # or None when never set for this track. Never fabricated.
     tempo_pref: dict[str, float | None] | None = None
+    # GRIDFLAG-04: the user hid this track's beatgrid flag. False when never set.
+    grid_flag_dismissed: bool = False
     file_path: str | None = None
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
@@ -208,6 +210,13 @@ class BatchConflictError(BackendError):
     def __init__(self, conflicts: list[dict[str, str]]) -> None:
         self.conflicts = conflicts
         super().__init__("one or more If-Match values do not match")
+
+
+def resolve_grid_flag_dismissed_write(patch_value: Any) -> bool:
+    """Validate a ``grid_flag_dismissed`` patch value (GRIDFLAG-04): a bool."""
+    if not isinstance(patch_value, bool):
+        raise BackendError("grid_flag_dismissed must be true or false")
+    return patch_value
 
 
 def resolve_tempo_pref_write(patch_value: Any) -> dict[str, float | None] | None:
@@ -567,6 +576,13 @@ class InMemoryBackend:
                     prov["tempo_pref"] = Provenance(value=updated.tempo_pref, source=source,
                                                     confidence=1.0, modified_at=now,
                                                     status="ok")
+                if "grid_flag_dismissed" in update.patch:
+                    updated.grid_flag_dismissed = resolve_grid_flag_dismissed_write(
+                        update.patch["grid_flag_dismissed"]
+                    )
+                    prov["grid_flag_dismissed"] = Provenance(
+                        value=updated.grid_flag_dismissed, source=source,
+                        confidence=1.0, modified_at=now, status="ok")
                 if "file_path" in update.patch:
                     file_path = update.patch["file_path"]
                     if not isinstance(file_path, str) or not file_path:

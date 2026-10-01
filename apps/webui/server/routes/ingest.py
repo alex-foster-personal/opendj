@@ -252,8 +252,11 @@ def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
 @router.get("/coverage", response_model=CoverageOut)
 def get_coverage(request: Request) -> CoverageOut:
     snapshot = build_snapshot(request.app)
-    return CoverageOut(
-        total_tracks=snapshot.playability.total, **ingest_coverage.response_fields(snapshot)
+    return CoverageOut.model_validate(
+        {
+            "total_tracks": snapshot.playability.total,
+            **ingest_coverage.response_fields(snapshot),
+        }
     )
 
 

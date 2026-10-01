@@ -13,7 +13,7 @@
  * fallbacks, no invented data.
  */
 
-import { API_BASE, timeoutSignal } from '$lib/api';
+import { API_BASE, getTrack, patchTrack, timeoutSignal } from '$lib/api';
 import type { PlaylistDetail, PlaylistSummary, Track } from '$lib/api';
 import type { components } from '$lib/api-types';
 import { api, unwrap } from '$lib/api/client';
@@ -24,6 +24,7 @@ import type { AnlzCue, AnlzData, HotCueMutation, HotCueSlotState } from './anlz-
 import type { HotCueSlot } from './hot-cue-types';
 export type { HotCueReversal, HotCueMutation, HotCueSlotState } from './anlz-types';
 import type { ArtworkSize, QualityRung, RbMeta, TrackQuality } from './library-types';
+import type { GridQualityRow } from './analysis-issues';
 import type { LyricsRowSummary } from './lyrics/types';
 import { anlzQuery, defaultAnlzPoints } from './runtime-policy-points';
 import { isUsbTrackId, loadStickSessionEdits, refuseStickRead, trackApiPath } from './track-source';
@@ -433,6 +434,8 @@ export interface PlaylistTrackRowWire {
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	lyrics?: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
+	grid_quality?: GridQualityRow | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 }
@@ -654,6 +657,8 @@ export type TrackListItemWire = Track & {
 	artwork_available: boolean | null;
 	artwork_status: 'ok' | 'no_image_path' | 'unresolved' | 'file_missing';
 	lyrics?: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02). Optional for older payloads. */
+	grid_quality?: GridQualityRow | null;
 	is_remix?: boolean | null;
 	is_radio_edit?: boolean | null;
 };
@@ -829,6 +834,19 @@ export async function fetchHotCueSlots(stable_id: string): Promise<HotCueSlotSta
 	const slots = await _fetchJson<HotCueSlotState[]>(trackApiPath(stable_id, '/hot-cues'));
 	if (!isUsbTrackId(stable_id)) return slots;
 	return (await loadStickSessionEdits()).withSessionHotCueSlots(stable_id, slots);
+}
+
+/** Set a track's rating and answer the rating now in effect. A library track
+ * fetches a fresh ETag, then PATCHes with If-Match (a ConflictError carries the
+ * current row). A stick track's rating is a session edit with no request (USB
+ * Play spec decision 2). */
+export async function saveTrackRating(stable_id: string, next: number): Promise<number | null> {
+	if (isUsbTrackId(stable_id)) {
+		(await loadStickSessionEdits()).setSessionRating(stable_id, next);
+		return next;
+	}
+	const etag = (await getTrack(stable_id)).etag;
+	return (await patchTrack(stable_id, etag, { rating: next })).track.rating ?? null;
 }
 
 /** CAS-save. The required revision comes from fetchHotCueSlots, and the

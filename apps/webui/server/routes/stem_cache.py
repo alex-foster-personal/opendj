@@ -135,7 +135,7 @@ def _index_corrupt(exc: stem_index.StemIndexError) -> HTTPException:
 
 
 def _enforcement_out(report: stem_cache_budget.EnforceReport) -> StemCacheEnforcementOut:
-    return StemCacheEnforcementOut(**report.as_dict())
+    return StemCacheEnforcementOut.model_validate(report.as_dict())
 
 
 @router.get(
@@ -161,11 +161,13 @@ def get_stem_cache_status(request: Request) -> StemCacheStatusOut:
         raise _index_corrupt(exc) from exc
     enforcer = getattr(app.state, "stem_cache_enforcer", None)
     last = enforcer.last_report if enforcer is not None else None
-    return StemCacheStatusOut(
-        **payload,
-        enforcer_running=bool(enforcer is not None and enforcer.running),
-        last_enforcement=_enforcement_out(last) if last is not None else None,
-        last_error=enforcer.last_error if enforcer is not None else None,
+    return StemCacheStatusOut.model_validate(
+        {
+            **payload,
+            "enforcer_running": bool(enforcer is not None and enforcer.running),
+            "last_enforcement": _enforcement_out(last) if last is not None else None,
+            "last_error": enforcer.last_error if enforcer is not None else None,
+        }
     )
 
 

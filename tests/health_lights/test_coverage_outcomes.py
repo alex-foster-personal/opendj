@@ -4,6 +4,8 @@ Regression lines:
   - if an unchanged failure can be retried before its backoff elapses then broken
   - if a failure is still retried after MAX_ATTEMPTS then broken
   - if a changed audio file does not re-arm a failed track then broken
+
+[if] an unchanged failure retries before its backoff or past the attempt cap [then] fail, [else stop].
 """
 from __future__ import annotations
 

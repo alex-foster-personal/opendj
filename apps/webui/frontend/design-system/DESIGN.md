@@ -78,8 +78,8 @@ Light theme (`html[data-theme='light'] .perf-root`): `--rb-bg: #f7f3eb`, `--rb-p
 - App shell: CSS grid, 220 px sidebar + fluid content, sidebar padding 1 rem, content 1.5 rem.
 - Performance app, top to bottom: 28 px topbar (`--rb-topbar-h`), one 43 px waveform row per deck
   (`--rb-waverow-h`), deck headers with 75 px artwork (`--rb-deck-art`) and a 28 px overview strip
-  (`--rb-strip-h`), then the browser table taking the remaining height. A fixed bottom-left nav reserves
-  `--rb-perf-nav-w: 232px` so the browser's bottom bar never overlaps it.
+  (`--rb-strip-h`), then the browser table taking the remaining height. Nothing floats over it: the browser's
+  bottom bar starts `--rb-perf-nav-w: 6px` from the left edge.
 - Density: inside `.perf-root` spacing is 2 to 12 px and radii are 2 to 4 px; app chrome uses 0.4 to
   1.5 rem and 6 to 8 px radii. Never mix the scales on one surface.
 - Decks 1 and 2 are primary: decks 3 and 4 use the lighter `--rb-waverow-secondary` fill so they recede.

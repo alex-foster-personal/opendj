@@ -1,8 +1,8 @@
-Layout metrics: topbar 28 px, waveform rows 43 px, deck art 75 px, overview strip 28 px, nav width 232 px, 220 px app sidebar.
+Layout metrics: topbar 28 px, waveform rows 43 px, deck art 75 px, overview strip 28 px, bottom-bar inset 6 px, 220 px app sidebar.
 
 Performance app stacks top to bottom: `--rb-topbar-h` topbar, one `--rb-waverow-h` row per deck, deck headers with
-`--rb-deck-art` artwork and a `--rb-strip-h` overview strip, then the browser table filling the remaining height. The
-fixed bottom-left nav reserves `--rb-perf-nav-w` so the browser's bottom bar never overlaps it.
+`--rb-deck-art` artwork and a `--rb-strip-h` overview strip, then the browser table filling the remaining height. Nothing
+floats over it: the browser's bottom bar is inset from the left edge by `--rb-perf-nav-w`.
 
 App chrome: `.app-shell` is `grid-template-columns: 220px 1fr`; `.sidebar` padding 1 rem, `.content` padding 1.5 rem
 with horizontal overflow rather than reflow.

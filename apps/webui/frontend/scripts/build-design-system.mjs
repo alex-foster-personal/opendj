@@ -217,11 +217,11 @@ function layoutCard(app, perfDark) {
 		.join('\n');
 	const body =
 		`<section class="ds-section"><h2>Layout metrics</h2><div class="perf-root ds-perf-frame">${rows}</div>` +
-		`<p class="ds-note">App shell: <code>.app-shell</code> is a two-column grid, 220 px sidebar + fluid content. Performance app: a fixed 28 px topbar, one 43 px waveform row per deck, decks, then the browser table filling the rest; the bottom-left nav reserves <code>--rb-perf-nav-w</code>.</p></section>`;
+		`<p class="ds-note">App shell: <code>.app-shell</code> is a two-column grid, 220 px sidebar + fluid content. Performance app: a fixed 28 px topbar, one 43 px waveform row per deck, decks, then the browser table filling the rest; the browser's bottom bar is inset by <code>--rb-perf-nav-w</code>.</p></section>`;
 	return cardShell({
 		group: GROUPS.foundations,
 		name: 'LayoutMetrics',
-		subtitle: 'Bar heights, art size, nav width, shell grid',
+		subtitle: 'Bar heights, art size, bottom-bar inset, shell grid',
 		title: 'Open DJ layout metrics',
 		body
 	});

@@ -44,8 +44,9 @@ export PATH="$HOME/.local/bin:$PATH"
 # signalsmith-stretch crate in apps/audio-engine runs at build time.
 # libdbus-1-dev: libdbus-sys in the desktop shells.
 # gh: the REST smoke test below, whenever the runner sets a GitHub token.
-# openssh-client: the image has no ssh, which the dispatch MCP (.mcp.json)
-# needs to reach nucbox-wsl and which the tailnet join exists to serve.
+# openssh-client: the image has no ssh, which the dispatch MCP (.mcp.json,
+# served from a fleet-af checkout) needs to reach nucbox-wsl and which the
+# tailnet join exists to serve.
 # xvfb + libnss3 libgbm1 libgtk-3-0t64 libxss1: run the Electron shell
 # (apps/desktop/electron) headless under `xvfb-run`.
 # ODJ_CLOUD_TAURI=1 adds the WebKitGTK stack the Tauri shell compiles against;

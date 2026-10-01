@@ -31,6 +31,7 @@ def _scan(state_db: Path, mounted: set[str] | None = None) -> library_playable.L
 
 @pytest.mark.requirement("HEALTH-01")
 def test_every_row_lands_in_exactly_one_bucket(state_db: Path, tmp_path: Path) -> None:
+    """[if] the playable buckets do not sum to the live row total [then] fail, [else stop]."""
     here = fx.audio_file(tmp_path / "music", "here.mp3")
     lost = fx.audio_file(tmp_path / "music", "lost.mp3")
     fx.seed_track(state_db, "present", str(here))
@@ -63,7 +64,10 @@ def test_every_row_lands_in_exactly_one_bucket(state_db: Path, tmp_path: Path) -
 
 @pytest.mark.requirement("HEALTH-01")
 def test_off_machine_rows_are_not_broken(state_db: Path) -> None:
-    """A library subset: rows whose audio lives on another machine."""
+    """A library subset: rows whose audio lives on another machine.
+
+    [if] an off-machine row is counted as broken [then] fail, [else stop].
+    """
     for index in range(5):
         path = f"/Users/someone-else/Music/{index}.mp3"
         fx.seed_track(state_db, f"remote-{index}", path)
@@ -77,7 +81,10 @@ def test_off_machine_rows_are_not_broken(state_db: Path) -> None:
 
 @pytest.mark.requirement("HEALTH-01")
 def test_a_genuinely_broken_local_link_stays_broken(state_db: Path, tmp_path: Path) -> None:
-    """Overshoot control: 'not broken' must not swallow a real local loss."""
+    """Overshoot control: 'not broken' must not swallow a real local loss.
+
+    [if] a link recorded present here and then lost is not broken_here [then] fail, [else stop].
+    """
     lost = fx.audio_file(tmp_path / "music", "lost.mp3")
     fx.seed_track(state_db, "lost", str(lost))
     fx.claim_here(state_db, "lost", lost)
@@ -92,6 +99,7 @@ def test_a_genuinely_broken_local_link_stays_broken(state_db: Path, tmp_path: Pa
 
 @pytest.mark.requirement("HEALTH-01")
 def test_soft_deleted_rows_are_in_no_bucket(state_db: Path, tmp_path: Path) -> None:
+    """[if] a soft-deleted row lands in any playable bucket [then] fail, [else stop]."""
     here = fx.audio_file(tmp_path / "music", "here.mp3")
     fx.seed_track(state_db, "kept", str(here))
     fx.seed_track(state_db, "deleted", str(here))
@@ -105,6 +113,7 @@ def test_soft_deleted_rows_are_in_no_bucket(state_db: Path, tmp_path: Path) -> N
 
 @pytest.mark.requirement("HEALTH-01")
 def test_a_mounted_volume_path_that_is_gone_is_not_awaiting(state_db: Path) -> None:
+    """[if] a missing path on a mounted volume counts as awaiting its volume [then] fail, [else stop]."""
     fx.seed_track(state_db, "drive", "/Volumes/MOUNTED-HEALTH/drive.mp3")
 
     scan = _scan(state_db, mounted={"MOUNTED-HEALTH"})

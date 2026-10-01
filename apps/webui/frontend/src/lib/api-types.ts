@@ -917,6 +917,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/beatgrid-flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Beatgrid Flags
+         * @description Tracks by beatgrid class, with the numbers behind each verdict.
+         *
+         *     `counts` cover the whole denominator whatever the filter and limit.
+         */
+        get: operations["list_beatgrid_flags_api_v1_beatgrid_flags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan Status */
+        get: operations["get_scan_status_api_v1_beatgrid_flags_scan_get"];
+        put?: never;
+        /**
+         * Start Scan
+         * @description Bring stored verdicts up to date. Incremental: an unchanged grid is
+         *     skipped after one stat. `wait=true` returns when the scan has finished;
+         *     otherwise it runs on a background thread and `GET /scan` reports it.
+         */
+        post: operations["start_scan_api_v1_beatgrid_flags_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/beatgrid-flags/{stable_id}/dismissed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Flag Dismissed
+         * @description Hide (or restore) one track's beatgrid flag. Stored as the user track
+         *     field `grid_flag_dismissed` (source `webui`), the same path rating and
+         *     comments take, so it carries provenance and travels with them.
+         */
+        put: operations["set_flag_dismissed_api_v1_beatgrid_flags__stable_id__dismissed_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bench/kpi": {
         parameters: {
             query?: never;
@@ -7387,6 +7454,93 @@ export interface components {
             stable_id: string;
         };
         /**
+         * BeatgridFlagCounts
+         * @description Every count is over the response's `denominator`. The four classes sum
+         *     to it; `dismissed` counts flagged tracks whose flag the user hid.
+         */
+        BeatgridFlagCounts: {
+            /** Dismissed */
+            dismissed: number;
+            /** Ok */
+            ok: number;
+            /** Suspect */
+            suspect: number;
+            /** Unknown */
+            unknown: number;
+            /** Variable Tempo */
+            variable_tempo: number;
+        };
+        /** BeatgridFlagItem */
+        BeatgridFlagItem: {
+            /** Artist */
+            artist: string | null;
+            /** Computed At */
+            computed_at: string | null;
+            /** Dismissed */
+            dismissed: boolean;
+            /**
+             * Grid Class
+             * @enum {string}
+             */
+            grid_class: "ok" | "suspect" | "variable_tempo" | "unknown";
+            /** Grid Source */
+            grid_source: string | null;
+            /** Interval Count */
+            interval_count: number;
+            /** Median Bpm */
+            median_bpm: number | null;
+            /** Message */
+            message: string;
+            /** Reason */
+            reason: string | null;
+            /** Stable Id */
+            stable_id: string;
+            /** Steady Coverage */
+            steady_coverage: number | null;
+            /** Steady Line Bpm */
+            steady_line_bpm: number | null;
+            /** Steady On Line */
+            steady_on_line: number | null;
+            /** Tempo Marker Count */
+            tempo_marker_count: number | null;
+            /** Title */
+            title: string | null;
+            /** Uneven Interval Count */
+            uneven_interval_count: number;
+            /** Worst At Sec */
+            worst_at_sec: number;
+            /** Worst Deviation Ms */
+            worst_deviation_ms: number;
+        };
+        /** BeatgridFlagRule */
+        BeatgridFlagRule: {
+            /** Thresholds */
+            thresholds: {
+                [key: string]: number;
+            };
+            /** Version */
+            version: string;
+        };
+        /** BeatgridFlagsOut */
+        BeatgridFlagsOut: {
+            counts: components["schemas"]["BeatgridFlagCounts"];
+            /**
+             * Denominator
+             * @enum {string}
+             */
+            denominator: "present" | "all_tracks";
+            /** Items */
+            items: components["schemas"]["BeatgridFlagItem"][];
+            /** Present */
+            present: number;
+            rule: components["schemas"]["BeatgridFlagRule"];
+            scan: components["schemas"]["BeatgridScanStatus"];
+            /** Unknown Reasons */
+            unknown_reasons: {
+                [key: string]: number;
+            };
+        };
+        /**
          * BeatgridIssueOut
          * @description A real, already-detected PQTZ field-vs-interval BPM disagreement.
          *
@@ -7408,6 +7562,22 @@ export interface components {
              * @enum {string}
              */
             severity: "warning" | "error";
+        };
+        /** BeatgridScanStatus */
+        BeatgridScanStatus: {
+            /** Last Error */
+            last_error: string | null;
+            /** Last Result */
+            last_result: {
+                [key: string]: unknown;
+            } | null;
+            /** Running Scope */
+            running_scope: ("present" | "all") | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "running";
         };
         /** Binding */
         Binding: {
@@ -8849,6 +9019,20 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** DismissIn */
+        DismissIn: {
+            /** Dismissed */
+            dismissed: boolean;
+        };
+        /** DismissOut */
+        DismissOut: {
+            /** Dismissed */
+            dismissed: boolean;
+            /** Etag */
+            etag: string;
+            /** Stable Id */
+            stable_id: string;
+        };
         /**
          * DrainConfigIn
          * @description Partial update: an omitted key keeps its stored value.
@@ -9631,6 +9815,31 @@ export interface components {
             owner_email: string;
             /** Token */
             token: string;
+        };
+        /**
+         * GridQualityRowOut
+         * @description A track row's stored beatgrid verdict (GRIDFLAG-02).
+         *
+         *     Read back from the grid-quality store; a listing never parses a grid.
+         *     ``unknown`` means nobody could judge the grid (``reason`` says why) and
+         *     must never be drawn as ``ok`` or as a flag. ``message`` is the sentence
+         *     the deck's Beat Sync badge shows for the same grid; null for ``ok``.
+         */
+        GridQualityRowOut: {
+            /**
+             * Dismissed
+             * @default false
+             */
+            dismissed: boolean;
+            /**
+             * Grid Class
+             * @enum {string}
+             */
+            grid_class: "ok" | "suspect" | "variable_tempo" | "unknown";
+            /** Message */
+            message?: string | null;
+            /** Reason */
+            reason?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -13202,6 +13411,7 @@ export interface components {
             genre: string | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -14595,6 +14805,7 @@ export interface components {
             genre?: string | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -14826,6 +15037,7 @@ export interface components {
             genre: string | null;
             /** Genre Reason */
             genre_reason?: string | null;
+            grid_quality?: components["schemas"]["GridQualityRowOut"] | null;
             /** Has Rb Mapping */
             has_rb_mapping: boolean;
             /** Has Remote Copy */
@@ -17405,6 +17617,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AvailabilityStatusOut"];
+                };
+            };
+        };
+    };
+    list_beatgrid_flags_api_v1_beatgrid_flags_get: {
+        parameters: {
+            query?: {
+                grid_class?: "flagged" | "suspect" | "variable_tempo" | "unknown" | "ok" | "all";
+                include_dismissed?: boolean;
+                availability?: "present" | "all";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridFlagsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_status_api_v1_beatgrid_flags_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+        };
+    };
+    start_scan_api_v1_beatgrid_flags_scan_post: {
+        parameters: {
+            query?: {
+                scope?: "present" | "all";
+                wait?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BeatgridScanStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_flag_dismissed_api_v1_beatgrid_flags__stable_id__dismissed_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

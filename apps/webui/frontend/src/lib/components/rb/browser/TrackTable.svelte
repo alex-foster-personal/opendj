@@ -36,6 +36,8 @@
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import {
 		analysisIssuesFor,
+		errColumnTitle,
+		gridFlagFor,
 		camelotKeyColor,
 		camelotKeyHoverLabel,
 		columnHeaderTitle,
@@ -57,6 +59,7 @@
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { classifyBpmCompatibility } from '$lib/rb/bpm-heat';
+	import { ensureGridQualityScan, setGridFlagDismissed } from '$lib/rb/api-grid-flags';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
 	import {
 		previewCue,
@@ -297,6 +300,22 @@
 	 * itself lives in $lib/rb/analysis-issues so it can be unit-tested. */
 	function _issuesFor(row: BrowserRow): AnalysisIssues {
 		return analysisIssuesFor(row);
+	}
+
+	// GRIDFLAG-02: the beatgrid verdicts on the rows are stored server-side.
+	// Ask once per page session for them to be brought up to date; the engine
+	// skips every unchanged grid and announces any change on library.changed.
+	$effect(() => {
+		void ensureGridQualityScan();
+	});
+
+	/** GRIDFLAG-04: hide or restore one row's beatgrid flag (a persisted user
+	 * track field). The row is updated only after the engine confirmed it; a
+	 * failure rejects, and the popover that asked reports it. */
+	async function _setGridFlagDismissed(row: BrowserRow, dismissed: boolean): Promise<void> {
+		const result = await setGridFlagDismissed(row.stable_id, dismissed);
+		if (row.grid_quality) row.grid_quality = { ...row.grid_quality, dismissed: result.dismissed };
+		if (row.etag !== '') row.etag = result.etag;
 	}
 
 	function _jobRowStyle(stableId: string): string | undefined {
@@ -1302,10 +1321,19 @@
 							onpointercancel={onColResizeEnd}
 						></span>
 					</th>
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<th
 						class="h-icon h-err"
+						class:sorted={sortKey === 'grid'}
 						style={`width:${colWidths.err}px`}
-						use:columnExplainer={{ text: 'Err - detected analysis data-quality issues, hover a square for detail' }}
+						use:columnExplainer={{
+							text: 'Err - detected analysis data-quality issues, hover a square for detail. Orange: uneven beatgrid, Beat Sync may wander. Gray: variable tempo. Hollow: beatgrid not checked. Click to sort flagged beatgrids to the top (asc → desc → clear).'
+						}}
+						onclick={(e) => {
+							if ((e.target as HTMLElement).closest('.col-resize')) return;
+							onsort('grid');
+						}}
 					>
 						Err
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1679,7 +1707,14 @@
 							<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />
 						</td>
 						<td class="c-err">
-							<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />
+							<AnalysisDotsPopover
+								issues={_issuesFor(row)}
+								mode="issues"
+								stableId={row.stable_id}
+								title={errColumnTitle(row)}
+								gridFlag={gridFlagFor(row)}
+								ongridflagdismiss={(dismissed) => _setGridFlagDismissed(row, dismissed)}
+							/>
 						</td>
 						<!-- CloudSync presence, local availability, and transfer bytes are
 						     separate backend facts; this cell never guesses a percentage. -->
@@ -2256,6 +2291,10 @@
 		font-size: 9px;
 		font-weight: 600;
 		letter-spacing: 0.02em;
+		cursor: pointer;
+	}
+	.h-err.sorted {
+		color: var(--rb-accent, #3d7dd9);
 	}
 	thead th:nth-child(-n + 3),
 	.c-funnel,

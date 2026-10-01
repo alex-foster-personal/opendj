@@ -29,6 +29,7 @@
 
 import type { CloudTransferWire, PreviewStripData, StemSummary, Vocals } from '$lib/rb/api-rb';
 import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
+import { gridFlagSortValue, type GridQualityRow } from '$lib/rb/analysis-issues';
 import { matchesSearchQuery } from '$lib/rb/browser-search-query';
 import { sortRowsByAutoPlayOrder } from '$lib/rb/auto-play';
 import type { PlaylistNode, RbMeta, TrackQuality, TrackRow } from '$lib/rb/library-types';
@@ -132,6 +133,10 @@ export interface BrowserRow extends Pick<
 	match_context: string | null;
 	/** Listing-row lyric summary; null = pipeline never ran. */
 	lyrics: LyricsRowSummary | null;
+	/** Stored beatgrid verdict (GRIDFLAG-02): the server's scan wrote it, the
+	 * Err column draws it. Absent or null on synthetic rows and older
+	 * payloads, which then show no beatgrid flag state at all. */
+	grid_quality?: GridQualityRow | null;
 	/** Title-marker remix heuristic (backend is_remix); null on synthetic rows. */
 	is_remix: boolean | null;
 	/** Radio edits are length trims, not remixes - separate tag. */
@@ -523,6 +528,7 @@ export function sortValue(row: BrowserRow, key: SortKey): string | number | null
 	else if (key === 'energy') return row.energy;
 	else if (key === 'genre') return row.genre ?? row.rb_meta?.genre ?? null;
 	else if (key === 'lyrics') return lyricsSortValue(row.lyrics);
+	else if (key === 'grid') return gridFlagSortValue(row);
 	throw new Error('AutoPlay ranks are not cell values');
 }
 

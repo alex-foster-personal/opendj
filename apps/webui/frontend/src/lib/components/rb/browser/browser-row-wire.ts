@@ -118,6 +118,7 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		revealed: false,
 		match_context: null,
 		lyrics: wire.lyrics ?? null,
+		grid_quality: wire.grid_quality ?? null,
 		is_remix: wire.is_remix ?? null,
 		is_radio_edit: wire.is_radio_edit ?? null
 	};
@@ -167,6 +168,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		revealed: false,
 		match_context: null,
 		lyrics: track.lyrics ?? null,
+		grid_quality: track.grid_quality ?? null,
 		is_remix: track.is_remix ?? null,
 		is_radio_edit: track.is_radio_edit ?? null
 	};

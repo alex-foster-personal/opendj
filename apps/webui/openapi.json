@@ -2560,6 +2560,292 @@
         "title": "BeatgridFallbackOut",
         "type": "object"
       },
+      "BeatgridFlagCounts": {
+        "description": "Every count is over the response's `denominator`. The four classes sum\nto it; `dismissed` counts flagged tracks whose flag the user hid.",
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "integer"
+          },
+          "suspect": {
+            "title": "Suspect",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          },
+          "variable_tempo": {
+            "title": "Variable Tempo",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "suspect",
+          "variable_tempo",
+          "unknown",
+          "dismissed"
+        ],
+        "title": "BeatgridFlagCounts",
+        "type": "object"
+      },
+      "BeatgridFlagItem": {
+        "properties": {
+          "artist": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artist"
+          },
+          "computed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed At"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "grid_class": {
+            "enum": [
+              "ok",
+              "suspect",
+              "variable_tempo",
+              "unknown"
+            ],
+            "title": "Grid Class",
+            "type": "string"
+          },
+          "grid_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Source"
+          },
+          "interval_count": {
+            "title": "Interval Count",
+            "type": "integer"
+          },
+          "median_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Bpm"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "steady_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steady Coverage"
+          },
+          "steady_line_bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steady Line Bpm"
+          },
+          "steady_on_line": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steady On Line"
+          },
+          "tempo_marker_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo Marker Count"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uneven_interval_count": {
+            "title": "Uneven Interval Count",
+            "type": "integer"
+          },
+          "worst_at_sec": {
+            "title": "Worst At Sec",
+            "type": "number"
+          },
+          "worst_deviation_ms": {
+            "title": "Worst Deviation Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artist",
+          "grid_class",
+          "reason",
+          "dismissed",
+          "grid_source",
+          "interval_count",
+          "uneven_interval_count",
+          "worst_deviation_ms",
+          "worst_at_sec",
+          "median_bpm",
+          "tempo_marker_count",
+          "steady_coverage",
+          "steady_on_line",
+          "steady_line_bpm",
+          "computed_at",
+          "message"
+        ],
+        "title": "BeatgridFlagItem",
+        "type": "object"
+      },
+      "BeatgridFlagRule": {
+        "properties": {
+          "thresholds": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Thresholds",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "thresholds"
+        ],
+        "title": "BeatgridFlagRule",
+        "type": "object"
+      },
+      "BeatgridFlagsOut": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/BeatgridFlagCounts"
+          },
+          "denominator": {
+            "enum": [
+              "present",
+              "all_tracks"
+            ],
+            "title": "Denominator",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BeatgridFlagItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/BeatgridFlagRule"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/BeatgridScanStatus"
+          },
+          "unknown_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Unknown Reasons",
+            "type": "object"
+          }
+        },
+        "required": [
+          "denominator",
+          "present",
+          "counts",
+          "unknown_reasons",
+          "rule",
+          "scan",
+          "items"
+        ],
+        "title": "BeatgridFlagsOut",
+        "type": "object"
+      },
       "BeatgridIssueOut": {
         "description": "A real, already-detected PQTZ field-vs-interval BPM disagreement.\n\nSee ``rb_vendor.cached_beatgrid_issue`` for the caching tradeoff: this is\nNone both when the grid is clean AND when it has never been evaluated\nyet - never a guessed verdict.",
         "properties": {
@@ -2596,6 +2882,64 @@
           "disagreement_bpm"
         ],
         "title": "BeatgridIssueOut",
+        "type": "object"
+      },
+      "BeatgridScanStatus": {
+        "properties": {
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Result"
+          },
+          "running_scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "present",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Scope"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "running_scope",
+          "last_result",
+          "last_error"
+        ],
+        "title": "BeatgridScanStatus",
         "type": "object"
       },
       "Binding": {
@@ -6653,6 +6997,42 @@
         "title": "DigestResponse",
         "type": "object"
       },
+      "DismissIn": {
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dismissed"
+        ],
+        "title": "DismissIn",
+        "type": "object"
+      },
+      "DismissOut": {
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "dismissed",
+          "etag"
+        ],
+        "title": "DismissOut",
+        "type": "object"
+      },
       "DrainConfigIn": {
         "additionalProperties": false,
         "description": "Partial update: an omitted key keeps its stored value.",
@@ -8589,6 +8969,53 @@
           "expires_at"
         ],
         "title": "GrantOut",
+        "type": "object"
+      },
+      "GridQualityRowOut": {
+        "description": "A track row's stored beatgrid verdict (GRIDFLAG-02).\n\nRead back from the grid-quality store; a listing never parses a grid.\n``unknown`` means nobody could judge the grid (``reason`` says why) and\nmust never be drawn as ``ok`` or as a flag. ``message`` is the sentence\nthe deck's Beat Sync badge shows for the same grid; null for ``ok``.",
+        "properties": {
+          "dismissed": {
+            "default": false,
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "grid_class": {
+            "enum": [
+              "ok",
+              "suspect",
+              "variable_tempo",
+              "unknown"
+            ],
+            "title": "Grid Class",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "grid_class"
+        ],
+        "title": "GridQualityRowOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -17858,6 +18285,16 @@
             ],
             "title": "Genre Reason"
           },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -21406,6 +21843,16 @@
             ],
             "title": "Genre Reason"
           },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
             "type": "boolean"
@@ -22158,6 +22605,16 @@
               }
             ],
             "title": "Genre Reason"
+          },
+          "grid_quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GridQualityRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "has_rb_mapping": {
             "title": "Has Rb Mapping",
@@ -26944,6 +27401,224 @@
         "summary": "Availability Status",
         "tags": [
           "library"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags": {
+      "get": {
+        "description": "Tracks by beatgrid class, with the numbers behind each verdict.\n\n`counts` cover the whole denominator whatever the filter and limit.",
+        "operationId": "list_beatgrid_flags_api_v1_beatgrid_flags_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "grid_class",
+            "required": false,
+            "schema": {
+              "default": "flagged",
+              "enum": [
+                "flagged",
+                "suspect",
+                "variable_tempo",
+                "unknown",
+                "ok",
+                "all"
+              ],
+              "title": "Grid Class",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_dismissed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Dismissed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "availability",
+            "required": false,
+            "schema": {
+              "default": "present",
+              "enum": [
+                "present",
+                "all"
+              ],
+              "title": "Availability",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 20000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridFlagsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Beatgrid Flags",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags/scan": {
+      "get": {
+        "operationId": "get_scan_status_api_v1_beatgrid_flags_scan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scan Status",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      },
+      "post": {
+        "description": "Bring stored verdicts up to date. Incremental: an unchanged grid is\nskipped after one stat. `wait=true` returns when the scan has finished;\notherwise it runs on a background thread and `GET /scan` reports it.",
+        "operationId": "start_scan_api_v1_beatgrid_flags_scan_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "present",
+              "enum": [
+                "present",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "wait",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Wait",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BeatgridScanStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Scan",
+        "tags": [
+          "beatgrid-flags"
+        ]
+      }
+    },
+    "/api/v1/beatgrid-flags/{stable_id}/dismissed": {
+      "put": {
+        "description": "Hide (or restore) one track's beatgrid flag. Stored as the user track\nfield `grid_flag_dismissed` (source `webui`), the same path rating and\ncomments take, so it carries provenance and travels with them.",
+        "operationId": "set_flag_dismissed_api_v1_beatgrid_flags__stable_id__dismissed_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Flag Dismissed",
+        "tags": [
+          "beatgrid-flags"
         ]
       }
     },

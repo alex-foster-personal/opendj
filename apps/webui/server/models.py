@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .models_grid_quality import GridQualityRowOut
+
 FileAvailabilityStatus = Literal[
     "present",
     "absent",
@@ -205,6 +207,7 @@ class TrackListItemOut(TrackOut):
     energy_source: Literal["mik"] | None
     energy_reason: str
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
@@ -350,6 +353,7 @@ class TrackRowOut(BaseModel):
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
 
