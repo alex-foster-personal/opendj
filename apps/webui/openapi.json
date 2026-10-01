@@ -26741,6 +26741,96 @@
         ]
       }
     },
+    "/api/v1/ahead-analysis/bump/{stable_id}": {
+      "post": {
+        "operationId": "post_bump_api_v1_ahead_analysis_bump__stable_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Bump Api V1 Ahead Analysis Bump  Stable Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Bump",
+        "tags": [
+          "ahead-analysis"
+        ]
+      }
+    },
+    "/api/v1/ahead-analysis/coverage": {
+      "get": {
+        "operationId": "get_coverage_api_v1_ahead_analysis_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Coverage Api V1 Ahead Analysis Coverage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coverage",
+        "tags": [
+          "ahead-analysis"
+        ]
+      }
+    },
+    "/api/v1/ahead-analysis/retry": {
+      "post": {
+        "operationId": "post_retry_api_v1_ahead_analysis_retry_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Retry Api V1 Ahead Analysis Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Retry",
+        "tags": [
+          "ahead-analysis"
+        ]
+      }
+    },
     "/api/v1/analysis-queue": {
       "get": {
         "description": "The analyze-on-import queue, its denominators and the drain's progress.",

@@ -65,6 +65,7 @@ from .request_guard import (
     host_allowlist_middleware,
     origin_guard_middleware,
 )
+from .routes import ahead_analysis as ahead_analysis_routes
 from .routes import analysis as analysis_routes
 from .routes import analysis_backfill as analysis_backfill_routes
 from .routes import analysis_queue as analysis_queue_routes
@@ -267,6 +268,17 @@ def _start_coverage_drain_if_armed(app: FastAPI) -> None:
     app.state.coverage_drain.start()
 
 
+def _start_ahead_analysis_if_armed(app: FastAPI) -> None:
+    # NATIVE-21: built only on an app the daemon entry point ARMED.
+    if not getattr(app.state, "ahead_analysis_armed", False):
+        return
+    if getattr(app.state, "ahead_analysis", None) is None:
+        from . import ahead_analysis
+
+        app.state.ahead_analysis = ahead_analysis.build_for_app(app)
+    app.state.ahead_analysis.start()
+
+
 @asynccontextmanager
 async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     from .app import build_auto_analyze_watcher, build_lyric_index_watcher
@@ -308,6 +320,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             stem_cache_enforcer.start()
         _retained_library_jobs_watcher(app).start()
         _start_coverage_drain_if_armed(app)
+        _start_ahead_analysis_if_armed(app)
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
@@ -321,6 +334,9 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         drain = getattr(app.state, "coverage_drain", None)
         if drain is not None:
             drain.stop()
+        ahead = getattr(app.state, "ahead_analysis", None)
+        if ahead is not None:
+            ahead.stop()
         if stem_cache_enforcer is not None:
             stem_cache_enforcer.stop()
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
@@ -617,6 +633,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         analysis_queue_routes.router,
         library_jobs_routes.router,
         coverage_drain_routes.router,
+        ahead_analysis_routes.router,
         coverage_terminal_routes.router,
         analysis_source_routes.router,
         auth_routes.router,

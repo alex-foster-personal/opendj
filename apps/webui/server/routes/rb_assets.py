@@ -347,6 +347,11 @@ def get_track_anlz(
     from data/state/vocal-cache, merged when PVDI is absent), and
     ``not_analyzed`` (NEITHER source exists).
     """
+    # NATIVE-21: a deck load (or a selected row) moves this track to the
+    # front of the ahead-of-time drain; it never becomes the only producer.
+    ahead = getattr(request.app.state, "ahead_analysis", None)
+    if ahead is not None:
+        ahead.bump(stable_id)
     # Read ONCE and thread the snapshot through both decisions below: the
     # ANALYSIS_NOT_FOUND rescue and _resolve_beatgrid_source's own branch
     # must agree on the same selection, or an agent's PUT landing between

@@ -25,6 +25,7 @@ from apps.sets.share import SetShareConfig
 from apps.sets.share_page import router as set_share_page_router
 
 from . import (
+    ahead_analysis,
     analysis_autostart,
     analysis_serving_bootstrap,  # noqa: F401 - PARITY-02 lane registration
     coverage_drain,
@@ -407,7 +408,7 @@ def _build_default_app() -> FastAPI:
     # MDT_DATA_DIR diverges from CWD/data -- e.g. every e2e suite that boots
     # this entrypoint against a fixture data dir with an unmapped track (#949).
     from apps.shared.paths import STATE_DB
-    return create_app(
+    app = create_app(
         backend=backend,
         bind_host=bind_host,
         hostname=hostname,
@@ -421,6 +422,9 @@ def _build_default_app() -> FastAPI:
         auto_coverage_drain=coverage_drain.arm_from_environ(os.environ),
         stem_hydration=True,
     )
+    # NATIVE-21: the ahead-of-time analysis drain; create_app leaves it off.
+    app.state.ahead_analysis_armed = ahead_analysis.arm_from_environ(os.environ)
+    return app
 
 
 # Single-item cache mutated in place (not rebound) so ``__getattr__`` below
