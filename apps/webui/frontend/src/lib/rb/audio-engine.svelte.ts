@@ -234,7 +234,7 @@ import {
 import type { PitchRange } from '$lib/player/constants';
 import {
 	_defaultChannel,
-	_defaultHeadphones,
+	_defaultHeadphones, recordMasterWrite,
 	_emptyDeckState,
 	_hotCueRevisionsFrom,
 	deckEffectiveBpm,
@@ -4323,7 +4323,7 @@ class RbAudioEngine implements AudioEngine {
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {
 		assertUnitRange('setMaster value', value);
-		mixerState.master = value;
+		recordMasterWrite(); mixerState.master = value;
 		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
 	}
 

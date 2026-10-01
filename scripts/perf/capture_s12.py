@@ -101,6 +101,7 @@ def _phase_rows(meta: CaptureMeta, first: Any, track_count: int) -> list[dict[st
             ("cloudsync_push_s", timings.push_s),
             ("cloudsync_pull_s", timings.pull_s),
             ("cloudsync_digest_s", timings.digest_s),
+            ("cloudsync_local_digest_s", timings.local_digest_s),
         )
     ]
 

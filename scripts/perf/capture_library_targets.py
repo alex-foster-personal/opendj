@@ -30,7 +30,8 @@ def _verify_capture_targets(
 ) -> tuple[str | None, str | None, int | None]:
     """Every identity gate `main()` must pass before launching Playwright, in
     one place: engine reachable and clean at this sha, frontend a verifiable
-    static build (never vite-dev) clean and matching this sha. Returns
+    static build (never vite-dev) clean and matching this sha, and the
+    capturing checkout itself clean with HEAD still at this sha. Returns
     `(reason, None, None)` on the first failure, or `(None, frontend_mode,
     engine_pid)` once all checks pass. Extracted from `main()` (quality-ratchet
     `ruff.complexity`, PR #4034): five review rounds of Codex P0/P1 findings
