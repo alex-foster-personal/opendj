@@ -236,8 +236,8 @@ def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
     `trackify_mode_footprint_slope_mb_per_10min` with a note implying a 1h
     leak slope.
     """
-    with pytest.raises(ValueError, match="1 h unattended"):
-        cmr._sample_leak(os.getpid(), cmr._MIN_LEAK_DURATION_S - 1)
+    with subprocess.Popen([sys.executable, "-c", "pass"], text=True) as proc, pytest.raises(ValueError, match="1 h unattended"):
+        cmr._sample_leak(proc, cmr._MIN_LEAK_DURATION_S - 1)
 
 
 _PROTOCOL_CHILD = """
