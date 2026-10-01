@@ -234,9 +234,11 @@ jobs:
       # as an infra failure rather than dropping it.
       - name: Run fast pytest lane shard (full suite + coverage live in Full CI, on-demand)
         id: pytest-shard
-        # TMPDIR mirrors ci.yml (ADR-NEW-ci-test-scratch-on-tmpfs).
+        # TMPDIR mirrors ci.yml (ADR-NEW-ci-test-scratch-on-tmpfs). So does the
+        # DEVOPS-20 selection switch: a canary is a push, so it always runs FULL.
         env:
           TMPDIR: ${{ runner.temp }}
+          CI_PR_TEST_SELECTION: ${{ vars.CI_PR_TEST_SELECTION }}
         run: |
           set -uo pipefail
           # Remove any report left by an EARLIER run on this persistent
@@ -314,31 +316,92 @@ jobs:
           # a wide margin (the slowest committed duration is ~400 s), so
           # it only fires on a hang. tests/scripts/test_ci_shard_matrix.py
           # pins it under the budget.
+          # The selection below runs INSIDE this budget (pytest gets what is
+          # left of it), so the job-cap arithmetic pinned in
+          # tests/scripts/test_ci_shard_matrix.py is unchanged by it.
           MDT_PYTEST_TIMEOUT_S=1440
           started=$(date +%s)
+          # The lane's ignores, ONE list: the full lane passes it to pytest,
+          # and the selector drops these paths from a selection, because a
+          # module named on the command line is collected even when an
+          # --ignore covers it (measured, pytest 9.1).
+          LANE_IGNORES=(
+            --ignore=tests/analysis
+            --ignore=tests/vocals
+            --ignore=tests/sync/usb
+            --ignore=tests/sets
+            --ignore=tests/quality/test_frontend_typing_gate.py
+            --ignore=tests/quality/test_frontend_typing_directives.py
+            --ignore=tests/quality/test_mypy_cache.py
+            --ignore=tests/perf/test_library_playlist_switch_bench.py
+          )
+          # Mode: full | affected | empty, one line on stdout. A selector
+          # that cannot answer (crash, hang, nonsense) means FULL, loudly:
+          # an unknown selection must never become a smaller run.
+          selection_dir="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pr-test-selection"
+          selection_rc=0
+          mode="$(timeout --kill-after=10 300 .venv/bin/python -m scripts.ci_test_selection select \
+            --shard ${{ matrix.shard }} --shards 5 --out-dir "$selection_dir" \
+            "${LANE_IGNORES[@]}")" || selection_rc=$?
+          case "$selection_rc:$mode" in
+            0:full|0:affected|0:empty) ;;
+            *)
+              printf '\n::warning title=PR test selection UNKNOWN (shard %s of 5)::the selector exited %s with mode [%s]; running the FULL suite\n' \
+                "${{ matrix.shard }}" "$selection_rc" "$mode"
+              mode=full
+              ;;
+          esac
+          echo "selection_mode=$mode" >> "$GITHUB_OUTPUT"
+          case "$mode" in
+            empty)
+              printf '\n::notice title=pytest fast lane (shard %s of 5): 0 affected tests::this PR head selected no test module for this shard, so pytest did not start and the shard reports success. The Trunk merge queue runs the FULL suite on the exact tree that lands.\n' \
+                "${{ matrix.shard }}"
+              exit 0
+              ;;
+            affected)
+              mapfile -t MODE_ARGS < "$selection_dir/shard-modules.txt"
+              echo "[selection] AFFECTED: shard ${{ matrix.shard }} runs ${#MODE_ARGS[@]} selected module(s); the queue runs the full suite"
+              ;;
+            full)
+              MODE_ARGS=(
+                --collect-floor 3181
+                --ledger-coverage-min 0.95
+                --splits 5 --group ${{ matrix.shard }}
+                --splitting-algorithm least_duration
+                --durations-path .test_durations
+                --store-durations --clean-durations
+              )
+              echo "[selection] FULL: shard ${{ matrix.shard }} runs its pytest-split slice of the whole lane"
+              ;;
+          esac
+          budget_left=$(( MDT_PYTEST_TIMEOUT_S - ($(date +%s) - started) ))
           set +e
-          timeout --kill-after=60 "$MDT_PYTEST_TIMEOUT_S" \
+          timeout --kill-after=60 "$budget_left" \
             .venv/bin/pytest \
               --basetemp="${RUNNER_TEMP:?RUNNER_TEMP must be set}/pytest-basetemp-shard-${{ matrix.shard }}" \
               --junitxml="${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
-              --collect-floor 3181 \
-              --ledger-coverage-min 0.95 \
-              --splits 5 --group ${{ matrix.shard }} \
-              --splitting-algorithm least_duration \
-              --durations-path .test_durations \
-              --store-durations --clean-durations \
+              "${MODE_ARGS[@]}" \
               --durations=25 \
               --timeout=900 \
-              --ignore=tests/analysis \
-              --ignore=tests/vocals \
-              --ignore=tests/sync/usb \
-              --ignore=tests/sets \
-              --ignore=tests/quality/test_frontend_typing_gate.py \
-              --ignore=tests/quality/test_frontend_typing_directives.py \
-              --ignore=tests/quality/test_mypy_cache.py \
-              --ignore=tests/perf/test_library_playlist_switch_bench.py
+              "${LANE_IGNORES[@]}"
           rc=$?
           set -e
+          # Exit 5 (no test item collected) is a FAILURE, except in affected
+          # mode when the JUnit report proves EACH selected module was
+          # reached and skipped itself at module level, which the full lane
+          # reports green for the same modules. An empty selection never gets
+          # here: it exited 0 above without starting pytest.
+          if [ "$mode" = affected ] && [ "$rc" -eq 5 ]; then
+            if .venv/bin/python -m scripts.ci_test_selection junit-all-skipped \
+                "${RUNNER_TEMP:?RUNNER_TEMP must be set}/junit-shard-${{ matrix.shard }}.xml" \
+                --modules "$selection_dir/shard-modules.txt"; then
+              echo "[selection] exit 5 with every selected module skipped at module level (JUnit evidence): success"
+              rc=0
+            else
+              printf '\n::error title=pytest fast lane (shard %s of 5): selected modules collected nothing::pytest exit 5 and the JUnit report does not show every selected module skipped\n' \
+                "${{ matrix.shard }}"
+            fi
+          fi
           echo "rc=${rc}" >> "$GITHUB_OUTPUT"
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
             elapsed=$(( $(date +%s) - started ))
