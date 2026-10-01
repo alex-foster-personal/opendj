@@ -2,8 +2,8 @@
 
 Unifies per-track tags across Rekordbox, djay, MIK, and on-disk audio
 containers and writes the chosen values back into the file (ID3v2 for
-MP3, Vorbis comments for FLAC; MP4 and Ogg are read but their writes are
-refused by name, see `docs/decisions/ADR-NEW-permissive-audio-tag-io.md`). Every decision is stamped with provenance
+MP3, Vorbis comments for FLAC and Ogg Vorbis / Opus, iTunes atoms for MP4;
+all in-house writers, see `docs/decisions/ADR-NEW-permissive-audio-tag-io.md`). Every decision is stamped with provenance
 so later phases (M6 open-dj) can replay.
 
 ## Modules
