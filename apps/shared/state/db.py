@@ -225,6 +225,56 @@ def connect_ro(path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+@contextmanager
+def write_unit(
+    conn: sqlite3.Connection, savepoint: str, *, keep: bool = True
+) -> Iterator[sqlite3.Connection]:
+    """One all-or-nothing write unit that holds the writer lock from its first read.
+
+    On an autocommit handle the unit is ``BEGIN IMMEDIATE`` ... ``COMMIT``.
+    A bare ``SAVEPOINT`` there would open a DEFERRED transaction instead: its
+    first read pins a WAL snapshot, and its first write must upgrade that
+    snapshot to the writer lock. If another connection committed in between,
+    SQLite returns SQLITE_BUSY_SNAPSHOT at once -- the busy handler is never
+    consulted, so ``busy_timeout`` cannot ride it out and the caller sees
+    ``database is locked`` (STATE-15; the setup import worker racing the
+    engine's own writers, Thu 1 Oct 2026). ``BEGIN IMMEDIATE`` takes the lock
+    up front, where ``busy_timeout`` does apply.
+
+    Inside a caller-owned transaction the unit is ``SAVEPOINT <savepoint>``:
+    the caller owns the lock mode and the commit. Same split as
+    :func:`apps.shared.state.sync_stamp.stamped_transaction`. The owned case
+    deliberately does not stack a SAVEPOINT under its BEGIN: a non-outermost
+    savepoint makes the pager journal every page it touches into a
+    sub-journal, measured at ~3x the per-write cost of the same unit.
+
+    ``keep=False`` discards the unit on a clean exit (dry runs). An exception
+    always discards it and propagates. The owned ROLLBACK is guarded because
+    SQLite may already have rolled back (e.g. on SQLITE_FULL), and a second
+    ROLLBACK would mask the original error.
+    """
+    owned = not conn.in_transaction
+    conn.execute("BEGIN IMMEDIATE" if owned else f"SAVEPOINT {savepoint}")
+    try:
+        yield conn
+    except BaseException:
+        _discard_write_unit(conn, savepoint, owned=owned)
+        raise
+    if keep:
+        conn.execute("COMMIT" if owned else f"RELEASE SAVEPOINT {savepoint}")
+    elif not keep:
+        _discard_write_unit(conn, savepoint, owned=owned)
+
+
+def _discard_write_unit(conn: sqlite3.Connection, savepoint: str, *, owned: bool) -> None:
+    if owned:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+    elif not owned:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+
+
 def open_dry_run(path: Path | None = None) -> sqlite3.Connection:
     """A migrated, disposable scratch copy of ``path``. Never touches the file.
 
@@ -302,4 +352,5 @@ __all__ = [
     "open_dry_run",
     "open_ro",
     "open_rw",
+    "write_unit",
 ]

@@ -33,6 +33,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
+from . import db as _state_db
 from . import sync_stamp as _sync_stamp
 from .events import EventBus, FakeEventBus
 from .types import Event
@@ -96,31 +97,26 @@ class StateWriter(_TrackWriterMixin, _PlaylistWriterMixin, _AvailabilityWriterMi
         batch back). Prefer this over poking ``_conn`` from the outside so
         internal refactors do not break call sites.
 
-        Callers MUST NOT issue ``BEGIN``/``COMMIT`` on this connection --
-        that would fight the writer's SAVEPOINT semantics. Use
-        ``SAVEPOINT <name>`` / ``RELEASE`` / ``ROLLBACK TO`` instead.
+        Callers MUST NOT issue ``BEGIN``/``COMMIT``/``SAVEPOINT`` by hand on
+        this connection. Open the outer unit with
+        :func:`apps.shared.state.db.write_unit`, which composes with the
+        writer's own nested units and takes the writer lock up front when it
+        is the outermost one (STATE-15).
         """
         return self._conn
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
-        """Run the enclosed block in a SAVEPOINT.
+        """Run the enclosed block as one write unit that holds the writer lock.
 
-        SAVEPOINTs are nestable, implicitly open a transaction when none is
-        active, and play well with an outer ``SAVEPOINT`` (used by the
-        ingest adapter for dry-run rollback). Each call gets a unique name
-        so re-entrant calls on the same writer are safe.
+        Outermost, the unit is ``BEGIN IMMEDIATE`` ... ``COMMIT``; nested
+        inside a caller's transaction (an ingest adapter's dry-run unit, or a
+        re-entrant call on this writer), it is a uniquely named SAVEPOINT.
+        See :func:`apps.shared.state.db.write_unit` for why a bare outermost
+        SAVEPOINT is not enough (STATE-15).
         """
-        name = f"sw_{next(self._sp_counter)}"
-        self._conn.execute(f"SAVEPOINT {name}")
-        try:
+        with _state_db.write_unit(self._conn, f"sw_{next(self._sp_counter)}"):
             yield self._conn
-        except Exception:
-            self._conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
-            self._conn.execute(f"RELEASE SAVEPOINT {name}")
-            raise
-        else:
-            self._conn.execute(f"RELEASE SAVEPOINT {name}")
 
     @contextmanager
     def playlist_transaction(self) -> Iterator[sqlite3.Connection]:
