@@ -9,8 +9,8 @@ Usage:
   python -m scripts.post_build_failure --from-log PATH --sha SHA --host HOST
   python -m scripts.post_build_failure --batch-file ci-sink-failures.json --host HOST
 
---batch-file posts the failed completions the cost guard's pass selected (RUN-COUNT
-round 3), each once: a record already in the sink is skipped, so overlapping passes
+--batch-file posts the failed completions the CI Budget Watch error-sink batch selected,
+each once: a record already in the sink is skipped, so overlapping passes
 re-read safely, and every record is read back after posting, because append_sink never
 raises and a lost write must fail the step rather than pass it.
 """

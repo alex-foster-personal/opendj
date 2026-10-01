@@ -19,8 +19,7 @@ name: E2E
 #   3. E2E can be sized, scheduled and reasoned about without perturbing the
 #      fast lane's latency budget.
 #
-# It is registered in ci-cost-guard.yml's workflow list so its runs get priced
-# like every other workflow.
+# Spend is attributed in ci-budget-watch.yml (ADR-0121 retired per-run spike guard).
 
 on:
   pull_request:
