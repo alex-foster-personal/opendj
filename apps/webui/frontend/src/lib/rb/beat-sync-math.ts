@@ -994,6 +994,85 @@ export function computeFollowerSyncPlan(request: FollowerSyncRequest): FollowerS
 }
 
 
+// --------------------------------------------- grids Beat Sync may wander on
+
+/** A beat interval further than this from the grid's median interval is
+ * uneven. Above what millisecond storage alone produces (two rounded beat
+ * times put an interval up to 1 ms off, and the median up to 1 ms more). */
+export const UNEVEN_GRID_INTERVAL_TOLERANCE_SEC = 0.003;
+
+export interface BeatSyncGridWarning {
+	/** Intervals more than UNEVEN_GRID_INTERVAL_TOLERANCE_SEC off the median. */
+	unevenIntervalCount: number;
+	intervalCount: number;
+	/** Largest interval deviation from the median, in ms (0 when none). */
+	worstDeviationMs: number;
+	/** Track time of the worst interval's first beat. */
+	worstAtSec: number;
+	/** Beats the analyzer extrapolated instead of detecting. */
+	extrapolatedBeatCount: number;
+	/** One line for the deck: what is wrong and what it means for sync. */
+	message: string;
+}
+
+/**
+ * Why Beat Sync may wander on this grid, or null when it has no such reason.
+ *
+ * The continuous phase lock (NAE-19) holds a follower to its GRID. Where the grid's beats are
+ * unevenly spaced, or were extrapolated rather than detected, the grid and
+ * the audio can disagree, and holding to one lets the other be heard off the
+ * beat. That is not a failure to hide: the DJ is told before they lean on it.
+ *
+ * Deliberately not `detectBeatgridIssue`: that compares the PQTZ `bpm` FIELD
+ * to the intervals (a data-quality column), while sync never reads the field.
+ *
+ * [if] the grid is missing or too short to have an interval [then] null -
+ * that state already has its own gridless tip.
+ */
+export function beatSyncGridWarning(beats: readonly AnlzBeat[]): BeatSyncGridWarning | null {
+	if (!Array.isArray(beats) || beats.length < 2) return null;
+	const intervalCount = beats.length - 1;
+	const intervals: number[] = new Array(intervalCount);
+	for (let index = 0; index < intervalCount; index++) {
+		intervals[index] = beats[index + 1].t - beats[index].t;
+	}
+	const medianSec = _medianSorted([...intervals].sort((left, right) => left - right));
+	let unevenIntervalCount = 0;
+	let worstDeviationSec = 0;
+	let worstAtSec = beats[0].t;
+	for (let index = 0; index < intervalCount; index++) {
+		const deviationSec = Math.abs(intervals[index] - medianSec);
+		if (deviationSec <= UNEVEN_GRID_INTERVAL_TOLERANCE_SEC) continue;
+		unevenIntervalCount += 1;
+		if (deviationSec > worstDeviationSec) {
+			worstDeviationSec = deviationSec;
+			worstAtSec = beats[index].t;
+		}
+	}
+	let extrapolatedBeatCount = 0;
+	for (const beat of beats) if (beatIsExtrapolated(beat)) extrapolatedBeatCount += 1;
+	if (unevenIntervalCount === 0 && extrapolatedBeatCount === 0) return null;
+	const worstDeviationMs = worstDeviationSec * 1000;
+	const reasons: string[] = [];
+	if (unevenIntervalCount > 0) {
+		reasons.push(
+			`${unevenIntervalCount} of ${intervalCount} beat intervals are uneven ` +
+				`(worst ${worstDeviationMs.toFixed(0)} ms off at ${worstAtSec.toFixed(1)} s)`
+		);
+	}
+	if (extrapolatedBeatCount > 0) {
+		reasons.push(`${extrapolatedBeatCount} of ${beats.length} beats are extrapolated, not detected`);
+	}
+	return {
+		unevenIntervalCount,
+		intervalCount,
+		worstDeviationMs,
+		worstAtSec,
+		extrapolatedBeatCount,
+		message: `Beatgrid: ${reasons.join('; ')} - Beat Sync may wander on this track`
+	};
+}
+
 // ----------------------------------------------- what the sync tells the DJ
 
 /**
