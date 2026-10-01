@@ -22,8 +22,11 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
+from apps.shared import vorbis_comment
 from apps.shared.file_rewrite import replace_head
+from apps.shared.vorbis_comment import VorbisCommentFields
 
 MAGIC = b"fLaC"
 BLOCK_STREAMINFO = 0
@@ -34,7 +37,7 @@ DEFAULT_PADDING = 4096
 _MAX_BLOCK = (1 << 24) - 1
 
 
-class FlacError(Exception):
+class FlacError(vorbis_comment.VorbisCommentError):
     """A FLAC file that cannot be read or written faithfully. Never swallowed."""
 
 
@@ -45,27 +48,13 @@ class Block:
 
 
 @dataclass
-class FlacMeta:
+class FlacMeta(VorbisCommentFields):
+    error: ClassVar[type[Exception]] = FlacError
     prefix: bytes  # bytes before ``fLaC`` (an ID3v2 tag some taggers prepend)
     blocks: list[Block] = field(default_factory=list)
     audio_offset: int = 0
     vendor: str = "music-dj-tools"
     comments: list[tuple[str, str]] = field(default_factory=list)
-
-    def get(self, key: str) -> list[str]:
-        wanted = key.upper()
-        return [value for name, value in self.comments if name.upper() == wanted]
-
-    def first(self, key: str) -> str | None:
-        values = [v.strip() for v in self.get(key) if v.strip()]
-        return values[0] if values else None
-
-    def set(self, key: str, value: str) -> None:
-        if not key or "=" in key or any(not 0x20 <= ord(c) <= 0x7D for c in key):
-            raise FlacError(f"invalid Vorbis comment field name {key!r}")
-        wanted = key.upper()
-        self.comments = [(n, v) for n, v in self.comments if n.upper() != wanted]
-        self.comments.append((key, value))
 
     def add_picture(self, mime: str, picture_type: int, data: bytes, description: str = "") -> None:
         self.blocks.append(Block(BLOCK_PICTURE, encode_picture(mime, picture_type, data, description)))
@@ -109,35 +98,14 @@ def read(path: Path) -> FlacMeta:
 
 def _decode_vorbis_comment(data: bytes, path: Path) -> tuple[str, list[tuple[str, str]]]:
     try:
-        offset = 0
-        (vendor_len,) = struct.unpack_from("<I", data, offset)
-        offset += 4
-        vendor = data[offset : offset + vendor_len].decode("utf-8", errors="replace")
-        offset += vendor_len
-        (count,) = struct.unpack_from("<I", data, offset)
-        offset += 4
-        comments = []
-        for _ in range(count):
-            (length,) = struct.unpack_from("<I", data, offset)
-            offset += 4
-            entry = data[offset : offset + length].decode("utf-8", errors="replace")
-            offset += length
-            name, sep, value = entry.partition("=")
-            if sep:
-                comments.append((name, value))
-        return vendor, comments
-    except struct.error as exc:
+        vendor, comments, _end = vorbis_comment.decode(data, str(path))
+    except vorbis_comment.VorbisCommentError as exc:
         raise FlacError(f"{path}: truncated VORBIS_COMMENT block") from exc
+    return vendor, comments
 
 
 # ============================================================== write =======
-def encode_vorbis_comment(vendor: str, comments: list[tuple[str, str]]) -> bytes:
-    vendor_raw = vendor.encode("utf-8")
-    out = [struct.pack("<I", len(vendor_raw)), vendor_raw, struct.pack("<I", len(comments))]
-    for name, value in comments:
-        entry = f"{name}={value}".encode()
-        out += [struct.pack("<I", len(entry)), entry]
-    return b"".join(out)
+encode_vorbis_comment = vorbis_comment.encode
 
 
 def encode_picture(mime: str, picture_type: int, data: bytes, description: str = "") -> bytes:
