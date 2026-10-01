@@ -601,6 +601,11 @@
 			.filter((t) => t !== '');
 	}
 
+	/** The Genre cell's raw text: the listing's own genre, else rekordbox's. */
+	function genreText(row: BrowserRow): string {
+		return row.genre ?? row.rb_meta?.genre ?? '';
+	}
+
 	function genreTagStyle(tag: string): string | undefined {
 		const color = genreHoverColor(tag);
 		return color === null ? undefined : `--genre-glow:${color}`;
@@ -1954,9 +1959,11 @@
 						<td class="c-energy" class:energy-unset={row.energy === null} title={row.energy_reason}>
 							{row.energy ?? ''}
 						</td>
-						<td class="c-genre">
-							{#if splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '').length > 0}
-								{#each splitGenreTags(row.genre ?? row.rb_meta?.genre ?? '') as tag, i (tag + String(i))}
+						<!-- LIBUX-34: a missing genre is a blank cell; why it is missing
+						     (STANDALONE-05) is the hover title, never cell text. -->
+						<td class="c-genre" title={genreText(row) || row.genre_reason || undefined}>
+							{#if splitGenreTags(genreText(row)).length > 0}
+								{#each splitGenreTags(genreText(row)) as tag, i (tag + String(i))}
 									{#if i > 0}<span class="genre-sep">, </span>{/if}
 									<button
 										type="button"
@@ -1979,8 +1986,6 @@
 										{/each}
 									</button>
 								{/each}
-							{:else if row.genre_reason}
-								<span class="genre-reason" title={row.genre_reason}>{row.genre_reason}</span>
 							{/if}
 						</td>
 						<td class="c-stems">
@@ -2565,6 +2570,10 @@
 	.master-fold.below {
 		bottom: 4px;
 	}
+	/* LIBUX-33: every cell clips to its own column. A column may only set
+	 * `overflow: visible` when an inner element clips its text instead
+	 * (.c-title -> .title-text); tests/unit/track-table-cell-clip.test.mjs
+	 * holds that list. */
 	td {
 		padding: 0 var(--tt-td-pad-x);
 		border-bottom: none;
@@ -2826,14 +2835,6 @@
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
 	}
-	/* Inherits the td nowrap + ellipsis: a wrapping reason grows the
-	 * fixed-height row (22.5px -> 25px), which the virtualization math and
-	 * right-click anchored popovers both assume never happens. */
-	.genre-reason {
-		color: var(--text-muted, #8b949e);
-		font-size: 0.85em;
-		font-style: italic;
-	}
 	.genre-tag.active {
 		color: var(--rb-text);
 		text-decoration: underline;
@@ -3085,9 +3086,6 @@
 		border-bottom: none;
 		overflow: visible;
 		vertical-align: middle;
-	}
-	.c-artist {
-		overflow: visible;
 	}
 	.art-slate {
 		display: block;

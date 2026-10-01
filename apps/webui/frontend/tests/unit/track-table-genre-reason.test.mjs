@@ -1,5 +1,12 @@
 /**
- * STANDALONE-05: TrackTable renders genre_reason when no genre tags exist.
+ * STANDALONE-05 + LIBUX-34: a missing genre is a blank cell, and the reason
+ * it is missing is on hover, never printed into the data cell.
+ *
+ * the maintainer, Thu 1 Oct 2026, on the demon-llama previews: Genre showed
+ * "no genre tag in..." (truncated prose) instead of being blank. The reason
+ * is still a fact worth keeping (a missing tag reader and an untagged file
+ * are different things, STANDALONE-05), so it moves to the cell's hover
+ * title; the minor-issue square in the cloud column also still carries it.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -19,33 +26,20 @@ function genreCell() {
 	return table.slice(open, close);
 }
 
-test('Genre cell defines a genre-reason branch for empty genre tags', () => {
+test('Genre cell exposes genre_reason as the hover title', () => {
 	const cell = genreCell();
-	assert.match(cell, /row\.genre_reason/, 'cell does not read row.genre_reason');
-	assert.match(cell, /class="genre-reason"/, 'no genre-reason element');
-	assert.match(cell, /title=\{row\.genre_reason\}/, 'genre reason is not exposed as hover title');
+	const td = cell.slice(0, cell.indexOf('>'));
+	assert.match(td, /title=\{[^}]*row\.genre_reason/, 'genre reason is not the cell hover title');
 });
 
-test('Genre reason branch is not rendered as a clickable genre filter tag', () => {
+test('Genre cell never prints the reason as cell text', () => {
 	const cell = genreCell();
-	const reasonIdx = cell.indexOf('genre-reason');
-	const tagIdx = cell.indexOf('genre-tag', reasonIdx);
-	assert.equal(tagIdx, -1, 'genre-reason must not use the genre-tag filter button');
+	const body = cell.slice(cell.indexOf('>') + 1);
+	assert.doesNotMatch(body, /\{row\.genre_reason\}/, 'genre reason is rendered as visible text');
+	assert.doesNotMatch(body, /genre-reason/, 'a genre-reason element still renders');
 });
 
-function genreReasonRule() {
-	const start = table.indexOf('.genre-reason {');
-	assert.notEqual(start, -1, 'no .genre-reason style rule in TrackTable');
-	return table.slice(start, table.indexOf('}', start));
-}
-
-test('Genre reason keeps the fixed row height: it must not wrap inside the cell', () => {
-	// tbody rows are `height: var(--tt-row-h)` because the virtualization
-	// window math needs a constant height. A wrapping reason grew every
-	// state-only row from 22.5px to 25px, which moved the right-click point
-	// and pushed the Show in playlists popover past the viewport edge
-	// (track-playlists.spec.ts red 3 of 3 on CI). The td already clips with
-	// nowrap + ellipsis, and the full text is the hover title.
-	const rule = genreReasonRule();
-	assert.doesNotMatch(rule, /white-space\s*:\s*(normal|pre-wrap|pre-line|break-spaces)/, 'genre-reason must not override the td nowrap');
+test('Genre reason is not rendered as a clickable genre filter tag', () => {
+	const cell = genreCell();
+	assert.doesNotMatch(cell, /onGenreTagClick\(e,\s*row\.genre_reason/);
 });
