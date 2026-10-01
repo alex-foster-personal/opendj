@@ -92,8 +92,11 @@ test('TrackTable.svelte wires both analysis cells through AnalysisDotsPopover wi
 	assert.ok(src.includes("import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';"));
 	assert.ok(!src.includes("import AnalysisDots from './AnalysisDots.svelte';"));
 	assert.ok(src.includes('<AnalysisDotsPopover badge={_badgeFor(row)} stableId={row.stable_id} />'));
-	assert.ok(
-		src.includes('<AnalysisDotsPopover issues={_issuesFor(row)} mode="issues" stableId={row.stable_id} />')
+	// The Err cell also carries the stored beatgrid flag (GRIDFLAG-03), so it
+	// spans several attributes: pin the three this test is about, in one tag.
+	assert.match(
+		src,
+		/<AnalysisDotsPopover\s+issues=\{_issuesFor\(row\)\}\s+mode="issues"\s+stableId=\{row\.stable_id\}\s/
 	);
 });
 

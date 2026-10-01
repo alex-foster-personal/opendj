@@ -72,6 +72,7 @@ from .routes import analysis_source as analysis_source_routes
 from .routes import audio_output_health as audio_output_health_routes
 from .routes import auth as auth_routes
 from .routes import autolists as autolists_routes
+from .routes import beatgrid_flags as beatgrid_flags_routes
 from .routes import bench as bench_routes
 from .routes import bulk_edit as bulk_edit_routes
 from .routes import client_errors as client_errors_routes
@@ -531,6 +532,7 @@ def _mount_api_routers(app: FastAPI) -> None:
     api_prefix = "/api/v1"
     prefixed = (
         tracks_routes.router,
+        beatgrid_flags_routes.router,
         client_errors_routes.router,
         telemetry_consent_routes.router,
         error_feed_routes.router,

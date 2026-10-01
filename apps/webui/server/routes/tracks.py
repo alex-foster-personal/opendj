@@ -303,6 +303,7 @@ def list_tracks(
                 energy_source=row["energy_source"],
                 energy_reason=row["energy_reason"],
                 lyrics=row.get("lyrics"),
+                grid_quality=row["grid_quality"],
                 is_remix=bool(row.get("is_remix")),
                 is_radio_edit=bool(row.get("is_radio_edit")),
                 genre=row.get("genre"),

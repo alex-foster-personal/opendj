@@ -157,6 +157,22 @@ class CloudTransferOut(BaseModel):
         return self
 
 
+class GridQualityRowOut(BaseModel):
+    """A track row's stored beatgrid verdict (GRIDFLAG-02).
+
+    Read back from the grid-quality store; a listing never parses a grid.
+    ``unknown`` means nobody could judge the grid (``reason`` says why) and
+    must never be drawn as ``ok`` or as a flag. ``message`` is the sentence
+    the deck's Beat Sync badge shows for the same grid; null for ``ok``.
+    """
+
+    grid_class: Literal["ok", "suspect", "variable_tempo", "unknown"]
+    reason: str | None = None
+    # The user hid this track's flag (track field ``grid_flag_dismissed``).
+    dismissed: bool = False
+    message: str | None = None
+
+
 class TrackListItemOut(TrackOut):
     """TrackOut + parity row fields (shared API contract item 1).
 
@@ -204,6 +220,7 @@ class TrackListItemOut(TrackOut):
     energy_source: Literal["mik"] | None
     energy_reason: str
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
     # STANDALONE-05: inline genre for state-only rows; genre_reason names why
@@ -349,6 +366,7 @@ class TrackRowOut(BaseModel):
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None
+    grid_quality: GridQualityRowOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
 

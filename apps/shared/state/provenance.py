@@ -55,6 +55,10 @@ WRAPPED_FIELDS: frozenset[str] = frozenset(
         "comments",
         # PREF-01: {"regular": float|None, "min": float|None, "max": float|None}.
         "tempo_pref",
+        # GRIDFLAG-04: true while the user has hidden this track's beatgrid
+        # flag ("I know, stop telling me"). A bool, set from the Err column or
+        # PUT /beatgrid-flags/{id}/dismissed.
+        "grid_flag_dismissed",
     }
 )
 
