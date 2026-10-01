@@ -1,15 +1,16 @@
 # Tag unification (Phase 7 Plan 02)
 
 Unifies per-track tags across Rekordbox, djay, MIK, and on-disk audio
-containers and writes the chosen values back into the file (ID3v2.4 /
-MP4 atoms / Vorbis comments). Every decision is stamped with provenance
+containers and writes the chosen values back into the file (ID3v2 for
+MP3, Vorbis comments for FLAC; MP4 and Ogg are read but their writes are
+refused by name, see `docs/decisions/ADR-NEW-permissive-audio-tag-io.md`). Every decision is stamped with provenance
 so later phases (M6 open-dj) can replay.
 
 ## Modules
 
 | Module                        | Responsibility                               |
 |-------------------------------|----------------------------------------------|
-| `apps.shared.tag_writer`      | mutagen read/write + dispatch per container  |
+| `apps.shared.tag_writer`      | read (tinytag) / write (in-house) dispatch   |
 | `apps.tags.collect`           | build `TagSources` matrix per file           |
 | `apps.tags.unify`             | apply precedence + provenance                |
 | `apps.tags.preview`           | dry-run CSV for review                       |
@@ -55,7 +56,8 @@ Per-file safety rails:
 1. Skip if the file is an iCloud placeholder (`.icloud` sibling present).
 2. Abort if Rekordbox OR djay is running (pgrep).
 3. Copy to `data/tags/backups/YYYY-MM-DD/<sha256>.ext` before any write.
-4. Write tags via the container-appropriate mutagen backend.
+4. Write tags via the in-house writer for the container (`apps.shared.id3v2`,
+   `apps.shared.flac_meta`).
 5. Re-read and compare; on mismatch restore from backup and fail.
 6. Insert a `tag_provenance` row per field (stable_id, field, value,
    source, confidence, modified_at).
