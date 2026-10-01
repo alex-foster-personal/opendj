@@ -66,7 +66,9 @@ function track(uuid, pdbId) {
 		bpm: 120,
 		duration_s: 200,
 		rating: 0,
+		play_count: 0,
 		file_path: `/Contents/fixture/${pdbId}.mp3`,
+		file_present: true,
 		has_analysis: true,
 		has_artwork: false,
 		date_added: null

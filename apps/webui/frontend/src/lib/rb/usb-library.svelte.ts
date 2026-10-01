@@ -40,7 +40,7 @@ import {
 	UsbLibraryError,
 	usbNodeTitle,
 	usbRowsForNode,
-	withUsbPresence,
+	withUsbStickRemoved,
 	type UsbLibraryWire
 } from './usb-row-wire';
 
@@ -316,7 +316,7 @@ interface PaneView {
 
 function _removedView(current: PaneView): PaneView {
 	return {
-		rows: withUsbPresence(current.rows, false),
+		rows: withUsbStickRemoved(current.rows),
 		title: current.title.endsWith(REMOVED_SUFFIX)
 			? current.title
 			: `${current.title}${REMOVED_SUFFIX}`
