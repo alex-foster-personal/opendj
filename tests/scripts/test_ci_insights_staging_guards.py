@@ -1,12 +1,12 @@
 """Guards on the CI Insights staging step's failure behavior.
 
-Extracted from `test_ci_mergify_insights.py` when that module approached the
+Extracted from `test_ci_fast_lane_junit_staging.py` when that module approached the
 quality gate's per-file line limit, following the same split as
 `autoreposync_uv.py`. The helpers stay in the original module so there is one
 definition of how the workflow is loaded.
 """
 
-from tests.scripts.test_ci_mergify_insights import _stage_step
+from tests.scripts.test_ci_fast_lane_junit_staging import _stage_step
 
 
 def test_staging_fails_when_a_required_copy_or_write_fails() -> None:

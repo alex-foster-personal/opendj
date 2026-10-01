@@ -1,8 +1,10 @@
 """The pytest fast lane's JUnit reports reach Trunk Flaky Tests, one upload per shard.
 
-the maintainer, Sun 27 Sep 2026: evaluate Trunk alongside Mergify before any cutover.
-The shadow reuses the reports the isolated `ci-insights` job already downloads,
-so it adds no job and no extra billing minimum. It is MEASURE ONLY: Trunk's
+Wired as a shadow on Sun 27 Sep 2026 (ADR-NEW-trunk-flaky-tests-shadow); the only
+test-health uploader since Wed 30 Sep 2026 (ADR-NEW-trunk-is-the-only-merge-queue).
+The isolated `ci-insights` job downloads the five shards' staged reports and
+uploads each on its own, in one job, so it adds no extra billing minimum. It is
+MEASURE ONLY: Trunk's
 quarantine (which can turn a failing test run green) stays off until the maintainer
 decides otherwise, and the upload can never be the lane's verdict.
 
@@ -28,6 +30,11 @@ Regression lines:
     Trunk recorded nothing
   - if the steps stop gating on the token then every run annotates before the
     secret exists, which is pure noise
+  - if the probe exports the token's value then every later step can read it
+  - if a failed download reads as a missing report then the instrumentation
+    dies silently behind a green step that measured nothing
+  - if the retired queue's uploader or its secret comes back into ci.yml then a
+    credential for an uninstalled app is wired into CI again
   - if an upload leans on the uploader's pull_request-only defaults for the repo
     url, head sha or head branch then every main push and dispatch upload fails
     with missing required arguments while the job stays green
@@ -134,14 +141,35 @@ def test_each_upload_carries_exactly_its_own_shard_report() -> None:
         junit = upload["with"]["junit-paths"]
         assert junit == f"{path}/junit-shard-{shard}.xml", junit
         assert "*" not in junit, "a glob could sweep several shards into one upload"
-        assert f"steps.shard-outcome-{shard}.outputs.report == 'true'" in upload["if"], upload["if"]
+        assert f"steps.shard-report-{shard}.outputs.report == 'true'" in upload["if"], upload["if"]
 
 
 def test_trunk_steps_are_skipped_without_a_token() -> None:
     probe = _step_by_id(INSIGHTS_JOB, PROBE_STEP_ID)
     assert probe["env"] == {"TRUNK_API_TOKEN": "${{ secrets.TRUNK_API_TOKEN }}"}
-    for step in (*_uploads(), _step_by_name(INSIGHTS_JOB, GUARD_NAME)):
+    gated = [s for s in _steps(INSIGHTS_JOB) if s.get("id") != PROBE_STEP_ID]
+    assert len(gated) == len(_steps(INSIGHTS_JOB)) - 1, "positive control: the probe was found"
+    checked = {s["name"] for s in gated}
+    assert {u["name"] for u in _uploads()} | {GUARD_NAME} <= checked, (
+        "control: the uploads and the guard are among the steps checked"
+    )
+    for step in gated:
         assert "steps.trunk-token.outputs.present == 'true'" in step["if"], step["if"]
+        assert "always()" in step["if"], f"{step.get('name')!r}: red runs are the ones to record"
+        assert "mergify" not in step["if"], step["if"]
+
+
+def test_the_probe_exports_only_a_boolean() -> None:
+    run = _step_by_id(INSIGHTS_JOB, PROBE_STEP_ID)["run"]
+    assert "present=true" in run and "present=false" in run, run
+    assert "$TRUNK_API_TOKEN" not in run.replace("${TRUNK_API_TOKEN:-}", ""), run
+
+
+def test_the_retired_queue_is_gone_from_ci() -> None:
+    text = CI.read_text()
+    assert "trunk-io/analytics-uploader@" in text, "positive control: ci.yml was read"
+    for retired in ("gha-mergify-ci", "MERGIFY_TOKEN", "mergify-token", "mergify-insights"):
+        assert retired not in text, f"{retired!r} is back in ci.yml"
 
 
 def test_trunk_guard_reads_every_shard_upload() -> None:
@@ -151,12 +179,18 @@ def test_trunk_guard_reads_every_shard_upload() -> None:
             guard["env"][f"TRUNK_UPLOAD_{n}"] == f"${{{{ steps.trunk-flaky-tests-{n}.outcome }}}}"
         )
         assert (
-            guard["env"][f"HAS_REPORT_{n}"] == f"${{{{ steps.shard-outcome-{n}.outputs.report }}}}"
+            guard["env"][f"HAS_REPORT_{n}"] == f"${{{{ steps.shard-report-{n}.outputs.report }}}}"
         )
+        assert guard["env"][f"DOWNLOAD_{n}"] == f"${{{{ steps.download-{n}.outcome }}}}"
 
 
-def _run_guard(results: dict[int, tuple[str, str]]) -> str:
-    """Execute the guard's own run block; results maps shard -> (has_report, upload outcome)."""
+def _run_guard(
+    results: dict[int, tuple[str, str]], downloads: dict[int, str] | None = None
+) -> str:
+    """Execute the guard's own run block; results maps shard -> (has_report, upload outcome).
+
+    Every download succeeded unless `downloads` says otherwise for a shard.
+    """
     guard = _step_by_name(INSIGHTS_JOB, GUARD_NAME)
     bash = shutil.which("bash")
     assert bash, "bash is required to execute the guard"
@@ -164,6 +198,7 @@ def _run_guard(results: dict[int, tuple[str, str]]) -> str:
     for n in SHARDS:
         has_report, upload = results.get(n, ("false", ""))
         env[f"HAS_REPORT_{n}"], env[f"TRUNK_UPLOAD_{n}"] = has_report, upload
+        env[f"DOWNLOAD_{n}"] = (downloads or {}).get(n, "success")
     done = subprocess.run(
         [bash, "-e", "-c", guard["run"]],
         env=env,
@@ -190,6 +225,15 @@ def test_trunk_guard_counts_successful_shard_uploads() -> None:
 def test_trunk_guard_names_a_failed_shard_upload() -> None:
     out = _run_guard({1: ("true", "success"), 4: ("true", "failure")})
     assert "Trunk upload UNMEASURED (shard 4 of 5)" in out and "outcome=failure" in out, out
+    assert "TRUNK_UPLOAD: success (1 of 5 shard uploads)" in out, out
+
+
+def test_trunk_guard_reports_a_failed_download_as_unmeasured_not_absent() -> None:
+    out = _run_guard({1: ("true", "success")}, downloads={2: "failure", 3: ""})
+    assert "Trunk upload UNMEASURED (shard 2 of 5)" in out, out
+    assert "download outcome=failure" in out and "download outcome=empty" in out, out
+    assert "no report (shard 2 of 5)" not in out, out
+    assert "no report (shard 4 of 5)" in out, "control: a clean download still reads as absent"
     assert "TRUNK_UPLOAD: success (1 of 5 shard uploads)" in out, out
 
 

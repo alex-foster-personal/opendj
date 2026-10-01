@@ -4,7 +4,8 @@ Companion to docs/oss-going-public-checklist.md. The checklist's REVIEW table wa
 one-off grep whose literal search strings were themselves scrubbed by #910 and #1326, so
 the numbers there cannot be re-derived. This module pins the INVARIANT instead: the
 tracked tree carries no real home directory, no consumer mailbox, no tailnet name and no
-CGNAT address. It is run by tests/scripts/test_oss_tip_audit.py on every CI pass, so a
+CGNAT address, and no login the tree reveals in a home path written as a bare word
+anywhere else (scripts/oss_tip_logins.py). It is run by tests/scripts/test_oss_tip_audit.py on every CI pass, so a
 regression fails a PR rather than surfacing in a public fork.
 
     python -m scripts.oss_tip_audit            # scan the tracked tree, exit 1 on findings
@@ -34,6 +35,7 @@ from __future__ import annotations
 import argparse
 import codecs
 import os
+import re
 import subprocess
 import sys
 from bisect import bisect_right
@@ -41,6 +43,12 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.oss_tip_logins import RULE as KNOWN_LOGIN_RULE
+from scripts.oss_tip_logins import (
+    bare_login_matches,
+    known_login_pattern,
+    revealed_logins,
+)
 from scripts.oss_tip_rules import (
     ALLOWED_MAILBOXES,
     ALLOWED_NON_ADDRESSES,
@@ -67,6 +75,7 @@ __all__ = [
     "RULE_PREFILTERS",
     "AuditResult",
     "Finding",
+    "KnownLogins",
     "audit_index",
     "audit_paths",
     "audit_tracked_tree",
@@ -111,6 +120,27 @@ class AuditResult:
         )
 
 
+@dataclass(frozen=True)
+class KnownLogins:
+    """Logins the published tree reveals in a home-directory position (oss_tip_logins).
+
+    Built once per audit from EVERY published text, records included, and then applied
+    to the scanned texts only, so a record can teach the gate a login without its own
+    content being judged.
+    """
+
+    logins: frozenset[str] = frozenset()
+    pattern: re.Pattern[str] | None = None
+
+    @classmethod
+    def from_texts(cls, texts: Iterable[str]) -> KnownLogins:
+        logins = revealed_logins(texts)
+        return cls(logins, known_login_pattern(logins))
+
+
+NO_KNOWN_LOGINS = KnownLogins()
+
+
 # ----- matching ------------------------------------------------------------------------
 
 
@@ -126,7 +156,9 @@ def is_exempt(finding: Finding) -> bool:
     return finding.path in MAILBOX_EXEMPT_PATHS or finding.path in GENERATED_TEST_ID_PATHS
 
 
-def findings_in_text(path: str, text: str) -> Iterator[Finding]:
+def findings_in_text(
+    path: str, text: str, known: KnownLogins = NO_KNOWN_LOGINS
+) -> Iterator[Finding]:
     """One pass per rule over the WHOLE text, with line numbers derived from the
     match offset.
 
@@ -139,6 +171,10 @@ def findings_in_text(path: str, text: str) -> Iterator[Finding]:
     a property of the patterns, so the test asserts it rather than trusting it.
     """
     lowered = text.lower()
+    line_starts: list[int] | None = None
+    for match in bare_login_matches(text, lowered, known.pattern, known.logins):
+        line_starts = line_starts or _line_starts(text)
+        yield Finding(path, bisect_right(line_starts, match.start()), KNOWN_LOGIN_RULE, match.group(0))
     live = [
         (rule, pattern)
         for rule, pattern in PATTERNS
@@ -146,11 +182,7 @@ def findings_in_text(path: str, text: str) -> Iterator[Finding]:
     ]
     if not live:
         return
-    line_starts = [0]
-    start = text.find("\n")
-    while start != -1:
-        line_starts.append(start + 1)
-        start = text.find("\n", start + 1)
+    line_starts = line_starts or _line_starts(text)
     for rule, pattern in live:
         for match in pattern.finditer(text):
             # A bounded window of what precedes the match, for the two rules that
@@ -160,6 +192,15 @@ def findings_in_text(path: str, text: str) -> Iterator[Finding]:
             preceding = text[max(0, match.start() - 256) : match.start()]
             if _rule_accepts(rule, match, preceding):
                 yield Finding(path, bisect_right(line_starts, match.start()), rule, match.group(0))
+
+
+def _line_starts(text: str) -> list[int]:
+    starts = [0]
+    start = text.find("\n")
+    while start != -1:
+        starts.append(start + 1)
+        start = text.find("\n", start + 1)
+    return starts
 
 
 # ----- tree walk -----------------------------------------------------------------------
@@ -349,13 +390,14 @@ def _audit_one(
     exempt: list[Finding],
     *,
     scan_content: bool = True,
+    known: KnownLogins = NO_KNOWN_LOGINS,
 ) -> bool:
     """Audit one path plus its bytes. True when the CONTENT was read."""
     # Line 0: the name, not a line of the content. Done for EVERY tracked path,
     # including binaries and including records, because `git ls-files` prints the
     # name of a blob nobody opens (Codex P1, #1440) and a record FILENAME must not
     # be a way to smuggle an identity past the gate (#1808).
-    for finding in findings_in_text(rel, rel):
+    for finding in findings_in_text(rel, rel, known):
         (exempt if is_exempt(finding) else findings).append(
             Finding(finding.path, 0, finding.rule, finding.match)
         )
@@ -364,9 +406,32 @@ def _audit_one(
     text = _decode_text(raw)
     if text is None:
         return False
-    for finding in findings_in_text(rel, text):
+    for finding in findings_in_text(rel, text, known):
         (exempt if is_exempt(finding) else findings).append(finding)
     return True
+
+
+def _known_logins(entries: Iterable[tuple[str, bytes]]) -> KnownLogins:
+    """Harvest from EVERY publishable path and its text, records included.
+
+    Records are read here although their content is never judged: a record that
+    quotes a real home directory is exactly how the gate learns that login is real.
+    """
+
+    def texts() -> Iterator[str]:
+        for rel, raw in entries:
+            yield rel
+            text = _decode_text(raw)
+            if text is not None:
+                yield text
+
+    return KnownLogins.from_texts(texts())
+
+
+def _filesystem_bytes(path: Path) -> bytes:
+    if path.is_symlink():
+        return os.readlink(path).encode()
+    return path.read_bytes() if path.is_file() else b""
 
 
 def _is_content_scanned(rel: str, *, include_records: bool) -> bool:
@@ -378,16 +443,18 @@ def audit_index(root: Path, *, include_records: bool = False) -> AuditResult:
     findings: list[Finding] = []
     exempt: list[Finding] = []
     scanned = skipped_binary = records = 0
-    for rel, mode, raw in published_blobs(root):
+    blobs = list(published_blobs(root))
+    known = _known_logins((rel, raw) for rel, _mode, raw in blobs)
+    for rel, mode, raw in blobs:
         if not _is_content_scanned(rel, include_records=include_records):
-            _audit_one(rel, b"", findings, exempt, scan_content=False)
+            _audit_one(rel, b"", findings, exempt, scan_content=False, known=known)
             records += 1
             continue
         if mode == "160000":
             # A submodule has no blob to read, but git publishes its PATHNAME.
-            _audit_one(rel, b"", findings, exempt)
+            _audit_one(rel, b"", findings, exempt, known=known)
             continue
-        if _audit_one(rel, raw, findings, exempt):
+        if _audit_one(rel, raw, findings, exempt, known=known):
             scanned += 1
         else:
             skipped_binary += 1
@@ -399,10 +466,14 @@ def audit_paths(root: Path, paths: Iterable[Path], *, include_records: bool = Fa
     findings: list[Finding] = []
     exempt: list[Finding] = []
     scanned = skipped_binary = records = 0
+    paths = list(paths)
+    known = _known_logins(
+        (path.relative_to(root).as_posix(), _filesystem_bytes(path)) for path in paths
+    )
     for path in paths:
         rel = path.relative_to(root).as_posix()
         if not _is_content_scanned(rel, include_records=include_records):
-            _audit_one(rel, b"", findings, exempt, scan_content=False)
+            _audit_one(rel, b"", findings, exempt, scan_content=False, known=known)
             records += 1
             continue
         if path.is_symlink():
@@ -410,12 +481,12 @@ def audit_paths(root: Path, paths: Iterable[Path], *, include_records: bool = Fa
             # a broken one vanished from the scan entirely, and a working one had
             # the target's contents audited in place of the target path git
             # actually ships (Codex P1, #1440).
-            _audit_one(rel, os.readlink(path).encode(), findings, exempt)
+            _audit_one(rel, os.readlink(path).encode(), findings, exempt, known=known)
             scanned += 1
             continue
         if not path.is_file():
             continue
-        if _audit_one(rel, path.read_bytes(), findings, exempt):
+        if _audit_one(rel, path.read_bytes(), findings, exempt, known=known):
             scanned += 1
         else:
             skipped_binary += 1

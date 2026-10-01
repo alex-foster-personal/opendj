@@ -34,6 +34,9 @@ Acceptance tests:
   [then] the build fails and caches nothing, [else ⛔️].
 - [if] a staged payload lacks the checkpoint or the runner site [then]
   verification fails naming the missing piece, [else ⛔️].
+- [if] the checkpoint is staged [then] Beat This!'s MIT notice is staged
+  beside it, and a payload without that notice (or with some other text in
+  its place) fails verification, [else ⛔️].
 """
 
 from __future__ import annotations
@@ -252,6 +255,17 @@ def test_stage_checkpoint_copies_byte_identical_to_the_launcher_path(tmp_path: P
     assert staged.read_bytes() == b"weights"
 
 
+def test_stage_checkpoint_ships_the_mit_notice_beside_it(tmp_path: Path) -> None:
+    cached = tmp_path / "c.ckpt"
+    cached.write_bytes(b"weights")
+    payload = tmp_path / "payload"
+    payload_beatgrid.stage_checkpoint(payload, cached)
+    notice = (payload / payload_beatgrid.CHECKPOINT_LICENSE_RELATIVE).read_text(encoding="utf-8")
+    assert notice.startswith("MIT License")
+    assert "Copyright (c) 2024 Institute of Computational Perception, JKU Linz, Austria" in notice
+    assert "The above copyright notice and this permission notice shall be included" in notice
+
+
 # ----- verification -----------------------------------------------------------
 
 
@@ -270,6 +284,52 @@ def test_verify_refuses_a_checkpoint_with_the_wrong_digest(tmp_path: Path) -> No
     staged.write_bytes(b"not final0")
     with pytest.raises(payload_beatgrid.PayloadBeatgridError, match="sha256"):
         payload_beatgrid.verify_bundled_beatgrid_runner(payload, REPO_ROOT)
+
+
+def _payload_with_real_digest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A payload whose staged checkpoint passes the digest check, so the
+    verifier reaches the notice check. The pinned digest is swapped for the
+    digest of stand-in bytes rather than shipping 81 MB of weights."""
+    payload = tmp_path / "payload"
+    (payload / payload_beatgrid.RUNNER_SITE_RELATIVE).mkdir(parents=True)
+    cached = tmp_path / "c.ckpt"
+    cached.write_bytes(b"stand-in weights")
+    monkeypatch.setattr(
+        payload_beatgrid.weights, "CHECKPOINT_SHA256",
+        hashlib.sha256(b"stand-in weights").hexdigest(),
+    )
+    payload_beatgrid.stage_checkpoint(payload, cached)
+    return payload
+
+
+def test_verify_refuses_a_checkpoint_without_its_license_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = _payload_with_real_digest(tmp_path, monkeypatch)
+    (payload / payload_beatgrid.CHECKPOINT_LICENSE_RELATIVE).unlink()
+    with pytest.raises(payload_beatgrid.PayloadBeatgridError, match="license notice missing"):
+        payload_beatgrid.verify_bundled_beatgrid_runner(payload, REPO_ROOT)
+
+
+def test_verify_refuses_some_other_text_in_place_of_the_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = _payload_with_real_digest(tmp_path, monkeypatch)
+    (payload / payload_beatgrid.CHECKPOINT_LICENSE_RELATIVE).write_text("MIT License\n")
+    with pytest.raises(payload_beatgrid.PayloadBeatgridError, match="not Beat This!'s MIT notice"):
+        payload_beatgrid.verify_bundled_beatgrid_runner(payload, REPO_ROOT)
+
+
+def test_verify_passes_the_notice_check_with_the_staged_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control: with the real notice staged, verification gets PAST the notice
+    check and fails later, on the launcher this bare payload never had."""
+    payload = _payload_with_real_digest(tmp_path, monkeypatch)
+    with pytest.raises((payload_beatgrid.PayloadBeatgridError, OSError)) as caught:
+        payload_beatgrid.verify_bundled_beatgrid_runner(payload, REPO_ROOT)
+    assert "license notice" not in str(caught.value)
+    assert "MIT notice" not in str(caught.value)
 
 
 def test_verify_refuses_a_payload_without_the_runner_site(tmp_path: Path) -> None:

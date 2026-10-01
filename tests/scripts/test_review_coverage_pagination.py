@@ -24,17 +24,19 @@ test skipped only on a missing `gh` binary, not on a present-but-unauthenticated
 one -- exactly this repo's own `pytest fast lane + reqs-check` CI step, which
 runs `gh` without `GH_TOKEN`. `_gh_unavailable_reason` now also skips on a
 failing `gh auth status`.
+
+Thu 1 Oct 2026: authentication was not enough either. PR CI now exports a token, so the
+test ran live on every PR and spent the shared runner token's quota; when that ran out
+(`API rate limit exceeded for user ID 166056029`, run 36823458339) it turned PR #4678
+red on code the PR never touched. It now runs only under `MDT_LIVE_GITHUB=1`
+(tests/support/live_github.py), like every other live-API test here.
 """
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-
-import pytest
-
 from scripts.review_coverage import REPO
 from scripts.review_gh import _flatten_pages, _paginated_json_list
+from tests.support.live_github import live_github
 
 # ----- _flatten_pages: pure, no `_gh` involved -----------------------------
 
@@ -66,31 +68,8 @@ def test_no_pages_at_all_flattens_to_an_empty_list() -> None:
 # ----- _paginated_json_list: real CLI integration test, no mock ------------
 
 
-def _gh_unavailable_reason() -> str | None:
-    """None when a real `gh api` call can run; otherwise the UNAVAILABLE
-    reason to skip on (AGENTS.md: report unavailable, never fabricate a
-    passing result).
-
-    issue #1016 P1 BLOCKING, thread r3929608593 (PR #1053, Thu 3 Sep 2026):
-    checking only `shutil.which("gh")` is not enough -- this repo's
-    `pytest fast lane + reqs-check` CI step runs with `gh` on PATH but no
-    `GH_TOKEN` exported, so an unauthenticated `gh api` call exits 4 before
-    any pagination assertion runs, turning every hosted-runner PR red
-    regardless of the change under test. Authentication is the actual
-    precondition; binary presence alone is not.
-    """
-    if shutil.which("gh") is None:
-        return "UNAVAILABLE: gh CLI not on PATH"
-    if subprocess.run(["gh", "auth", "status"], capture_output=True, check=False).returncode != 0:
-        return "UNAVAILABLE: gh CLI is not authenticated (no GH_TOKEN)"
-    return None
-
-
-_GH_UNAVAILABLE_REASON = _gh_unavailable_reason()
-
-
-@pytest.mark.skipif(_GH_UNAVAILABLE_REASON is not None, reason=str(_GH_UNAVAILABLE_REASON))
-def test_paginated_json_list_flattens_a_real_endpoint_through_the_real_gh_cli() -> None:
+@live_github
+def test_paginated_json_list_flattens_a_real_endpoint_through_the_real_gh_cli(gh_authenticated: None) -> None:
     """issue #1016 P1 BLOCKING, thread r3927877691: proves the live `gh api
     <endpoint> --paginate --slurp` wiring through the actual `_gh` subprocess
     call against a real, permanently-queryable endpoint (this PR's own review

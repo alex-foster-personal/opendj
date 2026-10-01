@@ -10,15 +10,11 @@ from __future__ import annotations
 import json
 import socket
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
-import uvicorn
 
-from apps.webui.server.app import create_app
-from apps.webui.server.backend import InMemoryBackend
 from scripts.diagnostics.opendj_performance_probe import (
     TREND_REPORT_FAILURE_EXIT,
     OpenDJProbe,
@@ -27,6 +23,8 @@ from scripts.diagnostics.opendj_performance_probe import (
     main,
     report_red_trend,
 )
+from tests.scripts.probe_report_servers import serving_engine as _serving_engine
+from tests.scripts.probe_report_servers import stop_engine as _stop_engine
 from tests.scripts.probe_sample_fixtures import captured_record as _captured_record
 from tests.scripts.probe_sample_fixtures import write_trend_rows as _write_trend_rows
 
@@ -96,34 +94,6 @@ def _serving_malformed_sink() -> tuple[HTTPServer, int]:
     server = HTTPServer(("127.0.0.1", 0), _MalformedReceiptSink)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, int(server.server_address[1])
-
-
-def _serving_engine(log_dir: Path) -> tuple[uvicorn.Server, threading.Thread, int]:
-    """Serve the production client-error route over a real loopback socket."""
-
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(5)
-    server = uvicorn.Server(
-        uvicorn.Config(
-            create_app(
-                backend=InMemoryBackend(),
-                mount_frontend=False,
-                enable_cors=False,
-                client_error_log_dir=log_dir,
-            ),
-            log_level="warning",
-        )
-    )
-    thread = threading.Thread(target=lambda: server.run(sockets=[listener]), daemon=True)
-    thread.start()
-    for _ in range(100):
-        if server.started:
-            return server, thread, int(listener.getsockname()[1])
-        time.sleep(0.01)
-    server.should_exit = True
-    thread.join(timeout=2)
-    raise RuntimeError("production engine did not start")
 
 
 def test_report_red_trend_raises_when_the_connection_is_refused() -> None:
@@ -205,8 +175,7 @@ def test_report_red_trend_persists_through_the_production_engine_route(tmp_path:
     try:
         receipt = report_red_trend(port, {"verdict_reason": "1 suspected orphan(s)"})
     finally:
-        server.should_exit = True
-        thread.join(timeout=5)
+        _stop_engine(server, thread)
 
     assert receipt["posted"] is True
     assert receipt["http_status"] == 202

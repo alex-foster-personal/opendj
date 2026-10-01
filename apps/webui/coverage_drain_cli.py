@@ -23,7 +23,7 @@ from urllib.parse import quote
 
 import httpx
 
-from apps.engine_core.origin import resolve_origin
+from apps.shared.engine_origin import resolve_origin
 from apps.webui.port_config import PortConfigError, resolve_ports
 from apps.webui.server.coverage_drain_state import SWITCHABLE_STEPS
 
