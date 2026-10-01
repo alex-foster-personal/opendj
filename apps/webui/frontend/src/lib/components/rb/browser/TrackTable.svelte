@@ -26,6 +26,8 @@
 	import {
 		artworkUrl,
 		artworkStatusLabel,
+		decodePreviewStrip,
+		fetchPreviewStrips,
 		type PreviewStripData,
 		type Vocals
 	} from '$lib/rb/api-rb';
@@ -83,6 +85,7 @@
 	import AutoPlayWalkthrough from './AutoPlayWalkthrough.svelte';
 	import LyricColumn from './LyricColumn.svelte';
 	import PreviewStrip from './PreviewStrip.svelte';
+	import { PreviewStripFiller } from '$lib/rb/preview-strip-fill';
 	import QualityBadge from '../QualityBadge.svelte';
 	import RatingStars from './RatingStars.svelte';
 	import AnalysisDotsPopover from './AnalysisDotsPopover.svelte';
@@ -960,6 +963,32 @@
 		onrenderedrowcapacity?.(renderedRowCapacity);
 	});
 
+	// Strips for rows in view (+ one screen of margin) that were listed without
+	// one: asked for in debounced batches, never per row (NATIVE-21).
+	let filledStrips: Record<string, PreviewStripData | null> = $state({});
+	const stripFiller = new PreviewStripFiller({
+		fetchBatch: fetchPreviewStrips,
+		onStrip: (id, wire) => {
+			filledStrips[id] = decodePreviewStrip(wire.preview_b64, wire.preview_max);
+		},
+		onError: (error) => console.warn('[preview-strips] batch read failed; retrying with backoff', error),
+		now: () => Date.now(),
+		setTimer: (fn, ms) => setTimeout(fn, ms),
+		clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>)
+	});
+	$effect(() => () => stripFiller.dispose());
+	$effect(() => {
+		const margin = renderedRowCapacity;
+		const near = rows.slice(
+			Math.max(0, windowInfo.startIndex - margin),
+			windowInfo.endIndex + margin
+		);
+		const missing = near
+			.filter((r) => r.strip === null && previewStripById[r.stable_id] == null)
+			.map((r) => r.stable_id);
+		untrack(() => stripFiller.setVisible(missing.filter((id) => filledStrips[id] == null)));
+	});
+
 	/** Jump to first in-place find match when the query becomes active. */
 	$effect(() => {
 		const q = findQuery;
@@ -1806,7 +1835,7 @@
 						{/if}
 						<td class="c-preview">
 							<PreviewStrip
-								strip={row.strip ?? previewStripById[row.stable_id] ?? null}
+								strip={row.strip ?? previewStripById[row.stable_id] ?? filledStrips[row.stable_id] ?? null}
 								stripLoading={stripLoadingById[row.stable_id] ?? false}
 								vocals={vocalsById[row.stable_id] ?? null}
 								markerAnlz={markerAnlzById[row.stable_id] ?? null}
