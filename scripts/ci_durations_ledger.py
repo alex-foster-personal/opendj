@@ -36,7 +36,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 SHARDS = 5
@@ -50,6 +50,10 @@ LEDGER_WORKFLOW = "durations-ledger.yml"
 MAX_TEST_SECONDS = 1800.0
 MIN_ROW_RATIO = 0.9
 RUNS_TO_SCAN = 20
+
+# The one network seam: `gh api <path>` -> response body. Tests replay real captured
+# exchanges through it (tests/fixtures/github/durations_ledger_exchanges.json).
+Api = Callable[[str], bytes]
 
 
 class LedgerError(Exception):
@@ -118,20 +122,20 @@ def _gh(path: str) -> bytes:
     return done.stdout
 
 
-def _gh_json(path: str) -> dict:
-    return json.loads(_gh(path))
+def _gh_json(api: Api, path: str) -> dict:
+    return json.loads(api(path))
 
 
-def _live_artifact(repo: str, run_id: int, name: str) -> int | None:
+def _live_artifact(repo: str, run_id: int, name: str, api: Api = _gh) -> int | None:
     """The id of a run's unexpired artifact called `name`, or None. Filtered by name, so
     a run with more than one page of artifacts cannot hide it."""
-    listing = _gh_json(f"repos/{repo}/actions/runs/{run_id}/artifacts?name={name}&per_page=100")
+    listing = _gh_json(api, f"repos/{repo}/actions/runs/{run_id}/artifacts?name={name}&per_page=100")
     live = [a["id"] for a in listing.get("artifacts", []) if a.get("name") == name and not a.get("expired")]
     return live[0] if live else None
 
 
-def _artifact_file(repo: str, artifact_id: int) -> object:
-    blob = _gh(f"repos/{repo}/actions/artifacts/{artifact_id}/zip")
+def _artifact_file(repo: str, artifact_id: int, api: Api = _gh) -> object:
+    blob = api(f"repos/{repo}/actions/artifacts/{artifact_id}/zip")
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
         try:
             return json.loads(archive.read(LEDGER_FILE))
@@ -139,23 +143,24 @@ def _artifact_file(repo: str, artifact_id: int) -> object:
             raise LedgerError(f"artifact {artifact_id} has no {LEDGER_FILE}") from exc
 
 
-def build(repo: str, out: Path, seed_path: Path) -> str:
+def build(repo: str, out: Path, seed_path: Path, api: Api = _gh) -> str:
     seed = _validate(_read_json(seed_path), f"seed {seed_path}")
     runs = _gh_json(
+        api,
         f"repos/{repo}/actions/workflows/{SOURCE_WORKFLOW}/runs"
         f"?branch=main&event=push&status=success&per_page={RUNS_TO_SCAN}"
     ).get("workflow_runs", [])
     names = [SHARD_ARTIFACT.format(n=n) for n in range(1, SHARDS + 1)]
     skipped: list[str] = []
     for run in runs:
-        found = [_live_artifact(repo, run["id"], name) for name in names]
+        found = [_live_artifact(repo, run["id"], name, api) for name in names]
         ids = [artifact_id for artifact_id in found if artifact_id is not None]
         if len(ids) != len(names):
             skipped.append(f"run {run['id']}: shard artifact(s) missing or expired")
             continue
         # One bad run (a short run, a repeated test) must not hide an older good one.
         try:
-            ledger = merge([_artifact_file(repo, artifact_id) for artifact_id in ids])
+            ledger = merge([_artifact_file(repo, artifact_id, api) for artifact_id in ids])
             check_rows(ledger, seed)
         except LedgerError as exc:
             skipped.append(f"run {run['id']}: {exc}")
@@ -174,12 +179,13 @@ def build(repo: str, out: Path, seed_path: Path) -> str:
     )
 
 
-def resolve(repo: str) -> str:
+def resolve(repo: str, api: Api = _gh) -> str:
     runs = _gh_json(
+        api,
         f"repos/{repo}/actions/workflows/{LEDGER_WORKFLOW}/runs?branch=main&status=success&per_page=10"
     ).get("workflow_runs", [])
     for run in runs:
-        if _live_artifact(repo, run["id"], LEDGER_ARTIFACT) is not None:
+        if _live_artifact(repo, run["id"], LEDGER_ARTIFACT, api) is not None:
             return str(run["id"])
     return ""
 
@@ -195,7 +201,7 @@ def install(src: Path, dest: Path) -> str:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, api: Api = _gh) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     p_build = sub.add_parser("build")
@@ -210,9 +216,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "build":
-            print(build(args.repo, args.out, args.seed))
+            print(build(args.repo, args.out, args.seed, api))
         elif args.command == "resolve":
-            print(resolve(args.repo))
+            print(resolve(args.repo, api))
         else:
             print(install(args.src, args.dest))
     except (LedgerError, OSError, ValueError, KeyError, zipfile.BadZipFile, subprocess.TimeoutExpired) as exc:
