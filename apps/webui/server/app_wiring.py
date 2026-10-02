@@ -205,6 +205,22 @@ def _resolve_ports(
     return port, frontend_port
 
 
+def _start_coverage_drain(app: FastAPI) -> None:
+    """HEALTH-05: built only on an app the daemon entry point ARMED; the
+    user setting (default on) is read by the drain itself, every tick."""
+    if not getattr(app.state, "coverage_drain_armed", False):
+        return
+    if getattr(app.state, "coverage_drain", None) is None:
+        app.state.coverage_drain = coverage_drain.build_for_app(app)
+    app.state.coverage_drain.start()
+
+
+def _stop_coverage_drain(app: FastAPI) -> None:
+    drain = getattr(app.state, "coverage_drain", None)
+    if drain is not None:
+        drain.stop()
+
+
 @asynccontextmanager
 async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     from .app import build_auto_analyze_watcher, build_lyric_index_watcher
@@ -257,12 +273,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
             )
             app.state.library_jobs_watcher = jobs_watcher
         jobs_watcher.start()
-        # HEALTH-05: built only on an app the daemon entry point ARMED; the
-        # user setting (default on) is read by the drain itself, every tick.
-        if getattr(app.state, "coverage_drain_armed", False):
-            if getattr(app.state, "coverage_drain", None) is None:
-                app.state.coverage_drain = coverage_drain.build_for_app(app)
-            app.state.coverage_drain.start()
+        _start_coverage_drain(app)
         from . import path_availability_refresh
 
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
@@ -273,9 +284,7 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         path_availability_refresh.stop()
         if cloudsync_scheduler is not None:
             cloudsync_scheduler.stop()
-        drain = getattr(app.state, "coverage_drain", None)
-        if drain is not None:
-            drain.stop()
+        _stop_coverage_drain(app)
         jobs_w = getattr(app.state, "library_jobs_watcher", None)
         if jobs_w is not None:
             jobs_w.stop()

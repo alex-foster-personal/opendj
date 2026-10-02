@@ -17,7 +17,8 @@ from typing import Any
 
 import httpx
 
-from apps.opendj_cli.api_cli import resolve_backend_base_url
+from apps.shared.engine_origin import resolve_origin
+from apps.webui.port_config import PortConfigError, resolve_ports
 
 PREFIX: str = "/api/v1/coverage-drain"
 REQUEST_TIMEOUT_S: float = 30.0
@@ -36,12 +37,20 @@ def request_for(verb: str) -> Request:
     return VERBS[verb]
 
 
+def _backend_base_url() -> str:
+    """Worktree ports when configured, else the engine lock file's origin."""
+    try:
+        return resolve_ports().api_proxy_target
+    except PortConfigError:
+        return resolve_origin().base_url
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="coverage_drain_cli", description=__doc__.splitlines()[0])
     parser.add_argument("verb", choices=sorted(VERBS))
     args = parser.parse_args(argv)
     method, path, body = request_for(args.verb)
-    base_url = resolve_backend_base_url().base_url
+    base_url = _backend_base_url()
     with httpx.Client(timeout=REQUEST_TIMEOUT_S) as client:
         response = client.request(method, f"{base_url}{path}", json=body)
     sys.stdout.write(json.dumps(response.json(), indent=2) + "\n")

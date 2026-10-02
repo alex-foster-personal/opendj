@@ -293,12 +293,8 @@ class CoverageDrain:
         return state
 
     def _tick(self) -> str:
-        if not self._config.enabled():
-            return self._settle("disabled")
-        if self._stopped:
-            return self._settle("stopped")
-        if self._playing_fn():
-            return self._settle("paused_playing")
+        if (idle := self._idle_reason()) is not None:
+            return self._settle(idle)
         snapshot, self._carried = self._carried or self._snapshot_fn(), None
         self._absorb(snapshot)
         if snapshot.green:
@@ -317,8 +313,21 @@ class CoverageDrain:
                     return self._run(step, stable_id, audio_path, signature)
                 if prior is not None and prior.attempts < outcomes_mod.MAX_ATTEMPTS:
                     retry_times.append(outcomes_mod.next_attempt_at(prior))
+        return self._settle_blocked(snapshot, retry_times)
+
+    def _settle_blocked(self, snapshot: CoverageSnapshot, retry_times: list[float]) -> str:
         self._status.next_retry_at = min(retry_times) if retry_times else None
         return self._settle("blocked", self._blocked_reason(snapshot, bool(retry_times)))
+
+    def _idle_reason(self) -> str | None:
+        """Why this tick does no work before measuring anything, or None."""
+        if not self._config.enabled():
+            return "disabled"
+        if self._stopped:
+            return "stopped"
+        if self._playing_fn():
+            return "paused_playing"
+        return None
 
     def _absorb(self, snapshot: CoverageSnapshot) -> None:
         status = self._status
