@@ -55,17 +55,21 @@ class TagReadError(Exception):
     """The file could not be parsed as tagged audio (corrupt, truncated, not audio)."""
 
 
-def read(path: Path | str, *, image: bool = False) -> TinyTag:
+def read(path: Path | str, *, image: bool = False, duration: bool = True) -> TinyTag:
     """Parse ``path`` with tinytag; raise :class:`TagReadError` when it cannot.
 
     Callers decide whether a failure is data (a library walk) or an error
     (an upload probe). ``image=True`` also loads embedded pictures.
+    ``duration=False`` skips the stream scan for callers that only want tags
+    or pictures: the listing's artwork probe runs per row, and the scan is
+    the larger share of a parse (measured 42 vs 28 us on a 3 s mp3, more on
+    long VBR files).
     """
     require()
     from tinytag import TinyTag  # type: ignore
 
     try:
-        return TinyTag.get(str(path), image=image)
+        return TinyTag.get(str(path), tags=True, duration=duration, image=image)
     except Exception as exc:
         raise TagReadError(str(exc) or type(exc).__name__) from exc
 

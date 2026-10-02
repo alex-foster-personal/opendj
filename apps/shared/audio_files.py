@@ -221,7 +221,7 @@ def read_embedded_artwork(path: Path) -> tuple[bytes, str] | None:
     if not HAS_TAG_READER:
         return None
     try:
-        tag = _tagreader.read(path, image=True)
+        tag = _tagreader.read(path, image=True, duration=False)
     except _tagreader.TagReadError:
         return None
     return _first_safe_picture(_picture_candidates(tag))
@@ -232,7 +232,7 @@ def embedded_artwork_available(path: Path) -> bool:
     if not HAS_TAG_READER:
         return False
     try:
-        tag = _tagreader.read(path, image=True)
+        tag = _tagreader.read(path, image=True, duration=False)
     except _tagreader.TagReadError:
         return False
     return _has_safe_picture(_picture_candidates(tag))
