@@ -421,6 +421,22 @@ def local_anlz_payload(
     return payload
 
 
+def local_strip_ids() -> frozenset[str]:
+    """Every stable id that has a cached strip sidecar, from ONE directory scan.
+
+    A listing page asks this once instead of trying to open one sidecar per
+    row (LIBM-137's warm-page open budget): a row absent here has no local
+    strip, so it costs no open at all. A missing or unreadable cache directory
+    is the empty set, the same "not decoded yet" answer a missing sidecar gives.
+    """
+    suffix = ".strip.json"
+    try:
+        with os.scandir(config.LOCAL_WAVEFORM_CACHE_DIR) as entries:
+            return frozenset(e.name[: -len(suffix)] for e in entries if e.name.endswith(suffix))
+    except OSError:
+        return frozenset()
+
+
 def local_preview_strip(stable_id: str) -> tuple[str | None, int | None]:
     """The cached browser strip for an unmapped track. NEVER decodes.
 
@@ -455,5 +471,6 @@ __all__ = [
     "ensure_local_peaks",
     "local_anlz_payload",
     "local_preview_strip",
+    "local_strip_ids",
     "peaks_version",
 ]

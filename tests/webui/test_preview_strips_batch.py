@@ -56,6 +56,8 @@ def world(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     )
     cached = {UNMAPPED_CACHED: ("TE9DQUw=", 17)}
     monkeypatch.setattr(track_rows, "local_preview_strip", lambda sid: cached.get(sid, (None, None)))
+    # The page scans the cache directory once for which rows have a strip.
+    monkeypatch.setattr(track_rows, "local_strip_ids", lambda: frozenset(cached))
     drain = FakeDrain()
     app = FastAPI()
     app.include_router(library.router, prefix="/api/v1")
