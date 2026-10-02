@@ -137,6 +137,58 @@ export function beatTimeAt(beats: readonly AnlzBeat[], index: number): number {
 	return beats[i].t + (f && f * (beats[i + 1].t - beats[i].t));
 }
 
+/**
+ * Phase-keeping seek: a quantized seek or a beat jump on a PLAYING deck keeps
+ * the deck's own beat phase AT THE INSTANT IT LANDS (round 2 hardening, NAE-19).
+ *
+ * The engine decides a seek's target at one context time and the schedule
+ * lands at another: `_scheduleDeckSerial` moves the requested instant later
+ * whenever the processor lead or a superseding pending segment needs it. A
+ * target fixed in track seconds then lands late by that gap, so the deck
+ * skips part of a beat. Measured in the real engine
+ * (performance-beat-sync-adversarial.spec.ts): with BeatSyncMax on, a +4
+ * beat jump on a playing 128 BPM master landed 165.2 ms behind its own rhythm
+ * and a quantized click 169.6 ms (8.7 and 117.5 ms with it off), and the
+ * phase lock then had to drag every Beat Sync follower after it.
+ *
+ * The landing is therefore evaluated from the playhead projected to the
+ * effective landing time:
+ * - a beat jump moves exactly the beats asked, fraction included, so +4 lands
+ *   four grid beats on whenever it lands (inside an engaged loop too: the
+ *   loop shifts by the same beats);
+ * - a quantized click / CUE / hot cue lands on the snapped target beat at
+ *   the beat fraction the playhead is at when it lands (Rekordbox's quantize:
+ *   the groove never skips, and a synced follower stays in phase without a
+ *   re-seek).
+ * Off the grid (before the first beat, at or after the last) there is no
+ * phase to keep and the caller lands on its fixed target as before.
+ *
+ * Where a deck playing at `currentSec` lands: `jumpBeats` grid beats on
+ * (a beat jump), or with no jump on the beat nearest `targetSec` at the
+ * playhead's own beat fraction (a quantized seek). `targetSec` with no grid,
+ * when either end is off the grid, or past `endSec` (a grid can run past the
+ * decoded audio). -Claude
+ */
+export function phaseKeepingLandingSec(
+	beats: readonly AnlzBeat[] | null,
+	currentSec: number,
+	jumpBeats: number | null,
+	targetSec: number,
+	endSec: number
+): number {
+	if (beats === null) return targetSec;
+	const current = gridBeatPosition(beats, currentSec);
+	const target = jumpBeats === null ? gridBeatPosition(beats, targetSec) : 0;
+	const index =
+		current === null || target === null
+			? -1
+			: jumpBeats === null
+				? Math.round(target) + (current % 1)
+				: current + jumpBeats;
+	const landing = index >= 0 && index <= beats.length - 1 ? beatTimeAt(beats, index) : endSec + 1;
+	return landing <= endSec ? landing : targetSec;
+}
+
 function _nearestBeatIndex(beats: readonly AnlzBeat[], positionSec: number): number {
 	const laterIndex = _firstBeatAtOrAfter(beats, positionSec);
 	if (laterIndex === 0) return 0;

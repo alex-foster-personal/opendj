@@ -131,7 +131,7 @@ REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 7
+FIXTURE_REVISION: int = 8
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100
@@ -159,6 +159,18 @@ BAR_ORDINARY_PULSE_MULTIPLIER: float = 0.55
 MEASUREMENT_BAND_HZ: tuple[float, float] = (800.0, 8_000.0)
 
 
+#: ``pattern`` for a track whose bar is a kick on beats 1 and 3 and a noise
+#: snare on 2 and 4. The plain accented pulse is gridded by the own beatgrid
+#: producer (Beat This!) at 128 and 124 BPM, but at 64 BPM it reads every pulse
+#: as a downbeat and the lane fails with ``grid_fit_bar_phase_below_floor``
+#: (measured Thu 1 Oct 2026). A backbeat gives it a bar to find.
+PATTERN_ACCENT: str = "accent"
+PATTERN_BACKBEAT: str = "backbeat"
+KICK_MS: float = 120.0
+SNARE_MS: float = 80.0
+SNARE_PEAK: float = 0.35
+
+
 @dataclass(frozen=True)
 class FixtureTrack:
     """One generated file. ``bpm`` is a property of the audio, not metadata."""
@@ -166,6 +178,7 @@ class FixtureTrack:
     filename: str
     bpm: float
     seconds: float
+    pattern: str = PATTERN_ACCENT
 
 
 #: Two tracks, because the suite loads deck 1 AND deck 2 and a single shared
@@ -202,8 +215,14 @@ AUTOPLAY_CHAIN_PLAYLIST_NAME: str = "E2E AutoPlay Chain"
 
 #: --seed-rescue-playback only. A 64 BPM fold pair for the 128 BPM master so
 #: BAR Beat Sync can exercise a real half-tempo lock in the hermetic lane.
+#: 61 s, not 60: at 64 BPM a 60.0 s file ends exactly on beat 64, and the own
+#: producer's +15 ms grid offset pushes that last beat past the record's
+#: duration, so the lane contract refuses the whole record (measured Thu 1 Oct
+#: 2026: "beatgrid.beats[64].t is 60.02656, beyond the record's duration_s
+#: 60.02"). That is a producer defect reported separately, not hidden here.
 PERFORMANCE_FOLD_TRACK: FixtureTrack = FixtureTrack(
-    filename="webkit-fixture-d-64bpm-fold.wav", bpm=64.0, seconds=60.0
+    filename="webkit-fixture-d-64bpm-fold.wav", bpm=64.0, seconds=61.0,
+    pattern=PATTERN_BACKBEAT,
 )
 RESCUE_PLAYBACK_TRACKS: tuple[FixtureTrack, ...] = (
     *FIXTURE_TRACKS,
@@ -264,6 +283,36 @@ def _pulse_envelope(sample_index: int, beat_period_samples: float) -> float:
     return 1.0 - (since_beat / pulse_len)
 
 
+def _noise(sample_index: int) -> float:
+    """Deterministic white noise in [-1, 1): the same bytes on every host."""
+    # splitmix32-style integer hash of the index (a plain LCG of the index is
+    # linear in it, which is a sawtooth, not noise).
+    state = (sample_index + 0x9E37_79B9) & 0xFFFF_FFFF
+    state = ((state ^ (state >> 16)) * 0x85EB_CA6B) & 0xFFFF_FFFF
+    state = ((state ^ (state >> 13)) * 0xC2B2_AE35) & 0xFFFF_FFFF
+    state ^= state >> 16
+    return state / float(0x8000_0000) - 1.0
+
+
+def _backbeat_value(sample_index: int, beat_period_samples: float) -> float:
+    """Kick on beats 1 and 3 (beat 1 louder), noise snare on 2 and 4."""
+    beat_index = int(sample_index / beat_period_samples)
+    since_beat = sample_index - beat_index * beat_period_samples
+    position = beat_index % 4
+    if position in (0, 2):
+        length = SAMPLE_RATE_HZ * KICK_MS / 1000.0
+        if since_beat >= length:
+            return 0.0
+        env = 1.0 - since_beat / length
+        sweep_hz = PULSE_HZ * 0.6 * (1.0 + env)
+        peak = 0.9 if position == 0 else 0.6
+        return peak * env * math.sin(2.0 * math.pi * sweep_hz * since_beat / SAMPLE_RATE_HZ)
+    length = SAMPLE_RATE_HZ * SNARE_MS / 1000.0
+    if since_beat >= length:
+        return 0.0
+    return SNARE_PEAK * (1.0 - since_beat / length) * _noise(sample_index)
+
+
 def write_tone_and_pulse_wav(path: Path, track: FixtureTrack) -> int:
     """Write one stereo 16-bit fixture file. Returns the PCM frame count.
 
@@ -278,6 +327,12 @@ def write_tone_and_pulse_wav(path: Path, track: FixtureTrack) -> int:
     samples = array.array("h")
     for n in range(frame_count):
         value = TONE_PEAK * math.sin(tone_step * n)
+        if track.pattern == PATTERN_BACKBEAT:
+            value += _backbeat_value(n, beat_period_samples)
+            sample = int(max(-1.0, min(1.0, value)) * peak)
+            samples.append(sample)
+            samples.append(sample)
+            continue
         env = _pulse_envelope(n, beat_period_samples)
         if env > 0.0:
             beat_index = int(n / beat_period_samples)
@@ -814,8 +869,116 @@ def _ensure_rescue_artwork_embedded(audio_dir: Path) -> None:
         )
 
 
-def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
-    """Build the performance rescue library: eight ingested rows, four with librosa."""
+#: The own beatgrid producer's backend name (``apps.analysis.backends.own_beatgrid``).
+OWN_BEATGRID_BACKEND: str = "own_beatgrid.backfill"
+#: Where the producer finds its verified Beat This! checkpoint
+#: (``apps.analysis_beatgrid.weights.WEIGHTS_PATH_ENV``).
+OWN_BEATGRID_WEIGHTS_ENV: str = "MDT_BEATGRID_WEIGHTS"
+#: A grid this far from the generated tempo is a wrong grid, not jitter.
+OWN_BEATGRID_BPM_TOLERANCE: float = 0.5
+
+
+def _run_own_beatgrid_analysis(
+    data_dir: Path,
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """Run the PRODUCTION own beatgrid producer and fail closed on any non-ok lane.
+
+    Since #3561 the deck refuses the legacy librosa ``/beatgrid-fallback`` grid
+    for a track whose own lane reports ``missing``, which is every unmapped
+    fixture track, so without this step no fixture deck has a grid and Beat
+    Sync cannot be exercised at all. This is the same backfill a real library
+    gets (``apps.analysis.run --backend own_beatgrid.backfill``: Beat This! on
+    the generated audio, grid fit, canonical pointer), so ``/anlz`` then serves
+    a measured ``source: own, status: ok`` grid and the #3561 rule is untouched.
+    Nothing is written by hand.
+    """
+    weights = os.environ.get(OWN_BEATGRID_WEIGHTS_ENV, "").strip()
+    if not weights or not Path(weights).is_file():
+        raise SystemExit(
+            f"[ERROR] {label} --seed-own-beatgrid needs {OWN_BEATGRID_WEIGHTS_ENV} naming "
+            f"the verified Beat This! checkpoint file, got {weights!r}"
+        )
+    pairs = _pairs_for_generated_tracks(rows, tracks, label)
+    pairs_path = data_dir / "own-beatgrid-pairs.json"
+    pairs_path.write_text(json.dumps(pairs, indent=2) + "\n", encoding="utf-8")
+    env = dict(os.environ)
+    env["MDT_DATA_DIR"] = str(data_dir)
+    env.pop("WEB_CONCURRENCY", None)
+    command = [
+        "uv", "run", "--no-sync", "python", "-m", "apps.analysis.run",
+        "--pairs-json", str(pairs_path), "--backend", OWN_BEATGRID_BACKEND,
+    ]
+    result = subprocess.run(
+        command, cwd=REPOSITORY_ROOT, env=env, capture_output=True, text=True, check=False,
+    )
+    pairs_path.unlink(missing_ok=True)
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        raise SystemExit(
+            f"[ERROR] {label} own beatgrid analysis failed with exit code {result.returncode}"
+        )
+    _assert_own_beatgrids(data_dir, rows, tracks, label)
+
+
+def _assert_own_beatgrids(
+    data_dir: Path,
+    rows: list[tuple[str, str | None, str | None]],
+    tracks: tuple[FixtureTrack, ...],
+    label: str,
+) -> None:
+    """Every generated track has a canonical own grid, ok, at its generated tempo."""
+    from apps.analysis.canonical import canonical_pointer
+
+    by_filename = {track.filename: track for track in tracks}
+    conn = sqlite3.connect(f"file:{data_dir / 'state' / 'state.db'}?mode=ro", uri=True)
+    try:
+        for stable_id, _title, file_path in rows:
+            if file_path is None or Path(file_path).name not in by_filename:
+                continue
+            track = by_filename[Path(file_path).name]
+            pointer = canonical_pointer(conn, stable_id, "beatgrid")
+            if pointer is None:
+                raise SystemExit(
+                    f"[ERROR] {label} {track.filename} has no canonical own beatgrid"
+                )
+            row = conn.execute(
+                "SELECT record_json FROM analysis "
+                "WHERE stable_id = ? AND backend = ? AND backend_version = ?",
+                (stable_id, pointer[0], pointer[1]),
+            ).fetchone()
+            lane = AnalysisRecord.from_json(row[0]).lanes.get("beatgrid")
+            if lane is None or lane.status != "ok":
+                status = None if lane is None else (lane.status, lane.reason)
+                raise SystemExit(
+                    f"[ERROR] {label} {track.filename} own beatgrid is not ok: {status}"
+                )
+            measured = float(lane.payload["bpm"])
+            if abs(measured - track.bpm) > OWN_BEATGRID_BPM_TOLERANCE:
+                raise SystemExit(
+                    f"[ERROR] {label} {track.filename} own beatgrid measured "
+                    f"{measured:.2f} bpm, generated at {track.bpm}"
+                )
+            if not any(int(beat["n"]) == 1 for beat in lane.payload["beats"]):
+                raise SystemExit(
+                    f"[ERROR] {label} {track.filename} own beatgrid has no beat-1 marker"
+                )
+    finally:
+        conn.close()
+
+
+def build_rescue_playback(
+    data_dir: Path, *, own_beatgrid: bool = False
+) -> list[tuple[str, str | None, str | None]]:
+    """Build an analysis-backed performance rescue library for Beat Sync e2e.
+
+    ``own_beatgrid`` additionally runs the production own beatgrid producer
+    (see :func:`_run_own_beatgrid_analysis`), which is what gives the decks a
+    grid at all since #3561.
+    """
     _discard_stale_revision(data_dir)
     _reset_feedback_dir(data_dir)
     audio_dir = data_dir / AUDIO_SUBDIR
@@ -876,6 +1039,8 @@ def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | N
         conn.close()
 
     _run_librosa_analysis(data_dir, rows, RESCUE_PLAYBACK_TRACKS, "rescue-playback")
+    if own_beatgrid:
+        _run_own_beatgrid_analysis(data_dir, rows, RESCUE_PLAYBACK_TRACKS, "rescue-playback")
     return rows
 
 
@@ -1039,6 +1204,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--seed-own-beatgrid",
+        action="store_true",
+        help=(
+            "with --seed-rescue-playback: also run the production own beatgrid "
+            "producer (Beat This!), so /anlz serves a measured own grid; needs "
+            f"{OWN_BEATGRID_WEIGHTS_ENV} and ffmpeg"
+        ),
+    )
+    parser.add_argument(
         "--manifest",
         default=None,
         help="absolute path to write a machine-readable JSON manifest",
@@ -1052,6 +1226,8 @@ def main(argv: list[str] | None = None) -> int:
             "[ERROR] --seed-autoplay-chain, --seed-autoplay-hunt, and "
             "--seed-rescue-playback are mutually exclusive"
         )
+    if args.seed_own_beatgrid and not args.seed_rescue_playback:
+        raise SystemExit("[ERROR] --seed-own-beatgrid requires --seed-rescue-playback")
     data_dir = Path(args.data_dir).expanduser()
     if not data_dir.is_absolute():
         raise SystemExit(f"[ERROR] --data-dir must be absolute, got {args.data_dir!r}")
@@ -1063,7 +1239,7 @@ def main(argv: list[str] | None = None) -> int:
     autoplay_hunt_playlist_b_id: str | None = None
     autoplay_hunt_playlist_b_name: str | None = None
     if args.seed_rescue_playback:
-        rows = build_rescue_playback(data_dir)
+        rows = build_rescue_playback(data_dir, own_beatgrid=args.seed_own_beatgrid)
         autoplay_chain_playlist_id = AUTOPLAY_CHAIN_PLAYLIST_ID
         autoplay_chain_playlist_name = AUTOPLAY_CHAIN_PLAYLIST_NAME
     elif args.seed_autoplay_hunt:

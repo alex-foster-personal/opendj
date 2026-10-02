@@ -476,7 +476,7 @@ test('every P0 press path threads the DOM event stamp, none re-takes the clock',
 
 	const engine = readSource('src/lib/rb/audio-engine.svelte.ts');
 	assert.ok(
-		/async quantizedSeek\(\s*deck: DeckId,\s*ms: number,\s*skipGridQuantize = false,\s*pressT0Ms\?: number\s*\): Promise<void> \{/.test(
+		/async quantizedSeek\(\s*deck: DeckId,\s*ms: number,\s*skipGridQuantize = false,\s*pressT0Ms\?: number,\s*jumpBeats\?: number \| null\s*\): Promise<void> \{/.test(
 			engine
 		),
 		'quantizedSeek must accept the stamp rather than dropping it on the floor'

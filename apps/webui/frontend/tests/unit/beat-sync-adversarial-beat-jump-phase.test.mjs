@@ -174,5 +174,10 @@ test('SOURCE: beatJump takes beatJumpSeekPlan with the deck\'s desired transport
 		body,
 		/const \{ targetMs, skipGridQuantize \} = beatJumpSeekPlan\(grid, anchorMs, beats, _durationSec\(deck\) \* 1000, _rt\[deck\]\.desiredActive\);/
 	);
-	assert.match(body, /await this\.quantizedSeek\(deck, targetMs, skipGridQuantize\);$/);
+	// Round 2: the jump also hands its beat count through, so a playing deck lands
+	// that many beats from wherever it is when the schedule lands (`phaseKeepingLandingSec`, beat-sync-math.ts).
+	assert.match(
+		body,
+		/await this\.quantizedSeek\(deck, targetMs, skipGridQuantize, undefined, beats\);$/
+	);
 });

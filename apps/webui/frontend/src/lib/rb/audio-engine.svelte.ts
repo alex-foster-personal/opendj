@@ -168,6 +168,7 @@ import {
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
 	QUANTIZED_LAUNCH,
+	phaseKeepingLandingSec,
 	resolveArmAtPosition
 } from '$lib/rb/beat-sync-math';
 import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
@@ -2069,8 +2070,9 @@ async function _resumeContext(): Promise<AudioContext> {
 interface _MasterSyncSchedule {
 	tempoRatio: number;
 	masterTempoEnabled: boolean;
-	/** When set, relocate master to this track position as part of the sync. */
-	positionSec?: number;
+	/** When set, relocate master to the track position this returns for the
+	 * group's sync instant (`phaseKeepingLandingSec`, beat-sync-math.ts). */
+	positionSec?: (syncAt: number) => number;
 }
 
 interface _SyncOptions {
@@ -2432,7 +2434,7 @@ async function _synchronizeFollowers(
 		}
 		const syncAt = requestedSyncAt;
 		const projectedMasterSec = _projectPositionAt(master, syncAt);
-		const masterPositionSec = options.masterSchedule?.positionSec ?? projectedMasterSec;
+		const masterPositionSec = options.masterSchedule?.positionSec?.(syncAt) ?? projectedMasterSec;
 		const masterTempoRatio = options.masterSchedule?.tempoRatio ?? _tempoAt(master, syncAt);
 		// Plan per follower independently. One unsyncable deck (e.g. BAR tempo
 		// out of range) must not abort BeatSyncMax for the rest - that left
@@ -3325,7 +3327,7 @@ class RbAudioEngine implements AudioEngine {
 		await this.quantizedSeek(deck, ms);
 	}
 
-	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number): Promise<void> {
+	async quantizedSeek(deck: DeckId, ms: number, skipGridQuantize = false, pressT0Ms?: number, jumpBeats?: number | null): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'cueJump');
 		const durMs = _durationSec(deck) * 1000;
 		if (!Number.isFinite(ms) || ms < 0 || ms > durMs) {
@@ -3351,6 +3353,11 @@ class RbAudioEngine implements AudioEngine {
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
 		if (needsScheduledMutation) {
+			// Land on the deck's own beat phase at the EFFECTIVE landing time, not a
+			// fixed second that lands late (`phaseKeepingLandingSec`, beat-sync-math.ts).
+			const when = _ctx === null ? 0 : _futureScheduleTime(deck);
+			const grid = !rt.desiredActive ? null : jumpBeats != null ? (st.anlz?.beatgrid.beats ?? null) : skipGridQuantize ? null : seekBeats; // never throws on a gridless deck
+			const landing = (at: number): number => phaseKeepingLandingSec(grid, _projectPositionAt(deck, at), jumpBeats ?? null, targetMs / 1000, durMs / 1000);
 			const activeMaster = _syncMaster();
 			const syncPlan = planSeekSync({
 				deck,
@@ -3384,7 +3391,7 @@ class RbAudioEngine implements AudioEngine {
 					masterSchedule: {
 						tempoRatio: st.pitch,
 						masterTempoEnabled: st.master_tempo_enabled,
-						positionSec: targetMs / 1000
+						positionSec: landing
 					},
 					reanchorDecks: new Set(syncPlan.followers),
 					...(pressT0Ms === undefined ? {} : { pressT0Ms })
@@ -3393,8 +3400,8 @@ class RbAudioEngine implements AudioEngine {
 				if (_ctx === null) throw new Error('cueJump: audio graph not initialised');
 				await _scheduleDeck(
 					deck,
-					_futureScheduleTime(deck),
-					targetMs / 1000,
+					when,
+					landing,
 					rt.desiredActive,
 					undefined,
 					undefined,
@@ -3734,14 +3741,14 @@ class RbAudioEngine implements AudioEngine {
 				beat_length: previousLoop.beat_length
 			};
 			try {
-				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop), true);
+				await this.quantizedSeek(deck, targetWithinShiftedLiveLoopMs(grid, targetMs, shiftedLoop), true, undefined, beats);
 			} catch (error) {
 				st.loop = previousLoop;
 				throw error;
 			}
 			return;
 		}
-		await this.quantizedSeek(deck, targetMs, skipGridQuantize);
+		await this.quantizedSeek(deck, targetMs, skipGridQuantize, undefined, beats);
 	}
 
 	/** Capture the current engaged loop as the one-slot safety loop (armed). */
