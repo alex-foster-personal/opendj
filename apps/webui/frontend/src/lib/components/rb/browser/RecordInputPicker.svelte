@@ -33,6 +33,7 @@
 	let devices = $state<RecorderDevices | null>(null);
 	let loading = $state(true);
 	let listError = $state<string | null>(null);
+	let rememberError = $state<string | null>(null);
 	let selected = $state<string | null>(null);
 	let startButton = $state<HTMLButtonElement | null>(null);
 
@@ -43,20 +44,25 @@
 		return choice.kind === 'none' ? NONE_VALUE : choice.name;
 	}
 
+	function reason(error: unknown): string {
+		return error instanceof Error ? error.message : String(error);
+	}
+
 	function toChoice(value: string): RecordInputChoice {
 		return value === NONE_VALUE ? { kind: 'none' } : { kind: 'device', name: value };
 	}
 
 	onMount(() => {
 		void (async () => {
-			// The remembered choice only preselects, so failing to read it
-			// costs nothing but that; failing to list inputs is shown.
+			// Either failure is shown: an unreadable remembered input must not
+			// look like "nothing remembered yet" (SET-10).
 			const [listed, remembered] = await Promise.allSettled([
 				listRecorderDevices(),
 				getRememberedInput()
 			]);
 			if (listed.status === 'fulfilled') devices = listed.value;
-			else listError = listed.reason instanceof Error ? listed.reason.message : String(listed.reason);
+			else listError = reason(listed.reason);
+			if (remembered.status === 'rejected') rememberError = reason(remembered.reason);
 			loading = false;
 			const last = remembered.status === 'fulfilled' ? remembered.value : null;
 			selected = toValue(initialInputChoice(last, devices));
@@ -114,6 +120,11 @@
 			{#if listError !== null}
 				<p class="rec-error" data-testid="record-input-error">
 					Audio inputs could not be listed: {listError}
+				</p>
+			{/if}
+			{#if rememberError !== null}
+				<p class="rec-error" data-testid="record-input-remember-error">
+					The last input used could not be read, so none is preselected: {rememberError}
 				</p>
 			{/if}
 			<div class="rec-options" role="radiogroup" aria-label="Audio input">

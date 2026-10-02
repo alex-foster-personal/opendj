@@ -312,12 +312,14 @@ def test_a_start_by_index_does_not_overwrite_the_remembered_name(picker_client):
     "content",
     ['{"kind": "device", "name": ""}', '{"kind": "device"}', "not json", '["none"]'],
 )
-def test_a_malformed_remembered_input_reads_as_unknown(picker_client, content):
-    """[if] the remembered-input file is junk [then] it reads as unknown, not a choice."""
+def test_a_malformed_remembered_input_is_an_error_not_nothing(picker_client, content):
+    """[if] the remembered-input file is junk [then] 500 names it, never "nothing yet"."""
     client, service = picker_client
     service.remembered_input_path.parent.mkdir(parents=True, exist_ok=True)
     service.remembered_input_path.write_text(content, encoding="utf-8")
-    assert client.get("/api/sets/recorder/remembered-input").json() == {"remembered": None}
+    response = client.get("/api/sets/recorder/remembered-input")
+    assert response.status_code == 500
+    assert str(service.remembered_input_path) in response.json()["detail"]
 
 
 @pytest.mark.parametrize(

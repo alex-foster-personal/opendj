@@ -33,6 +33,10 @@ class RecorderConflict(RuntimeError):
     """Raised when a command conflicts with the owned recorder lifecycle."""
 
 
+class RememberedInputUnreadable(RuntimeError):
+    """Raised when the remembered REC input file exists but is not usable."""
+
+
 class RecorderService:
     """Own one live recorder from start through stop or daemon shutdown."""
 
@@ -176,14 +180,20 @@ class RecorderService:
         return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
 
     def remembered_input(self) -> dict[str, str] | None:
-        """The input REC last started on by name, or none; None when unknown."""
+        """The input REC last started on by name, or none; None before any start.
+
+        Raises :class:`RememberedInputUnreadable` when the file exists but
+        cannot be read or parsed, so a broken store is never shown as
+        "nothing remembered yet".
+        """
         try:
             parsed: Any = json.loads(self.remembered_input_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
         except (OSError, ValueError) as exc:
-            _log.warning("ignoring unreadable %s: %s", self.remembered_input_path, exc)
-            return None
+            raise RememberedInputUnreadable(
+                f"{self.remembered_input_path} could not be read: {exc}"
+            ) from exc
         if parsed == {"kind": "none"}:
             return {"kind": "none"}
         if (
@@ -194,11 +204,17 @@ class RecorderService:
             and parsed["name"]
         ):
             return {"kind": "device", "name": parsed["name"]}
-        _log.warning("ignoring malformed %s: %r", self.remembered_input_path, parsed)
-        return None
+        raise RememberedInputUnreadable(
+            f"{self.remembered_input_path} does not hold an input choice: {parsed!r}"
+        )
 
     def _remember_input(self, device_name: str | None) -> None:
-        """Record the started input; a failed write costs only the preselection."""
+        """Record the started input.
+
+        Runs after the recording is live, so a failed write must not fail the
+        start; it is logged as an error, and the stale choice it leaves is
+        still a valid one the picker re-checks against connected inputs.
+        """
         choice = {"kind": "none"} if device_name is None else {"kind": "device", "name": device_name}
         tmp = self.remembered_input_path.with_suffix(".json.tmp")
         try:
@@ -206,7 +222,7 @@ class RecorderService:
             tmp.write_text(json.dumps(choice), encoding="utf-8")
             os.replace(tmp, self.remembered_input_path)
         except OSError as exc:
-            _log.warning("could not remember the REC input in %s: %s", self.remembered_input_path, exc)
+            _log.error("could not remember the REC input in %s: %s", self.remembered_input_path, exc)
 
     def _index_of(self, device_name: str) -> int:
         devices = self.list_devices()
@@ -332,4 +348,4 @@ def _pid_is_running(pid: int) -> bool:
     return True
 
 
-__all__ = ["RecorderConflict", "RecorderService"]
+__all__ = ["RecorderConflict", "RecorderService", "RememberedInputUnreadable"]

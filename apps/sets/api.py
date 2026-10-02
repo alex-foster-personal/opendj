@@ -43,7 +43,7 @@ from .audio import (
 from .capture import CaptureUnavailable, default_input_device
 from .classify import CLASS_LIST, read_transitions
 from .label import append_label
-from .recorder_service import RecorderConflict, RecorderService
+from .recorder_service import RecorderConflict, RecorderService, RememberedInputUnreadable
 from .sessions import Session, get_session, list_sessions, summary_to_dict
 from .share import (
     SetShareConfig,
@@ -384,7 +384,10 @@ def api_recorder_remembered_input(request: Request) -> dict[str, Any]:
     Server-side because the desktop shell serves the UI from a per-launch
     loopback port, and browser storage forgets across ports (SET-10).
     """
-    return {"remembered": _recorder_service(request).remembered_input()}
+    try:
+        return {"remembered": _recorder_service(request).remembered_input()}
+    except RememberedInputUnreadable as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post(

@@ -115,6 +115,8 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => \(\(recorder = status\), \(RecordInputPicker = null\)\)\}/);
 	assert.match(recordInputPicker, /getRememberedInput\(\)/);
 	assert.doesNotMatch(recordInputPicker, /localStorage/);
+	assert.match(recordInputPicker, /if \(remembered\.status === 'rejected'\) rememberError = reason\(remembered\.reason\)/);
+	assert.match(recordInputPicker, /data-testid="record-input-remember-error"/);
 	assert.match(performanceRecorderRail, /<RecordInputPicker/);
 	assert.match(performanceRecorderRail, /import\('.\/RecordInputPicker.svelte'\)/);
 	assert.match(performanceRecorderRail, /recorder = await stopPerformanceRecorder\(recorder\)/);
