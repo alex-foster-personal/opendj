@@ -33,6 +33,9 @@ Acceptance:
   [if] a process exits while holding the ledger lock [then] the next writer
        acquires the OS-released lock and commits
   [if] another host owns the write lock [then ⛔️] 503 without writing
+  [if] the engine is not running from a repo checkout (the packaged app)
+       [then ⛔️] PATCH is 503 dev_only_in_packaged_app, no lock sidecar and
+       no ledger write (INSTALL-30)
 """
 from __future__ import annotations
 
@@ -58,6 +61,8 @@ else:
 import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field
+
+from apps.shared.source_tree import dev_only_refusal, is_repo_checkout
 
 from ..backend import StateBackend
 from ..deps import get_write_state
@@ -622,6 +627,14 @@ def patch_progress_node(
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008  # FastAPI DI
 ) -> NodePatchOut:
     """Guarded partial update of one node; atomic YAML rewrite, no git commit."""
+    # The ledger is a repo-tracked file; in the packaged app REPO_ROOT is the
+    # signed payload, where even the lock sidecar would break the bundle's
+    # code signature (INSTALL-30). Refuse before the lock touches disk.
+    if not is_repo_checkout(REPO_ROOT):
+        refusal = dev_only_refusal("The progress-tree ledger", PROGRESS_FILE)
+        raise _http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, refusal["code"], refusal["message"],
+        )
     if if_match is None:
         raise _http_error(
             status.HTTP_428_PRECONDITION_REQUIRED,

@@ -14019,12 +14019,16 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /** Not Runnable Because */
+            not_runnable_because?: string | null;
             /** Overlap */
             overlap: number;
             /** Preset Tag */
             preset_tag: string;
             /** Purpose */
             purpose: string;
+            /** Runnable Here */
+            runnable_here: boolean;
             /** Shifts */
             shifts: number;
             /** Unavailable Because */

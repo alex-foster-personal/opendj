@@ -17,6 +17,8 @@ Single-line intent:
   - if the shard job loses --ledger-coverage-min then a thin ledger balances shards by count again
   - if the cancel step is not continue-on-error then UNKNOWN reads as a second failure
   - if the affected-test canary is still in ci.yml then two jobs claim the same lane
+  - if the legs still run on a PR head whose shards run the whole lane then 17k tests run twice
+  - if the scope job's selection is not fail-open then a selector crash silently drops the legs
 
 [if] a pull request opens [then] the fast tier runs every cheap test first, [else stop].
 """
@@ -98,7 +100,8 @@ def test_fast_job_is_pull_request_only_with_four_legs() -> None:
     assert job["needs"] == "scope"
     assert job["if"] == (
         "needs.scope.outputs.in_scope == 'true' && "
-        "((github.event_name == 'pull_request' && !(" + TRUNK_DRAFT + ")) || "
+        "((github.event_name == 'pull_request' && "
+        "needs.scope.outputs.pr_selection != 'full' && !(" + TRUNK_DRAFT + ")) || "
         "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast'))"
     )
     assert job["strategy"]["matrix"]["leg"] == [1, 2, 3, 4]
@@ -150,7 +153,7 @@ def test_fast_job_pytest_flags_fail_loud_and_never_write_the_ledger() -> None:
     for flag in (
         "--fast-tier fast",
         "--fast-tier-max-seconds 0.5",
-        "--ledger-coverage-min 0.95",
+        "--ledger-coverage-min 0.85 --ledger-coverage-warn 0.95",
         "--tier-min-selected 2000",
         "--splits 4 --group ${{ matrix.leg }}",
         "--durations-path .test_durations",
@@ -180,7 +183,7 @@ def test_fast_job_ignores_match_the_shard_job() -> None:
 def test_shard_job_gains_only_the_ledger_guard() -> None:
     """if the shard job loses --ledger-coverage-min then a thin ledger balances by count again"""
     shard = _pytest_step(_jobs()["test"])
-    assert "--ledger-coverage-min 0.95" in shard
+    assert "--ledger-coverage-min 0.85 --ledger-coverage-warn 0.95" in shard
     assert "-p scripts." not in shard
     assert "--fast-tier" not in shard, "the sharded lane still runs everything (6a is additive)"
     assert "--store-durations --clean-durations" in shard
@@ -264,3 +267,42 @@ def test_fast_job_skips_the_same_queue_draft_the_shards_route_to_mq() -> None:
     """
     assert TRUNK_DRAFT in _raw_runs_on("test"), "the shard job's mq clause no longer matches TRUNK_DRAFT"
     assert f"!({TRUNK_DRAFT})" in _jobs()["fast"]["if"]
+
+
+def _scope_selection_step() -> dict:
+    steps = [s for s in _jobs()["scope"]["steps"] if s.get("id") == "pr-selection"]
+    assert len(steps) == 1, "the scope job must decide the PR-head selection exactly once"
+    return steps[0]
+
+
+def test_legs_skip_only_a_pr_head_whose_selection_is_full() -> None:
+    """if the legs still run on a FULL PR head then 17k tests run twice; if the skip reaches
+    the fast-tier dispatch then main's six-hour control run loses its whole verdict"""
+    fast_if = _jobs()["fast"]["if"]
+    pr_clause, dispatch_clause = fast_if.split("||")
+    assert "needs.scope.outputs.pr_selection != 'full'" in pr_clause
+    assert "github.event_name == 'pull_request'" in pr_clause
+    assert "pr_selection" not in dispatch_clause
+    outputs = _jobs()["scope"]["outputs"]
+    assert outputs["pr_selection"] == "${{ steps.pr-selection.outputs.mode }}"
+
+
+def test_scope_selection_is_fail_open() -> None:
+    """if a selector crash or timeout in scope can read as FULL then the legs vanish on
+    an unmeasured answer, or a red step blocks the run"""
+    step = _scope_selection_step()
+    assert step.get("continue-on-error") is True
+    assert step.get("if") == "github.event_name == 'pull_request'"
+    run = step["run"]
+    assert '|| mode=""' in run
+    assert 'mode=""' in run.split("*)", 1)[1], "an unexpected answer must clear the mode"
+    assert "GITHUB_STEP_SUMMARY=/dev/null" in run, "the shards own the selection summary"
+
+
+def test_scope_selection_ignores_match_the_shard_job() -> None:
+    """if the scope job selects over a different lane than the shards then FULL in scope
+    need not mean the shards ran what the legs skip"""
+    shard = _pytest_step(_jobs()["test"])
+    scope = _scope_selection_step()["run"]
+    ignores = lambda run: sorted(tok for tok in run.replace("\\", " ").split() if tok.startswith("--ignore="))  # noqa: E731
+    assert ignores(scope) == ignores(shard)
