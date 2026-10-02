@@ -79,6 +79,7 @@
 	import {
 		AGENT_DETAILS_LABEL,
 		humanDataDirLabel,
+		humanImportFailure,
 		humanImportJobMessage,
 		humanImportJobStatus,
 		humanImportSourceLabel,
@@ -663,7 +664,7 @@
 											<div class="folder-path-row">
 												<input
 													type="text"
-													placeholder="~/Music"
+													placeholder="/Users/you/Music"
 													bind:value={row.path}
 													aria-label="Folder to import"
 												/>
@@ -997,8 +998,8 @@
 									<span title="Current import status">
 										{humanImportJobStatus(job.status)}
 									</span>
-									{#if humanImportJobMessage(job.message) !== null}
-										-- {humanImportJobMessage(job.message)}
+									{#if humanImportJobMessage(job.message, job.status) !== null}
+										-- {humanImportJobMessage(job.message, job.status)}
 									{/if}
 								</p>
 								<details class="agent-details">
@@ -1014,7 +1015,7 @@ message={job.message}
 									</pre>
 								</details>
 								{#if job.error !== null && job.error !== undefined}
-									<p class="fatal" role="alert">The import hit a problem.</p>
+									<p class="fatal" role="alert">{humanImportFailure(job.error)}</p>
 									<details class="agent-details">
 										<summary>{AGENT_DETAILS_LABEL}</summary>
 										<pre class="error-tail" data-agent-job-error={setupWizard.jobId}>

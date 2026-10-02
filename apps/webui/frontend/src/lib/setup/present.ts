@@ -323,7 +323,14 @@ export function humanImportJobStatus(status: string): string {
 	return 'Import status updating';
 }
 
-export function humanImportJobMessage(message: string | null | undefined): string | null {
+export function humanImportJobMessage(
+	message: string | null | undefined,
+	status?: string
+): string | null {
+	// A job keeps its last progress line after it ends, so a failed or
+	// cancelled import would read "Import failed -- Working through your
+	// library...". Only a live or finished job's message describes it.
+	if (status === 'failed' || status === 'cancelled' || status === 'unknown') return null;
 	if (message === null || message === undefined || message.trim() === '') return null;
 	const trimmed = message.trim();
 	if (containsForbiddenHumanToken(trimmed)) return 'Working through your library...';
@@ -333,6 +340,28 @@ export function humanImportJobMessage(message: string | null | undefined): strin
 	}
 	if (/job-/i.test(trimmed)) return 'Working through your library...';
 	return trimmed;
+}
+
+/**
+ * Why an import failed, in words a user can act on. The worker writes
+ * `[ERROR] <code>: <detail>` to the job's error tail; the detail can carry
+ * paths and library internals, so only the code picks the sentence and the
+ * raw tail stays in the agent details.
+ */
+export function humanImportFailure(error: string | null | undefined): string {
+	const code = /\[ERROR\]\s+([a-z_]+):/.exec(error ?? '')?.[1] ?? '';
+	// Each reason is one whole sentence pair: ", then try again" only follows
+	// an action the user takes; after a plain statement it is "Try again."
+	const quit = 'Could not open the rekordbox library. Quit rekordbox, then try again.';
+	const why: Record<string, string> = {
+		music_folder_access_denied:
+			'The app may not read that folder. Allow it in Privacy & Security, then try again.',
+		rekordbox_not_found: 'What you chose to import was not found. Try again.',
+		rekordbox_key_unavailable: quit,
+		rekordbox_decrypt_failed: quit,
+		setup_import_already_running: 'An import is already running. Wait for it to finish, then try again.'
+	};
+	return why[code] ?? 'The import stopped before it finished. Try again.';
 }
 
 export function humanStemsJobsUnavailable(): string {

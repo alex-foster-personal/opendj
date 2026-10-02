@@ -544,6 +544,58 @@ test('human presentation helpers keep forbidden tokens out of operator copy', ()
 	);
 });
 
+test('a failed import says why, not its last progress line', () => {
+	// The job keeps its last progress message after it fails.
+	assert.equal(mod.humanImportJobMessage('ingest: reading master.plain.db', 'failed'), null);
+	assert.equal(mod.humanImportJobMessage('ingest: reading master.plain.db', 'cancelled'), null);
+	// Control: a live job still shows its (sanitized) progress line.
+	assert.equal(
+		mod.humanImportJobMessage('ingest: reading master.plain.db', 'running'),
+		'Working through your library...'
+	);
+	assert.equal(mod.humanImportJobMessage('imported 8 tracks', 'succeeded'), 'imported 8 tracks');
+
+	const decrypt = mod.humanImportFailure(
+		'Traceback...\n[ERROR] rekordbox_decrypt_failed: sqlcipher refused /Users/dj/Library/Pioneer/rekordbox/master.db'
+	);
+	assert.match(decrypt, /Could not open the rekordbox library/);
+	assert.doesNotMatch(decrypt, /\/Users\/|rekordbox_decrypt_failed|sqlcipher/);
+	assert.match(
+		mod.humanImportFailure('[ERROR] music_folder_access_denied: macOS refused to list /Volumes/X'),
+		/may not read that folder/
+	);
+	assert.match(
+		mod.humanImportFailure('[ERROR] setup_import_already_running: setup import job-4 is queued'),
+		/already running/
+	);
+	// An unrecognized or missing tail still says something a user can act on.
+	assert.match(mod.humanImportFailure('exit 137'), /stopped before it finished/);
+	assert.match(mod.humanImportFailure(null), /stopped before it finished/);
+});
+
+test('every import-failure reason reads naturally with its retry line (Mac check item 5)', () => {
+	// "What you chose to import was not found. Then try again." read oddly:
+	// "Then" needs an action before it. Exact sentences, one per reason.
+	const said = (code) => mod.humanImportFailure(`[ERROR] ${code}: detail /Users/dj/x`);
+	assert.equal(said('rekordbox_not_found'), 'What you chose to import was not found. Try again.');
+	assert.equal(
+		said('music_folder_access_denied'),
+		'The app may not read that folder. Allow it in Privacy & Security, then try again.'
+	);
+	for (const code of ['rekordbox_key_unavailable', 'rekordbox_decrypt_failed']) {
+		assert.equal(said(code), 'Could not open the rekordbox library. Quit rekordbox, then try again.');
+	}
+	assert.equal(
+		said('setup_import_already_running'),
+		'An import is already running. Wait for it to finish, then try again.'
+	);
+	assert.equal(mod.humanImportFailure(null), 'The import stopped before it finished. Try again.');
+	// No reason, known or not, carries the stray capitalized "Then".
+	for (const error of [null, 'exit 137', ...['rekordbox_not_found', 'music_folder_access_denied'].map((c) => `[ERROR] ${c}: x`)]) {
+		assert.doesNotMatch(mod.humanImportFailure(error), /\. Then /);
+	}
+});
+
 test('the wizard gates on the FINAL refusal, never on an unfinished probe', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
@@ -690,7 +742,9 @@ test('default setup markup keeps agent diagnostics in a closed disclosure', () =
 test('import progress renders human job copy and agent diagnostics separately', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /humanImportJobStatus\(job\.status\)/);
-	assert.match(overlay, /humanImportJobMessage\(job\.message\)/);
+	assert.match(overlay, /humanImportJobMessage\(job\.message, job\.status\)/);
+	assert.match(overlay, /humanImportFailure\(job\.error\)/);
+	assert.doesNotMatch(overlay, /placeholder="~\//);
 	assert.doesNotMatch(overlay, /job\.status === 'running' \? 'Import in progress' : job\.status/);
 	assert.match(overlay, /data-agent-job-status=\{job\.status\}/);
 	assert.match(overlay, /data-agent-job-message=\{job\.message/);
