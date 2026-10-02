@@ -104,14 +104,27 @@ MIN_LICENSES_FILE_CHARS = 100_000
 #: exclude "bundled" wholesale from its textless table, which let a NEW
 #: textless component of any ecosystem ship unnoticed.
 #:
-#: Empty on purpose (Sol P1, PR #4853 r4167743715): mpg123 was the one entry
-#: here, on the premise that "the package carries no license text" -- true of
-#: the npm wrapper, false of mpg123 itself, whose own COPYING (LGPL-2.1) is
-#: now mirrored at docs/legal/mpg123-COPYING.txt and staged below. Leave this
-#: empty unless a FUTURE component is genuinely unobtainable; any new entry
-#: needs the same kind of investigation that replaced this one, not a repeat
-#: of the shortcut.
-KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset()
+#: mpg123 itself was wrongly listed here once (Sol P1, PR #4853 r4167743715):
+#: the premise "the package carries no license text" was true of the npm
+#: wrapper, false of mpg123 itself, whose own COPYING (LGPL-2.1) is now
+#: mirrored at docs/legal/mpg123-COPYING.txt and staged as its license text.
+#: That entry was removed, not replaced by a weaker one: every entry below is
+#: verified textless at BOTH the installed npm package AND its upstream
+#: GitHub repository root (not merely "this one package has no LICENSE
+#: file", which the mpg123 mistake shows is not enough on its own).
+#:
+#: eshaz/wasm-audio-decoders (Sol P1, PR #4853 r4167790855): every package
+#: declares "license": "MIT" but ships no LICENSE file, and the monorepo's
+#: GitHub root has none either (`gh api repos/eshaz/wasm-audio-decoders/contents/`
+#: at commit 3c74930e673bea39f22e344032c5100e73b69b82, Fri 2 Oct 2026) -- so
+#: unlike mpg123, there is no real text anywhere to mirror.
+KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("javascript", "mpg123-decoder"),
+        ("javascript", "@wasm-audio-decoders/common"),
+        ("javascript", "@wasm-audio-decoders/flac"),
+    }
+)
 
 #: Our own packages are not third party.
 FIRST_PARTY_NAMES: frozenset[str] = frozenset(
