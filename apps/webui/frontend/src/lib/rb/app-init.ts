@@ -36,18 +36,29 @@ import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
-import { DECK_IDS, deckStates, pitchRanges } from '$lib/rb/audio-engine.svelte';
+import {
+	DECK_IDS,
+	deckAudioClockPositionMs,
+	deckMixBuffer,
+	deckStates,
+	mixerState,
+	pitchRanges
+} from '$lib/rb/audio-engine.svelte';
+import { onAirGain } from '$lib/rb/master-election';
+import { everyStemPartSilent } from '$lib/sets/deck-audibility';
 import { getAutoPlayPlaylist, pickNextStableId, tempoBoundsFromPitchRange } from '$lib/rb/auto-play';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import {
 	setSilenceDropoutContextReader,
-	setSilenceDropoutHandler
+	setSilenceDropoutHandler,
+	setSilenceSourceReader
 } from '$lib/rb/master-silence-report';
 import { readAutoPlayHandoffInFlight } from '$lib/rb/auto-play.svelte';
 import { setUnexpectedPauseAutoPlayReader } from '$lib/rb/unexpected-pause-report';
 import { handleSilenceDropoutPlan } from '$lib/rb/silence-dropout-act';
 import type { SilenceDropoutDeckSnap } from '$lib/rb/silence-dropout';
 import type { DeckId } from '$lib/rb/deck-slots';
+import type { SilenceSourceDeckSnap } from '$lib/rb/silence-source-pcm';
 
 function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 	return DECK_IDS.map((id: DeckId) => {
@@ -64,6 +75,40 @@ function _readSilenceDropoutDecks(): readonly SilenceDropoutDeckSnap[] {
 			is_master: deck.is_master
 		};
 	});
+}
+
+/** Linear gain from a deck to the master analyser tap: the mixer chain, or 0
+ * when a ready stem bundle has every part gained to zero. Same laws the graph
+ * applies (`onAirGain`, `everyStemPartSilent`); EQ is left out because a full
+ * cut is a dB threshold, not a zero, so an EQ-killed deck still reads as open. */
+function _silenceMasterPathGain(id: DeckId): number {
+	if (everyStemPartSilent(deckStates[id])) return 0;
+	const ch = mixerState.channels[id];
+	return onAirGain(
+		{
+			id,
+			loaded: true,
+			playing: true,
+			beat_sync_enabled: false,
+			fader: ch.fader,
+			trim: ch.trim,
+			assign: ch.assign
+		},
+		mixerState.crossfader,
+		mixerState.master
+	);
+}
+
+/** Source PCM at each deck's audio-clock playhead and its gain to the master
+ * bus, for the master silence watchdog's source gate (issue #4030). Called only
+ * on master-quiet samples. */
+function readSilenceSourceDeckSnaps(): readonly SilenceSourceDeckSnap[] {
+	return DECK_IDS.map((id: DeckId) => ({
+		claims_live: deckStates[id].playing || deckStates[id].audible,
+		buffer: deckMixBuffer(id),
+		position_sec: deckAudioClockPositionMs(id) / 1000,
+		master_path_gain: _silenceMasterPathGain(id)
+	}));
 }
 
 function _hasPlayableAutoPlayNext(): boolean {
@@ -185,6 +230,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		_xrunsAtPrevious = xruns;
 		return ctx;
 	});
+	setSilenceSourceReader(readSilenceSourceDeckSnaps);
 
 	return () => {
 		stopTelemetryConsent?.();
@@ -192,6 +238,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 		setSilenceDropoutHandler(null);
 		setUnexpectedPauseAutoPlayReader(null);
 		setSilenceDropoutContextReader(null);
+		setSilenceSourceReader(null);
 		setAudioPrefetchShedRequest(null);
 		setEagerStemDecodeShed(null);
 		setAnlzPrefetchShedRequest(null);

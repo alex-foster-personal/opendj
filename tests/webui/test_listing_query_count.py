@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
@@ -70,6 +71,9 @@ def _seed_library(root: Path, count: int) -> Path:
     """Seed ``<root>/data/state/state.db``, the layout MDT_DATA_DIR names."""
     audio_dir = root / "audio"
     audio_dir.mkdir()
+    # A real cover image beside the files: only rows whose file resolves can
+    # reach it, which is what makes the artwork verdict a control below.
+    Image.new("RGB", (8, 8), (90, 20, 160)).save(audio_dir / "cover.jpg", format="JPEG")
     state_path = root / "data" / "state" / "state.db"
     state_path.parent.mkdir(parents=True)
     conn = state_db.open_rw(state_path)
@@ -180,14 +184,10 @@ def test_batched_artwork_verdicts_match_the_per_row_oracle(probe) -> None:
         assert row["artwork_available"] == oracle[row["stable_id"]][0], row["stable_id"]
     # Control: the resolvable shapes (file, location) must reach a different
     # verdict than the unresolvable three, or agreement proves nothing about
-    # the batching. With a tag reader the fixture's picture-less files read
-    # False, so only the no-reader build can tell them apart by verdict.
+    # the batching. The cover.jpg beside the files makes them True.
     resolvable = 2 * LARGE // len(SHAPES)
-    if probe["has_mutagen"]:
-        assert verdicts == Counter({(False, "no_image_path"): LARGE}), verdicts
-    elif not probe["has_mutagen"]:
-        assert verdicts[(None, "unresolved")] == resolvable, verdicts
-        assert verdicts[(False, "no_image_path")] == LARGE - resolvable, verdicts
+    assert verdicts[(True, "ok")] == resolvable, verdicts
+    assert verdicts[(False, "no_image_path")] == LARGE - resolvable, verdicts
 
 
 def test_fixture_rows_are_really_unmapped(probe) -> None:
