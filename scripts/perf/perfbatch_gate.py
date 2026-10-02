@@ -11,6 +11,16 @@ whitespace only:
     perfbatch: pipelines-idle <non-empty-evidence>
     perfbatch-03: quality-ok reqs=<ID> signal=<path> before_after=<path>
 
+A correctness-only filter (PERFBATCH-08) may instead carry
+
+    perfbatch: correctness-only reqs=<ID> tests=<path>
+
+which passes only inside the narrow scope ``[correctness_only]`` in the policy
+declares: Python files under its prefixes, no deleted, renamed or mode-changed
+file, a ``tests/`` path the PR itself changes, and a bounded number of changed
+lines in pre-existing pipeline files. Outside that scope the marker is refused
+and the idle plus quality-ok pair is still required.
+
 Allowlist (see docs/perf/perfbatch-gates.md for the reasoning and residuals):
 
     Python   judged against exact ``tokenize``/``ast`` facts for the WHOLE
@@ -79,6 +89,8 @@ class Policy:
     pipeline_prefixes: tuple[str, ...]
     pipeline_exempt: tuple[str, ...]
     measurement_only_prefixes: tuple[str, ...]
+    correctness_prefixes: tuple[str, ...]
+    correctness_max_existing_lines: int
 
 
 def _policy_list(table: dict, section: str, key: str, path: Path) -> tuple[str, ...]:
@@ -96,25 +108,43 @@ def load_policy(path: Path = POLICY_PATH) -> Policy:
         table = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"{path}: cannot read PERFBATCH policy ({exc})") from exc
-    policy = Policy(
-        pipeline_prefixes=_policy_list(table, "pipeline", "prefixes", path),
-        pipeline_exempt=_policy_list(table, "pipeline", "exempt", path),
-        measurement_only_prefixes=_policy_list(table, "measurement_only", "prefixes", path),
-    )
-    uncovered = [
-        entry
-        for entry in policy.pipeline_exempt
-        if not _matches_prefix(entry, policy.pipeline_prefixes)
-    ]
+    pipeline_prefixes = _policy_list(table, "pipeline", "prefixes", path)
+    pipeline_exempt = _policy_list(table, "pipeline", "exempt", path)
+    measurement_only_prefixes = _policy_list(table, "measurement_only", "prefixes", path)
+    uncovered = [entry for entry in pipeline_exempt if not _matches_prefix(entry, pipeline_prefixes)]
     if uncovered:
         raise ValueError(f"{path}: [pipeline].exempt entries outside every prefix: {uncovered}")
-    return policy
+    correctness_prefixes = _policy_list(table, "correctness_only", "prefixes", path)
+    loose = [e for e in correctness_prefixes if not _matches_prefix(e, pipeline_prefixes)]
+    if loose:
+        raise ValueError(f"{path}: [correctness_only].prefixes outside every pipeline prefix: {loose}")
+    return Policy(
+        pipeline_prefixes=pipeline_prefixes,
+        pipeline_exempt=pipeline_exempt,
+        measurement_only_prefixes=measurement_only_prefixes,
+        correctness_prefixes=correctness_prefixes,
+        correctness_max_existing_lines=_policy_int(
+            table, "correctness_only", "max_existing_lines", path
+        ),
+    )
+
+
+def _policy_int(table: dict, section: str, key: str, path: Path) -> int:
+    value = table.get(section, {}).get(key) if isinstance(table.get(section), dict) else None
+    # bool is an int subclass; `true` must not read as a budget of 1.
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValueError(f"{path}: [{section}].{key} must be a non-negative integer")
+    return value
 
 
 # Horizontal whitespace only. Never `\\s`: a newline as the "reason" must fail.
 _IDLE = re.compile(r"perfbatch:[ \t]*pipelines-idle[ \t]+\S", re.IGNORECASE)
 _QUALITY = re.compile(
     r"perfbatch-03:[ \t]*quality-ok[ \t]+reqs=\S+[ \t]+signal=\S+[ \t]+before_after=\S+",
+    re.IGNORECASE,
+)
+_CORRECTNESS = re.compile(
+    r"perfbatch:[ \t]*correctness-only[ \t]+reqs=(?P<reqs>\S+)[ \t]+tests=(?P<tests>\S+)",
     re.IGNORECASE,
 )
 
@@ -128,6 +158,8 @@ POLICY = load_policy()
 PIPELINE_PREFIXES = POLICY.pipeline_prefixes
 PIPELINE_EXEMPT = POLICY.pipeline_exempt
 MEASUREMENT_ONLY_PREFIXES = POLICY.measurement_only_prefixes
+CORRECTNESS_PREFIXES = POLICY.correctness_prefixes
+CORRECTNESS_MAX_EXISTING_LINES = POLICY.correctness_max_existing_lines
 
 
 def pipeline_mutation_paths(paths: list[str]) -> list[str]:
@@ -149,6 +181,50 @@ def idle_marker(body: str) -> bool:
 
 def quality_marker(body: str) -> bool:
     return bool(_QUALITY.search(body))
+
+
+def correctness_marker(body: str) -> tuple[str, str] | None:
+    """``(reqs, tests)`` from a ``perfbatch: correctness-only`` line, or None."""
+    match = _CORRECTNESS.search(body)
+    return (match["reqs"], match["tests"]) if match else None
+
+
+def correctness_refusal(
+    mutations: list[str],
+    paths: list[str],
+    file_diffs: dict[str, FileDiff] | None,
+    tests_path: str,
+) -> str | None:
+    """Why the PERFBATCH-08 correctness-only marker cannot cover these mutations, or None.
+
+    Every reason here is something the gate can read off the diff; whether the
+    filter is really correctness-only stays the author's claim, and this bounds
+    how far that claim can reach.
+    """
+    tests = tests_path.replace("\\", "/")
+    if not tests.startswith("tests/") or tests not in {p.replace("\\", "/") for p in paths}:
+        return f"tests={tests_path} is not a tests/ file this PR changes"
+    existing_lines = 0
+    for path in mutations:
+        if not _matches_prefix(path, CORRECTNESS_PREFIXES):
+            return f"{path} is outside the correctness-only prefixes"
+        if not path.endswith(".py"):
+            return f"{path} is not a Python file"
+        diff = (file_diffs or {}).get(path.replace("\\", "/"))
+        if diff is None or not diff.hunks:
+            return f"{path} has no readable hunks"
+        if diff.binary or diff.mode_changed or diff.renamed or diff.deleted:
+            return f"{path} is deleted, renamed, mode-changed or binary"
+        if not diff.created:
+            existing_lines += sum(
+                1 for hunk in diff.hunks for tag, _ in hunk.lines if tag in ("+", "-")
+            )
+    if existing_lines > CORRECTNESS_MAX_EXISTING_LINES:
+        return (
+            f"{existing_lines} changed lines in existing pipeline files exceed "
+            f"the {CORRECTNESS_MAX_EXISTING_LINES}-line correctness-only budget"
+        )
+    return None
 
 
 # ----------------------------------------------------------------------------
@@ -348,6 +424,19 @@ def verdict(
     if not mutations:
         listed = ", ".join(v.describe() for v in verdicts)
         return 0, f"[perfbatch-gate] OK -- measurement-only; allowlisted hunks only in {listed}"
+    correctness = correctness_marker(body)
+    refused = ""
+    if correctness is not None and not (idle_marker(body) and quality_marker(body)):
+        reqs, tests = correctness
+        why = correctness_refusal([v.path for v in mutations], paths, file_diffs, tests)
+        if why is None:
+            listed = ", ".join(v.path for v in mutations)
+            return (
+                0,
+                f"[perfbatch-gate] OK -- correctness-only filter (PERFBATCH-08) in {listed}; "
+                f"reqs={reqs} tests={tests}",
+            )
+        refused = f" (correctness-only marker refused: {why})"
     missing: list[str] = []
     if not idle_marker(body):
         missing.append("perfbatch: pipelines-idle <evidence>")
@@ -359,7 +448,7 @@ def verdict(
     needed = "; ".join(missing)
     return (
         1,
-        f"[perfbatch-gate] pipeline-mutation path(s) {listed} need {needed}",
+        f"[perfbatch-gate] pipeline-mutation path(s) {listed} need {needed}{refused}",
     )
 
 

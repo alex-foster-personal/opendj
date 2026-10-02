@@ -57,8 +57,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from apps.cloud import stem_index
-from apps.lyrics import fetch_verdicts
-from apps.lyrics import service as lyrics_service
+from apps.lyrics import fetch_verdicts, lookup_metadata
 from apps.webui.server import coverage_cloud, library_playable
 from apps.webui.server import coverage_outcomes as outcomes_mod
 from apps.webui.server.routes import ingest_job
@@ -218,7 +217,7 @@ def _ids_without_lookup_metadata(
 ) -> set[str]:
     conn = conn_factory()
     try:
-        return lyrics_service.ids_without_lookup_metadata(conn, stable_ids)
+        return lookup_metadata.ids_without_lookup_metadata(conn, stable_ids)
     finally:
         conn.close()
 
@@ -226,7 +225,7 @@ def _ids_without_lookup_metadata(
 def _audio_no_source(outcome: outcomes_mod.Outcome | None, signature: str) -> bool:
     """A ledger no_source that is about the audio, not the row's metadata."""
     return outcomes_mod.is_no_source(outcome, signature) and not (
-        outcome is not None and lyrics_service.is_metadata_reason(outcome.reason)
+        outcome is not None and lookup_metadata.is_metadata_reason(outcome.reason)
     )
 
 
