@@ -301,9 +301,10 @@ def test_unconfigured_machine_plays_rekordboxs_copy_when_its_own_path_is_gone(
     assert missing.json()["detail"]["code"] == "AUDIO_NOT_ON_THIS_MACHINE"
 
 
+
 @pytest.mark.requirement("CLOUDSYNC-33")
 def test_rekordbox_lookup_failure_is_not_reported_as_absence(
-    monkeypatch: pytest.MonkeyPatch,
+    unconfigured_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """[if] the rekordbox lookup fails for a reason other than absence [then]
     the error propagates instead of reading as "not on this computer",
@@ -312,18 +313,25 @@ def test_rekordbox_lookup_failure_is_not_reported_as_absence(
 
     from apps.adapters.rekordbox import paths as rb_paths
 
-    def fail(code: str, status: int) -> None:
-        def raiser(_stable_id: str) -> None:
-            raise HTTPException(status_code=status, detail={"code": code, "message": code})
-
-        monkeypatch.setattr(rb_paths, "resolve_content", raiser)
-
-    fail("STATE_DB_UNAVAILABLE", 500)
+    # Absence: a track with no rekordbox mapping (404) has no copy here.
+    assert rb_paths._rekordbox_copy(UNAVAILABLE_SID) is None
+    # Absence: a mapped track on a machine with no master database at all
+    # (no rekordbox install; the fixture's master path is not on disk).
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        state.execute(
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
+            "VALUES (?, 'rekordbox', '208807409')",
+            (UNAVAILABLE_SID,),
+        )
+        state.commit()
+    finally:
+        state.close()
+    assert not rb_config.MASTER_PLAIN_DB.exists()
+    assert rb_paths._rekordbox_copy(UNAVAILABLE_SID) is None
+    # Not absence: the state database itself is gone, so nothing could look.
+    monkeypatch.setattr(rb_config, "STATE_DB", tmp_path / "gone-state.db")
     with pytest.raises(HTTPException) as excinfo:
-        rb_paths._rekordbox_copy("sid")
+        rb_paths._rekordbox_copy(UNAVAILABLE_SID)
     assert excinfo.value.status_code == 500
-    # Controls: no rekordbox install, and a plain 404, both mean no copy here.
-    fail("MASTER_DB_UNAVAILABLE", 500)
-    assert rb_paths._rekordbox_copy("sid") is None
-    fail("VENDOR_MAPPING_NOT_FOUND", 404)
-    assert rb_paths._rekordbox_copy("sid") is None
+    assert excinfo.value.detail["code"] == "STATE_DB_UNAVAILABLE"
