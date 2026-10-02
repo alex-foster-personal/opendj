@@ -49,3 +49,57 @@ def test_rewrite_keeps_extended_attributes(tmp_path: Path):
 
     assert track.read_bytes() == b"NEWTAG" + b"audio-bytes"
     assert getattr(os, "getxattr")(track, "user.opendj.test") == b"keep-me"  # noqa: B009 - absent on macOS
+
+
+def _fake_xattrs(monkeypatch, names: list[str], *, refuse: str, code: int) -> None:
+    """Stand in for the kernel: ``names`` listed on the source, ``refuse``
+    rejected on set with ``code``. The three calls are replaced together so
+    the test asks one question: what a refused set does to the write."""
+    monkeypatch.setattr(os, "listxattr", lambda path: list(names), raising=False)
+    monkeypatch.setattr(os, "getxattr", lambda path, name: b"v", raising=False)
+
+    def setxattr(path, name, value):
+        if name == refuse:
+            raise OSError(code, os.strerror(code))
+
+    monkeypatch.setattr(os, "setxattr", setxattr, raising=False)
+    monkeypatch.setattr("apps.shared.file_rewrite.sys.platform", "linux")
+
+
+def _build(src: BinaryIO, out: BinaryIO) -> None:
+    out.write(b"NEWTAG")
+    copy_rest(src, out, 6)
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_a_policy_xattr_the_writer_may_not_set_never_blocks_the_tag_write(tmp_path: Path, monkeypatch):
+    """[if] a non-root writer cannot set a ``security.*`` attribute on the new file [then] the tag write still lands, [else stop].
+
+    MUTATION TARGET: raise on every refused set and an SELinux-labelled or
+    capability-bearing file could never have its tags written.
+    """
+    track = tmp_path / "track.mp3"
+    track.write_bytes(b"OLDTAG" + b"audio-bytes")
+    _fake_xattrs(monkeypatch, ["security.capability", "user.kept"], refuse="security.capability", code=errno.EPERM)
+
+    rewrite_atomic(track, _build)
+
+    assert track.read_bytes() == b"NEWTAG" + b"audio-bytes"
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_a_user_xattr_that_cannot_be_copied_aborts_and_keeps_the_original(tmp_path: Path, monkeypatch):
+    """[if] a ``user.*`` attribute cannot be set on the new file [then ⛔️] the write aborts and the original is untouched, [else stop].
+
+    Overshoot control for the test above: skipping every refused set would
+    pass it and silently drop the attributes this writer promises to keep.
+    """
+    track = tmp_path / "track.mp3"
+    track.write_bytes(b"OLDTAG" + b"audio-bytes")
+    _fake_xattrs(monkeypatch, ["user.kept"], refuse="user.kept", code=errno.EPERM)
+
+    with pytest.raises(PermissionError):
+        rewrite_atomic(track, _build)
+
+    assert track.read_bytes() == b"OLDTAG" + b"audio-bytes"
+    assert [p.name for p in tmp_path.iterdir()] == ["track.mp3"], "the temp file is removed"

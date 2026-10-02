@@ -43,14 +43,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apps.cloud import stem_cache_budget, stem_hydration
+from apps.cloud import stem_bundles, stem_cache_budget, stem_hydration
 from apps.cloud.stem_source import StemHydrationSource
 from apps.vocals import cache as vocals_cache
 
@@ -180,10 +179,14 @@ class CloudVocals:
             if bundle is None:
                 continue
             gap = stem_cache_budget.unconfirmed_reason(bundle, inputs.index)
+            if gap == stem_bundles.REASON_GONE:
+                continue    # an eviction pass removed it first
             if gap is not None:
                 log.warning("cloud vocals: keeping %s, R2 does not confirm it (%s)", stable_id, gap)
                 continue
-            shutil.rmtree(bundle.path)
+            # The eviction passes can claim this bundle concurrently; the
+            # rename claim lets exactly one remove it, the loser sees False.
+            stem_bundles.claim_and_remove(bundle.path)
         self._store.save(held)
 
     # --- one job -------------------------------------------------------------

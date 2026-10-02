@@ -314,6 +314,31 @@ def test_a_bundle_r2_does_not_confirm_is_never_removed_by_the_drain(
     assert first in rig.bundles()
 
 
+def test_a_bundle_an_eviction_pass_removed_first_does_not_break_the_release(
+    library: Library, cfg, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] an eviction pass removes the drain's bundle after its R2 check [then] the release finishes and saves the ledger, [else stop].
+
+    MUTATION TARGET: go back to a bare ``shutil.rmtree`` and the release
+    raises FileNotFoundError before it saves (Claude review of #4974).
+    """
+    rig = CloudRig(library, cfg, tmp_path, monkeypatch, cloud_ids=("a", "b"), cap=1)
+    assert rig.drain.tick() == "ran:vocals"
+    first = rig.source.fetched[0]
+    real = stem_cache_budget.unconfirmed_reason
+
+    def confirm_then_lose_the_race(bundle, index):
+        verdict = real(bundle, index)
+        shutil.rmtree(bundle.path, ignore_errors=True)  # the timer's eviction wins
+        return verdict
+
+    monkeypatch.setattr(stem_cache_budget, "unconfirmed_reason", confirm_then_lose_the_race)
+    rig.cloud._release_down_to(0, rig._inputs())
+
+    assert first not in rig.bundles()
+    assert rig.cloud._store.load() == []
+
+
 def test_local_vocals_and_lyrics_run_before_any_download(
     library: Library, cfg, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

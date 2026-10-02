@@ -48,6 +48,13 @@ def rewrite_atomic(path: Path, build: Callable[[BinaryIO, BinaryIO], None]) -> N
 # copyfile(3) flags, <copyfile.h>: COPYFILE_ACL | COPYFILE_XATTR.
 _COPYFILE_ACL_AND_XATTR = (1 << 0) | (1 << 2)
 _XATTR_UNSUPPORTED = {errno.ENOTSUP, getattr(errno, "EOPNOTSUPP", errno.ENOTSUP)}
+#: Failures that mean "this process may not set that attribute here", not a
+#: broken copy: a non-root writer can list ``security.*`` and ``system.*``
+#: names it cannot set on a new inode.
+_XATTR_NOT_PERMITTED = _XATTR_UNSUPPORTED | {errno.EPERM, errno.EACCES}
+#: Only user-namespace attributes (Finder-style tags, app data) must survive;
+#: the kernel and policy namespaces are copied best effort.
+_REQUIRED_XATTR_PREFIX = "user."
 
 
 def copy_extended_metadata(src: Path, dst: Path) -> None:
@@ -61,12 +68,17 @@ def copy_extended_metadata(src: Path, dst: Path) -> None:
     Platform seam: macOS uses copyfile(3), which copies both; Linux copies
     each xattr (POSIX ACLs live in xattrs there); a filesystem without xattr
     support has none to lose. Windows has no xattr API in Python and its ACLs
-    are inherited from the directory, so nothing is copied there.
+    are inherited from the directory, so nothing is copied there. On Linux a
+    ``user.*`` attribute that cannot be set aborts the write; ``security.*``,
+    ``system.*`` and ``trusted.*`` ones the process may not set (SELinux
+    labels, capabilities) are skipped, so they never block a tag write.
     """
     if sys.platform == "darwin":
         libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
         if libc.copyfile(os.fsencode(src), os.fsencode(dst), None, _COPYFILE_ACL_AND_XATTR) < 0:
             code = ctypes.get_errno()
+            if code in _XATTR_UNSUPPORTED:
+                return
             raise OSError(code, f"copyfile ACL/xattr from {src}: {os.strerror(code)}")
         return
     if not hasattr(os, "listxattr"):
@@ -78,7 +90,13 @@ def copy_extended_metadata(src: Path, dst: Path) -> None:
             return
         raise
     for name in names:
-        os.setxattr(dst, name, os.getxattr(src, name))
+        try:
+            os.setxattr(dst, name, os.getxattr(src, name))
+        except OSError as exc:
+            if exc.errno == errno.ENODATA:
+                continue  # removed between list and get: nothing to keep
+            if name.startswith(_REQUIRED_XATTR_PREFIX) or exc.errno not in _XATTR_NOT_PERMITTED:
+                raise
 
 
 def copy_rest(src: BinaryIO, out: BinaryIO, offset: int) -> None:
