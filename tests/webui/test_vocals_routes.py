@@ -181,7 +181,7 @@ def client(data_dir: Path) -> Iterator[TestClient]:
 @pytest.fixture
 def stem_bundle(data_dir: Path) -> None:
     import numpy as np
-    import soundfile as sf
+    sf = pytest.importorskip("soundfile", reason="needs the optional soundfile package")
 
     from apps.stems.artifacts import STEM_PARTS
 
@@ -211,7 +211,7 @@ def stem_bundle(data_dir: Path) -> None:
 @pytest.fixture
 def roformer_bundle(data_dir: Path) -> None:
     import numpy as np
-    import soundfile as sf
+    sf = pytest.importorskip("soundfile", reason="needs the optional soundfile package")
 
     bundle = data_dir / "configured-stems" / "roformer"
     bundle.mkdir(parents=True)

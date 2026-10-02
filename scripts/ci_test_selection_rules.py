@@ -37,6 +37,12 @@ DURATIONS_NAME = ".test_durations"
 
 #: A change to any of these runs the full suite. `*` crosses `/` (fnmatch), so `ci/*`
 #: is the whole tree. The reason is what the log and the record print.
+#:
+#: `.test_durations` is NOT here (Fri 2 Oct 2026, TEST-CUT round 1, specs/ci-test-cut.md):
+#: the ledger only weighs shards and sets the fast-tier ceiling, it changes no test's
+#: behavior, and as a trigger it sent 18 PR heads in 27 h to the full lane (63 shard
+#: runner-min each). A ledger edit is now an ordinary data file: the tests that name it
+#: (the fast-tier and selector suites) are selected by named reference.
 GLOBAL_PATTERNS: tuple[tuple[str, str], ...] = (
     ("conftest.py", "a conftest configures every test beneath it"),
     ("*/conftest.py", "a conftest configures every test beneath it"),
@@ -53,7 +59,6 @@ GLOBAL_PATTERNS: tuple[tuple[str, str], ...] = (
     ("ci/*", "CI configuration"),
     ("scripts/ci_*", "CI scripts, this selector included"),
     ("scripts/affected_tests.py", "the import graph this selector is built on"),
-    (DURATIONS_NAME, "the shard balance ledger"),
     ("tests/fixtures/*", "shared test fixtures"),
 )
 

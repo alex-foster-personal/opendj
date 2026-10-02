@@ -174,7 +174,21 @@ const BUDGETS = [
   // Thu 24 Sep 2026: the SetupOverlay payback (#3862) and the pin-shell deferral
   // (#3903) landed together; merged tree measured 250,040 locally against the
   // unchanged 259,072. Not raised: 9,032 bytes of headroom, first since #3737.
-  { name: 'library', limit: 259072, measured: 250249, note: 'initial load of "/"' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4897, first-run wizard skip and plain-language
+  // copy, SETUP-26 / UX-R2-03/04): merge skew again. Clean origin/main e0dfa83bc measured
+  // 258,429 locally; main + this PR 259,214 (142 OVER), main + this PR + its follow-up
+  // #4928 (failed-import sentence) about 259,380. Each PR passed alone. Payback, not
+  // yet measured: find which of this PR's setup modules the first-paint closure
+  // reaches and move the wizard-only copy behind the lazy SetupOverlay import.
+  // RAISED Fri 2 Oct 2026 (+2 KiB, PR #4908, CUEOUT-22 two-device headphone cue in the
+  // Mac app): headphones.ts is in the first-paint closure, and its native-sink
+  // branch adds +1,250 bytes even with the socket client and worker split behind a
+  // dynamic import. Clean origin/main c8b8f5aeb measured
+  // 259,943 locally (153 bytes of headroom); main + this PR 261,193. The second KiB is
+  // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
+  // of its own and raises once more. Payback, not yet measured: find what pulls
+  // headphones.ts into the "/" closure and defer it.
+  { name: 'library', limit: 262144, measured: 261193, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -185,7 +199,13 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4923, V1 UI polish): clean origin/main
+  // 5852c97c measures 239,840 locally. This PR adds +1,954 of user-visible
+  // V1 work on the route (the 2-deck toggle, SET OUTPUTS and the I/O pins,
+  // explainer dismiss, the 3Band waveform palette with its legacy option,
+  // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
+  // 130 bytes over the old limit; 894 bytes of headroom remain.
+  { name: 'performance', limit: 242688, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -287,7 +307,15 @@ const BUDGETS = [
   // is left to demote: what stays eager is the engine choice and command sets
   // the dispatcher and Settings read. The ceiling follows the +5% ceil-to-KiB
   // rule on 253,082.
-  { name: 'other-lazy', limit: 266240, measured: 253082, note: 'all other routes plus deferred shell' },
+  // RAISED Fri 2 Oct 2026: 260 -> 275 KiB for PR #4897 (first-run wizard, V1
+  // #3422/#2590). Its Trunk batch (PR #4951) failed this gate at 267,647, over
+  // by 1,407. Local build, one pass: clean origin/main 3ecf276ef measured
+  // 263,446 here; main + #4897 measured 267,629. The ~4.2 KB is the deferred
+  // setup overlay: the agent/human error split, path shortening, the read
+  // deadline with its did-not-finish states and the Welcome retry. None of it
+  // is first-paint weight (library stayed within its own limit). The ceiling
+  // follows the +5% ceil-to-KiB rule on 267,629.
+  { name: 'other-lazy', limit: 281600, measured: 267629, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

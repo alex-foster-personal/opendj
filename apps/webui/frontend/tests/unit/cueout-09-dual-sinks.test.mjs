@@ -90,7 +90,7 @@ test('master setSinkId failure names Chrome and does not silently follow the OS 
 test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps SHOW AUDIO I/O', () => {
 	const source = readFileSync(CLUSTER, 'utf8');
 	assert.match(source, /aria-label="SHOW AUDIO I\/O"/);
-	assert.match(source, />I\/O</);
+	assert.match(source, /><span>SET<\/span><span>OUTPUTS<\/span></);
 	assert.match(source, /ControlExplainer/);
 	assert.match(source, /title="MIX"/);
 	assert.match(source, /title="GAIN"/);

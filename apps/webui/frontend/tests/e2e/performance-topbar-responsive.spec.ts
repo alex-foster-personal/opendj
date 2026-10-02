@@ -12,6 +12,10 @@ const HAS_MANIFEST = fixtureManifestExists(MANIFEST_PATH);
 const FIXTURE_STABLE_ID = HAS_MANIFEST ? primaryFixtureStableId(MANIFEST_PATH) : '';
 
 const PRIORITY_CONTROLS = [
+	// The 2-deck toggle is the one real control in the view-icon cluster; the
+	// cluster's inert members yield at 1415px but it must not (Mac check on
+	// PR #4923 found it hidden at 1400px).
+	'button[aria-label="2 deck view"]',
 	'button[title^="BeatSyncMax"]',
 	'span.ap-wrap > button[title^="AutoPlay"]',
 	'button[aria-label="Jobs drawer"]',

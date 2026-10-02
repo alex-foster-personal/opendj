@@ -142,6 +142,9 @@ def test_nonwav_without_ffmpeg_raises_actionable_error(tmp_path: Path) -> None:
     env = dict(os.environ)
     env["PATH"] = str(isolated)
     env.pop("MDT_FFMPEG", None)
+    # No odj-audio either: a set ODJ_AUDIO_BIN is never second-guessed, so
+    # this also keeps a local cargo build from decoding the file (STEM-50).
+    env["ODJ_AUDIO_BIN"] = str(tmp_path / "no-such-odj-audio")
 
     proc = subprocess.run(
         [uv, "run", "--script", str(WORKER_SCRIPT), "--device", "cpu", str(aiff)],
@@ -155,6 +158,7 @@ def test_nonwav_without_ffmpeg_raises_actionable_error(tmp_path: Path) -> None:
     assert proc.returncode != 0
     assert str(aiff) in proc.stderr
     assert "MDT_FFMPEG" in proc.stderr
+    assert "ODJ_AUDIO_BIN" in proc.stderr
     assert "pre-transcode" in proc.stderr
 
 

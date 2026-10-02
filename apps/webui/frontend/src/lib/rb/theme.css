@@ -23,12 +23,21 @@
 	--rb-accent: #2f6fd6;        /* active-blue: toggles, faders, lit buttons */
 	--rb-accent-glow: rgba(47, 111, 214, 0.55); /* lit-button glow */
 	--rb-green: #35c04f;         /* loaded-track rows, loop-out chip */
-	--rb-orange: #e8a13a;        /* waveform lows band */
-	--rb-wave-mid: #3d7dd9;      /* waveform mids band */
-	--rb-wave-high: #cfe0f2;     /* waveform highs band */
+	--rb-orange: #e8a13a;        /* loop cues, warnings; legacy waveform lows */
+	/* Waveform bands, rekordbox/CDJ 3Band (issue #4219): dark blue low, amber
+	   mid, white high. Mirrored in wave-palette.ts; the pre-#4219 palette is
+	   the [data-wave-palette='legacy'] block below. */
+	--rb-wave-low: #2767d8;      /* waveform lows band - dark blue */
+	--rb-wave-mid: #f0a020;      /* waveform mids band - amber */
+	--rb-wave-high: #f4f6f8;     /* waveform highs band - white */
+	--rb-wave-mono: #3d7dd9;     /* mono / line waveform designs */
 	--rb-red: #d0342c;           /* cue markers, position tick */
 	--rb-yellow: #e5c33a;        /* Free licence badge */
 	--rb-select: #1d3f73;        /* selected row highlight */
+	--rb-master: #c9b35a;        /* master deck gold: MASTER button fill, master
+	                                library-row edge/wash, master-fold badge */
+	--rb-master-ink: #1a1608;    /* text drawn ON a --rb-master fill */
+	--rb-master-text: #e8d78a;   /* master library-row title/artist text */
 
 	/* -------- typography -------- */
 	--rb-font: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', Roboto,
@@ -73,11 +82,34 @@ html[data-theme='light'] .perf-root {
 	--rb-accent-glow: rgba(23, 94, 168, 0.35);
 	--rb-green: #1d7035;
 	--rb-orange: #a44b11;
-	--rb-wave-mid: #2166b1;
-	--rb-wave-high: #3a4653;
+	/* Light-face 3Band: a white high band vanishes on this face, so every
+	   band is darkened to clear 3:1 against both light row backgrounds. */
+	--rb-wave-low: #1d4fa3;
+	--rb-wave-mid: #9a5a00;
+	--rb-wave-high: #4a4f57;
+	--rb-wave-mono: #2166b1;
 	--rb-red: #ad2420;
 	--rb-yellow: #927000;
 	--rb-select: #d6e5f5;
+	/* Darker gold + light ink: the dark-mode gold measured 1.88:1 on the
+	   light --rb-bg, and its pale row text 1.18:1 on the gold wash. */
+	--rb-master: #856500;
+	--rb-master-ink: #fffdf8;
+	--rb-master-text: #4a3700;
+}
+
+/* Legacy waveform palette (pre-#4219: orange low, blue mid, near-white
+ * high), selectable in Settings > Waveform colors. The light block repeats
+ * the theme attribute so it outranks the dark legacy block. */
+html[data-wave-palette='legacy'] .perf-root {
+	--rb-wave-low: #e8a13a;
+	--rb-wave-mid: #3d7dd9;
+	--rb-wave-high: #cfe0f2;
+}
+html[data-theme='light'][data-wave-palette='legacy'] .perf-root {
+	--rb-wave-low: #a44b11;
+	--rb-wave-mid: #2166b1;
+	--rb-wave-high: #3a4653;
 }
 
 /* -------- panel chrome -------- */
@@ -238,10 +270,10 @@ html[data-theme='light'] .perf-root {
 }
 /* Master must beat the generic .lit blue - soft gold. */
 .perf-root .rb-lit-button.master-btn.lit {
-	color: #1a1608;
-	background: #c9b35a;
-	box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
-	border-color: #b8a24e;
+	color: var(--rb-master-ink);
+	background: var(--rb-master);
+	box-shadow: 0 0 6px color-mix(in srgb, var(--rb-master) 45%, transparent);
+	border-color: color-mix(in srgb, var(--rb-master) 85%, var(--rb-text));
 }
 .perf-root .rb-lit-button:disabled,
 .perf-root .rb-inert {
@@ -277,11 +309,29 @@ html[data-theme='light'] .perf-root {
 .perf-root tbody tr.rb-row-master .rb-row-loaded,
 .perf-root tbody tr.rb-row-master .c-title,
 .perf-root tbody tr.rb-row-master .c-artist {
-	color: #e8d78a;
+	color: var(--rb-master-text);
 	font-weight: 700;
 }
-.perf-root .rb-row-selected {
+.perf-root tbody tr.rb-row-selected {
 	background: var(--rb-select); /* blue full-row highlight */
+	box-shadow: none;
+}
+.perf-root tbody tr.rb-row-selected > td {
+	background: transparent;
+}
+.perf-root tbody tr.rb-row-selected .art-slate {
+	background: transparent;
+}
+.perf-root tbody tr.rb-row-selected .c-art::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background: color-mix(in srgb, var(--rb-select) 55%, transparent);
+}
+.perf-root tbody tr.rb-row-selected .c-art img {
+	z-index: 0;
 }
 
 /* -------- finished-track eject: overlaid on the waveform once the transport

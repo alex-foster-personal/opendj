@@ -7,8 +7,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.shared.state import db as state_db
+from apps.shared.state.events import FakeEventBus
+from apps.shared.state.writer import StateWriter
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import InMemoryBackend, Playlist, Track
+from apps.webui.server.sqlite_backend import SqliteBackend
 
 from .conftest import _stub_rb_vendor
 
@@ -68,6 +72,77 @@ def test_list_playlist_tracks_second_page(monkeypatch, tmp_path: Path):
     assert len(body["tracks"]) == 100
     assert body["tracks"][0]["stable_id"] == "pl-perf-track-0100"
     assert body["next_offset"] == 200
+
+
+def _seed_1k_state_db(tmp_path: Path) -> tuple[Path, str]:
+    """A real state.db written through StateWriter, members backed by real files."""
+    db_path = tmp_path / "state.db"
+    conn = state_db.open_rw(db_path)
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="test-seed")
+    try:
+        stable_ids: list[str] = []
+        for i in range(1000):
+            sid = f"pl-perf-track-{i:04d}"
+            path = tmp_path / f"{sid}.mp3"
+            path.write_bytes(b"\x00")
+            writer.upsert_track(
+                stable_id=sid, stable_id_tier="inferred", title=f"Track {i}",
+                artists=[f"Artist {i}"], album=None, isrc=None,
+                duration_ms=60_000, file_path=str(path),
+            )
+            stable_ids.append(sid)
+        writer.insert_playlist(
+            playlist_id="pl-perf-1k", name="Perf 1k",
+            vendor="fixture", vendor_pl_id="pl-perf-1k",
+        )
+        writer.set_playlist_memberships("pl-perf-1k", stable_ids)
+    finally:
+        writer.close()
+        conn.close()
+    return db_path, "pl-perf-1k"
+
+
+@pytest.mark.requirement("PERF-UI-05")
+def test_list_playlist_tracks_first_page_is_fast(tmp_path: Path):
+    """[if] warmed offset-0 limit-30 GET on a real state.db [then] under 0.5s, [else stop].
+
+    Real storage and hydration end to end: SqliteBackend over a StateWriter-
+    seeded state.db, no vendor stub, members on disk so availability is a
+    real stat pass. The rows asserted below prove the timed request went
+    through that path rather than returning early.
+    """
+    db_path, playlist_id = _seed_1k_state_db(tmp_path)
+    backend = SqliteBackend(db_path)
+    assert not isinstance(backend, InMemoryBackend)
+    app = create_app(
+        backend=backend, state_db_path=str(db_path),
+        bind_host="127.0.0.1", hostname="test-host",
+        lock_status_fn=lambda: None, syncthing_status_fn=lambda: None,
+        mount_frontend=False,
+    )
+    with TestClient(app) as c:
+        warm = c.get(
+            f"/api/v1/playlists/{playlist_id}/tracks",
+            params={"limit": 30, "offset": 0},
+        )
+        assert warm.status_code == 200, warm.text
+        t0 = time.perf_counter()
+        r = c.get(
+            f"/api/v1/playlists/{playlist_id}/tracks",
+            params={"limit": 30, "offset": 0},
+        )
+        elapsed = time.perf_counter() - t0
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 1000
+    assert [t["stable_id"] for t in body["tracks"]] == [
+        f"pl-perf-track-{i:04d}" for i in range(30)
+    ]
+    assert body["tracks"][7]["title"] == "Track 7"
+    assert elapsed < 0.5, (
+        f"warmed playlist tracks page took {elapsed:.3f}s on a real state.db; "
+        "first-page slice must stay under 0.5s once TestClient startup is paid"
+    )
 
 
 @pytest.mark.requirement("PERF-UI-05")

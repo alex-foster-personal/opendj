@@ -17,6 +17,8 @@
  *   404 that teaches the user nothing
  * - if the access caveat is dropped then a count taken behind a permission
  *   wall travels without saying so
+ * - if finish() closes on the BOOT preflight reading then the root layout
+ *   re-raises setup the moment it closes and Start playing does nothing
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
@@ -168,6 +170,7 @@ after(() => {
 
 beforeEach(() => {
 	wizard._resetForTests();
+	mod._resetPreflightForTests();
 	requests = [];
 });
 
@@ -212,7 +215,7 @@ test('detect refuses Next until detection has answered', () => {
 	assert.match(mod.advanceRefusal('detect', ctx), /has not answered/);
 });
 
-test('a fatal blocker refuses Next and names itself', () => {
+test('a fatal blocker refuses Next and names itself to agents', () => {
 	const ctx = {
 		source: 'rekordbox',
 		detection: detection({ blockers: ['rekordbox_not_found'] }),
@@ -220,6 +223,8 @@ test('a fatal blocker refuses Next and names itself', () => {
 		job: null
 	};
 	assert.match(mod.advanceRefusal('detect', ctx), /rekordbox_not_found/);
+	assert.match(mod.humanRefusal('detect', ctx), /cannot start yet/i);
+	assert.doesNotMatch(mod.humanRefusal('detect', ctx), /rekordbox_not_found/);
 });
 
 test('a missing share dir warns but does NOT block the import', () => {
@@ -338,13 +343,58 @@ test('progress refuses Next while the import is still live', () => {
 		mod.advanceRefusal('progress', { ...ctx, job: job({ status: 'failed' }) }),
 		/re-run it/
 	);
+	const succeeded = job({ status: 'succeeded', progress: 1 });
+	assert.match(
+		mod.advanceRefusal('progress', { ...ctx, job: succeeded, statusRefreshJobId: null }),
+		/still loading/
+	);
 	assert.equal(
 		mod.advanceRefusal('progress', {
 			...ctx,
-			job: job({ status: 'succeeded', progress: 1 })
+			job: succeeded,
+			statusRefreshJobId: succeeded.id
 		}),
 		null
 	);
+});
+
+test('progress surfaces a failed post-import status refresh', () => {
+	// [if] the post-import status refresh failed [then] Continue says so,
+	// [else stop].
+	const ctx = {
+		source: 'rekordbox',
+		detection: detection(),
+		folderRows: emptyFolderRows(),
+		job: job({ status: 'succeeded', progress: 1 }),
+		statusRefreshJobId: null,
+		statusRefreshError: 'state db is gone'
+	};
+	assert.match(mod.advanceRefusal('progress', ctx), /state db is gone/);
+});
+
+test('the operator copy for a pending status re-read never calls a finished import failed', () => {
+	// [if] the import succeeded and its status re-read is pending or failed
+	// [then] the operator reads that it finished, not "did not finish
+	// successfully", and the raw reason stays out of the copy, [else stop].
+	const succeeded = job({ status: 'succeeded', progress: 1 });
+	const ctx = {
+		source: 'folder',
+		detection: null,
+		folderRows: emptyFolderRows(),
+		job: succeeded,
+		statusRefreshJobId: null,
+		statusRefreshError: null
+	};
+	const loading = mod.humanRefusal('progress', ctx);
+	assert.match(loading, /import finished/i);
+	assert.doesNotMatch(loading, /did not finish/);
+	const failedRead = mod.humanRefusal('progress', { ...ctx, statusRefreshError: 'GET /api/v1/setup/status 500' });
+	assert.match(failedRead, /import finished/i);
+	assert.doesNotMatch(failedRead, /\/api\/v1|500/);
+	// control: a FAILED import still says it did not finish
+	assert.match(mod.humanRefusal('progress', { ...ctx, job: job({ status: 'failed' }) }), /did not finish/);
+	// control: once the re-read landed there is no refusal at all
+	assert.equal(mod.humanRefusal('progress', { ...ctx, statusRefreshJobId: succeeded.id }), null);
 });
 
 test('importPct clamps and rounds rather than trusting the row', () => {
@@ -400,7 +450,10 @@ test('_resetForTests leaves source unselected', () => {
 	assert.equal(wizard.source, null);
 });
 
-test('a failed load records the server message and KEEPS what was on screen', async () => {
+const GENERIC = 'Something went wrong talking to the app. Try again in a moment.';
+const TOO_SLOW = 'The app took too long to answer. Try again in a moment.';
+
+test('a failed load keeps the server message for agents only, and KEEPS what was on screen', async () => {
 	routeFetch({ '/api/v1/setup/status': status() });
 	await wizard.load();
 
@@ -410,8 +463,201 @@ test('a failed load records the server message and KEEPS what was on screen', as
 	});
 	await wizard.load();
 
-	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.error, GENERIC);
+	assert.equal(wizard.errorDiagnostic, 'state db is gone');
 	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+});
+
+test('a plain-string status error never reaches the operator word for word (Mac check item 4)', async () => {
+	// FastAPI's own layer answers {"detail": "<string>"}; humanApiError passed
+	// such a sentence through whenever it carried no internals, so the engine's
+	// own words were drawn on Welcome.
+	routeFetch({
+		'/api/v1/setup/status': () => jsonResponse({ detail: 'the disk said no' }, 500)
+	});
+	await wizard.load();
+
+	assert.equal(wizard.error, GENERIC);
+	assert.equal(wizard.errorDiagnostic, 'the disk said no', 'agents keep the raw words');
+	assert.equal(wizard.detectState, 'failed');
+});
+
+/** A response that never comes on its own but rejects once the request's
+ * signal aborts, the way a browser fetch does. Records that it was aborted. */
+function stalled(request, seen) {
+	return new Promise((_, reject) => {
+		request.signal.addEventListener('abort', () => {
+			seen.aborted = true;
+			reject(new DOMException('The operation was aborted.', 'AbortError'));
+		});
+	});
+}
+
+/** Fail, instead of hanging the suite, when a call never settles. */
+async function settlesWithin(promise, ms, what) {
+	let timer;
+	const guard = new Promise((_, reject) => {
+		timer = setTimeout(() => reject(new Error(`${what} never settled within ${ms} ms`)), ms);
+	});
+	try {
+		return await Promise.race([promise, guard]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+test('the setup read deadline defaults to 20 s', () => {
+	assert.equal(mod.SETUP_READ_TIMEOUT_MS, 20_000);
+	assert.equal(wizard.readTimeoutMs, 20_000);
+});
+
+test('a status read that never answers is aborted at the deadline and ends failed (Mac check 3a)', async () => {
+	const seen = { aborted: false };
+	routeFetch({ '/api/v1/setup/status': (request) => stalled(request, seen) });
+	wizard.readTimeoutMs = 30;
+
+	await settlesWithin(wizard.load(), 2_000, 'load()');
+
+	assert.equal(wizard.detectState, 'failed', 'a stall must end, not stay scanning');
+	assert.equal(wizard.busy, false, 'Get started must not stay disabled');
+	assert.equal(seen.aborted, true, 'the stalled request must be aborted, not left open');
+	assert.equal(wizard.error, TOO_SLOW);
+	assert.match(wizard.errorDiagnostic, /GET \/api\/v1\/setup\/status gave no answer within 30 ms/);
+});
+
+test('control: a read that answers inside the deadline is not cut short', async () => {
+	// The overshoot of the deadline fix: a timer that fires anyway, or one
+	// shorter than the answer it is waiting for.
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			new Promise((resolve) => setTimeout(() => resolve(jsonResponse(status())), 20))
+	});
+	wizard.readTimeoutMs = 500;
+
+	await wizard.load();
+	await new Promise((resolve) => setTimeout(resolve, 30));
+
+	assert.equal(wizard.detectState, 'answered');
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.detection.import_source, '/data/master.plain.db');
+});
+
+test('a Look again that never answers ends failed and keeps the earlier answer (Mac check 3a/3b)', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	const seen = { aborted: false };
+	routeFetch({ '/api/v1/setup/detect/rekordbox': (request) => stalled(request, seen) });
+	wizard.readTimeoutMs = 30;
+	await settlesWithin(wizard.redetect(), 2_000, 'redetect()');
+
+	assert.equal(wizard.detectState, 'failed');
+	assert.equal(seen.aborted, true);
+	assert.equal(wizard.error, TOO_SLOW);
+	assert.equal(wizard.detection.import_source, '/data/master.plain.db', 'the earlier answer stays');
+});
+
+test('ensureLoaded never re-runs a load the engine answered with a failure (Mac check 3c)', async () => {
+	// The overlay drives ensureLoaded() from an effect. Retrying a real
+	// failure from there looped load() and held Get started disabled.
+	let calls = 0;
+	routeFetch({
+		'/api/v1/setup/status': () => {
+			calls += 1;
+			return jsonResponse({ detail: 'down' }, 500);
+		}
+	});
+	await wizard.load();
+	assert.equal(calls, 1);
+
+	await wizard.ensureLoaded();
+	assert.equal(calls, 1, 'ensureLoaded retried a failed status read on its own');
+	assert.equal(wizard.detectState, 'failed');
+
+	// The operator's own retry still asks again.
+	await wizard.load();
+	assert.equal(calls, 2);
+});
+
+test('a failed Look again is not repainted by a status re-read (Mac check 3b)', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	routeFetch({
+		'/api/v1/setup/status': status({ rekordbox: detection({ installed: false }) }),
+		'/api/v1/setup/detect/rekordbox': () => jsonResponse({ detail: 'down' }, 500)
+	});
+	await wizard.redetect();
+	await wizard.ensureLoaded();
+
+	assert.equal(wizard.detectState, 'failed', 'the failure must stay on screen');
+	assert.equal(wizard.error, GENERIC);
+	assert.equal(
+		requests.filter((request) => request.url.endsWith('/api/v1/setup/status')).length,
+		1,
+		'only the first load may read status'
+	);
+	assert.equal(wizard.detection.installed, true, 'the earlier answer is what stays');
+});
+
+test('refreshStatusAfterImport fills last_import once per completed job', async () => {
+	// [if] an import job succeeded [then] Done's status is re-read and a
+	// second notice does not fetch again, [else stop].
+	let statusCalls = 0;
+	routeFetch({
+		'/api/v1/setup/status': () => {
+			statusCalls += 1;
+			if (statusCalls === 1) return jsonResponse(status({ last_import: null }));
+			return jsonResponse(
+				status({
+					tracks: 4,
+					library_empty: false,
+					last_import: {
+						kind: 'folder',
+						finished_at: '2026-10-02T00:00:00.000Z',
+						started_at: '2026-10-02T00:00:00.000Z',
+						tracks_written: 4,
+						files_seen: 4,
+						tracks: 4,
+						tracks_without_analysis: 4,
+						analysis_detail: 'tags only',
+						analysis_available: false,
+						files_dataless: 0,
+						files_rejected_unplayable: 0,
+						files_without_tags: 0,
+						unreadable_roots: []
+					}
+				})
+			);
+		}
+	});
+	await wizard.load();
+	assert.equal(wizard.status.last_import, null);
+
+	await wizard.refreshStatusAfterImport('job-folder-1');
+	assert.equal(wizard.status.last_import.tracks_written, 4);
+	assert.equal(wizard.status.tracks, 4);
+	assert.equal(statusCalls, 2);
+
+	const before = statusCalls;
+	await wizard.refreshStatusAfterImport('job-folder-1');
+	assert.equal(statusCalls, before, 'a second completion notice must not re-fetch');
+});
+
+test('refreshStatusAfterImport keeps prior status when the server refuses', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			jsonResponse({ detail: { code: 'boom', message: 'state db is gone' } }, 500)
+	});
+	await wizard.refreshStatusAfterImport('job-folder-2');
+
+	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.statusRefreshError, 'state db is gone');
+	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+	assert.equal(wizard.statusRefreshJobId, null);
 });
 
 test('redetect re-asks the detect endpoint specifically', async () => {
@@ -493,7 +739,8 @@ test('beginImport refuses without rekordbox source and makes no import POST', as
 
 	assert.equal(wizard.jobId, null);
 	assert.equal(wizard.step, 'welcome');
-	assert.equal(wizard.error, 'choose rekordbox import before starting');
+	assert.equal(wizard.error, 'Choose to import your DJ collection first.');
+	assert.equal(wizard.errorDiagnostic, 'choose rekordbox import before starting');
 	assert.equal(
 		requests.filter(
 			(request) => request.method === 'POST' && request.url.includes('/api/v1/setup/import')
@@ -533,7 +780,8 @@ test('a refused import leaves the step alone and shows the server sentence', asy
 
 	assert.equal(wizard.step, 'confirm', 'must not show progress for a job that was refused');
 	assert.equal(wizard.jobId, null);
-	assert.equal(wizard.error, 'setup import job-9 is already running');
+	assert.equal(wizard.error, 'An import is already running. Wait for it to finish, then try again.');
+	assert.equal(wizard.errorDiagnostic, 'setup import job-9 is already running');
 });
 
 test('refreshDecrypt is sent as the flag the CLI calls --refresh-decrypt', async () => {
@@ -585,7 +833,7 @@ test('checkFolderRow refuses an empty path without issuing a request', async () 
 	wizard.folderRows = [folderRow('   ')];
 	await wizard.checkFolderRow(wizard.folderRows[0].id);
 	assert.equal(requests.length, 0);
-	assert.match(wizard.error, /type a folder path/);
+	assert.match(wizard.error, /Type a folder path/);
 });
 
 test('beginFolderImport refuses before requesting when nothing was scanned', async () => {
@@ -662,6 +910,8 @@ test('a 403 on the folder import keeps the grant instructions verbatim', async (
 	await wizard.beginFolderImport();
 
 	assert.match(wizard.error, /Open System Settings/);
+	assert.match(wizard.error, /~\/Music/);
+	assert.doesNotMatch(wizard.error, /\/Users\//);
 	assert.equal(wizard.step, 'welcome');
 });
 
@@ -695,6 +945,118 @@ test('STANDALONE-08: declining clears the source, so every reopen door is neutra
 	assert.equal(wizard.source, null, 'a declined import must not survive as a selection');
 });
 
+// ------------------------------------------------------------- finishing
+
+function preflightCheck(id, checkStatus, detail) {
+	return { id, label: id, status: checkStatus, detail, remediation: null };
+}
+
+/** GET /api/v1/preflight with the two rows the empty-library gate reads. */
+function preflightReading(libraryStatus, libraryDetail) {
+	return {
+		status: 'pass',
+		checks: [
+			preflightCheck('engine-alive', 'pass', 'the endpoint answered'),
+			preflightCheck('library-attached', libraryStatus, libraryDetail)
+		]
+	};
+}
+
+/** Answer successive preflight GETs from `readings`, one each, in order. */
+function preflightSequence(readings) {
+	let index = 0;
+	return () => {
+		const reading = readings[Math.min(index, readings.length - 1)];
+		index += 1;
+		return typeof reading === 'number'
+			? jsonResponse({ detail: 'preflight exploded' }, reading)
+			: jsonResponse(reading);
+	};
+}
+
+function requestLine(request) {
+	return `${request.method} ${new URL(request.url).pathname}`;
+}
+
+test('finish re-reads preflight, so the boot reading cannot re-raise setup after an import', async () => {
+	// demon-llama, Thu 1 Oct 2026: 1274 tracks imported, eleven dismissals
+	// all 200, and the overlay never left, because the root layout's gate was
+	// still judging the empty library it saw at boot.
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([
+			preflightReading('fail', '0 tracks in the library'),
+			preflightReading('pass', '1274 tracks')
+		]),
+		'/api/v1/setup/dismiss': status({ dismissed: true, library_empty: false, tracks: 1274 })
+	});
+	await mod.checkPreflight();
+	assert.equal(
+		mod.needsSetupForEmptyLibrary(mod.preflightGate.checks, false),
+		true,
+		'precondition: the boot reading asks for setup'
+	);
+	requests = [];
+
+	const closable = await wizard.finish();
+
+	assert.equal(wizard.error, null);
+	assert.equal(closable, true);
+	assert.deepEqual(requests.map(requestLine), [
+		'POST /api/v1/setup/dismiss',
+		'GET /api/v1/preflight'
+	]);
+	assert.equal(
+		mod.needsSetupForEmptyLibrary(mod.preflightGate.checks, false),
+		false,
+		'after finish the gate must judge the library as it is now'
+	);
+	assert.equal(wizard.busy, false);
+});
+
+test('finish refuses with the engine detail when preflight still says no library', async () => {
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([
+			preflightReading('fail', 'the setup record at /data/setup.json could not be read')
+		]),
+		'/api/v1/setup/dismiss': status({ dismissed: true })
+	});
+
+	const closable = await wizard.finish();
+
+	assert.equal(closable, false);
+	assert.match(wizard.error, /library still looks empty/);
+	assert.doesNotMatch(wizard.error, /\/data\/|\/api\//);
+	assert.match(wizard.errorDiagnostic, /setup record at \/data\/setup\.json could not be read/);
+	assert.equal(wizard.busy, false);
+});
+
+test('finish refuses, loudly, when preflight cannot be re-read', async () => {
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([500]),
+		'/api/v1/setup/dismiss': status({ dismissed: true })
+	});
+
+	const closable = await wizard.finish();
+
+	assert.equal(closable, false);
+	assert.match(wizard.error, /could not confirm the library is ready/);
+	assert.match(wizard.errorDiagnostic, /startup checks could not be re-read/);
+	assert.equal(wizard.busy, false);
+});
+
+test('finish asks preflight nothing when the dismissal itself was refused', async () => {
+	routeFetch({
+		'/api/v1/preflight': preflightSequence([preflightReading('pass', '1274 tracks')]),
+		'/api/v1/setup/dismiss': () => jsonResponse({ detail: 'disk full' }, 500)
+	});
+
+	const closable = await wizard.finish();
+
+	assert.equal(closable, false);
+	assert.notEqual(wizard.error, null);
+	assert.deepEqual(requests.map(requestLine), ['POST /api/v1/setup/dismiss']);
+});
+
 test('reopen re-arms the wizard and returns it to the first step', async () => {
 	routeFetch({ '/api/v1/setup/dismiss': status({ dismissed: false }) });
 	wizard.useSource('rekordbox');
@@ -714,16 +1076,16 @@ test('accessCaveat is null when nothing was blocked', () => {
 	assert.equal(mod.accessCaveat(null), null);
 });
 
-test('accessCaveat names the folders and says the count is partial', () => {
+test('accessCaveat names blocked folders without raw paths in operator copy', () => {
 	const caveat = mod.accessCaveat(
 		permissions({ all_readable: false, denied: ['/Users/dj/Music'] })
 	);
-	assert.match(caveat, /\/Users\/dj\/Music/);
-	assert.match(caveat, /only what could be read/);
+	assert.doesNotMatch(caveat, /\/Users\//);
+	assert.match(caveat, /only what was accessible/);
+	assert.equal(mod.agentAccessDetail(permissions({ all_readable: false, denied: ['/Users/dj/Music'] })), '/Users/dj/Music');
 });
 
 test('folderVerdict never quotes a file count for a denied folder', () => {
-	// 0 from a denied folder is a count of nothing, not a count of the folder.
 	const verdict = mod.folderVerdict(
 		folderScan({ denied: true, readable: false, audio_files: 0 })
 	);
@@ -731,13 +1093,31 @@ test('folderVerdict never quotes a file count for a denied folder', () => {
 	assert.match(verdict, /System Settings/);
 });
 
+test('folderVerdict keeps the engine\'s plain permission reason, but never one carrying internals', () => {
+	const said = mod.folderVerdict(
+		folderScan({ denied: true, readable: false, audio_files: 0, detail: 'macOS refused the listing (Permission denied)' })
+	);
+	assert.match(said, /^macOS refused the listing \(Permission denied\)\. /);
+	const dirty = mod.folderVerdict(
+		folderScan({ denied: true, readable: false, audio_files: 0, detail: "PermissionError: [Errno 13] '/Users/dj/Music/Locked'" })
+	);
+	assert.doesNotMatch(dirty, /\/Users\/|Errno/);
+	assert.match(dirty, /^This folder cannot be read yet\. /);
+});
+
 test('folderVerdict distinguishes empty from missing from unreadable', () => {
 	assert.match(mod.folderVerdict(folderScan({ audio_files: 0 })), /holds no audio files/);
 	assert.match(
 		mod.folderVerdict(folderScan({ exists: false, readable: false })),
-		/Nothing at/
+		/Nothing was found at/
 	);
 	assert.match(
+		mod.folderVerdict(
+			folderScan({ readable: false, detail: 'could not be listed: I/O error' })
+		),
+		/could not be read/
+	);
+	assert.doesNotMatch(
 		mod.folderVerdict(
 			folderScan({ readable: false, detail: 'could not be listed: I/O error' })
 		),
@@ -748,7 +1128,7 @@ test('folderVerdict distinguishes empty from missing from unreadable', () => {
 test('folderVerdict reports skipped iCloud placeholders alongside the count', () => {
 	const verdict = mod.folderVerdict(folderScan({ icloud_placeholders: 4 }));
 	assert.match(verdict, /12 audio files/);
-	assert.match(verdict, /4 more are iCloud placeholders/);
+	assert.match(verdict, /iCloud-only files were skipped/);
 });
 
 test('folderIsImportable needs a readable folder with something in it', () => {
@@ -815,4 +1195,83 @@ test('every stage the server can report has a human label', () => {
 	for (const stage of status().folder_stages) {
 		assert.ok(mod.FOLDER_STAGE_LABELS[stage], `no label for folder stage ${stage}`);
 	}
+});
+
+// ------------------------------------------------- status after the import
+//
+// The Done step reads `status.last_import`. `status` was loaded when the
+// overlay opened, before any import, so after a successful import the Done
+// step said "No import was recorded for this data directory" (demon-llama
+// preview, Thu 1 Oct 2026). The wizard re-reads status once its own import
+// job settles.
+
+function rekordboxImportSummary() {
+	return {
+		kind: 'rekordbox',
+		finished_at: '2026-10-01T06:00:00Z',
+		tracks: 1200,
+		playlists: 34,
+		analyses_linked: 1100,
+		analyses_expected: 1200,
+		share_root: '/Users/dj/Library/Pioneer/rekordbox/share'
+	};
+}
+
+async function openedBeforeImport() {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+	assert.equal(wizard.status.last_import, null, 'precondition: the overlay opened before any import');
+	wizard.jobId = 'job-setup-1';
+	requests = [];
+	routeFetch({
+		'/api/v1/setup/status': status({ library_empty: false, tracks: 1200, last_import: rekordboxImportSummary() })
+	});
+}
+
+test('a settled import re-reads status so the Done step shows the real import', async () => {
+	await openedBeforeImport();
+
+	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }).id);
+
+	assert.deepEqual(requests.map((request) => request.url), [`${API_BASE}/api/v1/setup/status`]);
+	assert.equal(wizard.status.last_import.tracks, 1200);
+	assert.equal(wizard.status.tracks, 1200);
+	assert.equal(wizard.error, null);
+});
+
+// "A failed import re-reads too" and "a live import does not re-read yet" are
+// the overlay's call now (it passes a job id only for a terminal row, any
+// outcome); setup-overlay.test.mjs pins that guard. The store's own rules
+// stay here: once per job id, never for someone else's job.
+
+test('the re-read happens once per settled job, not on every job-row update', async () => {
+	await openedBeforeImport();
+	const settled = job({ status: 'succeeded', progress: 1 });
+
+	// The overlay calls again on every update of the settled row.
+	await wizard.refreshStatusAfterImport(settled.id);
+	await wizard.refreshStatusAfterImport(settled.id);
+
+	assert.equal(requests.length, 1);
+});
+
+test("someone else's job never re-reads this wizard's status", async () => {
+	await openedBeforeImport();
+
+	await wizard.refreshStatusAfterImport(job({ id: 'job-other', status: 'succeeded' }).id);
+
+	assert.deepEqual(requests, []);
+});
+
+test('a failed re-read says so and keeps the status it had', async () => {
+	await openedBeforeImport();
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			jsonResponse({ detail: { code: 'boom', message: 'state db is gone' } }, 500)
+	});
+
+	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }).id);
+
+	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.status.last_import, null, 'previous status must survive a failure');
 });

@@ -43,7 +43,8 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 		'title',
 		'not implemented - see PARITY-TODO'
 	);
-	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveAttribute('title', 'not implemented - see PARITY-TODO');
+	// Mark offline is unbuilt and HIDDEN for V1 (JIK, Thu 1 Oct 2026).
+	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveCount(0);
 	await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toBeEnabled();
 	await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toHaveAttribute(
 		'title',
@@ -85,7 +86,10 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 
 	const folder = page.locator('[data-testid="playlist-folder"]');
 	await folder.click({ button: 'right' });
-	await expect(page.locator(MENU)).toContainText('New folder');
+	// LIBM-135: the folder menu opens with its built rows; the unbuilt
+	// "New folder" row is hidden for V1 rather than shown inert.
+	await expect(page.locator(MENU)).toContainText('New playlist');
+	await expect(page.getByRole('menuitem', { name: 'New folder', exact: true })).toHaveCount(0);
 	const folderDuplicate = page.getByRole('menuitem', { name: 'Duplicate', exact: true });
 	if (await folderDuplicate.count()) {
 		await expect(folderDuplicate).toBeDisabled();
