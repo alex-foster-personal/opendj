@@ -11,27 +11,91 @@ Outputs:
 * ``data/dedup/manual-review.csv``  -- borderline clusters that need eyes.
 * Inserts rows into ``duplicate_clusters`` + ``track_aliases``.
 
-The clustering is O(N^2) in the number of fingerprints; for a 1,700-
-track library that is ~1.4M compares, each a ~1 microsecond XOR loop,
-so sub-3s end-to-end. No need for LSH at this scale.
+Candidate pairs come from an inverted index of the 32-bit
+sub-fingerprints, as AcoustID's own search does: two recordings of the same
+audio share many identical sub-fingerprints at one consistent offset, and
+only pairs with at least ``MIN_SHARED_WORDS`` of those are scored. The
+earlier all-pairs loop decoded both fingerprints for each of N^2/2 pairs,
+which at a DJ library's 8,000 tracks is 32M decodes; the index makes it
+roughly linear in the number of sub-fingerprints.
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import sqlite3
+from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from apps.shared import paths
-from apps.shared.fingerprints import Fingerprint, FingerprintCache, compare
+from apps.shared.fingerprints import Fingerprint, FingerprintCache, match, words
 
 from . import schema as dedup_schema
 
 DEFAULT_THRESHOLD = 0.92
 DEFAULT_MAX_CLUSTER = 8
 DEFAULT_DURATION_DELTA_S = 3.0
+# Identical sub-fingerprints at one offset before a pair is scored at all.
+# At the 0.92 threshold about 7% of a pair's sub-fingerprints are still
+# bit-exact (0.92^32), which is ~66 for a 120 s fingerprint and still 2 or
+# more for the 32-word minimum overlap, so 3 keeps every real pair while
+# random agreement at one consistent offset stays rare.
+MIN_SHARED_WORDS = 3
+# A sub-fingerprint shared by more files than this is silence or a
+# similarly generic frame, not evidence; it is left out of the votes.
+STOPWORD_MIN_FILES = 50
+STOPWORD_FRACTION = 0.02
+
+
+def candidate_pairs(fps: list[Fingerprint]) -> set[tuple[int, int]]:
+    """Index pairs ``(i, j)``, ``i < j``, that share enough sub-fingerprints
+    at one consistent offset to be worth scoring. A fingerprint that does
+    not decode is left out (it cannot be scored either).
+
+    The index is three flat numpy arrays (value, file, first position)
+    sorted by value, about 10 bytes per sub-fingerprint: 8,000 tracks of
+    ~950 sub-fingerprints is ~80 MB, where a dict of Python lists would be
+    over 1 GB. Only values shared by two or more files reach Python.
+    """
+    import numpy as np
+
+    values: list[np.ndarray] = []
+    files: list[np.ndarray] = []
+    positions: list[np.ndarray] = []
+    for i, fp in enumerate(fps):
+        try:
+            ws = np.asarray(words(fp), dtype=np.uint32)
+        except ValueError:
+            continue
+        uniq, first = np.unique(ws, return_index=True)
+        values.append(uniq)
+        files.append(np.full(len(uniq), i, dtype=np.int32))
+        positions.append(first.astype(np.int32))
+    if not values:
+        return set()
+    w = np.concatenate(values)
+    order = np.argsort(w, kind="stable")
+    w = w[order]
+    f = np.concatenate(files)[order]
+    p = np.concatenate(positions)[order]
+    starts = np.flatnonzero(np.r_[True, w[1:] != w[:-1]])
+    lengths = np.diff(np.r_[starts, len(w)])
+    stop = max(STOPWORD_MIN_FILES, int(len(fps) * STOPWORD_FRACTION))
+    keep = (lengths >= 2) & (lengths <= stop)
+    votes: dict[tuple[int, int, int], int] = defaultdict(int)
+    for start, length in zip(starts[keep].tolist(), lengths[keep].tolist(), strict=True):
+        fi = f[start : start + length].tolist()
+        pi = p[start : start + length].tolist()
+        for a in range(length):
+            for b in range(a + 1, length):
+                i, j = fi[a], fi[b]
+                if i < j:
+                    votes[(i, j, pi[a] - pi[b])] += 1
+                else:
+                    votes[(j, i, pi[b] - pi[a])] += 1
+    return {(i, j) for (i, j, _off), c in votes.items() if c >= MIN_SHARED_WORDS}
 
 
 # -------------------------------------------------------- Union-Find helper
@@ -196,16 +260,15 @@ def run_find_clusters(
 
     uf = _UnionFind(n)
     pair_similarity: dict[tuple[int, int], float] = {}
-    for i in range(n):
-        for j in range(i + 1, n):
-            sim = compare(fps[i], fps[j])
-            if sim < threshold:
-                continue
-            # Duration-delta guard: flag high sim + large delta as
-            # manual review (will still cluster, but marked).
-            uf.union(i, j)
-            key = (min(i, j), max(i, j))
-            pair_similarity[key] = sim
+    for i, j in sorted(candidate_pairs(fps)):
+        sim, _offset = match(fps[i], fps[j])
+        if sim < threshold:
+            continue
+        # Duration-delta guard: flag high sim + large delta as
+        # manual review (will still cluster, but marked).
+        uf.union(i, j)
+        key = (min(i, j), max(i, j))
+        pair_similarity[key] = sim
 
     # Group members by root.
     buckets: dict[int, list[int]] = {}
@@ -285,7 +348,7 @@ def run_find_clusters(
                 apath = str(m_row.fp.path)
                 asid = _stable_id_from_row(conn, apath)
                 # Similarity between alias and canonical.
-                sim = compare(winner.fp, m_row.fp)
+                sim, _offset = match(winner.fp, m_row.fp)
                 dur_delta = abs(winner.fp.duration - m_row.fp.duration)
                 conn.execute(
                     "INSERT OR REPLACE INTO track_aliases "

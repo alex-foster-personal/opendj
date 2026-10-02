@@ -9,6 +9,7 @@
  */
 
 import { API_BASE, ApiError, api } from '$lib/api/client';
+import type { paths } from '$lib/api-types';
 
 import type {
 	ApplyRecord,
@@ -240,6 +241,30 @@ function asDedupError(error: unknown, route: string): Error {
 		return new Error(`${route} failed: ${error.status} ${error.message}`);
 	}
 	return new Error(`daemon unreachable (${error instanceof Error ? error.message : String(error)})`);
+}
+
+/** Progress of the on-device library fingerprint scan (GET/POST /dedup/scan). */
+export type DedupScanStatus =
+	paths['/api/v1/dedup/scan']['get']['responses'][200]['content']['application/json'];
+
+export async function fetchDedupScan(signal?: AbortSignal): Promise<DedupScanStatus> {
+	try {
+		const { data } = await api.GET('/api/v1/dedup/scan', { signal: signal ?? null });
+		return data as DedupScanStatus;
+	} catch (error) {
+		throw asDedupError(error, 'GET /api/v1/dedup/scan');
+	}
+}
+
+/** Start the scan. A scan already running is not an error: its status comes back. */
+export async function startDedupScan(signal?: AbortSignal): Promise<DedupScanStatus> {
+	try {
+		const { data } = await api.POST('/api/v1/dedup/scan', { signal: signal ?? null });
+		return data as DedupScanStatus;
+	} catch (error) {
+		if (error instanceof ApiError && error.status === 409) return fetchDedupScan(signal);
+		throw asDedupError(error, 'POST /api/v1/dedup/scan');
+	}
 }
 
 export async function fetchDedupClusters(signal?: AbortSignal): Promise<ClustersResponse> {

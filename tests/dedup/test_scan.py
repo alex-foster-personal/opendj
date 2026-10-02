@@ -67,7 +67,7 @@ def test_force_recompute_hits_every_file(
 def test_chromaprint_missing_raises(
     tmp_path: Path, tmp_fixture_tree, monkeypatch
 ) -> None:
-    """When fpcalc is missing, scan raises ChromaprintMissing immediately."""
+    """With no engine build and no fpcalc, scan raises ChromaprintMissing immediately."""
     from apps.shared import fingerprints as fp_mod
 
     class BadBackend:
@@ -77,6 +77,7 @@ def test_chromaprint_missing_raises(
         def fingerprint_file(self, _path):
             raise self.NoBackendError("fpcalc missing")
 
+    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
     monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: BadBackend())
 
     db = tmp_path / "cache.sqlite"
@@ -118,6 +119,7 @@ def test_cli_chromaprint_missing_exit_2(
         def fingerprint_file(self, _path):
             raise self.NoBackendError("fpcalc missing")
 
+    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: None)
     monkeypatch.setattr(fp_mod, "_require_acoustid", lambda: BadBackend())
 
     rc = scan_mod.main(

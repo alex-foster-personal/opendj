@@ -10,6 +10,9 @@ import pytest
 from apps.dedup import find_clusters as fc_mod
 from apps.dedup import scan as scan_mod
 from apps.shared.fingerprints import Fingerprint, FingerprintCache
+from tests.fingerprint_fakes import fake_fingerprint
+
+SAME_FP = fake_fingerprint(b"same", b"")
 
 
 def _seed(tmp_path: Path, tmp_fixture_tree: Path) -> Path:
@@ -212,7 +215,7 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
     canonical = Fingerprint(
         path=tmp_path / "canonical.flac",
         duration=180.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=2_000,
         mtime=100.0,
         bitrate=320,
@@ -220,7 +223,7 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
     alias = Fingerprint(
         path=tmp_path / "alias.mp3",
         duration=180.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=1_000,
         mtime=200.0,
         bitrate=128,
@@ -262,7 +265,7 @@ def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
     canonical = Fingerprint(
         path=tmp_path / "canonical.flac",
         duration=180.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=2_000,
         mtime=100.0,
         bitrate=320,
@@ -270,7 +273,7 @@ def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
     alias = Fingerprint(
         path=tmp_path / "alias.mp3",
         duration=190.0,
-        fp_str="same-fingerprint",
+        fp_str=SAME_FP,
         size=1_000,
         mtime=200.0,
         bitrate=128,

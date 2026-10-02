@@ -41,6 +41,7 @@ rubato = "0.16"
 signalsmith-stretch = "0.1.3"
 midir = { version = "0.11", optional = true }
 regex-lite = "0.1"
+rusty-chromaprint = "0.3"
 
 # Test scratch directories that delete themselves on drop, panics included,
 # so a `cargo test` run leaves nothing behind in the runner's temp dir.

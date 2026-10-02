@@ -1656,6 +1656,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dedup/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dedup Scan
+         * @description Where the library fingerprint scan is (idle until first started).
+         */
+        get: operations["get_dedup_scan_api_v1_dedup_scan_get"];
+        put?: never;
+        /**
+         * Post Dedup Scan
+         * @description Start fingerprinting the library and rebuilding duplicate clusters.
+         *
+         *     Local only: the engine fingerprints each track's own file, nothing is
+         *     looked up online, and no audio file is written, moved or deleted.
+         */
+        post: operations["post_dedup_scan_api_v1_dedup_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/entitlements": {
         parameters: {
             query?: never;
@@ -12671,6 +12698,39 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["SyncRowSampleModel"][];
         };
+        /**
+         * ScanStatusOut
+         * @description Progress of the on-device library fingerprint scan.
+         */
+        ScanStatusOut: {
+            /** Cache Hits */
+            cache_hits: number;
+            /** Clusters */
+            clusters: number | null;
+            /** Computed */
+            computed: number;
+            /** Done */
+            done: number;
+            /** Error */
+            error: string | null;
+            /** Error Samples */
+            error_samples: string[];
+            /** Errors */
+            errors: number;
+            /** Finished At */
+            finished_at: string | null;
+            /** Not Local */
+            not_local: number;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "running" | "done" | "failed";
+            /** Total */
+            total: number;
+        };
         /** SchedulerResumeOut */
         SchedulerResumeOut: {
             /** Ok */
@@ -18271,6 +18331,53 @@ export interface operations {
             };
             /** @description If-Match is required for every decision write */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_dedup_scan_api_v1_dedup_scan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatusOut"];
+                };
+            };
+        };
+    };
+    post_dedup_scan_api_v1_dedup_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatusOut"];
+                };
+            };
+            /** @description A scan is already running */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

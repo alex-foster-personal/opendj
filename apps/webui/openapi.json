@@ -17143,6 +17143,112 @@
         "title": "RowsResponse",
         "type": "object"
       },
+      "ScanStatusOut": {
+        "description": "Progress of the on-device library fingerprint scan.",
+        "properties": {
+          "cache_hits": {
+            "title": "Cache Hits",
+            "type": "integer"
+          },
+          "clusters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clusters"
+          },
+          "computed": {
+            "title": "Computed",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "error_samples": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Error Samples",
+            "type": "array"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "not_local": {
+            "title": "Not Local",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "total",
+          "done",
+          "computed",
+          "cache_hits",
+          "not_local",
+          "errors",
+          "clusters",
+          "error",
+          "started_at",
+          "finished_at",
+          "error_samples"
+        ],
+        "title": "ScanStatusOut",
+        "type": "object"
+      },
       "SchedulerResumeOut": {
         "properties": {
           "ok": {
@@ -27643,6 +27749,51 @@
           }
         },
         "summary": "Post Dedup Undo",
+        "tags": [
+          "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/dedup/scan": {
+      "get": {
+        "description": "Where the library fingerprint scan is (idle until first started).",
+        "operationId": "get_dedup_scan_api_v1_dedup_scan_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dedup Scan",
+        "tags": [
+          "dedup-review"
+        ]
+      },
+      "post": {
+        "description": "Start fingerprinting the library and rebuilding duplicate clusters.\n\nLocal only: the engine fingerprints each track's own file, nothing is\nlooked up online, and no audio file is written, moved or deleted.",
+        "operationId": "post_dedup_scan_api_v1_dedup_scan_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "A scan is already running"
+          }
+        },
+        "summary": "Post Dedup Scan",
         "tags": [
           "dedup-review"
         ]

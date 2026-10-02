@@ -11,6 +11,7 @@ pub mod decode;
 pub mod device;
 pub mod dsp;
 pub mod engine;
+pub mod fingerprint;
 pub mod midi;
 #[cfg(feature = "midi")]
 pub mod midi_in;

@@ -4,6 +4,7 @@
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
 //!                   [--ws 127.0.0.1:0]
 //!                   [--midi] [--midi-map MAPS.json]
+//!   odj-audio fingerprint FILE... [--length SECONDS]
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
@@ -37,6 +38,7 @@ const USAGE: &str = "usage:
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
+  odj-audio fingerprint FILE... [--length SECONDS]   (0 = whole file; default 120, as fpcalc)
   odj-audio version";
 
 struct Args {
@@ -562,6 +564,38 @@ fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen
     Err("this build has no device output; rebuild with --features device".into())
 }
 
+/// One JSON line per file: `{"path", "duration", "fingerprint"}` on success,
+/// `{"path", "error"}` on failure, so one bad file never hides the rest. The
+/// exit status is nonzero when any file failed.
+fn fingerprint_cmd(mut args: Args) -> Result<(), String> {
+    let length: u32 = match args.take("--length")? {
+        Some(v) => v.parse().map_err(|_| format!("--length must be whole seconds, got {v}"))?,
+        None => odj_audio::fingerprint::DEFAULT_LENGTH_S,
+    };
+    let files = std::mem::take(&mut args.rest);
+    if files.is_empty() {
+        return Err("fingerprint needs at least one FILE".into());
+    }
+    if let Some(flag) = files.iter().find(|f| f.starts_with("--")) {
+        return Err(format!("unknown option {flag}"));
+    }
+    let mut failed = 0usize;
+    for f in &files {
+        let line = match odj_audio::fingerprint::fingerprint_file(Path::new(f), length) {
+            Ok(fp) => json!({"path": f, "duration": fp.duration_s, "fingerprint": fp.fingerprint}),
+            Err(e) => {
+                failed += 1;
+                json!({"path": f, "error": e.message})
+            }
+        };
+        println!("{line}");
+    }
+    if failed > 0 {
+        return Err(format!("{failed} of {} files could not be fingerprinted", files.len()));
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let mut argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.is_empty() {
@@ -572,6 +606,7 @@ fn main() -> ExitCode {
     let r = match sub.as_str() {
         "render" => render(args),
         "serve" => serve_cmd(args),
+        "fingerprint" => fingerprint_cmd(args),
         "version" => {
             let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
             println!("{v}");

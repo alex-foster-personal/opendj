@@ -14,8 +14,11 @@
 		applyDedupMerge,
 		dedupArtworkUrl,
 		fetchDedupClusters,
+		fetchDedupScan,
 		postDedupDecision,
-		undoDedupMerge
+		startDedupScan,
+		undoDedupMerge,
+		type DedupScanStatus
 	} from './dedup-api';
 	import { mergeCueWarning } from './cue-warning';
 	import type { Cluster, ClustersResponse, Decision, DecisionAction } from './types';
@@ -52,12 +55,44 @@
 		}
 	}
 
+	let scan = $state<DedupScanStatus | null>(null);
+	let scanError = $state<string | null>(null);
+	let scanTimer: ReturnType<typeof setTimeout> | null = null;
+	const SCAN_POLL_MS = 1500;
+
+	async function pollScan(signal: AbortSignal, next: Promise<DedupScanStatus>): Promise<void> {
+		try {
+			const status = await next;
+			if (signal.aborted) return;
+			const wasRunning = scan?.state === 'running';
+			scan = status;
+			scanError = null;
+			if (status.state === 'running') {
+				scanTimer = setTimeout(() => void pollScan(signal, fetchDedupScan(signal)), SCAN_POLL_MS);
+			} else if (wasRunning) {
+				// The scan just finished: its clusters replace the ones shown.
+				await load(signal);
+			}
+		} catch (caught) {
+			if (signal.aborted) return;
+			scanError = caught instanceof Error ? caught.message : String(caught);
+		}
+	}
+
+	function findDuplicates(): void {
+		const signal = pageController?.signal;
+		if (signal === undefined || signal.aborted || scan?.state === 'running') return;
+		void pollScan(signal, startDedupScan(signal));
+	}
+
 	onMount(() => {
 		const controller = new AbortController();
 		pageController = controller;
 		void load(controller.signal);
+		void pollScan(controller.signal, fetchDedupScan(controller.signal));
 		return () => {
 			controller.abort();
+			if (scanTimer !== null) clearTimeout(scanTimer);
 			if (pageController === controller) pageController = null;
 		};
 	});
@@ -182,6 +217,32 @@
 
 	<div class="pending-apply-banner">
 		Merge rewrites OpenDJ playlist memberships; it does not delete files or copy cue points.
+	</div>
+
+	<div class="scan-bar" data-testid="dedup-scan">
+		<button
+			type="button"
+			data-testid="dedup-scan-start"
+			disabled={scan?.state === 'running'}
+			onclick={findDuplicates}
+			title="Fingerprint every track's audio on this device and group recordings of the same audio. Reads files only; nothing is looked up online, moved or deleted."
+		>
+			{scan?.state === 'running' ? 'Scanning...' : 'Find duplicates'}
+		</button>
+		{#if scan && scan.state !== 'idle'}
+			<span class="scan-status" data-testid="dedup-scan-status">
+				<span title="Library tracks checked so far, of all library tracks that name a file"
+					>{scan.done} / {scan.total} tracks</span
+				>
+				{#if scan.computed > 0}<span title="Tracks fingerprinted in this scan">· {scan.computed} fingerprinted</span>{/if}
+				{#if scan.cache_hits > 0}<span title="Tracks whose file is unchanged since an earlier scan, so their fingerprint was reused">· {scan.cache_hits} unchanged</span>{/if}
+				{#if scan.not_local > 0}<span title="Tracks whose file is missing or not downloaded to this device; skipped, never downloaded">· {scan.not_local} not on this device</span>{/if}
+				{#if scan.errors > 0}<span title={scan.error_samples.join('\n')}>· {scan.errors} could not be read</span>{/if}
+				{#if scan.state === 'done' && scan.clusters !== null}<span title="Groups of two or more tracks with the same audio">· {scan.clusters} duplicate groups</span>{/if}
+				{#if scan.state === 'failed'}<span class="scan-failed">· failed: {scan.error}</span>{/if}
+			</span>
+		{/if}
+		{#if scanError}<span class="scan-failed">{scanError}</span>{/if}
 	</div>
 
 	{#if error}
@@ -345,6 +406,23 @@
 		font-size: 0.82rem;
 		color: var(--fg);
 		margin-bottom: 1rem;
+	}
+	.scan-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin-bottom: 1rem;
+		font-size: 0.82rem;
+	}
+	.scan-status {
+		color: var(--muted);
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
+	}
+	.scan-failed {
+		color: var(--danger);
 	}
 	.error-banner {
 		background: var(--danger);
