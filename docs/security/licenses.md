@@ -14,8 +14,8 @@ through a version bump that relicensed a package we already had?
 Why it exists: on Wed 1 Oct 2026 the shipped desktop payload already carried two GPL
 packages nobody had chosen. `rbox` went from MIT/Apache to GPL-3.0-only at 0.1.6, and
 `jsonschema[format]` pulled in `rfc3987` (GPL-3.0+). The second is fixed here
-(`jsonschema[format-nongpl]`); the first is a recorded exception while the
-Apache-versus-GPL question is open (PR #4770).
+(`jsonschema[format-nongpl]`); the first was a recorded exception until PR #4813
+replaced it with our own OneLibrary handle over `sqlcipher3-wheels` (Zlib) the same day.
 
 ## The three files
 

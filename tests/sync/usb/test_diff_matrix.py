@@ -43,7 +43,7 @@ from apps.sync.usb.pioneer.differ import (
     round_trip_via_writer,
     snapshot_onelibrary,
 )
-from apps.sync.usb.pioneer.writer_rbox import RBOX_AVAILABLE, RBOX_IMPORT_ERROR
+from apps.sync.usb.pioneer.writer_onelibrary import WRITER_AVAILABLE, WRITER_IMPORT_ERROR
 from tests.fixtures._resolver import FixtureNotAvailable, fixture_path
 from tests.fixtures.conftest import resolve_required_fixture
 
@@ -51,10 +51,10 @@ pytestmark = [
     pytest.mark.requirement("CAT-06"),
     pytest.mark.slow,
     pytest.mark.skipif(
-        not RBOX_AVAILABLE,
+        not WRITER_AVAILABLE,
         reason=(
-            f"rbox (PyPI) is not installed: {RBOX_IMPORT_ERROR}. "
-            "Install with `pip install rbox` to run the diff-matrix."
+            f"OneLibrary reader unavailable: {WRITER_IMPORT_ERROR}. "
+            "Install the repository dependencies to run the diff-matrix."
         ),
     ),
 ]
@@ -166,7 +166,7 @@ def test_overlay_round_trip(fixture_name: str, tmp_path: Path) -> None:
     overlay = _overlay_spec_for_fixture(pioneer, tmp_path / "pick")
     assert overlay, (
         f"fixture {fixture_name!r} reports {content_rows} content rows "
-        "but the id-picker returned no IDs — possible rbox/read regression"
+        "but the id-picker returned no IDs — possible OneLibrary read regression"
     )
     overlay_name = overlay[0][0]
 

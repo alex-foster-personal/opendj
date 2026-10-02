@@ -5,10 +5,10 @@ Covers:
 * ``--help`` for the package entry point + each subcommand.
 * ``read`` + ``read --validate`` exit codes against the committed
   ``tests/fixtures/rb-usb-export/`` fixture.
-* ``write`` dry-run (no ``rbox`` required) spec parsing + plan JSON.
+* ``write`` dry-run (no ``sqlcipher3`` required) spec parsing + plan JSON.
 * ``write`` spec-parse error exit codes (2 = bad args / parse error).
-* ``write --apply`` round-trip via the rbox-backed writer (skipped when
-  ``rbox`` is missing).
+* ``write --apply`` round-trip via the OneLibrary writer (skipped when
+  ``sqlcipher3`` is missing).
 * ``write`` alias module ``apps.sync.usb.pioneer.writer``.
 
 All tests are read-only against ``tests/fixtures/``. Output is written
@@ -27,9 +27,9 @@ from apps.sync.usb.pioneer.__main__ import (
     _parse_track_spec,
     main,
 )
-from apps.sync.usb.pioneer.writer_rbox import (
-    RBOX_AVAILABLE,
-    RBOX_IMPORT_ERROR,
+from apps.sync.usb.pioneer.writer_onelibrary import (
+    WRITER_AVAILABLE,
+    WRITER_IMPORT_ERROR,
 )
 from tests.fixtures.conftest import resolve_required_fixture
 
@@ -69,7 +69,7 @@ def _fixture_onelibrary() -> Path:
 def fixture_onelibrary_copy(tmp_path: Path) -> Path:
     """Per-test copy of the encrypted OneLibrary fixture.
 
-    rbox opens templates in read/write mode and spawns ``-shm``/``-wal``
+    The writer opens templates in read/write mode and spawns ``-shm``/``-wal``
     sidecars. Copying to ``tmp_path`` keeps the committed fixture
     untouched.
     """
@@ -213,7 +213,7 @@ class TestRead:
 
 
 # ---------------------------------------------------------------------------
-# ``write`` dry-run (no rbox required)
+# ``write`` dry-run (no sqlcipher3 required)
 # ---------------------------------------------------------------------------
 
 
@@ -306,13 +306,13 @@ class TestWriteDryRun:
 
 
 # ---------------------------------------------------------------------------
-# ``write --apply`` round-trip (requires rbox + fixture)
+# ``write --apply`` round-trip (requires sqlcipher3 + fixture)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(
-    not RBOX_AVAILABLE,
-    reason=f"rbox not installed ({RBOX_IMPORT_ERROR}).",
+    not WRITER_AVAILABLE,
+    reason=f"OneLibrary writer unavailable ({WRITER_IMPORT_ERROR}).",
 )
 class TestWriteApply:
     def test_apply_round_trip(
@@ -345,9 +345,9 @@ class TestWriteApply:
         assert summary["output_size_bytes"] > 0
         assert Path(summary["output_path"]) == output.resolve()
 
-        # Round-trip check: reopen via rbox and confirm the playlist is
+        # Round-trip check: reopen and confirm the playlist is
         # present with the right name.
-        from apps.sync.usb.pioneer.writer_rbox import read_playlist_roundtrip
+        from apps.sync.usb.pioneer.writer_onelibrary import read_playlist_roundtrip
 
         payload = read_playlist_roundtrip(
             onelibrary_path=output, playlist_id=summary["playlist_ids"][0]
@@ -360,7 +360,7 @@ class TestWriteApply:
         fixture_onelibrary_copy: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # writer_rbox refuses to open the same path twice; CLI maps that
+        # writer_onelibrary refuses to open the same path twice; CLI maps that
         # to exit code 4 (writer failure).
         rc = main(
             [
@@ -387,35 +387,35 @@ def test_apply_writer_import_failure_rc4(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Force the writer_rbox import in ``_cmd_write`` to fail and verify
+    """Force the writer_onelibrary import in ``_cmd_write`` to fail and verify
     we surface exit code 4 with a clear error message.
 
     We achieve this by blocking the import at sys.modules + meta-path
     level: register a loader that raises ImportError for
-    ``apps.sync.usb.pioneer.writer_rbox``.
+    ``apps.sync.usb.pioneer.writer_onelibrary``.
     """
     import importlib
 
     # Evict any cached copy so the fresh import inside _cmd_write fails.
     monkeypatch.delitem(
-        sys.modules, "apps.sync.usb.pioneer.writer_rbox", raising=False
+        sys.modules, "apps.sync.usb.pioneer.writer_onelibrary", raising=False
     )
 
     real_import_module = importlib.import_module
 
     def blocked_import(name: str, package: str | None = None):  # type: ignore[override]
-        if name in {".writer_rbox", "apps.sync.usb.pioneer.writer_rbox"}:
-            raise ImportError("writer_rbox blocked for test")
+        if name in {".writer_onelibrary", "apps.sync.usb.pioneer.writer_onelibrary"}:
+            raise ImportError("writer_onelibrary blocked for test")
         return real_import_module(name, package)
 
-    # Patch the ``from .writer_rbox import ...`` inside ``_cmd_write`` by
+    # Patch the ``from .writer_onelibrary import ...`` inside ``_cmd_write`` by
     # inserting a dummy module that raises on attribute access.
     class _RaisingModule:
         def __getattr__(self, attr: str):
-            raise ImportError("writer_rbox blocked for test")
+            raise ImportError("writer_onelibrary blocked for test")
 
     monkeypatch.setitem(
-        sys.modules, "apps.sync.usb.pioneer.writer_rbox", _RaisingModule()  # type: ignore[arg-type]
+        sys.modules, "apps.sync.usb.pioneer.writer_onelibrary", _RaisingModule()  # type: ignore[arg-type]
     )
 
     rc = main(
@@ -430,4 +430,4 @@ def test_apply_writer_import_failure_rc4(
     )
     assert rc == 4
     err = capsys.readouterr().err
-    assert "writer_rbox import failed" in err
+    assert "writer_onelibrary import failed" in err

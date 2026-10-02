@@ -74,7 +74,7 @@ blocked half.  ``tests/test_rekordbox_writeback_gate.py`` iterates it, so:
   module.sync.usb.pioneer.agent_export        the real rekordbox GUI, clicked
 
 The USB sub-modules (``usb/copy.py``, ``usb/playlist_writer.py``,
-``usb/marker.py``, ``usb/pioneer/writer_rbox.py``) are reachable only through
+``usb/marker.py``, ``usb/pioneer/writer_onelibrary.py``) are reachable only through
 the mapped entrypoints above, so they are covered transitively rather than
 guarded twice.  A NEW entrypoint into any of them must be added to this map.
 

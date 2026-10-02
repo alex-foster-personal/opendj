@@ -22,9 +22,9 @@ Subcommands
         [--track ID:FIELD=VALUE,...] [--apply]``
     Prototype B: copy an existing Rekordbox-produced OneLibrary
     (``exportLibrary.db``) to ``--output`` and overlay zero or more
-    new playlists + track metadata updates via the ``rbox`` Rust
-    crate. Defaults to dry-run (plan only). Pass ``--apply`` to
-    invoke the writer. See :mod:`apps.sync.usb.pioneer.writer_rbox`
+    new playlists + track metadata updates through our own SQLCipher
+    handle. Defaults to dry-run (plan only). Pass ``--apply`` to
+    invoke the writer. See :mod:`apps.sync.usb.pioneer.writer_onelibrary`
     for the capability matrix + safety guards.
 
 Requirement: CAT-06.
@@ -138,8 +138,8 @@ def _parse_track_spec(raw: str) -> tuple[int, dict[str, Any]]:
 
 
 def _cmd_write(args: argparse.Namespace) -> int:
-    # Lazy import: writer_rbox pulls in the ``rbox`` Rust wheel which
-    # is not always installed on every dev host. Parsing + --help must
+    # Lazy import: writer_onelibrary pulls in sqlcipher3, a compiled wheel
+    # that is not always installed on every dev host. Parsing + --help must
     # still work without it.
     try:
         playlist_specs = [_parse_playlist_spec(p) for p in (args.playlist or [])]
@@ -168,10 +168,10 @@ def _cmd_write(args: argparse.Namespace) -> int:
         sys.stdout.write("\n")
         return 0
 
-    # Apply path: import writer + rbox lazily.
+    # Apply path: import the writer lazily.
     require_writeback_enabled("module.sync.usb.pioneer.cli_write")
     try:
-        from .writer_rbox import (
+        from .writer_onelibrary import (
             OneLibraryWriteError,
             PlaylistSpec,
             TrackUpdate,
@@ -179,8 +179,8 @@ def _cmd_write(args: argparse.Namespace) -> int:
         )
     except Exception as exc:  # noqa: BLE001
         print(
-            f"error: writer_rbox import failed ({exc}); "
-            "install `rbox` with `pip install rbox`.",
+            f"error: writer_onelibrary import failed ({exc}); "
+            "install the repository dependencies (sqlcipher3 via pyrekordbox).",
             file=sys.stderr,
         )
         return 4
@@ -214,7 +214,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         "playlists_written": result.playlists_written,
         "playlist_ids": list(result.playlist_ids),
         "output_size_bytes": result.output_size_bytes,
-        "rbox_version": result.rbox_version,
+        "backend": result.backend,
     }
     json.dump(summary, sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
@@ -357,12 +357,12 @@ def main(argv: list[str] | None = None) -> int:
         "write",
         help=(
             "Overlay playlists + track updates on a OneLibrary template "
-            "(Prototype B; requires rbox)."
+            "(Prototype B; requires sqlcipher3)."
         ),
         description=(
             "Copy a Rekordbox-produced exportLibrary.db template to "
             "--output and overlay zero or more new playlists + track "
-            "metadata updates via the rbox Rust crate. Dry-run by "
+            "metadata updates via our SQLCipher handle. Dry-run by "
             "default; pass --apply to invoke the writer."
         ),
     )
@@ -463,7 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "For each fixture under tests/fixtures/ that matches the "
             "--fixture-glob pattern (directory OR .extern marker), "
-            "pass the fixture's exportLibrary.db through the rbox-based "
+            "pass the fixture's exportLibrary.db through the OneLibrary "
             "writer (identity passthrough + overlay with one test "
             "playlist) and diff the snapshots. Emits a markdown matrix "
             "and optionally a JSON side-channel. Fixtures whose "
