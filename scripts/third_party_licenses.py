@@ -76,6 +76,10 @@ ROOT_LICENSE_FILE_NAME = "LICENSE"
 
 PYTHON_SITES_RELATIVE: tuple[str, ...] = ("pylib", "runners/beatgrid/site")
 FRONTEND_RELATIVE = Path("apps/webui/frontend")
+#: Checked-in mirror of python-build-standalone's own per-library LICENSE
+#: files for the native C libraries the CPython runtime statically links.
+#: See docs/legal/python-build-standalone/README.md for provenance.
+PBS_NATIVE_LICENSES_RELATIVE = Path("docs/legal/python-build-standalone")
 # vite bundles the framework runtime out of devDependencies, so the
 # production-only closure would under-attribute the shipped SPA.
 JS_BUNDLED_FROM_DEV: tuple[str, ...] = ("svelte", "@sveltejs/kit")
@@ -436,14 +440,24 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
     font_license = repo_root / FRONTEND_RELATIVE / "static/fonts/Anybody-OFL.txt"
     if not font_license.is_file():
         raise LicenseInventoryError(f"{font_license} missing")
+    native_lib_dir = repo_root / PBS_NATIVE_LICENSES_RELATIVE
+    native_lib_licenses = sorted(native_lib_dir.glob("LICENSE.*.txt"))
+    if not native_lib_licenses:
+        raise LicenseInventoryError(
+            f"no LICENSE.*.txt under {native_lib_dir}: the CPython runtime statically links "
+            "third-party native libraries (OpenSSL, SQLite, zlib, bzip2, xz, libffi, expat, "
+            "and others) whose notices must ship with the binary (Sol P1, PR #4853). See "
+            f"{native_lib_dir}/README.md to refresh this mirror."
+        )
     return [
         Component(
             "bundled", "CPython (python-build-standalone)", runtime_licenses[0].parent.name, "PSF-2.0",
             "https://github.com/astral-sh/python-build-standalone",
-            [("LICENSE.txt", _read_text(runtime_licenses[0]))],
-            note="The relocatable interpreter statically links third-party C libraries (for example "
-                 "OpenSSL, SQLite, zlib, bzip2, xz, libffi, expat); their notices are published with "
-                 "the python-build-standalone release this build resolves.",
+            [("LICENSE.txt", _read_text(runtime_licenses[0]))]
+            + [(path.name, _read_text(path)) for path in native_lib_licenses],
+            note="The relocatable interpreter statically links third-party C libraries; their "
+                 f"license texts are mirrored from {PBS_NATIVE_LICENSES_RELATIVE}/ (see its README "
+                 "for provenance) rather than merely referenced.",
         ),
         Component(
             "bundled", "Beat This! final0 checkpoint", "final0", "MIT",

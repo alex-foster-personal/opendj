@@ -242,7 +242,18 @@ _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
     ("service", "timer", "socket", "mount", "automount", "path", "slice", "scope", "swap", "device")
 )
 
-MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
+MAILBOX_EXEMPT_PATHS = frozenset(
+    {
+        ".mailmap",
+        "docs/git-author-convention.md",
+        # Verbatim upstream license texts for CPython's statically-linked native
+        # libraries (docs/legal/python-build-standalone/README.md): the author
+        # contact addresses are PART of the license text itself (bzip2's and
+        # zlib's licenses name their authors by email), not the maintainer's own identity.
+        "docs/legal/python-build-standalone/LICENSE.bzip2.txt",
+        "docs/legal/python-build-standalone/LICENSE.zlib.txt",
+    }
+)
 GENERATED_TEST_ID_PATHS = frozenset({".test_durations"})  # pytest-split cache, not a mailbox
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
 # synthetic label this repo standardized on for MagicDNS fixtures in tests, the
