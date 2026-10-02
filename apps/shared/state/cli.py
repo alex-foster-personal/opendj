@@ -6,18 +6,24 @@ Subcommands (built up across Phase 5 plans):
 * ``stats``      -- print table counts + source breakdown (plan 05-01/03).
 * ``inspect``    -- pretty-print one track as open-dj JSON (plan 05-02).
 * ``ingest-rb``  -- Rekordbox -> state.db, dry-run by default (plan 05-03).
+* ``deleted``    -- list the tracks the user removed (LIBM-140).
+* ``undelete``   -- restore one removed track (LIBM-140).
 """
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sqlite3
 import sys
 from pathlib import Path
 
 from . import db as state_db
+from . import deleted_tracks
 from . import paths as state_paths
 from . import schema as state_schema
+from .writer import StateWriter
+from .writer_tracks import TrackNotFoundError, TrackNotRemovedError
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -118,6 +124,41 @@ def _cmd_ingest_folder(args: argparse.Namespace) -> int:
     return _folder.run_cli(args)
 
 
+def _cmd_deleted(args: argparse.Namespace) -> int:
+    """List the tracks the user removed (the CLI twin of ``GET /tracks/deleted``)."""
+    target = Path(args.db) if args.db else state_paths.STATE_DB
+    with state_db.connect_ro(target) as conn:
+        removed = deleted_tracks.list_deleted(conn)
+    json.dump([dataclasses.asdict(track) for track in removed], sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_undelete(args: argparse.Namespace) -> int:
+    """Restore one removed track (the CLI twin of ``POST /tracks/{id}:undelete``)."""
+    target = Path(args.db) if args.db else state_paths.STATE_DB
+    with state_db.connect_rw(target) as conn, StateWriter(conn, actor="state-cli") as writer:
+        try:
+            result = writer.undelete_track(args.stable_id)
+        except TrackNotFoundError:
+            print(f"stable_id {args.stable_id!r} not found", file=sys.stderr)
+            return 1
+        except TrackNotRemovedError:
+            print(f"stable_id {args.stable_id!r} is not removed", file=sys.stderr)
+            return 1
+    json.dump(
+        {
+            "stable_id": result.stable_id,
+            "deleted_at": result.deleted_at,
+            "memberships_restored": len(result.memberships),
+        },
+        sys.stdout,
+        indent=2,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
 def _table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts: dict[str, int] = {}
     for name in state_schema.TABLES:
@@ -211,6 +252,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="process at most N tracks (debug / smoke-test aid)",
     )
 
+    sub.add_parser(
+        "deleted",
+        help="list tracks the user removed (they stay removed until undelete)",
+    )
+    und = sub.add_parser("undelete", help="restore one removed track")
+    und.add_argument("stable_id", help="stable_id of the removed track")
+
     fol = sub.add_parser(
         "ingest-folder",
         help="filesystem folder -> state.db adapter (no rekordbox needed)",
@@ -253,6 +301,8 @@ _COMMANDS = {
     "inspect": _cmd_inspect,
     "ingest-rb": _cmd_ingest_rb,
     "ingest-folder": _cmd_ingest_folder,
+    "deleted": _cmd_deleted,
+    "undelete": _cmd_undelete,
 }
 
 

@@ -6396,6 +6396,66 @@
         "title": "DeletedPlaylistOut",
         "type": "object"
       },
+      "DeletedTrackOut": {
+        "description": "One tombstoned track that has not been restored (LIBM-140).\n\n``reason`` is ``user`` for Remove from library, which no re-import undoes,\nor ``missing`` for a watched-folder file that vanished, which comes back\nby itself when the file does.",
+        "properties": {
+          "artists": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artists",
+            "type": "array"
+          },
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "reason": {
+            "enum": [
+              "user",
+              "missing"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artists",
+          "file_path",
+          "deleted_at",
+          "reason"
+        ],
+        "title": "DeletedTrackOut",
+        "type": "object"
+      },
       "DigestDiffSampleOut": {
         "properties": {
           "newer_side": {
@@ -15389,6 +15449,11 @@
             "title": "Machines",
             "type": "array"
           },
+          "reseed": {
+            "default": false,
+            "title": "Reseed",
+            "type": "boolean"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/RowModel"
@@ -15447,6 +15512,13 @@
           "rejected": {
             "title": "Rejected",
             "type": "integer"
+          },
+          "rejected_rows": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedRowModel"
+            },
+            "title": "Rejected Rows",
+            "type": "array"
           },
           "seq": {
             "title": "Seq",
@@ -16498,6 +16570,36 @@
           "ui_title"
         ],
         "title": "RefusalOut",
+        "type": "object"
+      },
+      "RejectedRowModel": {
+        "description": "One offered row the hub refused, and why (CLOUDSYNC-31).",
+        "properties": {
+          "pk": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Pk",
+            "type": "array"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "table": {
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "pk",
+          "reason"
+        ],
+        "title": "RejectedRowModel",
         "type": "object"
       },
       "RekordboxDetectionOut": {
@@ -18207,6 +18309,93 @@
           "row_count"
         ],
         "title": "SqlQueryOut",
+        "type": "object"
+      },
+      "StaleCandidateModel": {
+        "properties": {
+          "origin_device_id": {
+            "title": "Origin Device Id",
+            "type": "string"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "origin_device_id"
+        ],
+        "title": "StaleCandidateModel",
+        "type": "object"
+      },
+      "StaleCheckRequest": {
+        "description": "``POST /stale-check``: which of these live tracks did the fleet drop?",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/StaleCandidateModel"
+            },
+            "maxItems": 1000,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "machine_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "reseed": {
+            "default": false,
+            "title": "Reseed",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
+          }
+        },
+        "required": [
+          "machine_id",
+          "schema_version",
+          "candidates"
+        ],
+        "title": "StaleCheckRequest",
+        "type": "object"
+      },
+      "StaleCheckResponse": {
+        "properties": {
+          "orphans": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Orphans",
+            "type": "array"
+          },
+          "unattributable": {
+            "default": 0,
+            "title": "Unattributable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "orphans"
+        ],
+        "title": "StaleCheckResponse",
         "type": "object"
       },
       "StatusResponse": {
@@ -36224,14 +36413,7 @@
             "description": "HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
           },
           "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SyncErrorResponse"
-                }
-              }
-            },
-            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+            "description": "SYNC_STALE_TRACKS: the batch carries live tracks another machine authored that this hub no longer holds (a stale or copied library). Nothing applied. Also SYNC_WIRE_VERSION / SYNC_SCHEMA_VERSION and FOREIGN KEY refusals."
           },
           "422": {
             "description": "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows)"
@@ -36364,6 +36546,64 @@
           }
         },
         "summary": "Rows",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/stale-check": {
+      "post": {
+        "description": "Which offered live tracks did the fleet drop? Read-only.\n\nThe spoke asks before it pushes, so it can refuse its own push and name\nevery orphan at once instead of meeting the ``/push`` backstop one batch\nat a time. Same rule, same connection state: :mod:`apps.sync_hub.stale_copy`.",
+        "operationId": "stale_check_api_v1_sync_stale_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaleCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaleCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "stale-check refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "stale-check refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Stale Check",
         "tags": [
           "sync"
         ]
@@ -36853,6 +37093,32 @@
           }
         },
         "summary": "List Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/deleted": {
+      "get": {
+        "description": "Tombstoned tracks and why, newest removal first.\n\nA track the user removed stays removed across every re-import and sync until it\nis restored with ``POST /tracks/{stable_id}:undelete``; this list is how a\nperson or an agent finds the id to restore.",
+        "operationId": "list_deleted_tracks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedTrackOut"
+                  },
+                  "title": "Response List Deleted Tracks",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deleted Tracks",
         "tags": [
           "tracks"
         ]

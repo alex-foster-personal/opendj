@@ -345,3 +345,88 @@ def test_nfc_nfd_spelling_drift_at_one_path_is_not_flagged_added_or_removed(
     live = _live_tracks(state_conn)
     assert len(live) == 1
     assert live[0][0] == live_id
+
+
+# ----- LIBM-140: a missing file is not a user delete ------------------------
+
+
+def _tombstone(state_conn, file_path: Path) -> tuple[str | None, str | None, str | None]:
+    row = state_conn.execute(
+        "SELECT deleted_at, deleted_reason, restored_at FROM tracks WHERE file_path = ?",
+        (str(file_path),),
+    ).fetchone()
+    return (row[0], row[1], row[2])
+
+
+def test_a_file_that_went_missing_comes_back_when_the_file_does(state_conn, tmp_path: Path) -> None:
+    """The rescan's own tombstone records WHY, so finding the file again lifts
+    it. Without the reason this is indistinguishable from a user delete and
+    the track would stay gone forever."""
+    root = tmp_path / "music"
+    audio_path = root / "a.wav"
+    _write_wav(audio_path)
+    _write_wav(root / "keep.wav")
+    original = audio_path.read_bytes()
+    stat = audio_path.stat()
+    writer = _writer(state_conn)
+    first = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+
+    audio_path.unlink()
+    second = folder_rescan.reconcile_folders(writer, [root], previous_signature=first.signature)
+    deleted_at, reason, _restored = _tombstone(state_conn, audio_path)
+    assert deleted_at is not None
+    assert reason == "missing"
+
+    audio_path.write_bytes(original)
+    os.utime(audio_path, ns=(stat.st_atime_ns, stat.st_mtime_ns))  # same file, same id
+    third = folder_rescan.reconcile_folders(writer, [root], previous_signature=second.signature)
+
+    assert third.tracks_added == 1
+    deleted_at, reason, restored_at = _tombstone(state_conn, audio_path)
+    assert (deleted_at, reason) == (None, None)
+    assert restored_at is not None, "the lift must outrank the tombstone on other machines"
+    assert len(_live_tracks(state_conn)) == 2
+
+
+def test_a_track_the_user_removed_stays_removed_while_its_file_is_still_there(
+    state_conn, tmp_path: Path
+) -> None:
+    """The control for the test above: the same rescan, but the tombstone is
+    the user's. The file is on disk every cycle and the track stays removed."""
+    root = tmp_path / "music"
+    audio_path = root / "a.wav"
+    _write_wav(audio_path)
+    _write_wav(root / "keep.wav")
+    writer = _writer(state_conn)
+    folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+    removed_id = next(sid for sid, path in _live_tracks(state_conn) if path == str(audio_path))
+    writer.remove_from_library(removed_id)
+    before = _tombstone(state_conn, audio_path)
+    assert before[1] == "user"
+
+    report = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+
+    assert report.tracks_added == 0
+    assert _tombstone(state_conn, audio_path) == before
+    assert [path for _sid, path in _live_tracks(state_conn)] == [str(root / "keep.wav")]
+
+
+def test_a_tombstone_older_than_the_reason_column_is_read_as_the_users(
+    state_conn, tmp_path: Path
+) -> None:
+    """A tombstone written before schema v23 has no reason. It is kept: an old
+    delete stays deleted, and ``undelete`` is the way back if it was a scan's."""
+    root = tmp_path / "music"
+    audio_path = root / "a.wav"
+    _write_wav(audio_path)
+    _write_wav(root / "keep.wav")
+    writer = _writer(state_conn)
+    folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+    removed_id = next(sid for sid, path in _live_tracks(state_conn) if path == str(audio_path))
+    writer.remove_from_library(removed_id)
+    state_conn.execute("UPDATE tracks SET deleted_reason = NULL WHERE stable_id = ?", (removed_id,))
+
+    report = folder_rescan.reconcile_folders(writer, [root], previous_signature="")
+
+    assert report.tracks_added == 0
+    assert _tombstone(state_conn, audio_path)[0] is not None
