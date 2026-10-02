@@ -35,6 +35,7 @@
 	} from '$lib/rb/optional-resource-availability';
 	import { autoMusicalWidths, COL_DEFAULTS, compactMusicalWidths, compactUtilityWidths, type ColId } from '$lib/rb/library-column-widths';
 	import { bpmCellTitle as buildBpmCellTitle } from '$lib/rb/bpm-cell-title';
+	import { isPairedRow } from '$lib/rb/pairing-row';
 	import {
 		analysisIssuesFor,
 		camelotKeyColor,
@@ -1570,7 +1571,7 @@
 						class:corridor-grace-active={corridorGraceRowIds.has(row.stable_id)}
 						class:rb-row-menu={quickDrawUi.menuHighlightStableId === row.stable_id}
 						class:rb-row-key-compat={keyCompat(row.key)}
-						class:rb-row-paired={pairedPartnerIds.has(row.stable_id)}
+						class:rb-row-paired={isPairedRow(pairedPartnerIds, row.stable_id)}
 						class:rb-row-spotify-pending={row.spotify_pending === true ||
 							row.stable_id.startsWith('spotify-pending:')}
 						class:loaded={loadedIds.has(row.stable_id)}

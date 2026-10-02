@@ -293,7 +293,11 @@
 	let _healthWriteEpoch = 0;
 	let _playlistsWriteEpoch = 0;
 	let allTracksNonBrokenCount = $state<number | null>(null);
-	const pairingIndex = new PairingIndex();
+	// A failed pairing lookup is unknown, not empty: say so instead of
+	// silently dropping the purple underlines (Sol P1, PR #4014).
+	const pairingIndex = new PairingIndex({
+		onError: (message) => pushToast(message, 'error')
+	});
 	let browserConfirmOpen = $state(false);
 	// The confirm dialog renders only after a delete or drop asks, so it loads on
 	// first use instead of riding the /performance route's eager bundle budget.
