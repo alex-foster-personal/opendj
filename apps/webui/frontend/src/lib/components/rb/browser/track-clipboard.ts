@@ -15,6 +15,7 @@
 
 import { isTextEntryTarget } from '$lib/keyboard/text-entry-target';
 import type { RowRef, SelectionPane } from './pane-row-selection';
+import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './virtual-window';
 
 export type LibraryEditShortcut = 'select_all' | 'copy' | 'cut' | 'paste';
 
@@ -174,6 +175,17 @@ export function pastedRowOrders(rows: readonly RowRef[], pastedIds: readonly str
 		if (wanted.has(row.stable_id)) lastOrder.set(row.stable_id, row.order);
 	}
 	return [...lastOrder.values()].sort((a, b) => a - b);
+}
+
+/** Table scrollTop that puts the row at `rowIndex` (in rendered order) two
+ * rows below the top of the visible band. Row heights are TrackTable's
+ * ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT. */
+export function pasteRevealScrollTop(rowIndex: number, density: string): number {
+	return scrollTopForRowIndex({
+		rowIndex: Math.max(0, rowIndex - 2),
+		rowHeight: density === 'cosy' ? 30 : 22,
+		headerOffsetPx: TRACK_TABLE_THEAD_PX
+	});
 }
 
 /** Select exactly the given rows, anchored on the first. */

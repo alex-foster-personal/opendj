@@ -171,6 +171,7 @@
 		libraryEditShortcut,
 		partitionPaste,
 		pastedRowOrders,
+		pasteRevealScrollTop,
 		pasteBlockReason,
 		pasteToastMessage,
 		selectAllRows,
@@ -178,7 +179,6 @@
 		selectRowOrders,
 		setTrackClipboard
 	} from './browser/track-clipboard';
-	import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './browser/virtual-window';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -3158,14 +3158,7 @@
 		if (p !== pane) return;
 		const index = renderedRows.findIndex((r) => r.order === orders[0]);
 		if (index < 0) return;
-		p.rememberScroll(
-			scrollTopForRowIndex({
-				rowIndex: Math.max(0, index - 2),
-				// TrackTable's ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT.
-				rowHeight: uiPrefs.library_density === 'cosy' ? 30 : 22,
-				headerOffsetPx: TRACK_TABLE_THEAD_PX
-			})
-		);
+		p.rememberScroll(pasteRevealScrollTop(index, uiPrefs.library_density));
 		navEpoch += 1;
 	}
 

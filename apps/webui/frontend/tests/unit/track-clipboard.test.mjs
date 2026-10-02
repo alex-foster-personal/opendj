@@ -173,6 +173,13 @@ test('selectRowOrders selects exactly those rows and anchors on the first', () =
 	assert.deepEqual(p.selected_orders, [3, 4]);
 });
 
+test('the reveal scroll puts the pasted row two rows below the top', () => {
+	assert.equal(mod.pasteRevealScrollTop(0, 'compact'), 0);
+	assert.equal(mod.pasteRevealScrollTop(2, 'compact'), 0);
+	assert.equal(mod.pasteRevealScrollTop(80, 'compact'), 78 * 22 + 20);
+	assert.equal(mod.pasteRevealScrollTop(80, 'cosy'), 78 * 30 + 20);
+});
+
 test('toast copy names counts and what happens next', () => {
 	assert.equal(
 		mod.clipboardToastMessage(1, 'copy'),
