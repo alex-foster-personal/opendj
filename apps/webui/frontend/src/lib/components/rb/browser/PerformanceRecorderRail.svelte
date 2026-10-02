@@ -70,5 +70,6 @@
 	<RecordInputPicker
 		onstarted={(status) => ((recorder = status), (RecordInputPicker = null))}
 		oncancel={() => (RecordInputPicker = null)}
+		notify={pushToast}
 	/>
 {/if}

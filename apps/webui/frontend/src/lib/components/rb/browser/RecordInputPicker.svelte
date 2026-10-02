@@ -6,7 +6,6 @@
 	// listed (no ffmpeg on this Mac) or none is wanted.
 	import { onMount } from 'svelte';
 	import type { RecorderDevices, RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { pushToast } from '$lib/stores.svelte';
 	import {
 		initialInputChoice,
 		listRecorderDevices,
@@ -18,11 +17,14 @@
 
 	let {
 		onstarted,
-		oncancel
+		oncancel,
+		notify
 	}: {
 		/** Called with the live status once recording has started. */
 		onstarted: (status: RecorderStatus) => void;
 		oncancel: () => void;
+		/** The rail's toast sink, passed in so this lazy chunk adds no store importer. */
+		notify: (message: string, level: 'info' | 'error') => void;
 	} = $props();
 
 	let busy = $state(false);
@@ -68,10 +70,10 @@
 			const status = await startPerformanceRecorder(choice);
 			rememberInput(choice);
 			const from = choice.kind === 'device' ? `from ${choice.name}` : 'tracklist only';
-			pushToast(`Recording ${status.session_id} (${from})`, 'info');
+			notify(`Recording ${status.session_id} (${from})`, 'info');
 			onstarted(status);
 		} catch (error) {
-			pushToast(`REC failed: ${String(error)}`, 'error');
+			notify(`REC failed: ${String(error)}`, 'error');
 		} finally {
 			busy = false;
 		}
