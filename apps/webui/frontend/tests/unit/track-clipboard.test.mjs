@@ -1,7 +1,7 @@
 /**
  * Library edit shortcuts: Cmd/Ctrl+A select all, Cmd/Ctrl+C/X/V copy, cut
  * and paste tracks between playlists (pin ce142ae7e22f in #3988, duplicated
- * as 0b1e12cc01d0 in #3989; LIBM-135..LIBM-137).
+ * as 0b1e12cc01d0 in #3989; LIBM-160..LIBM-162).
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
