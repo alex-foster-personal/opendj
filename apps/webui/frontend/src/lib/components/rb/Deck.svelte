@@ -671,8 +671,17 @@
 		align-items: stretch;
 		gap: 6px;
 	}
+	/* HotCueBank's root carries width: 100%, which as a flex item here is a
+	   100% flex-basis: it took the whole row and left .deck-lyric-host 0px wide
+	   (present, loaded, invisible; #3984 pin 3c204b5727aa). Zero both bases and
+	   split the spare width 3:2 so the lyric rows sit beside the pads. With no
+	   lyric host the bank still grows to fill the row alone. */
+	.cue-flex > :global(.cue-area) {
+		flex: 3 1 0;
+		width: auto;
+	}
 	.deck-lyric-host {
-		flex: 1 1 0;
+		flex: 2 1 0;
 		min-width: 0;
 		display: flex;
 		align-items: center;
