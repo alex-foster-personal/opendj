@@ -14,13 +14,13 @@ an import crash. The contract:
 * No read path reaches for mutagen: the reads work with mutagen made
   unimportable (the positive control below).
 
-Absence is simulated by flipping ``HAS_TAG_READER`` (module-level imports
-copy it by value, so each dependent module's own binding is patched too);
-the HTTP-level 503s are proven with a real import block in their own tests.
+Absence is real: the degrade test runs the production imports in a
+subprocess where ``import tinytag`` fails, so the import guard itself sets
+``HAS_TAG_READER``. The HTTP-level 503s are proven the same way in their own
+tests.
 """
 from __future__ import annotations
 
-import importlib
 import shutil
 import subprocess
 import sys
@@ -39,45 +39,58 @@ _DEPENDENTS = (
 )
 
 
-@pytest.fixture
-def no_reader(monkeypatch):
-    import apps.shared._tagreader as gate
+def test_read_paths_degrade_with_tinytag_unimportable(tmp_path):
+    """Every read path degrades cleanly in a process where tinytag is missing.
 
-    # Import every dependent BEFORE flipping the gate: a first import after the
-    # flip would copy False by value, and teardown would then "restore" False.
-    dependents = [importlib.import_module(name) for name in _DEPENDENTS]
-    monkeypatch.setattr(gate, "HAS_TAG_READER", False)
-    for module in dependents:
-        monkeypatch.setattr(module, "HAS_TAG_READER", False)
-    return gate
-
-
-def test_require_raises_with_reinstall_hint(no_reader):
-    with pytest.raises(ImportError) as excinfo:
-        no_reader.require()
-    msg = str(excinfo.value)
-    assert "tinytag" in msg
-    assert "uv sync" in msg
-
-
-def test_modules_still_importable_without_reader(no_reader):
-    for name in (*_DEPENDENTS, "apps.shared.fingerprints", "apps.sync.matcher"):
-        assert importlib.import_module(name) is not None
-
-
-def test_read_paths_degrade_without_reader(tmp_path, no_reader):
-    from apps.reconcile import index_disk
-    from apps.shared import audio_files, fingerprints
-    from apps.sync import matcher
-
+    Runs the production imports in a subprocess with ``import tinytag``
+    blocked, so ``HAS_TAG_READER`` is computed by the real import guard, not
+    patched. Positive control first: the probe proves tinytag really is
+    unimportable and the gate saw it, else a degraded result could be a
+    reader that simply failed on this file.
+    """
     track = tmp_path / "x.mp3"
     shutil.copyfile(FIXTURE, track)
-    assert audio_files.read_metadata(track) is None
-    assert audio_files.read_embedded_artwork(track) is None
-    assert audio_files.embedded_artwork_available(track) is False
-    assert fingerprints._safe_bitrate(track) is None
-    assert matcher._read_id3(track) is None
-    assert index_disk.read_tags(track).ok is False
+    probe = textwrap.dedent(
+        f"""
+        import importlib
+        import sys
+        sys.modules["tinytag"] = None
+        try:
+            import tinytag  # noqa: F401
+        except ImportError:
+            pass
+        else:
+            raise SystemExit("control failed: tinytag still importable")
+        from pathlib import Path
+        from apps.shared import _tagreader
+        assert _tagreader.HAS_TAG_READER is False
+        try:
+            _tagreader.require()
+        except ImportError as exc:
+            assert "tinytag" in str(exc) and "uv sync" in str(exc), exc
+        else:
+            raise SystemExit("require() did not raise")
+        for name in {(*_DEPENDENTS, "apps.shared.fingerprints", "apps.sync.matcher")!r}:
+            importlib.import_module(name)
+        from apps.reconcile import index_disk
+        from apps.shared import audio_files, fingerprints
+        from apps.sync import matcher
+        p = Path({str(track)!r})
+        assert _tagreader.can_read(p) is False
+        assert audio_files.read_metadata(p) is None
+        assert audio_files.read_embedded_artwork(p) is None
+        assert audio_files.embedded_artwork_available(p) is False
+        assert fingerprints._safe_bitrate(p) is None
+        assert matcher._read_id3(p) is None
+        assert index_disk.read_tags(p).ok is False
+        print("OK")
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", probe], cwd=REPO_ROOT, capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert proc.stdout.strip().endswith("OK")
 
 
 def test_read_paths_measure_with_reader(tmp_path):
@@ -167,3 +180,19 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     assert _tagreader.can_read(bogus) is True
     with pytest.raises(audio_playable.UnplayableAudioError):
         audio_playable.probe_playable_audio(bogus)
+
+
+@pytest.mark.parametrize("name", ["src-128.mp3", "src.flac", "src.m4a", "src.wav"])
+def test_upload_hold_path_suffix_still_reads_duration(tmp_path, name):
+    """The upload duplicate probe reads a ``<name>.part`` hold file.
+
+    tinytag picks its parser from the extension first, then falls back to
+    sniffing the content, so the ``.part`` suffix the upload route adds must
+    not cost the duration it uses to find duplicates (review of #4997).
+    """
+    from apps.webui.server.routes import ingest_upload
+
+    held = tmp_path / f"{name}.part"
+    shutil.copyfile(FIXTURE.parent / name, held)
+    duration = ingest_upload._duration_s(held)
+    assert duration is not None and 2.9 < duration < 3.2, duration
