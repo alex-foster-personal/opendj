@@ -24,7 +24,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { before, describe, it } from 'node:test';
+import { afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { loadTypeScriptModule } from './load-typescript.mjs';
@@ -97,5 +97,95 @@ describe('the master meter publishes only what it measured', () => {
 		assert.match(source, /RENDERING_RMS_FLOOR = 0\.05/);
 		assert.match(source, /audioOutputHealth\.snapshot\?\.browser\?\.verdict === 'stalled'/);
 		assert.match(source, /output-stalled-while-rendering/);
+	});
+});
+
+describe('the source PCM reader stays off the non-quiet master path', () => {
+	let report;
+
+	before(async () => {
+		report = await loadTypeScriptModule('src/lib/rb/master-silence-report.ts');
+	});
+
+	afterEach(() => {
+		report.resetMasterSilenceWatch();
+		report.setSilenceSourceReader(null);
+	});
+
+	it('does not read deck buffers on the no-analyser path', () => {
+		let readerCalls = 0;
+		report.setSilenceSourceReader(() => {
+			readerCalls += 1;
+			return [];
+		});
+		report.resetMasterSilenceWatch();
+		report.noteMasterSilence(null, null, true, 1_000);
+		assert.equal(readerCalls, 0, 'no-meter sentinel must not trigger source PCM scans');
+	});
+
+	// A duck-typed analyser: `_masterRms` reads only fftSize and
+	// getFloatTimeDomainData, so this drives the real noteMasterSilence wiring
+	// (reader -> claimedLiveSourceIsSilent -> fold) end to end, which the fold
+	// and pure-function tests alone cannot see.
+	function analyserAt(level) {
+		return {
+			fftSize: 256,
+			getFloatTimeDomainData(buf) {
+				buf.fill(level);
+			}
+		};
+	}
+
+	function bufferFilled(level, seconds = 10, sampleRate = 44_100) {
+		const data = new Float32Array(seconds * sampleRate).fill(level);
+		return {
+			sampleRate,
+			length: data.length,
+			numberOfChannels: 1,
+			getChannelData() {
+				return data;
+			}
+		};
+	}
+
+	function holdQuietMaster(readSnaps, masterLevel = 0) {
+		report.resetMasterSilenceWatch();
+		const analyser = analyserAt(masterLevel);
+		let reported = false;
+		let readerCalls = 0;
+		report.setSilenceSourceReader(() => {
+			readerCalls += 1;
+			return readSnaps();
+		});
+		for (let t = 0; t <= 3_000; t += 100) {
+			report.noteMasterSilence(analyser, null, true, t);
+			if (report.masterSilenceState().verdict === 'silent-while-playing') reported = true;
+		}
+		return { reported, readerCalls };
+	}
+
+	it('silent source under a quiet master is content, not a dropout (AC1, AC4)', () => {
+		const buffer = bufferFilled(0);
+		const { reported, readerCalls } = holdQuietMaster(() => [
+			{ claims_live: true, buffer, position_sec: 2, master_path_gain: 1 }
+		]);
+		assert.ok(readerCalls > 0, 'the quiet-master path must consult the source reader');
+		assert.equal(reported, false);
+	});
+
+	it('loud source under a quiet master still reports (AC3, the overshoot control)', () => {
+		const buffer = bufferFilled(0.5);
+		const { reported } = holdQuietMaster(() => [{ claims_live: true, buffer, position_sec: 2, master_path_gain: 1 }]);
+		assert.equal(reported, true, 'a real dropout must still reach silent-while-playing');
+	});
+
+	it('does not read deck buffers while the master carries signal', () => {
+		const buffer = bufferFilled(0);
+		const { reported, readerCalls } = holdQuietMaster(
+			() => [{ claims_live: true, buffer, position_sec: 2, master_path_gain: 1 }],
+			0.5
+		);
+		assert.equal(readerCalls, 0, 'the source scan must stay off the loud-master path');
+		assert.equal(reported, false);
 	});
 });
