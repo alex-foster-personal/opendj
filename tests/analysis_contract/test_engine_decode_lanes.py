@@ -7,6 +7,7 @@ the shipped app has no ffmpeg.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -27,6 +28,8 @@ _M4A = _FIXTURES / "click-250ms-aac.m4a"
 # hats, a bass note per bar), encoded once with `ffmpeg -c:a aac -b:a 32k -ac 1`.
 # A bare click track has no bar phase for the runner to anchor.
 _LOOP_M4A = _FIXTURES / "loop-124bpm-16s-aac.m4a"
+# Version 1 of that fixture. A changed file is a new fixture, never a quiet swap.
+_LOOP_M4A_SHA256 = "1c17d701d2d39aec459ceac2885e44b8a42271b30e9401cd1c1f484e4f13cab6"
 
 
 # Skips as UNAVAILABLE on a host with no odj-audio build; ci.yml runs this
@@ -56,6 +59,19 @@ def _in_child(code: str, *args: object, **env: str) -> str:
     )
     assert done.returncode == 0, done.stderr
     return done.stdout
+
+
+def _hydrated_loop(folder: Path) -> Path:
+    """A disposable copy of the loop fixture, checked against its recorded digest."""
+    track = folder / "Loop.m4a"
+    shutil.copy(_LOOP_M4A, track)
+    digest = hashlib.sha256(track.read_bytes()).hexdigest()
+    assert digest == _LOOP_M4A_SHA256, f"{_LOOP_M4A.name} is not fixture v1: {digest}"
+    return track
+
+
+def test_the_loop_fixture_is_the_recorded_one(tmp_path: Path) -> None:
+    _hydrated_loop(tmp_path)
 
 
 def test_the_runner_reads_a_wav_at_the_same_path_every_run(tmp_path: Path) -> None:
@@ -206,8 +222,7 @@ def test_the_real_beatgrid_runner_reads_an_m4a(tmp_path: Path) -> None:
     from apps.analysis.backends.base import BackendNotAvailable
     from apps.analysis.backends.own_beatgrid import OwnBeatgridBackfillBackend
 
-    track = tmp_path / "Loop.m4a"
-    shutil.copy(_LOOP_M4A, track)
+    track = _hydrated_loop(tmp_path)
     try:
         record = OwnBeatgridBackfillBackend.analyze(track, "m4a-acceptance")
     except BackendNotAvailable as exc:
