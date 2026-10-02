@@ -61,5 +61,9 @@ class TestDefaultLogPath:
         assert p == Path("/tmp/custom.log")
 
     def test_default_points_at_data_voice(self):
+        # INSTALL-30: the data dir (``<repo>/data`` in a checkout), never the
+        # source tree, which is the signed payload in the installed app.
+        from apps.shared import platform_paths
+
         p = timings.default_log_path(env={})
-        assert p.parts[-3:] == ("data", "voice", "timings.jsonl")
+        assert p == Path(platform_paths.DATA_DIR) / "voice" / "timings.jsonl"

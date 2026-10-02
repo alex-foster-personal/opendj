@@ -9,12 +9,13 @@
 //! -1.3 dB at 12-16 kHz and -2.4 dB at 16-20 kHz on every 44.1 kHz track.
 
 use std::fs::File;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
-use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::probe::Hint;
-use symphonia::core::formats::{FormatOptions, TrackType};
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::TimeBase;
@@ -23,6 +24,7 @@ use rubato::{FftFixedIn, Resampler};
 
 use crate::engine::ErrorCode;
 use crate::protocol::ProtoError;
+use crate::wav;
 
 pub struct Decoded {
     pub sample_rate: u32,
@@ -170,38 +172,11 @@ pub fn open(path: &Path) -> Result<File, ProtoError> {
 /// Decode `file`, already opened from `path` (which names it in errors and
 /// gives the format hint), as `decode_file_within` does: a caller that keyed
 /// the file by its open handle decodes exactly the file it keyed.
-pub fn decode_open_within(mut file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
-    // Taken from the file the samples come from, not from its path again.
-    let source = SourceId::of(&file).ok();
-    // symphonia does not apply an MP4 edit list, so its priming frames are
-    // read here and trimmed after the decode (src/mp4edit.rs).
-    let edit = mp4_edit(&mut file, path)?;
-    let lead = leading_tag_bytes(&mut file, path)?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
+pub fn decode_open_within(file: File, path: &Path, max_frames: u64) -> Result<Decoded, ProtoError> {
+    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, source, edit, .. } = open_decoder(file, path)?;
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
-    let mut format = probe_for(lead)
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-        .map_err(|e| dec_err("unrecognized format in", &e))?;
-    let track = format
-        .default_track(TrackType::Audio)
-        .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio track in {}", path.display())))?;
-    let track_id = track.id;
-    let time_base = track.time_base;
-    let params = track
-        .codec_params
-        .as_ref()
-        .and_then(|p| p.audio())
-        .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio codec parameters in {}", path.display())))?;
-    let codec_rate = params.sample_rate;
-    let mut decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(params, &AudioDecoderOptions::default())
-        .map_err(|e| dec_err("unsupported codec in", &e))?;
 
     let mut pcm: Vec<f32> = Vec::new();
     // What the budget allows the samples to hold, spare capacity included.
@@ -400,6 +375,242 @@ pub fn probe_file(path: &Path) -> Result<Probe, ProtoError> {
     Ok(Probe { sample_rate, frames, delay, padding: track.padding })
 }
 
+/// A file probed and ready to decode: its demuxer, the decoder for its
+/// default audio track, and what the codec parameters say before the first
+/// packet (rate and channel count, either of which may be unknown).
+pub(crate) struct Opened {
+    pub(crate) format: Box<dyn FormatReader>,
+    pub(crate) decoder: Box<dyn AudioDecoder>,
+    pub(crate) track_id: u32,
+    pub(crate) time_base: Option<TimeBase>,
+    pub(crate) codec_rate: Option<u32>,
+    pub(crate) codec_channels: Option<usize>,
+    pub(crate) source: Option<SourceId>,
+    /// The MP4 edit list as the file states it ([`crate::mp4edit`]), read
+    /// before the probe because symphonia does not apply it.
+    pub(crate) edit: Option<crate::mp4edit::RawEdit>,
+}
+
+/// Probe `file`, opened from `path` (which names it in errors and gives the
+/// format hint), and make the decoder for its default audio track. Shared by
+/// the whole-file decode a deck loads with and the streaming
+/// [`decode_to_wav`], so both read a file the same way.
+pub(crate) fn open_decoder(mut file: File, path: &Path) -> Result<Opened, ProtoError> {
+    // Taken from the file the samples come from, not from its path again.
+    let source = SourceId::of(&file).ok();
+    // symphonia does not apply an MP4 edit list, so its priming frames are
+    // read here and trimmed after the decode (src/mp4edit.rs).
+    let edit = mp4_edit(&mut file, path)?;
+    let lead = leading_tag_bytes(&mut file, path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let dec_err = |what: &str, e: &dyn std::fmt::Display| {
+        ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
+    };
+    let format = probe_for(lead)
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .map_err(|e| dec_err("unrecognized format in", &e))?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio track in {}", path.display())))?;
+    let track_id = track.id;
+    let time_base = track.time_base;
+    let params = track
+        .codec_params
+        .as_ref()
+        .and_then(|p| p.audio())
+        .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio codec parameters in {}", path.display())))?;
+    let codec_rate = params.sample_rate;
+    let codec_channels = params.channels.as_ref().map(|c| c.count()).filter(|&n| n > 0);
+    let decoder = symphonia::default::get_codecs()
+        .make_audio_decoder(params, &AudioDecoderOptions::default())
+        .map_err(|e| dec_err("unsupported codec in", &e))?;
+    Ok(Opened { format, decoder, track_id, time_base, codec_rate, codec_channels, source, edit })
+}
+
+/// What [`decode_to_wav`] wrote: the source's own rate and channel count,
+/// how many frames, and what the MP4 edit list (if any) trimmed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WavWritten {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub frames: u64,
+    /// Encoder priming trimmed from the front (MP4 edit list `media_time`).
+    pub trimmed_start: u64,
+    /// Frames of whole packets dropped past the edit's end.
+    pub dropped_end: u64,
+    /// `none` or `applied`.
+    pub edit: String,
+}
+
+/// Which decoded frames `decode_to_wav` keeps, per the file's edit list.
+struct Trim {
+    /// The edit as the file states it, converted to frames once the rate is
+    /// known (`resolved`).
+    raw: Option<crate::mp4edit::RawEdit>,
+    resolved: Option<Option<crate::mp4edit::Edit>>,
+    /// Frames decoded so far, before trimming (the decoder's timeline).
+    pos: u64,
+    trimmed_start: u64,
+    dropped_end: u64,
+}
+
+impl Trim {
+    fn new(raw: Option<crate::mp4edit::RawEdit>) -> Self {
+        Trim { raw, resolved: None, pos: 0, trimmed_start: 0, dropped_end: 0 }
+    }
+
+    /// Of the next `n` decoded frames, (first kept, how many kept). The edit
+    /// is converted to frames once, when the track's rate is first known.
+    fn window(&mut self, n: u64, rate: u32) -> (u64, u64) {
+        let raw = self.raw;
+        let edit = *self.resolved.get_or_insert_with(|| raw.and_then(|e| e.at(rate)));
+        let at = self.pos;
+        self.pos += n;
+        let Some(crate::mp4edit::Edit { skip, keep }) = edit else { return (0, n) };
+        // A packet that starts at or after the edit's end is dropped whole;
+        // one that straddles it is kept whole, as ffmpeg keeps it.
+        if keep.is_some_and(|k| at >= skip + k) {
+            self.dropped_end += n;
+            return (0, 0);
+        }
+        let from = skip.saturating_sub(at).min(n);
+        self.trimmed_start += from;
+        (from, n - from)
+    }
+
+    fn describe(&self) -> String {
+        match self.resolved {
+            Some(Some(_)) => "applied".into(),
+            _ => "none".into(),
+        }
+    }
+}
+
+/// Decode `path` into `out` as a 32-bit float WAV at the file's own sample
+/// rate and channel count, one packet at a time: memory stays at one packet
+/// whatever the track's length, unlike [`decode_file`], which holds the whole
+/// track. This is what lets a stems or vocals worker in the installed app,
+/// which ships no ffmpeg, read an MP3 (`odj-audio decode`).
+///
+/// Packets are read as a deck reads them ([`open_decoder`]): MP3 encoder
+/// delay and padding are trimmed (gapless), a corrupt packet of known length
+/// becomes silence of that length, and a file none of whose packets decode,
+/// whose rate or channel count changes part-way, or which is chained, is an
+/// error. An MP4's edit list is applied ([`crate::mp4edit`]), as the deck
+/// applies it, so an M4A starts where ffmpeg starts it rather than 1024
+/// priming frames early; unlike the deck's exact cut at the edit's end, a
+/// packet that straddles the end is kept whole, as ffmpeg keeps it. `out` must be seekable: the header is
+/// written last, once the length is known. On an error `out` holds a partial
+/// file the caller discards.
+pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWritten, ProtoError> {
+    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, codec_channels, edit, .. } =
+        open_decoder(open(path)?, path)?;
+    let dec_err = |what: &str, e: &dyn std::fmt::Display| {
+        ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
+    };
+    let io_err = |e: std::io::Error| ProtoError::new(ErrorCode::Io, format!("cannot write the WAV of {}: {e}", path.display()));
+    // The header's place, filled in at the end.
+    out.write_all(&[0u8; 44]).map_err(io_err)?;
+    let mut sample_rate = 0u32;
+    let mut channels = 0usize;
+    let mut frames = 0u64;
+    let mut decoded_any = false;
+    let mut trim = Trim::new(edit);
+    let mut scratch: Vec<f32> = Vec::new();
+    let mut bytes: Vec<u8> = Vec::new();
+    // The most frames a WAV of this channel count can hold (32-bit sizes).
+    let room = |ch: usize| (u64::from(u32::MAX) - 36) / (ch as u64 * 4);
+    let too_long = || ProtoError::new(ErrorCode::Invalid, format!("{} is too long for one WAV file (4 GiB)", path.display()));
+    loop {
+        let packet = match end_or_packet(format.next_packet()) {
+            Ok(Some(p)) => p,
+            Ok(None) => break,
+            Err(e) => return Err(dec_err("read error in", &e)),
+        };
+        if packet.track_id != track_id {
+            continue;
+        }
+        let buf = match decoder.decode(&packet) {
+            Ok(b) => b,
+            Err(SymError::DecodeError(e)) => {
+                let rate = if sample_rate != 0 { Some(sample_rate) } else { codec_rate };
+                let n = packet_frames(packet.dur.get(), time_base, rate)
+                    .ok_or_else(|| dec_err("corrupt packet of unknown length in", &e))?;
+                let ch = if channels != 0 { channels } else { codec_channels.ok_or_else(|| dec_err("corrupt packet before the channel count is known in", &e))? };
+                if sample_rate == 0 {
+                    sample_rate = rate.unwrap_or(0);
+                }
+                channels = ch;
+                let (_, take) = trim.window(n as u64, sample_rate);
+                if frames + take > room(ch) {
+                    return Err(too_long());
+                }
+                bytes.clear();
+                bytes.resize(take as usize * ch * 4, 0);
+                out.write_all(&bytes).map_err(io_err)?;
+                frames += take;
+                continue;
+            }
+            Err(e) => return Err(dec_err("decode error in", &e)),
+        };
+        decoded_any = true;
+        let spec = buf.spec();
+        lock_rate(&mut sample_rate, spec.rate()).map_err(|m| ProtoError::new(ErrorCode::Decode, format!("{m} in {}", path.display())))?;
+        let ch = spec.channels().count();
+        if ch == 0 {
+            return Err(ProtoError::new(ErrorCode::Decode, format!("zero channels in {}", path.display())));
+        }
+        if channels != 0 && ch != channels {
+            return Err(ProtoError::new(
+                ErrorCode::Decode,
+                format!("the channel count changes part-way through ({channels}, then {ch}) in {}", path.display()),
+            ));
+        }
+        channels = ch;
+        let (from, take) = trim.window(buf.frames() as u64, sample_rate);
+        if frames + take > room(ch) {
+            return Err(too_long());
+        }
+        if take == 0 {
+            continue;
+        }
+        scratch.resize(buf.samples_interleaved(), 0.0);
+        buf.copy_to_slice_interleaved(&mut scratch[..]);
+        let kept = &scratch[from as usize * ch..(from + take) as usize * ch];
+        bytes.clear();
+        bytes.reserve(kept.len() * 4);
+        for s in kept {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        out.write_all(&bytes).map_err(io_err)?;
+        frames += take;
+    }
+    if !decoded_any {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
+    }
+    if sample_rate == 0 || channels == 0 || frames == 0 {
+        return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
+    }
+    let ch16 = u16::try_from(channels).map_err(|_| dec_err("too many channels in", &channels))?;
+    // `room` kept the data under the 32-bit limit.
+    let data_bytes = (frames * channels as u64 * 4) as u32;
+    out.seek(SeekFrom::Start(0)).map_err(io_err)?;
+    wav::write_f32_header(out, ch16, sample_rate, data_bytes).map_err(io_err)?;
+    out.flush().map_err(io_err)?;
+    Ok(WavWritten {
+        sample_rate,
+        channels: ch16,
+        frames,
+        trimmed_start: trim.trimmed_start,
+        dropped_end: trim.dropped_end,
+        edit: trim.describe(),
+    })
+}
+
 /// The first rate decoded is the track's rate. A later buffer at another
 /// rate is refused: relabeling the audio before it would play that part at
 /// the wrong speed and move its beatgrid, cues and loops.
@@ -465,6 +676,32 @@ mod tests {
         let e = lock_rate(&mut rate, 48000).unwrap_err();
         assert!(e.contains("44100 Hz, then 48000 Hz"), "{e}");
         assert_eq!(rate, 44100, "a refused rate must not relabel the track");
+    }
+
+    /// The windows `decode_to_wav` keeps for 1024-frame packets under `edit`.
+    fn windows(edit: Option<crate::mp4edit::Edit>, packets: usize) -> (Vec<(u64, u64)>, Trim) {
+        let mut t = Trim::new(None);
+        t.resolved = Some(edit);
+        let w = (0..packets).map(|_| t.window(1024, 44100)).collect();
+        (w, t)
+    }
+
+    #[test]
+    fn the_edit_list_trims_the_front_and_drops_whole_packets_past_its_end() {
+        use crate::mp4edit::Edit;
+        // ffmpeg: skip 1024 (one packet), then 1500 frames; the packet that
+        // straddles the end (starting at 2048 < 2524) is kept whole, the one
+        // starting at 3072 is dropped.
+        let (w, t) = windows(Some(Edit { skip: 1024, keep: Some(1500) }), 4);
+        assert_eq!(w, vec![(1024, 0), (0, 1024), (0, 1024), (0, 0)]);
+        assert_eq!((t.trimmed_start, t.dropped_end, t.describe().as_str()), (1024, 1024, "applied"));
+        // A skip inside a packet keeps its tail.
+        let (w, _) = windows(Some(Edit { skip: 2112, keep: None }), 3);
+        assert_eq!(w, vec![(1024, 0), (1024, 0), (64, 960)]);
+        // Control: no edit list keeps every frame.
+        let (w, t) = windows(None, 3);
+        assert_eq!(w, vec![(0, 1024); 3]);
+        assert_eq!((t.trimmed_start, t.dropped_end, t.describe().as_str()), (0, 0, "none"));
     }
 
     fn tb(numer: u32, denom: u32) -> Option<TimeBase> {

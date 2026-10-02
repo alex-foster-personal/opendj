@@ -406,7 +406,17 @@ esac
 """
 
 
-def _run_alert_script_for_title(tmp_path: Path, month_input: str) -> str:
+def _run_alert_script_for_title(
+    tmp_path: Path,
+    month_input: str,
+    *,
+    ledger_outcome: str = "failure",
+    state: str = "",
+    pct: str = "",
+    used: str = "",
+    limit: str = "",
+    month: str = "",
+) -> str:
     """Run the shipped alert-issue step's bash for real; return the title it created."""
     script = _step(_workflow(), ALERT_STEP)["run"]
     gh_stub = tmp_path / "gh"
@@ -418,12 +428,12 @@ def _run_alert_script_for_title(tmp_path: Path, month_input: str) -> str:
         "PATH": f"{tmp_path}:{os.environ['PATH']}",
         "TITLE_OUT": str(title_out),
         "GH_TOKEN": "x",
-        "LEDGER_OUTCOME": "failure",
-        "STATE": "",
-        "PCT": "",
-        "USED": "",
-        "LIMIT": "",
-        "MONTH": "",
+        "LEDGER_OUTCOME": ledger_outcome,
+        "STATE": state,
+        "PCT": pct,
+        "USED": used,
+        "LIMIT": limit,
+        "MONTH": month,
         "MONTH_INPUT": month_input,
     }
     subprocess.run(["bash", "-c", script], check=True, cwd=tmp_path, env=env, timeout=30)
@@ -443,6 +453,34 @@ def test_a_valid_month_input_is_still_honored(tmp_path: Path) -> None:
     """A well-formed YYYY-MM dispatch input is real operator intent, not noise -- keep it."""
     title = _run_alert_script_for_title(tmp_path, "2026-07")
     assert "2026-07" in title, f"a valid month input should be honored; got {title!r}"
+
+
+def test_a_hosted_verdict_is_reported_as_hosted_not_blind(tmp_path: Path) -> None:
+    """Measured live Thu 1 Oct 2026 (dispatch for 2026-09): the ledger set state
+    HOSTED ($173.40 billed past the allowance), then exited 1 as designed. Its
+    continue-on-error step therefore had outcome `failure`, and the alert step
+    posted that measured month to #692 as BLIND, "failed before it could report
+    a state". A measured state must be reported as itself."""
+    title = _run_alert_script_for_title(
+        tmp_path,
+        "",
+        ledger_outcome="failure",
+        state="HOSTED",
+        pct="1588.2",
+        used="31763",
+        limit="2000",
+        month="2026-09",
+    )
+    assert title == "CI budget HOSTED: 2026-09 at 1588% of included minutes", (
+        f"a measured HOSTED month was titled {title!r}"
+    )
+
+
+def test_the_alert_step_names_the_hosted_state() -> None:
+    """The alert step must not reach a HOSTED verdict only through the ledger's
+    exit code, which is the coupling that mislabelled it."""
+    condition = str(_step(_workflow(), ALERT_STEP)["if"])
+    assert "steps.ledger.outputs.state == 'HOSTED'" in condition, condition
 
 
 # ----- functional: the streak's jq reduce, run for real against a fixed history --

@@ -701,6 +701,107 @@ fn set_beatgrid_reaches_a_loaded_deck_without_reloading() {
     assert!(child.wait().unwrap().success());
 }
 
+/// A tracked MP3 (mono, 22.05 kHz, about 3 s) from the repo's fixtures.
+fn mp3_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/phase7-dedup/src-128.mp3")
+}
+
+/// A tracked AAC clip (stereo, 44.1 kHz, about 60 s).
+fn m4a_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/am-contra-heart-peripheral-cfg-a.m4a")
+}
+
+/// A tracked mono AAC clip (22.05 kHz, about 3 s) with an edit list.
+fn m4a_mono_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/phase7-dedup/src.m4a")
+}
+
+/// Interleaved f32 samples and (rate, channels) of a float WAV `decode` wrote.
+fn read_f32_wav(p: &std::path::Path) -> (u32, u16, Vec<f32>) {
+    let b = std::fs::read(p).unwrap();
+    assert_eq!(&b[0..4], b"RIFF");
+    assert_eq!(&b[8..16], b"WAVEfmt ");
+    assert_eq!(u16::from_le_bytes([b[20], b[21]]), 3, "IEEE float");
+    let ch = u16::from_le_bytes([b[22], b[23]]);
+    let sr = u32::from_le_bytes([b[24], b[25], b[26], b[27]]);
+    assert_eq!(&b[36..40], b"data");
+    let n = u32::from_le_bytes([b[40], b[41], b[42], b[43]]) as usize;
+    assert_eq!(b.len(), 44 + n, "the data size in the header is the file's");
+    assert_eq!(u32::from_le_bytes([b[4], b[5], b[6], b[7]]) as usize, 36 + n);
+    let pcm = b[44..].chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    (sr, ch, pcm)
+}
+
+#[test]
+fn decode_writes_compressed_audio_as_a_wav_at_its_own_rate_and_channels() {
+    let d = temp_dir("cli-decode");
+    // (source, rate, channels, frames ffmpeg 6.1 decodes, the deck's frames,
+    // frames of encoder priming both trim). MP3 is gapless in both. Both
+    // apply an M4A's edit list (src/mp4edit.rs), so both start after the
+    // 1024 frames of AAC priming; at the edit's end the deck cuts exactly
+    // while `decode` keeps the straddling packet whole, as ffmpeg does.
+    let cases = [
+        (mp3_fixture(), 22050u32, 1u16, 66_150u64, 66_150u64, 0usize),
+        (m4a_fixture(), 44100, 2, 2_646_016, 2_646_000, 1024),
+        (m4a_mono_fixture(), 22050, 1, 66_560, 66_150, 1024),
+    ];
+    for (src, want_sr, want_ch, ffmpeg_frames, deck_frames, priming) in cases {
+        let out = d.join(format!("{}.wav", src.file_stem().unwrap().to_string_lossy()));
+        let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&out).output().unwrap();
+        assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+        let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(s["type"], "decode");
+        assert_eq!(s["sample_rate"], want_sr, "{}", src.display());
+        assert_eq!(s["channels"], want_ch, "{}", src.display());
+        assert_eq!(s["edit_list"], if priming > 0 { "applied" } else { "none" }, "{}", src.display());
+        assert_eq!(s["trimmed_start_frames"], priming as u64, "{}", src.display());
+        let (sr, ch, pcm) = read_f32_wav(&out);
+        assert_eq!((sr, ch), (want_sr, want_ch));
+        assert_eq!(s["frames"].as_u64().unwrap() as usize, pcm.len() / ch as usize);
+        assert_eq!(pcm.len() as u64 / u64::from(ch), ffmpeg_frames, "ffmpeg's frame count: {}", src.display());
+        // The same samples a deck decodes, streamed instead of held, from the
+        // same first frame: frame i is the deck's frame i, so neither is offset
+        // against the other or against ffmpeg. The deck's decode is stereo, so
+        // compare each frame's first channel and, for mono, the copy it makes
+        // for the right side.
+        let deck = odj_audio::decode::decode_file(&src).unwrap();
+        assert_eq!(deck.sample_rate, want_sr);
+        assert_eq!(deck.pcm.len() as u64 / 2, deck_frames, "the deck's frame count: {}", src.display());
+        for (i, (frame, (l, r))) in pcm.chunks_exact(ch as usize).zip(deck.pcm.chunks_exact(2).map(|f| (f[0], f[1]))).enumerate() {
+            assert_eq!(frame[0], l, "frame {i} of {}", src.display());
+            assert_eq!(*frame.get(1).unwrap_or(&frame[0]), r, "frame {i} of {}", src.display());
+        }
+        assert!(pcm.iter().any(|s| s.abs() > 0.01), "decoded audio, not silence");
+    }
+}
+
+#[test]
+fn decode_never_replaces_a_file_and_leaves_nothing_when_it_fails() {
+    let d = temp_dir("cli-decode-refuse");
+    // OUT naming the source itself: refused, and the source is untouched.
+    let src = d.join("src.mp3");
+    std::fs::copy(mp3_fixture(), &src).unwrap();
+    let before = std::fs::read(&src).unwrap();
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&src).output().unwrap();
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("never replaces"), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read(&src).unwrap(), before, "the source must be untouched");
+    // Input that is not audio: an error, and no partial OUT left behind.
+    let junk = d.join("junk.mp3");
+    std::fs::write(&junk, b"this is not an mp3").unwrap();
+    let out = d.join("junk.wav");
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&junk).arg("--out").arg(&out).output().unwrap();
+    assert!(!o.status.success());
+    assert!(!out.exists(), "a failed decode removes the OUT it created");
+    // Control: the same OUT path is written once the input is real audio.
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&out).output().unwrap();
+    assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+    assert!(out.is_file());
+    // Missing flags are usage errors, not a panic.
+    let o = Command::new(BIN).args(["decode", "--in"]).arg(&src).output().unwrap();
+    assert_eq!(o.status.code(), Some(2));
+}
+
 /// `decode` writes the file's PCM to stdout and names what it wrote on stderr.
 #[test]
 fn decode_streams_pcm_and_a_summary() {

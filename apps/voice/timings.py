@@ -1,7 +1,7 @@
 """Per-stage latency tracker.
 
 Used by the daemon main loop to record wake/vad/stt/grammar/dispatch
-timings per utterance and append them to ``data/voice/timings.jsonl``
+timings per utterance and append them to ``<data dir>/voice/timings.jsonl``
 for post-set analysis (CONTEXT success criterion 7).
 """
 from __future__ import annotations
@@ -64,11 +64,14 @@ def budget_warning(total_ms: float, budget_ms: float = 1_800.0) -> str | None:
 
 
 def default_log_path(env: dict[str, str] | None = None) -> Path:
-    """Resolve the default timings log under ``data/voice/timings.jsonl``."""
+    """Resolve the default timings log, ``<data dir>/voice/timings.jsonl``."""
     env = env if env is not None else dict(os.environ)
     override = env.get("VOICE_TIMINGS_LOG")
     if override:
         return Path(override)
-    # Assumes repo layout: apps/voice/timings.py -> parents[2] is the root.
-    root = Path(__file__).resolve().parents[2]
-    return root / "data" / "voice" / "timings.jsonl"
+    # The data dir, never the source tree: in the packaged app the source
+    # tree is the signed payload (INSTALL-30). A checkout's data dir is
+    # <repo>/data, so the development path is unchanged.
+    from apps.voice.settings import voice_data_dir
+
+    return voice_data_dir() / "timings.jsonl"

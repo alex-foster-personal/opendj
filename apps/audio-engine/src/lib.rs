@@ -7,6 +7,7 @@
 
 pub mod deck;
 pub mod decode;
+pub mod edit_list;
 #[cfg(feature = "device")]
 pub mod device;
 pub mod dsp;
