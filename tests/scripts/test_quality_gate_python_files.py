@@ -9,6 +9,7 @@ Regression lines:
   - if a .py under any node_modules directory is walked, then broken
   - if a first-party .py beside it is skipped, then broken (overshoot control)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,9 +19,7 @@ import pytest
 from scripts import quality_gate
 
 
-def test_python_files_skip_node_modules_but_keep_first_party(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_python_files_skip_node_modules_but_keep_first_party(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ours = tmp_path / "apps" / "desktop" / "electron" / "ours.py"
     theirs = tmp_path / "apps" / "desktop" / "electron" / "node_modules" / ".pnpm" / "gyp" / "msvs.py"
     for path in (ours, theirs):
