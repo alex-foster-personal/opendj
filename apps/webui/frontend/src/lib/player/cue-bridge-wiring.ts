@@ -80,3 +80,27 @@ export async function wireCueBridgeNodes(
 	}
 	return { bridgeSender, bridgeReceiver, bridgeControl };
 }
+
+/** CUEOUT-22: the sender half alone, for the Mac app's native cue output. The
+ * sender runs in port mode and its port is handed to the relay worker
+ * (cue-native-sink.ts) in place of a receiver worklet on a pinned cue context. */
+export async function wireNativeCueSender(
+	mainContext: AudioContext,
+	onProcessorError: () => void
+): Promise<{ bridgeSender: AudioWorkletNode; relayPort: MessagePort }> {
+	if (typeof AudioWorkletNode === 'undefined' || typeof mainContext.audioWorklet?.addModule !== 'function') {
+		throw new Error('AudioWorkletNode is unavailable');
+	}
+	await mainContext.audioWorklet.addModule(cueBridgeProcessorUrl);
+	const channel = new MessageChannel();
+	const bridgeSender = new AudioWorkletNode(mainContext, 'cue-bridge-sender', {
+		numberOfInputs: 1,
+		numberOfOutputs: 0,
+		channelCount: 2,
+		channelCountMode: 'explicit',
+		processorOptions: { mode: 'port' }
+	});
+	bridgeSender.onprocessorerror = onProcessorError;
+	bridgeSender.port.postMessage({ type: 'connect', port: channel.port1 }, [channel.port1]);
+	return { bridgeSender, relayPort: channel.port2 };
+}

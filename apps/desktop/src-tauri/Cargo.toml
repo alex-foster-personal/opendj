@@ -42,6 +42,11 @@ tauri-plugin-process = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
+# CUEOUT-22: the loopback socket the page relays headphone cue PCM over to
+# the native CoreAudio output (src/cue_sink.rs). Blocking std I/O on its own
+# threads, the same feature set the odj-audio engine already uses, so no async
+# runtime and no TLS enter the shell.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 # DEBUG BUILDS ONLY, and deliberately expressed as a cfg-gated DEPENDENCY
 # rather than a Cargo feature: this crate serves an unauthenticated W3C
