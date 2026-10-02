@@ -432,7 +432,7 @@ def _write_rb_db(path: Path) -> sqlite3.Connection:
         """
         CREATE TABLE djmdContent (
             ID TEXT PRIMARY KEY, BPM INTEGER, KeyID TEXT,
-            AnalysisDataPath TEXT,
+            AnalysisDataPath TEXT, FolderPath TEXT,
             rb_local_deleted INTEGER DEFAULT 0
         );
         CREATE TABLE djmdKey (ID TEXT PRIMARY KEY, ScaleName TEXT);
@@ -1202,6 +1202,11 @@ class TestWritebackLive:
 
 
 class TestPqtzWritebackLive:
+    @pytest.fixture(autouse=True)
+    def _wav_has_no_lead_in(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """These tracks have no audio file; the MP3 lead-in shift has its own tests (NAE-22)."""
+        monkeypatch.setattr("apps.sync.analysis_writeback.rekordbox_lead_in_s", lambda _p: 0.0)
+
     def _beats(self, count: int = 8, bpm: float = 128.0) -> list[dict[str, float | int]]:
         return [
             {
