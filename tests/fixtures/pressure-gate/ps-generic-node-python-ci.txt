@@ -1,5 +1,0 @@
- 45.0 node /home/runner/actions-runner-21/_work/music-dj-tools/music-dj-tools/node_modules/.bin/jest
- 42.0 python /home/runner/actions-runner-22/_work/music-dj-tools/music-dj-tools/.venv/bin/pytest
- 38.0 node /home/runner/actions-runner-23/_work/foo/bar/scripts/check.sh
- 15.0 node /usr/local/bin/some-unrelated-service
-  5.0 systemd --user
