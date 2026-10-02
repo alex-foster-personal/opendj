@@ -2671,7 +2671,7 @@
 	// select, same as a modifier-less TrackTable click.
 	function selectRow(
 		row: Pick<BrowserRow, 'stable_id'> & { order?: number },
-		event?: MouseEvent
+		event?: MouseEvent | KeyboardEvent
 	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
