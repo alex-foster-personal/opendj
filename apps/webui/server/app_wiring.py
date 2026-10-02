@@ -95,6 +95,7 @@ from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_cli_procs
 from .routes import ingest_materialize as ingest_materialize_routes
 from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
@@ -272,6 +273,8 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         if lyric_watcher is not None:
             lyric_watcher.stop()
         watcher.stop()
+        # A step still running would outlive the engine with its pool workers.
+        ingest_cli_procs.stop_all()
         # playlist_write builds its PlaylistStore lazily from
         # app.state.state_db_path; release its sqlite handle on shutdown.
         playlist_write_routes.close_store(app)

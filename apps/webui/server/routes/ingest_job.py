@@ -38,6 +38,7 @@ from apps.stems.artifacts import (
     load_stem_bundle,
 )
 from apps.vocals import cache as vocals_cache
+from apps.webui.server.routes import ingest_cli_procs
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed
 from apps.webui.soft_deletes import has_soft_deletes
 
@@ -178,12 +179,18 @@ def _run_cli(job: _RefreshJob, argv: list[str]) -> None:
         stderr=subprocess.STDOUT,
         text=True,
     )
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        stripped = line.rstrip()
-        if stripped:
-            _log(job, stripped)
-    rc = proc.wait()
+    # Registered so the engine's shutdown can stop it and its pool workers;
+    # see ingest_cli_procs.
+    ingest_cli_procs.register(proc)
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            stripped = line.rstrip()
+            if stripped:
+                _log(job, stripped)
+        rc = proc.wait()
+    finally:
+        ingest_cli_procs.unregister(proc)
     if rc != 0:
         raise CliFailed(f"{argv[2] if len(argv) > 2 else argv[0]} exited {rc}", rc)
 

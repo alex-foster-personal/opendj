@@ -8,6 +8,7 @@ pairs rather than the CLI's ``TrackRef``, which keeps the dependency one-way.
 from __future__ import annotations
 
 import multiprocessing
+import os
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
@@ -90,6 +91,9 @@ def run_pool(
         max_workers=workers,
         mp_context=multiprocessing.get_context("spawn"),
         initializer=init_worker,
+        # The pool owner's pid, read HERE: a worker reading its own parent
+        # pid could read the reparented one if the owner died first.
+        initargs=(os.getpid(),),
     )
     # The stdlib exposes no public handle on the worker processes, and
     # ``shutdown`` drops the private one, so snapshot the objects while they

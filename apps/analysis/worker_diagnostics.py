@@ -12,6 +12,9 @@ from __future__ import annotations
 import faulthandler
 import os
 import signal
+import sys
+import threading
+import time
 from collections.abc import Iterable
 
 #: Native math libraries the librosa backend pulls in transitively, each of
@@ -43,16 +46,66 @@ TRACED_SIGNALS: frozenset[int] = frozenset(
 #: reported as cleanup whenever a genuine crash signal is also present.
 CLEANUP_SIGNAL: int = int(signal.SIGTERM)
 
+#: How often a pool worker checks that the process that started it is alive.
+PARENT_POLL_S: float = 1.0
 
-def init_worker() -> None:
+#: Exit status of a worker that stopped because its parent was gone.
+EXIT_PARENT_GONE: int = 3
+
+
+def init_worker(parent_pid: int | None = None) -> None:
     """Pool-worker entry point: pin the native thread pools, then arm the tracer.
 
     Runs in the child before the backend import chain, which is what makes the
-    pin effective. See :data:`THREAD_PIN_VARS`.
+    pin effective. See :data:`THREAD_PIN_VARS`. Also starts the parent watch,
+    see :func:`watch_parent`, against ``parent_pid``: the pool owner passes
+    its own pid, since a worker that read ``os.getppid()`` itself would record
+    the reparented pid if the owner had already died.
     """
     for name in THREAD_PIN_VARS:
         os.environ[name] = "1"
     faulthandler.enable(all_threads=True)
+    watch_parent(os.getppid() if parent_pid is None else parent_pid)
+
+
+def parent_gone(parent_pid: int) -> bool:
+    """Whether this worker has lost the process that started it.
+
+    On POSIX an orphan is reparented, so its parent pid changes. Windows does
+    not reparent, and there the parent pid stays put, so this answers False:
+    the watch is a POSIX guard, and it says so rather than guessing.
+    """
+    if sys.platform == "win32":
+        return False
+    return os.getppid() != parent_pid
+
+
+def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Thread:
+    """Exit this worker when the process that started it is gone.
+
+    A spawned pool worker blocks on its call queue, and that queue never
+    reports end-of-file when the parent dies, so a worker whose parent was
+    killed waits forever. That is how three analysis workers outlived the app
+    on demon-llama (Fri 2 Oct 2026) and then blocked the DMG installer. The
+    worker has nobody left to report to, so it exits at once (``os._exit``,
+    skipping cleanup that would wait on that same queue).
+    """
+
+    def _watch() -> None:
+        while True:
+            time.sleep(poll_s)
+            if parent_gone(parent_pid):
+                print(
+                    f"[WARN] analysis worker {os.getpid()}: parent {parent_pid} "
+                    "is gone; exiting",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                os._exit(EXIT_PARENT_GONE)
+
+    thread = threading.Thread(target=_watch, name="parent-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 def worker_exit_signals(processes: Iterable[object]) -> list[int]:

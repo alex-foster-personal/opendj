@@ -420,6 +420,9 @@ def run_batch(
         max_workers=batch.workers,
         mp_context=multiprocessing.get_context("spawn"),
         initializer=init_worker,
+        # The pool owner's pid, read HERE: a worker reading its own parent
+        # pid could read the reparented one if the owner died first.
+        initargs=(os.getpid(),),
     )
     ctx = _RunContext(
         conn=conn,
