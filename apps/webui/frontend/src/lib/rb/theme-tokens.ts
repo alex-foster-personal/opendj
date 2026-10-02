@@ -56,6 +56,9 @@ export const DARK_SCHEME_TOKENS: Record<string, string> = {
   'rb-red': '#d0342c',
   'rb-yellow': '#e5c33a',
   'rb-select': '#1d3f73',
+  'rb-master': '#c9b35a',
+  'rb-master-ink': '#1a1608',
+  'rb-master-text': '#e8d78a',
 };
 
 /** Mirrors `html[data-theme='light'] .perf-root` in theme.css. */
@@ -75,6 +78,9 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-red': '#ad2420',
   'rb-yellow': '#927000',
   'rb-select': '#d6e5f5',
+  'rb-master': '#856500',
+  'rb-master-ink': '#fffdf8',
+  'rb-master-text': '#4a3700',
 };
 
 export function getSchemeTokens(theme: SchemeName): Record<string, string> {

@@ -29,6 +29,10 @@
 	--rb-red: #d0342c;           /* cue markers, position tick */
 	--rb-yellow: #e5c33a;        /* Free licence badge */
 	--rb-select: #1d3f73;        /* selected row highlight */
+	--rb-master: #c9b35a;        /* master deck gold: MASTER button fill, master
+	                                library-row edge/wash, master-fold badge */
+	--rb-master-ink: #1a1608;    /* text drawn ON a --rb-master fill */
+	--rb-master-text: #e8d78a;   /* master library-row title/artist text */
 
 	/* -------- typography -------- */
 	--rb-font: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'Segoe UI', Roboto,
@@ -78,6 +82,11 @@ html[data-theme='light'] .perf-root {
 	--rb-red: #ad2420;
 	--rb-yellow: #927000;
 	--rb-select: #d6e5f5;
+	/* Darker gold + light ink: the dark-mode gold measured 1.88:1 on the
+	   light --rb-bg, and its pale row text 1.18:1 on the gold wash. */
+	--rb-master: #856500;
+	--rb-master-ink: #fffdf8;
+	--rb-master-text: #4a3700;
 }
 
 /* -------- panel chrome -------- */
@@ -238,10 +247,10 @@ html[data-theme='light'] .perf-root {
 }
 /* Master must beat the generic .lit blue - soft gold. */
 .perf-root .rb-lit-button.master-btn.lit {
-	color: #1a1608;
-	background: #c9b35a;
-	box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
-	border-color: #b8a24e;
+	color: var(--rb-master-ink);
+	background: var(--rb-master);
+	box-shadow: 0 0 6px color-mix(in srgb, var(--rb-master) 45%, transparent);
+	border-color: color-mix(in srgb, var(--rb-master) 85%, var(--rb-text));
 }
 .perf-root .rb-lit-button:disabled,
 .perf-root .rb-inert {
@@ -277,7 +286,7 @@ html[data-theme='light'] .perf-root {
 .perf-root tbody tr.rb-row-master .rb-row-loaded,
 .perf-root tbody tr.rb-row-master .c-title,
 .perf-root tbody tr.rb-row-master .c-artist {
-	color: #e8d78a;
+	color: var(--rb-master-text);
 	font-weight: 700;
 }
 .perf-root .rb-row-selected {

@@ -227,6 +227,24 @@ export const PAIRINGS: ContrastPairing[] = [
   { fg: "rb-wave-high", bg: "rb-bg", level: "non-text", label: "waveform highs band" },
   { fg: "rb-red", bg: "rb-bg", level: "non-text", label: "cue marker / position tick" },
   { fg: "rb-yellow", bg: "rb-bg", level: "non-text", label: "Free licence badge" },
+  {
+    fg: "rb-master",
+    bg: "rb-bg",
+    level: "non-text",
+    label: "master gold indicator (MASTER button, master row edge)",
+  },
+  {
+    fg: "rb-master-ink",
+    bg: "rb-master",
+    level: "body",
+    label: "text on master gold fill (MASTER button, master-fold badge)",
+  },
+  {
+    fg: "rb-master-text",
+    bg: "rb-panel",
+    level: "body",
+    label: "master library-row title/artist text",
+  },
 ];
 
 /**

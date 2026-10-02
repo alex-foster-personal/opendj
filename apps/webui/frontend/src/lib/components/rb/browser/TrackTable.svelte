@@ -2402,19 +2402,19 @@
 	}
 	/* Master: biggest pop - gold edge + strong wash. */
 	tbody tr.rb-row-master {
-		background: color-mix(in srgb, var(--rb-master-gold, #c9b35a) 28%, transparent);
+		background: color-mix(in srgb, var(--rb-master) 28%, transparent);
 		box-shadow:
-			inset 5px 0 0 var(--rb-master-gold, #c9b35a),
-			inset -1px 0 0 color-mix(in srgb, var(--rb-master-gold, #c9b35a) 55%, transparent);
-		outline: 1px solid color-mix(in srgb, var(--rb-master-gold, #c9b35a) 70%, transparent);
+			inset 5px 0 0 var(--rb-master),
+			inset -1px 0 0 color-mix(in srgb, var(--rb-master) 55%, transparent);
+		outline: 1px solid color-mix(in srgb, var(--rb-master) 70%, transparent);
 		outline-offset: -1px;
 	}
 	tbody tr.rb-row-master:hover {
-		background: color-mix(in srgb, var(--rb-master-gold, #c9b35a) 36%, var(--rb-panel-raised));
+		background: color-mix(in srgb, var(--rb-master) 36%, var(--rb-panel-raised));
 	}
 	tbody tr.rb-row-master .c-title,
 	tbody tr.rb-row-master .c-artist {
-		color: #e8d78a;
+		color: var(--rb-master-text);
 		font-weight: 700;
 	}
 	/* Hovered deck's library track (non-master): light pulse to help find it. */
@@ -2482,10 +2482,10 @@
 		transform: translateX(-50%);
 		z-index: 4;
 		padding: 3px 14px;
-		border: 1px solid #c9b35a;
+		border: 1px solid var(--rb-master);
 		border-radius: 3px;
-		background: color-mix(in srgb, #c9b35a 88%, #1a1608);
-		color: #1a1608;
+		background: var(--rb-master);
+		color: var(--rb-master-ink);
 		font-family: var(--rb-font);
 		font-size: 10px;
 		font-weight: 700;
