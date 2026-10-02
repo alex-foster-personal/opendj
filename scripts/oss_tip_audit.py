@@ -144,6 +144,14 @@ NO_KNOWN_LOGINS = KnownLogins()
 # ----- matching ------------------------------------------------------------------------
 
 
+#: Verbatim upstream license mirrors (docs/legal/python-build-standalone/README.md):
+#: bzip2's and zlib's own license texts name their authors by email. That is
+#: part of the license, not the maintainer's identity -- kept as a directory prefix here
+#: (not in MAILBOX_EXEMPT_PATHS) so a future added file in this dir needs no
+#: code change, matching the whole-directory provenance the README describes.
+_UPSTREAM_LICENSE_MIRROR_PREFIX = "docs/legal/python-build-standalone/"
+
+
 def is_exempt(finding: Finding) -> bool:
     """True for a mailbox on one of the repository's published identity surfaces.
 
@@ -153,7 +161,11 @@ def is_exempt(finding: Finding) -> bool:
     """
     if finding.rule != "consumer-mailbox":
         return False
-    return finding.path in MAILBOX_EXEMPT_PATHS or finding.path in GENERATED_TEST_ID_PATHS
+    return (
+        finding.path in MAILBOX_EXEMPT_PATHS
+        or finding.path in GENERATED_TEST_ID_PATHS
+        or finding.path.startswith(_UPSTREAM_LICENSE_MIRROR_PREFIX)
+    )
 
 
 def findings_in_text(

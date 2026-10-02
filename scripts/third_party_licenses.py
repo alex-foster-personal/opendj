@@ -67,6 +67,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.license_classify import FLAGGED, RANK, Cat, classify_license
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 LICENSES_FILE_NAME = "THIRD-PARTY-LICENSES.txt"
@@ -76,9 +78,9 @@ ROOT_LICENSE_FILE_NAME = "LICENSE"
 
 PYTHON_SITES_RELATIVE: tuple[str, ...] = ("pylib", "runners/beatgrid/site")
 FRONTEND_RELATIVE = Path("apps/webui/frontend")
-#: Checked-in mirror of python-build-standalone's own per-library LICENSE
-#: files for the native C libraries the CPython runtime statically links.
-#: See docs/legal/python-build-standalone/README.md for provenance.
+#: Checked-in mirror of python-build-standalone's per-library LICENSE files
+#: for the CPython runtime's statically-linked native C libs; see that dir's
+#: README.md for provenance.
 PBS_NATIVE_LICENSES_RELATIVE = Path("docs/legal/python-build-standalone")
 # vite bundles the framework runtime out of devDependencies, so the
 # production-only closure would under-attribute the shipped SPA.
@@ -97,27 +99,18 @@ NOTICE_FILE_PATTERN = re.compile(r"notice", re.IGNORECASE)
 #: A real inventory renders hundreds of license texts; a stub cannot pass.
 MIN_LICENSES_FILE_CHARS = 100_000
 
-#: (ecosystem, name) pairs a human has reviewed and accepted as genuinely
-#: textless -- the ONLY components `write_payload_license_files` may stage
-#: without a license text or notice. Anything else missing both is a failed
-#: collection, not a quiet gap (Sol P1, PR #4853): the flag report used to
-#: exclude "bundled" wholesale from its textless table, which let a NEW
-#: textless component of any ecosystem ship unnoticed.
-#:
-#: mpg123 itself was wrongly listed here once (Sol P1, PR #4853 r4167743715):
-#: the premise "the package carries no license text" was true of the npm
-#: wrapper, false of mpg123 itself, whose own COPYING (LGPL-2.1) is now
-#: mirrored at docs/legal/mpg123-COPYING.txt and staged as its license text.
-#: That entry was removed, not replaced by a weaker one: every entry below is
-#: verified textless at BOTH the installed npm package AND its upstream
-#: GitHub repository root (not merely "this one package has no LICENSE
-#: file", which the mpg123 mistake shows is not enough on its own).
-#:
-#: eshaz/wasm-audio-decoders (Sol P1, PR #4853 r4167790855): every package
-#: declares "license": "MIT" but ships no LICENSE file, and the monorepo's
-#: GitHub root has none either (`gh api repos/eshaz/wasm-audio-decoders/contents/`
-#: at commit 3c74930e673bea39f22e344032c5100e73b69b82, Fri 2 Oct 2026) -- so
-#: unlike mpg123, there is no real text anywhere to mirror.
+#: (ecosystem, name) pairs verified textless at BOTH the installed package
+#: AND its upstream repo root -- the ONLY components `write_payload_license_files`
+#: may stage without a license text or notice (Sol P1, PR #4853: the flag
+#: report used to exclude "bundled" wholesale from its textless table, which
+#: let a NEW textless component of any ecosystem ship unnoticed). mpg123 was
+#: wrongly listed here once on the premise that "the package carries no
+#: license text" -- true of its npm wrapper, false of mpg123 itself, whose
+#: COPYING (LGPL-2.1) is now mirrored at docs/legal/mpg123-COPYING.txt and
+#: staged as its license text; that single-file check was not enough on its
+#: own, hence the BOTH above. eshaz/wasm-audio-decoders below IS verified at
+#: both: every package declares MIT but ships no LICENSE file, and the
+#: monorepo's GitHub root has none either (commit 3c74930e67, Fri 2 Oct 2026).
 KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset(
     {
         ("javascript", "mpg123-decoder"),
@@ -138,68 +131,6 @@ FIRST_PARTY_NAMES: frozenset[str] = frozenset(
         "open-dj",
     }
 )
-
-
-# ----- classification -----------------------------------------------------
-class Cat:
-    PERMISSIVE = "permissive"
-    WEAK = "weak-copyleft"
-    STRONG = "strong-copyleft"
-    NONCOM = "non-commercial"
-    UNKNOWN = "unknown"
-
-
-_RANK = {Cat.PERMISSIVE: 0, Cat.WEAK: 1, Cat.STRONG: 2, Cat.NONCOM: 3, Cat.UNKNOWN: 4}
-FLAGGED = (Cat.WEAK, Cat.STRONG, Cat.NONCOM, Cat.UNKNOWN)
-
-_PERMISSIVE_MARKERS = (
-    "mit", "mit-0", "bsd", "bsd-2-clause", "bsd-3-clause", "apache", "apache-2.0", "isc", "iscl",
-    "psf", "psf-2.0", "python-2.0", "cnri-python", "zlib", "unlicense", "cc0-1.0", "0bsd", "hpnd",
-    "bsl-1.0", "boost", "public domain", "ofl", "ofl-1.1", "openssl", "curl", "unicode", "blueoak-1.0.0",
-    "wtfpl", "zpl-2.1", "python software foundation", "historical", "ncsa", "pil", "libpng", "x11",
-    "cc-by-4.0", "cc-by-3.0", "afl-2.1", "artistic-2.0", "llvm-exception",
-)
-_STRONG_MARKERS = ("agpl", "sspl", "eupl", "osl-3")
-_NONCOM_MARKERS = ("cc-by-nc", "cc-by-nc-sa", "cc-by-nc-nd", "non-commercial")
-
-
-def _has_marker(lowered: str, markers: tuple[str, ...]) -> bool:
-    """Whole-token match, so "mit" never fires inside "permit" or "limited"."""
-    return any(re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", lowered) for marker in markers)
-
-
-def _token_category(token: str) -> str:
-    lowered = token.strip().lower().strip("()")
-    if not lowered:
-        return Cat.UNKNOWN
-    if _has_marker(lowered, _NONCOM_MARKERS) or "noncommercial" in lowered:
-        return Cat.NONCOM
-    if "lgpl" in lowered or "lesser" in lowered:
-        return Cat.WEAK
-    if "gpl" in lowered or "gnu general public" in lowered or _has_marker(lowered, _STRONG_MARKERS):
-        return Cat.STRONG
-    if any(marker in lowered for marker in ("mpl", "mozilla", "epl", "eclipse", "cddl", "cecill-c")):
-        return Cat.WEAK
-    if _has_marker(lowered, _PERMISSIVE_MARKERS):
-        return Cat.PERMISSIVE
-    return Cat.UNKNOWN
-
-
-def classify_license(expression: str) -> str:
-    """Category of an SPDX-ish expression.
-
-    ``A OR B`` takes the BEST alternative (the licensee may choose); ``A AND
-    B`` and ``A / B`` style joins take the WORST (all apply). Free text that
-    matches nothing is UNKNOWN, never assumed permissive.
-    """
-    alternatives = re.split(r"\s+OR\s+|\s*\|\s*|;\s*", expression.strip(), flags=re.IGNORECASE)
-    ranked: list[str] = []
-    for alternative in alternatives:
-        # "X WITH exception" is still X (an exception only loosens it).
-        without_exceptions = re.sub(r"\s+WITH\s+\S+", "", alternative, flags=re.IGNORECASE)
-        parts = re.split(r"\s+AND\s+|\s*/\s*", without_exceptions, flags=re.IGNORECASE)
-        ranked.append(max((_token_category(part) for part in parts), key=_RANK.__getitem__))
-    return min(ranked, key=_RANK.__getitem__)
 
 
 # ----- model --------------------------------------------------------------
@@ -245,14 +176,7 @@ def _license_files_in(directory: Path) -> list[tuple[str, str]]:
 
 
 def _meta_get(metadata: importlib_metadata.PackageMetadata, key: str) -> str | None:
-    """`PackageMetadata.get`, typed via `__getitem__`.
-
-    The typeshed stub for `importlib.metadata.PackageMetadata` declares
-    `__getitem__` but not `.get`/`.get_all`'s single-arg overload, even though
-    the real runtime value (`email.message.Message`) supports both. Routing
-    through `__getitem__` keeps this call checked instead of silencing the
-    whole attribute.
-    """
+    """`PackageMetadata.get`, typed via `__getitem__` (the stub omits `.get`)."""
     try:
         return metadata[key]
     except KeyError:
@@ -521,7 +445,7 @@ def flag_report(components: list[Component]) -> str:
     """Two tables: risky licenses, then components that ship with no license text."""
     flagged = sorted(
         (c for c in components if c.category in FLAGGED),
-        key=lambda c: (-_RANK[c.category], c.ecosystem, c.name.lower()),
+        key=lambda c: (-RANK[c.category], c.ecosystem, c.name.lower()),
     )
     lines = [
         "## Copyleft, non-commercial and unidentified licenses",
