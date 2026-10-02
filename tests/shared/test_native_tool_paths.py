@@ -87,6 +87,9 @@ def test_no_module_calls_sysctl_by_bare_name() -> None:
     offenders = [
         f"{path.relative_to(REPO_ROOT)}:{lineno}"
         for path in sorted((REPO_ROOT / "apps").rglob("*.py"))
+        # Third-party installs CI keeps between jobs are not our modules: node-gyp's
+        # ninja.py tripped this on agentbox-9 (Fri 2 Oct 2026).
+        if "node_modules" not in path.relative_to(REPO_ROOT).parts
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
         if bare.search(line)
     ]
