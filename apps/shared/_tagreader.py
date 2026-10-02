@@ -84,9 +84,16 @@ def read(path: Path | str, *, image: bool = False, duration: bool = True) -> Tin
     from tinytag import TinyTag  # type: ignore
 
     try:
-        return TinyTag.get(str(path), tags=True, duration=duration, image=image)
+        tag = TinyTag.get(str(path), tags=True, duration=duration, image=image)
     except Exception as exc:
         raise TagReadError(str(exc) or type(exc).__name__) from exc
+    if duration:
+        # tinytag misreads raw ADTS streams (0.03 s for a 7.3 s file) rather
+        # than failing, so every duration consumer takes the frame walk.
+        adts = adts_duration(path)
+        if adts is not None:
+            tag.duration = adts
+    return tag
 
 
 _ADTS_RATES = (

@@ -250,3 +250,18 @@ def test_upload_duration_reads_raw_aac_held_as_part(tmp_path):
 
     assert _tagreader.adts_duration(FIXTURE) is None
     assert ingest_upload._duration_s(FIXTURE) == pytest.approx(3.06, abs=0.05)
+
+
+def test_shared_read_reports_true_raw_aac_duration(tmp_path):
+    """Every duration consumer, not only uploads, gets the ADTS frame walk.
+
+    Folder ingest and the disk index call ``_tagreader.read`` directly, so a
+    tinytag misread would persist there (review of #4997). Control: an
+    ``mp3`` keeps tinytag's own duration.
+    """
+    from apps.shared import _tagreader
+
+    track = tmp_path / "raw.aac"
+    track.write_bytes(_adts_frames(430))
+    assert _tagreader.read(track).duration == pytest.approx(430 * 1024 / 44100)
+    assert _tagreader.read(FIXTURE).duration == pytest.approx(3.06, abs=0.05)
