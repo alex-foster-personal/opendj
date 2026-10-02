@@ -164,7 +164,7 @@ def _tag_answers(answers: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dic
     for tag in tags:
         ans = answers.get(f"tag:{tag.name}")
         p = ans.get("noul") if isinstance(ans, Mapping) else None
-        if not isinstance(p, int | float) or not 0.0 <= float(p) <= 1.0:
+        if isinstance(p, bool) or not isinstance(p, int | float) or not 0.0 <= float(p) <= 1.0:
             return f"tag {tag.name!r} answer missing or out of range"
         out[tag.name] = round(float(p), 4)
     return out
@@ -181,7 +181,8 @@ def _genre_answer(answers: Any) -> tuple[str, float, Mapping[str, Any]] | str:
     if family not in FAMILY_CRITERIA or not isinstance(probs, Mapping):
         return f"genre answer {family!r} is not a family"
     confidence = probs.get(family)
-    if not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
+    # JSON true/false are ints in Python; a boolean is not a probability.
+    if isinstance(confidence, bool) or not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
         return "genre confidence missing or out of range"
     return str(family), float(confidence), probs
 

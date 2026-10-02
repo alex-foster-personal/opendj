@@ -64,6 +64,25 @@ def _artists(artists_json: str | None) -> str | None:
     return str(value).strip() or None
 
 
+def local_genre_ids(conn: sqlite3.Connection) -> set[str]:
+    """stable_ids with a non-empty local genre field (file, MIK or web edit).
+
+    The library row shows this field even when rekordbox has no genre, so a
+    track carrying one is tagged and must never be asked about (GENRE-02).
+    """
+    out: set[str] = set()
+    for sid, value_json in conn.execute(
+        "SELECT stable_id, value_json FROM track_fields WHERE field_name = 'genre' AND deleted_at IS NULL"
+    ):
+        try:
+            value = json.loads(value_json) if value_json else None
+        except ValueError:
+            value = value_json
+        if isinstance(value, str) and value.strip():
+            out.add(str(sid))
+    return out
+
+
 def track_facts(conn: sqlite3.Connection, stable_ids: Iterable[str]) -> dict[str, dict[str, Any]]:
     """stable_id -> the fields :func:`apps.genre_infer.jev.build_state` reads."""
     ids = list(stable_ids)

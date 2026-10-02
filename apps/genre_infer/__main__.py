@@ -57,8 +57,14 @@ def _family_labels(state: Path, master: Path) -> tuple[dict[str, str], list[str]
 
 
 def _untagged(state: Path, master: Path) -> list[str]:
-    """stable_ids with no genre tag anywhere, as the wheel resolves tags."""
-    return sorted(sid for sid, tag in genre_tags_by_stable_id(state, master).items() if not (tag or "").strip())
+    """stable_ids with no genre tag anywhere: neither rekordbox nor the local genre field."""
+    conn = state_db.open_ro(state)
+    try:
+        local = jev_store.local_genre_ids(conn)
+    finally:
+        conn.close()
+    tags = genre_tags_by_stable_id(state, master)
+    return sorted(sid for sid, tag in tags.items() if not (tag or "").strip() and sid not in local)
 
 
 def _embed_targets(args: argparse.Namespace, state: Path, data_dir: Path) -> dict[str, Path | None]:
