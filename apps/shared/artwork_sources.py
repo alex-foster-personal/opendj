@@ -177,19 +177,41 @@ def matching_release_groups(payload: dict, query: TrackQuery) -> list[str]:
     artist credit contains our first artist (or the other way round), and
     its length is within :data:`DURATION_TOLERANCE_S` when both are known.
     Without the artist check, common titles match a stranger's recording.
+
+    The artist's own official album, single or EP comes first, then other
+    plain releases, and soundtracks, compilations, DJ mixes and live albums
+    last, so a hit's cover is its own sleeve rather than a film poster.
     """
     title = normalize(query_title(query.title))
     ours = normalize(query_artist(query.artist))
     want_s = (query.duration_ms or 0) / 1000.0
-    groups: list[str] = []
+    best: dict[str, int] = {}
     for rec in payload.get("recordings", []):
         if not _is_same_recording(rec, title, ours, want_s):
             continue
         for rel in rec.get("releases", []):
             group = (rel.get("release-group") or {}).get("id")
-            if group and group not in groups:
-                groups.append(group)
-    return groups
+            if group:
+                best[group] = min(best.get(group, 3), _release_tier(rel, ours))
+    # sorted() is stable, so within a tier MusicBrainz's own order holds.
+    return sorted(best, key=best.__getitem__)
+
+
+_OWN_TYPES = {"album", "single", "ep"}
+
+
+def _release_tier(rel: dict, ours: str) -> int:
+    """0: the artist's own official album/single/EP; 1: other plain; 2: secondary types."""
+    group = rel.get("release-group") or {}
+    if group.get("secondary-types"):
+        return 2
+    credit = normalize(" ".join(c.get("name", "") for c in rel.get("artist-credit", [])))
+    own = (
+        rel.get("status") == "Official"
+        and str(group.get("primary-type") or "").lower() in _OWN_TYPES
+        and bool(ours) and ours in credit
+    )
+    return 0 if own else 1
 
 
 def _is_same_recording(rec: dict, title: str, ours: str, want_s: float) -> bool:
@@ -355,7 +377,7 @@ def _lookup(cache: ArtworkCache, stable_id: str, query: TrackQuery,
             http: HttpGet) -> tuple[tuple[bytes, str] | None, bool]:
     """(cover or None, whether the network was unreachable)."""
     lucene = f'recording:"{_lucene(query_title(query.title))}" AND artist:"{_lucene(query_artist(query.artist))}"'
-    status, body = http.get(f"{MB_URL}?fmt=json&limit=10&query={urllib.parse.quote(lucene)}")
+    status, body = http.get(f"{MB_URL}?fmt=json&limit=100&query={urllib.parse.quote(lucene)}")
     if status != 200:
         # unreachable, busy or rate-limited: not a fact about the track
         return None, status == NETWORK_FAILURE

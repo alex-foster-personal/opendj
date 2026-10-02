@@ -9,6 +9,7 @@ Regression one-liners:
   - if a lone unrelated image in the folder is taken as the cover then broken
   - if an image whose bytes do not match its extension is served then broken
   - if a stranger's recording with the same title matches then broken
+  - if a soundtrack or compilation cover beats the artist's own release then broken
   - if a found cover is fetched again on the next view then broken
   - if a miss is looked up again within a week then broken
   - if a network failure is remembered as a miss then broken
@@ -121,6 +122,34 @@ def test_matching_requires_title_artist_and_duration() -> None:
         _recording("Glue", "Bicep", None, ["rg-2", "rg-3"]),
     ]}
     assert art.matching_release_groups(payload, query) == ["rg-1", "rg-2", "rg-3"]
+
+
+def _release(group: str, primary: str | None, secondary: list[str], credit: str,
+             status: str | None = "Official") -> dict:
+    return {
+        "status": status,
+        "artist-credit": [{"name": credit}],
+        "release-group": {"id": group, "primary-type": primary, "secondary-types": secondary},
+    }
+
+
+def test_own_release_beats_soundtrack_and_compilation() -> None:
+    """Shape of the real 'Too Close' answer: MusicBrainz lists the film first."""
+    query = TrackQuery(artist="Alex Clare", title="Too Close", duration_ms=None)
+    recording = {"title": "Too Close", "length": None, "artist-credit": [{"name": "Alex Clare"}]}
+    payload = {"recordings": [
+        {**recording, "releases": [
+            _release("taken-2", "Album", ["Soundtrack"], "Nathaniel Mechaly"),
+            _release("mega-hits", "Album", ["Compilation"], "Various Artists"),
+        ]},
+        {**recording, "releases": [
+            _release("bravo", None, [], "Various Artists", status=None),
+            _release("lateness", "Album", [], "Alex Clare"),
+        ]},
+    ]}
+    assert art.matching_release_groups(payload, query) == [
+        "lateness", "bravo", "taken-2", "mega-hits",
+    ]
 
 
 def test_query_cleaning() -> None:
