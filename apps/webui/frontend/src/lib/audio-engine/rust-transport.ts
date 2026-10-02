@@ -562,7 +562,6 @@ export const rustHotCueDriver: PerformanceHotCueDriver = {
 		st.hot_cues = hotCuesFromAnlz(slots.flatMap((s) => (s.cue === null ? [] : [s.cue])));
 		st.hot_cue_revisions = _hotCueRevisionsFrom(slots);
 	},
-	hasRbMapping: (deck) => deckStates[deck].has_rb_mapping,
 	triggerState: (deck, slot) => {
 		const st = deckStates[deck];
 		return {

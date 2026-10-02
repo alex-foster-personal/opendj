@@ -653,7 +653,6 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
 		refresh: async () => {},
-		hasRbMapping: () => true
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -689,18 +688,17 @@ test('hot-cue IPC dispatch sends CAS revisions and exposes one-time reversal sta
 	}
 });
 
-test('hot_cue_save rejects for an unmapped deck before reaching the network, same as HotCueBank (#736)', async () => {
+test('hot_cue_save reaches the network for any loaded deck, mapped or not (CUES-01)', async () => {
 	const originalFetch = globalThis.fetch;
 	let fetchCalls = 0;
 	globalThis.fetch = async () => {
 		fetchCalls += 1;
-		throw new Error('saveHotCue must not reach the network for an unmapped deck');
+		throw new Error('network reached');
 	};
 	globalThis.window = {};
 	const resetDriver = ipc.installPerformanceHotCueDriverForTest({
 		stableId: () => 'loaded-track',
 		refresh: async () => {},
-		hasRbMapping: () => false
 	});
 	const uninstall = ipc.installPerformanceBrowserIpc();
 	try {
@@ -708,9 +706,12 @@ test('hot_cue_save rejects for an unmapped deck before reaching the network, sam
 			window.musicDjToolsPerformance.dispatch({
 				type: 'hot_cue_save', deck: 1, slot: 'A', in_ms: 1000, revision: 'etag'
 			}),
-			/no live rekordbox mapping/i
+			(error) => {
+				assert.doesNotMatch(String(error), /rekordbox mapping/i);
+				return true;
+			}
 		);
-		assert.equal(fetchCalls, 0, 'hot_cue_save must reject before calling saveHotCue');
+		assert.ok(fetchCalls >= 1, 'hot_cue_save must reach saveHotCue with no rekordbox-mapping gate');
 	} finally {
 		uninstall();
 		resetDriver();
@@ -742,7 +743,6 @@ function triggerDriverStub({ playing, loopEngaged, positionSec, contextTimeNowSe
 		driver: {
 			stableId: () => 'loaded-track',
 			refresh: async () => {},
-			hasRbMapping: () => true,
 			triggerState: () => ({ cue, playing, loopEngaged, positionSec, beats: TRIGGER_PQTZ_BEATS }),
 			jump: async (deck, positionMs) => {
 				jumpCalls.push({ deck, positionMs });

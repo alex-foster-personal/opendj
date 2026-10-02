@@ -20,9 +20,9 @@
  *       before invoking the engine or recreating an off-route audio graph ⛔️
  *     [if] a new route session starts while old work settles [then] its commands
  *       use fresh scheduler tails and clean pending counters
- *   ✔︎ ✅ 🎯 hot_cue_save is gated on has_rb_mapping for every caller (#736).
- *     [if] a browser/CLI agent dispatches hot_cue_save for an unmapped deck
- *       [then] it rejects before reaching saveHotCue, same as the UI click ⛔️
+ *   ✔︎ ✅ 🎯 hot_cue_save works for every loaded deck, mapped or not (CUES-01;
+ *     supersedes the #736 mapping gate). [if] a browser/CLI agent dispatches
+ *       hot_cue_save for an unmapped deck [then] it reaches saveHotCue ⛔️
  *   ✔︎ ✅ 🎯 hot_cue_trigger honours BeatSyncMax on a playing, unlooped deck (#884).
  *     [if] BeatSyncMax is on, the deck is playing and unlooped [then] the jump
  *       arms for the deck's own next downbeat instead of firing immediately,
@@ -739,10 +739,6 @@ export function resetQuantizedLaunchArmedForTest(): void {
 export interface PerformanceHotCueDriver {
 	stableId(deck: DeckId): string | null;
 	refresh(deck: DeckId): Promise<void>;
-	/** Same `DeckState.has_rb_mapping` HotCueBank gates its click on (#736) -
-	 * read here too so a non-UI caller (browser IPC, a preset transaction)
-	 * hits the identical guard rather than only the component seeing it. */
-	hasRbMapping(deck: DeckId): boolean;
 	/** #884: everything planHotCueTrigger needs for one slot, in one read so
 	 * the test seam can stand in for the engine without a real audio graph. */
 	triggerState(
@@ -769,7 +765,6 @@ export interface PerformanceHotCueDriver {
 const _defaultHotCueDriver: PerformanceHotCueDriver = {
 	stableId: (deck) => getDeckState(deck).stable_id,
 	refresh: (deck) => engine.refreshHotCues(deck),
-	hasRbMapping: (deck) => getDeckState(deck).has_rb_mapping,
 	triggerState: (deck, slot) => {
 		const state = getDeckState(deck);
 		return {
@@ -2240,11 +2235,6 @@ async function _execute(command: PerformanceCommand, pressT0Ms?: number): Promis
 	} else if (command.type === 'hot_cue_save') {
 		const stableId = _hotCueDriver.stableId(command.deck);
 		if (stableId === null) throw new Error(`hot cue ${command.slot}: deck is not loaded`);
-		if (!_hotCueDriver.hasRbMapping(command.deck)) {
-			throw new Error(
-				`hot cue ${command.slot}: deck has no live rekordbox mapping - cues need a rekordbox mapping`
-			);
-		}
 		// Untrusted own grids (static_grid_untrusted: true) must not BeatSyncMax-snap.
 		const beatSyncMaxSnap =
 			uiPrefs.beat_sync_max && hasTrustedBeatGrid(getDeckState(command.deck).anlz);

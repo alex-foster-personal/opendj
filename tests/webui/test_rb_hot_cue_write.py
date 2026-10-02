@@ -15,7 +15,8 @@ Regression one-liners:
   - if a slot outside A-H is ever accepted then broken
   - if a negative in_ms is ever accepted then broken
   - if a hot-cue write uses a deferred SQLite transaction then concurrent saves can duplicate a slot
-  - if the PUT/DELETE routes don't round-trip through fetch_cues then broken
+  - if the PUT/DELETE routes write rekordbox's djmdCue instead of the own
+    cue store (CUES-01) then broken; they round-trip through GET hot-cues
   - if the route ever accepts a slot letter beyond H (Kind 9-11) then broken
 """
 from __future__ import annotations
@@ -331,6 +332,13 @@ def _put(client: TestClient, slot: str, body: dict[str, Any]):
     )
 
 
+def _own_slots(client: TestClient) -> dict[str, dict[str, Any]]:
+    """Filled slots as GET serves them (the own cue store, CUES-01)."""
+    response = client.get(f"/api/v1/tracks/{STABLE_ID}/hot-cues")
+    assert response.status_code == 200, response.text
+    return {row["slot"]: row["cue"] for row in response.json() if row["cue"] is not None}
+
+
 def _delete(client: TestClient, slot: str):
     return client.delete(
         f"/api/v1/tracks/{STABLE_ID}/hot-cues/{slot}",
@@ -345,23 +353,24 @@ def test_put_hot_cue_saves_and_reads_back(client: TestClient) -> None:
     assert body["slot"] == "A"
     assert body["in_ms"] == 4_200
     assert body["comment"] == "intro"
-    assert rb_vendor.fetch_cues(VENDOR_ID)[0]["in_ms"] == 4_200
+    assert _own_slots(client)["A"]["in_ms"] == 4_200
+    assert rb_vendor.fetch_cues(VENDOR_ID) == [], "SAVE must not write djmdCue"
 
 
 def test_put_hot_cue_resave_overwrites(client: TestClient) -> None:
     _put(client, "B", {"in_ms": 1_000})
     resp = _put(client, "B", {"in_ms": 2_000})
     assert resp.status_code == 200
-    cues = [c for c in rb_vendor.fetch_cues(VENDOR_ID) if c["slot"] == "B"]
-    assert len(cues) == 1
-    assert cues[0]["in_ms"] == 2_000
+    slots = _own_slots(client)
+    assert list(slots) == ["B"]
+    assert slots["B"]["in_ms"] == 2_000
 
 
 def test_delete_hot_cue_clears_slot(client: TestClient) -> None:
     _put(client, "C", {"in_ms": 1_000})
     resp = _delete(client, "C")
     assert resp.status_code == 200
-    assert rb_vendor.fetch_cues(VENDOR_ID) == []
+    assert _own_slots(client) == {}
 
 
 def test_put_hot_cue_rejects_negative_ms_422(client: TestClient) -> None:
@@ -400,7 +409,7 @@ def test_http_requires_current_revision_and_returns_conflict_revision(client: Te
     )
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["current_revision"] == _client_revision(client, "A")
-    assert rb_vendor.fetch_cues(VENDOR_ID)[0]["in_ms"] == 1_000
+    assert _own_slots(client)["A"]["in_ms"] == 1_000
 
 
 def test_http_restore_uses_reversal_preimage(client: TestClient) -> None:
@@ -431,7 +440,7 @@ def test_restore_rejects_cross_slot_and_cross_track_tokens(client: TestClient) -
         headers={"If-Match": _client_revision(client, "A")},
     )
     assert cross_track.status_code == 409
-    assert rb_vendor.fetch_cues(VENDOR_ID)[0]["in_ms"] == 1_000
+    assert _own_slots(client)["A"]["in_ms"] == 1_000
 
 
 def test_restore_rejects_forged_preimage_fields_and_consumes_token(client: TestClient) -> None:

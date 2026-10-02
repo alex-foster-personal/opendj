@@ -33,6 +33,10 @@ class _FakeRbDb:
     monkeypatched) and ``close()`` in its finally block.
     """
 
+    def get_cue(self) -> list[object]:
+        # No djmdCue rows: these tests are about tracks, not cues (CUES-01).
+        return []
+
     def close(self) -> None:
         return None
 
