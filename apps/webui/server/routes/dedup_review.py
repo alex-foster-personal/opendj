@@ -130,11 +130,11 @@ def post_dedup_scan(request: Request) -> ScanStatusOut:
     """Start fingerprinting the library and rebuilding duplicate clusters.
 
     Local only: the engine fingerprints each track's own file, nothing is
-    looked up online, and no audio file is written, moved or deleted. The
-    scan reads THIS app's state database (an alternate library or fixture
-    passes its own to ``create_app``), not the process-global default, and
-    writes clusters where the review routes read them.
+    looked up online, and no audio file is written, moved or deleted.
     """
+    # The scan reads THIS app's state database (an alternate library or
+    # fixture passes its own to ``create_app``), not the process-global
+    # default, and writes clusters where the review routes read them.
     configured = getattr(request.app.state, "state_db_path", None)
     state_db = Path(configured) if configured is not None else None
     if not library_scan.JOB.start(state_db=state_db, db_path=dedup_db_path()):
