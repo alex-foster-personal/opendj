@@ -350,14 +350,18 @@ export function humanImportJobMessage(
  */
 export function humanImportFailure(error: string | null | undefined): string {
 	const code = /\[ERROR\]\s+([a-z_]+):/.exec(error ?? '')?.[1] ?? '';
+	// Each reason is one whole sentence pair: ", then try again" only follows
+	// an action the user takes; after a plain statement it is "Try again."
+	const quit = 'Could not open the rekordbox library. Quit rekordbox, then try again.';
 	const why: Record<string, string> = {
-		music_folder_access_denied: 'The app may not read that folder. Allow it in Privacy & Security.',
-		rekordbox_not_found: 'What you chose to import was not found.',
-		rekordbox_key_unavailable: 'Could not open the rekordbox library. Quit rekordbox.',
-		rekordbox_decrypt_failed: 'Could not open the rekordbox library. Quit rekordbox.',
-		setup_import_already_running: 'An import is already running.'
+		music_folder_access_denied:
+			'The app may not read that folder. Allow it in Privacy & Security, then try again.',
+		rekordbox_not_found: 'What you chose to import was not found. Try again.',
+		rekordbox_key_unavailable: quit,
+		rekordbox_decrypt_failed: quit,
+		setup_import_already_running: 'An import is already running. Wait for it to finish, then try again.'
 	};
-	return `${why[code] ?? 'The import stopped before it finished.'} Then try again.`;
+	return why[code] ?? 'The import stopped before it finished. Try again.';
 }
 
 export function humanStemsJobsUnavailable(): string {

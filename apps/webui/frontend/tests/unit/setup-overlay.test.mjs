@@ -573,6 +573,29 @@ test('a failed import says why, not its last progress line', () => {
 	assert.match(mod.humanImportFailure(null), /stopped before it finished/);
 });
 
+test('every import-failure reason reads naturally with its retry line (Mac check item 5)', () => {
+	// "What you chose to import was not found. Then try again." read oddly:
+	// "Then" needs an action before it. Exact sentences, one per reason.
+	const said = (code) => mod.humanImportFailure(`[ERROR] ${code}: detail /Users/dj/x`);
+	assert.equal(said('rekordbox_not_found'), 'What you chose to import was not found. Try again.');
+	assert.equal(
+		said('music_folder_access_denied'),
+		'The app may not read that folder. Allow it in Privacy & Security, then try again.'
+	);
+	for (const code of ['rekordbox_key_unavailable', 'rekordbox_decrypt_failed']) {
+		assert.equal(said(code), 'Could not open the rekordbox library. Quit rekordbox, then try again.');
+	}
+	assert.equal(
+		said('setup_import_already_running'),
+		'An import is already running. Wait for it to finish, then try again.'
+	);
+	assert.equal(mod.humanImportFailure(null), 'The import stopped before it finished. Try again.');
+	// No reason, known or not, carries the stray capitalized "Then".
+	for (const error of [null, 'exit 137', ...['rekordbox_not_found', 'music_folder_access_denied'].map((c) => `[ERROR] ${c}: x`)]) {
+		assert.doesNotMatch(mod.humanImportFailure(error), /\. Then /);
+	}
+});
+
 test('the wizard gates on the FINAL refusal, never on an unfinished probe', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
