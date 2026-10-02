@@ -12,6 +12,12 @@ name: Durations ledger (main)
 # for exactly that reason), so the ledger travels as an artifact. Retention is
 # 7 days; a schedule that stops for longer degrades CI to the committed seed,
 # loudly (ci.yml's scope job warns), never to a smaller run.
+#
+# Supersedes: the hand-made refresh PR that committed a new `.test_durations`
+# (the "Refresh procedure" in ops/test-latency/README.md, round 4; #4699, #5048).
+# That section now redirects here and keeps the recipe only to refresh the seed
+# when no published ledger exists. Decision record:
+# docs/decisions/ADR-NEW-durations-ledger-built-on-main-as-an-artifact.md.
 
 on:
   schedule:

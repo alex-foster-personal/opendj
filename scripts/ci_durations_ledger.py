@@ -24,6 +24,11 @@ Subcommands (standard library only, so a bare runner `python3` can run them):
 A ledger is refused (non-zero exit, nothing written) when its shards overlap, a value is
 not a non-negative number, a test is recorded above `MAX_TEST_SECONDS`, or it names
 fewer than `MIN_ROW_RATIO` of the committed seed's rows (a partial run).
+
+Supersedes: the hand-made refresh PR that committed a new `.test_durations` (the
+"Refresh procedure" in ops/test-latency/README.md, round 4; #4699, #5048). That section
+now redirects to this module and its workflow. Decision record:
+docs/decisions/ADR-NEW-durations-ledger-built-on-main-as-an-artifact.md.
 """
 
 from __future__ import annotations
