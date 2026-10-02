@@ -172,6 +172,18 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
         audio_playable.probe_playable_audio(stub)
 
+    # A header promising a whole frame the file does not hold is truncated.
+    cut = tmp_path / "cut.aac"
+    cut.write_bytes(_adts_frames(1)[:27])
+    assert _tagreader.adts_duration(cut) is None
+    with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
+        audio_playable.probe_playable_audio(cut)
+
+    # An MP4 container named .aac goes to the tag reader, not the ADTS walk.
+    mp4 = tmp_path / "mp4.aac"
+    shutil.copyfile(FIXTURE.parent / "src.m4a", mp4)
+    audio_playable.probe_playable_audio(mp4)
+
     # Control: a tinytag-readable type with valid magic but no audio frames is
     # still rejected by the tag cross-check.
     bogus = tmp_path / "bogus.mp3"

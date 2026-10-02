@@ -238,19 +238,17 @@ class TestId3Signal:
         _, signals = score_pair(_FakeRB(file_path=a), _dj(file_path=b))
         assert not _find(signals, "id3").fired
 
-    @pytest.mark.requires_mutagen
     def test_matching_title_and_artist_fire(self, tmp_path: Path) -> None:
-        """Control for the test above: the same files, tagged alike, DO fire."""
-        from mutagen.id3 import ID3, TIT2, TPE1
+        """Control for the test above: two copies of one tagged mp3 DO fire.
 
+        Uses an already-tagged fixture (title "Source V2", artist "Fixture"),
+        so the control runs where mutagen is absent, as in the packaged app.
+        """
+        tagged = _FIXTURE_MP3.parent / "src-v2.mp3"
         paths = []
         for name in ("a.mp3", "b.mp3"):
             path = tmp_path / name
-            path.write_bytes(_FIXTURE_MP3.read_bytes())
-            tag = ID3()
-            tag.add(TIT2(encoding=3, text="Song"))
-            tag.add(TPE1(encoding=3, text="Artist"))
-            tag.save(path)
+            path.write_bytes(tagged.read_bytes())
             paths.append(path)
         _, signals = score_pair(_FakeRB(file_path=paths[0]), _dj(file_path=paths[1]))
         assert _find(signals, "id3").fired

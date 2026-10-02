@@ -113,12 +113,16 @@ def adts_duration(path: Path | str) -> float | None:
     samples = 0
     rate = 0
     with open(path, "rb") as fh:
+        size = fh.seek(0, 2)
+        fh.seek(0)
         offset = _id3v2_end(fh.read(10))
         while True:
             fh.seek(offset)
             frame = _adts_frame(fh.read(7))
             if frame is None or (rate and frame[0] != rate):
                 break
+            if offset + frame[1] > size:
+                break  # truncated: the header promises bytes the file lacks
             rate = frame[0]
             samples += frame[2]
             offset += frame[1]

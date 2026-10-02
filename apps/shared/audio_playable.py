@@ -67,10 +67,11 @@ def probe_playable_audio(path: Path) -> None:
         _probe_aiff_header(header, size_bytes)
 
     # The tag reader cross-checks duration only for formats it can parse.
-    # tinytag has no raw ADTS reader, so a .aac gets the stdlib frame walk
-    # instead: a stream with no whole frame is not playable audio.
+    # tinytag has no raw ADTS reader, so a raw .aac gets the stdlib frame walk
+    # instead: a stream with no whole frame is not playable audio. An MP4
+    # container named .aac (ftyp) still goes to the tag reader.
     if ext == ".aac":
-        _probe_adts(path, size_bytes)
+        _probe_aac(path, header, size_bytes)
     elif HAS_TAG_READER and _tagreader.can_read(path):
         _probe_tags(path, size_bytes)
 
@@ -191,6 +192,13 @@ def _check_duration_size(duration_s: float, size_bytes: int) -> None:
 
 
 # ----- tag-reader cross-check -----------------------------------------------
+def _probe_aac(path: Path, header: bytes, size_bytes: int) -> None:
+    if header[4:8] != b"ftyp":
+        _probe_adts(path, size_bytes)
+    elif HAS_TAG_READER:
+        _probe_tags(path, size_bytes)
+
+
 def _probe_adts(path: Path, size_bytes: int) -> None:
     length = _tagreader.adts_duration(path)
     if not length:
