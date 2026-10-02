@@ -33,6 +33,7 @@ from typing import Any
 from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
 from apps.shared.state import db as state_db
+from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
 from apps.shared.state.events import _DryRunSilentBus
@@ -55,6 +56,9 @@ class IngestReport:
     tracks_updated: int = 0
     tracks_unchanged: int = 0
     tracks_skipped: int = 0
+    #: Rows rekordbox still lists that the user removed from this library
+    #: (LIBM-140). Left removed, never written, kept out of every playlist.
+    tracks_skipped_deleted: int = 0
     tier_counts: dict[str, int] = dataclasses.field(
         default_factory=lambda: {"isrc": 0, "fingerprint": 0, "inferred": 0}
     )
@@ -232,6 +236,9 @@ def ingest_rb(
             # multiple RB rows share a stable_id. Honour the first and skip
             # subsequent collisions so reruns are truly idempotent.
             seen_sids: set[str] = set()
+            # Ids the user removed (LIBM-140): skipped above, and filtered out
+            # of every playlist's membership below.
+            deleted_sids: set[str] = set()
 
             for i, track in enumerate(all_rows):
                 if limit is not None and i >= limit:
@@ -277,6 +284,22 @@ def ingest_rb(
                 audio_hash = _audio_hash_for(path_str, track["is_streaming"])
                 if content_hash is None and path_str and not track["is_streaming"]:
                     report.content_hash_missing += 1
+
+                if (
+                    deleted_tracks.find_deleted_match(
+                        conn,
+                        stable_id=sid,
+                        content_hash=content_hash,
+                        audio_hash=audio_hash,
+                    )
+                    is not None
+                ):
+                    # Deletes stay deleted: rekordbox listing the file is not
+                    # a restore. Recorded so the playlist pass below cannot
+                    # put it back in a playlist either.
+                    deleted_sids.add(sid)
+                    report.tracks_skipped_deleted += 1
+                    continue
 
                 changed = writer.upsert_track(
                     stable_id=sid,
@@ -345,7 +368,11 @@ def ingest_rb(
                 )
                 if inserted:
                     report.playlists_inserted += 1
-                member_sids = [rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable]
+                member_sids = [
+                    rb_to_stable[tid]
+                    for tid in rb_tids
+                    if tid in rb_to_stable and rb_to_stable[tid] not in deleted_sids
+                ]
                 writer.set_playlist_memberships(pl_id, member_sids)
 
             tracks_seen = (
@@ -415,6 +442,7 @@ def _print_summary(report: IngestReport) -> None:
     print(f"  tracks updated:   {report.tracks_updated}")
     print(f"  tracks unchanged: {report.tracks_unchanged}")
     print(f"  tracks skipped:   {report.tracks_skipped}")
+    print(f"  skipped: deleted by user: {report.tracks_skipped_deleted}")
     for tier, n in report.tier_counts.items():
         print(f"  tier {tier:<12} {n}")
     print(f"  playlists new:    {report.playlists_inserted}")

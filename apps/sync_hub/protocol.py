@@ -287,6 +287,8 @@ class SyncDigest:
     #: the hash but counted separately from ``quarantined``. ``None`` when the
     #: peer did not report the field.
     hash_pending: dict[str, int] | None = field(default=None)
+    #: Of ``quarantined``, rows the hub already settled and this machine does not hold (CLOUDSYNC-32). Local only.
+    settled: dict[str, int] | None = field(default=None)
 
     @property
     def hash_pending_rows(self) -> int | None:
@@ -386,6 +388,7 @@ class TableDigest:
     hash: str
     quarantined: int
     hash_pending: int = 0
+    settled: int = 0  #: Of ``quarantined``, rows the hub already settled (CLOUDSYNC-32).
 
 
 def table_digest(
@@ -429,7 +432,7 @@ def table_digest(
     order_by = ", ".join(spec.pk)
     digest = hashlib.sha256()
     digest.update(canonical_bytes({"table": table, "columns": list(columns)}))
-    quarantined = 0
+    quarantined = settled = 0
     hash_pending = 0
     cursor = conn.execute(
         f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}"
@@ -438,6 +441,9 @@ def table_digest(
         reason = sync_set.excluded_reason(conn, table, columns, row, spec, tracking)
         if reason is not None:
             quarantined += 1
+            if sync_set.is_settled(reason):
+                settled += 1
+                continue
             pk_index = {column: index for index, column in enumerate(columns)}
             pk = [row[pk_index[column]] for column in spec.pk]
             record_quarantine(table, pk, reason)
@@ -448,7 +454,7 @@ def table_digest(
         ):
             hash_pending += 1
         digest.update(canonical_bytes(canonical))
-    return TableDigest(hash=digest.hexdigest(), quarantined=quarantined, hash_pending=hash_pending)
+    return TableDigest(digest.hexdigest(), quarantined, hash_pending, settled)
 
 
 def sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest:
@@ -504,6 +510,7 @@ def compute_sync_digest(conn: sqlite3.Connection, *, seq: int = 0) -> SyncDigest
                 for name, value in computed.items()
                 if value.hash_pending
             },
+            settled={name: value.settled for name, value in computed.items() if value.settled},
         )
 
 
@@ -531,15 +538,11 @@ def _require_pk(payload: Mapping[str, Any], table: str, *, expected: int) -> lis
     if not isinstance(raw_pk, list) or not raw_pk:
         raise SyncProtocolError(f"{table}: 'pk' must be a non-empty array")
     if len(raw_pk) != expected:
-        raise SyncProtocolError(
-            f"{table}: primary key has {expected} column(s), got {len(raw_pk)}"
-        )
+        raise SyncProtocolError(f"{table}: primary key has {expected} column(s), got {len(raw_pk)}")
     return raw_pk
 
 
-def _parse_members(
-    payload: Mapping[str, Any], table: str
-) -> tuple[dict[str, Any], ...] | None:
+def _parse_members(payload: Mapping[str, Any], table: str) -> tuple[dict[str, Any], ...] | None:
     """``payload['members']``, or ``None`` if absent. Split out of
     :meth:`RowChange.from_wire` for the same reason as :func:`_require_pk`."""
     raw_members = payload.get("members")
@@ -548,9 +551,7 @@ def _parse_members(
     if not isinstance(raw_members, list):
         raise SyncProtocolError(f"{table}: 'members' must be an array or absent")
     if table != "playlists":
-        raise SyncProtocolError(
-            f"{table}: 'members' is only meaningful on a playlists row"
-        )
+        raise SyncProtocolError(f"{table}: 'members' is only meaningful on a playlists row")
     return tuple(_require_mapping(item, "members[]") for item in raw_members)
 
 
