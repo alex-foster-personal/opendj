@@ -180,13 +180,28 @@ def test_local_argv_uses_local_worker(
 # ----- argv ------------------------------------------------------------------
 
 
-def test_argv_overlays_modal_rather_than_using_the_repo_venv() -> None:
-    """if the overlay is dropped then the worker dies at `import modal`,
+def test_relay_argv_needs_no_modal_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """if the relay argv asked for modal then the installed app, which ships
+    no modal and no uv, could never separate through the relay (#3421)"""
+    monkeypatch.delenv("MDT_STEMS_TRANSPORT", raising=False)
+    argv = build_argv({"stable_ids": [SID_A], "tier": "M"})
+    assert argv[:4] == ["uv", "run", "--no-sync", "python"]
+    assert "--with" not in argv
+    assert argv[4].endswith("stems_modal_worker.py")
+    assert Path(argv[4]).is_absolute()
+    assert argv[argv.index("--transport") + 1] == "relay"
+    assert "--stable-id" in argv and SID_A in argv
+
+
+def test_direct_argv_overlays_modal_rather_than_using_the_repo_venv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """if the overlay is dropped then a direct run dies at `import modal`,
     because modal is deliberately absent from the repo venv"""
+    monkeypatch.setenv("MDT_STEMS_TRANSPORT", "direct")
     argv = build_argv({"stable_ids": [SID_A], "tier": "M"})
     assert argv[:6] == ["uv", "run", "--no-sync", "--with", "modal", "python"]
     assert argv[6].endswith("stems_modal_worker.py")
-    assert "--stable-id" in argv and SID_A in argv
 
 
 def test_argv_passes_a_scope_instead_of_ids() -> None:
@@ -318,7 +333,7 @@ def test_the_gate_refuses_when_the_local_worker_is_not_installed(
     """[if] the gate stays open with no worker script on disk [then] fail, [else stop]."""
     from apps.stems import job as stems_job
 
-    monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("apps.shared.platform_paths.PROJECT_ROOT", tmp_path)
     refusal = stems_job.local_worker_refusal()
     assert refusal is not None
     assert "stems_local_worker.py" in refusal
@@ -351,7 +366,7 @@ def test_build_argv_refuses_rather_than_naming_a_script_that_is_not_there(
     # not raise" would be a true statement about the wrong code path.
     monkeypatch.setattr("apps.stems.routing.resolve_stems_executor", lambda **_: "local")
     monkeypatch.setattr("apps.stems.local_gate.local_stems_gate", lambda: None)
-    monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("apps.shared.platform_paths.PROJECT_ROOT", tmp_path)
     with pytest.raises(stems_job.StemsJobPayloadError, match=r"stems_local_worker\.py"):
         stems_job.build_argv({"stable_ids": [SID_A], "tier": "M"})
 
@@ -366,7 +381,6 @@ def test_the_plan_gate_reports_a_missing_worker_as_its_refusal(
     wizard's StemsPrompt renders that inert with the sentence as its reason.
     So the worker check has to be IN the gate, not only in build_argv, or the
     button stays live and the tester presses it into a job that cannot run."""
-    from apps.stems import job as stems_job
     from apps.stems import local_gate
 
     class _FlagOn:
@@ -375,7 +389,7 @@ def test_the_plan_gate_reports_a_missing_worker_as_its_refusal(
 
     monkeypatch.setattr(local_gate, "resolve_stems_executor", lambda: "local")
     monkeypatch.setattr(local_gate, "local_stems_tier_refusal", lambda: None)
-    monkeypatch.setattr(stems_job, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("apps.shared.platform_paths.PROJECT_ROOT", tmp_path)
     refusal = local_gate.local_stems_gate(flag_store=_FlagOn())
     assert refusal is not None
     assert "not installed in this build" in refusal
