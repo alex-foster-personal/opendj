@@ -1,7 +1,8 @@
 <script module lang="ts">
 	// Re-exported so BrowserPanel's load hook reaches it through the import it
 	// already has (the quality ratchet counts each module a file imports).
-	export { waitForStemsSettled } from '$lib/rb/command-bar';
+	import { waitForStemsSettled } from '$lib/rb/command-bar';
+	export { waitForStemsSettled };
 </script>
 
 <script lang="ts">
