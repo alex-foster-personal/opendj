@@ -179,24 +179,36 @@ def test_old_pairings_table_gains_snapshot_column(db_path: Path) -> None:
     assert by_from["a"].snapshot == SNAPSHOT
 
 
-def test_snapshot_column_add_survives_losing_the_race(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """If a rival process adds snapshot_json first then the lost ALTER is benign, else stop."""
+def test_snapshot_column_add_survives_losing_the_race(tmp_path: Path) -> None:
+    """If a rival connection adds snapshot_json first then the lost ALTER is benign, else stop."""
     from apps.shared.pairings import schema_sql
 
-    conn = sqlite3.connect(tmp_path / "race.db")
-    conn.execute(schema_sql._PAIRINGS_DDL[0])  # the rival already added the column
-    real = schema_sql._pairings_has_snapshot_json
-    answers = [False]  # the first check ran before the rival's ALTER landed
-    monkeypatch.setattr(
-        schema_sql,
-        "_pairings_has_snapshot_json",
-        lambda c: answers.pop() if answers else real(c),
-    )
-    schema_sql.migrate_pairings_snapshot_json(conn)  # must not raise
-    assert real(conn)
-    conn.close()
+    path = tmp_path / "race.db"
+    setup = sqlite3.connect(path)
+    setup.execute(schema_sql._PAIRINGS_DDL[0].replace("        snapshot_json  TEXT,\n", ""))
+    setup.commit()
+    setup.close()
+    ours = sqlite3.connect(path, isolation_level=None)
+    rival = sqlite3.connect(path, isolation_level=None)
+    rival_added: list[bool] = []
+
+    def _rival_wins(action: int, *_: object) -> int:
+        # SQLite asks this as it prepares our ALTER, after our check saw the
+        # column absent: the rival's real ALTER commits in that window.
+        if action == sqlite3.SQLITE_ALTER_TABLE and not rival_added:
+            rival_added.append(True)
+            rival.execute("ALTER TABLE pairings ADD COLUMN snapshot_json TEXT")
+        return sqlite3.SQLITE_OK
+
+    ours.set_authorizer(_rival_wins)
+    schema_sql.migrate_pairings_snapshot_json(ours)  # must not raise
+    ours.set_authorizer(None)
+
+    assert rival_added == [True]
+    columns = [row[1] for row in ours.execute("PRAGMA table_info(pairings)")]
+    assert columns.count("snapshot_json") == 1
+    ours.close()
+    rival.close()
 
 
 def test_snapshot_column_add_still_raises_a_real_failure(tmp_path: Path) -> None:
