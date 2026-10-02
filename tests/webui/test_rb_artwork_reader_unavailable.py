@@ -1,29 +1,19 @@
-"""GET /artwork's ARTWORK_READER_UNAVAILABLE 503, proved WITHOUT mutagen.
+"""GET /artwork and rb-meta read embedded art WITHOUT mutagen (issue #4717).
 
-Deliberately split out of ``test_rb_artwork_local_track.py``: that module
-carries ``pytestmark = pytest.mark.requires_mutagen`` because most of its
-tests write real embedded tags via mutagen's own writer. This module has no
-such marker and its fixture never touches mutagen at all -- a plain file
-copy is enough, since :func:`apps.adapters.rekordbox.paths.local_artwork`
-raises the 503 BEFORE any tag read is attempted.
+The packaged app never ships mutagen (GPL, opt-in ``tags`` extra), so until
+tinytag (MIT) became the reader every locally imported track there answered
+503 ``ARTWORK_READER_UNAVAILABLE``. This proves the shipped configuration in a
+FRESH subprocess that blocks ``import mutagen`` before anything imports it:
+the picture is still read and served, and rb-meta agrees.
 
-Codex caught this live on PR #773 (P1/BLOCKING): the shipped desktop payload
-omits the optional ``tags`` extra (GPL vs this wheel's Apache license), so
-the one acceptance test that proves the reader-unavailable fallback works
-must itself be provable in an environment that genuinely lacks the reader --
-gating it behind ``requires_mutagen`` meant it could only ever run in an
-environment that HAS mutagen, silently proving nothing about the one
-environment it exists to cover (AGENTS.md: "Never silently skip acceptance
-because ... a platform is missing").
+The embedded picture is written here by hand as an ID3v2.3 ``APIC`` frame
+(spec section 4.15) around a real Pillow-encoded JPEG, so the fixture itself
+needs no tag library either.
 
 Regression one-liners:
   - if this test needs mutagen installed to run then it can never prove the mutagen-less path
-  - if the probe needs the project INSTALLED into the interpreter then it
-    passes only where something else installed it (the serial CI lane got
-    `apps` as a side effect of `make waveform-native-verify` reinstalling the
-    wheel into .venv; the sharded lane does not build the wheel, and the
-    probe died with ModuleNotFoundError on PR #1143). The probe is fed on
-    stdin with cwd at the repo root, so sys.path[0] is the tree itself.
+  - if a track with a real embedded cover 503s or 404s without mutagen then broken
+  - if a missing file reports artwork_available True then broken (residency first)
 """
 from __future__ import annotations
 
@@ -41,6 +31,7 @@ pytestmark = [pytest.mark.requirement("CAT-05"), pytest.mark.rb_parity]
 
 STABLE_ID = "e" * 40
 NO_FILE_SID = "d" * 40
+NO_ART_SID = "c" * 40
 DURATION_MS = 240_000
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -60,109 +51,82 @@ def _insert_local_track(path: Path, stable_id: str, file_path: str) -> None:
         conn.close()
 
 
-def test_artwork_verdicts_when_mutagen_genuinely_cannot_be_imported(
-    tmp_path: Path,
-) -> None:
-    """Both missing-reader verdicts, under one genuinely absent reader.
+def _jpeg() -> bytes:
+    from io import BytesIO
 
-    Two fixture-based tests used to live here, each monkeypatching the cached
-    ``HAS_MUTAGEN`` boolean. Codex raised both as P1/BLOCKING on PR #773 and was
-    right twice: flipping the flag MANUFACTURES the precondition, so on a machine
-    where mutagen is installed neither test could show what happens when the
-    reader is really gone. That is the fail-closed prohibition in AGENTS.md
-    L55-L59, and it hides exactly the packaged-build case (no optional ``tags``
-    extra) these tests name.
+    from PIL import Image
 
-    So both verdicts are asserted here instead, in a FRESH subprocess that blocks
-    the real ``import mutagen`` with ``sys.modules["mutagen"] = None`` BEFORE
-    ``apps.shared._mutagen`` has ever run, so the production ``except
-    ImportError`` branch fires rather than a flag:
+    out = BytesIO()
+    Image.new("RGB", (32, 32), (200, 40, 90)).save(out, format="JPEG", quality=90)
+    return out.getvalue()
 
-    - a file that EXISTS with no reader -> 503 ``ARTWORK_READER_UNAVAILABLE``,
-      an UNKNOWN rather than a guessed absence;
-    - a file that DOES NOT exist -> 404 ``ARTWORK_NOT_FOUND``, because residency
-      is decided before reader availability.
 
-    The second is the ordering assertion, and it is only worth something because
-    the reader is genuinely gone rather than flagged off. ``assert HAS_MUTAGEN is
-    False`` inside the subprocess is the control: if the import block ever stops
-    working, this fails loudly instead of quietly testing nothing.
+def _syncsafe(n: int) -> bytes:
+    return bytes(((n >> 21) & 0x7F, (n >> 14) & 0x7F, (n >> 7) & 0x7F, n & 0x7F))
 
-    Same subprocess also proves GET /rb-meta's ``artwork_available`` under the
-    same genuinely blocked import (issue #795): the resolvable-but-unreadable
-    row must report ``None`` ("could not check"), not the guessed ``False``
-    that :func:`apps.adapters.rekordbox.paths.local_artwork_available` used to
-    collapse it into -- the exact reason the UI never called ``/artwork`` and
-    the 503 above went unheard. The missing-file row is the overshoot control:
-    residency still wins, so it stays a real ``False``, not ``None``.
-    """
-    audio_path = tmp_path / "no reader.mp3"
-    shutil.copy2(FIXTURE_ROOT / "src-320.mp3", audio_path)
-    state_path = tmp_path / "state.db"
-    _insert_local_track(state_path, STABLE_ID, str(audio_path))
-    # Second row, same db: a path that resolves to nothing on disk. Both
-    # verdicts are then read under ONE genuinely blocked import.
+
+def _with_id3_apic(audio: bytes, image: bytes) -> bytes:
+    """``audio`` with an ID3v2.3 tag holding one front-cover APIC frame."""
+    body = b"\x00" + b"image/jpeg\x00" + b"\x03" + b"cover\x00" + image
+    frame = b"APIC" + len(body).to_bytes(4, "big") + b"\x00\x00" + body
+    return b"ID3\x03\x00\x00" + _syncsafe(len(frame)) + frame + audio
+
+
+def test_artwork_served_when_mutagen_genuinely_cannot_be_imported(tmp_path: Path) -> None:
+    image = _jpeg()
+    with_art = tmp_path / "with art.mp3"
+    with_art.write_bytes(_with_id3_apic((FIXTURE_ROOT / "src-320.mp3").read_bytes(), image))
+    no_art = tmp_path / "no art.mp3"
+    shutil.copy2(FIXTURE_ROOT / "src-320.mp3", no_art)
+    state_path = tmp_path / "state" / "state.db"
+    _insert_local_track(state_path, STABLE_ID, str(with_art))
+    _insert_local_track(state_path, NO_ART_SID, str(no_art))
     _insert_local_track(state_path, NO_FILE_SID, str(tmp_path / "does-not-exist.mp3"))
-    absent_master_db = tmp_path / "absent.db"
+    image_path = tmp_path / "expected.jpg"
+    image_path.write_bytes(image)
 
-    # Fed to the interpreter on STDIN rather than written to tmp_path: a script
-    # file puts ITS directory at sys.path[0], and `apps` is then importable
-    # only if the project is installed into the interpreter. `python -` with
-    # cwd at the repo root resolves `apps` from the tree, which is what this
-    # probe is meant to exercise.
-    probe = (
-        textwrap.dedent(f"""
-            import sys
-            sys.modules["mutagen"] = None  # force a genuine ImportError, not a flag flip
+    probe = textwrap.dedent(f"""
+        import os
+        import sys
+        sys.modules["mutagen"] = None  # force a genuine ImportError, not a flag flip
+        os.environ["ODJ_ARTWORK_ONLINE"] = "0"
 
-            from pathlib import Path
+        from pathlib import Path
 
-            from fastapi import FastAPI
-            from fastapi.testclient import TestClient
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
 
-            from apps.adapters.rekordbox import config as rb_config
-            from apps.shared._mutagen import HAS_MUTAGEN
+        from apps.adapters.rekordbox import config as rb_config
+        from apps.shared._mutagen import HAS_MUTAGEN
 
-            assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
+        assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
 
-            from apps.webui.server.routes.rb_assets import router
-            from apps.webui.server.sqlite_backend import make_backend
+        from apps.webui.server.routes.rb_assets import router
+        from apps.webui.server.sqlite_backend import make_backend
 
-            rb_config.STATE_DB = Path({str(state_path)!r})
-            rb_config.MASTER_PLAIN_DB = Path({str(absent_master_db)!r})
+        rb_config.STATE_DB = Path({str(state_path)!r})
+        rb_config.MASTER_PLAIN_DB = Path({str(tmp_path / "absent.db")!r})
 
-            app = FastAPI()
-            app.state.backend = make_backend(Path({str(state_path)!r}))
-            app.include_router(router, prefix="/api/v1")
-            with TestClient(app) as test_client:
-                resp = test_client.get("/api/v1/tracks/{STABLE_ID}/artwork")
-                stale = test_client.get("/api/v1/tracks/{NO_FILE_SID}/artwork")
-                meta = test_client.get("/api/v1/tracks/{STABLE_ID}/rb-meta")
-                stale_meta = test_client.get("/api/v1/tracks/{NO_FILE_SID}/rb-meta")
+        app = FastAPI()
+        app.state.backend = make_backend(rb_config.STATE_DB)
+        app.include_router(router, prefix="/api/v1")
+        with TestClient(app) as client:
+            art = client.get("/api/v1/tracks/{STABLE_ID}/artwork")
+            bare = client.get("/api/v1/tracks/{NO_ART_SID}/artwork")
+            stale = client.get("/api/v1/tracks/{NO_FILE_SID}/artwork")
+            metas = [client.get(f"/api/v1/tracks/{{sid}}/rb-meta").json()["artwork_available"]
+                     for sid in ({STABLE_ID!r}, {NO_ART_SID!r}, {NO_FILE_SID!r})]
 
-            # A file that exists with no reader: capability UNKNOWN, not a guess.
-            assert resp.status_code == 503, resp.text
-            assert resp.json()["detail"]["code"] == "ARTWORK_READER_UNAVAILABLE"
-
-            # A file that does not exist: residency is decided FIRST, so absence
-            # wins over the missing reader. This is the ordering assertion, and it
-            # is only worth anything because the reader is genuinely gone here
-            # rather than flagged off.
-            assert stale.status_code == 404, stale.text
-            assert stale.json()["detail"]["code"] == "ARTWORK_NOT_FOUND"
-
-            # rb-meta must agree with /artwork about the epistemic state (#795):
-            # a resolvable file with no reader is UNKNOWN, never a guessed False.
-            assert meta.status_code == 200, meta.text
-            assert meta.json()["artwork_available"] is None
-            # Overshoot control: a genuinely missing file stays a real False,
-            # not None -- residency still wins even with the reader gone.
-            assert stale_meta.status_code == 200, stale_meta.text
-            assert stale_meta.json()["artwork_available"] is False
-            print("PROBE_OK")
-        """)
-    )
-
+        assert art.status_code == 200, art.text
+        assert art.headers["content-type"] == "image/jpeg"
+        assert art.content == Path({str(image_path)!r}).read_bytes()
+        assert bare.status_code == 404, bare.text
+        assert bare.json()["detail"]["code"] == "ARTWORK_NOT_FOUND"
+        assert stale.status_code == 404, stale.text
+        assert stale.json()["detail"]["code"] == "ARTWORK_NOT_FOUND"
+        assert metas == [True, False, False], metas
+        print("PROBE_OK")
+    """)
     result = subprocess.run(
         [sys.executable, "-"],
         input=probe,

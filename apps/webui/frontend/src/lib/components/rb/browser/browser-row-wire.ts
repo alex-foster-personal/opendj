@@ -105,6 +105,22 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 	};
 }
 
+/**
+ * The listing's own streaming verdict (issue #3934). `TrackListItemOut`
+ * carries no `is_streaming` field, so All Tracks rows used to start at null
+ * and learn they were streaming only once rb-meta hydrated, i.e. after the
+ * operator had already tried to load or drag them; until then a streaming row
+ * read as an ordinary broken link. The server already classifies a streaming
+ * URI as `file_availability: 'streaming'`, so that status settles the flag up
+ * front. Any other status stays null ("not known to be streaming"), which
+ * keeps the lazy rb-meta fallback for the rest unchanged.
+ */
+export function listRowIsStreaming(
+	availability: FileAvailabilityStatus | null | undefined
+): true | null {
+	return availability === 'streaming' ? true : null;
+}
+
 export function rowFromListWire(track: TrackListItemWire, order: number): BrowserRow {
 	const availability = wireAvailability(track);
 	if (typeof track.stable_id !== 'string' || availability === null) {
@@ -131,7 +147,7 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		energy_source: track.energy_source,
 		energy_reason: track.energy_reason,
 		...availability,
-		is_streaming: null,
+		is_streaming: listRowIsStreaming(availability.file_availability),
 		is_remote: track.is_remote === true,
 		has_remote_copy: track.has_remote_copy === true,
 		cloud_transfer: track.cloud_transfer ?? null,

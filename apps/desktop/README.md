@@ -135,17 +135,21 @@ available.
   access log shows `GET /api/v1/health` followed by `GET /`, which proves
   WKWebView permits navigating from the `tauri://localhost` app origin to a
   loopback HTTP origin.
-- engine unreachable -> render a setup screen naming the exact address
-  tried, the failure, the attempt count and the command that fixes it. See
-  `.planning/evidence/dmg-setup-screen-2026-08-19.png`.
+- engine unreachable -> render a friendly setup screen with retry guidance
+  and the attempt count. Exact address, failure text, start command and the
+  `no-cors` probe note live in a closed **Details for agents** disclosure,
+  not in the default copy. See
+  `.planning/evidence/dmg-setup-screen-2026-08-19.png` for the older
+  always-exposed layout this replaced.
 
 There is no third state: no blank window, no endless spinner, no fake data.
 
-The probe is a `no-cors` fetch, and the screen says so under "What exactly
-was tested". The engine's CORS allowlist covers the dev-server origins
-only, so a normal cross-origin read from `tauri://localhost` would be
-blocked before it could tell "refused" from "absent". `no-cors` yields one
-honest bit: the connection was accepted, or it was not.
+The probe is a `no-cors` fetch. The engine's CORS allowlist covers the
+dev-server origins only, so a normal cross-origin read from
+`tauri://localhost` would be blocked before it could tell "refused" from
+"absent". `no-cors` yields one honest bit: the connection was accepted, or
+it was not. That technical note is in the closed agent disclosure, not the
+default operator copy.
 
 **Runtime supervision (INSTALL-23, issue #2916):** after boot the shell polls
 its engine child every 5 s. A dead or zombie engine is reaped, shell-side

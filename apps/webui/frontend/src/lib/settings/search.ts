@@ -8,6 +8,30 @@ export interface FilterOptions {
 	group: SettingGroupId | null;
 	/** Extra ids from AI search (appended, no dupes). */
 	aiIds?: readonly string[];
+	/** The "Show developer pages" pref. `false` drops `devOnly` rows; omitted
+	 * keeps every row (the pure-filter default). Callers rendering the UI pass
+	 * it explicitly, together with `hideTodo: effectiveHideTodo(...)`. */
+	showDev?: boolean;
+}
+
+/** Unbuilt (todo) rows are hidden by default for V1 (JIK, Thu 1 Oct 2026):
+ * they show only while "Show developer pages" is on AND the developer has not
+ * also asked to hide them with the "Hide todo / grayed settings" row. */
+export function effectiveHideTodo(prefs: {
+	show_dev_ui: boolean;
+	hide_todo_settings: boolean;
+}): boolean {
+	return !prefs.show_dev_ui || prefs.hide_todo_settings;
+}
+
+/** Whether a row may appear at all under the given filter options. */
+export function settingRowVisible(
+	def: SettingDef,
+	opts: Pick<FilterOptions, 'hideTodo' | 'showDev'>
+): boolean {
+	if (opts.hideTodo && !def.implemented) return false;
+	if (opts.showDev === false && def.devOnly === true) return false;
+	return true;
 }
 
 export interface FilterResult {
@@ -49,17 +73,17 @@ function _matches(def: SettingDef, expanded: Set<string>): boolean {
 	return false;
 }
 
-function _basePool(hideTodo: boolean, group: SettingGroupId | null): SettingDef[] {
+function _basePool(opts: FilterOptions): SettingDef[] {
 	return SETTINGS_CATALOG.filter((s) => {
-		if (hideTodo && !s.implemented) return false;
-		if (group !== null && s.group !== group) return false;
+		if (!settingRowVisible(s, opts)) return false;
+		if (opts.group !== null && s.group !== opts.group) return false;
 		return true;
 	});
 }
 
 /** Pure keyword/synonym filter. Empty query returns the full (filtered) pool. */
 export function filterSettings(query: string, opts: FilterOptions): FilterResult {
-	const pool = _basePool(opts.hideTodo, opts.group);
+	const pool = _basePool(opts);
 	const tokens = _tokens(query);
 	const expanded = _expandedTokens(tokens);
 	const keyword =
@@ -71,7 +95,7 @@ export function filterSettings(query: string, opts: FilterOptions): FilterResult
 		if (keywordIds.has(id)) continue;
 		const def = byId.get(id);
 		if (!def) continue;
-		if (opts.hideTodo && !def.implemented) continue;
+		if (!settingRowVisible(def, opts)) continue;
 		if (opts.group !== null && def.group !== opts.group) continue;
 		aiExtra.push(def);
 	}

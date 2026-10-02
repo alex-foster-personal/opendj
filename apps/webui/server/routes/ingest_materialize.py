@@ -128,7 +128,11 @@ def materialize_batch(batch: str, request: Request) -> MaterializeOut:
         }
         conn.execute("BEGIN IMMEDIATE")
         with StateWriter(conn, actor="webui") as writer:
-            folder_ingest.ingest_folder(writer, [dest_dir], dry_run=False)
+            # The user picked these files to add, so one they removed earlier
+            # comes back rather than failing the drop (LIBM-141).
+            folder_ingest.ingest_folder(
+                writer, [dest_dir], dry_run=False, restore_removed=True
+            )
 
         # Commit only after EVERY staged path resolved (see _resolve_staged).
         tracks = _resolve_staged(conn, dest_dir, staged, before_ids)

@@ -17,6 +17,10 @@
  * Regression lines:
  * - if playlistsLoading = false moves after the _restoreBootPane() await then
  *   playlist navigation waits for the first track page again
+ * - if the All Tracks boot path awaits _restoreBootPane() before the tree is
+ *   released then the tree waits for the WHOLE library walk (#3985: 25 s at
+ *   10k tracks). The first test only looks after the metadata assignment, so it
+ *   could not see that await, which sat before it.
  * - if BrowserPanel stops passing playlistsLoading to SpotifySourcePanel then
  *   the sidebar can never leave its loading state
  * - if SpotifySourcePanel stops gating its rows behind playlistsLoading then
@@ -50,6 +54,39 @@ test('playlist sidebar becomes usable when metadata arrives, before the all-trac
 	assert.ok(ready > metadata, 'expected _init() to clear the loading flag after the playlists land');
 	assert.ok(ready < tracks, 'playlist navigation must not wait for every track to load');
 	compile(panel, { filename: panelUrl.pathname, generate: 'client' });
+});
+
+test('the All Tracks boot path does not await the pane before releasing the tree (#3985)', () => {
+	const ready = init.indexOf('playlistsLoading = false;');
+	assert.ok(ready >= 0, 'expected _init() to clear the loading flag');
+	const beforeReady = init.slice(0, ready);
+	assert.ok(
+		beforeReady.includes('bootPaneDone = _restoreBootPane();'),
+		'expected the All Tracks boot path to start the pane before the tree is released'
+	);
+	assert.equal(
+		/await\s+_restoreBootPane\(/.test(beforeReady),
+		false,
+		'the tree must not wait for _restoreBootPane(): fillAllTracksPane walks every page'
+	);
+	const settle = init.indexOf('if (bootPaneDone !== null) await bootPaneDone;', ready);
+	const caught = init.indexOf('} catch (exc) {', ready);
+	assert.ok(
+		settle > ready && settle < caught,
+		'the started pane must still be awaited inside the try so a failed first page reaches the catch'
+	);
+});
+
+test('the tree-ready metric is open-to-tree, not now() minus an epoch (#3985)', () => {
+	assert.ok(
+		init.includes('recordPlaylistTreeReadyMs(Math.round(performance.now()));'),
+		'tree-ready must record performance.now(), which counts from navigation start'
+	);
+	assert.equal(
+		init.includes('.startedAt'),
+		false,
+		'bootTracksPrefetch().startedAt is performance.timeOrigin (an epoch); subtracting it clamps to 0'
+	);
 });
 
 test('the readiness flag reaches the sidebar and gates whether it renders rows', () => {
