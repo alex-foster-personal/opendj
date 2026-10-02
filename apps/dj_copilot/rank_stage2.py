@@ -58,7 +58,13 @@ def rerank_with_pairings(
         "WHERE to_stable_id=? AND direction IN ('out_of','either')",
         (current_stable_id, current_stable_id),
     ).fetchall()
-    pair_index: dict[str, str] = {r[0]: r[1] for r in rows}
+    # One logical edge can be stored both ways round (e.g. a manual
+    # (cur, b) and a learned (b, cur)): keep the source with the larger bump.
+    pair_index: dict[str, str] = {}
+    for partner, source in rows:
+        kept = pair_index.get(partner)
+        if kept is None or _BUMPS.get(source, 0.0) > _BUMPS.get(kept, 0.0):
+            pair_index[partner] = source
     if not pair_index:
         return stage1
 

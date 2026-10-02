@@ -160,3 +160,30 @@ def test_reverse_into_edge_is_not_a_pairing_for_its_target(tmp_path) -> None:
         assert [s.stable_id for s in out] == ["a", "b"]
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize("order", ["manual_first", "learned_first"])
+def test_duplicate_edge_keeps_the_strongest_source(tmp_path, order: str) -> None:
+    """If one edge is stored both ways with two sources then the larger bump wins, else stop."""
+    conn = sqlite3.connect(str(tmp_path / "s.db"), isolation_level=None)
+    try:
+        _seed_pairings_table(conn)
+        rows = [("cur", "b", "manual"), ("b", "cur", "learned")]
+        if order == "learned_first":
+            rows = [("b", "cur", "learned"), ("cur", "b", "manual")]
+        for from_id, to_id, source in rows:
+            conn.execute(
+                "INSERT INTO pairings"
+                "(from_stable_id, to_stable_id, direction, source, "
+                " created_at, modified_at) "
+                "VALUES (?, ?, 'either', ?, '2026-01-01', '2026-01-01')",
+                (from_id, to_id, source),
+            )
+        stage1 = [_sc("a", 0.60), _sc("b", 0.50)]
+        out = rerank_with_pairings(
+            conn=conn, current_stable_id="cur", stage1=stage1
+        )
+        assert [s.stable_id for s in out] == ["b", "a"]
+        assert out[0].rationale.get("pair_manual") == 1.0
+    finally:
+        conn.close()
