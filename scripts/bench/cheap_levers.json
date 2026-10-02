@@ -2,11 +2,11 @@
   {
     "id": "rb7-stems",
     "group": "baseline",
-    "isolates": "rekordbox 7 STEMS engine, its own hdemucs.onnx",
+    "isolates": "user-supplied ONNX 4-stem model",
     "s_per_stem_minute": 14.39,
     "si_sdr": 8.39,
     "meta": {
-      "engine": "rekordbox7-stems-hdemucs-onnx",
+      "engine": "user-supplied-onnx",
       "segment_s": 8.0,
       "overlap": 0.25,
       "audio_s": 60.0,

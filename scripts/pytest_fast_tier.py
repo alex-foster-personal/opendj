@@ -28,6 +28,9 @@ Requirements (mini-PRD)
 - [if] ``--ledger-coverage-min 0.95`` and the ledger names fewer than 95% of the collected
   tests [then] the run is refused as a usage error naming both counts, never exit 0,
   [else stop] ✔︎ ✅ 🎯
+- [if] ``--ledger-coverage-warn 0.95`` and the ledger names fewer than 95% of the collected
+  tests but no fewer than ``--ledger-coverage-min`` [then] the run goes ahead and prints one
+  warning line (a GitHub ``::warning`` annotation) naming both counts, [else stop] ✔︎ ✅ 🎯
 - [if] the ledger file is missing while an option is given [then] usage error naming the
   path, [else stop] ✔︎ ✅ 🎯
 - [if] no option is given [then] nothing is deselected and the exit code is pytest's own,
@@ -59,6 +62,7 @@ misses were the same two slow requirement-marker tests.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -108,11 +112,22 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="refuse the run when the ledger names fewer than this fraction of the collected "
         "tests (0.95 means 95%%); guards against shards balancing by count",
     )
+    group.addoption(
+        "--ledger-coverage-warn",
+        type=float,
+        default=None,
+        help="warn, without refusing, when the ledger names fewer than this fraction of the "
+        "collected tests; pairs with a lower --ledger-coverage-min",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
     no_tier = config.getoption("--fast-tier") is None
-    inert = no_tier and config.getoption("--ledger-coverage-min") is None
+    inert = (
+        no_tier
+        and config.getoption("--ledger-coverage-min") is None
+        and config.getoption("--ledger-coverage-warn") is None
+    )
     if inert:
         return
     config.pluginmanager.register(FastTier.from_config(config), PLUGIN_NAME)
@@ -158,11 +173,13 @@ class FastTier:
         ledger: dict[str, float],
         coverage_min: float | None,
         always: frozenset[str] = frozenset(),
+        coverage_warn: float | None = None,
     ) -> None:
         self.tier = tier
         self.max_seconds = max_seconds
         self.ledger = ledger
         self.coverage_min = coverage_min
+        self.coverage_warn = coverage_warn
         self.always = always
         self.summary: str = ""
 
@@ -181,6 +198,7 @@ class FastTier:
             ledger=_load_ledger(ledger_path),
             coverage_min=config.getoption("--ledger-coverage-min"),
             always=_load_always(always_path, explicit=always_option is not None),
+            coverage_warn=config.getoption("--ledger-coverage-warn"),
         )
 
     def _forced(self, nodeid: str) -> bool:
@@ -212,6 +230,16 @@ class FastTier:
                 f"({coverage:.1%}), under the {self.coverage_min:.0%} floor. pytest-split "
                 "balances unseen tests by a flat average, so shards are balanced by count, "
                 "not time. Regenerate the ledger from a full run before trusting a shard."
+            )
+        if self.coverage_warn is not None and coverage < self.coverage_warn:
+            # Stderr, not the terminal reporter: a GitHub annotation must start its own line,
+            # and this hook runs before the reporter prints the collection summary.
+            print(
+                f"::warning title=fast-tier ledger is going stale::{LINE_PREFIX} ledger names "
+                f"{known} of {collected} collected tests ({coverage:.1%}), under the "
+                f"{self.coverage_warn:.0%} warning line; the run goes ahead. Refresh "
+                "`.test_durations` from a full run on main.",
+                file=sys.stderr,
             )
         if self.tier in ("fast", "slow"):
             stale = sorted(

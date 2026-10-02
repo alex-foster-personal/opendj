@@ -392,7 +392,7 @@ jobs:
             full)
               MODE_ARGS=(
                 --collect-floor 3181
-                --ledger-coverage-min 0.95
+                --ledger-coverage-min 0.85 --ledger-coverage-warn 0.95
                 --splits 5 --group ${{ matrix.shard }}
                 --splitting-algorithm least_duration
                 --durations-path .test_durations

@@ -30,7 +30,14 @@ export function applyStemControl(
 	}
 	const op =
 		field === 'muted' ? 'setStemMute' : field === 'solo' ? 'setStemSolo' : 'setStemGain';
-	const { st, rt } = deps.requireLoaded(deck, op);
+	const loaded = _loadedStemDeck(deps.requireLoaded, deck, op);
+	if (loaded === null) {
+		// Empty deck: same as unavailable stems. CLI / agent / IPC can fire
+		// stem_mute while deck 1 has no track; throwing lights the persistent
+		// deck-error banner and Sentry (OPEN-DJ-BE-6Z).
+		return;
+	}
+	const { st, rt } = loaded;
 	if (st.stems.status === 'ready' && !st.stems.available_controls.includes(stem)) {
 		throw new Error(
 			`deck ${deck} stem layout ${String(st.stems.layout)} has no ${stem} control; ` +
@@ -80,4 +87,21 @@ export function applyStemEqMode(
 		throw new TypeError('setStemEqMode: enabled must be boolean');
 	}
 	getChannel(deck).stem_eq_mode = enabled;
+}
+
+function _loadedStemDeck(
+	requireLoaded: StemEngineControlDeps['requireLoaded'],
+	deck: DeckId,
+	op: string
+): { st: DeckState; rt: StemEngineRuntime } | null {
+	try {
+		return requireLoaded(deck, op);
+	} catch (error) {
+		if (_isUnloadedDeckError(error, op, deck)) return null;
+		throw error;
+	}
+}
+
+function _isUnloadedDeckError(error: unknown, op: string, deck: DeckId): boolean {
+	return error instanceof Error && error.message === `${op}: no track loaded on deck ${deck}`;
 }
