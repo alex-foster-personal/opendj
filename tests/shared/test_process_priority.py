@@ -67,11 +67,12 @@ def test_windows_self_lowering_sets_a_priority_class_not_os_nice(
             calls.append(("SetPriorityClass", priority))
             return 1
 
-    class WinDll:
-        kernel32 = Kernel32()
-
     monkeypatch.setattr(process_priority.sys, "platform", "win32")
-    monkeypatch.setattr(ctypes, "windll", WinDll(), raising=False)
+    def win_dll(name: str, *, use_last_error: bool = False) -> Kernel32:
+        assert name == "kernel32" and use_last_error
+        return Kernel32()
+
+    monkeypatch.setattr(ctypes, "WinDLL", win_dll, raising=False)
     monkeypatch.delattr(process_priority.os, "nice", raising=False)
     process_priority.lower_own_priority(19)
     assert calls == [("SetPriorityClass", 0x4000)]

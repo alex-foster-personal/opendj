@@ -27,7 +27,7 @@ def lower_own_priority(niceness: int) -> None:
     if sys.platform == "win32":
         import ctypes
 
-        kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009
+        kernel32 = getattr(ctypes, "WinDLL")("kernel32", use_last_error=True)  # noqa: B009
         if not kernel32.SetPriorityClass(
             kernel32.GetCurrentProcess(), _BELOW_NORMAL_PRIORITY_CLASS
         ):
