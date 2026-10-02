@@ -5,7 +5,7 @@ tool the toolset pins, never whatever a host happens to carry: pnpm runs at the
 packageManager pin through corepack with the network off, and a host uv is
 compared only inside the version range the table was verified against. A host
 that cannot provide the pinned tool reports UNKNOWN (a skip naming why): that is
-a toolset question for scripts/runner_toolset_verify.py, not a table mismatch,
+a toolset question for the host verifier (fleet-af runner_toolset/verify.py), not a table mismatch,
 and it must never turn a PR red on one runner and green on the next.
 
 Regression lines:

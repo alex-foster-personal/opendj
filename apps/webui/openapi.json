@@ -5434,12 +5434,34 @@
         "type": "object"
       },
       "CoverageOut": {
+        "description": "Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.\n\n``on_disk`` is the denominator (``availability.present``). Per step,\n``done + terminal + failed + pending == on_disk``. ``missing`` and\n``corrupt`` keep their artifact meaning for the refresh job's targeting:\n``corrupt`` (structurally invalid entries) is a subset of ``missing``.",
         "properties": {
+          "availability": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Availability",
+            "type": "object"
+          },
           "corrupt": {
             "additionalProperties": {
               "type": "integer"
             },
             "title": "Corrupt",
+            "type": "object"
+          },
+          "done": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Done",
+            "type": "object"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Failed",
             "type": "object"
           },
           "generated_at": {
@@ -5457,12 +5479,41 @@
             "title": "On Disk",
             "type": "integer"
           },
+          "pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pending",
+            "type": "object"
+          },
+          "stems_source_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stems Source Refusal"
+          },
+          "terminal": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Terminal",
+            "type": "object"
+          },
           "total_tracks": {
             "title": "Total Tracks",
             "type": "integer"
           },
           "unreachable": {
             "title": "Unreachable",
+            "type": "integer"
+          },
+          "waiting_on_stems": {
+            "title": "Waiting On Stems",
             "type": "integer"
           }
         },
@@ -5472,6 +5523,13 @@
           "unreachable",
           "missing",
           "corrupt",
+          "availability",
+          "done",
+          "terminal",
+          "failed",
+          "pending",
+          "waiting_on_stems",
+          "stems_source_refusal",
           "generated_at"
         ],
         "title": "CoverageOut",
@@ -6396,6 +6454,66 @@
         "title": "DeletedPlaylistOut",
         "type": "object"
       },
+      "DeletedTrackOut": {
+        "description": "One tombstoned track that has not been restored (LIBM-140).\n\n``reason`` is ``user`` for Remove from library, which no re-import undoes,\nor ``missing`` for a watched-folder file that vanished, which comes back\nby itself when the file does.",
+        "properties": {
+          "artists": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artists",
+            "type": "array"
+          },
+          "deleted_at": {
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path"
+          },
+          "reason": {
+            "enum": [
+              "user",
+              "missing"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "stable_id",
+          "title",
+          "artists",
+          "file_path",
+          "deleted_at",
+          "reason"
+        ],
+        "title": "DeletedTrackOut",
+        "type": "object"
+      },
       "DigestDiffSampleOut": {
         "properties": {
           "newer_side": {
@@ -6462,6 +6580,165 @@
           "seq"
         ],
         "title": "DigestResponse",
+        "type": "object"
+      },
+      "DrainConfigIn": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DrainConfigIn",
+        "type": "object"
+      },
+      "DrainRetryOut": {
+        "properties": {
+          "rearmed": {
+            "title": "Rearmed",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DrainStatusOut"
+          }
+        },
+        "required": [
+          "rearmed",
+          "status"
+        ],
+        "title": "DrainRetryOut",
+        "type": "object"
+      },
+      "DrainStatusOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Failed",
+            "type": "object"
+          },
+          "jobs_failed": {
+            "title": "Jobs Failed",
+            "type": "integer"
+          },
+          "jobs_run": {
+            "title": "Jobs Run",
+            "type": "integer"
+          },
+          "last_job": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Job"
+          },
+          "next_retry_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Retry At"
+          },
+          "pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pending",
+            "type": "object"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "stems_needing_farm": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stems Needing Farm",
+            "type": "array"
+          },
+          "stems_needing_farm_count": {
+            "title": "Stems Needing Farm Count",
+            "type": "integer"
+          },
+          "stop_requested": {
+            "title": "Stop Requested",
+            "type": "boolean"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          },
+          "unavailable_steps": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Unavailable Steps",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "waiting_on_stems": {
+            "title": "Waiting On Stems",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "enabled",
+          "stop_requested",
+          "reason",
+          "pending",
+          "failed",
+          "waiting_on_stems",
+          "stems_needing_farm",
+          "stems_needing_farm_count",
+          "unavailable_steps",
+          "next_retry_at",
+          "last_job",
+          "jobs_run",
+          "jobs_failed",
+          "ticks",
+          "updated_at"
+        ],
+        "title": "DrainStatusOut",
         "type": "object"
       },
       "EngineHealthOut": {
@@ -15389,6 +15666,11 @@
             "title": "Machines",
             "type": "array"
           },
+          "reseed": {
+            "default": false,
+            "title": "Reseed",
+            "type": "boolean"
+          },
           "rows": {
             "items": {
               "$ref": "#/components/schemas/RowModel"
@@ -15447,6 +15729,13 @@
           "rejected": {
             "title": "Rejected",
             "type": "integer"
+          },
+          "rejected_rows": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedRowModel"
+            },
+            "title": "Rejected Rows",
+            "type": "array"
           },
           "seq": {
             "title": "Seq",
@@ -16182,6 +16471,20 @@
       },
       "ReconcileSummary": {
         "properties": {
+          "availability": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability"
+          },
           "orphan_broken": {
             "title": "Orphan Broken",
             "type": "integer"
@@ -16498,6 +16801,36 @@
           "ui_title"
         ],
         "title": "RefusalOut",
+        "type": "object"
+      },
+      "RejectedRowModel": {
+        "description": "One offered row the hub refused, and why (CLOUDSYNC-31).",
+        "properties": {
+          "pk": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Pk",
+            "type": "array"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "table": {
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "pk",
+          "reason"
+        ],
+        "title": "RejectedRowModel",
         "type": "object"
       },
       "RekordboxDetectionOut": {
@@ -18207,6 +18540,93 @@
           "row_count"
         ],
         "title": "SqlQueryOut",
+        "type": "object"
+      },
+      "StaleCandidateModel": {
+        "properties": {
+          "origin_device_id": {
+            "title": "Origin Device Id",
+            "type": "string"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "origin_device_id"
+        ],
+        "title": "StaleCandidateModel",
+        "type": "object"
+      },
+      "StaleCheckRequest": {
+        "description": "``POST /stale-check``: which of these live tracks did the fleet drop?",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/StaleCandidateModel"
+            },
+            "maxItems": 1000,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "machine_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "reseed": {
+            "default": false,
+            "title": "Reseed",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "wire_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "sync wire version; absent on pre-split builds",
+            "title": "Wire Version"
+          }
+        },
+        "required": [
+          "machine_id",
+          "schema_version",
+          "candidates"
+        ],
+        "title": "StaleCheckRequest",
+        "type": "object"
+      },
+      "StaleCheckResponse": {
+        "properties": {
+          "orphans": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Orphans",
+            "type": "array"
+          },
+          "unattributable": {
+            "default": 0,
+            "title": "Unattributable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "orphans"
+        ],
+        "title": "StaleCheckResponse",
         "type": "object"
       },
       "StatusResponse": {
@@ -19921,6 +20341,17 @@
             "title": "Name",
             "type": "string"
           },
+          "not_runnable_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Runnable Because"
+          },
           "overlap": {
             "title": "Overlap",
             "type": "number"
@@ -19932,6 +20363,10 @@
           "purpose": {
             "title": "Purpose",
             "type": "string"
+          },
+          "runnable_here": {
+            "title": "Runnable Here",
+            "type": "boolean"
           },
           "shifts": {
             "title": "Shifts",
@@ -19961,7 +20396,8 @@
           "evidence_strength",
           "availability",
           "unavailable_because",
-          "is_default"
+          "is_default",
+          "runnable_here"
         ],
         "title": "TierOut",
         "type": "object"
@@ -27172,6 +27608,131 @@
         "summary": "Suggest Next Route",
         "tags": [
           "copilot"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/config": {
+      "put": {
+        "operationId": "drain_config_api_v1_coverage_drain_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drain Config",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/retry": {
+      "post": {
+        "operationId": "drain_retry_api_v1_coverage_drain_retry_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainRetryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Retry",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/start": {
+      "post": {
+        "operationId": "drain_start_api_v1_coverage_drain_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Start",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/status": {
+      "get": {
+        "operationId": "drain_status_api_v1_coverage_drain_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Status",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/stop": {
+      "post": {
+        "operationId": "drain_stop_api_v1_coverage_drain_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Stop",
+        "tags": [
+          "coverage-drain"
         ]
       }
     },
@@ -36128,14 +36689,7 @@
             "description": "HOSTED hubs only. push is refused with entitlement_not_in_plan when the calling machine's owner is read_only or archived, or has no plan on record (data is always retained); or with SYNC_HOSTED_UNOWNED when the machine has no owner this hub honors."
           },
           "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SyncErrorResponse"
-                }
-              }
-            },
-            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+            "description": "SYNC_STALE_TRACKS: the batch carries live tracks another machine authored that this hub no longer holds (a stale or copied library). Nothing applied. Also SYNC_WIRE_VERSION / SYNC_SCHEMA_VERSION and FOREIGN KEY refusals."
           },
           "422": {
             "description": "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows)"
@@ -36268,6 +36822,64 @@
           }
         },
         "summary": "Rows",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/api/v1/sync/stale-check": {
+      "post": {
+        "description": "Which offered live tracks did the fleet drop? Read-only.\n\nThe spoke asks before it pushes, so it can refuse its own push and name\nevery orphan at once instead of meeting the ``/push`` backstop one batch\nat a time. Same rule, same connection state: :mod:`apps.sync_hub.stale_copy`.",
+        "operationId": "stale_check_api_v1_sync_stale_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaleCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaleCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "stale-check refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {\"detail\": {\"code\", \"message\"}}."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncErrorResponse"
+                }
+              }
+            },
+            "description": "The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "stale-check refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {\"detail\": {\"code\", \"message\"}}."
+          }
+        },
+        "summary": "Stale Check",
         "tags": [
           "sync"
         ]
@@ -36762,6 +37374,32 @@
         ]
       }
     },
+    "/api/v1/tracks/deleted": {
+      "get": {
+        "description": "Tombstoned tracks and why, newest removal first.\n\nA track the user removed stays removed across every re-import and sync until it\nis restored with ``POST /tracks/{stable_id}:undelete``; this list is how a\nperson or an agent finds the id to restore.",
+        "operationId": "list_deleted_tracks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedTrackOut"
+                  },
+                  "title": "Response List Deleted Tracks",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Deleted Tracks",
+        "tags": [
+          "tracks"
+        ]
+      }
+    },
     "/api/v1/tracks/lyrics-cached-ids": {
       "get": {
         "description": "List cached lyric timelines so the UI can skip explicit cache-miss reads.",
@@ -36997,7 +37635,7 @@
     },
     "/api/v1/tracks/{stable_id}/artwork": {
       "get": {
-        "description": "Serve artwork for the track: rekordbox's pre-rendered jpg variant when\nmapped, else the embedded tag picture read straight from the local file.\n\nThe embedded-tag path has no pre-rendered s/m/orig variants (rekordbox\nnever touched this file), so ``size`` is not honoured there -- the real\nembedded image is served at its original dimensions and mime type for\nall three, rather than fabricating a resize.",
+        "description": "Serve the track's artwork from the first source that has one.\n\nrekordbox's pre-rendered jpg variant, else the embedded picture, a cover\nimage beside the file, or a cached online cover (looked up only with\n``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.\n``size`` applies to the rekordbox variants only; others are served as found.",
         "operationId": "get_track_artwork_api_v1_tracks__stable_id__artwork_get",
         "parameters": [
           {
@@ -37024,6 +37662,18 @@
               ],
               "title": "Size",
               "type": "string"
+            }
+          },
+          {
+            "description": "also try MusicBrainz + Cover Art Archive (decks only)",
+            "in": "query",
+            "name": "online",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "also try MusicBrainz + Cover Art Archive (decks only)",
+              "title": "Online",
+              "type": "boolean"
             }
           }
         ],

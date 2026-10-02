@@ -1,3 +1,0 @@
-2026-09-03T22:10:00Z ACCOUNT-FLIP lane=workers from=acct-hot to=acct-green pct=91
-2026-09-04T09:00:00Z ACCOUNT-FLIP lane=backend from=acct-hot to=acct-green pct=90
-2026-09-04T17:00:00Z ACCOUNT-FLIP lane=ci-infra from=acct-hot to=acct-warm pct=93

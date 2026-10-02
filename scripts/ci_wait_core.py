@@ -151,7 +151,7 @@ def _previous_shas(commits: list[dict], head_sha: str) -> list[str]:
 
     If `head_sha` is not found in `commits` at all, the cached PR object's
     commit history has not caught up to the live branch ref yet (documented
-    lag: docs/ops/nucbox-fleet.md:200-202; found in review, PR #1685 thread
+    lag: fleet-af docs/records/nucbox-fleet.md:231-232; found in review, PR #1685 thread
     r3976329043): `_head_sha` resolves the CURRENT head from a live `git
     ls-remote`, but `_pr_commits` reads the PR object's cached `commits`
     array, which can be a beat behind it. Every commit already IN that

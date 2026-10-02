@@ -36,7 +36,9 @@ from apps.shared.state.writer import StateWriter  # noqa: E402
 
 FIXTURE_REVISION: int = 1
 REVISION_MARKER: str = "playlist-switch-fixture-revision.txt"
-TRACK_COUNT: int = 1000
+# PLAYLIST_SWITCH_BENCH_TRACKS scales the library for the pressure run (issue
+# #3985: the playlist tree must stay fast on a library the size of the maintainer's).
+TRACK_COUNT: int = int(os.environ.get("PLAYLIST_SWITCH_BENCH_TRACKS", "1000"))
 PLAYLIST_ID: str = "pl-perf-1k"
 PLAYLIST_NAME: str = "Perf 1k"
 AUDIO_SUBDIR: str = "fixture-audio"
@@ -45,16 +47,23 @@ SAMPLE_RATE_HZ: int = 44_100
 CHANNELS: int = 2
 
 
+def _revision_tag() -> str:
+    """Revision plus size, so a run at another track count rebuilds the library."""
+    if TRACK_COUNT == 1000:
+        return str(FIXTURE_REVISION)
+    return f"{FIXTURE_REVISION}:{TRACK_COUNT}"
+
+
 def _discard_stale_revision(data_dir: Path) -> None:
     marker = data_dir / REVISION_MARKER
     current = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
-    if current == str(FIXTURE_REVISION):
+    if current == _revision_tag():
         return
     for stale in (data_dir / AUDIO_SUBDIR, data_dir / "state"):
         if stale.exists():
             shutil.rmtree(stale)
     data_dir.mkdir(parents=True, exist_ok=True)
-    marker.write_text(f"{FIXTURE_REVISION}\n", encoding="utf-8")
+    marker.write_text(f"{_revision_tag()}\n", encoding="utf-8")
 
 
 def _state_cli(data_dir: Path, *args: str) -> None:

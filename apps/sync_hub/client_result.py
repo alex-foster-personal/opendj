@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from apps.sync_hub.rejected_rows import RejectedRow
     from apps.sync_hub.sync_timing import SyncTimings
 
 
@@ -87,6 +88,15 @@ class SyncResult:
     #: edits did not leave it and are offered again next sync. The digest
     #: compare was skipped: it cannot agree while the hub refuses writes.
     push_refused: bool = False
+    #: Offered rows the hub rejected, and why (CLOUDSYNC-31): ``rejected``
+    #: counts them, this names them. Capped per push answer at
+    #: ``protocol.MAX_REJECTED_ROWS_NAMED``; empty from a hub too old to name
+    #: them.
+    rejected_rows: tuple[RejectedRow, ...] = ()
+    #: Rows the identity repair offered once so the hub could confirm a
+    #: content-identity collapse (CLOUDSYNC-32). Counted apart from
+    #: ``pushed``/``rejected``: the hub refusing them is the confirmation.
+    identity_repairs: int = 0
     #: Phase timings from :mod:`apps.sync_hub.sync_timing`, when instrumented.
     timings: SyncTimings | None = None
 

@@ -57,8 +57,11 @@ Requirements (mini-PRD):
     [if] MDT_VOCAL_WORKER_SCRIPT names a missing or unreadable file [then ⛔️]
     reinstall-from-a-complete-dmg guidance, no worker spawned
     [if] input is not .wav and no ffmpeg is reachable (MDT_FFMPEG or PATH,
-    the worker's own lookup) [then ⛔️] a decoder message naming the file
-    and the remedies, no worker spawned
+    the worker's own lookup) and no odj-audio either (ODJ_AUDIO_BIN, else a
+    local cargo build) [then ⛔️] a decoder message naming the file and the
+    remedies, no worker spawned
+    [if] input is not .wav, no ffmpeg, odj-audio resolves [then] the worker
+    is launched and decodes through ``odj-audio decode`` (STEM-50)
   → per-night budget (--max-minutes) - PARITY-TODO follow-up, not here.
 
 Exact command lines:
@@ -543,8 +546,8 @@ def preflight_worker(audio_path: Path, environ: Mapping[str, str]) -> None:
 
     Two launches are knowable failures before the worker imports torch:
     a packaged worker script that is not there (an incomplete install),
-    and a non-WAV input with no ffmpeg to decode it (the worker decodes
-    only ``.wav`` itself, via soundfile). ``environ`` is the environment
+    and a non-WAV input with neither ffmpeg nor odj-audio to decode it (the
+    worker decodes only ``.wav`` itself, via soundfile). ``environ`` is the environment
     the worker would inherit.
     """
     packaged_script = environ.get(PACKAGED_WORKER_SCRIPT_ENV)
@@ -553,12 +556,20 @@ def preflight_worker(audio_path: Path, environ: Mapping[str, str]) -> None:
         if not (script.is_file() and os.access(script, os.R_OK)):
             raise WorkerUnavailableError(WORKER_UNAVAILABLE_MESSAGE)
     if audio_path.suffix.lower() != ".wav" and not _ffmpeg_reachable(environ):
-        raise WorkerUnavailableError(
-            f"Vocal separation cannot read {audio_path.name}: only WAV files "
-            "can be decoded without ffmpeg, and ffmpeg was not found. "
-            f"Install ffmpeg, set {FFMPEG_OVERRIDE_ENV} to its path, or "
-            "convert the track to WAV, then try again."
-        )
+        # The installed app ships no ffmpeg; the worker decodes through
+        # odj-audio instead, which the launcher names in ODJ_AUDIO_BIN.
+        from apps.shared.odj_audio_decode import NoDecoderError, resolve_odj_audio
+
+        try:
+            resolve_odj_audio(audio_path, environ)
+        except NoDecoderError as exc:
+            raise WorkerUnavailableError(
+                f"Vocal separation cannot read {audio_path.name}: only WAV files "
+                "can be decoded without ffmpeg or the odj-audio engine, and "
+                f"neither was found ({exc}). Install ffmpeg, set "
+                f"{FFMPEG_OVERRIDE_ENV} to its path, set ODJ_AUDIO_BIN to the "
+                "odj-audio engine, or convert the track to WAV, then try again."
+            ) from None  # its text is in the message; no cause means "never launched"
 
 
 def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:

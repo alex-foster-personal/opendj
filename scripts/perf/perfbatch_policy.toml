@@ -74,3 +74,21 @@ prefixes = [
   "docs/decisions/",
   "specs/",
 ]
+
+[correctness_only]
+# PERFBATCH-08 (the maintainer, Fri 2 Oct 2026, on PR #4903): a correctness-only filter
+# (drop a known-bad output, never speed a step up) may carry
+#
+#     perfbatch: correctness-only reqs=<ID> tests=<path>
+#
+# in place of the idle and quality-ok markers, but ONLY when every mutating
+# pipeline file in the PR is a Python file under one of these prefixes, none
+# is deleted, renamed or mode-changed, the tests= path is a tests/ file the PR
+# itself changes, and the changed lines in pre-existing pipeline files total
+# at most max_existing_lines (new modules are free: the filter lives there,
+# the hook into the pipeline is what this bounds). Anything wider still needs
+# idle plus quality-ok evidence.
+prefixes = [
+  "apps/lyrics/",
+]
+max_existing_lines = 40

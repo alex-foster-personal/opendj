@@ -2,15 +2,33 @@
 	import { onMount } from 'svelte';
 	import { createPairing, deletePairing, listPairings, type Pairing } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
+	import { describeLoadError } from '$lib/route-load-state';
 
 	let pairings = $state<Pairing[]>([]);
+	let loading = $state(true);
+	let loadError = $state<string | null>(null);
 	let source = $state('');
 	let fromId = $state('');
 	let toId = $state('');
 	let notes = $state('');
+	// A filter change while a load is in flight must not let the older answer win.
+	let loadSeq = 0;
 
 	async function load(): Promise<void> {
-		pairings = await listPairings(source || undefined);
+		const seq = ++loadSeq;
+		loading = true;
+		loadError = null;
+		try {
+			const next = await listPairings(source || undefined);
+			if (seq !== loadSeq) return;
+			pairings = next;
+		} catch (exc) {
+			if (seq !== loadSeq) return;
+			pairings = [];
+			loadError = describeLoadError(exc);
+		} finally {
+			if (seq === loadSeq) loading = false;
+		}
 	}
 
 	async function create(): Promise<void> {
@@ -18,7 +36,12 @@
 			pushToast('Both track IDs required', 'error');
 			return;
 		}
-		await createPairing({ from_stable_id: fromId, to_stable_id: toId, notes });
+		try {
+			await createPairing({ from_stable_id: fromId, to_stable_id: toId, notes });
+		} catch (exc) {
+			pushToast(`Add pairing failed: ${describeLoadError(exc)}`, 'error');
+			return;
+		}
 		fromId = toId = notes = '';
 		await load();
 		pushToast('Pairing created');
@@ -45,7 +68,9 @@
 		return `"${hex}"`;
 	}
 
-	onMount(load);
+	onMount(() => {
+		void load();
+	});
 </script>
 
 <h2>Pairings</h2>
@@ -65,24 +90,54 @@
 	</select></label>
 </div>
 
-<table class="library" style="margin-top: 1rem;">
-	<thead>
-		<tr><th>From</th><th>&rarr;</th><th>To</th><th>Source</th><th>Notes</th><th></th></tr>
-	</thead>
-	<tbody>
-		{#each pairings as p}
-			<tr>
-				<td><a href={`/track/${p.from_stable_id}`}>{p.from_stable_id}</a></td>
-				<td>{p.direction}</td>
-				<td><a href={`/track/${p.to_stable_id}`}>{p.to_stable_id}</a></td>
-				<td>{p.source}</td>
-				<td>{p.notes ?? ''}</td>
-				<td><button onclick={() => remove(p)}>×</button></td>
-			</tr>
-		{/each}
-	</tbody>
-</table>
-
-{#if pairings.length === 0}
-	<p style="color: var(--muted); margin-top: 1rem;">No pairings yet. Add your first one above.</p>
+{#if loadError !== null}
+	<div class="load-error" role="alert">
+		<p>Could not load pairings: {loadError}</p>
+		<button type="button" onclick={() => void load()}>Retry</button>
+	</div>
+{:else if loading && pairings.length === 0}
+	<p class="muted spaced">Loading pairings...</p>
+{:else if pairings.length === 0}
+	<p class="muted spaced">
+		{source === ''
+			? 'No pairings yet. Add your first one above.'
+			: `No ${source} pairings. Choose "all" to see every source.`}
+	</p>
+{:else}
+	<table class="library spaced">
+		<thead>
+			<tr><th>From</th><th>&rarr;</th><th>To</th><th>Source</th><th>Notes</th><th></th></tr>
+		</thead>
+		<tbody>
+			{#each pairings as p}
+				<tr>
+					<td><a href={`/track/${p.from_stable_id}`}>{p.from_stable_id}</a></td>
+					<td>{p.direction}</td>
+					<td><a href={`/track/${p.to_stable_id}`}>{p.to_stable_id}</a></td>
+					<td>{p.source}</td>
+					<td>{p.notes ?? ''}</td>
+					<td><button onclick={() => remove(p)} title="Delete this pairing" aria-label="Delete this pairing">×</button></td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
 {/if}
+
+<style>
+	.muted {
+		color: var(--muted);
+	}
+	.spaced {
+		margin-top: 1rem;
+	}
+	.load-error {
+		margin-top: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		color: var(--danger);
+	}
+	.load-error p {
+		margin: 0;
+	}
+</style>

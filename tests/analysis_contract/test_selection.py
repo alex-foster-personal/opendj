@@ -96,6 +96,35 @@ def test_toggle_overrides_the_default_in_both_directions(db) -> None:
     assert selection.effective_source(db, "key") == "own"  # back to the default
 
 
+@pytest.mark.parametrize(
+    ("fn", "bad_value", "expected_msg"),
+    [
+        (
+            selection.check_lane,
+            "phrases",
+            f"unknown lane 'phrases'; lanes are {LANES}",
+        ),
+        (
+            selection.check_source,
+            "maybe",
+            f"unknown source 'maybe'; sources are {selection.SOURCES}",
+        ),
+        (
+            selection.check_toggle_state,
+            "sometimes",
+            f"unknown toggle state 'sometimes'; states are {selection.TOGGLE_STATES}",
+        ),
+    ],
+)
+def test_check_wrappers_reject_invalid_values_with_exact_selection_error(
+    fn, bad_value, expected_msg
+) -> None:
+    """[if] check wrappers get invalid values [then] SelectionError text is exact, [else stop]."""
+    with pytest.raises(selection.SelectionError) as exc_info:
+        fn(bad_value)
+    assert str(exc_info.value) == expected_msg
+
+
 def test_unknown_lane_source_and_toggle_state_are_refused(db) -> None:
     with pytest.raises(selection.SelectionError, match="unknown lane"):
         selection.get_default(db, "phrases")

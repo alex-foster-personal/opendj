@@ -23,6 +23,7 @@
 	import type { AnlzData } from '$lib/rb/anlz-types';
 	import { previewStripDataToStripBands } from '$lib/rb/deck-strip-preview';
 	import type { WaveformDesign } from '$lib/rb/waveform-design';
+	import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
 	import { drawStripPreviewBands } from '../deck/strip-waveform-render';
 	import {
@@ -124,7 +125,8 @@
 	$effect(() => {
 		const design = uiPrefs.waveform_design;
 		if (canvas && strip !== null && revealed) {
-			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design);
+			const bandColors = resolveStripBandColors(uiPrefs.theme, uiPrefs.wave_palette);
+			_draw(canvas, strip, vocals, markerAnlz, duration_ms, dpr, design, bandColors);
 		}
 	});
 
@@ -135,7 +137,8 @@
 		markerAnlz: AnlzData | null,
 		durMs: number | null,
 		ratio: number,
-		design: WaveformDesign
+		design: WaveformDesign,
+		bandColors: WaveBandColors
 	): void {
 		el.width = W * ratio;
 		el.height = H * ratio;
@@ -146,7 +149,7 @@
 		ctx.clearRect(0, 0, W, H);
 		if (data.max > 0) {
 			const bands = previewStripDataToStripBands(data);
-			drawStripPreviewBands(ctx, bands.preview, bands.kind, W, H, design);
+			drawStripPreviewBands(ctx, bands.preview, bands.kind, W, H, design, bandColors);
 		}
 		if (
 			voc !== null &&

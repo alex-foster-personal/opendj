@@ -92,7 +92,7 @@ The head SHA itself is read from `git ls-remote` against the live branch
 ref, never `gh pr view --json headRefOid` (found in review, PR #1685 thread
 r3976173905): `headRefOid` is a cached field on the PR object and is
 documented to lag the real branch ref right after a push
-(docs/ops/nucbox-fleet.md:200-202). Resolving a stale head would let a
+(fleet-af docs/records/nucbox-fleet.md:231-232). Resolving a stale head would let a
 worker calling this right after its own push observe the PREVIOUS head's
 already-complete checks and report SUCCESS while the real new head has
 nothing registered yet -- reproducing this issue's own defect through head
@@ -112,7 +112,7 @@ If `head_sha` is not found in the PR's cached `commits` array at all,
 than raising (found in review, PR #1685 thread r3976329043): `_head_sha`
 now reads the live branch ref, but `_pr_commits` still reads the PR
 object's cached `commits` array, which can lag behind it by the same
-documented window (docs/ops/nucbox-fleet.md:200-202). Every commit already
+documented window (fleet-af docs/records/nucbox-fleet.md:231-232). Every commit already
 IN that cached list necessarily happened before the live head the cache
 has not heard about yet, so treating the lag as an error would turn an
 ordinary, brief caching delay into a spurious COULD-NOT-MEASURE right when
@@ -245,7 +245,7 @@ def _head_sha(pr: str, repo: str = REPO) -> str:
     ls-remote` rather than `gh pr view --json headRefOid`.
 
     `headRefOid` is a cached field on the PR object, documented to lag the
-    real branch ref right after a push (docs/ops/nucbox-fleet.md:200-202;
+    real branch ref right after a push (fleet-af docs/records/nucbox-fleet.md:231-232;
     the same convention `scripts.review_lane._ref_sha` already follows for
     exactly this reason; found in review, PR #1685 thread r3976173905): a
     worker calling this right after its own push could otherwise resolve the

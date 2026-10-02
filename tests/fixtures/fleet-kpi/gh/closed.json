@@ -1,6 +1,0 @@
-[
-  {"number": 1306, "mergedAt": null, "labels": [], "title": "fix(ci): derive E2E port pair from RUNNER_NAME", "body": "Superseded by #1304, which namespaces the pool by lane instead."},
-  {"number": 1327, "mergedAt": null, "labels": [{"name": "duplicate"}], "title": "fix(tests): close the last free-port race", "body": "closing in favour of the other one"},
-  {"number": 1304, "mergedAt": "2026-09-04T17:54:15Z", "labels": [{"name": "duplicate"}], "title": "fix(ci): namespace worktree port pool by CI runner lane", "body": "superseded by #9999 in an earlier draft; this one MERGED and must not count"},
-  {"number": 1299, "mergedAt": null, "labels": [], "title": "spike we abandoned", "body": "not needed any more"}
-]
