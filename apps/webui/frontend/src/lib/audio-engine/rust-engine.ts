@@ -273,6 +273,11 @@ export function applyLoadFailed(e: EngineLoadFailed): void {
 	if (st === undefined || st.stable_id === null) return;
 	clearRustDeck(st);
 	st.processor_error = `${e.error.code}: ${e.error.message}`;
+	// As an explicit unload does: no armed jump survives, and a master that
+	// lost its audio hands sync to the next deck rather than lingering.
+	const deck = e.deck as DeckId;
+	cancelArmedJump(deck);
+	if (rustMaster.deck === deck) void electAndRejoin({ force: true });
 }
 
 /** Transport truth from the engine: play state, tempo, loop, length, key. */

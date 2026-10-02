@@ -223,6 +223,7 @@ class _Expr:
         self.expr, self.allow, self.deny = expr, allow, deny
         self.tokens = _tokens(expr)
         self.pos = 0
+        self.unbalanced = False
 
     def _peek(self) -> str | None:
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -258,6 +259,9 @@ class _Expr:
         result = self.parse_or()
         if self._peek() == ")":
             self.pos += 1
+        else:
+            # "(MIT" reached EOF: a truncated expression never reads as allowed.
+            self.unbalanced = True
         return result
 
 
@@ -267,7 +271,7 @@ def evaluate(expr: str, allow: list[re.Pattern], deny: list[re.Pattern]) -> _Res
     if not parser.tokens:
         return "unknown", [expr or "(empty)"]
     result = parser.parse_or()
-    if parser.pos != len(parser.tokens):
+    if parser.pos != len(parser.tokens) or (parser.unbalanced and result[0] != "denied"):
         return "unknown", [expr]
     return result
 
