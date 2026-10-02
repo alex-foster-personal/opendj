@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -75,6 +76,12 @@ def test_directory_witness_tells_a_symlink_from_the_directory_it_points_at(tmp_p
 
 def test_directory_witness_ignores_the_directory_s_own_times(tmp_path: Path) -> None:
     before = os.lstat(tmp_path)
+    # The kernel stamps mtime from a coarse clock tick, so an entry added in
+    # the same tick can leave mtime (and, on some filesystems, size) unmoved.
+    # Wait past the tick so the first assert measures the change, not luck.
+    deadline = time.monotonic() + 2.0
+    while time.time_ns() <= before.st_mtime_ns + 20_000_000 and time.monotonic() < deadline:
+        time.sleep(0.005)
     (tmp_path / "new-entry").write_bytes(b"x")
     after = os.lstat(tmp_path)
     assert after.st_mtime_ns != before.st_mtime_ns or after.st_size != before.st_size
