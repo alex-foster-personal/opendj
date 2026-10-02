@@ -6,8 +6,8 @@ Regression lines:
   - if stable-evidence's batch pass filters on nothing but status, reads its mark from
     a cache, or can fail to overlap the previous pass, then broken
   - if trunk-job-verdict verdict runs on a cancelled trunk run, then broken
-  - if ci-cost-guard's batch pass filters on conclusion or reads its mark from a
-    cache, then broken
+  - if the error-sink batch pass filters on conclusion, reads its mark from a cache, or
+    reads it from a workflow file that also runs jobs that skip the sink, then broken
   - if two consecutive passes can fail to overlap, then
     broken (issue #2505: the collapse was considered and rejected because the
     guard prices one run id per invocation with no cross-run aggregation)
@@ -25,7 +25,7 @@ from scripts.stable_evidence_batch import RECORDED_WORKFLOWS
 REPO = Path(__file__).resolve().parents[2]
 STABLE_EVIDENCE = REPO / ".github" / "workflows" / "stable-evidence.yml"
 TRUNK_JOB_VERDICT = REPO / ".github" / "workflows" / "trunk-job-verdict.yml"
-CI_COST_GUARD = REPO / ".github" / "workflows" / "ci-cost-guard.yml"
+CI_ERROR_SINK = REPO / ".github" / "workflows" / "ci-error-sink.yml"
 
 CANCELLED_SKIP = "github.event.workflow_run.conclusion != 'cancelled'"
 
@@ -44,8 +44,10 @@ def _job_if(workflow: dict, job_name: str) -> str:
 
 
 def _cadence_minutes(cron: str) -> int:
+    if re.fullmatch(r"\d+ \* \* \* \*", cron):
+        return 60  # once an hour, at a fixed minute
     match = re.fullmatch(r"(?:\*|\d+-59)/(\d+) \* \* \* \*", cron)
-    assert match, f"not an every-N-minutes schedule: {cron}"
+    assert match, f"not an every-N-minutes or hourly schedule: {cron}"
     return int(match.group(1))
 
 
@@ -143,29 +145,42 @@ def test_trunk_job_verdict_skips_cancelled_triggering_run() -> None:
     assert CANCELLED_SKIP in condition
 
 
-def test_ci_cost_guard_batch_lists_every_completion_including_cancelled() -> None:
-    """The batch pass filters on status=completed and never on conclusion.
+def test_error_sink_batch_lists_every_completion_from_its_own_workflow_mark() -> None:
+    """The batch pass filters on status=completed and never on conclusion, and the mark is
+    read from GitHub's own record of THIS workflow file, which runs nothing but sink passes.
 
-    A run cancelled at its timeout bills the whole ceiling, which is the case
-    the threshold is sized for (#2505). tests/test_ci_cost_guard_batch.py pins
-    the selection; this pins that the workflow hands the script no conclusion
-    filter and that the mark is read from GitHub's own record of this
-    workflow, not from a cache that can be evicted.
+    Sol P1 on #4844: as a job in ci-budget-watch.yml the mark was the last successful run
+    of the whole file, and the 12-hourly ledger run (the sink job skipped, the run green)
+    moved it past sink passes that had failed.
     """
-    workflow = _workflow(CI_COST_GUARD)
-    steps = workflow["jobs"]["assess"]["steps"]
-    price = next(step for step in steps if step.get("id") == "guard")
-    assert "--batch" in price["run"]
-    assert "python -m scripts.ci_cost_guard" in price["run"], (
-        "the guard imports scripts.ci_run_batch, so run as a path it dies with "
-        "ModuleNotFoundError before pricing anything"
+    workflow = _workflow(CI_ERROR_SINK)
+    assert list(workflow["jobs"]) == ["sink"], "every job in this file is a sink pass"
+    steps = workflow["jobs"]["sink"]["steps"]
+    listing = next(step for step in steps if step.get("id") == "sink")
+    assert "python3 -m scripts.ci_error_sink_batch" in listing["run"], (
+        "the batch imports scripts.ci_run_batch, so run as a path it dies with "
+        "ModuleNotFoundError before listing anything"
     )
-    assert "conclusion" not in price["run"]
+    assert "conclusion" not in listing["run"]
     mark = next(step for step in steps if step.get("id") == "mark")
-    assert "--workflow-file ci-cost-guard.yml" in mark["run"]
-    alert = next(step for step in steps if step.get("name") == "Open cost alert issues")
-    assert "exit 1" not in alert["run"], (
-        "an alert must not fail the pass, or a new offender every cadence pins the mark"
+    assert "--workflow-file ci-error-sink.yml" in mark["run"]
+    assert "ci-budget-watch" not in mark["run"]
+    census = next(step for step in steps if step.get("id") == "census")
+    assert '--watched "$LISTED_WORKFLOWS"' in census["run"]
+    assert set(workflow["jobs"]["sink"]["env"]["LISTED_WORKFLOWS"].split(",")) == {
+        "CI",
+        "E2E",
+        "macOS Packaging",
+    }
+
+
+def test_the_error_sink_reconcile_is_not_cancelled_by_the_next_hourly_pass() -> None:
+    """Sol-found on #4844: a workflow-level cancel-in-progress group let the 03:30 hourly run
+    cancel the 03:23 reconcile, whose timeout is 30 minutes."""
+    workflow = _workflow(CI_ERROR_SINK)
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+    assert not any("concurrency" in job for job in workflow["jobs"].values()), (
+        "one group, at workflow level, so every pass queues behind the running one"
     )
 
 
@@ -184,7 +199,7 @@ def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
     batch modules read GITHUB_TOKEN; reviewers misread the mix three times on #3844, so all
     three now read GITHUB_TOKEN, and this holds every step to it."""
     checked = 0
-    for path in (CI_COST_GUARD, STABLE_EVIDENCE):
+    for path in (CI_ERROR_SINK, STABLE_EVIDENCE):
         for job in _workflow(path)["jobs"].values():
             for step in job["steps"]:
                 for module in re.findall(r"python3? -m (scripts\.\w+)", step.get("run", "")):
@@ -198,16 +213,20 @@ def test_every_batch_step_sets_the_token_variable_its_module_reads() -> None:
     assert checked >= 5, checked
     assert {
         _token_env_read_by(m)
-        for m in ("scripts.ci_cost_guard", "scripts.ci_run_batch", "scripts.stable_evidence_batch")
+        for m in (
+            "scripts.ci_error_sink_batch",
+            "scripts.ci_run_batch",
+            "scripts.stable_evidence_batch",
+        )
     } == {"GITHUB_TOKEN"}
 
 
-def test_ci_cost_guard_passes_overlap_by_at_least_one_cadence() -> None:
+def test_error_sink_passes_overlap_by_at_least_one_cadence() -> None:
     """Two consecutive passes must overlap, so a late or failed pass loses nothing.
 
-    The overlap floor (OVERLAP_MINUTES) must be at least twice the cron
-    cadence, and the run creation lookback (LOOKBACK_HOURS) must exceed the
-    longest watched workflow timeout, or a run created before the mark and
-    completed after it is never priced. E2E's extended job alone can run 45 + 30 min.
+    The overlap floor (OVERLAP_MINUTES) must be at least twice the cron cadence, and the
+    run creation lookback (LOOKBACK_HOURS) must exceed the longest watched workflow
+    timeout, or a run created before the mark and completed after it is never listed.
+    E2E's extended job alone can run 45 + 30 min.
     """
-    _assert_batch_pass(_workflow(CI_COST_GUARD), "assess", "ci-cost-guard.yml", 120, "guard")
+    _assert_batch_pass(_workflow(CI_ERROR_SINK), "sink", "ci-error-sink.yml", 120, "sink")

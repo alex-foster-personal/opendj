@@ -96,7 +96,7 @@ export function midiLabelTitle(
 	deviceCount: number
 ): string {
 	if (requestPending) return 'MIDI: permission request pending in the browser';
-	if (permission === 'unsupported') return 'MIDI: WebMIDI not supported in this browser (use Chrome or Edge)';
+	if (permission === 'unsupported') return 'MIDI: not supported here - WebMIDI needs Chrome or Edge, and the desktop app has no MIDI yet';
 	if (permission === 'denied') return 'MIDI: permission denied - re-enable in browser site settings';
 	if (permission === 'prompt') return 'MIDI: click to open the panel and request access';
 	if (permission === 'granted') {

@@ -1579,6 +1579,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/coverage-drain/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Drain Config */
+        put: operations["drain_config_api_v1_coverage_drain_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Retry */
+        post: operations["drain_retry_api_v1_coverage_drain_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Start */
+        post: operations["drain_start_api_v1_coverage_drain_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Drain Status */
+        get: operations["drain_status_api_v1_coverage_drain_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage-drain/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drain Stop */
+        post: operations["drain_stop_api_v1_coverage_drain_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dedup/clusters": {
         parameters: {
             query?: never;
@@ -8062,10 +8147,30 @@ export interface components {
             /** Title */
             title: string | null;
         };
-        /** CoverageOut */
+        /**
+         * CoverageOut
+         * @description Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.
+         *
+         *     ``on_disk`` is the denominator (``availability.present``). Per step,
+         *     ``done + terminal + failed + pending == on_disk``. ``missing`` and
+         *     ``corrupt`` keep their artifact meaning for the refresh job's targeting:
+         *     ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
+         */
         CoverageOut: {
+            /** Availability */
+            availability: {
+                [key: string]: number;
+            };
             /** Corrupt */
             corrupt: {
+                [key: string]: number;
+            };
+            /** Done */
+            done: {
+                [key: string]: number;
+            };
+            /** Failed */
+            failed: {
                 [key: string]: number;
             };
             /** Generated At */
@@ -8076,10 +8181,22 @@ export interface components {
             };
             /** On Disk */
             on_disk: number;
+            /** Pending */
+            pending: {
+                [key: string]: number;
+            };
+            /** Stems Source Refusal */
+            stems_source_refusal: string | null;
+            /** Terminal */
+            terminal: {
+                [key: string]: number;
+            };
             /** Total Tracks */
             total_tracks: number;
             /** Unreachable */
             unreachable: number;
+            /** Waiting On Stems */
+            waiting_on_stems: number;
         };
         /**
          * CoverageVerdictOut
@@ -8530,6 +8647,60 @@ export interface components {
             tables: {
                 [key: string]: string;
             };
+        };
+        /** DrainConfigIn */
+        DrainConfigIn: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** DrainRetryOut */
+        DrainRetryOut: {
+            /** Rearmed */
+            rearmed: number;
+            status: components["schemas"]["DrainStatusOut"];
+        };
+        /** DrainStatusOut */
+        DrainStatusOut: {
+            /** Enabled */
+            enabled: boolean;
+            /** Failed */
+            failed: {
+                [key: string]: number;
+            };
+            /** Jobs Failed */
+            jobs_failed: number;
+            /** Jobs Run */
+            jobs_run: number;
+            /** Last Job */
+            last_job: {
+                [key: string]: unknown;
+            } | null;
+            /** Next Retry At */
+            next_retry_at: number | null;
+            /** Pending */
+            pending: {
+                [key: string]: number;
+            };
+            /** Reason */
+            reason: string | null;
+            /** State */
+            state: string;
+            /** Stems Needing Farm */
+            stems_needing_farm: string[];
+            /** Stems Needing Farm Count */
+            stems_needing_farm_count: number;
+            /** Stop Requested */
+            stop_requested: boolean;
+            /** Ticks */
+            ticks: number;
+            /** Unavailable Steps */
+            unavailable_steps: {
+                [key: string]: string;
+            };
+            /** Updated At */
+            updated_at: number | null;
+            /** Waiting On Stems */
+            waiting_on_stems: number;
         };
         /**
          * EngineHealthOut
@@ -12423,6 +12594,10 @@ export interface components {
         };
         /** ReconcileSummary */
         ReconcileSummary: {
+            /** Availability */
+            availability?: {
+                [key: string]: number;
+            } | null;
             /** Orphan Broken */
             orphan_broken: number;
             /** Playlists */
@@ -18142,6 +18317,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    drain_config_api_v1_coverage_drain_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DrainConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drain_retry_api_v1_coverage_drain_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainRetryOut"];
+                };
+            };
+        };
+    };
+    drain_start_api_v1_coverage_drain_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+        };
+    };
+    drain_status_api_v1_coverage_drain_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
+                };
+            };
+        };
+    };
+    drain_stop_api_v1_coverage_drain_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainStatusOut"];
                 };
             };
         };
