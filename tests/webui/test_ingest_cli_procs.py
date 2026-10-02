@@ -17,6 +17,10 @@ Regression lines:
     CLIs that ignore SIGTERM outlast the shell's grace -> broken
   - if a finished step stays registered then shutdown signals a dead pid -> broken
   - if the lifespan never calls stop_all then none of this runs -> broken
+  - if a step that starts after stop_all is accepted then it outlives the
+    engine with its pool -> broken
+  - if a new lifespan does not reopen the registry then every refresh step
+    of the next app is stopped at once -> broken (the overshoot)
 """
 from __future__ import annotations
 
@@ -83,6 +87,13 @@ def _kill(proc: subprocess.Popen[str], pid: int) -> None:
         with contextlib.suppress(psutil.NoSuchProcess):
             psutil.Process(target).kill()
     proc.wait()
+
+
+@pytest.fixture(autouse=True)
+def _open_registry() -> None:
+    # stop_all closes the registry for the rest of the process, as a real
+    # shutdown does; each case starts from a freshly started app's state.
+    ingest_cli_procs.reopen()
 
 
 def test_stop_all_stops_the_cli_and_its_descendants() -> None:
@@ -187,3 +198,27 @@ def test_the_lifespan_stops_a_running_step_and_its_pool(tmp_path) -> None:
     finally:
         with contextlib.suppress(psutil.NoSuchProcess):
             psutil.Process(grandchild).kill()
+
+
+def test_a_step_started_after_stop_all_is_stopped_at_once() -> None:
+    assert ingest_cli_procs.stop_all() == 0
+    thread, job, raised = _run_cli_in_thread(_CLI_WITH_POOL)
+    thread.join(timeout=ingest_cli_procs.STOP_ALL_MAX_S + 30)
+    assert not thread.is_alive(), "a step started after shutdown kept running"
+    assert raised, "a step stopped at registration read as success"
+    for line in list(job.log):
+        last = line.rsplit(" ", 1)[-1]
+        if last.isdigit():
+            assert _gone(int(last)), "its pool worker outlived the stop"
+
+
+def test_a_new_lifespan_reopens_the_registry(tmp_path) -> None:
+    assert ingest_cli_procs.stop_all() == 0
+    armed = app_mod.create_app(
+        state_db_path=str(tmp_path / "state" / "state.db"), mount_frontend=False,
+        port=18736, frontend_port=19736,
+    )
+    with TestClient(armed):
+        thread, _job, raised = _run_cli_in_thread("print('ok')")
+        thread.join(timeout=30)
+    assert not thread.is_alive() and raised == [], f"the next app's step was refused: {raised!r}"

@@ -16,9 +16,11 @@ ends there rather than starting its next step. The whole tree is stopped, not
 just the CLI: SIGTERM kills the CLI's own process outright, and its pool
 workers would then wait on a parent that no longer exists.
 
-There is deliberately no "refuse new spawns" latch: it would be process-wide
-state that outlives one app's lifespan, and the next app started in the same
-process (every lifespan test) would inherit a refusal it never asked for.
+Once :func:`stop_all` has run, the registry is closed: a step that starts
+after it (the next step of a refresh job, or one that was mid-``Popen``) is
+stopped the moment it registers, rather than outliving the engine. The
+lifespan reopens it with :func:`reopen` on startup, so the next app started in
+the same process (every lifespan test) does not inherit the refusal.
 """
 from __future__ import annotations
 
@@ -43,12 +45,30 @@ STOP_ALL_MAX_S: float = STOP_GRACE_S + KILL_WAIT_S
 
 _lock = threading.Lock()
 _procs: set[subprocess.Popen[str]] = set()
+#: Set by :func:`stop_all`, cleared by :func:`reopen`; changed under ``_lock``
+#: so a register cannot slip between the snapshot and the close.
+_closed = threading.Event()
 
 
-def register(proc: subprocess.Popen[str]) -> None:
-    """Track a running CLI until :func:`unregister` or :func:`stop_all`."""
+def reopen() -> None:
+    """Accept CLIs again; the lifespan calls this on startup."""
     with _lock:
-        _procs.add(proc)
+        _closed.clear()
+
+
+def register(proc: subprocess.Popen[str]) -> bool:
+    """Track a running CLI until :func:`unregister` or :func:`stop_all`.
+
+    After :func:`stop_all` the CLI is stopped at once instead, with its
+    descendants and within :data:`STOP_ALL_MAX_S`, and this returns False.
+    """
+    with _lock:
+        if not _closed.is_set():
+            _procs.add(proc)
+            return True
+    log.warning("pipeline CLI pid %d started after shutdown began; stopping it", proc.pid)
+    _stop([proc])
+    return False
 
 
 def unregister(proc: subprocess.Popen[str]) -> None:
@@ -65,20 +85,26 @@ def stop_all() -> int:
     added up past the shell's own grace, and its SIGKILL then landed
     mid-reap with the pool workers still running.
 
-    Returns how many CLIs were running, for the log line.
+    Closes the registry, see :func:`register`. Returns how many CLIs were
+    running, for the log line.
     """
     with _lock:
+        _closed.set()
         running = list(_procs)
         _procs.clear()
     if not running:
         return 0
+    _stop(running)
+    log.info("shutdown stopped %d running pipeline CLI(s)", len(running))
+    return len(running)
+
+
+def _stop(running: list[subprocess.Popen[str]]) -> None:
     descendants = [member for proc in running for member in _descendants(proc)]
     _signal(running, descendants, kill=False)
     alive = _wait(running, descendants, STOP_GRACE_S)
     _signal(running, alive, kill=True)
     _wait(running, alive, KILL_WAIT_S)
-    log.info("shutdown stopped %d running pipeline CLI(s)", len(running))
-    return len(running)
 
 
 def _signal(
