@@ -102,11 +102,16 @@ MIN_LICENSES_FILE_CHARS = 100_000
 #: without a license text or notice. Anything else missing both is a failed
 #: collection, not a quiet gap (Sol P1, PR #4853): the flag report used to
 #: exclude "bundled" wholesale from its textless table, which let a NEW
-#: textless component of any ecosystem ship unnoticed. Add an entry here only
-#: with the same kind of human-reviewed note mpg123 carries.
-KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset(
-    {("bundled", "mpg123 (compiled to WebAssembly inside mpg123-decoder)")}
-)
+#: textless component of any ecosystem ship unnoticed.
+#:
+#: Empty on purpose (Sol P1, PR #4853 r4167743715): mpg123 was the one entry
+#: here, on the premise that "the package carries no license text" -- true of
+#: the npm wrapper, false of mpg123 itself, whose own COPYING (LGPL-2.1) is
+#: now mirrored at docs/legal/mpg123-COPYING.txt and staged below. Leave this
+#: empty unless a FUTURE component is genuinely unobtainable; any new entry
+#: needs the same kind of investigation that replaced this one, not a repeat
+#: of the shortcut.
+KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset()
 
 #: Our own packages are not third party.
 FIRST_PARTY_NAMES: frozenset[str] = frozenset(
@@ -440,6 +445,9 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
     font_license = repo_root / FRONTEND_RELATIVE / "static/fonts/Anybody-OFL.txt"
     if not font_license.is_file():
         raise LicenseInventoryError(f"{font_license} missing")
+    mpg123_copying = repo_root / "docs/legal/mpg123-COPYING.txt"
+    if not mpg123_copying.is_file():
+        raise LicenseInventoryError(f"{mpg123_copying} missing: mpg123 (LGPL-2.1) ships with no license text")
     native_lib_dir = repo_root / PBS_NATIVE_LICENSES_RELATIVE
     native_lib_licenses = sorted(native_lib_dir.glob("LICENSE.*.txt"))
     if not native_lib_licenses:
@@ -473,9 +481,11 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
         Component(
             "bundled", "mpg123 (compiled to WebAssembly inside mpg123-decoder)", "", "LGPL-2.1-only",
             "https://www.mpg123.de/",
-            note="The npm wrapper declares MIT but its README says it is based on mpg123, which is "
-                 "LGPL-2.1; the package carries no license text. A human must confirm the terms of "
-                 "the compiled .wasm (relinking and source-offer obligations).",
+            [("mpg123-COPYING.txt", _read_text(mpg123_copying))],
+            note="The npm wrapper declares MIT but is a WebAssembly build of mpg123 itself, which is "
+                 "LGPL-2.1; the wrapper package ships no license text, so mpg123's own COPYING is "
+                 "mirrored from libsdl-org/mpg123 (an upstream mirror) instead. A human must still "
+                 "confirm the compiled .wasm's relinking and source-offer obligations under LGPL-2.1.",
         ),
     ]
 
