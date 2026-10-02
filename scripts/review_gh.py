@@ -155,3 +155,9 @@ def _paginated_json_list(endpoint: str) -> list[dict]:
     1, silently dropping evidence that scrolled past it on a long-lived PR.
     """
     return _flatten_pages(json.loads(_gh(["api", endpoint, "--paginate", "--slurp"])))
+
+
+def _paginated_json_pages(endpoint: str) -> list:
+    """Every page of an endpoint whose pages are OBJECTS (`compare`, or the single object
+    `pulls/{n}`), unflattened: `--slurp` hands back one outer array with a page per item."""
+    return json.loads(_gh(["api", endpoint, "--paginate", "--slurp"]))

@@ -19,6 +19,7 @@ from apps.analysis import queue_store
 from apps.analysis import queue_user as user
 from apps.analysis.queue import QueueError
 from apps.analysis.queue_user import UserJobConflict
+from apps.analysis.queue_user_lanes import USER_JOB_LANES
 from apps.analysis.store import open_conn
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.cache import LyricLine, Lyrics
@@ -54,6 +55,15 @@ def _enqueue(conn, lane: str, ids: list[str], tmp: Path, placement: str = "next"
         placement=placement,  # type: ignore[arg-type]
         stems_root=tmp / "stems",
         data_dir=tmp,
+    )
+
+
+def test_require_lane_rejects_unknown_user_lane_with_exact_queue_error() -> None:
+    """[if] require_lane gets a non-user lane [then] QueueError text is exact, [else stop]."""
+    with pytest.raises(QueueError) as exc_info:
+        user.require_lane("waveform")
+    assert str(exc_info.value) == (
+        f"unknown user lane 'waveform'; lanes are {USER_JOB_LANES}"
     )
 
 

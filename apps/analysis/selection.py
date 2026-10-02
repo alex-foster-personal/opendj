@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from ._value_check import require_allowed_value
 from .canonical import PROJECTION_FIELDS
 from .lanes import LANES, Lane
 from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
@@ -73,23 +74,19 @@ def _now_iso() -> str:
 
 
 def check_lane(lane: str) -> str:
-    if lane not in LANES:
-        raise SelectionError(f"unknown lane {lane!r}; lanes are {LANES}")
-    return lane
+    return require_allowed_value(lane, LANES, "lane", "lanes", SelectionError)
 
 
 def check_source(source: str) -> str:
-    if source not in SOURCES:
-        raise SelectionError(f"unknown source {source!r}; sources are {SOURCES}")
-    return source
+    return require_allowed_value(
+        source, SOURCES, "source", "sources", SelectionError
+    )
 
 
 def check_toggle_state(state: str) -> str:
-    if state not in TOGGLE_STATES:
-        raise SelectionError(
-            f"unknown toggle state {state!r}; states are {TOGGLE_STATES}"
-        )
-    return state
+    return require_allowed_value(
+        state, TOGGLE_STATES, "toggle state", "states", SelectionError
+    )
 
 
 # Kept as the internal spelling used throughout this module.
