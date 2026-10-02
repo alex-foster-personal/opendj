@@ -93,6 +93,17 @@ NOTICE_FILE_PATTERN = re.compile(r"notice", re.IGNORECASE)
 #: A real inventory renders hundreds of license texts; a stub cannot pass.
 MIN_LICENSES_FILE_CHARS = 100_000
 
+#: (ecosystem, name) pairs a human has reviewed and accepted as genuinely
+#: textless -- the ONLY components `write_payload_license_files` may stage
+#: without a license text or notice. Anything else missing both is a failed
+#: collection, not a quiet gap (Sol P1, PR #4853): the flag report used to
+#: exclude "bundled" wholesale from its textless table, which let a NEW
+#: textless component of any ecosystem ship unnoticed. Add an entry here only
+#: with the same kind of human-reviewed note mpg123 carries.
+KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset(
+    {("bundled", "mpg123 (compiled to WebAssembly inside mpg123-decoder)")}
+)
+
 #: Our own packages are not third party.
 FIRST_PARTY_NAMES: frozenset[str] = frozenset(
     {
@@ -211,12 +222,27 @@ def _license_files_in(directory: Path) -> list[tuple[str, str]]:
     ]
 
 
+def _meta_get(metadata: importlib_metadata.PackageMetadata, key: str) -> str | None:
+    """`PackageMetadata.get`, typed via `__getitem__`.
+
+    The typeshed stub for `importlib.metadata.PackageMetadata` declares
+    `__getitem__` but not `.get`/`.get_all`'s single-arg overload, even though
+    the real runtime value (`email.message.Message`) supports both. Routing
+    through `__getitem__` keeps this call checked instead of silencing the
+    whole attribute.
+    """
+    try:
+        return metadata[key]
+    except KeyError:
+        return None
+
+
 # ----- python -------------------------------------------------------------
 def _python_license_string(metadata: importlib_metadata.PackageMetadata) -> str:
-    expression = metadata.get("License-Expression")
+    expression = _meta_get(metadata, "License-Expression")
     if expression:
         return expression.strip()
-    free_text = (metadata.get("License") or "").strip()
+    free_text = (_meta_get(metadata, "License") or "").strip()
     free_text_usable = free_text and "\n" not in free_text and len(free_text) < 100 and free_text.upper() != "UNKNOWN"
     if free_text_usable and classify_license(free_text) != Cat.UNKNOWN:
         return free_text
@@ -231,13 +257,29 @@ def _python_license_string(metadata: importlib_metadata.PackageMetadata) -> str:
 
 
 def python_components(payload_dir: Path) -> list[Component]:
+    """Every configured Python site, required individually.
+
+    `PYTHON_SITES_RELATIVE` names every site this inventory is responsible
+    for (the main app's `pylib` AND the beatgrid runner's own venv). Accepting
+    whichever sites happen to exist, as long as at least one does, let a
+    missing or empty site silently drop that runtime's ENTIRE dependency set
+    from the inventory while the build still reported success (Sol P1,
+    PR #4853). Each site must exist and contain at least one measurable
+    distribution, or the build fails loudly naming which site is missing.
+    """
     components: dict[tuple[str, str], Component] = {}
     sites = [payload_dir / relative for relative in PYTHON_SITES_RELATIVE]
-    existing = [site for site in sites if site.is_dir()]
-    if not existing:
-        raise LicenseInventoryError(f"none of the Python sites exist under {payload_dir}: {sites}")
-    for site in existing:
-        for dist in importlib_metadata.distributions(path=[str(site)]):
+    missing = [site for site in sites if not site.is_dir()]
+    if missing:
+        raise LicenseInventoryError(
+            f"Python site(s) missing under {payload_dir}: {missing}; "
+            f"expected all of {PYTHON_SITES_RELATIVE}"
+        )
+    for site in sites:
+        site_distributions = list(importlib_metadata.distributions(path=[str(site)]))
+        if not site_distributions:
+            raise LicenseInventoryError(f"Python site {site} has no dist-info: unmeasurable, not empty by design")
+        for dist in site_distributions:
             name = dist.metadata["Name"]
             if name is None or name.lower() in FIRST_PARTY_NAMES:
                 continue
@@ -255,11 +297,11 @@ def python_components(payload_dir: Path) -> list[Component]:
                 name=name,
                 version=dist.version,
                 license=_python_license_string(dist.metadata),
-                homepage=dist.metadata.get("Home-page") or "",
+                homepage=_meta_get(dist.metadata, "Home-page") or "",
                 texts=texts,
             )
     if not components:
-        raise LicenseInventoryError(f"no dist-info found in {existing}")
+        raise LicenseInventoryError(f"no dist-info found in {sites}")
     return sorted(components.values(), key=lambda c: c.name.lower())
 
 
@@ -512,6 +554,22 @@ def render_licenses(components: list[Component]) -> str:
     return "\n".join(out) + "\n"
 
 
+def unreviewed_textless_components(components: list[Component]) -> list[Component]:
+    """Components with no license text AND no notice, excluding `KNOWN_TEXTLESS`.
+
+    Pulled out of `write_payload_license_files` so the guard is testable
+    without staging a full fake payload across every ecosystem.
+    """
+    return sorted(
+        (
+            c
+            for c in components
+            if not c.license_texts and not c.notices and (c.ecosystem, c.name) not in KNOWN_TEXTLESS
+        ),
+        key=lambda c: (c.ecosystem, c.name.lower()),
+    )
+
+
 def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str, object]:
     """Stage THIRD-PARTY-LICENSES.txt, the flag report, LICENSE and NOTICE.
 
@@ -519,6 +577,14 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
     measured, so the dmg build fails rather than shipping without attribution.
     """
     components = collect_all(repo_root, payload_dir)
+    unreviewed = unreviewed_textless_components(components)
+    if unreviewed:
+        names = ", ".join(f"{c.ecosystem}:{c.name}" for c in unreviewed)
+        raise LicenseInventoryError(
+            f"{len(unreviewed)} component(s) have no license text or notice and are not in "
+            f"KNOWN_TEXTLESS: {names}. Stage the missing text, or add a human-reviewed entry to "
+            "KNOWN_TEXTLESS with a note explaining why none exists."
+        )
     (payload_dir / LICENSES_FILE_NAME).write_text(render_licenses(components), encoding="utf-8")
     (payload_dir / REPORT_FILE_NAME).write_text(flag_report(components), encoding="utf-8")
     for name in (ROOT_LICENSE_FILE_NAME, NOTICE_FILE_NAME):
