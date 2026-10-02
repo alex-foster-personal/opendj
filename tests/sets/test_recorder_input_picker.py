@@ -254,3 +254,20 @@ def test_start_requires_exactly_one_input_or_an_explicit_no_audio(picker_client,
     """[if] a start names zero or two inputs [then] 422, never a silent default."""
     client, _ = picker_client
     assert client.post("/api/sets/recorder/start", json=body).status_code == 422
+
+
+def test_start_by_a_name_two_inputs_share_is_refused(tmp_path: Path):
+    """[if] two inputs share the picked name [then] 503, never the first one silently."""
+    twins = [capture.InputDevice(0, "USB Audio", False), capture.InputDevice(1, "USB Audio", False)]
+    app = FastAPI()
+    app.state.sets_recorder_service = RecorderService(
+        sets_root=tmp_path, db_path=tmp_path / "sets.db", capture_enabled=False,
+        list_devices=lambda: twins,
+    )
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/sets/recorder/start", json={"device_name": "USB Audio", "sources": []}
+        )
+    assert response.status_code == 503
+    assert "2 audio inputs are named 'USB Audio'" in response.json()["detail"]

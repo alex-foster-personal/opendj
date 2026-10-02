@@ -337,7 +337,9 @@ def _share_visible_session(request: Request, session_id: str) -> Session:
 
 
 @router.get("/recorder", response_model=RecorderStatus)
-async def api_recorder_status(request: Request) -> dict[str, Any]:
+def api_recorder_status(request: Request) -> dict[str, Any]:
+    # Sync: status() can wait on the recorder lock while a start spawns
+    # ffmpeg, and that wait must not stall the event loop.
     return _recorder_service(request).status()
 
 

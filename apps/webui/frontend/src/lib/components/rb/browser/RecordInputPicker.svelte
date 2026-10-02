@@ -97,7 +97,7 @@
 				</p>
 			{/if}
 			<div class="rec-options" role="radiogroup" aria-label="Audio input">
-				{#each devices?.devices ?? [] as device (device.name)}
+				{#each devices?.devices ?? [] as device (device.index)}
 					<label class="rec-option">
 						<input type="radio" name="rec-input" value={device.name} bind:group={selected} />
 						<span class="rec-name">{device.name}</span>

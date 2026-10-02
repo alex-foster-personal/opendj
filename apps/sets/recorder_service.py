@@ -89,6 +89,16 @@ class RecorderService:
             )
         if ffmpeg_device_idx is not None and device_name is not None:
             raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
+        # Resolved BEFORE the lock: listing spawns ffmpeg (up to 10 s), and
+        # status() shares the lock. A missing input or ffmpeg starts nothing.
+        if not capture_audio:
+            device_idx, device_label = None, NO_AUDIO_DEVICE_LABEL
+        elif device_name is not None:
+            device_idx, device_label = self._index_of(device_name), device_name
+        else:
+            device_idx, device_label = ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
+        if capture_audio and self.capture_enabled:
+            capture_mod.resolve_capture_ffmpeg()
         with self._lock:
             if self._recorder is not None:
                 raise RecorderConflict(
@@ -103,13 +113,6 @@ class RecorderService:
                     f"session {external['session_id']} is owned by recorder "
                     f"process {external['pid']}"
                 )
-
-            if not capture_audio:
-                device_idx, device_label = None, NO_AUDIO_DEVICE_LABEL
-            elif device_name is not None:
-                device_idx, device_label = self._index_of(device_name), device_name
-            else:
-                device_idx, device_label = ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
 
             state = SetsState(db_path=self.db_path)
             resolved_id = record_mod.resolve_session_id(
@@ -152,9 +155,14 @@ class RecorderService:
 
     def _index_of(self, device_name: str) -> int:
         devices = self.list_devices()
-        for device in devices:
-            if device.name == device_name:
-                return device.index
+        matches = [device.index for device in devices if device.name == device_name]
+        if len(matches) > 1:
+            raise capture_mod.CaptureUnavailable(
+                f"{len(matches)} audio inputs are named {device_name!r}; rename one in "
+                "Audio MIDI Setup so REC can tell them apart"
+            )
+        if matches:
+            return matches[0]
         connected = ", ".join(repr(device.name) for device in devices) or "none"
         raise capture_mod.CaptureUnavailable(
             f"audio input {device_name!r} is not connected (connected inputs: {connected})"
