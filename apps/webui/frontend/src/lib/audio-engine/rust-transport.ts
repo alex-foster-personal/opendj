@@ -19,7 +19,7 @@ import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster } from '$lib/rb/master-election';
 import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/performance-ipc.svelte';
-import { phaseLockDecision, phaseLockShouldSend } from '$lib/rb/phase-lock';
+import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
 import { DECKS, type DeckId, displayLoops, notify, playheadMs, send } from './rust-link';
@@ -59,13 +59,10 @@ export function electIfAuto(options?: { force?: boolean }): void {
 }
 
 /**
- * An AUTOMATIC master change - the master paused, CUE'd, played out or was
- * unloaded - re-joins every playing synced deck to the new master, as the
- * manual `_setDeckMaster` does. Without it each follower's phase lock is
- * dropped as soon as the master moves (`_lockHolds`) and nothing records a
- * new one, so the decks free-run and drift. A re-anchor join only seeks a
- * follower that is off phase; the new master was itself locked to the old
- * one, so this is normally a tempo-only re-lock.
+ * An AUTOMATIC master change (paused, CUE'd, played out, unloaded) re-joins
+ * every playing synced deck to the new master, as `_setDeckMaster` does;
+ * otherwise `_lockHolds` drops each lock and the decks free-run. A re-anchor
+ * only seeks a follower that is off phase, so this is normally tempo-only.
  */
 export async function electAndRejoin(options?: { force?: boolean }): Promise<void> {
 	const previous = rustMaster.deck;
@@ -116,6 +113,7 @@ async function _join(
 		reanchor?: boolean;
 		masterAtSec?: number | undefined;
 		followerAtSec?: number;
+		anchorOnBeat?: boolean;
 	} = {}
 ): Promise<void> {
 	const st = deckStates[follower];
@@ -127,7 +125,7 @@ async function _join(
 		leadSec: SYNC_LEAD_SEC,
 		mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode),
 		pitchRangePct: pitchRanges[follower],
-		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec })
+		...(options.followerAtSec === undefined ? {} : { followerAtSec: options.followerAtSec, anchorOnBeat: options.anchorOnBeat === true })
 	});
 	const cmds: EngineCommand[] = [{ type: 'tempo', deck: follower, ratio: join.tempo }];
 	if (!options.reanchor || reanchorNeedsSeek(join, fv, SYNC_LEAD_SEC)) {
@@ -227,7 +225,7 @@ export function phaseLockTick(): void {
 		const st = deckStates[deck];
 		let decision: ReturnType<typeof phaseLockDecision>;
 		try {
-			decision = phaseLockDecision({
+			const input = {
 				masterBeats: deckStates[master].anlz?.beatgrid.beats ?? [],
 				masterPositionSec: playheadMs(master) / 1000,
 				masterTempo: deckStates[master].pitch,
@@ -235,9 +233,10 @@ export function phaseLockTick(): void {
 				followerPositionSec: playheadMs(deck) / 1000,
 				followerBaseTempo: lock.base,
 				normalization: lock.normalization,
-				pitchRangePct: pitchRanges[deck],
-				trimming: lock.sent !== lock.base
-			});
+				pitchRangePct: pitchRanges[deck]
+			};
+			lock.base = phaseLockFeedForwardBase(input); // follows a grid tempo change (F4)
+			decision = phaseLockDecision({ ...input, followerBaseTempo: lock.base, trimming: lock.sent !== lock.base });
 		} catch (e) {
 			// Thrown inside the state mirror: drop this lock and say why rather
 			// than stop mirroring every deck.
@@ -387,7 +386,7 @@ async function _seek(deck: DeckId, ms: number, options: { quantize: boolean }): 
 	}
 	const master = _syncMaster();
 	if (st.playing && effectiveBeatSync(st) && master !== null && master !== deck) {
-		await _join(master, deck, { followerAtSec: targetMs / 1000 });
+		await _join(master, deck, { followerAtSec: targetMs / 1000, anchorOnBeat: options.quantize }); // a user seek: the clicked beat
 		st.position_ms = targetMs;
 		return;
 	}

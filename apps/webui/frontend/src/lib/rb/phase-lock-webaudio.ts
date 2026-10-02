@@ -8,8 +8,10 @@
  * - `record` is called where `_synchronizeFollowers` commits a plan. It stores
  *   the BASE tempo the join chose, the master and the master tempo it assumed,
  *   and the deck's load identity. Every trim is relative to that base, so trims
- *   never accumulate. `clear` is called at the top of every sync for its
- *   followers, so no trim can land between a join's plan and its own lock.
+ *   never accumulate; the base itself follows a tempo change inside either
+ *   grid (`phaseLockFeedForwardBase`). `clear` is called at the top of every
+ *   sync for its followers, so no trim can land between a join's plan and its
+ *   own lock.
  * - `tick` runs from the engine's existing presentation frame (`_tick`,
  *   requestAnimationFrame), throttled here to `PHASE_LOCK_WEBAUDIO_INTERVAL_SEC`
  *   of AudioContext time. Positions are the engine's own schedule projection
@@ -33,7 +35,7 @@
 import type { AnlzBeat } from '$lib/rb/anlz-types';
 import type { TempoNormalization } from '$lib/rb/beat-sync-math';
 import type { DeckId } from '$lib/rb/deck-id';
-import { phaseLockDecision, phaseLockShouldSend, type PhaseLockDecision } from '$lib/rb/phase-lock';
+import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend, type PhaseLockDecision } from '$lib/rb/phase-lock';
 
 /** At most one phase-lock evaluation per this much AudioContext time (30 Hz),
  * however fast the display's frame rate drives the presentation tick. */
@@ -243,7 +245,7 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 			}
 			let decision: PhaseLockDecision;
 			try {
-				decision = phaseLockDecision({
+				const input = {
 					masterBeats: ports.beats(lock.master),
 					masterPositionSec: ports.positionSec(lock.master, contextTime),
 					masterTempo: lock.masterTempo,
@@ -251,9 +253,12 @@ export function createWebAudioPhaseLock(ports: WebAudioPhaseLockPorts) {
 					followerPositionSec: ports.positionSec(deck, contextTime),
 					followerBaseTempo: lock.base,
 					normalization: lock.normalization,
-					pitchRangePct: ports.pitchRangePct(deck),
-					trimming: lock.sent !== lock.base
-				});
+					pitchRangePct: ports.pitchRangePct(deck)
+				};
+				// The base follows a tempo change inside either grid (F4); the
+				// trim corrects only the residual.
+				lock.base = phaseLockFeedForwardBase(input);
+				decision = phaseLockDecision({ ...input, followerBaseTempo: lock.base, trimming: lock.sent !== lock.base });
 			} catch (error) {
 				// Inside the presentation frame: drop this lock and say why rather
 				// than let one deck's bad input stop the playhead for every deck.

@@ -760,7 +760,20 @@ impl Deck {
         let i = (0..=i).rev().find(|&k| t.beats[k].time_ms <= dur).ok_or_else(|| {
             EngineError::new(ErrorCode::Invalid, "beat jump: no grid beat at or before the end of the decoded audio")
         })?;
-        let target = t.beats[i].time_ms.clamp(0.0, dur);
+        let mut target = t.beats[i].time_ms.clamp(0.0, dur);
+        // A PLAYING deck keeps its fractional beat phase, exactly `beats`
+        // grid beats on (`beatJumpSeekPlan`): snapping it to a beat skips
+        // `p` of a beat in its own groove and knocks every follower of a
+        // jumping master off phase. Only inside the grid and the audio; an
+        // edge stops on its beat as before. A paused deck still snaps.
+        if self.playing {
+            let last = t.beats.len() - 1;
+            let from = t.beat_index_at(now).filter(|&f| f >= 0.0 && f < last as f64);
+            let to = from.map(|f| f + beats).filter(|&f| f >= 0.0 && f <= last as f64);
+            if let Some(ms) = to.and_then(|f| t.beat_time_ms(f)).filter(|&ms| ms <= dur) {
+                target = ms;
+            }
+        }
         let Some((a, b)) = self.looping else {
             self.pos = t.ms_to_frames(target);
             self.stretch_warm = false;
@@ -1666,6 +1679,28 @@ mod tests {
             assert!(d.pos >= 48000.0 && d.pos < 144000.0, "pos {}", d.pos);
         }
         assert!(d.playing);
+    }
+
+    #[test]
+    fn a_playing_beat_jump_keeps_its_phase_and_a_paused_one_snaps() {
+        // 120 BPM grid (500 ms beats); playhead 30% into beat 4 (2150 ms).
+        let mut d = Deck::new(48000.0);
+        d.load(Arc::new(silent(48000, 20.0, grid_120(8))));
+        d.set_quantize(false);
+        d.seek(2150.0).unwrap();
+        d.play(true).unwrap();
+        d.beat_jump(4.0).unwrap();
+        assert!((d.pos - 4150.0 * 48.0).abs() < 1e-6, "playing: +4 beats exactly, pos {}", d.pos);
+        d.beat_jump(-1.0).unwrap();
+        assert!((d.pos - 3650.0 * 48.0).abs() < 1e-6, "playing: -1 beat exactly, pos {}", d.pos);
+        // Past the end of the grid a playing jump still stops on the last beat.
+        d.beat_jump(64.0).unwrap();
+        assert_eq!(d.pos, 15500.0 * 48.0);
+        // Control: paused, the same jump snaps to the nearest beat first.
+        d.play(false).unwrap();
+        d.seek(2150.0).unwrap();
+        d.beat_jump(4.0).unwrap();
+        assert_eq!(d.pos, 4000.0 * 48.0);
     }
 
     #[test]

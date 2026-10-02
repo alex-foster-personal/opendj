@@ -627,7 +627,7 @@ test('a hot-cue jump against an already-playing synced follower carries the pres
 	// either branch's `_synchronizeFollowers` call.
 	const body = readSource('src/lib/rb/audio-engine.svelte.ts');
 	assert.ok(
-		/await _synchronizeFollowers\(syncPlan\.master, \[deck\], \{\s*followerAnchorSec: \{ \[deck\]: targetMs \/ 1000 \},\s*reanchorDecks: new Set\(\[deck\]\),\s*\.\.\.\(pressT0Ms === undefined \? \{\} : \{ pressT0Ms \}\)/.test(
+		/await _synchronizeFollowers\(syncPlan\.master, \[deck\], \{\s*followerAnchorSec: \{ \[deck\]: targetMs \/ 1000 \}, anchorOnBeat: !skipGridQuantize,[^\n]*\s*reanchorDecks: new Set\(\[deck\]\),\s*\.\.\.\(pressT0Ms === undefined \? \{\} : \{ pressT0Ms \}\)/.test(
 			body
 		),
 		"'follower' must forward the press it was given"

@@ -310,6 +310,33 @@ test('a failed release is reported, not thrown into the frame', async () => {
 	assert.deepEqual(e.log.errors, [{ deck: 2, message: 'phase lock release failed: processor gone' }]);
 });
 
+test('feed-forward: a tempo change inside the follower grid moves the base, and the trim rides on it', async () => {
+	const e = fakeEngine();
+	const lock = mod.createWebAudioPhaseLock(e.ports);
+	lock.record(2, JOIN);
+	// The follower is now in a 130 BPM region of its grid, still in phase.
+	const region = grid(130, 0.05, 2000);
+	const m = pl.gridBeatPosition(MASTER_GRID, e.decks[1].pos);
+	const i = Math.floor(m);
+	e.decks[2].beats = region;
+	e.decks[2].pos = region[i].t + (m - i) * (region[i + 1].t - region[i].t);
+	const [step] = lock.tick(e.now);
+	assert.equal(step.decision.action, 'base');
+	assert.ok(Math.abs(lock.snapshot().get(2).base - 128 / 130) < 1e-9, `base ${lock.snapshot().get(2).base}`);
+	assert.deepEqual(e.log.schedules.map((x) => x.deck), [2]);
+	assert.ok(Math.abs(e.log.schedules[0].ratio - 128 / 130) < 1e-9, 'the new base is scheduled');
+	await flush();
+	// Control: on a constant grid the base never moves (no command at all).
+	e.log.schedules.length = 0;
+	for (let k = 0; k < 30; k++) {
+		e.advance(0.05);
+		lock.tick(e.now);
+		await flush();
+	}
+	assert.ok(Math.abs(lock.snapshot().get(2).base - 128 / 130) < 1e-9);
+	assert.deepEqual(e.log.schedules, []);
+});
+
 test('a trim in flight is superseded by a re-sync: its late completion does not touch the new lock', async () => {
 	const e = fakeEngine({ scheduleDelaySync: false });
 	const lock = mod.createWebAudioPhaseLock(e.ports);

@@ -159,8 +159,7 @@ import {
 	type BeatgridResyncPorts
 } from '$lib/components/rb/wave/anlz-cache.svelte';
 import {
-	beatJumpTargetMs,
-	beatJumpTargetWithinDurationMs,
+	beatJumpSeekPlan,
 	computeFollowerSyncPlan,
 	displayLoopFrom,
 	computeQuantizedLaunchArm,
@@ -2076,6 +2075,7 @@ interface _MasterSyncSchedule {
 
 interface _SyncOptions {
 	followerAnchorSec?: Partial<Record<DeckId, number>>;
+	anchorOnBeat?: boolean; // a user seek: join on the clicked beat (FollowerSyncRequest.anchorOnBeat)
 	masterSchedule?: _MasterSyncSchedule;
 	/**
 	 * Followers that were already playing and already beat-synced before
@@ -2088,9 +2088,8 @@ interface _SyncOptions {
 	 * `_scheduleReanchoredFollower` instead of stepping - see that function.
 	 */
 	reanchorDecks?: ReadonlySet<DeckId>;
-	/** Q1: the press behind this sync, when one deck's start caused it. Set
-	 * ONLY by `play`, whose followers are the single pressed deck; the resync
-	 * callers leave it unset so a background re-anchor never files a press row. */
+	/** Q1: the press behind this sync. Set ONLY by `play` (one pressed follower);
+	 * resync callers leave it unset so a background re-anchor files no press row. */
 	pressT0Ms?: number;
 }
 
@@ -2476,7 +2475,7 @@ async function _synchronizeFollowers(
 					syncAtContextTimeSec: syncAt,
 					minFollowerTempoRatio: bounds.min,
 					maxFollowerTempoRatio: bounds.max,
-					mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode)
+					mode: syncModeForBeatSyncMax(uiPrefs.beat_sync_max, st.sync_mode), anchorOnBeat: options.anchorOnBeat && requestedAnchorSec !== undefined
 				});
 				planned.push({ deck, st, plan, rawFollowerPositionSec });
 			} catch (error) {
@@ -3374,7 +3373,7 @@ class RbAudioEngine implements AudioEngine {
 				// seekSyncMaster only returns this kind for a deck already
 				// playing and already beat-synced - a re-anchor, not a join.
 				await _synchronizeFollowers(syncPlan.master, [deck], {
-					followerAnchorSec: { [deck]: targetMs / 1000 },
+					followerAnchorSec: { [deck]: targetMs / 1000 }, anchorOnBeat: !skipGridQuantize, // a beat jump's target is already exact (F3)
 					reanchorDecks: new Set([deck]),
 					...(pressT0Ms === undefined ? {} : { pressT0Ms })
 				});
@@ -3716,8 +3715,7 @@ class RbAudioEngine implements AudioEngine {
 		const { st } = _requireLoaded(deck, 'beatJump');
 		const grid = requireBeatGrid(st, 'beatJump');
 		const anchorMs = _projectPositionAt(deck, _futureScheduleTime(deck)) * 1000;
-		const rawTargetMs = beatJumpTargetMs(grid, anchorMs, beats);
-		const targetMs = beatJumpTargetWithinDurationMs(grid, rawTargetMs, _durationSec(deck) * 1000);
+		const { targetMs, skipGridQuantize } = beatJumpSeekPlan(grid, anchorMs, beats, _durationSec(deck) * 1000, _rt[deck].desiredActive);
 		if (st.loop !== null && st.loop.engaged) {
 			const previousLoop = st.loop;
 			// quantizedSeek preserves an in-range loop. Shift its exact PQTZ
@@ -3743,7 +3741,7 @@ class RbAudioEngine implements AudioEngine {
 			}
 			return;
 		}
-		await this.quantizedSeek(deck, targetMs);
+		await this.quantizedSeek(deck, targetMs, skipGridQuantize);
 	}
 
 	/** Capture the current engaged loop as the one-slot safety loop (armed). */

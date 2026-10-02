@@ -30,7 +30,7 @@
  * bookkeeping beside the scheduled revisions and re-anchor ramps).
  */
 import type { AnlzBeat } from '$lib/rb/anlz-types';
-import { PHASE_LOCK_MAX_TRIM, type TempoNormalization } from '$lib/rb/beat-sync-math';
+import { beatTimeAt, gridBeatPosition, PHASE_LOCK_MAX_TRIM, type TempoNormalization } from '$lib/rb/beat-sync-math';
 
 /**
  * Errors smaller than this are left alone (the tempo goes back to base). The
@@ -57,7 +57,7 @@ export const PHASE_LOCK_RELEASE_MS = 1;
 export const PHASE_LOCK_CORRECTION_BEATS = 4;
 
 // Largest trim (0.3% of base); defined in beat-sync-math.ts, see there.
-export { PHASE_LOCK_MAX_TRIM };
+export { gridBeatPosition, PHASE_LOCK_MAX_TRIM };
 
 /**
  * The wrapped phase error is at most half a beat; past a quarter of one the
@@ -107,24 +107,6 @@ export type PhaseLockDecision =
 	/** A position is off its grid (intro, outro): nothing to measure. */
 	| { action: 'unmeasured'; tempo: number; errorMs: null };
 
-/** Fractional beat index of `positionSec` on `beats`, or null off the grid. */
-export function gridBeatPosition(beats: readonly AnlzBeat[], positionSec: number): number | null {
-	const n = beats.length;
-	if (n < 2 || !Number.isFinite(positionSec)) return null;
-	if (positionSec < beats[0].t || positionSec >= beats[n - 1].t) return null;
-	// Last beat at or before the position.
-	let lo = 0;
-	let hi = n - 1;
-	while (hi - lo > 1) {
-		const mid = (lo + hi) >> 1;
-		if (beats[mid].t <= positionSec) lo = mid;
-		else hi = mid;
-	}
-	const span = beats[lo + 1].t - beats[lo].t;
-	if (!(span > 0)) return null;
-	return lo + (positionSec - beats[lo].t) / span;
-}
-
 /** One master beat in wall-clock ms at the master's position and tempo. */
 function _masterBeatWallMs(input: PhaseLockInput, masterBeatPos: number): number {
 	const i = Math.floor(masterBeatPos);
@@ -172,9 +154,59 @@ export function phaseLockDecision(input: PhaseLockInput): PhaseLockDecision {
 	// Ahead by E with W to fix it in: play slower by E/W.
 	const correction = -errorMs / (PHASE_LOCK_CORRECTION_BEATS * beatWallMs);
 	const trim = Math.max(-PHASE_LOCK_MAX_TRIM, Math.min(PHASE_LOCK_MAX_TRIM, correction));
-	const range = input.pitchRangePct / 100;
-	const tempo = Math.max(Math.max(0.01, 1 - range), Math.min(1 + range, base * (1 + trim)));
-	return { action: 'trim', tempo, errorMs };
+	return { action: 'trim', tempo: _inPitchRange(base * (1 + trim), input.pitchRangePct), errorMs };
+}
+
+/** Master beats over which the feed-forward base measures both grids,
+ * centered on the playheads (two behind, two ahead). */
+export const PHASE_LOCK_FEED_FORWARD_BEATS = 4;
+
+/** The feed-forward base moves only when the grids ask for more than this
+ * fraction of it: half the trim cap. Under it the trim absorbs the residual;
+ * rekordbox's millisecond beat times dither a constant grid's measured tempo
+ * by up to ~0.1% over the window, which must not move the base. */
+export const PHASE_LOCK_FEED_FORWARD_HYSTERESIS = PHASE_LOCK_MAX_TRIM / 2;
+
+/**
+ * The follower's base tempo as the two grids ask for it HERE (NAE-19 F4):
+ * the ratio that makes the follower cover `normalization` of its grid beats
+ * per master beat over `PHASE_LOCK_FEED_FORWARD_BEATS` master beats centered
+ * on the playheads, at the master's playing tempo. A join fixes the base
+ * once and the trim can only move `PHASE_LOCK_MAX_TRIM` around it, so a
+ * tempo change INSIDE either grid (a ramp, a second const_region) used to
+ * become a run of audible re-seeks. A window, not one interval, so
+ * ms-rounded beat times do not become tempo noise; centered, not ahead, so a
+ * step's phase error is split before and after it (about 6 ms for a 3% step
+ * at 128 BPM, under the re-seek line; a window ahead met it early and
+ * re-seeked). Returns `input.followerBaseTempo` unchanged when either window
+ * leaves its grid or the grids ask for less than
+ * `PHASE_LOCK_FEED_FORWARD_HYSTERESIS` of change; kept inside the pitch range.
+ */
+export function phaseLockFeedForwardBase(input: Omit<PhaseLockInput, 'trimming'>): number {
+	const base = input.followerBaseTempo;
+	const m = gridBeatPosition(input.masterBeats, input.masterPositionSec);
+	const f = gridBeatPosition(input.followerBeats, input.followerPositionSec);
+	if (m === null || f === null) return base;
+	const half = PHASE_LOCK_FEED_FORWARD_BEATS / 2;
+	const asked =
+		(_spanSec(input.followerBeats, f, half * (input.normalization ?? 1)) * input.masterTempo) /
+		_spanSec(input.masterBeats, m, half);
+	if (!(asked > 0 && asked < Infinity)) return base; // also refuses NaN
+	if (Math.abs(asked - base) <= PHASE_LOCK_FEED_FORWARD_HYSTERESIS * base) return base;
+	return _inPitchRange(asked, input.pitchRangePct);
+}
+
+/** Track seconds from beat index `at - half` to `at + half`; NaN when that
+ * window leaves the grid (the caller then keeps its base). */
+function _spanSec(beats: readonly AnlzBeat[], at: number, half: number): number {
+	if (at - half < 0 || at + half > beats.length - 1) return NaN;
+	return beatTimeAt(beats, at + half) - beatTimeAt(beats, at - half);
+}
+
+/** `tempo` held inside a +-`pitchRangePct` fader (never below 0.01). */
+function _inPitchRange(tempo: number, pitchRangePct: number): number {
+	const range = pitchRangePct / 100;
+	return Math.max(0.01, 1 - range, Math.min(1 + range, tempo));
 }
 
 /** Whether `next` differs enough from the tempo last sent to send it. A return
