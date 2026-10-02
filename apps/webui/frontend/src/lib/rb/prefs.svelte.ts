@@ -56,6 +56,12 @@ import {
 	type GigHelperPrefs
 } from './gig-helper-prefs';
 import {
+	DEV_UI_PREF_DEFAULTS,
+	makeDevUiPrefSetters,
+	mergeDevUiPrefsFromParsed,
+	type DevUiPrefs
+} from './dev-ui-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
@@ -114,7 +120,13 @@ export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
 /** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
 export type HorizontalWheelKnob = 'filter' | 'color';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPrefs, AppModePrefs, LyricsPrefs {
+export interface RbUiPrefs
+	extends PerfTierPrefs,
+		AppPosturePrefs,
+		GigHelperPrefs,
+		AppModePrefs,
+		LyricsPrefs,
+		DevUiPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -266,7 +278,8 @@ const DEFAULTS: RbUiPrefs = {
 	...PERF_TIER_PREF_DEFAULTS,
 	...APP_POSTURE_PREF_DEFAULTS,
 	...GIG_HELPER_PREF_DEFAULTS,
-	...APP_MODE_PREF_DEFAULTS
+	...APP_MODE_PREF_DEFAULTS,
+	...DEV_UI_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -530,7 +543,8 @@ function _load(): RbUiPrefs {
 		...GIG_HELPER_PREF_DEFAULTS,
 		...mergeGigHelperPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
-		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
+		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY),
+		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -730,6 +744,8 @@ export function setAppPosture(next: AppPosturePref): void {
 }
 export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+/** "Show developer pages" - local-only, see dev-ui-prefs.ts. */
+export const { setShowDevUi } = makeDevUiPrefSetters(uiPrefs, _persist);
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

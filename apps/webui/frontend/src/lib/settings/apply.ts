@@ -22,6 +22,7 @@ import {
 	setHideTodoSettings,
 	setHorizontalWheelKnob,
 	setJogRadialWaveform,
+	setShowDevUi,
 	setShowStems,
 	setWaveformDesign,
 	setLibraryDensity,
@@ -83,6 +84,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'lyrics_waveform_overlay',
 	'lyrics_deck_line',
 	'hide_todo_settings',
+	'show_dev_ui',
 	'technically_working_animate',
 	'jog_radial_waveform',
 	'show_stems',
@@ -153,6 +155,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.lyrics_deck_line;
 		case 'hide_todo_settings':
 			return uiPrefs.hide_todo_settings;
+		case 'show_dev_ui':
+			return uiPrefs.show_dev_ui;
 		case 'technically_working_animate':
 			return uiPrefs.technically_working_animate;
 		case 'jog_radial_waveform':
@@ -276,6 +280,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'hide_todo_settings':
 			setHideTodoSettings(_asBool(value, key));
+			return;
+		case 'show_dev_ui':
+			setShowDevUi(_asBool(value, key));
 			return;
 		case 'technically_working_animate':
 			setTechnicallyWorkingAnimate(_asBool(value, key));

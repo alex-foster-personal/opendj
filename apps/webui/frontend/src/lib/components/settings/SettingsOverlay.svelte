@@ -38,7 +38,12 @@
 		setSettingsSelectedIndex,
 		settingsOverlay
 	} from '$lib/settings/overlay.svelte';
-	import { filterSettings, visibleGroups } from '$lib/settings/search';
+	import {
+		effectiveHideTodo,
+		filterSettings,
+		settingRowVisible,
+		visibleGroups
+	} from '$lib/settings/search';
 	import { subscribeWheelSensitivity } from '$lib/rb/wheel-adjust';
 	import {
 		setAutoSyncDestination,
@@ -70,14 +75,18 @@
 	 * on EVERY change, including writes this component did not make. */
 	let numberDraft = $state<Record<string, number>>({});
 
-	const hideTodo = $derived(uiPrefs.hide_todo_settings);
+	// Todo rows and developer-only rows are hidden unless "Show developer
+	// pages" (show_dev_ui) is on - V1 hide-unbuilt-UI, JIK Thu 1 Oct 2026.
+	const showDev = $derived(uiPrefs.show_dev_ui);
+	const hideTodo = $derived(effectiveHideTodo(uiPrefs));
 	const filterOpts = $derived({
 		hideTodo,
+		showDev,
 		group: settingsOverlay.group as SettingGroupId | null,
 		aiIds
 	});
 	const filtered = $derived(filterSettings(settingsOverlay.query, filterOpts));
-	const groupsShown = $derived(visibleGroups(settingsOverlay.query, { hideTodo, aiIds }));
+	const groupsShown = $derived(visibleGroups(settingsOverlay.query, { hideTodo, showDev, aiIds }));
 	const selected = $derived(
 		filtered.all[clampIndex(settingsOverlay.selectedIndex, filtered.all.length)] ?? null
 	);
@@ -118,7 +127,7 @@
 		const seq = ++aiSeq;
 		aiPending = true;
 		aiError = null;
-		const catalogIds = SETTINGS_CATALOG.filter((s) => !hideTodo || s.implemented).map(
+		const catalogIds = SETTINGS_CATALOG.filter((s) => settingRowVisible(s, { hideTodo, showDev })).map(
 			(s) => s.id
 		);
 		const handle = setTimeout(() => {

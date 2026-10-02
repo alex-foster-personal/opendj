@@ -488,7 +488,20 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		group: 'advanced',
 		keywords: ['todo', 'gray', 'parity', 'hide', 'stub', 'placeholder'],
 		title: 'Hide PARITY-TODO placeholder settings from the list',
-		detail: 'When on, only implemented settings appear in search results and category lists.',
+		detail:
+			'When on, only implemented settings appear in search results and category lists. Only shown while "Show developer pages" is on, since todo rows are hidden otherwise.',
+		implemented: true,
+		devOnly: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'show_dev_ui',
+		label: 'Show developer pages',
+		group: 'advanced',
+		keywords: ['developer', 'dev', 'debug', 'admin', 'queues', 'progress', 'ledger', 'todo', 'unbuilt'],
+		title: 'Show developer-only pages and unbuilt settings',
+		detail:
+			'When on, the sidebar shows the Admin, Progress ledger and Queues links, and the settings list shows unbuilt (todo) rows and the Rekordbox / djay Pro parity groups. Default off. Saved in this browser only.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

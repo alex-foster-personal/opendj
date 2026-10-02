@@ -44,10 +44,16 @@
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import { isPerformanceRoutePath, isTrackifyRoutePath } from '$lib/rb/performance-preset';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		headerPlaylistCountTitle,
+		headerTrackCountTitle,
+		isCurrentNavLink,
+		sidebarNavLinks
+	} from '$lib/shell/sidebar-nav';
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
-	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
+	import { installSettingsHotkeys } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import { entitlements } from '$lib/api/entitlements.svelte';
@@ -80,6 +86,7 @@
 
 	/** Why the Progress link goes nowhere useful, or null when it works. */
 	const ledgerRefusal = $derived(progressRefusal());
+	const navLinks = $derived(sidebarNavLinks(uiPrefs.show_dev_ui));
 
 	// /performance is a pixel-faithful full-window rekordbox clone; it must
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
@@ -312,40 +319,43 @@
 	<aside class="sidebar">
 		<h1>Open DJ</h1>
 		<nav>
-			<a href="/">Library</a>
-			<a href="/pairings">Pairings</a>
-			<a href="/smartlists">Smartlists</a>
-			<a href="/queues">Queues</a>
-			<a href="/reconcile">Missing tracks</a>
-			<a href="/dedup">Dedup Review</a>
-			<a href="/performance">Performance</a>
-			<a href="/play-analytics">Play analytics</a>
-			<a href="/library-wheel">Library wheel</a>
-			<a href="/sets">Sessions / REC</a>
-			<a href="/cloudsync">CloudSync</a>
-			<!-- Ledger route: legacy-daemon only, so the link says so rather than
-			     leading to a page that can only apologise. -->
-			<a
-				href="/progress-tree"
-				class:nav-unavailable={ledgerRefusal !== null}
-				title={ledgerRefusal ?? 'Fan-out progress ledger (GET /api/v1/progress)'}
-			>
-				Progress
-			</a>
-			<a href="/admin">Admin</a>
-			<a href="/settings">Settings (daemon)</a>
-			<button type="button" class="nav-settings" onclick={() => openSettings()}>
-				Settings (Cmd+,)
-			</button>
+			<!-- Links come from $lib/shell/sidebar-nav: developer pages (Queues,
+			     Progress, Admin) only while "Show developer pages" is on, one
+			     Settings entry, and the current page marked. -->
+			{#each navLinks as link (link.href)}
+				{@const current = isCurrentNavLink(link.href, $page.url.pathname)}
+				{#if link.href === '/progress-tree'}
+					<!-- Ledger route: legacy-daemon only, so the link says so rather than
+					     leading to a page that can only apologize. -->
+					<a
+						href={link.href}
+						class:active={current}
+						class:nav-unavailable={ledgerRefusal !== null}
+						aria-current={current ? 'page' : undefined}
+						title={ledgerRefusal ?? 'Fan-out progress ledger (GET /api/v1/progress)'}
+					>
+						{link.label}
+					</a>
+				{:else}
+					<a
+						href={link.href}
+						class:active={current}
+						aria-current={current ? 'page' : undefined}
+						title={link.title}
+					>
+						{link.label}
+					</a>
+				{/if}
+			{/each}
 		</nav>
 	</aside>
 	<main>
 		<div class="topbar">
 			<div class="status-strip" data-testid="header-status-strip">
 				{#if health.data}
-					<span class="readout readout-numeric" title={String(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
+					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
 					<span class="sep" aria-hidden="true"> · </span>
-					<span class="readout readout-numeric" title={String(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
+					<span class="readout readout-numeric" title={headerPlaylistCountTitle(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
 					<span class="sep" aria-hidden="true"> · </span>
 					{#if health.data.cloud.lock_holder}
 						<span class="readout">lock: {health.data.cloud.lock_holder.holder}</span>
@@ -492,20 +502,12 @@
 		background: var(--surface);
 		border-top: 1px solid var(--border);
 	}
-	.nav-settings {
-		display: block;
-		width: 100%;
-		margin-top: 0.15rem;
-		padding: 0.2rem 0;
-		border: none;
-		background: transparent;
+	/* The page on screen: aria-current="page" plus a visible accent bar and
+	   color, on top of app.css's shared .active background. */
+	.sidebar nav a[aria-current='page'] {
 		color: var(--accent);
-		text-align: left;
-		font: inherit;
-		cursor: pointer;
-	}
-	.nav-settings:hover {
-		text-decoration: underline;
+		font-weight: 600;
+		box-shadow: inset 3px 0 0 var(--accent);
 	}
 	/* Still navigable (the page explains itself), just visibly not on offer. */
 	.nav-unavailable {
