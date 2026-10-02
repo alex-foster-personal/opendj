@@ -28,6 +28,9 @@
  *     and painting the scanning sentence beside the red error is issue #3422.
  *     [if] a null detection that is not `failed` renders the not-found state [then ⛔️] broken
  *     [if] detectState `failed` returns `scanning` [then ⛔️] broken
+ *   ✔︎ ✅ 🎯 detectNotice() says the search did not finish whenever the last
+ *     ask failed, including a failed Look again over an earlier answer.
+ *     [if] a failed re-check shows the earlier answer with nothing saying so [then ⛔️] broken
  *   ✔︎ ✅ 🎯 probeRows() marks a MISSING file as danger exactly when it is the
  *     reason nothing is importable, never merely because it is absent -- a
  *     working copy that is absent because the plain copy is being used is not
@@ -75,6 +78,22 @@ export function detectPhase(
 	if (detectState === 'scanning') return 'scanning';
 	if (detection === null) return 'scanning';
 	return 'answered';
+}
+
+/**
+ * What the detect step says when the last ask FAILED (an error or the read
+ * deadline), or null when it did not. With no earlier answer it is the
+ * did-not-finish sentence; with one, it says the answer below is the old one,
+ * so a failed Look again is never drawn as if it had succeeded.
+ */
+export function detectNotice(
+	detection: RekordboxDetection | null,
+	detectState: DetectState
+): string | null {
+	if (detectState !== 'failed') return null;
+	return detection === null
+		? 'The search for your music did not finish. Look again, or import a folder instead.'
+		: 'Looking again did not finish. What is shown below is from the earlier search.';
 }
 
 /** The sentence the scanning phase shows. Spelled once so the e2e can pin it

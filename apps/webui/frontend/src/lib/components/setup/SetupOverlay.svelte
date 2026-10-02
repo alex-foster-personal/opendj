@@ -26,6 +26,7 @@
 	 * endpoints in $lib/setup/setup-api; the only browser-only state is
 	 * whether this tab is drawing the panel, the chip, or neither.
 	 */
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import AssistantSidebar from '$lib/components/assistant/AssistantSidebar.svelte';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
@@ -47,6 +48,7 @@
 		ESCAPE_ACTIONS,
 		SCANNING_SENTENCE,
 		blockerTone,
+		detectNotice,
 		detectPhase,
 		escapeAgentEndpoint,
 		probeRows,
@@ -166,6 +168,8 @@
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
 	const phase = $derived(detectPhase(detection, detectState));
+	/** "Did not finish", with or without an earlier answer below it. */
+	const notice = $derived(detectNotice(detection, detectState));
 	const rows = $derived(detection === null ? [] : probeRows(detection));
 	/** Live while the panel is minimised, so the chip is never a lie. */
 	const importRunning = $derived(
@@ -275,11 +279,13 @@
 	 * nothing re-ran the load, so the step sat on a grey in-flight sentence
 	 * forever. This is a state change, not a poll: it fires when the flavor
 	 * resolves and when the panel is re-opened, and never otherwise.
+	 * untrack: ensureLoaded() reads detectState, and tracking it re-ran this
+	 * effect on every failure, which looped load() (Mac check, 2f449f863).
 	 */
 	$effect(() => {
 		if (!setupOverlay.open) return;
 		void capabilities.flavor;
-		void setupWizard.ensureLoaded();
+		untrack(() => void setupWizard.ensureLoaded());
 	});
 
 	/** The jobs store is the progress feed. Attached only while the overlay is
@@ -474,9 +480,26 @@
 										</span>.
 									</p>
 								{/if}
+							{:else if detectState === 'failed'}
+								<p class="warning" role="status" data-agent-detect-state="failed">
+									Your library could not be read yet. Try again, or get started anyway.
+								</p>
+							{:else if detectState === 'scanning'}
+								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
 							{/if}
 							<div class="actions">
 								{@render backButton()}
+								{#if status === null && detectState === 'failed'}
+									<button
+										type="button"
+										class="secondary"
+										onclick={() => setupWizard.load()}
+										disabled={setupWizard.busy}
+										data-agent-endpoint="GET /api/v1/setup/status"
+									>
+										Try again
+									</button>
+								{/if}
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
@@ -790,13 +813,11 @@
 							<h3>What is on this machine</h3>
 							{#if phase === 'scanning'}
 								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
-							{:else if detection === null}
-								<p class="muted" role="status" data-agent-detect-state="failed">
-									The search for your music did not finish. Look again, or import a
-									folder instead.
-								</p>
-							{:else if detection !== null}
-								<ul class="probes">
+							{:else if notice !== null}
+								<p class="warning" role="status" data-agent-detect-state="failed">{notice}</p>
+							{/if}
+							{#if phase === 'answered' && detection !== null}
+								<ul class="probes" class:stale={notice !== null}>
 									{#each rows as row (row.key)}
 										<li
 											class:danger={row.danger}
@@ -1433,6 +1454,11 @@ message={job.message}
 		color: var(--fg);
 		border-left: 3px solid var(--accent-dim);
 		padding-left: 0.6rem;
+	}
+	/* An earlier answer kept under a failed Look again: still readable, but
+	   visibly not the current one. */
+	.probes.stale {
+		opacity: 0.6;
 	}
 	.warning {
 		color: var(--muted);
