@@ -8,6 +8,8 @@ Regression lines:
   - if the drain ever starts a stems job locally then broken
   - if an unchanged failure is retried in a loop then broken
   - if a job that reports success without producing its artifact is retried forever then broken
+
+[if] the drain runs work while a deck plays or loops on an unchanged failure [then] fail, [else stop].
 """
 from __future__ import annotations
 
