@@ -68,6 +68,16 @@ def test_scan_starts_once_reports_progress_and_finishes(app_client, monkeypatch)
     assert (body["state"], body["done"], body["clusters"]) == ("done", 3, 1)
     assert body["finished_at"] is not None
     assert len(calls) == 1
+    # The scan reads this app's own state database, not the process default,
+    # and writes clusters where the review routes read them.
+    from pathlib import Path
+
+    from apps.webui.server.dedup_review_ops import dedup_db_path
+
+    assert calls[0] == {
+        "state_db": Path(app_client.app.state.state_db_path),
+        "db_path": dedup_db_path(),
+    }
 
 
 def test_scan_failure_is_reported_not_swallowed(app_client, monkeypatch) -> None:

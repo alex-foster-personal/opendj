@@ -17,6 +17,7 @@ SHA-256 digest of the cluster member stable ids. Every write requires
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -125,13 +126,18 @@ def get_dedup_scan() -> ScanStatusOut:
     status_code=status.HTTP_202_ACCEPTED,
     responses={409: {"description": "A scan is already running"}},
 )
-def post_dedup_scan() -> ScanStatusOut:
+def post_dedup_scan(request: Request) -> ScanStatusOut:
     """Start fingerprinting the library and rebuilding duplicate clusters.
 
     Local only: the engine fingerprints each track's own file, nothing is
-    looked up online, and no audio file is written, moved or deleted.
+    looked up online, and no audio file is written, moved or deleted. The
+    scan reads THIS app's state database (an alternate library or fixture
+    passes its own to ``create_app``), not the process-global default, and
+    writes clusters where the review routes read them.
     """
-    if not library_scan.JOB.start():
+    configured = getattr(request.app.state, "state_db_path", None)
+    state_db = Path(configured) if configured is not None else None
+    if not library_scan.JOB.start(state_db=state_db, db_path=dedup_db_path()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "scan_running", "message": "a duplicate scan is already running"},

@@ -60,11 +60,17 @@
 	let scanTimer: ReturnType<typeof setTimeout> | null = null;
 	const SCAN_POLL_MS = 1500;
 
-	async function pollScan(signal: AbortSignal, next: Promise<DedupScanStatus>): Promise<void> {
+	async function pollScan(
+		signal: AbortSignal,
+		next: Promise<DedupScanStatus>,
+		started = false
+	): Promise<void> {
 		try {
 			const status = await next;
 			if (signal.aborted) return;
-			const wasRunning = scan?.state === 'running';
+			// A scan this page just started can already be over when the start
+			// returns, so it reloads too, not only one seen running first.
+			const wasRunning = started || scan?.state === 'running';
 			scan = status;
 			scanError = null;
 			if (status.state === 'running') {
@@ -82,7 +88,7 @@
 	function findDuplicates(): void {
 		const signal = pageController?.signal;
 		if (signal === undefined || signal.aborted || scan?.state === 'running') return;
-		void pollScan(signal, startDedupScan(signal));
+		void pollScan(signal, startDedupScan(signal), true);
 	}
 
 	onMount(() => {

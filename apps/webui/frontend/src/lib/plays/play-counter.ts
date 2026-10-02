@@ -53,6 +53,8 @@ export interface PlayPost {
 
 interface DeckLoad {
 	stableId: string;
+	/** `DeckState.load_generation` at the load: a reload of the same track is a new play. */
+	generation: number;
 	playId: string;
 	heardMs: number;
 	lastSampleMs: number | null;
@@ -147,9 +149,11 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 			loads.delete(deck);
 			return;
 		}
-		if (load === undefined || load.stableId !== stableId) {
+		const generation = deckState.load_generation ?? 0;
+		if (load === undefined || load.stableId !== stableId || load.generation !== generation) {
 			load = {
 				stableId,
+				generation,
 				playId: newPlayId(),
 				heardMs: 0,
 				lastSampleMs: null,

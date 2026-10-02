@@ -92,6 +92,25 @@ test('a load posts exactly once, only after PLAY_THRESHOLD_S heard seconds', asy
 	assert.equal(h.posts.length, 1, 'one load must never count twice');
 });
 
+test('reloading the same track is a new play, not the old one continued', async () => {
+	// The sampler may never see the deck empty between two loads of one
+	// track; load_generation is what tells them apart.
+	const h = harness();
+	h.deck1.load_generation = 1;
+	h.counter.tick();
+	h.run(mod.PLAY_THRESHOLD_S);
+	await settle();
+	assert.equal(h.posts.length, 1);
+	h.deck1.load_generation = 2;
+	h.run(mod.PLAY_THRESHOLD_S - 5);
+	await settle();
+	assert.equal(h.posts.length, 1, 'the reload must not inherit the first load\'s heard time');
+	h.run(10);
+	await settle();
+	assert.equal(h.posts.length, 2);
+	assert.notEqual(h.posts[1].playId, h.posts[0].playId);
+});
+
 test('a fractional decoded duration is posted as whole milliseconds', async () => {
 	// The server's duration_ms is an int: a float like 215040.00000000003
 	// (AudioBuffer.duration * 1000) is a 422, and the play is never logged.
