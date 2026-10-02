@@ -73,33 +73,45 @@ def stop_all() -> int:
     if not running:
         return 0
     descendants = [member for proc in running for member in _descendants(proc)]
-    for proc in running:
-        if proc.poll() is None:
-            proc.terminate()
-    for member in descendants:
-        with contextlib.suppress(psutil.NoSuchProcess):
-            member.terminate()
+    _signal(running, descendants, kill=False)
+    alive = _wait(running, descendants, STOP_GRACE_S)
+    _signal(running, alive, kill=True)
+    _wait(running, alive, KILL_WAIT_S)
+    log.info("shutdown stopped %d running pipeline CLI(s)", len(running))
+    return len(running)
 
-    deadline = time.monotonic() + STOP_GRACE_S
+
+def _signal(
+    running: list[subprocess.Popen[str]], members: list[psutil.Process], *, kill: bool
+) -> None:
+    """Terminate (or kill) every CLI still running and every listed descendant."""
+    for proc in running:
+        if proc.poll() is not None:
+            continue
+        if kill:
+            proc.kill()
+        else:
+            proc.terminate()
+    for member in members:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            if kill:
+                member.kill()
+            else:
+                member.terminate()
+
+
+def _wait(
+    running: list[subprocess.Popen[str]], members: list[psutil.Process], within_s: float
+) -> list[psutil.Process]:
+    """Wait up to ``within_s`` IN TOTAL for all of them; return the members still alive."""
+    deadline = time.monotonic() + within_s
     for proc in running:
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=max(0.0, deadline - time.monotonic()))
-    _, alive = psutil.wait_procs(descendants, timeout=max(0.0, deadline - time.monotonic()))
-
-    for proc in running:
-        if proc.poll() is None:
-            proc.kill()
-    for member in alive:
-        with contextlib.suppress(psutil.NoSuchProcess):
-            member.kill()
-    kill_deadline = time.monotonic() + KILL_WAIT_S
-    for proc in running:
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            proc.wait(timeout=max(0.0, kill_deadline - time.monotonic()))
-    if alive:
-        psutil.wait_procs(alive, timeout=max(0.0, kill_deadline - time.monotonic()))
-    log.info("shutdown stopped %d running pipeline CLI(s)", len(running))
-    return len(running)
+    if not members:
+        return []
+    _, alive = psutil.wait_procs(members, timeout=max(0.0, deadline - time.monotonic()))
+    return list(alive)
 
 
 def _descendants(proc: subprocess.Popen[str]) -> list[psutil.Process]:

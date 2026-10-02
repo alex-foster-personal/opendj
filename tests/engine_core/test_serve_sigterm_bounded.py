@@ -101,7 +101,7 @@ def _boot(tmp_path: Path, mode: str) -> tuple[subprocess.Popen[bytes], int]:
             return proc, port
     proc.kill()
     proc.wait()
-    pytest.fail("the engine never answered /api/v1/health")
+    raise AssertionError("the engine never answered /api/v1/health")
 
 
 def _open_request(port: int, path: str) -> socket.socket:
