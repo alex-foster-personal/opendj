@@ -150,8 +150,8 @@ def adts_stream(path: Path | str) -> AdtsStream | None:
             hdr = fh.read(7)
             frame = _adts_frame(hdr)
             if frame is None:
-                if _partial_sync(hdr):
-                    return None  # truncated inside the next frame's header
+                if _sync_like(hdr):
+                    return None  # a damaged or cut-off frame header
                 break
             if offset + frame[1] > size or (first and frame[0] != first[0]):
                 return None
@@ -175,9 +175,10 @@ def _id3v2_end(head: bytes) -> int:
     return 10 + size + (10 if head[5] & 0x10 else 0)
 
 
-def _partial_sync(hdr: bytes) -> bool:
-    """Whether a short read at EOF is the start of a cut-off ADTS header."""
-    return 0 < len(hdr) < 7 and hdr[0] == 0xFF and (len(hdr) < 2 or hdr[1] & 0xF6 == 0xF0)
+def _sync_like(hdr: bytes) -> bool:
+    """Whether bytes that are not a valid frame still begin with ADTS sync:
+    a header cut off at EOF or carrying invalid fields, so damage, not a tag."""
+    return len(hdr) > 0 and hdr[0] == 0xFF and (len(hdr) < 2 or hdr[1] & 0xF6 == 0xF0)
 
 
 def _adts_frame(hdr: bytes) -> tuple[int, int, int, int] | None:
