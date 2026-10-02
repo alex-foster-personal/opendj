@@ -94,12 +94,23 @@ def migrate_pairings_snapshot_json(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if row is None:
         return
-    columns = {
-        col[1] for col in conn.execute("PRAGMA table_info(pairings)")
-    }
-    if "snapshot_json" in columns:
+    if _pairings_has_snapshot_json(conn):
         return
-    conn.execute("ALTER TABLE pairings ADD COLUMN snapshot_json TEXT")
+    try:
+        conn.execute("ALTER TABLE pairings ADD COLUMN snapshot_json TEXT")
+    except sqlite3.OperationalError:
+        # Two processes opening the same pre-column DB can both see it absent;
+        # the one that loses the ALTER race finds the column already there.
+        # Anything else (a locked or read-only file) is a real failure.
+        if not _pairings_has_snapshot_json(conn):
+            raise
+
+
+def _pairings_has_snapshot_json(conn: sqlite3.Connection) -> bool:
+    return any(
+        col[1] == "snapshot_json"
+        for col in conn.execute("PRAGMA table_info(pairings)")
+    )
 
 _PAIRING_CAPTURE_V1: tuple[str, ...] = (
     """

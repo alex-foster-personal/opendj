@@ -177,3 +177,38 @@ def test_old_pairings_table_gains_snapshot_column(db_path: Path) -> None:
     by_from = {p.from_stable_id: p for p in backend.list_pairings()}
     assert by_from["x"].notes == "old"
     assert by_from["a"].snapshot == SNAPSHOT
+
+
+def test_snapshot_column_add_survives_losing_the_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If a rival process adds snapshot_json first then the lost ALTER is benign, else stop."""
+    from apps.shared.pairings import schema_sql
+
+    conn = sqlite3.connect(tmp_path / "race.db")
+    conn.execute(schema_sql._PAIRINGS_DDL[0])  # the rival already added the column
+    real = schema_sql._pairings_has_snapshot_json
+    answers = [False]  # the first check ran before the rival's ALTER landed
+    monkeypatch.setattr(
+        schema_sql,
+        "_pairings_has_snapshot_json",
+        lambda c: answers.pop() if answers else real(c),
+    )
+    schema_sql.migrate_pairings_snapshot_json(conn)  # must not raise
+    assert real(conn)
+    conn.close()
+
+
+def test_snapshot_column_add_still_raises_a_real_failure(tmp_path: Path) -> None:
+    """If the ALTER fails and the column is still absent then it raises, else stop."""
+    from apps.shared.pairings import schema_sql
+
+    path = tmp_path / "ro.db"
+    conn = sqlite3.connect(path)
+    conn.execute(schema_sql._PAIRINGS_DDL[0].replace("        snapshot_json  TEXT,\n", ""))
+    conn.commit()
+    conn.close()
+    ro = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    with pytest.raises(sqlite3.OperationalError):
+        schema_sql.migrate_pairings_snapshot_json(ro)
+    ro.close()
