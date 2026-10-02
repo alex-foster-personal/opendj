@@ -68,13 +68,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.review_claude import CLAUDE_MARKER
-from scripts.review_coverage_carry import (
-    _fetch_candidates,
-    carry_proof_lines,
-    fetch_commits,
-    is_debt_only_since,
-    paths_between,
-    sort_candidates_newest_first,
+from scripts.review_control_plane_carry import (
+    _NO_CARRY,
+    SUBMITTED_REVIEW_STATES,
+    CarriedReview,
+    Carry,
+    debt_only_carry,
+    print_carry_proofs,
 )
 from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
@@ -192,8 +192,6 @@ AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
 }
 AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
-#: Pull-request review states that count as submitted (excludes PENDING and DISMISSED).
-SUBMITTED_REVIEW_STATES: frozenset[str] = frozenset({"COMMENTED", "APPROVED", "CHANGES_REQUESTED"})
 #: Same trusted-login rule as Sol's SOL_LOGINS in scripts/review_sol.py; login AND marker required.
 SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
 GROK_REVIEW_MARKER = re.compile(
@@ -222,28 +220,6 @@ _LAST_FAILURE: list[str] = []
 
 def last_failure() -> str | None:
     return _LAST_FAILURE[-1] if _LAST_FAILURE else None
-
-
-@dataclass(frozen=True)
-class CarriedReview:
-    """One reviewer's review at an earlier head, carried over debt-only commits."""
-
-    reviewer: str
-    carried_from: str  # full SHA of the reviewed ancestor head
-    paths: frozenset[str]  # `git diff --name-only carried_from..head`, printed as proof
-
-    @property
-    def phrase(self) -> str:
-        return f"{self.reviewer} (carried from {self.carried_from[:11]} (debt-only since))"
-
-
-@dataclass(frozen=True)
-class Carry:
-    reviews: tuple[CarriedReview, ...] = ()
-    unknown: tuple[str, ...] = ()  # candidates whose carry could not be measured
-
-
-_NO_CARRY = Carry()
 
 
 @dataclass(frozen=True)
@@ -535,37 +511,6 @@ def measure(
     return dual_review(hits, authors, author_detail, at_head, carried(at_head))
 
 
-def _debt_only_carry(
-    pr: str,
-    head_sha: str,
-    repo_root: Path,
-    reviews: Sequence[Mapping],
-    reviewed_at: Callable[[str], Mapping[str, bool]],
-    at_head: Mapping[str, bool],
-) -> Carry:
-    """Reviewers with a submitted review at an earlier head, debt-only equivalent to `head_sha`.
-
-    The git rule is review_coverage_carry's own (`is_debt_only_since`); candidates are the heads
-    of submitted reviews, newest first. A candidate that cannot be fetched is `unknown`, never a carry.
-    """
-    candidates = tuple(
-        sorted({str(r["commit_id"]) for r in reviews if str(r["state"]).upper() in SUBMITTED_REVIEW_STATES} - {head_sha})
-    )
-    if not candidates:
-        return _NO_CARRY
-    fetch_commits(repo_root, head_sha)
-    present, unknown = _fetch_candidates(repo_root, candidates)
-    carried_by: dict[str, CarriedReview] = {}
-    for sha in sort_candidates_newest_first(repo_root, head_sha, present):
-        if not is_debt_only_since(repo_root, pr, sha, head_sha):
-            continue
-        paths = paths_between(repo_root, sha, head_sha)
-        for name, reviewed in reviewed_at(sha).items():
-            if reviewed and not at_head.get(name) and name not in carried_by:
-                carried_by[name] = CarriedReview(name, sha, paths)
-    return Carry(tuple(carried_by.values()), tuple(unknown))
-
-
 def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
     """review_coverage.triage's hook: 0 to continue, 1 after printing the FAIL line.
 
@@ -603,7 +548,7 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         return found
 
     def carried(at_head: Mapping[str, bool]) -> Carry:
-        return _debt_only_carry(pr, head_sha, repo_root, payloads()[0], reviewed_at, at_head)
+        return debt_only_carry(pr, head_sha, repo_root, payloads()[0], reviewed_at, at_head)
 
     def uncapped() -> tuple[list[dict], int]:
         (pull,) = rc._paginated_json_pages(f"repos/{rc.REPO}/pulls/{pr}")
@@ -628,20 +573,9 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
     rc._require_head_unchanged(head_sha, rc._head_sha(pr))
     if verdict.ok:
         print(f"[review-coverage] control-plane dual review (REVIEW-13) ok: {verdict.detail}")
-        _print_carry_proofs(verdict.carried, head_sha)
+        print_carry_proofs(verdict.carried, head_sha)
         return 0
     _LAST_FAILURE.append(verdict.detail)
     print(f"[review-coverage] FAIL: control-plane dual review (REVIEW-13): {verdict.detail}")
-    _print_carry_proofs(verdict.carried, head_sha)
+    print_carry_proofs(verdict.carried, head_sha)
     return 1
-
-
-def _print_carry_proofs(carried: Sequence[CarriedReview], head_sha: str) -> None:
-    """Both full SHAs and the local diff path list, once per carried head (as review_coverage does)."""
-    seen: set[str] = set()
-    for review in carried:
-        if review.carried_from in seen:
-            continue
-        seen.add(review.carried_from)
-        for line in carry_proof_lines(review.carried_from, head_sha, review.paths):
-            print(line)
