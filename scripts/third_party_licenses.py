@@ -555,7 +555,13 @@ def render_licenses(components: list[Component]) -> str:
 
 
 def unreviewed_textless_components(components: list[Component]) -> list[Component]:
-    """Components with no license text AND no notice, excluding `KNOWN_TEXTLESS`.
+    """Components with no non-empty license text, excluding `KNOWN_TEXTLESS`.
+
+    A NOTICE is attribution, not the license text itself (Apache-2.0 section
+    4(d) notices are additive, not a substitute for the license terms), so it
+    does not excuse a missing license text (Sol P1, PR #4853 r4167612998). An
+    empty-string text entry is likewise not real content: `any(... .strip()
+    ...)` catches it even though `c.license_texts` itself is a non-empty list.
 
     Pulled out of `write_payload_license_files` so the guard is testable
     without staging a full fake payload across every ecosystem.
@@ -564,7 +570,8 @@ def unreviewed_textless_components(components: list[Component]) -> list[Componen
         (
             c
             for c in components
-            if not c.license_texts and not c.notices and (c.ecosystem, c.name) not in KNOWN_TEXTLESS
+            if not any(text.strip() for _, text in c.license_texts)
+            and (c.ecosystem, c.name) not in KNOWN_TEXTLESS
         ),
         key=lambda c: (c.ecosystem, c.name.lower()),
     )
@@ -581,7 +588,7 @@ def write_payload_license_files(repo_root: Path, payload_dir: Path) -> dict[str,
     if unreviewed:
         names = ", ".join(f"{c.ecosystem}:{c.name}" for c in unreviewed)
         raise LicenseInventoryError(
-            f"{len(unreviewed)} component(s) have no license text or notice and are not in "
+            f"{len(unreviewed)} component(s) have no non-empty license text and are not in "
             f"KNOWN_TEXTLESS: {names}. Stage the missing text, or add a human-reviewed entry to "
             "KNOWN_TEXTLESS with a note explaining why none exists."
         )
