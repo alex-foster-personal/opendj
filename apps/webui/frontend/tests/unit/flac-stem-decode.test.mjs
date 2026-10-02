@@ -1292,6 +1292,20 @@ test('MPEG bytes take the worker path when the mpeg lane is forced', withMpegRun
 	assert.equal(decode.stemDecodeLabels(result.reports).stem_decode_codec, 'mpeg');
 }));
 
+test('MPEG on the worker lane with no injected decoder falls back (no bundled MPEG decoder)', withMpegRung(async () => {
+	mpegBytes = mpegBytes ?? new Uint8Array(await readFileAsync(MPEG_FIXTURE));
+	decode.stemDecodeSession.forceLane('workers');
+	decode.stemDecodeSession.resetPool();
+	const ctx = fakeContext(22050);
+	const fallback = countingFallback();
+	const allMpeg = () => Object.fromEntries(PARTS.map((part) => [part, mpegBytes.buffer.slice(0)]));
+	const result = await decode.decodeStemParts(ctx, allMpeg(), PARTS, { decodeFallback: fallback.fn });
+	assert.equal(decode.stemDecodeSession.lane(PARTS.length, 'mpeg'), 'workers');
+	assert.equal(fallback.calls.length, PARTS.length);
+	assert.ok(result.reports.every((r) => !r.viaWorker && r.refusal === 'decoder-unavailable'));
+	decode.stemDecodeSession.resetLane();
+}));
+
 test('OGG is still not-flac and never claims an MPEG trial', withMpegRung(async () => {
 	decode.stemDecodeSession.resetLane();
 	const ctx = fakeContext();

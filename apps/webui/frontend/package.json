@@ -15,7 +15,6 @@
     "test:live:wave-raf": "node tests/live/wave-row-raf-attribution.mjs",
     "test:live:device-latency-floor": "node tests/live/device-latency-floor.mjs",
     "test:live:stem-decode-workers": "node tests/live/stem-decode-workers.mjs",
-    "test:live:stem-decode-workers-mpeg": "node tests/live/stem-decode-workers-mpeg.mjs",
     "test:e2e:performance": "playwright test --config tests/e2e/playwright.performance.config.ts",
     "test:e2e:performance:smoke": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_SMOKE=1 playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-smoke --max-failures=1 --reporter=list",
 		"test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
@@ -55,7 +54,6 @@
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@wasm-audio-decoders/flac": "0.2.11",
-    "mpg123-decoder": "1.0.3",
     "openapi-fetch": "0.17.0",
     "signalsmith-stretch": "1.3.2"
   }
