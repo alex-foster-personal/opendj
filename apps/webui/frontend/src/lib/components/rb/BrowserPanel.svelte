@@ -86,18 +86,8 @@
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
 		PlaylistSetTabs,
-		clipboardToastMessage,
-		getTrackClipboard,
 		libraryEditShortcut,
-		partitionPaste,
-		pastedRowOrders,
-		pasteRevealScrollTop,
-		pasteBlockReason,
-		pasteToastMessage,
-		selectAllRows,
-		selectedIdsInViewOrder,
-		selectRowOrders,
-		setTrackClipboard
+		loadTrackClipboard
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -3142,7 +3132,12 @@
 			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
 		}
 		e.preventDefault();
-		const p = pane;
+		void _runLibraryEdit(action, pane);
+	}
+
+	async function _runLibraryEdit(action: 'select_all' | 'copy' | 'cut' | 'paste', p: PaneStore): Promise<void> {
+		const { clipboardToastMessage, selectAllRows, selectedIdsInViewOrder, setTrackClipboard } =
+			await loadTrackClipboard();
 		if (action === 'select_all') {
 			if (selectAllRows(p, renderedRows) === 0) pushToast('no tracks to select', 'info');
 			return;
@@ -3169,11 +3164,12 @@
 			pushToast(clipboardToastMessage(ids.length, mode), 'info');
 			return;
 		}
-		void _pasteTracks();
+		await _pasteTracks(p);
 	}
 
-	async function _pasteTracks(): Promise<void> {
-		const p = pane;
+	async function _pasteTracks(p: PaneStore): Promise<void> {
+		const { getTrackClipboard, partitionPaste, pasteBlockReason, pasteToastMessage, setTrackClipboard } =
+			await loadTrackClipboard();
 		const clip = getTrackClipboard();
 		const blocked = pasteBlockReason(p, source, clip);
 		if (blocked !== null || clip === null || p.playlist_id === null) {
@@ -3215,7 +3211,7 @@
 						if (node !== null) await _loadPane(q, node);
 					})
 			);
-			if (p.playlist_id === destId && plan.add.length > 0) _revealPasted(p, plan.add);
+			if (p.playlist_id === destId && plan.add.length > 0) await _revealPasted(p, plan.add);
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
 				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
@@ -3229,7 +3225,8 @@
 
 	/** Pasted rows land at the END of the playlist, below the fold in a long
 	 * one: select them and scroll the first into view so the paste is seen. */
-	function _revealPasted(p: PaneStore, pastedIds: string[]): void {
+	async function _revealPasted(p: PaneStore, pastedIds: string[]): Promise<void> {
+		const { pastedRowOrders, pasteRevealScrollTop, selectRowOrders } = await loadTrackClipboard();
 		const orders = pastedRowOrders(p.rows, pastedIds);
 		if (orders.length === 0) return;
 		selectRowOrders(p, orders);

@@ -1,20 +1,10 @@
 export { plannedTitle } from '$lib/rb/planned-explainers';
 // Through here, not imported directly, to keep BrowserPanel's import fan-out
 // (frontend.max_fan_out quality ratchet) at main's figure.
-export {
-	clipboardToastMessage,
-	getTrackClipboard,
-	libraryEditShortcut,
-	partitionPaste,
-	pastedRowOrders,
-	pasteRevealScrollTop,
-	pasteBlockReason,
-	pasteToastMessage,
-	selectAllRows,
-	selectedIdsInViewOrder,
-	selectRowOrders,
-	setTrackClipboard
-} from './track-clipboard';
+export { libraryEditShortcut } from './library-edit-shortcut';
+// The clipboard rules load on the first shortcut press, outside the
+// /performance static bundle (scripts/bundle-budget.mjs).
+export const loadTrackClipboard = () => import('./track-clipboard');
 export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
