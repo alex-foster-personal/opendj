@@ -52,16 +52,16 @@ export function createPlaylistPagePrefetch(
 	const isFresh = (entry: PrefetchEntry): boolean =>
 		now() - entry.startedAt <= PLAYLIST_PREFETCH_MAX_AGE_MS;
 
-	/** Idempotent while a fresh prefetch is pending or unconsumed. */
+	/** Idempotent while a fresh prefetch is pending or unconsumed. A rejected
+	 * prefetch stays in the map so the switch that joins it reports that
+	 * failure (fail-fast); the no-op catch only marks it handled until then. */
 	function prefetchFirstPage(playlistId: string, pageSize = PLAYLIST_PREFETCH_PAGE_SIZE): void {
 		const existing = inflight.get(playlistId);
 		if (existing !== undefined && isFresh(existing)) return;
 		const promise = fetchPage(playlistId, pageSize, 0);
 		const entry: PrefetchEntry = { promise, pageSize, startedAt: now() };
 		inflight.set(playlistId, entry);
-		promise.catch(() => {
-			if (inflight.get(playlistId) === entry) inflight.delete(playlistId);
-		});
+		promise.catch(() => undefined);
 	}
 
 	/** Prefetch up to max playlist first pages (tree-visible intent). */
@@ -75,8 +75,9 @@ export function createPlaylistPagePrefetch(
 	}
 
 	/** Page fetch for a switch: at offset 0, consume a fresh prefetch of the
-	 * same size if one exists (falling back to a live GET if it failed);
-	 * otherwise a live GET. */
+	 * same size if one exists, resolving or rejecting exactly as it did, so a
+	 * failed prefetch reaches the caller's load-error path and is never masked
+	 * by a second GET; otherwise a live GET. */
 	async function fetchFirstPage(
 		playlistId: string,
 		offset: number,
@@ -90,11 +91,7 @@ export function createPlaylistPagePrefetch(
 		if (entry === undefined || entry.pageSize !== pageSize || !isFresh(entry)) {
 			return fetchPage(playlistId, pageSize, 0);
 		}
-		try {
-			return await entry.promise;
-		} catch {
-			return fetchPage(playlistId, pageSize, 0);
-		}
+		return entry.promise;
 	}
 
 	return { prefetchFirstPage, prefetchTreeIntent, fetchFirstPage };

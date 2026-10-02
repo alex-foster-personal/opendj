@@ -103,7 +103,35 @@ test('a cold switch whose live GET fails does not retry it', async () => {
 	assert.equal(calls, 1);
 });
 
-test('fetchFirstPage falls back to a live GET when the prefetch rejects', async () => {
+test('a switch joined to a pending prefetch reports its rejection without a second GET', async () => {
+	let calls = 0;
+	let rejectPrefetch;
+	const p = prefetch.createPlaylistPagePrefetch(() => {
+		calls += 1;
+		return new Promise((_resolve, reject) => {
+			rejectPrefetch = reject;
+		});
+	});
+	p.prefetchFirstPage('pl-b');
+	const switching = p.fetchFirstPage('pl-b', 0);
+	rejectPrefetch(new Error('prefetch fail'));
+	await assert.rejects(switching, /prefetch fail/);
+	assert.equal(calls, 1);
+});
+
+test('a prefetch that rejected before the switch still reaches the switch', async () => {
+	let calls = 0;
+	const p = prefetch.createPlaylistPagePrefetch(() => {
+		calls += 1;
+		return Promise.reject(new Error('prefetch fail early'));
+	});
+	p.prefetchFirstPage('pl-b');
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	await assert.rejects(p.fetchFirstPage('pl-b', 0), /prefetch fail early/);
+	assert.equal(calls, 1);
+});
+
+test('control: the failed prefetch is reported once, then the next switch reads live', async () => {
 	let calls = 0;
 	const p = prefetch.createPlaylistPagePrefetch(() => {
 		calls += 1;
@@ -114,9 +142,27 @@ test('fetchFirstPage falls back to a live GET when the prefetch rejects', async 
 		});
 	});
 	p.prefetchFirstPage('pl-b');
+	await assert.rejects(p.fetchFirstPage('pl-b', 0), /prefetch fail/);
 	const page = await p.fetchFirstPage('pl-b', 0);
 	assert.equal(calls, 2);
 	assert.equal(page.page.tracks[0].stable_id, 't1');
+});
+
+test('control: a stale failed prefetch is not reported; the switch reads live', async () => {
+	let calls = 0;
+	let clock = 0;
+	const p = prefetch.createPlaylistPagePrefetch(
+		() => {
+			calls += 1;
+			if (calls === 1) return Promise.reject(new Error('old failure'));
+			return emptyPage('pl-b');
+		},
+		() => clock
+	);
+	p.prefetchFirstPage('pl-b');
+	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS + 1;
+	await p.fetchFirstPage('pl-b', 0);
+	assert.equal(calls, 2);
 });
 
 test('fetchFirstPage uses a live GET for a non-zero offset', async () => {
