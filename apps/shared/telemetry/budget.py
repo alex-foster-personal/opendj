@@ -90,6 +90,15 @@ def is_transient_network_error(_name: str | None, message: str) -> bool:
     return False
 
 
+def is_local_only_browser_error(kind: str, name: str | None, message: str) -> bool:
+    """True when the event is recorded locally and must not leave for Sentry."""
+    return (
+        is_perf_console_mirror(kind, message)
+        or is_dev_tooling_console(kind, message)
+        or is_transient_network_error(name, message)
+    )
+
+
 @dataclass
 class SentryBudget:
     """Per-process send budget. ``clock`` is injected so replays and tests can drive it."""

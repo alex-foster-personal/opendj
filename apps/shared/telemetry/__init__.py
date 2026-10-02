@@ -369,11 +369,7 @@ def capture_browser_error(
     (None) falls back to the engine-side probe. The local sink row above
     is written either way.
     """
-    from apps.shared.telemetry.budget import (
-        is_dev_tooling_console,
-        is_perf_console_mirror,
-        is_transient_network_error,
-    )
+    from apps.shared.telemetry.budget import is_local_only_browser_error
     from apps.shared.telemetry.sink import (
         capture_error_event,
         client_error_message,
@@ -386,11 +382,7 @@ def capture_browser_error(
         source_site=client_source_site(kind, url),
         kind="client",
     )
-    if (
-        is_perf_console_mirror(kind, message)
-        or is_dev_tooling_console(kind, message)
-        or is_transient_network_error(name, message)
-    ):
+    if is_local_only_browser_error(kind, name, message):
         return None
     if _client() is None or held_for_consent():
         return None
