@@ -27,7 +27,7 @@ import os
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
@@ -119,6 +119,8 @@ class ResolvedStickTrack:
 class _Binding:
     stick: MountedStick
     st_dev: int
+    #: ``_now()`` when discovery last confirmed this VolUUID at this mount.
+    verified_at: float
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,14 @@ class _CachedLibrary:
     artwork_available: frozenset[int]
     audio_present: frozenset[int]
 
+
+#: A binding older than this is re-proven through discovery before reuse:
+#: macOS can hand a replacement stick the old one's mount path AND device id,
+#: so ``st_dev`` alone cannot tell them apart. Unmounting one stick and
+#: mounting another takes longer than this, so a reuse inside the window is
+#: still the stick discovery saw.
+REVERIFY_AFTER_S = 1.0
+_now = time.monotonic
 
 _LOCK = threading.Lock()
 _bindings: dict[str, _Binding] = {}
@@ -139,7 +149,7 @@ def open_stick_library(volume_uuid: str, scan: VolumeScan) -> OpenedStickLibrary
     if not is_canonical_volume_uuid(volume_uuid):
         raise ValueError(f"volume uuid {volume_uuid!r} is not uppercase-hex 8-4-4-4-12")
     with _LOCK:
-        stick = _trusted_binding(volume_uuid)
+        stick = _trusted_binding(volume_uuid, scan)
         freshly_bound = stick is None
         if stick is None:
             stick = _bind_from_fresh_scan(volume_uuid, scan)
@@ -203,13 +213,22 @@ def resolve_stick_track(track_id: str, scan: VolumeScan) -> ResolvedStickTrack:
     return ResolvedStickTrack(stick=opened.stick, library=opened.library, track=track)
 
 
-def _trusted_binding(volume_uuid: str) -> MountedStick | None:
+def _trusted_binding(volume_uuid: str, scan: VolumeScan) -> MountedStick | None:
     binding = _bindings.get(volume_uuid)
     if binding is None:
         return None
     if _mount_device(binding.stick.mount) != binding.st_dev:
         del _bindings[volume_uuid]
         return None
+    if _now() - binding.verified_at < REVERIFY_AFTER_S:
+        return binding.stick
+    if not any(
+        volume.volume_uuid == volume_uuid and volume.mount_path == binding.stick.mount
+        for volume in scan()
+    ):
+        del _bindings[volume_uuid]
+        return None
+    _bindings[volume_uuid] = replace(binding, verified_at=_now())
     return binding.stick
 
 
@@ -252,7 +271,7 @@ def _bind_from_fresh_scan(volume_uuid: str, scan: VolumeScan) -> MountedStick:
             f"{stick.mount} went away while it was being bound",
             volume_uuid=volume_uuid,
         )
-    _bindings[volume_uuid] = _Binding(stick=stick, st_dev=st_dev)
+    _bindings[volume_uuid] = _Binding(stick=stick, st_dev=st_dev, verified_at=_now())
     return stick
 
 

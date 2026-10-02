@@ -10,16 +10,16 @@ prefix so the priority drop needs no platform binary.
 """
 from __future__ import annotations
 
-import os
 import sys
 
 from apps.analysis import run as analysis_run
+from apps.shared.process_priority import lower_own_priority
 
 NICENESS: int = 19
 
 
 def main(argv: list[str] | None = None) -> int:
-    os.nice(NICENESS)
+    lower_own_priority(NICENESS)
     return analysis_run.main(argv)
 
 

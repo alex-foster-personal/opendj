@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.shared import ffmpeg
 from apps.webui import coverage_drain_cli as cli
 from apps.webui.server import coverage_drain as cd
 from apps.webui.server import coverage_outcomes as co
@@ -137,12 +138,67 @@ def test_real_ffprobe_durations_and_damage(tmp_path: Path) -> None:
     assert st.probe(tmp_path / "absent.mp3").kind == "unknown"
 
 
-def test_missing_ffprobe_is_unknown_and_named(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_ffprobe_and_no_ffmpeg_is_unknown_and_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(st.shutil, "which", lambda _name: None)
+    monkeypatch.delenv(ffmpeg.OVERRIDE_ENV, raising=False)
+    monkeypatch.delenv(ffmpeg.BUNDLED_ENV, raising=False)
     audio = _wav(tmp_path / "x.wav", 2.0)
-    assert st.probe(audio) == st.Probe("unknown", detail="ffprobe is not installed")
-    assert "ffprobe is not installed" in str(st.ffprobe_refusal())
+    assert st.probe(audio) == st.Probe(
+        "unknown", detail="neither ffprobe nor ffmpeg is available"
+    )
+    assert "neither ffprobe nor ffmpeg" in str(st.ffprobe_refusal())
     assert st.classify(audio, None) is None
+
+
+def _without_ffprobe(monkeypatch: pytest.MonkeyPatch, ffmpeg_path: str) -> None:
+    """A packaged install: no ffprobe anywhere, ffmpeg only through the
+    launcher's bundled-binary variable."""
+    real_which = shutil.which
+    monkeypatch.setattr(
+        st.shutil, "which", lambda name: None if name in ("ffprobe", "ffmpeg") else real_which(name)
+    )
+    monkeypatch.delenv(ffmpeg.OVERRIDE_ENV, raising=False)
+    monkeypatch.setenv(ffmpeg.BUNDLED_ENV, ffmpeg_path)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed on this machine")
+def test_without_ffprobe_the_bundled_ffmpeg_reads_durations_and_damage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    short = _wav(tmp_path / "short.wav", 2.0)
+    long = _wav(tmp_path / "long.wav", 12.0)
+    damaged = tmp_path / "damaged.mp3"
+    damaged.write_bytes(b"\x00" * 4096)
+    garbage = tmp_path / "garbage.wav"
+    garbage.write_bytes(b"garbage text")
+    _without_ffprobe(monkeypatch, str(shutil.which("ffmpeg")))
+    assert st.ffprobe_refusal() is None
+    assert st.probe(short).duration_s == pytest.approx(2.0, abs=0.05)
+    assert st.probe(long).duration_s == pytest.approx(12.0, abs=0.05)
+    assert "under the 10 s minimum" in str(st.classify(short, None))
+    assert st.classify(long, None) is None
+    for bad in (damaged, garbage):
+        result = st.probe(bad)
+        assert result.kind == "no_duration", result.detail
+    assert st.probe(tmp_path / "absent.mp3").kind == "unknown"
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["{path}: Permission denied", "{path}: Input/output error", "Invalid argument"],
+)
+def test_any_other_ffmpeg_failure_stays_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str
+) -> None:
+    """Overshoot control for the ffmpeg fallback: only a demuxer refusal is damage."""
+    damaged = tmp_path / "damaged.mp3"
+    damaged.write_bytes(b"\x00" * 4096)
+    _ffprobe_that_fails_with(tmp_path, monkeypatch, line)
+    _without_ffprobe(monkeypatch, str(tmp_path / "bin" / "ffprobe"))
+    result = st.probe(damaged)
+    assert result.kind == "unknown" and "ffmpeg reported no duration" in str(result.detail)
 
 
 def _ffprobe_that_fails_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, line: str) -> None:

@@ -25,8 +25,9 @@ too short          ffprobe reports under :data:`MIN_SEPARABLE_S` seconds: a
 Mark those by hand through the route or CLI when they really are stems.
 
 Containment: a file that cannot be opened at all (an unmounted volume, a
-pending macOS privacy prompt) and an ffprobe that is missing or fails for any
-other reason are UNKNOWN, never terminal. A wrong terminal mark hides a track
+pending macOS privacy prompt) and a probe that is missing or fails for any
+other reason are UNKNOWN, never terminal. A packaged app ships ffmpeg but not
+ffprobe, so without ffprobe the same read goes through ``ffmpeg -i``. A wrong terminal mark hides a track
 from the farm, so only the two exact ffprobe signatures above produce one.
 
 A mark is stored in the outcome ledger (``coverage_outcomes``) keyed on the
@@ -41,7 +42,8 @@ Requirements (mini-PRD):
     [if] ffprobe reports 2 s [then] marked too short; [if] 12 s [then] not
   ✔︎ ✅ 🎯 HEALTH-09 unknown is never terminal
     [if] the file cannot be opened [then] not marked
-    [if] ffprobe is not installed [then] not marked, and the reason is named
+    [if] ffprobe is not installed [then] the bundled ffmpeg reads the duration
+    [if] neither ffprobe nor ffmpeg is available [then] not marked, reason named
   ✔︎ ✅ 🎯 HEALTH-09 a cleared mark stays cleared
     [if] a user clears an automatic mark [then] the check skips that track
     [if] a user marks it again [then] the skip is removed
@@ -59,6 +61,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from apps.shared import ffmpeg
 from apps.webui.server import coverage_outcomes as outcomes_mod
 
 #: Shorter than this and there is nothing to mix with stems. The shortest
@@ -74,6 +77,10 @@ FFPROBE_INVALID_DATA: str = "Invalid data found when processing input"
 # "<path>: Invalid argument" (measured on the Linux runners, Thu 1 Oct 2026);
 # newer builds say FFPROBE_INVALID_DATA for the same file.
 FFPROBE_INVALID_ARGUMENT: str = "Invalid argument"
+#: ``Duration: HH:MM:SS.ss`` in ffmpeg's input report; ``N/A`` does not match.
+FFMPEG_DURATION_LINE: re.Pattern[str] = re.compile(
+    r"^\s*Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?),", re.MULTILINE
+)
 AUTO_PREFIX: str = "auto"
 MANUAL_PREFIX: str = "manual"
 STEP: str = "stems"
@@ -103,9 +110,17 @@ def stem_file_reason(audio_path: Path, title: str | None) -> str | None:
 
 
 def ffprobe_refusal() -> str | None:
-    """Why durations cannot be probed on this install, or None when they can."""
-    if shutil.which("ffprobe") is None:
-        return "ffprobe is not installed, so unreadable and too-short sources are not detected"
+    """Why durations cannot be probed on this install, or None when they can.
+    A packaged app ships ffmpeg but not ffprobe, so ffmpeg is the fallback."""
+    if shutil.which("ffprobe") is not None:
+        return None
+    try:
+        ffmpeg.resolve_ffmpeg()
+    except ffmpeg.FfmpegUnavailable:
+        return (
+            "neither ffprobe nor ffmpeg is available, so unreadable and too-short "
+            "sources are not detected"
+        )
     return None
 
 
@@ -118,7 +133,7 @@ def probe(audio_path: Path) -> Probe:
         return Probe("unknown", detail=f"cannot open the file: {error}")
     executable = shutil.which("ffprobe")
     if executable is None:
-        return Probe("unknown", detail="ffprobe is not installed")
+        return _ffmpeg_probe(audio_path)
     try:
         completed = subprocess.run(
             [executable, "-v", "error", "-show_entries", "format=duration", "-of", "json",
@@ -146,6 +161,42 @@ def probe(audio_path: Path) -> Probe:
     if duration <= 0:
         return Probe("no_duration", detail=f"ffprobe reported duration {duration}")
     return Probe("duration", duration_s=duration)
+
+
+def _ffmpeg_probe(audio_path: Path) -> Probe:
+    """The same read through ``ffmpeg -i`` (the bundled LGPL build when
+    packaged): its input report carries the duration, and the same two
+    demuxer refusals as ffprobe mark damage. Anything else stays unknown."""
+    try:
+        executable = ffmpeg.resolve_ffmpeg()
+    except ffmpeg.FfmpegUnavailable:
+        return Probe("unknown", detail="neither ffprobe nor ffmpeg is available")
+    try:
+        report = subprocess.run(
+            [executable, "-hide_banner", "-nostdin", "-i", str(audio_path)],
+            capture_output=True, text=True, errors="replace", check=False,
+            timeout=FFPROBE_TIMEOUT_S,
+        ).stderr
+    except subprocess.TimeoutExpired:
+        return Probe("unknown", detail=f"ffmpeg timed out after {FFPROBE_TIMEOUT_S:.0f} s")
+    match = FFMPEG_DURATION_LINE.search(report)
+    if match is not None:
+        hours, minutes, seconds = match.groups()
+        duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+        if duration > 0:
+            return Probe("duration", duration_s=duration)
+        return Probe("no_duration", detail=f"ffmpeg reported duration {duration}")
+    if "Duration: N/A" in report:
+        return Probe("no_duration", detail="ffmpeg reported duration N/A")
+    lines = report.strip().splitlines()
+    rejected_by_demuxer = FFPROBE_INVALID_DATA in report or any(
+        line == f"{audio_path}: {FFPROBE_INVALID_ARGUMENT}"
+        or line.endswith(f"Error opening input: {FFPROBE_INVALID_ARGUMENT}")
+        for line in lines
+    )
+    if rejected_by_demuxer:
+        return Probe("no_duration", detail="ffmpeg: invalid data")
+    return Probe("unknown", detail=f"ffmpeg reported no duration: {(lines or ['no message'])[-1]}")
 
 
 def classify(

@@ -61,6 +61,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from apps.shared.process_priority import lowered_priority
 from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
 
 log = logging.getLogger(__name__)
@@ -457,7 +458,7 @@ def _queue_cli(args: list[str], db: str) -> tuple[int, str, str]:
     argv = [sys.executable, "-m", "apps.analysis.queue_cli", "--db", db, "--json", *args]
     proc = subprocess.run(
         argv, capture_output=True, text=True, timeout=QUEUE_TIMEOUT_S, check=False,
-        preexec_fn=lambda: os.nice(NICENESS),
+        **lowered_priority(NICENESS),
         env={**os.environ, "AF_SERVICE_ID": "com.opendj.engine.ahead-analysis"},
     )
     return proc.returncode, proc.stdout, proc.stderr

@@ -13,6 +13,7 @@ Regression intent, one line per guard:
   - if a second open re-parses or re-scans (or takes 100 ms) then the cache is broken
   - if an mtime or size change serves the old parse then the cache is stale
   - if a new device at the same mount path is trusted without a rescan then another stick is served
+  - if a binding is trusted past REVERIFY_AFTER_S on st_dev alone then a reused device id serves another stick
   - if artwork named by the export but absent reads as available then the browser fetches a 404
   - if a vanished stick answers anything but USB_STICK_NOT_MOUNTED then the load toast lies
   - if ``..`` or a symlink out of the mount is served then containment is broken
@@ -292,6 +293,38 @@ def test_new_device_carrying_the_same_uuid_rebinds_and_keeps_the_cache(
     monkeypatch.setattr(sl, "_mount_device", lambda _mount: first_device + 1)
     again = sl.open_stick_library(UUID, scan)
     assert again.cache_hit and again.library is cold.library and scan.calls == 2
+
+
+def test_an_old_binding_is_reproven_even_when_the_device_id_is_reused(
+    mount: Path, scan: CountingScan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """macOS can give a replacement stick the old one's path AND device id;
+    with a cloned export nothing on disk differs, so only discovery's VolUUID
+    tells them apart once the binding is older than the reverify window."""
+    clock = [1000.0]
+    monkeypatch.setattr(sl, "_now", lambda: clock[0])
+    sl.open_stick_library(UUID, scan)
+    # Control: inside the window the binding is trusted with no rescan.
+    clock[0] += sl.REVERIFY_AFTER_S / 2
+    assert sl.open_stick_library(UUID, scan).cache_hit and scan.calls == 1
+    clock[0] += sl.REVERIFY_AFTER_S
+    scan.volumes = [_volume(mount, OTHER_UUID)]
+    error = _refusal(lambda: sl.open_stick_library(UUID, scan))
+    assert error.code == "USB_STICK_NOT_MOUNTED"
+
+
+def test_an_old_binding_still_on_its_stick_stays_a_cache_hit(
+    mount: Path, scan: CountingScan, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The overshoot control: re-proving the same stick costs one scan, never
+    a reparse, and restarts the window."""
+    clock = [1000.0]
+    monkeypatch.setattr(sl, "_now", lambda: clock[0])
+    cold = sl.open_stick_library(UUID, scan)
+    clock[0] += sl.REVERIFY_AFTER_S * 2
+    again = sl.open_stick_library(UUID, scan)
+    assert again.cache_hit and again.library is cold.library and scan.calls == 2
+    assert sl.open_stick_library(UUID, scan).cache_hit and scan.calls == 2
 
 
 def test_unmounted_stick_is_not_mounted_with_its_uuid(mount: Path) -> None:
