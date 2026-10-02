@@ -19,9 +19,11 @@ because emitted preview values change. The detail lane is unchanged. 1.1.0
 is skipped here on purpose: on main-electron-rust it names the Rust engine
 decoder (NATIVE-21), which this branch does not carry.
 
-WHAT 1.3.0 IS. The same peaks; the preview's per-band gains are re-fitted on
+WHAT 1.4.0 IS. The same peaks; the preview's per-band gains are re-fitted on
 real music (`bands.PWV6_MUSIC_GAIN`, 83/56/176) because the sine-derived ones
 drew own rows with no blue lows at all. MINOR: emitted preview values change.
+1.3.0 is the engine decoder ported from main-electron-rust (#5013); this
+number sits above it whichever of the two lands first.
 
 -Cursor
 """
@@ -29,7 +31,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.3.0"
+PRODUCER_VERSION = "1.4.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name.
 PRODUCER: Literal["backfill"] = "backfill"
