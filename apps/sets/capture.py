@@ -35,7 +35,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg
+from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg_including_homebrew
 
 # The default name of the MIT-licensed BlackHole virtual device.
 DEFAULT_DEVICE_NAME = "BlackHole 2ch"
@@ -48,11 +48,6 @@ DEFAULT_BITRATE_KBPS = 320
 # output back in as an input, so it is the right default for a set recording;
 # a microphone would record the room. Matched case-insensitively.
 LOOPBACK_NAME_HINTS: tuple[str, ...] = ("blackhole", "loopback", "soundflower")
-
-# Where Homebrew puts ffmpeg. A Finder-launched app inherits launchd's PATH
-# (/usr/bin:/bin:/usr/sbin:/sbin), which holds neither, so the PATH lookup in
-# apps.shared.ffmpeg finds nothing on a Mac that has ffmpeg installed.
-HOMEBREW_FFMPEG_PATHS: tuple[str, ...] = ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg")
 
 # How long a freshly spawned capture must stay alive before REC reports it
 # started. ffmpeg exits within this window for a vanished device or a refused
@@ -101,22 +96,12 @@ def resolve_capture_ffmpeg() -> str:
     """ffmpeg for capture: ``MDT_FFMPEG``, then PATH, then Homebrew's prefixes.
 
     The Homebrew step is what lets REC work in the packaged app, which is
-    launched without a shell PATH. A set-but-broken ``MDT_FFMPEG`` still
-    fails loud instead of falling through, as in :func:`resolve_ffmpeg`.
+    launched without a shell PATH (apps.shared.ffmpeg owns the lookup).
     """
     try:
-        return resolve_ffmpeg()
+        return resolve_ffmpeg_including_homebrew()
     except FfmpegUnavailable as exc:
-        if os.environ.get("MDT_FFMPEG"):
-            raise CaptureUnavailable(str(exc)) from exc
-        for candidate in HOMEBREW_FFMPEG_PATHS:
-            if Path(candidate).is_file() and os.access(candidate, os.X_OK):
-                return candidate
-        raise CaptureUnavailable(
-            "ffmpeg is needed to record set audio and was not found on PATH or in "
-            f"{', '.join(HOMEBREW_FFMPEG_PATHS)} (install it with `brew install "
-            "ffmpeg`, or set MDT_FFMPEG)"
-        ) from exc
+        raise CaptureUnavailable(f"ffmpeg is needed to record set audio: {exc}") from exc
 
 
 def is_loopback_name(name: str) -> bool:
@@ -335,6 +320,10 @@ def start_capture(
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=log_fh,
+            # -strftime stamps segment names in the process's local time, but
+            # the set id and _segment_start_from_name are UTC; a local stamp
+            # shifts every segment by the UTC offset.
+            env={**os.environ, "TZ": "UTC"},
         )
     except Exception:
         log_fh.close()

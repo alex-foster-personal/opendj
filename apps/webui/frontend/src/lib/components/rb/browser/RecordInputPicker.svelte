@@ -5,22 +5,27 @@
 	// is always offered, so REC still records the set when no input can be
 	// listed (no ffmpeg on this Mac) or none is wanted.
 	import { onMount } from 'svelte';
-	import { listRecorderDevices, type RecorderDevices } from '../../../../routes/sets/sets-api';
+	import type { RecorderDevices, RecorderStatus } from '../../../../routes/sets/sets-api';
+	import { pushToast } from '$lib/stores.svelte';
 	import {
 		initialInputChoice,
+		listRecorderDevices,
 		loadRememberedInput,
+		rememberInput,
+		startPerformanceRecorder,
 		type RecordInputChoice
-	} from '$lib/sets/performance-recorder';
+	} from '$lib/sets/record-input-choice';
 
 	let {
-		busy = false,
-		onstart,
+		onstarted,
 		oncancel
 	}: {
-		busy?: boolean;
-		onstart: (choice: RecordInputChoice) => void;
+		/** Called with the live status once recording has started. */
+		onstarted: (status: RecorderStatus) => void;
 		oncancel: () => void;
 	} = $props();
+
+	let busy = $state(false);
 
 	const NONE_VALUE = '\u0000none';
 
@@ -55,9 +60,21 @@
 		})();
 	});
 
-	function start(): void {
+	async function start(): Promise<void> {
 		if (selected === null || busy) return;
-		onstart(toChoice(selected));
+		const choice = toChoice(selected);
+		busy = true;
+		try {
+			const status = await startPerformanceRecorder(choice);
+			rememberInput(choice);
+			const from = choice.kind === 'device' ? `from ${choice.name}` : 'tracklist only';
+			pushToast(`Recording ${status.session_id} (${from})`, 'info');
+			onstarted(status);
+		} catch (error) {
+			pushToast(`REC failed: ${String(error)}`, 'error');
+		} finally {
+			busy = false;
+		}
 	}
 
 	function onKeydown(event: KeyboardEvent): void {
@@ -84,7 +101,7 @@
 		aria-labelledby="rec-picker-title"
 		onsubmit={(e) => {
 			e.preventDefault();
-			start();
+			void start();
 		}}
 	>
 		<h2 id="rec-picker-title">Record set from</h2>

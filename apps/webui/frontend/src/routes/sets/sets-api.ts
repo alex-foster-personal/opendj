@@ -16,7 +16,6 @@ export type RecorderSourceName = NonNullable<
 >[number];
 
 export type RecorderDevices = components['schemas']['RecorderDevicesResponse'];
-export type RecorderInputDevice = components['schemas']['RecorderInputDevice'];
 
 /** One audio input by raw ffmpeg index or by name with `capture_audio: true`,
  *  or `capture_audio: false` and no input for a tracklist-only set (SET-10);
@@ -81,7 +80,7 @@ export interface TimelineEvent {
 }
 
 /** Preserve the pre-client Error(detail) contract for non-2xx responses. */
-function rethrowSetsError(error: unknown): never {
+export function rethrowSetsError(error: unknown): never {
 	if (error instanceof ApiError) {
 		const d = (error.body as { detail?: unknown } | null)?.detail;
 		throw new Error(typeof d === 'string' ? d : `${error.status} ${error.response.statusText}`);
@@ -92,16 +91,6 @@ function rethrowSetsError(error: unknown): never {
 export async function getRecorderStatus(): Promise<RecorderStatus> {
 	try {
 		return await unwrap(api.GET('/api/sets/recorder', {}));
-	} catch (error) {
-		rethrowSetsError(error);
-	}
-}
-
-/** Audio inputs by name for the REC picker. Rejects with the daemon's reason
- *  (no ffmpeg, not macOS) rather than resolving to an empty list. */
-export async function listRecorderDevices(): Promise<RecorderDevices> {
-	try {
-		return await unwrap(api.GET('/api/sets/recorder/devices', {}));
 	} catch (error) {
 		rethrowSetsError(error);
 	}

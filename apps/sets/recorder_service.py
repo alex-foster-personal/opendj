@@ -82,23 +82,11 @@ class RecorderService:
         index of a named input moves whenever another input is plugged in,
         so a remembered index records whatever now sits at it.
         """
-        if capture_audio == (ffmpeg_device_idx is None and device_name is None):
-            raise ValueError(
-                "name exactly one audio input (ffmpeg_device_idx or device_name), "
-                "or set capture_audio false for a tracklist-only recording"
-            )
-        if ffmpeg_device_idx is not None and device_name is not None:
-            raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
         # Resolved BEFORE the lock: listing spawns ffmpeg (up to 10 s), and
         # status() shares the lock. A missing input or ffmpeg starts nothing.
-        if not capture_audio:
-            device_idx, device_label = None, NO_AUDIO_DEVICE_LABEL
-        elif device_name is not None:
-            device_idx, device_label = self._index_of(device_name), device_name
-        else:
-            device_idx, device_label = ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
-        if capture_audio and self.capture_enabled:
-            capture_mod.resolve_capture_ffmpeg()
+        device_idx, device_label = self._resolve_input(
+            ffmpeg_device_idx, device_name, capture_audio=capture_audio
+        )
         with self._lock:
             if self._recorder is not None:
                 raise RecorderConflict(
@@ -152,6 +140,29 @@ class RecorderService:
                 "owned": True,
                 "recoverable": False,
             }
+
+    def _resolve_input(
+        self,
+        ffmpeg_device_idx: int | None,
+        device_name: str | None,
+        *,
+        capture_audio: bool,
+    ) -> tuple[int | None, str]:
+        """(ffmpeg index or None, manifest label) for one input, or for none."""
+        if capture_audio == (ffmpeg_device_idx is None and device_name is None):
+            raise ValueError(
+                "name exactly one audio input (ffmpeg_device_idx or device_name), "
+                "or set capture_audio false for a tracklist-only recording"
+            )
+        if ffmpeg_device_idx is not None and device_name is not None:
+            raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
+        if not capture_audio:
+            return None, NO_AUDIO_DEVICE_LABEL
+        if self.capture_enabled:
+            capture_mod.resolve_capture_ffmpeg()
+        if device_name is not None:
+            return self._index_of(device_name), device_name
+        return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
 
     def _index_of(self, device_name: str) -> int:
         devices = self.list_devices()

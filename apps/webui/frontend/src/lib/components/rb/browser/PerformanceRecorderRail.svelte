@@ -1,15 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import {
-		rememberInput,
-		startPerformanceRecorder,
-		stopPerformanceRecorder,
-		type RecordInputChoice
-	} from '$lib/sets/performance-recorder';
+	import { stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './IconRail.svelte';
-	import RecordInputPicker from './RecordInputPicker.svelte';
 
 	let {
 		source,
@@ -27,7 +21,10 @@
 		recoverable: false
 	});
 	let recorderBusy = $state(false);
-	let pickerOpen = $state(false);
+	// Lazy: the picker renders only after a REC click, so it stays out of the
+	// /performance bundle budget (charged to other-lazy instead). Non-null
+	// means the picker is open.
+	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
 
 	onMount(() => {
 		void refreshRecorderStatus();
@@ -52,22 +49,7 @@
 			}
 			// SET-10: pick the input by name in-app. A browser prompt dialog never shows in
 			// the desktop app's WKWebView, so the old index prompt did nothing.
-			pickerOpen = true;
-		} catch (error) {
-			pushToast(`REC failed: ${String(error)}`, 'error');
-		} finally {
-			recorderBusy = false;
-		}
-	}
-
-	async function startWithInput(choice: RecordInputChoice): Promise<void> {
-		recorderBusy = true;
-		try {
-			recorder = await startPerformanceRecorder(choice);
-			rememberInput(choice);
-			pickerOpen = false;
-			const from = choice.kind === 'device' ? `from ${choice.name}` : 'tracklist only';
-			pushToast(`Recording ${recorder.session_id} (${from})`, 'info');
+			RecordInputPicker = (await import('./RecordInputPicker.svelte')).default;
 		} catch (error) {
 			pushToast(`REC failed: ${String(error)}`, 'error');
 		} finally {
@@ -84,10 +66,9 @@
 	onrecord={() => void togglePerformanceRecording()}
 />
 
-{#if pickerOpen}
+{#if RecordInputPicker !== null}
 	<RecordInputPicker
-		busy={recorderBusy}
-		onstart={(choice) => void startWithInput(choice)}
-		oncancel={() => (pickerOpen = false)}
+		onstarted={(status) => ((recorder = status), (RecordInputPicker = null))}
+		oncancel={() => (RecordInputPicker = null)}
 	/>
 {/if}

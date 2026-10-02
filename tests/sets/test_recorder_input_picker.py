@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +17,7 @@ from fastapi.testclient import TestClient
 from apps.sets import capture
 from apps.sets.api import router
 from apps.sets.recorder_service import NO_AUDIO_DEVICE_LABEL, RecorderService
+from apps.shared import ffmpeg as shared_ffmpeg
 
 pytestmark = pytest.mark.requirement("SET-10")
 
@@ -95,7 +97,7 @@ def test_capture_ffmpeg_falls_back_to_homebrew_only_without_an_override(monkeypa
     brew = tmp_path / "ffmpeg"
     brew.write_text("#!/bin/sh\n")
     brew.chmod(0o755)
-    monkeypatch.setattr(capture, "HOMEBREW_FFMPEG_PATHS", (str(tmp_path / "absent"), str(brew)))
+    monkeypatch.setattr(shared_ffmpeg, "HOMEBREW_FFMPEG_PATHS", (str(tmp_path / "absent"), str(brew)))
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
     monkeypatch.delenv("MDT_FFMPEG", raising=False)
     assert capture.resolve_capture_ffmpeg() == str(brew)
@@ -105,7 +107,7 @@ def test_capture_ffmpeg_falls_back_to_homebrew_only_without_an_override(monkeypa
         capture.resolve_capture_ffmpeg()
 
     monkeypatch.delenv("MDT_FFMPEG")
-    monkeypatch.setattr(capture, "HOMEBREW_FFMPEG_PATHS", (str(tmp_path / "absent"),))
+    monkeypatch.setattr(shared_ffmpeg, "HOMEBREW_FFMPEG_PATHS", (str(tmp_path / "absent"),))
     with pytest.raises(capture.CaptureUnavailable, match="brew install ffmpeg"):
         capture.resolve_capture_ffmpeg()
 
@@ -131,14 +133,14 @@ def test_startup_check_refuses_a_capture_that_already_exited(tmp_path: Path):
     """[if] ffmpeg exits inside the startup window [then] REC fails with its stderr."""
     with pytest.raises(capture.CaptureUnavailable, match="device not found"):
         capture.start_capture(
-            tmp_path, 4, popen=_ExitedPopen, ffmpeg="ffmpeg", startup_check_s=0.1
+            tmp_path, 4, popen=cast(Any, _ExitedPopen), ffmpeg="ffmpeg", startup_check_s=0.1
         )
 
 
 def test_startup_check_passes_a_capture_that_is_still_running(tmp_path: Path):
     """[if] ffmpeg is alive after the window [then] the handle is returned."""
     handle = capture.start_capture(
-        tmp_path, 4, popen=_RunningPopen, ffmpeg="ffmpeg", startup_check_s=0.1
+        tmp_path, 4, popen=cast(Any, _RunningPopen), ffmpeg="ffmpeg", startup_check_s=0.1
     )
     assert handle.argv[handle.argv.index("-i") + 1] == ":4"
     handle.log_fh.close()
@@ -271,3 +273,18 @@ def test_start_by_a_name_two_inputs_share_is_refused(tmp_path: Path):
         )
     assert response.status_code == 503
     assert "2 audio inputs are named 'USB Audio'" in response.json()["detail"]
+
+
+class _EnvPopen(_RunningPopen):
+    env: dict[str, str] | None = None
+
+    def __init__(self, argv, **kwargs):
+        super().__init__(argv, **kwargs)
+        _EnvPopen.env = kwargs.get("env")
+
+
+def test_capture_runs_ffmpeg_in_utc_so_segment_names_match_the_set_id(tmp_path: Path):
+    """[if] ffmpeg names segments [then] in UTC like the set id, never local time."""
+    handle = capture.start_capture(tmp_path, 1, popen=cast(Any, _EnvPopen), ffmpeg="ffmpeg")
+    assert _EnvPopen.env is not None and _EnvPopen.env["TZ"] == "UTC"
+    handle.log_fh.close()

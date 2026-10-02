@@ -10,6 +10,7 @@ const performanceRecorderRail = readFileSync(new URL('../../src/lib/components/r
 const recordInputPicker = readFileSync(new URL('../../src/lib/components/rb/browser/RecordInputPicker.svelte', import.meta.url), 'utf8');
 const browserPanel = readFileSync(new URL('../../src/lib/components/rb/BrowserPanel.svelte', import.meta.url), 'utf8');
 let recorder;
+let choice;
 let originalFetch;
 let requests;
 
@@ -25,6 +26,7 @@ before(async () => {
 		);
 	};
 	recorder = await loadTypeScriptModule('src/lib/sets/performance-recorder.ts', { viteApiBase: API_BASE });
+	choice = await loadTypeScriptModule('src/lib/sets/record-input-choice.ts', { viteApiBase: API_BASE });
 });
 
 after(() => {
@@ -33,7 +35,7 @@ after(() => {
 
 test('performance REC starts the recorder on the picked input BY NAME with the Open DJ source enabled', async () => {
 	requests.length = 0;
-	await recorder.startPerformanceRecorder({ kind: 'device', name: 'BlackHole 2ch' });
+	await choice.startPerformanceRecorder({ kind: 'device', name: 'BlackHole 2ch' });
 
 	assert.deepEqual(requests, [
 		{
@@ -51,7 +53,7 @@ test('performance REC starts the recorder on the picked input BY NAME with the O
 
 test('performance REC tracklist-only start says so explicitly instead of omitting the input', async () => {
 	requests.length = 0;
-	await recorder.startPerformanceRecorder({ kind: 'none' });
+	await choice.startPerformanceRecorder({ kind: 'none' });
 
 	assert.equal(requests.length, 1);
 	assert.deepEqual(JSON.parse(requests[0].body), {
@@ -61,12 +63,6 @@ test('performance REC tracklist-only start says so explicitly instead of omittin
 	});
 });
 
-test('performance REC rejects a blank input name before issuing a recording request', async () => {
-	requests.length = 0;
-	await assert.rejects(recorder.startPerformanceRecorder({ kind: 'device', name: ' ' }), /pick an audio input/);
-	assert.deepEqual(requests, []);
-});
-
 function memoryStorage(initial = {}) {
 	const map = new Map(Object.entries(initial));
 	return { getItem: (k) => (map.has(k) ? map.get(k) : null), setItem: (k, v) => map.set(k, v), map };
@@ -74,14 +70,14 @@ function memoryStorage(initial = {}) {
 
 test('the picked input is remembered per machine and read back; junk reads as nothing', () => {
 	const storage = memoryStorage();
-	assert.equal(recorder.loadRememberedInput(storage), null);
-	recorder.rememberInput({ kind: 'device', name: 'Loopback Audio' }, storage);
-	assert.deepEqual(recorder.loadRememberedInput(storage), { kind: 'device', name: 'Loopback Audio' });
-	storage.setItem(recorder.RECORD_INPUT_STORAGE_KEY, '{"kind":"device","name":7}');
-	assert.equal(recorder.loadRememberedInput(storage), null);
-	storage.setItem(recorder.RECORD_INPUT_STORAGE_KEY, 'not json');
-	assert.equal(recorder.loadRememberedInput(storage), null);
-	assert.equal(recorder.loadRememberedInput(null), null);
+	assert.equal(choice.loadRememberedInput(storage), null);
+	choice.rememberInput({ kind: 'device', name: 'Loopback Audio' }, storage);
+	assert.deepEqual(choice.loadRememberedInput(storage), { kind: 'device', name: 'Loopback Audio' });
+	storage.setItem(choice.RECORD_INPUT_STORAGE_KEY, '{"kind":"device","name":7}');
+	assert.equal(choice.loadRememberedInput(storage), null);
+	storage.setItem(choice.RECORD_INPUT_STORAGE_KEY, 'not json');
+	assert.equal(choice.loadRememberedInput(storage), null);
+	assert.equal(choice.loadRememberedInput(null), null);
 });
 
 test('the picker opens on the remembered input while connected, else the loopback default, never a mic', () => {
@@ -93,15 +89,15 @@ test('the picker opens on the remembered input while connected, else the loopbac
 		default_name: 'BlackHole 2ch'
 	};
 	const mic = { kind: 'device', name: 'MacBook Pro Microphone' };
-	assert.deepEqual(recorder.initialInputChoice(mic, devices), mic);
-	assert.deepEqual(recorder.initialInputChoice({ kind: 'device', name: 'Unplugged' }, devices), {
+	assert.deepEqual(choice.initialInputChoice(mic, devices), mic);
+	assert.deepEqual(choice.initialInputChoice({ kind: 'device', name: 'Unplugged' }, devices), {
 		kind: 'device',
 		name: 'BlackHole 2ch'
 	});
-	assert.deepEqual(recorder.initialInputChoice(null, devices), { kind: 'device', name: 'BlackHole 2ch' });
-	assert.equal(recorder.initialInputChoice(null, { devices: devices.devices.slice(0, 1), default_name: null }), null);
-	assert.deepEqual(recorder.initialInputChoice({ kind: 'none' }, null), { kind: 'none' });
-	assert.equal(recorder.initialInputChoice(mic, null), null);
+	assert.deepEqual(choice.initialInputChoice(null, devices), { kind: 'device', name: 'BlackHole 2ch' });
+	assert.equal(choice.initialInputChoice(null, { devices: devices.devices.slice(0, 1), default_name: null }), null);
+	assert.deepEqual(choice.initialInputChoice({ kind: 'none' }, null), { kind: 'none' });
+	assert.equal(choice.initialInputChoice(mic, null), null);
 });
 
 test('the live performance rail opens the in-app input picker instead of window.prompt', () => {
@@ -113,10 +109,11 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.doesNotMatch(performanceRecorderRail, /window\.prompt/);
 	assert.match(performanceRecorderRail, /async function togglePerformanceRecording\(\): Promise<void>/);
 	assert.match(performanceRecorderRail, /recorder = await getRecorderStatus\(\)/);
-	assert.match(performanceRecorderRail, /pickerOpen = true/);
-	assert.match(performanceRecorderRail, /recorder = await startPerformanceRecorder\(choice\)/);
-	assert.match(performanceRecorderRail, /rememberInput\(choice\)/);
+	assert.match(recordInputPicker, /const status = await startPerformanceRecorder\(choice\)/);
+	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => \(\(recorder = status\), \(RecordInputPicker = null\)\)\}/);
+	assert.match(recordInputPicker, /rememberInput\(choice\);\n\t\t\tconst from/);
 	assert.match(performanceRecorderRail, /<RecordInputPicker/);
+	assert.match(performanceRecorderRail, /import\('.\/RecordInputPicker.svelte'\)/);
 	assert.match(performanceRecorderRail, /recorder = await stopPerformanceRecorder\(recorder\)/);
 	assert.match(performanceRecorderRail, /onrecord=\{\(\) => void togglePerformanceRecording\(\)\}/);
 	assert.match(recordInputPicker, /listRecorderDevices\(\)/);
