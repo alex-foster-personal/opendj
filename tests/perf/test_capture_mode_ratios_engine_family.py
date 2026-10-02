@@ -384,3 +384,20 @@ def test_engine_root_check_refuses_a_changed_engine_pid() -> None:
     with _listener("opendj-engine") as (origin, pid):
         reason = mode_ratio_engine._engine_root_pid_reason(origin, pid + 1)
     assert reason is not None and "engine pid changed" in reason
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="the engine root helper runs under node")
+@pytest.mark.requirement("PERFMODE-15")
+def test_engine_root_helper_loads_its_typescript_import_on_the_node_floor() -> None:
+    """[if] the helper cannot load its .ts import under the node on PATH [then] broken, [else stop].
+
+    Runs on every host, not only the Darwin reference Mac: the helper imports a
+    .ts module, and below Node 22.18 (the repo floor and CI's pin is 22.14) that
+    needs --experimental-strip-types. Port 9 (discard) is closed, so the probe must
+    fail, and the presence check is that it failed INSIDE engineRootPids (its lsof
+    probe), not at module load.
+    """
+    reason = mode_ratio_engine._engine_root_pid_reason("http://127.0.0.1:9", 123)
+    assert reason is not None
+    assert "ERR_UNKNOWN_FILE_EXTENSION" not in reason, reason
+    assert "lsof" in reason, reason

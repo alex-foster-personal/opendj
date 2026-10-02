@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --experimental-strip-types
 /**
  * Print the verified local engine root pid for a PERFMODE-15 ratio capture.
  *
@@ -7,7 +7,12 @@
  * pid's own command line runs engine code, and (given an expected pid) it has
  * not changed. Exits non-zero with the reason on stderr on any refusal.
  *
- * usage: node engine_root_pid.mjs <engine-origin> <expected-pid>
+ * It imports a `.ts` module, so it needs type stripping: on by default from
+ * Node 22.18, but the repo's floor (package.json engines, CI's pinned node) is
+ * 22.14, where a plain `node` refuses with ERR_UNKNOWN_FILE_EXTENSION. The flag
+ * is the same one the frontend unit-test scripts pass.
+ *
+ * usage: node --experimental-strip-types engine_root_pid.mjs <engine-origin> <expected-pid>
  */
 
 import { engineRootPids } from "../../apps/webui/frontend/tests/e2e/support/renderer-process-sample.ts";
@@ -15,7 +20,7 @@ import { engineRootPids } from "../../apps/webui/frontend/tests/e2e/support/rend
 const [engine, expected] = process.argv.slice(2);
 const expectedPid = Number(expected);
 if (!engine || !Number.isInteger(expectedPid) || expectedPid <= 0) {
-  console.error("usage: node engine_root_pid.mjs <engine-origin> <expected-pid>");
+  console.error("usage: node --experimental-strip-types engine_root_pid.mjs <engine-origin> <expected-pid>");
   process.exit(2);
 }
 

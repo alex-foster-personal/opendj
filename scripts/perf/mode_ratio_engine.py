@@ -41,7 +41,8 @@ class EngineTarget:
 def _engine_root_pid_reason(engine: str, expected_pid: int) -> str | None:
     """None when PERFMODE-14's `engineRootPids` resolves `engine` to exactly `expected_pid`."""
     proc = subprocess.run(
-        ["node", str(_ENGINE_ROOT_SCRIPT), engine, str(expected_pid)],
+        # The helper imports a .ts module; type stripping is off by default below Node 22.18.
+        ["node", "--experimental-strip-types", str(_ENGINE_ROOT_SCRIPT), engine, str(expected_pid)],
         cwd=_REPO,
         capture_output=True,
         text=True,
