@@ -5,9 +5,9 @@ draft already ran the e2e gate on, so a per-SHA push group tested each merge twi
 the four `e2e` runners drafts wait for (14 push gates in 6.7 h waited a median 79 min).
 
 Single-line intent:
-  - if push runs keep a per-SHA group then every merge queues a second e2e gate
-  - if push runs cancel in progress then a burst of merges can leave main with no verdict
-  - if pull requests stop cancelling in progress then a new push waits behind its stale run
+  - [if] push runs keep a per-SHA group [then] every merge queues a second e2e gate, [else stop].
+  - [if] push runs cancel in progress [then] a burst of merges can leave main with no verdict, [else stop].
+  - [if] pull requests stop cancelling in progress [then] a new push waits behind its stale run, [else stop].
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _concurrency() -> dict:
 
 
 def test_push_runs_share_one_group_without_a_sha() -> None:
-    """if push runs keep a per-SHA group then every merge queues a second e2e gate"""
+    """[if] push runs keep a per-SHA group [then] every merge queues a second e2e gate, [else stop]."""
     group = _concurrency()["group"]
     assert "github.sha" not in group
     assert "github.event_name == 'push' && 'push-tip'" in group
@@ -35,6 +35,9 @@ def test_push_runs_share_one_group_without_a_sha() -> None:
 
 
 def test_push_runs_never_cancel_a_running_gate_and_prs_still_do() -> None:
-    """if a push cancels in progress then a merge burst leaves main with no verdict; if a PR
-    stops cancelling then a new head waits behind its stale run"""
+    """[if] a push cancels in progress, or a PR stops cancelling, [then] fail, [else stop].
+
+    A cancelled push leaves main with no verdict after a merge burst; a PR that stops
+    cancelling makes a new head wait behind its stale run.
+    """
     assert _concurrency()["cancel-in-progress"] == "${{ github.event_name != 'push' }}"
