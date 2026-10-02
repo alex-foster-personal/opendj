@@ -207,8 +207,10 @@ def test_the_strip_is_the_360_byte_contract_and_is_never_padded() -> None:
     preview_b64, preview_max = local_waveform._strip_from_peaks(loud_then_quiet)
     assert preview_b64 is not None, "a full-length strip always encodes"
     raw = base64.b64decode(preview_b64)
-    assert len(raw) == 360 and preview_max == 240
-    assert max(raw[:180]) == 240 and max(raw[180:]) == 30
+    # On rekordbox PWV6's scale (NATIVE-22) the high band leads: 240 -> 166,
+    # 30 -> 21.
+    assert len(raw) == 360 and preview_max == 166
+    assert max(raw[:180]) == 166 and max(raw[180:]) == 21
 
     too_short = np.full(
         (local_waveform.STRIP_COLUMNS - 1, decode.BAND_COUNT), 240, dtype=np.uint8
