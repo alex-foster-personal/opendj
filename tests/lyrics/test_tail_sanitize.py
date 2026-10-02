@@ -160,6 +160,18 @@ def test_unmeasurable_gap_kept() -> None:
     assert _texts(kept) == ["sing", "thank", "you"]
 
 
+def test_missing_prev_end_with_prev_start_kept() -> None:
+    """[if] the previous word has start_s but no end_s [then] the gap is unmeasurable, kept [else stop]."""
+    words = [
+        word("sing", start_s=1.0, end_s=None, witness="agree", line_final=True),
+        word("thank", start_s=3.0, end_s=3.3, witness="contradict"),
+        word("you", start_s=3.3, end_s=3.6, witness="lost"),
+    ]
+    kept, report = sanitize_words_for_artifact(words, duration_s=210.0)
+    assert _texts(kept) == ["sing", "thank", "you"]
+    assert report.dropped == ()
+
+
 def test_bare_you_tail_is_not_a_phrase_kept() -> None:
     """[if] a lone weak "you" after silence [then] not a known phrase, kept [else stop]."""
     words = [

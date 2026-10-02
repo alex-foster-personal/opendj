@@ -79,9 +79,8 @@ def _number(value: Any) -> float | None:
 
 def _gap_before(prev: Mapping[str, Any], first: Mapping[str, Any]) -> float | None:
     """Silence between ``prev`` ending and ``first`` starting, or None if unmeasurable."""
+    # No fallback to prev start_s: start-to-start is not silence (LYR-08).
     prev_end = _number(prev.get("end_s"))
-    if prev_end is None:
-        prev_end = _number(prev.get("start_s"))
     first_start = _number(first.get("start_s"))
     if prev_end is None or first_start is None:
         return None
