@@ -230,7 +230,10 @@ test(
 test('an unloaded deck (no stable_id) triggers no fetch and is left untouched', async () => {
 	const before_ = await requestLog();
 	await cache.refreshAnalysisSourceDecks(audio.DECK_IDS, audio.deckStates);
-	const after_ = (await requestLog()).slice(before_.length);
+	// Deck fetches only, as `requestLog` explains: the one-off settings GET an
+	// earlier test's settlement starts can land inside this window on a busy
+	// runner (seen on CI, 1 !== 0), and it is not a fetch this call made.
+	const after_ = (await requestLog()).slice(before_.length).filter((url) => url.includes('/anlz?'));
 
 	assert.equal(after_.length, 0, 'no deck has a stable_id, so the real server must see no request');
 	for (const deck of audio.DECK_IDS) {
