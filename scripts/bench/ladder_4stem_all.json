@@ -292,7 +292,7 @@
     },
     {
       "id": "rb7-stems",
-      "params": "rekordbox 7 STEMS, its own hdemucs.onnx, overlap 0.25, 44.1 kHz",
+      "params": "user-supplied ONNX 4-stem model, overlap 0.25, 44.1 kHz",
       "separate_s": 10.51,
       "s_per_stem_minute": 10.51,
       "machine_score": 3,

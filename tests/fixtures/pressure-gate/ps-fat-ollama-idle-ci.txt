@@ -1,4 +1,0 @@
-350.0 llama-server
-  3.2 node /home/runner/actions-runner-1/_work/music-dj-tools/music-dj-tools/idle
-  2.8 python /home/runner/actions-runner-2/_work/foo/bar/waiting
-  5.0 systemd --user

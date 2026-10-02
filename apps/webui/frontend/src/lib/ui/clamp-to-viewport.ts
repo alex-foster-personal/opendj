@@ -55,7 +55,7 @@ function _proposedPosition(
 }
 
 /**
- * Whether a box at (x, y) crosses the inset viewport along the axis that
+ * Whether a box at pos crosses the inset viewport along the axis that
  * `placement` moves it on. Only that axis can be fixed by flipping to the
  * opposite side; the cross axis is clampToViewport's job, so it must not veto
  * a flip. It used to: a trigger in the bottom-right corner whose tile
@@ -65,17 +65,16 @@ function _proposedPosition(
  * feedback dock, PR #4094).
  */
 function _overflowsMainAxis(
-	x: number,
-	y: number,
+	pos: FloatingBox,
 	size: Size,
 	viewport: ViewportSize,
 	margin: number,
 	placement: FloatingPlacement
 ): boolean {
 	if (placement === 'below' || placement === 'above') {
-		return y < margin || y + size.height > viewport.height - margin;
+		return pos.y < margin || pos.y + size.height > viewport.height - margin;
 	}
-	return x < margin || x + size.width > viewport.width - margin;
+	return pos.x < margin || pos.x + size.width > viewport.width - margin;
 }
 
 /** Shift a proposed top-left so the full box stays inside the viewport inset by margin. */
@@ -113,9 +112,9 @@ export function placeFloating(input: {
 	} = input;
 
 	let pos = _proposedPosition(trigger, size, preferred, gap);
-	if (_overflowsMainAxis(pos.x, pos.y, size, viewport, margin, preferred)) {
+	if (_overflowsMainAxis(pos, size, viewport, margin, preferred)) {
 		const flipped = _proposedPosition(trigger, size, OPPOSITE[preferred], gap);
-		if (!_overflowsMainAxis(flipped.x, flipped.y, size, viewport, margin, preferred)) {
+		if (!_overflowsMainAxis(flipped, size, viewport, margin, OPPOSITE[preferred])) {
 			pos = flipped;
 		}
 	}

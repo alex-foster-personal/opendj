@@ -2,7 +2,8 @@
 
 [if] packaged env names a runtime and script [then] vocals launches exactly those, [else stop].
 [if] the packaged runtime or script cannot start [then] reinstall guidance only, [else stop].
-[if] a non-WAV track has no reachable ffmpeg [then] refuse it before launch, [else stop].
+[if] a non-WAV track has neither ffmpeg nor odj-audio [then] refuse it before launch, [else stop].
+[if] a non-WAV track has no ffmpeg but odj-audio resolves [then] it reaches the worker (STEM-50), [else stop].
 
 No fakes: every launch below goes through the real ``subprocess.Popen`` in a
 child interpreter whose environment is passed explicitly, so the command
@@ -35,6 +36,7 @@ _WORKER_ENV_KEYS = (
     vocals_cli.PACKAGED_WORKER_PYTHON_ENV,
     vocals_cli.PACKAGED_WORKER_SCRIPT_ENV,
     vocals_cli.FFMPEG_OVERRIDE_ENV,
+    "ODJ_AUDIO_BIN",
 )
 
 _CHILD_RUN_WORKER = """
@@ -182,11 +184,18 @@ def test_present_packaged_worker_script_reaches_the_worker() -> None:
     assert report["type"] != "WorkerUnavailableError", report
 
 
+def _absent_engine(tmp_path: Path) -> str:
+    """An ODJ_AUDIO_BIN that names nothing: no odj-audio, and (because a set
+    ODJ_AUDIO_BIN is never second-guessed) no repo build standing in for it."""
+    return str(tmp_path / "no-such-odj-audio")
+
+
 def test_non_wav_without_ffmpeg_refuses_before_launch(tmp_path: Path) -> None:
     env = _child_env(
         PATH=_empty_path_dir(tmp_path),
         MDT_VOCAL_WORKER_PYTHON=sys.executable,
         MDT_VOCAL_WORKER_SCRIPT=str(vocals_cli.WORKER_SCRIPT),
+        ODJ_AUDIO_BIN=_absent_engine(tmp_path),
     )
     report = _run_worker_in_child(MP3_FIXTURE, env)
 
@@ -196,8 +205,32 @@ def test_non_wav_without_ffmpeg_refuses_before_launch(tmp_path: Path) -> None:
     assert MP3_FIXTURE.name in message
     assert "ffmpeg" in message
     assert vocals_cli.FFMPEG_OVERRIDE_ENV in message
+    assert "ODJ_AUDIO_BIN" in message
     assert "convert the track to WAV" in message
     assert "vocal_region_worker" not in message
+
+
+def test_non_wav_without_ffmpeg_passes_the_preflight_when_odj_audio_resolves(
+    tmp_path: Path,
+) -> None:
+    """The installed app: no ffmpeg anywhere, ODJ_AUDIO_BIN names the engine.
+
+    The preflight only asks whether the engine is an executable file, so any
+    executable stands in for it here; tests/shared/test_odj_audio_decode.py
+    runs the real one.
+    """
+    bare_path = _empty_path_dir(tmp_path)
+    engine = tmp_path / "bin" / "odj-audio"
+    engine.parent.mkdir()
+    shutil.copy2(sys.executable, engine)
+    engine.chmod(0o755)
+
+    vocals_cli.preflight_worker(MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": str(engine)})
+    # Control: the same environment with the engine gone is refused.
+    with pytest.raises(vocals_cli.WorkerUnavailableError, match="ODJ_AUDIO_BIN"):
+        vocals_cli.preflight_worker(
+            MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)}
+        )
 
 
 def test_wav_without_ffmpeg_still_reaches_the_worker(tmp_path: Path) -> None:
@@ -221,9 +254,11 @@ def test_non_wav_with_mdt_ffmpeg_passes_the_decoder_preflight(tmp_path: Path) ->
     bare_path = _empty_path_dir(tmp_path)
     environ = {"PATH": bare_path, vocals_cli.FFMPEG_OVERRIDE_ENV: ffmpeg}
 
-    vocals_cli.preflight_worker(MP3_FIXTURE, environ)
+    vocals_cli.preflight_worker(MP3_FIXTURE, {**environ, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)})
     with pytest.raises(vocals_cli.WorkerUnavailableError):
-        vocals_cli.preflight_worker(MP3_FIXTURE, {"PATH": bare_path})
+        vocals_cli.preflight_worker(
+            MP3_FIXTURE, {"PATH": bare_path, "ODJ_AUDIO_BIN": _absent_engine(tmp_path)}
+        )
 
 
 def test_payload_launcher_exports_vocal_runtime_contract() -> None:

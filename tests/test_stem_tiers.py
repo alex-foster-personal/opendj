@@ -12,6 +12,8 @@ One-line intent per test, in the house format:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from apps.stems import tiers as tiercfg
@@ -370,3 +372,79 @@ def test_finished_jobs_are_reaped_but_running_ones_are_never_dropped(monkeypatch
     stem_tiers._reap_jobs()
     assert "live" in stem_tiers._JOBS, "a running job was dropped"
     assert len(stem_tiers._JOBS) <= stem_tiers._MAX_JOB_HISTORY + 1
+
+
+def _tree(root):
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*"))
+
+
+@pytest.mark.requirement("STEM-49")
+def test_a_local_job_writes_its_log_to_the_data_dir_never_the_source_tree(
+    monkeypatch, tmp_path
+):
+    """[if] a LOCAL job runs [then] its log is under the data dir, never the source tree, [else stop].
+
+    In the installed app the source tree is ``Open DJ.app/Contents/Resources/
+    payload/app``; one LOCAL job wrote ``.tmp/stem-jobs/<id>.log`` there and
+    ``codesign --verify --deep --strict`` then failed (packaged check of
+    316572f5, Fri 2 Oct 2026, finding 2). Here the source tree is a read-only
+    stand-in for that payload, and the job must leave it byte-for-byte as it
+    was while its log lands under the data dir's ``logs/``.
+    """
+    pytest.importorskip("fastapi")
+    import os
+    import stat
+    import sys
+    import time
+
+    from fastapi.testclient import TestClient
+
+    import apps.shared.paths as shared_paths
+    import apps.stems.cli as stems_cli
+    from apps.webui.server.app import create_app
+    from apps.webui.server.routes import stem_tiers
+
+    payload_app = tmp_path / "Open DJ.app" / "Contents" / "Resources" / "payload" / "app"
+    (payload_app / "scripts").mkdir(parents=True)
+    (payload_app / "scripts" / "stem_bundle_worker.py").write_text("# shipped\n")
+    data_dir = tmp_path / "Application Support" / "com.opendj.desktop"
+    data_dir.mkdir(parents=True)
+    audio = tmp_path / "music" / "track.mp3"
+    audio.parent.mkdir()
+    audio.write_bytes(b"ID3")
+    before = _tree(tmp_path / "Open DJ.app")
+    read_only = stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP
+    payload_app.chmod(read_only)
+    try:
+        monkeypatch.setattr(stem_tiers, "_repo_root", lambda: payload_app)
+        monkeypatch.setattr(stem_tiers, "_JOBS", {})
+        monkeypatch.setattr(shared_paths, "DATA_DIR", data_dir)
+        monkeypatch.setattr(stems_cli, "resolve_audio_path", lambda *a, **k: audio)
+        # A real child process that writes to stdout, standing in for the
+        # torch worker: the log file is what is under test, not separation.
+        monkeypatch.setattr(
+            stem_tiers,
+            "_generate_command",
+            lambda *a, **k: [sys.executable, "-c", "print('stem job ran')"],
+        )
+        client = TestClient(create_app(stem_roots=[data_dir / "state" / "stems"]))
+
+        r = client.post(
+            "/api/v1/stems/generate", json={"stable_id": "abc123", "tier": "LOCAL"}
+        )
+
+        assert r.status_code == 200, r.text
+        log = Path(r.json()["log"])
+        assert log.parent == data_dir / "logs" / "stem-jobs"
+        deadline = time.monotonic() + 30
+        status = client.get(r.json()["poll"]).json()
+        while status["state"] == "running" and time.monotonic() < deadline:
+            time.sleep(0.05)
+            status = client.get(r.json()["poll"]).json()
+        assert status["state"] == "done", status
+        assert "stem job ran" in log.read_text()
+        assert "stem job ran" in status["log_tail"]
+    finally:
+        payload_app.chmod(read_only | stat.S_IWUSR)
+    assert _tree(tmp_path / "Open DJ.app") == before, "the job wrote into the source tree"
+    assert not os.path.exists(payload_app / ".tmp")
