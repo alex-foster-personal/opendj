@@ -33,6 +33,7 @@ FAILURES ARE UNKNOWN. No key, a failed call or a malformed answer becomes
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -229,7 +230,7 @@ def classify(
             return sid, _unknown("state too large for JEV's context")
         try:
             return sid, parse_answer(_http_post(build_request(state, tags, model), key), tags)
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, OSError) as exc:
             return sid, _unknown(f"call failed: {type(exc).__name__}")
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:

@@ -20,7 +20,7 @@ import json
 import sqlite3
 import threading
 from collections.abc import Iterable
-from pathlib import Path, PurePath
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from . import store
@@ -79,7 +79,9 @@ def track_facts(conn: sqlite3.Connection, stable_ids: Iterable[str]) -> dict[str
                 "title": title,
                 "artist": _artists(artists_json),
                 "album": album,
-                "file_name": PurePath(file_path).name if file_path else None,
+                # Windows parsing splits on both / and \\, so a Windows-authored path
+                # sends only its basename, never the user's folders.
+                "file_name": PureWindowsPath(file_path).name if file_path else None,
             }
         names = ",".join("?" * len(_FIELD_NAMES))
         for sid, name, value_json in conn.execute(
