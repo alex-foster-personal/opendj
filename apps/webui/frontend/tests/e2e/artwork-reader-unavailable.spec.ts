@@ -464,6 +464,29 @@ test('null artwork availability identifies an unavailable reader without request
 			json: { tier: 'STANDARD', source: 'auto', auto_tier: 'STANDARD', override: 'auto' }
 		})
 	);
+	// EnrichCard.svelte (ENRICH-01) reads the enrichment summary on mount.
+	// Answered `show: false`, the engine's shape for a library with nothing
+	// left to enrich, so the card stays hidden and fires nothing else.
+	await page.route('**/api/v1/enrich/summary', (route) =>
+		route.fulfill({
+			json: {
+				show: false,
+				analysis: null,
+				analysis_error: null,
+				coverage: null,
+				coverage_error: null,
+				stems: { state: 'done', pending: null, reason: null },
+				decisions: {}
+			}
+		})
+	);
+	// preview-strip-fill.ts (NATIVE-21) asks for the strips of strip-less rows
+	// in view. Answered "nothing on disk yet" for every id, never a strip, so
+	// no row gains a waveform and no id is pending a retry.
+	await page.route('**/api/v1/library/preview-strips', (route) => {
+		const { ids } = route.request().postDataJSON() as { ids: string[] };
+		return route.fulfill({ json: { strips: Object.fromEntries(ids.map((id) => [id, null])), pending: [] } });
+	});
 	// client-performance-samples.ts's `startClientPerformanceSampling`, also
 	// deferred from app-init.ts (`scheduler.defer('client-samples:first', ...)`,
 	// same 9f4631536 introduction, Sat 12 Sep 2026). The module never reads the
