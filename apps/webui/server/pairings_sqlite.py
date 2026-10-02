@@ -14,7 +14,8 @@ from typing import Any
 
 from apps.shared.pairings.repo import PairingsRepo
 
-from .backend import ConflictError, NotFoundError, Pairing
+from .backend import BackendError, ConflictError, NotFoundError, Pairing
+from .playlist_add import AlreadyExistsError
 
 _HTTP_PAIRINGS_DDL: tuple[str, ...] = (
     """
@@ -39,6 +40,28 @@ _SELECT_HTTP = (
     "pairing_id, from_stable_id, to_stable_id, direction, source, notes, "
     "snapshot_json, created_at, updated_at"
 )
+
+
+class PairingIdConflictError(AlreadyExistsError):
+    """A create reused a pairing_id stored for different endpoints or direction (409).
+
+    Sol P1 on PR #4014: the upsert would otherwise overwrite that pairing and
+    its snapshot while the graph mirror kept the old edge beside the new one.
+    """
+
+    def __init__(self, pairing_id: str) -> None:
+        self.pairing_id = pairing_id
+        BackendError.__init__(
+            self, f"pairing_id {pairing_id} already names a different pairing"
+        )
+
+
+def raise_on_pairing_id_collision(existing: Pairing | None, pairing: Pairing) -> None:
+    """Refuse ``pairing`` when ``existing`` holds its id for another edge."""
+    if existing is not None and (
+        existing.from_stable_id, existing.to_stable_id, existing.direction
+    ) != (pairing.from_stable_id, pairing.to_stable_id, pairing.direction):
+        raise PairingIdConflictError(pairing.pairing_id)
 
 
 def _http_table_exists(conn: sqlite3.Connection) -> bool:
@@ -196,6 +219,13 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
             )
             return _upsert_row(conn, updated)
         return existing
+    same_id = conn.execute(
+        f"SELECT {_SELECT_HTTP} FROM http_pairings WHERE pairing_id=?",
+        (pairing.pairing_id,),
+    ).fetchone()
+    raise_on_pairing_id_collision(
+        _row_to_pairing(same_id) if same_id is not None else None, pairing
+    )
     return _upsert_row(conn, pairing)
 
 

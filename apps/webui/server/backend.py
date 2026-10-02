@@ -673,6 +673,8 @@ class InMemoryBackend:
                         self._pairings[existing.pairing_id] = updated
                         return updated
                     return existing
+            from .pairings_sqlite import raise_on_pairing_id_collision
+            raise_on_pairing_id_collision(self._pairings.get(pairing.pairing_id), pairing)
             self._pairings[pairing.pairing_id] = pairing
             self._last_writer = (pairing.source, pairing.created_at)
             return pairing
