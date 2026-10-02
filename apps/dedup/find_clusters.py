@@ -254,6 +254,14 @@ def run_find_clusters(
 
     n = len(fps)
     if n == 0:
+        # No fingerprints means no clusters: the previous run's groups are
+        # cleared too, so review never offers a merge this run did not find.
+        conn = dedup_schema.ensure_schema(use_db)
+        try:
+            _wipe_derived_cluster_tables(conn)
+            conn.commit()
+        finally:
+            conn.close()
         use_csv.parent.mkdir(parents=True, exist_ok=True)
         use_csv.write_text("cluster_id,canonical_path\n", encoding="utf-8")
         return []

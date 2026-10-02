@@ -141,6 +141,18 @@ def test_play_adds_to_rekordbox_count_and_retry_is_idempotent(client: TestClient
     assert body["opendj_last_played_at"] is not None
 
 
+def test_counts_come_from_the_apps_own_state_db(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An app serving another library reads that library's rekordbox mapping,
+    not the process-default state database's."""
+    other = tmp_path / "other-state.db"
+    state_db.open_rw(other).close()
+    monkeypatch.setattr(rb_config, "STATE_DB", other)
+    body = client.get(f"/api/v1/tracks/{MAPPED}/plays").json()
+    assert body["rekordbox_play_count"] == RB_PLAYS
+
+
 def test_unmapped_track_counts_own_plays(client: TestClient) -> None:
     _play(client, LOCAL, "load-local-1")
     body = client.get(f"/api/v1/tracks/{LOCAL}/plays").json()

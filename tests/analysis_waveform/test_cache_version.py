@@ -233,3 +233,25 @@ def test_the_payload_declares_tri_and_carries_three_distinct_bands() -> None:
     assert payload["preview"]["length"] == min(600, decode.OVERVIEW_COLUMNS), (
         "the preview is capped at the rekordbox PWV6 width before `points` applies"
     )
+
+
+@pytest.mark.parametrize("forced", ["engine", "ffmpeg", "rust"])
+def test_a_forced_decoder_that_is_missing_never_serves_another_decoders_cache(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forced: str
+) -> None:
+    """Only ``auto`` falls back to the last real decode when nothing can decode.
+
+    A forced decoder that is missing, or an invalid setting, must fail closed,
+    not quietly serve columns another decoder wrote.
+    """
+    monkeypatch.setenv("ODJ_AUDIO_BIN", str(tmp_path / "no-such-odj-audio"))
+    monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
+    written = {**local_waveform._source_key(source), "decoder": "ffmpeg"}
+    local_waveform._store_peaks(SID, written, _tri_peaks())
+
+    # Control: under auto with no decoder at all, that same entry still stands.
+    monkeypatch.delenv(decode.DECODER_ENV, raising=False)
+    assert local_waveform._cached_peaks(SID, local_waveform._decode_key(source)) is not None
+
+    monkeypatch.setenv(decode.DECODER_ENV, forced)
+    assert local_waveform._cached_peaks(SID, local_waveform._decode_key(source)) is None

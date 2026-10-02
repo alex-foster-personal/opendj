@@ -260,6 +260,34 @@ def test_rerun_replaces_same_member_set(tmp_path: Path) -> None:
 
 
 @pytest.mark.requirement("META-03")
+def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> None:
+    """A run that fingerprints nothing leaves no stale groups to merge."""
+    db = tmp_path / "phase7.sqlite"
+    members = [
+        Fingerprint(
+            path=tmp_path / name, duration=180.0, fp_str=SAME_FP,
+            size=size, mtime=100.0, bitrate=bitrate,
+        )
+        for name, size, bitrate in (("a.flac", 2_000, 320), ("b.mp3", 1_000, 128))
+    ]
+    cache = FingerprintCache(db)
+    for i, fp in enumerate(members):
+        cache.put(fp, stable_id=f"sid-{i}")
+    kwargs = {
+        "db_path": db, "threshold": 0.9, "roots": [tmp_path],
+        "clusters_csv": tmp_path / "c.csv", "manual_review_csv": tmp_path / "m.csv",
+    }
+    assert len(fc_mod.run_find_clusters(fingerprints=members, **kwargs)) == 1
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (1,)
+
+    assert fc_mod.run_find_clusters(fingerprints=[], **kwargs) == []
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (0,)
+        assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (0,)
+
+
+@pytest.mark.requirement("META-03")
 def test_duration_delta_persists_manual_review_flag(tmp_path: Path) -> None:
     db = tmp_path / "phase7.sqlite"
     canonical = Fingerprint(

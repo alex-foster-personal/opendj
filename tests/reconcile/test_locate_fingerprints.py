@@ -3,10 +3,10 @@
 [if] the duplicate scan recorded a track's fingerprint [then] locate finds and checks its moved file by audio, [else stop].
 
 The dedup database here is a real one (``FingerprintCache``) holding real
-chromaprint strings (``tests/fingerprint_fakes.py``); only ``compute``, the
-decode of a candidate file, is replaced, because the candidates are stub
-files rather than audio. The real engine path is covered by
-``tests/dedup/test_engine_fingerprint_real.py``.
+chromaprint strings (``tests/fingerprint_fakes.py``), and nothing here decodes
+a candidate: every check below is answered from recorded fingerprints alone.
+Checks that decode a candidate file (match, veto, unmeasurable) run on the
+real engine with real audio in ``tests/dedup/test_engine_fingerprint_real.py``.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import pytest
 from apps.reconcile import fingerprint_evidence as fe
 from apps.reconcile import locate
 from apps.shared import audio_files
-from apps.shared.fingerprints import ChromaprintMissing, Fingerprint, FingerprintCache
+from apps.shared.fingerprints import Fingerprint, FingerprintCache
 from tests.fingerprint_fakes import fake_fingerprint
 
 pytestmark = pytest.mark.requirement("RECON-06")
@@ -55,18 +55,6 @@ def _row(original: Path, **extra: str) -> dict[str, str]:
     }
     row.update(extra)
     return row
-
-
-def _compute_as(monkeypatch: pytest.MonkeyPatch, by_name: dict[str, str]) -> list[Path]:
-    """Candidates decode to the fingerprint named for their file name."""
-    calls: list[Path] = []
-
-    def compute(path: Path) -> Fingerprint:
-        calls.append(path)
-        return _fp(path, by_name[path.name])
-
-    monkeypatch.setattr(fe, "compute", compute)
-    return calls
 
 
 def test_a_renamed_move_is_found_by_its_audio(tmp_path: Path) -> None:
@@ -123,64 +111,6 @@ def test_a_file_another_track_owns_is_not_offered(tmp_path: Path) -> None:
     assert ev2 is not None
     cands = locate.find_candidates(_row(original, stable_id="sid-1"), idx, {dup: None}, fingerprints=ev2)
     assert [c.path for c in cands] == [dup]
-
-
-def _named_candidate(tmp_path: Path) -> tuple[Path, Path, locate.FsIndex, dict]:
-    original = tmp_path / "old" / "track.mp3"
-    same_name = _file(tmp_path / "new" / "track.mp3")
-    meta = {same_name: audio_files.AudioMetadata(title="Song", artist="Artist", duration_s=200.0)}
-    return original, same_name, locate.FsIndex.build([_af(same_name)]), meta
-
-
-def test_same_name_different_audio_is_vetoed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] a same-named candidate's audio differs [then] it is never triple-validated, [else stop]."""
-    original, _same, idx, meta = _named_candidate(tmp_path)
-    ev = fe.FingerprintEvidence.open(_db(tmp_path, [(original, SONG, None)]))
-    assert ev is not None
-    _compute_as(monkeypatch, {"track.mp3": OTHER_SONG})
-
-    best = locate._locate_one(_row(original), idx, meta, ev)
-
-    assert best is not None
-    assert "fingerprint_mismatch" in best.signals
-    # Name, size, tags and duration all agree: four signals, still vetoed.
-    assert {"basename_exact", "size_match", "id3_match", "duration_match"} <= set(best.signals)
-    assert not best.triple_validated
-    assert best.confidence == pytest.approx(0.35 + 0.20 + 0.15 + 0.10)
-
-
-def test_same_name_same_audio_is_confirmed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] a same-named candidate's audio matches [then] fingerprint_match adds its weight, [else stop]."""
-    original, same_name, idx, meta = _named_candidate(tmp_path)
-    ev = fe.FingerprintEvidence.open(_db(tmp_path, [(original, SONG, None)]))
-    assert ev is not None
-    calls = _compute_as(monkeypatch, {"track.mp3": fake_fingerprint(b"song", b"re-encode")})
-
-    best = locate._locate_one(_row(original), idx, meta, ev)
-
-    assert best is not None
-    assert "fingerprint_match" in best.signals
-    assert best.triple_validated
-    assert best.confidence == pytest.approx(0.35 + 0.20 + 0.15 + 0.10 + 0.35)
-    # The candidate's fingerprint is cached for next time, not recomputed.
-    assert calls == [same_name]
-
-
-def test_unmeasurable_candidate_is_unknown_not_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """[if] a candidate cannot be fingerprinted [then] no fingerprint signal fires and it is counted, [else stop]."""
-    original, _same_name, idx, meta = _named_candidate(tmp_path)
-    ev = fe.FingerprintEvidence.open(_db(tmp_path, [(original, SONG, None)]))
-    assert ev is not None
-
-    def no_backend(path: Path) -> Fingerprint:
-        raise ChromaprintMissing("no engine")
-
-    monkeypatch.setattr(fe, "compute", no_backend)
-    best = locate._locate_one(_row(original), idx, meta, ev)
-    assert best is not None
-    assert not any(s.startswith("fingerprint") for s in best.signals)
-    assert best.triple_validated
-    assert ev.unmeasured == 1
 
 
 def test_no_scan_database_means_no_evidence(tmp_path: Path) -> None:

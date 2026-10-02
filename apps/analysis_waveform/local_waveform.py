@@ -77,6 +77,7 @@ from apps.analysis_waveform.bands import (
 from apps.analysis_waveform.decode import (
     BAND_COUNT,
     BAND_NAMES,
+    DECODER_ENV,
     OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
     decode_peaks_from,
@@ -178,6 +179,10 @@ def _source_key(path: Path) -> dict[str, Any]:
 
 
 NO_DECODER: str = "none"
+# A decoder the operator forced (or an invalid setting) that is unavailable.
+# Unlike NO_DECODER it matches no cache entry: a forced decoder fails closed
+# rather than serving another decoder's columns.
+FORCED_DECODER_UNAVAILABLE: str = "forced-unavailable"
 
 
 def _decode_key(path: Path) -> dict[str, Any]:
@@ -188,12 +193,15 @@ def _decode_key(path: Path) -> dict[str, Any]:
     a switch of decoder is a different decode convention and rebuilds the entry
     rather than serving the other decoder's columns. With no decoder available
     the key says so (``NO_DECODER``): nothing is ever decoded under it, and the
-    decode attempt raises the reason.
+    decode attempt raises the reason. Only ``auto`` mode may fall back to an
+    existing cache that way; a forced decoder that is missing, or an invalid
+    setting, keys as ``FORCED_DECODER_UNAVAILABLE`` and never hits the cache.
     """
     try:
         decoder: str = select_decoder(path)
     except LocalDecodeUnavailable:
-        decoder = NO_DECODER
+        mode = os.environ.get(DECODER_ENV, "auto").strip().lower() or "auto"
+        decoder = NO_DECODER if mode == "auto" else FORCED_DECODER_UNAVAILABLE
     return {**_source_key(path), "decoder": decoder}
 
 
@@ -390,7 +398,7 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
                 )
             try:
                 decoder = key["decoder"]
-                if decoder == NO_DECODER:
+                if decoder in (NO_DECODER, FORCED_DECODER_UNAVAILABLE):
                     decoder = select_decoder(path)  # raises the reason
                 peaks = decode_peaks_from(decoder, path)
             finally:

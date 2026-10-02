@@ -224,3 +224,88 @@ def test_a_moved_track_is_confirmed_by_its_recorded_audio(
     assert "fingerprint_mismatch" in cands[impostor].signals
     assert ev.unmeasured == 0
     assert next(iter(cands)) == moved, "the matching file ranks first"
+
+
+def _named_candidate(tmp_path: Path, audio: Path | None) -> tuple[Path, Path, object, dict, dict]:
+    """A recorded track at ``old/track.wav`` and a same-named, same-size
+    candidate at ``new/track.wav`` holding ``audio`` (or bytes no decoder reads)."""
+    from apps.reconcile import locate
+    from apps.shared import audio_files
+
+    original = tmp_path / "old" / "track.wav"
+    same_name = tmp_path / "new" / "track.wav"
+    same_name.parent.mkdir(parents=True)
+    if audio is None:
+        same_name.write_bytes(b"not audio" * 100)
+    else:
+        shutil.copy(audio, same_name)
+    size = same_name.stat().st_size
+    idx = locate.FsIndex.build([audio_files.AudioFile(same_name, size, 0.0, ".wav")])
+    meta = {same_name: audio_files.AudioMetadata(title="Song", artist="Artist", duration_s=20.0)}
+    row = {"id": "1", "title": "Song", "artist": "Artist", "original_path": str(original),
+           "basename": original.name, "duration_s": "20", "file_size": str(size)}
+    return original, same_name, idx, meta, row
+
+
+def _evidence(tmp_path: Path, original: Path, recorded: Path):
+    """A dedup database holding the engine's own fingerprint of ``recorded``
+    under the track's original path, as a library scan leaves it."""
+    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
+
+    db = tmp_path / "dedup.sqlite"
+    fp = compute(recorded)
+    fp_mod.FingerprintCache(db).put(
+        fp_mod.Fingerprint(path=original, duration=fp.duration, fp_str=fp.fp_str, size=1, mtime=0.0),
+        stable_id=None,
+    )
+    ev = FingerprintEvidence.open(db)
+    assert ev is not None
+    return ev, db
+
+
+def test_same_name_different_audio_is_vetoed(engine: Path, tracks: dict[str, Path], tmp_path: Path) -> None:
+    """[if] a same-named candidate's audio differs [then] it is never triple-validated, [else stop]."""
+    from apps.reconcile import locate
+
+    original, _same, idx, meta, row = _named_candidate(tmp_path, tracks["b"])
+    ev, _db = _evidence(tmp_path, original, tracks["a"])
+
+    best = locate._locate_one(row, idx, meta, ev)
+
+    assert best is not None
+    assert "fingerprint_mismatch" in best.signals
+    # Name, size, tags and duration all agree: four signals, still vetoed.
+    assert {"basename_exact", "size_match", "id3_match", "duration_match"} <= set(best.signals)
+    assert not best.triple_validated
+    assert best.confidence == pytest.approx(0.35 + 0.20 + 0.15 + 0.10)
+
+
+def test_same_name_same_audio_is_confirmed(engine: Path, tracks: dict[str, Path], tmp_path: Path) -> None:
+    """[if] a same-named candidate's audio matches [then] fingerprint_match adds its weight, [else stop]."""
+    from apps.reconcile import locate
+
+    original, same_name, idx, meta, row = _named_candidate(tmp_path, tracks["a_copy"])
+    ev, db = _evidence(tmp_path, original, tracks["a"])
+
+    best = locate._locate_one(row, idx, meta, ev)
+
+    assert best is not None
+    assert "fingerprint_match" in best.signals
+    assert best.triple_validated
+    assert best.confidence == pytest.approx(0.35 + 0.20 + 0.15 + 0.10 + 0.35)
+    # The candidate's fingerprint is cached for next time, not recomputed.
+    assert fp_mod.FingerprintCache(db).get(same_name) is not None
+
+
+def test_unmeasurable_candidate_is_unknown_not_mismatch(engine: Path, tracks: dict[str, Path], tmp_path: Path) -> None:
+    """[if] a candidate cannot be fingerprinted [then] no fingerprint signal fires and it is counted, [else stop]."""
+    from apps.reconcile import locate
+
+    original, _same, idx, meta, row = _named_candidate(tmp_path, None)
+    ev, _db = _evidence(tmp_path, original, tracks["a"])
+
+    best = locate._locate_one(row, idx, meta, ev)
+    assert best is not None
+    assert not any(s.startswith("fingerprint") for s in best.signals)
+    assert best.triple_validated
+    assert ev.unmeasured == 1

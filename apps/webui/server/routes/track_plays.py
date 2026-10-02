@@ -81,13 +81,14 @@ def _require_track(conn: sqlite3.Connection, stable_id: str) -> None:
 
 
 def _plays_out(request: Request, stable_id: str, recorded: bool | None) -> TrackPlaysOut:
-    conn = state_db.open_ro(_state_db_path(request))
+    state_path = _state_db_path(request)
+    conn = state_db.open_ro(state_path)
     try:
         _require_track(conn, stable_id)
         own = play_log.bulk_own_plays(conn, [stable_id]).get(stable_id)
     finally:
         conn.close()
-    meta = bulk_rb_meta([stable_id]).get(stable_id)
+    meta = bulk_rb_meta([stable_id], state_db_path=state_path).get(stable_id)
     rekordbox = meta.play_count if meta is not None else 0
     opendj = own.count if own is not None else 0
     return TrackPlaysOut(
