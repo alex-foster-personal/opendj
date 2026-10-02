@@ -13,10 +13,12 @@ import { before, test } from 'node:test';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 let sink;
+let sinkClient;
 let headphones;
 
 before(async () => {
 	sink = await loadTypeScriptModule('src/lib/player/cue-native-sink.ts');
+	sinkClient = await loadTypeScriptModule('src/lib/player/cue-native-sink-client.ts');
 	headphones = await loadTypeScriptModule('src/lib/player/headphones.ts');
 });
 
@@ -96,7 +98,7 @@ async function flush() {
 
 test('requests resolve by id and error replies reject', async () => {
 	const worker = new FakeWorker();
-	const client = new sink.NativeCueSinkClient(CONFIG, worker);
+	const client = new sinkClient.NativeCueSinkClient(CONFIG, worker);
 	assert.deepEqual(worker.posted[0], { kind: 'connect', url: CONFIG.url, token: 't' });
 	worker.deliver({ kind: 'open' });
 
@@ -119,7 +121,7 @@ test('requests resolve by id and error replies reject', async () => {
 
 test('a dropped socket rejects pending requests and emits disconnected', async () => {
 	const worker = new FakeWorker();
-	const client = new sink.NativeCueSinkClient(CONFIG, worker);
+	const client = new sinkClient.NativeCueSinkClient(CONFIG, worker);
 	const events = [];
 	client.onEvent((event) => events.push(event));
 	worker.deliver({ kind: 'open' });
@@ -133,7 +135,7 @@ test('a dropped socket rejects pending requests and emits disconnected', async (
 
 test('unsolicited shell events reach listeners', () => {
 	const worker = new FakeWorker();
-	const client = new sink.NativeCueSinkClient(CONFIG, worker);
+	const client = new sinkClient.NativeCueSinkClient(CONFIG, worker);
 	const events = [];
 	client.onEvent((event) => events.push(event.type));
 	worker.deliver({ kind: 'message', payload: { type: 'device_lost', uid: 'phones' } });

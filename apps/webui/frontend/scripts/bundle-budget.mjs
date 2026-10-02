@@ -204,14 +204,15 @@ const BUDGETS = [
   // #4928 (failed-import sentence) about 259,380. Each PR passed alone. Payback, not
   // yet measured: find which of this PR's setup modules the first-paint closure
   // reaches and move the wizard-only copy behind the lazy SetupOverlay import.
-  // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's 260,096
-  // (#4897) and the Preview's 261,120 (#3837) are each one tree's raise over the
-  // shared 259,072. The merged limit keeps the Preview's reviewed 261,120 and does
-  // NOT sum them (262,144). NOT re-measured on the merged tree at resolution time
-  // (other files were still conflicted); both sides' notes predict the merged
-  // tree lands above 261,120, so the first merged build decides a payback or a
-  // separately reviewed raise.
-  { name: 'library', limit: 261120, measured: 259325, note: 'initial load of "/"' },
+  // RAISED Fri 2 Oct 2026 (+2 KiB, PR #4908, CUEOUT-22 two-device headphone cue in the
+  // Mac app): headphones.ts is in the first-paint closure, and its native-sink
+  // branch adds +1,250 bytes even with the socket client and worker split behind a
+  // dynamic import. Clean origin/main c8b8f5aeb measured
+  // 259,943 locally (153 bytes of headroom); main + this PR 261,193. The second KiB is
+  // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
+  // of its own and raises once more. Payback, not yet measured: find what pulls
+  // headphones.ts into the "/" closure and defer it.
+  { name: 'library', limit: 262144, measured: 261193, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -409,7 +410,11 @@ const BUDGETS = [
   // MEASURED Fri 2 Oct 2026 on the merged tree: 291,430, 4,710 over (the two
   // notes predicted ~288,942). Reviewed raise to the measured size ceiled to KiB
   // (285 KiB), no extra headroom; the MIDI split-chunk payback stays open.
-  { name: 'other-lazy', limit: 291840, measured: 291430, note: 'all other routes plus deferred shell' },
+  // RE-MERGED Fri 2 Oct 2026 (main 69 commits ahead, incl. #4908's lazy native cue
+  // sink client and #4906): measured 293,800, 1,960 over. Reviewed raise to the
+  // measured size ceiled to KiB (287 KiB), no extra headroom; the MIDI split-chunk
+  // payback above still stands.
+  { name: 'other-lazy', limit: 293888, measured: 293800, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

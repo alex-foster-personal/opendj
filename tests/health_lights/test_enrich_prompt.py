@@ -7,6 +7,8 @@ Regression lines:
   - if a stored "never" is asked again then broken
   - if stems with no source on this host are asked then broken
   - if the decision is written anywhere but the app's data dir then broken
+
+[if] the library has missing analysis or undecided stems [then] the enrich card shows, [else stop]
 """
 from __future__ import annotations
 

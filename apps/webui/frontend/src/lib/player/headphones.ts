@@ -59,8 +59,8 @@ import {
 	systemDefaultOutputOnly,
 	type SavedIoDevice
 } from '$lib/player/io-device-access';
+import type { NativeCueSinkClient } from '$lib/player/cue-native-sink-client';
 import {
-	NativeCueSinkClient,
 	nativeCueSinkConfig,
 	nativeDeviceId,
 	nativeOutputsAsHeadphoneOutputs,
@@ -1199,15 +1199,26 @@ let _nativeCueSink: NativeCueSinkClient | null = null;
 /** The macOS default output at the last native listing: where the room plays. */
 let _nativeRoomOutputId: string | null = null;
 let _nativeEventsUnsubscribe: (() => void) | null = null;
+/** Bumped by every dispose, so a client import still in flight across a
+ * teardown never resurrects the sink the teardown just closed. */
+let _nativeSinkEpoch = 0;
 
 export function nativeCueSinkAvailable(): boolean {
 	return nativeCueSinkConfig() !== null;
 }
 
-function _nativeSink(): NativeCueSinkClient | null {
+/** The live client, created on first use. Loaded lazily: the client and its
+ * worker only matter in the Mac app, and a static import put them on the
+ * initial load of "/" for every Chrome tab (library bundle budget). */
+async function _nativeSink(): Promise<NativeCueSinkClient | null> {
 	if (_nativeCueSink !== null && _nativeCueSink.disconnected === null) return _nativeCueSink;
 	const config = nativeCueSinkConfig();
 	if (config === null) return null;
+	const epoch = _nativeSinkEpoch;
+	const { NativeCueSinkClient } = await import('$lib/player/cue-native-sink-client');
+	if (epoch !== _nativeSinkEpoch) return null;
+	// A concurrent caller may have created the client while this one awaited.
+	if (_nativeCueSink !== null && _nativeCueSink.disconnected === null) return _nativeCueSink;
 	_nativeEventsUnsubscribe?.();
 	_nativeCueSink?.dispose();
 	const client = new NativeCueSinkClient(config);
@@ -1217,6 +1228,7 @@ function _nativeSink(): NativeCueSinkClient | null {
 }
 
 function _disposeNativeSink(): void {
+	_nativeSinkEpoch += 1;
 	_nativeEventsUnsubscribe?.();
 	_nativeEventsUnsubscribe = null;
 	_nativeCueSink?.dispose();
@@ -1266,7 +1278,7 @@ function _onNativeCueEvent(event: NativeCueSinkEvent): void {
 /** Output listing and selection need `navigator.mediaDevices` in a browser;
  * the Mac app lists outputs natively and needs nothing from it. */
 function _requireOutputSelectionApi(): void {
-	if (_nativeSink() !== null) {
+	if (nativeCueSinkAvailable()) {
 		mixerState.headphones.supported = true;
 		return;
 	}
@@ -1431,8 +1443,13 @@ async function _ensureCueBridge(mainContext: AudioContext, nodes: HeadphoneNodes
 		await _cueBridgeReady;
 		return;
 	}
-	const native = _nativeSink();
+	// Chrome never awaits here, so its start stays synchronous up to the cache below.
+	const native = nativeCueSinkAvailable() ? await _nativeSink() : null;
 	if (native !== null) {
+		if (_cueBridgeReady !== null) {
+			await _cueBridgeReady;
+			return;
+		}
 		await _ensureNativeCueBridge(mainContext, nodes, native);
 		return;
 	}
@@ -1710,7 +1727,7 @@ function _requireMasterSinkApi(context: AudioContext): AudioContext & { setSinkI
 }
 
 async function _applyMasterSink(deviceId: string, context: AudioContext): Promise<void> {
-	const native = _nativeSink();
+	const native = nativeCueSinkAvailable() ? await _nativeSink() : null;
 	if (native !== null) {
 		// The webview plays the room mix on the macOS default output, so MASTER
 		// is pinned by making the device the default; the shell puts it back if
@@ -2019,7 +2036,7 @@ function _rememberSavedOutput(role: 'master' | 'cue', deviceId: string | null): 
 export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Promise<void> {
 	if (monitorSource !== undefined) _lastMonitorSource = monitorSource;
 	const generation = _headphoneGeneration;
-	const native = _nativeSink();
+	const native = nativeCueSinkAvailable() ? await _nativeSink() : null;
 	let mediaDevices: MediaDevices | null = null;
 	if (native === null) {
 		try {
@@ -2152,7 +2169,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Promise<void> {
 	const generation = _headphoneGeneration;
 	try {
-		if (_nativeSink() !== null) {
+		if (nativeCueSinkAvailable()) {
 			// The shell names every device itself, so there is no label unlock
 			// and no microphone prompt on this path.
 			await refreshHeadphoneOutputs(monitorSource);

@@ -384,6 +384,32 @@ def build() -> Path:
     return prefix
 
 
+LICENSES_RELATIVE = "licenses/ffmpeg"
+LICENSE_FILES = ("LICENSE-ffmpeg", "LICENSE-soxr", "NOTICE-ffmpeg")
+
+
+def stage(payload_dir: Path, relative: str) -> dict[str, str]:
+    """Stage the pinned LGPL ffmpeg at ``payload_dir/relative`` with its licence files.
+
+    Built (or reused from the cache outside the repo) by ``build()``. The
+    STAGED copy is put through the licence guard again, so a cache that was
+    tampered with or rebuilt with --enable-gpl cannot reach the payload.
+    ffprobe is not shipped: no shipped code path calls it
+    (apps.shared.ffmpeg.probe_duration_s uses ffmpeg -i).
+    """
+    artifact = build()
+    staged = payload_dir / relative
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(artifact / "bin/ffmpeg", staged)
+    staged.chmod(0o755)
+    licenses = payload_dir / LICENSES_RELATIVE
+    licenses.mkdir(parents=True, exist_ok=True)
+    for name in LICENSE_FILES:
+        shutil.copy2(artifact / name, licenses / name)
+    verified = verify_lgpl_binary(staged)
+    return {"path": relative, "version": verified["version"], "artifact": artifact.name}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="guard the cached artifact only")
