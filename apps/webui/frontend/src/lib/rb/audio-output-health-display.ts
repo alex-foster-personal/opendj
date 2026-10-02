@@ -66,7 +66,13 @@ export function describeAudioOutputHealth(
 	if (combined === 'idle') {
 		return {
 			cssClass: 'idle',
-			title: `${BASE_EXPLAINER} Nothing is playing right now, so there is nothing to check.`,
+			// The combined verdict is also idle while a deck plays with the master
+			// muted or silent (cue-only monitoring), and "nothing is playing" is
+			// false then. Browser liveness is only non-idle while a deck plays.
+			title:
+				snapshot.browser !== null && snapshot.browser.verdict !== 'idle'
+					? `${BASE_EXPLAINER} A deck is playing, but the master output is muted or silent, so there is no room output to check.`
+					: `${BASE_EXPLAINER} Nothing is playing right now, so there is nothing to check.`,
 			toast: null,
 			switchOutputAvailable: snapshot.device?.probe_available === true
 		};
