@@ -147,11 +147,13 @@ export interface ContrastViolation {
  *    checked against every surface they render on (window bg, panel, raised
  *    chrome, the selected-row highlight, and the decks 3/4 waveform row) at 4.5:1.
  *  - `--rb-accent`, `--rb-green`, `--rb-orange`, `--rb-red`, `--rb-yellow`,
- *    `--rb-wave-mid` and `--rb-wave-high` are documented as indicators and
+ *    and the `--rb-wave-*` bands are documented as indicators and
  *    graphical bands (toggles/lit buttons, loaded-track chip, waveform
  *    bands, cue markers, a badge) rather than paragraph text, so they are
  *    held to the 3:1 non-text-UI floor against the window background they
- *    are drawn on.
+ *    are drawn on. The waveform bands are also pinned against the decks 3/4
+ *    row (`--rb-waverow-secondary`), for both the default rekordbox 3Band
+ *    and the legacy waveform palette (issue #4219).
  *
  * Known gap (stated rather than hidden): a handful of call sites still reuse
  * an indicator colour as small `color:` text without a declared pairing
@@ -222,11 +224,57 @@ export const PAIRINGS: ContrastPairing[] = [
     level: "body",
     label: "deck-strip hotcue letter chip (text on green fill)",
   },
-  { fg: "rb-orange", bg: "rb-bg", level: "non-text", label: "waveform lows band" },
+  { fg: "rb-orange", bg: "rb-bg", level: "non-text", label: "loop cue / warning indicator" },
+  // Waveform bands (issue #4219): every band is pinned against BOTH row
+  // backgrounds, decks 1/2 (rb-bg) and decks 3/4 (rb-waverow-secondary).
+  { fg: "rb-wave-low", bg: "rb-bg", level: "non-text", label: "waveform lows band" },
   { fg: "rb-wave-mid", bg: "rb-bg", level: "non-text", label: "waveform mids band" },
   { fg: "rb-wave-high", bg: "rb-bg", level: "non-text", label: "waveform highs band" },
+  { fg: "rb-wave-mono", bg: "rb-bg", level: "non-text", label: "waveform mono/line design" },
+  {
+    fg: "rb-wave-low",
+    bg: "rb-waverow-secondary",
+    level: "non-text",
+    label: "waveform lows band on deck 3/4 row",
+  },
+  {
+    fg: "rb-wave-mid",
+    bg: "rb-waverow-secondary",
+    level: "non-text",
+    label: "waveform mids band on deck 3/4 row",
+  },
+  {
+    fg: "rb-wave-high",
+    bg: "rb-waverow-secondary",
+    level: "non-text",
+    label: "waveform highs band on deck 3/4 row",
+  },
+  {
+    fg: "rb-wave-mono",
+    bg: "rb-waverow-secondary",
+    level: "non-text",
+    label: "waveform mono/line design on deck 3/4 row",
+  },
   { fg: "rb-red", bg: "rb-bg", level: "non-text", label: "cue marker / position tick" },
   { fg: "rb-yellow", bg: "rb-bg", level: "non-text", label: "Free licence badge" },
+  {
+    fg: "rb-master",
+    bg: "rb-bg",
+    level: "non-text",
+    label: "master gold indicator (MASTER button, master row edge)",
+  },
+  {
+    fg: "rb-master-ink",
+    bg: "rb-master",
+    level: "body",
+    label: "text on master gold fill (MASTER button, master-fold badge)",
+  },
+  {
+    fg: "rb-master-text",
+    bg: "rb-panel",
+    level: "body",
+    label: "master library-row title/artist text",
+  },
 ];
 
 /**

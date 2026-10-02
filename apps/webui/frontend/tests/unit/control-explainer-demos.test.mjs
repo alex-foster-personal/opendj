@@ -51,12 +51,14 @@ test('ControlExplainer declares headphone-mix and layout demo branches', () => {
 });
 
 test('TopBar icon cluster and LINK use ControlExplainer demos', () => {
-	assert.match(TOPBAR, /demo="split-view"/);
+	// Split view and grid view are unbuilt and HIDDEN for V1 (JIK, Thu 1 Oct
+	// 2026), so the topbar no longer renders their buttons or explainers.
+	assert.doesNotMatch(TOPBAR, /aria-label="split view"/);
+	assert.doesNotMatch(TOPBAR, /aria-label="grid view"/);
 	assert.match(TOPBAR, /demo="link"/);
 	assert.match(TOPBAR, /demo="fx"/);
 	assert.match(TOPBAR, /demo="2-deck-view"/);
 	assert.match(TOPBAR, /listViewBullets = plannedExplainerBullets\('list-view'\)/);
-	assert.match(TOPBAR, /gridViewBullets = plannedExplainerBullets\('grid-view'\)/);
 	assert.match(TOPBAR, /fourWaveformBullets = plannedExplainerBullets\('4-waveform-view'\)/);
 	assert.match(TOPBAR, /scopeView1Bullets = plannedExplainerBullets\('scope-view-1'\)/);
 	assert.doesNotMatch(TOPBAR, /title=\{plannedTitle\('split-view'\)\}/);

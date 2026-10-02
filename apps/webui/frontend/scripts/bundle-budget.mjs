@@ -191,7 +191,13 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4923, V1 UI polish): clean origin/main
+  // 5852c97c measures 239,840 locally. This PR adds +1,954 of user-visible
+  // V1 work on the route (the 2-deck toggle, SET OUTPUTS and the I/O pins,
+  // explainer dismiss, the 3Band waveform palette with its legacy option,
+  // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
+  // 130 bytes over the old limit; 894 bytes of headroom remain.
+  { name: 'performance', limit: 242688, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -293,7 +299,15 @@ const BUDGETS = [
   // is left to demote: what stays eager is the engine choice and command sets
   // the dispatcher and Settings read. The ceiling follows the +5% ceil-to-KiB
   // rule on 253,082.
-  { name: 'other-lazy', limit: 266240, measured: 253082, note: 'all other routes plus deferred shell' },
+  // RAISED Fri 2 Oct 2026: 260 -> 275 KiB for PR #4897 (first-run wizard, V1
+  // #3422/#2590). Its Trunk batch (PR #4951) failed this gate at 267,647, over
+  // by 1,407. Local build, one pass: clean origin/main 3ecf276ef measured
+  // 263,446 here; main + #4897 measured 267,629. The ~4.2 KB is the deferred
+  // setup overlay: the agent/human error split, path shortening, the read
+  // deadline with its did-not-finish states and the Welcome retry. None of it
+  // is first-paint weight (library stayed within its own limit). The ceiling
+  // follows the +5% ceil-to-KiB rule on 267,629.
+  { name: 'other-lazy', limit: 281600, measured: 267629, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

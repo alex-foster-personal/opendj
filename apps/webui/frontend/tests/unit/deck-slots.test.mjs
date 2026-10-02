@@ -413,13 +413,24 @@ describe('BrowserPanel wires the pure picker to live state, not fabricated input
 	});
 
 	it('onRowDblClick asks the wired callback for the deck, not a fabricated one', () => {
+		// The double-click and Enter-on-a-row share one load path
+		// (_requestLoadPlay): the dblclick hands it the event's own modifiers,
+		// and the shared path hands those straight to the picker.
 		const fn = table.slice(
 			table.indexOf('function onRowDblClick('),
 			table.indexOf('function ', table.indexOf('function onRowDblClick(') + 1)
 		);
 		assert.match(
 			fn,
-			/onpickdoubledeck\?\.\(row, \{\s*shift: event\.shiftKey,\s*replace: event\.metaKey \|\| event\.ctrlKey\s*\}\)/
+			/_requestLoadPlay\(row, \{\s*shift: event\.shiftKey,\s*replace: event\.metaKey \|\| event\.ctrlKey,/
+		);
+		const shared = table.slice(
+			table.indexOf('function _requestLoadPlay('),
+			table.indexOf('function ', table.indexOf('function _requestLoadPlay(') + 1)
+		);
+		assert.match(
+			shared,
+			/onpickdoubledeck\?\.\(row, \{\s*shift: gesture\.shift,\s*replace: gesture\.replace\s*\}\)/
 		);
 	});
 
@@ -548,7 +559,7 @@ describe('a reservation is only released by the call that owns it', () => {
 		assert.match(fn, /const reservation = picked != null \? picked\.reservation : null;/);
 		assert.match(
 			fn,
-			/reservation !== null\s*\? \{ play: true, reservation, pressT0Ms: event\.timeStamp \}\s*: \{ play: true, pressT0Ms: event\.timeStamp \}/
+			/reservation !== null\s*\? \{ play: true, reservation, pressT0Ms: gesture\.timeStamp \}\s*: \{ play: true, pressT0Ms: gesture\.timeStamp \}/
 		);
 	});
 
