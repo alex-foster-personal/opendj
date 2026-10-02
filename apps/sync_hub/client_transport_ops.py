@@ -325,6 +325,7 @@ def _push_in_batches(
     *,
     batch_rows: int,
     reseed: bool = False,
+    confirming: bool = False,
 ) -> _PushOutcome:
     """Offer ``rows`` to the hub, at most ``batch_rows`` and
     :data:`PUSH_BODY_MAX_BYTES` per request.
@@ -371,7 +372,7 @@ def _push_in_batches(
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))
         identity_rejects.extend(_identity_rejects_from(payload))
-        rejected_rows.extend(rejected_rows_mod.from_push_answer(payload))
+        rejected_rows.extend(rejected_rows_mod.from_push_answer(payload, confirming=confirming))
         requests += chunk_requests
     return _PushOutcome(
         accepted=accepted,
@@ -478,6 +479,7 @@ def _run_identity_repair(
         offer_rows,
         fleet,
         batch_rows=1,
+        confirming=True,
     )
 
     def _apply_rejects() -> None:

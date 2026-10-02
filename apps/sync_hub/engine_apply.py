@@ -944,11 +944,21 @@ def hub_apply(
 ) -> ApplyResult:
     """Merge a spoke's push into the hub DB and append to ``hub_changelog``.
 
-    First retires any identity remap whose loser the hub holds as a
-    tombstone, re-logging that tombstone so a spoke still holding the row
-    live pulls it (CLOUDSYNC-31, :func:`retire_tombstoned_remap_losers`).
+    First runs :func:`retire_tombstoned_remaps` (CLOUDSYNC-31).
     """
     stamp = received_at or sync_stamp.canonical_now()
+    retire_tombstoned_remaps(conn, stamp)
+    return _apply(conn, changes, record_changelog=True, received_at=stamp)
+
+
+def retire_tombstoned_remaps(conn: sqlite3.Connection, stamp: str) -> None:
+    """Retire every remap whose loser the hub holds as a tombstone, and re-log it.
+
+    A spoke still holding the row live pulls the tombstone (CLOUDSYNC-31,
+    :func:`retire_tombstoned_remap_losers`). Runs on every push and every
+    hello: since CLOUDSYNC-32 a spoke holding such a loser settles it and may
+    have nothing left to push, so a push alone would never come.
+    """
     for loser in retire_tombstoned_remap_losers(conn):
         log.warning(
             "retired identity remap for tracks %s: the hub holds it removed, so "
@@ -956,7 +966,6 @@ def hub_apply(
             loser,
         )
         _log_hub_change(conn, _tracks_change(loser), stamp)
-    return _apply(conn, changes, record_changelog=True, received_at=stamp)
 
 
 def _tracks_change(stable_id: str) -> RowChange:

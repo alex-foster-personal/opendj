@@ -60,8 +60,13 @@ class RejectedRow:
         return f"{self.table} {list(self.pk)} ({self.reason})"
 
 
-def from_push_answer(payload: Mapping[str, object]) -> list[RejectedRow]:
-    """The rows one push answer names as rejected, each logged on this machine."""
+def from_push_answer(payload: Mapping[str, object], *, confirming: bool = False) -> list[RejectedRow]:
+    """The rows one push answer names as rejected, each logged on this machine.
+
+    ``confirming`` is the identity repair's one-row offer of a hub-answered
+    loser (CLOUDSYNC-32): the hub refusing it IS the confirmation, so it is
+    logged as one, not as a rejection, and the sync does not count it.
+    """
     raw = payload.get("rejected_rows")
     if raw is None:
         return []
@@ -71,7 +76,10 @@ def from_push_answer(payload: Mapping[str, object]) -> list[RejectedRow]:
         )
     rows = [RejectedRow.from_wire(item) for item in raw]
     for row in rows:
-        log.warning("hub rejected %s", row.describe())
+        if confirming:
+            log.info("hub confirmed the identity collapse of %s", row.describe())
+        else:
+            log.warning("hub rejected %s", row.describe())
     return rows
 
 

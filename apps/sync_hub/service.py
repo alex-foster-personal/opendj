@@ -56,7 +56,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from apps.shared.state import db as state_db
-from apps.shared.state import machine_identity
+from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import (
     capabilities,
@@ -426,6 +426,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
                     ],
                     caller_id=payload.machine.machine_id,
                 )
+                engine.retire_tombstoned_remaps(conn, sync_stamp.canonical_now())
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:

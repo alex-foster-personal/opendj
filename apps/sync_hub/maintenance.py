@@ -489,7 +489,8 @@ def _report_sync(result: client.SyncResult, data_dir: Path) -> int:
         f"{result.applied}), {result.rounds} round(s), hub seq "
         f"{result.hub_seq}{restored}, recovered: "
         f"{result.location_twins_repaired} NFC location twin group(s) collapsed, "
-        f"{result.stale_identity_remaps_dropped} stale identity remap(s) dropped"
+        f"{result.stale_identity_remaps_dropped} stale identity remap(s) dropped, "
+        f"{result.identity_repairs} identity duplicate collapse(s) confirmed by the hub"
     )
     if result.rejected_rows:
         print(f"rejected: {rejected_rows.summarize(result.rejected_rows, limit=20)}")

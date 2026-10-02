@@ -212,12 +212,12 @@ def test_one_machine_remove_drop_sync_rescan_keeps_the_removal(
 ) -> None:
     """The Mac sequence on ONE machine, original file still under a watched root.
 
-    What re-offers the tombstone after the re-add is the push fence. The seed
-    collapses a pair of live duplicates of another recording and drops the
-    loser here; the rescan re-inserts it (the Mac saw 40 of 152 come back
-    this way), it is held as an identity loser, and the fence stays below it,
-    so every later sync re-offers everything logged since, the removal
-    included. Before the fix that re-offer lost the collapse to the re-add,
+    What re-offered the tombstone after the re-add was the push fence. The
+    seed collapses a pair of live duplicates of another recording and drops
+    the loser here; the rescan re-inserts it (the Mac saw 40 of 152 come back
+    this way), and before CLOUDSYNC-32 it was held as an identity loser with
+    the fence below it, so every later sync re-offered everything logged
+    since, the removal included. Before the fix that re-offer lost the collapse to the re-add,
     the spoke hard-deleted its removed row, and the rescan re-inserted it live.
     """
     library = _Library(tmp_path)
@@ -241,11 +241,9 @@ def test_one_machine_remove_drop_sync_rescan_keeps_the_removal(
     assert _removed(spoke_a, removed) is True, "the watched-folder rescan resurrected a removed track"
     result = _sync(spoke_a, hub, "spoke-a")
     _assert_two_rows_everywhere((hub_dir, spoke_a), removed, re_added)
-    # The fence the re-inserted duplicate loser pins still re-offers rows the
-    # hub already holds (a separate defect); none of them may be refused as
-    # a removal or an identity loss any more.
-    refused = [(row.table, row.reason) for row in result.rejected_rows if row.reason != "not_newer"]
-    assert refused == [], f"the hub still refuses rows of the pair: {result.rejected_rows}"
+    # The re-inserted duplicate loser is settled (CLOUDSYNC-32), so it no
+    # longer pins the fence: nothing is re-offered, let alone refused.
+    assert (result.pushed, result.rejected_rows) == (0, ()), f"the sync re-offered rows: {result.rejected_rows}"
 
 
 def test_a_tombstone_newer_than_the_re_add_does_not_erase_the_re_add(
@@ -332,8 +330,10 @@ def test_a_spoke_stuck_in_the_loop_converges(
     assert _removed(spoke_b, removed) is None, "premise: the collapse hard-deleted B's removed row"
     assert _rescan(spoke_b, library.music).tracks_added == 1, "premise: the rescan resurrected it"
     _sync(spoke_b, hub, "spoke-b")
-    stuck = _sync(spoke_b, hub, "spoke-b")
-    assert stuck.rejected > 0, "premise: B is stuck re-offering rows the hub rejects"
+    _sync(spoke_b, hub, "spoke-b")
+    # Before CLOUDSYNC-32 B also re-offered rows the hub rejects on every sync:
+    # the held loser pinned its push fence. A settled loser no longer does,
+    # so that half of the symptom is gone even with these fixes switched off.
     assert _removed(spoke_b, removed) is False
     assert _remaps(spoke_b) == {removed: re_added} == _remaps(hub_dir)
     monkeypatch.undo()

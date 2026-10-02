@@ -50,6 +50,7 @@ from apps.sync_hub.engine_apply import (
     ApplyResult,
     finalize_identity_repairs,
     hub_apply,
+    retire_tombstoned_remaps,
     spoke_apply,
 )
 from apps.sync_hub.engine_changes import (
@@ -116,6 +117,7 @@ __all__ = [
     "prune_changelog",
     "read_watermark",
     "relog_held",
+    "retire_tombstoned_remaps",
     "settled_push_seq",
     "spoke_apply",
     "spoke_push",
