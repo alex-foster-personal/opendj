@@ -153,7 +153,7 @@ TAILNET_HOST = "agentbox.example-tailnet.ts.net"
 def test_the_ssh_alias_alone_is_a_complete_allowlist() -> None:
     """No MDT_AGENTBOX_SSH_HOSTS is a configured deployment, not a broken one."""
     assert allowed_ssh_host("agentbox", environ={}) is True
-    assert allowed_ssh_host("198.51.100.7", environ={}) is False
+    assert allowed_ssh_host("203.0.113.10", environ={}) is False
     assert allowed_ssh_host("evil.example", environ={}) is False
 
 
@@ -186,10 +186,10 @@ def test_ssh_hop_is_tailnet_only_and_not_a_shell() -> None:
     assert is_agentbox(hostname="agentbox") is True
     assert is_agentbox(hostname="afmac") is False
     assert allowed_ssh_host("agentbox") is True
-    assert allowed_ssh_host("198.51.100.7") is False
+    assert allowed_ssh_host("203.0.113.10") is False
     assert allowed_ssh_host("evil.example") is False
     with pytest.raises(PortConfigError, match="refusing SSH host"):
-        ssh_agentbox_argv("hostname", ssh_host="198.51.100.7")
+        ssh_agentbox_argv("hostname", ssh_host="203.0.113.10")
     argv = ssh_agentbox_argv("hostname")
     assert argv[:6] == [
         "ssh",
@@ -381,7 +381,7 @@ def test_the_served_origin_is_read_back_from_the_launcher() -> None:
     """The public URL comes from what the box REPORTED, never from local config."""
     reported = (
         "[OK] reserved 8585/5173 hosts=agentbox\n"
-        "[OK] serve agentbox.example-tailnet.ts.net -> https://agentbox.example-tailnet.ts.net/ via 100.64.0.5\n"
+        "[OK] serve agentbox.example-tailnet.ts.net -> https://agentbox.example-tailnet.ts.net/ via 203.0.113.5\n"
     )
     assert serve_url_from_launcher_output(reported) == (
         "https://agentbox.example-tailnet.ts.net/"
@@ -391,8 +391,8 @@ def test_the_served_origin_is_read_back_from_the_launcher() -> None:
 def test_the_last_serve_line_wins() -> None:
     """A replayed log must not hand back an older run's origin."""
     log = (
-        "[OK] serve old -> https://old.example-tailnet.ts.net/ via 100.64.0.1\n"
-        "[OK] serve new -> https://new.example-tailnet.ts.net/ via 100.64.0.2\n"
+        "[OK] serve old -> https://old.example-tailnet.ts.net/ via 203.0.113.1\n"
+        "[OK] serve new -> https://new.example-tailnet.ts.net/ via 203.0.113.2\n"
     )
     assert serve_url_from_launcher_output(log) == "https://new.example-tailnet.ts.net/"
 
@@ -406,4 +406,4 @@ def test_no_serve_line_is_a_hard_failure() -> None:
 def test_a_serve_line_without_a_url_is_a_hard_failure() -> None:
     """Near-misses count as absent: the reader is not a substring match."""
     with pytest.raises(PortConfigError, match="no serve line"):
-        serve_url_from_launcher_output("[OK] serve agentbox -> nope via 100.64.0.1\n")
+        serve_url_from_launcher_output("[OK] serve agentbox -> nope via 203.0.113.1\n")

@@ -6,7 +6,7 @@ Phase 14 Plan 3. Flow:
   2. Re-open VAD + STT on the warm whisper daemon; 3 s timeout.
   3. Parse the transcript with a tiny regex: "yes" (+synonyms) -> True;
      anything else -> False.
-  4. Journal both prompt + answer to ``data/voice/confirmations.jsonl``
+  4. Journal both prompt + answer to ``<data dir>/voice/confirmations.jsonl``
      with a UTC timestamp.
 
 The STT + VAD layers are injected so tests can drive the flow without
@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from apps.voice.settings import voice_data_dir
 
 YES_PATTERN = re.compile(
     r"^\s*(?:yes|yeah|yep|yup|confirm|affirmative|ok|okay|sure|do it)\b",
@@ -99,7 +101,8 @@ class ConfirmEngine:
         a closure wrapping VAD + STT.
     log_path
         Path to the confirmations JSONL; defaults to
-        ``data/voice/confirmations.jsonl``.
+        ``<data dir>/voice/confirmations.jsonl`` (INSTALL-30: never the
+        source tree, which is the signed payload in the installed app).
     timeout_s
         How long to wait for an answer. voice-feasibility.md 7.2 locks
         this at 3 s.
@@ -108,10 +111,7 @@ class ConfirmEngine:
     tts_engine: Any
     listen_fn: Callable[[float], str]
     log_path: Path = field(
-        default_factory=lambda: Path(__file__).resolve().parents[2]
-        / "data"
-        / "voice"
-        / "confirmations.jsonl"
+        default_factory=lambda: voice_data_dir() / "confirmations.jsonl"
     )
     timeout_s: float = 3.0
 

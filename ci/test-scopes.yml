@@ -275,10 +275,10 @@ scopes:
     mentions: ["scripts/lyrics_alignment", "scripts.lyrics_alignment"]
     tests: ["tests/lyrics_alignment/"]
   - name: perf
-    sources: ["ops/perf/", "scripts/perf/"]
+    sources: ["scripts/perf/"]
     # Nested inside the `scripts` scope, so ownership no longer makes a change here FULL;
     # the mention reader keeps a test that spawns or reads it by name as a consumer.
-    mentions: ["ops/perf", "scripts/perf", "scripts.perf"]
+    mentions: ["scripts/perf", "scripts.perf"]
     tests: ["tests/perf/"]
     dependents: ["scripts"]
   - name: quality

@@ -1195,6 +1195,10 @@ export type StemTier = {
 	availability: 'AVAILABLE' | 'NOT_APPLICABLE';
 	unavailable_because: string;
 	is_default: boolean;
+	/** false when THIS engine refuses to spawn the tier (a Modal tier in the
+	 * installed app); the menu hides it (INSTALL-32). */
+	runnable_here: boolean;
+	not_runnable_because: string | null;
 };
 
 export type StemTierEstimate = {

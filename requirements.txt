@@ -105,7 +105,7 @@ PyYAML>=6.0
 # Phase 15 -- open-dj spec validation + canonicalisation.
 # jsonschema validates open-dj JSON docs against the draft 2020-12 schema;
 # rfc8785 produces RFC 8785 JCS canonical bytes for content hashing.
-jsonschema[format]>=4.21,<5
+jsonschema[format-nongpl]>=4.25,<5
 rfc8785>=0.1.4,<1
 
 # --- Phase 14 -- voice commands (VOICE-01) ---

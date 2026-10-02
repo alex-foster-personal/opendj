@@ -18,7 +18,7 @@ So the two questions a spawn has to answer live here, once:
   (the same relocatable runtime, with the payload's ``pylib`` on PYTHONPATH,
   that local vocals already use), otherwise ``uv run`` as in a checkout.
 
-Requirements (mini-PRD, STEM-49):
+Requirements (mini-PRD, STEM-52):
   [if] the launcher names a packaged interpreter [then] every stems argv
     starts with it and never names uv [else ⛔️ no route runs in the app]
   [if] no packaged interpreter and no uv [then ⛔️] refuse with a sentence,

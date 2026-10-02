@@ -22032,6 +22032,17 @@
             "title": "Name",
             "type": "string"
           },
+          "not_runnable_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Runnable Because"
+          },
           "overlap": {
             "title": "Overlap",
             "type": "number"
@@ -22043,6 +22054,10 @@
           "purpose": {
             "title": "Purpose",
             "type": "string"
+          },
+          "runnable_here": {
+            "title": "Runnable Here",
+            "type": "boolean"
           },
           "shifts": {
             "title": "Shifts",
@@ -22072,7 +22087,8 @@
           "evidence_strength",
           "availability",
           "unavailable_because",
-          "is_default"
+          "is_default",
+          "runnable_here"
         ],
         "title": "TierOut",
         "type": "object"
