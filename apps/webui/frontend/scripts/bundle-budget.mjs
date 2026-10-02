@@ -191,7 +191,13 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  { name: 'performance', limit: 241664, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4923, V1 UI polish): clean origin/main
+  // 5852c97c measures 239,840 locally. This PR adds +1,954 of user-visible
+  // V1 work on the route (the 2-deck toggle, SET OUTPUTS and the I/O pins,
+  // explainer dismiss, the 3Band waveform palette with its legacy option,
+  // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
+  // 130 bytes over the old limit; 894 bytes of headroom remain.
+  { name: 'performance', limit: 242688, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

@@ -2651,6 +2651,41 @@
 		}
 	}
 
+	/** CMDK-01..03: the Gig page mounts the Cmd-K command bar beside this
+	 * panel and reaches the open playlist and the deck-load path through these
+	 * (bind:this), so a command-bar load gets the same refusals and load
+	 * settings as a double-click. */
+	export function commandBarRows(): readonly BrowserRow[] {
+		return pane.rows;
+	}
+
+	export function commandBarTitle(): string {
+		return pane.title;
+	}
+
+	export async function commandBarLoad(row: LoadableRow, deck: DeckId): Promise<void> {
+		await _loadOntoDeck(row, deck);
+	}
+
+	/** CMDK-03: called once the deck's stems have settled for the loaded
+	 * track. Ready solos the vocal stem; anything else leaves the full mix
+	 * playing, and says so. */
+	export async function commandBarSoloVocals(
+		deck: DeckId,
+		settled: 'ready' | 'unavailable' | 'error' | 'timeout'
+	): Promise<void> {
+		if (settled !== 'ready') {
+			const why = settled === 'unavailable' ? 'No stems for this track yet' : `Stems did not load (${settled})`;
+			pushToast(`${why}; deck ${deck} plays the full mix`, 'warn');
+			return;
+		}
+		try {
+			await dispatchPerformanceCommand({ type: 'stem_solo', deck, stem: 'vocal', solo: true });
+		} catch {
+			// Dispatcher already toasted + recorded the deck alert.
+		}
+	}
+
 	function _offerUnload(deck: DeckId): void {
 		if (unloadOfferTimer !== null) clearTimeout(unloadOfferTimer);
 		unloadOffer = { deck, until: performance.now() + 2000 };
@@ -2716,7 +2751,7 @@
 	// select, same as a modifier-less TrackTable click.
 	function selectRow(
 		row: Pick<BrowserRow, 'stable_id'> & { order?: number },
-		event?: MouseEvent
+		event?: MouseEvent | KeyboardEvent
 	): void {
 		_noteLibraryInteraction();
 		const p = panes[activePane];
