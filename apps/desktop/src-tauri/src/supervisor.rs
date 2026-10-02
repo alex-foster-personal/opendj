@@ -524,8 +524,16 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
     let lock_path = launch::lock_path(&data_dir);
     match launch::inspect_lock(&lock_path, engine::health_ok) {
         launch::LaunchPlan::Adopt { pid, host, port } => {
-            guard.supervised = Some(Supervised::Adopted { pid, host, port });
             supervisor.record_engine_pid(Some(pid));
+            // Same latch order as the spawn branch below: a quit that took
+            // the pid before this record never saw the adopted engine.
+            if supervisor.is_stopping() {
+                engine::append_shell_log("INFO", "quit began during restart; stopping the adopted engine");
+                launch::stop_holder_pid(pid);
+                supervisor.record_engine_pid(None);
+                return false;
+            }
+            guard.supervised = Some(Supervised::Adopted { pid, host, port });
             guard.phase = SupervisorPhase::Running;
             guard.dead_at = None;
             guard.auto_restart_attempted = false;
