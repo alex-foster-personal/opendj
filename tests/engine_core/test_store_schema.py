@@ -697,6 +697,31 @@ def test_shape_audit_adopts_a_legacy_pairings_table_without_snapshot_json(
     conn.close()
 
 
+def test_a_db_already_at_schema_version_still_gains_snapshot_json(
+    tmp_path: Path,
+) -> None:
+    """A state.db stamped at SCHEMA_VERSION before PAIR-04 gains snapshot_json
+    on its next open, though the version gate skips the ladder."""
+    conn = _connect(tmp_path / "stamped_pre_snapshot.db")
+    assert consolidated.apply_migrations(conn) == consolidated.SCHEMA_VERSION
+    # Rebuild pairings exactly as a pre-PAIR-04 build left it, keeping a row.
+    conn.execute("DROP TABLE pairings")
+    conn.execute(_PAIRINGS_DDL[0].replace("        snapshot_json  TEXT,\n", ""))
+    for stmt in _PAIRINGS_DDL[1:]:
+        conn.execute(stmt)
+    conn.execute(
+        "INSERT INTO pairings VALUES ('a', 'b', 'into', 'manual', 'kept', NULL, "
+        "'2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00')"
+    )
+    conn.commit()
+
+    assert consolidated.apply_migrations(conn) == consolidated.SCHEMA_VERSION
+    assert conn.execute("SELECT notes, snapshot_json FROM pairings").fetchall() == [
+        ("kept", None)
+    ]
+    conn.close()
+
+
 class _RollbackHostileConnection(sqlite3.Connection):
     """A connection whose ROLLBACK fails while a transaction is still live.
 

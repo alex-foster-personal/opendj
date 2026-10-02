@@ -118,6 +118,10 @@ describe('the routes use these outcomes', () => {
 		assert.match(src, /await getTrack\(id\)/);
 		assert.match(src, /\{labels\[id\] \?\? id\}/);
 		assert.match(src, /not in the library/);
+		// Only a 404 is remembered as missing; other failures stay retryable.
+		assert.match(src, /exc instanceof ApiError && exc\.status === 404\) missing\[id\] = true/);
+		assert.match(src, /else lookupErrors\[id\] = describeLoadError\(exc\)/);
+		assert.match(src, /Could not look up track/);
 		assert.match(src, /\{@render trackCell\(p\.from_stable_id\)\}[\s\S]*\{@render trackCell\(p\.to_stable_id\)\}/);
 	});
 

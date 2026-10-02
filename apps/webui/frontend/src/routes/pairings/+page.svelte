@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createPairing, deletePairing, getTrack, listPairings, type Pairing } from '$lib/api';
+	import { ApiError, createPairing, deletePairing, getTrack, listPairings, type Pairing } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
 	import { describeLoadError } from '$lib/route-load-state';
 
@@ -14,9 +14,12 @@
 	// A filter change while a load is in flight must not let the older answer win.
 	let loadSeq = 0;
 	// "Artist - Title" per stable_id, so rows read as tracks rather than raw ids.
-	// An id whose lookup fails stays shown as the id, with a tooltip saying why.
+	// An id whose lookup fails stays shown as the id, with a tooltip saying why:
+	// a 404 is remembered as "not in the library"; any other failure is kept
+	// only until the next load, which retries it.
 	let labels = $state<Record<string, string>>({});
 	let missing = $state<Record<string, true>>({});
+	let lookupErrors = $state<Record<string, string>>({});
 
 	async function resolveLabels(rows: Pairing[]): Promise<void> {
 		const ids = new Set<string>();
@@ -32,8 +35,10 @@
 						const { track } = await getTrack(id);
 						const name = track.title ?? id;
 						labels[id] = track.artist ? `${track.artist} - ${name}` : name;
-					} catch {
-						missing[id] = true;
+						delete lookupErrors[id];
+					} catch (exc) {
+						if (exc instanceof ApiError && exc.status === 404) missing[id] = true;
+						else lookupErrors[id] = describeLoadError(exc);
 					}
 				})
 		);
@@ -100,7 +105,13 @@
 </script>
 
 {#snippet trackCell(id: string)}
-	<td><a href={`/track/${id}`} title={missing[id] ? `Track ${id} is not in the library` : id}>{labels[id] ?? id}</a></td>
+	<td><a
+		href={`/track/${id}`}
+		title={missing[id]
+			? `Track ${id} is not in the library`
+			: lookupErrors[id]
+				? `Could not look up track ${id}: ${lookupErrors[id]}`
+				: id}>{labels[id] ?? id}</a></td>
 {/snippet}
 
 <h2>Pairings</h2>

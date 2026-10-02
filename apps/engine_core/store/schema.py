@@ -1832,6 +1832,12 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     """
     conn.execute(f"PRAGMA busy_timeout = {int(BUSY_TIMEOUT_MS)}")
     _ensure_meta(conn)
+    # Before the version gate, not after it: a database already stamped at
+    # SCHEMA_VERSION never reaches the ladder below, so a column added to a
+    # foreign-authority table without a rung would otherwise never land there.
+    # Idempotent (one PRAGMA when the column is present), so it is safe on
+    # every open.
+    migrate_pairings_snapshot_json(conn)
     current = consolidated_version(conn)
     if current >= SCHEMA_VERSION:
         return current
@@ -1849,7 +1855,6 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     if adopting:
         _assert_adoptable(conn)
     migrate_smartlists_deleted_at(conn)
-    migrate_pairings_snapshot_json(conn)
     _audit_existing_shapes(conn)
 
     # IMMEDIATE, not the default DEFERRED: this runner reads (the census and

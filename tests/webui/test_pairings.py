@@ -272,6 +272,7 @@ pytestmark = pytest.mark.rb_parity
 
 @pytest.mark.requirement("PAIR-04")
 def test_create_pairing_rejects_a_self_pair_with_422(client):
+    """If a pairing names one track twice then the API answers 422, else stop."""
     r = client.post(
         "/api/v1/pairings",
         json={"from_stable_id": "track-003", "to_stable_id": "track-003"},
