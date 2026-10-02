@@ -516,9 +516,20 @@ let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
 let _summarySeq = 0;
 
 /* The summary body check and failure classifier load on the first refresh,
- * off the "/" and /performance bundles (PR #4094); a failed chunk fetch is
- * transient (counts kept, next poll retries the import). */
-let _summaryCheck: Promise<typeof import("./feedback-pin-summary-check")> | null = null;
+ * off the "/" and /performance bundles (PR #4094). A failed chunk load drops
+ * the counts and shows why, naming a reload as the fix: a browser keeps a
+ * failed module fetch in its module map, so re-importing the same URL keeps
+ * rejecting with no request (tests/e2e/lazy-chunk-failures.spec.ts). The next
+ * poll still retries the import, and a later success clears the error. */
+type SummaryCheckModule = typeof import("./feedback-pin-summary-check");
+let _loadSummaryCheck = (): Promise<SummaryCheckModule> => import("./feedback-pin-summary-check");
+let _summaryCheck: Promise<SummaryCheckModule> | null = null;
+
+/** Test seam: replace the summary-check chunk loader (null restores it). */
+export function _setSummaryCheckLoaderForTests(loader: (() => Promise<SummaryCheckModule>) | null): void {
+  _loadSummaryCheck = loader ?? (() => import("./feedback-pin-summary-check"));
+  _summaryCheck = null;
+}
 
 /** GET /comments/summary (FB-20). `classifySummaryFailure` decides a failure:
  * a 404 clears the summary, a transient miss (the request itself failed, or a
@@ -528,10 +539,18 @@ let _summaryCheck: Promise<typeof import("./feedback-pin-summary-check")> | null
  * poll's answer never overwrites a post-mutation refresh. */
 async function _refreshPinSummary(): Promise<void> {
   const seq = ++_summarySeq;
-  const mod = await (_summaryCheck ??= import("./feedback-pin-summary-check")).catch(() => {
+  let mod: SummaryCheckModule;
+  try {
+    mod = await (_summaryCheck ??= _loadSummaryCheck());
+  } catch (err) {
     _summaryCheck = null;
-  });
-  if (!mod) return;
+    if (seq !== _summarySeq) return;
+    feedbackState.pinSummary = null;
+    feedbackState.pinSummaryError = `summary code failed to load (${
+      err instanceof Error ? err.message : String(err)
+    }); reload the page to retry`;
+    return;
+  }
   try {
     // Read the body as a stream so a rejection here is transport only; a body
     // that fails to decode rejects inside decodeSummaryBody, which reports it

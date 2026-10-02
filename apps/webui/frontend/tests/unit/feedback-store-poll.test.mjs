@@ -432,6 +432,34 @@ test("pin 6af63c5e9b7c a body that fails to decode with a TypeError is persisten
   assert.match(store.feedbackState.pinSummaryError ?? "", /undecodable \/comments\/summary body: Decompression failed/);
 });
 
+test("pin 6af63c5e9b7c a summary-check chunk that fails to load drops the counts and says to reload", async () => {
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => jsonResponse({ ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" }),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store._setSummaryCheckLoaderForTests(() =>
+    Promise.reject(new TypeError("Failed to fetch dynamically imported module")),
+  );
+  try {
+    store.feedbackState.availability = "ok";
+    store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+    store.feedbackState.pinSummaryError = null;
+    await store.refreshPins();
+    assert.equal(store.feedbackState.pinSummary, null, "stale counts must not stay on screen");
+    assert.match(
+      store.feedbackState.pinSummaryError ?? "",
+      /summary code failed to load \(Failed to fetch dynamically imported module\); reload the page/,
+    );
+  } finally {
+    store._setSummaryCheckLoaderForTests(null);
+  }
+  // Control: with the real chunk loadable again, the next poll stores the
+  // summary and clears the error.
+  await store.refreshPins();
+  assert.equal(store.feedbackState.pinSummaryError, null);
+  assert.ok(store.feedbackState.pinSummary, "a later successful load must restore the counts");
+});
+
 test("pin 6af63c5e9b7c an unreachable daemon keeps the last-known counts and raises no error", async () => {
   const last = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
   globalThis.fetch = mockFeedbackFetch({
