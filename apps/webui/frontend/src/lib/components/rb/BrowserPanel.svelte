@@ -2452,7 +2452,8 @@
 				title: r.title,
 				artist: r.artist
 			})),
-			autoPlayFilterKey
+			autoPlayFilterKey,
+			pane.load_progress !== null
 		);
 		autoPlaySnapshotActive = autoPlayFeed.active;
 		autoPlaySnapshotMatchesView = autoPlayFeed.matches(visibleRows);
