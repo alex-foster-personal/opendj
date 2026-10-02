@@ -123,24 +123,16 @@ def get_track_artwork(
         "s", description="s=80x80 browser rows, m=240x240 deck thumbs, orig"
     ),
     online: bool = Query(
-        False,
-        description=(
-            "also look the track up on MusicBrainz + Cover Art Archive when it has no "
-            "local artwork (the decks ask; the listing does not)"
-        ),
+        False, description="also try MusicBrainz + Cover Art Archive (decks only)"
     ),
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> FileResponse | Response:
-    """Serve artwork for the track, first source that has one:
+    """Serve the track's artwork from the first source that has one.
 
-    rekordbox's pre-rendered jpg variant when mapped and present, else the
-    picture embedded in the local file, a cover image beside it, or a cover
-    found online (cached in the app's data dir; looked up now only with
-    ``online=true``). See :func:`apps.adapters.rekordbox.paths.local_artwork`.
-
-    Only the rekordbox path has pre-rendered s/m/orig variants, so ``size``
-    is not honoured for the others: the real image is served as found,
-    rather than fabricating a resize.
+    rekordbox's pre-rendered jpg variant, else the embedded picture, a cover
+    image beside the file, or a cached online cover (looked up only with
+    ``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.
+    ``size`` applies to the rekordbox variants only; others are served as found.
     """
     try:
         content = rb_vendor.resolve_content(stable_id)

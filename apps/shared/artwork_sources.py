@@ -38,6 +38,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
 from . import audio_files
 
@@ -176,19 +177,23 @@ def matching_release_groups(payload: dict, query: TrackQuery) -> list[str]:
     want_s = (query.duration_ms or 0) / 1000.0
     groups: list[str] = []
     for rec in payload.get("recordings", []):
-        if normalize(rec.get("title")) != title:
-            continue
-        credit = normalize(" ".join(c.get("name", "") for c in rec.get("artist-credit", [])))
-        if not credit or not ours or (ours not in credit and credit not in ours):
-            continue
-        rec_s = (rec.get("length") or 0) / 1000.0
-        if want_s and rec_s and abs(rec_s - want_s) > DURATION_TOLERANCE_S:
+        if not _is_same_recording(rec, title, ours, want_s):
             continue
         for rel in rec.get("releases", []):
             group = (rel.get("release-group") or {}).get("id")
             if group and group not in groups:
                 groups.append(group)
     return groups
+
+
+def _is_same_recording(rec: dict, title: str, ours: str, want_s: float) -> bool:
+    if normalize(rec.get("title")) != title:
+        return False
+    credit = normalize(" ".join(c.get("name", "") for c in rec.get("artist-credit", [])))
+    if not credit or not ours or (ours not in credit and credit not in ours):
+        return False
+    rec_s = (rec.get("length") or 0) / 1000.0
+    return not (want_s and rec_s and abs(rec_s - want_s) > DURATION_TOLERANCE_S)
 
 
 class ArtworkCache:
@@ -247,6 +252,12 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+class HttpGet(Protocol):
+    """What the lookup needs from HTTP: status and body, or -1 on a network failure."""
+
+    def get(self, url: str) -> tuple[int, bytes]: ...
+
+
 class _Http:
     """GET with MusicBrainz's one-request-per-second spacing, shared process-wide."""
 
@@ -285,7 +296,7 @@ _INFLIGHT_GUARD = threading.Lock()
 
 
 def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
-                 http: _Http | None = None) -> tuple[bytes, str] | None:
+                 http: HttpGet | None = None) -> tuple[bytes, str] | None:
     """The cached online cover, looking it up first when it was never tried.
 
     Returns None when the lookup is off, the track has no artist or title,
@@ -307,7 +318,7 @@ def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
 
 
 def _lookup(cache: ArtworkCache, stable_id: str, query: TrackQuery,
-            http: _Http) -> tuple[bytes, str] | None:
+            http: HttpGet) -> tuple[bytes, str] | None:
     lucene = f'recording:"{_lucene(query_title(query.title))}" AND artist:"{_lucene(query_artist(query.artist))}"'
     status, body = http.get(f"{MB_URL}?fmt=json&limit=10&query={urllib.parse.quote(lucene)}")
     if status != 200:
