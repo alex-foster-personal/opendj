@@ -147,6 +147,16 @@ test('the deck banner reads the load path\'s wording, and the load path records 
 		fn.includes('deckFacingMessage(error)'),
 		'if the banner text ignores the load\'s wording then deck_errors shows the raw API code'
 	);
+	const persistAt = ipc.indexOf('function _persistCommandError(');
+	assert.ok(persistAt !== -1, '_persistCommandError moved; re-point this guard');
+	const persist = ipc.slice(persistAt, ipc.indexOf('\n}\n', persistAt));
+	const skipAt = persist.indexOf('deckFacingMessage(error) !== undefined');
+	const toastAt = persist.indexOf('pushToast(`Performance command failed');
+	assert.ok(toastAt !== -1, 'the generic command toast moved; re-point this guard');
+	assert.ok(
+		skipAt !== -1 && skipAt < toastAt,
+		'if a worded load failure also raises the generic command toast then one missing file shows two toasts'
+	);
 });
 
 test('the context names the source, the deck, and every stage that was measured', () => {

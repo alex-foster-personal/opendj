@@ -2414,9 +2414,11 @@ function _persistCommandError(
 	performanceCommandStatus.last_error = messageText;
 	if (deck !== null) performanceCommandStatus.deck_errors[deck] = messageText;
 	if (
-		command !== undefined &&
-		command.type === 'load' &&
-		command.suppressCommandErrorToast === true
+		(command !== undefined &&
+			command.type === 'load' &&
+			command.suppressCommandErrorToast === true) ||
+		// A worded load failure already raised its own deck-load toast (CLOUDSYNC-33).
+		deckFacingMessage(error) !== undefined
 	) {
 		return;
 	}
