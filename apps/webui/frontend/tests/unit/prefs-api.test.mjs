@@ -542,8 +542,9 @@ test('clearConfirmPref PUTs null deletion marker for one confirm key', async () 
 			return jsonResponse({ theme: 'dark', confirm: {} });
 		};
 
-		isolated.clearConfirmPref('playlist_drop_mode');
+		const done = isolated.clearConfirmPref('playlist_drop_mode');
 		await gate;
+		await done;
 
 		assert.equal(isolated.uiPrefs.confirm.playlist_drop_mode, undefined);
 		assert.equal(isolated.uiPrefs.confirm.delete_playlist, false);

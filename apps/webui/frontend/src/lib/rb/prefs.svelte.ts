@@ -46,6 +46,7 @@ import {
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
+import { makeVerifiedPrefWriters } from './verified-pref-writes';
 import {
 	LYRICS_PREF_DEFAULTS,
 	makeLyricsPrefSetters,
@@ -816,52 +817,28 @@ export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeL
 	(patch) => void _syncDiskPrefs(patch)
 );
 
-/** The latest compatible-filter value queued for disk and not yet settled, so
- * two quick range clicks compose instead of the second dropping the first. */
-let _compatibleFilterPending: CompatibleFilterPrefs | null = null;
+/** Verified disk writes (PR #4014): each commits only after its PUT lands
+ * and rejects otherwise; see verified-pref-writes.ts. */
+const _verified = makeVerifiedPrefWriters({
+	uiPrefs,
+	persist: _persist,
+	sync: _syncDiskPrefs,
+	put: putDiskPrefsVerified
+});
+export const { patchCompatibleFilter, setLibraryWatcherFolders } = _verified;
 
-/** LIBM compatible filter ranges (PR #4014, Sol P1): resolves only once the
- * disk PUT succeeded, and only then commits the live pref and localStorage.
- * A failed write rejects and leaves the committed ranges untouched, so the UI
- * never shows a range that disk hydration would later revert. */
-export async function patchCompatibleFilter(patch: Partial<CompatibleFilterPrefs>): Promise<void> {
-	const next = { ...(_compatibleFilterPending ?? uiPrefs.compatible_filter), ...patch };
-	_compatibleFilterPending = next;
-	try {
-		await _syncDiskPrefs({ compatible_filter: next }, putDiskPrefsVerified);
-	} catch (err) {
-		if (_compatibleFilterPending === next) _compatibleFilterPending = null;
-		throw err;
-	}
-	if (_compatibleFilterPending === next) _compatibleFilterPending = null;
-	uiPrefs.compatible_filter = next;
-	_persist();
+/** Reset a remembered confirm choice to "ask". Rejects (and keeps the
+ * remembered choice) when the disk delete fails, so the caller can show it. */
+export function clearConfirmPref<K extends keyof RbUiPrefs['confirm']>(key: K): Promise<void> {
+	return _verified.clearConfirmPref(key);
 }
 
-/** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks.
- * Resolves only once the disk PUT succeeded and rejects otherwise, leaving the
- * live prefs untouched, so the editor never reports a save that did not land. */
-export async function setLibraryWatcherFolders(paths: readonly string[]): Promise<void> {
-	const next = [...paths];
-	await _syncDiskPrefs({ library_watcher_folders: next }, putDiskPrefsVerified);
-	uiPrefs.library_watcher_folders = next;
-	_persist();
-}
-
-export function clearConfirmPref<K extends keyof RbUiPrefs['confirm']>(key: K): void {
-	delete uiPrefs.confirm[key];
-	_persist();
-	void _syncDiskPrefs({ confirm: { [key]: null } });
-}
-
+/** Remember a confirm choice. Resetting to "ask" is `clearConfirmPref`, which
+ * is verified; there is no `undefined` path here that could swallow its error. */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
-	value: RbUiPrefs['confirm'][K] | undefined
+	value: Exclude<RbUiPrefs['confirm'][K], undefined>
 ): void {
-	if (value === undefined) {
-		clearConfirmPref(key);
-		return;
-	}
 	uiPrefs.confirm[key] = value;
 	_persist();
 	void _syncDiskPrefs({ confirm: { [key]: value } });

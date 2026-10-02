@@ -74,30 +74,51 @@ test('a transport failure rejects and keeps the committed range', async () => {
 	assert.deepEqual(prefs.uiPrefs.compatible_filter, BEFORE);
 });
 
-test('two quick range clicks compose, and a failure does not poison the next save', async () => {
-	globalThis.fetch = async () => {
-		throw new TypeError('Failed to fetch');
-	};
-	await assert.rejects(prefs.patchCompatibleFilter({ bpm_window_bpm: 20 }));
-
+test('two quick range clicks compose, and a failed click never rides on a queued one', async () => {
+	// Sol P2 r4167041284: the second click is queued WHILE the first PUT is in
+	// flight; the first then fails. The second must be built from the committed
+	// ranges when it runs, so it carries only its own change.
 	const bodies = [];
+	let failFirst;
+	const firstGate = new Promise((resolve) => {
+		failFirst = resolve;
+	});
+	globalThis.fetch = async (request) => {
+		const body = await request.clone().json();
+		bodies.push(body);
+		if (bodies.length === 1) {
+			await firstGate;
+			throw new TypeError('Failed to fetch');
+		}
+		return jsonResponse({});
+	};
+
+	const first = prefs.patchCompatibleFilter({ bpm_window_bpm: 20 });
+	const second = prefs.patchCompatibleFilter({ bpm_direction: 'below' });
+	failFirst();
+	await assert.rejects(first, /Failed to fetch/);
+	await second;
+
+	assert.deepEqual(bodies, [
+		{ compatible_filter: { ...BEFORE, bpm_window_bpm: 20 } },
+		{ compatible_filter: { ...BEFORE, bpm_direction: 'below' } }
+	]);
+	assert.deepEqual(prefs.uiPrefs.compatible_filter, { ...BEFORE, bpm_direction: 'below' });
+
+	// Control: two successful clicks still compose.
+	bodies.length = 0;
 	globalThis.fetch = async (request) => {
 		bodies.push(await request.clone().json());
 		return jsonResponse({});
 	};
 	await Promise.all([
 		prefs.patchCompatibleFilter({ camelot_steps: 0 }),
-		prefs.patchCompatibleFilter({ bpm_direction: 'below' })
-	]);
-
-	// The failed bpm_window_bpm=20 never rides along on a later write.
-	assert.deepEqual(bodies, [
-		{ compatible_filter: { ...BEFORE, camelot_steps: 0 } },
-		{ compatible_filter: { ...BEFORE, camelot_steps: 0, bpm_direction: 'below' } }
+		prefs.patchCompatibleFilter({ bpm_enabled: false })
 	]);
 	assert.deepEqual(prefs.uiPrefs.compatible_filter, {
 		...BEFORE,
+		bpm_direction: 'below',
 		camelot_steps: 0,
-		bpm_direction: 'below'
+		bpm_enabled: false
 	});
 });

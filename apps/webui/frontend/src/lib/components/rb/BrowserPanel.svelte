@@ -3756,6 +3756,9 @@
 </section>
 
 {#if browserConfirmPending && BrowserConfirmDialog}
+	<!-- Keyed per request (PR #4014, Sol P2): a superseding confirmation remounts
+	     the dialog, so the previous prompt's checkboxes never carry over. -->
+	{#key browserConfirmPending}
 	<BrowserConfirmDialog
 		bind:open={browserConfirmOpen}
 		title={browserConfirmPending.title}
@@ -3772,6 +3775,7 @@
 			browserConfirmPending = null;
 		}}
 	/>
+	{/key}
 {/if}
 
 <TrackEditModals

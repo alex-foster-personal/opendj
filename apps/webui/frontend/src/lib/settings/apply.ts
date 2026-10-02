@@ -3,6 +3,7 @@
  * Unknown keys throw (fail-loud).
  */
 import { parseWaveformDesign } from '$lib/rb/waveform-design';
+import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
 import { parseWavePalette } from '$lib/rb/wave-palette';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
@@ -363,7 +364,13 @@ export function applySettingChange(key: string, value: SettingValue): void {
 			return;
 		case 'confirm.playlist_drop_mode':
 			if (value === 'ask') {
-				clearConfirmPref('playlist_drop_mode');
+				// Verified (PR #4014, Sol P1): the reset commits only after the disk
+				// delete lands, and a failure is shown rather than left for the next
+				// hydration to quietly restore Add or Move.
+				clearConfirmPref('playlist_drop_mode').catch((err: unknown) => {
+					const detail = err instanceof Error ? err.message : String(err);
+					pushToast(`Could not reset the playlist drop choice to Ask: ${detail}`, 'error', TOAST_DEFAULT_MS, err);
+				});
 			} else if (value === 'add' || value === 'move') {
 				setConfirmPref('playlist_drop_mode', value);
 			} else {
