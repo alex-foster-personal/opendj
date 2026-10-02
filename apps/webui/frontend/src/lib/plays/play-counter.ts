@@ -113,7 +113,7 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 	const now = options.now ?? (() => Date.now());
 	const newPlayId = options.newPlayId ?? _newPlayId;
 	const loads = new Map<DeckId, DeckLoad>();
-	// Plays waiting to be posted, kept apart from \`loads\` so a failed post is
+	// Plays waiting to be posted, kept apart from `loads` so a failed post is
 	// still retried after its deck unloads or loads the next track.
 	const outbox: Array<{ deck: DeckId; load: DeckLoad }> = [];
 	let posted = 0;

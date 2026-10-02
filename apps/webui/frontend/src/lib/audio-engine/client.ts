@@ -265,7 +265,7 @@ export class AudioEngineClient {
 		return () => this.listeners.delete(fn);
 	}
 
-	/** Called with every \`load_failed\` event. Returns an unsubscribe function. */
+	/** Called with every `load_failed` event. Returns an unsubscribe function. */
 	onLoadFailed(fn: (e: EngineLoadFailed) => void): () => void {
 		this.loadFailedListeners.add(fn);
 		return () => this.loadFailedListeners.delete(fn);
