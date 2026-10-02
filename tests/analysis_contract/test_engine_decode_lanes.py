@@ -7,6 +7,7 @@ the shipped app has no ffmpeg.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -16,13 +17,16 @@ from pathlib import Path
 import pytest
 
 from apps.analysis.backends import own_beatgrid, own_beatgrid_input, own_key
-from apps.analysis.backends.base import BackendNotAvailable, TrackUnreadable, TrackVanished
+from apps.analysis.backends.base import TrackUnreadable, TrackVanished
 from apps.shared.engine_decode import BIN_ENV
 
-_M4A = (
-    Path(__file__).resolve().parents[2]
-    / "apps/audio-engine/tests/fixtures/audio/click-250ms-aac.m4a"
-)
+_REPO = Path(__file__).resolve().parents[2]
+_FIXTURES = _REPO / "apps/audio-engine/tests/fixtures/audio"
+_M4A = _FIXTURES / "click-250ms-aac.m4a"
+# 16 s of a synthesized 124 BPM drum loop (kick, snare on 2 and 4, offbeat
+# hats, a bass note per bar), encoded once with `ffmpeg -c:a aac -b:a 32k -ac 1`.
+# A bare click track has no bar phase for the runner to anchor.
+_LOOP_M4A = _FIXTURES / "loop-124bpm-16s-aac.m4a"
 
 
 # Skips as UNAVAILABLE on a host with no odj-audio build; ci.yml runs this
@@ -37,6 +41,21 @@ def _input(track: Path, decode_dir: Path) -> AbstractContextManager[Path]:
 
 def _wavs(folder: Path) -> list[Path]:
     return list(folder.rglob("*.wav"))
+
+
+def _in_child(code: str, *args: object, **env: str) -> str:
+    """Run ``code`` in a real interpreter configured by ``env``; its stdout.
+
+    Configuration crosses a real process boundary, the way the shipped app
+    sets it, so nothing in this process is patched.
+    """
+    done = subprocess.run(
+        [sys.executable, "-c", code, *map(str, args)],
+        env={**os.environ, **env}, cwd=_REPO,
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    return done.stdout
 
 
 def test_the_runner_reads_a_wav_at_the_same_path_every_run(tmp_path: Path) -> None:
@@ -104,14 +123,22 @@ def test_a_run_that_died_holding_the_lock_does_not_block_the_track(tmp_path: Pat
         assert wav.is_file()
 
 
-def test_the_runner_wav_is_deleted_when_the_runner_cannot_start(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Configuration, not a fake: the runner interpreter really does not exist.
-    monkeypatch.setenv("MDT_BEATGRID_ACTIVATIONS_DIR", str(tmp_path / "activations"))
-    monkeypatch.setenv(own_beatgrid.RUNNER_PYTHON_ENV, str(tmp_path / "no-python"))
-    with pytest.raises(BackendNotAvailable, match="could not launch"):
-        own_beatgrid.run_runner(_M4A, tmp_path / "ckpt", device="cpu")
+def test_the_runner_wav_is_deleted_when_the_runner_cannot_start(tmp_path: Path) -> None:
+    # The runner interpreter really does not exist, so the launch really fails.
+    out = _in_child(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from apps.analysis.backends import own_beatgrid\n"
+        "from apps.analysis.backends.base import BackendNotAvailable\n"
+        "try:\n"
+        "    own_beatgrid.run_runner(Path(sys.argv[1]), Path(sys.argv[2]), device='cpu')\n"
+        "except BackendNotAvailable as exc:\n"
+        "    print('unavailable:', exc)\n",
+        _M4A, tmp_path / "ckpt",
+        MDT_BEATGRID_ACTIVATIONS_DIR=str(tmp_path / "activations"),
+        **{own_beatgrid.RUNNER_PYTHON_ENV: str(tmp_path / "no-python")},
+    )
+    assert out.startswith("unavailable:") and "could not launch" in out, out
     decode_dir = tmp_path / "engine-decode"
     assert decode_dir.is_dir(), "the engine decode never ran, so this proves nothing"
     assert not _wavs(decode_dir)
@@ -126,6 +153,8 @@ def test_the_key_lane_reads_an_m4a_through_the_engine() -> None:
     # where librosa through ffmpeg returns 45056 with it kept.
     assert rate == engine_rate == 44100
     assert samples.tobytes() == pcm and samples.shape == (44100,)
+    # A view of the engine's bytes, not a second whole-track copy.
+    assert not samples.flags.owndata
     assert abs(int(abs(samples).argmax()) - 11025) < 64
 
 
@@ -144,13 +173,46 @@ def test_an_unreadable_m4a_is_one_bad_track(tmp_path: Path, lane: str) -> None:
 
 
 @pytest.mark.parametrize("lane", ["beatgrid", "key"])
-def test_a_missing_engine_stops_the_lane(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lane: str
-) -> None:
-    monkeypatch.setenv(BIN_ENV, str(tmp_path / "absent"))
-    with pytest.raises(BackendNotAvailable):
-        if lane == "beatgrid":
-            with _input(_M4A, tmp_path / "decode"):
-                pass
-        else:
-            own_key._decode(_M4A)
+def test_a_missing_engine_stops_the_lane(tmp_path: Path, lane: str) -> None:
+    out = _in_child(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from apps.analysis.backends import own_beatgrid_input, own_key\n"
+        "from apps.analysis.backends.base import BackendNotAvailable\n"
+        "track, decode_dir = Path(sys.argv[1]), Path(sys.argv[2])\n"
+        "try:\n"
+        "    if sys.argv[3] == 'beatgrid':\n"
+        "        with own_beatgrid_input.runner_input(track, decode_dir=decode_dir):\n"
+        "            pass\n"
+        "    else:\n"
+        "        own_key._decode(track)\n"
+        "except BackendNotAvailable as exc:\n"
+        "    print('unavailable:', exc)\n",
+        _M4A, tmp_path / "decode", lane,
+        **{BIN_ENV: str(tmp_path / "absent")},
+    )
+    assert out.startswith("unavailable:") and "absent" in out, out
+
+
+@pytest.mark.skipif(
+    os.environ.get("MDT_BEATGRID_MODEL_TESTS") != "1",
+    reason=(
+        "drives the real Beat This! runner, which needs uv and a provisioned "
+        "checkpoint (see test_anlz_own_beatgrid_real_analyzer); "
+        "set MDT_BEATGRID_MODEL_TESTS=1 to run"
+    ),
+)
+def test_the_real_beatgrid_runner_reads_an_m4a(tmp_path: Path) -> None:
+    from apps.analysis.backends.base import BackendNotAvailable
+    from apps.analysis.backends.own_beatgrid import OwnBeatgridBackfillBackend
+
+    track = tmp_path / "Loop.m4a"
+    shutil.copy(_LOOP_M4A, track)
+    try:
+        record = OwnBeatgridBackfillBackend.analyze(track, "m4a-acceptance")
+    except BackendNotAvailable as exc:
+        pytest.fail(f"MDT_BEATGRID_MODEL_TESTS=1 but the runner is unavailable: {exc}")
+    lane = record.lanes["beatgrid"]
+    assert lane.status == "ok", lane
+    assert lane.payload["beats"], "the real runner found no beats in the m4a"
+    assert abs(record.bpm - 124.0) < 1.0, f"read {record.bpm} BPM off a 124 BPM loop"

@@ -347,7 +347,9 @@ def _engine_decode(audio_path: Path) -> tuple[Any, int]:
         if not audio_path.exists():
             raise TrackVanished(f"{audio_path.name} vanished before it was decoded") from None
         raise TrackUnreadable(f"{audio_path.name}: {exc}") from None
-    return np.frombuffer(pcm, dtype="<f4").copy(), sample_rate
+    # A read-only view of the engine's bytes, not a second whole-track copy:
+    # librosa's own decode holds one copy, so this lane must not hold two.
+    return np.frombuffer(pcm, dtype="<f4"), sample_rate
 
 
 def analyze_audio(
