@@ -116,7 +116,11 @@ def test_run_cli_registers_only_while_the_step_runs(monkeypatch) -> None:
 
 def test_the_lifespan_stops_running_clis(monkeypatch, tmp_path) -> None:
     calls: list[int] = []
-    monkeypatch.setattr(ingest_cli_procs, "stop_all", lambda: calls.append(1) or 0)
+    def _record() -> int:
+        calls.append(1)
+        return 0
+
+    monkeypatch.setattr(ingest_cli_procs, "stop_all", _record)
     armed = app_mod.create_app(
         state_db_path=str(tmp_path / "state" / "state.db"), mount_frontend=False,
         port=18735, frontend_port=19735,
