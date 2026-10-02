@@ -9,9 +9,12 @@ which hands it this checkout as `--repo`, or exits 2 with the reason.
   - [if] a `wt-*` recipe runs [then] fleet-af's tool gets this checkout as --repo, [else stop].
   - [if] fleet-af's copy is absent [then] exit 2 naming the path, never a fallback, [else stop].
 
-The tool under FLEET_AF_HOME is a temp module that records the argv it was
-handed: CI runners have no fleet-af checkout, and the stub's job ends at the
-hand-off. The real tools' tests are fleet-af's `just worktree-tools::test`.
+Nothing here is fabricated. The hand-off tests run the REAL fleet-af tools, found
+the way the stub finds them ($FLEET_AF_HOME, else the live clone), against this
+checkout and against throwaway git repositories. Where no fleet-af copy exists (CI
+runners: fleet-af is private) those tests report UNAVAILABLE with the path they
+looked at, never a pass. The argv rule itself is checked on the stub's own pure
+`tool_argv`, and the refusals on a real empty directory, so both still bite there.
 
 Regression one-liners:
   - if `lifecycle` is not handed `--repo <this checkout>` right after its subcommand then broken
@@ -37,62 +40,94 @@ from scripts import worktree_tools
 pytestmark = pytest.mark.requirement("OPS-21")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-_RECORDER = """import json, sys
-print(json.dumps(sys.argv[1:]))
-raise SystemExit(7)
-"""
+_STATUS = ("status", "--no-github", "--no-size", "--no-remote", "--json")
 
 
-def _fleet_af(tmp_path: Path, *tools: str) -> Path:
-    package = tmp_path / "fleet-af" / "agents_worktree_tools"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    for tool in tools:
-        (package / f"{tool}.py").write_text(_RECORDER, encoding="utf-8")
-    return package.parent
+def _real_fleet_af() -> Path:
+    """The fleet-af copy the stub would run, or an UNAVAILABLE report naming where it looked."""
+    home = worktree_tools.fleet_af_home()
+    missing = [t for t in worktree_tools.TOOLS
+               if not (home / worktree_tools.PACKAGE / f"{t}.py").is_file()]
+    if missing:
+        pytest.skip(f"UNAVAILABLE: no fleet-af {worktree_tools.PACKAGE} {missing} under {home} "
+                    "(set FLEET_AF_HOME or create the live clone); the hand-off was not measured")
+    return home
 
 
-def _run(fleet_af: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "FLEET_AF_HOME": str(fleet_af)}
+def _run(fleet_af: Path, *args: str, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "FLEET_AF_HOME": str(fleet_af), "PYTHONPATH": str(REPO_ROOT)}
     return subprocess.run(
         [sys.executable, "-m", "scripts.worktree_tools", *args],
-        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=60, check=False,
+        cwd=cwd, env=env, capture_output=True, text=True, timeout=300, check=False,
     )
 
 
-def test_lifecycle_is_handed_this_checkout_as_repo(tmp_path: Path) -> None:
-    """[if] a `wt-*` recipe runs [then] the tool gets this checkout as --repo, [else stop]."""
-    done = _run(_fleet_af(tmp_path, "lifecycle"), "lifecycle", "guard", "--cap", "3")
-    assert done.returncode == 7, done.stderr
-    assert json.loads(done.stdout) == ["guard", "--repo", str(REPO_ROOT), "--cap", "3"]
+def _git_repo(path: Path) -> Path:
+    path.mkdir(parents=True)
+    for cmd in (["init", "-q", "-b", "main"],
+                ["-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                 "commit", "-q", "--allow-empty", "-m", "root"]):
+        subprocess.run(["git", *cmd], cwd=path, check=True, capture_output=True)
+    return path
 
 
-def test_a_callers_repo_comes_last_and_so_wins(tmp_path: Path) -> None:
-    """[if] the caller names --repo [then] it follows the stub's (argparse: last wins)."""
-    done = _run(_fleet_af(tmp_path, "lifecycle"), "lifecycle", "status", "--repo", "/elsewhere")
-    assert json.loads(done.stdout) == ["status", "--repo", str(REPO_ROOT), "--repo", "/elsewhere"]
+def _listed(done: subprocess.CompletedProcess[str]) -> set[Path]:
+    assert done.returncode == 0, done.stderr
+    return {Path(row["path"]).resolve() for row in json.loads(done.stdout)}
 
 
-def test_worker_guard_args_pass_through_untouched(tmp_path: Path) -> None:
+def test_lifecycle_argv_puts_this_checkout_right_after_the_subcommand() -> None:
+    assert worktree_tools.tool_argv("lifecycle", ["guard", "--cap", "3"]) == [
+        "guard", "--repo", str(REPO_ROOT), "--cap", "3"]
+    # A caller's --repo follows the stub's, so argparse's last-wins gives it the say.
+    assert worktree_tools.tool_argv("lifecycle", ["status", "--repo", "/elsewhere"]) == [
+        "status", "--repo", str(REPO_ROOT), "--repo", "/elsewhere"]
+
+
+def test_worker_guard_argv_is_untouched() -> None:
     """Control for the --repo injection: only `lifecycle` gets it."""
     argv = ["create", "--repo", "/r", "--target", "/t", "--branch", "b", "--base", "origin/main"]
-    done = _run(_fleet_af(tmp_path, "worker_guard"), "worker_guard", *argv)
-    assert done.returncode == 7, done.stderr
-    assert json.loads(done.stdout) == argv
+    assert worktree_tools.tool_argv("worker_guard", argv) == argv
+
+
+def test_real_lifecycle_lists_this_checkout_from_anywhere(tmp_path: Path) -> None:
+    """[if] a `wt-*` recipe runs [then] the real tool gets this checkout as --repo, [else stop].
+
+    Run from an unrelated directory: the tool requires --repo, so a listing that
+    contains this checkout can only come from the stub's hand-off."""
+    listed = _listed(_run(_real_fleet_af(), "lifecycle", *_STATUS, cwd=tmp_path))
+    assert REPO_ROOT.resolve() in listed
+
+
+def test_real_lifecycle_honors_a_callers_repo(tmp_path: Path) -> None:
+    """[if] the caller names --repo [then] the real tool scans that repository instead."""
+    other = _git_repo(tmp_path / "other")
+    listed = _listed(_run(_real_fleet_af(), "lifecycle", *_STATUS, "--repo", str(other)))
+    assert listed == {other.resolve()}
+
+
+def test_real_worker_guard_refusal_comes_back_unchanged(tmp_path: Path) -> None:
+    """[if] the real guard refuses [then] its exit code and reason reach the caller as-is.
+
+    A repository with no `origin` has no remote-tracking base, so the fail-closed
+    guard must refuse and create nothing."""
+    repo, target = _git_repo(tmp_path / "repo"), tmp_path / "target"
+    done = _run(_real_fleet_af(), "worker_guard", "create", "--repo", str(repo),
+                "--target", str(target), "--branch", "af--x", "--base", "origin/main")
+    assert done.returncode != 0 and done.returncode != worktree_tools.EXIT_UNAVAILABLE
+    assert "origin/main" in done.stderr and not target.exists()
 
 
 def test_missing_fleet_af_copy_exits_2_naming_the_path(tmp_path: Path) -> None:
     """[if] fleet-af has no such tool [then] exit 2 naming the path and FLEET_AF_HOME."""
-    home = _fleet_af(tmp_path, "worker_guard")   # the package exists, lifecycle does not
-    done = _run(home, "lifecycle", "guard")
+    done = _run(tmp_path, "lifecycle", "guard")
     assert done.returncode == 2
-    assert str(home / "agents_worktree_tools" / "lifecycle.py") in done.stderr
+    assert str(tmp_path / "agents_worktree_tools" / "lifecycle.py") in done.stderr
     assert "FLEET_AF_HOME" in done.stderr and done.stdout == ""
 
 
 def test_unknown_tool_exits_2(tmp_path: Path) -> None:
-    done = _run(_fleet_af(tmp_path, "lifecycle"), "census", "status")
+    done = _run(tmp_path, "census", "status")
     assert done.returncode == 2 and "usage:" in done.stderr
 
 
