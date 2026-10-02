@@ -18,6 +18,7 @@ from apps.shared import audio_quality
 from apps.shared.events import publish
 from apps.shared.paths import STATE_DB
 from apps.shared.state import db as state_db
+from apps.shared.state import deleted_tracks
 from apps.shared.state.writer import StateWriter
 from apps.shared.state.writer_tracks import (
     TrackAlreadyRemovedError,
@@ -392,6 +393,55 @@ class TrackLifecycleOut(BaseModel):
     stable_id: str
     deleted_at: str | None
     memberships: list[TrackMembershipRefOut]
+
+
+class DeletedTrackOut(BaseModel):
+    """One tombstoned track that has not been restored (LIBM-140).
+
+    ``reason`` is ``user`` for Remove from library, which no re-import undoes,
+    or ``missing`` for a watched-folder file that vanished, which comes back
+    by itself when the file does.
+    """
+
+    stable_id: str
+    title: str | None
+    artists: list[str]
+    file_path: str | None
+    deleted_at: str
+    reason: Literal["user", "missing"]
+
+
+@router.get(
+    "/deleted",
+    response_model=list[DeletedTrackOut],
+    operation_id="list_deleted_tracks",
+)
+def list_deleted_tracks(
+    request: Request,
+    _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+) -> list[DeletedTrackOut]:
+    """Tombstoned tracks and why, newest removal first.
+
+    A track the user removed stays removed across every re-import and sync until it
+    is restored with ``POST /tracks/{stable_id}:undelete``; this list is how a
+    person or an agent finds the id to restore.
+    """
+    conn = state_db.open_ro(Path(request.app.state.state_db_path))
+    try:
+        removed = deleted_tracks.list_deleted(conn)
+    finally:
+        conn.close()
+    return [
+        DeletedTrackOut(
+            stable_id=track.stable_id,
+            title=track.title,
+            artists=track.artists,
+            file_path=track.file_path,
+            deleted_at=track.deleted_at,
+            reason=track.reason,
+        )
+        for track in removed
+    ]
 
 
 class TrackLibraryRevisionOut(BaseModel):

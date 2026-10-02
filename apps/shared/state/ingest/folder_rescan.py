@@ -43,6 +43,7 @@ from apps.shared.state import ids as state_ids
 from apps.shared.state.ingest.folder import FolderIngestReport, _write_tracks, collect_audio
 from apps.shared.state.ingest.path_collisions import PathCollisionError, assert_no_path_collisions
 from apps.shared.state.writer import StateWriter
+from apps.shared.state.writer_tracks import DELETED_FILE_MISSING
 
 #: A cycle that finds a change never applies more than this many removals in
 #: one pass. ``remove_from_library`` opens its own transaction and publishes
@@ -195,7 +196,7 @@ def _apply_tombstones_and_writes(
     savepoint = "folder_rescan_reconcile"
     with state_db.write_unit(conn, savepoint):
         for stable_id in tombstones:
-            writer.remove_from_library(stable_id)
+            writer.remove_from_library(stable_id, reason=DELETED_FILE_MISSING)
         report.tracks_removed = len(tombstones)
 
         sub_report = FolderIngestReport(roots=report.roots)

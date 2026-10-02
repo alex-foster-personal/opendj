@@ -55,10 +55,21 @@ class IdentityRejectModel(BaseModel):
     survivor_pk: str = Field(min_length=1)
 
 
+class RejectedRowModel(BaseModel):
+    """One offered row the hub refused, and why (CLOUDSYNC-31)."""
+
+    table: str = Field(min_length=1)
+    pk: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 #: Carried on every request that can move rows (``hello``, ``push``,
 #: ``enroll``) and gated per request, like the capability tokens. ``None`` --
 #: the field absent -- is a build from before the wire/schema split, judged by
 #: exact schema equality instead (:mod:`apps.sync_hub.wire_version`).
+#: Most candidates one ``POST /stale-check`` may carry. The client chunks.
+STALE_CHECK_MAX_CANDIDATES: int = 1000
+
 _WIRE_VERSION_FIELD: Any = Field(
     default=None, description="sync wire version; absent on pre-split builds"
 )
@@ -166,11 +177,10 @@ class HelloResponse(BaseModel):
     #: Required, no default, for the reason ``ownership`` gives.
     credential: CredentialVerdict
     #: How many live ``tracks`` rows this hub holds, so the caller can tell
-    #: SEEDING from MERGING (CLOUDSYNC-07,
-    #: ``engine_identity.assert_merge_safe``). ``0`` is an affirmative "this
-    #: hub holds no library"; ``None`` means a hub too old to answer, and the
-    #: spoke keeps its strict refusal for that -- absent is never yes
-    #: (:mod:`apps.sync_hub.capabilities`). Gated by ``library-size/v1`` in
+    #: SEEDING from MERGING (CLOUDSYNC-07). ``0`` is an affirmative "this
+    #: hub holds no library"; ``None`` means a hub too old to answer. It is
+    #: REPORTED, not enforced: no spoke refuses a first sync on it since
+    #: ADR-0068 (:mod:`apps.sync_hub.capabilities`). Gated by ``library-size/v1`` in
     #: ``capabilities``, which is how a spoke tells the two apart without
     #: guessing from the value.
     #:
@@ -208,6 +218,36 @@ class PushRequest(BaseModel):
     #: absent means this hub must refuse anything it cannot fully decide,
     #: rather than report a shortfall the caller has no field to read.
     capabilities: list[str] = Field(default_factory=list)
+    #: True when the pusher detected, in this sync, that the hub went
+    #: backwards (a new generation token, or a seq below what it pulled) and
+    #: is re-offering its library. The stale-copy guard
+    #: (:mod:`apps.sync_hub.stale_copy`) stands aside for that push, because
+    #: a restored hub has forgotten rows it really held.
+    reseed: bool = False
+
+
+class StaleCandidateModel(BaseModel):
+    stable_id: str = Field(min_length=1)
+    origin_device_id: str
+
+
+class StaleCheckRequest(BaseModel):
+    """``POST /stale-check``: which of these live tracks did the fleet drop?"""
+
+    machine_id: str = Field(min_length=1, max_length=MACHINE_ID_MAX_LENGTH)
+    schema_version: int
+    wire_version: int | None = _WIRE_VERSION_FIELD
+    candidates: list[StaleCandidateModel] = Field(max_length=STALE_CHECK_MAX_CANDIDATES)
+    reseed: bool = False
+
+
+class StaleCheckResponse(BaseModel):
+    #: Candidates another registered machine authored that the hub holds
+    #: under no id and no identity remap: the fleet dropped them.
+    orphans: list[str]
+    #: Foreign candidates whose author is no machine the hub knows. Not
+    #: decided either way; the push still carries them.
+    unattributable: int = 0
 
 
 class PushResponse(BaseModel):
@@ -225,6 +265,10 @@ class PushResponse(BaseModel):
     #: (issue #3057). Only emitted for ``tracks`` rows where the hub
     #: kept a different PK for the same content identity.
     identity_rejects: list[IdentityRejectModel] = Field(default_factory=list)
+    #: Which offered rows ``rejected`` counts, and why, capped at
+    #: ``protocol.MAX_REJECTED_ROWS_NAMED`` (CLOUDSYNC-31). Optional: an older
+    #: client ignores it, an older hub omits it.
+    rejected_rows: list[RejectedRowModel] = Field(default_factory=list)
 
 
 class PullResponse(BaseModel):
@@ -314,11 +358,16 @@ __all__ = [
     "HelloRequest",
     "HelloResponse",
     "IdentityRejectModel",
+    "RejectedRowModel",
     "MachineModel",
     "PullResponse",
     "PushRequest",
     "PushResponse",
     "RowModel",
+    "STALE_CHECK_MAX_CANDIDATES",
+    "StaleCandidateModel",
+    "StaleCheckRequest",
+    "StaleCheckResponse",
     "StatusResponse",
     "SyncErrorBody",
     "SyncErrorResponse",

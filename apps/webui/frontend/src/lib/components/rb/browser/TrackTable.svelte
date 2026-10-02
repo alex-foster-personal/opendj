@@ -978,12 +978,15 @@
 	function applyDeckLayoutAnchorScroll(): void {
 		const el = wrapEl;
 		const anchor = deckLayoutAnchor;
-		if (el === null || anchor === null || viewportHeight <= 0) return;
+		if (el === null || anchor === null) return;
+		const effectiveViewportHeight =
+			viewportHeight > 0 ? viewportHeight : el.clientHeight;
+		if (effectiveViewportHeight <= 0) return;
 		const next = scrollTopForDeckLayoutAnchor({
 			rowIndex: anchor.rowIndex,
 			rowHeight,
 			headerOffsetPx: TRACK_TABLE_THEAD_PX,
-			viewportHeight,
+			viewportHeight: effectiveViewportHeight,
 			priorScrollTop: anchor.priorScrollTop,
 			priorViewportHeight: anchor.priorViewportHeight
 		});
@@ -2556,7 +2559,7 @@
 		height: 1px;
 		background: #131519;
 		pointer-events: none;
-		z-index: 1;
+		z-index: 4;
 	}
 	/* Prefetch markers - top-left of row (same corner as job wash). */
 	.audio-cache-chevron {

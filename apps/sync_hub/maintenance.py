@@ -100,6 +100,7 @@ from apps.shared.sync_runtime_gates import (
 from apps.sync_hub import (
     capabilities,
     client,
+    client_stale_copy,
     config_cli,
     engine,
     enrollment_credentials,
@@ -108,6 +109,7 @@ from apps.sync_hub import (
     hosted_config,
     maintenance_enroll,
     maintenance_policy,
+    rejected_rows,
     single_flight,
     sync_set,
 )
@@ -271,6 +273,7 @@ def _journal_entry(
                 f"sync started at {started_at} completed, but the digest "
                 f"compare against hub {result.hub_machine_id} "
                 f"{exclusion_summary} Agreement was not verified."
+                f"{_rejected_note(result)}"
             ),
             pushed=result.pushed,
             pulled=result.pulled,
@@ -278,9 +281,19 @@ def _journal_entry(
     return sync_status.SyncResult(
         finished_at=sync_stamp.canonical_now(),
         status="ok",
-        message=f"completed sync started at {started_at}",
+        message=f"completed sync started at {started_at}{_rejected_note(result)}",
         pushed=result.pushed,
         pulled=result.pulled,
+    )
+
+
+def _rejected_note(result: client.SyncResult) -> str:
+    """Name the rows the hub rejected, for the journal message (CLOUDSYNC-31)."""
+    if not result.rejected_rows:
+        return ""
+    return (
+        f" The hub rejected {result.rejected} row(s): "
+        f"{rejected_rows.summarize(result.rejected_rows)}."
     )
 
 
@@ -364,6 +377,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Bypass Gig posture and playing-deck gates for this round only.",
     )
 
+    client_stale_copy.add_parser(subcommands, common)
     subcommands.add_parser("generation", parents=[common], help="print this hub's generation token")
     subcommands.add_parser(
         "rotate",
@@ -487,8 +501,11 @@ def _report_sync(result: client.SyncResult, data_dir: Path) -> int:
         f"{result.applied}), {result.rounds} round(s), hub seq "
         f"{result.hub_seq}{restored}, recovered: "
         f"{result.location_twins_repaired} NFC location twin group(s) collapsed, "
-        f"{result.stale_identity_remaps_dropped} stale identity remap(s) dropped"
+        f"{result.stale_identity_remaps_dropped} stale identity remap(s) dropped, "
+        f"{result.identity_repairs} identity duplicate collapse(s) confirmed by the hub"
     )
+    if result.rejected_rows:
+        print(f"rejected: {rejected_rows.summarize(result.rejected_rows, limit=20)}")
     if result.quarantined_rows or result.hub_quarantined:
         on_hub = "unreported" if result.hub_quarantined is None else result.hub_quarantined
         conn = _open(data_dir)
@@ -631,7 +648,9 @@ def _print_hosted(args: argparse.Namespace) -> None:
 #: and exiting 0. Named here, not in the test, so "every registered
 #: subcommand is dispatched" can be re-derived from the module instead of
 #: from a list a test author kept up to date by hand.
-EXIT_CODE_COMMANDS: frozenset[str] = frozenset({"sync", "status", "feedback-pins", "policy"})
+EXIT_CODE_COMMANDS: frozenset[str] = frozenset(
+    {"sync", "status", "feedback-pins", "policy", "stale-tracks"}
+)
 
 
 PRINTING_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
@@ -959,6 +978,8 @@ def main(argv: list[str] | None = None) -> int:
         return _feedback_pins(args)
     if args.command == "policy":
         return maintenance_policy.run(args)
+    if args.command == "stale-tracks":
+        return client_stale_copy.run_cli(args)
     # Everything below prints and exits 0; the two above own their own codes.
     handler = PRINTING_COMMANDS.get(args.command)
     if handler is None:
