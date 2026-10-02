@@ -42,7 +42,7 @@ def ffmpeg_available() -> bool:
 
 def _ffmpeg(args: list[str]) -> None:
     result = subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", *args], capture_output=True, text=True, timeout=60
+        ["ffmpeg", "-v", "error", "-y", *args], capture_output=True, text=True, timeout=60, check=False
     )
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed ({result.returncode}): {result.stderr.strip()}")
@@ -151,7 +151,7 @@ def decoded_audio_sha256(path: Path) -> str:
     """sha256 of the PCM ffmpeg decodes from ``path``: identical audio, identical hash."""
     result = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a", "-f", "hash", "-hash", "sha256", "-"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, check=False,
     )
     if result.returncode != 0 or result.stderr.strip() or not result.stdout.startswith("SHA256="):
         raise RuntimeError(f"ffmpeg could not decode {path} cleanly: {result.stderr.strip()}")
@@ -162,7 +162,7 @@ def ffprobe_tags(path: Path) -> dict[str, str]:
     """Container and stream tags as ffprobe (an independent parser) sees them, keys lowercased."""
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format_tags:stream_tags", "-of", "json", str(path)],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"ffprobe failed on {path}: {result.stderr.strip()}")

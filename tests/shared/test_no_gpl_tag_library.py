@@ -99,7 +99,7 @@ assert geob.read_geob_frames(Path({str(mp3)!r})).opaque_frames == {{"Serato Over
 print("OK")
 """
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, cwd=REPO_ROOT, timeout=120
+        [sys.executable, "-c", script], capture_output=True, text=True, cwd=REPO_ROOT, timeout=120, check=False
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "OK"

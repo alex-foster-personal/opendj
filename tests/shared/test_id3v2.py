@@ -38,7 +38,7 @@ def _tag(path: Path) -> id3v2.Id3Tag:
 def _decodes(path: Path) -> bool:
     result = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=60, check=False,
     )
     return result.returncode == 0 and not result.stderr.strip()
 
@@ -179,7 +179,7 @@ def test_a_v22_tag_is_refused_not_rewritten(tmp_path: Path) -> None:
     mp3 = tmp_path / "old.mp3"
     original = _raw_tag(2, b"TT2" + b"\x00\x00\x03" + b"\x00hi") + b"\xff\xfb\x90\x00" * 4
     mp3.write_bytes(original)
-    with pytest.raises(id3v2.Id3Error, match="v2.2"):
+    with pytest.raises(id3v2.Id3Error, match=r"v2\.2"):
         id3v2.load_or_new(mp3)
     assert mp3.read_bytes() == original
 
