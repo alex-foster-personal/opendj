@@ -486,6 +486,22 @@ def _rekordbox_copy(stable_id: str) -> Path | None:
     return path
 
 
+def _local_only_fallback(stable_id: str, reason: str | None) -> track_locations.PickedAudio:
+    """CLOUDSYNC-33: a local-only machine with no copy in its own locations.
+
+    The listing counts rekordbox's FolderPath as this track's file, so
+    playback does too; only when that is gone as well does the deck say,
+    plainly, that the file is not here.
+    """
+    rekordbox_copy = _rekordbox_copy(stable_id)
+    if rekordbox_copy is not None:
+        return _picked_from_path(rekordbox_copy, source="rekordbox-folder-path")
+    raise not_found(
+        "AUDIO_NOT_ON_THIS_MACHINE",
+        reason or hydration.NOT_ON_THIS_MACHINE,
+    )
+
+
 def resolve_playable_audio(
     stable_id: str,
     *,
@@ -565,17 +581,7 @@ def resolve_playable_audio(
 
     if source.origin == "unavailable":
         if source.policy_source == "unconfigured":
-            # CLOUDSYNC-33: a local-only machine with no copy in its own
-            # locations. The listing counts rekordbox's FolderPath as this
-            # track's file, so playback does too; only when that is gone as
-            # well does the deck say, plainly, that the file is not here.
-            rekordbox_copy = _rekordbox_copy(stable_id)
-            if rekordbox_copy is not None:
-                return _picked_from_path(rekordbox_copy, source="rekordbox-folder-path")
-            raise not_found(
-                "AUDIO_NOT_ON_THIS_MACHINE",
-                source.reason or hydration.NOT_ON_THIS_MACHINE,
-            )
+            return _local_only_fallback(stable_id, source.reason)
         raise not_found(
             "CLOUD_ASSET_UNAVAILABLE",
             source.reason

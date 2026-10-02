@@ -239,7 +239,9 @@ def unconfigured_client(
 def test_unconfigured_machine_says_a_missing_file_is_not_on_this_computer(
     unconfigured_client: TestClient,
 ) -> None:
-    """[if] a machine with no CloudSync policy loads a track it has no copy of [then] the route answers 404 AUDIO_NOT_ON_THIS_MACHINE with a plain sentence, not CLOUD_POLICY_UNCONFIGURED, [else stop]."""
+    """[if] a machine with no CloudSync policy loads a track it has no copy of
+    [then] the route answers 404 AUDIO_NOT_ON_THIS_MACHINE with a plain
+    sentence, not CLOUD_POLICY_UNCONFIGURED, [else stop]."""
     response = unconfigured_client.get(f"/api/v1/tracks/{REMOTE_SID}/audio")
     assert response.status_code == 404
     detail = response.json()["detail"]
@@ -256,7 +258,9 @@ def test_unconfigured_machine_says_a_missing_file_is_not_on_this_computer(
 def test_unconfigured_machine_plays_rekordboxs_copy_when_its_own_path_is_gone(
     unconfigured_client: TestClient, tmp_path: Path
 ) -> None:
-    """[if] a local-only machine's own location for a track is gone but rekordbox's FolderPath for it is on disk [then] the deck plays rekordbox's file, as the listing already counts it available, [else stop]."""
+    """[if] a local-only machine's own location for a track is gone but
+    rekordbox's FolderPath for it is on disk [then] the deck plays rekordbox's
+    file, as the listing already counts it available, [else stop]."""
     import sqlite3
 
     master = tmp_path / "absent-master.db"
