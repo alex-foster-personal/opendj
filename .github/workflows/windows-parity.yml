@@ -1,0 +1,82 @@
+name: Windows Parity (on-demand)
+
+# Windows parity is dispatched manually or through the periodic caller.
+# It remains outside the per-PR path and uses the same runnable parity contract.
+# Results are recorded by the configured periodic-check ledger.
+# per-run CI Cost Guard that used to price them was retired, ADR-0121).
+#
+# Cadence lives in periodic-checks.yml (row 10, merges:100), which calls this
+# file so a periodic run and a manual dispatch are the same workflow. There is
+# still no schedule here; a nightly Windows job is not the intended rate.
+#
+# Runner provisioning failure remains a failed capability; never skip it to
+# record an unexecuted parity gate as passing.
+
+on:
+  workflow_dispatch:
+  # Called by periodic-checks.yml. No schedule of its own; the merges:100
+  # window in that caller is the cadence.
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit to check out. A caller that REPORTS on a specific SHA pins it
+          here, so the gate runs against the tree that caller recorded rather
+          than against wherever the branch has moved to since. Empty means the
+          workflow event's own ref, which is what a manual dispatch wants.
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  # run_id for everything that is not a push, matching full-ci.yml: a reusable
+  # call reports the CALLER's event (schedule), and a shared group would let a
+  # periodic window cancel a manual dispatch or the other way around.
+  group: windows-parity-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-stabilization:
+    name: Windows Rekordbox parity gate
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # The configured hosted-OS switch and event admission below govern execution.
+    # has to admit `schedule`, because a reusable-workflow CALL reports the
+    # CALLER's event_name (periodic-checks.yml's daily cron), not
+    # workflow_call. Left as dispatch-or-tag only, a periodic call would
+    # succeed with this job skipped and the ledger would record PASS over a
+    # row that never executed. See "Switching CI between self-hosted and
+    # GitHub-hosted" in docs/ci-actions-cost-review-2026-08-16.md.
+    if: vars.CI_HOSTED_OS_JOBS == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          # A caller's pinned SHA when there is one; empty falls back to the
+          # workflow event's own ref, which is the dispatch behavior.
+          ref: ${{ inputs.ref }}
+          # Progress-tree tests resolve historical provenance commit SHAs.
+          fetch-depth: 0
+          clean: true
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.14.0"
+
+      - name: Enable pinned pnpm
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+
+      - name: Run Windows stabilization gate
+        shell: pwsh
+        run: ./scripts/run_rb_parity_check.ps1 -Final

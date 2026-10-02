@@ -230,6 +230,33 @@ test('accepting records the current terms version and then loads the loader, mas
 	live = true;
 	assert.equal(options.beforeSend({ message: 'mid-set' }), null, 'nothing leaves while live');
 	live = false;
+	assert.equal(
+		options.beforeSend({
+			exception: { values: [{ type: 'TypeError', value: 'Load failed' }] }
+		}),
+		null,
+		'Safari fetch TypeError stays local (OBS-07 / OPEN-DJ-FE-F)'
+	);
+	assert.equal(
+		options.beforeSend({
+			exception: { values: [{ type: 'TypeError', value: 'Failed to fetch' }] }
+		}),
+		null,
+		'Chromium fetch TypeError stays local'
+	);
+	const chunkMiss = options.beforeSend({
+		exception: {
+			values: [
+				{
+					type: 'TypeError',
+					value: 'Failed to fetch dynamically imported module: /assets/Deck.js'
+				}
+			]
+		}
+	});
+	assert.ok(chunkMiss, 'a missing SPA chunk is still an error');
+	assert.equal(consent.isTransientNetworkError('Load failed'), true);
+	assert.equal(consent.isTransientNetworkError('Failed to fetch dynamically imported module'), false);
 });
 
 test('the live watcher stops the replay at once and discards the tail, ahead of any poll', async () => {

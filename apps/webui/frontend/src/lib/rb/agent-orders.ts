@@ -175,7 +175,15 @@ export async function pollAgentOrders(
 			await _sleep(IDLE_POLL_MS);
 			continue;
 		}
-		const response = await fetch(NEXT_ORDER_PATH);
+		let response: Response;
+		try {
+			response = await fetch(NEXT_ORDER_PATH);
+		} catch {
+			// Unreachable engine (Safari TypeError `Load failed`) must not
+			// kill the loop or become an unhandledrejection.
+			await _sleep(IDLE_POLL_MS);
+			continue;
+		}
 		if (response.status === 409) {
 			// Expected state, not a failure: the engine dropped this page between
 			// our last accepted publish and this poll (engine restart, or the
@@ -198,11 +206,17 @@ export async function pollAgentOrders(
 			} catch (error) {
 				result = { steps: [{ status: 'failed', error: _message(error) }], mirror_delta: { changed: {} } };
 			}
-			const complete = await fetch(`/api/v1/commands/${next.id}/result`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(result)
-			});
+			let complete: Response;
+			try {
+				complete = await fetch(`/api/v1/commands/${next.id}/result`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(result)
+				});
+			} catch {
+				await _sleep(IDLE_POLL_MS);
+				continue;
+			}
 			if (!complete.ok) throw new Error(`agent order result failed: ${complete.status}`);
 			republish();
 		}
