@@ -94,9 +94,8 @@ from apps.cloud.stem_cache_settings import (
 GIB: int = 1024**3
 UPLOAD_QUEUE_FILENAME: str = "stem-upload-queue.json"
 UPLOAD_QUEUE_SCHEMA_VERSION: int = 1
-#: How many bytes one timer pass may hash to find same-name re-renders. The
-#: first pass after this shipped meets every bundle unverified; a cap spreads
-#: that one-off cost over several passes instead of one long disk read.
+#: Bytes one timer pass may hash to find same-name re-renders, so a first pass
+#: meeting every bundle unverified spreads that read over several passes.
 REVERIFY_HASH_BUDGET_BYTES: int = 2 * GIB
 
 BLOCKED_HYDRATION_NOT_ARMED: str = "hydration_not_armed"
@@ -188,6 +187,33 @@ def _save_upload_queue(
     write_json_atomically(path, payload)
 
 
+def _queue_reason(
+    bundle: LocalBundle,
+    index: StemAssetIndex,
+    *,
+    known_differs: bool,
+    was_differing: bool,
+    verified_fingerprint: str | None,
+    room_to_hash: bool,
+) -> tuple[str | None, bool, bool]:
+    """One bundle's upload-queue verdict: (reason or None, verified, hashed).
+
+    A bundle queued for differing content is always re-hashed; any other only
+    when its fingerprint moved since it last hashed equal, and only with room
+    left in this pass's hash budget (else neither queued nor verified)."""
+    gap = index_gap(bundle, index)
+    if gap is not None:
+        return gap, False, False
+    if known_differs:
+        return REASON_CONTENT_DIFFERS, False, False
+    if not was_differing and verified_fingerprint == bundle.fingerprint:
+        return None, True, False
+    if not was_differing and not room_to_hash:
+        return None, False, False
+    reason = unconfirmed_reason(bundle, index)
+    return reason, reason is None, True
+
+
 def _refreshed_upload_queue(
     previous: dict[str, dict[str, object]],
     bundles: list[LocalBundle],
@@ -201,38 +227,29 @@ def _refreshed_upload_queue(
 
     A bundle is queued while it is on disk and the index does not cover it.
     One previously queued for differing content is re-hashed (a handful at
-    most) so it leaves the queue as soon as a publish catches up. A bundle
-    whose names the index covers but whose fingerprint has changed since it
-    was last hashed equal (a same-name re-render) is hashed again, up to
-    ``hash_budget_bytes`` per pass, so different bytes reach the queue on a
-    healthy disk too, where no eviction walk ever hashes it. One over the
-    budget stays unverified, not queued, and is hashed on a later pass.
+    most) so it leaves the queue as soon as a publish catches up. A same-name
+    re-render is hashed within ``hash_budget_bytes`` (see ``_queue_reason``),
+    so different bytes reach the queue on a healthy disk too.
     """
     queue: dict[str, dict[str, object]] = {}
     verified_now: dict[str, str] = {}
     known = verified or {}
     hashed_bytes = 0
     for bundle in bundles:
-        reason = index_gap(bundle, index)
-        was_differing = (
-            previous.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS
+        room = hash_budget_bytes is None or hashed_bytes + bundle.size_bytes <= hash_budget_bytes
+        reason, is_verified, hashed = _queue_reason(
+            bundle,
+            index,
+            known_differs=bundle.stable_id in content_differs,
+            was_differing=(
+                previous.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS
+            ),
+            verified_fingerprint=known.get(bundle.stable_id),
+            room_to_hash=room,
         )
-        if reason is None and bundle.stable_id in content_differs:
-            reason = REASON_CONTENT_DIFFERS
-        elif reason is None and (
-            was_differing or known.get(bundle.stable_id) != bundle.fingerprint
-        ):
-            if (
-                not was_differing
-                and hash_budget_bytes is not None
-                and hashed_bytes + bundle.size_bytes > hash_budget_bytes
-            ):
-                continue
+        if hashed:
             hashed_bytes += bundle.size_bytes
-            reason = unconfirmed_reason(bundle, index)
-            if reason is None:
-                verified_now[bundle.stable_id] = bundle.fingerprint
-        elif reason is None:
+        if is_verified:
             verified_now[bundle.stable_id] = bundle.fingerprint
         if reason is None:
             continue
