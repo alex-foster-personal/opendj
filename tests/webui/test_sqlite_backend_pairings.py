@@ -94,6 +94,31 @@ def test_cli_pairing_is_visible_to_the_ui(db_path: Path) -> None:
     assert listed == {("a", "b", "->", "cli"), ("d", "c", "->", None)}
 
 
+def test_capturing_a_cli_reverse_edge_merges_into_it(db_path: Path) -> None:
+    """If the CLI stored the visible edge reversed then a capture merges into it, else stop."""
+    conn = state_db.open_rw(db_path)
+    try:
+        repo = PairingsRepo(conn)
+        repo.add("b", "a", direction="out_of", notes="cli")  # reads as a -> b
+        repo.add("d", "c", direction="either")  # reads as d <-> c
+    finally:
+        conn.close()
+    backend = SqliteBackend(db_path)
+    [before_ab] = [p for p in backend.list_pairings() if p.from_stable_id == "a"]
+
+    merged = backend.create_pairing(_pairing("a", "b", notes="ui", snapshot=SNAPSHOT))
+    backend.create_pairing(_pairing("c", "d", direction="<->", notes="ui"))
+
+    assert merged.pairing_id == before_ab.pairing_id
+    assert merged.notes == "cli\nui"
+    assert merged.snapshot == SNAPSHOT
+    listed = sorted(
+        (p.from_stable_id, p.to_stable_id, p.direction, p.notes)
+        for p in backend.list_pairings()
+    )
+    assert listed == [("a", "b", "->", "cli\nui"), ("d", "c", "<->", "ui")]
+
+
 def test_repeat_merges_notes_and_keeps_first_snapshot(db_path: Path) -> None:
     backend = SqliteBackend(db_path)
     first = backend.create_pairing(_pairing(notes="one", snapshot=SNAPSHOT))

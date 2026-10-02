@@ -122,6 +122,9 @@ describe('the routes use these outcomes', () => {
 		assert.match(src, /exc instanceof ApiError && exc\.status === 404\) missing\[id\] = true/);
 		assert.match(src, /else lookupErrors\[id\] = describeLoadError\(exc\)/);
 		assert.match(src, /Could not look up track/);
+		// One in-flight lookup per id, so a stale failure cannot overwrite a newer label.
+		assert.match(src, /!inflight\.has\(id\)\)/);
+		assert.match(src, /finally \{\s*inflight\.delete\(id\);/);
 		assert.match(src, /\{@render trackCell\(p\.from_stable_id\)\}[\s\S]*\{@render trackCell\(p\.to_stable_id\)\}/);
 	});
 

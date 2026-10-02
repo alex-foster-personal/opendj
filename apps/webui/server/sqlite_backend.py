@@ -298,6 +298,32 @@ def _pairing_matches(
     )
 
 
+def _find_pairing_edge(
+    conn: sqlite3.Connection, key: tuple[str, str, str]
+) -> tuple[tuple[str, str, str], tuple[str | None, str | None] | None]:
+    """Return the stored key and (notes, snapshot_json) for ``key``'s edge.
+
+    The CLI may hold the same visible edge as ``(to, from, 'out_of')``, which
+    the read path shows as ``from -> to``, or an ``either`` edge stored the
+    other way round; a capture of that row must merge into it rather than
+    insert a duplicate.
+    """
+    candidates = [key]
+    if key[2] == "into":
+        candidates.append((key[1], key[0], "out_of"))
+    elif key[2] == "either":
+        candidates.append((key[1], key[0], "either"))
+    for candidate in candidates:
+        row = conn.execute(
+            "SELECT notes, snapshot_json FROM pairings "
+            "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+            candidate,
+        ).fetchone()
+        if row is not None:
+            return candidate, (row[0], row[1])
+    return key, None
+
+
 def _row_to_pairing(row: tuple[Any, ...]) -> Pairing:
     """Map a stored pairings row onto the wire's :class:`Pairing`.
 
@@ -1153,11 +1179,7 @@ class SqliteBackend:
         )
         writer: tuple[str, str] | None = None
         with self._pairings_rw() as conn:
-            row = conn.execute(
-                "SELECT notes, snapshot_json FROM pairings "
-                "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
-                key,
-            ).fetchone()
+            key, row = _find_pairing_edge(conn, key)
             now = _utcnow_iso()
             if row is None:
                 conn.execute(

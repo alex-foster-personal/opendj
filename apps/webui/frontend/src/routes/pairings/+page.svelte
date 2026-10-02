@@ -20,6 +20,9 @@
 	let labels = $state<Record<string, string>>({});
 	let missing = $state<Record<string, true>>({});
 	let lookupErrors = $state<Record<string, string>>({});
+	// One lookup per id at a time, so an older failure cannot land after a
+	// newer success for the same track.
+	const inflight = new Set<string>();
 
 	async function resolveLabels(rows: Pairing[]): Promise<void> {
 		const ids = new Set<string>();
@@ -29,8 +32,9 @@
 		}
 		await Promise.all(
 			[...ids]
-				.filter((id) => !(id in labels) && !(id in missing))
+				.filter((id) => !(id in labels) && !(id in missing) && !inflight.has(id))
 				.map(async (id) => {
+					inflight.add(id);
 					try {
 						const { track } = await getTrack(id);
 						const name = track.title ?? id;
@@ -39,6 +43,8 @@
 					} catch (exc) {
 						if (exc instanceof ApiError && exc.status === 404) missing[id] = true;
 						else lookupErrors[id] = describeLoadError(exc);
+					} finally {
+						inflight.delete(id);
 					}
 				})
 		);
