@@ -140,3 +140,92 @@ test('the app shell routes reported settings save failures to an error toast', a
 	sinkModule.reportSettingSaveError('after install', 'cause-2');
 	assert.deepEqual(seen, [{ message: 'after install', cause: 'cause-2' }]);
 });
+
+// Sol (review bodies, three rounds) on prefs-hydrate.ts _hydrateConfirmFromDisk:
+// a successful disk read is authoritative for the known confirm keys, so a
+// choice another profile reset to "ask" is removed here too. The overshoot
+// control: a local choice disk has not acknowledged yet must survive.
+function routeFetch({ get, put }) {
+	return async (request) => (request.method === 'GET' ? get(request) : put(request));
+}
+
+test('hydration removes a remembered drop mode the disk map no longer has', async () => {
+	globalThis.fetch = routeFetch({
+		get: () => jsonResponse({ confirm: { delete_playlist: false } }),
+		put: () => jsonResponse({})
+	});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined);
+	assert.equal(prefs.uiPrefs.confirm.delete_playlist, false, 'a key present on disk still hydrates');
+});
+
+test('hydration keeps a choice whose PUT is still in flight, then honors disk once it lands', async () => {
+	prefs.uiPrefs.confirm = {};
+	let releasePut;
+	const putGate = new Promise((resolve) => {
+		releasePut = resolve;
+	});
+	globalThis.fetch = routeFetch({
+		get: () => jsonResponse({ confirm: {} }),
+		put: async () => {
+			await putGate;
+			return jsonResponse({});
+		}
+	});
+
+	prefs.setConfirmPref('playlist_drop_mode', 'move');
+	await prefs.hydrateConfirmPrefsFromDisk();
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'move', 'an unacknowledged choice must survive');
+
+	releasePut();
+	await settle();
+	await prefs.hydrateConfirmPrefsFromDisk();
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined, 'once saved, disk is authoritative again');
+});
+
+test('a failed confirm PUT keeps the choice through hydration and the next write resends it', async () => {
+	prefs.uiPrefs.confirm = {};
+	const originalWarn = console.warn;
+	console.warn = () => {};
+	try {
+		globalThis.fetch = routeFetch({
+			get: () => jsonResponse({ confirm: {} }),
+			put: async () => {
+				throw new TypeError('Failed to fetch');
+			}
+		});
+		prefs.setConfirmPref('playlist_drop_mode', 'add');
+		await settle();
+		await prefs.hydrateConfirmPrefsFromDisk();
+		assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'add');
+
+		const bodies = [];
+		globalThis.fetch = routeFetch({
+			get: () => jsonResponse({ confirm: { playlist_drop_mode: 'add', delete_playlist: false } }),
+			put: async (request) => {
+				bodies.push(await request.clone().json());
+				return jsonResponse({});
+			}
+		});
+		prefs.setConfirmPref('delete_playlist', false);
+		await settle();
+		assert.deepEqual(bodies, [{ confirm: { playlist_drop_mode: 'add', delete_playlist: false } }]);
+	} finally {
+		console.warn = originalWarn;
+	}
+});
+
+test('unknown confirm keys behave as before: kept locally, applied from disk', async () => {
+	prefs.uiPrefs.confirm = { legacy_local_only: true };
+	globalThis.fetch = routeFetch({
+		get: () => jsonResponse({ confirm: { future_disk_key: false } }),
+		put: () => jsonResponse({})
+	});
+
+	await prefs.hydrateConfirmPrefsFromDisk();
+
+	assert.equal(prefs.uiPrefs.confirm.legacy_local_only, true);
+	assert.equal(prefs.uiPrefs.confirm.future_disk_key, false);
+});

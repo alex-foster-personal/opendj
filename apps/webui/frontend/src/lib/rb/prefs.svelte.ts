@@ -833,15 +833,16 @@ export function clearConfirmPref<K extends keyof RbUiPrefs['confirm']>(key: K): 
 	return _verified.clearConfirmPref(key);
 }
 
-/** Remember a confirm choice. Resetting to "ask" is `clearConfirmPref`, which
- * is verified; there is no `undefined` path here that could swallow its error. */
+/** Remember a confirm choice (resetting to "ask" is `clearConfirmPref`). The
+ * verified write keeps the key unsaved until disk acknowledges it, so a failed
+ * PUT is resent by the next confirm write and hydration cannot drop it. */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
 	value: Exclude<RbUiPrefs['confirm'][K], undefined>
 ): void {
-	uiPrefs.confirm[key] = value;
-	_persist();
-	void _syncDiskPrefs({ confirm: { [key]: value } });
+	_verified.setConfirmPref(key, value).catch((err: unknown) => {
+		console.warn(`[ui-prefs] confirm.${String(key)} not saved yet; the next write resends it`, err);
+	});
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
@@ -850,5 +851,6 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	persist: _persist,
 	applyThemeDom: _applyThemeDom,
 	storageKey: STORAGE_KEY,
-	defaults: DEFAULTS
+	defaults: DEFAULTS,
+	isConfirmUnsaved: _verified.isConfirmUnsaved
 });

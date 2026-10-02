@@ -99,14 +99,29 @@ export type DiskConfirmPatch = {
   dblclick_load_play?: boolean | null;
 };
 
+const KNOWN_CONFIRM_KEYS = [
+  "delete_playlist",
+  "playlist_drop_mode",
+  "dblclick_load_play",
+] as const;
+
+/** A successful read is authoritative for the known confirm keys: one absent
+ * from the disk map is "ask" and is removed locally, so a reset made in another
+ * browser profile reaches this one (PR #4014, Sol). A key whose local write is
+ * not yet acknowledged on disk is kept, and the next write resends it. */
 function _hydrateConfirmFromDisk(
   uiPrefs: PrefsHydrateTarget,
   diskConfirm: DiskConfirmPatch,
+  isUnsaved: (key: string) => boolean,
 ): void {
   const next: LiveConfirmPrefs & Record<string, unknown> = {
     ...uiPrefs.confirm,
   };
+  for (const key of KNOWN_CONFIRM_KEYS) {
+    if (!(key in diskConfirm) && !isUnsaved(key)) delete next[key];
+  }
   for (const [key, value] of Object.entries(diskConfirm)) {
+    if (isUnsaved(key)) continue;
     // null deletes; drop mode takes 'add'|'move'; every other key takes a boolean.
     if (value === null) delete next[key];
     else if (
@@ -298,18 +313,21 @@ export interface PrefsHydrateDeps {
   applyThemeDom: (theme: UiTheme) => void;
   storageKey: string;
   defaults: Pick<PrefsHydrateTarget, "auto_sync" | "level_calibration">;
+  /** Confirm keys with a local write disk has not acknowledged yet. */
+  isConfirmUnsaved?: (key: string) => boolean;
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
 export function makePrefsHydrator(deps: PrefsHydrateDeps): () => Promise<void> {
   const { uiPrefs, persist, applyThemeDom, storageKey, defaults } = deps;
+  const isConfirmUnsaved = deps.isConfirmUnsaved ?? (() => false);
   return async function hydrateConfirmPrefsFromDisk(): Promise<void> {
     try {
       const body = (await unwrap(
         api.GET("/api/v1/ui-prefs"),
       )) as DiskPrefsPatch;
       if (body.confirm !== undefined && typeof body.confirm === "object") {
-        _hydrateConfirmFromDisk(uiPrefs, body.confirm);
+        _hydrateConfirmFromDisk(uiPrefs, body.confirm, isConfirmUnsaved);
       }
       if (body.theme === "dark" || body.theme === "light") {
         uiPrefs.theme = body.theme;

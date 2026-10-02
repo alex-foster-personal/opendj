@@ -30,6 +30,23 @@ export function makeVerifiedPrefWriters(deps: {
 	put: (patch: DiskPrefsPatch) => Promise<void>;
 }) {
 	const { uiPrefs, persist, sync, put } = deps;
+	const confirm = () => uiPrefs.confirm as Record<string, unknown>;
+	// Confirm keys set locally whose value disk has not acknowledged yet (in
+	// flight or failed). Hydration keeps them, and every confirm write resends
+	// them, so a failed write is retried rather than lost or overwritten.
+	const unsavedConfirm = new Set<string>();
+
+	function unsavedConfirmPatch(): Record<string, unknown> {
+		const patch: Record<string, unknown> = {};
+		for (const key of unsavedConfirm) if (key in confirm()) patch[key] = confirm()[key];
+		return patch;
+	}
+
+	function markConfirmSaved(patch: Record<string, unknown>): void {
+		for (const [key, value] of Object.entries(patch)) {
+			if (value === null || confirm()[key] === value) unsavedConfirm.delete(key);
+		}
+	}
 
 	/** Queue one verified step: `build` runs when the step executes. */
 	function step(build: () => { patch: DiskPrefsPatch; commit: () => void }): Promise<void> {
@@ -68,14 +85,39 @@ export function makeVerifiedPrefWriters(deps: {
 		},
 
 		/** Reset a remembered confirm choice to "ask": the disk key is deleted
-		 * first, and the live choice is dropped only after that lands. */
+		 * first (resending any unsaved choices with it), and the live choice is
+		 * dropped only after that lands. */
 		clearConfirmPref(key: string): Promise<void> {
-			return step(() => ({
-				patch: { confirm: { [key]: null } } as DiskPrefsPatch,
-				commit: () => {
-					delete (uiPrefs.confirm as Record<string, unknown>)[key];
-				}
-			}));
+			return step(() => {
+				const patch = { ...unsavedConfirmPatch(), [key]: null };
+				return {
+					patch: { confirm: patch } as DiskPrefsPatch,
+					commit: () => {
+						delete confirm()[key];
+						markConfirmSaved(patch);
+					}
+				};
+			});
+		},
+
+		/** Remember a confirm choice: live at once (the prompt that set it has
+		 * already been answered), and unsaved until the verified PUT lands. A
+		 * failed PUT rejects and leaves the key unsaved for the next write. */
+		setConfirmPref(key: string, value: unknown): Promise<void> {
+			confirm()[key] = value;
+			persist();
+			unsavedConfirm.add(key);
+			return sync({}, async () => {
+				const patch = unsavedConfirmPatch();
+				if (Object.keys(patch).length === 0) return;
+				await put({ confirm: patch } as DiskPrefsPatch);
+				markConfirmSaved(patch);
+			});
+		},
+
+		/** True while a local confirm choice is not yet acknowledged on disk. */
+		isConfirmUnsaved(key: string): boolean {
+			return unsavedConfirm.has(key);
 		}
 	};
 }
