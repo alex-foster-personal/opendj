@@ -51,8 +51,7 @@ def test_produce_strips_phantom_tail_and_keeps_source(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """[if] weak thank-you after silence and a word past the duration on produce [then] both
-    omitted from the artifact [else stop]."""
+    """[if] produce sees a weak thank-you after silence and a past-duration word [then] both are omitted, [else stop]."""
     use_local_mode(monkeypatch)
     seed_track(conn, "sid-tail")
     conn.execute(
@@ -85,8 +84,7 @@ def test_produce_keeps_real_final_words_inside_duration(
     data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """[if] real lyrics end inside the duration, incl. a repeated chorus and a word in the
-    final quarter-second [then] every word is in the artifact [else stop]."""
+    """[if] real lyrics end inside the duration, with a repeated chorus [then] every word is kept, [else stop]."""
     use_local_mode(monkeypatch)
     seed_track(conn, "sid-keep")
     conn.execute(

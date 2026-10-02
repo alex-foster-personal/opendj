@@ -1,7 +1,6 @@
 """Tail sanitizer for phantom karaoke words (LYR-08, issue #3995).
 
-[if] produce writes track words [then] the Whisper silence hallucination and
-past-duration words drop, real lyrics inside the duration stay, [else stop].
+[if] produce writes track words [then] the silence hallucination and past-duration words drop while real lyrics stay, [else stop].
 """
 from __future__ import annotations
 
