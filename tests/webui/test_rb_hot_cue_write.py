@@ -17,6 +17,8 @@ Regression one-liners:
   - if a hot-cue write uses a deferred SQLite transaction then concurrent saves can duplicate a slot
   - if the PUT/DELETE routes don't round-trip through fetch_cues then broken
   - if the route ever accepts a slot letter beyond H (Kind 9-11) then broken
+  - if a hot cue on a tagged MP3 is stored without its lead-in put back then broken (NAE-22)
+  - if the slot API and fetch_cues disagree on a tagged MP3's cue then broken (NAE-22)
 """
 from __future__ import annotations
 
@@ -513,3 +515,39 @@ def test_initial_empty_revision_cannot_write_after_save_clear_cycle(client: Test
     )
     assert stale.status_code == 409
     assert next(row for row in client.get(f"/api/v1/tracks/{STABLE_ID}/hot-cues").json() if row["slot"] == "H")["cue"] is None
+
+
+# ----- MP3 lead-in: the slot API is on our timeline too (NAE-22) -------------
+
+TAGGED_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-128.mp3"
+
+
+@pytest.mark.requirement("NAE-22")
+def test_hot_cue_slots_round_trip_on_our_timeline_for_a_tagged_mp3(
+    master_db: Path,
+) -> None:
+    """Saved where the deck plays it, stored where rekordbox plays it, read back unmoved."""
+    conn = sqlite3.connect(str(master_db))
+    try:
+        conn.execute(
+            "UPDATE djmdContent SET FolderPath = ? WHERE ID = ?", (str(TAGGED_MP3), VENDOR_ID)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    # 1105 samples at 22.05 kHz, put back on the way into rekordbox.
+    assert _save("A", 1_000)["cue"]["in_ms"] == 1_000
+    conn = sqlite3.connect(str(master_db))
+    try:
+        stored = conn.execute(
+            "SELECT InMsec FROM djmdCue WHERE ContentID = ? AND Kind = 1", (VENDOR_ID,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert stored == 1_050
+    slot_a = next(r for r in rb_vendor.fetch_hot_cue_slots(VENDOR_ID) if r["slot"] == "A")
+    assert slot_a["cue"]["in_ms"] == 1_000
+    assert [c["in_ms"] for c in rb_vendor.fetch_cues(VENDOR_ID)] == [1_000]
+    _save("A", slot_a["cue"]["in_ms"])
+    again = next(r for r in rb_vendor.fetch_hot_cue_slots(VENDOR_ID) if r["slot"] == "A")
+    assert again["cue"]["in_ms"] == 1_000, "re-saving a cue where it reads must not move it"

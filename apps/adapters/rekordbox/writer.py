@@ -57,6 +57,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from apps.shared.mp3_lead_in import rekordbox_lead_in_s, to_our_ms
 from apps.shared.rb_frames import msec_to_frame
 
 from .cues import (
@@ -96,6 +97,30 @@ def _open_rw(path: Path, label: str) -> sqlite3.Connection:
     return sqlite3.connect(str(path))
 
 
+def _lead_in_s(conn: sqlite3.Connection, vendor_id: str) -> float:
+    """The track's MP3 lead-in in seconds: rekordbox time minus ours.
+
+    Same rule as ``rb_vendor_pkg.db.fetch_cues``, so a cue saved here reads
+    back at the position it was saved at: a track with no local file reads 0.
+    """
+    row = conn.execute(
+        "SELECT FolderPath FROM djmdContent WHERE ID = ?", (vendor_id,)
+    ).fetchone()
+    return rekordbox_lead_in_s(row[0] if row else None) or 0.0
+
+
+def _on_our_timeline(view: dict[str, Any], lead_in_s: float) -> dict[str, Any]:
+    """A slot view with rekordbox's stored positions moved onto our timeline."""
+    if not lead_in_s:
+        return view
+    out_ms = view["out_ms"]
+    return {
+        **view,
+        "in_ms": to_our_ms(view["in_ms"], lead_in_s) if view["in_ms"] is not None else None,
+        "out_ms": to_our_ms(out_ms, lead_in_s) if out_ms is not None else None,
+    }
+
+
 def fetch_hot_cue_slots(
     vendor_id: str,
     *,
@@ -113,15 +138,19 @@ def fetch_hot_cue_slots(
             kind: _live_slot_snapshot(master, vendor_id, kind) for kind in _KINDS
         }
         generations = _read_slot_generations(master, vendor_id, _KINDS)
+        lead_in_s = _lead_in_s(master, vendor_id)
     finally:
         master.close()
     return [
         {
             "slot": slot,
-            "cue": _cue_view(
-                slot,
-                snapshots[kind],
-                _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
+            "cue": _on_our_timeline(
+                _cue_view(
+                    slot,
+                    snapshots[kind],
+                    _cue_revision(vendor_id, kind, generations[kind], snapshots[kind]),
+                ),
+                lead_in_s,
             )
             if snapshots[kind]
             else None,
@@ -183,12 +212,18 @@ def save_hot_cue(
     color_table_index: int | None = None,
     open_rw: ConnectMaster,
 ) -> dict[str, Any]:
-    """CAS-save a hot cue and return its atomic preimage for one-step undo."""
+    """CAS-save a hot cue and return its atomic preimage for one-step undo.
+
+    ``in_ms`` is on our timeline; it is stored in rekordbox's, with the
+    track's MP3 lead-in put back (``apps.shared.mp3_lead_in``).
+    """
     kind = _slot_to_kind(slot)
     now = _rb_timestamp()
     master = open_rw()
     try:
         master.execute("BEGIN IMMEDIATE")
+        lead_in_s = _lead_in_s(master, vendor_id)
+        in_ms = round(in_ms + lead_in_s * 1000)
         _validate_cue_position(master, vendor_id, in_ms)
         preimage = _live_slot_snapshot(master, vendor_id, kind)
         generation = _slot_generation(master, vendor_id, kind)
@@ -255,7 +290,7 @@ def save_hot_cue(
     finally:
         master.close()
     return {
-        "cue": _cue_view(slot, current, revision),
+        "cue": _on_our_timeline(_cue_view(slot, current, revision), lead_in_s),
         "reversal": {"reversal_id": reversal_id},
     }
 
@@ -352,6 +387,7 @@ def restore_hot_cue(
             (_rb_timestamp(), reversal_id, vendor_id, kind),
         )
         restored = _live_slot_snapshot(master, vendor_id, kind)
+        lead_in_s = _lead_in_s(master, vendor_id)
         generation = _bump_slot_generation(master, vendor_id, kind)
         revision = _cue_revision(vendor_id, kind, generation, restored)
         master.commit()
@@ -361,7 +397,9 @@ def restore_hot_cue(
     finally:
         master.close()
     return {
-        "cue": _cue_view(slot, restored, revision) if restored else None,
+        "cue": _on_our_timeline(_cue_view(slot, restored, revision), lead_in_s)
+        if restored
+        else None,
         "revision": revision,
     }
 
