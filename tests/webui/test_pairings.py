@@ -282,3 +282,18 @@ def test_create_pairing_rejects_a_self_pair_with_422(client):
         p["to_stable_id"] != p["from_stable_id"]
         for p in client.get("/api/v1/pairings").json()
     )
+
+
+@pytest.mark.requirement("PAIR-04")
+@pytest.mark.parametrize("ends", [("", "track-003"), ("track-003", "")])
+def test_create_pairing_rejects_an_empty_endpoint_with_422(client, ends):
+    """If a pairing names an empty track id then the API answers 422, else stop."""
+    r = client.post(
+        "/api/v1/pairings",
+        json={"from_stable_id": ends[0], "to_stable_id": ends[1]},
+    )
+    assert r.status_code == 422
+    assert not [
+        p for p in client.get("/api/v1/pairings").json()
+        if "" in (p["from_stable_id"], p["to_stable_id"])
+    ]

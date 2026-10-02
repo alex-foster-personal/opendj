@@ -31,9 +31,12 @@ def rerank_with_pairings(
     current_stable_id: str,
     stage1: list[ScoredCandidate],
 ) -> list[ScoredCandidate]:
-    """Bump candidates present in pairings as ``from=current_stable_id``.
+    """Bump candidates the pairings table says follow ``current_stable_id``.
 
-    Respects direction ``into`` + ``either``. When the ``pairings``
+    A row pairs ``current -> candidate`` when it is ``(current, candidate)``
+    with direction ``into`` or ``either``, or ``(candidate, current)`` with
+    ``out_of`` ("paired when candidate's partner is current") or ``either``
+    (undirected, stored either way round). When the ``pairings``
     table does not exist, the stage is a no-op and logs a one-time
     INFO message.
     """
@@ -49,8 +52,11 @@ def rerank_with_pairings(
 
     rows = conn.execute(
         "SELECT to_stable_id, source FROM pairings "
-        "WHERE from_stable_id=? AND direction IN ('into','either')",
-        (current_stable_id,),
+        "WHERE from_stable_id=? AND direction IN ('into','either') "
+        "UNION ALL "
+        "SELECT from_stable_id, source FROM pairings "
+        "WHERE to_stable_id=? AND direction IN ('out_of','either')",
+        (current_stable_id, current_stable_id),
     ).fetchall()
     pair_index: dict[str, str] = {r[0]: r[1] for r in rows}
     if not pair_index:
