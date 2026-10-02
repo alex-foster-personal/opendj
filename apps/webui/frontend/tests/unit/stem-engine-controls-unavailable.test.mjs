@@ -8,6 +8,7 @@
 // [if] applyStemControl is called for a deck whose stems.status is
 //   'loading' or 'error' [then] it must still throw - those are the real,
 //   loud failure paths and must not be silenced by this fix.
+// [if] requireLoaded throws "no track loaded" [then] applyStemControl no-ops.
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -81,6 +82,42 @@ test('applyStemControl still throws for a loading deck', () => {
 	assert.throws(
 		() => controlsModule.applyStemControl(3, 'vocal', 'muted', true, depsFor(st)),
 		/deck 3 stems are loading/
+	);
+});
+
+function unloadedDeps(deck) {
+	return {
+		requireLoaded: (_deck, op) => {
+			throw new Error(`${op}: no track loaded on deck ${deck}`);
+		},
+		getChannel: () => {
+			throw new Error('getChannel must not run for an unloaded deck');
+		}
+	};
+}
+
+test('applyStemControl no-ops when no track is loaded instead of throwing', () => {
+	assert.doesNotThrow(() =>
+		controlsModule.applyStemControl(1, 'vocal', 'muted', true, unloadedDeps(1))
+	);
+	assert.doesNotThrow(() =>
+		controlsModule.applyStemControl(1, 'drums', 'solo', true, unloadedDeps(1))
+	);
+	assert.doesNotThrow(() =>
+		controlsModule.applyStemControl(1, 'instrumental', 'gain', 0.25, unloadedDeps(1))
+	);
+});
+
+test('applyStemControl still throws a mismatched no-track-loaded error', () => {
+	const deps = {
+		requireLoaded: () => {
+			throw new Error('setStemMute: no track loaded on deck 2');
+		},
+		getChannel: () => ({})
+	};
+	assert.throws(
+		() => controlsModule.applyStemControl(1, 'vocal', 'muted', true, deps),
+		/no track loaded on deck 2/
 	);
 });
 

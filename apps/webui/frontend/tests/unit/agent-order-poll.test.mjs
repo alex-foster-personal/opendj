@@ -140,6 +140,20 @@ test('any other non-2xx is raised, never absorbed', async () => {
 	running = false;
 });
 
+test('an unreachable engine does not kill the loop or reject', async () => {
+	const page = registration(true);
+	respond = () => {
+		throw new TypeError('Load failed');
+	};
+	let running = true;
+	const loop = orders.pollAgentOrders(page, () => {}, () => running);
+
+	await settle();
+	running = false;
+	await loop;
+	assert.ok(calls.length > 0, 'the poll keeps asking after a fetch TypeError');
+});
+
 test('uninstalling stops the loop, so it cannot outlive /performance', async () => {
 	const page = registration(true);
 	const uninstall = orders.installAgentOrderPoll(page, () => {});
