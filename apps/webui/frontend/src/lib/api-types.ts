@@ -5174,6 +5174,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sync/stale-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stale Check
+         * @description Which offered live tracks did the fleet drop? Read-only.
+         *
+         *     The spoke asks before it pushes, so it can refuse its own push and name
+         *     every orphan at once instead of meeting the ``/push`` backstop one batch
+         *     at a time. Same rule, same connection state: :mod:`apps.sync_hub.stale_copy`.
+         */
+        post: operations["stale_check_api_v1_sync_stale_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync/status": {
         parameters: {
             query?: never;
@@ -5306,6 +5330,30 @@ export interface paths {
         };
         /** List Tracks */
         get: operations["list_tracks_api_v1_tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tracks/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Deleted Tracks
+         * @description Tombstoned tracks and why, newest removal first.
+         *
+         *     A track the user removed stays removed across every re-import and sync until it
+         *     is restored with ``POST /tracks/{stable_id}:undelete``; this list is how a
+         *     person or an agent finds the id to restore.
+         */
+        get: operations["list_deleted_tracks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8514,6 +8562,31 @@ export interface components {
             vendor: string;
             /** Vendor Pl Id */
             vendor_pl_id: string;
+        };
+        /**
+         * DeletedTrackOut
+         * @description One tombstoned track that has not been restored (LIBM-140).
+         *
+         *     ``reason`` is ``user`` for Remove from library, which no re-import undoes,
+         *     or ``missing`` for a watched-folder file that vanished, which comes back
+         *     by itself when the file does.
+         */
+        DeletedTrackOut: {
+            /** Artists */
+            artists: string[];
+            /** Deleted At */
+            deleted_at: string;
+            /** File Path */
+            file_path: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "user" | "missing";
+            /** Stable Id */
+            stable_id: string;
+            /** Title */
+            title: string | null;
         };
         /** DigestDiffSampleOut */
         DigestDiffSampleOut: {
@@ -12137,6 +12210,11 @@ export interface components {
             machine_id: string;
             /** Machines */
             machines?: components["schemas"]["MachineModel"][];
+            /**
+             * Reseed
+             * @default false
+             */
+            reseed: boolean;
             /** Rows */
             rows: components["schemas"]["RowModel"][];
             /** Schema Version */
@@ -12165,6 +12243,8 @@ export interface components {
             quarantined: number;
             /** Rejected */
             rejected: number;
+            /** Rejected Rows */
+            rejected_rows?: components["schemas"]["RejectedRowModel"][];
             /** Seq */
             seq: number;
         };
@@ -12551,6 +12631,18 @@ export interface components {
             message: string;
             /** Ui Title */
             ui_title: string;
+        };
+        /**
+         * RejectedRowModel
+         * @description One offered row the hub refused, and why (CLOUDSYNC-31).
+         */
+        RejectedRowModel: {
+            /** Pk */
+            pk: string[];
+            /** Reason */
+            reason: string;
+            /** Table */
+            table: string;
         };
         /**
          * RekordboxDetectionOut
@@ -13186,6 +13278,45 @@ export interface components {
             rows: unknown[][];
             /** Truncated */
             truncated: boolean;
+        };
+        /** StaleCandidateModel */
+        StaleCandidateModel: {
+            /** Origin Device Id */
+            origin_device_id: string;
+            /** Stable Id */
+            stable_id: string;
+        };
+        /**
+         * StaleCheckRequest
+         * @description ``POST /stale-check``: which of these live tracks did the fleet drop?
+         */
+        StaleCheckRequest: {
+            /** Candidates */
+            candidates: components["schemas"]["StaleCandidateModel"][];
+            /** Machine Id */
+            machine_id: string;
+            /**
+             * Reseed
+             * @default false
+             */
+            reseed: boolean;
+            /** Schema Version */
+            schema_version: number;
+            /**
+             * Wire Version
+             * @description sync wire version; absent on pre-split builds
+             */
+            wire_version?: number | null;
+        };
+        /** StaleCheckResponse */
+        StaleCheckResponse: {
+            /** Orphans */
+            orphans: string[];
+            /**
+             * Unattributable
+             * @default 0
+             */
+            unattributable: number;
         };
         /** StatusResponse */
         StatusResponse: {
@@ -24316,14 +24447,12 @@ export interface operations {
                     "application/json": components["schemas"]["GateErrorResponse"];
                 };
             };
-            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            /** @description SYNC_STALE_TRACKS: the batch carries live tracks another machine authored that this hub no longer holds (a stale or copied library). Nothing applied. Also SYNC_WIRE_VERSION / SYNC_SCHEMA_VERSION and FOREIGN KEY refusals. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["SyncErrorResponse"];
-                };
+                content?: never;
             };
             /** @description SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION (blocking policy rule on offered sync_policies / playlist_pins rows) */
             422: {
@@ -24396,6 +24525,62 @@ export interface operations {
                 };
             };
             /** @description rows refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stale_check_api_v1_sync_stale_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaleCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaleCheckResponse"];
+                };
+            };
+            /** @description stale-check refused under ENFORCE: the Authorization bearer is missing, wrong, revoked, or not owned on this hub. code: SYNC_CREDENTIAL. Body: {"detail": {"code", "message"}}. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The peers must not exchange rows. code: SYNC_WIRE_VERSION (a different sync wire version), SYNC_SCHEMA_VERSION (a pre-split peer on a different schema), SYNC_APPLY, SYNC_MACHINE_NAME_TAKEN or SYNC_UNKNOWN_MACHINE. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description stale-check refused: ENFORCE is configured but will not activate while any machine is unowned or holds no credential. code: SYNC_ENFORCE_NOT_ACTIVE. Body: {"detail": {"code", "message"}}. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -24703,6 +24888,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deleted_tracks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedTrackOut"][];
                 };
             };
         };

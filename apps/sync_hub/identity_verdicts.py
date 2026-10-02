@@ -97,6 +97,10 @@ class IdentityLoserVerdicts:
         self._decide_component_of(stable_id)
         return self._verdicts[stable_id]
 
+    def is_hub_answered(self, stable_id: str) -> bool:
+        """True when a persisted hub remap names ``stable_id`` a loser (CLOUDSYNC-32)."""
+        return stable_id in self._persisted_remap().combined
+
     def expect(self, count: int) -> None:
         """A caller is about to ask ``count`` more verdicts.
 

@@ -107,6 +107,8 @@ class WriteSummary:
     odj_created: bool = False
     vendor_ids_set: int = 0
     synthetic_tracks_written: int = 0
+    #: Unmatched tracks skipped because the user removed their placeholder.
+    tracks_skipped_deleted: int = 0
 
 
 def backup_state_db(
@@ -198,6 +200,9 @@ class _MembershipBuild:
     pending_rows: list[tuple]
     vendor_ids_set: int
     synthetic_tracks_written: int
+    #: Unmatched tracks whose placeholder the user removed (LIBM-140): left
+    #: removed and kept out of the playlist.
+    skipped_deleted: int = 0
 
 
 def _build_membership(
@@ -223,9 +228,13 @@ def _build_membership(
                 build.vendor_ids_set += 1
         else:
             src = pair.source
-            sid = _upsert_synthetic_track(
+            placeholder_sid = _upsert_synthetic_track(
                 conn, src, machine_id=machine_id, now=now
             )
+            if placeholder_sid is None:
+                build.skipped_deleted += 1
+                continue
+            sid = placeholder_sid
             build.synthetic_tracks_written += 1
             build.membership.append((playlist_id, sid, idx))
             build.pending_rows.append(
@@ -485,4 +494,5 @@ def write_playlist_and_pending(
         odj_created=odj_created,
         vendor_ids_set=build.vendor_ids_set,
         synthetic_tracks_written=build.synthetic_tracks_written,
+        tracks_skipped_deleted=build.skipped_deleted,
     )

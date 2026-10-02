@@ -312,8 +312,26 @@ html[data-theme='light'][data-wave-palette='legacy'] .perf-root {
 	color: var(--rb-master-text);
 	font-weight: 700;
 }
-.perf-root .rb-row-selected {
+.perf-root tbody tr.rb-row-selected {
 	background: var(--rb-select); /* blue full-row highlight */
+	box-shadow: none;
+}
+.perf-root tbody tr.rb-row-selected > td {
+	background: transparent;
+}
+.perf-root tbody tr.rb-row-selected .art-slate {
+	background: transparent;
+}
+.perf-root tbody tr.rb-row-selected .c-art::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	background: color-mix(in srgb, var(--rb-select) 55%, transparent);
+}
+.perf-root tbody tr.rb-row-selected .c-art img {
+	z-index: 0;
 }
 
 /* -------- finished-track eject: overlaid on the waveform once the transport
