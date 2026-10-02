@@ -200,10 +200,16 @@ def compute(path: Path) -> Fingerprint:
     if not path.exists():
         raise FileNotFoundError(str(path))
     binary = _engine_binary()
-    if binary is not None:
-        duration, fp_str = _compute_with_engine(binary, path)
-    else:
+    if binary is None:
         duration, fp_str = _compute_with_fpcalc(path)
+    else:
+        try:
+            duration, fp_str = _compute_with_engine(binary, path)
+        except ChromaprintMissing:
+            # An engine build that cannot fingerprint (older than the
+            # command, or not runnable) must not hide a working fpcalc:
+            # a checkout or CI runner can hold a stale cargo build.
+            duration, fp_str = _compute_with_fpcalc(path)
     st = path.stat()
     bitrate = _safe_bitrate(path)
     return Fingerprint(

@@ -130,6 +130,31 @@ def test_fpcalc_missing_raises(tmp_path, fake_backend_missing) -> None:
         compute(src)
 
 
+@pytest.mark.requirement("META-09")
+def test_an_engine_build_without_fingerprint_falls_back_to_fpcalc(
+    tmp_path: Path, fake_backend, monkeypatch
+) -> None:
+    """[if] the engine build predates the fingerprint command [then] fpcalc still answers, [else stop]."""
+    old = tmp_path / "odj-audio"
+    old.write_text("#!/bin/sh\necho 'unknown command fingerprint' >&2\nexit 2\n")
+    old.chmod(0o755)
+    monkeypatch.setattr(fp_mod, "_engine_binary", lambda: old)
+    src = FIXTURE_ROOT / "src-320.mp3"
+    assert compute(src).fp_str == fake_fingerprint_for(src)
+    # Control: with no fpcalc either, the failure still says no backend.
+    monkeypatch.setattr(fp_mod, "_require_acoustid", _no_acoustid)
+    with pytest.raises(ChromaprintMissing):
+        compute(src)
+
+
+def fake_fingerprint_for(path: Path) -> str:
+    return _FakeAcoustid(backend_ok=True).fingerprint_file(str(path))[1].decode("ascii")
+
+
+def _no_acoustid():
+    raise ChromaprintMissing("no fpcalc")
+
+
 # ------------------------------------------------------------------ compare
 
 

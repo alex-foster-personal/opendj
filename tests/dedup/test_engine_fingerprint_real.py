@@ -183,3 +183,44 @@ def test_library_scan_groups_the_library_duplicates(
     # A second scan reuses every fingerprint.
     again = library_scan.run_library_scan(state_db=state, db_path=db, workers=2)
     assert (again.computed, again.cache_hits, again.clusters) == (0, 4, 1)
+
+
+def test_a_moved_track_is_confirmed_by_its_recorded_audio(
+    engine: Path, tracks: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a scanned track's file moves [then] its same-named new home matches and an impostor is vetoed, [else stop]."""
+    from apps.reconcile import locate
+    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
+    from apps.shared import audio_files
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    original = lib / "song.wav"
+    shutil.copy(tracks["a"], original)
+    monkeypatch.setattr(platform_paths, "MUSIC_ROOTS", [tmp_path])
+    monkeypatch.setattr(library_scan.paths, "DEDUP_CLUSTERS_CSV", tmp_path / "clusters.csv")
+    monkeypatch.setattr(library_scan.paths, "DEDUP_MANUAL_REVIEW_CSV", tmp_path / "manual.csv")
+    db = tmp_path / "dedup.sqlite"
+    library_scan.run_library_scan(
+        state_db=_state_db(tmp_path / "state.db", [("sid-song", original, None)]), db_path=db, workers=1
+    )
+
+    # The file moves; a different song with the same name sits elsewhere.
+    moved = tmp_path / "moved" / "song.wav"
+    moved.parent.mkdir()
+    original.rename(moved)
+    impostor = tmp_path / "other" / "song.wav"
+    impostor.parent.mkdir()
+    shutil.copy(tracks["b"], impostor)
+
+    ev = FingerprintEvidence.open(db)
+    assert ev is not None
+    row = {"original_path": str(original), "basename": "song.wav", "stable_id": "sid-song",
+           "title": "", "artist": "", "duration_s": "", "file_size": ""}
+    idx = locate.FsIndex.build([audio_files.AudioFile(p, 1, 0.0, ".wav") for p in (moved, impostor)])
+    cands = {c.path: c for c in locate.find_candidates(row, idx, {moved: None, impostor: None}, fingerprints=ev)}
+
+    assert "fingerprint_match" in cands[moved].signals
+    assert "fingerprint_mismatch" in cands[impostor].signals
+    assert ev.unmeasured == 0
+    assert next(iter(cands)) == moved, "the matching file ranks first"
