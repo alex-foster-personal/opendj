@@ -287,7 +287,9 @@ def test_unconfigured_machine_with_local_file_plays_without_policy_row(
 def test_unconfigured_machine_without_a_local_file_is_local_only(
     conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
 ):
-    """[if] a machine has no sync_policies row and no copy of a track [then] playback resolution answers unavailable "not on this computer" and never presigns, [else stop]."""
+    """[if] a machine has no sync_policies row and no copy of a track [then]
+    playback resolution answers unavailable "not on this computer" and never
+    presigns, [else stop]."""
     _seed_track(conn, "t1", content_hash=_sha(b"body"))
     _seed_machine(conn, "m1")
     source = hydration.resolve_playback_source(
@@ -299,6 +301,35 @@ def test_unconfigured_machine_without_a_local_file_is_local_only(
     # resolve_policy itself still refuses to assume a mode.
     with pytest.raises(hydration.PolicyUnconfigured):
         hydration.resolve_policy(conn, "t1", "m1", asset_kind="audio")
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_plays_bytes_a_past_policy_hydrated(
+    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
+):
+    """[if] a machine with no sync_policies row still holds a hydrated cache
+    entry for a track [then] it plays that entry and never presigns, [else
+    stop]."""
+    digest = _sha(b"body")
+    _seed_track(conn, "t1", content_hash=digest)
+    _seed_machine(conn, "m1")
+    cache_dir = tmp_path / "cache"
+    cached = hydration.cache_path(cache_dir, digest)
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_bytes(b"body")
+    source = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg
+    )
+    assert source.origin == "cache"
+    assert source.path == cached
+    assert source.url is None
+    # Control: without the entry the same machine says the file is not here.
+    cached.unlink()
+    gone = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=cache_dir, cfg=cfg
+    )
+    assert gone.origin == "unavailable"
+    assert gone.reason == hydration.NOT_ON_THIS_MACHINE
 
 
 def test_an_unknown_asset_kind_raises(conn: sqlite3.Connection):

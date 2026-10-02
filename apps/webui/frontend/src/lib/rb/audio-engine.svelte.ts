@@ -3112,10 +3112,10 @@ class RbAudioEngine implements AudioEngine {
 					// Preserve the load failure; dispose() closes the port in finally.
 				}
 			}
-			if (token !== rt.loadToken) throw exc;
-			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			// RbApiError's message already reads `CODE: detail`; the title falls back to this load's own getTrack request.
 			const msg = await failedDeckLoadMessage(exc, track?.title ?? trackRequest, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
+			if (token !== rt.loadToken) throw exc;
+			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			deckLoadErrors[deck] = msg;
 			reportDeckLoadFailure(deck, msg, exc, stages, options);
 			throw exc;

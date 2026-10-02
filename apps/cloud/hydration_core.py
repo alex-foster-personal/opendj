@@ -57,7 +57,7 @@ from typing import Literal
 from .asset_store import DEFAULT_PRESIGN_EXPIRY_SECONDS, presign_url, validate_content_hash
 from .config import CloudConfig
 from .eviction import HydrationError
-from .r2_keys import canonical_digest
+from .r2_keys import R2KeyError, canonical_digest
 
 PolicyMode = Literal["pinned", "cached", "stream", "excluded"]
 PolicySource = Literal["sync_policies", "playlist_pin", "unconfigured"]
@@ -344,6 +344,43 @@ def _content_hash(conn: sqlite3.Connection, stable_id: str) -> str | None:
     return str(row[0]) if row[0] else None
 
 
+def _existing_cache_entry(cache_dir: Path, content_hash: str | None) -> Path | None:
+    """The hydrated cache file for ``content_hash`` if it is on disk, else None.
+
+    Never raises: a missing or malformed hash simply has no cache entry.
+    """
+    if content_hash is None:
+        return None
+    try:
+        cached = cache_path(cache_dir, canonical_digest(content_hash))
+    except R2KeyError:
+        return None
+    return cached if cached.is_file() else None
+
+
+def _unconfigured_source(cache_dir: Path, content_hash: str | None) -> PlaybackSource:
+    """Local-only answer for a machine with no local file and no policy row."""
+    cached = _existing_cache_entry(cache_dir, content_hash)
+    if cached is not None and content_hash is not None:
+        # Bytes a past policy hydrated are still a copy this machine has;
+        # serving them neither presigns nor enqueues anything.
+        touch_cache_entry(cached)
+        return PlaybackSource(
+            origin="cache",
+            mode="cached",
+            policy_source="unconfigured",
+            path=cached,
+            content_hash=canonical_digest(content_hash),
+        )
+    return PlaybackSource(
+        origin="unavailable",
+        mode="excluded",
+        policy_source="unconfigured",
+        content_hash=content_hash,
+        reason=NOT_ON_THIS_MACHINE,
+    )
+
+
 def resolve_playback_source(
     conn: sqlite3.Connection,
     stable_id: str,
@@ -381,13 +418,7 @@ def resolve_playback_source(
             )
         if not isinstance(exc, PolicyUnconfigured):
             raise
-        return PlaybackSource(
-            origin="unavailable",
-            mode="excluded",
-            policy_source="unconfigured",
-            content_hash=content_hash,
-            reason=NOT_ON_THIS_MACHINE,
-        )
+        return _unconfigured_source(cache_dir, content_hash)
 
     content_hash = _content_hash(conn, stable_id)
 

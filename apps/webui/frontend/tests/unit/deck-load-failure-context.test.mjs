@@ -136,6 +136,13 @@ test('the deck banner reads the load path\'s wording, and the load path records 
 			'request for the title, then the banner shows RbApiError: CODE: detail or the stable id again'
 	);
 	assert.ok(body.includes('(trackRequest = getTrack(stable_id))'), 'the title request must be the load\'s own getTrack');
+	const titled = body.indexOf('await failedDeckLoadMessage(');
+	const stale = body.indexOf('if (token !== rt.loadToken) throw exc;', titled);
+	assert.ok(
+		stale !== -1 && stale < body.indexOf('deckLoadErrors[deck] = msg;', titled),
+		'a newer load can start while the title resolves; the token check must follow that await ' +
+			'and precede publishing, or the old failure overwrites the new load\'s deck state'
+	);
 	const ipc = readFileSync(
 		fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
 		'utf8'
