@@ -220,7 +220,7 @@ export class NativeCueSinkClient {
 			case 'device_lost':
 			case 'stats':
 			case 'master_reasserted':
-				this.emit(payload as unknown as NativeCueSinkEvent);
+				this.emit(payload as NativeCueSinkEvent);
 				return;
 			case 'error':
 				// An error with no request id is the shell refusing something it

@@ -150,6 +150,29 @@ test('paste skips tracks the target already holds', () => {
 	assert.deepEqual(mod.partitionPaste(['a'], ['a']), { add: [], already: 1 });
 });
 
+test('pasted rows are the last row of each pasted track, in slot order', () => {
+	const rows = [
+		{ stable_id: 'a', order: 1 },
+		{ stable_id: 'b', order: 2 },
+		{ stable_id: 'c', order: 3 },
+		{ stable_id: 'b', order: 4 }
+	];
+	assert.deepEqual(mod.pastedRowOrders(rows, ['b', 'c']), [3, 4]);
+	assert.deepEqual(mod.pastedRowOrders(rows, ['z']), []);
+});
+
+test('selectRowOrders selects exactly those rows and anchors on the first', () => {
+	const p = pane(ROWS, { id: 'a', order: 1, ids: ['a'], orders: [1] });
+	mod.selectRowOrders(p, [4, 3]);
+	assert.deepEqual(p.selected_orders, [3, 4]);
+	assert.deepEqual(p.selected_ids, ['c', 'a']);
+	assert.equal(p.selected_id, 'c');
+	assert.equal(p.selected_order, 3);
+	// Nothing matching leaves the selection alone.
+	mod.selectRowOrders(p, [99]);
+	assert.deepEqual(p.selected_orders, [3, 4]);
+});
+
 test('toast copy names counts and what happens next', () => {
 	assert.equal(
 		mod.clipboardToastMessage(1, 'copy'),
@@ -182,6 +205,9 @@ test('BrowserPanel installs and removes the edit-shortcut listener', () => {
 	assert.match(src, /window\.removeEventListener\('keydown', onLibraryEditKey\)/);
 	// Paste goes through the set-union transfer endpoint, not a full rewrite.
 	const paste = src.slice(src.indexOf('async function _pasteTracks'));
-	assert.match(paste.slice(0, 3000), /transferPlaylistTracks\(/);
-	assert.doesNotMatch(paste.slice(0, 3000), /replacePlaylistTracks\(/);
+	assert.match(paste.slice(0, 4000), /transferPlaylistTracks\(/);
+	assert.doesNotMatch(paste.slice(0, 4000), /replacePlaylistTracks\(/);
+	// Every pane showing the destination reloads, then the paste is revealed.
+	assert.match(paste.slice(0, 4000), /q\.playlist_id === destId/);
+	assert.match(paste.slice(0, 4000), /_revealPasted\(p, plan\.add\)/);
 });

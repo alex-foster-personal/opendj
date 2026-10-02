@@ -185,12 +185,15 @@
 		getTrackClipboard,
 		libraryEditShortcut,
 		partitionPaste,
+		pastedRowOrders,
 		pasteBlockReason,
 		pasteToastMessage,
 		selectAllRows,
 		selectedIdsInViewOrder,
+		selectRowOrders,
 		setTrackClipboard
 	} from './browser/track-clipboard';
+	import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './browser/virtual-window';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -3365,6 +3368,18 @@
 			// A cut pastes once, like a Finder move; copy can paste again.
 			if (move) setTrackClipboard({ ...clip, mode: 'copy', source_playlist_id: null });
 			pushToast(pasteToastMessage(plan.add.length, plan.already, destTitle, move), 'info');
+			// Reload every pane showing either playlist BEFORE the tree refresh,
+			// so the pasted rows are on screen as soon as the write lands.
+			const sourceId = move ? clip.source_playlist_id : null;
+			await Promise.all(
+				panes
+					.filter((q) => q.playlist_id === destId || (sourceId !== null && q.playlist_id === sourceId))
+					.map(async (q) => {
+						const node = _currentNode(q);
+						if (node !== null) await _loadPane(q, node);
+					})
+			);
+			if (p.playlist_id === destId && plan.add.length > 0) _revealPasted(p, plan.add);
 		} catch (exc) {
 			if (exc instanceof PlaylistConflictError) {
 				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
@@ -3374,7 +3389,26 @@
 			return;
 		}
 		await _refreshPlaylists();
-		if (pane === p && p.playlist_id === destId) await _reloadActivePane();
+	}
+
+	/** Pasted rows land at the END of the playlist, below the fold in a long
+	 * one: select them and scroll the first into view so the paste is seen. */
+	function _revealPasted(p: PaneStore, pastedIds: string[]): void {
+		const orders = pastedRowOrders(p.rows, pastedIds);
+		if (orders.length === 0) return;
+		selectRowOrders(p, orders);
+		if (p !== pane) return;
+		const index = renderedRows.findIndex((r) => r.order === orders[0]);
+		if (index < 0) return;
+		p.rememberScroll(
+			scrollTopForRowIndex({
+				rowIndex: Math.max(0, index - 2),
+				// TrackTable's ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT.
+				rowHeight: uiPrefs.library_density === 'cosy' ? 30 : 22,
+				headerOffsetPx: TRACK_TABLE_THEAD_PX
+			})
+		);
+		navEpoch += 1;
 	}
 
 	let addToPlaylistIds = $state<string[] | null>(null);
