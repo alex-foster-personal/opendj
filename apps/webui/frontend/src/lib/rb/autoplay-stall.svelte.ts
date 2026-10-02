@@ -36,7 +36,7 @@ let _revision = 0;
 function _reportAutoPlayStallFailure(stall: AutoPlayStallDescription): void {
 	// Exhaustion and handoff terminal branches already emit error toasts (and
 	// those rows reach webui-client-errors-*.log). Silent idle has no toast, so
-	// it needs its own grep-stable console line (PLAY-13 / pin b91c8ba9b84b).
+	// it needs its own grep-stable console line (PLAY-14 / pin b91c8ba9b84b).
 	if (stall.reason !== 'no-deck-playing') return;
 	const diagnostic = autoPlayStallDiagnosticMessage(stall.reason, stall.detail);
 	recordPerfEvent('autoplay-stall', diagnostic, null, 'error');

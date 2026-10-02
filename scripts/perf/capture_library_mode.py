@@ -16,28 +16,36 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
+from scripts.perf.capture_build_identity import _git_sha
 from scripts.perf.capture_kpi_ledger import append_entries, format_appended
+from scripts.perf.capture_library_targets import _verify_capture_targets
 
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _PLAYWRIGHT_CONFIG = "tests/e2e/playwright.library-mode-perf.config.ts"
 _EXIT_UNAVAILABLE = 69
-_PROBE_TIMEOUT_S = 10.0
-_DEFAULT_CAPTURE_TIMEOUT_S = 300
+_DEFAULT_CAPTURE_TIMEOUT_S = 600
+# PERFMODE-14's required post-switch settling period before a dwell is read,
+# AND the required length of the dwell itself (performance-register.md's
+# "60 s settle" rows). A shorter --settle-seconds or --dwell-seconds is a
+# legitimate debug run, but its samples must never enter the scorecard as
+# release evidence (Sol P1, PR #4034, discussion_r4128465144; Codex P1, PR
+# #4034: settle conforming alone is not the floor -- a --settle-seconds 60
+# with a --dwell-seconds 10 still scored until both periods were checked).
+_MIN_SCORED_SETTLE_SECONDS = 60
 
-
-def _git_sha() -> str:
-    proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=_REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return proc.stdout.strip()
+# Codex P1/BLOCKING, PR #4034, discussion_r4138153190: the Playwright spec's
+# own floor (library-mode-perf-capture.spec.ts's MIN_SAMPLE_FRACTION) is
+# relative to `expectedTicks`, which collapses to 1 when
+# KPI_CAPTURE_SAMPLE_INTERVAL_S is set to the full dwell length or longer --
+# a single reading would then satisfy that floor and could still flip
+# LIB-MODE/PERFMODE-14 to PASS without establishing steady-state behavior.
+# This is an ABSOLUTE floor, independent of whatever interval produced the
+# samples: at the documented default (60s dwell, 5s interval) a conforming
+# capture yields about 12 ticks per mode, so 6 is a conservative minimum that
+# only a materially widened interval (or heavy sample failures) can miss.
+_MIN_SCORED_SAMPLES = 6
 
 
 def _machine_name() -> str:
@@ -59,38 +67,6 @@ def _require_reference_mac(dry_run: bool) -> None:
 def _build_capture_id() -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"issue-2700-library-mode-{stamp}"
-
-
-def _http_json(method: str, url: str, timeout_s: float = _PROBE_TIMEOUT_S) -> tuple[int, Any]:
-    request = Request(url, headers={"Accept": "application/json"}, method=method)
-    try:
-        with urlopen(request, timeout=timeout_s) as response:
-            raw = response.read().decode("utf-8")
-            payload = json.loads(raw) if raw else None
-            return response.status, payload
-    except HTTPError as exc:
-        raw = exc.read().decode("utf-8")
-        try:
-            payload = json.loads(raw) if raw else None
-        except json.JSONDecodeError:
-            payload = raw
-        return exc.code, payload
-    except URLError as exc:
-        raise ConnectionError(str(exc.reason)) from exc
-    except OSError as exc:
-        raise ConnectionError(f"{type(exc).__name__}: {exc}") from exc
-
-
-def _probe_engine(engine: str, timeout_s: float = _PROBE_TIMEOUT_S) -> str | None:
-    try:
-        status, _payload = _http_json(
-            "GET", f"{engine.rstrip('/')}/api/v1/health", timeout_s=timeout_s
-        )
-    except ConnectionError as exc:
-        return f"engine unreachable: {exc}"
-    if status != 200:
-        return f"engine health returned HTTP {status}"
-    return None
 
 
 def _ledger_rows(
@@ -132,6 +108,7 @@ def _ledger_rows(
             "source": "capture_library_mode",
             "note": note,
             "measured": measured,
+            "capture_id": capture_id,
         },
         {
             "date": today,
@@ -143,6 +120,7 @@ def _ledger_rows(
             "source": "capture_library_mode",
             "note": note,
             "measured": measured,
+            "capture_id": capture_id,
         },
     ]
 
@@ -155,6 +133,7 @@ def _run_playwright_capture(
     capture_id: str,
     timeout_s: int,
     dwell_seconds: int,
+    settle_seconds: int,
 ) -> dict[str, Any]:
     with tempfile.NamedTemporaryFile(
         mode="w",
@@ -173,6 +152,7 @@ def _run_playwright_capture(
     env["KPI_CAPTURE_TIMEOUT_S"] = str(timeout_s)
     env["KPI_CAPTURE_ID"] = capture_id
     env["KPI_CAPTURE_DWELL_SECONDS"] = str(dwell_seconds)
+    env["KPI_CAPTURE_SETTLE_SECONDS"] = str(settle_seconds)
     proc = subprocess.run(
         [
             "pnpm",
@@ -194,8 +174,7 @@ def _run_playwright_capture(
         result = {
             "ok": False,
             "reason": (
-                "playwright capture did not write KPI_CAPTURE_RESULT "
-                f"(exit {proc.returncode})"
+                f"playwright capture did not write KPI_CAPTURE_RESULT (exit {proc.returncode})"
             ),
         }
     finally:
@@ -216,15 +195,78 @@ def _rows_from_capture_result(
     machine: str,
     app_build_sha: str,
     dwell_seconds: int,
+    settle_seconds: int,
+    frontend_mode: str,
 ) -> list[dict[str, Any]]:
     gig = result.get("gig") if isinstance(result.get("gig"), dict) else None
     library = result.get("library") if isinstance(result.get("library"), dict) else None
     if gig is None or library is None:
         raise ValueError(result.get("reason") or "capture result missing gig/library medians")
+    # Sol P1/BLOCKING (PR #4034, discussion_r4148668268): a tick that threw
+    # during the dwell was silently dropped from every sample array once
+    # enough OTHER ticks cleared the minimum-sample floor, so a mode-
+    # correlated failure (more likely in the heavier phase) could thin one
+    # phase's denominator without leaving a trace on an otherwise-clean
+    # `measured: true` row. Refuse to score any row where either phase
+    # reports a failure, rather than silently averaging over survivors.
+    # Sol P1/BLOCKING, PR #4540: a missing count is producer drift, not zero
+    # failures, so it is refused rather than defaulted.
+    for mode, capture in (("gig", gig), ("library", library)):
+        failure_count = capture.get("sample_failure_count")
+        if type(failure_count) is not int or failure_count < 0:
+            raise ValueError(
+                f"{mode} phase sample_failure_count must be a nonnegative int, got "
+                f"{failure_count!r}; refusing to treat an unreported count as zero failures"
+            )
+        if failure_count:
+            raise ValueError(
+                f"{mode} phase had {failure_count} failed sample tick(s) during the dwell; "
+                "refusing to score a row over a partial, possibly mode-biased denominator"
+            )
     sampling_method = result.get("sampling_method")
     method_note = (
-        f"sampling_method={sampling_method}" if isinstance(sampling_method, str) else "method=scripts/perf/capture_library_mode.py"
+        f"sampling_method={sampling_method}"
+        if isinstance(sampling_method, str)
+        else "method=scripts/perf/capture_library_mode.py"
     )
+    sample_note = _sample_count_note(gig, library)
+    # A debug run under the required 60 s settle OR dwell is real data for
+    # iterating, but it must never enter the scorecard as PERFMODE-14 release
+    # evidence (Sol P1, PR #4034, discussion_r4128465144; Codex P1, PR #4034):
+    # mark it unmeasured rather than silently scoring a run that skipped
+    # either documented floor. A conforming settle does not excuse a
+    # shortened dwell, or the reverse.
+    settle_met = settle_seconds >= _MIN_SCORED_SETTLE_SECONDS
+    dwell_met = dwell_seconds >= _MIN_SCORED_SETTLE_SECONDS
+    stable_ids_met = _valid_deck_stable_ids(result) is not None
+    samples_met = _min_samples_met(gig, library)
+    measured = settle_met and dwell_met and stable_ids_met and samples_met
+    note = (
+        f"capture_id={capture_id} app_build_sha={app_build_sha} "
+        f"settle_seconds={settle_seconds} dwell_seconds={dwell_seconds} "
+        f"frontend_mode={frontend_mode} {sample_note} {_rss_ratio_note(gig, library)} "
+        f"{_raw_medians_note(gig, library)} {_deck_stable_ids_note(result)} "
+        f"{method_note}"
+    )
+    if not measured:
+        short_periods = ", ".join(
+            f"{name}={value}"
+            for name, value, met in (
+                ("settle_seconds", settle_seconds, settle_met),
+                ("dwell_seconds", dwell_seconds, dwell_met),
+            )
+            if not met
+        )
+        reasons = [part for part in (short_periods,) if part]
+        if not stable_ids_met:
+            reasons.append(f"deck_stable_ids invalid (need exactly {_DECKS_PER_CAPTURE})")
+        if not samples_met:
+            reasons.append(f"insufficient samples ({_min_sample_counts_note(gig, library)})")
+        note += (
+            f" UNMEASURED: {', '.join(reasons)}; either below the required "
+            f"{_MIN_SCORED_SETTLE_SECONDS}s floor or missing the four-deck denominator "
+            "proof; this run does not score as PERFMODE-14 release evidence"
+        )
     return _ledger_rows(
         capture_id=capture_id,
         machine=machine,
@@ -233,8 +275,146 @@ def _rows_from_capture_result(
         library_footprint_mb=float(library["median_footprint_mb"]),
         gig_cpu_percent=float(gig["median_cpu_percent"]),
         library_cpu_percent=float(library["median_cpu_percent"]),
-        note=f"capture_id={capture_id} app_build_sha={app_build_sha} dwell_seconds={dwell_seconds} {method_note}",
+        measured=measured,
+        note=note,
     )
+
+
+def _rss_ratio_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
+    """The same pids' RSS ratio, for continuity with rows captured before phys_footprint."""
+    if "median_rss_mb" not in gig or "median_rss_mb" not in library:
+        raise ValueError(
+            "capture result has no median_rss_mb; the sampler predates pid-tree attribution"
+        )
+    gig_rss = float(gig["median_rss_mb"])
+    library_rss = float(library["median_rss_mb"])
+    if gig_rss <= 0:
+        raise ValueError(f"gig median_rss_mb is {gig_rss}; an RSS ratio over it is undefined")
+    return f"rss_ratio={library_rss / gig_rss:.4f}"
+
+
+def _raw_medians_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
+    """The raw medians the ratio was computed FROM, not just the ratio itself.
+
+    Codex P1/BLOCKING, PR #4034, discussion_r4131907743: `main()` printed these
+    to stdout and then deleted the temporary KPI_CAPTURE_RESULT file, so a
+    committed ledger row that marks PERFMODE-14 met carried only the derived
+    ratio -- nothing an auditor could recompute or sanity-check the ratio
+    against, or compare a later capture's medians to, once the ephemeral
+    stdout log was gone.
+    """
+    return (
+        f"gig_median_footprint_mb={float(gig['median_footprint_mb']):.1f} "
+        f"library_median_footprint_mb={float(library['median_footprint_mb']):.1f} "
+        f"gig_median_cpu_percent={float(gig['median_cpu_percent']):.2f} "
+        f"library_median_cpu_percent={float(library['median_cpu_percent']):.2f}"
+    )
+
+
+_DECKS_PER_CAPTURE = 4
+
+
+def _valid_deck_stable_ids(result: dict[str, Any]) -> list[str] | None:
+    """The capture's `stable_ids`, or `None` if it is not exactly four
+    non-empty strings.
+
+    Codex P1/BLOCKING, PR #4034, discussion_r4138030257: `result.get(
+    "stable_ids")` used to render straight into the note, including `None`
+    or a malformed value, while the row could still be marked measured and
+    score LIB-MODE as PASS -- a missing or malformed result masked contract
+    drift and left no proof the denominator was Gig with four loaded decks.
+    """
+    ids = result.get("stable_ids")
+    if not isinstance(ids, list) or len(ids) != _DECKS_PER_CAPTURE:
+        return None
+    if not all(isinstance(stable_id, str) and stable_id for stable_id in ids):
+        return None
+    return ids
+
+
+def _deck_stable_ids_note(result: dict[str, Any]) -> str:
+    """Which exact tracks were loaded, so a row can be reproduced or audited.
+
+    Codex P1/BLOCKING, PR #4034, discussion_r4131907743: `deck_stable_ids` was
+    printed to stdout alongside the medians above and never retained anywhere
+    a committed row points to.
+    """
+    ids = _valid_deck_stable_ids(result)
+    if ids is None:
+        raw = result.get("stable_ids")
+        return f"deck_stable_ids=INVALID (raw={raw!r}, need exactly {_DECKS_PER_CAPTURE})"
+    return f"deck_stable_ids={ids!r}"
+
+
+_SAMPLE_FIELDS = ("footprint_samples_mb", "cpu_samples_percent")
+
+
+def _sample_field_counts(gig: dict[str, Any], library: dict[str, Any]) -> dict[str, dict[str, int]]:
+    """Real sample count per (mode, field); zero is a refusal, not a row.
+
+    Codex P1/BLOCKING, PR #4034, discussion at sha=09612c7a6f: the prior
+    version of this function counted only `footprint_samples_mb` and used
+    that single count to represent BOTH fields, so a capture whose
+    `cpu_samples_percent` list was much shorter than its footprint list
+    (fewer CPU ticks landed, more footprint ticks did) would pass a sample
+    floor that never actually looked at the CPU count. Every (mode, field)
+    pair is counted independently.
+    """
+    counts: dict[str, dict[str, int]] = {}
+    for mode, capture in (("gig", gig), ("library", library)):
+        counts[mode] = {}
+        for field in _SAMPLE_FIELDS:
+            samples = capture.get(field)
+            if not isinstance(samples, list) or len(samples) == 0:
+                raise ValueError(
+                    f"{mode} {field} holds no samples; a median over none is not a capture"
+                )
+            counts[mode][field] = len(samples)
+    return counts
+
+
+def _sample_count_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
+    """Name how many real samples each (mode, field) median came from.
+
+    Sol P1/BLOCKING, PR #4553, discussion at capture_library_mode.py:381: this
+    used to report ONLY `footprint_samples_mb`'s count under both the
+    `samples_gig`/`samples_library` keys, including on the
+    `library_mode_cpu_ratio` row -- a result with 11 footprint samples and 6
+    CPU samples passed every scoring gate while the note recorded the CPU
+    median as resting on 11 samples too. Every (mode, field) count is named
+    independently; `_sample_field_counts` already refuses a field with zero
+    samples, so a count printed here is always real.
+    """
+    counts = _sample_field_counts(gig, library)
+    return (
+        f"samples_gig_footprint={counts['gig']['footprint_samples_mb']} "
+        f"samples_gig_cpu={counts['gig']['cpu_samples_percent']} "
+        f"samples_library_footprint={counts['library']['footprint_samples_mb']} "
+        f"samples_library_cpu={counts['library']['cpu_samples_percent']}"
+    )
+
+
+def _min_samples_met(gig: dict[str, Any], library: dict[str, Any]) -> bool:
+    """Every (mode, field) count must clear `_MIN_SCORED_SAMPLES`, not merely
+    be non-empty, and not merely the footprint field (see
+    `_sample_field_counts`)."""
+    counts = _sample_field_counts(gig, library)
+    return all(
+        counts[mode][field] >= _MIN_SCORED_SAMPLES
+        for mode in ("gig", "library")
+        for field in _SAMPLE_FIELDS
+    )
+
+
+def _min_sample_counts_note(gig: dict[str, Any], library: dict[str, Any]) -> str:
+    """The exact counts behind an `insufficient samples` UNMEASURED reason."""
+    counts = _sample_field_counts(gig, library)
+    parts = ", ".join(
+        f"{mode}.{field}={counts[mode][field]}"
+        for mode in ("gig", "library")
+        for field in _SAMPLE_FIELDS
+    )
+    return f"{parts} (need >={_MIN_SCORED_SAMPLES} each)"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,6 +425,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-url", help="Frontend base URL")
     parser.add_argument("--data-dir", required=True, help="Real library data directory")
     parser.add_argument("--dwell-seconds", type=int, default=60)
+    parser.add_argument(
+        "--settle-seconds",
+        type=int,
+        default=60,
+        help="Seconds to wait in EACH mode before its dwell (Library is read at 60 s)",
+    )
     parser.add_argument("--timeout-s", type=int, default=_DEFAULT_CAPTURE_TIMEOUT_S)
     parser.add_argument(
         "--ledger",
@@ -319,10 +505,14 @@ def main(argv: list[str] | None = None) -> int:
             print(format_appended(row))
         return 0
 
-    probe_reason = _probe_engine(engine)
-    if probe_reason is not None:
-        print(probe_reason, file=sys.stderr)
+    targets_reason, frontend_mode, engine_pid = _verify_capture_targets(
+        engine, frontend, app_build_sha
+    )
+    if targets_reason is not None:
+        print(targets_reason, file=sys.stderr)
         return 1
+    assert frontend_mode is not None  # guaranteed by _verify_capture_targets on success
+    assert engine_pid is not None  # guaranteed by _verify_capture_targets on success
 
     result = _run_playwright_capture(
         engine=engine.rstrip("/"),
@@ -331,9 +521,32 @@ def main(argv: list[str] | None = None) -> int:
         capture_id=capture_id,
         timeout_s=args.timeout_s,
         dwell_seconds=args.dwell_seconds,
+        settle_seconds=args.settle_seconds,
     )
     if result.get("ok") is not True:
         print(result.get("reason") or "library mode capture failed", file=sys.stderr)
+        return 1
+
+    # Codex P1/BLOCKING, PR #4034, discussion_r4138297594 then discussion_r4138422256:
+    # the identity and checkout-cleanliness gates above only prove the
+    # engine/frontend/checkout were correct BEFORE Playwright started. A
+    # capture normally dwells for minutes; if the engine restarts (even from
+    # the SAME clean commit) or the frontend's served files are replaced
+    # mid-capture, the process-tree sampler happily follows the new engine pid
+    # and still returns enough samples, and the resulting rows would be
+    # recorded under `app_build_sha` even though the capture mixed builds or
+    # process lifetimes. Re-run every one of those gates -- including the
+    # engine's own pid, pinned from the pre-capture call above -- right after
+    # Playwright finishes, before any row is built or appended.
+    post_capture_reason, _post_capture_frontend_mode, _post_capture_engine_pid = (
+        _verify_capture_targets(engine, frontend, app_build_sha, expected_engine_pid=engine_pid)
+    )
+    if post_capture_reason is not None:
+        print(
+            "post-capture reverification failed (engine, frontend, or checkout changed "
+            f"during the capture): {post_capture_reason}",
+            file=sys.stderr,
+        )
         return 1
 
     try:
@@ -343,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
             machine=machine,
             app_build_sha=app_build_sha,
             dwell_seconds=args.dwell_seconds,
+            settle_seconds=args.settle_seconds,
+            frontend_mode=frontend_mode,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -351,6 +566,22 @@ def main(argv: list[str] | None = None) -> int:
     append_entries(args.ledger, rows)
     for row in rows:
         print(format_appended(row))
+    for mode in ("gig", "library"):
+        capture = result[mode]
+        print(
+            f"{mode}: median_footprint_mb={capture['median_footprint_mb']:.1f} "
+            f"(chromium {capture['median_chromium_footprint_mb']:.1f}, "
+            f"engine {capture['median_engine_footprint_mb']:.1f}, "
+            f"engine_pids {sorted(set(capture['engine_pid_counts']))}) "
+            f"median_rss_mb={capture['median_rss_mb']:.1f} "
+            f"median_cpu_percent={capture['median_cpu_percent']:.2f} "
+            f"samples={len(capture['footprint_samples_mb'])} "
+            f"footprint_samples_mb={[round(v, 1) for v in capture['footprint_samples_mb']]} "
+            f"cpu_samples_percent={[round(v, 2) for v in capture['cpu_samples_percent']]}"
+        )
+        by_type = capture.get("last_chromium_by_type_mb", {})
+        print(f"{mode}: chromium_by_type_mb={ {k: round(v) for k, v in sorted(by_type.items())} }")
+    print(f"deck_stable_ids={result.get('stable_ids')} frontend_mode={frontend_mode}")
     return 0
 
 

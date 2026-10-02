@@ -8,7 +8,8 @@ etag = ``compute_etag(playlist_id, updated_at)``. Stale ``If-Match`` ->
 :class:`ConflictError` (409).
 
 Membership primitives: ``PUT .../tracks`` full replace; ``POST .../items:add``
-O(1) insert; ``DELETE .../items/{item_id}`` O(1) remove; ``POST .../items:move``
+O(1) insert that reads and returns no existing member (LIBM-132);
+``DELETE .../items/{item_id}`` O(1) remove; ``POST .../items:move``
 O(k) slice reorder (LIBM-22). One store lock + rw connection per process.
 """
 from __future__ import annotations
@@ -32,7 +33,14 @@ from apps.shared.state.writer_playlists import (
 
 from .backend import BackendError, ConflictError, NotFoundError
 from .etag import compute_etag, strip_quotes
-from .playlist_add import MEMBERSHIP_ORDER_BY, AlreadyExistsError
+from .playlist_add import (
+    ADD_ITEMS_OP,
+    MEMBERSHIP_ORDER_BY,
+    AddResult,
+    AlreadyExistsError,
+    redo_add,
+    undo_add,
+)
 from .playlist_add import add_memberships as _add_memberships
 from .playlist_dupes import first_repeated_stable_id
 from .playlist_history import (
@@ -135,6 +143,23 @@ class PlaylistStore:
 
     # --- internal helpers -------------------------------------------------
     def _load(self, playlist_id: str) -> PlaylistRow:
+        row = self._load_header(playlist_id)
+        row.items = [
+            r[0] for r in self._conn.execute(
+                "SELECT stable_id FROM playlist_memberships "
+                f"WHERE playlist_id = ? AND deleted_at IS NULL "
+                f"ORDER BY {MEMBERSHIP_ORDER_BY}",
+                (playlist_id,),
+            )
+        ]
+        return row
+
+    def _load_header(self, playlist_id: str) -> PlaylistRow:
+        """The live playlist row with ``items`` still EMPTY, or NotFoundError.
+
+        Split from :meth:`_load` so a write that must not read every member
+        (the ``:add`` path, #3963) can read the header alone.
+        """
         row = self._conn.execute(
             "SELECT playlist_id, name, vendor, vendor_pl_id, "
             "       created_at, updated_at, forbid_duplicates "
@@ -143,21 +168,19 @@ class PlaylistStore:
         ).fetchone()
         if row is None:
             raise NotFoundError(f"playlist not found: {playlist_id}")
-        items = [
-            r[0] for r in self._conn.execute(
-                "SELECT stable_id FROM playlist_memberships "
-                f"WHERE playlist_id = ? AND deleted_at IS NULL "
-                f"ORDER BY {MEMBERSHIP_ORDER_BY}",
-                (playlist_id,),
-            )
-        ]
         return PlaylistRow(
             playlist_id=row["playlist_id"], name=row["name"],
             vendor=row["vendor"], vendor_pl_id=row["vendor_pl_id"],
-            items=items, created_at=row["created_at"],
+            items=[], created_at=row["created_at"],
             updated_at=row["updated_at"],
             forbid_duplicates=bool(row["forbid_duplicates"]),
         )
+
+    def _try_load_header(self, playlist_id: str) -> PlaylistRow | None:
+        try:
+            return self._load_header(playlist_id)
+        except NotFoundError:
+            return None
 
     def _check_etag(self, row: PlaylistRow, expected_etag: str) -> None:
         if strip_quotes(row.etag) != strip_quotes(expected_etag):
@@ -202,6 +225,7 @@ class PlaylistStore:
         playlist_id: str,
         before: PlaylistSnapshot | None,
         after: PlaylistSnapshot | None,
+        added: list[dict[str, str]] | None = None,
     ) -> None:
         command = PlaylistEditCommand(
             command_id=uuid.uuid4().hex,
@@ -210,6 +234,7 @@ class PlaylistStore:
             ts=self._writer._now_iso(),
             before=before,
             after=after,
+            added=added,
         )
         self._writer.append_playlist_history("playlist.edit", command.to_dict())
         self._stack = self._stack[: self._cursor]
@@ -217,6 +242,16 @@ class PlaylistStore:
         if len(self._stack) > HISTORY_LIMIT:
             self._stack = self._stack[-HISTORY_LIMIT:]
         self._cursor = len(self._stack)
+
+    def _record_add(self, header: PlaylistRow, added: list[dict[str, str]]) -> None:
+        """History for ``:add``: the inserted rows, never a membership snapshot.
+
+        ``after`` carries the header only (``items`` empty) so the history
+        label can name the playlist; undo/redo read ``added``.
+        """
+        self._record_edit(
+            ADD_ITEMS_OP, header.playlist_id, None, self._snapshot(header), added=added,
+        )
 
     def _conflict(self, live: PlaylistRow | None) -> None:
         raise ConflictError(
@@ -461,8 +496,8 @@ class PlaylistStore:
         *,
         position: int | None = None,
         record_edit: bool = True,
-    ) -> PlaylistRow:
-        """O(1) append/insert via ``:add`` (LIBM-20)."""
+    ) -> AddResult:
+        """O(1) append/insert via ``:add`` (LIBM-20, LIBM-132)."""
         with self._lock:
             return _add_memberships(
                 self, playlist_id, stable_ids,
@@ -599,18 +634,32 @@ class PlaylistStore:
                 ],
             }
 
+    def _undo_snapshot(self, command: PlaylistEditCommand) -> PlaylistRow | None:
+        live = self._try_load(command.playlist_id)
+        if not snapshots_match(
+            None if live is None else self._snapshot(live), command.after,
+        ):
+            self._conflict(live)
+        op, snap = invert(command)
+        return self._apply_inverse(op, snap, live)
+
+    def _redo_snapshot(self, command: PlaylistEditCommand) -> PlaylistRow | None:
+        live = self._try_load(command.playlist_id)
+        if not snapshots_match(
+            None if live is None else self._snapshot(live), command.before,
+        ):
+            self._conflict(live)
+        return self._apply_inverse(self._forward_op(command), command.after, live)
+
     def undo(self) -> tuple[PlaylistEditCommand, PlaylistRow | None]:
         with self._lock:
             if self._cursor <= 0:
                 raise PlaylistHistoryEmptyError("undo")
             command = self._stack[self._cursor - 1]
-            live = self._try_load(command.playlist_id)
-            if not snapshots_match(
-                None if live is None else self._snapshot(live), command.after,
-            ):
-                self._conflict(live)
-            op, snap = invert(command)
-            current = self._apply_inverse(op, snap, live)
+            current = (
+                undo_add(self, command) if command.op == ADD_ITEMS_OP
+                else self._undo_snapshot(command)
+            )
             self._writer.append_playlist_history(
                 "playlist.undo", {"command_id": command.command_id},
             )
@@ -622,13 +671,9 @@ class PlaylistStore:
             if self._cursor >= len(self._stack):
                 raise PlaylistHistoryEmptyError("redo")
             command = self._stack[self._cursor]
-            live = self._try_load(command.playlist_id)
-            if not snapshots_match(
-                None if live is None else self._snapshot(live), command.before,
-            ):
-                self._conflict(live)
-            current = self._apply_inverse(
-                self._forward_op(command), command.after, live,
+            current = (
+                redo_add(self, command) if command.op == ADD_ITEMS_OP
+                else self._redo_snapshot(command)
             )
             self._writer.append_playlist_history(
                 "playlist.redo", {"command_id": command.command_id},

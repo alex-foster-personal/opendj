@@ -115,7 +115,7 @@ def check_ci_health_watchdog(log_path: Path, repo: Path, now: datetime) -> Check
             sources=[str(log_path)],
             remediation=(
                 f"the watchdog runs 4-hourly; {_describe_age(age)} is at least two missed "
-                "runs. Check `launchctl print gui/$(id -u)/com.maintainer.mdt-ci-health`"
+                "runs. Check `launchctl print gui/$(id -u)/com.YOU.mdt-ci-health`"
             ),
         )
     if checkout_days is not None and checkout_days > WATCHDOG_MAX_CHECKOUT_AGE_DAYS:

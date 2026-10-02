@@ -21,9 +21,9 @@ Three things it refuses to be vague about:
   ``files_rejected_unplayable`` and never become track rows.
 
 Safety mirrors the rekordbox adapter exactly: dry-run by default via an
-outer SAVEPOINT that is ROLLBACK-released, and the event bus swapped for a
-silent drop-in while it is, so a rolled-back run publishes no phantom
-events.
+outer write unit (:func:`apps.shared.state.db.write_unit`) that is
+discarded, and the event bus swapped for a silent drop-in while it is, so a
+rolled-back run publishes no phantom events.
 """
 
 from __future__ import annotations
@@ -153,32 +153,24 @@ def ingest_folder(
     assert_no_path_collisions(str(entry.path) for entry in files)
     if limit is not None:
         files = files[:limit]
-    savepoint = "setup_ingest_folder"
     original_bus = writer.bus
     if dry_run:
         writer.bus = _DryRunSilentBus()
 
-    conn.execute(f"SAVEPOINT {savepoint}")
     try:
-        _write_tracks(writer, files, report, on_progress)
-        writer.register_adapter(
-            ADAPTER_ID,
-            last_run_at=now_fn().isoformat(),
-            last_ok=True,
-            notes=(
-                f"roots={len(root_list)} files={report.files_seen} "
-                f"dataless={report.files_dataless} "
-                f"unreadable_roots={len(report.unreadable_roots)} "
-                f"dry_run={dry_run}"
-            ),
-        )
-        if dry_run:
-            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-    except Exception:
-        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
+        with state_db.write_unit(conn, "setup_ingest_folder", keep=not dry_run):
+            _write_tracks(writer, files, report, on_progress)
+            writer.register_adapter(
+                ADAPTER_ID,
+                last_run_at=now_fn().isoformat(),
+                last_ok=True,
+                notes=(
+                    f"roots={len(root_list)} files={report.files_seen} "
+                    f"dataless={report.files_dataless} "
+                    f"unreadable_roots={len(report.unreadable_roots)} "
+                    f"dry_run={dry_run}"
+                ),
+            )
     finally:
         writer.bus = original_bus
         report.duration_s = round(time.perf_counter() - start, 3)

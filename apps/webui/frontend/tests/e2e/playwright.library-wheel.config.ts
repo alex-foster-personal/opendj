@@ -15,6 +15,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { guardedWebServerCommand } from './support/guarded-web-server';
 
 const FRONTEND_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -30,6 +31,8 @@ const ENGINE_COMMAND = [
 ].join(' ');
 
 export default defineConfig({
+	// Off: on a pull_request CI run the default git fetch stalls webServer start (#4419).
+	captureGitInfo: { commit: false, diff: false },
 	testDir: '.',
 	testMatch: 'library-wheel.spec.ts',
 	fullyParallel: false,
@@ -39,20 +42,26 @@ export default defineConfig({
 	expect: { timeout: 10_000 },
 	webServer: [
 		{
-			command: ENGINE_COMMAND,
+			command: guardedWebServerCommand('library-wheel-engine', ENGINE_COMMAND),
 			cwd: REPOSITORY_ROOT,
 			url: 'http://127.0.0.1:9428/api/v1/health',
 			reuseExistingServer: false,
 			timeout: 120_000,
+			// The pairing lets the page's own POSTs (the page-view client
+			// event) pass the mutating-origin guard (#2689), which otherwise
+			// 403s any Origin but the daemon's paired frontend; the spec
+			// asserts no failed resources.
 			env: {
 				...process.env,
 				MDT_DATA_DIR: FIXTURE_DATA_DIR,
 				MDT_LIBRARY_MODE: 'local',
+				MUSIC_DJ_FRONTEND_PORT: '5228',
+				MUSIC_DJ_BACKEND_PORT: '9428',
 				WEB_CONCURRENCY: ''
 			}
 		},
 		{
-			command: 'pnpm exec vite --config tests/e2e/vite.library-wheel.config.ts',
+			command: guardedWebServerCommand('library-wheel-vite', 'pnpm exec vite --config tests/e2e/vite.library-wheel.config.ts'),
 			cwd: FRONTEND_ROOT,
 			url: 'http://127.0.0.1:5228/library-wheel',
 			reuseExistingServer: false,

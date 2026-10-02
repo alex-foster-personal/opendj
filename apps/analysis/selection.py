@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from ._value_check import require_allowed_value
 from .canonical import PROJECTION_FIELDS
 from .lanes import LANES, Lane
 from .serving_lanes import SERVING_LANES, register_serving_lane, serving_lanes
@@ -73,23 +74,19 @@ def _now_iso() -> str:
 
 
 def check_lane(lane: str) -> str:
-    if lane not in LANES:
-        raise SelectionError(f"unknown lane {lane!r}; lanes are {LANES}")
-    return lane
+    return require_allowed_value(lane, LANES, "lane", "lanes", SelectionError)
 
 
 def check_source(source: str) -> str:
-    if source not in SOURCES:
-        raise SelectionError(f"unknown source {source!r}; sources are {SOURCES}")
-    return source
+    return require_allowed_value(
+        source, SOURCES, "source", "sources", SelectionError
+    )
 
 
 def check_toggle_state(state: str) -> str:
-    if state not in TOGGLE_STATES:
-        raise SelectionError(
-            f"unknown toggle state {state!r}; states are {TOGGLE_STATES}"
-        )
-    return state
+    return require_allowed_value(
+        state, TOGGLE_STATES, "toggle state", "states", SelectionError
+    )
 
 
 # Kept as the internal spelling used throughout this module.
@@ -613,12 +610,16 @@ def _annotate_available_not_selected(
     fields: dict[str, EffectiveField],
     *,
     has_rb_mapping: bool,
+    projection_available: bool,
 ) -> None:
-    """When rbx is selected but a canonical own record exists, name it (STANDALONE-03)."""
+    """When rbx is selected but a canonical own record exists, name it (STANDALONE-03).
+
+    The caller has already established that ``analysis_canonical`` exists and
+    passes whether ``analysis_projection`` does: both are schema facts of the
+    connection, probed once per call rather than once per track (#3962).
+    """
     from .canonical import canonical_pointer
 
-    if not _table_exists(conn, "analysis_canonical"):
-        return
     for field_name, lane in PROJECTION_FIELDS.items():
         if effective_source_for_track(conn, lane, has_rb_mapping=has_rb_mapping) != "rbx":
             continue
@@ -627,7 +628,7 @@ def _annotate_available_not_selected(
             continue
         own_row = (
             _fetch_projection(conn, [sid], (field_name,))[sid].get(field_name)
-            if _table_exists(conn, "analysis_projection")
+            if projection_available
             else None
         )
         if own_row is None or own_row.status != "ok":
@@ -728,12 +729,15 @@ def effective_fields(
                     found if found is not None else _missing_own_field(field_name)
                 )
 
+    if not _table_exists(conn, "analysis_canonical"):
+        return out
     for sid in ids:
         _annotate_available_not_selected(
             conn,
             sid,
             out[sid],
             has_rb_mapping=bool(rb_mapped.get(sid, False)),
+            projection_available=projection_available,
         )
     return out
 

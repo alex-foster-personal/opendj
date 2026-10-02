@@ -11,10 +11,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_SH = REPO_ROOT / "ops" / "dmg-smoke" / "run.sh"
 INSTALLER = REPO_ROOT / "scripts" / "install_dmg_smoke_launchd.sh"
+RECORD_BUILD_TIME = REPO_ROOT / "ops" / "dmg-smoke" / "record_build_time.sh"
+REAL_BUILD_BUDGET = REPO_ROOT / "ops" / "build-budget.env"
 
 HEAD_SHA = "a" * 40
 OLD_ROW7_SHA = "b" * 40
 ROW1_SHA = "c" * 40
+
+# The default (non-fabricated) elapsed time/rc the headless shim feeds to the
+# real record_build_time.sh on a successful build. 60s is far under the real
+# BUILD_TOTAL_SOFT_S (1320s), so the real script's own verdict logic reads OK.
+DEFAULT_BUILD_SECONDS = 60
+DEFAULT_BUILD_RC = 0
 
 
 def _write(path: Path, content: str, executable: bool = False) -> None:
@@ -26,29 +34,41 @@ def _write(path: Path, content: str, executable: bool = False) -> None:
 
 def _gh_shim(fixture_dir: Path, comment_file: Path) -> str:
     return textwrap.dedent(
-        f"""#!/usr/bin/env bash
+        rf"""#!/usr/bin/env bash
 set -euo pipefail
 comment_file="{comment_file}"
 fixture_dir="{fixture_dir}"
 _apply_jq() {{
   local payload="$1"
   if [[ -n "$jq_filter" ]]; then
-    printf '%s' "$payload" | jq -r "$jq_filter"
+    if [[ "$paginate" == "1" ]]; then
+      # Real gh applies --jq per page (not to a slurped array of pages), so
+      # the fixture's outer page-array is unwrapped one level here before
+      # the caller's filter runs against each page's own array of records.
+      printf '%s' "$payload" | jq -r ".[] as \$__page | (\$__page | ${{jq_filter}})"
+    else
+      printf '%s' "$payload" | jq -r "$jq_filter"
+    fi
   else
     printf '%s' "$payload"
   fi
 }}
 if [[ "$1" == "api" ]]; then
   shift
-  paginate=0 slurp=0 jq_filter=""
+  paginate=0 slurp=0 jq_filter="" template=""
   while (($#)); do
     case "$1" in
       --paginate) paginate=1; shift ;;
       --slurp) slurp=1; shift ;;
       --jq) jq_filter="$2"; shift 2 ;;
+      --template) template="$2"; shift 2 ;;
       *) endpoint="$1"; shift ;;
     esac
   done
+  if [[ "$slurp" == "1" ]] && {{ [[ -n "$jq_filter" ]] || [[ -n "$template" ]]; }}; then
+    echo "gh: the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+    exit 1
+  fi
   if [[ "$endpoint" == *"/commits/main" ]]; then
     _apply_jq "$(cat "$fixture_dir/commits_main.json")"
     exit 0
@@ -104,6 +124,17 @@ set -euo pipefail
 build_root="{build_root}"
 bundle_dir="{bundle_dir}"
 log_dir="{log_dir}"
+record_build_time="{RECORD_BUILD_TIME}"
+real_budget="{REAL_BUILD_BUDGET}"
+# ops/dmg-smoke/run.sh exports this before invoking the real headless script,
+# so this fixture can correlate a fabricated row the same way a real build's
+# row is correlated (review round 4, P1: "correlate the timing row with this
+# build"). Fixtures below stamp any DMG_SMOKE_TIMING_LOG content with it too,
+# so a test asserting "this build's own row" reads the same way a real one
+# would; a line written directly into ops/logs/ship-dmg.log by a test's own
+# setup code (simulating an unrelated PRIOR run) never passes through here,
+# so it is correctly left uncorrelated.
+run_id="${{MDT_DMG_SMOKE_RUN_ID:-none}}"
 prepare_only=0
 while (($#)); do
   case "$1" in
@@ -115,7 +146,28 @@ done
 if [[ "$prepare_only" == "1" ]]; then
   exit 0
 fi
+if [[ -f "$build_root/DMG_SMOKE_HEADLESS_SLEEP_S" ]]; then
+  # Simulates setup work run.sh's own wall-clock sees but the recipe's own
+  # build_total timer never does (checkout, uv sync, the frontend build,
+  # dmg-preflight all run before `just dmg` starts its own clock): sleeping
+  # here, before the fast synthetic build below, makes the full $HEADLESS
+  # wall time genuinely exceed a low test TIMING_BUDGET_S while the
+  # recipe-reported seconds stays fast and in-budget (review round 4, P1:
+  # "preserve the full headless wall time for flagging").
+  sleep "$(cat "$build_root/DMG_SMOKE_HEADLESS_SLEEP_S")"
+fi
 if [[ -f "$build_root/DMG_SMOKE_BUILD_FAIL" ]]; then
+  # The real recipe's EXIT trap (_record_build_time) fires on every exit,
+  # success or failure, and records whatever verdict it reached before
+  # returning the original rc. Mirror that here: a failing build still gets
+  # its timing line (from DMG_SMOKE_TIMING_LOG when the test supplies one)
+  # before this shim's own nonzero exit, so run.sh's failure path can be
+  # tested against a real-shaped already-_FAILED verdict, not only the
+  # no-line-at-all case.
+  mkdir -p "$log_dir"
+  if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
+    sed "s/mode=direct /mode=direct run_id=$run_id /" "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
+  fi
   exit 1
 fi
 mkdir -p "$bundle_dir" "$log_dir"
@@ -128,9 +180,31 @@ else
 fi
 printf 'origin/main 2026-01-01T00:00:00Z\\n%s\\n' "$digest" > "$dmg.complete"
 if [[ -f "$build_root/DMG_SMOKE_TIMING_LOG" ]]; then
-  cat "$build_root/DMG_SMOKE_TIMING_LOG" > "$log_dir/ship-dmg.log"
+  # An explicit raw-line fixture: some tests need full control over the
+  # exact log content (a stale prior run, an unparseable line) to exercise
+  # run.sh's own parsing, independent of what a real build would produce.
+  sed "s/mode=direct /mode=direct run_id=$run_id /" "$build_root/DMG_SMOKE_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 else
-  echo '[TIMING] total=60s rc=0 verdict=OK' > "$log_dir/ship-dmg.log"
+  # No override: run the SAME executable ops/dmg-smoke's real `dmg` recipe
+  # runs (record_build_time.sh) against the REAL build budget directly, so
+  # this fixture exercises the actual production timing writer rather than
+  # a hand-duplicated or regex-derived copy of its format (PR #4481 review
+  # round 2, P1: "factor the writer into an executable production path and
+  # exercise that instead"). {DEFAULT_BUILD_SECONDS}s/rc={DEFAULT_BUILD_RC}
+  # is a synthetic (elapsed, outcome) pair; the write path is real. Budget
+  # path and log root are separate arguments (matching the justfile's own
+  # independent `_budget`/`_root`), so no copy of the budget file is needed.
+  # run_id is passed straight through so run.sh's own correlation matches.
+  "$record_build_time" "$real_budget" "$build_root" {DEFAULT_BUILD_SECONDS} {DEFAULT_BUILD_RC} "$run_id"
+fi
+if [[ -f "$build_root/DMG_SMOKE_EXTRA_TIMING_LOG" ]]; then
+  # Simulates a genuinely OTHER run's row landing AFTER this run's own
+  # (unlike a stale row a test writes directly into the log before this
+  # script even starts): written verbatim, with NO run_id substitution, so
+  # it is the LAST line in the log yet still not correlated to this run.
+  # Proves correlation is by run_id, not by "whichever line is newest"
+  # (review round 4, P1: "correlate the timing row with this build").
+  cat "$build_root/DMG_SMOKE_EXTRA_TIMING_LOG" >> "$log_dir/ship-dmg.log"
 fi
 exit 0
 """
@@ -177,7 +251,31 @@ def _curl_shim() -> str:
         """#!/usr/bin/env bash
 set -euo pipefail
 url="${@: -1}"
+# DMG_SMOKE_LIVE_PORT: only that port has a listener; any other 127.0.0.1
+# port is refused exactly as real curl reports it (exit 7, empty body).
+if [[ -n "${DMG_SMOKE_LIVE_PORT:-}" && "$url" == "http://127.0.0.1:"* \
+      && "$url" != "http://127.0.0.1:${DMG_SMOKE_LIVE_PORT}/"* ]]; then
+  echo "${url}" >> "${DMG_SMOKE_REFUSED_LOG:-/dev/null}"
+  exit 7
+fi
 if [[ "$url" == *"/api/v1/preflight" ]]; then
+  attempt=1
+  if [[ -n "${DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE:-}" ]]; then
+    prev="$(cat "$DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE" 2>/dev/null || echo 0)"
+    attempt=$((prev + 1))
+    printf '%s' "$attempt" > "$DMG_SMOKE_PREFLIGHT_ATTEMPTS_FILE"
+  fi
+  # Simulates the packaged app's engine port accepting the TCP connection but
+  # not answering yet (the TCC/Gatekeeper negotiation window): curl returns
+  # an empty body, exactly like the real `-m` timeout does after `|| true`
+  # discards its non-zero exit.
+  if [[ "${DMG_SMOKE_PREFLIGHT_NEVER_ANSWER:-0}" == "1" ]]; then
+    exit 0
+  fi
+  ready_after="${DMG_SMOKE_PREFLIGHT_READY_AFTER_ATTEMPTS:-0}"
+  if [[ "$ready_after" -gt 0 && "$attempt" -lt "$ready_after" ]]; then
+    exit 0
+  fi
   printf '%s' "${DMG_SMOKE_PREFLIGHT_JSON:?}"
   exit 0
 fi
@@ -232,11 +330,41 @@ exit 1
         ),
         "lsof": textwrap.dedent(
             """#!/usr/bin/env bash
+# `lsof -iTCP:PORT -sTCP:LISTEN -t`: the pid listening on the log's port.
+if [[ " $* " == *" -t "* ]]; then
+  if [[ -n "${DMG_SMOKE_FOREIGN_PORT:-}" && "$*" == *":${DMG_SMOKE_FOREIGN_PORT} "* ]]; then
+    echo 8888
+    exit 0
+  fi
+  if [[ -n "${DMG_SMOKE_LISTENER_PID:-}" ]]; then
+    echo "$DMG_SMOKE_LISTENER_PID"
+    exit 0
+  fi
+  exit 1
+fi
 if [[ -n "${DMG_SMOKE_ENGINE_PORT:-}" ]]; then
   echo "n*:${DMG_SMOKE_ENGINE_PORT}"
   exit 0
 fi
 exit 1
+"""
+        ),
+        "ps": textwrap.dedent(
+            """#!/usr/bin/env bash
+# `ps -ww -o command= -p PID` for the log-port listener: this run's scratch
+# engine (its app path is the last `open` argument) or another instance's.
+if [[ "$*" == *"command="* ]]; then
+  if [[ " $* " == *" 8888 "* || " $* " == *" 8888" ]]; then
+    app="/Applications/Open DJ.app"
+  elif [[ "${DMG_SMOKE_LISTENER_FROM_SCRATCH:-0}" == "1" ]]; then
+    app="$(tail -n 1 "${DMG_SMOKE_OPEN_LOG:?}")"
+  else
+    app="/Applications/Open DJ.app"
+  fi
+  echo "opendj-engine --name opendj-engine [${app}/Contents/Resources/payload/runtime/bin/python3 apps.engine_core serve]"
+  exit 0
+fi
+exec /bin/ps "$@"
 """
         ),
         "open": textwrap.dedent(
@@ -245,6 +373,16 @@ if [[ "${DMG_SMOKE_OPEN_FAIL:-0}" == "1" ]]; then
   exit 1
 fi
 printf '%s\\n' "$@" > "${DMG_SMOKE_OPEN_LOG:?}"
+# The launched engine's boot line, as the real shell appends it to the shared
+# engine.log; ROTATE=1 first moves the old log aside (the shell's 5 MB rotation).
+if [[ -n "${DMG_SMOKE_OPEN_ENGINE_LOG_LINE:-}" ]]; then
+  engine_log="$HOME/Library/Application Support/com.opendj.desktop/logs/engine.log"
+  mkdir -p "$(dirname "$engine_log")"
+  if [[ "${DMG_SMOKE_OPEN_ROTATES_ENGINE_LOG:-0}" == "1" && -f "$engine_log" ]]; then
+    mv "$engine_log" "$engine_log.rotated"
+  fi
+  printf '%s\\n' "$DMG_SMOKE_OPEN_ENGINE_LOG_LINE" >> "$engine_log"
+fi
 touch "${DMG_SMOKE_SCRATCH_STATE:?}"
 touch "${DMG_SMOKE_OPEN_CALLED:?}"
 exit 0
@@ -338,6 +476,7 @@ def setup_layout(home: Path) -> dict[str, Path]:
     open_log = home / "open_log.txt"
     scratch_state = home / "scratch_running"
     build_root.mkdir(parents=True, exist_ok=True)
+    preflight_attempts_file = home / "preflight_attempts"
 
     return {
         "bin_dir": bin_dir,
@@ -349,6 +488,7 @@ def setup_layout(home: Path) -> dict[str, Path]:
         "open_called": open_called,
         "open_log": open_log,
         "scratch_state": scratch_state,
+        "preflight_attempts_file": preflight_attempts_file,
     }
 
 
@@ -403,3 +543,17 @@ def ok_health_json(tracks: int = 5, playlists: int = 3) -> str:
 
 def zero_health_json() -> str:
     return ok_health_json(tracks=0, playlists=0)
+
+
+def success_env() -> dict[str, str]:
+    """The extra_env baseline for a healthy attach: preflight passes,
+    /health reports nonzero tracks/playlists, and a live engine/app pid.
+    Shared by tests/scripts/test_dmg_smoke_run.py and
+    tests/scripts/test_dmg_smoke_build_timing.py (split out at the 600-line
+    file-size ratchet, review round 4, P1)."""
+    return {
+        "DMG_SMOKE_PREFLIGHT_JSON": ok_preflight_json(),
+        "DMG_SMOKE_HEALTH_JSON": ok_health_json(),
+        "DMG_SMOKE_ENGINE_PID": "4242",
+        "DMG_SMOKE_ENGINE_PORT": "9400",
+    }

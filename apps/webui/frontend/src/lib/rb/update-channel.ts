@@ -40,6 +40,12 @@
  */
 
 import { API_BASE } from '$lib/api/base';
+import {
+	electronApplyUpdate,
+	nativeShellKind,
+	type ShellUpdateOutcome,
+	type ShellUpdateProgress
+} from '$lib/shell/native-shell';
 
 /** The route the engine serves. Spelled once. */
 export const UPDATE_CHECK_PATH = '/api/v1/update/check';
@@ -252,35 +258,27 @@ export function summarizeUpdate(
 }
 
 // ----- applying -----------------------------------------------------------
-/** The global Tauri v2 injects into every window it owns. */
-const TAURI_GLOBAL = '__TAURI_INTERNALS__';
-
 /**
  * Can THIS window install an update?
  *
- * Only inside the desktop shell. A browser tab pointed at the same engine
- * reaches the same page and has no installer, and telling it so is the whole
- * reason this function exists rather than a try/catch around the attempt.
+ * Only inside a desktop shell (Tauri or Electron). A browser tab pointed at
+ * the same engine reaches the same page and has no installer, and telling it
+ * so is the whole reason this function exists rather than a try/catch around
+ * the attempt.
  */
 export function canApplyHere(scope: Record<string, unknown> = globalThis): boolean {
-	return scope[TAURI_GLOBAL] !== undefined && scope[TAURI_GLOBAL] !== null;
+	return nativeShellKind(scope) !== null;
 }
 
-export type ApplyProgress =
-	| { phase: 'checking' }
-	| { phase: 'downloading'; received: number; total: number | null }
-	| { phase: 'installing' }
-	| { phase: 'restarting' };
+export type ApplyProgress = ShellUpdateProgress;
 
-export type ApplyOutcome =
-	| { kind: 'no-update' }
-	| { kind: 'installed' }
-	| { kind: 'refused'; reason: string };
+export type ApplyOutcome = ShellUpdateOutcome;
 
 /**
  * Download, verify and install, then restart into the new build.
  *
- * The Tauri updater does its OWN check here rather than being handed the one
+ * The shell's updater (Tauri plugin, or electron-updater behind the Electron
+ * bridge) does its OWN check here rather than being handed the one
  * the engine already did. That is deliberate and is not redundant work: the
  * plugin must fetch the manifest itself to verify its signature against the
  * compiled-in public key, and an installer that accepted a caller's parsed
@@ -300,6 +298,15 @@ export async function applyUpdate(
 				'this page is running in a browser, not in the Open DJ desktop shell, so it has no ' +
 				'installer. Open the desktop app and check for updates there.'
 		};
+	}
+	// Electron: the shell's own updater fetches, verifies and installs.
+	const electron = electronApplyUpdate(onProgress, scope);
+	if (electron !== null) {
+		try {
+			return await electron;
+		} catch (err) {
+			return { kind: 'refused', reason: err instanceof Error ? err.message : String(err) };
+		}
 	}
 	let check: typeof import('@tauri-apps/plugin-updater').check;
 	let relaunch: typeof import('@tauri-apps/plugin-process').relaunch;

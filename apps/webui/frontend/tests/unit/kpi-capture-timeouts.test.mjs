@@ -34,6 +34,7 @@ test('if KPI_CAPTURE_TIMEOUT_S is a positive integer then it is the capture budg
 	assert.equal(kpiCaptureTimeoutS(' 90 '), 90);
 });
 
+// REQ: PERF-CAPTURE-03
 test('if --timeout-s equals the old hardcoded 120s then the test timeout still exceeds it', () => {
 	// The regression this guards: --timeout-s 120 against a fixed 120_000 test
 	// timeout raced, and Playwright tore the context down inside the spec's own
@@ -41,6 +42,7 @@ test('if --timeout-s equals the old hardcoded 120s then the test timeout still e
 	assert.ok(kpiCaptureTestTimeoutMs('120') > 120 * 1000);
 });
 
+// REQ: PERF-CAPTURE-03
 test('if any --timeout-s is given then the test timeout leads it by the headroom', () => {
 	for (const seconds of [1, 30, 90, 120, 600, KPI_CAPTURE_MAX_TIMEOUT_S]) {
 		const budgetMs = seconds * 1000;

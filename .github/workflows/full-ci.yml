@@ -61,6 +61,12 @@ env:
   # for this name, so the pre-checkout hygiene step below is the repair path
   # for a root-run interpreter.
   PYTHONDONTWRITEBYTECODE: "1"
+  # No runner has a real rekordbox stick, so the live stick tests report the
+  # capability UNAVAILABLE in the skip summary instead of failing. This opts
+  # out of the stick ALONE (tests/sync/usb/live_stick.py); every other
+  # required fixture still fails closed here. Unset on a dev machine, a
+  # missing stick fails loud.
+  MDT_ALLOW_MISSING_USB_STICK: "1"
 
 permissions:
   contents: read
@@ -203,14 +209,23 @@ jobs:
       - name: Setup uv for isolated dependency contracts
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
 
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python
+
       - name: Provision isolated Python test environment
         # modal is a CI test-environment tool, not a package dependency;
         # see the fuller note in ci.yml.
         run: |
-          scripts/ci_venv.sh 3.11
-          # + the pyproject `observability` extra, verbatim: the Sentry e2e tests import
-          # sentry_sdk, and requirements.txt (the shipped payload) deliberately omits it.
-          uv pip install --exact --upgrade --python .venv/bin/python -r requirements.txt modal 'sentry-sdk>=2.0,<3'
+          # Exact sync from a hash-pinned lock: zero index requests on a warm cache
+          # (issue #4252). requirements-ci.in adds modal and the pyproject
+          # `observability` extra to requirements.txt; scripts/ci_lock.py compiles it.
+          scripts/ci_venv.sh 3.11 --lock pylock.ci.toml
 
       - name: System deps for pyrekordbox (SQLCipher)
         # Keep the project interpreter available to any post-failure steps.

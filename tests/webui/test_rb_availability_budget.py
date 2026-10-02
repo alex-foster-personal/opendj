@@ -158,6 +158,7 @@ def availability_client(
         yield client, data_dir, state_db_path
 
 
+# REQ: PERF-RB-01
 @pytest.mark.requirement("PERF-RB-01")
 def test_list_playlists_all_stale_index_zero_stats(
     availability_client: tuple[TestClient, Path, Path],
@@ -183,6 +184,7 @@ def test_list_playlists_all_stale_index_zero_stats(
     assert calls["n"] == 0
 
 
+# REQ: PERF-RB-01
 @pytest.mark.requirement("PERF-RB-01")
 def test_playlist_detail_500_stale_caps_at_16_stats(
     availability_client: tuple[TestClient, Path, Path],
@@ -249,6 +251,7 @@ def test_restart_serves_index_before_probe(
     assert calls["n"] == 0
 
 
+# REQ: PERF-RB-01
 @pytest.mark.requirement("PERF-RB-01")
 def test_pending_never_sets_file_exists_bool(
     availability_client: tuple[TestClient, Path, Path],

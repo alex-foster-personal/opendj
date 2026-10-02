@@ -1,0 +1,18 @@
+{
+  "total_count": 1,
+  "workflow_runs": [
+    {
+      "conclusion": "cancelled",
+      "created_at": "2026-09-30T18:45:08Z",
+      "event": "pull_request",
+      "head_branch": "trunk-merge/pr-3844/e6f9bf73-9b5d-40b6-9ae7-00e25130e247",
+      "head_sha": "2d17ffeb74bf4f9b7a598a84dbf4922573fcf0c0",
+      "id": 36760815993,
+      "name": "CI",
+      "pull_requests": [],
+      "run_attempt": 1,
+      "status": "completed",
+      "workflow_id": 262078015
+    }
+  ]
+}

@@ -168,9 +168,10 @@ import {
 	playbackBpm,
 	quantizeToNearestBeat,
 	quantizeToNearestGridBeat,
-	QUANTIZED_LAUNCH
+	QUANTIZED_LAUNCH,
+	resolveArmAtPosition
 } from '$lib/rb/beat-sync-math';
-import type { TempoRampStep } from '$lib/rb/beat-sync-math';
+import type { ArmAtPosition, TempoRampStep } from '$lib/rb/beat-sync-math';
 import { beatSyncOutcomeNotices } from '$lib/rb/beat-sync-math';
 import {
 	deckHasRealBeatGrid,
@@ -233,7 +234,7 @@ import {
 import type { PitchRange } from '$lib/player/constants';
 import {
 	_defaultChannel,
-	_defaultHeadphones,
+	_defaultHeadphones, recordMasterWrite,
 	_emptyDeckState,
 	_hotCueRevisionsFrom,
 	deckEffectiveBpm,
@@ -3038,14 +3039,7 @@ class RbAudioEngine implements AudioEngine {
 		// Stage timings + load conditions for DevTools `[perf]`; spanId binds every recordDeckLoad below to THIS load's own span (#1658).
 		const { clock: perfMs, spanId } = beginDeckLoad(deck);
 		const stages: Record<string, number> = {};
-		const time = async <T>(name: string, work: Promise<T>): Promise<T> => {
-			const t0 = performance.now();
-			try {
-				return await work;
-			} finally {
-				stages[name] = Math.round(performance.now() - t0);
-			}
-		};
+		const time = stageTimer(stages);
 		try {
 			// SPIKE-PERF: reuse a ready FE anlz cache entry (select prefetch / prior load).
 			const cachedAnlz = getAnlzEntry(stable_id);
@@ -3120,11 +3114,10 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
-			const raw =
-				exc instanceof RbApiError ? `${exc.code}: ${exc.message}` : String(exc);
-			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, raw);
+			// RbApiError's message already reads `CODE: detail`; prefixing the code again doubled it.
+			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
 			deckLoadErrors[deck] = msg;
-			reportDeckLoadFailure(deck, msg, exc, stages);
+			reportDeckLoadFailure(deck, msg, exc, stages, options);
 			throw exc;
 		}
 		if (
@@ -3163,7 +3156,8 @@ class RbAudioEngine implements AudioEngine {
 				if (loadCandidateCanPublish(token, rt.loadToken)) {
 					const message = String(error);
 					deckLoadErrors[deck] = message;
-					pushToast(`Deck ${deck} load failed - ${message}`, 'error');
+					stages.failedAt = perfMs();
+					reportDeckLoadFailure(deck, message, error, stages, options);
 				}
 				throw error;
 			}
@@ -3526,16 +3520,13 @@ class RbAudioEngine implements AudioEngine {
 	 * Self-referential only: unlike `quantizedSeek`'s syncPlan branch, this
 	 * does not additionally re-plan cross-deck follower phase (#884 scope -
 	 * that is the other, unrelated meaning of BeatSyncMax, for seek).
+	 * A resolver `armAt` runs on the live projected position before any await.
 	 */
-	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAtPositionSec: number, pressT0Ms?: number): Promise<number> {
+	async armHotCueTrigger(deck: DeckId, targetPositionMs: number, armAt: ArmAtPosition, pressT0Ms?: number): Promise<number> {
 		const { rt } = _requireLoaded(deck, 'armHotCueTrigger');
 		if (_ctx === null) throw new Error('armHotCueTrigger: audio graph not initialised');
 		const nowPositionSec = _projectPositionAt(deck, _ctx.currentTime);
-		if (armAtPositionSec < nowPositionSec) {
-			throw new RangeError(
-				`armHotCueTrigger: armAtPositionSec ${armAtPositionSec} precedes current position ${nowPositionSec}`
-			);
-		}
+		const armAtPositionSec = resolveArmAtPosition(armAt, nowPositionSec);
 		const deltaContextSec = (armAtPositionSec - nowPositionSec) / rt.controlTempoRatio;
 		const targetContextTime = Math.max(_futureScheduleTime(deck), _ctx.currentTime + deltaContextSec);
 		await _schedulePress(deck, targetContextTime, targetPositionMs / 1000, rt.desiredActive, pressT0Ms);
@@ -4332,7 +4323,7 @@ class RbAudioEngine implements AudioEngine {
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {
 		assertUnitRange('setMaster value', value);
-		mixerState.master = value;
+		recordMasterWrite(); mixerState.master = value;
 		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
 	}
 

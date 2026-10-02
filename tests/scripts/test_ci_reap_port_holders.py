@@ -48,6 +48,8 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="reads ss and /p
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "ci_reap_port_holders.sh"
 ORPHAN = "no-such-ancestor-marker"
+# Outside every runner _work tree on every Linux host, whatever TMPDIR says.
+NO_WORK_PARENT = "/tmp"
 
 
 def _free_port() -> int:
@@ -136,8 +138,13 @@ def no_work_cwd() -> Path:
     """A cwd guaranteed to sit outside every ``_work`` tree, independent of
     where --basetemp (and so pytest's own ``tmp_path``) lands. See the module
     docstring: on a self-hosted runner ``tmp_path`` no longer guarantees this
-    since ADR-0029 moved --basetemp under $RUNNER_TEMP."""
-    cwd = Path(tempfile.mkdtemp(prefix="mdt-no-work-cwd-"))
+    since ADR-0029 moved --basetemp under $RUNNER_TEMP. The dir is pinned to
+    /tmp rather than ``tempfile``'s default, because CI also sets TMPDIR to
+    ``runner.temp`` (ADR-NEW-ci-test-scratch-on-tmpfs), which is under
+    ``_work`` too. The assert makes a future move under ``_work`` fail here,
+    naming the premise, instead of as a reap verdict."""
+    cwd = Path(tempfile.mkdtemp(prefix="mdt-no-work-cwd-", dir=NO_WORK_PARENT))
+    assert "/_work/" not in f"{cwd}/", f"no_work_cwd premise broken: {cwd} is under a _work tree"
     try:
         yield cwd
     finally:
@@ -348,8 +355,11 @@ def test_a_registry_ownership_marker_is_named_in_the_no_ci_provenance_message(
         proc.wait(timeout=10)
 
 
+@pytest.mark.requirement("INFRA-08")
 def test_a_cross_uid_holder_is_waited_for_before_the_step_fails(tmp_path: Path) -> None:
-    """CONTROL: if a holder whose pid `ss` cannot report fails the step the
+    """[if] another uid holds the port [then] the step waits before failing, [else stop].
+
+    CONTROL: if a holder whose pid `ss` cannot report fails the step the
     moment it is seen, instead of after the bounded foreign-holder wait, then
     the retry path of issue #1613 is unreachable for the collision it exists
     for."""

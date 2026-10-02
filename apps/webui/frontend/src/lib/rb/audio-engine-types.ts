@@ -6,6 +6,7 @@
  * downstream of every other module in this group.
  */
 
+import type { ArmAtPosition } from './beat-sync-math';
 import type { DeckId } from './deck-slots';
 
 export type MasterMode = 'auto' | 'locked';
@@ -23,8 +24,13 @@ export type MasterReason =
 	| null;
 
 export interface DeckLoadOptions {
-	/** Whether the asynchronous stem probe and decode may run for this load. */
-	stems?: boolean;
+	/** Whether the asynchronous stem probe and decode may run for this load.
+	 * `undefined` means absent (true), so a dispatcher can pass its own
+	 * optional field straight through. */
+	stems?: boolean | undefined;
+	/** The caller shows its own toast for a failed load (Trackify, #4036). The
+	 * engine still reports the failure and its stage context to the server. */
+	suppressFailureToast?: boolean | undefined;
 }
 import type { DeckAudioSnapshot, QuantizeGrid, SyncMode } from './deck-state-types';
 import type { CrossfaderAssign, EqBand, HeadphoneAlignmentMode, HeadphoneOutputMode } from './mixer-types';
@@ -111,7 +117,7 @@ export interface AudioEngine {
 	armHotCueTrigger(
 		deck: DeckId,
 		targetPositionMs: number,
-		armAtPositionSec: number,
+		armAtPositionSec: ArmAtPosition,
 		pressT0Ms?: number
 	): Promise<number>;
 	/** LATENCY-02: arm QUANTIZED LAUNCH on the follower's next shared beat 1. */

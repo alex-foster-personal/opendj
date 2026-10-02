@@ -78,7 +78,10 @@ def test_version_ordering_is_numeric_not_lexical(db) -> None:
     assert canonical_pointer(db, "t1", "beatgrid") == ("own_beatgrid.backfill", "0.10.0")
 
 
+# REQ: NATIVE-11
+@pytest.mark.requirement("NATIVE-11")
 def test_cand_rows_are_never_eligible(db) -> None:
+    """[if] a row comes from a bench candidate [then] it never goes canonical, [else stop]."""
     store_mod.upsert_record(
         own_record(producer="cand", version="9.9.9",
                    backend="own_beatgrid.cand.beat_this"),

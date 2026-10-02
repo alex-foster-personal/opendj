@@ -19,6 +19,7 @@ from apps.analysis import queue_store
 from apps.analysis import queue_user as user
 from apps.analysis.queue import QueueError
 from apps.analysis.queue_user import UserJobConflict
+from apps.analysis.queue_user_lanes import USER_JOB_LANES
 from apps.analysis.store import open_conn
 from apps.lyrics import cache as lyrics_cache
 from apps.lyrics.cache import LyricLine, Lyrics
@@ -57,7 +58,19 @@ def _enqueue(conn, lane: str, ids: list[str], tmp: Path, placement: str = "next"
     )
 
 
+def test_require_lane_rejects_unknown_user_lane_with_exact_queue_error() -> None:
+    """[if] require_lane gets a non-user lane [then] QueueError text is exact, [else stop]."""
+    with pytest.raises(QueueError) as exc_info:
+        user.require_lane("waveform")
+    assert str(exc_info.value) == (
+        f"unknown user lane 'waveform'; lanes are {USER_JOB_LANES}"
+    )
+
+
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_stems_do_next_places_selection_at_head_in_order(tmp_path: Path) -> None:
+    """[if] stems are queued do-next [then] they go to the head in order, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c", "backlog"])
     conn = _conn(db)
@@ -72,7 +85,10 @@ def test_stems_do_next_places_selection_at_head_in_order(tmp_path: Path) -> None
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_running_item_is_not_interrupted_by_do_next(tmp_path: Path) -> None:
+    """[if] a do-next names a running item [then] that item keeps running, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["run", "n1", "n2"])
     conn = _conn(db)
@@ -89,7 +105,10 @@ def test_running_item_is_not_interrupted_by_do_next(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_lyrics_lane_is_independent_of_running_stems(tmp_path: Path) -> None:
+    """[if] a stems item is running [then] the lyrics lane still claims work, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["t1", "t2"])
     conn = _conn(db)
@@ -105,7 +124,10 @@ def test_lyrics_lane_is_independent_of_running_stems(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_fresh_stem_bundle_is_skipped_up_to_date(tmp_path: Path) -> None:
+    """[if] a track has a fresh stem bundle [then] enqueue skips it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["fresh", "need"])
     bundle = tmp_path / "stems" / "fresh"
@@ -123,7 +145,10 @@ def test_fresh_stem_bundle_is_skipped_up_to_date(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_fresh_lyrics_cache_is_skipped_up_to_date(tmp_path: Path) -> None:
+    """[if] a track has cached lyrics [then] enqueue skips it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["has", "need"])
     path = lyrics_cache.cache_path(tmp_path, "has")
@@ -139,7 +164,10 @@ def test_fresh_lyrics_cache_is_skipped_up_to_date(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_patch_pending_changes_claim_order(tmp_path: Path) -> None:
+    """[if] a pending item is reordered [then] claim order follows it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c"])
     conn = _conn(db)
@@ -152,7 +180,10 @@ def test_patch_pending_changes_claim_order(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_cancel_pending_leaves_the_active_queue(tmp_path: Path) -> None:
+    """[if] a pending item is cancelled [then] it leaves the active queue, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b"])
     conn = _conn(db)
@@ -164,7 +195,10 @@ def test_cancel_pending_leaves_the_active_queue(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_cancel_running_blocks_worker_finish(tmp_path: Path) -> None:
+    """[if] a running item is cancelled [then] the worker cannot finish it, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a"])
     conn = _conn(db)
@@ -186,7 +220,10 @@ def test_cancel_running_blocks_worker_finish(tmp_path: Path) -> None:
     conn.close()
 
 
+# REQ: PERFBATCH-05
+@pytest.mark.requirement("PERFBATCH-05")
 def test_release_running_keeps_pending_order(tmp_path: Path) -> None:
+    """[if] a running item is released [then] pending order is kept, [else stop]."""
     db = tmp_path / "state.db"
     _seed(db, ["a", "b", "c"])
     conn = _conn(db)
@@ -289,30 +326,26 @@ def test_unknown_runner_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         runner_from_environ()
 
 
-def test_dry_runner_still_skips_fresh_bundle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+# Real timed path, no time.sleep patch: a patched time.sleep is process-wide, so
+# a thread leaked by an earlier test (sentry_sdk's sentry.monitor loops
+# time.sleep(10)) landed its calls in a spy here and flaked PR #4250.
+DRY_CONTROL_HOLD_S: float = 0.2
+#: Long enough that a hold which ran cannot hide under a slow runner's tick.
+DRY_SKIP_HOLD_S: float = 30.0
+
+
+def _tick_dry_stems(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hold_s: float
+) -> tuple[str, float, str]:
+    """Run one real dry-runner tick; return (outcome, wall seconds, settled state)."""
     import time
 
     from apps.analysis import queue_user_runner
 
     monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_RUNNER", "dry")
-    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", "10")
-    sleep_called: list[float] = []
-    original_sleep = time.sleep
-
-    def spy_sleep(seconds: float) -> None:
-        sleep_called.append(seconds)
-        original_sleep(0)
-
-    monkeypatch.setattr(time, "sleep", spy_sleep)
-    db = tmp_path / "state.db"
-    _seed(db, ["fresh"])
-    conn = _conn(db)
-    _enqueue(conn, "stems", ["fresh"], tmp_path)
-    bundle = tmp_path / "stems" / "fresh"
-    bundle.mkdir(parents=True)
-    (bundle / MANIFEST_NAME).write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("MUSIC_DJ_LIBRARY_JOBS_DRY_HOLD_S", str(hold_s))
+    conn = _conn(tmp_path / "state.db")
+    t0 = time.monotonic()
     outcome = queue_user_runner.tick_lane(
         conn,
         "stems",
@@ -320,11 +353,45 @@ def test_dry_runner_still_skips_fresh_bundle(
         stems_root=tmp_path / "stems",
         data_dir=tmp_path,
     )
-    assert outcome == "ran"
-    assert sleep_called == []
-    settled = user.list_lane(conn, "stems", include_settled=True)
-    assert settled[0].state == "skipped"
+    elapsed = time.monotonic() - t0
+    state = user.list_lane(conn, "stems", include_settled=True)[0].state
     conn.close()
+    return outcome, elapsed, state
+
+
+def test_dry_runner_holds_when_not_fresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a not-fresh dry run finishes before its hold elapses [then] broken, [else stop]."""
+    db = tmp_path / "state.db"
+    _seed(db, ["stale"])
+    conn = _conn(db)
+    _enqueue(conn, "stems", ["stale"], tmp_path)
+    conn.close()
+    outcome, elapsed, state = _tick_dry_stems(
+        tmp_path, monkeypatch, DRY_CONTROL_HOLD_S
+    )
+    assert outcome == "ran"
+    assert elapsed >= DRY_CONTROL_HOLD_S, "the dry runner never held"
+    assert state == "done"
+
+
+def test_dry_runner_still_skips_fresh_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a fresh bundle still waits out the dry hold [then] broken, [else stop]."""
+    db = tmp_path / "state.db"
+    _seed(db, ["fresh"])
+    conn = _conn(db)
+    _enqueue(conn, "stems", ["fresh"], tmp_path)
+    conn.close()
+    bundle = tmp_path / "stems" / "fresh"
+    bundle.mkdir(parents=True)
+    (bundle / MANIFEST_NAME).write_text("{}", encoding="utf-8")
+    outcome, elapsed, state = _tick_dry_stems(tmp_path, monkeypatch, DRY_SKIP_HOLD_S)
+    assert outcome == "ran"
+    assert elapsed < DRY_SKIP_HOLD_S, "a fresh bundle waited out the dry hold"
+    assert state == "skipped"
 
 
 def test_reorder_running_is_conflict(tmp_path: Path) -> None:

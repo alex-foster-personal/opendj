@@ -39,11 +39,17 @@ test('a dynamic import survives an identifier that merely starts with "import"',
 	);
 });
 
-test('the real SetupOverlay dynamic import reaches knip', () => {
+test('the real SetupOverlay folder picker import reaches knip', () => {
+	// The picker's shell packages are imported by src/lib/shell/native-shell.ts,
+	// which knip reads natively; the overlay reaches them through that module.
 	const compiled = svelteImports(read('src/lib/components/setup/SetupOverlay.svelte'));
 	assert.ok(
-		compiled.includes("import('@tauri-apps/plugin-dialog')"),
+		compiled.includes("from '$lib/shell/native-shell'"),
 		'if the native folder picker import is dropped then frontend.unused_deps regresses - broken'
+	);
+	assert.ok(
+		read('src/lib/shell/native-shell.ts').includes("import('@tauri-apps/plugin-dialog')"),
+		'if the bridge stops importing the dialog plugin then knip reports it unused - broken'
 	);
 });
 

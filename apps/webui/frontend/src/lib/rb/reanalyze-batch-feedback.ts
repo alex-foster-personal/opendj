@@ -89,6 +89,33 @@ export function formatReanalyzeProgressToast(
 	};
 }
 
+export type ReanalyzeToastSlice = {
+	message: string;
+	kind: 'info' | 'warn' | 'error';
+	title?: string;
+};
+
+function _stripBatchSuffix(message: string): string {
+	return message.replace(/\s*\(batch [^)]+\)/gu, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** Collapsed-tray headline + expandable detail for UX-TOAST-02 (#3981 pin 0a3514651f17). */
+export function toReanalyzeToastPresentation(presentation: ReanalyzeToastSlice): {
+	headline: string;
+	detail: string;
+	kind: 'info' | 'warn' | 'error';
+} {
+	const detail = presentation.message;
+	let headline = _stripBatchSuffix(detail);
+	if (/queued 0 of/i.test(headline)) {
+		headline = headline.replace(
+			/^Re-analyze \((.*?)\): queued 0 of/i,
+			'Re-analyze: nothing queued ($1) — queued 0 of'
+		);
+	}
+	return { headline, detail, kind: presentation.kind };
+}
+
 export type ReanalyzeWatchCallbacks = {
 	onUpdate: (progress: BackfillProgress, presentation: ReturnType<typeof formatReanalyzeProgressToast>) => void;
 	onTerminal: (progress: BackfillProgress, presentation: ReturnType<typeof formatReanalyzeProgressToast>) => void;

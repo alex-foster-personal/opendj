@@ -1136,6 +1136,269 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "AudioEngineLoadIn": {
+        "properties": {
+          "deck": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Deck",
+            "type": "integer"
+          },
+          "stable_id": {
+            "minLength": 1,
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck",
+          "stable_id"
+        ],
+        "title": "AudioEngineLoadIn",
+        "type": "object"
+      },
+      "AudioEngineLoadOut": {
+        "properties": {
+          "beatgrid_missing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatgrid Missing"
+          },
+          "beatgrid_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beatgrid Source"
+          },
+          "beats": {
+            "title": "Beats",
+            "type": "integer"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "deck": {
+            "title": "Deck",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deck",
+          "stable_id",
+          "path",
+          "beatgrid_source",
+          "beats",
+          "bpm",
+          "beatgrid_missing"
+        ],
+        "title": "AudioEngineLoadOut",
+        "type": "object"
+      },
+      "AudioEngineOut": {
+        "properties": {
+          "binary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binary"
+          },
+          "binary_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binary Source"
+          },
+          "clock": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clock"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "last_exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Exit Code"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "restarts": {
+            "title": "Restarts",
+            "type": "integer"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "state": {
+            "enum": [
+              "off",
+              "starting",
+              "running",
+              "restarting",
+              "stopped",
+              "failed",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "stderr_tail": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stderr Tail",
+            "type": "array"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "ws_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ws Url"
+          }
+        },
+        "required": [
+          "state",
+          "generation",
+          "restarts",
+          "stderr_tail"
+        ],
+        "title": "AudioEngineOut",
+        "type": "object"
+      },
+      "AudioEngineStartIn": {
+        "properties": {
+          "clock": {
+            "enum": [
+              "wall",
+              "device"
+            ],
+            "title": "Clock",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clock"
+        ],
+        "title": "AudioEngineStartIn",
+        "type": "object"
+      },
       "AudioInterferenceItemOut": {
         "properties": {
           "key": {
@@ -2779,6 +3042,17 @@
               }
             ],
             "title": "Manifest Path"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
           },
           "product_name": {
             "anyOf": [
@@ -11252,6 +11526,81 @@
           "stable_ids"
         ],
         "title": "MembershipAddIn",
+        "type": "object"
+      },
+      "MembershipAddOut": {
+        "description": "``:add`` response: the header and the rows inserted, in order.\n\nNo ``items`` / ``track_count``: both are O(members) and no caller reads\nthem (ADR-NEW playlist-add-constant-time). ``added`` is empty when\n``forbid_duplicates`` dropped every requested id.",
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipAddedOut"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "forbid_duplicates": {
+            "title": "Forbid Duplicates",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "vendor": {
+            "title": "Vendor",
+            "type": "string"
+          },
+          "vendor_pl_id": {
+            "title": "Vendor Pl Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "vendor",
+          "vendor_pl_id",
+          "created_at",
+          "updated_at",
+          "forbid_duplicates",
+          "added"
+        ],
+        "title": "MembershipAddOut",
+        "type": "object"
+      },
+      "MembershipAddedOut": {
+        "properties": {
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "order_key": {
+            "title": "Order Key",
+            "type": "string"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "stable_id",
+          "order_key"
+        ],
+        "title": "MembershipAddedOut",
         "type": "object"
       },
       "MembershipMoveIn": {
@@ -24589,6 +24938,136 @@
         ]
       }
     },
+    "/api/v1/audio-engine": {
+      "get": {
+        "operationId": "audio_engine_status_api_v1_audio_engine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioEngineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Engine Status",
+        "tags": [
+          "audio-engine"
+        ]
+      }
+    },
+    "/api/v1/audio-engine/load": {
+      "post": {
+        "description": "Load a library track onto a deck by ``stable_id``.\n\nThe file is the one ``GET /tracks/{id}/audio`` would stream and the\ngrid is the one ``GET /tracks/{id}/anlz`` serves, so the engine plays\nwhat the page shows. Returns once the engine has decoded the track.",
+        "operationId": "audio_engine_load_api_v1_audio_engine_load_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudioEngineLoadIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioEngineLoadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "the engine is not running"
+          },
+          "422": {
+            "description": "the engine refused the load"
+          },
+          "504": {
+            "description": "the engine did not answer"
+          }
+        },
+        "summary": "Audio Engine Load",
+        "tags": [
+          "audio-engine"
+        ]
+      }
+    },
+    "/api/v1/audio-engine/start": {
+      "post": {
+        "operationId": "audio_engine_start_api_v1_audio_engine_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudioEngineStartIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioEngineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "running on another clock"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "no odj-audio binary"
+          }
+        },
+        "summary": "Audio Engine Start",
+        "tags": [
+          "audio-engine"
+        ]
+      }
+    },
+    "/api/v1/audio-engine/stop": {
+      "post": {
+        "operationId": "audio_engine_stop_api_v1_audio_engine_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioEngineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Engine Stop",
+        "tags": [
+          "audio-engine"
+        ]
+      }
+    },
     "/api/v1/audio-interference": {
       "get": {
         "operationId": "audio_interference_api_v1_audio_interference_get",
@@ -31571,7 +32050,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlaylistWriteOut"
+                  "$ref": "#/components/schemas/MembershipAddOut"
                 }
               }
             },

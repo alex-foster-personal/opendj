@@ -46,7 +46,7 @@ def matches_by_hash(
     audio_hash: str | None,
 ) -> list[StoredMatch]:
     """Find rows sharing either supported content identity hash."""
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    columns = protocol.table_columns(conn, "tracks")
     if "audio_hash" not in columns:
         rows = conn.execute(
             "SELECT stable_id, content_hash, isrc, updated_at, origin_device_id "
@@ -69,6 +69,10 @@ def matches_by_hash(
             )
             for row in rows
         ]
+    # Each OR arm is served by its own index (idx_tracks_content_hash,
+    # idx_tracks_audio_hash), so this is a seek, not a scan (#4397). That
+    # plan returns rows arm by arm; ORDER BY rowid keeps the order the old
+    # table scan returned.
     rows = conn.execute(
         """
         SELECT stable_id, content_hash, audio_hash, isrc, updated_at, origin_device_id
@@ -77,6 +81,7 @@ def matches_by_hash(
           AND deleted_at IS NULL
           AND ((content_hash = ? AND ? IS NOT NULL)
             OR (audio_hash = ? AND ? IS NOT NULL))
+        ORDER BY rowid
         """,
         (incoming_pk, content_hash, content_hash, audio_hash, audio_hash),
     ).fetchall()
@@ -86,8 +91,12 @@ def matches_by_hash(
 def matches_by_isrc(
     conn: sqlite3.Connection, incoming_pk: str, isrc: str, raw_isrc: str | None
 ) -> list[StoredMatch]:
-    """Find rows sharing a normalizable ISRC across schema versions."""
-    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    """Find rows sharing a normalizable ISRC across schema versions.
+
+    Each OR arm has its own index (idx_tracks_isrc, idx_tracks_isrc_upper), so
+    the lookup is a seek, not a scan (#4397).
+    """
+    columns = protocol.table_columns(conn, "tracks")
     audio_column = "audio_hash" if "audio_hash" in columns else "NULL AS audio_hash"
     rows = conn.execute(
         f"""
@@ -97,6 +106,7 @@ def matches_by_isrc(
           AND deleted_at IS NULL
           AND isrc IS NOT NULL
           AND (isrc = ? OR upper(isrc) = ?)
+        ORDER BY rowid
         """,
         (incoming_pk, raw_isrc or isrc, isrc),
     ).fetchall()

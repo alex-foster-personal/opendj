@@ -1,0 +1,75 @@
+<!doctype html>
+<!--
+  Open DJ doc style: DECISION BRIEF template.
+  How to use: copy this file next to where the doc will live, fix the stylesheet
+  href if you moved it, then replace every {{PLACEHOLDER}}. Delete any section you
+  do not need; never leave a placeholder or a slot comment in a finished doc.
+  Voice rules for every slot: answer first, then evidence. Dates carry the weekday
+  (Thu 1 Oct 2026), times are UTC. Every claim that can drift gets a source line.
+  Every number gets a title attribute with its unit and denominator. American spelling.
+  Style guide: style-guide.html (sections S1 to S9).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Title: two to four words naming the question, not the doc type. -->
+<title>{{SHORT_TITLE}}</title>
+<link rel="stylesheet" href="odj-doc.css">
+</head>
+<body>
+<main>
+<header class="mast" aria-label="Open DJ">
+  <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 367.72,144.28 A 188,188 0 0,0 101.85,410.15 Z" fill="var(--mark-dark)"/><path d="M 410.15,101.85 A 188,188 0 0,1 144.28,367.72 Z" fill="var(--mark-light)"/></svg>
+  <span class="wordmark">Open DJ</span><span class="stage" title="Open DJ is alpha software: features and stored formats can change between releases. Keep a library backup.">alpha</span>
+</header>
+
+<!-- Eyebrow: doc type, weekday date, and the repo plus short sha the brief was measured on. -->
+<p class="eyebrow">Decision brief · {{WEEKDAY_DATE}} · {{REPO}} {{BRANCH}} {{SHORT_SHA}}</p>
+<!-- H1: the one question this brief answers, phrased as a question. -->
+<h1>{{QUESTION}}</h1>
+<!-- Lede: the answer in one sentence, then the one reason that matters most. No preamble. -->
+<p class="lede">{{ANSWER_IN_ONE_SENTENCE}} {{THE_ONE_REASON}}</p>
+
+<!-- Verdict: once per brief, at the top. Pill class is ok (Go), warn (Hold) or bad (Stop). -->
+<section class="verdict" aria-label="Verdict">
+  <span><span class="pill {{OK_WARN_OR_BAD}}">{{GO_HOLD_OR_STOP}}</span></span>
+  <p class="call">{{THE_CALL_IN_ONE_SENTENCE}}</p>
+  <p>{{ONE_OR_TWO_SUPPORTING_REASONS}}</p>
+</section>
+
+<h2>Where things stand</h2>
+<!-- Facts card: label and value pairs only. Numbers use class="num" and a title naming unit and denominator. -->
+<dl class="facts">
+  <dt>{{FACT_LABEL}}</dt><dd>{{FACT_VALUE}}</dd>
+  <dt>{{COUNT_LABEL}}</dt><dd class="num" title="{{WHAT_THIS_NUMBER_COUNTS_AND_ITS_DENOMINATOR}}">{{N}} of {{DENOMINATOR}}</dd>
+</dl>
+
+<h2>{{EVIDENCE_SECTION_TITLE}}</h2>
+<!-- Evidence table: one row per check or option. A zero or "none" cell names the control that proved the probe could fire. -->
+<div class="tbl"><table>
+  <thead><tr><th>{{COLUMN_1}}</th><th>{{COLUMN_2}}</th><th>Result</th><th>Control</th></tr></thead>
+  <tbody>
+    <tr><td>{{ROW_NAME}}</td><td>{{ROW_DETAIL}}</td><td class="num" title="{{RESULT_UNIT_AND_DENOMINATOR}}"><span class="pill ok">{{RESULT}}</span></td><td class="num" title="{{CONTROL_MEANING}}">{{CONTROL_RESULT}}</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Open before {{MILESTONE}}</h2>
+<!-- Task rows: ordered by what blocks most. Pill: bad = Decide, warn = Fix, ok = Done. Bold claim, one line of context, then a source line. -->
+<ol class="tasks">
+  <li><span class="pill bad">Decide</span><div><p><strong>{{CLAIM}}</strong> {{ONE_LINE_OF_CONTEXT}}</p><p class="src">{{PATH_LINE_PR_OR_SESSION}}</p></div></li>
+  <li><span class="pill warn">Fix</span><div><p><strong>{{CLAIM}}</strong> {{ONE_LINE_OF_CONTEXT}}</p><p class="src">{{PATH_LINE_PR_OR_SESSION}}</p></div></li>
+  <li><span class="pill ok">Done</span><div><p><strong>{{CLAIM}}</strong> {{ONE_LINE_OF_CONTEXT}}</p><p class="src">{{PATH_LINE_PR_OR_SESSION}}</p></div></li>
+</ol>
+
+<!-- Footer: always present, always last. Summary reads "What exactly was tested", or "Not verified" when corners were cut. Plain English: what ran, on what, and what was skipped and how it could bite. -->
+<details class="tested">
+  <summary>What exactly was tested</summary>
+  <ul>
+    <li>{{WHAT_RAN_AND_ON_WHICH_SHA}}</li>
+    <li>Not checked: {{WHAT_WAS_SKIPPED_AND_HOW_IT_COULD_BITE}}</li>
+  </ul>
+</details>
+</main>
+</body>
+</html>

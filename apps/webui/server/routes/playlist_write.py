@@ -26,7 +26,9 @@ ETag / error semantics copied from the tracks PATCH:
 
 ``PUT .../tracks`` is the full-replace membership primitive for import/restore.
 ``POST .../items:add`` is the O(1) append/insert primitive (LIBM-20): one or
-more tracks are inserted without rewriting existing membership rows.
+more tracks are inserted without rewriting existing membership rows. It
+answers ``MembershipAddOut`` (header + the inserted rows), never the whole
+membership (LIBM-132, #3963); read ``GET /playlists/{id}`` for that.
 ``POST .../items:remove`` and ``DELETE .../items/{item_id}`` are the O(1)
 remove primitives (LIBM-21): membership rows are tombstoned without rewriting
 neighbors.
@@ -147,6 +149,29 @@ class PlaylistWriteOut(BaseModel):
     created_at: str
     updated_at: str
     forbid_duplicates: bool
+
+
+class MembershipAddedOut(BaseModel):
+    item_id: str
+    stable_id: str
+    order_key: str
+
+
+class MembershipAddOut(BaseModel):
+    """``:add`` response: the header and the rows inserted, in order.
+
+    No ``items`` / ``track_count``: both are O(members) and no caller reads
+    them (ADR-NEW playlist-add-constant-time). ``added`` is empty when
+    ``forbid_duplicates`` dropped every requested id.
+    """
+    playlist_id: str
+    name: str
+    vendor: str
+    vendor_pl_id: str
+    created_at: str
+    updated_at: str
+    forbid_duplicates: bool
+    added: list[MembershipAddedOut]
 
 
 class MembershipMoveOut(PlaylistWriteOut):
@@ -314,7 +339,7 @@ def duplicate_playlist(
 
 @router.post(
     "/{playlist_id}/items:add",
-    response_model=PlaylistWriteOut,
+    response_model=MembershipAddOut,
     operation_id="add_playlist_items",
 )
 def add_playlist_items(
@@ -323,12 +348,19 @@ def add_playlist_items(
     response: Response,
     _backend: StateBackend = Depends(get_write_state),  # noqa: B008
     store: PlaylistStore = Depends(get_playlist_store),  # noqa: B008
-) -> PlaylistWriteOut:
-    row = store.add_memberships(
+) -> MembershipAddOut:
+    result = store.add_memberships(
         playlist_id, body.stable_ids, position=body.position,
     )
     publish("library.changed", {"kind": "playlists", "ids": [playlist_id]})
-    return _out(row, response)
+    row = result.row
+    response.headers["ETag"] = row.etag
+    return MembershipAddOut(
+        playlist_id=row.playlist_id, name=row.name, vendor=row.vendor,
+        vendor_pl_id=row.vendor_pl_id, created_at=row.created_at,
+        updated_at=row.updated_at, forbid_duplicates=row.forbid_duplicates,
+        added=[MembershipAddedOut(**member.to_dict()) for member in result.added],
+    )
 
 
 @router.post(

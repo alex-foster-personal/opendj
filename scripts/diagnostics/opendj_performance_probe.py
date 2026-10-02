@@ -23,7 +23,8 @@ This module is the sampler and CLI; the collectors it composes live beside it:
 * ``probe_native_metrics`` -- ``proc_pid_rusage``, ``vmmap``, ``sysctl``;
 * ``probe_process_family`` -- which PIDs belong to this app, and by what rule;
 * ``probe_app_signals`` -- engine HTTP and the WebKit perf ring;
-* ``probe_log_store`` -- bounded JSONL append and the trend summary.
+* ``probe_log_store`` -- bounded JSONL append and the trend summary;
+* ``probe_trend_report`` -- the durable client-error record of a RED trend.
 
 RUN IT AS A MODULE: the pieces import each other relatively, so the entry point
 is ``python3 -m <package>.opendj_performance_probe`` with the package's parent
@@ -52,12 +53,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .probe_app_signals import (
-    TrendReportError,
-    browser_perf_ring,
-    engine_metrics,
-    report_red_trend,
-)
+from .probe_app_signals import browser_perf_ring, engine_metrics
 from .probe_log_store import append_bounded_jsonl, summarize_logs, trend_logs
 from .probe_native_metrics import (
     DarwinProcessMetrics,
@@ -76,6 +72,7 @@ from .probe_process_family import (
     process_table,
     suspected_orphans,
 )
+from .probe_trend_report import TrendReportError, report_red_trend
 from .probe_types import (
     DEFAULT_BUNDLE_IDS,
     DEFAULT_DEEP_INTERVAL_SECONDS,
