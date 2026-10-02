@@ -115,15 +115,9 @@ def test_read_paths_never_import_mutagen(tmp_path):
     """
     track = tmp_path / "x.mp3"
     shutil.copyfile(FIXTURE, track)
-    # The matcher ignores untagged files, so give its read a tagged copy.
-    # Written here, in the parent, because the probe process blocks mutagen.
-    tagged = tmp_path / "tagged.mp3"
-    shutil.copyfile(FIXTURE, tagged)
-    mutagen_id3 = pytest.importorskip("mutagen.id3")
-    tags = mutagen_id3.ID3()
-    tags.add(mutagen_id3.TIT2(encoding=3, text="Probe Title"))
-    tags.add(mutagen_id3.TPE1(encoding=3, text="Probe Artist"))
-    tags.save(tagged)
+    # The matcher ignores untagged files, so read an already-tagged fixture
+    # (title "Source V2", artist "Fixture"); no tagging step can skip this.
+    tagged = FIXTURE.parent / "src-v2.mp3"
     probe = textwrap.dedent(
         f"""
         import sys
@@ -143,7 +137,7 @@ def test_read_paths_never_import_mutagen(tmp_path):
         assert meta is not None and meta.duration_s > 3, meta
         assert fingerprints._safe_bitrate(p) == 127
         assert index_disk.read_tags(p).ok
-        assert matcher._read_id3(Path({str(tagged)!r})) is not None
+        assert matcher._read_id3(Path({str(tagged)!r})) == ("Source V2", "Fixture")
         audio_playable.probe_playable_audio(p)
         assert "mutagen" not in {{k for k, v in sys.modules.items() if v is not None}}
         print("OK")
@@ -196,3 +190,31 @@ def test_upload_hold_path_suffix_still_reads_duration(tmp_path, name):
     shutil.copyfile(FIXTURE.parent / name, held)
     duration = ingest_upload._duration_s(held)
     assert duration is not None and 2.9 < duration < 3.2, duration
+
+
+def test_fingerprint_cache_backfills_a_null_bitrate(tmp_path):
+    """A cache row stored with no bitrate gets it on the next lookup.
+
+    Rows cached while no tag reader was installed hold NULL, which canonical
+    selection reads as 0 (review of #4997). Control: the row really is NULL
+    before the lookup, and a second lookup reads the stored value.
+    """
+    import sqlite3
+
+    from apps.shared.fingerprints import Fingerprint, FingerprintCache
+
+    track = tmp_path / "x.mp3"
+    shutil.copyfile(FIXTURE, track)
+    st = track.stat()
+    cache = FingerprintCache(tmp_path / "fp.sqlite")
+    cache.put(
+        Fingerprint(
+            path=track, duration=3.0, fp_str="AQAA", size=st.st_size,
+            mtime=st.st_mtime, bitrate=None,
+        )
+    )
+    with sqlite3.connect(tmp_path / "fp.sqlite") as conn:
+        assert conn.execute("SELECT bitrate FROM fingerprints").fetchone() == (None,)
+    assert cache.get(track).bitrate == 127
+    with sqlite3.connect(tmp_path / "fp.sqlite") as conn:
+        assert conn.execute("SELECT bitrate FROM fingerprints").fetchone() == (127,)

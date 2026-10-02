@@ -205,7 +205,7 @@ def _read_id3(path: Path | None) -> tuple[str, str] | None:
     if not _tagreader.HAS_TAG_READER:
         return None
     try:
-        tag = _tagreader.read(path)
+        tag = _tagreader.read(path, duration=False)  # only title/artist used
     except _tagreader.TagReadError:
         return None
     title = (tag.title or "").strip()

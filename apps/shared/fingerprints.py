@@ -242,6 +242,20 @@ class FingerprintCache:
         fp_str, duration, size, mtime, bitrate, computed_at = row
         if size != st.st_size or abs(mtime - st.st_mtime) > 1e-3:
             return None
+        if bitrate is None:
+            # Rows cached while no tag reader was installed (the packaged app
+            # before tinytag, Thu 1 Oct 2026) hold a NULL bitrate, which
+            # canonical selection reads as 0 and so can keep the worse twin.
+            # Backfill it here: the scan calls get() for every file, so the
+            # cache heals on the next scan without re-running fpcalc.
+            bitrate = _safe_bitrate(path)
+            if bitrate is not None:
+                with self._conn() as c:
+                    c.execute(
+                        "UPDATE fingerprints SET bitrate = ? WHERE path = ?",
+                        (bitrate, str(path)),
+                    )
+                    c.commit()
         return Fingerprint(
             path=path,
             duration=float(duration),
