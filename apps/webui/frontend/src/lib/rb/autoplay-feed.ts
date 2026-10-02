@@ -18,7 +18,8 @@ export interface AutoPlayFeedSnapshot {
 		enabled: boolean,
 		playlistScope: string | null,
 		viewRows: readonly AutoPlayTrackRow[],
-		filterKey?: string
+		filterKey?: string,
+		membershipHydrating?: boolean
 	): AutoPlayFeedDecision;
 	matches(viewRows: readonly Pick<AutoPlayTrackRow, 'stable_id'>[]): boolean;
 	readonly active: boolean;
@@ -45,7 +46,8 @@ export function createAutoPlayFeedSnapshot(): AutoPlayFeedSnapshot {
 			enabled: boolean,
 			playlistScope: string | null,
 			viewRows: readonly AutoPlayTrackRow[],
-			filterKey = ''
+			filterKey = '',
+			membershipHydrating = false
 		): AutoPlayFeedDecision {
 			if (!enabled) {
 				active = false;
@@ -70,6 +72,11 @@ export function createAutoPlayFeedSnapshot(): AutoPlayFeedSnapshot {
 					return { publish: viewRows.slice(), snapshotted: false };
 				}
 				return { publish: null, snapshotted: false };
+			}
+			if (membershipHydrating) {
+				active = false;
+				snapshotIds = null;
+				return { publish: viewRows.slice(), snapshotted: false };
 			}
 			if (viewRows.length === 0) {
 				return { publish: viewRows.slice(), snapshotted: false };
