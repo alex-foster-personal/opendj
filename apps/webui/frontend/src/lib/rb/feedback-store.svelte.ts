@@ -69,11 +69,9 @@ interface FeedbackState {
    * again once the daemon answers 404 for the route, so the widget keeps the
    * legacy lifecycle line and its honest "not tracked" stub. */
   pinSummary: CommentSummary | null;
-  /** Why the last GET /comments/summary failed for a reason a retry will not
-   * fix (a 500 such as unknown_pin_status, a 4xx other than 404, an empty or
-   * undecodable body). Null after a success, a 404, or a transient miss. While
-   * set, `pinSummary` is null and the comment-pin controls say the summary
-   * failed instead of showing counts the daemon refused to vouch for. */
+  /** Why the last summary failed for a reason a retry will not fix (see
+   * classifySummaryFailure). While set, `pinSummary` is null and the comment-pin
+   * controls say the summary failed instead of showing unvouched counts. */
   pinSummaryError: string | null;
   general: FeedbackGeneralNote | null;
   panelOpen: boolean;
@@ -97,9 +95,8 @@ export const feedbackState: FeedbackState = $state({
   error: null,
 });
 
-/** Total + breakdown line for the comment-pin controls (FB-20 / pin
- * 6af63c5e9b7c): the daemon's operator buckets when it serves
- * /comments/summary, else the lifecycle counts derived from `pins`. */
+/** Total + breakdown for the comment-pin controls (FB-20): the daemon's operator
+ * buckets when it serves /comments/summary, else lifecycle counts from `pins`. */
 export function commentPinSummaryTitle(pins: readonly FeedbackPin[]): string {
   if (feedbackState.pinSummaryError !== null) {
     return `Comment pin summary failed: ${feedbackState.pinSummaryError}`;
@@ -515,46 +512,30 @@ let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
 
 let _summarySeq = 0;
 
-/* The summary body check and failure classifier load on the first refresh,
- * off the "/" and /performance bundles (PR #4094). A failed chunk load drops
- * the counts and shows why, naming a reload as the fix: a browser keeps a
- * failed module fetch in its module map, so re-importing the same URL keeps
- * rejecting with no request (tests/e2e/lazy-chunk-failures.spec.ts). The next
- * poll still retries the import, and a later success clears the error. */
+/* The summary check loads on the first refresh, off the "/" and /performance
+ * bundles (PR #4094). A failed chunk load drops the counts and names a reload
+ * as the fix, since a browser keeps a failed module fetch; the next poll still
+ * retries. `classifySummaryFailure` decides a request failure: 404 clears, a
+ * transient miss keeps the last counts, a persistent error drops them and sets
+ * `pinSummaryError`. Only the newest request may write (FB-20). */
 type SummaryCheckModule = typeof import("./feedback-pin-summary-check");
-let _loadSummaryCheck = (): Promise<SummaryCheckModule> => import("./feedback-pin-summary-check");
 let _summaryCheck: Promise<SummaryCheckModule> | null = null;
 
-/** Test seam: replace the summary-check chunk loader (null restores it). */
-export function _setSummaryCheckLoaderForTests(loader: (() => Promise<SummaryCheckModule>) | null): void {
-  _loadSummaryCheck = loader ?? (() => import("./feedback-pin-summary-check"));
-  _summaryCheck = null;
-}
-
-/** GET /comments/summary (FB-20). `classifySummaryFailure` decides a failure:
- * a 404 clears the summary, a transient miss (the request itself failed, or a
- * retryable status) keeps the last-known counts (the
- * next poll retries), and a persistent contract or data error drops the counts
- * and sets `pinSummaryError`. Only the newest request may write, so an older
- * poll's answer never overwrites a post-mutation refresh. */
 async function _refreshPinSummary(): Promise<void> {
   const seq = ++_summarySeq;
   let mod: SummaryCheckModule;
   try {
-    mod = await (_summaryCheck ??= _loadSummaryCheck());
+    mod = await (_summaryCheck ??= import("./feedback-pin-summary-check"));
   } catch (err) {
     _summaryCheck = null;
     if (seq !== _summarySeq) return;
     feedbackState.pinSummary = null;
-    feedbackState.pinSummaryError = `summary code failed to load (${
-      err instanceof Error ? err.message : String(err)
-    }); reload the page to retry`;
+    const why = err instanceof Error ? err.message : String(err);
+    feedbackState.pinSummaryError = `summary code failed to load (${why}); reload the page to retry`;
     return;
   }
   try {
-    // Read the body as a stream so a rejection here is transport only; a body
-    // that fails to decode rejects inside decodeSummaryBody, which reports it
-    // as persistent (PR #4094 Sol P1).
+    // A stream body: a rejected request is transport; decode fails in the module.
     const stream = await unwrap(api.GET("/api/v1/feedback/comments/summary", { parseAs: "stream" }));
     const summary = mod.parseCommentSummary(await mod.decodeSummaryBody(stream));
     if (seq !== _summarySeq) return;
@@ -569,9 +550,7 @@ async function _refreshPinSummary(): Promise<void> {
   }
 }
 
-/** Every successful local pin mutation: newer than any in-flight poll (so the
- * poll must not roll the board back), and the operator summary must follow
- * the board at once rather than trail it by a poll interval. */
+/** After a successful local pin mutation: outrank in-flight polls and refresh the summary now. */
 function _notePinMutation(): void {
   _pinGeneration++;
   if (feedbackState.availability === "ok") void _refreshPinSummary();

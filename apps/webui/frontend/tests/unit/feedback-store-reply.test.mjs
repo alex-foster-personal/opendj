@@ -77,8 +77,13 @@ test("addReply POSTs the replies path with operator author", async () => {
   assert.equal(store.feedbackState.pins.length, 1);
   assert.equal(store.feedbackState.pins[0].replies.length, 1);
   assert.equal(store.feedbackState.error, null);
+  // The refresh is scheduled, not awaited, and first loads its lazy chunk:
+  // wait (bounded) for it to land rather than assume it already has.
+  for (let i = 0; i < 200 && store.feedbackState.pinSummary === null; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
   assert.equal(summaryGets, 1, "a successful reply refreshes the summary once");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(store.feedbackState.pinSummary, "the refreshed summary is stored");
   assert.equal(store.feedbackState.pinSummaryError, null, "the fixture is a valid summary");
 });
 
