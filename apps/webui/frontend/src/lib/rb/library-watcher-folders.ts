@@ -27,7 +27,7 @@ export function parseWatcherFolderLines(text: string): string[] {
 const WINDOWS_DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/;
 const WINDOWS_UNC_ABSOLUTE = /^\\\\[^\\/]+[\\/][^\\/]+/;
 
-export function isAbsoluteWatcherFolderPath(path: string): boolean {
+function isAbsoluteWatcherFolderPath(path: string): boolean {
 	return (
 		path.startsWith('/') || WINDOWS_DRIVE_ABSOLUTE.test(path) || WINDOWS_UNC_ABSOLUTE.test(path)
 	);

@@ -3,7 +3,7 @@
  * Unknown keys throw (fail-loud).
  */
 import { parseWaveformDesign } from '$lib/rb/waveform-design';
-import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
+import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { parseWavePalette } from '$lib/rb/wave-palette';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
@@ -369,7 +369,7 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				// hydration to quietly restore Add or Move.
 				clearConfirmPref('playlist_drop_mode').catch((err: unknown) => {
 					const detail = err instanceof Error ? err.message : String(err);
-					pushToast(`Could not reset the playlist drop choice to Ask: ${detail}`, 'error', TOAST_DEFAULT_MS, err);
+					reportSettingSaveError(`Could not reset the playlist drop choice to Ask: ${detail}`, err);
 				});
 			} else if (value === 'add' || value === 'move') {
 				setConfirmPref('playlist_drop_mode', value);

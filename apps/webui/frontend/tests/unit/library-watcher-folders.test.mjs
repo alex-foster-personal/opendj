@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
 	formatWatcherFolderLines,
-	isAbsoluteWatcherFolderPath,
 	parseWatcherFolderLines,
 	validateWatcherFolderPathSyntax
 } from '../../src/lib/rb/library-watcher-folders.ts';
@@ -31,7 +30,6 @@ test('formatWatcherFolderLines round-trips parse', () => {
 // POSIX ones, while relative and drive-relative forms still fail.
 test('Windows drive-letter and UNC absolute paths are accepted', () => {
 	for (const path of ['C:\\Music', 'C:/Music', 'd:\\DJ\\Crates', '\\\\server\\share', '\\\\nas\\music\\house']) {
-		assert.equal(isAbsoluteWatcherFolderPath(path), true, path);
 		assert.doesNotThrow(() => validateWatcherFolderPathSyntax(path), path);
 	}
 	assert.deepEqual(parseWatcherFolderLines('C:\\Music\r\n\\\\server\\share\n/Users/dev/Music'), [
@@ -43,7 +41,6 @@ test('Windows drive-letter and UNC absolute paths are accepted', () => {
 
 test('relative, drive-relative and share-less forms are still rejected', () => {
 	for (const path of ['Music', 'C:Music', '\\Music', '\\\\server', '\\\\server\\', 'relative\\dir']) {
-		assert.equal(isAbsoluteWatcherFolderPath(path), false, path);
 		assert.throws(() => validateWatcherFolderPathSyntax(path), /absolute path/, path);
 	}
 	assert.throws(() => validateWatcherFolderPathSyntax('C:\\a\\..\\b'), /\.\./);
