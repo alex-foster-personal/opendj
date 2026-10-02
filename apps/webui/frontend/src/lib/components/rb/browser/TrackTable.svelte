@@ -57,6 +57,7 @@
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		previewCue,
 		previewCueRatioFor,
@@ -1269,7 +1270,7 @@
 					<th
 						class="h-icon"
 						style={`width:${colWidths.funnel}px`}
-						use:columnExplainer={{ text: 'filter - not implemented, see PARITY-TODO' }}
+						use:columnExplainer={{ text: plannedTitle('track-table-filter') }}
 					>
 						<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
 							<path d="M2 3h12l-4.5 5v5l-3-1.5V8z" fill="currentColor" />

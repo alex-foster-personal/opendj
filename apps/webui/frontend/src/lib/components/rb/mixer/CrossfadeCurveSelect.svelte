@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { setCrossfadeCurve, uiPrefs, type CrossfadeCurve } from '$lib/rb/prefs.svelte';
 
 	const OPTIONS: { value: CrossfadeCurve; label: string; disabled?: boolean }[] = [
@@ -25,7 +26,7 @@
 	onchange={handleChange}
 >
 	{#each OPTIONS as option (option.value)}
-		<option value={option.value} disabled={option.disabled} title={option.disabled ? 'not implemented - see PARITY-TODO' : option.label}>
+		<option value={option.value} disabled={option.disabled} title={option.disabled ? `${option.label}: ${plannedTitle('crossfade-curve')}` : option.label}>
 			{option.label}
 		</option>
 	{/each}

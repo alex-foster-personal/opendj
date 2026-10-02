@@ -45,6 +45,7 @@
 	 */
 	import { listPairingsFor, getTrack, type Pairing, type Track } from '$lib/api';
 	import { ApiError } from '$lib/api/client';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	type Props = {
 		candidates?: unknown[];
@@ -172,7 +173,7 @@
 {#if candidates.length > 0}
 	<div
 		class="rec-placeholder"
-		title="Recommended section not implemented - the component was never committed (cfbfe55). See PARITY-TODO."
+		title={plannedTitle('recommended-section')}
 	>
 		Recommended: not implemented ({candidates.length} candidate{candidates.length === 1
 			? ''
