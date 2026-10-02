@@ -44,6 +44,7 @@ import os
 import struct
 import subprocess
 import tempfile
+import threading
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -74,6 +75,8 @@ SNDFILE_SUFFIXES: frozenset[str] = frozenset(
 DECODE_TIMEOUT_S = 300
 _WAVE_FORMAT_IEEE_FLOAT = 3
 _CHUNK_BYTES = 1 << 20
+#: A RIFF size field is 32 bits and the header takes 36 of them.
+_WAV_MAX_DATA_BYTES = 0xFFFFFFFF - 36
 
 
 class EngineDecoderUnavailable(RuntimeError):
@@ -239,9 +242,16 @@ def decode_to_wav(path: Path, wav: Path, *, exe: Path | None = None) -> Path:
     Streamed to disk, so peak memory here is one chunk, not the track. For a
     reader that cannot open the source container (Beat This!'s file read on
     an m4a with no ffmpeg); the samples are the engine's, the MP4 edit list
-    applied.
+    applied. On any failure ``wav`` is removed, never left half written.
     """
-    binary = exe or resolve_engine_decoder()
+    try:
+        return _decode_to_wav(path, wav, exe or resolve_engine_decoder())
+    except BaseException:
+        wav.unlink(missing_ok=True)
+        raise
+
+
+def _decode_to_wav(path: Path, wav: Path, binary: Path) -> Path:
     with wav.open("wb") as out, tempfile.TemporaryFile() as errors:
         out.write(_wav_header(0, 0, 2))
         try:
@@ -252,21 +262,34 @@ def decode_to_wav(path: Path, wav: Path, *, exe: Path | None = None) -> Path:
         except OSError as exc:
             raise EngineDecoderUnavailable(f"{binary} could not be launched: {exc}") from None
         assert process.stdout is not None  # Popen(stdout=PIPE) always sets it
+        # The read loop blocks on a decoder that stalls without closing
+        # stdout, so the deadline is a kill from outside, not a wait timeout.
+        timed_out = threading.Event()
+
+        def _expire() -> None:
+            timed_out.set()
+            process.kill()
+
+        watchdog = threading.Timer(DECODE_TIMEOUT_S, _expire)
+        watchdog.start()
         written = 0
         try:
             while chunk := process.stdout.read(_CHUNK_BYTES):
-                out.write(chunk)
                 written += len(chunk)
+                if written > _WAV_MAX_DATA_BYTES:
+                    process.kill()
+                    raise EngineDecodeFailed(
+                        f"{path} decodes to more than a WAV can hold (4 GiB)"
+                    )
+                out.write(chunk)
         finally:
+            watchdog.cancel()
             process.stdout.close()
-            try:
-                returncode = process.wait(timeout=DECODE_TIMEOUT_S)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                raise EngineDecodeFailed(
-                    f"odj-audio did not decode {path} within {DECODE_TIMEOUT_S}s"
-                ) from None
+            returncode = process.wait()
+        if timed_out.is_set():
+            raise EngineDecodeFailed(
+                f"odj-audio did not decode {path} within {DECODE_TIMEOUT_S}s"
+            )
         errors.seek(0)
         stderr = errors.read()
         if returncode != 0:

@@ -163,3 +163,25 @@ def test_output_shorter_than_the_stated_frames_is_refused(tmp_path: Path, to_wav
             engine_decode.decode_to_wav(_M4A, tmp_path / "x.wav", exe=short)
         else:
             engine_decode.decode_f32(_M4A, mono=False, exe=short)
+
+
+def test_a_failed_decode_leaves_no_partial_wav(tmp_path: Path, engine: Path) -> None:
+    junk = tmp_path / "junk.m4a"
+    junk.write_bytes(b"not audio" * 256)
+    wav = tmp_path / "junk.wav"
+    with pytest.raises(EngineDecodeFailed):
+        engine_decode.decode_to_wav(junk, wav, exe=engine)
+    assert not wav.exists()
+
+
+def test_a_decoder_that_stalls_with_stdout_open_is_killed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stall = tmp_path / "odj-audio"
+    stall.write_text("#!/bin/sh\nprintf 'abcd'\nexec sleep 30\n")
+    stall.chmod(stall.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(engine_decode, "DECODE_TIMEOUT_S", 1)
+    wav = tmp_path / "x.wav"
+    with pytest.raises(EngineDecodeFailed, match="within 1s"):
+        engine_decode.decode_to_wav(_M4A, wav, exe=stall)
+    assert not wav.exists()
