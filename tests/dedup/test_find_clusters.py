@@ -273,11 +273,14 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
     cache = FingerprintCache(db)
     for i, fp in enumerate(members):
         cache.put(fp, stable_id=f"sid-{i}")
-    kwargs = {
-        "db_path": db, "threshold": 0.9, "roots": [tmp_path],
-        "clusters_csv": tmp_path / "c.csv", "manual_review_csv": tmp_path / "m.csv",
-    }
-    assert len(fc_mod.run_find_clusters(fingerprints=members, **kwargs)) == 1
+    def run(fingerprints: list[Fingerprint]) -> list[fc_mod.ClusterOutcome]:
+        return fc_mod.run_find_clusters(
+            db_path=db, threshold=0.9, roots=[tmp_path],
+            clusters_csv=tmp_path / "c.csv", manual_review_csv=tmp_path / "m.csv",
+            fingerprints=fingerprints,
+        )
+
+    assert len(run(members)) == 1
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (1,)
 
@@ -285,7 +288,7 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
     with (tmp_path / "m.csv").open("a", encoding="utf-8") as handle:
         handle.write("1,duration_delta,a.flac,b.mp3,0.95,12.0\n")
 
-    assert fc_mod.run_find_clusters(fingerprints=[], **kwargs) == []
+    assert run([]) == []
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (0,)
         assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (0,)

@@ -22,8 +22,10 @@ import pytest
 
 from apps.dedup import library_scan
 from apps.engine_core.audio_engine import BIN_ENV
+from apps.reconcile import locate
+from apps.reconcile.fingerprint_evidence import FingerprintEvidence
+from apps.shared import audio_files, platform_paths
 from apps.shared import fingerprints as fp_mod
-from apps.shared import platform_paths
 from apps.shared.fingerprints import compare, compute, match
 from tests.rust_build_env import build_audio_engine
 
@@ -226,12 +228,11 @@ def test_a_moved_track_is_confirmed_by_its_recorded_audio(
     assert next(iter(cands)) == moved, "the matching file ranks first"
 
 
-def _named_candidate(tmp_path: Path, audio: Path | None) -> tuple[Path, Path, object, dict, dict]:
+def _named_candidate(
+    tmp_path: Path, audio: Path | None
+) -> tuple[Path, Path, locate.FsIndex, dict[Path, audio_files.AudioMetadata | None], dict[str, str]]:
     """A recorded track at ``old/track.wav`` and a same-named, same-size
     candidate at ``new/track.wav`` holding ``audio`` (or bytes no decoder reads)."""
-    from apps.reconcile import locate
-    from apps.shared import audio_files
-
     original = tmp_path / "old" / "track.wav"
     same_name = tmp_path / "new" / "track.wav"
     same_name.parent.mkdir(parents=True)
@@ -241,17 +242,17 @@ def _named_candidate(tmp_path: Path, audio: Path | None) -> tuple[Path, Path, ob
         shutil.copy(audio, same_name)
     size = same_name.stat().st_size
     idx = locate.FsIndex.build([audio_files.AudioFile(same_name, size, 0.0, ".wav")])
-    meta = {same_name: audio_files.AudioMetadata(title="Song", artist="Artist", duration_s=20.0)}
+    meta: dict[Path, audio_files.AudioMetadata | None] = {
+        same_name: audio_files.AudioMetadata(title="Song", artist="Artist", duration_s=20.0)
+    }
     row = {"id": "1", "title": "Song", "artist": "Artist", "original_path": str(original),
            "basename": original.name, "duration_s": "20", "file_size": str(size)}
     return original, same_name, idx, meta, row
 
 
-def _evidence(tmp_path: Path, original: Path, recorded: Path):
+def _evidence(tmp_path: Path, original: Path, recorded: Path) -> tuple[FingerprintEvidence, Path]:
     """A dedup database holding the engine's own fingerprint of ``recorded``
     under the track's original path, as a library scan leaves it."""
-    from apps.reconcile.fingerprint_evidence import FingerprintEvidence
-
     db = tmp_path / "dedup.sqlite"
     fp = compute(recorded)
     fp_mod.FingerprintCache(db).put(
@@ -265,8 +266,6 @@ def _evidence(tmp_path: Path, original: Path, recorded: Path):
 
 def test_same_name_different_audio_is_vetoed(engine: Path, tracks: dict[str, Path], tmp_path: Path) -> None:
     """[if] a same-named candidate's audio differs [then] it is never triple-validated, [else stop]."""
-    from apps.reconcile import locate
-
     original, _same, idx, meta, row = _named_candidate(tmp_path, tracks["b"])
     ev, _db = _evidence(tmp_path, original, tracks["a"])
 
@@ -282,8 +281,6 @@ def test_same_name_different_audio_is_vetoed(engine: Path, tracks: dict[str, Pat
 
 def test_same_name_same_audio_is_confirmed(engine: Path, tracks: dict[str, Path], tmp_path: Path) -> None:
     """[if] a same-named candidate's audio matches [then] fingerprint_match adds its weight, [else stop]."""
-    from apps.reconcile import locate
-
     original, same_name, idx, meta, row = _named_candidate(tmp_path, tracks["a_copy"])
     ev, db = _evidence(tmp_path, original, tracks["a"])
 
@@ -299,8 +296,6 @@ def test_same_name_same_audio_is_confirmed(engine: Path, tracks: dict[str, Path]
 
 def test_unmeasurable_candidate_is_unknown_not_mismatch(engine: Path, tracks: dict[str, Path], tmp_path: Path) -> None:
     """[if] a candidate cannot be fingerprinted [then] no fingerprint signal fires and it is counted, [else stop]."""
-    from apps.reconcile import locate
-
     original, _same, idx, meta, row = _named_candidate(tmp_path, None)
     ev, _db = _evidence(tmp_path, original, tracks["a"])
 
