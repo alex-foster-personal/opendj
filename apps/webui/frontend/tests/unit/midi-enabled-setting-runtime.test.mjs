@@ -138,7 +138,7 @@ test('the MIDI panel requests access by turning MIDI on, so its pending prompt r
 	assert.doesNotMatch(panel, /requestMidiAccess/, 'a bare request persists nothing until the grant');
 	// applyMidiEnabledSetting persists the choice before it requests access.
 	const applyFn = body(uiStateSrc, 'export async function applyMidiEnabledSetting(enabled: boolean)');
-	assert.match(applyFn, /setMidiEnabledChoice\(true\);\s*await maybeAutoEnableMidi\(\);/);
+	assert.match(applyFn, /setMidiEnabledChoice\(true\);[\s\S]*?await requestMidiAccess\(\);/);
 });
 
 test('off and on again while a request is pending settles without a stuck request', () => {
@@ -151,11 +151,16 @@ test('off and on again while a request is pending settles without a stuck reques
 	assert.equal(s.persisted, false);
 });
 
-test('page-load auto-enable still requests access for a persisted opt-in (control)', () => {
+// CTRL-06: this child has neither WebMIDI nor the native bridge, so the
+// page-load auto-enable makes no request and leaves the shared opt-in alone
+// (a Chrome tab on the same machine reads it). The opposite direction, that a
+// runtime WITH WebMIDI still requests on boot and clears on denial, is pinned
+// in midi-panel.test.mjs.
+test('page-load auto-enable in a runtime with no MIDI keeps a persisted opt-in (CTRL-06)', () => {
 	const s = results.autoEnableOptedIn;
-	assert.equal(s.permission, 'unsupported', 'the request path ran');
-	assert.match(s.lastError, /not supported/i);
-	assert.equal(s.persisted, false, 'a failed request forgets the opt-in');
+	assert.equal(s.persistedBeforeAuto, true, 'the opt-in was set before boot');
+	assert.equal(s.persisted, true, 'boot without MIDI must not forget the opt-in');
+	assert.equal(s.glueAttached, false);
 });
 
 test('disabling from settings leaves the permission state as the browser reported it', () => {
@@ -301,7 +306,7 @@ test('enable while a superseded request is pending waits for it, then requests a
 	const applyFn = body(uiStateSrc, 'export async function applyMidiEnabledSetting(enabled: boolean)');
 	assert.match(applyFn, /if \(pending\.generation === _requestGeneration\) return;/);
 	assert.match(applyFn, /await pending\.done;/);
-	assert.match(applyFn, /setMidiEnabledChoice\(true\);\s*await maybeAutoEnableMidi\(\);/);
+	assert.match(applyFn, /setMidiEnabledChoice\(true\);[\s\S]*?await requestMidiAccess\(\);/);
 });
 
 test('releaseMidiInputs detaches every input and hot-plug listener and never writes permission', () => {

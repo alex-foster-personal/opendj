@@ -263,18 +263,15 @@ test('requestMidiAccess on a WebMIDI-less runtime fails LOUDLY into lastError', 
 	assert.match(uiState.midiUi.lastError, /not supported/i);
 });
 
-test('CTRL-06: a runtime with no MIDI keeps the shared opt-in on failure and on boot', async () => {
+test('CTRL-06: boot in a runtime with no MIDI makes no request and keeps the shared opt-in', async () => {
 	// Node has neither navigator.requestMIDIAccess nor the Tauri bridge.
 	assert.equal(uiState.midiRuntimeAvailable(), false);
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	try {
-		await uiState.requestMidiAccess();
-		assert.match(uiState.midiUi.lastError, /not supported/i);
-		assert.equal(enabledChoice.midiEnabledPersisted(), true, 'unsupported keeps the opt-in');
 		uiState.midiUi.lastError = null;
 		await uiState.maybeAutoEnableMidi();
 		assert.equal(uiState.midiUi.lastError, null, 'boot must not request MIDI where none exists');
-		assert.equal(enabledChoice.midiEnabledPersisted(), true);
+		assert.equal(enabledChoice.midiEnabledPersisted(), true, 'the Chrome tab keeps its opt-in');
 	} finally {
 		_uninstallLocalStorage();
 	}

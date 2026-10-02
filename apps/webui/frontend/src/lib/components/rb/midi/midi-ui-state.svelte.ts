@@ -201,8 +201,8 @@ export function setMidiEnabledChoice(enabled: boolean): void {
 export async function maybeAutoEnableMidi(): Promise<void> {
 	if (!midiEnabledPersisted()) return;
 	// CTRL-06: a window with neither WebMIDI nor the macOS app's native bridge
-	// (Safari) has no MIDI to ask for. Requesting would only fail and clear the
-	// on-disk opt-in that a Chrome tab on this machine shares.
+	// (Safari) has no MIDI to ask for on boot. Requesting would only fail and
+	// clear the on-disk opt-in that a Chrome tab on this machine shares.
 	if (!midiRuntimeAvailable()) return;
 	if (midiUi.requestPending) return;
 	await requestMidiAccess();
@@ -321,11 +321,7 @@ async function _requestMidiAccess(generation: number): Promise<void> {
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
 		// A superseded request leaves the choice alone: the user has already
 		// set it since, and a re-enable must not be clobbered by a stale failure.
-		// Unsupported (CTRL-06) keeps it too: this window cannot answer for the
-		// Chrome tab that shares the on-disk choice.
-		if (generation === _requestGeneration && midiRuntimeAvailable()) {
-			setMidiEnabledChoice(false);
-		}
+		if (generation === _requestGeneration) setMidiEnabledChoice(false);
 	} finally {
 		midiUi.requestPending = false;
 	}
@@ -376,7 +372,10 @@ export async function applyMidiEnabledSetting(enabled: boolean): Promise<void> {
 		if (_requestGeneration !== waitedFrom) return;
 	}
 	setMidiEnabledChoice(true);
-	await maybeAutoEnableMidi();
+	// An explicit enable always asks, even where no MIDI exists, so the user
+	// sees why it failed; only the boot path skips (CTRL-06).
+	if (midiUi.requestPending) return;
+	await requestMidiAccess();
 }
 
 /** TEST-ONLY: forget the one-time live-refresh arming (pair with

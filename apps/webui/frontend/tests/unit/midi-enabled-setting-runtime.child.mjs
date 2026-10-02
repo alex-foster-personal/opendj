@@ -125,7 +125,7 @@ try {
 	await Promise.all([first, off, again]);
 	results.reenableWhilePending = { ...snapshot(), pendingAtToggle };
 
-	// 5. Control: a persisted opt-in still drives the page-load auto-enable.
+	// 5. CTRL-06: a persisted opt-in survives a boot that has no MIDI to ask for.
 	localStorage.clear();
 	localStorage.setItem(choice.MIDI_ENABLED_KEY, '1');
 	const persistedBeforeAuto = choice.midiEnabledPersisted();
