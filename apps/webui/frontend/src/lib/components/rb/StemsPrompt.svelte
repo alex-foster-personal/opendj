@@ -18,6 +18,14 @@
 <script lang="ts">
 	import { jobsRefusal } from '$lib/api/capabilities.svelte';
 	import {
+		AGENT_DETAILS_LABEL,
+		humanStemsBlocked,
+		humanStemsEnqueueError,
+		humanStemsJobsUnavailable,
+		humanStemsPlanLoadError,
+		humanStemsPlanTimeout
+	} from '$lib/setup/present';
+	import {
 		DEFAULT_STEMS_TIER,
 		type StemsPlan,
 		type StemsTier,
@@ -62,6 +70,11 @@
 		refusal ?? plan?.local_refusal ?? plan?.transport_refusal ?? null
 	);
 	const localExecutor = $derived(plan?.executor === 'local');
+	const loadErrorHuman = $derived(
+		loadError !== null && loadError.includes('/api/v1/stems/plan')
+			? humanStemsPlanTimeout()
+			: humanStemsPlanLoadError()
+	);
 
 	$effect(() => {
 		if (refusal !== null) return;
@@ -115,50 +128,59 @@
 	<h3>Separate stems?</h3>
 
 	{#if refusal !== null}
-		<p class="stems-error" role="alert" title={refusal}>{refusal}</p>
+		<p class="stems-error" role="alert">{humanStemsJobsUnavailable()}</p>
+		<details class="agent-details">
+			<summary>{AGENT_DETAILS_LABEL}</summary>
+			<pre data-agent-stems-refusal={refusal}>{refusal}</pre>
+		</details>
 	{:else if loadError !== null}
-		<p class="stems-error" role="alert" title={loadError}>
-			Could not work out what this would cost, so nothing is being offered yet: {loadError}
-		</p>
+		<p class="stems-error" role="alert">{loadErrorHuman}</p>
+		<details class="agent-details">
+			<summary>{AGENT_DETAILS_LABEL}</summary>
+			<pre data-agent-stems-load-error={loadError}>{loadError}</pre>
+		</details>
 	{:else if plan === null}
 		<p class="stems-note" role="status">Working out how many tracks need stems...</p>
 	{:else if blocked !== null && plan !== null}
 		<!--
 			STEMS CANNOT START ON THIS BUILD. The counts are still shown so the
 			tester sees how much work exists behind the refusal. The button stays
-			visible but inert with the server's own tooltip (PERFMODE tier floor,
-			feature flag, or farm transport), never a silent no-op.
+			visible but inert with a human tooltip, never a silent no-op.
 		-->
-		<p class="stems-error" role="alert" title={blocked}>
-			{localExecutor
-				? `Local stems are not available on this machine: ${blocked}`
-				: `Stems are not available in this build: ${blocked}`}
-		</p>
-		<p class="stems-note" title={stemsPlanSummary(plan)}>
-			{plan.pending} of {plan.total} tracks would need separating. {localExecutor
-				? 'Nothing is queued.'
-				: 'Nothing is queued and nothing is charged.'}
+		<p class="stems-error" role="alert">{humanStemsBlocked(localExecutor)}</p>
+		<details class="agent-details">
+			<summary>{AGENT_DETAILS_LABEL}</summary>
+			<pre data-agent-stems-blocked={blocked}>{blocked}</pre>
+		</details>
+		<p class="stems-note">
+			{plan.pending} of {plan.total} tracks would need separating. Nothing is queued
+			{localExecutor ? '.' : ' and nothing is charged.'}
 		</p>
 		<div class="stems-actions">
-			<button class="stems-go rb-inert" disabled title={blocked}>
+			<button
+				class="stems-go rb-inert"
+				disabled
+				title="Stem separation is not available on this machine"
+			>
 				Separate {plan.pending} tracks
 			</button>
 			<button class="stems-skip" onclick={() => onskip?.()}>Continue without stems</button>
 		</div>
 	{:else if enqueuedJobId !== null}
-		<p class="stems-note" title={`Engine job ${enqueuedJobId}`}>
+		<p class="stems-note">
 			Started. Tracks gain their stems as each one finishes; the bar at the top of the
 			menu shows how far along it is.
 		</p>
+		<details class="agent-details">
+			<summary>{AGENT_DETAILS_LABEL}</summary>
+			<pre data-agent-stems-job-id={enqueuedJobId}>job_id={enqueuedJobId}</pre>
+		</details>
 	{:else if plan.pending === 0}
-		<p
-			class="stems-note"
-			title={`${plan.ready} of ${plan.total} library rows already have a stem bundle on disk; ${plan.unavailable} have no audio on this machine.`}
-		>
+		<p class="stems-note">
 			Every track that has audio here already has stems. Nothing to do.
 		</p>
 	{:else}
-		<p class="stems-summary" title={stemsPlanSummary(plan)}>{stemsPlanSummary(plan)}</p>
+		<p class="stems-summary">{stemsPlanSummary(plan)}</p>
 		<p class="stems-note">
 			{localExecutor
 				? 'Separation runs on this machine in the background at low priority; you can keep using the app.'
@@ -173,7 +195,11 @@
 			</button>
 		</div>
 		{#if enqueueError !== null}
-			<p class="stems-error" title={enqueueError}>Could not start: {enqueueError}</p>
+			<p class="stems-error" role="alert">{humanStemsEnqueueError()}</p>
+			<details class="agent-details">
+				<summary>{AGENT_DETAILS_LABEL}</summary>
+				<pre data-agent-stems-enqueue-error={enqueueError}>{enqueueError}</pre>
+			</details>
 		{/if}
 	{/if}
 </section>
@@ -211,6 +237,15 @@
 		   and this component mounts inside .perf-root where it resolves. */
 		color: var(--rb-red);
 		font-weight: 560;
+	}
+	.agent-details {
+		font-size: 10px;
+		color: var(--rb-text-dim);
+	}
+	.agent-details pre {
+		white-space: pre-wrap;
+		margin: 0.35rem 0 0;
+		font-size: 10px;
 	}
 	.stems-actions {
 		display: flex;

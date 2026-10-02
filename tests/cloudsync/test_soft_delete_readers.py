@@ -52,6 +52,7 @@ from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.sync_stamp import encode_row_pk
 from apps.shared.state.writer import StateWriter
+from apps.shared.state.writer_tracks import TrackRemovedError
 from apps.smartlists.evaluator import evaluate
 from apps.spotify.matcher_adapter import load_local_tracks
 from apps.stems.cli import _duration_from_state, resolve_audio_path
@@ -232,19 +233,21 @@ def test_deleted_track_hidden_from_crate_sync_collect_plan(
     )
 
 
-def test_upsert_track_reactivates_a_tombstoned_row(
+def test_upsert_track_never_rewrites_a_tombstoned_row(
     state_db_path: Path,
 ) -> None:
-    """The chokepoint mirror of ``test_reinsert_after_delete_clears_the_
-    tombstone`` in ``test_soft_delete.py``, for tracks:
-    ``apps/shared/state/ingest/rekordbox.py`` calls ``upsert_track`` on every
-    scan regardless of whether the stable_id already exists. If a re-ingest
-    silently refreshed a tombstoned row's data while leaving ``deleted_at``
-    set, the row would carry a fresh ``updated_at`` and a fresh
-    ``local_changelog`` entry while remaining permanently invisible to every
-    deleted_at-filtered reader -- a stamped, synced, undead row. Reactivation
-    must clear the tombstone instead, the same way ``insert_playlist``
-    already does.
+    """``apps/shared/state/ingest/rekordbox.py`` calls ``upsert_track`` on every
+    scan regardless of whether the stable_id already exists. Two wrong answers
+    are possible on a row the user removed, and this pins both out (LIBM-140):
+
+    * refresh the data and leave ``deleted_at`` set: a stamped, synced, undead
+      row, invisible to every deleted_at-filtered reader;
+    * clear the tombstone: what this test asserted until LIBM-140, and the
+      reason every removed track came back on the next rekordbox import.
+
+    The row is left byte-identical and unlogged, and the call raises so a
+    caller that forgot to ask ``deleted_tracks.find_deleted_match`` first is
+    loud. ``insert_playlist`` still reactivates a playlist; tracks do not.
     """
     conn = state_db.open_rw(state_db_path)
     try:
@@ -259,45 +262,34 @@ def test_upsert_track_reactivates_a_tombstoned_row(
             writer.close()
 
         _tombstone_track(conn, "trk-1")
-        tombstoned = conn.execute(
-            "SELECT deleted_at FROM tracks WHERE stable_id = ?", ("trk-1",),
-        ).fetchone()
-        assert tombstoned is not None and tombstoned[0] is not None
-
-        # A re-ingest replays the identical row -- same title, same fields.
-        # This must still count as a change: the row is coming back from
-        # the dead even though nothing about its displayed content differs,
-        # exactly as insert_playlist's own reactivation test asserts.
-        writer = StateWriter(conn, FakeEventBus(), actor="test")
-        try:
-            changed = writer.upsert_track(
-                stable_id="trk-1", stable_id_tier="inferred", title="Loft",
-                artists=["A"], album=None, isrc=None, duration_ms=222_000,
-                file_path="/music/loft.mp3",
-            )
-        finally:
-            writer.close()
-        assert changed is True, (
-            "reactivating a tombstoned track with unchanged data must "
-            "still be reported as a change"
-        )
-
-        reactivated = conn.execute(
-            "SELECT deleted_at FROM tracks WHERE stable_id = ?", ("trk-1",),
-        ).fetchone()
-        assert reactivated is not None and reactivated[0] is None, (
-            "the tombstone survived the re-ingest -- the track is "
-            "permanently invisible even though the vendor scan still has it"
-        )
-
-        changelog_count = conn.execute(
-            "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'tracks' "
-            "AND row_pk = ?",
+        tombstoned = conn.execute("SELECT * FROM tracks WHERE stable_id = ?", ("trk-1",)).fetchone()
+        assert tombstoned is not None
+        changelog_before = conn.execute(
+            "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'tracks' AND row_pk = ?",
             (encode_row_pk(("trk-1",)),),
         ).fetchone()[0]
-        assert changelog_count >= 2, (
-            "the reactivation was not logged to local_changelog -- it will "
-            "not sync (ADR 08 point 2)"
+
+        writer = StateWriter(conn, FakeEventBus(), actor="test")
+        try:
+            for title in ("Loft", "Loft (retagged)"):
+                with pytest.raises(TrackRemovedError):
+                    writer.upsert_track(
+                        stable_id="trk-1", stable_id_tier="inferred", title=title,
+                        artists=["A"], album=None, isrc=None, duration_ms=222_000,
+                        file_path="/music/loft.mp3",
+                    )
+        finally:
+            writer.close()
+
+        after = conn.execute("SELECT * FROM tracks WHERE stable_id = ?", ("trk-1",)).fetchone()
+        assert tuple(after) == tuple(tombstoned), "a re-ingest rewrote a removed track"
+        changelog_after = conn.execute(
+            "SELECT COUNT(*) FROM local_changelog WHERE table_name = 'tracks' AND row_pk = ?",
+            (encode_row_pk(("trk-1",)),),
+        ).fetchone()[0]
+        assert changelog_after == changelog_before, (
+            "a refused write still logged a change, which would sync a no-op "
+            "stamp over the tombstone"
         )
     finally:
         conn.close()

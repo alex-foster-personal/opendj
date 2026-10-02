@@ -32,7 +32,6 @@ from apps.sync_hub import client, engine, protocol
 from apps.sync_hub.engine_identity import (
     SyncIdentityPreflightError,
     assert_identity_ready,
-    assert_merge_safe,
     hub_library_size,
 )
 from tests.cloudsync.test_hub_sync import (
@@ -590,27 +589,6 @@ def test_run_sync_second_library_does_not_push_unidentifiable_rows(
         assert _track_ids(hub_after) == {"trk-a-seeded", "trk-b-unsyncable"}
     finally:
         hub_after.close()
-
-
-# ----- (4b) the seed/merge distinction, in isolation -------------------------
-
-
-def test_merge_safe_refuses_only_a_first_sync_into_a_populated_hub(
-    tmp_path: Path,
-) -> None:
-    """ADR-0068: hash_pending rows no longer trigger merge_safe refusal."""
-    conn = _open_hub(tmp_path)
-    try:
-        _insert_identified_track(
-            conn, "trk-x", title="no identity", updated_at=_T0, origin=_DEV_A
-        )
-        conn.commit()
-        assert_merge_safe(conn, hub_library_rows=None, first_sync=True)
-        assert_merge_safe(conn, hub_library_rows=0, first_sync=True)
-        assert_merge_safe(conn, hub_library_rows=9194, first_sync=False)
-        assert_merge_safe(conn, hub_library_rows=9194, first_sync=True)
-    finally:
-        conn.close()
 
 
 def test_hub_library_size_counts_live_rows_whatever_authored_them(

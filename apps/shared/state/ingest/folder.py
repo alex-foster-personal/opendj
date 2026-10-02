@@ -22,8 +22,10 @@ Three things it refuses to be vague about:
 
 Safety mirrors the rekordbox adapter exactly: dry-run by default via an
 outer write unit (:func:`apps.shared.state.db.write_unit`) that is
-discarded, and the event bus swapped for a silent drop-in while it is, so a
-rolled-back run publishes no phantom events.
+discarded, and the event bus swapped for a neutral silent drop-in from
+:mod:`apps.shared.state.events` while it is, so a rolled-back run publishes
+no phantom events. This module must not import any Rekordbox code; the
+no-rekordbox onboarding path depends on it.
 """
 
 from __future__ import annotations
@@ -41,16 +43,14 @@ from apps.shared import audio_files, audio_playable, fs_access, fs_residency, ha
 from apps.shared.audio_playable import UnplayableAudioError
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
+from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
-
-# The same drop-in the rekordbox adapter uses. Imported rather than copied:
-# two silent buses that could drift is worse than one private import.
+from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
 )
-from apps.shared.state.ingest.rekordbox import _DryRunSilentBus
 from apps.shared.state.writer import StateWriter
 
 ADAPTER_ID: str = "folder"
@@ -81,6 +81,12 @@ class FolderIngestReport:
     tracks_updated: int = 0
     tracks_unchanged: int = 0
     tracks_skipped: int = 0
+    #: Files that ARE a track the user removed, by id or by audio identity
+    #: (LIBM-140). Left removed; restore one with ``undelete``.
+    tracks_skipped_deleted: int = 0
+    #: Files the user picked to add again that ARE a track they removed
+    #: (``restore_removed``): restored, not skipped (LIBM-141).
+    tracks_restored: int = 0
     tier_counts: dict[str, int] = dataclasses.field(
         default_factory=lambda: {"isrc": 0, "fingerprint": 0, "inferred": 0}
     )
@@ -134,8 +140,16 @@ def ingest_folder(
     clock: _ClockFn | None = None,
     on_progress: ProgressFn | None = None,
     allow_mass_missing: bool = False,
+    restore_removed: bool = False,
 ) -> FolderIngestReport:
-    """Ingest every audio file under ``roots`` into the state DB."""
+    """Ingest every audio file under ``roots`` into the state DB.
+
+    ``restore_removed`` is for a caller adding files the user picked by hand
+    (a folder drop, the import modal), never for a rescan of a library root.
+    Those files were chosen to be added, so one the user removed earlier
+    comes back instead of being skipped (LIBM-141). Without it, a removed
+    track stays removed (LIBM-140).
+    """
     start = time.perf_counter()
     root_list = [Path(root).expanduser() for root in roots]
     now_fn = clock or (lambda: _dt.datetime.now(_dt.UTC))
@@ -159,7 +173,7 @@ def ingest_folder(
 
     try:
         with state_db.write_unit(conn, "setup_ingest_folder", keep=not dry_run):
-            _write_tracks(writer, files, report, on_progress)
+            _write_tracks(writer, files, report, on_progress, restore_removed=restore_removed)
             writer.register_adapter(
                 ADAPTER_ID,
                 last_run_at=now_fn().isoformat(),
@@ -205,6 +219,8 @@ def _write_tracks(
     files: list[audio_files.AudioFile],
     report: FolderIngestReport,
     on_progress: ProgressFn | None,
+    *,
+    restore_removed: bool = False,
 ) -> None:
     """One row per file, with a tier-3 collision guard.
 
@@ -225,6 +241,24 @@ def _write_tracks(
             continue
         seen.add(stable_id)
 
+        audio_hash = hashing.sha256_audio_payload(entry.path)
+        removed = deleted_tracks.find_deleted_match(
+            writer.raw_conn,
+            stable_id=stable_id,
+            content_hash=None,
+            audio_hash=audio_hash,
+        )
+        if removed is not None and not restore_removed:
+            report.tracks_skipped_deleted += 1
+            continue
+        if removed is not None:
+            report.tracks_restored += 1
+            if removed == stable_id:
+                # Same row: the explicit restore, then the upsert refreshes it.
+                writer.undelete_track(stable_id)
+            # Same audio under another id (a new path): the file is written as
+            # the new row below and the old tombstone is left as it is.
+
         changed = writer.upsert_track(
             stable_id=stable_id,
             stable_id_tier=tier,
@@ -235,7 +269,7 @@ def _write_tracks(
             duration_ms=duration_ms,
             file_path=str(entry.path),
             content_hash=None,
-            audio_hash=hashing.sha256_audio_payload(entry.path),
+            audio_hash=audio_hash,
         )
         if changed:
             report.tracks_inserted += 1
@@ -347,6 +381,8 @@ def _print_summary(report: FolderIngestReport) -> None:
     print(f"  tracks inserted:    {report.tracks_inserted}")
     print(f"  tracks unchanged:   {report.tracks_unchanged}")
     print(f"  tracks skipped:     {report.tracks_skipped}")
+    print(f"  skipped: deleted by user: {report.tracks_skipped_deleted}")
+    print(f"  restored: picked again by user: {report.tracks_restored}")
     print(f"  tracks with NO analysis: {report.tracks_without_analysis}")
     for tier, count in report.tier_counts.items():
         print(f"  tier {tier:<12} {count}")
