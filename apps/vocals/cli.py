@@ -343,7 +343,9 @@ def load_state_tracks(ctx: Ctx) -> list[VocalTrack]:
             "WHERE t.deleted_at IS NULL"
         ).fetchall()
         ids = [str(sid) for sid, _title in rows]
-        audio = state_locations.bulk_local_audio_paths(state, ids)
+        audio = state_locations.bulk_local_audio_paths(
+            state, ids, path_map=load_path_map(ctx.data_dir)
+        )
     finally:
         state.close()
     tracks = [

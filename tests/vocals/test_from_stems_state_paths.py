@@ -10,11 +10,14 @@ Regression one-liners:
   - if from-stems needs master.plain.db then broken
   - if a rekordbox-mapped track's state.db audio path is not what from-stems sees then broken
   - if an unmapped or deleted track enters from-stems then broken
+  - if a data dir's path-map.json is ignored then a remapped library skips every track
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+import json
 
 import pytest
 
@@ -68,12 +71,40 @@ def test_state_tracks_come_from_state_db_alone(tmp_path: Path) -> None:
     assert tracks[0].audio_on_disk is True
 
 
-def test_from_stems_runs_without_master_db(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """[if] from-stems runs where no master.plain.db exists [then] it plans and exits 0, [else stop]."""
+def test_state_tracks_apply_the_data_dirs_path_map(tmp_path: Path) -> None:
+    """[if] state.db stores a path only path-map.json resolves [then] the track still finds its audio, [else stop]."""
+    data_dir = tmp_path / "data"
+    audio = _state(data_dir, tmp_path)
+    conn = state_db.open_rw(data_dir / "state" / "state.db")
+    for table in ("tracks", "track_locations"):
+        conn.execute(
+            f"UPDATE {table} SET file_path = ? WHERE stable_id = 'mapped'",
+            ("/Volumes/Gone/mapped.wav",),
+        )
+    conn.commit()
+    conn.close()
+    (data_dir / "path-map.json").write_text(
+        json.dumps({"entries": [{"from": "/Volumes/Gone", "to": str(tmp_path)}]})
+    )
+
+    tracks = cli.load_state_tracks(cli.Ctx(data_dir=data_dir))
+
+    assert tracks[0].audio_path == audio["mapped"]
+
+
+def test_from_stems_runs_without_master_db(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] from-stems runs where no master.plain.db exists [then] it plans the mapped bundle and exits 0, [else stop]."""
     data_dir = tmp_path / "data"
     _state(data_dir, tmp_path)
+    monkeypatch.setattr(
+        cli.vfrom_stems, "list_bundle_ids", lambda _root: ["deleted", "mapped", "unmapped"]
+    )
 
     code = cli.main(["from-stems", "--data-dir", str(data_dir), "--dry-run"])
 
+    out = capsys.readouterr().out
     assert code == 0
-    assert "from-stems: 0 track(s)" in capsys.readouterr().out
+    assert "from-stems: 1 track(s)" in out
+    assert "1. mapped 'Mapped'" in out
