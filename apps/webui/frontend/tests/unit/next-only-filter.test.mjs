@@ -115,4 +115,26 @@ describe('next-only-filter', () => {
 		const bothPrefs = { ...samePrefs, bpm_direction: 'both' };
 		assert.equal(bpmMatchesCompatiblePrefs(110, 128, bothPrefs), true);
 	});
+
+	it('applies the BPM direction to half and double matches by raw tempo', () => {
+		// Sol P2 on PR #4014: with allow_half_double on, the fold branch used to
+		// admit 64 under `above` and 256 under `below` against 128.
+		const { bpmMatchesCompatiblePrefs, COMPATIBLE_FILTER_DEFAULTS } = mod;
+		const base = {
+			...COMPATIBLE_FILTER_DEFAULTS,
+			bpm_window_bpm: 6,
+			allow_half_double: true,
+			bpm_enabled: true
+		};
+		const above = { ...base, bpm_direction: 'above' };
+		const below = { ...base, bpm_direction: 'below' };
+		const both = { ...base, bpm_direction: 'both' };
+		assert.equal(bpmMatchesCompatiblePrefs(64, 128, above), false, 'half time is below 128');
+		assert.equal(bpmMatchesCompatiblePrefs(256, 128, above), true, 'double time is above 128');
+		assert.equal(bpmMatchesCompatiblePrefs(256, 128, below), false, 'double time is above 128');
+		assert.equal(bpmMatchesCompatiblePrefs(64, 128, below), true, 'half time is below 128');
+		// Control: `both` keeps both folds.
+		assert.equal(bpmMatchesCompatiblePrefs(64, 128, both), true);
+		assert.equal(bpmMatchesCompatiblePrefs(256, 128, both), true);
+	});
 });

@@ -101,7 +101,11 @@ export function bpmMatchesCompatiblePrefs(
 	}
 	if (within) return true;
 	if (!prefs.allow_half_double) return false;
+	// Direction compares RAW tempo (PR #4014): a half-time candidate is below
+	// the reference and a double-time one above, so `above` keeps only the
+	// double fold and `below` only the half fold.
 	for (const fold of [0.5, 2] as const) {
+		if (prefs.bpm_direction === 'above' ? fold < 1 : prefs.bpm_direction === 'below' && fold > 1) continue;
 		if (Math.abs(candidateBpm - refBpm * fold) <= BPM_HALF_ABS) return true;
 	}
 	return false;

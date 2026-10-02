@@ -23,10 +23,12 @@ export function bpmCellTitle(row: BrowserRow, masterBpm: number | null): string 
 	if (row.bpm_confidence !== null && row.bpm_confidence !== undefined) {
 		const pct = Math.round(row.bpm_confidence * 100);
 		parts.push(`Confidence: ${pct}%`);
+	} else if (row.bpm_confidence_error) {
+		parts.push(`Confidence: ${row.bpm_confidence_error}`);
 	}
 	if (row.bpm !== null) {
 		parts.push(`Exact BPM: ${row.bpm.toFixed(1)}`);
-		if (row.bpm_status === 'ok' && !row.bpm_method && row.bpm_confidence == null) {
+		if (row.bpm_status === 'ok' && !row.bpm_method && row.bpm_confidence == null && !row.bpm_confidence_error) {
 			parts.push('Dynamic tempo analysis: not analyzed');
 		}
 	}

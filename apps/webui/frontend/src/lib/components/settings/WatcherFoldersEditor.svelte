@@ -25,7 +25,7 @@
 		try {
 			const paths = parseWatcherFolderLines(draft);
 			await validateWatcherFoldersExist(paths);
-			setLibraryWatcherFolders(paths);
+			await setLibraryWatcherFolders(paths);
 			draft = formatWatcherFolderLines(paths);
 			msg = paths.length === 0 ? 'Cleared watcher folders.' : `Saved ${paths.length} folder(s).`;
 		} catch (err) {

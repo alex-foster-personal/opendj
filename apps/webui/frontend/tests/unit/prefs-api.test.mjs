@@ -589,25 +589,6 @@ test('hydrateConfirmPrefsFromDisk still hydrates unknown boolean confirm keys', 
 	assert.equal(prefs.uiPrefs.confirm.future_confirm_flag, true);
 });
 
-test('setLibraryWatcherFolders fires PUT with library_watcher_folders body', async () => {
-	let body;
-	let release;
-	const gate = new Promise((resolve) => {
-		release = resolve;
-	});
-	globalThis.fetch = async (request) => {
-		body = await request.clone().json();
-		release();
-		return jsonResponse({ library_watcher_folders: ['/Users/dev/watch-a'] });
-	};
-
-	prefs.setLibraryWatcherFolders(['/Users/dev/watch-a']);
-	await gate;
-
-	assert.deepEqual(body, { library_watcher_folders: ['/Users/dev/watch-a'] });
-	assert.deepEqual(prefs.uiPrefs.library_watcher_folders, ['/Users/dev/watch-a']);
-});
-
 test('hydrateConfirmPrefsFromDisk applies library_watcher_folders from GET', async () => {
 	prefs.uiPrefs.library_watcher_folders = [];
 

@@ -18,4 +18,22 @@ describe('bpm-cell-title', () => {
 		assert.match(title, /Rekordbox beatgrid/);
 		assert.match(title, /Confidence: 92%/);
 	});
+
+	it('names an invalid stored confidence instead of hiding it (Sol P1, PR #4014)', async () => {
+		const { bpmCellTitle } = await loadTypeScriptModule('src/lib/rb/bpm-cell-title.ts');
+		const error = 'invalid stored bpm confidence 1.5: expected a number from 0 to 1';
+		const title = bpmCellTitle(
+			{
+				bpm_status: 'ok',
+				bpm: 128,
+				bpm_method: null,
+				bpm_confidence: null,
+				bpm_confidence_error: error,
+				bpm_reason: null
+			},
+			null
+		);
+		assert.ok(title.includes(`Confidence: ${error}`), title);
+		assert.doesNotMatch(title, /Dynamic tempo analysis: not analyzed/);
+	});
 });

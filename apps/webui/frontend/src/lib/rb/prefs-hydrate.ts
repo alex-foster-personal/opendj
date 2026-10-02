@@ -195,6 +195,13 @@ async function _putDiskPrefs(patch: DiskPrefsPatch): Promise<void> {
   }
 }
 
+/** Like `_putDiskPrefs` but fails loud: a transport error or a non-2xx
+ * (the client middleware throws ApiError) rejects, so a caller that reports
+ * "saved" can await this first (LIBM-129 watcher folders, PR #4014). */
+export async function putDiskPrefsVerified(patch: DiskPrefsPatch): Promise<void> {
+  await api.PUT("/api/v1/ui-prefs", { body: _diskPrefsToWirePatch(patch) });
+}
+
 export function createDiskPrefsSync() {
   return makeDiskWriteChain<DiskPrefsPatch>(_putDiskPrefs);
 }

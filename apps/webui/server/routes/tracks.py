@@ -303,6 +303,7 @@ def list_tracks(
                 bpm_source=row.get("bpm_source"),
                 bpm_method=row.get("bpm_method"),
                 bpm_confidence=row.get("bpm_confidence"),
+                bpm_confidence_error=row.get("bpm_confidence_error"),
                 lyrics=row.get("lyrics"),
                 is_remix=bool(row.get("is_remix")),
                 is_radio_edit=bool(row.get("is_radio_edit")),

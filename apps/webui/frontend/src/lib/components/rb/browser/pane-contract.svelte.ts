@@ -58,6 +58,7 @@ export interface BrowserRow extends Pick<
 	bpm_source?: string | null;
 	bpm_method?: string | null;
 	bpm_confidence?: number | null;
+	bpm_confidence_error?: string | null;
 	/** v13 playlist_memberships.item_id; null outside playlist detail. */
 	item_id: string | null;
 	/** 1-based membership position within the pane playlist (# column). */

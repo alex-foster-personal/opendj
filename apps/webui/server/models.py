@@ -204,6 +204,7 @@ class TrackListItemOut(TrackOut):
     bpm_source: str | None = None
     bpm_method: str | None = None
     bpm_confidence: float | None = None
+    bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
     lyrics: LyricsRowSummaryOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False
@@ -347,6 +348,7 @@ class TrackRowOut(BaseModel):
     bpm_source: str | None = None
     bpm_method: str | None = None
     bpm_confidence: float | None = None
+    bpm_confidence_error: str | None = None  # stored confidence not a number in [0, 1]
     loudness_status: Literal["ok", "failed", "missing", "available-not-selected"]
     loudness_reason: str | None
     lyrics: LyricsRowSummaryOut | None = None

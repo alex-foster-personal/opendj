@@ -97,3 +97,56 @@ def test_all_tracks_and_playlist_rows_agree_on_bpm_provenance(state_path: Path) 
         items = client.get("/api/v1/tracks").json()["items"]
     (item,) = [r for r in items if r["stable_id"] == STABLE_ID]
     assert {key: item[key] for key in PROVENANCE} == {key: row[key] for key in PROVENANCE}
+
+
+def _set_confidence(path: Path, value: object) -> None:
+    # The state schema's CHECK constraint already refuses an out-of-range or
+    # text confidence on write; ignore it here to stand in for a row written
+    # before that constraint or by a tool that bypassed it.
+    raw = sqlite3.connect(path)
+    try:
+        raw.execute("PRAGMA ignore_check_constraints = ON")
+        raw.execute(
+            "UPDATE track_fields SET confidence = ? WHERE stable_id = ? AND field_name = 'bpm'",
+            (value, STABLE_ID),
+        )
+        raw.commit()
+    finally:
+        raw.close()
+
+
+@pytest.mark.parametrize("bad", [1.5, -0.1])
+def test_invalid_bpm_confidence_is_reported_not_dropped(state_path: Path, bad: object) -> None:
+    """[if] stored bpm confidence is invalid [then] the row names the error and the listing still serves [else stop]."""
+    _set_confidence(state_path, bad)
+    with _client(state_path) as client:
+        response = client.get("/api/v1/tracks")
+    assert response.status_code == 200, response.text
+    (item,) = [row for row in response.json()["items"] if row["stable_id"] == STABLE_ID]
+    assert item["bpm_confidence"] is None
+    assert item["bpm_confidence_error"] is not None
+    assert repr(bad) in item["bpm_confidence_error"]
+    assert item["bpm_method"] == "manual"  # the rest of the provenance still serves
+
+
+def test_text_bpm_confidence_is_reported_by_the_row_builder(state_path: Path) -> None:
+    """[if] stored bpm confidence is text [then] the shared row builder names the error [else stop].
+
+    Builder level only: the list route also maps provenance into
+    ``ProvenanceOut``, whose float field already refuses a text confidence
+    for the whole request (pre-existing, outside this PR).
+    """
+    _set_confidence(state_path, "not-a-number")
+    backend = SqliteBackend(state_path)
+    (row,) = rb_vendor.build_track_rows([backend.get_track(STABLE_ID)])
+    assert "bpm_confidence" not in row
+    assert "'not-a-number'" in row["bpm_confidence_error"]
+
+
+def test_valid_bpm_confidence_carries_no_error(state_path: Path) -> None:
+    """Control: a valid confidence serves as a number with no error field set."""
+    with _client(state_path) as client:
+        items = client.get("/api/v1/tracks").json()["items"]
+    (item,) = [r for r in items if r["stable_id"] == STABLE_ID]
+    assert item["bpm_confidence"] == pytest.approx(0.93)
+    assert item["bpm_confidence_error"] is None

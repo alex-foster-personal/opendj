@@ -12655,6 +12655,8 @@ export interface components {
             bpm: number | null;
             /** Bpm Confidence */
             bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
             /** Bpm Method */
             bpm_method?: string | null;
             /** Bpm Reason */
@@ -13890,6 +13892,8 @@ export interface components {
             bpm?: number | null;
             /** Bpm Confidence */
             bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
             /** Bpm Method */
             bpm_method?: string | null;
             /** Bpm Source */
@@ -14116,6 +14120,8 @@ export interface components {
             bpm: number | null;
             /** Bpm Confidence */
             bpm_confidence?: number | null;
+            /** Bpm Confidence Error */
+            bpm_confidence_error?: string | null;
             /** Bpm Method */
             bpm_method?: string | null;
             /** Bpm Reason */

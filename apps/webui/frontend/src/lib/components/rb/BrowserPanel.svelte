@@ -312,13 +312,15 @@
 	let BrowserConfirmDialog = $state<
 		typeof import('./browser/BrowserConfirmDialog.svelte').default | null
 	>(null);
+	/** `cancelled`: superseded by a newer confirm before the user answered. */
+	type BrowserConfirmChoice = { ok: boolean; remember: boolean; setDefault: boolean; cancelled?: true };
 	let browserConfirmPending = $state<{
 		title: string;
 		message: string;
 		primaryLabel: string;
 		secondaryLabel: string;
 		showDefault: boolean;
-		resolve: (value: { ok: boolean; remember: boolean; setDefault: boolean }) => void;
+		resolve: (value: BrowserConfirmChoice) => void;
 	} | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
@@ -652,7 +654,7 @@
 		primaryLabel: string;
 		secondaryLabel: string;
 		showDefault?: boolean;
-	}): Promise<{ ok: boolean; remember: boolean; setDefault: boolean }> {
+	}): Promise<BrowserConfirmChoice> {
 		const loaded =
 			BrowserConfirmDialog === null
 				? import('./browser/BrowserConfirmDialog.svelte').then((mod) => {
@@ -660,6 +662,11 @@
 					})
 				: Promise.resolve();
 		return loaded.then(() => new Promise((resolve) => {
+			// The dialog is not modal over the browser, so a second delete or
+			// drop can arrive while one is open: settle the first as cancelled
+			// rather than drop its resolver and leave it awaiting forever
+			// (Sol P2, PR #4014). Not ok:false - for a drop that means Move.
+			browserConfirmPending?.resolve({ ok: false, remember: false, setDefault: false, cancelled: true });
 			browserConfirmPending = {
 				...cfg,
 				showDefault: cfg.showDefault ?? false,
@@ -1628,7 +1635,13 @@
 			// leave it there until the next event. The mount-time read in
 			// `_init` above has no such constraint and shares one.
 			const healthRes = await getHealthFreshWithRetry(getHealth);
-			allTracksCount = allTracksNonBrokenCount ?? healthRes.health.state_db.tracks;
+			// RAW state_db row total, the same population `_init` writes: it
+			// only says whether the library has rows, and All Tracks nodes
+			// pair it with `allTracksBrokenCount` like any playlist's
+			// track_count. Every NON-BROKEN total reads
+			// `allTracksNonBrokenCount` and shows unknown while it is null;
+			// never substitute this for it, nor it for this (Sol P1, #4014).
+			allTracksCount = healthRes.health.state_db.tracks;
 			_healthWriteEpoch += 1;
 		} catch (exc) {
 			console.error(`[library-refresh] track count refresh failed: ${String(exc)}`);
@@ -1923,6 +1936,7 @@
 				secondaryLabel: 'Move',
 				showDefault: true
 			});
+			if (choice.cancelled) return;
 			mode = choice.ok ? 'add' : 'move';
 			if (choice.remember || choice.setDefault) {
 				setConfirmPref('playlist_drop_mode', mode);

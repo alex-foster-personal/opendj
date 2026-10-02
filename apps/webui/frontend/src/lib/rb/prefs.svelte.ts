@@ -88,6 +88,7 @@ import {
 	makePrefsHydrator,
 	setLibraryBrowserDiskPref,
 	setTopbarDiskPref,
+	putDiskPrefsVerified,
 	syncDiskPrefs
 } from './prefs-hydrate';
 import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLibrary } from './prefs-fields';
@@ -822,11 +823,14 @@ export function patchCompatibleFilter(patch: Partial<CompatibleFilterPrefs>): vo
 	_syncDiskPrefs({ compatible_filter: uiPrefs.compatible_filter });
 }
 
-/** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
-export function setLibraryWatcherFolders(paths: readonly string[]): void {
-	uiPrefs.library_watcher_folders = [...paths];
+/** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks.
+ * Resolves only once the disk PUT succeeded and rejects otherwise, leaving the
+ * live prefs untouched, so the editor never reports a save that did not land. */
+export async function setLibraryWatcherFolders(paths: readonly string[]): Promise<void> {
+	const next = [...paths];
+	await _syncDiskPrefs({ library_watcher_folders: next }, putDiskPrefsVerified);
+	uiPrefs.library_watcher_folders = next;
 	_persist();
-	void _syncDiskPrefs({ library_watcher_folders: uiPrefs.library_watcher_folders });
 }
 
 export function clearConfirmPref<K extends keyof RbUiPrefs['confirm']>(key: K): void {
