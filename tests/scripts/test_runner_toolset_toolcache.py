@@ -113,13 +113,20 @@ def test_the_real_marked_tool_cache_passes_the_probe(entry: dict) -> None:
 @pytest.mark.parametrize("entry", ENTRIES, ids=[e["name"] for e in ENTRIES])
 def test_a_real_cache_copy_passes_only_with_its_marker(entry: dict, tmp_path: Path) -> None:
     marker = _copy_real_version(_populated_arch_dir(entry), tmp_path)
-
-    control = _run_verify(entry, tmp_path)
-    assert control.returncode == 0, f"the marked copy failed: {control.stdout}{control.stderr}"
-    marker.unlink()
-    result = _run_verify(entry, tmp_path)
-    assert result.returncode != 0, f"passed without the marker: {result.stdout}{result.stderr}"
-    assert ".complete" in result.stdout + result.stderr, result.stdout + result.stderr
+    try:
+        control = _run_verify(entry, tmp_path)
+        assert control.returncode == 0, f"the marked copy failed: {control.stdout}{control.stderr}"
+        marker.unlink()
+        result = _run_verify(entry, tmp_path)
+        assert result.returncode != 0, f"passed without the marker: {result.stdout}{result.stderr}"
+        assert ".complete" in result.stdout + result.stderr, result.stdout + result.stderr
+    finally:
+        # The hardlink in _copy_real_version fails across filesystems (a tmpfs
+        # RUNNER_TEMP vs /opt/hostedtoolcache), so this is a full copy of a real
+        # toolchain, hundreds of MB. pytest keeps every tmp_path until the
+        # session ends, and on nucbox RUNNER_TEMP is a 2G tmpfs shared with the
+        # whole shard: free it now (ENOSPC on nucbox-wsl-3/6/8/14, Fri 2 Oct 2026).
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
 
 def test_every_tool_cache_entry_names_its_completion_marker() -> None:
