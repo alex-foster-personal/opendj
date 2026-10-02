@@ -122,38 +122,59 @@ def get_track_artwork(
     size: Literal["s", "m", "orig"] = Query(
         "s", description="s=80x80 browser rows, m=240x240 deck thumbs, orig"
     ),
+    online: bool = Query(
+        False,
+        description=(
+            "also look the track up on MusicBrainz + Cover Art Archive when it has no "
+            "local artwork (the decks ask; the listing does not)"
+        ),
+    ),
     _backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
 ) -> FileResponse | Response:
-    """Serve artwork for the track: rekordbox's pre-rendered jpg variant when
-    mapped, else the embedded tag picture read straight from the local file.
+    """Serve artwork for the track, first source that has one:
 
-    The embedded-tag path has no pre-rendered s/m/orig variants (rekordbox
-    never touched this file), so ``size`` is not honoured there -- the real
-    embedded image is served at its original dimensions and mime type for
-    all three, rather than fabricating a resize.
+    rekordbox's pre-rendered jpg variant when mapped and present, else the
+    picture embedded in the local file, a cover image beside it, or a cover
+    found online (cached in the app's data dir; looked up now only with
+    ``online=true``). See :func:`apps.adapters.rekordbox.paths.local_artwork`.
+
+    Only the rekordbox path has pre-rendered s/m/orig variants, so ``size``
+    is not honoured for the others: the real image is served as found,
+    rather than fabricating a resize.
     """
     try:
         content = rb_vendor.resolve_content(stable_id)
     except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+        if _error_code(exc) != "VENDOR_MAPPING_NOT_FOUND":
             raise
-        data, mime = rb_vendor.local_artwork(stable_id)
-        etag = f'"{hashlib.sha256(data).hexdigest()}"'
-        headers = {"Cache-Control": _CACHE_ARTWORK, "ETag": etag}
-        if _etag_matches(request.headers.get("if-none-match"), etag):
-            return Response(status_code=304, headers=headers)
-        return Response(
-            content=data,
-            media_type=mime,
-            headers=headers,
-        )
-    path = rb_vendor.artwork_file(content, size)
+        return _local_artwork_response(request, stable_id, online=online)
+    try:
+        path = rb_vendor.artwork_file(content, size)
+    except HTTPException as exc:
+        if _error_code(exc) != "ARTWORK_NOT_FOUND":
+            raise
+        # rekordbox holds no artwork for this track on this machine (no
+        # ImagePath, or its Artwork folder is elsewhere): the rest of the chain.
+        return _local_artwork_response(request, stable_id, online=online)
     return FileResponse(
         path,
         media_type="image/jpeg",
         headers={"Cache-Control": _CACHE_ARTWORK},
     )
+
+
+def _error_code(exc: HTTPException) -> str | None:
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    return detail.get("code")
+
+
+def _local_artwork_response(request: Request, stable_id: str, *, online: bool) -> Response:
+    data, mime = rb_vendor.local_artwork(stable_id, online=online)
+    etag = f'"{hashlib.sha256(data).hexdigest()}"'
+    headers = {"Cache-Control": _CACHE_ARTWORK, "ETag": etag}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=data, media_type=mime, headers=headers)
 
 
 def _canonical_beatgrid_record(db_path: Path, stable_id: str) -> AnalysisRecord | None:

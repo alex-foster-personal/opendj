@@ -3,11 +3,7 @@
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
 	// key badge + semitone nudge arrows, KEY SYNC,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
-	import { artworkUrl } from '$lib/rb/api-rb';
-	import {
-		optionalResources,
-		shouldFetchArtwork
-	} from '$lib/rb/optional-resource-availability';
+	import { deckArtworkUrl } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { formatKeySyncDeltaText, keySyncNotationBullet } from '$lib/rb/key-sync-copy';
 	import {
@@ -56,13 +52,8 @@
 
 	let artworkFailed: boolean = $state(false);
 	let tempoEditAt: { x: number; y: number } | null = $state(null);
-	const artworkCap = $derived(
-		deck.stable_id === null ? 'unknown' : optionalResources(deck.stable_id).artwork
-	);
 	const artSrc: string | null = $derived(
-		deck.stable_id === null || !shouldFetchArtwork(deck.stable_id)
-			? null
-			: artworkUrl(deck.stable_id, 'orig')
+		deck.stable_id === null ? null : deckArtworkUrl(deck.stable_id, 'orig')
 	);
 	$effect(() => {
 		// Reset the failure flag whenever the artwork target changes.
@@ -319,9 +310,7 @@
 				{:else}
 					<span
 						class="art placeholder"
-						title={artworkCap === null
-							? 'artwork could not be checked (tag reader not installed in this build)'
-							: undefined}
+						title="No artwork found: none in rekordbox, the file, a cover image in its folder, or online"
 					></span>
 				{/if}
 				<span class="art-eject" aria-hidden="true">⏏</span>
