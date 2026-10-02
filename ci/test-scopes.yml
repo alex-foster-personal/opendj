@@ -164,6 +164,7 @@ scopes:
   - name: parity
     sources: ["apps/parity/"]
     tests: ["tests/parity/"]
+    dependents: ["vocals"]
   - name: play_analytics
     sources: ["apps/play_analytics/"]
     tests: ["tests/play_analytics/"]
@@ -235,7 +236,7 @@ scopes:
     sources: ["apps/webui/frontend/"]
     tests: []
     mentions: ["apps/webui/frontend", "frontend"]
-    dependents: ["agentic_testing", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "standalone", "stems", "webui"]
+    dependents: ["agentic_testing", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "standalone", "stems", "vocals", "webui"]
   - name: prose
     # Documentation trees. Round 5 measured that prose is NOT harmless here (24 files named
     # by literal path inside tests, six modules that glob for it), so an unclaimed prose path
