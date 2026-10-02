@@ -2048,7 +2048,7 @@
 						</td>
 						<td
 							class="c-plays"
-							title="play count (rekordbox history + djay)"
+							title="play count: rekordbox plays plus Open DJ plays heard for 60 s or more"
 						>{row.play_count > 0 ? String(row.play_count) : ''}</td>
 						<!-- The cell hands its own width to CSS so the stars can
 						     tighten then shrink to fit it (pin 8f60606750c6). -->

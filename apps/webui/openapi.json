@@ -21193,6 +21193,57 @@
         "title": "TrackPatch",
         "type": "object"
       },
+      "TrackPlayIn": {
+        "additionalProperties": false,
+        "properties": {
+          "audible_s": {
+            "description": "Seconds the room heard this load (master-routed, above silence).",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Audible S",
+            "type": "number"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deck"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "play_id": {
+            "description": "Client-minted id of this deck load; a retry with the same id is not counted twice.",
+            "maxLength": 64,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Play Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "play_id",
+          "audible_s"
+        ],
+        "title": "TrackPlayIn",
+        "type": "object"
+      },
       "TrackPlaylistOut": {
         "properties": {
           "name": {
@@ -21222,6 +21273,59 @@
           "positions"
         ],
         "title": "TrackPlaylistOut",
+        "type": "object"
+      },
+      "TrackPlaysOut": {
+        "properties": {
+          "opendj_last_played_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opendj Last Played At"
+          },
+          "opendj_play_count": {
+            "title": "Opendj Play Count",
+            "type": "integer"
+          },
+          "play_count": {
+            "description": "rekordbox_play_count + opendj_play_count",
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "recorded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "POST only: false when this play_id was already logged.",
+            "title": "Recorded"
+          },
+          "rekordbox_play_count": {
+            "title": "Rekordbox Play Count",
+            "type": "integer"
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "play_count",
+          "rekordbox_play_count",
+          "opendj_play_count",
+          "opendj_last_played_at"
+        ],
+        "title": "TrackPlaysOut",
         "type": "object"
       },
       "TrackRowOut": {
@@ -38157,6 +38261,98 @@
         "summary": "List Track Playlists",
         "tags": [
           "tracks"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/plays": {
+      "get": {
+        "operationId": "get_track_plays_api_v1_tracks__stable_id__plays_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackPlaysOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Track Plays",
+        "tags": [
+          "track-plays"
+        ]
+      },
+      "post": {
+        "operationId": "record_track_play_api_v1_tracks__stable_id__plays_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackPlayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackPlaysOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Track Play",
+        "tags": [
+          "track-plays"
         ]
       }
     },

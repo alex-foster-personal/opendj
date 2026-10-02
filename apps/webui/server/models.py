@@ -75,7 +75,7 @@ class TrackOut(BaseModel):
     # (not vendor bpm). Null when never set for this track.
     tempo_pref: TempoPrefOut | None = None
     file_path: str | None = None
-    # Rekordbox djmdContent.DJPlayCount when hydrated via rb_vendor; 0 if unknown.
+    # Rekordbox djmdContent.DJPlayCount plus Open DJ plays (PLAYS-01); 0 if neither.
     play_count: int = 0
     created_at: str
     updated_at: str

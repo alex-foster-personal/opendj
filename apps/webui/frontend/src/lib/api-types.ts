@@ -5678,6 +5678,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracks/{stable_id}/plays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Track Plays */
+        get: operations["get_track_plays_api_v1_tracks__stable_id__plays_get"];
+        put?: never;
+        /** Record Track Play */
+        post: operations["record_track_play_api_v1_tracks__stable_id__plays_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tracks/{stable_id}/rb-meta": {
         parameters: {
             query?: never;
@@ -14206,6 +14224,23 @@ export interface components {
             tags_remove?: string[] | null;
             tempo_pref?: components["schemas"]["TempoPrefPatch"] | null;
         };
+        /** TrackPlayIn */
+        TrackPlayIn: {
+            /**
+             * Audible S
+             * @description Seconds the room heard this load (master-routed, above silence).
+             */
+            audible_s: number;
+            /** Deck */
+            deck?: number | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /**
+             * Play Id
+             * @description Client-minted id of this deck load; a retry with the same id is not counted twice.
+             */
+            play_id: string;
+        };
         /** TrackPlaylistOut */
         TrackPlaylistOut: {
             /** Name */
@@ -14216,6 +14251,27 @@ export interface components {
             positions: number[];
             /** Vendor */
             vendor: string;
+        };
+        /** TrackPlaysOut */
+        TrackPlaysOut: {
+            /** Opendj Last Played At */
+            opendj_last_played_at: string | null;
+            /** Opendj Play Count */
+            opendj_play_count: number;
+            /**
+             * Play Count
+             * @description rekordbox_play_count + opendj_play_count
+             */
+            play_count: number;
+            /**
+             * Recorded
+             * @description POST only: false when this play_id was already logged.
+             */
+            recorded?: boolean | null;
+            /** Rekordbox Play Count */
+            rekordbox_play_count: number;
+            /** Stable Id */
+            stable_id: string;
         };
         /**
          * TrackRowOut
@@ -25374,6 +25430,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrackPlaylistOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_track_plays_api_v1_tracks__stable_id__plays_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaysOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_track_play_api_v1_tracks__stable_id__plays_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackPlayIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackPlaysOut"];
                 };
             };
             /** @description Validation Error */
