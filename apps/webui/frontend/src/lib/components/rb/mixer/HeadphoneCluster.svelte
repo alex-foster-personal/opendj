@@ -13,6 +13,8 @@
 	import { headphoneLivenessAlertText, headphoneMixAccent, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
+	import { ioHoverSummary, ioShouldAlert, outputsUnset } from '$lib/rb/io-outputs-button';
+	import { ioOutputsSession, noteSetOutputsClicked } from '$lib/rb/io-outputs-session.svelte';
 	import Knob from './Knob.svelte';
 	import type { HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
 	import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -98,14 +100,20 @@
 		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
 		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
-	const ioBullets = [
-		'MASTER/MAIN is the room mix (the four channels). Pin it to speakers so plugging headphones in cannot steal it.',
-		'HEADPHONE CUE is the cue mix. Pick wired or Bluetooth headphones here.',
-		'I/O briefly uses the built-in mic so device names appear. It does not flip Bluetooth to HFP.',
-		'CALIBRATE opens the cue alignment modal: chirps to the speakers and the headphones, timed by the built-in mic, set HEAD DELAY and ROOM so both arrive together.',
-		'AUDIO IN defaults to the Mac microphone. A headphone/handsfree mic can collapse Bluetooth to HFP and drop quality.',
-		'HEAD DELAY is the Mixxx millisecond field on the cue path. Two devices still drift; Bluetooth is for auditioning, not beatmatching.'
-	];
+	// Pin 894af5672c3b: the I/O hover is compact (one sentence, the devices in
+	// use, the call to action) and dismisses instantly; the per-picker detail
+	// lives on each picker's own explainer inside the click menu.
+	const ioSummary = $derived(ioHoverSummary(state));
+	const ioBullets = $derived([ioSummary.sentence, ...ioSummary.devices, ioSummary.cta]);
+	// SET OUTPUTS pulses and glows red while no output is chosen, until the
+	// first click this session (sessionStorage; a blocked store falls back to
+	// the module's in-memory flag).
+	const ioAlert = $derived(ioShouldAlert(outputsUnset(state), ioOutputsSession.clicked));
+
+	function handleSetOutputs(): void {
+		noteSetOutputsClicked();
+		onacquire();
+	}
 	const delayBullets = [
 		'Mixxx Head Delay, 0-500 ms, on the cue path only. It does not delay the room.',
 		'CALIBRATE fills it from the measured offset when the phones are ahead of the room; type a value to override.',
@@ -120,7 +128,9 @@
 		'The waveform and PLAY light lag by the same amount on purpose, so what you see is what the room hears.'
 	];
 	const rescanBullets = [
-		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.'
+		'Re-enumerate outputs and inputs without flipping a Bluetooth headset to HFP.',
+		'Use it after plugging in or pairing a device so it shows up in the pickers below.',
+		'I/O briefly uses the built-in mic so device names appear. It does not flip Bluetooth to HFP.'
 	];
 	const modeBullets = [
 		'practice (MAIN): one output; enable channel CUE and use MIX to blend cue with full master on speakers.',
@@ -192,44 +202,42 @@
 	<ControlExplainer title="Output mode" bullets={modeBullets} demo="headphone-mode" showDelayMs={60}>
 		<span class="hp-mode" data-output-mode={state.output_mode}>{modeLabel}</span>
 	</ControlExplainer>
-	<ControlExplainer title="MAIN" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}>
-		<button
-			type="button"
-			class="hp-btn"
-			aria-pressed={state.output_mode === 'practice'}
-			aria-label="Practice output mode"
-			onclick={() => onmode('practice')}>MAIN</button
-		>
-	</ControlExplainer>
-	<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}>
-		<button
-			type="button"
-			class="hp-btn"
-			aria-pressed={state.output_mode === 'split_cable'}
-			aria-label="Split cable output mode"
-			onclick={toggleSplit}>SPLIT</button
-		>
-	</ControlExplainer>
+	<!-- Pin 894af5672c3b: MAIN above SPLIT, beside a double-height SET OUTPUTS. -->
+	<div class="hp-mode-stack" data-hp-mode-stack>
+		<ControlExplainer title="MAIN" bullets={mainBullets} demo="headphone-practice" showDelayMs={60}>
+			<button
+				type="button"
+				class="hp-btn"
+				aria-pressed={state.output_mode === 'practice'}
+				aria-label="Practice output mode"
+				onclick={() => onmode('practice')}>MAIN</button
+			>
+		</ControlExplainer>
+		<ControlExplainer title="SPLIT" bullets={splitBullets} demo="headphone-split" showDelayMs={60}>
+			<button
+				type="button"
+				class="hp-btn"
+				aria-pressed={state.output_mode === 'split_cable'}
+				aria-label="Split cable output mode"
+				onclick={toggleSplit}>SPLIT</button
+			>
+		</ControlExplainer>
+	</div>
 	<ControlExplainer
 		title="Audio I/O"
 		bullets={ioBullets}
 		pinOnClick={true}
+		dismiss="instant"
 		action={outputMenu}
 	>
 		<button
 			type="button"
-			class="hp-btn"
+			class="hp-btn hp-btn-io"
+			class:io-alert={ioAlert}
+			data-io-alert={ioAlert ? 'unset' : undefined}
 			aria-label="SHOW AUDIO I/O"
 			aria-expanded={state.supported}
-			onclick={onacquire}>I/O</button
-		>
-	</ControlExplainer>
-	<ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={60}>
-		<button
-			type="button"
-			class="hp-btn"
-			aria-label="Rescan available headphone output devices"
-			onclick={onrefresh}>↻</button
+			onclick={handleSetOutputs}><span>SET</span><span>OUTPUTS</span></button
 		>
 	</ControlExplainer>
 	{#if masterLabel !== null || selectedLabel !== null}
@@ -298,6 +306,15 @@
 
 {#snippet outputMenu()}
 	<div class="hp-menu">
+		<!-- Pin d529a7e80a4e: the rescan button and its explainer live in this menu, not the row. -->
+		<ControlExplainer title="Rescan" bullets={rescanBullets} showDelayMs={40} placement="right">
+			<button
+				type="button"
+				class="hp-btn hp-rescan"
+				aria-label="Rescan available headphone output devices"
+				onclick={onrefresh}>↻ RESCAN DEVICES</button
+			>
+		</ControlExplainer>
 		<ControlExplainer title="MASTER / MAIN" bullets={masterPickBullets} showDelayMs={40} placement="right">
 			<label class="hp-pick">
 				<span>MASTER / MAIN</span>
@@ -372,6 +389,46 @@
 		border-radius: 2px;
 		color: var(--rb-text-dim, #838990);
 		cursor: pointer;
+	}
+	.hp-mode-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.hp-btn-io {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 23px;
+		line-height: 1.1;
+	}
+	.hp-btn-io.io-alert {
+		color: var(--rb-red, #e5484d);
+		border-color: var(--rb-red, #e5484d);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--rb-red, #e5484d) 70%, transparent);
+		animation: io-alert-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes io-alert-pulse {
+		0%,
+		100% {
+			box-shadow: 0 0 3px color-mix(in srgb, var(--rb-red, #e5484d) 45%, transparent);
+		}
+		50% {
+			box-shadow: 0 0 9px color-mix(in srgb, var(--rb-red, #e5484d) 95%, transparent);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		/* Glow without pulse. */
+		.hp-btn-io.io-alert {
+			animation: none;
+		}
+	}
+	.hp-rescan {
+		max-width: none;
+		align-self: flex-start;
+		font-size: 8px;
+		padding: 2px 6px;
 	}
 	.hp-btn:hover {
 		color: var(--rb-text, #c8cdd2);
