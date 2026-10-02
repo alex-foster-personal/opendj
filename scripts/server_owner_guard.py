@@ -106,6 +106,29 @@ def testing_service_id(name: str, repo_root: Path = CFG.REPO_ROOT) -> str:
     return f"{process_namespace(repo_root)}{CFG.TEST_SERVICE_INFIX}{name}"
 
 
+def _proc_ppid(pid: int) -> int | None:
+    """Parent pid, or None when the process is gone."""
+    if sys.platform.startswith("linux"):
+        try:
+            text = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            return None
+        fields = text[text.rfind(")") + 2 :].split()
+        if len(fields) < 2:
+            return None
+        return int(fields[1])
+    out = subprocess.run(
+        ["ps", "-o", "ppid=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "LC_ALL": "C"},
+    ).stdout.strip()
+    if not out:
+        return None
+    return int(out)
+
+
 def process_start_time(pid: int) -> str | None:
     """Identity of a pid: its start time. None when the pid is gone or a zombie."""
     if sys.platform.startswith("linux"):
@@ -178,6 +201,34 @@ def _live_group_members_but_me(timeout_s: float | None = None) -> list[int]:
     ]
 
 
+def _ownership_watch(owner_pid: int, guard_pid: int) -> dict[int, str]:
+    """Pids whose death should tear down the guarded server: the declared owner
+    plus every ancestor of the guard up to init.
+
+    Playwright stamps ``--owner-pid`` from ``process.pid`` when the config
+    loads, which is not always the process the harness SIGKILLs: a wrapper or
+    worker can leave that pid running while the runner the test actually kills
+    sits on the guard's parent chain. SIGTERM often tears the tree down anyway;
+    SIGKILL does not."""
+    chain: list[int] = []
+    seen: set[int] = set()
+    for start in (owner_pid, guard_pid):
+        pid = start
+        while pid > 0 and pid not in seen:
+            chain.append(pid)
+            seen.add(pid)
+            ppid = _proc_ppid(pid)
+            if ppid is None or ppid == pid:
+                break
+            pid = ppid
+    watch: dict[int, str] = {}
+    for pid in chain:
+        identity = process_start_time(pid)
+        if identity is not None:
+            watch[pid] = identity
+    return watch
+
+
 def _kill_group_leftovers(reason: str) -> None:
     """The child exited, but what it backgrounded is still in the group: kill
     that, TERM then KILL, and spare the guard so it can return the child's status."""
@@ -219,8 +270,8 @@ def main(argv: list[str] | None = None) -> int:
             "start_new_session, so its group signals reach only the server"
         )
     owner_seen_alive_at = time.monotonic()
-    owner_identity = process_start_time(args.owner_pid)
-    if owner_identity is None:
+    ownership = _ownership_watch(args.owner_pid, os.getpid())
+    if args.owner_pid not in ownership:
         raise SystemExit(
             f"[ERROR] owner pid {args.owner_pid} is not running: "
             "refusing to start an unowned server"
@@ -247,12 +298,18 @@ def main(argv: list[str] | None = None) -> int:
             _kill_group_leftovers(f"{args.name}: child exited with status {status}")
             return status
         probe_started_at = time.monotonic()
-        if process_start_time(args.owner_pid) != owner_identity:
-            # The owner died after the last probe that saw it alive STARTED, so
-            # this deadline falls inside the bound measured from its real death,
-            # however late the poll noticed it.
+        gone = [
+            pid
+            for pid, identity in ownership.items()
+            if process_start_time(pid) != identity
+        ]
+        if gone:
+            # A watched pid died after the last probe that saw it alive STARTED,
+            # so this deadline falls inside the bound measured from its real
+            # death, however late the poll noticed it.
             kill_by = owner_seen_alive_at + CFG.OWNER_DEATH_BOUND_S - CFG.DEADLINE_MARGIN_S
-            _kill_own_group(f"{args.name}: owner pid {args.owner_pid} is gone", kill_by)
+            label = gone[0] if len(gone) == 1 else f"one of {gone}"
+            _kill_own_group(f"{args.name}: ownership pid {label} is gone", kill_by)
             return 1
         owner_seen_alive_at = probe_started_at
         time.sleep(CFG.POLL_S)

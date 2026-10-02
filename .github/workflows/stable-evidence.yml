@@ -22,7 +22,7 @@ name: Stable evidence
 
 on:
   schedule:
-    # Offset from ci-cost-guard.yml's */15 so the two passes never queue together.
+    # Offset from other */15 bookkeeping passes so the two passes never queue together.
     - cron: "7-59/15 * * * *"
     # Daily reconcile pass: the plain pass plus every re-run of a run created up to
     # RECONCILE_HORIZON_DAYS back (see the append step).

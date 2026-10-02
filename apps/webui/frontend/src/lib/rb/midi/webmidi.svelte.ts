@@ -17,6 +17,11 @@
  *     [if] initMidi() on Safari [then ⛔️] permission 'unsupported' + throw
  *     [if] user denies the Chrome prompt [then] permission 'denied', no
  *       silent retry loop
+ *   ✔︎ 🎯 webMidiSupported(): the page knows up front whether it can ask at
+ *     all, so a WebMIDI-less window (Safari, the macOS desktop app's
+ *     WKWebView) starts 'unsupported' and never offers a request.
+ *     [if] the desktop app shows "not requested yet" and a request button
+ *       [then ⛔️] broken
  *   ✔︎ Device discovery + hot-plug: statechange rescans; each input is
  *     resolved against registered DeviceMaps by nameMatch regex; inputs
  *     with no map still get a listener so their traffic learn-logs.
@@ -89,13 +94,21 @@ export interface MidiDeviceInfo {
 	hasOutput: boolean;
 }
 
+/** True when this page can call navigator.requestMIDIAccess at all. Chrome,
+ * Edge, Electron and WebView2 can. Safari and WKWebView (the macOS desktop
+ * app) cannot: WebKit has no WebMIDI and has said it will not ship one, so
+ * a request there can never succeed and no OS prompt exists to grant it. */
+export function webMidiSupported(): boolean {
+	return typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined;
+}
+
 /** Reactive WebMIDI surface state. */
 export const midiState: {
 	permission: MidiPermission;
 	devices: MidiDeviceInfo[];
 	shiftHeld: boolean;
 } = $state({
-	permission: 'prompt',
+	permission: webMidiSupported() ? 'prompt' : 'unsupported',
 	devices: [],
 	shiftHeld: false
 });
@@ -481,7 +494,7 @@ export function unregisterActionHandler(): void {
  * needs SysEx) and start dispatching. Throws on unsupported browsers and
  * on user denial; permission state is mirrored in midiState. */
 export async function initMidi(): Promise<void> {
-	if (typeof navigator === 'undefined' || navigator.requestMIDIAccess === undefined) {
+	if (!webMidiSupported()) {
 		midiState.permission = 'unsupported';
 		throw new Error('WebMIDI is not supported in this browser (Safari has no WebMIDI - use Chrome/Edge)');
 	}

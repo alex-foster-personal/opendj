@@ -12,13 +12,20 @@ WHAT 1.0.0 IS. The shipped ffmpeg tri-band decode (`DecodeProfile` defaults,
 columns/s detail, 1200-column preview. Model-free: no third-party weights, so
 `uses_model=False` and `model_sha256=None` on every record it writes.
 
+WHAT 1.2.0 IS. The same peaks; the 1200-column preview is now encoded on
+rekordbox PWV6's per-band scale (`bands.pwv6_scale`), so it draws with the
+balance JIK approved (specs/ui-contracts/library-preview-waveform). MINOR,
+because emitted preview values change. The detail lane is unchanged. 1.1.0
+is skipped here on purpose: on main-electron-rust it names the Rust engine
+decoder (NATIVE-21), which this branch does not carry.
+
 -Cursor
 """
 from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.0.0"
+PRODUCER_VERSION = "1.2.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name.
 PRODUCER: Literal["backfill"] = "backfill"

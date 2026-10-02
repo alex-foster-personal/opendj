@@ -211,5 +211,8 @@ def test_empty_library(tmp_path: Path,
             "total": 0, "tracks": [],
         }
         summary = c.get("/api/v1/reconcile/summary").json()
+    # availability is None, not zeros: an in-memory backend has no state.db
+    # to scan, and "unknown" must not read as "nothing is broken".
     assert summary == {"total_tracks": 0, "total_broken": 0,
-                       "orphan_broken": 0, "playlists": []}
+                       "orphan_broken": 0, "playlists": [],
+                       "availability": None}
