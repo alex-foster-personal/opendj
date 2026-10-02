@@ -162,6 +162,21 @@ test('Space prevents default and runs the app action on library list and row', (
 	}
 });
 
+test('Space prevents default on library chrome when play toggle is a no-op', () => {
+	const event = key({ code: 'Space', key: ' ', target: target('DIV') });
+	assert.equal(
+		routing.handlePerformanceShortcutKeydown(event, {
+			toggleRecentPlay: () => {},
+			toggleNextOnlyFilter: () => assert.fail('Tab handler must not run for Space'),
+			resizeLast: () => assert.fail('loop resize must not run for Space'),
+			exitLast: () => assert.fail('loop exit must not run for Space'),
+			armPinPlacement: () => assert.fail('M handler must not run for Space')
+		}),
+		true
+	);
+	assert.equal(event.wasPrevented(), true);
+});
+
 test('Space leaves a focused text input alone', () => {
 	const calls = [];
 	const event = key({ code: 'Space', key: ' ', target: target('INPUT', { type: 'text' }) });

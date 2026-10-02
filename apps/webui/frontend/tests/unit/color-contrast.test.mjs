@@ -160,3 +160,55 @@ test("PAIRINGS covers every colour token theme.css declares, except a named deco
   );
   assert.deepEqual(uncovered, [], `token(s) with no contrast pairing at all: ${uncovered}`);
 });
+
+// ----- issue #4219: waveform band palettes, both choices, both themes --------
+// The default is rekordbox 3Band; the legacy palette is a CSS override block
+// layered over each scheme. Every band must clear the pinned non-text floor
+// (3:1) against BOTH row backgrounds in all four combinations.
+const WAVE_BAND_TOKENS = ["rb-wave-low", "rb-wave-mid", "rb-wave-high", "rb-wave-mono"];
+const SCHEME_SELECTORS = {
+  dark: { base: ".perf-root", legacy: "html[data-wave-palette='legacy'] .perf-root" },
+  light: {
+    base: "html[data-theme='light'] .perf-root",
+    legacy: "html[data-theme='light'][data-wave-palette='legacy'] .perf-root",
+  },
+};
+
+for (const [scheme, sel] of Object.entries(SCHEME_SELECTORS)) {
+  for (const choice of ["rekordbox", "legacy"]) {
+    test(`#4219 every waveform band clears 3:1 on both rows: ${scheme} / ${choice}`, () => {
+      const base = cc.parseColorTokens(THEME_CSS, sel.base);
+      const tokens =
+        choice === "legacy" ? { ...base, ...cc.parseColorTokens(THEME_CSS, sel.legacy) } : base;
+      // Presence first: a pairing set that silently lost its band rows would
+      // also report zero violations.
+      for (const band of WAVE_BAND_TOKENS) {
+        for (const bg of ["rb-bg", "rb-waverow-secondary"]) {
+          assert.ok(
+            cc.PAIRINGS.some((p) => p.fg === band && p.bg === bg && p.level === "non-text"),
+            `no non-text pairing pins ${band} on ${bg}`,
+          );
+          assert.match(tokens[band] ?? "", /^#[0-9a-f]{6}$/i, `${scheme}/${choice} lacks ${band}`);
+          const ratio = cc.contrastRatio(tokens[band], tokens[bg]);
+          assert.ok(
+            ratio >= cc.AA_LARGE_TEXT_OR_NON_TEXT_UI,
+            `${scheme}/${choice} ${band} ${tokens[band]} on ${bg} = ${ratio.toFixed(2)}:1`,
+          );
+        }
+      }
+      const violations = cc.validateScheme(tokens, cc.PAIRINGS);
+      assert.deepEqual(violations, [], cc.describeViolations(violations));
+    });
+  }
+}
+
+test("#4219 mutation: the dark face's white high band is rejected on the light face", () => {
+  const light = cc.parseColorTokens(THEME_CSS, SCHEME_SELECTORS.light.base);
+  const dark = cc.parseColorTokens(THEME_CSS, SCHEME_SELECTORS.dark.base);
+  const broken = { ...light, "rb-wave-high": dark["rb-wave-high"] };
+  const violations = cc.validateScheme(broken, cc.PAIRINGS);
+  assert.ok(
+    violations.some((v) => v.pairing.fg === "rb-wave-high"),
+    "a near-white high band on the light face must violate its pinned pairing",
+  );
+});

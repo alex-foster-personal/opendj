@@ -200,7 +200,7 @@
 			{#each data.clusters as cluster (cluster.cluster_key)}
 				<section class="cluster-card" data-testid="dedup-cluster">
 					<header class="cluster-header">
-						<h3>Cluster #{cluster.cluster_id}</h3>
+						<h3 title="Duplicate-cluster id assigned by the dedup scan">Cluster #{cluster.cluster_id}</h3>
 						{#if cluster.flagged_manual_review}
 							<span class="badge flagged">needs manual review</span>
 						{/if}
@@ -240,12 +240,12 @@
 									<div class="member-meta">
 										{#if member.is_canonical}<span class="chip canonical">proposed survivor</span>{/if}
 										{#if member.similarity !== null}
-											<span class="chip">similarity {(member.similarity * 100).toFixed(1)}%</span>
+											<span class="chip" title="Audio-fingerprint similarity to the proposed survivor, 0-100%">similarity {(member.similarity * 100).toFixed(1)}%</span>
 										{/if}
-										<span class="chip">{member.bpm ?? '-'} BPM</span>
-										<span class="chip">{member.key ?? '-'}</span>
-										<span class="chip">{formatDuration(member.duration_ms)}</span>
-										<span class="chip">rating {member.rating ?? '-'}</span>
+										<span class="chip" title="Tempo in beats per minute (- when not analyzed)">{member.bpm ?? '-'} BPM</span>
+										<span class="chip" title="Musical key (- when not analyzed)">{member.key ?? '-'}</span>
+										<span class="chip" title="Track length, minutes:seconds">{formatDuration(member.duration_ms)}</span>
+										<span class="chip" title="Library rating of this copy (- when unrated)">rating {member.rating ?? '-'}</span>
 										<span class="chip" class:missing={!member.file_exists}>
 											{member.file_exists ? 'file found' : 'file missing'}
 										</span>
@@ -253,14 +253,15 @@
 											class="chip"
 											class:missing={member.cue_count === 0}
 											data-testid="dedup-member-cues"
+											title="Cue points rekordbox stores for this copy, memory and hot cues together (loops included)"
 										>
 											{member.cue_count === 0 ? 'no cues' : `${member.cue_count} cues`}
 										</span>
 										{#if member.hot_cue_count > 0}
-											<span class="chip">{member.hot_cue_count} hot cues</span>
+											<span class="chip" title="Hot cues (pads A-H) rekordbox stores for this copy">{member.hot_cue_count} hot cues</span>
 										{/if}
 										{#if member.loop_count > 0}
-											<span class="chip">{member.loop_count} loops</span>
+											<span class="chip" title="Saved loops (cues with a loop end) rekordbox stores for this copy">{member.loop_count} loops</span>
 										{/if}
 										<span
 											class="chip"
@@ -270,7 +271,11 @@
 											{member.has_beatgrid ? 'beatgrid' : 'no beatgrid'}
 										</span>
 										{#if member.cue_positions_ms.length > 0}
-											<span class="chip" data-testid="dedup-member-cue-positions">
+											<span
+												class="chip"
+												data-testid="dedup-member-cue-positions"
+												title="Positions of the first 8 cue points, minutes:seconds from the track start"
+											>
 												{member.cue_positions_ms
 													.slice(0, 8)
 													.map((position) => formatDuration(position))
@@ -333,7 +338,7 @@
 		font-size: 1.05rem;
 	}
 	.pending-apply-banner {
-		background: var(--muted-bg, rgba(255, 180, 58, 0.12));
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 		border: 1px solid var(--border);
 		border-radius: 6px;
 		padding: 0.6rem 0.85rem;
@@ -343,7 +348,7 @@
 	}
 	.error-banner {
 		background: var(--danger);
-		color: #fff;
+		color: var(--on-danger);
 		font-weight: 600;
 		padding: 0.6rem 1rem;
 		border-radius: 6px;
@@ -384,12 +389,12 @@
 		border-radius: 999px;
 	}
 	.badge.flagged {
-		color: #ffb43a;
-		border: 1px solid #ffb43a;
+		color: var(--accent);
+		border: 1px solid var(--accent);
 	}
 	.badge.decided {
-		color: #4ade80;
-		border: 1px solid #4ade80;
+		color: var(--success);
+		border: 1px solid var(--success);
 	}
 	.members {
 		display: grid;
@@ -405,7 +410,7 @@
 		cursor: pointer;
 	}
 	.member.selected {
-		border-color: var(--accent, #4ade80);
+		border-color: var(--accent);
 	}
 	.member input[type='radio'] {
 		align-self: flex-start;
@@ -416,7 +421,7 @@
 		height: 48px;
 		object-fit: cover;
 		border-radius: 4px;
-		background: var(--muted-bg, rgba(255, 255, 255, 0.06));
+		background: var(--surface-raised);
 		flex-shrink: 0;
 	}
 	.member-info {
@@ -443,12 +448,12 @@
 		color: var(--muted);
 	}
 	.chip.canonical {
-		color: #4ade80;
-		border-color: #4ade80;
+		color: var(--success);
+		border-color: var(--success);
 	}
 	.chip.missing {
-		color: #ff6b6b;
-		border-color: #ff6b6b;
+		color: var(--danger);
+		border-color: var(--danger);
 	}
 	.member-path {
 		font-size: 0.68rem;

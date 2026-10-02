@@ -39,10 +39,14 @@
 		smartlist?: { id: string; name: string }
 	): ContextMenuItem[] {
 		const isSmartlist = kind === 'smartlist';
+		// Unbuilt rows (New folder, Export, Import from Spotify, Pin offline,
+		// Sort by..., and the inert Forbid duplicates placeholder on
+		// non-playlists) are HIDDEN for V1 rather than shown inert (JIK, Thu 1
+		// Oct 2026): no folder-create, export, Spotify, offline-pin or tree-sort
+		// API exists to wire them to.
 		return [
 			{ id: 'new-playlist', label: 'New playlist', run: oncreate },
 			{ id: 'new-smartlist', label: 'New smartlist', run: oncreatesmartlist },
-			{ id: 'new-folder', label: 'New folder' },
 			{
 				id: 'rename',
 				label: 'Rename',
@@ -82,9 +86,7 @@
 							run: () => onforbidduplicates?.(node)
 						}
 					]
-				: [{ id: 'forbid-duplicates', label: 'Forbid duplicates' }]),
-			{ id: 'export', label: 'Export' }, { id: 'spotify', label: 'Import from Spotify' },
-			{ id: 'offline', label: 'Pin offline' }, { id: 'sort', label: 'Sort by...' },
+				: []),
 			{ id: 'reveal', label: 'Reveal in tree', run: kind === 'playlist' && node !== undefined ? () => onselect(node) : undefined }
 		];
 	}
