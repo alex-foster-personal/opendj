@@ -176,6 +176,15 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     cut = tmp_path / "cut.aac"
     cut.write_bytes(_adts_frames(1)[:27])
     assert _tagreader.adts_duration(cut) is None
+
+    # A whole frame followed by a truncated one is truncated audio too...
+    tail = tmp_path / "tail.aac"
+    tail.write_bytes(_adts_frames(2)[:1024 + 27])
+    assert _tagreader.adts_duration(tail) is None
+    # ...while a trailing ID3v1 tag (no ADTS sync) is not a frame at all.
+    tagged_tail = tmp_path / "tagged_tail.aac"
+    tagged_tail.write_bytes(_adts_frames(2) + b"TAG" + b"\x00" * 125)
+    assert _tagreader.adts_duration(tagged_tail) == pytest.approx(2 * 1024 / 44100)
     with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
         audio_playable.probe_playable_audio(cut)
 

@@ -122,7 +122,9 @@ def adts_duration(path: Path | str) -> float | None:
             if frame is None or (rate and frame[0] != rate):
                 break
             if offset + frame[1] > size:
-                break  # truncated: the header promises bytes the file lacks
+                # Truncated: a header promises bytes the file lacks, so the
+                # frames walked so far are not the whole stream.
+                return None
             rate = frame[0]
             samples += frame[2]
             offset += frame[1]
