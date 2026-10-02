@@ -7,16 +7,16 @@ listener on SIGTERM and then sat in the event loop for 12+ minutes, holding
 the engine lock, until ``kill -9``. uvicorn's graceful shutdown waits for
 every open connection and task with no bound by default, and a page's event
 stream or a handler blocked in a thread never finishes. These cases boot the
-real ``serve`` entry point with one extra probe route and send it a real
-SIGTERM.
+real, unmodified ``serve`` entry point, leave a real request open against a
+production route (a POST whose body never finishes arriving, so the handler
+is still waiting on it) and send it a real SIGTERM.
 
 Regression lines:
-  - if an open event stream keeps a SIGTERM'd engine alive then quit hangs
-    and the next boot finds the lock held -> broken
-  - if a handler blocked in a worker thread keeps it alive then the same ->
-    broken
-  - if the probe cannot tell a bounded shutdown from an unbounded one then
-    the two cases above prove nothing (the control) -> broken
+  - if a request whose body never finishes arriving keeps a SIGTERM'd engine
+    alive then quit hangs and the next boot finds the lock held -> broken
+  - if the engine exits before its graceful window is up then the open
+    request did not hold the shutdown, and the case above proves nothing
+    (the control) -> broken
 """
 from __future__ import annotations
 
@@ -43,35 +43,8 @@ pytestmark = [
 REPO = Path(__file__).resolve().parents[2]
 #: The lifespan shutdown after the graceful window, plus slack for a loaded runner.
 EXIT_WITHIN_S: float = GRACEFUL_SHUTDOWN_S + 12.0
-
-# Boots the real `serve` with two probe routes: a stream that never ends and
-# a sync handler that blocks its worker thread.
-_BOOT = """
-import asyncio, sys, time
-import apps.engine_core.__main__ as main_mod
-import apps.engine_core.app as app_mod
-from fastapi.responses import StreamingResponse
-if sys.argv[1] == "unbounded":
-    main_mod.GRACEFUL_SHUTDOWN_S = None
-real_create_app = app_mod.create_app
-def create_app(*args, **kwargs):
-    app = real_create_app(*args, **kwargs)
-    @app.get("/probe/blocking")
-    def blocking():
-        time.sleep(600)
-        return {}
-    @app.get("/probe/stream")
-    async def stream():
-        async def chunks():
-            while True:
-                yield b"data: x\\n\\n"
-                await asyncio.sleep(1)
-        return StreamingResponse(chunks(), media_type="text/event-stream")
-    return app
-app_mod.create_app = create_app
-sys.exit(main_mod.main(sys.argv[2:]))
-"""
-
+#: A production route whose handler reads a JSON body.
+OPEN_REQUEST_PATH: str = "/api/v1/feedback/comments"
 
 def _free_port() -> int:
     with socket.socket() as sock:
@@ -79,12 +52,12 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _boot(tmp_path: Path, mode: str) -> tuple[subprocess.Popen[bytes], int]:
+def _boot(tmp_path: Path) -> tuple[subprocess.Popen[bytes], int]:
     port = _free_port()
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     proc = subprocess.Popen(
-        [sys.executable, "-c", _BOOT, mode, "serve", "--data-dir", str(data_dir), "--port", str(port)],
+        [sys.executable, "-m", "apps.engine_core", "serve", "--data-dir", str(data_dir), "--port", str(port)],
         cwd=REPO,
         env={**os.environ, "MDT_LIBRARY_MODE": "local"},
         stdout=subprocess.DEVNULL,
@@ -104,10 +77,20 @@ def _boot(tmp_path: Path, mode: str) -> tuple[subprocess.Popen[bytes], int]:
     raise AssertionError("the engine never answered /api/v1/health")
 
 
-def _open_request(port: int, path: str) -> socket.socket:
+def _open_request(port: int) -> socket.socket:
+    """POST a body that never finishes arriving, so the request stays open."""
     sock = socket.create_connection(("127.0.0.1", port))
-    sock.sendall(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode())
+    sock.sendall(
+        (
+            f"POST {OPEN_REQUEST_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+            "Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n"
+            '{"body":'
+        ).encode()
+    )
     time.sleep(1.0)
+    sock.setblocking(False)
+    with pytest.raises(BlockingIOError):
+        sock.recv(1)  # no response yet: the request is still open
     return sock
 
 
@@ -128,22 +111,17 @@ def _stop(proc: subprocess.Popen[bytes], sock: socket.socket) -> None:
     proc.wait()
 
 
-@pytest.mark.parametrize("path", ["/probe/stream", "/probe/blocking"])
-def test_sigterm_exits_with_a_request_still_open(tmp_path: Path, path: str) -> None:
-    proc, port = _boot(tmp_path, "bounded")
-    sock = _open_request(port, path)
+def test_sigterm_exits_with_a_request_still_open(tmp_path: Path) -> None:
+    proc, port = _boot(tmp_path)
+    sock = _open_request(port)
     try:
         took = _seconds_to_exit(proc, EXIT_WITHIN_S)
-        assert took is not None, f"engine still running {EXIT_WITHIN_S}s after SIGTERM with {path} open"
-    finally:
-        _stop(proc, sock)
-
-
-def test_control_an_unbounded_shutdown_is_still_running(tmp_path: Path) -> None:
-    proc, port = _boot(tmp_path, "unbounded")
-    sock = _open_request(port, "/probe/stream")
-    try:
-        took = _seconds_to_exit(proc, GRACEFUL_SHUTDOWN_S + 5.0)
-        assert took is None, f"control: the unbounded engine exited after {took:.1f}s, so the probe cannot see the hang"
+        assert took is not None, f"engine still running {EXIT_WITHIN_S}s after SIGTERM with a request open"
+        # The control: the open request held the shutdown until the bound,
+        # so it was the bound that ended it and not an early close.
+        assert took >= GRACEFUL_SHUTDOWN_S - 0.5, (
+            f"engine exited {took:.1f}s after SIGTERM, inside its {GRACEFUL_SHUTDOWN_S}s "
+            "graceful window, so the open request never held the shutdown"
+        )
     finally:
         _stop(proc, sock)

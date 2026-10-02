@@ -280,6 +280,10 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
+        # A step still running would outlive the engine with its pool
+        # workers. First, before the thread joins below (CloudSync waits up
+        # to 30 s), so they cannot push it past the shell's grace.
+        ingest_cli_procs.stop_all()
         from . import path_availability_refresh
 
         path_availability_refresh.stop()
@@ -292,8 +296,6 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         if lyric_watcher is not None:
             lyric_watcher.stop()
         watcher.stop()
-        # A step still running would outlive the engine with its pool workers.
-        ingest_cli_procs.stop_all()
         # playlist_write builds its PlaylistStore lazily from
         # app.state.state_db_path; release its sqlite handle on shutdown.
         playlist_write_routes.close_store(app)
