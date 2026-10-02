@@ -450,6 +450,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		width: 100%; /* <button> shrinks to fit: long labels spilled, not ellipsized (#4082) */
 		min-width: 0;
 		height: 18px;
 		box-sizing: border-box;

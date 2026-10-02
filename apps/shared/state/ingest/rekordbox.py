@@ -7,7 +7,7 @@ vendor id links, and playlists to the state layer.
 Safety:
 
 * Always opens the RB DB read-only -- no writes possible.
-* Dry-run by default (the outer SAVEPOINT is ROLLBACK-released).
+* Dry-run by default (the outer write unit is discarded, not kept).
 * Default source is ``paths.REKORDBOX_PLAIN_DB``, the decrypted working
   copy. ``paths.REKORDBOX_WORKING_DB`` is a byte-for-byte snapshot of the
   live master.db and is therefore still SQLCipher-encrypted, so the CLI
@@ -33,8 +33,10 @@ from typing import Any
 from apps.shared import hashing, rekordbox_db
 from apps.shared import paths as shared_paths
 from apps.shared.state import db as state_db
+from apps.shared.state import deleted_tracks
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
+from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
@@ -46,30 +48,6 @@ _log = logging.getLogger(__name__)
 _ClockFn = Callable[[], _dt.datetime]
 
 
-class _DryRunSilentBus:
-    """Drop-in replacement for :class:`EventBus` that discards publishes.
-
-    Used by :func:`ingest_rb` during ``dry_run=True`` so that the outer
-    SAVEPOINT's ROLLBACK does not leave subscribers with phantom events
-    for SQL mutations that were never committed. It records the number of
-    events it swallowed for diagnostics/tests but never invokes any
-    subscriber (addresses Codex P05-F02 / INFRA-03).
-    """
-
-    def __init__(self) -> None:
-        self.suppressed: int = 0
-
-    def publish(self, _event: Any) -> None:
-        self.suppressed += 1
-
-    def subscribe(self, _kind: str, _callback: Any) -> None:  # pragma: no cover
-        # Dry-run lifetime is a single call; no-op is safe.
-        return None
-
-    def close(self, timeout: float | None = None) -> None:  # noqa: ARG002
-        return None
-
-
 @dataclasses.dataclass
 class IngestReport:
     """Counters emitted by :func:`ingest_rb` for CLI + tests."""
@@ -78,6 +56,9 @@ class IngestReport:
     tracks_updated: int = 0
     tracks_unchanged: int = 0
     tracks_skipped: int = 0
+    #: Rows rekordbox still lists that the user removed from this library
+    #: (LIBM-140). Left removed, never written, kept out of every playlist.
+    tracks_skipped_deleted: int = 0
     tier_counts: dict[str, int] = dataclasses.field(
         default_factory=lambda: {"isrc": 0, "fingerprint": 0, "inferred": 0}
     )
@@ -213,9 +194,9 @@ def ingest_rb(
 ) -> IngestReport:
     """Ingest the Rekordbox DB at ``rb_db_path`` into the state DB.
 
-    ``dry_run=True`` wraps everything in a SAVEPOINT that is
-    ROLLBACK-released at the end. ``dry_run=False`` releases the
-    SAVEPOINT to persist.
+    Everything runs in one :func:`apps.shared.state.db.write_unit`, which
+    holds the writer lock from its first read (STATE-15). ``dry_run=True``
+    discards the unit at the end; ``dry_run=False`` keeps it.
     """
     from pyrekordbox import Rekordbox6Database
 
@@ -249,13 +230,15 @@ def ingest_rb(
         ]
         assert_no_path_collisions(local_paths)
 
-        conn.execute(f"SAVEPOINT {savepoint}")
-        try:
+        with state_db.write_unit(conn, savepoint, keep=not dry_run):
             rb_to_stable: dict[str, str] = {}
             # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
             # multiple RB rows share a stable_id. Honour the first and skip
             # subsequent collisions so reruns are truly idempotent.
             seen_sids: set[str] = set()
+            # Ids the user removed (LIBM-140): skipped above, and filtered out
+            # of every playlist's membership below.
+            deleted_sids: set[str] = set()
 
             for i, track in enumerate(all_rows):
                 if limit is not None and i >= limit:
@@ -301,6 +284,22 @@ def ingest_rb(
                 audio_hash = _audio_hash_for(path_str, track["is_streaming"])
                 if content_hash is None and path_str and not track["is_streaming"]:
                     report.content_hash_missing += 1
+
+                if (
+                    deleted_tracks.find_deleted_match(
+                        conn,
+                        stable_id=sid,
+                        content_hash=content_hash,
+                        audio_hash=audio_hash,
+                    )
+                    is not None
+                ):
+                    # Deletes stay deleted: rekordbox listing the file is not
+                    # a restore. Recorded so the playlist pass below cannot
+                    # put it back in a playlist either.
+                    deleted_sids.add(sid)
+                    report.tracks_skipped_deleted += 1
+                    continue
 
                 changed = writer.upsert_track(
                     stable_id=sid,
@@ -369,28 +368,24 @@ def ingest_rb(
                 )
                 if inserted:
                     report.playlists_inserted += 1
-                member_sids = [rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable]
+                member_sids = [
+                    rb_to_stable[tid]
+                    for tid in rb_tids
+                    if tid in rb_to_stable and rb_to_stable[tid] not in deleted_sids
+                ]
                 writer.set_playlist_memberships(pl_id, member_sids)
 
+            tracks_seen = (
+                report.tracks_inserted
+                + report.tracks_updated
+                + report.tracks_unchanged
+            )
             writer.register_adapter(
                 "rekordbox",
                 last_run_at=now_fn().isoformat(),
                 last_ok=True,
-                notes=(
-                    f"tracks={report.tracks_inserted + report.tracks_updated + report.tracks_unchanged} "
-                    f"dry_run={dry_run}"
-                ),
+                notes=f"tracks={tracks_seen} dry_run={dry_run}",
             )
-
-            if dry_run:
-                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            else:
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        except Exception:
-            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            raise
     finally:
         # Always restore the real bus, even if the ingest raised.
         writer.bus = original_bus
@@ -447,6 +442,7 @@ def _print_summary(report: IngestReport) -> None:
     print(f"  tracks updated:   {report.tracks_updated}")
     print(f"  tracks unchanged: {report.tracks_unchanged}")
     print(f"  tracks skipped:   {report.tracks_skipped}")
+    print(f"  skipped: deleted by user: {report.tracks_skipped_deleted}")
     for tier, n in report.tier_counts.items():
         print(f"  tier {tier:<12} {n}")
     print(f"  playlists new:    {report.playlists_inserted}")

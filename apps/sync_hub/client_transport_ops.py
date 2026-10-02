@@ -20,6 +20,7 @@ from typing import Any
 
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import capabilities, client_refusal, engine, protocol, wire_version
+from apps.sync_hub import rejected_rows as rejected_rows_mod
 from apps.sync_hub.engine_identity_map import (
     IdentityRepairRequest,
     apply_hub_identity_rejects,
@@ -115,7 +116,11 @@ def _json_bytes(value: object) -> int:
 
 
 def _push_body(
-    machine_id: str, wire_rows: Sequence[dict[str, Any]], wire_fleet: list[dict[str, object]]
+    machine_id: str,
+    wire_rows: Sequence[dict[str, Any]],
+    wire_fleet: list[dict[str, object]],
+    *,
+    reseed: bool = False,
 ) -> dict[str, object]:
     return {
         "machine_id": machine_id,
@@ -124,6 +129,7 @@ def _push_body(
         "rows": list(wire_rows),
         "machines": wire_fleet,
         "capabilities": list(_ADVERTISED),
+        "reseed": reseed,
     }
 
 
@@ -217,6 +223,9 @@ class _PushOutcome:
     hub_quarantined: int | None = None
     #: Identity-collapse rejections from the hub (issue #3057).
     identity_rejects: tuple[protocol.IdentityReject, ...] = ()
+    #: Which offered rows the hub rejected, and why (CLOUDSYNC-31). Empty
+    #: from a hub too old to name them, while ``rejected`` still counts them.
+    rejected_rows: tuple[rejected_rows_mod.RejectedRow, ...] = ()
     #: True when the hub answered a push request with 403
     #: ``entitlement_not_in_plan`` (:mod:`apps.sync_hub.client_refusal`).
     #: The batches before it are counted; nothing after it was sent.
@@ -248,6 +257,8 @@ def _push_chunk_with_split(
     machine_id: str,
     chunk: Sequence[dict[str, Any]],
     wire_fleet: list[dict[str, object]],
+    *,
+    reseed: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Push one chunk, halving it on a timeout or a 413 until one row is left.
 
@@ -256,7 +267,12 @@ def _push_chunk_with_split(
     limit in front of the hub is below what this library needs.
     """
     try:
-        return channel.post(f"{API_PREFIX}/push", _push_body(machine_id, chunk, wire_fleet)), 1
+        return (
+            channel.post(
+                f"{API_PREFIX}/push", _push_body(machine_id, chunk, wire_fleet, reseed=reseed)
+            ),
+            1,
+        )
     except SyncTransportError as exc:
         if not _should_split(exc):
             raise
@@ -283,10 +299,10 @@ def _push_chunk_with_split(
             len(chunk) - mid,
         )
         left, left_requests = _push_chunk_with_split(
-            channel, machine_id, chunk[:mid], wire_fleet
+            channel, machine_id, chunk[:mid], wire_fleet, reseed=reseed
         )
         right, right_requests = _push_chunk_with_split(
-            channel, machine_id, chunk[mid:], wire_fleet
+            channel, machine_id, chunk[mid:], wire_fleet, reseed=reseed
         )
         return {
             "accepted": _int_from(left, "accepted", "push")
@@ -296,6 +312,8 @@ def _push_chunk_with_split(
             "quarantined": left.get("quarantined"),
             "identity_rejects": list(left.get("identity_rejects") or [])
             + list(right.get("identity_rejects") or []),
+            "rejected_rows": list(left.get("rejected_rows") or [])
+            + list(right.get("rejected_rows") or []),
         }, left_requests + right_requests
 
 
@@ -306,6 +324,8 @@ def _push_in_batches(
     fleet: Sequence[protocol.MachineRow],
     *,
     batch_rows: int,
+    reseed: bool = False,
+    confirming: bool = False,
 ) -> _PushOutcome:
     """Offer ``rows`` to the hub, at most ``batch_rows`` and
     :data:`PUSH_BODY_MAX_BYTES` per request.
@@ -324,6 +344,7 @@ def _push_in_batches(
     requests = 0
     reported: list[Any] = []
     identity_rejects: list[protocol.IdentityReject] = []
+    rejected_rows: list[rejected_rows_mod.RejectedRow] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
     batches = _push_batches(
         [row.to_wire() for row in rows],
@@ -334,7 +355,7 @@ def _push_in_batches(
     for chunk in batches:
         try:
             payload, chunk_requests = _push_chunk_with_split(
-                channel, machine_id, chunk, wire_fleet
+                channel, machine_id, chunk, wire_fleet, reseed=reseed
             )
         except SyncTransportError as exc:
             if not client_refusal.is_plan_refusal(exc):
@@ -351,6 +372,7 @@ def _push_in_batches(
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))
         identity_rejects.extend(_identity_rejects_from(payload))
+        rejected_rows.extend(rejected_rows_mod.from_push_answer(payload, confirming=confirming))
         requests += chunk_requests
     return _PushOutcome(
         accepted=accepted,
@@ -358,6 +380,7 @@ def _push_in_batches(
         requests=requests,
         hub_quarantined=_total_reported(reported),
         identity_rejects=tuple(identity_rejects),
+        rejected_rows=tuple(rejected_rows),
     )
 
 
@@ -456,6 +479,7 @@ def _run_identity_repair(
         offer_rows,
         fleet,
         batch_rows=1,
+        confirming=True,
     )
 
     def _apply_rejects() -> None:

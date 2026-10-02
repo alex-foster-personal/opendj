@@ -273,7 +273,7 @@
 	{:else if recorder.active && recorder.recoverable}
 		<button class="stop" onclick={recoverRecording} disabled={busy}>Finalize stale session</button>
 	{:else if recorder.active}
-		<span class="external-owner">Owned by process {recorder.pid}</span>
+		<span class="external-owner" title="Operating-system process id of the recorder that owns this capture">Owned by process {recorder.pid}</span>
 	{:else}
 		<label>
 			<span>ffmpeg input index</span>
@@ -287,7 +287,7 @@
 	<aside class="session-list" aria-label="Recorded sessions">
 		<div class="section-title">
 			<h3>Recorded sessions</h3>
-			<span>{sessions.length}</span>
+			<span title="Finalized recorded sessions listed below">{sessions.length}</span>
 		</div>
 		{#if sessions.length === 0}
 			<p class="empty">No finalized sessions found.</p>
@@ -298,9 +298,9 @@
 				class="session-card"
 				onclick={() => selectSession(session.session_id)}
 			>
-				<strong>{new Date(session.started_at).toLocaleDateString()}</strong>
-				<span>{formatDuration(session.duration_s)} · {session.event_count} events</span>
-				<small>{session.transition_count} transitions · {session.share_state}</small>
+				<strong title={`Session start date, local time (recorded ${session.started_at})`}>{new Date(session.started_at).toLocaleDateString()}</strong>
+				<span title="Session length (hours and minutes) and the number of events in its timeline">{formatDuration(session.duration_s)} · {session.event_count} events</span>
+				<small title="Detected deck-to-deck transitions in this session, and its sharing state">{session.transition_count} transitions · {session.share_state}</small>
 			</button>
 		{/each}
 	</aside>
@@ -310,15 +310,21 @@
 			<div class="detail-heading">
 				<div>
 					<p class="eyebrow">{selected.summary.session_id}</p>
-					<h3>{formatDuration(selected.summary.duration_s)} session</h3>
+					<h3 title="Session length, hours and minutes; active means it is still recording">{formatDuration(selected.summary.duration_s)} session</h3>
 				</div>
 				<span class="privacy">{selected.summary.share_state}</span>
 			</div>
 
 			<section class="set-summary" aria-label="Set summary">
-				<div><strong>{trackEvents().length}</strong><span>tracks played</span></div>
-				<div><strong>{selected.transitions.length}</strong><span>transitions detected</span></div>
-				<div><strong>{formatDuration(selected.summary.duration_s)}</strong><span>on the floor</span></div>
+				<div title="Track loads (track_loaded events) in this session's timeline">
+					<strong>{trackEvents().length}</strong><span>tracks played</span>
+				</div>
+				<div title="Deck-to-deck transitions the detector found in this session">
+					<strong>{selected.transitions.length}</strong><span>transitions detected</span>
+				</div>
+				<div title="Session length, hours and minutes">
+					<strong>{formatDuration(selected.summary.duration_s)}</strong><span>on the floor</span>
+				</div>
 			</section>
 
 			<section class="share-panel" aria-label="Metadata-only sharing">
@@ -347,7 +353,7 @@
 				{#each selected.segments as segment (segment.name)}
 					<div class="segment">
 						<div>
-							<strong>Segment {Math.floor(segment.start_t_s / 60) + 1}</strong>
+							<strong title={`Recorded audio segment starting ${segment.start_t_s.toFixed(0)} s into the session; the number is the minute it starts in`}>Segment {Math.floor(segment.start_t_s / 60) + 1}</strong>
 							<small>{segment.name}</small>
 						</div>
 						<audio controls preload="metadata" src={sessionAudioUrl(selected.summary.session_id, segment.name)}></audio>
@@ -380,11 +386,11 @@
 			<section class="timeline" aria-label="Session timeline">
 				<div class="section-title">
 					<h4>Timeline</h4>
-					<span>{timeline.length} events</span>
+					<span title="Events recorded in this session's timeline">{timeline.length} events</span>
 				</div>
 				{#each timeline as event, index (`${event.timestamp_s}-${index}`)}
 					<div class="event-row">
-						<time>{event.timestamp_s.toFixed(1)}s</time>
+						<time title="Seconds from the start of the session to this event">{event.timestamp_s.toFixed(1)}s</time>
 						<span class="event-marker"></span>
 						<div>
 							<strong>{eventTitle(event)}</strong>
@@ -397,17 +403,17 @@
 			<section class="transitions" aria-label="Detected transitions">
 				<div class="section-title">
 					<h4>Detected transitions</h4>
-					<span>{selected.transitions.length}</span>
+					<span title="Deck-to-deck transitions the detector found in this session">{selected.transitions.length}</span>
 				</div>
 				{#if selected.transitions.length === 0}
 					<p class="empty">No transitions were recorded for this set.</p>
 				{/if}
 				{#each selected.transitions as transition (transition.idx)}
 					<div class="transition-row">
-						<time>{transition.t_change_s.toFixed(1)}s</time>
+						<time title="Seconds from the start of the session to the transition">{transition.t_change_s.toFixed(1)}s</time>
 						<div>
 							<strong>{transition.from_track ?? transition.from_deck ?? 'Unknown'} → {transition.to_track ?? transition.to_deck ?? 'Unknown'}</strong>
-							<small>{transition.predicted_class} · {Math.round(transition.confidence * 100)}% confidence</small>
+							<small title="Predicted transition type, and the detector's confidence in it (0-100%)">{transition.predicted_class} · {Math.round(transition.confidence * 100)}% confidence</small>
 						</div>
 					</div>
 				{/each}
@@ -429,47 +435,47 @@
 	h2, h3, h4, p { margin: 0; }
 	.eyebrow { color: var(--accent); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.18em; }
 	.subtitle, .empty { color: var(--muted); margin-top: 0.35rem; }
-	.rec-panel { background: linear-gradient(110deg, #171c25, #10141b); border: 1px solid #2a313d; border-radius: 12px; padding: 1rem 1.15rem; margin-bottom: 1.25rem; }
+	.rec-panel { background: linear-gradient(110deg, var(--surface-raised), var(--surface)); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.15rem; margin-bottom: 1.25rem; }
 	.rec-state { display: flex; align-items: center; gap: 0.8rem; margin-right: auto; }
 	.rec-state p, label span, small { display: block; color: var(--muted); font-size: 0.75rem; }
-	.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #58606c; box-shadow: 0 0 0 5px #252a32; }
-	.rec-dot.live { background: #ff4d57; box-shadow: 0 0 0 5px #57262b; }
+	.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 5px var(--surface-raised); }
+	.rec-dot.live { background: var(--danger); box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 30%, var(--surface)); }
 	.rec-panel label { display: flex; align-items: center; gap: 0.65rem; }
 	.rec-panel input { width: 92px; }
-	.record { background: #e83c47; border-color: #ff6570; color: white; font-weight: 800; letter-spacing: 0.08em; }
-	.stop { border-color: #ff6570; color: #ff9198; }
+	.record { background: var(--danger); border-color: var(--danger); color: var(--on-danger); font-weight: 800; letter-spacing: 0.08em; }
+	.stop { border-color: var(--danger); color: var(--danger); }
 	.external-owner { color: var(--muted); font-size: 0.8rem; }
 	.session-layout { display: grid; grid-template-columns: minmax(230px, 290px) minmax(0, 1fr); gap: 1rem; min-height: 520px; }
 	.session-list, .session-detail { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
 	.section-title { margin-bottom: 0.75rem; }
-	.section-title span, .privacy { border: 1px solid #303744; border-radius: 999px; color: var(--muted); font-size: 0.72rem; padding: 0.18rem 0.5rem; }
+	.section-title span, .privacy { border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 0.72rem; padding: 0.18rem 0.5rem; }
 	.session-card { display: block; text-align: left; width: 100%; padding: 0.8rem; margin-bottom: 0.5rem; background: transparent; }
-	.session-card span { display: block; margin: 0.3rem 0; color: #c5ccd6; font-size: 0.82rem; }
-	.session-card.selected { background: #202731; border-color: var(--accent-dim); box-shadow: inset 3px 0 var(--accent); }
+	.session-card span { display: block; margin: 0.3rem 0; color: var(--fg); font-size: 0.82rem; }
+	.session-card.selected { background: var(--surface-raised); border-color: var(--accent-dim); box-shadow: inset 3px 0 var(--accent); }
 	.session-detail { padding: 1.2rem 1.35rem; }
 	.detail-heading { border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
 	.set-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.65rem; margin-top: 1.25rem; }
-	.set-summary div { background: #171d26; border: 1px solid #29313c; border-radius: 9px; padding: 0.75rem; }
+	.set-summary div { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 9px; padding: 0.75rem; }
 	.set-summary strong, .set-summary span { display: block; }
-	.set-summary strong { font-size: 1.15rem; color: #edf3ff; }
+	.set-summary strong { font-size: 1.15rem; color: var(--fg); }
 	.set-summary span { color: var(--muted); font-size: 0.74rem; margin-top: 0.2rem; }
-	.share-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.8rem 1rem; background: linear-gradient(110deg, #152a32, #111a24); border: 1px solid #31505c; border-radius: 10px; padding: 0.9rem 1rem; margin-top: 1.25rem; }
+	.share-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.8rem 1rem; background: linear-gradient(110deg, color-mix(in srgb, var(--info) 18%, var(--surface)), var(--surface)); border: 1px solid color-mix(in srgb, var(--info) 55%, var(--border)); border-radius: 10px; padding: 0.9rem 1rem; margin-top: 1.25rem; }
 	.share-panel h4, .share-panel p { margin: 0; }
-	.share-panel p { color: #b7c8d2; font-size: 0.8rem; margin-top: 0.3rem; }
-	.share-create, .share-open { background: #276e86; border-color: #5aaeca; color: white; font-weight: 700; text-decoration: none; white-space: nowrap; }
+	.share-panel p { color: var(--muted); font-size: 0.8rem; margin-top: 0.3rem; }
+	.share-create, .share-open { background: var(--info); border-color: var(--info); color: var(--on-info); font-weight: 700; text-decoration: none; white-space: nowrap; }
 	.share-url { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.6rem; }
 	.share-url span { color: var(--muted); font-size: 0.75rem; }
-	.share-url input { min-width: 0; width: 100%; color: #cce9f4; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+	.share-url input { min-width: 0; width: 100%; color: var(--fg); font-family: ui-monospace, monospace; font-size: 0.72rem; }
 	.replay, .timeline, .transitions, .soundcloud-export { margin-top: 1.25rem; }
 	.soundcloud-export h4 { margin-bottom: 0.45rem; }
 	.export-lead, .licensing-reminder { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem; max-width: 62ch; }
-	.licensing-reminder { color: #e6edf3; }
+	.licensing-reminder { color: var(--fg); }
 	.soundcloud-export textarea {
 		display: block;
 		width: 100%;
 		margin: 0.75rem 0;
 		padding: 0.7rem 0.8rem;
-		background: #10141b;
+		background: var(--bg);
 		border: 1px solid var(--border);
 		border-radius: 8px;
 		color: inherit;
@@ -483,9 +489,9 @@
 	.event-row { display: grid; grid-template-columns: 52px 12px 1fr; gap: 0.65rem; min-height: 50px; align-items: start; }
 	.event-row time { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.75rem; padding-top: 0.12rem; text-align: right; }
 	.event-marker { position: relative; width: 8px; height: 8px; margin-top: 0.28rem; border-radius: 50%; background: var(--accent); }
-	.event-marker::after { content: ''; position: absolute; top: 10px; bottom: -38px; left: 3px; width: 1px; background: #303744; }
+	.event-marker::after { content: ''; position: absolute; top: 10px; bottom: -38px; left: 3px; width: 1px; background: var(--border); }
 	.event-row:last-child .event-marker::after { display: none; }
-	.transition-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 0.65rem; padding: 0.55rem 0; border-top: 1px solid #28303a; }
+	.transition-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 0.65rem; padding: 0.55rem 0; border-top: 1px solid var(--border); }
 	.transition-row time { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.75rem; text-align: right; }
 	.transition-row small { margin-top: 0.25rem; }
 	.detail-empty { display: grid; place-items: center; min-height: 420px; }
