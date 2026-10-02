@@ -99,7 +99,9 @@ test.describe('onboarding gauntlet: adversarial folders', () => {
 		expect(scan).toMatchObject({ exists: false, readable: false, denied: false, audio_files: 0 });
 
 		const dialog = setupDialog(page);
-		await expect(dialog.getByText(`Nothing at ${missing}.`)).toBeVisible();
+		// Named by its folder, never by its full absolute path (#2590).
+		await expect(dialog.getByText(/^Nothing was found at .*Typo Crate That Was Never Made\.$/)).toBeVisible();
+		await expect(dialog.getByText(missing, { exact: false })).toHaveCount(0);
 		await expect(dialog.getByRole('button', { name: 'Import this folder' })).toBeDisabled();
 		await expectFolderEscapesEnabled(page);
 		expect(imports()).toBe(0);

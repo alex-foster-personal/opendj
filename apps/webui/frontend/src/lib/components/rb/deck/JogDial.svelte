@@ -339,8 +339,8 @@
 						class="q-grid-opt rb-inert"
 						disabled
 						data-testid={`quantize-grid-phase-deck-${deck.deck_id}`}
-						title="not implemented, will match quantize to the detected phase length"
-						aria-label="match to phase length - not implemented"
+						title={plannedTitle('quantize-grid-phase')}
+						aria-label={`match to phase length deck ${deck.deck_id} - ${plannedTitle('quantize-grid-phase')}`}
 					>
 						phase
 					</button>

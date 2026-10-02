@@ -14,6 +14,12 @@
 	import { openStage } from '$lib/lyrics/stage-store.svelte';
 	import type { TrackQuality } from '$lib/rb/library-types';
 	import TrackActions from '$lib/components/TrackActions.svelte';
+	import {
+		describeLoadError,
+		notesChanged,
+		routeLoadError,
+		type RouteLoadError
+	} from '$lib/route-load-state';
 
 	let track = $state<Track | null>(null);
 	let etag = $state<string>('');
@@ -24,17 +30,38 @@
 	// single-track route; the badge stays absent until it lands, never a guess).
 	let quality = $state<TrackQuality | null>(null);
 
+	// Set when the track itself could not be loaded: an unknown id answers 404
+	// and reads as "not found"; anything else shows its reason. Either way the
+	// page settles instead of sitting on "Loading..." forever.
+	let loadError = $state<RouteLoadError | null>(null);
+	// The last notes save failure, shown beside the field until a save lands.
+	let notesError = $state<string | null>(null);
+
 	async function load(): Promise<void> {
 		const stable = $page.params.stable_id;
-		if (stable === undefined) throw new Error('track route param "stable_id" missing');
+		if (stable === undefined) {
+			loadError = { kind: 'not-found', message: 'no track id in the address' };
+			return;
+		}
+		loadError = null;
 		void loadLyrics(stable);
-		const res = await getTrack(stable);
-		track = res.track;
-		etag = res.etag;
+		try {
+			const res = await getTrack(stable);
+			track = res.track;
+			etag = res.etag;
+		} catch (exc) {
+			loadError = routeLoadError(exc);
+			return;
+		}
 		try {
 			quality = (await fetchRbMeta(stable)).quality;
 		} catch (exc) {
-			if (!(exc instanceof RbApiError) || exc.status !== 404) throw exc;
+			// No rekordbox row (404) is the honest "no quality badge" state; any
+			// other failure is reported rather than swallowed, and the track
+			// itself stays on screen.
+			if (!(exc instanceof RbApiError) || exc.status !== 404) {
+				pushToast(`Quality badge unavailable: ${describeLoadError(exc)}`, 'error');
+			}
 		}
 	}
 
@@ -50,15 +77,24 @@
 			track = res.track;
 			etag = res.etag;
 			pendingPatch = null;
+			if ('notes' in patch) notesError = null;
 			pushToast('Saved');
 		} catch (exc) {
 			if (exc instanceof ConflictError) {
 				conflictServer = exc.current;
 				etag = exc.etag;
 			} else {
-				pushToast(`Save failed: ${exc}`, 'error');
+				const reason = describeLoadError(exc);
+				if ('notes' in patch) notesError = reason;
+				pushToast(`Save failed: ${reason}`, 'error');
 			}
 		}
+	}
+
+	/** Blur saves the notes only when the text differs from what is saved. */
+	function saveNotesOnBlur(next: string): void {
+		if (!track || !notesChanged(track.notes, next)) return;
+		void applyPatch({ notes: next });
 	}
 
 	function keepMine(): void {
@@ -111,7 +147,10 @@
 	</div>
 
 	<h3>Notes</h3>
-	<textarea rows="4" value={track.notes ?? ''} onblur={(e) => applyPatch({ notes: (e.currentTarget as HTMLTextAreaElement).value })}></textarea>
+	<textarea rows="4" value={track.notes ?? ''} onblur={(e) => saveNotesOnBlur((e.currentTarget as HTMLTextAreaElement).value)}></textarea>
+	{#if notesError !== null}
+		<p class="notes-error" role="alert">Notes not saved: {notesError}. Edit and leave the field to retry.</p>
+	{/if}
 
 	{#if stageWordCount > 0}
 		<button
@@ -138,6 +177,25 @@
 			onmerge_tags={mergeTags}
 		/>
 	{/if}
+{:else if loadError !== null}
+	<a href="/">&larr; back to library</a>
+	<div class="load-error" role="alert">
+		{#if loadError.kind === 'not-found'}
+			<h2>Track not found</h2>
+			<p>No track in the library has the id <code>{$page.params.stable_id ?? ''}</code>.</p>
+		{:else}
+			<h2>Could not load this track</h2>
+			<p>{loadError.message}</p>
+			<button type="button" onclick={() => void load()}>Retry</button>
+		{/if}
+	</div>
 {:else}
 	<p>Loading...</p>
 {/if}
+
+<style>
+	.notes-error,
+	.load-error p {
+		color: var(--danger);
+	}
+</style>

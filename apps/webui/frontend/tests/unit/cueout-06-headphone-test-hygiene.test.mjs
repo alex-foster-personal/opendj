@@ -15,7 +15,7 @@ test('HeadphoneCluster and the device probe agree on the I/O accessible name', (
 	const cluster = readFileSync(CLUSTER, 'utf8');
 	const probe = readFileSync(PROBE, 'utf8');
 	assert.match(cluster, new RegExp(`aria-label="${ACCESSIBLE_NAME}"`));
-	assert.match(cluster, />I\/O</);
+	assert.match(cluster, /><span>SET<\/span><span>OUTPUTS<\/span></, 'pin 894af5672c3b: visible text is SET OUTPUTS');
 	assert.match(probe, new RegExp(`name: '${ACCESSIBLE_NAME}'`));
 	assert.doesNotMatch(
 		probe,
