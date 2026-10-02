@@ -44,9 +44,55 @@ def _fetch_summary(*, lock: Path | None) -> dict[str, Any]:
             f"GET {COMMENTS_SUMMARY_PATH} returned {response.status_code}: {response.text}"
         )
     payload = response.json()
-    if not isinstance(payload, dict):
-        raise TypeError(f"GET {COMMENTS_SUMMARY_PATH} returned non-object JSON")
+    problem = summary_shape_problem(payload)
+    if problem is not None:
+        raise TypeError(f"GET {COMMENTS_SUMMARY_PATH} returned a malformed body: {problem}")
     return payload
+
+
+_OPERATOR_KEYS = (
+    "total",
+    "sent_to_queue",
+    "in_progress",
+    "delegated",
+    "fixed",
+    "merged",
+    "blocked",
+    "harvested",
+)
+_LIFECYCLE_KEYS = (
+    "total",
+    "untriaged",
+    "open",
+    "issued",
+    "blocked",
+    "fixed",
+    "merged",
+    "harvested",
+)
+_FLEET_CORRELATIONS = frozenset({"ok", "ledger_missing", "ledger_unreadable"})
+
+
+def summary_shape_problem(payload: object) -> str | None:
+    """Why a 2xx summary body breaks CommentSummaryOut, or None when it fits.
+
+    A malformed body (no operator, a missing or non-integer bucket, an unknown
+    fleet_correlation) must fail as request_failed in both JSON and text mode,
+    never print as a confirmed result (PR #4094 Sol P2).
+    """
+    if not isinstance(payload, dict):
+        return "not a JSON object"
+    for name, keys in (("operator", _OPERATOR_KEYS), ("lifecycle", _LIFECYCLE_KEYS)):
+        buckets = payload.get(name)
+        if not isinstance(buckets, dict):
+            return f"{name} is missing"
+        for key in keys:
+            value = buckets.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                return f"{name}.{key} is {value!r}"
+    if payload.get("fleet_correlation") not in _FLEET_CORRELATIONS:
+        return f"fleet_correlation is {payload.get('fleet_correlation')!r}"
+    return None
 
 
 def run_comments_summary(
@@ -73,11 +119,7 @@ def run_comments_summary(
     if as_json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        operator = payload.get("operator")
-        if isinstance(operator, dict):
-            print(_format_operator(operator, payload.get("fleet_correlation")))
-        else:
-            print(json.dumps(payload, indent=2, sort_keys=True))
+        print(_format_operator(payload["operator"], payload["fleet_correlation"]))
     return EXIT_CONFIRMED
 
 

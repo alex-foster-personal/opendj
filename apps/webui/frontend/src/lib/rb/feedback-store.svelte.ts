@@ -49,6 +49,7 @@ import {
   describeFleetCorrelation,
   classifySummaryFailure,
   describePinOperatorSummary,
+  parseCommentSummary,
   type CommentSummary,
 } from "./feedback-pin-operator-summary";
 import {
@@ -533,7 +534,7 @@ let _summarySeq = 0;
 async function _refreshPinSummary(): Promise<void> {
   const seq = ++_summarySeq;
   try {
-    const summary = await unwrap(api.GET("/api/v1/feedback/comments/summary"));
+    const summary = parseCommentSummary(await unwrap(api.GET("/api/v1/feedback/comments/summary")));
     if (seq !== _summarySeq) return;
     feedbackState.pinSummary = summary;
     feedbackState.pinSummaryError = null;

@@ -55,6 +55,7 @@ const EMPTY_PIN_SUMMARY = {
     merged: 0,
     harvested: 0,
   },
+  fleet_correlation: "ok",
 };
 
 function feedbackPathname(request) {
@@ -477,3 +478,32 @@ test("pin 6af63c5e9b7c a failed addPin does not refresh the summary", async () =
   assert.equal(summaryGets, 0);
   store.feedbackState.error = null;
 });
+
+// ----- the summary body is validated before it is stored (PR #4094 Sol P1) --
+for (const [label, body, why] of [
+  ["an empty object", {}, /operator is missing/],
+  [
+    "a missing operator bucket",
+    { ...EMPTY_PIN_SUMMARY, operator: { ...EMPTY_PIN_SUMMARY.operator, merged: undefined } },
+    /operator\.merged/,
+  ],
+  [
+    "a non-integer lifecycle bucket",
+    { ...EMPTY_PIN_SUMMARY, lifecycle: { ...EMPTY_PIN_SUMMARY.lifecycle, open: "3" } },
+    /lifecycle\.open/,
+  ],
+  ["an unknown fleet_correlation", { ...EMPTY_PIN_SUMMARY, fleet_correlation: "maybe" }, /fleet_correlation/],
+]) {
+  test(`pin 6af63c5e9b7c a 200 summary with ${label} is surfaced, not stored`, async () => {
+    globalThis.fetch = mockFeedbackFetch({
+      summary: () => jsonResponse(body),
+      comments: () => jsonResponse({ comments: [] }),
+    });
+    store.feedbackState.availability = "ok";
+    store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY };
+    await store.refreshPins();
+    assert.equal(store.feedbackState.pinSummary, null, "a malformed body must not reach the controls");
+    assert.match(store.feedbackState.pinSummaryError ?? "", /malformed \/comments\/summary body/);
+    assert.match(store.feedbackState.pinSummaryError ?? "", why);
+  });
+}
