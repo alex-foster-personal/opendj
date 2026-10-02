@@ -1,6 +1,6 @@
 """rekordbox positions on our timeline: the MP3 lead-in shift at every boundary (NAE-22).
 
-[if] a rekordbox cue, beat or phrase belongs to an MP3 whose encoder lead-in our decoders trim [then] it is served, imported and stored with that lead-in taken off, and written back to rekordbox with it put back, [else stop].
+[if] a rekordbox cue, beat or phrase belongs to an MP3 whose encoder lead-in our decoders trim [then] it is served with that lead-in taken off, and written back to rekordbox with it put back, [else stop].
 
 Regression one-liners:
   - if fetch_cues serves rekordbox's raw InMsec for a tagged MP3 then broken
@@ -116,7 +116,7 @@ def test_anlz_payload_is_untouched_without_a_lead_in() -> None:
 
 
 def test_cue_lists_move_onto_our_timeline() -> None:
-    cues = [
+    cues: list[dict[str, Any]] = [
         {"kind": "hot_cue", "slot": "A", "in_ms": 1000, "out_ms": None},
         {"kind": "loop", "slot": None, "in_ms": 4000, "out_ms": 8000},
     ]
@@ -130,7 +130,7 @@ def test_cue_lists_move_onto_our_timeline() -> None:
 def test_pqtz_write_back_puts_the_lead_in_back(master: Path) -> None:
     conn = sqlite3.connect(str(master))
     try:
-        ours = [{"n": 1, "bpm": 120.0, "t": 0.47}, {"n": 2, "bpm": 120.0, "t": 0.97}]
+        ours: list[dict[str, object]] = [{"n": 1, "bpm": 120.0, "t": 0.47}, {"n": 2, "bpm": 120.0, "t": 0.97}]
         back = _beats_on_rekordbox_timeline(conn, TAGGED_ID, ours)
         assert [b["t"] for b in back] == pytest.approx([0.47 + LEAD_IN_S, 0.97 + LEAD_IN_S])
         # Round trip: shifting back out lands on what /anlz served.
