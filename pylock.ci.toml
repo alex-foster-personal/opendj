@@ -3349,6 +3349,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/00/dc/6c58154c1c65f758e
 wheels = [{ url = "https://files.pythonhosted.org/packages/43/3f/f88a53f60a472b46f4023f56d204dd7de33d34c5d2acbfa0d70a674e639e/threadpoolctl-3.7.0-py3-none-any.whl", upload-time = 2026-09-15T15:46:19Z, size = 26362, hashes = { sha256 = "cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be" } }]
 
 [[packages]]
+name = "tinytag"
+version = "2.3.2"
+sdist = { url = "https://files.pythonhosted.org/packages/38/0f/fae085b7f19fe0c67b68e6d70098ac6cd046cc498f253f5ee56a3dd03bbc/tinytag-2.3.2.tar.gz", upload-time = 2026-09-07T17:46:08Z, size = 47353, hashes = { sha256 = "021d711cdbdbf840d3b67b976cb34dadc58d2fcfd490eb74ef9602b37b991414" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/6b/54/d378858d14e5c5c7b921cb9ffccf27be3d34f3d6d010c57404ddd634685d/tinytag-2.3.2-py3-none-any.whl", upload-time = 2026-09-07T17:46:07Z, size = 37171, hashes = { sha256 = "ebaf957915266b9c20414a10f8c5170a345aa039a794650d39d66e7d6b96199f" } }]
+
+[[packages]]
 name = "toml"
 version = "0.10.2"
 sdist = { url = "https://files.pythonhosted.org/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", upload-time = 2020-11-01T01:40:22Z, size = 22253, hashes = { sha256 = "b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f" } }
@@ -3840,4 +3846,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "b9c3151a04e630c34fe1f2e76e80f3b440c4fbf09b2bd3e65b01185aad68fb46"
+source-sha256 = "9ccf77bacaf8d99a2d4a4c5fba357158b8cf9f2be06f08f65901cfa1920ba331"

@@ -21,3 +21,9 @@ test('setCrossfadeCurve rejects unbuilt curves', async () => {
 	const prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts');
 	assert.throws(() => prefs.setCrossfadeCurve('linear'), /not implemented/i);
 });
+
+test('the select itself carries the explainer, since a disabled option may never show its own tooltip', async () => {
+	const src = await readFile('src/lib/components/rb/mixer/CrossfadeCurveSelect.svelte', 'utf8');
+	const select = src.slice(src.indexOf('<select'), src.indexOf('>', src.indexOf('<select')));
+	assert.match(select, /title=\{`\$\{selectedLabel\}\. \$\{plannedTitle\('crossfade-curve'\)\}`\}/);
+});

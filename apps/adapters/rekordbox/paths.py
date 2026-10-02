@@ -34,7 +34,6 @@ from apps.cloud import policy as cloud_policy
 from apps.cloud.config import CloudConfig, MissingEnvError
 from apps.cloud.eviction import HydrationError
 from apps.shared import audio_quality, fs_residency, platform_paths
-from apps.shared._mutagen import HAS_MUTAGEN
 from apps.shared.platform_paths import MappedPath
 from apps.shared.state import locations as track_locations
 from apps.shared.state import sync_stamp
@@ -272,67 +271,88 @@ def _resolve_local_audio_path(stable_id: str) -> Path | None:
         state.close()
 
 
-def local_artwork(stable_id: str) -> tuple[bytes, str]:
-    """Embedded-tag cover art for a track with NO rekordbox vendor mapping.
+def local_artwork(stable_id: str, *, online: bool = False) -> tuple[bytes, str]:
+    """Artwork for a track rekordbox holds none for, or 404 ``ARTWORK_NOT_FOUND``.
 
-    :func:`artwork_file` needs a ``djmdContent.ImagePath``, which a locally
-    imported file never has, so ``/artwork`` 404'd for every such row
-    (PARITY-TODO). This reads the same on-disk file :func:`local_audio_file`
-    resolves and returns the real embedded picture frame instead -- never a
-    generated or placeholder image, and never resized (there is no
-    pre-rendered s/m variant for embedded art, unlike the rekordbox path).
+    The chain after rekordbox's own jpg, first hit wins:
 
-    ``mutagen`` is an opt-in ``[tags]`` extra (GPL vs this wheel's Apache
-    license, see ``apps.shared._mutagen``), so a build that omits it cannot
-    tell a track with no embedded picture apart from one it never checked.
-    Collapsing that into ``ARTWORK_NOT_FOUND`` would be a guessed verdict, so
-    a track with a real, resolvable file but no reader raises 503
-    ``ARTWORK_READER_UNAVAILABLE`` instead -- loud and distinct from "checked,
-    no art". Residency is checked FIRST: a stale path, a missing file, or a
-    streaming URI has no file to read regardless of whether a reader exists,
-    so those still 404 ``ARTWORK_NOT_FOUND`` even when mutagen is absent.
+    1. the picture embedded in the track's local audio file (tinytag, MIT);
+    2. a ``cover``/``folder``/``front`` image beside that file;
+    3. a cover found online earlier and cached in the app's data dir;
+    4. with ``online=True`` only, a MusicBrainz + Cover Art Archive lookup
+       now (:mod:`apps.shared.artwork_sources`; ``ODJ_ARTWORK_ONLINE=0``
+       turns it off). The listing never asks for this: one lookup per track
+       is held to MusicBrainz's one request per second, so only the decks
+       ask.
+
+    Never a generated or placeholder image, and never resized: there is no
+    pre-rendered s/m variant for these, unlike the rekordbox path. Nothing
+    is written into the library or the audio file.
     """
-    file_path, _duration_ms = local_track_row(stable_id)
-    resolved = _resolve_local_audio_path(stable_id)
-    if resolved is None:
-        raise not_found(
-            "ARTWORK_NOT_FOUND",
-            f"track {stable_id} has no resolvable local file "
-            f"(file_path={file_path!r})",
-        )
-    if not HAS_MUTAGEN:
-        raise unavailable(
-            "ARTWORK_READER_UNAVAILABLE",
-            f"track {stable_id} has a resolvable local file but the optional "
-            "'mutagen' tag reader is not installed (pip install music-dj-tools[tags])",
-        )
+    from apps.shared import artwork_sources
     from apps.shared import audio_files as _audio_files
 
-    embedded = _audio_files.read_embedded_artwork(resolved)
-    if embedded is None:
+    file_path, duration_ms = local_track_row(stable_id)
+    resolved = _resolve_local_audio_path(stable_id)
+    if resolved is not None:
+        found = _audio_files.read_embedded_artwork(resolved) or artwork_sources.sidecar_artwork(
+            resolved
+        )
+        if found is not None:
+            return found
+    cache = online_artwork_cache()
+    found = cache.get(stable_id)
+    if found is None and online:
+        found = artwork_sources.online_cover(cache, stable_id, _track_query(stable_id, duration_ms))
+    if found is None:
         raise not_found(
             "ARTWORK_NOT_FOUND",
-            f"track {stable_id} has a local file with no embedded artwork tag "
-            f"(file_path={file_path!r})",
+            f"track {stable_id} has no artwork: no embedded picture, no cover image "
+            f"beside the file and no online cover (file_path={file_path!r})",
         )
-    return embedded
+    return found
+
+
+def online_artwork_cache() -> Any:
+    """The app-data cache of covers found online (never inside the library)."""
+    from apps.shared import artwork_sources
+
+    return artwork_sources.ArtworkCache(config.STATE_DB.parent / "artwork-cache")
+
+
+def _track_query(stable_id: str, duration_ms: int | None) -> Any:
+    """Artist + title + duration from state.db for an online lookup."""
+    from apps.shared import artwork_sources
+
+    state = _open_ro(config.STATE_DB, "STATE_DB")
+    try:
+        row = state.execute(
+            "SELECT title, artists_json FROM tracks WHERE stable_id = ?", (stable_id,)
+        ).fetchone()
+    finally:
+        state.close()
+    title, artists_json = row if row is not None else (None, None)
+    artist: str | None = None
+    try:
+        artists = json.loads(artists_json) if artists_json else []
+        if isinstance(artists, list) and artists:
+            artist = ", ".join(str(a) for a in artists if a)
+        elif isinstance(artists, str):
+            artist = artists
+    except ValueError:
+        artist = None
+    return artwork_sources.TrackQuery(artist=artist, title=title, duration_ms=duration_ms)
 
 
 def local_artwork_available(stable_id: str) -> bool | None:
-    """Tri-state local-track counterpart of ``artwork_available`` for a
-    rekordbox-mapped row (see ``rb_assets.py``'s ``_local_rb_meta``, which
-    already holds ``file_path`` for other fields).
-
-    Mirrors :func:`local_artwork`'s own split instead of collapsing it:
-    residency is checked FIRST, so an unresolvable/missing/streaming
-    ``file_path`` is a real ``False`` -- no file to read regardless of
-    whether a reader exists. Only once a file is confirmed present does a
-    missing ``mutagen`` reader become ``None`` ("could not check") rather
-    than a guessed ``False``. Collapsing that ``None`` into ``False`` is
-    exactly the guessed verdict :func:`local_artwork` refuses to give for
-    its own 503 -- this sibling used to make it anyway (#795).
+    """Whether ``/artwork`` would serve something for a track with no
+    rekordbox mapping, without going online: an embedded picture, a cover
+    image beside the file, or an online cover already cached. Still typed
+    ``bool | None`` for the wire, but the reader (tinytag) is now a core
+    dependency, so it never answers ``None`` ("could not check") any more
+    (#795, #4717).
     """
-    return _artwork_available_for_resolved(_resolve_local_audio_path(stable_id))
+    return _artwork_available_for_resolved(stable_id, _resolve_local_audio_path(stable_id))
 
 
 def bulk_local_artwork_available(
@@ -351,18 +371,20 @@ def bulk_local_artwork_available(
     exists (the per-row function answers False without one).
     """
     resolved = track_locations.bulk_local_audio_paths(state, stable_ids)
-    return {sid: _artwork_available_for_resolved(resolved[sid]) for sid in stable_ids}
+    return {sid: _artwork_available_for_resolved(sid, resolved[sid]) for sid in stable_ids}
 
 
-def _artwork_available_for_resolved(resolved: Path | None) -> bool | None:
-    """Residency first, then reader: the tri-state both callers above share."""
-    if resolved is None:
-        return False
-    if not HAS_MUTAGEN:
-        return None
+def _artwork_available_for_resolved(stable_id: str, resolved: Path | None) -> bool:
+    """Whether :func:`local_artwork` would serve something without going online."""
+    from apps.shared import artwork_sources
     from apps.shared import audio_files as _audio_files
 
-    return _audio_files.embedded_artwork_available(resolved)
+    if resolved is not None and (
+        _audio_files.embedded_artwork_available(resolved)
+        or artwork_sources.sidecar_artwork_path(resolved) is not None
+    ):
+        return True
+    return online_artwork_cache().has(stable_id)
 
 
 def local_track_row(stable_id: str) -> tuple[str | None, int | None]:

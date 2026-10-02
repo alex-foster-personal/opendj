@@ -238,12 +238,12 @@ class FleetSim(RuleBasedStateMachine):
     def edit_title(self, spoke: int, track: str, title: str) -> None:
         machine = self._spoke(spoke)
         row = (TRACKS, track)
-        deleted_at = self._versions(machine)[row].content[1]
+        _old_title, deleted_at, restored_at = self._versions(machine)[row].content
         self._write(
             "edit",
             machine,
             row,
-            lambda _stamp: (title, deleted_at),
+            lambda _stamp: (title, deleted_at, restored_at),
             lambda stamp: _apply_edit(
                 self.run,
                 machine,
@@ -254,13 +254,15 @@ class FleetSim(RuleBasedStateMachine):
     def _tombstone_write(self, candidates: list[SpokeTrack], pick: int, *, deleting: bool) -> bool:
         machine, track = candidates[pick % len(candidates)]
         row = (TRACKS, track)
-        title = self._versions(machine)[row].content[0]
+        title, _deleted_at, restored_at = self._versions(machine)[row].content
         verb = _apply_delete if deleting else _apply_reinsert
         return self._write(
             "delete" if deleting else "reinsert",
             machine,
             row,
-            lambda stamp: (title, stamp if deleting else None),
+            # A reinsert is the explicit restore: it stamps restored_at, which
+            # is what lets it outrank the tombstone (CLOUDSYNC-29).
+            lambda stamp: (title, stamp, restored_at) if deleting else (title, None, stamp),
             lambda stamp: verb(
                 self.run,
                 machine,
@@ -425,11 +427,14 @@ class FleetSim(RuleBasedStateMachine):
         views = self._views()
         self.hub_seq = views[HUB].hub_seq
         for row in self.oracle.rows():
-            held = [view.versions[row].key for view in views.values() if row in view.versions]
+            held = [view.versions[row] for view in views.values() if row in view.versions]
             winner = self.oracle.winner(row)
-            assert held and max(held) == winner.key, (
-                f"no machine holds the winning version of {row}: winner {winner.key}, "
-                f"held {sorted(held)}"
+            # "Holds the winner", not "max stamp is the winner's": a track
+            # tombstone wins over a later-stamped live edit (CLOUDSYNC-29),
+            # so the greatest held stamp need not be the winning version.
+            assert winner in held, (
+                f"no machine holds the winning version of {row}: winner {winner}, "
+                f"held {sorted(version.key for version in held)}"
             )
         for machine, view in views.items():
             for row, version in view.versions.items():

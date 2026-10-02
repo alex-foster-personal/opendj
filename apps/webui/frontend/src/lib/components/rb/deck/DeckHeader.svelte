@@ -3,11 +3,7 @@
 	// deck number, title/artist, BPM+KEY readout, remaining/elapsed clocks,
 	// key badge + semitone nudge arrows, KEY SYNC,
 	// BEAT SYNC and exclusive MASTER stacked at the right.
-	import { artworkUrl } from '$lib/rb/api-rb';
-	import {
-		optionalResources,
-		shouldFetchArtwork
-	} from '$lib/rb/optional-resource-availability';
+	import { deckArtworkUrl } from '$lib/rb/api-rb';
 	import { camelotKeyColor, camelotKeyHoverLabel } from '$lib/rb/camelot-color';
 	import { formatKeySyncDeltaText, keySyncNotationBullet } from '$lib/rb/key-sync-copy';
 	import {
@@ -56,13 +52,8 @@
 
 	let artworkFailed: boolean = $state(false);
 	let tempoEditAt: { x: number; y: number } | null = $state(null);
-	const artworkCap = $derived(
-		deck.stable_id === null ? 'unknown' : optionalResources(deck.stable_id).artwork
-	);
 	const artSrc: string | null = $derived(
-		deck.stable_id === null || !shouldFetchArtwork(deck.stable_id)
-			? null
-			: artworkUrl(deck.stable_id, 'orig')
+		deck.stable_id === null ? null : deckArtworkUrl(deck.stable_id, 'orig')
 	);
 	$effect(() => {
 		// Reset the failure flag whenever the artwork target changes.
@@ -319,9 +310,7 @@
 				{:else}
 					<span
 						class="art placeholder"
-						title={artworkCap === null
-							? 'artwork could not be checked (tag reader not installed in this build)'
-							: undefined}
+						title="No artwork found: none in rekordbox, the file, a cover image in its folder, or online"
 					></span>
 				{/if}
 				<span class="art-eject" aria-hidden="true">⏏</span>
@@ -762,15 +751,15 @@
 		flex: 0 0 auto;
 	}
 	.master-btn.lit {
-		color: #1a1608;
-		background: #c9b35a;
-		box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
-		border-color: #b8a24e;
+		color: var(--rb-master-ink);
+		background: var(--rb-master);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--rb-master) 45%, transparent);
+		border-color: color-mix(in srgb, var(--rb-master) 85%, var(--rb-text));
 	}
 	.master-btn.lit.locked {
 		box-shadow:
-			inset 0 0 0 1px rgba(26, 22, 8, 0.55),
-			0 0 6px rgba(201, 179, 90, 0.45);
+			inset 0 0 0 1px color-mix(in srgb, var(--rb-master-ink) 55%, transparent),
+			0 0 6px color-mix(in srgb, var(--rb-master) 45%, transparent);
 	}
 	.master-btn.lit.locked::after {
 		content: 'LOCK';

@@ -152,3 +152,26 @@ export async function* streamChat(
 		});
 	}
 }
+
+/**
+ * What the setup sidebar shows for one status reading (issue #2590).
+ *
+ * - 'chat': a key is configured, so the conversation is offered.
+ * - 'unavailable': the status could not be read; one plain sentence, with
+ *   the engine's words only in the agent disclosure.
+ * - 'hidden': nothing for the operator. Covers "not configured" (agents
+ *   read GET /api/v1/assistant/status instead), "still checking" (so the
+ *   panel never flashes up and away) and "not visible".
+ */
+export type AssistantPanelMode = 'chat' | 'unavailable' | 'hidden';
+
+export function assistantPanelMode(
+	visible: boolean,
+	status: Pick<AssistantStatus, 'configured'> | null,
+	statusError: string | null
+): AssistantPanelMode {
+	if (!visible) return 'hidden';
+	if (statusError !== null) return 'unavailable';
+	if (status?.configured === true) return 'chat';
+	return 'hidden';
+}
