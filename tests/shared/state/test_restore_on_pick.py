@@ -1,11 +1,8 @@
 """LIBM-141: a removed track the user picks to add again comes back.
 
-[if] a by-hand add (``restore_removed``) meets a file under a removed id
-[then] that row is restored, live, with ``restored_at`` stamped [else fail].
-[if] it meets the removed recording under a new path [then] the file arrives
-as a live row and the old tombstone is left as it is [else fail].
-[if] the caller does not pass ``restore_removed`` [then] the removed track
-stays removed (LIBM-140 control) [else fail].
+- [if] a by-hand add meets a file under a removed id [then] that row is restored with restored_at, [else stop].
+- [if] a by-hand add meets the removed recording under a new path [then] it arrives as a live row, [else stop].
+- [if] the caller does not pass restore_removed [then] the removed track stays removed, [else stop].
 """
 
 from __future__ import annotations
