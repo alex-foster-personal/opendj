@@ -751,15 +751,15 @@
 		flex: 0 0 auto;
 	}
 	.master-btn.lit {
-		color: #1a1608;
-		background: #c9b35a;
-		box-shadow: 0 0 6px rgba(201, 179, 90, 0.45);
-		border-color: #b8a24e;
+		color: var(--rb-master-ink);
+		background: var(--rb-master);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--rb-master) 45%, transparent);
+		border-color: color-mix(in srgb, var(--rb-master) 85%, var(--rb-text));
 	}
 	.master-btn.lit.locked {
 		box-shadow:
-			inset 0 0 0 1px rgba(26, 22, 8, 0.55),
-			0 0 6px rgba(201, 179, 90, 0.45);
+			inset 0 0 0 1px color-mix(in srgb, var(--rb-master-ink) 55%, transparent),
+			0 0 6px color-mix(in srgb, var(--rb-master) 45%, transparent);
 	}
 	.master-btn.lit.locked::after {
 		content: 'LOCK';

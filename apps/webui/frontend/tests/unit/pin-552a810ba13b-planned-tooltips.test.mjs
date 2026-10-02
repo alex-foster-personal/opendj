@@ -69,8 +69,7 @@ const CONVERTED = {
 	'FeedbackPinVisibilityActions.svelte': 'feedback-pin-visibility',
 	'ContextMenu.svelte': 'context-menu-unavailable',
 	'browser/TrackTable.svelte': 'track-table-filter',
-	'deck/JogDial.svelte': 'quantize-grid-phase',
-	'RecommendedSection.svelte': 'recommended-section'
+	'deck/JogDial.svelte': 'quantize-grid-phase'
 };
 
 let components;

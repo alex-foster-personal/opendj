@@ -599,7 +599,9 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
 }
 
 /** Track listing item + contract point 1's per-row fields. STANDALONE-05
- * adds inline genre/genre_reason; is_streaming is still lazy via rb-meta. */
+ * adds inline genre/genre_reason; is_streaming is not on the wire: the row
+ * mapper settles it from `file_availability === 'streaming'` (issue #3934)
+ * and otherwise leaves it lazy via rb-meta. */
 export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;

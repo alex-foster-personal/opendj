@@ -7,11 +7,13 @@
 	 * so `/performance` failed to build for anyone without that author's
 	 * working tree. This restores the build WITHOUT inventing the feature.
 	 *
-	 * It renders nothing but an inert marker for `candidates`, per the house
-	 * rule that a control with no real data source must not look live. The
-	 * props below are exactly the ones BrowserPanel already passes, so
-	 * replacing this file with the real implementation needs no change at
-	 * the call site.
+	 * The `candidates` funnel is unbuilt, and it renders NOTHING for it: the
+	 * earlier inert "not implemented, N candidates available" marker
+	 * was hidden for V1 (JIK, Thu 1 Oct 2026: hide unbuilt UI rather than
+	 * show it inert; issue #876, merging NEXT and RECOMMENDED into one rail,
+	 * stays open). The props below are exactly the ones BrowserPanel already
+	 * passes, so replacing this file with the real implementation needs no
+	 * change at the call site.
 	 *
 	 * TODO(owner of cfbfe55): replace with the real recommended-tracks section.
 	 *
@@ -45,7 +47,6 @@
 	 */
 	import { listPairingsFor, getTrack, type Pairing, type Track } from '$lib/api';
 	import { ApiError } from '$lib/api/client';
-	import { plannedTitle } from '$lib/rb/planned-explainers';
 
 	type Props = {
 		candidates?: unknown[];
@@ -62,7 +63,7 @@
 		onhover?: (stableId: string) => void;
 	};
 
-	let { candidates = [], stableId = null, onload, onplay, onhover }: Props = $props();
+	let { stableId = null, onload, onplay, onhover }: Props = $props();
 
 	type PairedTrack = {
 		pairing: Pairing;
@@ -170,27 +171,7 @@
 	</div>
 {/if}
 
-{#if candidates.length > 0}
-	<div
-		class="rec-placeholder"
-		title={plannedTitle('recommended-section')}
-	>
-		Recommended: not implemented ({candidates.length} candidate{candidates.length === 1
-			? ''
-			: 's'} available)
-	</div>
-{/if}
-
 <style>
-	.rec-placeholder {
-		padding: 0.4rem 0.6rem;
-		font-size: 0.78rem;
-		color: var(--muted, #9aa4b2);
-		border: 1px dashed var(--border, #1c222c);
-		border-radius: 6px;
-		margin: 0.4rem 0;
-		cursor: help;
-	}
 	.rec-error {
 		padding: 0.4rem 0.6rem;
 		font-size: 0.78rem;

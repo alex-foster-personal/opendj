@@ -75,8 +75,7 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'feedback-pin-visibility': "Other users' pins - shows the comment pins collaborators left on this screen beside your own and the agents', so shared review feedback appears in place. Needs community sharing first.",
 	'context-menu-unavailable': 'Library action - this menu command will act on the selected tracks or playlist. Its handler is not connected yet, so choosing it changes nothing.',
 	'track-table-filter': 'Column filter - narrows the track table to rows matching a value you pick per column (genre, key, BPM range, rating), like the rekordbox column filter funnel.',
-	'quantize-grid-phase': 'Phrase quantize - snaps seeks, cue points and loop ends to the detected phrase length from analysis (for example 16 or 32 bars) instead of a fixed 1, 4 or 8 beat grid.',
-	'recommended-section': 'Recommended tracks - lists library tracks that mix well out of the loaded deck, ranked by key, BPM and energy compatibility, in a strip above the table. The count is how many scored candidates are already waiting.'
+	'quantize-grid-phase': 'Phrase quantize - snaps seeks, cue points and loop ends to the detected phrase length from analysis (for example 16 or 32 bars) instead of a fixed 1, 4 or 8 beat grid.'
 };
 
 /** The tooltip for a planned control. Throws on an unknown id: an empty

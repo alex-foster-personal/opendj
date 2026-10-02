@@ -22,8 +22,10 @@ Three things it refuses to be vague about:
 
 Safety mirrors the rekordbox adapter exactly: dry-run by default via an
 outer write unit (:func:`apps.shared.state.db.write_unit`) that is
-discarded, and the event bus swapped for a silent drop-in while it is, so a
-rolled-back run publishes no phantom events.
+discarded, and the event bus swapped for a neutral silent drop-in from
+:mod:`apps.shared.state.events` while it is, so a rolled-back run publishes
+no phantom events. This module must not import any Rekordbox code; the
+no-rekordbox onboarding path depends on it.
 """
 
 from __future__ import annotations
@@ -43,14 +45,11 @@ from apps.shared.scan_mass_missing import MassMissingError, guard_roots
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
-
-# The same drop-in the rekordbox adapter uses. Imported rather than copied:
-# two silent buses that could drift is worse than one private import.
+from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
 )
-from apps.shared.state.ingest.rekordbox import _DryRunSilentBus
 from apps.shared.state.writer import StateWriter
 
 ADAPTER_ID: str = "folder"

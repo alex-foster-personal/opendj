@@ -18,6 +18,7 @@ import {
 	vocalAlpha
 } from '../wave/render';
 import type { WaveformDesign } from '$lib/rb/waveform-design';
+import { resolveStripBandColors, type WaveBandColors } from '$lib/rb/wave-palette';
 import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
 
 // This module is PRESENTATIONAL: it names the shapes it paints instead of
@@ -29,12 +30,11 @@ import { loopBandPx, type LoopBandSource } from '../wave/wave-math';
 // These are structural subsets of AnlzWaveform / AnlzWaveformBands / Vocals,
 // so callers keep passing the real objects with no conversion.
 
-/** Band colors per SCREENSHOT-SPEC 6: lows orange, mids blue, highs white. */
-const BAND_LOW = '#e8a13a';
-const BAND_MID = 'rgba(61, 125, 217, 0.85)';
-const BAND_HIGH = 'rgba(207, 224, 242, 0.9)';
-/** 'mono' payloads carry heights only - one color, never invented bands. */
-const BAND_MONO = '#3d7dd9';
+/** Band colors when the caller passes none: the default rekordbox 3Band
+ * palette on the dark face (issue #4219). Callers pass the user's choice via
+ * `resolveStripBandColors(theme, wave_palette)`. 'mono' payloads carry
+ * heights only - one color (`mono`), never invented bands. */
+const DEFAULT_BAND_COLORS: WaveBandColors = resolveStripBandColors('dark');
 /** Stored loop hot-cue span, distinct from the translucent engaged-loop band. */
 export const LOOP_CUE_COLOR = '#e8a13a';
 const LOOP_CUE_OUTLINE = '#c8cdd2';
@@ -95,6 +95,8 @@ export interface StripFrame {
 	/** Stored loop hot cues. They remain visible when no loop is engaged. */
 	loopCues: readonly StripLoopCue[];
 	waveformDesign?: WaveformDesign;
+	/** Band fills from `resolveStripBandColors`; default rekordbox 3Band. */
+	bandColors?: WaveBandColors;
 }
 
 /**
@@ -108,10 +110,11 @@ export function drawStripPreviewBands(
 	payloadKind: 'tri' | 'mono',
 	widthPx: number,
 	heightPx: number,
-	design: WaveformDesign = 'tri-band'
+	design: WaveformDesign = 'tri-band',
+	colors: WaveBandColors = DEFAULT_BAND_COLORS
 ): void {
 	const kind = resolveStripWaveformKind(payloadKind, design);
-	_drawPreview(ctx, bands, kind, widthPx, heightPx, design);
+	_drawPreview(ctx, bands, kind, widthPx, heightPx, design, colors);
 }
 
 export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFrame): void {
@@ -124,7 +127,8 @@ export function drawStripWaveform(ctx: CanvasRenderingContext2D, frame: StripFra
 			frame.waveform.kind,
 			w,
 			h,
-			frame.waveformDesign ?? 'tri-band'
+			frame.waveformDesign ?? 'tri-band',
+			frame.bandColors ?? DEFAULT_BAND_COLORS
 		);
 		if (frame.vocals !== null && durationMs !== null && durationMs > 0) {
 			_drawVocalBars(ctx, frame.vocals, durationMs, w);
@@ -161,13 +165,14 @@ function _drawPreview(
 	kind: 'tri' | 'mono',
 	widthPx: number,
 	heightPx: number,
-	design: WaveformDesign
+	design: WaveformDesign,
+	colors: WaveBandColors
 ): void {
 	const n = bands.length;
 	if (n === 0) return;
 	const w = widthPx / n;
 	if (design === 'line') {
-		ctx.strokeStyle = BAND_MID;
+		ctx.strokeStyle = colors.mono;
 		ctx.lineWidth = 1;
 		ctx.beginPath();
 		for (let i = 0; i < n; i++) {
@@ -183,13 +188,13 @@ function _drawPreview(
 	for (let i = 0; i < n; i++) {
 		const x = i * w;
 		if (kind === 'tri') {
-			_bar(ctx, x, w, bands.low[i], BAND_LOW, heightPx);
-			_bar(ctx, x, w, bands.mid[i], BAND_MID, heightPx);
-			_bar(ctx, x, w, bands.high[i], BAND_HIGH, heightPx);
+			_bar(ctx, x, w, bands.low[i], colors.low, heightPx);
+			_bar(ctx, x, w, bands.mid[i], colors.mid, heightPx);
+			_bar(ctx, x, w, bands.high[i], colors.high, heightPx);
 		} else {
 			// mono = heights only; single color, never synthesized bands.
 			const v = Math.max(bands.low[i], bands.mid[i], bands.high[i]);
-			_bar(ctx, x, w, v, BAND_MONO, heightPx);
+			_bar(ctx, x, w, v, colors.mono, heightPx);
 		}
 	}
 }
