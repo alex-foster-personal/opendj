@@ -57,6 +57,7 @@
 		type TrackEditModalKind
 	} from './track-table-support';
 	import { camelotKeysAreCompatible, DECK_IDS, deckStates } from '$lib/rb/audio-engine.svelte';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		previewCue,
 		previewCueRatioFor,
@@ -100,6 +101,16 @@
 	import TrackContextMenu from './TrackContextMenu.svelte';
 	import TrackPlaylistsPopover from './TrackPlaylistsPopover.svelte';
 	import { trackCloudView } from './track-cloud-state';
+	import {
+		nextTrackTableIndex,
+		resolveActiveRowIndex,
+		scrollTopToRevealRow,
+		trackRowKey,
+		trackTableKeyAction,
+		trackTablePageSize,
+		trackTableRangeSpan,
+		type TrackTableNavKey
+	} from './track-table-keyboard';
 
 	type DeckId = (typeof DECK_IDS)[number];
 
@@ -129,6 +140,8 @@
 		reservation: number | null;
 		x: number;
 		y: number;
+		/** Opened by Enter on a row: focus Yes so a second Enter confirms. */
+		fromKeyboard: boolean;
 	} | null>(null);
 	let loadConfirmEl = $state<HTMLDivElement | null>(null);
 	let loadConfirmStyle = $state('');
@@ -147,6 +160,9 @@
 				{ width: window.innerWidth, height: window.innerHeight }
 			);
 			loadConfirmStyle = `left:${Math.round(box.x)}px;top:${Math.round(box.y)}px`;
+			if (loadConfirm.fromKeyboard) {
+				loadConfirmEl.querySelector<HTMLButtonElement>('.load-confirm-yes')?.focus();
+			}
 		})();
 	});
 	let trackContextMenu = $state<TrackContextMenu | null>(null);
@@ -394,7 +410,9 @@
 		 * header and current density are accounted for. */
 		onrenderedrowcapacity?: (count: number) => void;
 		onsort: (key: SortKey) => void;
-		onselectrow: (row: BrowserRow, event?: MouseEvent) => void;
+		/** `event` carries the click's (or arrow key's) Shift/Cmd/Ctrl state;
+		 * keyboard moves reuse the same plain / Shift-range gestures. */
+		onselectrow: (row: BrowserRow, event?: MouseEvent | KeyboardEvent) => void;
 		/** deck null = legacy free-deck load; prefer onpickdoubledeck for dblclick.
 		 * `reservation` must be set only when `deck` came from onpickdoubledeck
 		 * (it reserved that deck, at that generation) - never for an explicit
@@ -601,6 +619,7 @@
 		// land, whether the row was already selected or is only selecting
 		// now - both cases must stay guarded (issue #1558).
 		_armDblclickGuard(row.stable_id);
+		_noteRowPointerFocus(row, event);
 		onselectrow(row, event);
 		if (!genreWindowOpen() || ongenrefilter === undefined || event.detail < 2) return;
 		if (_rowGenreTimer !== null) clearTimeout(_rowGenreTimer);
@@ -623,11 +642,35 @@
 		if (genreWindowOpen()) return;
 		const target = event.target as HTMLElement | null;
 		if (target === null || target.closest(LOAD_DBLCLICK_SEL) === null) return;
-		const picked = onpickdoubledeck?.(row, {
+		_requestLoadPlay(row, {
 			shift: event.shiftKey,
-			replace: event.metaKey || event.ctrlKey
+			replace: event.metaKey || event.ctrlKey,
+			timeStamp: event.timeStamp,
+			x: event.clientX,
+			y: event.clientY,
+			fromKeyboard: false
 		});
-		const deck = picked?.deck ?? (event.shiftKey ? null : 1);
+	}
+
+	/** The double-click load+play gesture, shared by a row double-click and
+	 * Enter on a focused row so both pick the same deck, honor the same
+	 * confirm preference and own the same reservation. */
+	function _requestLoadPlay(
+		row: BrowserRow,
+		gesture: {
+			shift: boolean;
+			replace: boolean;
+			timeStamp: number;
+			x: number;
+			y: number;
+			fromKeyboard: boolean;
+		}
+	): void {
+		const picked = onpickdoubledeck?.(row, {
+			shift: gesture.shift,
+			replace: gesture.replace
+		});
+		const deck = picked?.deck ?? (gesture.shift ? null : 1);
 		if (deck === null) return;
 		// onpickdoubledeck reserved this deck (and returned its generation);
 		// the shift-with-no-picker fallback above never did, so it owns
@@ -639,8 +682,8 @@
 				row,
 				deck,
 				reservation !== null
-					? { play: true, reservation, pressT0Ms: event.timeStamp }
-					: { play: true, pressT0Ms: event.timeStamp }
+					? { play: true, reservation, pressT0Ms: gesture.timeStamp }
+					: { play: true, pressT0Ms: gesture.timeStamp }
 			);
 			return;
 		}
@@ -656,8 +699,9 @@
 			row,
 			deck,
 			reservation,
-			x: event.clientX,
-			y: Math.max(8, event.clientY - 20)
+			x: gesture.x,
+			y: Math.max(8, gesture.y - 20),
+			fromKeyboard: gesture.fromKeyboard
 		};
 	}
 
@@ -693,6 +737,29 @@
 		) {
 			return;
 		}
+		const action = trackTableKeyAction(event);
+		if (action.kind === 'move') {
+			event.preventDefault();
+			event.stopPropagation();
+			_keyboardMove(action.nav, action.extend, event);
+			return;
+		}
+		if (action.kind === 'load') {
+			event.preventDefault();
+			event.stopPropagation();
+			if (genreWindowOpen()) return;
+			const tr = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+			const rect = tr?.getBoundingClientRect();
+			_requestLoadPlay(row, {
+				shift: action.shift,
+				replace: action.replace,
+				timeStamp: event.timeStamp,
+				x: rect !== undefined ? rect.left + Math.min(240, rect.width / 3) : 0,
+				y: rect !== undefined ? rect.bottom + 20 : 0,
+				fromKeyboard: true
+			});
+			return;
+		}
 		if (
 			removable &&
 			(event.key === 'Delete' || event.key === 'Backspace') &&
@@ -713,6 +780,84 @@
 		}
 		if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
 		trackContextMenu?.openFromKeyboard(event, row);
+	}
+
+	// ----- keyboard navigation (track-table-keyboard.ts) --------------------
+	// The active row is the one roving tabindex focuses; the anchor is the
+	// fixed end a Shift-extended move grows from (a plain click or move sets
+	// it, Shift never does). Both are (stable_id, order) keys because a
+	// playlist can repeat a track. Selection itself stays in the pane model:
+	// moves call onselectrow exactly like a plain or Shift click.
+	let activeRowKey = $state<string | null>(null);
+	let anchorRowKey: string | null = null;
+	const activeRowIndex = $derived(
+		resolveActiveRowIndex({ rows, activeKey: activeRowKey, selectedOrders })
+	);
+
+	function _noteRowPointerFocus(row: BrowserRow, event: MouseEvent): void {
+		const key = trackRowKey(row);
+		activeRowKey = key;
+		if (!event.shiftKey || anchorRowKey === null) anchorRowKey = key;
+	}
+
+	function _keyboardMove(nav: TrackTableNavKey, extend: boolean, event: KeyboardEvent): void {
+		const list = rows;
+		const target = nextTrackTableIndex({
+			current: activeRowIndex,
+			nav,
+			rowCount: list.length,
+			pageSize: trackTablePageSize(renderedRowCapacity)
+		});
+		if (target < 0) return;
+		const targetRow = list[target];
+		const targetKey = trackRowKey(targetRow);
+		if (extend) {
+			if (anchorRowKey === null && activeRowIndex >= 0) {
+				anchorRowKey = trackRowKey(list[activeRowIndex]);
+			}
+			const anchor =
+				anchorRowKey === null ? -1 : list.findIndex((r) => trackRowKey(r) === anchorRowKey);
+			const span = trackTableRangeSpan({ anchor, target, rowCount: list.length });
+			if (span.from === span.to) {
+				onselectrow(targetRow);
+				anchorRowKey = targetKey;
+			} else {
+				// The pane's Shift-range spans from its last selected row, so
+				// re-seat that on the fixed anchor first: the same plain-then-
+				// Shift click pair a mouse user would make.
+				onselectrow(list[anchor]);
+				onselectrow(targetRow, event);
+			}
+		} else {
+			onselectrow(targetRow);
+			anchorRowKey = targetKey;
+		}
+		activeRowKey = targetKey;
+		_revealAndFocusRow(target);
+	}
+
+	/** Scroll the virtualized window so the row is mounted and fully in view,
+	 * then move DOM focus to it (roving tabindex) once it has rendered. */
+	function _revealAndFocusRow(index: number): void {
+		const el = wrapEl;
+		if (el === null) return;
+		const next = scrollTopToRevealRow({
+			rowIndex: index,
+			rowHeight,
+			headerOffsetPx: TRACK_TABLE_THEAD_PX,
+			viewportHeight,
+			scrollTop: liveScrollTop
+		});
+		if (next !== liveScrollTop) {
+			el.scrollTop = next;
+			liveScrollTop = next;
+			onscrollcursor(next);
+		}
+		void tick().then(() => {
+			el.querySelector<HTMLElement>(`tr[data-row-index="${index}"]`)?.focus({
+				preventScroll: true
+			});
+		});
 	}
 
 	// ----- AUTOPLAY-COL helpers ---------------------------------------------
@@ -817,6 +962,8 @@
 
 	$effect(() => {
 		void restoreKey; // the one tracked dependency
+		activeRowKey = null;
+		anchorRowKey = null;
 		const el = wrapEl;
 		if (el !== null) {
 			const restored = untrack(() => scrollTop);
@@ -1239,7 +1386,18 @@
 			onscrollcursor(top);
 		}}
 	>
-		<table data-testid="track-table" style={`width:${tableWidthPx}px`}>
+		<!-- Keyboard + screen readers: a grid of rows with roving tabindex (one
+		     row is the Tab stop; arrows move it). Virtualized, so aria-rowcount /
+		     aria-rowindex give the full list size and each row's place in it
+		     (header row is 1). See track-table-keyboard.ts. -->
+		<table
+			data-testid="track-table"
+			style={`width:${tableWidthPx}px`}
+			role="grid"
+			aria-label="Tracks"
+			aria-multiselectable="true"
+			aria-rowcount={rows.length + 1}
+		>
 			<colgroup>
 				<col style={`width:${colWidths.funnel}px`} />
 				<col style={`width:${colWidths.err}px`} />
@@ -1265,11 +1423,11 @@
 				{/if}
 			</colgroup>
 			<thead bind:clientHeight={theadHeightPx}>
-				<tr>
+				<tr aria-rowindex={1}>
 					<th
 						class="h-icon"
 						style={`width:${colWidths.funnel}px`}
-						use:columnExplainer={{ text: 'filter - not implemented, see PARITY-TODO' }}
+						use:columnExplainer={{ text: plannedTitle('track-table-filter') }}
 					>
 						<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
 							<path d="M2 3h12l-4.5 5v5l-3-1.5V8z" fill="currentColor" />
@@ -1559,6 +1717,7 @@
 										bytesTotal: row.cloud_transfer.bytes_total
 									}
 					})}
+					{@const rowIndex = windowInfo.startIndex + i}
 					<!-- key includes order: playlists CAN repeat a track -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1567,7 +1726,15 @@
 						use:observeRow={row}
 						data-testid="track-row"
 						data-stable-id={row.stable_id}
-						tabindex="0"
+						data-row-index={rowIndex}
+						aria-rowindex={rowIndex + 2}
+						aria-selected={selectedOrderSet.has(row.order)}
+						tabindex={rowIndex === activeRowIndex ||
+						((activeRowIndex < windowInfo.startIndex ||
+							activeRowIndex >= windowInfo.endIndex) &&
+							i === 0)
+							? 0
+							: -1}
 						draggable="true"
 						class:rb-row-selected={selectedOrderSet.has(row.order)}
 						class:rb-row-first={windowInfo.topPad === 0 && i === 0}
@@ -2392,6 +2559,12 @@
 		outline: 1px solid color-mix(in srgb, var(--rb-accent) 45%, transparent);
 		outline-offset: -1px;
 	}
+	/* Keyboard focus (roving tabindex, track-table-keyboard.ts): the active
+	 * row a screen reader announces and arrows move from. */
+	tbody tr:focus-visible {
+		outline: 1px solid var(--rb-accent);
+		outline-offset: -1px;
+	}
 	/* Loaded on a non-master deck: yellow edge + wash (distinct from master gold). */
 	tbody tr.loaded:not(.rb-row-master):not(.rb-row-selected) {
 		background: color-mix(in srgb, var(--rb-yellow) 12%, transparent);
@@ -2402,19 +2575,19 @@
 	}
 	/* Master: biggest pop - gold edge + strong wash. */
 	tbody tr.rb-row-master {
-		background: color-mix(in srgb, var(--rb-master-gold, #c9b35a) 28%, transparent);
+		background: color-mix(in srgb, var(--rb-master) 28%, transparent);
 		box-shadow:
-			inset 5px 0 0 var(--rb-master-gold, #c9b35a),
-			inset -1px 0 0 color-mix(in srgb, var(--rb-master-gold, #c9b35a) 55%, transparent);
-		outline: 1px solid color-mix(in srgb, var(--rb-master-gold, #c9b35a) 70%, transparent);
+			inset 5px 0 0 var(--rb-master),
+			inset -1px 0 0 color-mix(in srgb, var(--rb-master) 55%, transparent);
+		outline: 1px solid color-mix(in srgb, var(--rb-master) 70%, transparent);
 		outline-offset: -1px;
 	}
 	tbody tr.rb-row-master:hover {
-		background: color-mix(in srgb, var(--rb-master-gold, #c9b35a) 36%, var(--rb-panel-raised));
+		background: color-mix(in srgb, var(--rb-master) 36%, var(--rb-panel-raised));
 	}
 	tbody tr.rb-row-master .c-title,
 	tbody tr.rb-row-master .c-artist {
-		color: #e8d78a;
+		color: var(--rb-master-text);
 		font-weight: 700;
 	}
 	/* Hovered deck's library track (non-master): light pulse to help find it. */
@@ -2482,10 +2655,10 @@
 		transform: translateX(-50%);
 		z-index: 4;
 		padding: 3px 14px;
-		border: 1px solid #c9b35a;
+		border: 1px solid var(--rb-master);
 		border-radius: 3px;
-		background: color-mix(in srgb, #c9b35a 88%, #1a1608);
-		color: #1a1608;
+		background: var(--rb-master);
+		color: var(--rb-master-ink);
 		font-family: var(--rb-font);
 		font-size: 10px;
 		font-weight: 700;

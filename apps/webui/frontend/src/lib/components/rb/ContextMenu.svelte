@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import { tick } from 'svelte';
 	import { clampToViewport } from '$lib/ui/clamp-to-viewport';
 
@@ -116,7 +117,7 @@
 <div bind:this={menu} class="context-menu" data-testid="context-menu" role="menu" tabindex="-1" style={`left:${position.x}px;top:${position.y}px`}>
 	{#each items as item (item.id)}
 		{@const unavailable = item.run === undefined}
-		{@const explanation = item.title ?? (unavailable ? 'not implemented - see PARITY-TODO' : item.label)}
+		{@const explanation = item.title ?? (unavailable ? plannedTitle('context-menu-unavailable') : item.label)}
 		{@const descId = `ctx-menu-desc-${item.id}`}
 		<button
 			type="button"

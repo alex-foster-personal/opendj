@@ -811,8 +811,14 @@ test('a direct Load+Play (TrackTable double-click) threads its own click stamp',
 		table.indexOf('function onRowDblClick('),
 		table.indexOf('function hl(')
 	);
+	// Double-click and Enter share _requestLoadPlay: the dblclick passes its
+	// own event stamp in as gesture.timeStamp, which the fast path forwards.
 	assert.ok(
-		dblclick.includes('pressT0Ms: event.timeStamp'),
+		dblclick.includes('timeStamp: event.timeStamp'),
+		'the double-click must hand the shared load path its own click stamp'
+	);
+	assert.ok(
+		dblclick.includes('pressT0Ms: gesture.timeStamp'),
 		'the no-confirm fast path must forward the double-click\'s own stamp'
 	);
 	// The confirm-before-load dialog pauses for a human decision of unknown

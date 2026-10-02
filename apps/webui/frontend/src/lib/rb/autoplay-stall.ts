@@ -236,6 +236,25 @@ export function autoPlayStallReason(input: {
  * matching: `webui-client-errors-2026-09-09.log` holds the middle one at
  * 18:23:39.614Z and that line is the incident's anchor.
  */
+/**
+ * Grep-stable console line when AutoPlay stops and will not resume (PLAY-14 /
+ * pin b91c8ba9b84b). The autoplay error hunt collects `console.error` verbatim;
+ * this string is the contract, not the perf-event wrapper around it.
+ */
+export function autoPlayStallDiagnosticMessage(
+	reason: AutoPlayStallReason,
+	detail: string | null
+): string {
+	switch (reason) {
+		case 'no-deck-playing':
+			return '[autoplay] arm failed: no-deck-playing after idle timeout (see autoplay-stall)';
+		default: {
+			const detailBit = detail === null || detail === '' ? '' : `: ${detail}`;
+			return `[autoplay] run failed: ${reason}${detailBit} (see autoplay-stall)`;
+		}
+	}
+}
+
 export function autoPlayExhaustionToast(reason: AutoPlayStallReason): string {
 	switch (reason) {
 		case 'missing-audio':
