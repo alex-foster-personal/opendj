@@ -55,5 +55,5 @@ test('TrackContextMenu spreads the helper and BrowserPanel passes the toolbar op
 	const contextMenu = readFileSync(`${SRC}/lib/components/rb/ContextMenu.svelte`, 'utf8');
 	assert.match(menu, /trackEditMenuItems\(targetIds\.length, onopeneditmodal\)/);
 	assert.match(panel, /onopeneditmodal=\{\(kind\) => void openEditModal\(kind\)\}/);
-	assert.match(contextMenu, /item\.title \?\? \(unavailable \? 'not implemented - see PARITY-TODO' : item\.label\)/);
+	assert.match(contextMenu, /item\.title \?\? \(unavailable \? plannedTitle\('context-menu-unavailable'\) : item\.label\)/);
 });

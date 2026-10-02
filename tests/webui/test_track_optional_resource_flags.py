@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import shutil
 import wave
@@ -443,12 +442,14 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped(
 
 
 @pytest.mark.requirement("PARITY-04")
-def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_mutagen(
+def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_picture(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
-    """[if] no mutagen reader [then] list and detail agree artwork None, [else stop]."""
-    if importlib.util.find_spec("mutagen") is not None:
-        pytest.skip("mutagen installed; None tri-state runs only without the reader")
+    """[if] a local file has no picture [then] list and detail agree on False, [else stop].
+
+    The reader is tinytag, a core dependency (issue #4717), so this is a checked
+    False everywhere now, never the old "could not check" None.
+    """
 
     wav_path = tmp_path / "local.wav"
     _write_wav(wav_path)
@@ -476,6 +477,6 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_mut
     assert detail_resp.status_code == 200
     detail_art = detail_resp.json()["artwork_available"]
 
-    assert listing_art is None
-    assert detail_art is None
+    assert listing_art is False
+    assert detail_art is False
     assert listing_art == detail_art
