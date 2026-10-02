@@ -95,7 +95,9 @@ import {
 	beginDeckLoad,
 	formatDeckLoadFailureMessage,
 	recordDeckLoad,
-	reportDeckLoadFailure
+	rememberDeckFacingMessage,
+	reportDeckLoadFailure,
+	settledTrackTitle
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import {
@@ -3026,6 +3028,7 @@ class RbAudioEngine implements AudioEngine {
 		const replacingMaster = _masterDeck === deck;
 		deckLoadErrors[deck] = null;
 		let track: Track | null = null;
+		let trackRequest: ReturnType<typeof getTrack> | null = null;
 		let buffer: AudioBuffer | null = null;
 		let anlz: DeckState['anlz'] = null;
 		let hotCueSlots: HotCueSlotState[] | null = null;
@@ -3066,7 +3069,7 @@ class RbAudioEngine implements AudioEngine {
 			// 1-9ms endpoint). It now runs after the swap, in _upgradeDeckStems.
 			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] =
 				await Promise.all([
-					time('getTrack', getTrack(stable_id)),
+					time('getTrack', (trackRequest = getTrack(stable_id))),
 					time(audio.fetchStage, audio.bytes),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
 					time('fetchHotCues', fetchHotCueSlots(stable_id))
@@ -3115,8 +3118,11 @@ class RbAudioEngine implements AudioEngine {
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
 			// RbApiError's message already reads `CODE: detail`; prefixing the code again doubled it.
-			const msg = formatDeckLoadFailureMessage(track?.title, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
+			// The audio fetch usually rejects before getTrack is read, so the title comes from that request.
+			const title = track?.title ?? (await settledTrackTitle(trackRequest));
+			const msg = formatDeckLoadFailureMessage(title, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
 			deckLoadErrors[deck] = msg;
+			rememberDeckFacingMessage(exc, msg);
 			reportDeckLoadFailure(deck, msg, exc, stages, options);
 			throw exc;
 		}

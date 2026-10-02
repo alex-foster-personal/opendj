@@ -85,6 +85,7 @@ import {
 	type PitchRange
 } from '$lib/rb/audio-engine.svelte';
 import { executeInRustEngine } from '$lib/audio-engine/rust-mode.svelte';
+import { deckFacingMessage } from '$lib/rb/deck-load-context';
 import type { MasterMode, MasterReason } from '$lib/rb/audio-engine-types';
 import { readTransition } from './transition-read.svelte';
 import type { TransitionStatus } from './transition-classifier';
@@ -1966,6 +1967,9 @@ export function performanceCommandQueueScopes(
 }
 
 function _errorMessage(error: unknown): string {
+	// A failed load already worded its error for the deck (CLOUDSYNC-33).
+	const deckFacing = deckFacingMessage(error);
+	if (deckFacing !== undefined) return deckFacing;
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 

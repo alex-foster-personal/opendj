@@ -87,6 +87,55 @@ test('[if] a track is not on this computer [then] the deck says so in plain word
 	);
 });
 
+test('[if] a load fails before its metadata is read [then] the title still comes from that request, bounded, [else stop].', async () => {
+	// CLOUDSYNC-33 Air check: the toast showed the stable id because the audio
+	// fetch rejected before getTrack was read.
+	assert.equal(
+		await failureContext.settledTrackTitle(Promise.resolve({ track: { title: 'Outomorrow' } })),
+		'Outomorrow'
+	);
+	// Controls: no request, a failed request, and a request that never answers
+	// all give null rather than throwing or hanging the failure path.
+	assert.equal(await failureContext.settledTrackTitle(null), null);
+	assert.equal(await failureContext.settledTrackTitle(Promise.reject(new Error('404'))), null);
+	const started = Date.now();
+	assert.equal(await failureContext.settledTrackTitle(new Promise(() => {}), 20), null);
+	assert.ok(Date.now() - started < 1000, 'a metadata request that never answers must not hold up the failure');
+});
+
+test('[if] a load records its deck-facing message [then] only that same error object reads it back, [else stop].', () => {
+	const failed = new Error('AUDIO_NOT_ON_THIS_MACHINE: This file isn\'t on this computer.');
+	failureContext.rememberDeckFacingMessage(failed, "Outomorrow: This file isn't on this computer.");
+	assert.equal(failureContext.deckFacingMessage(failed), "Outomorrow: This file isn't on this computer.");
+	// Controls: another error with the same text, and non-objects, read nothing.
+	assert.equal(failureContext.deckFacingMessage(new Error(failed.message)), undefined);
+	assert.equal(failureContext.deckFacingMessage('AUDIO_NOT_ON_THIS_MACHINE: x'), undefined);
+	assert.equal(failureContext.deckFacingMessage(null), undefined);
+});
+
+test('the deck banner reads the load path\'s wording, and the load path records it with the title', () => {
+	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {');
+	assert.ok(
+		body.includes('rememberDeckFacingMessage(exc, msg)'),
+		'if the load stops recording its wording then the banner shows RbApiError: CODE: detail again'
+	);
+	assert.ok(
+		body.includes('settledTrackTitle(trackRequest)'),
+		'if the title is not read from the load\'s own getTrack request then the toast shows the stable id'
+	);
+	const ipc = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
+		'utf8'
+	).replaceAll('\r\n', '\n');
+	const start = ipc.indexOf('function _errorMessage(error: unknown): string {');
+	assert.ok(start !== -1, '_errorMessage moved; re-point this guard');
+	const fn = ipc.slice(start, ipc.indexOf('\n}\n', start));
+	assert.ok(
+		fn.includes('deckFacingMessage(error)'),
+		'if the banner text ignores the load\'s wording then deck_errors shows the raw API code'
+	);
+});
+
 test('the context names the source, the deck, and every stage that was measured', () => {
 	const context = failureContext.deckLoadFailureContext(2, {
 		getTrack: 41,

@@ -292,6 +292,48 @@ export function formatDeckLoadFailureMessage(
 }
 
 /**
+ * The deck banner's text for a failed load, keyed by the error that failed it
+ * (CLOUDSYNC-33). The banner is filled from the rejected command's error, which
+ * only knows `RbApiError: CODE: detail`; the load path knows the title and the
+ * plain wording, so it records them here against the same error object.
+ * A WeakMap, so nothing stale can outlive the error or leak onto another load.
+ */
+const deckFacingMessages = new WeakMap<object, string>();
+
+export function rememberDeckFacingMessage(error: unknown, message: string): void {
+	if (typeof error === 'object' && error !== null) deckFacingMessages.set(error, message);
+}
+
+export function deckFacingMessage(error: unknown): string | undefined {
+	return typeof error === 'object' && error !== null ? deckFacingMessages.get(error) : undefined;
+}
+
+/**
+ * The track title from a load's own metadata request, for a load that failed
+ * before that request was read (the audio fetch rejects first). Bounded, so a
+ * slow metadata answer never holds up the failure, and never throws.
+ */
+export async function settledTrackTitle(
+	request: Promise<{ track: { title?: string | null } }> | null,
+	timeoutMs = 300
+): Promise<string | null> {
+	if (request === null) return null;
+	const title = request.then(
+		(res) => res.track.title ?? null,
+		() => null
+	);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<null>((resolve) => {
+		timer = setTimeout(() => resolve(null), timeoutMs);
+	});
+	try {
+		return await Promise.race([title, timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/**
  * Report one failed deck load: the user-facing toast, the client perf ring, and
  * - riding that same toast - the server-side error row carrying the stages.
  *
