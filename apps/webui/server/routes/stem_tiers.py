@@ -242,7 +242,29 @@ def _running_count(where: str) -> int:
 
 
 def _repo_root() -> Path:
+    """The source tree: read-only in the installed app (``payload/app`` inside
+    the signed bundle). Workers are FOUND here; nothing is WRITTEN here."""
     return Path(__file__).resolve().parents[4]
+
+
+JOB_LOG_SUBDIR: str = "logs/stem-jobs"
+
+
+def _job_log_dir() -> Path:
+    """Where a generate job's log goes: the data dir's ``logs/``, the same
+    writable, per-engine place as the engine's own logs (``EngineConfig``'s
+    ``logs_dir``), never the source tree.
+
+    It used to be ``_repo_root() / ".tmp/stem-jobs"``. In the installed app
+    that is inside ``Open DJ.app``, so one LOCAL job added a file to the
+    sealed bundle and ``codesign --verify --deep --strict`` failed with "a
+    sealed resource is missing or invalid" (packaged check of 316572f5,
+    Fri 2 Oct 2026, finding 2; STEM-49). Read at call time so a test that
+    repoints the data dir measures it.
+    """
+    from apps.shared import paths
+
+    return Path(paths.DATA_DIR) / JOB_LOG_SUBDIR
 
 
 def _generate_command(
@@ -360,7 +382,7 @@ def _generate_impl(body: GenerateIn, request: Request) -> dict:
         stems_dir=storage.write_root,
     )
     job_id = uuid.uuid4().hex[:12]
-    log = _repo_root() / ".tmp/stem-jobs" / f"{job_id}.log"
+    log = _job_log_dir() / f"{job_id}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     # The parent closes its copy as soon as the child owns one: leaving it open
     # leaks a descriptor per job, and job_status reads the file by path anyway.
