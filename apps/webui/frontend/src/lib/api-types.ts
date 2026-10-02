@@ -13889,6 +13889,12 @@ export interface components {
             auto_cues_available: boolean;
             /** Bpm */
             bpm?: number | null;
+            /** Bpm Confidence */
+            bpm_confidence?: number | null;
+            /** Bpm Method */
+            bpm_method?: string | null;
+            /** Bpm Source */
+            bpm_source?: string | null;
             cloud_transfer?: components["schemas"]["CloudTransferOut"] | null;
             /** Created At */
             created_at: string;

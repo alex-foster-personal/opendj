@@ -1,3 +1,9 @@
+<script lang="ts" module>
+	// Re-exported for the top-bar button, so TopBar reaches it through the
+	// sheet it already imports (no new import edge on the widest module).
+	export { pairingUnavailableReason } from '$lib/rb/pairing-button-state';
+</script>
+
 <script lang="ts">
 	// LV1 Create pairing freezes the loaded deck and EQ state at open, for the
 	// deck picker's display only. Align hotcues and Reload sync (PAIR-03) read

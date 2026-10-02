@@ -166,6 +166,37 @@ test('pairing snapshot rejects beat timestamps when no beat is available', async
 	}
 });
 
+test('pairing snapshot captures a beat for decks parked in the lead-in before their first beat (Mac check, PR #4014)', async () => {
+	// A freshly loaded deck sits at 0:00 and its first grid beat is a few ms
+	// in, so "the last beat at or before the playhead" used to be nothing and
+	// Create pairing failed with "CH1 has no beatgrid timestamp".
+	globalThis.window = {};
+	const uninstall = pairing.installPerformanceBrowserIpc();
+	try {
+		pairing.uiPrefs.beat_sync_max = true;
+		for (const deckId of [1, 2, 3, 4]) {
+			const deck = pairing.deckStates[deckId];
+			deck.stable_id = deckId <= 2 ? `track-lead-in-${deckId}` : null;
+			deck.title = deckId <= 2 ? `Lead-in ${deckId}` : null;
+			deck.position_ms = deckId === 1 ? 0 : 1000;
+			deck.anlz = deckId <= 2
+				? { beatgrid: { beats: [
+						{ n: 1, bpm: 120, t: 0.05 }, { n: 2, bpm: 120, t: 0.55 }, { n: 3, bpm: 120, t: 1.05 }
+					] } }
+				: null;
+		}
+		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		const decks = pairing.queryPerformanceState().pairing_snapshot.decks;
+		assert.deepEqual(decks.map((deck) => [deck.deck_id, deck.timestamp]), [
+			[1, { unit: 'beats', value: 4 }],
+			[2, { unit: 'beats', value: 2 }]
+		]);
+	} finally {
+		uninstall();
+		delete globalThis.window;
+	}
+});
+
 test('a beatgrid-landed resync claims only its own deck, and widening never makes that claim wait on the wide work', () => {
 	// PARITY-09 / PR #765 P1 ("Route deferred resync through the scoped
 	// scheduler") + three further BLOCKING findings on the fix itself ("Claim

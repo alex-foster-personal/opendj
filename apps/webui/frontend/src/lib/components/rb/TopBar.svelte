@@ -82,7 +82,7 @@
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
-	import CreatePairingSheet from './CreatePairingSheet.svelte';
+	import CreatePairingSheet, { pairingUnavailableReason } from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -121,6 +121,16 @@
 
 	let pairingOpen = $state(false);
 	let pairingSnapshot = $state<PairingSnapshot | null>(null);
+	// Disabled with the reason as its tooltip, never a failure after the click.
+	const pairingBlocked = $derived(
+		pairingUnavailableReason(
+			DECK_IDS.map((deckId) => {
+				const deck = getDeckState(deckId);
+				return { deckId, loaded: deck.stable_id !== null, beatCount: deck.anlz?.beatgrid.beats.length ?? 0 };
+			}),
+			uiPrefs.beat_sync_max
+		)
+	);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
@@ -540,10 +550,12 @@
 	<button
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
-		title="Create pairing from two decks"
+		aria-label="Create pairing"
+		title={pairingBlocked ?? 'Create pairing from two decks'}
+		disabled={pairingBlocked !== null}
 		onclick={() => void _openPairing()}
 	>
-		Create pairing
+		<span class="pair-long">Create pairing</span><span class="pair-short" aria-hidden="true">Pair</span>
 	</button>
 
 	<button
@@ -1060,7 +1072,8 @@
 	   chip REPORT state and operate nothing, so the 1125px tier is where they
 	   go. Below that the inert/duplicated chrome goes, then the clock, then
 	   the free badge and the utility icons, then - only on a window too narrow
-	   for the row to be honest about it - pairing and the vibe meter.
+	   for the row to be honest about it - the vibe meter (Create pairing
+	   shortens to "Pair" at that tier instead, see below).
 
 	   Deliberately NOT evicted, because each is the only door to something:
 	   the compact lyric chip (the one surface that says the word lane is
@@ -1108,9 +1121,18 @@
 	   its label at every width; tests/e2e/performance-topbar-responsive.spec.ts
 	   asserts it visible, labelled and hittable at 800x600. */
 
+	/* The vibe meter is decoration and yields at 1740px. Create pairing is a
+	   real control (the only door to DECKUX-12), so it stays at every width
+	   and shortens its label instead, never wrapping or crushing. */
+	.rb-topbar .topbar-slot-pairing {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+	.rb-topbar .pair-short { display: none; }
 	@media (max-width: 1740px) {
-		.rb-topbar .topbar-slot-pairing,
 		.rb-topbar .topbar-slot-vibe { display: none; }
+		.rb-topbar .pair-long { display: none; }
+		.rb-topbar .pair-short { display: inline; }
 	}
 
 	.ap-wrap {

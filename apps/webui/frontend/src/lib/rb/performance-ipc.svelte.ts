@@ -53,6 +53,7 @@ import {
 	toasts,
 	toastTimerArmed
 } from '$lib/stores.svelte';
+import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import {
 	analysisSourceState,
@@ -1606,15 +1607,16 @@ function _openPairingSnapshot(): PairingSnapshot {
 		const deck = getDeckState(deckId);
 		if (deck.stable_id === null) return [];
 		const channel = mixerState.channels[deckId];
-		const positionBeat = [...(deck.anlz?.beatgrid.beats ?? [])]
-			.reverse()
-			.find((beat) => beat.t * 1000 <= deck.position_ms);
 		let timestampValue = deck.position_ms;
 		if (unit === 'beats') {
-			if (positionBeat === undefined) {
+			// A playhead before the first beat (a deck parked at 0:00) is in the
+			// lead-in, not gridless; only an empty grid cannot be captured, and
+			// the top-bar button is disabled for that case (pairing-readiness.ts).
+			const positionBeat = pairingBeatAt(deck.anlz?.beatgrid.beats ?? [], deck.position_ms);
+			if (positionBeat === null) {
 				throw new Error(`CH${deckId} has no beatgrid timestamp for pairing capture`);
 			}
-			timestampValue = positionBeat.n;
+			timestampValue = positionBeat;
 		}
 		const adjustments: Array<{ band: EqBand; value: number }> = [
 			{ band: 'low', value: channel.eq_low },

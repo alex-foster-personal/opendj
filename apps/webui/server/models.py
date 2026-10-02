@@ -199,6 +199,11 @@ class TrackListItemOut(TrackOut):
     energy: int | None
     energy_source: Literal["mik"] | None
     energy_reason: str
+    # LIBUX-31: the BPM hover's beatgrid method and confidence, the same
+    # provenance TrackRowOut carries, so All Tracks and search match playlists.
+    bpm_source: str | None = None
+    bpm_method: str | None = None
+    bpm_confidence: float | None = None
     lyrics: LyricsRowSummaryOut | None = None
     is_remix: bool = False
     is_radio_edit: bool = False

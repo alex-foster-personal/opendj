@@ -174,7 +174,22 @@ const BUDGETS = [
   // Thu 24 Sep 2026: the SetupOverlay payback (#3862) and the pin-shell deferral
   // (#3903) landed together; merged tree measured 250,040 locally against the
   // unchanged 259,072. Not raised: 9,032 bytes of headroom, first since #3737.
-  { name: 'library', limit: 259072, measured: 250249, note: 'initial load of "/"' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins): the
+  // settings overlay rides this surface (+layout.svelte imports it eagerly),
+  // and the PR adds boot-needed prefs plumbing to it: the Confirmations
+  // settings group, the confirm-map and compatible-filter hydrate/validation
+  // in prefs.svelte.ts / prefs-hydrate.ts, and the pairing lead-in beat helper
+  // the performance dispatcher needs. Clean origin/main e0dfa83bc measured
+  // 258,383 locally (689 bytes of headroom); the merged PR measured 260,408.
+  // Deferred first, measured each step: the watcher-folders editor and its
+  // validator now load on demand inside the open overlay (259,736), and the
+  // pairing button's disabled-reason logic lives in its own module that only
+  // the /performance top bar imports. What remains (+1,353 over main) is read
+  // during boot. Lazy-loading the whole SettingsOverlay was measured too:
+  // library 243,590 but other-lazy 279,897 against 266,240, a far larger
+  // raise. Payback: that same SettingsOverlay deferral, once other-lazy has
+  // the headroom for it, retires this KiB.
+  { name: 'library', limit: 260096, measured: 250249, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
