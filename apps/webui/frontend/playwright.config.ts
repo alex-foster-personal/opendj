@@ -120,6 +120,7 @@ export default defineConfig({
 		'**/stems-progress.spec.ts', // playwright.stems.config.ts (engine + ffmpeg)
 		'**/midi-maps-resync.spec.ts', // playwright.midi-maps-resync.config.ts (engine + real WS)
 		'**/library-jobs-ordering.spec.ts', // playwright.library-jobs.config.ts (dry runner)
+		'**/vocals-demucs-overlay.spec.ts', // playwright.vocals-demucs-overlay.config.ts (opt-in live demucs, real audio clip)
 		'**/stretch-artifact.spec.ts', // playwright.stretch-artifact.config.ts (built artifact)
 		'**/stretch-quality.spec.ts', // playwright.stretch-quality.config.ts (no server)
 		'**/audio-output-topology.spec.ts', // playwright.audio-output-topology.config.ts (no server)

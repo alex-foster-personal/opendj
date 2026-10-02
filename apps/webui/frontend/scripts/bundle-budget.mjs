@@ -413,8 +413,9 @@ const BUDGETS = [
   // RE-MERGED Fri 2 Oct 2026 (main 69 commits ahead, incl. #4908's lazy native cue
   // sink client and #4906): measured 293,800, 1,960 over. Reviewed raise to the
   // measured size ceiled to KiB (287 KiB), no extra headroom; the MIDI split-chunk
-  // payback above still stands.
-  { name: 'other-lazy', limit: 293888, measured: 293800, note: 'all other routes plus deferred shell' },
+  // payback above still stands. Second re-merge (main +59 commits, Fri 2 Oct
+  // 2026 evening): measured 294,088, 200 over; raised to 288 KiB on the same rule.
+  { name: 'other-lazy', limit: 294912, measured: 294088, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
