@@ -29,18 +29,16 @@ from pydantic import BaseModel
 
 from apps.analysis import run as analysis_run
 from apps.lyrics import cache as lyrics_cache
-from apps.shared import platform_paths
 from apps.shared.paths import PROJECT_ROOT
-from apps.shared.state import locations as state_locations
 from apps.stems.artifacts import (
     StemArtifactError,
     StemBundleNotFoundError,
     load_stem_bundle,
 )
 from apps.vocals import cache as vocals_cache
+from apps.webui.server import library_playable
 from apps.webui.server.routes import ingest_cli_procs
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed
-from apps.webui.soft_deletes import has_soft_deletes
 
 #: Exit codes that describe THESE targets rather than this machine. Only
 #: these may leave the chunk loop running; see :func:`_step_analysis`. The
@@ -275,6 +273,87 @@ def valid_vocal_ids(vocal_dir: Path, audio_paths: dict[str, Path]) -> tuple[set[
     return done, corrupt
 
 
+#-----------------------------------------------------------------------------
+# stem-bundle validation cache
+#-----------------------------------------------------------------------------
+_BundleSignature = tuple[tuple[int, int, int] | None, ...]
+
+
+class BundleCache:
+    """Remembered ``load_stem_bundle`` verdicts, keyed on what is on disk.
+
+    Validating a bundle opens every stem file, which made GET /ingest/coverage
+    cost about 105 s on 1596 bundles (measured Thu 1 Oct 2026) because it did
+    so for every bundle on every request. A verdict is reused only while the
+    bundle's signature is unchanged: per configured root, the bundle
+    directory's own mtime plus its manifest's mtime and size. The directory
+    mtime is in the key on purpose: a part file added, removed or renamed
+    moves it while leaving the manifest untouched, and a verdict that survived
+    a missing part would count a broken bundle as covered forever.
+
+    Accepted caveat: a part REWRITTEN IN PLACE with the same name does not move
+    either mtime, so its verdict is reused until the engine restarts. That is
+    the same trust boundary ``apps.vocals.from_stems.bundle_stem_identity``
+    accepts, and playback re-validates the bundle it actually loads.
+
+    ``hits`` / ``misses`` are real counters, not test scaffolding: they are
+    how a reader (or a test) confirms the fast path is the path taken.
+    """
+
+    def __init__(self) -> None:
+        self._verdicts: dict[tuple[tuple[str, ...], str], tuple[_BundleSignature, bool]] = {}
+        self._lock = threading.Lock()
+        self.hits: int = 0
+        self.misses: int = 0
+
+    def clear(self) -> None:
+        with self._lock:
+            self._verdicts.clear()
+            self.hits = 0
+            self.misses = 0
+
+    def is_valid(self, name: str, roots: Sequence[Path]) -> bool:
+        key = (tuple(str(root) for root in roots), name)
+        signature = _bundle_signature(name, roots)
+        with self._lock:
+            cached = self._verdicts.get(key)
+            if cached is not None and cached[0] == signature:
+                self.hits += 1
+                return cached[1]
+        try:
+            load_stem_bundle(name, roots=roots)
+        except (StemArtifactError, StemBundleNotFoundError):
+            valid = False
+        else:
+            valid = True
+        with self._lock:
+            self.misses += 1
+            self._verdicts[key] = (signature, valid)
+        return valid
+
+
+def _bundle_signature(name: str, roots: Sequence[Path]) -> _BundleSignature:
+    """(dir mtime, manifest mtime, manifest size) per root; None where absent."""
+    parts: list[tuple[int, int, int] | None] = []
+    for root in roots:
+        bundle = root / name
+        try:
+            directory = bundle.stat()
+        except OSError:
+            parts.append(None)
+            continue
+        try:
+            manifest = (bundle / "manifest.json").stat()
+        except OSError:
+            parts.append((directory.st_mtime_ns, -1, -1))
+            continue
+        parts.append((directory.st_mtime_ns, manifest.st_mtime_ns, manifest.st_size))
+    return tuple(parts)
+
+
+BUNDLE_CACHE = BundleCache()
+
+
 def valid_stem_bundle_ids(roots: Sequence[Path]) -> tuple[set[str], set[str]]:
     """(done, corrupt) stable_ids for stem-bundle directories under ``roots``.
 
@@ -285,6 +364,9 @@ def valid_stem_bundle_ids(roots: Sequence[Path]) -> tuple[set[str], set[str]]:
     (STEM-01) even when another root holds junk. Directories the reader
     rejects, with no valid bundle anywhere, land in ``corrupt``. A track with
     no directory in any root is neither set (missing, never run).
+
+    Verdicts come through :data:`BUNDLE_CACHE`, so an unchanged bundle is
+    validated once per engine lifetime rather than once per request.
     """
     seen: set[str] = set()
     for root in roots:
@@ -293,13 +375,7 @@ def valid_stem_bundle_ids(roots: Sequence[Path]) -> tuple[set[str], set[str]]:
         for p in root.iterdir():
             if p.is_dir():
                 seen.add(p.name)
-    done: set[str] = set()
-    for name in seen:
-        try:
-            load_stem_bundle(name, roots=roots)
-        except (StemArtifactError, StemBundleNotFoundError):
-            continue
-        done.add(name)
+    done = {name for name in seen if BUNDLE_CACHE.is_valid(name, roots)}
     return done, seen - done
 
 
@@ -312,33 +388,29 @@ def tracks_on_disk(
     monkeypatched in tests) passed in explicitly rather than imported here,
     so this module stays request-DB-agnostic - the same reason ``ingest.py``
     exists as a separate module in the first place (see the module docstring).
+
+    The playable set is :func:`apps.webui.server.library_playable.scan_playability`,
+    the one predicate reconcile's summary reads too. ``unreachable`` keeps its
+    original meaning for the callers that log it: every non-streaming row with
+    no audio here, whether broken on this machine or simply held elsewhere.
+    The health lights do not read it; they read the scan's own buckets.
     """
+    scan = playability(conn_factory)
+    unreachable = (
+        len(scan.broken_here) + scan.off_machine + scan.awaiting_volume + scan.pathless
+    )
+    return list(scan.present), unreachable
+
+
+def playability(
+    conn_factory: Callable[[], sqlite3.Connection],
+) -> library_playable.LibraryPlayability:
+    """One playability scan over the caller's own connection."""
     conn = conn_factory()
     try:
-        if has_soft_deletes(conn, "tracks"):
-            tracks_sql = (
-                "SELECT stable_id, file_path FROM tracks WHERE deleted_at IS NULL"
-            )
-        else:
-            tracks_sql = "SELECT stable_id, file_path FROM tracks"
-        rows = conn.execute(tracks_sql).fetchall()
-        stable_ids = [str(sid) for sid, _fp in rows]
-        track_paths = {str(sid): fp for sid, fp in rows}
-        resolved = state_locations.bulk_local_audio_paths(conn, stable_ids)
+        return library_playable.scan_playability(conn)
     finally:
         conn.close()
-    ok: list[tuple[str, str]] = []
-    unreachable = 0
-    for sid in stable_ids:
-        path = resolved.get(sid)
-        if path is not None:
-            ok.append((sid, str(path)))
-            continue
-        fp = track_paths.get(sid)
-        if fp and str(fp).startswith(platform_paths.STREAMING_PREFIXES):
-            continue
-        unreachable += 1
-    return ok, unreachable
 
 
 def missing_by_step(
@@ -392,6 +464,7 @@ def missing_by_step(
 
 
 __all__ = [
+    "BUNDLE_CACHE",
     "LOG_RING",
     "_JOBS",
     "_RefreshJob",
@@ -399,6 +472,7 @@ __all__ = [
     "_log",
     "_run_cli",
     "missing_by_step",
+    "playability",
     "tracks_on_disk",
     "valid_lyrics_ids",
     "valid_stem_bundle_ids",

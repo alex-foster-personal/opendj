@@ -13,7 +13,6 @@ Run directly:
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -21,13 +20,7 @@ from pathlib import Path
 from apps.cloud import stem_index
 from apps.cloud.stem_source import StemSourceError, resolve_stem_hydration_source
 from apps.stems.hydrate_runner import HydrateRunnerError, hydrate_stable_ids
-from apps.stems.job import (
-    LOCAL_WORKER_SCRIPT,
-    SCOPE_PENDING,
-    UV_BIN,
-    WORKER_SCRIPT,
-    resolve_transport,
-)
+from apps.stems.job import SCOPE_PENDING, StemsJobPayloadError, compute_argv
 
 
 def _resolve_pending_ids(data_dir: Path) -> list[str]:
@@ -65,41 +58,18 @@ def _compute_argv(
     tier: str,
     executor: str,
 ) -> list[str]:
-    if shutil.which(UV_BIN) is None:
-        raise SystemExit(
-            f"error: {UV_BIN!r} is not on PATH, and the stems compute worker needs uv"
-        )
-    if executor == "local":
-        from apps.stems.local_gate import local_stems_gate
+    """The same separation argv the engine would build (apps.stems.job).
 
-        refusal = local_stems_gate()
-        if refusal is not None:
-            raise SystemExit(f"error: {refusal}")
-        argv: list[str] = [
-            UV_BIN,
-            "run",
-            "--no-sync",
-            "python",
-            LOCAL_WORKER_SCRIPT,
-        ]
-    else:
-        argv = [
-            UV_BIN,
-            "run",
-            "--no-sync",
-            "--with",
-            "modal",
-            "python",
-            WORKER_SCRIPT,
-            "--tier",
-            tier,
-            "--transport",
-            resolve_transport(),
-        ]
-    argv += ["--data-dir", str(data_dir)]
-    for stable_id in stable_ids:
-        argv += ["--stable-id", stable_id]
-    return argv
+    Delegated rather than rebuilt: this copy used to name the workers by
+    RELATIVE path and require uv, so in the installed app the fall-through
+    for un-indexed tracks could not start either (issue #3421).
+    """
+    try:
+        return compute_argv(
+            stable_ids, tier=tier, data_dir=data_dir, executor=executor
+        )
+    except StemsJobPayloadError as exc:
+        raise SystemExit(f"error: {exc}") from exc
 
 
 def _run_compute(
@@ -133,10 +103,11 @@ def main(argv: list[str] | None = None) -> int:
         data_dir = DATA_DIR
     data_dir = Path(data_dir)
 
-    if args.scope == SCOPE_PENDING:
-        stable_ids = _resolve_pending_ids(data_dir)
-    else:
-        stable_ids = list(dict.fromkeys(args.stable_ids))
+    stable_ids = (
+        _resolve_pending_ids(data_dir)
+        if args.scope == SCOPE_PENDING
+        else list(dict.fromkeys(args.stable_ids))
+    )
 
     if not stable_ids:
         print("[stems-r2-first] nothing to do", file=sys.stderr, flush=True)

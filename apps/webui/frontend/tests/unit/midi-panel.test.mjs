@@ -10,6 +10,8 @@
 //   if midiLabelStatus with requestPending isn't amber then broken
 //   if requestMidiAccess failure leaves midiUi.lastError null then broken
 //   if two toggleMidiPanel calls don't restore panelOpen then broken
+//   if a WebMIDI-less window clears the shared MIDI opt-in then broken
+//   if a Chrome denial leaves the MIDI opt-in set then broken
 
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -26,6 +28,7 @@ let fmt; // midi-format.ts (pure)
 let uiState; // midi-ui-state.svelte.ts (rune module)
 let enabledChoice; // midi-enabled-choice.ts (the persisted opt-in, runtime-free)
 let webmidi; // webmidi.svelte.ts (for permission state assertions)
+let initialPermission; // midiState.permission as the module built it, before any test
 let flx10; // ddj-flx10.ts (real map, for best-guess-hint transcription check)
 
 before(async () => {
@@ -49,6 +52,7 @@ before(async () => {
 		'/src/lib/components/rb/midi/midi-enabled-choice.ts'
 	);
 	webmidi = await vite.ssrLoadModule('/src/lib/rb/midi/webmidi.svelte.ts');
+	initialPermission = webmidi.midiState.permission;
 	flx10 = await vite.ssrLoadModule('/src/lib/rb/midi/maps/ddj-flx10.ts');
 });
 
@@ -248,14 +252,54 @@ test('midiEnabledPersisted is false (no throw) when localStorage is absent', () 
 	assert.equal(uiState.midiEnabledPersisted(), false);
 });
 
-test('a failed requestMidiAccess clears the persisted enabled flag (no reload nag)', async () => {
-	// Simulate "user enabled MIDI before", then a reload where access fails
-	// (Node has no WebMIDI): the choice must be forgotten so we do not re-nag.
+/** Give Node's navigator a requestMIDIAccess that rejects, the way Chrome
+ * answers a user who clicks Block, and take it away again afterwards. */
+async function _withDeniedWebMidi(fn) {
+	const denied = async () => {
+		throw new Error('NotAllowedError: permission denied');
+	};
+	globalThis.navigator.requestMIDIAccess = denied;
+	try {
+		assert.equal(webmidi.webMidiSupported(), true);
+		await fn();
+	} finally {
+		delete globalThis.navigator.requestMIDIAccess;
+	}
+}
+
+test('webMidiSupported follows navigator.requestMIDIAccess', async () => {
+	assert.equal(webmidi.webMidiSupported(), false); // Node, like WKWebView
+	await _withDeniedWebMidi(async () => {});
+	assert.equal(webmidi.webMidiSupported(), false);
+});
+
+test('a WebMIDI-less window starts unsupported, not "not requested yet"', () => {
+	// Module state was built in Node, which has no WebMIDI: the desktop app's
+	// panel must not offer a request button that can never work.
+	assert.equal(initialPermission, 'unsupported');
+});
+
+test('a denied requestMidiAccess clears the persisted enabled flag (no reload nag)', async () => {
+	// Simulate "user enabled MIDI before", then a reload where Chrome denies
+	// access: the choice must be forgotten so we do not re-nag.
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	assert.equal(uiState.midiEnabledPersisted(), true);
-	await uiState.requestMidiAccess();
-	assert.notEqual(uiState.midiUi.lastError, null); // failed loudly
+	await _withDeniedWebMidi(async () => {
+		await uiState.requestMidiAccess();
+	});
+	assert.match(uiState.midiUi.lastError, /denied/); // failed loudly
+	assert.equal(webmidi.midiState.permission, 'denied');
 	assert.equal(uiState.midiEnabledPersisted(), false); // and forgot the choice
+	_uninstallLocalStorage();
+});
+
+test('an unsupported requestMidiAccess keeps the shared enabled flag', async () => {
+	// The desktop app has no WebMIDI, and the opt-in is shared with the Chrome
+	// tab through ui-prefs, so failing here must not switch Chrome's MIDI off.
+	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
+	await uiState.requestMidiAccess();
+	assert.match(uiState.midiUi.lastError, /not supported/i); // still loud
+	assert.equal(uiState.midiEnabledPersisted(), true);
 	_uninstallLocalStorage();
 });
 
@@ -269,12 +313,25 @@ test('maybeAutoEnableMidi is a no-op when the user never opted in', async () => 
 });
 
 test('maybeAutoEnableMidi re-runs the request when the choice was persisted', async () => {
-	// Persisted opt-in -> auto path calls requestMidiAccess, which fails loudly
-	// in Node (no WebMIDI) and clears the flag: proves the wire actually fired.
+	// Persisted opt-in -> auto path calls requestMidiAccess, which the stub
+	// denies, clearing the flag: proves the wire actually fired.
+	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
+	uiState.midiUi.lastError = null;
+	await _withDeniedWebMidi(async () => {
+		await uiState.maybeAutoEnableMidi();
+	});
+	assert.match(uiState.midiUi.lastError, /denied/);
+	assert.equal(uiState.midiEnabledPersisted(), false);
+	_uninstallLocalStorage();
+});
+
+test('maybeAutoEnableMidi does nothing in a WebMIDI-less window', async () => {
+	// The desktop app: no request, no error, and the opt-in stays for Chrome.
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	uiState.midiUi.lastError = null;
 	await uiState.maybeAutoEnableMidi();
-	assert.notEqual(uiState.midiUi.lastError, null);
-	assert.equal(uiState.midiEnabledPersisted(), false);
+	assert.equal(uiState.midiUi.lastError, null);
+	assert.equal(uiState.midiUi.requestPending, false);
+	assert.equal(uiState.midiEnabledPersisted(), true);
 	_uninstallLocalStorage();
 });

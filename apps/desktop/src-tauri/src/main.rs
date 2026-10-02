@@ -18,6 +18,7 @@
 // `initialization_script` is the only hook with that guarantee.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cue_sink;
 mod engine;
 mod engine_log;
 mod launch;
@@ -487,6 +488,10 @@ fn fail_visibly(error: &engine::EngineError) -> ! {
     std::process::exit(1);
 }
 
+fn cue_sink_log(message: &str) {
+    engine::append_shell_log("cue-sink", message);
+}
+
 fn main() {
     // Generated once and reused for `.build()` below: the macro only reads
     // `tauri.conf.json` at compile time, so calling it here to read the
@@ -571,6 +576,17 @@ fn main() {
             };
             let package = app.package_info();
             let identity = shell_build_identity(&package.version.to_string());
+            // CUEOUT-22: the native headphone cue output. A failure to start it
+            // is logged and leaves the page without the global, so the I/O
+            // panel reports two-device cue as unavailable instead of the whole
+            // app failing to open over a headphone feature.
+            let cue_sink_script = match cue_sink::CueSinkServer::start(cue_sink_log) {
+                Ok(server) => server.init_script()?,
+                Err(failure) => {
+                    cue_sink_log(&failure);
+                    String::new()
+                }
+            };
             // serde_json does the escaping, so neither the origin nor the
             // identity can break out of its assignment.
             let script = format!(
@@ -584,9 +600,10 @@ fn main() {
                      message: message,\
                      context: context || {{ source: 'shell-webview' }}\
                    }});\
-                 }};",
+                 }};{}",
                 serde_json::to_string(&origin)?,
                 serde_json::to_string(&identity)?,
+                cue_sink_script,
             );
             // The window title IS productName, so the per-lane `--config`
             // overlay labels the window without a second place to edit.
