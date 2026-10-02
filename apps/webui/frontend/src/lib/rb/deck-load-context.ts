@@ -279,13 +279,29 @@ export function deckLoadFailureContext(
  * already be stamped when this is called, or every report is missing the one
  * number that says when the load died.
  */
+/**
+ * Load failures a DJ can act on, said plainly (CLOUDSYNC-33). The message
+ * arrives as RbApiError's `CODE: detail`; for these codes the deck shows only
+ * the sentence, while the toast's error report still carries the raw cause.
+ */
+const PLAIN_LOAD_FAILURES: Readonly<Record<string, string>> = {
+	AUDIO_NOT_ON_THIS_MACHINE: "This file isn't on this computer.",
+	AUDIO_FILE_MISSING: "This file isn't on this computer."
+};
+
+function plainLoadFailure(message: string): string {
+	const code = /^([A-Z][A-Z0-9_]+): /.exec(message)?.[1];
+	return (code !== undefined && PLAIN_LOAD_FAILURES[code]) || message;
+}
+
 export function formatDeckLoadFailureMessage(
 	trackTitle: string | null | undefined,
 	stableId: string,
 	message: string
 ): string {
 	const title = trackTitle?.trim();
-	return title ? `${title}: ${message}` : `${stableId}: ${message}`;
+	const reason = plainLoadFailure(message);
+	return title ? `${title}: ${reason}` : `${stableId}: ${reason}`;
 }
 
 export function reportDeckLoadFailure(

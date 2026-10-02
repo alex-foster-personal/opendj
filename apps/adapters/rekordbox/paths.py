@@ -547,6 +547,13 @@ def resolve_playable_audio(
         )
 
     if source.origin == "unavailable":
+        if source.policy_source == "unconfigured":
+            # CLOUDSYNC-33: a local-only machine without this file. The
+            # message is the one a DJ reads on the deck, so it is plain.
+            raise not_found(
+                "AUDIO_NOT_ON_THIS_MACHINE",
+                source.reason or hydration.NOT_ON_THIS_MACHINE,
+            )
         raise not_found(
             "CLOUD_ASSET_UNAVAILABLE",
             source.reason

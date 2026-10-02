@@ -283,6 +283,24 @@ def test_unconfigured_machine_with_local_file_plays_without_policy_row(
     assert source.path == audio
 
 
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_without_a_local_file_is_local_only(
+    conn: sqlite3.Connection, cfg: CloudConfig, tmp_path: Path
+):
+    """[if] a machine has no sync_policies row and no copy of a track [then] playback resolution answers unavailable "not on this computer" and never presigns, [else stop]."""
+    _seed_track(conn, "t1", content_hash=_sha(b"body"))
+    _seed_machine(conn, "m1")
+    source = hydration.resolve_playback_source(
+        conn, "t1", "m1", asset_kind="audio", cache_dir=tmp_path / "cache", cfg=cfg
+    )
+    assert source.origin == "unavailable"
+    assert source.policy_source == "unconfigured"
+    assert source.reason == hydration.NOT_ON_THIS_MACHINE
+    # resolve_policy itself still refuses to assume a mode.
+    with pytest.raises(hydration.PolicyUnconfigured):
+        hydration.resolve_policy(conn, "t1", "m1", asset_kind="audio")
+
+
 def test_an_unknown_asset_kind_raises(conn: sqlite3.Connection):
     _seed_track(conn, "t1")
     _seed_machine(conn, "m1")

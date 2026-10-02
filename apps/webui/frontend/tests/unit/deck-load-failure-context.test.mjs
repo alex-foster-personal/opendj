@@ -61,6 +61,32 @@ test('[if] decode or audio fetch fails after getTrack [then] the toast message c
 	);
 });
 
+test('[if] a track is not on this computer [then] the deck says so in plain words, not the API code, [else stop].', () => {
+	// CLOUDSYNC-33: the raw CLOUD_POLICY_UNCONFIGURED text reached a DJ's deck.
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage(
+			'Outomorrow',
+			'abc',
+			"AUDIO_NOT_ON_THIS_MACHINE: This file isn't on this computer."
+		),
+		"Outomorrow: This file isn't on this computer."
+	);
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage(null, 'abc123', 'AUDIO_FILE_MISSING: /Users/dev/Music/gone.mp3'),
+		"abc123: This file isn't on this computer."
+	);
+	// Controls: a code with no plain wording, and a message that only looks
+	// like one, pass through unchanged.
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage('Night Ride', 'abc', 'CLOUD_HYDRATING: fetching'),
+		'Night Ride: CLOUD_HYDRATING: fetching'
+	);
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage('Night Ride', 'abc', 'AUDIO_FILE_MISSING without a colon'),
+		'Night Ride: AUDIO_FILE_MISSING without a colon'
+	);
+});
+
 test('the context names the source, the deck, and every stage that was measured', () => {
 	const context = failureContext.deckLoadFailureContext(2, {
 		getTrack: 41,

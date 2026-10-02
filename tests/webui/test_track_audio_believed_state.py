@@ -206,3 +206,47 @@ def test_missing_content_hash_refuses_audio_route(client: TestClient) -> None:
     detail = response.json()["detail"]
     assert detail["code"] == "CLOUD_ASSET_UNAVAILABLE"
     assert "content_hash" in detail["message"]
+
+
+@pytest.fixture
+def unconfigured_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    """A machine nobody configured CloudSync on: no ``sync_policies`` rows."""
+    state_path = tmp_path / "state.db"
+    _seed_believed_state(state_path)
+    conn = state_db.open_rw(state_path)
+    try:
+        conn.execute("DELETE FROM sync_policies")
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setattr(rb_config, "STATE_DB", state_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent-master.db")
+    monkeypatch.setattr(rb_config, "DATA_DIR", tmp_path)
+    app = create_app(
+        backend=InMemoryBackend(),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        syncthing_status_fn=lambda: None,
+    )
+    with TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1") as tc:
+        yield tc
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_says_a_missing_file_is_not_on_this_computer(
+    unconfigured_client: TestClient,
+) -> None:
+    """[if] a machine with no CloudSync policy loads a track it has no copy of [then] the route answers 404 AUDIO_NOT_ON_THIS_MACHINE with a plain sentence, not CLOUD_POLICY_UNCONFIGURED, [else stop]."""
+    response = unconfigured_client.get(f"/api/v1/tracks/{REMOTE_SID}/audio")
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["code"] == "AUDIO_NOT_ON_THIS_MACHINE"
+    assert detail["message"] == "This file isn't on this computer."
+    # Control: the same machine still plays its own copy.
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{PLAYABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
