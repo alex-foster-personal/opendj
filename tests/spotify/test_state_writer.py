@@ -10,6 +10,7 @@ import pytest
 
 from apps.shared.state import schema as state_schema
 from apps.shared.state import sync_stamp
+from apps.shared.state.writer import StateWriter
 from apps.spotify.client import SpotifyPlaylist, SpotifyTrack
 from apps.spotify.matcher_adapter import LocalTrack, MatchedPair, MatchResult
 from apps.spotify.state_writer import (
@@ -413,3 +414,39 @@ def test_a_reimport_outranks_the_previous_import(state_conn: sqlite3.Connection)
     assert (second[0], second[1]) > (first[0], first[0])
     # Two imports x two playlists (Spotify + linked ODJ twin) = four rows.
     assert _changelog(state_conn).get("playlists") == 4
+
+
+@pytest.mark.requirement("LIBM-140")
+def test_a_reimport_leaves_a_removed_placeholder_removed(state_conn: sqlite3.Connection) -> None:
+    """Re-importing a playlist is not a restore: the placeholder the user
+    removed keeps its tombstone and stays out of the playlist, while the
+    placeholder beside it (the control) is written as before."""
+    removed_src = _mk_src(sid="t-removed", title="Removed")
+    kept_src = _mk_src(sid="t-kept", title="Kept")
+    result = MatchResult(pairs=[
+        MatchedPair(removed_src, None, 0.0, (), "unmatched"),
+        MatchedPair(kept_src, None, 0.0, (), "unmatched"),
+    ])
+    first = _write(state_conn, _mk_playlist(snapshot="snap-1", tracks=(removed_src, kept_src)), result)
+    assert first.tracks_skipped_deleted == 0
+    removed_sid = synthetic_stable_id(removed_src.spotify_uri)
+    StateWriter(state_conn, actor="test").remove_from_library(removed_sid)
+    tombstone = state_conn.execute(
+        "SELECT deleted_at, updated_at FROM tracks WHERE stable_id = ?", (removed_sid,)
+    ).fetchone()
+    assert tombstone[0] is not None
+
+    second = _write(state_conn, _mk_playlist(snapshot="snap-2", tracks=(removed_src, kept_src)), result)
+
+    assert second.tracks_skipped_deleted == 1
+    assert state_conn.execute(
+        "SELECT deleted_at, updated_at FROM tracks WHERE stable_id = ?", (removed_sid,)
+    ).fetchone() == tombstone, "a playlist re-import rewrote a removed track"
+    live_members = {
+        row[0]
+        for row in state_conn.execute(
+            "SELECT stable_id FROM playlist_memberships WHERE deleted_at IS NULL"
+        )
+    }
+    assert removed_sid not in live_members
+    assert synthetic_stable_id(kept_src.spotify_uri) in live_members

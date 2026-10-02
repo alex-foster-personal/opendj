@@ -933,7 +933,8 @@ class SqliteBackend:
                         if file_path is not None:
                             row = conn.execute(
                                 "SELECT stable_id_tier, title, artists_json, album, isrc, "
-                                "duration_ms, content_hash FROM tracks WHERE stable_id = ?",
+                                "duration_ms, content_hash FROM tracks "
+                                "WHERE stable_id = ? AND deleted_at IS NULL",
                                 (current.stable_id,),
                             ).fetchone()
                             if row is None:
