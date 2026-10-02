@@ -1214,6 +1214,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/27/b8/ca7319556912f6883
 wheels = [{ url = "https://files.pythonhosted.org/packages/4a/4a/cf14bf3b1f5ffb13c69cf5f0ea78031247790558ee88984a8bdd22fae60d/kaitaistruct-0.11-py2.py3-none-any.whl", upload-time = 2025-09-08T15:46:23Z, size = 11372, hashes = { sha256 = "5c6ce79177b4e193a577ecd359e26516d1d6d000a0bffd6e1010f2a46a62a561" } }]
 
 [[packages]]
+name = "lark"
+version = "1.3.1"
+sdist = { url = "https://files.pythonhosted.org/packages/da/34/28fff3ab31ccff1fd4f6c7c7b0ceb2b6968d8ea4950663eadcb5720591a0/lark-1.3.1.tar.gz", upload-time = 2025-10-27T18:25:56Z, size = 382732, hashes = { sha256 = "b426a7a6d6d53189d318f2b6236ab5d6429eaf09259f1ca33eb716eed10d2905" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/82/3d/14ce75ef66813643812f3093ab17e46d3a206942ce7376d31ec2d36229e7/lark-1.3.1-py3-none-any.whl", upload-time = 2025-10-27T18:25:54Z, size = 113151, hashes = { sha256 = "c629b661023a014c37da873b4ff58a817398d12635d3bbb2c5a03be7fe5d1e12" } }]
+
+[[packages]]
 name = "lazy-loader"
 version = "0.6"
 sdist = { url = "https://files.pythonhosted.org/packages/19/8c/0f2ff2a8b7513e68871a74740c17a504b0488c679b379e6445ebb7bd78dc/lazy_loader-0.6.tar.gz", upload-time = 2026-09-21T21:31:32Z, size = 18438, hashes = { sha256 = "2f4b7824d6401958639008a0cae20c776b61dff619accd6890693e2de8260167" } }
@@ -2752,10 +2758,16 @@ sdist = { url = "https://files.pythonhosted.org/packages/28/ea/a9387748e2d111c3c
 wheels = [{ url = "https://files.pythonhosted.org/packages/7b/44/4e421b96b67b2daff264473f7465db72fbdf36a07e05494f50300cc7b0c6/rfc3339_validator-0.1.4-py2.py3-none-any.whl", upload-time = 2021-05-12T16:37:52Z, size = 3490, hashes = { sha256 = "24f6ec1eda14ef823da9e36ec7113124b39c04d50a4d3d3a3c2859577e7791fa" } }]
 
 [[packages]]
-name = "rfc3987"
-version = "1.3.8"
-sdist = { url = "https://files.pythonhosted.org/packages/14/bb/f1395c4b62f251a1cb503ff884500ebd248eed593f41b469f89caa3547bd/rfc3987-1.3.8.tar.gz", upload-time = 2018-07-29T17:23:47Z, size = 20700, hashes = { sha256 = "d3c4d257a560d544e9826b38bc81db676890c79ab9d7ac92b39c7a253d5ca733" } }
-wheels = [{ url = "https://files.pythonhosted.org/packages/65/d4/f7407c3d15d5ac779c3dd34fbbc6ea2090f77bd7dd12f207ccf881551208/rfc3987-1.3.8-py2.py3-none-any.whl", upload-time = 2018-07-29T17:23:45Z, size = 13377, hashes = { sha256 = "10702b1e51e5658843460b189b185c0366d2cf4cff716f13111b0ea9fd2dce53" } }]
+name = "rfc3986-validator"
+version = "0.1.1"
+sdist = { url = "https://files.pythonhosted.org/packages/da/88/f270de456dd7d11dcc808abfa291ecdd3f45ff44e3b549ffa01b126464d0/rfc3986_validator-0.1.1.tar.gz", upload-time = 2019-10-28T16:00:19Z, size = 6760, hashes = { sha256 = "3d44bde7921b3b9ec3ae4e3adca370438eccebc676456449b145d533b240d055" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/9e/51/17023c0f8f1869d8806b979a2bffa3f861f26a3f1a66b094288323fba52f/rfc3986_validator-0.1.1-py2.py3-none-any.whl", upload-time = 2019-10-28T16:00:13Z, size = 4242, hashes = { sha256 = "2f235c432ef459970b4306369336b9d5dbdda31b510ca1e327636e01f528bfa9" } }]
+
+[[packages]]
+name = "rfc3987-syntax"
+version = "1.1.0"
+sdist = { url = "https://files.pythonhosted.org/packages/2c/06/37c1a5557acf449e8e406a830a05bf885ac47d33270aec454ef78675008d/rfc3987_syntax-1.1.0.tar.gz", upload-time = 2025-07-18T01:05:05Z, size = 14239, hashes = { sha256 = "717a62cbf33cffdd16dfa3a497d81ce48a660ea691b1ddd7be710c22f00b4a0d" } }
+wheels = [{ url = "https://files.pythonhosted.org/packages/7e/71/44ce230e1b7fadd372515a97e32a83011f906ddded8d03e3c6aafbdedbb7/rfc3987_syntax-1.1.0-py3-none-any.whl", upload-time = 2025-07-18T01:05:03Z, size = 8046, hashes = { sha256 = "6c3d97604e4c5ce9f714898e05401a0445a641cfa276432b0a648c80856f6a3f" } }]
 
 [[packages]]
 name = "rfc8785"
@@ -3846,4 +3858,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "9ccf77bacaf8d99a2d4a4c5fba357158b8cf9f2be06f08f65901cfa1920ba331"
+source-sha256 = "158a582df619ca817d5d6f2bda4e424b1662643c8243a36c1ea853c5c10bd024"
