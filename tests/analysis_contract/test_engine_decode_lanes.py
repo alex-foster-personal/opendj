@@ -16,11 +16,7 @@ import pytest
 
 from apps.analysis.backends import own_beatgrid, own_key
 from apps.analysis.backends.base import BackendNotAvailable, TrackUnreadable, TrackVanished
-from apps.shared.engine_decode import (
-    BIN_ENV,
-    EngineDecoderUnavailable,
-    resolve_engine_decoder,
-)
+from apps.shared.engine_decode import BIN_ENV
 
 _M4A = (
     Path(__file__).resolve().parents[2]
@@ -28,12 +24,9 @@ _M4A = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _engine() -> None:
-    try:
-        resolve_engine_decoder()
-    except EngineDecoderUnavailable as exc:
-        pytest.skip(f"no odj-audio build in this checkout: {exc}")
+# Skips as UNAVAILABLE on a host with no odj-audio build; ci.yml runs this
+# file where the engine was just built, where a missing build fails instead.
+pytestmark = pytest.mark.requires_canonical_decode
 
 
 def test_the_runner_reads_a_wav_at_the_same_path_every_run(tmp_path: Path) -> None:
