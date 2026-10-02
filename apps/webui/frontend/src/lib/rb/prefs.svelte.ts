@@ -302,7 +302,12 @@ function _applyThemeDom(theme: UiTheme): void {
 	if (typeof document === 'undefined') return;
 	document.documentElement.dataset.theme = theme;
 	document.documentElement.style.colorScheme = theme;
-	validateActiveScheme(theme);
+	// Dev builds only: the contrast tables (theme-tokens + color-contrast) are a
+	// developer diagnostic that logs to the console, and in a production build
+	// they cost the library first paint about 3 KB gzip for no visible effect.
+	// The same rules gate CI statically (theme-tokens.test.mjs and the contrast
+	// tests), so a failing shipped scheme is still caught before release.
+	if (import.meta.env.DEV) validateActiveScheme(theme);
 }
 
 /** theme.css keys the legacy waveform override blocks on this attribute;
