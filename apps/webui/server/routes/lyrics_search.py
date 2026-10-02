@@ -64,7 +64,7 @@ def search_lyrics(
     rows_by_id = {
         row["stable_id"]: row
         for row in rb_vendor.build_track_rows(
-            [tracks_map[sid] for sid in stable_ids if sid in tracks_map]
+            [tracks_map[sid] for sid in stable_ids if sid in tracks_map], data_dir=data_dir
         )
     }
     items: list[SearchHit] = []

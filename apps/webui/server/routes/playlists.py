@@ -13,7 +13,7 @@ from apps.sync.djay_sync_service import RbDjaySyncError, playlist_rb_djay_diff
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_read_state
+from ..deps import get_library_data_dir, get_read_state
 from ..etag import compute_etag
 from ..models import (
     PlaylistDetail,
@@ -168,6 +168,7 @@ def list_playlist_tracks(
     limit: int = Query(100, ge=1, le=500),  # noqa: B008  # FastAPI DI
     offset: int = Query(0, ge=0),  # noqa: B008  # FastAPI DI
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
 ) -> PlaylistTracksPage:
     """Paginated hydrated membership slice for first-page library paint.
 
@@ -194,7 +195,7 @@ def list_playlist_tracks(
                 f"with no track row (first: {missing[:5]})"
             ),
         })
-    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in slice_ids])
+    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in slice_ids], data_dir=data_dir)
     tracks: list[TrackRowOut] = []
     for i, row in enumerate(rows):
         iid = pl.item_ids[i] if i < len(pl.item_ids) else None
@@ -217,6 +218,7 @@ def get_playlist(
         ),
     ),
     backend: StateBackend = Depends(get_read_state),  # noqa: B008  # FastAPI DI
+    data_dir: Path = Depends(get_library_data_dir),  # noqa: B008  # FastAPI DI
 ) -> PlaylistDetail:
     pl = backend.get_playlist(playlist_id)
     # add-remove-reorder-tracks: the write side's PUT .../tracks requires
@@ -238,7 +240,7 @@ def get_playlist(
                 f"with no track row (first: {missing[:5]})"
             ),
         })
-    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in pl.items])
+    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in pl.items], data_dir=data_dir)
     item_ids = list(pl.item_ids or [])
     tracks: list[TrackRowOut] = []
     for i, row in enumerate(rows):

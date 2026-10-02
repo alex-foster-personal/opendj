@@ -18,6 +18,7 @@ Backend selection:
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
@@ -47,6 +48,11 @@ def get_lock_status(request: Request) -> dict[str, Any] | None:
         # through to "no holder" — that would leave writes open during an
         # outage of the cloud-lock probe (codex P11-F01).
         return {"holder": _LOCK_PROBE_FAILED, "error": "lock_probe_failed"}
+
+
+def get_library_data_dir(request: Request) -> Path:
+    """This app's library data root: ``state_db_path`` is ``data_dir/state/state.db``."""
+    return Path(getattr(request.app.state, "state_db_path", "data/state/state.db")).parent.parent
 
 
 def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:  # noqa: B008  # FastAPI DI
