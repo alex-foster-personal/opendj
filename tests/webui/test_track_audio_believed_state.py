@@ -250,3 +250,48 @@ def test_unconfigured_machine_says_a_missing_file_is_not_on_this_computer(
         f"/api/v1/tracks/{PLAYABLE_SID}/audio", headers={"Range": "bytes=0-0"}
     )
     assert played.status_code == 206
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_plays_rekordboxs_copy_when_its_own_path_is_gone(
+    unconfigured_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] a local-only machine's own location for a track is gone but rekordbox's FolderPath for it is on disk [then] the deck plays rekordbox's file, as the listing already counts it available, [else stop]."""
+    import sqlite3
+
+    master = tmp_path / "absent-master.db"
+    conn = sqlite3.connect(master)
+    try:
+        conn.executescript(
+            "CREATE TABLE djmdContent (ID TEXT, FolderPath TEXT, ImagePath TEXT, "
+            "AnalysisDataPath TEXT, Length INTEGER, Commnt TEXT, GenreID TEXT, "
+            "rb_local_deleted INTEGER DEFAULT 0);"
+            "CREATE TABLE djmdGenre (ID TEXT, Name TEXT, rb_local_deleted INTEGER DEFAULT 0);"
+        )
+        conn.execute(
+            "INSERT INTO djmdContent (ID, FolderPath) VALUES ('208807409', ?)",
+            (str(REAL_AUDIO),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        state.execute(
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
+            "VALUES (?, 'rekordbox', '208807409')",
+            (UNAVAILABLE_SID,),
+        )
+        state.commit()
+    finally:
+        state.close()
+
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
+    # Control: a track with neither its own copy nor a rekordbox one still
+    # says, plainly, that it is not here.
+    missing = unconfigured_client.get(f"/api/v1/tracks/{REMOTE_SID}/audio")
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "AUDIO_NOT_ON_THIS_MACHINE"

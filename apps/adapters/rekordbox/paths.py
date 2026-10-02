@@ -469,6 +469,23 @@ def _picked_from_path(path: Path, *, source: str) -> track_locations.PickedAudio
     )
 
 
+def _rekordbox_copy(stable_id: str) -> Path | None:
+    """rekordbox's own on-disk file for ``stable_id``, or None.
+
+    None covers every way there is no such file here: no vendor mapping, no
+    master database, no FolderPath, a streaming row, or a path that is missing
+    or not materialised. An unsupported extension (415) still propagates,
+    because then the file IS here and the deck should say why it won't play.
+    """
+    try:
+        path, _media_type = audio_file(resolve_content(stable_id))
+    except HTTPException as exc:
+        if exc.status_code == 415:
+            raise
+        return None
+    return path
+
+
 def resolve_playable_audio(
     stable_id: str,
     *,
@@ -548,8 +565,13 @@ def resolve_playable_audio(
 
     if source.origin == "unavailable":
         if source.policy_source == "unconfigured":
-            # CLOUDSYNC-33: a local-only machine without this file. The
-            # message is the one a DJ reads on the deck, so it is plain.
+            # CLOUDSYNC-33: a local-only machine with no copy in its own
+            # locations. The listing counts rekordbox's FolderPath as this
+            # track's file, so playback does too; only when that is gone as
+            # well does the deck say, plainly, that the file is not here.
+            rekordbox_copy = _rekordbox_copy(stable_id)
+            if rekordbox_copy is not None:
+                return _picked_from_path(rekordbox_copy, source="rekordbox-folder-path")
             raise not_found(
                 "AUDIO_NOT_ON_THIS_MACHINE",
                 source.reason or hydration.NOT_ON_THIS_MACHINE,
