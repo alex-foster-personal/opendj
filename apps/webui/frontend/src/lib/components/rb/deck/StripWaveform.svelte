@@ -25,6 +25,7 @@
 	} from '$lib/lyrics/pointer-word';
 	import { vocalsOf, type Vocals } from '$lib/rb/api-rb';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { resolveStripBandColors } from '$lib/rb/wave-palette';
 	import { keyAtPlayheadNow } from '$lib/player/key-playhead-lazy.svelte';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 	import type { HotCueSlot } from '$lib/rb/hot-cue-types';
@@ -182,7 +183,8 @@
 			vocals,
 			loop: deck.loop,
 			loopCues,
-			waveformDesign: uiPrefs.waveform_design
+			waveformDesign: uiPrefs.waveform_design,
+			bandColors: resolveStripBandColors(uiPrefs.theme, uiPrefs.wave_palette)
 		});
 	});
 

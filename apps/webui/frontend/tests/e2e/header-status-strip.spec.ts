@@ -20,15 +20,17 @@ test('at 1280px the header status strip separates every readout with middle dots
 
 	const tracks = strip.locator('.readout-numeric').nth(0);
 	const playlists = strip.locator('.readout-numeric').nth(1);
-	await expect(tracks).toHaveAttribute('title', /^\d+$/);
-	await expect(playlists).toHaveAttribute('title', /^\d+$/);
+	// The hover title is a sentence saying what the number counts (V1 polish,
+	// PR #4923), and it leads with the same number the readout shows.
+	await expect(tracks).toHaveAttribute('title', /^\d+ tracks: .+state\.db/);
+	await expect(playlists).toHaveAttribute('title', /^\d+ playlists: .+state\.db/);
 
 	const tracksText = await tracks.innerText();
 	const playlistsText = await playlists.innerText();
 	const tracksTitle = await tracks.getAttribute('title');
 	const playlistsTitle = await playlists.getAttribute('title');
-	expect(tracksText.match(/^(\d+)/)?.[1]).toBe(tracksTitle);
-	expect(playlistsText.match(/^(\d+)/)?.[1]).toBe(playlistsTitle);
+	expect(tracksText.match(/^(\d+)/)?.[1]).toBe(tracksTitle?.match(/^(\d+)/)?.[1]);
+	expect(playlistsText.match(/^(\d+)/)?.[1]).toBe(playlistsTitle?.match(/^(\d+)/)?.[1]);
 });
 
 test('at narrow width the status strip never concatenates readouts', async ({ page }) => {
