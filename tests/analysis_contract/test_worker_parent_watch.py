@@ -11,6 +11,8 @@ Regression lines:
   - if a worker whose parent died keeps running then the orphan stays -> broken
   - if a worker exits while its parent is alive then analysis dies for
     nothing -> broken (the overshoot)
+  - if the watch trusts the pid alone then a Windows orphan (never
+    reparented) or a reused pid reads as a live parent -> broken
 """
 from __future__ import annotations
 
@@ -25,9 +27,7 @@ import pytest
 
 from apps.analysis import worker_diagnostics
 
-pytestmark = [pytest.mark.requirement("INSTALL-33"), pytest.mark.skipif(
-    sys.platform == "win32", reason="Windows does not reparent; the watch is POSIX-only"
-)]
+pytestmark = pytest.mark.requirement("INSTALL-33")
 
 # The worker: arm the watch against the parent pid it was handed (argv[1]),
 # the way the pool owner hands its pid to init_worker, then idle.
@@ -100,5 +100,21 @@ def test_a_worker_keeps_running_while_its_parent_lives() -> None:
 
 
 def test_parent_gone_compares_against_the_recorded_parent() -> None:
-    assert worker_diagnostics.parent_gone(os.getppid()) is False
-    assert worker_diagnostics.parent_gone(os.getppid() + 1) is True
+    started_at = worker_diagnostics.parent_started_at(os.getpid())
+    assert started_at is not None
+    assert worker_diagnostics.parent_gone(os.getpid(), started_at) is False
+    # Same pid, another start time: the pid was reused, which is what an
+    # unreparented Windows orphan's pid looks like once the OS recycles it.
+    assert worker_diagnostics.parent_gone(os.getpid(), started_at - 1.0) is True
+
+
+def test_a_dead_parent_is_gone_by_pid_and_start_time() -> None:
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        started_at = worker_diagnostics.parent_started_at(proc.pid)
+        assert started_at is not None
+        assert worker_diagnostics.parent_gone(proc.pid, started_at) is False
+    finally:
+        proc.kill()
+        proc.wait()
+    assert worker_diagnostics.parent_gone(proc.pid, started_at) is True

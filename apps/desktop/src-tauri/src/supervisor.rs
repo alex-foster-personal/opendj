@@ -504,6 +504,12 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
         old.shutdown();
     }
     supervisor.record_engine_pid(None);
+    // A quit can start during the stop above, which may take the full grace.
+    // It found no engine to stop, so starting one now would outlive the shell.
+    if supervisor.is_stopping() {
+        engine::append_shell_log("INFO", "quit began during restart; not respawning");
+        return false;
+    }
     if let Err(err) = write_parent_file(&data_dir) {
         engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
         guard.phase = SupervisorPhase::Fatal;
@@ -559,6 +565,16 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
             return false;
         }
     };
+    // `shutdown` sets the latch before it takes the recorded pid, and the pid
+    // was recorded before this load, so either the quit saw this engine's pid
+    // or this load sees the latch. Without the check, a quit that won the
+    // race took pid 0 and the new engine outlived the shell.
+    if supervisor.is_stopping() {
+        engine::append_shell_log("INFO", "quit began during restart; stopping the new engine");
+        running.shutdown();
+        supervisor.record_engine_pid(None);
+        return false;
+    }
     match running.wait_until_healthy(engine::BOOT_TIMEOUT) {
         Ok(()) => {
             guard.supervised = Some(Supervised::Spawned(running));

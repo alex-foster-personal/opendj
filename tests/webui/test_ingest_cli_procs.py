@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import subprocess
 import sys
+import threading
 import time
 
 import psutil
@@ -136,34 +137,55 @@ def test_stop_all_leaves_unregistered_processes_alone() -> None:
         _kill(proc, grandchild)
 
 
-def test_run_cli_registers_only_while_the_step_runs(monkeypatch) -> None:
-    seen: list[bool] = []
-    real_register = ingest_cli_procs.register
-
-    def _spy(proc: subprocess.Popen[str]) -> None:
-        real_register(proc)
-        seen.append(proc in ingest_cli_procs._procs)
-
-    monkeypatch.setattr(ingest_cli_procs, "register", _spy)
+def _run_cli_in_thread(source: str) -> tuple[threading.Thread, ingest_job._RefreshJob, list[BaseException]]:
     job = ingest_job._RefreshJob(started_at=time.time(), steps=[])
-    ingest_job._run_cli(job, [sys.executable, "-c", "print('ok')"])
+    raised: list[BaseException] = []
 
-    assert seen == [True], "the step was not registered while it ran"
+    def _step() -> None:
+        try:
+            ingest_job._run_cli(job, [sys.executable, "-c", source])
+        except BaseException as exc:  # noqa: BLE001 - handed back to the test
+            raised.append(exc)
+
+    thread = threading.Thread(target=_step, daemon=True)
+    thread.start()
+    return thread, job, raised
+
+
+def _grandchild_from_log(job: ingest_job._RefreshJob, within_s: float = 30.0) -> int:
+    deadline = time.monotonic() + within_s
+    while time.monotonic() < deadline:
+        for line in list(job.log):
+            last = line.rsplit(" ", 1)[-1]
+            if last.isdigit():
+                return int(last)
+        time.sleep(0.05)
+    raise AssertionError(f"the CLI never printed its grandchild pid: {job.log!r}")
+
+
+def test_a_finished_step_leaves_nothing_registered() -> None:
+    thread, _job, raised = _run_cli_in_thread("print('ok')")
+    thread.join(timeout=30)
+    assert not thread.is_alive() and raised == []
     assert ingest_cli_procs.stop_all() == 0, "a finished step stayed registered"
 
 
-def test_the_lifespan_stops_running_clis(monkeypatch, tmp_path) -> None:
-    calls: list[int] = []
-    def _record() -> int:
-        calls.append(1)
-        return 0
-
-    monkeypatch.setattr(ingest_cli_procs, "stop_all", _record)
+def test_the_lifespan_stops_a_running_step_and_its_pool(tmp_path) -> None:
     armed = app_mod.create_app(
         state_db_path=str(tmp_path / "state" / "state.db"), mount_frontend=False,
         port=18735, frontend_port=19735,
     )
     with TestClient(armed) as client:
         assert client.get("/api/v1/health").status_code == 200
-        assert calls == [], "stop_all ran before shutdown"
-    assert calls == [1], "the lifespan shutdown did not stop running CLIs"
+        thread, job, raised = _run_cli_in_thread(_CLI_WITH_POOL)
+        grandchild = _grandchild_from_log(job)
+        assert thread.is_alive(), "the step ended before shutdown"
+    try:
+        thread.join(timeout=30)
+        assert _gone(grandchild), "the lifespan shutdown left the pool worker running"
+        assert not thread.is_alive(), "the lifespan shutdown left the step running"
+        assert raised, "a step stopped by shutdown read as success"
+        assert ingest_cli_procs.stop_all() == 0, "the stopped step stayed registered"
+    finally:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            psutil.Process(grandchild).kill()

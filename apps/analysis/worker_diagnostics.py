@@ -17,6 +17,8 @@ import threading
 import time
 from collections.abc import Iterable
 
+import psutil
+
 #: Native math libraries the librosa backend pulls in transitively, each of
 #: which sizes a thread pool from its own environment variable at import time.
 #: The analysis pool already fans out across processes, so a per-worker thread
@@ -68,19 +70,47 @@ def init_worker(parent_pid: int | None = None) -> None:
     watch_parent(os.getppid() if parent_pid is None else parent_pid)
 
 
-def parent_gone(parent_pid: int) -> bool:
-    """Whether this worker has lost the process that started it.
+def parent_started_at(parent_pid: int) -> float | None:
+    """The start time that names ``parent_pid``, or None when it is gone.
 
-    On POSIX an orphan is reparented, so its parent pid changes. Windows does
-    not reparent, and there the parent pid stays put, so this answers False:
-    the watch is a POSIX guard, and it says so rather than guessing.
+    A pid alone does not name a process: Windows does not reparent an orphan,
+    so its parent pid stays put after the parent dies, and any OS can hand a
+    dead pid to a new process. The pid plus its start time names the same
+    process on every platform. A zombie is gone: it can no longer feed the
+    queue. Raises :class:`psutil.AccessDenied` when the OS will not say.
     """
-    if sys.platform == "win32":
+    try:
+        proc = psutil.Process(parent_pid)
+        if proc.status() == psutil.STATUS_ZOMBIE:
+            return None
+        return proc.create_time()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return None
+
+
+def parent_gone(parent_pid: int, started_at: float) -> bool:
+    """Whether the process recorded as (``parent_pid``, ``started_at``) is gone.
+
+    Same check on every platform, see :func:`parent_started_at`. When the OS
+    refuses to say, the answer is "not gone": exiting a worker on a guess
+    kills analysis for nothing.
+    """
+    try:
+        return parent_started_at(parent_pid) != started_at
+    except psutil.AccessDenied:
         return False
-    return os.getppid() != parent_pid
 
 
-def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Thread:
+def _exit_parent_gone(parent_pid: int) -> None:
+    print(
+        f"[WARN] analysis worker {os.getpid()}: parent {parent_pid} is gone; exiting",
+        file=sys.stderr,
+        flush=True,
+    )
+    os._exit(EXIT_PARENT_GONE)
+
+
+def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Thread | None:
     """Exit this worker when the process that started it is gone.
 
     A spawned pool worker blocks on its call queue, and that queue never
@@ -88,20 +118,29 @@ def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Th
     killed waits forever. That is how three analysis workers outlived the app
     on demon-llama (Fri 2 Oct 2026) and then blocked the DMG installer. The
     worker has nobody left to report to, so it exits at once (``os._exit``,
-    skipping cleanup that would wait on that same queue).
+    skipping cleanup that would wait on that same queue). Returns None, with
+    a warning, when the OS will not name the parent: the watch cannot measure
+    then, and says so rather than guessing.
     """
+    try:
+        started_at = parent_started_at(parent_pid)
+    except psutil.AccessDenied:
+        print(
+            f"[WARN] analysis worker {os.getpid()}: cannot read parent {parent_pid}; "
+            "parent watch not armed",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+    if started_at is None:
+        _exit_parent_gone(parent_pid)
+        return None
 
     def _watch() -> None:
         while True:
             time.sleep(poll_s)
-            if parent_gone(parent_pid):
-                print(
-                    f"[WARN] analysis worker {os.getpid()}: parent {parent_pid} "
-                    "is gone; exiting",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                os._exit(EXIT_PARENT_GONE)
+            if parent_gone(parent_pid, started_at):
+                _exit_parent_gone(parent_pid)
 
     thread = threading.Thread(target=_watch, name="parent-watch", daemon=True)
     thread.start()
