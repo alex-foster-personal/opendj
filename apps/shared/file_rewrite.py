@@ -7,7 +7,11 @@ whose audio bytes must come through untouched.
 """
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
+import errno
 import os
+import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -20,7 +24,8 @@ def rewrite_atomic(path: Path, build: Callable[[BinaryIO, BinaryIO], None]) -> N
     """Rebuild ``path`` by calling ``build(src, out)`` and swap the result in.
 
     The new file is built beside the original, fsynced, given the original's
-    permission bits, then swapped in with ``os.replace``: a crash leaves the old
+    permission bits, extended attributes and ACL (``copy_extended_metadata``),
+    then swapped in with ``os.replace``: a crash leaves the old
     file or the new one, never a half-written mix. A failure removes the temp
     file and re-raises.
     """
@@ -33,10 +38,47 @@ def rewrite_atomic(path: Path, build: Callable[[BinaryIO, BinaryIO], None]) -> N
             out.flush()
             os.fsync(out.fileno())
         os.chmod(tmp, mode & 0o7777)
+        copy_extended_metadata(path, tmp)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+# copyfile(3) flags, <copyfile.h>: COPYFILE_ACL | COPYFILE_XATTR.
+_COPYFILE_ACL_AND_XATTR = (1 << 0) | (1 << 2)
+_XATTR_UNSUPPORTED = {errno.ENOTSUP, getattr(errno, "EOPNOTSUPP", errno.ENOTSUP)}
+
+
+def copy_extended_metadata(src: Path, dst: Path) -> None:
+    """Carry ``src``'s extended attributes (and, on macOS, its ACL) onto ``dst``.
+
+    The replace swaps in a brand-new inode, so without this a tag edit would
+    silently drop Finder tags, quarantine flags and access-control entries:
+    more than the writer promises to change. A failure raises, which aborts
+    the rewrite and leaves the original untouched.
+
+    Platform seam: macOS uses copyfile(3), which copies both; Linux copies
+    each xattr (POSIX ACLs live in xattrs there); a filesystem without xattr
+    support has none to lose. Windows has no xattr API in Python and its ACLs
+    are inherited from the directory, so nothing is copied there.
+    """
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        if libc.copyfile(os.fsencode(src), os.fsencode(dst), None, _COPYFILE_ACL_AND_XATTR) < 0:
+            code = ctypes.get_errno()
+            raise OSError(code, f"copyfile ACL/xattr from {src}: {os.strerror(code)}")
+        return
+    if not hasattr(os, "listxattr"):
+        return
+    try:
+        names = os.listxattr(src)
+    except OSError as exc:
+        if exc.errno in _XATTR_UNSUPPORTED:
+            return
+        raise
+    for name in names:
+        os.setxattr(dst, name, os.getxattr(src, name))
 
 
 def copy_rest(src: BinaryIO, out: BinaryIO, offset: int) -> None:

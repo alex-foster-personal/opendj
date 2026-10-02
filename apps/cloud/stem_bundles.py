@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,10 +23,15 @@ _HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
 #: bundles. That directory is a download in progress, not a bundle: it is
 #: neither evicted nor queued for upload.
 IN_FLIGHT_MARKER: str = ".tmp-hydrate-"
+#: An eviction renames a bundle to ``<stable_id>.evicting-<random>`` before
+#: deleting it; scans skip it like a download in progress.
+EVICTING_MARKER: str = ".evicting-"
 
 REASON_NOT_IN_INDEX: str = "not_in_r2_index"
 REASON_FILES_DIFFER: str = "file_set_differs_from_r2_index"
 REASON_CONTENT_DIFFERS: str = "content_differs_from_r2_index"
+#: The bundle vanished mid-hash: a concurrent pass evicted it. Never queued.
+REASON_GONE: str = "bundle_removed_concurrently"
 
 StemAssetIndex = Mapping[str, Mapping[str, str]]
 
@@ -54,7 +62,12 @@ def scan_bundles(stems_dir: Path) -> list[LocalBundle]:
         return []
     bundles: list[LocalBundle] = []
     for child in sorted(root.iterdir()):
-        if not child.is_dir() or child.is_symlink() or IN_FLIGHT_MARKER in child.name:
+        if (
+            not child.is_dir()
+            or child.is_symlink()
+            or IN_FLIGHT_MARKER in child.name
+            or EVICTING_MARKER in child.name
+        ):
             continue
         size, newest_atime = 0, 0.0
         names: set[str] = set()
@@ -104,19 +117,42 @@ def unconfirmed_reason(bundle: LocalBundle, index: StemAssetIndex) -> str | None
     if gap is not None:
         return gap
     entry = index[bundle.stable_id]
-    for filename in sorted(bundle.filenames):
-        if _sha256_of(bundle.path / filename) != entry[filename]:
-            return REASON_CONTENT_DIFFERS
+    try:
+        for filename in sorted(bundle.filenames):
+            if _sha256_of(bundle.path / filename) != entry[filename]:
+                return REASON_CONTENT_DIFFERS
+    except FileNotFoundError:
+        return REASON_GONE
     return None
 
 
+def claim_and_remove(bundle_dir: Path) -> bool:
+    """Remove a bundle directory, or return False when another pass got it first.
+
+    The timer and a post-hydrate pass can pick the same LRU bundle. The rename
+    to a unique name is the claim: exactly one ``os.rename`` of the directory
+    succeeds, the loser sees FileNotFoundError and reports nothing freed, and
+    no ``rmtree`` ever runs on a path another pass is deleting.
+    """
+    claimed = bundle_dir.with_name(f"{bundle_dir.name}{EVICTING_MARKER}{secrets.token_hex(4)}")
+    try:
+        os.rename(bundle_dir, claimed)
+    except FileNotFoundError:
+        return False
+    shutil.rmtree(claimed)
+    return True
+
+
 __all__ = [
+    "EVICTING_MARKER",
     "IN_FLIGHT_MARKER",
     "REASON_CONTENT_DIFFERS",
     "REASON_FILES_DIFFER",
+    "REASON_GONE",
     "REASON_NOT_IN_INDEX",
     "LocalBundle",
     "StemAssetIndex",
+    "claim_and_remove",
     "index_gap",
     "scan_bundles",
     "unconfirmed_reason",

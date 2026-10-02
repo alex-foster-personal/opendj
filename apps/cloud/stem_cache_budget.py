@@ -69,9 +69,11 @@ from apps.cloud.stem_bundles import (
     IN_FLIGHT_MARKER,
     REASON_CONTENT_DIFFERS,
     REASON_FILES_DIFFER,
+    REASON_GONE,
     REASON_NOT_IN_INDEX,
     LocalBundle,
     StemAssetIndex,
+    claim_and_remove,
     index_gap,
     scan_bundles,
     unconfirmed_reason,
@@ -211,6 +213,8 @@ def _queue_reason(
     if not was_differing and not room_to_hash:
         return None, False, False
     reason = unconfirmed_reason(bundle, index)
+    if reason == REASON_GONE:  # a concurrent pass evicted it: nothing to queue
+        return None, False, True
     return reason, reason is None, True
 
 
@@ -375,15 +379,12 @@ def _evict_lru(
     index: StemAssetIndex,
     protected: frozenset[str],
     dry_run: bool,
-    remove: Callable[[Path], None],
+    remove: Callable[[Path], bool],
     live_protected: Callable[[], frozenset[str]] | None = None,
 ) -> tuple[list[str], int, set[str]]:
-    """Remove least-recently-used bundles until ``need_bytes`` is freed.
-
-    Returns (evicted ids, bytes freed, ids skipped for differing content).
-    A bundle is removed only when it is not protected AND R2 holds it byte
-    for byte; anything else is skipped and the walk continues to the next.
-    """
+    """Remove LRU bundles until ``need_bytes`` is freed: (evicted ids, bytes
+    freed, ids skipped for differing content). A bundle is removed only when
+    it is not protected AND R2 holds it byte for byte; others are skipped."""
     evicted: list[str] = []
     content_differs: set[str] = set()
     freed = 0
@@ -392,19 +393,17 @@ def _evict_lru(
             break
         if bundle.stable_id in protected:
             continue
-        reason = unconfirmed_reason(bundle, index)
+        reason = unconfirmed_reason(bundle, index)  # REASON_GONE when raced away
         if reason is not None:
             if reason == REASON_CONTENT_DIFFERS:
                 content_differs.add(bundle.stable_id)
             continue
-        # ``protected`` was read before the scan and the hash above, which
-        # takes seconds on a large bundle; a deck can open or be served this
-        # bundle in that window. Ask the live registry again right before
-        # removal, so only that sub-millisecond gap is left.
+        # ``protected`` predates the scan and the hash (seconds on a big bundle),
+        # so a deck may have opened this one since: ask the live registry again.
         if live_protected is not None and bundle.stable_id in live_protected():
             continue
-        if not dry_run:
-            remove(bundle.path)
+        if not dry_run and not remove(bundle.path):
+            continue  # another pass claimed it first; it freed those bytes
         evicted.append(bundle.stable_id)
         freed += bundle.size_bytes
     return evicted, freed, content_differs
@@ -455,7 +454,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
             index=index,
             protected=protected,
             dry_run=dry_run,
-            remove=shutil.rmtree,
+            remove=claim_and_remove,
             live_protected=live_protected,
         )
         if freed < need:

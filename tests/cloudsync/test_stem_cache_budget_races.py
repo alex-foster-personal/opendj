@@ -179,3 +179,40 @@ def test_the_post_hydrate_pass_hashes_nothing_to_look_for_rerenders(tmp_path: Pa
     )
     enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=200 * GIB), max_evict_bytes=1)
     assert hashed == []
+
+
+@pytest.mark.requirement("STEM-41")
+def test_a_bundle_another_pass_evicted_first_is_skipped_not_an_error(tmp_path: Path, monkeypatch):
+    """[if] a concurrent pass removes the bundle this pass just confirmed [then] this pass skips it and frees nothing, without raising, [else stop].
+
+    MUTATION TARGET: go back to a bare ``shutil.rmtree`` and the second
+    remover raises FileNotFoundError, which the post-hydrate pass surfaced as
+    a failed deck load (Codex on #4974, 3e9a4592b).
+    """
+    import shutil
+
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    index = {"contested": make_bundle(stems_dir, "contested", atime=100.0)}
+    real = budget.unconfirmed_reason
+
+    def confirm_then_lose_the_race(bundle, idx):
+        verdict = real(bundle, idx)
+        shutil.rmtree(bundle.path, ignore_errors=True)  # the other pass removes it now
+        return verdict
+
+    monkeypatch.setattr(budget, "unconfirmed_reason", confirm_then_lose_the_race)
+    report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - 1))
+
+    assert report.evicted_stable_ids == ()
+    assert report.bytes_freed == 0
+
+
+def test_claim_and_remove_lets_exactly_one_remover_win(tmp_path: Path):
+    """[if] two passes remove the same bundle [then] one returns True and the other False, and nothing is left behind, [else stop]."""
+    from apps.cloud.stem_bundles import claim_and_remove
+
+    stems_dir = tmp_path / "stems"
+    make_bundle(stems_dir, "one", atime=100.0)
+    assert claim_and_remove(stems_dir / "one") is True
+    assert claim_and_remove(stems_dir / "one") is False
+    assert list(stems_dir.iterdir()) == []
