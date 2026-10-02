@@ -89,7 +89,7 @@ _IF_NOT_EXISTS_RE = re.compile(r"\bIF\s+NOT\s+EXISTS\b", re.IGNORECASE)
 
 # --- version counters -----------------------------------------------------
 
-SCHEMA_VERSION: int = 11
+SCHEMA_VERSION: int = 12
 """Target version of the consolidated ladder (index into :data:`MIGRATIONS`)."""
 
 VERSION_OFFSET: int = 1000
@@ -1326,7 +1326,18 @@ _V11: list[str] = [
 Its own rung for the reason _V2 and _V3 spell out: an install already
 stamped at v10 never re-runs an earlier rung."""
 
-MIGRATIONS: list[list[str]] = [_V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11]
+_V12: list[str] = [
+    "ALTER TABLE tracks ADD COLUMN restored_at TEXT",
+    "ALTER TABLE tracks ADD COLUMN deleted_reason TEXT",
+]
+"""11 -> 12: the explicit-restore stamp on tracks (legacy ladder v23, LIBM-140).
+
+Its own rung for the reason _V2 and _V3 spell out: an install already
+stamped at v11 never re-runs an earlier rung."""
+
+MIGRATIONS: list[list[str]] = [
+    _V1, _V2, _V3, _V4, _V5, _V6, _V7, _V8, _V9, _V10, _V11, _V12,
+]
 
 ALL_DDL: list[str] = [stmt for rung in MIGRATIONS for stmt in rung]
 """Every rung, flattened. What both the fresh path and adoption execute.
@@ -1735,15 +1746,24 @@ def _create_all(conn: sqlite3.Connection, statements: list[str]) -> None:
         conn.execute(stmt)
 
 
+_ADDED_TRACK_COLUMNS: tuple[str, ...] = ("audio_hash", "restored_at", "deleted_reason")
+"""Columns a rung adds to ``tracks`` with a bare ``ALTER TABLE``."""
+
+
 def _adoption_ddl(conn: sqlite3.Connection) -> list[str]:
-    """Return ladder DDL with an already-present v8 column add removed."""
+    """Return ladder DDL with every already-present column add removed.
+
+    ``ALTER TABLE ... ADD COLUMN`` has no ``IF NOT EXISTS``, so a database the
+    legacy ladder already brought forward must skip the rungs that add a
+    column it holds (v8 ``audio_hash``, v12 ``restored_at`` and ``deleted_reason``).
+    """
     columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
-    if "audio_hash" not in columns:
-        return ALL_DDL
-    return [
-        stmt for stmt in ALL_DDL
-        if stmt != "ALTER TABLE tracks ADD COLUMN audio_hash TEXT"
-    ]
+    present = {
+        f"ALTER TABLE tracks ADD COLUMN {column} TEXT"
+        for column in _ADDED_TRACK_COLUMNS
+        if column in columns
+    }
+    return [stmt for stmt in ALL_DDL if stmt not in present]
 
 
 def _rollback_without_masking(

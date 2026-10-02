@@ -94,10 +94,16 @@
 
 	{#if data}
 		<div class="summary" aria-label="Play summary">
-			<div><strong>{data.summary.sessions}</strong><span>sessions</span></div>
-			<div><strong>{data.summary.plays}</strong><span>plays</span></div>
-			<div><strong>{data.summary.unique_tracks}</strong><span>unique tracks</span></div>
-			<div>
+			<div title="Recorded sessions that match the visibility filter">
+				<strong>{data.summary.sessions}</strong><span>sessions</span>
+			</div>
+			<div title="Track loads (track_loaded events) across those sessions; a load heard for less than the minimum audible time is not counted">
+				<strong>{data.summary.plays}</strong><span>plays</span>
+			</div>
+			<div title="Distinct tracks loaded at least once across those sessions">
+				<strong>{data.summary.unique_tracks}</strong><span>unique tracks</span>
+			</div>
+			<div title="Total length of finished sessions, hours and minutes; a session still recording is not counted">
 				<strong>{formatDuration(data.summary.completed_duration_s)}</strong>
 				<span>completed time</span>
 			</div>
@@ -105,7 +111,7 @@
 
 		<div class="panels">
 			<section class="panel">
-				<div class="panel-title"><h3>Recent sessions</h3><span>{data.sessions.length} shown</span></div>
+				<div class="panel-title"><h3>Recent sessions</h3><span title={`Sessions listed below (at most ${LIMIT}, newest first)`}>{data.sessions.length} shown</span></div>
 				{#if data.sessions.length === 0}
 					<p class="empty">No sessions match this visibility filter.</p>
 				{:else}
@@ -115,10 +121,10 @@
 							<tbody>
 								{#each data.sessions as session (session.session_id)}
 									<tr>
-										<td><strong>{formatDate(session.started_at)}</strong><small>{session.session_id}</small></td>
-										<td>{formatDuration(session.duration_s)}</td>
-										<td>{session.play_count}</td>
-										<td>{session.unique_track_count}</td>
+										<td><strong title={`Session start, local time (recorded ${session.started_at})`}>{formatDate(session.started_at)}</strong><small>{session.session_id}</small></td>
+										<td title="Session length, hours and minutes; Active means it is still recording">{formatDuration(session.duration_s)}</td>
+										<td title="Counted plays (deck loads) in this session">{session.play_count}</td>
+										<td title="Distinct tracks loaded in this session">{session.unique_track_count}</td>
 										<td><span class="state">{session.share_state.replace('_', ' ')}</span></td>
 									</tr>
 								{/each}
@@ -138,7 +144,7 @@
 							<li>
 								<div class="track-label">
 									<span><strong>{track.title ?? track.stable_id}</strong><small>{track.artist ?? 'Unknown artist'}</small></span>
-									<b>{track.play_count}</b>
+									<b title="Counted plays of this track (deck loads) across sessions matching the filter">{track.play_count}</b>
 								</div>
 								<div class="bar"><span style={`width: ${(track.play_count / maxPlayCount) * 100}%`}></span></div>
 							</li>
@@ -177,14 +183,14 @@
 	tbody tr:last-child td { border-bottom: 0; }
 	td strong, td small, .track-label span, .track-label strong, .track-label small { display: block; }
 	td small, .track-label small { margin-top: 0.2rem; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.67rem; }
-	.state { white-space: nowrap; padding: 0.15rem 0.45rem; background: #1a212c; border: 1px solid var(--border); border-radius: 999px; font-size: 0.68rem; }
+	.state { white-space: nowrap; padding: 0.15rem 0.45rem; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 999px; font-size: 0.68rem; }
 	ol { list-style: none; margin: 0; padding: 0.25rem 1rem 0.5rem; }
 	li { padding: 0.65rem 0; border-bottom: 1px solid var(--border); }
 	li:last-child { border-bottom: 0; }
 	.track-label { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; }
 	.track-label strong { font-size: 0.82rem; }
 	.track-label b { color: var(--accent); font-variant-numeric: tabular-nums; }
-	.bar { height: 3px; margin-top: 0.5rem; background: #202733; border-radius: 2px; overflow: hidden; }
+	.bar { height: 3px; margin-top: 0.5rem; background: var(--surface-raised-hover); border-radius: 2px; overflow: hidden; }
 	.bar span { display: block; height: 100%; background: var(--accent); }
 	.panel > .empty { padding: 1rem; }
 	@media (max-width: 900px) {

@@ -23,9 +23,9 @@
 		<main id="root" data-state="checking">
 			<section id="checking-view" class="view">
 				<h1>Starting Open DJ</h1>
-				<p class="lede">
-					Looking for the Open DJ engine at
-					<code id="checking-origin">(resolving)</code>
+				<p class="lede">Looking for the Open DJ engine on this computer...</p>
+				<p class="muted" id="checking-attempts" hidden>
+					Attempt <span id="checking-attempt-count">0</span>
 				</p>
 			</section>
 
@@ -57,65 +57,37 @@
 				<h1 id="headline">Open DJ cannot reach its engine</h1>
 
 				<p class="lede">
-					This window is running. The engine it needs is not
-					answering.
+					This window is running, but the engine it needs is not answering yet.
 				</p>
 
 				<dl class="facts">
-					<dt>Address tried</dt>
-					<dd><code id="probe-url">(unknown)</code></dd>
-
-					<dt>Result</dt>
-					<dd id="probe-detail">(unknown)</dd>
-
 					<dt>
-						<span
-							title="How many times this window has tried to open a connection to the engine since it launched."
-							>Attempts</span
-						>
+						<span title="How many times this window has tried to connect since it launched">
+							Attempts
+						</span>
 					</dt>
 					<dd>
 						<span
 							id="attempts"
-							title="How many times this window has tried to open a connection to the engine since it launched."
+							title="How many times this window has tried to connect since it launched"
 							>0</span
 						>
 					</dd>
 				</dl>
 
-				<h2>What Open DJ is</h2>
-				<p>
-					Open DJ is a native window onto a local engine process, and
-					both ship inside this app: the engine, its Python runtime
-					and the whole user interface live in the app bundle. The app
-					starts the engine itself, on a free local port, before it
-					opens a window. No source checkout is needed.
-				</p>
-				<p class="note">
-					Which makes this screen specific rather than generic. A
-					bundled engine that fails to start raises a system error
-					dialog and the app quits; it never reaches here. Reaching
-					here means this window was pointed at an engine address by
-					hand, through the <code>OPENDJ_ENGINE_ORIGIN</code>
-					environment variable or a <code>?engine=</code> query, and
-					nothing is answering at that address.
-				</p>
-
 				<h2>What to do</h2>
 				<ol class="steps">
 					<li>
-						To use the engine that ships inside this app: quit it,
-						unset <code>OPENDJ_ENGINE_ORIGIN</code>, and open the
-						app again from Finder.
+						If you use the engine that ships inside this app, quit Open DJ and open
+						it again from your Applications folder.
 					</li>
 					<li>
-						To keep using your own engine, start it on the address
-						named above:
-						<pre><code id="engine-command">(resolving)</code></pre>
+						If you run your own engine, make sure it is started and listening on
+						this computer.
 					</li>
 					<li>
-						Leave it running. This window retries on its own, or
-						press <strong>Check now</strong>.
+						Leave it running. This window retries on its own, or press
+						<strong>Check now</strong>.
 					</li>
 				</ol>
 
@@ -124,24 +96,28 @@
 					<span
 						class="countdown"
 						id="countdown"
-						title="Seconds until this window retries the connection on its own."
+						title="When this window will retry the connection on its own"
 					></span>
 				</div>
 
-				<details class="probe-explainer">
-					<summary>What exactly was tested</summary>
-					<p>
-						A cross origin <code>fetch</code> in
-						<code>no-cors</code> mode against
-						<code id="probe-url-echo">(unknown)</code>. The browser
-						sandbox will not let this page read a cross origin
-						response body, so this test proves reachability only:
-						that something accepted a TCP connection and answered
-						HTTP at that address. It does not prove the responder is
-						the Open DJ engine, and it does not read the engine's
-						health payload. Once the window navigates to the engine
-						origin, every later request is same origin and the real
-						interface reports its own status.
+				<details class="agent-details" id="agent-details">
+					<summary>Details for agents</summary>
+					<dl class="facts agent-facts">
+						<dt>Address tried</dt>
+						<dd><code id="probe-url">(unknown)</code></dd>
+
+						<dt>Result</dt>
+						<dd id="probe-detail">(unknown)</dd>
+
+						<dt>Start command</dt>
+						<dd><pre><code id="engine-command">(resolving)</code></pre></dd>
+					</dl>
+					<p class="note">
+						A cross origin <code>fetch</code> in <code>no-cors</code> mode was used.
+						The browser sandbox will not let this page read a cross origin response
+						body, so this test proves reachability only. Override the engine address
+						with the <code>OPENDJ_ENGINE_ORIGIN</code> environment variable or a
+						<code>?engine=</code> query when driving this screen in tests.
 					</p>
 				</details>
 			</section>

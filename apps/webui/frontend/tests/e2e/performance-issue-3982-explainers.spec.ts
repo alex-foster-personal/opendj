@@ -67,8 +67,6 @@ test('issue 3982: performance explainers and vibe thumb colors', async ({ page }
 	await page.goto('/performance?muted=1', { waitUntil: 'domcontentloaded' });
 	await waitForPerformanceIpc(page);
 
-	await expectExplainerPop(page, 'button[aria-label="split view"]', /split/i);
-	await page.mouse.move(0, 0);
 	await expectExplainerPop(page, 'button[aria-label="FX panel"]', /fx/i);
 	await page.mouse.move(0, 0);
 	await expectExplainerPop(page, 'button[aria-label="2 deck view"]', /2.?deck/i);

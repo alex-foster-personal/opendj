@@ -75,13 +75,17 @@ export function midiLabelStatus(
 	return 'grey';
 }
 
-/** The glyph shown next to the TopBar MIDI label for a given status: a tick
- * when a controller is bound, an X when access is granted but disconnected,
- * nothing otherwise (amber pulses; grey is idle). */
-export function midiLabelGlyph(status: MidiLabelStatus): string {
-	if (status === 'green') return '✓'; // check mark
-	if (status === 'red') return '✗'; // ballot X
-	return '';
+/** Which inline SVG icon sits next to the TopBar MIDI label. Icons, never
+ * emoji or text-symbol glyphs (issue #3886 criterion 1). */
+export type MidiLabelIcon = 'check' | 'cross' | null;
+
+/** The icon shown next to the TopBar MIDI label for a given status: a check
+ * when a controller is bound, a cross when access is granted but
+ * disconnected, nothing otherwise (amber pulses; grey is idle). */
+export function midiLabelGlyph(status: MidiLabelStatus): MidiLabelIcon {
+	if (status === 'green') return 'check';
+	if (status === 'red') return 'cross';
+	return null;
 }
 
 /** Tooltip for the TopBar MIDI label - states WHY the colour is what it is. */
@@ -92,7 +96,7 @@ export function midiLabelTitle(
 	deviceCount: number
 ): string {
 	if (requestPending) return 'MIDI: permission request pending in the browser';
-	if (permission === 'unsupported') return 'MIDI: WebMIDI not supported in this browser (use Chrome or Edge)';
+	if (permission === 'unsupported') return 'MIDI: not supported here - WebMIDI needs Chrome or Edge, and the desktop app has no MIDI yet';
 	if (permission === 'denied') return 'MIDI: permission denied - re-enable in browser site settings';
 	if (permission === 'prompt') return 'MIDI: click to open the panel and request access';
 	if (permission === 'granted') {

@@ -49,6 +49,8 @@ interface PerfRingWindow extends Window {
 interface Sample {
 	playlist_tree_ready_ms: number;
 	playlist_switch_first_rows_ms: number;
+	playlist_switch_fetch_ms: number;
+	playlist_switch_paint_ms: number;
 	all_tracks_first_rows_ms: number;
 }
 
@@ -158,6 +160,18 @@ async function measureOneSample(page: Page): Promise<Sample> {
 			'first_rows_ms',
 			{ source: 'playlist' }
 		);
+		const playlist_switch_fetch_ms = await readLatestPerfMs(
+			page,
+			'library-switch-first-rows',
+			'fetch_ms',
+			{ source: 'playlist' }
+		);
+		const playlist_switch_paint_ms = await readLatestPerfMs(
+			page,
+			'library-switch-first-rows',
+			'paint_ms',
+			{ source: 'playlist' }
+		);
 
 		const allTracksCountBefore = await page.evaluate(
 			() => (window as PerfRingWindow).__mdtPerfLog?.().length ?? 0
@@ -188,6 +202,8 @@ async function measureOneSample(page: Page): Promise<Sample> {
 	return {
 		playlist_tree_ready_ms,
 		playlist_switch_first_rows_ms,
+		playlist_switch_fetch_ms,
+		playlist_switch_paint_ms,
 		all_tracks_first_rows_ms
 	};
 }
@@ -226,6 +242,7 @@ test('playlist tree and switch first-row paint meet PERF-UI-05 caps', async ({
 			`[playlist-switch-bench] run ${run}${run === 0 ? ' (warmup, discarded)' : ''}: ` +
 				`tree=${sample.playlist_tree_ready_ms}ms ` +
 				`switch=${sample.playlist_switch_first_rows_ms}ms ` +
+				`(fetch=${sample.playlist_switch_fetch_ms} paint=${sample.playlist_switch_paint_ms}) ` +
 				`all_tracks=${sample.all_tracks_first_rows_ms}ms`
 		);
 	}

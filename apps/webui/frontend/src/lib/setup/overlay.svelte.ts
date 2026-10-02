@@ -28,11 +28,18 @@
  *     state rather than into silence.
  *     [if] closeSetupOverlay({ incomplete: true }) leaves no trace on screen
  *     [then ⛔️] broken
+ *   ✔︎ 🎯 an explicit close holds the empty-library auto-open until the
+ *     operator asks for setup again. Preflight's previous `fail` is still
+ *     on screen for one poll, and reopening on it bounces Skip and Start
+ *     playing (issue #3422).
+ *     [if] closeSetupOverlay() leaves holdEmptyReopen false [then ⛔️] broken
  */
 
 let open = $state(false);
 let collapsed = $state(false);
 let incomplete = $state(false);
+/** Operator closed the wizard this tab. Blocks the stale-fail auto-open. */
+let holdEmptyReopen = $state(false);
 
 export function isSetupOverlayOpen(): boolean {
 	return open;
@@ -51,6 +58,7 @@ export function openSetupOverlay(): void {
 	open = true;
 	collapsed = false;
 	incomplete = false;
+	holdEmptyReopen = false;
 }
 
 /**
@@ -64,6 +72,7 @@ export function closeSetupOverlay(options: { incomplete?: boolean } = {}): void 
 	open = false;
 	collapsed = false;
 	incomplete = options.incomplete === true;
+	holdEmptyReopen = true;
 }
 
 /** Shrink to the progress chip. Still OPEN: the import keeps running and the
@@ -89,6 +98,7 @@ export function _resetSetupOverlayForTests(): void {
 	open = false;
 	collapsed = false;
 	incomplete = false;
+	holdEmptyReopen = false;
 }
 
 /** Reactive snapshot for components. */
@@ -101,5 +111,8 @@ export const setupOverlay = {
 	},
 	get incomplete() {
 		return incomplete;
+	},
+	get holdEmptyReopen() {
+		return holdEmptyReopen;
 	}
 };

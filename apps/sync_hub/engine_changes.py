@@ -64,6 +64,10 @@ class HeldRow:
     table: str
     pk: tuple[str, ...]
     seq: int | None = None
+    #: The hub already answered for this row (:func:`sync_set.is_settled`,
+    #: CLOUDSYNC-32): left out of the offer like any held row, but never a
+    #: fence pin, never re-logged and never counted as held.
+    settled: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,19 @@ class Offer:
 
     rows: list[RowChange]
     held: tuple[HeldRow, ...] = ()
+    #: Rows left out because the hub already settled them; see
+    #: :attr:`HeldRow.settled`. Kept apart from ``held`` so neither the count
+    #: nor the fence can pick them up.
+    settled: tuple[HeldRow, ...] = ()
+
+    @classmethod
+    def of(cls, rows: list[RowChange], excluded: Sequence[HeldRow]) -> Offer:
+        """An offer whose ``excluded`` rows are split into held and settled."""
+        return cls(
+            rows=rows,
+            held=tuple(row for row in excluded if not row.settled),
+            settled=tuple(row for row in excluded if row.settled),
+        )
 
     @property
     def quarantined(self) -> int:
@@ -158,10 +175,12 @@ def _row_change(
     raw_pk = tuple(str(row[pk_index[column]]) for column in spec.pk)
     reason = sync_set.row_reason(table, columns, row, spec, held)
     if reason is not None:
-        _quarantine(
-            table, [row[pk_index[column]] for column in spec.pk], reason
-        )
-        return HeldRow(table=table, pk=raw_pk)
+        settled = sync_set.is_settled(reason)
+        if not settled:
+            _quarantine(
+                table, [row[pk_index[column]] for column in spec.pk], reason
+            )
+        return HeldRow(table=table, pk=raw_pk, settled=settled)
     values = protocol.canonical_row(table, columns, row)
     pk = tuple(str(values[column]) for column in spec.pk)
     members = (
@@ -197,7 +216,7 @@ def _rows_for_table(
             held_rows.append(change)
             continue
         rows.append(change)
-    return Offer(rows=rows, held=tuple(held_rows))
+    return Offer.of(rows, held_rows)
 
 
 def _changelog_rows(
@@ -311,7 +330,7 @@ def _walk_changelog_entries(
     changes.sort(
         key=lambda change: (apply_rank(change.table, source=changelog), change.pk)
     )
-    return Offer(rows=changes, held=tuple(held_rows)), skipped
+    return Offer.of(changes, held_rows), skipped
 
 
 def spoke_push(
@@ -350,8 +369,8 @@ def spoke_push(
             for spec in SYNC_TABLES:
                 offer = _rows_for_table(conn, spec, held)
                 changes.extend(offer.rows)
-                held_rows.extend(offer.held)
-            return Offer(rows=changes, held=tuple(held_rows))
+                held_rows.extend((*offer.held, *offer.settled))
+            return Offer.of(changes, held_rows)
         top = local_seq(conn) if ceiling is None else int(ceiling)
         entries = conn.execute(
             f"SELECT seq, table_name, row_pk FROM {LOCAL_CHANGELOG_TABLE} "
@@ -420,7 +439,7 @@ def still_held_rows(
         if row is None:
             continue
         outcome = _row_change(conn, item.table, columns, spec, row, keys)
-        if isinstance(outcome, HeldRow):
+        if isinstance(outcome, HeldRow) and not outcome.settled:
             kept.append(item)
     return tuple(kept)
 

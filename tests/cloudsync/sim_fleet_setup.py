@@ -94,7 +94,7 @@ def fleet_scenario(spokes: list[str]) -> Scenario:
 def seed_versions() -> dict[RowKey, Version]:
     """What the oracle records for the seed: the same stamp on every machine."""
     key: LwwKey = (SEED_STAMP, SEED_ORIGIN)
-    seeded = {(TRACKS, stable_id): Version(key, (SEED_TITLE, None)) for stable_id in TRACK_IDS}
+    seeded = {(TRACKS, stable_id): Version(key, (SEED_TITLE, None, None)) for stable_id in TRACK_IDS}
     seeded[(PLAYLISTS, PLAYLIST_ID)] = Version(key, (PLAYLIST_NAME, None, SEED_MEMBERS))
     return seeded
 
