@@ -1,5 +1,7 @@
 """Shutdown stops the pipeline CLIs a refresh job has running (quit hang, Fri 2 Oct 2026).
 
+[if] the engine shuts down mid-step [then] the CLI and its pool workers keep running after the app is gone, [else stop].
+
 On demon-llama an engine stopped by a plain SIGTERM left the analysis CLI's
 pool workers running after the app was gone, and they blocked the DMG
 installer. These cases drive real processes: a CLI stand-in that starts a

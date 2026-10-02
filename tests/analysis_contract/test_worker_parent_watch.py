@@ -1,5 +1,7 @@
 """Analysis pool workers exit when their parent is gone (quit hang, Fri 2 Oct 2026).
 
+[if] a pool worker outlives its parent [then] it blocks reinstalls forever, [else stop].
+
 A spawned pool worker blocks on a call queue that never reports end-of-file
 when the parent dies, so three of them outlived the app on demon-llama and
 blocked the DMG installer. These cases run a real parent and a real worker
