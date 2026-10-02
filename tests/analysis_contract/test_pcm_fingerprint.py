@@ -17,6 +17,7 @@ import hashlib
 import math
 import struct
 import subprocess
+import sys
 import wave
 from pathlib import Path
 
@@ -54,6 +55,13 @@ def _synthesize(
         w.setframerate(rate)
         w.writeframes(bytes(out))
     return path
+
+
+# The stand-in below is a shebang script, which Windows cannot execute.
+_POSIX_STAND_IN = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the stand-in odj-audio is a POSIX shell script; Windows cannot run a shebang",
+)
 
 
 def _fake_engine(tmp_path: Path, body: str) -> Path:
@@ -105,6 +113,7 @@ def test_a_missing_engine_is_refused(tmp_path: Path, monkeypatch) -> None:
         canonical_decode_fingerprint(tmp_path / "any.wav")
 
 
+@_POSIX_STAND_IN
 def test_an_empty_decode_never_returns_the_digest_of_zero_bytes(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -195,6 +204,7 @@ def test_the_probe_passes_where_the_resampler_exists() -> None:
     require_resampler()
 
 
+@_POSIX_STAND_IN
 def test_the_probe_fails_loud_on_a_build_that_cannot_decode(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -210,6 +220,7 @@ def test_the_probe_fails_loud_on_a_build_that_cannot_decode(
     assert "cannot resample" in str(raised.value)
 
 
+@_POSIX_STAND_IN
 def test_the_probe_fails_loud_on_a_decode_of_the_wrong_length(
     tmp_path: Path, monkeypatch
 ) -> None:

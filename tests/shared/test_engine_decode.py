@@ -20,6 +20,12 @@ from apps.shared.engine_decode import (
     resolve_engine_decoder,
 )
 
+# The stand-in below is a shebang script, which Windows cannot execute.
+_POSIX_STAND_IN = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the stand-in odj-audio is a POSIX shell script; Windows cannot run a shebang",
+)
+
 
 def _exe(path: Path, commands: str = "decode probe") -> Path:
     """A stand-in binary whose ``help`` lists ``commands`` the way odj-audio does."""
@@ -30,6 +36,7 @@ def _exe(path: Path, commands: str = "decode probe") -> Path:
     return path
 
 
+@_POSIX_STAND_IN
 def test_the_env_override_wins_and_the_repo_build_is_not_read(tmp_path: Path) -> None:
     bundled = _exe(tmp_path / "payload" / "bin" / "odj-audio")
     _exe(tmp_path / "repo" / engine_decode.REPO_TARGET / "release" / engine_decode.EXE_NAME)
@@ -37,6 +44,7 @@ def test_the_env_override_wins_and_the_repo_build_is_not_read(tmp_path: Path) ->
     assert got == bundled
 
 
+@_POSIX_STAND_IN
 def test_a_broken_override_is_the_answer_not_a_fallback(tmp_path: Path) -> None:
     _exe(tmp_path / "repo" / engine_decode.REPO_TARGET / "release" / engine_decode.EXE_NAME)
     plain = tmp_path / "odj-audio"
@@ -45,6 +53,7 @@ def test_a_broken_override_is_the_answer_not_a_fallback(tmp_path: Path) -> None:
         resolve_engine_decoder({"ODJ_AUDIO_BIN": str(plain)}, repo_root=tmp_path / "repo")
 
 
+@_POSIX_STAND_IN
 def test_without_override_the_newest_repo_build_is_used(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     release = _exe(root / engine_decode.REPO_TARGET / "release" / engine_decode.EXE_NAME)
@@ -54,6 +63,7 @@ def test_without_override_the_newest_repo_build_is_used(tmp_path: Path) -> None:
     assert resolve_engine_decoder({}, repo_root=root) == debug
 
 
+@_POSIX_STAND_IN
 def test_a_stale_build_without_the_subcommands_is_passed_over(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     fresh = _exe(root / engine_decode.REPO_TARGET / "release" / engine_decode.EXE_NAME)
