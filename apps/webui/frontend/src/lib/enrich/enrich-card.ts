@@ -160,3 +160,27 @@ export function stemsText(stems: StemsLine): string | null {
 export function offersRetry(summary: EnrichSummary): boolean {
 	return analysisLines(summary).some((line) => line.tone === 'failed' || line.tone === 'unavailable');
 }
+
+/**
+ * True when the card opens expanded: something needs the user's eyes or a
+ * click (the stems question, a failure, a lane that cannot run, an unknown
+ * status). Background progress alone opens collapsed, so the card does not
+ * sit over the track table's right-hand columns while nothing is asked.
+ */
+export function needsAttention(summary: EnrichSummary | null, loadError: string | null, actionError: string | null): boolean {
+	if (loadError || actionError || summary === null) return true;
+	if (summary.stems.state === 'ask' || summary.stems.state === 'unknown') return true;
+	const lines = [...analysisLines(summary), lyricsLine(summary)];
+	return lines.some((line) => line !== null && (line.tone === 'failed' || line.tone === 'unavailable'));
+}
+
+/** The one line a collapsed card shows: which lanes are still running. */
+export function collapsedText(summary: EnrichSummary): string {
+	const running = [...analysisLines(summary), lyricsLine(summary)].filter(
+		(line): line is CardLine => line !== null && line.tone === 'working'
+	);
+	const labels = running.map((line) => (line.lane === 'lyrics' ? 'Lyrics' : LANE_LABELS[line.lane]));
+	if (labels.length === 0) return 'Nothing left running';
+	const list = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
+	return `${list}: running in the background`;
+}

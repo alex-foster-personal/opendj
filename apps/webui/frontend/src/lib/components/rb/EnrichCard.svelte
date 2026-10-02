@@ -11,13 +11,14 @@
 	  Separate  POST /api/v1/jobs (via StemsPrompt)
 	  Never     PUT  /api/v1/enrich/decisions/stems  (enrich_cli decide)
 	  Hide      session only, re-shown on the next open
+	  More/Less view only; the card opens expanded exactly when needsAttention()
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, unwrap } from '$lib/api/client';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import EnrichCardView from '$lib/components/rb/EnrichCardView.svelte';
-	import type { EnrichSummary } from '$lib/enrich/enrich-card';
+	import { type EnrichSummary, needsAttention } from '$lib/enrich/enrich-card';
 
 	const REFRESH_MS = 30_000;
 	const HIDE_KEY = 'odj.enrich-card.hidden';
@@ -28,6 +29,10 @@
 	let hidden = $state(readHidden());
 	let asking = $state(false);
 	let busy = $state(false);
+	/** null until the user presses More or Less; until then the policy decides. */
+	let expandedChoice = $state<boolean | null>(null);
+
+	const expanded = $derived(expandedChoice ?? (asking || needsAttention(summary, loadError, actionError)));
 
 	const visible = $derived(!hidden && (loadError !== null || (summary?.show ?? false)));
 
@@ -95,6 +100,8 @@
 		{actionError}
 		{busy}
 		{asking}
+		{expanded}
+		ontoggle={() => (expandedChoice = !expanded)}
 		onhide={hide}
 		onretry={retry}
 		onask={() => (asking = true)}

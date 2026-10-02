@@ -9,6 +9,7 @@
 	import {
 		type EnrichSummary,
 		analysisLines,
+		collapsedText,
 		lyricsLine,
 		offersRetry,
 		stemsText
@@ -25,6 +26,9 @@
 		/** The user chose "Separate stems...": render `stemsPrompt` in place of the three answers. */
 		asking?: boolean;
 		stemsPrompt?: Snippet;
+		/** False: only the header and one progress line, so the card stays off the track table. */
+		expanded?: boolean;
+		ontoggle?: () => void;
 		onhide?: () => void;
 		onretry?: () => void;
 		onask?: () => void;
@@ -38,6 +42,8 @@
 		busy = false,
 		asking = false,
 		stemsPrompt,
+		expanded = true,
+		ontoggle,
 		onhide,
 		onretry,
 		onask,
@@ -48,40 +54,53 @@
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 </script>
 
-<section class="enrich-card" aria-label="Library enrichment" data-testid="enrich-card">
+<section class="enrich-card" class:collapsed={!expanded} aria-label="Library enrichment" data-testid="enrich-card">
 	<header>
 		<h3>Getting your library ready</h3>
-		<button type="button" class="enrich-hide" onclick={onhide} title="Hide until the app is next opened">Hide</button>
+		<span class="enrich-header-actions">
+			<button
+				type="button"
+				class="enrich-hide"
+				onclick={ontoggle}
+				aria-expanded={expanded}
+				title={expanded ? 'Collapse to one line' : 'Show every lane'}>{expanded ? 'Less' : 'More'}</button
+			>
+			<button type="button" class="enrich-hide" onclick={onhide} title="Hide until the app is next opened">Hide</button>
+		</span>
 	</header>
-	{#if loadError}
-		<p class="enrich-line failed">{loadError}</p>
-	{/if}
-	{#each lines as line (line.lane + line.tone)}
-		<p class="enrich-line {line.tone}" title={line.title ?? undefined} data-lane={line.lane} data-tone={line.tone}>
-			{line.text}
-		</p>
-	{/each}
-	{#if summary && offersRetry(summary)}
-		<button type="button" onclick={onretry} disabled={busy}>Retry failed analysis</button>
-	{/if}
-	{#if stemsLine}
-		<p class="enrich-line {summary?.stems.state === 'ask' ? 'working' : 'unavailable'}" data-lane="stems">
-			{stemsLine}
-		</p>
-	{/if}
-	{#if summary?.stems.state === 'ask'}
-		{#if asking && stemsPrompt}
-			{@render stemsPrompt()}
-		{:else}
-			<div class="enrich-actions">
-				<button type="button" class="enrich-go" onclick={onask}>Separate stems...</button>
-				<button type="button" onclick={onhide}>Not now</button>
-				<button type="button" onclick={onnever} disabled={busy}>Never for this library</button>
-			</div>
+	{#if !expanded && summary}
+		<p class="enrich-line working" data-testid="enrich-collapsed">{collapsedText(summary)}</p>
+	{:else}
+		{#if loadError}
+			<p class="enrich-line failed">{loadError}</p>
 		{/if}
-	{/if}
-	{#if actionError}
-		<p class="enrich-line failed">{actionError}</p>
+		{#each lines as line (line.lane + line.tone)}
+			<p class="enrich-line {line.tone}" title={line.title ?? undefined} data-lane={line.lane} data-tone={line.tone}>
+				{line.text}
+			</p>
+		{/each}
+		{#if summary && offersRetry(summary)}
+			<button type="button" onclick={onretry} disabled={busy}>Retry failed analysis</button>
+		{/if}
+		{#if stemsLine}
+			<p class="enrich-line {summary?.stems.state === 'ask' ? 'working' : 'unavailable'}" data-lane="stems">
+				{stemsLine}
+			</p>
+		{/if}
+		{#if summary?.stems.state === 'ask'}
+			{#if asking && stemsPrompt}
+				{@render stemsPrompt()}
+			{:else}
+				<div class="enrich-actions">
+					<button type="button" class="enrich-go" onclick={onask}>Separate stems...</button>
+					<button type="button" onclick={onhide}>Not now</button>
+					<button type="button" onclick={onnever} disabled={busy}>Never for this library</button>
+				</div>
+			{/if}
+		{/if}
+		{#if actionError}
+			<p class="enrich-line failed">{actionError}</p>
+		{/if}
 	{/if}
 </section>
 
@@ -112,6 +131,15 @@
 		margin: 0;
 		font-size: 13px;
 		letter-spacing: 0.04em;
+	}
+	.enrich-card.collapsed {
+		width: auto;
+		max-width: min(380px, calc(100vw - 24px));
+	}
+	.enrich-header-actions {
+		display: flex;
+		gap: 6px;
+		margin-left: 12px;
 	}
 	.enrich-line {
 		margin: 0;
