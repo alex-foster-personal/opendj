@@ -52,22 +52,25 @@ export function makeVerifiedPrefWriters(deps: {
 	sync: SyncDiskPrefs;
 	put: (patch: DiskPrefsPatch) => Promise<void>;
 	/** Confirm keys set locally whose value disk has not acknowledged yet (in
-	 * flight or failed). Owned by prefs.svelte.ts so hydration can read it
-	 * before this module loads; every confirm write here resends them. */
-	unsavedConfirm: Set<string>;
+	 * flight or failed), each with the revision of its latest local write.
+	 * Owned by prefs.svelte.ts so hydration can read it before this module
+	 * loads; every confirm write here resends them. */
+	unsavedConfirm: Map<string, number>;
 }) {
 	const { uiPrefs, persist, sync, put, unsavedConfirm } = deps;
 	const confirm = () => uiPrefs.confirm as Record<string, unknown>;
 
-	function unsavedConfirmPatch(): Record<string, unknown> {
+	/** The unsaved choices to send, with the revisions they were taken at. */
+	function unsavedConfirmPatch() {
 		const patch: Record<string, unknown> = {};
-		for (const key of unsavedConfirm) if (key in confirm()) patch[key] = confirm()[key];
-		return patch;
+		for (const key of unsavedConfirm.keys()) if (key in confirm()) patch[key] = confirm()[key];
+		return { patch, revs: new Map<string, number | undefined>(unsavedConfirm) };
 	}
 
-	function markConfirmSaved(patch: Record<string, unknown>): void {
-		for (const [key, value] of Object.entries(patch)) {
-			if (value === null || confirm()[key] === value) unsavedConfirm.delete(key);
+	/** A key is saved only if no newer local write replaced it meanwhile. */
+	function markConfirmSaved(patch: Record<string, unknown>, revs: Map<string, number | undefined>): void {
+		for (const key of Object.keys(patch)) {
+			if (unsavedConfirm.get(key) === revs.get(key)) unsavedConfirm.delete(key);
 		}
 	}
 
@@ -109,15 +112,19 @@ export function makeVerifiedPrefWriters(deps: {
 
 		/** Reset a remembered confirm choice to "ask": the disk key is deleted
 		 * first (resending any unsaved choices with it), and the live choice is
-		 * dropped only after that lands. */
-		clearConfirmPref(key: string): Promise<void> {
+		 * dropped only after that lands. `rev` is the key's unsaved revision when
+		 * the reset was asked for: a choice made after that is newer than the
+		 * reset, so it is kept and its own queued save sends it (Sol P2, #4014). */
+		clearConfirmPref(key: string, rev: number | undefined): Promise<void> {
 			return step(() => {
-				const patch = { ...unsavedConfirmPatch(), [key]: null };
+				const { patch, revs } = unsavedConfirmPatch();
+				patch[key] = null;
+				revs.set(key, rev);
 				return {
 					patch: { confirm: patch } as DiskPrefsPatch,
 					commit: () => {
-						delete confirm()[key];
-						markConfirmSaved(patch);
+						if (unsavedConfirm.get(key) === rev) delete confirm()[key];
+						markConfirmSaved(patch, revs);
 					}
 				};
 			});
@@ -127,10 +134,10 @@ export function makeVerifiedPrefWriters(deps: {
 		 * rejects and leaves the keys unsaved for the next write. */
 		saveUnsavedConfirm(): Promise<void> {
 			return sync({}, async () => {
-				const patch = unsavedConfirmPatch();
+				const { patch, revs } = unsavedConfirmPatch();
 				if (Object.keys(patch).length === 0) return;
 				await put({ confirm: patch } as DiskPrefsPatch);
-				markConfirmSaved(patch);
+				markConfirmSaved(patch, revs);
 			});
 		}
 	};

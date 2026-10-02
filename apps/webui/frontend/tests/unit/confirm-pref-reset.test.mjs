@@ -31,7 +31,10 @@ async function settle() {
 }
 
 before(async () => {
-	prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', { viteApiBase: API_BASE });
+	prefs = await loadTypeScriptModule('src/lib/rb/prefs.svelte.ts', {
+		viteApiBase: API_BASE,
+		alias: { '$lib/settings/setting-save-errors': RECORDING_SINK }
+	});
 	apply = await loadTypeScriptModule('src/lib/settings/apply.ts', {
 		viteApiBase: API_BASE,
 		alias: { '$lib/settings/setting-save-errors': RECORDING_SINK }
@@ -228,4 +231,87 @@ test('unknown confirm keys behave as before: kept locally, applied from disk', a
 
 	assert.equal(prefs.uiPrefs.confirm.legacy_local_only, true);
 	assert.equal(prefs.uiPrefs.confirm.future_disk_key, false);
+});
+
+// Sol P1 r4168165199: a failed confirm save must reach the user (the settings
+// save-error sink, an error toast in the app), not only the console. Control:
+// a save that lands reports nothing.
+test('a failed confirm save is reported to the user', async () => {
+	prefs.uiPrefs.confirm = {};
+	globalThis.fetch = async () =>
+		jsonResponse({ detail: { code: 'WRITE_FAILED', message: 'disk full' } }, 500);
+
+	prefs.setConfirmPref('delete_playlist', false);
+	await settle();
+
+	assert.equal(globalThis.__recordedSettingSaveErrors.length, 1);
+	assert.match(globalThis.__recordedSettingSaveErrors[0].message, /not saved.*disk full/);
+});
+
+test('a confirm save that lands reports nothing', async () => {
+	prefs.uiPrefs.confirm = {};
+	globalThis.fetch = async () => jsonResponse({});
+
+	prefs.setConfirmPref('delete_playlist', false);
+	await settle();
+
+	assert.deepEqual(globalThis.__recordedSettingSaveErrors, []);
+	assert.equal(prefs.uiPrefs.confirm.delete_playlist, false);
+});
+
+// Sol P2 r4168165209: a reset whose PUT lands after the user picked a newer
+// choice must not clobber it. Overshoot control: a choice that was already
+// unsaved when the reset was asked for is still cleared by that reset.
+test('a reset that lands after a newer choice keeps that choice and saves it', async () => {
+	prefs.uiPrefs.confirm = { playlist_drop_mode: 'move' };
+	const bodies = [];
+	let releaseReset;
+	const resetGate = new Promise((resolve) => {
+		releaseReset = resolve;
+	});
+	globalThis.fetch = async (request) => {
+		const body = await request.clone().json();
+		bodies.push(body);
+		if (body.confirm.playlist_drop_mode === null) await resetGate;
+		return jsonResponse({});
+	};
+
+	const reset = prefs.clearConfirmPref('playlist_drop_mode');
+	await settle();
+	prefs.setConfirmPref('playlist_drop_mode', 'add');
+	releaseReset();
+	await reset;
+	await settle();
+
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'add');
+	assert.deepEqual(bodies.at(-1), { confirm: { playlist_drop_mode: 'add' } });
+	globalThis.fetch = routeFetch({ get: () => jsonResponse({ confirm: {} }), put: () => jsonResponse({}) });
+	await prefs.hydrateConfirmPrefsFromDisk();
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined, 'the newer choice was saved, so disk wins');
+	assert.deepEqual(globalThis.__recordedSettingSaveErrors, []);
+});
+
+test('a reset still clears a choice that was unsaved before it was asked for', async () => {
+	prefs.uiPrefs.confirm = {};
+	globalThis.fetch = async () => {
+		throw new TypeError('Failed to fetch');
+	};
+	prefs.setConfirmPref('playlist_drop_mode', 'move');
+	await settle();
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'move');
+
+	const bodies = [];
+	globalThis.fetch = routeFetch({
+		get: () => jsonResponse({ confirm: { playlist_drop_mode: 'move' } }),
+		put: async (request) => {
+			bodies.push(await request.clone().json());
+			return jsonResponse({});
+		}
+	});
+	await prefs.clearConfirmPref('playlist_drop_mode');
+
+	assert.deepEqual(bodies, [{ confirm: { playlist_drop_mode: null } }]);
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, undefined);
+	await prefs.hydrateConfirmPrefsFromDisk();
+	assert.equal(prefs.uiPrefs.confirm.playlist_drop_mode, 'move', 'no longer unsaved: disk is authoritative');
 });

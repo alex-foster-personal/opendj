@@ -45,6 +45,7 @@ import {
 	validateCompatibleFilterPrefs,
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
+import { reportSettingSaveError } from '$lib/settings/setting-save-errors';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
 import {
 	LYRICS_PREF_DEFAULTS,
@@ -833,8 +834,9 @@ function _verified(): Promise<VerifiedWriters> {
 	);
 	return _verifiedLoad;
 }
-/** Confirm keys disk has not acknowledged yet; hydration keeps them. */
-const _unsavedConfirm = new Set<string>();
+/** Confirm keys disk has not acknowledged yet, by write revision; hydration keeps them. */
+const _unsavedConfirm = new Map<string, number>();
+let _confirmRev = 0;
 export const patchCompatibleFilter = (patch: Partial<CompatibleFilterPrefs>): Promise<void> =>
 	_verified().then((v) => v.patchCompatibleFilter(patch));
 /** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
@@ -842,22 +844,25 @@ export const setLibraryWatcherFolders = (paths: readonly string[]): Promise<void
 	_verified().then((v) => v.setLibraryWatcherFolders(paths));
 /** Reset a remembered confirm choice to "ask". Rejects (and keeps the
  * remembered choice) when the disk delete fails, so the caller can show it. */
-export const clearConfirmPref = (key: keyof RbUiPrefs['confirm']): Promise<void> =>
-	_verified().then((v) => v.clearConfirmPref(key));
+export function clearConfirmPref(key: keyof RbUiPrefs['confirm']): Promise<void> {
+	const rev = _unsavedConfirm.get(key);
+	return _verified().then((v) => v.clearConfirmPref(key, rev));
+}
 
 /** Remember a confirm choice (resetting to "ask" is `clearConfirmPref`): live at
  * once, and unsaved until disk acknowledges it, so a failed PUT is resent by
- * the next confirm write and hydration cannot drop it. */
+ * the next confirm write and hydration cannot drop it. A failed save is shown
+ * through the settings save-error sink (an error toast; Sol P1, PR #4014). */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
 	value: Exclude<RbUiPrefs['confirm'][K], undefined>
 ): void {
 	uiPrefs.confirm[key] = value;
 	_persist();
-	_unsavedConfirm.add(key);
+	_unsavedConfirm.set(key, ++_confirmRev);
 	_verified()
 		.then((v) => v.saveUnsavedConfirm())
-		.catch((err: unknown) => console.warn(`[ui-prefs] confirm.${key} unsaved; resent next write`, err));
+		.catch((err: unknown) => reportSettingSaveError(`Confirmation choice not saved to disk: ${err}`, err));
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
