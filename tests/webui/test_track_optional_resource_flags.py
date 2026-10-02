@@ -445,7 +445,7 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped(
 def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_picture(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
-    """[if] a local file has no picture [then] list and detail agree artwork False.
+    """[if] a local file has no picture [then] list and detail agree on False, [else stop].
 
     The reader is tinytag, a core dependency (issue #4717), so this is a checked
     False everywhere now, never the old "could not check" None.
