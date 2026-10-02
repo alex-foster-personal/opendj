@@ -46,7 +46,12 @@ from .queue import CascadeOutcome, QueueError, enqueue
 from .queue_effects import cascade_if_canonical
 from .record import AnalysisRecord
 from .store import upsert_record
-from .worker_diagnostics import init_worker, pool_death_message, worker_exit_signals
+from .worker_diagnostics import (
+    init_worker,
+    owner_identity,
+    pool_death_message,
+    worker_exit_signals,
+)
 
 log = logging.getLogger("apps.analysis.queue_runner")
 
@@ -420,9 +425,9 @@ def run_batch(
         max_workers=batch.workers,
         mp_context=multiprocessing.get_context("spawn"),
         initializer=init_worker,
-        # The pool owner's pid, read HERE: a worker reading its own parent
-        # pid could read the reparented one if the owner died first.
-        initargs=(os.getpid(),),
+        # The pool owner's pid and start time, read HERE: a worker reading
+        # them itself could name a reparented or recycled pid if the owner died first.
+        initargs=owner_identity(),
     )
     ctx = _RunContext(
         conn=conn,

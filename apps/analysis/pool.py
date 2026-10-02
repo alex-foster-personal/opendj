@@ -8,7 +8,6 @@ pairs rather than the CLI's ``TrackRef``, which keeps the dependency one-way.
 from __future__ import annotations
 
 import multiprocessing
-import os
 from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
@@ -23,7 +22,12 @@ from .backends.base import (
     TrackVanished,
 )
 from .record import AnalysisRecord
-from .worker_diagnostics import init_worker, pool_death_message, worker_exit_signals
+from .worker_diagnostics import (
+    init_worker,
+    owner_identity,
+    pool_death_message,
+    worker_exit_signals,
+)
 
 #: ``(stable_id, record, error)`` for one track.
 Row = tuple[str, AnalysisRecord | None, str | None]
@@ -91,9 +95,9 @@ def run_pool(
         max_workers=workers,
         mp_context=multiprocessing.get_context("spawn"),
         initializer=init_worker,
-        # The pool owner's pid, read HERE: a worker reading its own parent
-        # pid could read the reparented one if the owner died first.
-        initargs=(os.getpid(),),
+        # The pool owner's pid and start time, read HERE: a worker reading
+        # them itself could name a reparented or recycled pid if the owner died first.
+        initargs=owner_identity(),
     )
     # The stdlib exposes no public handle on the worker processes, and
     # ``shutdown`` drops the private one, so snapshot the objects while they

@@ -55,19 +55,35 @@ PARENT_POLL_S: float = 1.0
 EXIT_PARENT_GONE: int = 3
 
 
-def init_worker(parent_pid: int | None = None) -> None:
+def init_worker(parent_pid: int | None = None, parent_started_at: float | None = None) -> None:
     """Pool-worker entry point: pin the native thread pools, then arm the tracer.
 
     Runs in the child before the backend import chain, which is what makes the
     pin effective. See :data:`THREAD_PIN_VARS`. Also starts the parent watch,
     see :func:`watch_parent`, against ``parent_pid``: the pool owner passes
-    its own pid, since a worker that read ``os.getppid()`` itself would record
-    the reparented pid if the owner had already died.
+    its own pid and start time (:func:`owner_identity`), since a worker that
+    read them itself would record whichever process holds that pid by then,
+    the reparented one or a recycled one, if the owner had already died.
     """
     for name in THREAD_PIN_VARS:
         os.environ[name] = "1"
     faulthandler.enable(all_threads=True)
-    watch_parent(os.getppid() if parent_pid is None else parent_pid)
+    watch_parent(os.getppid() if parent_pid is None else parent_pid, parent_started_at)
+
+
+def owner_identity() -> tuple[int, float | None]:
+    """``initargs`` for :func:`init_worker`: this process's pid and start time.
+
+    Read in the owner, before any worker exists, so the identity names the
+    owner even if it dies and its pid is recycled before a worker starts. A
+    start time the OS will not give is passed as None, and the worker then
+    reads it itself.
+    """
+    pid = os.getpid()
+    try:
+        return pid, parent_started_at(pid)
+    except psutil.AccessDenied:
+        return pid, None
 
 
 def parent_started_at(parent_pid: int) -> float | None:
@@ -110,7 +126,9 @@ def _exit_parent_gone(parent_pid: int) -> None:
     os._exit(EXIT_PARENT_GONE)
 
 
-def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Thread | None:
+def watch_parent(
+    parent_pid: int, started_at: float | None = None, poll_s: float = PARENT_POLL_S
+) -> threading.Thread | None:
     """Exit this worker when the process that started it is gone.
 
     A spawned pool worker blocks on its call queue, and that queue never
@@ -118,10 +136,15 @@ def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Th
     killed waits forever. That is how three analysis workers outlived the app
     on demon-llama (Fri 2 Oct 2026) and then blocked the DMG installer. The
     worker has nobody left to report to, so it exits at once (``os._exit``,
-    skipping cleanup that would wait on that same queue). Returns None, with
-    a warning, when the OS will not name the parent: the watch cannot measure
-    then, and says so rather than guessing.
+    skipping cleanup that would wait on that same queue). ``started_at`` is
+    the parent's start time as its owner recorded it; without it the watch
+    reads it now. Returns None, with a warning, when the OS will not name the
+    parent: the watch cannot measure then, and says so rather than guessing.
     """
+    if started_at is not None:
+        if parent_gone(parent_pid, started_at):
+            _exit_parent_gone(parent_pid)
+        return _start_watch(parent_pid, started_at, poll_s)
     try:
         started_at = parent_started_at(parent_pid)
     except psutil.AccessDenied:
@@ -135,7 +158,10 @@ def watch_parent(parent_pid: int, poll_s: float = PARENT_POLL_S) -> threading.Th
     if started_at is None:
         _exit_parent_gone(parent_pid)
         return None
+    return _start_watch(parent_pid, started_at, poll_s)
 
+
+def _start_watch(parent_pid: int, started_at: float, poll_s: float) -> threading.Thread:
     def _watch() -> None:
         while True:
             time.sleep(poll_s)

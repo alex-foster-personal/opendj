@@ -56,18 +56,19 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a stopping engine gets between SIGTERM and SIGKILL.
 ///
 /// Long enough for the engine's own shutdown to finish: uvicorn's graceful
-/// window (`GRACEFUL_SHUTDOWN_S`, apps/engine_core/__main__.py), the job
-/// runner reaping its worker groups (`WORKER_TERMINATE_GRACE_S`,
-/// apps/engine_core/jobs/reap.py) and the refresh job's CLIs being stopped
-/// (`STOP_GRACE_S`, apps/webui/server/routes/ingest_cli_procs.py), worst
-/// case one after another. tests/scripts/test_desktop_quit_budget.py holds
+/// window (`GRACEFUL_SHUTDOWN_S`, apps/engine_core/__main__.py), the refresh
+/// job's CLIs being stopped (`STOP_ALL_MAX_S`,
+/// apps/webui/server/routes/ingest_cli_procs.py), and the job runner settling
+/// jobs still forking (`_SPAWN_SETTLE_S`, apps/engine_core/jobs/runner.py)
+/// then reaping its worker groups (`WORKER_TERMINATE_GRACE_S`,
+/// apps/engine_core/jobs/reap.py), worst case one after another. tests/scripts/test_desktop_quit_budget.py holds
 /// that sum under this number. Job
 /// workers lead their own sessions, so this group's SIGKILL never reaches
 /// them: a SIGKILL that lands before the runner has reaped them leaves them
 /// running after the app is gone (three analysis workers on demon-llama,
 /// Fri 2 Oct 2026, which then blocked the DMG installer). It is a bound,
 /// not a wait: an engine that exits sooner is reaped sooner.
-pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(20);
+pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(25);
 
 const HEALTH_PATH: &str = "/api/v1/health";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);

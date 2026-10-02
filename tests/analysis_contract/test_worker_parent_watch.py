@@ -13,6 +13,9 @@ Regression lines:
     nothing -> broken (the overshoot)
   - if the watch trusts the pid alone then a Windows orphan (never
     reparented) or a reused pid reads as a live parent -> broken
+  - if a worker reads its parent's start time itself instead of taking the
+    owner's record then an owner that died and had its pid recycled before
+    the worker started reads as alive forever -> broken
 """
 from __future__ import annotations
 
@@ -34,7 +37,8 @@ pytestmark = pytest.mark.requirement("INSTALL-33")
 _WORKER = (
     "import sys, time\n"
     "from apps.analysis.worker_diagnostics import watch_parent\n"
-    "watch_parent(int(sys.argv[1]), poll_s=0.05)\n"
+    "started_at = float(sys.argv[2]) if len(sys.argv) > 2 else None\n"
+    "watch_parent(int(sys.argv[1]), started_at, poll_s=0.05)\n"
     "time.sleep(60)\n"
 )
 
@@ -118,3 +122,25 @@ def test_a_dead_parent_is_gone_by_pid_and_start_time() -> None:
         proc.kill()
         proc.wait()
     assert worker_diagnostics.parent_gone(proc.pid, started_at) is True
+
+
+def test_a_worker_trusts_the_owners_record_over_whoever_holds_the_pid() -> None:
+    # The owner recorded a start time; the process holding its pid now has
+    # another one, which is what a pid recycled before the worker started
+    # looks like. The worker must leave even though that pid is alive.
+    holder = os.getpid()
+    recorded = worker_diagnostics.parent_started_at(holder)
+    assert recorded is not None
+    worker = subprocess.Popen([sys.executable, "-c", _WORKER, str(holder), str(recorded - 1.0)])
+    try:
+        assert worker.wait(timeout=10) == worker_diagnostics.EXIT_PARENT_GONE
+    finally:
+        if worker.poll() is None:
+            worker.kill()
+            worker.wait()
+
+
+def test_the_owner_hands_workers_its_own_identity() -> None:
+    pid, started_at = worker_diagnostics.owner_identity()
+    assert pid == os.getpid()
+    assert started_at == worker_diagnostics.parent_started_at(os.getpid())
