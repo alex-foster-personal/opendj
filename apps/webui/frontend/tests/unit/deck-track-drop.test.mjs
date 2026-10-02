@@ -77,6 +77,18 @@ describe('applyDeckTrackDrop', () => {
 		);
 	});
 
+	it('72be3e505510 loadable track loads onto a deck cleared by unload', async () => {
+		const { dispatches, toasts } = await runDrop({
+			row: { file_exists: true, is_streaming: false },
+			occupied: true
+		});
+		assert.equal(toasts.length, 0);
+		assert.deepEqual(dispatches, [
+			{ type: 'unload', deck: 1 },
+			{ type: 'load', deck: 1, stable_id: 'SID-1' }
+		]);
+	});
+
 	it('loads a loadable row onto an empty deck', async () => {
 		const { dispatches, toasts } = await runDrop({
 			row: { file_exists: true, is_streaming: false }

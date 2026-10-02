@@ -665,6 +665,15 @@ jobs:
             --output test-results/setup-entry-points
 
       # -- TIER 1a-bis: cross-browser deck-load smoke (#770) -------------------
+      - name: Debugger for the deck-load hang capture (#4281)
+        if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
+        # gdb lets scripts/ci_hang_capture.py (wrapped round the smoke below) take
+        # a native backtrace of a hung WebKitWebProcess. Non-fatal: without it the
+        # capture still records per-thread BUSY/BLOCKED and says gdb is UNKNOWN.
+        continue-on-error: true
+        run: |
+          scripts/ci_apt_present.sh gdb || scripts/ci_host_lock.sh packages sudo env -C / apt-get install -y gdb
+
       - name: Deck-load smoke (chromium + webkit, production build)
         working-directory: apps/webui/frontend
         if: ${{ steps.frontend-artifact.outcome == 'success' && !cancelled() }}
@@ -701,9 +710,22 @@ jobs:
         # once, at the end of the job) can read them -- so a cross-browser
         # failure here would ship with no diagnosable artifact (flagged on
         # review, PR #860).
+        #
+        # HANG CAPTURE (#4281): the webkit half hangs to the 120s test timeout on
+        # agentbox, and the traces cannot say whether the WebProcess is stuck in a
+        # native GStreamer/PulseAudio wait or spinning. scripts/ci_hang_capture.py
+        # answers that DURING the hang (Playwright closes the browser at timeout,
+        # so a later failure step finds nothing): if the run is still going at 60s
+        # and 95s (a green run takes about 20s) it records each WebKitWebProcess
+        # thread as BUSY or BLOCKED with its wait channel, plus a gdb backtrace,
+        # into test-results/hang-capture/, which "Upload failure artifacts" ships.
+        # It passes playwright's exit code through untouched and never kills
+        # anything. It sits inside the host lock so lock waits do not count.
         run: |
           "$GITHUB_WORKSPACE/scripts/ci_host_lock.sh" webkit-deckload \
             "$GITHUB_WORKSPACE/scripts/ci_reap_port_holders.sh" 8690 -- \
+            python3 "$GITHUB_WORKSPACE/scripts/ci_hang_capture.py" \
+            --out test-results/hang-capture --at 60,95 -- \
             pnpm exec playwright test \
             --config tests/e2e/playwright.webkit-deckload.config.ts \
             --project webkit --project chromium --grep "deck-load smoke" \
@@ -746,11 +768,13 @@ jobs:
         run: pnpm exec playwright test --config tests/e2e/playwright.stretch-quality.config.ts --output test-results/stretch-quality
 
       - name: Hermetic gate - master12-cue34 output topology
-        working-directory: apps/webui/frontend
         if: ${{ !cancelled() }}
         # No webServer, no port, no data dir: the djio graph is rendered by a
         # real four-channel OfflineAudioContext and the samples are read back.
-        run: pnpm exec playwright test --config tests/e2e/playwright.audio-output-topology.config.ts --output test-results/audio-output-topology
+        # The script skips only while the whole feature (source, spec, config)
+        # is absent, as on main before the preview (PR #3837) lands, and fails
+        # when any one of the three is here without the others.
+        run: bash scripts/ci_output_topology_gate.sh apps/webui/frontend
 
       # -- Comment-hotkey gate, real backend + fixture library ---------------
       # NOT hermetic like the two steps above: this suite needs a real
@@ -845,7 +869,7 @@ jobs:
       # The onboarding gauntlet (SETUP-21..23, specs/onboarding-gauntlet.md):
       # every test boots its own brand-new PACKAGED engine on an OS-assigned
       # port against the production artifact, so it pins no port and needs no
-      # host lock. Known open bugs (#3422) are test.fail, so a fix flips the
+      # host lock. Known open bugs are test.fail, so a fix flips the
       # case red until its marker is removed, never silently green.
       - name: Onboarding gauntlet (packaged engine, production build)
         working-directory: apps/webui/frontend

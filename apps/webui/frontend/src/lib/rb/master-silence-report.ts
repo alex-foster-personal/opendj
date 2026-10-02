@@ -24,6 +24,7 @@
 
 import { recordPerfEvent, readPerfEvents } from '$lib/rb/perf-event-log';
 import {
+	SILENCE_RMS_FLOOR,
 	SILENT_WHILE_PLAYING_MS,
 	foldSilenceSample,
 	type SilenceState,
@@ -41,6 +42,10 @@ import {
 } from '$lib/rb/silence-dropout';
 import { pushToast } from '$lib/stores.svelte';
 import type { DeckId } from '$lib/rb/deck-slots';
+import {
+	claimedLiveSourceIsSilent,
+	type SilenceSourceDeckSnap
+} from '$lib/rb/silence-source-pcm';
 
 export interface SilenceDropoutContext {
 	decks: readonly SilenceDropoutDeckSnap[];
@@ -59,6 +64,7 @@ let _lastMasterRmsAtMs: number | null = null;
 let _xrunsAtPreviousSample = 0;
 let _dropoutHandler: ((plan: SilenceDropoutPlan) => void) | null = null;
 let _readDropoutContext: (() => SilenceDropoutContext) | null = null;
+let _readSilenceSource: (() => readonly SilenceSourceDeckSnap[]) | null = null;
 
 export function setSilenceDropoutHandler(handler: ((plan: SilenceDropoutPlan) => void) | null): void {
 	_dropoutHandler = handler;
@@ -66,6 +72,10 @@ export function setSilenceDropoutHandler(handler: ((plan: SilenceDropoutPlan) =>
 
 export function setSilenceDropoutContextReader(reader: (() => SilenceDropoutContext) | null): void {
 	_readDropoutContext = reader;
+}
+
+export function setSilenceSourceReader(reader: (() => readonly SilenceSourceDeckSnap[]) | null): void {
+	_readSilenceSource = reader;
 }
 
 /** Instantaneous RMS 0..1 of whatever is leaving the master gain. */
@@ -177,12 +187,20 @@ export function noteMasterSilence(
 		_lastMasterRms = masterRms;
 		_lastMasterRmsAtMs = Date.now();
 	}
+	const claimedLive = playing || _anyDeckAudible(ctx);
+	let source_explains_silence = false;
+	if (analyser !== null && claimedLive && masterRms < SILENCE_RMS_FLOOR) {
+		const sourceSnaps = _readSilenceSource?.() ?? [];
+		source_explains_silence =
+			sourceSnaps.length > 0 && claimedLiveSourceIsSilent(sourceSnaps);
+	}
 	_state = foldSilenceSample(_state, {
 		playing,
 		audible: _anyDeckAudible(ctx),
 		masterOutputIntentionallySilent,
 		masterRms,
-		tMs
+		tMs,
+		source_explains_silence
 	});
 	if (_state.verdict === 'silent-while-playing') {
 		_reportSilenceDropout('silent-while-playing');

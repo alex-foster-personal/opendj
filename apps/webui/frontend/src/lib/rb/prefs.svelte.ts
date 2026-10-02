@@ -29,6 +29,11 @@ import {
 	WAVEFORM_DESIGN_DEFAULT,
 	type WaveformDesign
 } from '$lib/rb/waveform-design';
+import {
+	parseWavePalette,
+	WAVE_PALETTE_DEFAULT,
+	type WavePaletteChoice
+} from '$lib/rb/wave-palette';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
@@ -56,6 +61,12 @@ import {
 	type GigHelperPrefs
 } from './gig-helper-prefs';
 import {
+	DEV_UI_PREF_DEFAULTS,
+	makeDevUiPrefSetters,
+	mergeDevUiPrefsFromParsed,
+	type DevUiPrefs
+} from './dev-ui-prefs';
+import {
 	APP_POSTURE_PREF_DEFAULTS,
 	bindAppPosturePrefSetters,
 	mergeAppPosturePrefsFromParsed,
@@ -80,6 +91,9 @@ import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+// The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
+// TopBar reads both from this one module (quality ratchet: max fan-out).
+export { describeTwoDeckToggle } from './two-deck-toggle';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AppModeId } from './app-mode';
 export type { GigHelperPref } from './gig-helper-prefs';
@@ -114,7 +128,13 @@ export type CrossfadeCurve = 'magic' | 'bass_swap' | 'linear';
 /** Horizontal wheel target on /performance (MIXUX-08). Color routes to FILTER until built. */
 export type HorizontalWheelKnob = 'filter' | 'color';
 
-export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPrefs, AppModePrefs, LyricsPrefs {
+export interface RbUiPrefs
+	extends PerfTierPrefs,
+		AppPosturePrefs,
+		GigHelperPrefs,
+		AppModePrefs,
+		LyricsPrefs,
+		DevUiPrefs {
 	/** Width, in CSS pixels, of the resizable playlist tree (220 through 520). */
 	playlist_tree_width: number;
 	/** FR-1: hide missing-file tracks and playlists with available_count == 0. Default OFF. */
@@ -192,6 +212,10 @@ export interface RbUiPrefs extends PerfTierPrefs, AppPosturePrefs, GigHelperPref
 	show_stems: boolean;
 	/** DECKUX-20: tri-band, mono envelope, or line outline for waveforms. */
 	waveform_design: WaveformDesign;
+	/** Issue #4219: waveform band colors. 'rekordbox' (default) is CDJ 3Band:
+	 * dark blue low, amber mid, white high; 'legacy' is the pre-#4219 orange
+	 * low, blue mid, near-white high. Applied as html[data-wave-palette]. */
+	wave_palette: WavePaletteChoice;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -252,6 +276,7 @@ const DEFAULTS: RbUiPrefs = {
 	show_agent_pins: true,
 	show_stems: false,
 	waveform_design: WAVEFORM_DESIGN_DEFAULT,
+	wave_palette: WAVE_PALETTE_DEFAULT,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -269,7 +294,8 @@ const DEFAULTS: RbUiPrefs = {
 	...PERF_TIER_PREF_DEFAULTS,
 	...APP_POSTURE_PREF_DEFAULTS,
 	...GIG_HELPER_PREF_DEFAULTS,
-	...APP_MODE_PREF_DEFAULTS
+	...APP_MODE_PREF_DEFAULTS,
+	...DEV_UI_PREF_DEFAULTS
 };
 
 // ----------------------------------------------------------- _helpers
@@ -282,7 +308,20 @@ function _applyThemeDom(theme: UiTheme): void {
 	if (typeof document === 'undefined') return;
 	document.documentElement.dataset.theme = theme;
 	document.documentElement.style.colorScheme = theme;
-	validateActiveScheme(theme);
+	// Dev builds only: the contrast tables (theme-tokens + color-contrast) are a
+	// developer diagnostic that logs to the console, and in a production build
+	// they cost the library first paint about 3 KB gzip for no visible effect.
+	// The same rules gate CI statically (theme-tokens.test.mjs and the contrast
+	// tests), so a failing shipped scheme is still caught before release.
+	if (import.meta.env.DEV) validateActiveScheme(theme);
+}
+
+/** theme.css keys the legacy waveform override blocks on this attribute;
+ * the default palette needs no attribute, so it is removed rather than set. */
+function _applyWavePaletteDom(choice: WavePaletteChoice): void {
+	if (typeof document === 'undefined') return;
+	if (choice === 'legacy') document.documentElement.dataset.wavePalette = 'legacy';
+	else delete document.documentElement.dataset.wavePalette;
 }
 
 function _load(): RbUiPrefs {
@@ -440,6 +479,7 @@ function _load(): RbUiPrefs {
 		);
 	}
 	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
+	const wavePalette = parseWavePalette(parsed.wave_palette);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
 		crossfadeCurve !== undefined &&
@@ -519,6 +559,7 @@ function _load(): RbUiPrefs {
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
+		wave_palette: wavePalette ?? DEFAULTS.wave_palette,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
@@ -541,7 +582,8 @@ function _load(): RbUiPrefs {
 		...GIG_HELPER_PREF_DEFAULTS,
 		...mergeGigHelperPrefsFromParsed(parsed, STORAGE_KEY),
 		...APP_MODE_PREF_DEFAULTS,
-		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY)
+		...mergeAppModePrefsFromParsed(parsed, STORAGE_KEY),
+		...mergeDevUiPrefsFromParsed(parsed, STORAGE_KEY)
 	};
 }
 
@@ -559,6 +601,7 @@ const _syncDiskPrefs = syncDiskPrefs;
 export const uiPrefs = $state<RbUiPrefs>(_load());
 
 _applyThemeDom(uiPrefs.theme);
+_applyWavePaletteDom(uiPrefs.wave_palette);
 
 export function setHideBrokenLinks(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
@@ -688,6 +731,15 @@ export function setWaveformDesign(next: WaveformDesign): void {
 	_persist();
 }
 
+export function setWavePalette(next: WavePaletteChoice): void {
+	if (parseWavePalette(next) === undefined) {
+		throw new Error('wave_palette must be rekordbox|legacy, got undefined');
+	}
+	uiPrefs.wave_palette = next;
+	_applyWavePaletteDom(next);
+	_persist();
+}
+
 export function setCrossfadeCurve(next: CrossfadeCurve): void {
 	if (next !== 'magic') {
 		throw new Error(`crossfade curve ${next} is not implemented - see PARITY-TODO`);
@@ -742,6 +794,8 @@ export function setAppPosture(next: AppPosturePref): void {
 }
 export const { setGigHelper } = bindGigHelperPrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
 export const { setAppMode } = bindAppModePrefSetters(uiPrefs, _persist, (p) => void _syncDiskPrefs(p));
+/** "Show developer pages" - local-only, see dev-ui-prefs.ts. */
+export const { setShowDevUi } = makeDevUiPrefSetters(uiPrefs, _persist);
 
 export function setAutoSyncDestination(dest: AutoSyncDestination, next: boolean): void {
 	uiPrefs.auto_sync[dest] = next;

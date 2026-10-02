@@ -32,6 +32,8 @@
 		setAppMode,
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
+		setDeckLayoutMode,
+		describeTwoDeckToggle,
 		toggleLyricsGlobal,
 		toggleTheme,
 		uiPrefs
@@ -45,11 +47,9 @@
 	import { switchDeviceOutput } from '$lib/rb/device-output-probe-control';
 
 	const outputHealthDisplay = $derived(describeAudioOutputHealth(audioOutputHealth.snapshot));
-	const splitViewBullets = plannedExplainerBullets('split-view');
 	const listViewBullets = plannedExplainerBullets('list-view');
 	const fxBullets = plannedExplainerBullets('fx');
-	const twoDeckBullets = plannedExplainerBullets('2-deck-view');
-	const gridViewBullets = plannedExplainerBullets('grid-view');
+	const twoDeck = $derived(describeTwoDeckToggle(uiPrefs.deck_layout));
 	const fourWaveformBullets = plannedExplainerBullets('4-waveform-view');
 	const scopeView1Bullets = plannedExplainerBullets('scope-view-1');
 	const scopeView2Bullets = plannedExplainerBullets('scope-view-2');
@@ -439,32 +439,26 @@
 		<ControlExplainer title="FX panel" bullets={fxBullets} demo="fx" showDelayMs={60}>
 			<button class="tb-icon fx rb-inert" disabled aria-label="FX panel">FX</button>
 		</ControlExplainer>
-		<!-- split-view icon -->
-		<ControlExplainer title="Split view" bullets={splitViewBullets} demo="split-view" showDelayMs={60}>
-			<button class="tb-icon rb-inert" disabled aria-label="split view">
-				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-					<rect x="1" y="1" width="10" height="10" fill="none" stroke="currentColor" />
-					<line x1="6" y1="1" x2="6" y2="11" stroke="currentColor" />
-				</svg>
-			</button>
-		</ControlExplainer>
-		<!-- 2up icon -->
-		<ControlExplainer title="2-deck view" bullets={twoDeckBullets} demo="2-deck-view" showDelayMs={60}>
-			<button class="tb-icon rb-inert" disabled aria-label="2 deck view">
+		<!-- Split view and grid view are unbuilt: HIDDEN for V1 rather than shown
+		     disabled (JIK, Thu 1 Oct 2026). Their planned-explainers entries stay
+		     so the copy is ready when they are built. -->
+		<!-- 2up icon: a real toggle between the 2-deck (LESS) and 4-deck (MORE)
+		     layouts, via the same setDeckLayoutMode path Cmd/Ctrl+2 and
+		     Cmd/Ctrl+4 use (deck-layout-hotkeys.ts) - see two-deck-toggle.ts. -->
+		<ControlExplainer title="2-deck view" demo="2-deck-view" showDelayMs={60}>
+			<button
+				type="button"
+				class="tb-icon"
+				class:active={twoDeck.pressed}
+				aria-label="2 deck view"
+				aria-pressed={twoDeck.pressed}
+				aria-keyshortcuts="Meta+2 Control+2 Meta+4 Control+4"
+				title={twoDeck.title}
+				onclick={() => setDeckLayoutMode(twoDeck.next)}
+			>
 				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
 					<rect x="1" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
 					<rect x="6.6" y="2" width="4.4" height="8" fill="none" stroke="currentColor" />
-				</svg>
-			</button>
-		</ControlExplainer>
-		<!-- grid icon -->
-		<ControlExplainer title="Grid view" bullets={gridViewBullets} showDelayMs={60}>
-			<button class="tb-icon rb-inert" disabled aria-label="grid view">
-				<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-					<rect x="1" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-					<rect x="6.6" y="1" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-					<rect x="1" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
-					<rect x="6.6" y="6.6" width="4.4" height="4.4" fill="none" stroke="currentColor" />
 				</svg>
 			</button>
 		</ControlExplainer>
@@ -1065,8 +1059,10 @@
 		/* Was 1210px. The inert view-icon cluster, LINK and PAD are 233px of
 		   placeholder chrome that operate nothing; the deficits above 1211px run
 		   to 138px, so 1415px is the last measured failing width plus the same
-		   25px margin the other tiers use. */
-		.rb-topbar .icon-cluster,
+		   25px margin the other tiers use. Only the cluster's INERT members go:
+		   the 2-deck toggle is a real control since V1 (PR #4923) and is about
+		   22px, well inside the ~95px this tier frees at its tightest width. */
+		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
@@ -1462,8 +1458,8 @@
 	}
 	.midi-glyph {
 		margin-left: 3px;
-		font-size: 10px;
-		font-weight: 700;
+		vertical-align: middle;
+		flex: none;
 	}
 	.midi-label.st-amber {
 		color: var(--rb-orange);

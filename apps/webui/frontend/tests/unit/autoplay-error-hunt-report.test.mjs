@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { loadRuneModule } from './load-rune-module.mjs';
 import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const {
@@ -169,6 +170,57 @@ test('the negative-control message is a distinct signature', () => {
 	assert.ok(grouped.some((finding) => finding.signature.includes(NEGATIVE_CONTROL_NEEDLE)));
 	assert.ok(grouped.some((finding) => finding.signature.includes('negative control rejection')));
 	assert.ok(grouped.some((finding) => finding.signature === 'pageerror:some other boom'));
+});
+
+test('b91c8ba9b84b autoplay arm failure surfaces in console and hunt report', async () => {
+	const stallEntry = [
+		"export { noteAutoPlaySilentIdle, clearAutoPlayStall } from '$lib/rb/autoplay-stall.svelte';",
+		"export { readPerfEvents } from '$lib/rb/perf-event-log';"
+	].join('\n');
+	const stallMod = await loadRuneModule(stallEntry);
+	const calls = { error: [] };
+	const realError = console.error;
+	console.error = (...args) => {
+		calls.error.push(args.join(' '));
+	};
+	try {
+		stallMod.clearAutoPlayStall();
+		stallMod.noteAutoPlaySilentIdle({ source_stable_id: 'src-b91c8ba9b84b', blocked: [] });
+	} finally {
+		console.error = realError;
+		stallMod.clearAutoPlayStall();
+	}
+	const message = calls.error.find((line) => line.startsWith('[autoplay]'));
+	assert.ok(message, `expected production [autoplay] console.error, saw: ${calls.error.join(' | ')}`);
+	assert.match(message, /no-deck-playing after idle timeout/);
+	const perfRows = stallMod.readPerfEvents().filter((row) => row.kind === 'autoplay-stall');
+	assert.ok(perfRows.length >= 1, 'autoplay-stall perf row must carry the same diagnostic for engine.log');
+	assert.match(perfRows.at(-1).message, /\[autoplay\] arm failed/);
+	const ts = perfRows.at(-1).t;
+	const events = [
+		event({ ts, kind: 'console.error', message, action: 'autoplay-arm' }),
+		event({ ts, kind: 'stall', message: 'autoplay-idle', action: 'autoplay-arm' })
+	];
+	const grouped = groupBySignature(events);
+	assert.equal(grouped.length, 2);
+	for (const finding of grouped) {
+		assert.equal(finding.first_seen_at, ts);
+		assert.ok(finding.examples.message.length > 0);
+	}
+	const report = buildHuntReport({
+		minutesRequested: 2,
+		seed: 4083,
+		startedAt: ts,
+		endedAt: '2026-09-02T16:58:14.435Z',
+		unknownReason: null,
+		events,
+		allowlist: [],
+		actionsRan: ['autoplay-arm']
+	});
+	assert.equal(report.status, 'FAIL');
+	assert.equal(report.unexpected.length, 2);
+	assert.match(formatReport(report.findings), /console\.error:/);
+	assert.match(formatReport(report.findings), /stall:autoplay-idle/);
 });
 
 test('buildHuntReport FAILs on unexpected findings and PASSes when allowlisted', () => {

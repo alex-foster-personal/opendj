@@ -178,14 +178,15 @@ export function recordPlaylistTreeReadyMs(ms: number): void {
 /** Click to first visible rows on playlist or All Tracks switch (PERF-UI-05). */
 export function recordPlaylistSwitchFirstRowsMs(
 	source: 'playlist' | 'all-tracks',
-	ms: number
+	ms: number,
+	decomposition?: { fetchMs: number; paintMs: number }
 ): void {
-	recordPerfTiming(
-		'library-switch-first-rows',
-		{ first_rows_ms: Math.round(ms) },
-		null,
-		{ source }
-	);
+	const stages: Record<string, number> = { first_rows_ms: Math.round(ms) };
+	if (decomposition !== undefined) {
+		stages.fetch_ms = Math.round(decomposition.fetchMs);
+		stages.paint_ms = Math.round(decomposition.paintMs);
+	}
+	recordPerfTiming('library-switch-first-rows', stages, null, { source });
 }
 
 /** One completed whole-collection FTS query. `total` rides along because the

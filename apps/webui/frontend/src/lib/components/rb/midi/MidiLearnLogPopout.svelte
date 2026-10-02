@@ -23,7 +23,7 @@
 	<div class="log-popout" class:minimized={midiUi.logPopoutMinimized} role="log" aria-label="MIDI learn log">
 		<header class="popout-head">
 			<span class="popout-title">MIDI log</span>
-			<span class="popout-count" title="MIDI messages in the learn log">{learnLog.length}</span>
+			<span class="popout-count" title="MIDI messages in the learn log (last 50 kept)">{learnLog.length}</span>
 			<span class="popout-spacer"></span>
 			<button
 				type="button"

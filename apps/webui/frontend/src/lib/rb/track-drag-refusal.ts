@@ -34,7 +34,10 @@ export interface DraggableRow {
  * nothing. A duplicated string with a test on it is the cheaper trade here.
  */
 export function trackDragRefusal(row: DraggableRow): string | null {
-	if (row.is_streaming === true) {
+	// The server's own availability status names a streaming URI too, so a row
+	// whose is_streaming flag has not hydrated yet is still refused as streaming
+	// up front, never as a "missing on disk" broken link (issue #3934).
+	if (row.is_streaming === true || row.file_availability === 'streaming') {
 		return 'streaming track - deck load not implemented (see PARITY-TODO)';
 	}
 	// A row whose disk truth is not probed yet (file_exists null,

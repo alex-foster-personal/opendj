@@ -296,6 +296,12 @@ def test_run_folder_import_reports_progress_and_records_the_outcome(
     )
     assert outcome.tracks_written == 3
     assert outcome.tracks_without_analysis == 3
+    messages = [message for _, message in sink]
+    preparing = "detect: preparing folder import"
+    checking = "detect: checking 1 folder(s)"
+    assert preparing in messages
+    assert checking in messages
+    assert messages.index(preparing) < messages.index(checking)
     progresses = [progress for progress, _ in sink]
     assert progresses == sorted(progresses)
     assert progresses[-1] == pytest.approx(1.0)

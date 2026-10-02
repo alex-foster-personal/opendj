@@ -15,6 +15,7 @@
 	 */
 	import { onDestroy } from 'svelte';
 	import { createDeferredClickGuard } from '$lib/rb/deferred-click';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import {
 		KNOB_CFG,
 		altClickKnob,
@@ -72,7 +73,6 @@
 		onsingleclick
 	}: Props = $props();
 
-	const INERT_TITLE = 'not implemented - see PARITY-TODO';
 	const SWEEP_DEG = 270; // -135deg .. +135deg like rekordbox knobs
 	const RAINBOW_STOPS = ['#e23a32', '#e8a13a', '#d7d83a', '#35c04f'] as const;
 	const visualStyle = $derived.by(() => {
@@ -245,7 +245,7 @@
 		disabled: !live
 	}}
 	title={inert
-		? INERT_TITLE
+		? `${label}: ${plannedTitle('mixer-knob')}`
 		: `${label}${selected ? ' - selected: the scroll wheel nudges this dial from anywhere' : ''}${linked ? ' - linked: turning this dial moves its partner the other way' : ''}`}
 >
 	<svg

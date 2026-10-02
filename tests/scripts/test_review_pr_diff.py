@@ -23,6 +23,8 @@ SIZE_REFUSAL = (
     "'List pull requests files' API or locally cloning the repository instead. (HTTP 406)"
 )
 GATEWAY_FAILURE = "gh api repos/example/repo/pulls/9 failed (1): gh: Bad Gateway (HTTP 502)"
+#: A 406 that is NOT the size refusal: GitHub's answer to a media type it does not serve.
+OTHER_406 = "gh api repos/example/repo/pulls/9 failed (1): gh: Not Acceptable (HTTP 406)"
 
 
 def _git(root: Path, *args: str) -> str:
@@ -97,10 +99,14 @@ def test_a_diff_github_refuses_for_size_is_read_from_the_checkout(
     assert review_lane.anchorable_lines(diff)["kept.py"] == {1, 2}
 
 
-def test_only_the_size_refusal_falls_back_to_the_checkout(monkeypatch: pytest.MonkeyPatch, pr_repo: dict) -> None:
-    """[if] the diff API fails for any other reason [then] it raises and asks nothing else."""
-    calls = _github(monkeypatch, pr_repo, GATEWAY_FAILURE)
-    with pytest.raises(TriageError, match="HTTP 502"):
+@pytest.mark.parametrize(("failure", "status"), [(GATEWAY_FAILURE, "HTTP 502"), (OTHER_406, "HTTP 406")])
+def test_only_the_size_refusal_falls_back_to_the_checkout(
+    monkeypatch: pytest.MonkeyPatch, pr_repo: dict, failure: str, status: str
+) -> None:
+    """[if] the diff API fails for any other reason, another 406 included, [then] it raises and
+    asks nothing else."""
+    calls = _github(monkeypatch, pr_repo, failure)
+    with pytest.raises(TriageError, match=status):
         review_pr_diff.pr_diff(REPO, "9", pr_repo["root"])
     assert len(calls) == 1
 
@@ -139,6 +145,31 @@ def test_a_bare_carriage_return_in_a_changed_line_is_not_a_line_break(
     _github(monkeypatch, pr_repo, SIZE_REFUSAL)
     diff = review_pr_diff.pr_diff(REPO, "9", root)
     assert "+workers = 8\ra = 2\n" in diff
+
+
+def _head_with_changed_bytes(pr_repo: dict, content: bytes) -> None:
+    root = pr_repo["root"]
+    _git(root, "checkout", "-q", "feature")
+    (root / "kept.py").write_bytes(content)
+    _git(root, "commit", "-q", "-am", "bytes")
+    pr_repo["head"] = _git(root, "rev-parse", "HEAD")
+
+
+def test_changed_bytes_that_are_not_utf8_are_a_measurement_failure(
+    monkeypatch: pytest.MonkeyPatch, pr_repo: dict
+) -> None:
+    """[if] a changed line is not UTF-8 [then] TriageError, never a diff with the bytes replaced."""
+    _head_with_changed_bytes(pr_repo, b"x = 1\nname = 'caf\xe9'\n")
+    _github(monkeypatch, pr_repo, SIZE_REFUSAL)
+    with pytest.raises(TriageError, match="not valid UTF-8"):
+        review_pr_diff.pr_diff(REPO, "9", pr_repo["root"])
+
+
+def test_changed_text_outside_ascii_is_kept_exactly(monkeypatch: pytest.MonkeyPatch, pr_repo: dict) -> None:
+    """CONTROL: strict decoding must not refuse, or alter, valid UTF-8."""
+    _head_with_changed_bytes(pr_repo, "x = 1\nname = 'café ♫'\n".encode())
+    _github(monkeypatch, pr_repo, SIZE_REFUSAL)
+    assert "+name = 'café ♫'\n" in review_pr_diff.pr_diff(REPO, "9", pr_repo["root"])
 
 
 def test_review_lane_reads_its_diff_through_this_source(

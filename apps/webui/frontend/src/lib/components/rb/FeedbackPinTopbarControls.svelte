@@ -32,7 +32,7 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 12px;
-		color: var(--text-muted, #94a3b8);
+		color: var(--muted);
 		cursor: pointer;
 		white-space: nowrap;
 	}

@@ -38,6 +38,7 @@ from typing import Any
 
 from apps.shared import audio_files, fs_access
 from apps.shared.scan_mass_missing import MassMissingError, guard_roots, path_is_under_root
+from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state.ingest.folder import FolderIngestReport, _write_tracks, collect_audio
 from apps.shared.state.ingest.path_collisions import PathCollisionError, assert_no_path_collisions
@@ -182,16 +183,17 @@ def _apply_tombstones_and_writes(
     tombstones: list[str],
     write_candidates: list[audio_files.AudioFile],
 ) -> None:
-    """The one transactional step: tombstone, then write, in a SAVEPOINT.
+    """The one transactional step: tombstone, then write, in one write unit.
 
-    A SAVEPOINT rather than a bare transaction because ``writer`` may already
-    be inside an outer one (``writer_tracks.py``'s own nested-``_tx()``
-    contract).
+    :func:`apps.shared.state.db.write_unit` rather than a bare transaction
+    because ``writer`` may already be inside an outer one
+    (``writer_tracks.py``'s own nested-``_tx()`` contract); when it is not,
+    the unit takes the writer lock up front (STATE-15), since the engine's
+    other writers commit concurrently.
     """
     conn = writer.raw_conn
     savepoint = "folder_rescan_reconcile"
-    conn.execute(f"SAVEPOINT {savepoint}")
-    try:
+    with state_db.write_unit(conn, savepoint):
         for stable_id in tombstones:
             writer.remove_from_library(stable_id)
         report.tracks_removed = len(tombstones)
@@ -207,11 +209,6 @@ def _apply_tombstones_and_writes(
                 "normalization or a stale row outside the configured roots)"
             )
             report.warning = f"{report.warning}; {noop_note}" if report.warning else noop_note
-        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-    except Exception:
-        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
 
 
 def reconcile_folders(

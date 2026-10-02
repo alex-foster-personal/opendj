@@ -33,23 +33,32 @@
  *     since run [then] the gate no longer asks for setup [else ⛔️] broken
  *     [if] the fresh reading still says 'fail' [then] finish() refuses with
  *     the engine's detail on `error` [else ⛔️] broken
- *   ✔︎ 🎯 refreshStatusAfterImport(job) re-reads setup status once this
- *     wizard's own import job settles, so the Done step reads the import that
- *     just ran, not the status loaded when the overlay opened.
+ *   ✔︎ 🎯 refreshStatusAfterImport(jobId) re-reads setup status once per job
+ *     id when this wizard's own import settles (the overlay calls it only for
+ *     a terminal row), so the Done step reads the import that just ran, not
+ *     the status loaded when the overlay opened.
  *     [if] the job succeeded and Done still says no import was recorded [then ⛔️] broken
- *     [if] a running job, or another wizard's job, triggers a status read [then ⛔️] broken
+ *     [if] another wizard's job id triggers a status read [then ⛔️] broken
+ *   ✔︎ 🎯 load() and redetect() are bounded by `readTimeoutMs` (default
+ *     SETUP_READ_TIMEOUT_MS): a stalled request is aborted and ends 'failed'
+ *     with a plain sentence, never a scanning state with no end.
+ *     [if] a read that never answers leaves detectState 'scanning' [then ⛔️] broken
+ *   ✔︎ 🎯 ensureLoaded() re-runs load() only for the boot race (the daemon was
+ *     not identified yet), never after the engine answered with a failure.
+ *     [if] a failed status read or a failed Look again is retried by
+ *     ensureLoaded() [then ⛔️] broken: the retry loops (Get started stays
+ *     disabled) or repaints the old answer over the failure (Mac check of
+ *     2f449f863, Fri 2 Oct 2026)
  */
 
 import { capabilities } from '../api/capabilities.svelte';
-import { LIBRARY_ATTACHED_CHECK_ID, needsSetupForEmptyLibrary } from '../preflight/fresh-install';
-import { checkPreflight, preflightGate } from '../preflight/preflight.svelte';
+import { checkPreflight } from '../preflight/preflight.svelte';
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
 	finalSetupRefusal,
 	getFolderCandidates,
 	getSetupStatus,
-	isFatalBlocker,
 	normalizeSetupFolderPath,
 	scanFolder,
 	setDismissed,
@@ -61,184 +70,29 @@ import {
 	type SetupStatus,
 } from './setup-api';
 import {
-	folderAdvanceRefusal,
 	importableFolderPathsFromRows,
 	newFolderRow,
 	type FolderRow,
 } from './folder-rows';
+import { agentApiError, humanApiError, humanSetupReadError } from './present';
+import {
+	SETUP_READ_TIMEOUT_MS,
+	SetupReadTimeout,
+	bounded,
+	errorMessage,
+	finishBlocker
+} from './setup-read';
+import {
+	backRefusal,
+	nextStepFor,
+	previousStepFor,
+	type ImportSource,
+	type ImportSourceSelection,
+	type WizardStep,
+} from './wizard-rules';
 
-export const WIZARD_STEPS = [
-	'welcome',
-	'detect',
-	'confirm',
-	'progress',
-	'stems',
-	'done'
-] as const;
-
-export type WizardStep = (typeof WIZARD_STEPS)[number];
-
-export const STEP_TITLES: Record<WizardStep, string> = {
-	welcome: 'Welcome',
-	detect: 'Find your music',
-	confirm: 'Confirm the import',
-	progress: 'Importing',
-	stems: 'Stems analysis',
-	done: 'Done'
-};
-
-/** Which library the wizard is importing FROM. */
-export type ImportSource = 'rekordbox' | 'folder';
-
-/** Unselected until the operator picks a branch. STANDALONE-08: detection alone
- * must not imply rekordbox. */
-export type ImportSourceSelection = ImportSource | null;
-
-/** The job kind the import runs as. Mirrors SETUP_IMPORT_KIND. */
-export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
-
-const TERMINAL = ['succeeded', 'failed', 'cancelled', 'unknown'];
-
-// ------------------------------------------------------------- pure rules
-
-export function stepIndex(step: WizardStep): number {
-	return WIZARD_STEPS.indexOf(step);
-}
-
-export function nextStep(step: WizardStep): WizardStep {
-	const index = stepIndex(step);
-	return WIZARD_STEPS[Math.min(index + 1, WIZARD_STEPS.length - 1)];
-}
-
-export function previousStep(step: WizardStep): WizardStep {
-	const index = stepIndex(step);
-	return WIZARD_STEPS[Math.max(index - 1, 0)];
-}
-
-/**
- * The steps THIS branch will actually visit.
- *
- * 'confirm' confirms a rekordbox collection, so the folder branch never goes
- * near it: beginFolderImport() jumps straight from 'detect' to 'progress'.
- * That asymmetry was invisible while nothing could move backwards. The moment
- * Back exists, walking back from 'progress' on a folder import would land on a
- * rekordbox confirmation screen for a library the user is not importing, so
- * the route has to know which branch it is on.
- */
-export function visibleSteps(source: ImportSourceSelection): WizardStep[] {
-	if (source === 'folder' || source === null) {
-		return WIZARD_STEPS.filter((step) => step !== 'confirm');
-	}
-	return [...WIZARD_STEPS];
-}
-
-/** 1-based position of `step` in this branch's route, for "step 2 of 5". */
-export function stepPosition(step: WizardStep, source: ImportSourceSelection): number {
-	return visibleSteps(source).indexOf(step) + 1;
-}
-
-/** How many steps this branch has in total. */
-export function stepCount(source: ImportSourceSelection): number {
-	return visibleSteps(source).length;
-}
-
-export function nextStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
-	const route = visibleSteps(source);
-	const index = route.indexOf(step);
-	if (index === -1) return step;
-	return route[Math.min(index + 1, route.length - 1)];
-}
-
-export function previousStepFor(step: WizardStep, source: ImportSourceSelection): WizardStep {
-	const route = visibleSteps(source);
-	const index = route.indexOf(step);
-	if (index === -1) return step;
-	return route[Math.max(index - 1, 0)];
-}
-
-/**
- * Why Back is refused on this step, or null when it is allowed.
- *
- * Deliberately symmetric with advanceRefusal: one function both gates the
- * button and supplies its tooltip, so a disabled Back cannot disagree with
- * the reason shown for it.
- *
- * Only two things refuse. The first step has nothing behind it. And a LIVE
- * import cannot be walked away from: the job keeps running whatever the
- * wizard shows, so a user who stepped back to 'confirm' and pressed Start
- * again would be queueing a second import on top of the first. Once the job
- * reaches a terminal state that stops being true and Back opens up again,
- * which is what makes a failed import re-runnable instead of a dead end.
- */
-export function backRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
-	if (step === 'welcome') return 'this is the first step';
-	if (step === 'progress' && ctx.job !== null && !TERMINAL.includes(ctx.job.status)) {
-		return `the import is running (${ctx.job.status}); it cannot be un-started by going back`;
-	}
-	return null;
-}
-
-/** Fatal blockers only. A missing share dir is reported, never a stopper. */
-export function fatalBlockers(detection: RekordboxDetection | null): string[] {
-	if (detection === null) return [];
-	return (detection.blockers ?? []).filter(isFatalBlocker);
-}
-
-export interface AdvanceContext {
-	source: ImportSourceSelection;
-	detection: RekordboxDetection | null;
-	folderRows: FolderRow[];
-	job: Job | null;
-}
-
-/**
- * Why Next is refused on this step, or null when it is allowed.
- *
- * The progress step refuses while the job is still live on purpose: a wizard
- * that lets you walk past a running import is a wizard whose "done" screen is
- * a guess.
- *
- * On the detect step the refusal depends on which source is selected, and a
- * fatal rekordbox blocker must NOT block someone who has switched to a
- * folder -- that is the whole point of the folder branch.
- */
-export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
-	// STANDALONE-08: [if] RB install detected [then] import only after explicit act, [else stop].
-	if (step === 'detect' && ctx.source === null) {
-		return 'choose an import source first';
-	}
-	if (step === 'detect' && ctx.source === 'folder') return folderAdvanceRefusal(ctx.folderRows);
-	if (step === 'detect') {
-		if (ctx.detection === null) return 'detection has not answered yet';
-		const fatal = fatalBlockers(ctx.detection);
-		if (fatal.length > 0) return `cannot import: ${fatal.join(', ')}`;
-		return null;
-	}
-	if (step === 'progress') {
-		if (ctx.job === null) return 'no import has been started yet';
-		if (!TERMINAL.includes(ctx.job.status)) return `import is ${ctx.job.status}`;
-		if (ctx.job.status !== 'succeeded') {
-			return `import ${ctx.job.status}; re-run it before finishing`;
-		}
-		return null;
-	}
-	if (step === 'done') return 'this is the last step';
-	return null;
-}
-
-/** Percent for a progress bar, clamped. Mirrors progressPct in jobs-store, but
- * this module must not import a UI helper from another surface just for one
- * arithmetic line. */
-export function importPct(job: Job | null): number {
-	if (job === null) return 0;
-	return Math.max(0, Math.min(100, Math.round(job.progress * 100)));
-}
-
-function _message(exc: unknown): string {
-	return exc instanceof Error ? exc.message : String(exc);
-}
-
-// ------------------------------------------------------------------ store
+export * from './wizard-rules';
+export { SETUP_READ_TIMEOUT_MS } from './setup-read';
 
 class SetupWizard {
 	step = $state<WizardStep>('welcome');
@@ -253,6 +107,8 @@ class SetupWizard {
 	jobId = $state<string | null>(null);
 	busy = $state(false);
 	error = $state<string | null>(null);
+	/** Raw diagnostic for agents when `error` was sanitized for display. */
+	errorDiagnostic = $state<string | null>(null);
 	/**
 	 * Whether detection has ever answered, tracked separately from the answer
 	 * itself.
@@ -266,13 +122,33 @@ class SetupWizard {
 	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
 	folderCandidates = $state<FolderCandidates['candidates']>([]);
 	folderCandidatesState = $state<'idle' | 'loading' | 'answered' | 'failed'>('idle');
-	/** The job whose settled outcome `status` already reflects. Plain field,
-	 * not $state: nothing renders it, it only stops a re-read per row update. */
-	private _statusReadForJob: string | null = null;
+	/** Job id for which setup status was re-read after success. */
+	statusRefreshJobId = $state<string | null>(null);
+	/** Last refreshStatusAfterImport failure for the current job, if any. */
+	statusRefreshError = $state<string | null>(null);
+	/** Deadline for load() and redetect(). A field so tests can shorten it. */
+	readTimeoutMs = SETUP_READ_TIMEOUT_MS;
+	/** True only when the last load() was refused because the daemon was not
+	 * identified yet: the one failure ensureLoaded() may retry on its own. */
+	private awaitingEngine = false;
 
 	goTo(step: WizardStep): void {
 		this.step = step;
 		this.error = null;
+		this.errorDiagnostic = null;
+	}
+
+	private _fail(message: string): void {
+		this.errorDiagnostic = agentApiError(message);
+		this.error = humanApiError(message);
+	}
+
+	/** A failed status or detection read: a fixed sentence for the operator,
+	 * the raw message (plain-string details and paths included) for agents. */
+	private _failRead(exc: unknown): void {
+		this.errorDiagnostic = agentApiError(errorMessage(exc));
+		this.error = humanSetupReadError(exc instanceof SetupReadTimeout);
+		this.detectState = 'failed';
 	}
 
 	next(): void {
@@ -321,55 +197,29 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			// FAILED, not "still looking". The caller re-runs load() once the
 			// capability probe finally identifies an engine, so a daemon that
 			// was merely slow to boot heals itself instead of stranding the
 			// step on a scanning state nothing will ever clear.
 			this.detectState = 'failed';
+			this.awaitingEngine = true;
 			return;
 		}
+		this.awaitingEngine = false;
 		this.busy = true;
 		try {
-			// Sequential, not Promise.all: two requests whose second one is only
-			// meaningful if the first succeeded, and a combined rejection would
-			// lose which of them failed.
-			this.status = await getSetupStatus();
+			this.status = await bounded('GET /api/v1/setup/status', this.readTimeoutMs, (signal) =>
+				getSetupStatus(signal)
+			);
 			this.detection = this.status.rekordbox;
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.detectState = 'answered';
 		} catch (exc) {
-			this.error = _message(exc);
-			this.detectState = 'failed';
+			this._failRead(exc);
 		} finally {
 			this.busy = false;
-		}
-	}
-
-	/**
-	 * Re-read setup status once THIS wizard's import job has settled.
-	 *
-	 * `status` is loaded when the overlay opens, which is before any import,
-	 * so its `last_import` describes the data directory as it was then. The
-	 * Done step reads that field, and after a successful import it said "No
-	 * import was recorded for this data directory" (demon-llama preview, Thu
-	 * 1 Oct 2026). The overlay passes the live job row in on every update;
-	 * this reads status once per settled job, whatever the outcome, because a
-	 * failed import changes what the engine has recorded too. Detection is
-	 * left alone: it describes rekordbox, which the import does not change.
-	 */
-	async refreshStatusAfterImport(job: Job | null): Promise<void> {
-		if (job === null || job.id !== this.jobId) return;
-		if (!TERMINAL.includes(job.status)) return;
-		if (this._statusReadForJob === job.id) return;
-		this._statusReadForJob = job.id;
-		try {
-			this.status = await getSetupStatus();
-			this.error = null;
-		} catch (exc) {
-			// Not marked as read, so the next row update can try again.
-			this._statusReadForJob = null;
-			this.error = _message(exc);
 		}
 	}
 
@@ -383,19 +233,25 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			this.detectState = 'failed';
 			return;
 		}
 		this.busy = true;
 		this.detectState = 'scanning';
 		try {
-			this.detection = await detectRekordbox();
+			this.detection = await bounded(
+				'GET /api/v1/setup/detect/rekordbox',
+				this.readTimeoutMs,
+				(signal) => detectRekordbox(signal)
+			);
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.detectState = 'answered';
 		} catch (exc) {
-			this.error = _message(exc);
-			this.detectState = 'failed';
+			// The earlier answer stays on `detection`; 'failed' beside it is
+			// what the detect step renders as "looking again did not finish".
+			this._failRead(exc);
 		} finally {
 			this.busy = false;
 		}
@@ -411,9 +267,14 @@ class SetupWizard {
 	 * in-flight sentence permanently, on a machine where rekordbox was right
 	 * there. Callers drive this from an effect on `capabilities.flavor`, so
 	 * the retry is demand-driven off a state change and never a poll.
+	 *
+	 * ONLY that race is retried. A read that failed or timed out stays
+	 * 'failed' until Try again or Look again: retrying it from the effect
+	 * looped load() and repainted a failed Look again with the old answer.
 	 */
 	async ensureLoaded(): Promise<void> {
-		if (this.detectState === 'answered' || this.detectState === 'scanning') return;
+		if (this.detectState !== 'idle' && !this.awaitingEngine) return;
+		if (this.detectState === 'scanning') return;
 		if (finalSetupRefusal() !== null) return;
 		await this.load();
 	}
@@ -423,6 +284,7 @@ class SetupWizard {
 	useSource(source: ImportSource): void {
 		this.source = source;
 		this.error = null;
+		this.errorDiagnostic = null;
 		if (source === 'rekordbox') this.resetFolderRows();
 		if (source === 'folder') {
 			this.resetFolderRows();
@@ -458,7 +320,7 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			this.folderCandidatesState = 'failed';
 			return;
 		}
@@ -469,7 +331,7 @@ class SetupWizard {
 			this.error = null;
 			this.folderCandidatesState = 'answered';
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(errorMessage(exc));
 			this.folderCandidatesState = 'failed';
 		}
 	}
@@ -478,14 +340,14 @@ class SetupWizard {
 	async checkFolderRow(id: string): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		const row = this.folderRows.find((entry) => entry.id === id);
 		if (row === undefined) return;
 		const trimmed = row.path.trim();
 		if (trimmed === '') {
-			this.error = 'type a folder path first';
+			this._fail('type a folder path first');
 			return;
 		}
 		const normalized = normalizeSetupFolderPath(trimmed);
@@ -496,8 +358,9 @@ class SetupWizard {
 				entry.id === id ? { ...entry, path: normalized, scan } : entry
 			);
 			this.error = null;
+			this.errorDiagnostic = null;
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -518,22 +381,24 @@ class SetupWizard {
 	async beginFolderImport(): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		const folders = this.importableFolderPaths();
 		if (folders.length === 0) {
-			this.error = 'check at least one folder with audio files in it';
+			this._fail('check at least one folder with audio files in it');
 			return;
 		}
 		this.busy = true;
 		try {
 			const job = await startFolderImport({ folders });
 			this.jobId = job.id;
+			this._clearStatusRefresh();
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.goTo('progress');
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -547,12 +412,12 @@ class SetupWizard {
 	 */
 	async beginImport(options: { refreshDecrypt?: boolean } = {}): Promise<void> {
 		if (this.source !== 'rekordbox') {
-			this.error = 'choose rekordbox import before starting';
+			this._fail('choose rekordbox import before starting');
 			return;
 		}
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		this.busy = true;
@@ -561,10 +426,12 @@ class SetupWizard {
 				refresh_decrypt: options.refreshDecrypt === true
 			});
 			this.jobId = job.id;
+			this._clearStatusRefresh();
 			this.error = null;
+			this.errorDiagnostic = null;
 			this.goTo('progress');
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -575,7 +442,7 @@ class SetupWizard {
 	async skip(): Promise<void> {
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		this.busy = true;
@@ -585,8 +452,9 @@ class SetupWizard {
 			// without reopen() must still find a neutral wizard (Codex P2, #3561).
 			this.source = null;
 			this.error = null;
+			this.errorDiagnostic = null;
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -622,17 +490,10 @@ class SetupWizard {
 		} finally {
 			this.busy = false;
 		}
-		if (preflightGate.error !== null) {
-			this.error =
-				'setup was saved, but the startup checks could not be re-read ' +
-				`(GET /api/v1/preflight), so setup cannot tell whether to close: ${preflightGate.error}`;
-			return false;
-		}
-		if (needsSetupForEmptyLibrary(preflightGate.checks, false)) {
-			const row = preflightGate.checks.find((check) => check.id === LIBRARY_ATTACHED_CHECK_ID);
-			this.error =
-				'setup was saved, but the engine still reports no library attached ' +
-				`(${row?.detail ?? 'no detail given'}), so closing would only reopen setup`;
+		const blocker = finishBlocker();
+		if (blocker !== null) {
+			this.errorDiagnostic = blocker.diagnostic;
+			this.error = blocker.human;
 			return false;
 		}
 		return true;
@@ -646,7 +507,7 @@ class SetupWizard {
 		await capabilities.probe();
 		const refusal = setupRefusal();
 		if (refusal !== null) {
-			this.error = refusal;
+			this._fail(refusal);
 			return;
 		}
 		this.busy = true;
@@ -655,14 +516,62 @@ class SetupWizard {
 			this.step = 'welcome';
 			this.source = null;
 			this.error = null;
+			this.errorDiagnostic = null;
 			// Re-arming is a fresh run: whatever detection said last time is
 			// history, and ensureLoaded() must ask again rather than reuse it.
 			this.detectState = 'idle';
+			this._clearStatusRefresh();
 		} catch (exc) {
-			this.error = _message(exc);
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/**
+	 * Re-read setup status once THIS wizard's import job has settled, so Done
+	 * shows the daemon's last_import, not the snapshot from when the overlay
+	 * opened (issue #3422; the demon-llama preview, Thu 1 Oct 2026, said "No
+	 * import was recorded for this data directory" after a good import).
+	 *
+	 * Once per job id: the overlay calls this on every update of a settled
+	 * row, and a second call for the same id does not fetch again. A job id
+	 * other than the one this wizard started is ignored, so someone else's
+	 * import never rewrites this wizard's status. Until the read lands,
+	 * advanceRefusal() holds Continue on the progress step; a failed read is
+	 * kept on statusRefreshError (raw, for agents) and `error` (operator-safe).
+	 */
+	async refreshStatusAfterImport(jobId: string): Promise<void> {
+		if (this.statusRefreshJobId === jobId) return;
+		if (this.jobId !== null && jobId !== this.jobId) return;
+		const refusal = setupRefusal();
+		if (refusal !== null) {
+			this._fail(refusal);
+			this.statusRefreshError = refusal;
+			return;
+		}
+		this.busy = true;
+		this.statusRefreshError = null;
+		try {
+			const next = await getSetupStatus();
+			this.status = next;
+			this.detection = next.rekordbox;
+			this.error = null;
+			this.errorDiagnostic = null;
+			this.statusRefreshJobId = jobId;
+			this.statusRefreshError = null;
+		} catch (exc) {
+			const message = errorMessage(exc);
+			this._fail(message);
+			this.statusRefreshError = message;
+		} finally {
+			this.busy = false;
+		}
+	}
+
+	_clearStatusRefresh(): void {
+		this.statusRefreshJobId = null;
+		this.statusRefreshError = null;
 	}
 
 	/** Drop everything, for tests. */
@@ -675,10 +584,13 @@ class SetupWizard {
 		this.jobId = null;
 		this.busy = false;
 		this.error = null;
+		this.errorDiagnostic = null;
 		this.detectState = 'idle';
+		this.awaitingEngine = false;
+		this.readTimeoutMs = SETUP_READ_TIMEOUT_MS;
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
-		this._statusReadForJob = null;
+		this._clearStatusRefresh();
 	}
 }
 

@@ -11,14 +11,16 @@
 // `pnpm test:unit`, which CI already invokes.
 //
 // Regression lines:
-// - if the library limit stops being exactly 259072 then the figure moved
+// - if the library limit stops being exactly 260096 then the figure moved
 //   without a reviewed note: 256000 was the inherited figure this repair
 //   explicitly did not raise; +1 KiB was added Mon 21 Sep 2026 (PR #3737) for
 //   the live-transport probe on the client error path, with main already
 //   within 80 bytes of the limit, and +1 KiB Wed 23 Sep 2026 (PR #3681) for
 //   the multiple-folder rows in the statically imported SetupOverlay, with
 //   main at 277 bytes of headroom, and +1 KiB Thu 24 Sep 2026 (PR #3865) for
-//   the deck's stem hydrating state, with main already 319 bytes over. Any further move is a deliberate act with
+//   the deck's stem hydrating state, with main already 319 bytes over, and
+//   +1 KiB Fri 2 Oct 2026 (PR #4897) for the first-run wizard's plain-language
+//   copy, with main + that PR 142 bytes over. Any further move is a deliberate act with
 //   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
@@ -144,6 +146,7 @@ test('the library limit is exactly 261120: the inherited 256000 plus five review
   assert.match(source, /RAISED Wed 23 Sep 2026 \(\+1 KiB, PR #3681/, 'the raise must carry its note');
   assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
   assert.match(source, /RAISED Sat 26 Sep 2026 \(\+2 KiB, PR #3837/, 'the raise must carry its note');
+  assert.match(source, /RAISED Fri 2 Oct 2026 \(\+1 KiB, PR #4897/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

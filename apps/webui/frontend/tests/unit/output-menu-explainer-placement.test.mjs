@@ -1,5 +1,5 @@
 /**
- * The audio I/O device menu stacks three pickers vertically. Above/below
+ * The audio I/O device menu stacks its pickers vertically. Above/below
  * explainers covered the sibling pickers, so these open beside the menu.
  */
 import assert from 'node:assert/strict';
@@ -23,6 +23,8 @@ before(async () => {
 test('every device picker in the output menu opens its explainer to the right', () => {
 	const menu = cluster.slice(cluster.indexOf('{#snippet outputMenu()}'), cluster.indexOf('{/snippet}', cluster.indexOf('{#snippet outputMenu()}')));
 	const tags = [...menu.matchAll(/<ControlExplainer[^>]*>/g)].map((m) => m[0]);
+	// Rescan lives in the persistent I/O panel's Devices heading (IOPIN-04),
+	// so the click menu keeps the three device pickers plus MIDI.
 	assert.equal(tags.length, 4, 'expected MASTER / MAIN, HEADPHONE CUE, AUDIO IN and MIDI');
 	for (const tag of tags) assert.match(tag, /placement="right"/);
 });
@@ -55,7 +57,9 @@ test('both MIDI entries open the drawer and close the I/O view, and neither open
 });
 
 test('the I/O button still opens and closes the I/O view itself (control)', () => {
-	assert.match(cluster, /class="hp-btn hp-io-trigger"[\s\S]*?onclick=\{openIo\}/);
+	// Main's SET OUTPUTS trigger records the click, then opens the I/O view.
+	assert.match(cluster, /class="hp-btn hp-io-trigger[^"]*"[\s\S]*?onclick=\{handleSetOutputs\}/);
+	assert.match(cluster, /function handleSetOutputs\(\): void \{[^}]*openIo\(\);/);
 	assert.match(cluster, /\{#if ioSurface\.open\}/);
 	assert.match(cluster, /aria-label="Close audio I\/O settings" onclick=\{closeIo\}/);
 	assert.match(cluster, /function closeIo\(\): void \{[^}]*closeIoView\(\);/);

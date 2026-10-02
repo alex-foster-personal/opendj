@@ -434,10 +434,14 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped(
 
 
 @pytest.mark.requirement("PARITY-04")
-def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_art(
+def test_track_detail_artwork_available_agrees_with_listing_unmapped_without_picture(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
-    """[if] an unmapped file embeds no art [then] list and detail both say False, [else stop]."""
+    """[if] a local file has no picture [then] list and detail agree on False, [else stop].
+
+    The reader is tinytag, a core dependency (issue #4717), so this is a checked
+    False everywhere now, never the old "could not check" None.
+    """
 
     wav_path = tmp_path / "local.wav"
     _write_wav(wav_path)

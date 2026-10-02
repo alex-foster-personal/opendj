@@ -100,6 +100,11 @@
 		menuY: number
 	): ContextMenuItem[] {
 		const addItem = addToPlaylistMenuItem(targetIds, onaddtoplaylist);
+		// Unbuilt rows with no handler and no feature behind them (a bare "Edit"
+		// label, Stems - open, Mark offline, Cloud-only) are HIDDEN for V1 rather
+		// than shown inert (JIK, Thu 1 Oct 2026). Rows whose `run` is undefined
+		// only in context (Remove from playlist outside a playlist, Stems/Lyrics
+		// when the host passes no handler) stay, since the feature is real.
 		return menuItemsForTrack(row.stable_id, [
 			...DECKS.map((deck) => ({
 				id: `load-${deck}`,
@@ -112,7 +117,6 @@
 				...addItem,
 				title: addItem.run ? ADD_TO_PLAYLIST_TITLE : ADD_TO_PLAYLIST_EMPTY_TITLE
 			},
-			{ id: 'edit', label: 'Edit' },
 			...trackEditMenuItems(targetIds.length, onopeneditmodal),
 			relocateMenuItem(() => onrelocate(row, menuX, menuY)),
 			{
@@ -139,14 +143,11 @@
 				label: 'Stems: do next',
 				run: onstemsdonext ? () => onstemsdonext(targetIds) : undefined
 			},
-			{ id: 'stems-open', label: 'Stems - open' },
 			{
 				id: 'lyrics',
 				label: 'Lyrics: do next',
 				run: onlyricsdonext ? () => onlyricsdonext(targetIds) : undefined
 			},
-			{ id: 'offline', label: 'Mark offline' },
-			{ id: 'cloud-only', label: 'Cloud-only' },
 			{
 				id: 'remove-playlist',
 				label: 'Remove from playlist',

@@ -93,7 +93,8 @@ test('JogDial reuses the shared ControlExplainer, offers 1/4/8 real options plus
 
 	// The phase option: explicitly plumbed but NOT implemented.
 	assert.match(JOG_DIAL, /class="q-grid-opt rb-inert"/);
-	assert.match(JOG_DIAL, /title="not implemented, will match quantize to the detected phase length"/);
+	// Pin 552a810ba13b: its tooltip says what phrase quantize IS, from the catalog.
+	assert.match(JOG_DIAL, /title=\{plannedTitle\('quantize-grid-phase'\)\}/);
 	assert.match(JOG_DIAL, /data-testid=\{`quantize-grid-phase-deck-\$\{deck\.deck_id\}`\}/);
 	// It must be disabled and call nothing - never onQuantizeGrid('phase' as any).
 	assert.doesNotMatch(JOG_DIAL, /onQuantizeGrid\('phase'\)/);

@@ -258,7 +258,6 @@ function showUnreachable(result, attempts) {
 	byId('fatal-view').hidden = true;
 	byId('unreachable-view').hidden = false;
 	byId('probe-url').textContent = result.url;
-	byId('probe-url-echo').textContent = result.url;
 	byId('probe-detail').textContent = result.detail;
 	byId('attempts').textContent = String(attempts);
 	if (typeof globalThis.__OPENDJ_enqueueShellClientError === 'function') {
@@ -284,16 +283,21 @@ export function startBootstrap({
 	let stopped = false;
 	let timer = null;
 
-	byId('checking-origin').textContent = origin;
 	byId('engine-command').textContent = engineCommand(origin);
 
 	const countdown = byId('countdown');
+	const checkingAttempts = byId('checking-attempts');
+	const checkingAttemptCount = byId('checking-attempt-count');
 
 	async function attempt() {
 		if (stopped) {
 			return;
 		}
 		attempts += 1;
+		if (checkingAttempts !== null) {
+			checkingAttempts.hidden = false;
+			checkingAttemptCount.textContent = String(attempts);
+		}
 		const result = await probeEngine(origin, fetchImpl);
 		if (stopped) {
 			return;

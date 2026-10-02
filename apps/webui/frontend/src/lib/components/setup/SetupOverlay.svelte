@@ -26,6 +26,7 @@
 	 * endpoints in $lib/setup/setup-api; the only browser-only state is
 	 * whether this tab is drawing the panel, the chip, or neither.
 	 */
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import AssistantSidebar from '$lib/components/assistant/AssistantSidebar.svelte';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
@@ -47,8 +48,11 @@
 		ESCAPE_ACTIONS,
 		SCANNING_SENTENCE,
 		blockerTone,
+		detectNotice,
 		detectPhase,
-		probeRows
+		escapeAgentEndpoint,
+		probeRows,
+		shortenPath
 	} from '$lib/setup/detect-view';
 	import {
 		clearSetupIncomplete,
@@ -64,16 +68,32 @@
 		FOLDER_STAGE_LABELS,
 		STAGE_LABELS,
 		accessCaveat,
+		agentAccessDetail,
+		blockerAgentDetail,
 		blockerSentence,
 		finalSetupRefusal,
+		finalSetupRefusalAgent,
 		folderVerdict,
 		setupProbePending
 	} from '$lib/setup/setup-api';
 	import {
+		AGENT_DETAILS_LABEL,
+		humanDataDirLabel,
+		humanImportFailure,
+		humanImportJobMessage,
+		humanImportJobStatus,
+		humanImportSourceLabel,
+		humanSetupProbePending,
+		humanStageLabel,
+		humanStemsFailed
+	} from '$lib/setup/present';
+	import {
 		STEP_TITLES,
+		TERMINAL,
 		advanceRefusal,
 		backRefusal,
 		fatalBlockers,
+		humanRefusal,
 		importPct,
 		setupWizard,
 		stepCount,
@@ -117,7 +137,22 @@
 	const fatal = $derived(fatalBlockers(detection));
 	const source = $derived(setupWizard.source);
 	const folderRows = $derived(setupWizard.folderRows);
-	const nextRefusal = $derived(advanceRefusal(step, { source, detection, folderRows, job }));
+	/** Everything the Next rules read. The status-refresh fields hold Continue
+	 * on the progress step until Done can show the import that just ran
+	 * (#3422). */
+	const advanceCtx = $derived({
+		source,
+		detection,
+		folderRows,
+		job,
+		statusRefreshJobId: setupWizard.statusRefreshJobId,
+		busy: setupWizard.busy,
+		statusRefreshError: setupWizard.statusRefreshError
+	});
+	/** Raw refusal: gates the button and rides on data-agent-refusal. */
+	const nextRefusalAgent = $derived(advanceRefusal(step, advanceCtx));
+	/** Operator-safe sentence for the same refusal, the only one rendered. */
+	const nextRefusal = $derived(humanRefusal(step, advanceCtx));
 	/** Why Back is refused here, or null. Same function that gates the button,
 	 * so the tooltip and the disabled state can never disagree. */
 	const backWhy = $derived(backRefusal(step, { source, detection, folderRows, job }));
@@ -132,7 +167,9 @@
 	const pct = $derived(importPct(job));
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
-	const phase = $derived(detectPhase(detection, detectState === 'scanning'));
+	const phase = $derived(detectPhase(detection, detectState));
+	/** "Did not finish", with or without an earlier answer below it. */
+	const notice = $derived(detectNotice(detection, detectState));
 	const rows = $derived(detection === null ? [] : probeRows(detection));
 	/** Live while the panel is minimised, so the chip is never a lie. */
 	const importRunning = $derived(
@@ -242,18 +279,13 @@
 	 * nothing re-ran the load, so the step sat on a grey in-flight sentence
 	 * forever. This is a state change, not a poll: it fires when the flavor
 	 * resolves and when the panel is re-opened, and never otherwise.
+	 * untrack: ensureLoaded() reads detectState, and tracking it re-ran this
+	 * effect on every failure, which looped load() (Mac check, 2f449f863).
 	 */
 	$effect(() => {
 		if (!setupOverlay.open) return;
 		void capabilities.flavor;
-		void setupWizard.ensureLoaded();
-	});
-
-	/** Done reads `status.last_import`, and `status` was read when the overlay
-	 * opened, before the import ran. Hand the live row to the store, which
-	 * re-reads status once when this wizard's own job settles. */
-	$effect(() => {
-		void setupWizard.refreshStatusAfterImport(job);
+		untrack(() => void setupWizard.ensureLoaded());
 	});
 
 	/** The jobs store is the progress feed. Attached only while the overlay is
@@ -267,9 +299,22 @@
 		return jobsStore.attach();
 	});
 
+	/** Re-read setup status once this wizard's import settles so Done (and
+	 * Welcome, after Back) shows the same last_import as GET
+	 * /api/v1/setup/status, not the snapshot from when the overlay opened
+	 * (issue #3422). Any terminal outcome: a failed import changes what the
+	 * engine has recorded too. The store reads once per job id. */
+	$effect(() => {
+		if (!setupOverlay.open) return;
+		if (job === null || !TERMINAL.includes(job.status)) return;
+		void setupWizard.refreshStatusAfterImport(job.id);
+	});
+
 	async function dismissAndClose(): Promise<void> {
 		// finish(), not skip(): it re-reads preflight before saying the close
-		// will stick. See the store for the reopen this prevents.
+		// will stick, and refuses with a visible reason when the engine still
+		// says the library needs setup. See the store for the reopen this
+		// prevents.
 		if (!(await setupWizard.finish())) return;
 		// Honest close: the library really is whatever was already in it, and
 		// the chip that replaces the panel says so rather than vanishing.
@@ -277,8 +322,20 @@
 	}
 
 	async function finish(): Promise<void> {
+		// Same door as Skip: dismiss, re-read preflight, close only when the
+		// fresh reading agrees (the stale-fail reopen of #3422).
 		if (!(await setupWizard.finish())) return;
 		closeSetupOverlay();
+	}
+
+	/** Progress Continue waits for the post-import status refresh. */
+	async function continueFromProgress(): Promise<void> {
+		if (job !== null && job.status === 'succeeded' && setupWizard.statusRefreshJobId !== job.id) {
+			await setupWizard.refreshStatusAfterImport(job.id);
+			if (setupWizard.error !== null) return;
+		}
+		if (nextRefusalAgent !== null || setupWizard.busy) return;
+		setupWizard.next();
 	}
 
 	function reopen(): void {
@@ -373,34 +430,47 @@
 
 					{#if refusal !== null}
 						<p class="fatal" role="alert">{refusal}</p>
+						{#if finalSetupRefusalAgent() !== null}
+							<details class="agent-details">
+								<summary>{AGENT_DETAILS_LABEL}</summary>
+								<pre data-agent-refusal={finalSetupRefusalAgent()}>{finalSetupRefusalAgent()}</pre>
+							</details>
+						{/if}
 					{:else if probing}
-						<p class="scanning" role="status">
-							Checking which daemon is serving this page (GET /api/v1/health)...
-						</p>
+						<p class="scanning" role="status">{humanSetupProbePending()}</p>
 					{/if}
 
 					{#if setupWizard.error !== null}
 						<p class="fatal" role="alert">{setupWizard.error}</p>
+						{#if setupWizard.errorDiagnostic !== null && setupWizard.errorDiagnostic !== setupWizard.error}
+							<details class="agent-details">
+								<summary>{AGENT_DETAILS_LABEL}</summary>
+								<pre data-agent-error={setupWizard.errorDiagnostic}>{setupWizard.errorDiagnostic}</pre>
+							</details>
+						{/if}
 					{/if}
 
 					<!-- -------------------------------------------------- welcome -->
 					{#if step === 'welcome'}
 						<div class="panel">
 							<p>
-								This engine has a library database of its own. You can populate it
-								from a rekordbox collection or a folder of audio files, but only
-								when you choose to start that import. Nothing in rekordbox is
-								written to or changed -- a rekordbox import only ever reads a copy.
+								This app keeps its own library. You can fill it from your existing
+								DJ collection or from a folder of audio files, but only when you
+								choose to start that import. Your original collection is never
+								changed -- the import only reads a copy.
 							</p>
 							{#if status !== null}
 								<p class="counts">
 									Library right now:
-									<strong title="Tracks currently in the engine's state database">
+									<strong title="Tracks currently in your library">
 										{status.tracks} tracks
 									</strong>,
-									<strong title="Playlists currently in the engine's state database">
+									<strong title="Playlists currently in your library">
 										{status.playlists} playlists
-									</strong>. Data directory <code>{status.data_dir}</code>.
+									</strong>.
+									{#if status.data_dir}
+										Stored in <span data-agent-data-dir={status.data_dir}>{humanDataDirLabel(status.data_dir)}</span>.
+									{/if}
 								</p>
 								{#if lastImport !== null}
 									<p class="muted">
@@ -410,9 +480,26 @@
 										</span>.
 									</p>
 								{/if}
+							{:else if detectState === 'failed'}
+								<p class="warning" role="status" data-agent-detect-state="failed">
+									Your library could not be read yet. Try again, or get started anyway.
+								</p>
+							{:else if detectState === 'scanning'}
+								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
 							{/if}
 							<div class="actions">
 								{@render backButton()}
+								{#if status === null && detectState === 'failed'}
+									<button
+										type="button"
+										class="secondary"
+										onclick={() => setupWizard.load()}
+										disabled={setupWizard.busy}
+										data-agent-endpoint="GET /api/v1/setup/status"
+									>
+										Try again
+									</button>
+								{/if}
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
@@ -425,7 +512,8 @@
 									class="secondary"
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
-									title="Close setup and use the app with whatever is already in the library (POST /api/v1/setup/dismiss)."
+									title="Close setup and use the app with whatever is already in the library."
+									data-agent-endpoint="POST /api/v1/setup/dismiss"
 								>
 									Skip for now
 								</button>
@@ -439,6 +527,14 @@
 							{#if deniedRoots.length > 0}
 								<p class="fatal" role="alert">{caveat}</p>
 								<p class="muted">{permissions?.how_to_grant}</p>
+								{#if agentAccessDetail(permissions) !== null}
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-denied={agentAccessDetail(permissions)}>
+											{agentAccessDetail(permissions)}
+										</pre>
+									</details>
+								{/if}
 							{/if}
 
 							<fieldset class="choice">
@@ -478,6 +574,7 @@
 									class="secondary"
 									onclick={() => setupWizard.redetect()}
 									title={ESCAPE_ACTIONS[0].title}
+									data-agent-endpoint={escapeAgentEndpoint('redetect')}
 								>
 									{ESCAPE_ACTIONS[0].label}
 								</button>
@@ -486,6 +583,7 @@
 									class="secondary"
 									onclick={() => setupWizard.useSource('folder')}
 									title={ESCAPE_ACTIONS[1].title}
+									data-agent-endpoint={escapeAgentEndpoint('folder')}
 								>
 									{ESCAPE_ACTIONS[1].label}
 								</button>
@@ -495,13 +593,15 @@
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
 									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
 								>
 									{ESCAPE_ACTIONS[2].label}
 								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
-									disabled={nextRefusal !== null || setupWizard.busy}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
+									data-agent-refusal={nextRefusalAgent}
 									title={nextRefusal ?? 'Continue to the import'}
 								>
 									Continue
@@ -509,7 +609,7 @@
 							</div>
 							{#if nextRefusal !== null}
 								<p class="why" role="status">
-									Continue is not available: {nextRefusal}.
+									Continue is not available. {nextRefusal}
 								</p>
 							{/if}
 						</div>
@@ -537,16 +637,18 @@
 												class="folder-chip"
 												onclick={() => setupWizard.applyFolderSuggestion(candidate.path)}
 												disabled={setupWizard.busy || refusal !== null}
-												title="Use {candidate.path}"
+												title="Use {shortenPath(candidate.path)}"
 											>
-												{candidate.path}
+												{shortenPath(candidate.path)}
 											</button>
 										{:else}
 											<span
 												class="folder-chip refused"
-												title={candidate.detail}
+												title="This folder cannot be read yet"
+												data-agent-detail={candidate.detail}
+												data-agent-path={candidate.path}
 											>
-												{candidate.path}
+												{shortenPath(candidate.path)}
 											</span>
 										{/if}
 									{/each}
@@ -642,7 +744,7 @@
 												</p>
 												<ul class="probes">
 													{#each row.scan.sample as example (example)}
-														<li><code>{example}</code></li>
+														<li><code>{shortenPath(example)}</code></li>
 													{/each}
 												</ul>
 											{/if}
@@ -679,13 +781,15 @@
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
 									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
 								>
 									{ESCAPE_ACTIONS[2].label}
 								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.beginFolderImport()}
-									disabled={nextRefusal !== null || setupWizard.busy}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
+									data-agent-refusal={nextRefusalAgent}
 									title={nextRefusal ??
 										(importableFolderCount > 1
 											? 'Import these folders'
@@ -698,7 +802,7 @@
 							</div>
 							{#if nextRefusal !== null}
 								<p class="why" role="status">
-									Import is not available yet: {nextRefusal}.
+									Import is not available yet. {nextRefusal}
 								</p>
 							{/if}
 						</div>
@@ -709,10 +813,17 @@
 							<h3>What is on this machine</h3>
 							{#if phase === 'scanning'}
 								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
-							{:else if detection !== null}
-								<ul class="probes">
+							{:else if notice !== null}
+								<p class="warning" role="status" data-agent-detect-state="failed">{notice}</p>
+							{/if}
+							{#if phase === 'answered' && detection !== null}
+								<ul class="probes" class:stale={notice !== null}>
 									{#each rows as row (row.key)}
-										<li class:danger={row.danger} title={row.title}>
+										<li
+											class:danger={row.danger}
+											title={row.title}
+											data-agent-detail={row.agentDetail}
+										>
 											{#if row.danger}
 												<span role="alert">{row.text}</span>
 											{:else}
@@ -723,21 +834,19 @@
 								</ul>
 
 								{#if detection.import_source !== null}
-									<p>
-										The import will read <code>{detection.import_source}</code>
-										{#if detection.import_source_encrypted}
-											, which is encrypted and will be decrypted first.
-										{:else}
-											, which is already decrypted.
-										{/if}
-									</p>
+									<p>{humanImportSourceLabel(detection.import_source_encrypted)}</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-import-source={detection.import_source}>
+											{detection.import_source}
+										</pre>
+									</details>
 								{/if}
 
 								{#if detection.rekordbox_running}
 									<p class="muted">
-										rekordbox is running. That is fine -- the import reads a copy
-										-- but anything you change in rekordbox from now on will not
-										be in it.
+										Your DJ app is running. That is fine -- the import reads a copy
+										-- but anything you change there from now on will not be in it.
 									</p>
 								{/if}
 
@@ -749,6 +858,10 @@
 											{blockerSentence(code, detection)}
 										</p>
 									{/if}
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-blocker={code}>{blockerAgentDetail(code, detection)}</pre>
+									</details>
 								{/each}
 							{/if}
 
@@ -762,6 +875,7 @@
 									class="secondary"
 									onclick={() => setupWizard.redetect()}
 									title={ESCAPE_ACTIONS[0].title}
+									data-agent-endpoint={escapeAgentEndpoint('redetect')}
 								>
 									{ESCAPE_ACTIONS[0].label}
 								</button>
@@ -770,6 +884,7 @@
 									class="secondary"
 									onclick={() => setupWizard.useSource('folder')}
 									title={ESCAPE_ACTIONS[1].title}
+									data-agent-endpoint={escapeAgentEndpoint('folder')}
 								>
 									{ESCAPE_ACTIONS[1].label}
 								</button>
@@ -779,27 +894,32 @@
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
 									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
 								>
 									{ESCAPE_ACTIONS[2].label}
 								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.next()}
-									disabled={nextRefusal !== null || setupWizard.busy}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue to the import'}
 								>
 									Continue
 								</button>
 							</div>
-							<!-- The refusal, INLINE. It used to live only in the hover
-							     title above, which on a trackpad nobody ever sees. -->
 							{#if nextRefusal !== null}
 								<p class="why" class:fatal={fatal.length > 0} role={fatal.length > 0 ? 'alert' : 'status'}>
-									Continue is not available: {nextRefusal}.
+									Continue is not available. {nextRefusal}
 									{#if fatal.length > 0}
 										Use one of the three options above instead.
 									{/if}
 								</p>
+								{#if nextRefusalAgent !== null}
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-refusal={nextRefusalAgent}>{nextRefusalAgent}</pre>
+									</details>
+								{/if}
 							{/if}
 						</div>
 					{/if}
@@ -810,25 +930,35 @@
 							<h3>Confirm the import</h3>
 							{#if detection !== null && detection.import_source !== null}
 								<p>
-									Reading <code>{detection.import_source}</code> into
-									<code>{status?.data_dir ?? 'the data directory'}</code>.
+									Reading your collection into
+									<span data-agent-data-dir={status?.data_dir ?? ''}>{status?.data_dir ? humanDataDirLabel(status.data_dir) : 'your library'}</span>.
 								</p>
 							{/if}
 							<p>These are the stages it will report:</p>
 							<ol class="stages">
 								{#each stageNames as stage (stage)}
-									<li><strong>{stage}</strong> {stageLabels[stage] ?? ''}</li>
+									<li data-agent-stage={stage}>{humanStageLabel(stage, stageLabels)}</li>
 								{/each}
 							</ol>
 							{#if detection?.plain_copy.exists}
 								<label class="checkbox">
 									<input type="checkbox" bind:checked={refreshDecrypt} />
-									Decrypt again instead of reusing the existing
-									<code>master.plain.db</code>
+									Unlock the collection again instead of reusing the saved copy
 								</label>
 							{/if}
 							<div class="actions">
 								{@render backButton()}
+								<!-- #3422: Confirm was the one step whose only exit was Back. -->
+								<button
+									type="button"
+									class="secondary"
+									onclick={() => void dismissAndClose()}
+									disabled={setupWizard.busy}
+									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
+								>
+									{ESCAPE_ACTIONS[2].label}
+								</button>
 								<button
 									type="button"
 									onclick={() => setupWizard.beginImport({ refreshDecrypt })}
@@ -847,9 +977,7 @@
 							<h3>Importing</h3>
 							{#if job === null}
 								<p class="scanning" role="status">
-									Waiting for the engine to report on job
-									<code>{setupWizard.jobId ?? '(none started)'}</code>. Nothing has
-									come back yet.
+									Waiting for the import to start. Nothing has come back yet.
 								</p>
 							{:else}
 								<div
@@ -867,15 +995,33 @@
 									</span>
 								</div>
 								<p class="status-line">
-									<span title="The job's current status as the engine last wrote it">
-										{job.status}
+									<span title="Current import status">
+										{humanImportJobStatus(job.status)}
 									</span>
-									{#if job.message !== null && job.message !== undefined}
-										-- {job.message}
+									{#if humanImportJobMessage(job.message, job.status) !== null}
+										-- {humanImportJobMessage(job.message, job.status)}
 									{/if}
 								</p>
+								<details class="agent-details">
+									<summary>{AGENT_DETAILS_LABEL}</summary>
+									<pre
+										data-agent-job-status={job.status}
+										data-agent-job-message={job.message ?? ''}
+									>
+status={job.status}
+{#if job.message !== null && job.message !== undefined}
+message={job.message}
+{/if}
+									</pre>
+								</details>
 								{#if job.error !== null && job.error !== undefined}
-									<pre class="error-tail">{errorTail(job.error)}</pre>
+									<p class="fatal" role="alert">{humanImportFailure(job.error)}</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre class="error-tail" data-agent-job-error={setupWizard.jobId}>
+											{errorTail(job.error)}
+										</pre>
+									</details>
 								{/if}
 							{/if}
 							<div class="actions">
@@ -890,15 +1036,15 @@
 								</button>
 								<button
 									type="button"
-									onclick={() => setupWizard.next()}
-									disabled={nextRefusal !== null}
+									onclick={() => void continueFromProgress()}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue'}
 								>
 									Continue
 								</button>
 							</div>
 							{#if nextRefusal !== null}
-								<p class="why" role="status">Continue is not available: {nextRefusal}.</p>
+								<p class="why" role="status">Continue is not available. {nextRefusal}</p>
 							{/if}
 						</div>
 					{/if}
@@ -939,11 +1085,15 @@
 							</div>
 
 							{#if stems.state === 'failed' || stems.state === 'unknown'}
-								<p class="fatal" role="alert" title={`Engine job ${stemsJobId}`}>
-									{stems.message}
+								<p class="fatal" role="alert" title="Stem separation" data-agent-job={stemsJobId}>
+									{humanStemsFailed()}
 								</p>
+								<details class="agent-details">
+									<summary>{AGENT_DETAILS_LABEL}</summary>
+									<pre data-agent-stems={stems.message}>{stems.message}</pre>
+								</details>
 							{:else if stems.state !== 'none'}
-								<p class="started" role="status" title={`Engine job ${stemsJobId}`}>
+								<p class="started" role="status" title="Stem separation" data-agent-job={stemsJobId}>
 									{stems.message} You can press Continue whenever you like.
 								</p>
 							{/if}
@@ -962,22 +1112,22 @@
 							{#if lastImport !== null && lastImport.kind === 'rekordbox'}
 								<p class="counts">
 									Imported
-									<strong title="Tracks written into the engine's state database">
+									<strong title="Tracks added to your Open DJ library">
 										{lastImport.tracks} tracks
 									</strong>
 									and
-									<strong title="Playlists written into the engine's state database">
+									<strong title="Playlists added to your Open DJ library">
 										{lastImport.playlists} playlists
 									</strong>.
 								</p>
 								<p class="muted">
 									<span
-										title="Rekordbox analysis files (waveforms, beatgrids) found on disk, out of the imported tracks that name one"
+										title="Analysis files (waveforms, beatgrids) found on disk, out of the imported tracks that name one"
 									>
 										{lastImport.analyses_linked} of
 										{lastImport.analyses_expected}
 									</span>
-									analyses were found under <code>{lastImport.share_root}</code>.
+									analyses were found for your waveform data.
 									{#if lastImport.analyses_linked === 0 && lastImport.analyses_expected > 0}
 										None resolved, so waveforms will not draw until that folder is
 										reachable.
@@ -985,18 +1135,18 @@
 								</p>
 								{#if importDenied.length > 0}
 									<p class="fatal" role="alert">
-										macOS blocked
-										<span title="Music folders that could not be listed during the import">
-											{importDenied.length}
-										</span>
-										folder(s) during this import ({importDenied.join(', ')}), so
-										the counts above cover only what could be read.
+										Some music folders could not be read during this import, so the
+										counts above cover only what could be accessed.
 									</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-denied={importDenied.join(', ')}>{importDenied.join(', ')}</pre>
+									</details>
 								{/if}
 							{:else if lastImport !== null && lastImport.kind === 'folder'}
 								<p class="counts">
 									Imported
-									<strong title="Tracks written into the engine's state database">
+									<strong title="Tracks added to your Open DJ library">
 										{lastImport.tracks_written} tracks
 									</strong>
 									from
@@ -1012,14 +1162,23 @@
 									import record so the number moves.
 								-->
 								{#if analysisReadError !== null}
-									<p class="fatal" role="alert" title={analysisReadError}>
+									<p class="fatal" role="alert" title="Analysis status could not be read">
 										Could not read what still needs analyzing, so the state of
-										these tracks is unknown: {analysisReadError}
+										these tracks is unknown.
 									</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-analysis-error={analysisReadError}>{analysisReadError}</pre>
+									</details>
 								{:else if analysis.state === 'failed'}
-									<p class="fatal" role="alert" title={analysis.message}>
-										{analysis.message}
+									<p class="fatal" role="alert" title="Analysis did not finish">
+										Open DJ could not work out the BPM, key and beatgrid for these
+										tracks, so they have none yet.
 									</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-analysis={analysis.message}>{analysis.message}</pre>
+									</details>
 								{:else if analysis.state === 'working'}
 									<p
 										class="warning"
@@ -1062,22 +1221,30 @@
 								{/if}
 								{#if importDenied.length > 0}
 									<p class="fatal" role="alert">
-										macOS blocked {importDenied.join(', ')}, so the counts above
-										cover only what could be read.
+										Some folders could not be read, so the counts above cover only
+										what was accessible.
 									</p>
+									<details class="agent-details">
+										<summary>{AGENT_DETAILS_LABEL}</summary>
+										<pre data-agent-denied={importDenied.join(', ')}>{importDenied.join(', ')}</pre>
+									</details>
 								{/if}
 							{:else}
 								<p class="muted">
-									No import was recorded for this data directory. The library is
-									whatever was already in it.
+									No import was recorded yet. The library is whatever was already in
+									it.
 								</p>
 							{/if}
 							{#if stems.state === 'failed' || stems.state === 'unknown'}
-								<p class="fatal" role="alert" title={`Engine job ${stemsJobId}`}>
-									{stems.message}
+								<p class="fatal" role="alert" title="Stem separation" data-agent-job={stemsJobId}>
+									{humanStemsFailed()}
 								</p>
+								<details class="agent-details">
+									<summary>{AGENT_DETAILS_LABEL}</summary>
+									<pre data-agent-stems={stems.message}>{stems.message}</pre>
+								</details>
 							{:else if stems.state !== 'none'}
-								<p class="muted" role="status" title={`Engine job ${stemsJobId}`}>
+								<p class="muted" role="status" title="Stem separation" data-agent-job={stemsJobId}>
 									{stems.message}
 								</p>
 							{/if}
@@ -1089,11 +1256,6 @@
 							</div>
 						</div>
 					{/if}
-
-					<p class="muted footnote">
-						Every step here is an HTTP endpoint under <code>/api/v1/setup</code>, so
-						this whole flow can be driven without a browser.
-					</p>
 				</section>
 
 				<!-- The assistant lane. Contract with the assistant-backend work is
@@ -1110,7 +1272,7 @@
 		class="su-chip"
 		onclick={() => expandSetupOverlay()}
 		title={importRunning
-			? `Setup is minimised while import job ${setupWizard.jobId} runs. Click to reopen it with live progress.`
+			? 'Setup is minimised while the import runs. Click to reopen it with live progress.'
 			: 'Setup is minimised. Click to reopen it at the step you left.'}
 	>
 		{#if importRunning}
@@ -1126,7 +1288,7 @@
 	<div class="su-incomplete" role="status">
 		<span>
 			Setup incomplete -- library is
-			<strong title="Tracks currently in the engine's state database (GET /api/v1/setup/status)">
+			<strong title="Tracks currently in your library">
 				empty ({emptyTracks} tracks)
 			</strong>.
 		</span>
@@ -1292,6 +1454,11 @@
 		color: var(--fg);
 		border-left: 3px solid var(--accent-dim);
 		padding-left: 0.6rem;
+	}
+	/* An earlier answer kept under a failed Look again: still readable, but
+	   visibly not the current one. */
+	.probes.stale {
+		opacity: 0.6;
 	}
 	.warning {
 		color: var(--muted);
@@ -1474,6 +1641,16 @@
 	.footnote {
 		font-size: 0.8rem;
 		margin-top: 1rem;
+	}
+	.agent-details {
+		margin-top: 0.5rem;
+		font-size: 0.75rem;
+		color: var(--muted);
+	}
+	.agent-details pre {
+		white-space: pre-wrap;
+		margin: 0.35rem 0 0;
+		font-size: 0.72rem;
 	}
 	/* ----- the minimised chip and the incomplete note --------------------- */
 	.su-chip,

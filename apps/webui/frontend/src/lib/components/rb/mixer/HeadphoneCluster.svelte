@@ -12,7 +12,7 @@
 	} from '$lib/rb/headphone-mix-step';
 	import { headphoneLivenessAlertForState, headphoneMixAccent, MIC_DECLINED_NOTICE, monitorLabelIsBluetooth, twoOutputsWarning } from '$lib/player/headphones';
 	import { calibrateButtonEnabled } from '$lib/player/cue-align-policy';
-	import { levelBullets, ioBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
+	import { levelBullets, delayBullets, calibrateBullets, roomBullets, rescanBullets, modeBullets, inputPickBullets } from './headphone-io-copy';
 	import { closeCueAlignModal, cueAlignModal } from '$lib/rb/cue-align-session.svelte';
 	import ControlExplainer from '../deck/ControlExplainer.svelte';
 	import CueAlignModal from './CueAlignModal.svelte';
@@ -22,6 +22,8 @@
 	import { toggleMidiPanel, midiUi, midiEnabledPersisted } from '$lib/components/rb/midi/midi-ui-state.svelte';
 	import { midiLabelGlyph, midiLabelStatus, midiLabelTitle } from '$lib/components/rb/midi/midi-format';
 	import { midiState } from '$lib/rb/midi/midi-state.svelte';
+	import { ioHoverSummary, ioShouldAlert, outputsUnset } from '$lib/rb/io-outputs-button';
+	import { ioOutputsSession, noteSetOutputsClicked } from '$lib/rb/io-outputs-session.svelte';
 	import Knob from './Knob.svelte';
 	import MidiStatusGlyph from './MidiStatusGlyph.svelte';
 	import type { HeadphoneAlignmentMode, HeadphoneOutputMode, HeadphoneState } from '$lib/rb/mixer-types';
@@ -110,6 +112,23 @@
 		'2) Set MIX and GAIN after choosing SPLIT; a Y cable will not separate the legs.',
 		'3) Turn CUE on for channels you want on the right ear; master is always the left leg.'
 	];
+	// Pin 894af5672c3b (main #3990), merged onto the Preview's persistent I/O
+	// panel: the I/O hover is compact (one sentence, the devices in use, the
+	// call to action) and dismisses instantly; the per-control detail lives
+	// on each control's own explainer inside the panel.
+	const ioSummary = $derived(ioHoverSummary(headphoneState));
+	const ioBullets = $derived([ioSummary.sentence, ...ioSummary.devices, ioSummary.cta]);
+	// SET OUTPUTS pulses and glows red while no output is chosen, until the
+	// first click this session (sessionStorage; a blocked store falls back to
+	// the module's in-memory flag).
+	const ioAlert = $derived(ioShouldAlert(outputsUnset(headphoneState), ioOutputsSession.clicked));
+
+	// The click only opens the panel (Preview d16ef5f5: opening stays side-effect
+	// free); device access is the panel's explicit "Choose output" action.
+	function handleSetOutputs(): void {
+		noteSetOutputsClicked();
+		openIo();
+	}
 	const masterPickBullets = [
 		'Room mix. Pin this to speakers so OS-default headphones cannot steal the room. The MAIN speaker line cannot be interrupted by CUE unplug or reconnect.'
 	];
@@ -209,13 +228,16 @@
 		showDelayMs={100}
 		compact={true}
 		disabled={ioSurface.open}
+		dismiss="instant"
 	>
 		<button
 			type="button"
-			class="hp-btn hp-io-trigger"
+			class="hp-btn hp-io-trigger hp-btn-io"
+			class:io-alert={ioAlert}
+			data-io-alert={ioAlert ? 'unset' : undefined}
 			aria-label="SHOW AUDIO I/O"
 			aria-expanded={ioSurface.open}
-			onclick={openIo}>I/O</button
+			onclick={handleSetOutputs}><span>SET</span><span>OUTPUTS</span></button
 		>
 	</ControlExplainer>
 	<ControlExplainer
@@ -432,6 +454,35 @@
 		}
 		50% {
 			opacity: 0.35;
+		}
+	}
+	.hp-btn-io {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		min-height: 23px;
+		line-height: 1.1;
+	}
+	.hp-btn-io.io-alert {
+		color: var(--rb-red, #e5484d);
+		border-color: var(--rb-red, #e5484d);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--rb-red, #e5484d) 70%, transparent);
+		animation: io-alert-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes io-alert-pulse {
+		0%,
+		100% {
+			box-shadow: 0 0 3px color-mix(in srgb, var(--rb-red, #e5484d) 45%, transparent);
+		}
+		50% {
+			box-shadow: 0 0 9px color-mix(in srgb, var(--rb-red, #e5484d) 95%, transparent);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		/* Glow without pulse. */
+		.hp-btn-io.io-alert {
+			animation: none;
 		}
 	}
 	.hp-btn:hover {

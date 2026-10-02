@@ -146,7 +146,7 @@ test('midiLabelStatus: granted but turned off is gray, not a lost device (Codex 
 	assert.equal(fmt.midiLabelStatus('granted', true, false, false), 'grey');
 });
 
-test('midiLabelGlyph: tick for green, cross for red, none otherwise', () => {
+test('midiLabelGlyph: tick for green, cross for red, none otherwise (#3886: SVG icon kinds, not text glyphs)', () => {
 	assert.equal(fmt.midiLabelGlyph('green'), 'tick');
 	assert.equal(fmt.midiLabelGlyph('red'), 'cross');
 	assert.equal(fmt.midiLabelGlyph('grey'), 'none');

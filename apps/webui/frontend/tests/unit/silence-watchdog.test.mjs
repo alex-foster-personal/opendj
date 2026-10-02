@@ -302,3 +302,55 @@ test('a second audible-only dropout after reset is a second verdict', () => {
 	const { verdicts } = runSamples([...dropout, ...recovered, ...dropout]);
 	assert.equal(verdicts.length, 2);
 });
+
+test('held master silence with source_explains_silence emits no verdict', () => {
+	const mod = _silence();
+	const { verdicts } = runSamples(
+		heldFor(mod.SILENT_WHILE_PLAYING_MS + 500, {
+			playing: true,
+			masterRms: 0,
+			source_explains_silence: true
+		})
+	);
+	assert.equal(verdicts.length, 0);
+});
+
+test('held master silence without source flag still emits one verdict', () => {
+	const mod = _silence();
+	const { verdicts } = runSamples(
+		heldFor(mod.SILENT_WHILE_PLAYING_MS + 500, { playing: true, masterRms: 0 })
+	);
+	assert.equal(verdicts.length, 1);
+	assert.equal(verdicts[0].verdict, 'silent-while-playing');
+});
+
+test('source_explains_silence resets the silence clock before the window', () => {
+	const mod = _silence();
+	const nearlyThere = heldFor(mod.SILENT_WHILE_PLAYING_MS - 300, {
+		playing: true,
+		masterRms: 0
+	});
+	const { verdicts } = runSamples([
+		...nearlyThere,
+		{ playing: true, masterRms: 0, source_explains_silence: true },
+		...nearlyThere
+	]);
+	assert.equal(verdicts.length, 0);
+});
+
+test('positive control: source flag clears then dropout fires after window', () => {
+	const mod = _silence();
+	const explained = heldFor(500, {
+		playing: true,
+		masterRms: 0,
+		source_explains_silence: true
+	});
+	const dropout = heldFor(mod.SILENT_WHILE_PLAYING_MS + 500, {
+		playing: true,
+		masterRms: 0,
+		source_explains_silence: false
+	});
+	const { verdicts } = runSamples([...explained, ...dropout]);
+	assert.equal(verdicts.length, 1);
+	assert.equal(verdicts[0].verdict, 'silent-while-playing');
+});

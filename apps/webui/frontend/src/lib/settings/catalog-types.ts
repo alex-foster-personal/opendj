@@ -52,8 +52,11 @@ export interface SettingDef {
 	title: string;
 	/** Longer explanation shown on focus/hover. */
 	detail: string;
-	/** false = grayed inert todo (PARITY-TODO). */
+	/** false = grayed inert todo (PARITY-TODO). Hidden unless the
+	 * "Show developer pages" pref (show_dev_ui) is on. */
 	implemented: boolean;
+	/** true = a developer-only row, shown only while show_dev_ui is on. */
+	devOnly?: boolean;
 	control: SettingControl;
 }
 

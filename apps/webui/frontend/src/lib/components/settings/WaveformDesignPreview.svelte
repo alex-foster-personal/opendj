@@ -1,16 +1,21 @@
 <script lang="ts">
 	import type { WaveformDesign } from '$lib/rb/waveform-design';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { resolveStripBandColors } from '$lib/rb/wave-palette';
 
 	let { design }: { design?: WaveformDesign } = $props();
 
 	const active = $derived(design ?? uiPrefs.waveform_design);
+	// The preview canvas is always painted on a dark fill, so it shows the
+	// dark-face hues of the chosen band palette (issue #4219).
+	const colors = $derived(resolveStripBandColors('dark', uiPrefs.wave_palette));
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 
 	$effect(() => {
 		const el = canvas;
 		if (el === undefined) return;
+		const c = colors;
 		const ctx = el.getContext('2d');
 		if (ctx === null) return;
 		const w = el.width;
@@ -25,7 +30,7 @@
 		});
 		const barW = w / n;
 		if (active === 'line') {
-			ctx.strokeStyle = '#3d7dd9';
+			ctx.strokeStyle = c.mono;
 			ctx.lineWidth = 1.5;
 			ctx.beginPath();
 			for (let i = 0; i < n; i++) {
@@ -42,14 +47,14 @@
 			const v = sample[i];
 			if (active === 'mono') {
 				const bh = v * (h - 2);
-				ctx.fillStyle = '#3d7dd9';
+				ctx.fillStyle = c.mono;
 				ctx.fillRect(x, h - bh, barW, bh);
 			} else {
-				ctx.fillStyle = '#e8a13a';
+				ctx.fillStyle = c.low;
 				ctx.fillRect(x, h - v * (h - 2) * 0.55, barW, v * (h - 2) * 0.55);
-				ctx.fillStyle = 'rgba(61, 125, 217, 0.85)';
+				ctx.fillStyle = c.mid;
 				ctx.fillRect(x, h - v * (h - 2) * 0.75, barW, v * (h - 2) * 0.35);
-				ctx.fillStyle = 'rgba(207, 224, 242, 0.9)';
+				ctx.fillStyle = c.high;
 				ctx.fillRect(x, h - v * (h - 2) * 0.45, barW, v * (h - 2) * 0.25);
 			}
 		}

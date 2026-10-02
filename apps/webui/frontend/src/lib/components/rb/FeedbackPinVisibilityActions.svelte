@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { plannedTitle } from '$lib/rb/planned-explainers';
+
 	/** Interactive comment-pin controls in FeedbackWidget's explainer. */
 	let {
 		pinsVisible,
@@ -21,7 +23,7 @@
 	<input type="checkbox" checked={showAgentPins} onchange={onToggleAgentPins} />
 	Show agent pins
 </label>
-<label class="fb-toggle-row rb-inert" title="not implemented - see PARITY-TODO">
+<label class="fb-toggle-row rb-inert" title={plannedTitle('feedback-pin-visibility')}>
 	<input type="checkbox" disabled />
 	Show other users' pins
 	<span class="fb-hint">(not implemented - community feature)</span>

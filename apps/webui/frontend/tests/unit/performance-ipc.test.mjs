@@ -1150,7 +1150,9 @@ test('mixer headphone controls use the typed dispatcher from every visible contr
 	assert.match(headphones, /onclick=\{onacquire\}/);
 	// Opening settings is read-only; permission/chooser is a separate explicit
 	// action. Both still reach the typed dispatcher via Mixer callbacks.
-	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{openIo\}/);
+	// Pin 894af5672c3b: SET OUTPUTS records the session click, then opens the panel.
+	assert.match(headphones, /function handleSetOutputs\(\): void \{[^}]*openIo\(\);/);
+	assert.match(headphones, /aria-label="SHOW AUDIO I\/O"[^>]*onclick=\{handleSetOutputs\}/);
 	assert.match(headphones, /Choose output \/ allow device access/);
 	assert.match(headphones, /Device access can open an output chooser or microphone permission prompt/);
 	assert.match(strip, /aria-pressed=\{cueEnabled\}/);

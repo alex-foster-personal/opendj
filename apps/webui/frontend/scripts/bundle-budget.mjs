@@ -198,6 +198,19 @@ const BUDGETS = [
   // skew: main's 500 commits since the merge base add first-paint weight on
   // top of #3837's). Deliberately NOT raised on that local, never-pushed
   // branch: #3837 must pay back or justify a raise on its own rebase onto main.
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4897, first-run wizard skip and plain-language
+  // copy, SETUP-26 / UX-R2-03/04): merge skew again. Clean origin/main e0dfa83bc measured
+  // 258,429 locally; main + this PR 259,214 (142 OVER), main + this PR + its follow-up
+  // #4928 (failed-import sentence) about 259,380. Each PR passed alone. Payback, not
+  // yet measured: find which of this PR's setup modules the first-paint closure
+  // reaches and move the wizard-only copy behind the lazy SetupOverlay import.
+  // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's 260,096
+  // (#4897) and the Preview's 261,120 (#3837) are each one tree's raise over the
+  // shared 259,072. The merged limit keeps the Preview's reviewed 261,120 and does
+  // NOT sum them (262,144). NOT re-measured on the merged tree at resolution time
+  // (other files were still conflicted); both sides' notes predict the merged
+  // tree lands above 261,120, so the first merged build decides a payback or a
+  // separately reviewed raise.
   { name: 'library', limit: 261120, measured: 259325, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
@@ -224,7 +237,17 @@ const BUDGETS = [
   // drawer and learn-log pop-out mounted only while open. Measured after:
   // 239,199 (clean origin/main a3ca2f14a: 238,317), so the route pays +882 for
   // the PR's always-rendered chrome, and that weight moved to other-lazy.
-  { name: 'performance', limit: 241664, measured: 239199, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4923, V1 UI polish): clean origin/main
+  // 5852c97c measures 239,840 locally. This PR adds +1,954 of user-visible
+  // V1 work on the route (the 2-deck toggle, SET OUTPUTS and the I/O pins,
+  // explainer dismiss, the 3Band waveform palette with its legacy option,
+  // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
+  // 130 bytes over the old limit; 894 bytes of headroom remain.
+  // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's #4923
+  // raise is kept because its features are all in the merged route; the
+  // Preview's #3837 work fit the old 241,664 by deferral (+882 measured). NOT
+  // re-measured on the merged tree at resolution time.
+  { name: 'performance', limit: 242688, measured: 241794, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -358,6 +381,20 @@ const BUDGETS = [
   // (which carries #4321's 260 KiB raise above) onto #3837 + #3896 measures
   // 284,759 over 64 files, local, one build: the Rust engine mode chunk fits
   // inside this UNCHANGED 280 KiB ceiling; no raise.
+  // RAISED Fri 2 Oct 2026: 260 -> 275 KiB for PR #4897 (first-run wizard, V1
+  // #3422/#2590). Its Trunk batch (PR #4951) failed this gate at 267,647, over
+  // by 1,407. Local build, one pass: clean origin/main 3ecf276ef measured
+  // 263,446 here; main + #4897 measured 267,629. The ~4.2 KB is the deferred
+  // setup overlay: the agent/human error split, path shortening, the read
+  // deadline with its did-not-finish states and the Welcome retry. None of it
+  // is first-paint weight (library stayed within its own limit). The ceiling
+  // follows the +5% ceil-to-KiB rule on 267,629.
+  // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's 275 KiB
+  // (#4897) and the Preview's 280 KiB (#3837) are each one tree's raise; the
+  // merged limit keeps the Preview's reviewed 286,720 and does NOT add #4897's
+  // ~4.2 KB on top. NOT re-measured on the merged tree at resolution time; the
+  // two notes predict roughly 284,759 + 4,183, so the first merged build decides
+  // a payback (the ~3.6 KB MIDI split-chunk overhead above) or a reviewed raise.
   { name: 'other-lazy', limit: 286720, measured: 284759, note: 'all other routes plus deferred shell' },
 ];
 

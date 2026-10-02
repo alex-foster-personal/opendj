@@ -93,6 +93,7 @@ test('HeadphoneCluster I/O menu names MASTER, HEADPHONE CUE, AUDIO IN and keeps 
 	assert.match(source, /title="Audio I\/O quick settings"/);
 	assert.match(source, /showDelayMs=\{100\}/);
 	assert.match(source, /aria-label="Audio I\/O settings"/);
+	assert.match(source, /><span>SET<\/span><span>OUTPUTS<\/span></);
 	assert.match(source, /ControlExplainer/);
 	assert.match(source, /title="MIX"/);
 	assert.match(source, /title="VOL"/);
