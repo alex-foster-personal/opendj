@@ -449,7 +449,7 @@
 
 	<div
 		class="main-row"
-		class:mirror-main-row={deckId === 2 && uiPrefs.deck_right_mirror}
+		class:mirror-main-row={(deckId === 2 || deckId === 4) ? uiPrefs.deck_right_mirror : uiPrefs.deck_left_mirror}
 	>
 		<!-- Left edge: 2 grid-adjust icon stacks (inert, COMPONENT-MAP 1.3). -->
 		<div class="grid-adjust">

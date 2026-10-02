@@ -278,12 +278,23 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 	},
 	{
 		id: 'deck_right_mirror',
-		label: 'Mirror deck 2 controls',
+		label: 'Mirror deck 2 and 4 controls',
 		group: 'performance',
 		keywords: ['deck', 'mirror', 'symmetry', 'deck 2', 'layout', 'right column'],
-		title: 'Mirror deck 2 main control row for mixer-facing symmetry',
+		title: 'Mirror deck 2 and 4 main control rows for mixer-facing symmetry',
 		detail:
-			'When on, deck 2 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
+			'When on, deck 2 and 4 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
+		implemented: true,
+		control: { kind: 'boolean' }
+	},
+	{
+		id: 'deck_left_mirror',
+		label: 'Mirror deck 1 and 3 controls',
+		group: 'performance',
+		keywords: ['deck', 'mirror', 'symmetry', 'deck 1', 'deck 3', 'layout', 'left column'],
+		title: 'Mirror deck 1 and 3 main control rows',
+		detail:
+			'When on, deck 1 and 3 control row order is reversed horizontally (block order inside each cluster stays the same). Default off.',
 		implemented: true,
 		control: { kind: 'boolean' }
 	},

@@ -16,6 +16,7 @@ import {
 	setDeckLayoutDurationMs,
 	setDeckLayoutMode,
 	setDeckRightMirror,
+	setDeckLeftMirror,
 	setPlaylistTreeView,
 	setCrossfadeCurve,
 	setHideBrokenLinks,
@@ -134,6 +135,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
 	'deck_right_mirror',
+	'deck_left_mirror',
 	'playlist_tree_view',
 	'auto_sync.rekordbox',
 	'auto_sync.djay',
@@ -214,6 +216,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return String(uiPrefs.deck_layout_duration_ms);
 		case 'deck_right_mirror':
 			return uiPrefs.deck_right_mirror;
+		case 'deck_left_mirror':
+			return uiPrefs.deck_left_mirror;
 		case 'playlist_tree_view':
 			return uiPrefs.playlist_tree_view;
 		case 'auto_sync.rekordbox':
@@ -365,6 +369,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 		}
 		case 'deck_right_mirror':
 			setDeckRightMirror(_asBool(value, key));
+			return;
+		case 'deck_left_mirror':
+			setDeckLeftMirror(_asBool(value, key));
 			return;
 		case 'playlist_tree_view': {
 			if (value !== 'tree' && value !== 'column') {
