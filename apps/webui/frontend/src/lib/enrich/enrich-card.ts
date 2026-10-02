@@ -1,7 +1,7 @@
 /**
  * Enrich-on-open card policy (ENRICH-01). Pure: the component fetches
  * GET /api/v1/enrich/summary and renders exactly the lines this returns, so
- * every state in docs/library-enrichment-states.md is unit-testable here.
+ * every state in specs/state-inventories/library-enrichment.md is unit-testable here.
  *
  * One line per lane, and each state reads differently, because each needs a
  * different action from the user:

@@ -1,7 +1,7 @@
 """Enrich-on-open: what the library still lacks, and what to ask the user.
 
 Opening the app on a library that is not fully enriched shows one card
-(`docs/library-enrichment-states.md`). The lanes split by consent:
+(`specs/state-inventories/library-enrichment.md`). The lanes split by consent:
 
 * Automatic, never asked: file tags, Preview strips, loudness, waveform,
   BPM/beatgrid and key (the ahead-of-time drain) and lyrics (the coverage
