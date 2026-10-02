@@ -1,10 +1,3 @@
-<script module lang="ts">
-	// Re-exported so BrowserPanel's load hook reaches it through the import it
-	// already has (the quality ratchet counts each module a file imports).
-	import { waitForStemsSettled } from '$lib/rb/command-bar';
-	export { waitForStemsSettled };
-</script>
-
 <script lang="ts">
 	// CMDK-01..03: Cmd-K (Ctrl-K off macOS) command bar over the browser.
 	// Searches the open playlist as you type; Tab widens it to the whole
@@ -12,7 +5,8 @@
 	// uses). Up/Down pick a track, Left/Right pick the deck, Enter loads it,
 	// Shift+Enter loads it vocals-only. Loading goes through the browser's own
 	// deck-load path (the `load` prop), so every guard and load setting that
-	// applies to a double-click applies here too.
+	// applies to a double-click applies here too; the vocal solo goes through
+	// the browser's `soloVocals` hook once the stems settle.
 	import { tick } from 'svelte';
 	import { deckStates as decks, DECK_IDS } from '$lib/rb/audio-engine.svelte';
 	import { searchCollection } from '$lib/rb/api-rb';
@@ -24,6 +18,7 @@
 		rowHaystack,
 		stepDeck,
 		stepSelection,
+		waitForStemsSettled,
 		type CommandBarRow,
 		type CommandBarScope
 	} from '$lib/rb/command-bar';
@@ -31,11 +26,14 @@
 	let {
 		rows,
 		playlistTitle,
-		load
+		load,
+		soloVocals
 	}: {
 		rows: readonly CommandBarRow[];
 		playlistTitle: string;
-		load: (row: CommandBarRow, deck: DeckId, vocalsOnly: boolean) => Promise<void>;
+		load: (row: CommandBarRow, deck: DeckId) => Promise<void>;
+		/** Called once the deck's stems settle for a vocals-only load. */
+		soloVocals: (deck: DeckId, settled: 'ready' | 'unavailable' | 'error' | 'timeout') => Promise<void>;
 	} = $props();
 
 	let open = $state(false);
@@ -130,7 +128,16 @@
 		if (row === undefined) return;
 		const deck = target;
 		closeBar();
-		await load(row, deck, withVocalsOnly);
+		await load(row, deck);
+		// CMDK-03: stems decode after the mix, and the engine refuses a solo
+		// while they are loading, so wait for them; never touch a deck that
+		// has moved on to another track meanwhile.
+		if (!withVocalsOnly || decks[deck].stable_id !== row.stable_id) return;
+		const settled = await waitForStemsSettled(
+			() => ({ stable_id: decks[deck].stable_id, status: decks[deck].stems.status }),
+			row.stable_id
+		);
+		if (settled !== 'stale') await soloVocals(deck, settled);
 	}
 
 	function onInputKeydown(event: KeyboardEvent): void {

@@ -241,7 +241,6 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
-	import CommandBar, { waitForStemsSettled } from './CommandBar.svelte';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,
@@ -2607,18 +2606,29 @@
 		}
 	}
 
-	/** CMDK-02/03: the command bar loads through _loadOntoDeck like a
-	 * double-click, then solos the vocal stem when asked. The solo waits for
-	 * the deck's stems to settle (they decode after the mix), and a track
-	 * whose stem bundle is missing loads as the full mix, and says so. */
-	async function _commandBarLoad(row: LoadableRow, deck: DeckId, vocalsOnly: boolean): Promise<void> {
+	/** CMDK-01..03: the Gig page mounts the Cmd-K command bar beside this
+	 * panel and reaches the open playlist and the deck-load path through these
+	 * (bind:this), so a command-bar load gets the same refusals and load
+	 * settings as a double-click. */
+	export function commandBarRows(): readonly BrowserRow[] {
+		return pane.rows;
+	}
+
+	export function commandBarTitle(): string {
+		return pane.title;
+	}
+
+	export async function commandBarLoad(row: LoadableRow, deck: DeckId): Promise<void> {
 		await _loadOntoDeck(row, deck);
-		if (!vocalsOnly || decks[deck].stable_id !== row.stable_id) return;
-		const settled = await waitForStemsSettled(
-			() => ({ stable_id: decks[deck].stable_id, status: decks[deck].stems.status }),
-			row.stable_id
-		);
-		if (settled === 'stale') return;
+	}
+
+	/** CMDK-03: called once the deck's stems have settled for the loaded
+	 * track. Ready solos the vocal stem; anything else leaves the full mix
+	 * playing, and says so. */
+	export async function commandBarSoloVocals(
+		deck: DeckId,
+		settled: 'ready' | 'unavailable' | 'error' | 'timeout'
+	): Promise<void> {
 		if (settled !== 'ready') {
 			const why = settled === 'unavailable' ? 'No stems for this track yet' : `Stems did not load (${settled})`;
 			pushToast(`${why}; deck ${deck} plays the full mix`, 'warn');
@@ -3622,8 +3632,6 @@
 	onpick={(node) => void addTracksToPlaylist(node)}
 	onclose={() => (addToPlaylistIds = null)}
 />
-
-<CommandBar rows={pane.rows} playlistTitle={pane.title} load={_commandBarLoad} />
 
 {#if folderDupPrompt !== null}
 	<PlaylistFolderDupModal

@@ -83,9 +83,10 @@ test('deck and row stepping stop at the ends', () => {
 });
 
 test('the bar loads through the browser deck-load path, not its own', () => {
+	const page = readFileSync(`${SRC}/routes/performance/+page.svelte`, 'utf8');
+	assert.match(page, /<CommandBar[\s\S]{0,200}load=\{browserPanel\.commandBarLoad\}/);
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	assert.match(panel, /<CommandBar rows=\{pane\.rows\}[^>]*load=\{_commandBarLoad\}/);
-	assert.match(panel, /async function _commandBarLoad[\s\S]{0,200}await _loadOntoDeck\(row, deck\)/);
+	assert.match(panel, /export async function commandBarLoad[\s\S]{0,120}await _loadOntoDeck\(row, deck\)/);
 	const bar = readFileSync(`${SRC}/lib/components/rb/CommandBar.svelte`, 'utf8');
 	assert.doesNotMatch(bar, /dispatchPerformanceCommand|runPerformanceCommandFromUi/);
 });
@@ -127,10 +128,19 @@ test('vocals-only gives up after its ceiling', async () => {
 	assert.ok(clock.now() >= 1000);
 });
 
-test('the load hook solos only after the stems settle', () => {
+test('the bar hands the stems result on only after they settle', () => {
+	const bar = readFileSync(`${SRC}/lib/components/rb/CommandBar.svelte`, 'utf8');
+	const choose = bar.slice(bar.indexOf('async function choose'));
+	const wait = choose.indexOf('await waitForStemsSettled(');
+	const solo = choose.indexOf('await soloVocals(');
+	assert.ok(wait > 0 && solo > wait, 'soloVocals must follow the stems wait');
+	assert.match(choose, /if \(settled !== 'stale'\) await soloVocals/);
+});
+
+test('the browser solos the vocal stem only when the stems are ready', () => {
 	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
-	const hook = panel.slice(panel.indexOf('async function _commandBarLoad'));
-	const wait = hook.indexOf('await waitForStemsSettled(');
+	const hook = panel.slice(panel.indexOf('export async function commandBarSoloVocals'));
+	const notReady = hook.indexOf("if (settled !== 'ready')");
 	const solo = hook.indexOf("type: 'stem_solo'");
-	assert.ok(wait > 0 && solo > wait, 'stem_solo must follow the stems wait');
+	assert.ok(notReady > 0 && solo > notReady, 'stem_solo must sit behind the ready check');
 });
