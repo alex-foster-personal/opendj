@@ -57,6 +57,7 @@ against it, and there is nothing honest to put in its place.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -76,6 +77,7 @@ from apps.analysis_beatgrid import activations
 from apps.analysis_beatgrid.grid_fit import GRID_FIT_RAW
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
+from apps.shared import engine_decode
 
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
@@ -156,6 +158,38 @@ def runner_command(
     return [uv, "run", "--no-project", "--script", *args]
 
 
+#: Where an m4a's engine decode waits for the runner. Fixed, not a fresh
+#: temporary directory, because the runner names its activation file after a
+#: digest of the path it read.
+ENGINE_DECODE_DIR = Path(tempfile.gettempdir()) / "own-beatgrid-decode"
+
+
+def _runner_input(audio_path: Path, decode_dir: Path | None = None) -> Path:
+    """The file the runner reads: the track itself, or the engine's decode of it.
+
+    The runner reads audio through torchaudio, soundfile and madmom, none of
+    which opens an m4a without ffmpeg, and the shipped app has no ffmpeg
+    (NAE-22). For a container libsndfile cannot read, the engine decodes it
+    into a float WAV first, at a path fixed per track so the activation file
+    is the same on every run of it. The caller deletes the WAV.
+    """
+    if not engine_decode.needs_engine_decode(audio_path):
+        return audio_path
+    tag = hashlib.sha256(str(audio_path.resolve()).encode("utf-8")).hexdigest()[:12]
+    wav = (decode_dir or ENGINE_DECODE_DIR) / tag / f"{audio_path.stem}.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        return engine_decode.decode_to_wav(audio_path, wav)
+    except engine_decode.EngineDecoderUnavailable as exc:
+        wav.unlink(missing_ok=True)
+        raise BackendNotAvailable(f"the engine cannot decode {audio_path}: {exc}") from exc
+    except engine_decode.EngineDecodeFailed as exc:
+        wav.unlink(missing_ok=True)
+        if not audio_path.exists():
+            raise TrackVanished(f"{audio_path} vanished before the engine decoded it") from None
+        raise TrackUnreadable(str(exc)) from None
+
+
 def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, Any]:
     """Run `beat_this_runner.py` over one file and return its parsed payload.
 
@@ -171,10 +205,28 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
     """
     timeout = float(os.environ.get(TIMEOUT_ENV) or DEFAULT_TIMEOUT_S)
     activations_dir = activations.default_activations_dir()
+    runner_input = _runner_input(audio_path)
+    try:
+        return _run_runner_on(runner_input, audio_path, checkpoint, device=device,
+                              timeout=timeout, activations_dir=activations_dir)
+    finally:
+        if runner_input != audio_path:
+            runner_input.unlink(missing_ok=True)
+
+
+def _run_runner_on(
+    runner_input: Path,
+    audio_path: Path,
+    checkpoint: Path,
+    *,
+    device: str,
+    timeout: float,
+    activations_dir: Path,
+) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch:
         out_path = Path(scratch) / "beats.json"
         command = runner_command(
-            audio_path, out_path, checkpoint, device=device, activations_dir=activations_dir
+            runner_input, out_path, checkpoint, device=device, activations_dir=activations_dir
         )
         log.info("own_beatgrid: %s", " ".join(command))
         try:

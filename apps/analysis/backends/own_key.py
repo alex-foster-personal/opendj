@@ -74,6 +74,7 @@ from apps.analysis_key.lane_payload import (
     depends_on_identity,
 )
 from apps.analysis_key.version import LANE, PRODUCER, PRODUCER_VERSION
+from apps.shared import engine_decode
 
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
@@ -314,6 +315,8 @@ def _require_deps() -> None:
 
 def _decode(audio_path: Path) -> tuple[Any, int]:
     """`(samples, sample_rate)` for a whole file, failing by name per file."""
+    if engine_decode.needs_engine_decode(audio_path):
+        return _engine_decode(audio_path)
     import librosa
 
     try:
@@ -325,6 +328,26 @@ def _decode(audio_path: Path) -> tuple[Any, int]:
     if samples.size == 0:
         raise TrackUnreadable(f"empty audio: {audio_path.name}")
     return samples, int(sample_rate)
+
+
+def _engine_decode(audio_path: Path) -> tuple[Any, int]:
+    """Mono float samples from the engine, for a container librosa reads only via ffmpeg.
+
+    librosa opens m4a through audioread, which needs ffmpeg, and the shipped
+    app has none (NAE-22). The engine's mono mix is (L+R)/2, the same as
+    librosa's.
+    """
+    import numpy as np
+
+    try:
+        pcm, sample_rate, _ = engine_decode.decode_f32(audio_path, mono=True)
+    except engine_decode.EngineDecoderUnavailable as exc:
+        raise BackendNotAvailable(f"the engine cannot decode {audio_path}: {exc}") from exc
+    except engine_decode.EngineDecodeFailed as exc:
+        if not audio_path.exists():
+            raise TrackVanished(f"{audio_path.name} vanished before it was decoded") from None
+        raise TrackUnreadable(f"{audio_path.name}: {exc}") from None
+    return np.frombuffer(pcm, dtype="<f4").copy(), sample_rate
 
 
 def analyze_audio(

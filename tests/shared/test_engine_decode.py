@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import struct
 import wave
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import pytest
 
 from apps.shared import engine_decode
 from apps.shared.engine_decode import (
+    EngineDecodeFailed,
     EngineDecoderUnavailable,
     probe_duration_s,
     resolve_engine_decoder,
@@ -98,3 +100,66 @@ def test_an_m4a_length_excludes_its_priming_frames(engine: Path) -> None:
         / "apps/audio-engine/tests/fixtures/audio/click-250ms-aac.m4a"
     )
     assert probe_duration_s(fixture, engine) == 1.0
+
+
+_M4A = (
+    Path(__file__).resolve().parents[2]
+    / "apps/audio-engine/tests/fixtures/audio/click-250ms-aac.m4a"
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [("a.m4a", True), ("a.M4A", True), ("a.alac", True), ("a.mp3", False),
+     ("a.FLAC", False), ("a.wav", False), ("a.aiff", False), ("a.ogg", False)],
+)
+def test_only_containers_libsndfile_cannot_read_take_the_engine(
+    name: str, expected: bool
+) -> None:
+    assert engine_decode.needs_engine_decode(Path(name)) is expected
+
+
+def test_an_m4a_decodes_to_its_frames_without_the_priming(engine: Path) -> None:
+    pcm, rate, channels = engine_decode.decode_f32(_M4A, mono=True, exe=engine)
+    assert (rate, channels, len(pcm)) == (44100, 1, 4 * 44100)
+    peak = max(range(0, len(pcm), 4), key=lambda i: abs(struct.unpack_from("<f", pcm, i)[0]))
+    # The click sits at 250 ms; priming left in would push it ~1024 frames late.
+    assert abs(peak // 4 - 11025) < 64
+
+
+def test_an_m4a_becomes_a_float_wav_a_plain_reader_opens(tmp_path: Path, engine: Path) -> None:
+    soundfile = pytest.importorskip("soundfile")
+    wav = engine_decode.decode_to_wav(_M4A, tmp_path / "click.wav", exe=engine)
+    info = soundfile.info(str(wav))
+    assert (info.samplerate, info.channels, info.frames, info.subtype) == (
+        44100, 2, 44100, "FLOAT"
+    )
+
+
+@pytest.mark.parametrize("to_wav", [False, True])
+def test_a_file_the_engine_cannot_read_is_a_decode_failure(
+    tmp_path: Path, engine: Path, to_wav: bool
+) -> None:
+    junk = tmp_path / "junk.m4a"
+    junk.write_bytes(b"not audio" * 256)
+    with pytest.raises(EngineDecodeFailed, match="could not decode"):
+        if to_wav:
+            engine_decode.decode_to_wav(junk, tmp_path / "junk.wav", exe=engine)
+        else:
+            engine_decode.decode_f32(junk, mono=True, exe=engine)
+
+
+@pytest.mark.parametrize("to_wav", [False, True])
+def test_output_shorter_than_the_stated_frames_is_refused(tmp_path: Path, to_wav: bool) -> None:
+    # A decode cut short (killed, truncated pipe) must not pass as the track.
+    short = tmp_path / "odj-audio"
+    short.write_text(
+        "#!/bin/sh\nprintf 'abcd'\n"
+        "echo '{\"sample_rate\": 44100, \"channels\": 2, \"frames\": 10}' >&2\n"
+    )
+    short.chmod(short.stat().st_mode | stat.S_IXUSR)
+    with pytest.raises(EngineDecodeFailed, match=r"4 bytes .* not the 10 frames"):
+        if to_wav:
+            engine_decode.decode_to_wav(_M4A, tmp_path / "x.wav", exe=short)
+        else:
+            engine_decode.decode_f32(_M4A, mono=False, exe=short)

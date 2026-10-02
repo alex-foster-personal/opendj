@@ -41,7 +41,9 @@ from __future__ import annotations
 import functools
 import json
 import os
+import struct
 import subprocess
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -63,8 +65,28 @@ null test), on a contended host."""
 REQUIRED_COMMANDS: tuple[str, ...] = ("decode", "probe")
 
 
+#: Containers libsndfile (soundfile, and so librosa and Beat This!'s
+#: fallback) reads by itself. Anything else, m4a/AAC/ALAC first, reached those
+#: readers only through ffmpeg, which the shipped app does not bundle.
+SNDFILE_SUFFIXES: frozenset[str] = frozenset(
+    {".wav", ".wave", ".aif", ".aiff", ".aifc", ".flac", ".ogg", ".oga", ".mp3"}
+)
+DECODE_TIMEOUT_S = 300
+_WAVE_FORMAT_IEEE_FLOAT = 3
+_CHUNK_BYTES = 1 << 20
+
+
 class EngineDecoderUnavailable(RuntimeError):
     """``odj-audio`` cannot be located or executed. Never a degraded result."""
+
+
+class EngineDecodeFailed(RuntimeError):
+    """``odj-audio`` ran and could not decode this one file."""
+
+
+def needs_engine_decode(path: Path) -> bool:
+    """Whether ``path`` is a container libsndfile cannot read by itself."""
+    return path.suffix.lower() not in SNDFILE_SUFFIXES
 
 
 @functools.lru_cache(maxsize=16)
@@ -147,9 +169,130 @@ def probe_duration_s(path: Path, exe: Path | None = None) -> float | None:
     return seconds if seconds > 0 else None
 
 
+def _decode_argv(binary: Path, path: Path, *, mono: bool) -> list[str]:
+    return [str(binary), "decode", *(["--mono"] if mono else []), "--format", "f32le", str(path)]
+
+
+def _summary(stderr: bytes) -> dict[str, int]:
+    """The JSON line ``odj-audio decode`` ends its stderr with."""
+    lines = stderr.decode("utf-8", "replace").strip().splitlines()
+    try:
+        summary = json.loads(lines[-1])
+        return {k: int(summary[k]) for k in ("sample_rate", "channels", "frames")}
+    except (IndexError, ValueError, KeyError, TypeError):
+        raise EngineDecodeFailed(
+            f"odj-audio decode gave no summary: {lines[-1] if lines else 'no stderr'}"
+        ) from None
+
+
+def decode_f32(
+    path: Path, *, mono: bool, exe: Path | None = None
+) -> tuple[bytes, int, int]:
+    """``(little-endian float32 PCM, sample_rate, channels)`` at the file's own rate.
+
+    Raises :class:`EngineDecodeFailed` for a file the engine cannot read and
+    :class:`EngineDecoderUnavailable` when the engine itself cannot run.
+    """
+    binary = exe or resolve_engine_decoder()
+    try:
+        done = subprocess.run(  # fixed argv, never a shell
+            _decode_argv(binary, path, mono=mono),
+            capture_output=True, check=False, stdin=subprocess.DEVNULL,
+            timeout=DECODE_TIMEOUT_S,
+        )
+    except OSError as exc:
+        raise EngineDecoderUnavailable(f"{binary} could not be launched: {exc}") from None
+    except subprocess.TimeoutExpired:
+        raise EngineDecodeFailed(
+            f"odj-audio did not decode {path} within {DECODE_TIMEOUT_S}s"
+        ) from None
+    if done.returncode != 0:
+        tail = done.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise EngineDecodeFailed(
+            f"odj-audio could not decode {path}: {tail[-1] if tail else done.returncode}"
+        )
+    summary = _summary(done.stderr)
+    if not done.stdout or len(done.stdout) != 4 * summary["channels"] * summary["frames"]:
+        raise EngineDecodeFailed(
+            f"odj-audio decoded {len(done.stdout)} bytes of {path}, not the "
+            f"{summary['frames']} frames its summary states"
+        )
+    return done.stdout, summary["sample_rate"], summary["channels"]
+
+
+def _wav_header(data_bytes: int, sample_rate: int, channels: int) -> bytes:
+    """A WAVE_FORMAT_IEEE_FLOAT header for 32-bit float PCM."""
+    block = 4 * channels
+    return (
+        b"RIFF" + struct.pack("<I", 36 + data_bytes) + b"WAVE"
+        + b"fmt " + struct.pack(
+            "<IHHIIHH", 16, _WAVE_FORMAT_IEEE_FLOAT, channels, sample_rate,
+            sample_rate * block, block, 32,
+        )
+        + b"data" + struct.pack("<I", data_bytes)
+    )
+
+
+def decode_to_wav(path: Path, wav: Path, *, exe: Path | None = None) -> Path:
+    """Decode ``path`` with the engine into a 32-bit float stereo WAV at ``wav``.
+
+    Streamed to disk, so peak memory here is one chunk, not the track. For a
+    reader that cannot open the source container (Beat This!'s file read on
+    an m4a with no ffmpeg); the samples are the engine's, the MP4 edit list
+    applied.
+    """
+    binary = exe or resolve_engine_decoder()
+    with wav.open("wb") as out, tempfile.TemporaryFile() as errors:
+        out.write(_wav_header(0, 0, 2))
+        try:
+            process = subprocess.Popen(  # fixed argv, never a shell
+                _decode_argv(binary, path, mono=False),
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errors,
+            )
+        except OSError as exc:
+            raise EngineDecoderUnavailable(f"{binary} could not be launched: {exc}") from None
+        assert process.stdout is not None  # Popen(stdout=PIPE) always sets it
+        written = 0
+        try:
+            while chunk := process.stdout.read(_CHUNK_BYTES):
+                out.write(chunk)
+                written += len(chunk)
+        finally:
+            process.stdout.close()
+            try:
+                returncode = process.wait(timeout=DECODE_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                raise EngineDecodeFailed(
+                    f"odj-audio did not decode {path} within {DECODE_TIMEOUT_S}s"
+                ) from None
+        errors.seek(0)
+        stderr = errors.read()
+        if returncode != 0:
+            tail = stderr.decode("utf-8", "replace").strip().splitlines()
+            raise EngineDecodeFailed(
+                f"odj-audio could not decode {path}: {tail[-1] if tail else returncode}"
+            )
+        summary = _summary(stderr)
+        if written == 0 or written != 4 * summary["channels"] * summary["frames"]:
+            raise EngineDecodeFailed(
+                f"odj-audio decoded {written} bytes of {path}, not the "
+                f"{summary['frames']} frames its summary states"
+            )
+        out.seek(0)
+        out.write(_wav_header(written, summary["sample_rate"], summary["channels"]))
+    return wav
+
+
 __all__ = [
     "BIN_ENV",
+    "SNDFILE_SUFFIXES",
+    "EngineDecodeFailed",
     "EngineDecoderUnavailable",
+    "decode_f32",
+    "decode_to_wav",
+    "needs_engine_decode",
     "probe_duration_s",
     "resolve_engine_decoder",
 ]
