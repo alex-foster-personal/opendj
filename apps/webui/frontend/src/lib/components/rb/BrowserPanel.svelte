@@ -86,7 +86,19 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs
+		PlaylistSetTabs,
+		clipboardToastMessage,
+		getTrackClipboard,
+		libraryEditShortcut,
+		partitionPaste,
+		pastedRowOrders,
+		pasteRevealScrollTop,
+		pasteBlockReason,
+		pasteToastMessage,
+		selectAllRows,
+		selectedIdsInViewOrder,
+		selectRowOrders,
+		setTrackClipboard
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -165,20 +177,6 @@
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCueSeek } from '$lib/player/preview-cue.svelte';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
-	import {
-		clipboardToastMessage,
-		getTrackClipboard,
-		libraryEditShortcut,
-		partitionPaste,
-		pastedRowOrders,
-		pasteRevealScrollTop,
-		pasteBlockReason,
-		pasteToastMessage,
-		selectAllRows,
-		selectedIdsInViewOrder,
-		selectRowOrders,
-		setTrackClipboard
-	} from './browser/track-clipboard';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
