@@ -409,6 +409,8 @@
 {/snippet}
 
 <style>
+	@import './HeadphoneCluster.io-panel.css';
+
 	.hp {
 		display: flex;
 		flex-wrap: wrap;
@@ -496,65 +498,6 @@
 		gap: 2px;
 		align-items: center;
 	}
-	.hp-panel {
-		position: fixed;
-		z-index: 140;
-		top: max(12px, var(--rb-topbar-h, 50px));
-		right: 12px;
-		width: min(450px, calc(100vw - 24px));
-		max-height: calc(100vh - 24px);
-		display: flex;
-		flex-direction: column;
-		background: var(--rb-panel, #14171b);
-		color: var(--rb-text, #c8cdd2);
-		border: 1px solid var(--rb-border, #333);
-		border-radius: 8px;
-		box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
-		font-size: 11px;
-	}
-	.hp-panel-header, .hp-section-heading {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-	}
-	.hp-panel-header {
-		padding: 10px 14px;
-		border-bottom: 1px solid var(--rb-border, #333);
-	}
-	.hp-panel-header strong { display: block; font-size: 14px; }
-	.hp-panel-header small { display: block; color: var(--rb-text-dim, #838990); font-size: 9px; }
-	.hp-panel-close {
-		background: transparent;
-		border: 0;
-		color: var(--rb-text, #c8cdd2);
-		line-height: 0;
-		cursor: pointer;
-	}
-	.hp-panel-body { overflow: auto; padding: 10px 14px 14px; }
-	.hp-section { padding: 8px 0; border-bottom: 1px solid var(--rb-border, #333); }
-	.hp-section:last-child { border-bottom: 0; }
-	.hp-section h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-	.hp-section h3 span { color: var(--rb-text-dim, #838990); text-transform: none; font-weight: 400; }
-	.hp-section-heading h3 { margin: 0; }
-	.hp-section button, .hp-section select, .hp-section input { font: inherit; }
-	.hp-mode-choices { display: flex; flex-wrap: wrap; gap: 5px; }
-	.hp-mode-choices button, .hp-section-heading button, .hp-calibrate-button, .hp-acquire {
-		background: var(--rb-panel-raised, #1a1e25);
-		border: 1px solid var(--rb-border, #333);
-		border-radius: 3px;
-		color: var(--rb-text, #c8cdd2);
-		padding: 4px 7px;
-		cursor: pointer;
-	}
-	.hp-mode-choices button[aria-pressed='true'] { border-color: var(--rb-accent, #4fb3ff); color: var(--rb-accent, #4fb3ff); }
-	.hp-context { color: var(--rb-text-dim, #838990); font-size: 10px; line-height: 1.35; margin: 5px 0; }
-	.hp-future { display: flex; justify-content: space-between; align-items: center; color: var(--rb-text-dim, #838990); margin: 3px 0; }
-	.hp-future button { background: transparent; border: 0; color: inherit; padding: 3px 0; }
-	.hp-future span { font-size: 9px; }
-	.hp-future button:disabled, .hp-calibrate-button:disabled { opacity: .5; cursor: not-allowed; }
-	.hp-delay-visual { display: flex; flex-direction: column; gap: 2px; color: var(--rb-accent, #4fb3ff); font-size: 9px; letter-spacing: .05em; margin: 5px 0; }
-	.hp-calibration-section { display: block; }
 	select {
 		font: inherit;
 		font-size: 7px;

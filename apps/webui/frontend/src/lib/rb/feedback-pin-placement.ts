@@ -1,4 +1,4 @@
-import type { AnchorishElement } from './feedback';
+import type { AnchorishElement } from './feedback-anchorish';
 
 /** Pin-system chrome that must not become the stored anchor. */
 const PIN_SYSTEM_CLASSES = new Set([

@@ -79,15 +79,11 @@ export function usbPaneSource(): Promise<typeof import('$lib/rb/usb-library.svel
 }
 
 // Re-exported so BrowserPanel.svelte, already coupled to this barrel, does not
-// take three more direct fan-out edges for IOPIN-01 keyboard nav and the MIDI
-// browse adapter.
+// take more direct fan-out edges for IOPIN-01 keyboard nav, the Cmd+A/C/X/V
+// library edit keys and the MIDI browse adapter.
 export { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
-export {
-	browserNavigationMayHandle,
-	browserSelectionDelta,
-	moveBrowserFocus,
-	type BrowserFocusZone
-} from '$lib/rb/browser-navigation';
+export { createBrowserKeyboard } from './browser-keyboard';
+export { createLibraryEditKeys } from './library-edit-keys';
 export { openIoView } from '$lib/rb/io-surface.svelte';
 
 // Through here, not imported directly, to keep BrowserPanel's import fan-out

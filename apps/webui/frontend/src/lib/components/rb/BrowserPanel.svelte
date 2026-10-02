@@ -95,10 +95,8 @@
 		usbPaneSource,
 		isRemovedStickRow,
 		registerBrowseAdapter,
-		browserNavigationMayHandle,
-		browserSelectionDelta,
-		moveBrowserFocus,
-		type BrowserFocusZone,
+		createBrowserKeyboard,
+		createLibraryEditKeys,
 		openIoView
 	} from './browser/browser-panel-support';
 	import type {
@@ -188,20 +186,6 @@
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
-	import {
-		clipboardToastMessage,
-		getTrackClipboard,
-		libraryEditShortcut,
-		partitionPaste,
-		pastedRowOrders,
-		pasteBlockReason,
-		pasteToastMessage,
-		selectAllRows,
-		selectedIdsInViewOrder,
-		selectRowOrders,
-		setTrackClipboard
-	} from './browser/track-clipboard';
-	import { scrollTopForRowIndex, TRACK_TABLE_THEAD_PX } from './browser/virtual-window';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -309,12 +293,18 @@
 	// is mounted (one TrackTable) - a deliberate perf choice, kept.
 	const panes: PaneStore[] = [createPaneStore()];
 	let activePane = $state(0);
-	/** IOPIN-01: ownership is application state, not incidental DOM focus. */
-	let browserFocus = $state<BrowserFocusZone>('tracks');
-	let browserDeckTarget = $state<DeckId>(1);
+	/** IOPIN-01: ownership is application state, not incidental DOM focus
+	 * (focus zone, deck target and double-Enter live in browser-keyboard). */
+	const browserKeys = createBrowserKeyboard({
+		selectedId: () => panes[activePane].selected_id,
+		activePane: () => activePane,
+		moveTrackSelection: (delta) => _moveMidiSelection(delta),
+		searchFocused: () => searchFocused,
+		searchMode: () => searchMode,
+		openSearchMode: (mode) => openSearchMode(mode)
+	});
 	let browseScrollRevision = 0;
 	let browseScroll = $state<{ order: number; direction: -1 | 1; revision: number } | null>(null);
-	let lastTrackEnter: { at: number; stableId: string | null; pane: number } | null = null;
 	let openModal = $state<'bulk-edit' | 'find-replace' | 'mytag' | null>(null);
 	let modalEtags = $state<Record<string, string>>({});
 	let playlists = $state<PlaylistSummaryHydrated[]>([]);
@@ -920,88 +910,7 @@
 			// still waiting to settle.
 			if (request.revision > 0) _setSearchNow(request.query, request);
 		});
-		const onKey = (e: KeyboardEvent): void => {
-			if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'f' || e.key === 'F')) {
-				// Don't steal Cmd/Ctrl+F from text fields outside the browser search box.
-				const t = e.target;
-				if (t instanceof HTMLElement && !t.closest('.rb-search') && _editableTarget(t)) return;
-				e.preventDefault();
-				if (e.shiftKey) openSearchMode('collection');
-				else if (searchFocused && searchMode === 'filter') openSearchMode('find');
-				else openSearchMode('filter');
-				return;
-			}
-
-			if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-			if (!browserNavigationMayHandle({
-				editable: _editableTarget(e.target),
-				contextMenuOpen: document.querySelector('[data-testid="context-menu"]') !== null
-			})) return;
-
-			const delta = browserSelectionDelta(e.key);
-			if (delta !== null) {
-				lastTrackEnter = null;
-				e.preventDefault();
-				if (browserFocus === 'playlist') _movePlaylistSelection(delta);
-				else if (browserFocus === 'deck') {
-					browserDeckTarget = Math.max(1, Math.min(4, browserDeckTarget + delta)) as DeckId;
-					_focusBrowserZone();
-				}
-				else {
-					browserFocus = 'tracks';
-					_moveMidiSelection(delta);
-					_focusBrowserZone();
-				}
-				return;
-			}
-			const horizontal = e.key === 'a' || e.key === 'A' ? 'ArrowLeft'
-				: e.key === 'd' || e.key === 'D' ? 'ArrowRight' : e.key;
-			if (horizontal === 'ArrowLeft' || horizontal === 'ArrowRight') {
-				lastTrackEnter = null;
-				e.preventDefault();
-				browserFocus = moveBrowserFocus(browserFocus, horizontal);
-				_focusBrowserZone();
-				return;
-			}
-			if (e.key !== 'Enter') return;
-			// A directly focused playlist row already handles Enter in PlaylistTree;
-			// a native deck button activates itself. Neither is a track-row
-			// double-Enter, regardless of an earlier browserFocus state.
-			const target = e.target instanceof HTMLElement ? e.target : null;
-			if (target?.closest('[data-testid="playlist-row"], [data-testid="playlist-all-tracks"]')) {
-				lastTrackEnter = null;
-				browserFocus = 'playlist';
-				return;
-			}
-			const deckTarget = target?.closest<HTMLButtonElement>('button.deck-target');
-			if (deckTarget) {
-				lastTrackEnter = null;
-				browserFocus = 'deck';
-				const targets = Array.from(deckTarget.parentElement?.querySelectorAll('button.deck-target') ?? []);
-				const index = targets.indexOf(deckTarget);
-				if (index >= 0) browserDeckTarget = (index + 1) as DeckId;
-				return;
-			}
-			e.preventDefault();
-			if (browserFocus === 'playlist') {
-				(document.activeElement instanceof HTMLElement ? document.activeElement : null)?.click();
-				return;
-			}
-			if (browserFocus === 'deck') {
-				_activateFocusedDeckTarget();
-				return;
-			}
-			const now = performance.now();
-			const stableId = panes[activePane].selected_id;
-			if (lastTrackEnter !== null && now - lastTrackEnter.at <= 500 &&
-				lastTrackEnter.stableId === stableId && lastTrackEnter.pane === activePane) {
-				lastTrackEnter = null;
-				_triggerTrackDoubleEnter();
-			} else {
-				lastTrackEnter = { at: now, stableId, pane: activePane };
-				_focusBrowserZone();
-			}
-		};
+		const onKey = browserKeys.onKey;
 		window.addEventListener('keydown', onKey);
 		window.addEventListener('keydown', onLibraryEditKey);
 		// PERF-UI-01: first crossing into a short viewport collapses
@@ -2903,7 +2812,7 @@
 		_noteLibraryInteraction();
 		const p = panes[activePane];
 		if (p.selected_id !== row.stable_id) {
-			lastTrackEnter = null;
+			browserKeys.resetEnter();
 			_pushNav();
 		}
 		const extend = event !== undefined && (event.metaKey || event.ctrlKey);
@@ -2929,8 +2838,7 @@
 		// navigation while that menu is open (IOPIN-01).
 		if (typeof document !== 'undefined' && document.querySelector('[data-testid="context-menu"]') !== null) return;
 		if (visibleRows.length === 0 || delta === 0) return;
-		lastTrackEnter = null;
-		browserFocus = 'tracks';
+		browserKeys.tracksMoved();
 		const selected = panes[activePane].selected_id;
 		const current = selected === null
 			? -1
@@ -2942,69 +2850,6 @@
 		selectRow(row);
 		browseScrollRevision += 1;
 		browseScroll = { order: row.order, direction: delta > 0 ? 1 : -1, revision: browseScrollRevision };
-	}
-
-	function _editableTarget(target: EventTarget | null): boolean {
-		if (!(target instanceof HTMLElement)) return false;
-		const interactive = target.closest('button, a, [role="button"]');
-		if (interactive !== null && !interactive.matches(
-			'.deck-target, [data-testid="playlist-row"], [data-testid="playlist-all-tracks"]'
-		)) return true;
-		return (
-			target.closest('[role="slider"], [role="dialog"], dialog, [role="menu"]') !== null ||
-			target.tagName === 'INPUT' ||
-			target.tagName === 'TEXTAREA' ||
-			target.tagName === 'SELECT' ||
-			target.isContentEditable
-		);
-	}
-
-	function _selectedTrackElement(): HTMLElement | null {
-		const id = panes[activePane].selected_id;
-		if (id === null || typeof document === 'undefined') return null;
-		return document.querySelector<HTMLElement>(`[data-testid="track-row"][data-stable-id="${CSS.escape(id)}"]`);
-	}
-
-	function _focusBrowserZone(): void {
-		void tick().then(() => {
-			if (typeof document === 'undefined') return;
-			if (browserFocus === 'tracks') {
-				_selectedTrackElement()?.focus();
-				return;
-			}
-			if (browserFocus === 'playlist') {
-				document.querySelector<HTMLElement>('[data-testid="playlist-row"].selected, [data-testid="playlist-all-tracks"].selected')?.focus();
-				return;
-			}
-			const targets = _selectedTrackElement()?.querySelectorAll<HTMLButtonElement>('button.deck-target');
-			targets?.[browserDeckTarget - 1]?.focus();
-		});
-	}
-
-	function _movePlaylistSelection(delta: -1 | 1): void {
-		if (typeof document === 'undefined') return;
-		const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="playlist-all-tracks"], [data-testid="playlist-row"]'));
-		if (nodes.length === 0) return;
-		const active = document.activeElement;
-		const current = active instanceof HTMLElement ? nodes.indexOf(active) : -1;
-		const next = current < 0 ? (delta > 0 ? 0 : nodes.length - 1) : Math.max(0, Math.min(nodes.length - 1, current + delta));
-		nodes[next].click();
-		nodes[next].focus();
-	}
-
-	function _activateFocusedDeckTarget(): void {
-		const row = _selectedTrackElement();
-		if (row === null) return;
-		const targets = Array.from(row.querySelectorAll<HTMLButtonElement>('button.deck-target'));
-		targets[browserDeckTarget - 1]?.click();
-	}
-
-	function _triggerTrackDoubleEnter(): void {
-		const row = _selectedTrackElement();
-		if (row === null) return;
-		// Route through TrackTable's existing double-click handler so its deck
-		// reservation and master-deck safeguards stay the one implementation.
-		row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
 	}
 
 	function _loadMidiSelection(deck: DeckId): void {
@@ -3357,128 +3202,24 @@
 		if (node !== null) await _loadPane(p, node);
 	}
 
-	// Cmd/Ctrl+A, C, X, V on the track list (pins ce142ae7e22f, 0b1e12cc01d0).
-	// Pure rules live in ./browser/track-clipboard; this owns the key and the
-	// one write. Paste goes through the atomic transfer endpoint, which is a
-	// set-union on the destination, so a repeated Cmd+V never stacks
-	// duplicates and a cut paste removes the tracks from their source in the
-	// same transaction.
-	function onLibraryEditKey(e: KeyboardEvent): void {
-		if (e.repeat) return;
-		const action = libraryEditShortcut(e);
-		if (action === null) return;
-		// A modal dialog over the library owns the keyboard.
-		if (document.querySelector('dialog[open], [aria-modal="true"]') !== null) return;
-		if (action === 'copy' || action === 'cut') {
-			// Selected page text (a lyric line, a toast) keeps the native copy.
-			const sel = window.getSelection();
-			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
-		}
-		e.preventDefault();
-		const p = pane;
-		if (action === 'select_all') {
-			if (selectAllRows(p, renderedRows) === 0) pushToast('no tracks to select', 'info');
-			return;
-		}
-		if (action === 'copy' || action === 'cut') {
-			const ids = selectedIdsInViewOrder(renderedRows, p.selected_orders, p.selected_ids);
-			if (ids.length === 0) {
-				pushToast(`select tracks to ${action} first`, 'info');
-				return;
-			}
-			const fromPlaylist =
-				source === 'collection' && p.kind === 'playlist' && p.playlist_id !== null && !p.whole_collection
-					? p.playlist_id
-					: null;
-			// Cutting from something that is not a playlist (All Tracks,
-			// search results) has nothing to remove the tracks from: copy.
-			const mode = action === 'cut' && fromPlaylist !== null ? 'cut' : 'copy';
-			setTrackClipboard({
-				stable_ids: ids,
-				mode,
-				source_playlist_id: fromPlaylist,
-				source_title: p.title
-			});
-			pushToast(clipboardToastMessage(ids.length, mode), 'info');
-			return;
-		}
-		void _pasteTracks();
-	}
-
-	async function _pasteTracks(): Promise<void> {
-		const p = pane;
-		const clip = getTrackClipboard();
-		const blocked = pasteBlockReason(p, source, clip);
-		if (blocked !== null || clip === null || p.playlist_id === null) {
-			pushToast(blocked ?? 'nothing to paste', 'info');
-			return;
-		}
-		const destId = p.playlist_id;
-		const destTitle = p.title;
-		const move = clip.mode === 'cut' && clip.source_playlist_id !== null && clip.source_playlist_id !== destId;
-		try {
-			const dest = await getPlaylistTracksEtag(destId);
-			const plan = partitionPaste(
-				clip.stable_ids,
-				dest.detail.tracks.map((t) => t.stable_id)
-			);
-			if (plan.add.length > 0 || move) {
-				const src = move && clip.source_playlist_id !== null
-					? await getPlaylistTracksEtag(clip.source_playlist_id)
-					: null;
-				await transferPlaylistTracks(destId, dest.etag, {
-					stable_ids: clip.stable_ids,
-					mode: move ? 'move' : 'add',
-					...(src !== null && clip.source_playlist_id !== null
-						? { source_playlist_id: clip.source_playlist_id, source_etag: src.etag }
-						: {})
-				});
-			}
-			// A cut pastes once, like a Finder move; copy can paste again.
-			if (move) setTrackClipboard({ ...clip, mode: 'copy', source_playlist_id: null });
-			pushToast(pasteToastMessage(plan.add.length, plan.already, destTitle, move), 'info');
-			// Reload every pane showing either playlist BEFORE the tree refresh,
-			// so the pasted rows are on screen as soon as the write lands.
-			const sourceId = move ? clip.source_playlist_id : null;
-			await Promise.all(
-				panes
-					.filter((q) => q.playlist_id === destId || (sourceId !== null && q.playlist_id === sourceId))
-					.map(async (q) => {
-						const node = _currentNode(q);
-						if (node !== null) await _loadPane(q, node);
-					})
-			);
-			if (p.playlist_id === destId && plan.add.length > 0) _revealPasted(p, plan.add);
-		} catch (exc) {
-			if (exc instanceof PlaylistConflictError) {
-				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
-			} else {
-				pushToast(`paste failed: ${String(exc)}`, 'error');
-			}
-			return;
-		}
-		await _refreshPlaylists();
-	}
-
-	/** Pasted rows land at the END of the playlist, below the fold in a long
-	 * one: select them and scroll the first into view so the paste is seen. */
-	function _revealPasted(p: PaneStore, pastedIds: string[]): void {
-		const orders = pastedRowOrders(p.rows, pastedIds);
-		if (orders.length === 0) return;
-		selectRowOrders(p, orders);
-		if (p !== pane) return;
-		const index = renderedRows.findIndex((r) => r.order === orders[0]);
-		if (index < 0) return;
-		p.rememberScroll(
-			scrollTopForRowIndex({
-				rowIndex: Math.max(0, index - 2),
-				// TrackTable's ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT.
-				rowHeight: uiPrefs.library_density === 'cosy' ? 30 : 22,
-				headerOffsetPx: TRACK_TABLE_THEAD_PX
-			})
-		);
-		navEpoch += 1;
-	}
+	// Cmd/Ctrl+A, C, X, V on the track list (pins ce142ae7e22f, 0b1e12cc01d0):
+	// the key handler and the atomic-transfer paste live in
+	// ./browser/library-edit-keys; this supplies the pane state it reads.
+	const onLibraryEditKey = createLibraryEditKeys({
+		pane: () => pane,
+		panes: () => panes,
+		renderedRows: () => renderedRows,
+		source: () => source,
+		// TrackTable's ROW_HEIGHT_COSY / ROW_HEIGHT_COMPACT.
+		rowHeight: () => (uiPrefs.library_density === 'cosy' ? 30 : 22),
+		currentNode: _currentNode,
+		loadPane: _loadPane,
+		refreshPlaylists: _refreshPlaylists,
+		bumpNavEpoch: () => {
+			navEpoch += 1;
+		},
+		pushToast: (message, kind) => pushToast(message, kind)
+	});
 
 	let addToPlaylistIds = $state<string[] | null>(null);
 

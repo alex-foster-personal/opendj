@@ -64,6 +64,7 @@
  */
 
 import { clampToViewport } from "$lib/ui/clamp-to-viewport";
+import type { AnchorishElement } from "./feedback-anchorish";
 import type { PinPlacement } from "./feedback-pin-position";
 
 export interface PanelPos {
@@ -476,14 +477,9 @@ export function serializePinsVisible(visible: boolean): string {
 export { linkifyAgentNote } from "./feedback-note";
 
 // ----- nearest stable anchor ---------------------------------------------
-/** The slice of Element the anchor walk reads; tests pass plain objects. */
-export interface AnchorishElement {
-  id?: string;
-  tagName?: string;
-  getAttribute?(name: string): string | null;
-  classList?: { length: number; item(i: number): string | null };
-  parentElement?: AnchorishElement | null;
-}
+// AnchorishElement lives in feedback-anchorish.ts so feedback-pin-placement
+// can name it without importing this module (that edge closed an import cycle).
+export type { AnchorishElement } from "./feedback-anchorish";
 
 const ANCHOR_WALK_LIMIT = 8;
 
