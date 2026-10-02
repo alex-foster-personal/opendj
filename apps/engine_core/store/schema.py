@@ -81,7 +81,10 @@ from functools import cache
 
 from apps.analysis.queue_stale import STALE_TABLES_SQL
 from apps.analysis.queue_store import QUEUE_TABLES_SQL
-from apps.shared.pairings.schema_sql import migrate_smartlists_deleted_at
+from apps.shared.pairings.schema_sql import (
+    migrate_pairings_snapshot_json,
+    migrate_smartlists_deleted_at,
+)
 from apps.shared.state.migrations_v9 import ENROLLED_VIA_VALUES
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -763,6 +766,7 @@ _CURATION: tuple[str, ...] = (
                                    (confidence BETWEEN 0 AND 1)),
         created_at     TEXT NOT NULL,
         modified_at    TEXT NOT NULL,
+        snapshot_json  TEXT,
         PRIMARY KEY (from_stable_id, to_stable_id, direction)
     )
     """,
@@ -1845,6 +1849,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     if adopting:
         _assert_adoptable(conn)
     migrate_smartlists_deleted_at(conn)
+    migrate_pairings_snapshot_json(conn)
     _audit_existing_shapes(conn)
 
     # IMMEDIATE, not the default DEFERRED: this runner reads (the census and

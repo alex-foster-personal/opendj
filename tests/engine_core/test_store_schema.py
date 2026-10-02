@@ -35,7 +35,11 @@ from apps.launcher.scripts.bootstrap_db import apply_launcher_migration
 from apps.sets.state import _ensure_schema as sets_ensure_schema
 from apps.shared.fingerprints import FingerprintCache
 from apps.shared.hashing import HashCache
-from apps.shared.pairings.schema_sql import ensure_phase08_tables
+from apps.shared.pairings.schema_sql import (
+    _PAIRINGS_DDL,
+    _SMARTLISTS_DDL,
+    ensure_phase08_tables,
+)
 from apps.shared.play_orders.schema import apply_play_order_migrations
 from apps.shared.state.schema import INFRASTRUCTURE_TABLES
 from apps.shared.state.schema import apply_migrations as legacy_state_migrations
@@ -659,6 +663,37 @@ def test_shape_audit_accepts_a_real_legacy_state_db(tmp_path: Path) -> None:
 
     consolidated.apply_migrations(conn)
     assert consolidated.was_adopted(conn)
+    conn.close()
+
+
+def test_shape_audit_adopts_a_legacy_pairings_table_without_snapshot_json(
+    tmp_path: Path,
+) -> None:
+    """A state.db whose pairings table predates snapshot_json (PAIR-04) still
+    adopts: the column is added before the audit, as smartlists.deleted_at is,
+    and its rows survive."""
+    conn = _connect(tmp_path / "legacy_pre_snapshot.db")
+    legacy_state_migrations(conn)
+    _ensure_analysis_tables(conn)
+    # The exact pre-PAIR-04 DDL: the shipped statement minus its snapshot line.
+    pre_snapshot_ddl = _PAIRINGS_DDL[0].replace("        snapshot_json  TEXT,\n", "")
+    assert "snapshot_json" not in pre_snapshot_ddl
+    conn.execute(pre_snapshot_ddl)
+    conn.execute(
+        "INSERT INTO pairings VALUES ('a', 'b', 'into', 'manual', 'kept', NULL, "
+        "'2026-09-01T00:00:00+00:00', '2026-09-01T00:00:00+00:00')"
+    )
+    # The rest of the pre-PAIR-04 curation DDL, without ensure_phase08_tables
+    # (which now adds the column itself and would hide the adoption path).
+    for stmt in (*_PAIRINGS_DDL[1:], *_SMARTLISTS_DDL):
+        conn.execute(stmt)
+    conn.commit()
+
+    consolidated.apply_migrations(conn)
+    assert consolidated.was_adopted(conn)
+    assert conn.execute("SELECT notes, snapshot_json FROM pairings").fetchall() == [
+        ("kept", None)
+    ]
     conn.close()
 
 
