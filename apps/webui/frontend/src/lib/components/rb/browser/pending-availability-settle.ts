@@ -23,7 +23,7 @@
  *       nothing ⛔️
  */
 
-import type { FileAvailabilityStatus } from '$lib/rb/api-rb';
+import type { FileAvailabilityStatus } from '$lib/rb/file-availability';
 
 //-----------------------------------------------------------------------------
 // config

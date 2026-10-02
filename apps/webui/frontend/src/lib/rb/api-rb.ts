@@ -56,12 +56,8 @@ export const RB_API_BASE: string = API_BASE;
 
 export { RbApiError } from './api-rb-error';
 
-export type FileAvailabilityStatus =
-	| 'present'
-	| 'absent'
-	| 'AVAILABILITY_PENDING'
-	| 'streaming'
-	| 'awaiting_volume';
+import type { FileAvailabilityStatus } from './file-availability';
+export type { FileAvailabilityStatus } from './file-availability';
 
 export type TrackLyrics = {
 	stable_id: string;
