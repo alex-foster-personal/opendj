@@ -105,7 +105,8 @@
 		recordFilterTiming,
 		recordLibraryLoadTiming,
 		recordPlaylistSwitchFirstRowsMs,
-		recordPlaylistTreeReadyMs
+		recordPlaylistTreeReadyMs,
+		measurePlaylistTreeReadyMs
 	} from '$lib/rb/library-perf';
 	import type { FilterDebounce, FilterSettle } from '$lib/rb/library-perf';
 	import {
@@ -1165,7 +1166,7 @@
 			// The old `now() - startedAt` subtracted an epoch (timeOrigin) from a
 			// relative clock and clamped to 0, so the PERF-UI-05 gate read 0 ms on
 			// every run whatever the tree actually took (#3985).
-			recordPlaylistTreeReadyMs(Math.round(performance.now()));
+			recordPlaylistTreeReadyMs(measurePlaylistTreeReadyMs());
 			bootScheduler.defer('browser-panel:refresh-playlist-availability', () => {
 				void _refreshPlaylists();
 			});
