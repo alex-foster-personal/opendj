@@ -181,6 +181,10 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     tail = tmp_path / "tail.aac"
     tail.write_bytes(_adts_frames(2)[:1024 + 27])
     assert _tagreader.adts_duration(tail) is None
+    # A later frame at another sample rate is not the same stream either.
+    mixed = tmp_path / "mixed.aac"
+    mixed.write_bytes(_adts_frames(1, rate_index=4) + _adts_frames(1, rate_index=3))
+    assert _tagreader.adts_duration(mixed) is None
     # ...while a trailing ID3v1 tag (no ADTS sync) is not a frame at all.
     tagged_tail = tmp_path / "tagged_tail.aac"
     tagged_tail.write_bytes(_adts_frames(2) + b"TAG" + b"\x00" * 125)
@@ -289,5 +293,10 @@ def test_shared_read_reports_true_raw_aac_duration(tmp_path):
 
     track = tmp_path / "raw.aac"
     track.write_bytes(_adts_frames(430))
-    assert _tagreader.read(track).duration == pytest.approx(430 * 1024 / 44100)
+    tag = _tagreader.read(track)
+    assert tag.duration == pytest.approx(430 * 1024 / 44100)
+    # tinytag fills the other stream properties from the same misread frames,
+    # so they come from the walk too: 1024-byte frames over 1024 samples.
+    assert (tag.samplerate, tag.channels) == (44100, 1)
+    assert tag.bitrate == pytest.approx(1024 * 8 * 44100 / 1024 / 1000)
     assert _tagreader.read(FIXTURE).duration == pytest.approx(3.06, abs=0.05)

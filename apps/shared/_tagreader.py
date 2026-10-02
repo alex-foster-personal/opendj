@@ -26,7 +26,7 @@ Every callsite imports from this module, so:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 try:  # pragma: no cover - trivially exercised at import time
     import tinytag as _tinytag  # type: ignore
@@ -88,11 +88,16 @@ def read(path: Path | str, *, image: bool = False, duration: bool = True) -> Tin
     except Exception as exc:
         raise TagReadError(str(exc) or type(exc).__name__) from exc
     if duration:
-        # tinytag misreads raw ADTS streams (0.03 s for a 7.3 s file) rather
-        # than failing, so every duration consumer takes the frame walk.
-        adts = adts_duration(path)
-        if adts is not None:
-            tag.duration = adts
+        # tinytag misreads raw ADTS streams as MPEG (0.03 s for a 7.3 s file)
+        # rather than failing, and fills bitrate, samplerate and channels
+        # from the same bogus frames; every stream property comes from the
+        # frame walk instead.
+        stream = adts_stream(path)
+        if stream is not None:
+            tag.duration = stream.duration
+            tag.samplerate = stream.samplerate
+            tag.channels = stream.channels
+            tag.bitrate = stream.bitrate
     return tag
 
 
@@ -102,35 +107,53 @@ _ADTS_RATES = (
 )
 
 
+class AdtsStream(NamedTuple):
+    """Stream properties of a raw ADTS AAC file, from its frame headers."""
+
+    duration: float
+    samplerate: int
+    channels: int
+    bitrate: float  # kbps over the audio frames, tags excluded
+
+
 def adts_duration(path: Path | str) -> float | None:
     """Duration in seconds of a raw ADTS AAC stream, or None if it is not one.
 
     tinytag has no ADTS reader (see :func:`can_read`), and the upload duplicate
-    check needs a duration for every accepted type. Walks the frame headers
-    (1024 samples per raw data block) without decoding; a leading ID3v2 tag is
-    skipped. Reads by content, not suffix, so held ``.part`` files work.
+    check needs a duration for every accepted type. Reads by content, not
+    suffix, so held ``.part`` files work.
+    """
+    stream = adts_stream(path)
+    return stream.duration if stream else None
+
+
+def adts_stream(path: Path | str) -> AdtsStream | None:
+    """Walk the ADTS frame headers (1024 samples per raw data block) without
+    decoding; a leading ID3v2 tag is skipped and a trailing non-ADTS tag ends
+    the walk. None when the file is not ADTS, or a frame is truncated or
+    changes sample rate, since the frames walked would not be the stream.
     """
     samples = 0
-    rate = 0
+    first: tuple[int, int, int, int] | None = None
     with open(path, "rb") as fh:
         size = fh.seek(0, 2)
         fh.seek(0)
-        offset = _id3v2_end(fh.read(10))
+        start = offset = _id3v2_end(fh.read(10))
         while True:
             fh.seek(offset)
             frame = _adts_frame(fh.read(7))
-            if frame is None or (rate and frame[0] != rate):
+            if frame is None:
                 break
-            if offset + frame[1] > size:
-                # Truncated: a header promises bytes the file lacks, so the
-                # frames walked so far are not the whole stream.
+            if offset + frame[1] > size or (first and frame[0] != first[0]):
                 return None
-            rate = frame[0]
+            first = first or frame
             samples += frame[2]
             offset += frame[1]
-    if not rate or not samples:
+    if first is None:
         return None
-    return samples / rate
+    duration = samples / first[0]
+    kbps = (offset - start) * 8 / duration / 1000
+    return AdtsStream(duration, first[0], first[3], kbps)
 
 
 def _id3v2_end(head: bytes) -> int:
@@ -143,15 +166,16 @@ def _id3v2_end(head: bytes) -> int:
     return 10 + size + (10 if head[5] & 0x10 else 0)
 
 
-def _adts_frame(hdr: bytes) -> tuple[int, int, int] | None:
-    """(sample rate, frame bytes, samples) of one ADTS header, or None."""
+def _adts_frame(hdr: bytes) -> tuple[int, int, int, int] | None:
+    """(sample rate, frame bytes, samples, channels) of one ADTS header."""
     if len(hdr) < 7 or hdr[0] != 0xFF or (hdr[1] & 0xF6) != 0xF0:
         return None
     rate_index = (hdr[2] >> 2) & 0x0F
     frame_len = ((hdr[3] & 0x03) << 11) | (hdr[4] << 3) | (hdr[5] >> 5)
     if rate_index >= len(_ADTS_RATES) or frame_len < 7:
         return None
-    return _ADTS_RATES[rate_index], frame_len, 1024 * ((hdr[6] & 0x03) + 1)
+    channels = ((hdr[2] & 0x01) << 2) | (hdr[3] >> 6)
+    return _ADTS_RATES[rate_index], frame_len, 1024 * ((hdr[6] & 0x03) + 1), channels
 
 
 def first_other(tag: TinyTag, key: str) -> str | None:
@@ -166,8 +190,10 @@ def first_other(tag: TinyTag, key: str) -> str | None:
 
 __all__ = [
     "HAS_TAG_READER",
+    "AdtsStream",
     "TagReadError",
     "adts_duration",
+    "adts_stream",
     "can_read",
     "first_other",
     "read",
