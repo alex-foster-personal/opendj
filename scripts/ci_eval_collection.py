@@ -53,7 +53,7 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
             "databaseId,workflowName,status,conclusion,url,createdAt,updatedAt,headBranch,headSha,event",
         ],
     )
-    known_workflows = {*campaign["expected_workflows"], "CI Cost Guard"}
+    known_workflows = set(campaign["expected_workflows"])
     campaign_runs = [
         row for row in all_runs
         if row.get("workflowName") in known_workflows
@@ -108,22 +108,7 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
         row for row in campaign_runs
         if row.get("workflowName") in campaign["expected_workflows"] and row.get("status") == "completed"
     ]
-    # The cost guard is a scheduled batch pass (Tue 22 Sep 2026, #2196): one
-    # pass prices every watched completion since the previous pass, so coverage
-    # is complete once a guard pass has COMPLETED that STARTED after the last
-    # monitored completion, not once there is one guard run per monitored run.
-    guard_runs = [row for row in campaign_runs if row.get("workflowName") == "CI Cost Guard"]
-    guard_completed = [row for row in guard_runs if row.get("status") == "completed"]
-    last_monitored = max((row.get("updatedAt") or "" for row in monitored_completed), default="")
-    guard_coverage_complete = any(
-        (row.get("createdAt") or "") > last_monitored for row in guard_completed
-    )
-    if direct_complete and not guard_coverage_complete:
-        anomalies.append(
-            "Cost Guard coverage incomplete: no completed guard pass started after the "
-            f"last monitored completion at {last_monitored or 'unknown'}"
-        )
-    complete = direct_complete and guard_coverage_complete
+    complete = direct_complete
     run_rows = []
     for run in sorted(campaign_runs, key=lambda row: row.get("createdAt") or ""):
         priced = priced_runs.get(int(run["databaseId"]), {"jobs": [], "unknown_jobs": [], "total_cost": 0.0})
@@ -134,7 +119,7 @@ def collect_campaign(campaign: dict[str, Any], runner: Any) -> dict[str, Any]:  
         "target_repository": target, "collected_at": datetime.now(UTC).isoformat(),
         "complete": complete, "estimated_gross_cost_usd": total_cost,
         "monitored_runs_completed": len(monitored_completed),
-        "cost_guard_runs_completed": len(guard_completed), "anomalies": anomalies,
+        "anomalies": anomalies,
         "cases": cases, "campaign_runs": run_rows,
     }
 
@@ -148,7 +133,6 @@ def render_campaign_report(result: dict[str, Any]) -> str:
         f"- Complete: **{str(result['complete']).lower()}**",
         f"- Estimated gross campaign cost, including baseline and guard runs: **${result['estimated_gross_cost_usd']:.3f}**",
         f"- Completed monitored runs: **{result.get('monitored_runs_completed', 0)}**",
-        f"- Completed Cost Guard runs: **{result.get('cost_guard_runs_completed', 0)}**", "",
         "| PR | Workflow | Status | Result | Estimated cost |",
         "| --- | --- | --- | --- | ---: |",
     ]
@@ -170,7 +154,7 @@ def render_campaign_report(result: dict[str, Any]) -> str:
     lines.extend([
         "", "## Required LLM assessment", "",
         "This snapshot is evidence, not the verdict. Use `$af-evalsuite-ci` to inspect "
-        "failed logs, compare all ten PRs, review Cost Guard runs/issues, and write the "
+        "failed logs, compare all ten PRs, review CI spend, and write the "
         "final assessment.", "",
     ])
     return "\n".join(lines)
