@@ -180,7 +180,14 @@ const BUDGETS = [
   // #4928 (failed-import sentence) about 259,380. Each PR passed alone. Payback, not
   // yet measured: find which of this PR's setup modules the first-paint closure
   // reaches and move the wizard-only copy behind the lazy SetupOverlay import.
-  { name: 'library', limit: 260096, measured: 259214, note: 'initial load of "/"' },
+  // RAISED Fri 2 Oct 2026 (+3 KiB, PRs #4908 and #4906, V1 headphone cue and stems
+  // on a playing deck): merge skew between two V1 PRs. Clean origin/main c8b8f5aeb
+  // measured 259,943 locally (153 bytes of headroom). #4908 alone adds +1,250 (the
+  // native cue sink branch in headphones.ts, with the socket client and worker behind
+  // a dynamic import) and #4906 alone +1,319, so both together need about 262,512.
+  // Payback, not yet measured: find which of their modules the "/" closure reaches
+  // and defer them.
+  { name: 'library', limit: 263168, measured: 261262, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -197,7 +204,10 @@ const BUDGETS = [
   // explainer dismiss, the 3Band waveform palette with its legacy option,
   // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
   // 130 bytes over the old limit; 894 bytes of headroom remain.
-  { name: 'performance', limit: 242688, measured: 229639, note: '/performance and children' },
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4906, STEM-44..48 / PERFMODE-18): the live stem
+  // handoff and the graded decode hold are genuine route weight. Clean origin/main
+  // c8b8f5aeb measured 242,439 locally; main + this PR 243,377, 689 bytes over.
+  { name: 'performance', limit: 243712, measured: 243377, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
