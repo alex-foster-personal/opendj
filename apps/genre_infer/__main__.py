@@ -211,6 +211,44 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _jev_write(data_dir: Path, results: dict, tags: list[jev.TagQuestion], min_confidence: float) -> list[str]:
+    """Merge this run into the sidecar (its answers replace earlier ones); return served models."""
+    served = sorted({str(r.get("model")) for r in results.values() if r["status"] == "ok"})
+    merged = {**jev_store.load_suggestions(data_dir).get("suggestions", {}), **results}
+    store.write_json(
+        jev_store.suggestions_path(data_dir),
+        {
+            "schema": jev.SCHEMA,
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "model": served,
+            "min_confidence": min_confidence,
+            "tags": [{"name": t.name, "question": t.question} for t in tags],
+            "suggestions": merged,
+        },
+    )
+    return served
+
+
+def _jev_report(results: dict, served: list[str], untagged: int, min_confidence: float) -> int:
+    """Print counts, UNKNOWN reasons and cost; exit 3 when every call failed."""
+    unknown = {sid: r["reason"] for sid, r in results.items() if r["status"] != "ok"}
+    doc = {"suggestions": results, "min_confidence": min_confidence}
+    shown = sum(1 for sid in results if jev_store.genre_guess(doc, sid))
+    cost = sum(float(r.get("cost") or 0.0) for r in results.values())
+    print(
+        f"asked JEV about {len(results)} untagged tracks ({untagged} untagged in total): "
+        f"{len(results) - len(unknown)} answered, {len(unknown)} UNKNOWN, "
+        f"{shown} confident enough to show (>= {min_confidence}); "
+        f"model {', '.join(served) or 'none'}; cost ${cost:.5f}",
+        file=sys.stderr,
+    )
+    if unknown:
+        reasons = sorted(set(unknown.values()))
+        print(f"UNKNOWN reasons: {'; '.join(reasons[:5])}", file=sys.stderr)
+    # Every call failing is a measurement failure, not an empty result.
+    return 3 if results and len(unknown) == len(results) else 0
+
+
 def _cmd_jev(args: argparse.Namespace) -> int:
     """Ask JEV for a genre family (and the user's tag questions) for untagged tracks."""
     data_dir, state, master = _paths(args)
@@ -222,42 +260,9 @@ def _cmd_jev(args: argparse.Namespace) -> int:
         facts = jev_store.track_facts(conn, ids[: args.limit])
     finally:
         conn.close()
-    results = jev.classify(
-        {sid: jev.build_state(f) for sid, f in facts.items()}, tags, workers=args.workers
-    )
-    unknown = {sid: r["reason"] for sid, r in results.items() if r["status"] != "ok"}
-    served = sorted({str(r.get("model")) for r in results.values() if r["status"] == "ok"})
-    # Earlier runs' answers are kept; this run's answers replace theirs.
-    merged = {**jev_store.load_suggestions(data_dir).get("suggestions", {}), **results}
-    store.write_json(
-        jev_store.suggestions_path(data_dir),
-        {
-            "schema": jev.SCHEMA,
-            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "model": served,
-            "min_confidence": args.min_confidence,
-            "tags": [{"name": t.name, "question": t.question} for t in tags],
-            "suggestions": merged,
-        },
-    )
-    shown = sum(
-        1 for sid in results if jev_store.genre_guess(
-            {"suggestions": results, "min_confidence": args.min_confidence}, sid
-        )
-    )
-    cost = sum(float(r.get("cost") or 0.0) for r in results.values())
-    print(
-        f"asked JEV about {len(results)} untagged tracks ({len(unlabeled)} untagged in total): "
-        f"{len(results) - len(unknown)} answered, {len(unknown)} UNKNOWN, "
-        f"{shown} confident enough to show (>= {args.min_confidence}); "
-        f"model {', '.join(served) or 'none'}; cost ${cost:.5f}",
-        file=sys.stderr,
-    )
-    if unknown:
-        reasons = sorted(set(unknown.values()))
-        print(f"UNKNOWN reasons: {'; '.join(reasons[:5])}", file=sys.stderr)
-    # Every call failing is a measurement failure, not an empty result.
-    return 3 if results and len(unknown) == len(results) else 0
+    results = jev.classify({sid: jev.build_state(f) for sid, f in facts.items()}, tags, workers=args.workers)
+    served = _jev_write(data_dir, results, tags, args.min_confidence)
+    return _jev_report(results, served, len(unlabeled), args.min_confidence)
 
 
 def main(argv: list[str] | None = None) -> int:

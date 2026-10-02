@@ -9092,10 +9092,7 @@ export interface components {
         };
         /**
          * GenreGuessOut
-         * @description GENRE-02: a JEV genre-family GUESS for a track with no genre tag.
-         *
-         *     Never a tag: it is served only while ``genre`` is empty, only at or above
-         *     the confidence floor its run recorded, and never written anywhere.
+         * @description GENRE-02: a JEV genre-family GUESS, served only while ``genre`` is empty; never a tag.
          */
         GenreGuessOut: {
             /** Confidence */

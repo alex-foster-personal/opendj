@@ -8080,7 +8080,7 @@
         "type": "object"
       },
       "GenreGuessOut": {
-        "description": "GENRE-02: a JEV genre-family GUESS for a track with no genre tag.\n\nNever a tag: it is served only while ``genre`` is empty, only at or above\nthe confidence floor its run recorded, and never written anywhere.",
+        "description": "GENRE-02: a JEV genre-family GUESS, served only while ``genre`` is empty; never a tag.",
         "properties": {
           "confidence": {
             "maximum": 1.0,

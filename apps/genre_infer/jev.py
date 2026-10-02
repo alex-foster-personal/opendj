@@ -160,32 +160,47 @@ def _unknown(reason: str) -> dict[str, Any]:
     return {"status": "unknown", "reason": reason}
 
 
-def parse_answer(doc: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[str, Any]:
-    """One JEV response -> a suggestion, or ``unknown`` when any part is missing or out of range."""
-    answers = doc.get("answers")
-    if not isinstance(answers, Mapping):
-        return _unknown("response has no answers")
-    genre = answers.get("genre")
-    if not isinstance(genre, Mapping):
-        return _unknown("no genre answer")
-    family = genre.get("choice")
-    probs = genre.get("probabilities")
-    if family not in FAMILY_CRITERIA or not isinstance(probs, Mapping):
-        return _unknown(f"genre answer {family!r} is not a family")
-    confidence = probs.get(family)
-    if not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
-        return _unknown("genre confidence missing or out of range")
-    tag_p: dict[str, float] = {}
+def _tag_answers(answers: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[str, float] | str:
+    """P(yes) per tag question, or the reason one is missing or out of range."""
+    out: dict[str, float] = {}
     for tag in tags:
         ans = answers.get(f"tag:{tag.name}")
         p = ans.get("noul") if isinstance(ans, Mapping) else None
         if not isinstance(p, int | float) or not 0.0 <= float(p) <= 1.0:
-            return _unknown(f"tag {tag.name!r} answer missing or out of range")
-        tag_p[tag.name] = round(float(p), 4)
+            return f"tag {tag.name!r} answer missing or out of range"
+        out[tag.name] = round(float(p), 4)
+    return out
+
+
+def _genre_answer(answers: Any) -> tuple[str, float, Mapping[str, Any]] | str:
+    """(family, confidence, probabilities), or the reason the genre answer is unusable."""
+    if not isinstance(answers, Mapping):
+        return "response has no answers"
+    genre = answers.get("genre")
+    if not isinstance(genre, Mapping):
+        return "no genre answer"
+    family, probs = genre.get("choice"), genre.get("probabilities")
+    if family not in FAMILY_CRITERIA or not isinstance(probs, Mapping):
+        return f"genre answer {family!r} is not a family"
+    confidence = probs.get(family)
+    if not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
+        return "genre confidence missing or out of range"
+    return str(family), float(confidence), probs
+
+
+def parse_answer(doc: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[str, Any]:
+    """One JEV response -> a suggestion, or ``unknown`` when any part is missing or out of range."""
+    genre = _genre_answer(doc.get("answers"))
+    if isinstance(genre, str):
+        return _unknown(genre)
+    family, confidence, probs = genre
+    tag_p = _tag_answers(doc["answers"], tags)
+    if isinstance(tag_p, str):
+        return _unknown(tag_p)
     return {
         "status": "ok",
         "family": family,
-        "confidence": round(float(confidence), 4),
+        "confidence": round(confidence, 4),
         "probabilities": {k: round(float(v), 4) for k, v in probs.items() if isinstance(v, int | float)},
         "tags": tag_p,
         "model": doc.get("model"),
