@@ -116,7 +116,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -m scripts.ci_durations_ledger build \
+          # Resolved once (the guard above proved it is this checkout's), never a bare
+          # python3 in argv (AGENTS.md, "Portable by default").
+          py="$(command -v python3)"
+          "$py" -m scripts.ci_durations_ledger build \
             --repo "$GITHUB_REPOSITORY" \
             --out "$RUNNER_TEMP/durations-ledger/.test_durations"
 
