@@ -611,14 +611,14 @@
 						</button>
 						{#if applyMsg}
 							<p class="so-apply-msg" class:ok={applyOk === true} class:bad={applyOk === false}>
-								{#if applyOk === true}✅{:else if applyOk === false}✗{/if}
+								{#if applyOk === true}<svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 4.2 3.1 6.3 7 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>{:else if applyOk === false}<svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>{/if}
 								{applyMsg}
 							</p>
 						{/if}
 						{#if pendingProposal}
 							<div class="so-confirm">
-								<button type="button" onclick={() => confirmProposal(true)}>✅ Apply</button>
-								<button type="button" onclick={() => confirmProposal(false)}>✗ Reject</button>
+								<button type="button" onclick={() => confirmProposal(true)}><svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 4.2 3.1 6.3 7 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg> Apply</button>
+								<button type="button" onclick={() => confirmProposal(false)}><svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg> Reject</button>
 							</div>
 						{/if}
 					</div>
@@ -901,6 +901,9 @@
 	.so-ask-btn:disabled {
 		opacity: 0.45;
 		cursor: default;
+	}
+	.so-icon {
+		vertical-align: -1px;
 	}
 	.so-apply-msg {
 		margin: 8px 2px 0;

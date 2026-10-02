@@ -679,7 +679,36 @@
 		aria-expanded={midiUi.panelOpen}
 		onclick={toggleMidiPanel}
 	>
-		MIDI{#if midiGlyph !== ''}<span class="midi-glyph" aria-hidden="true">{midiGlyph}</span>{/if}
+		MIDI{#if midiGlyph === 'check'}<svg
+				class="midi-glyph"
+				data-icon="check"
+				width="8"
+				height="8"
+				viewBox="0 0 8 8"
+				aria-hidden="true"
+				><path
+					d="M1 4.2 3.1 6.3 7 1.8"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/></svg
+			>{:else if midiGlyph === 'cross'}<svg
+				class="midi-glyph"
+				data-icon="cross"
+				width="8"
+				height="8"
+				viewBox="0 0 8 8"
+				aria-hidden="true"
+				><path
+					d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+				/></svg
+			>{/if}
 	</button>
 
 	<!-- JOBS: LIVE (build unit: T5 jobs) - engine job list, opens the drawer.
@@ -1471,8 +1500,8 @@
 	}
 	.midi-glyph {
 		margin-left: 3px;
-		font-size: 10px;
-		font-weight: 700;
+		vertical-align: middle;
+		flex: none;
 	}
 	.midi-label.st-amber {
 		color: var(--rb-orange);
