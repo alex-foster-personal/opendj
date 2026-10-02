@@ -184,7 +184,7 @@ export function humanDataDirLabel(dataDir: string): string {
 
 export function humanAdvanceRefusal(
 	step: string,
-	ctx: { source: 'rekordbox' | 'folder' | null },
+	ctx: { source: 'rekordbox' | 'folder' | null; statusRefreshError?: string | null },
 	rawRefusal: string | null
 ): string | null {
 	if (rawRefusal === null) return null;
@@ -214,6 +214,18 @@ export function humanAdvanceRefusal(
 		}
 	}
 	if (step === 'progress') {
+		// The post-import status re-read (#3422): checked before the generic
+		// 'import ' prefix below, which would call a finished import failed.
+		if (rawRefusal === 'import status is still loading') {
+			return 'The import finished. Loading what it brought in...';
+		}
+		if (
+			ctx.statusRefreshError !== null &&
+			ctx.statusRefreshError !== undefined &&
+			rawRefusal === ctx.statusRefreshError
+		) {
+			return 'The import finished, but its summary could not be read yet.';
+		}
 		if (rawRefusal === 'no import has been started yet') {
 			return 'The import has not started yet.';
 		}

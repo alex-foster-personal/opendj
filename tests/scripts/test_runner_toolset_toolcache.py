@@ -9,7 +9,7 @@ that cannot. Each probe therefore selects the directory the action would select.
 
 Everything here runs against the host's REAL action-populated cache, never a
 fabricated one: the positive case runs each manifest entry's verify command
-unchanged against it, exactly as scripts/runner_toolset_verify.py does (`bash -o
+unchanged against it, exactly as the host verifier (fleet-af runner_toolset/verify.py) does (`bash -o
 pipefail -c`). The negative case copies one real version directory, its real
 bytes and its real marker, into tmp_path, runs the same command there, then
 deletes the copied marker and runs it again: the marker is the only difference.

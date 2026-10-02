@@ -22,9 +22,12 @@
  * caller renders INLINE rather than a tooltip.
  *
  * Requirements (mini-PRD):
- *   ✔︎ ✅ 🎯 detectPhase() never answers 'answered' for a null detection, so
- *     the failure visual cannot be painted before an answer exists.
- *     [if] a null detection renders the not-found state [then ⛔️] broken
+ *   ✔︎ ✅ 🎯 detectPhase() answers 'scanning' for a null detection that is
+ *     still idle or in flight, so a not-found visual cannot be painted before
+ *     an answer exists. A `failed` ask is the exception: that is a verdict,
+ *     and painting the scanning sentence beside the red error is issue #3422.
+ *     [if] a null detection that is not `failed` renders the not-found state [then ⛔️] broken
+ *     [if] detectState `failed` returns `scanning` [then ⛔️] broken
  *   ✔︎ ✅ 🎯 probeRows() marks a MISSING file as danger exactly when it is the
  *     reason nothing is importable, never merely because it is absent -- a
  *     working copy that is absent because the plain copy is being used is not
@@ -53,20 +56,24 @@ import { isFatalBlocker, type RekordboxDetection } from './setup-api';
  *
  * 'scanning' covers BOTH "the first answer has not arrived" and "we are
  * re-asking", because to an operator they are the same fact: the machine is
- * looking. 'answered' is the only phase allowed to draw a verdict.
+ * looking. 'answered' is the only phase allowed to draw a verdict. A failed
+ * ask is 'answered' with a null detection: the caller renders that as "the
+ * search did not finish", never as the scanning sentence (#3422).
  */
-export type DetectPhase = 'scanning' | 'answered' | 'failed';
+export type DetectPhase = 'scanning' | 'answered';
+
+/** Mirrors wizard.svelte.ts detectState without importing the store. */
+export type DetectState = 'idle' | 'scanning' | 'answered' | 'failed';
 
 export function detectPhase(
 	detection: RekordboxDetection | null,
-	busy: boolean,
-	failed = false
+	detectState: DetectState
 ): DetectPhase {
-	if (busy) return 'scanning';
-	// A detection that FAILED with nothing on screen is not still looking
-	// (#3422): painting the scanning sentence beside a red error says two
-	// opposite things at once, and the first one never clears.
-	if (detection === null) return failed ? 'failed' : 'scanning';
+	// Failed is a verdict. The scanning sentence beside the red error is the
+	// #3422 detect bug; idle/scanning with no answer stays in flight.
+	if (detectState === 'failed') return 'answered';
+	if (detectState === 'scanning') return 'scanning';
+	if (detection === null) return 'scanning';
 	return 'answered';
 }
 

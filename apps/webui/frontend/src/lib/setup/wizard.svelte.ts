@@ -33,11 +33,12 @@
  *     since run [then] the gate no longer asks for setup [else ⛔️] broken
  *     [if] the fresh reading still says 'fail' [then] finish() refuses with
  *     the engine's detail on `error` [else ⛔️] broken
- *   ✔︎ 🎯 refreshStatusAfterImport(job) re-reads setup status once this
- *     wizard's own import job settles, so the Done step reads the import that
- *     just ran, not the status loaded when the overlay opened.
+ *   ✔︎ 🎯 refreshStatusAfterImport(jobId) re-reads setup status once per job
+ *     id when this wizard's own import settles (the overlay calls it only for
+ *     a terminal row), so the Done step reads the import that just ran, not
+ *     the status loaded when the overlay opened.
  *     [if] the job succeeded and Done still says no import was recorded [then ⛔️] broken
- *     [if] a running job, or another wizard's job, triggers a status read [then ⛔️] broken
+ *     [if] another wizard's job id triggers a status read [then ⛔️] broken
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -71,16 +72,34 @@ import {
 	humanFinishUnconfirmed
 } from './present';
 import {
-	TERMINAL,
+	backRefusal,
+	nextStepFor,
+	previousStepFor,
 	type ImportSource,
 	type ImportSourceSelection,
 	type WizardStep,
-	backRefusal,
-	nextStepFor,
-	previousStepFor
-} from './wizard-steps';
+} from './wizard-rules';
 
-export * from './wizard-steps';
+export {
+	SETUP_IMPORT_KIND,
+	STEP_TITLES,
+	TERMINAL,
+	WIZARD_STEPS,
+	advanceRefusal,
+	backRefusal,
+	fatalBlockers,
+	humanRefusal,
+	importPct,
+	nextStep,
+	nextStepFor,
+	previousStep,
+	previousStepFor,
+	stepCount,
+	stepIndex,
+	stepPosition,
+	visibleSteps,
+} from './wizard-rules';
+export type { AdvanceContext, ImportSource, ImportSourceSelection, WizardStep } from './wizard-rules';
 
 function _message(exc: unknown): string {
 	return exc instanceof Error ? exc.message : String(exc);
@@ -116,9 +135,10 @@ class SetupWizard {
 	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
 	folderCandidates = $state<FolderCandidates['candidates']>([]);
 	folderCandidatesState = $state<'idle' | 'loading' | 'answered' | 'failed'>('idle');
-	/** The job whose settled outcome `status` already reflects. Plain field,
-	 * not $state: nothing renders it, it only stops a re-read per row update. */
-	private _statusReadForJob: string | null = null;
+	/** Job id for which setup status was re-read after success. */
+	statusRefreshJobId = $state<string | null>(null);
+	/** Last refreshStatusAfterImport failure for the current job, if any. */
+	statusRefreshError = $state<string | null>(null);
 
 	goTo(step: WizardStep): void {
 		this.step = step;
@@ -200,34 +220,6 @@ class SetupWizard {
 			this.detectState = 'failed';
 		} finally {
 			this.busy = false;
-		}
-	}
-
-	/**
-	 * Re-read setup status once THIS wizard's import job has settled.
-	 *
-	 * `status` is loaded when the overlay opens, which is before any import,
-	 * so its `last_import` describes the data directory as it was then. The
-	 * Done step reads that field, and after a successful import it said "No
-	 * import was recorded for this data directory" (demon-llama preview, Thu
-	 * 1 Oct 2026). The overlay passes the live job row in on every update;
-	 * this reads status once per settled job, whatever the outcome, because a
-	 * failed import changes what the engine has recorded too. Detection is
-	 * left alone: it describes rekordbox, which the import does not change.
-	 */
-	async refreshStatusAfterImport(job: Job | null): Promise<void> {
-		if (job === null || job.id !== this.jobId) return;
-		if (!TERMINAL.includes(job.status)) return;
-		if (this._statusReadForJob === job.id) return;
-		this._statusReadForJob = job.id;
-		try {
-			this.status = await getSetupStatus();
-			this.error = null;
-			this.errorDiagnostic = null;
-		} catch (exc) {
-			// Not marked as read, so the next row update can try again.
-			this._statusReadForJob = null;
-			this._fail(_message(exc));
 		}
 	}
 
@@ -391,6 +383,7 @@ class SetupWizard {
 		try {
 			const job = await startFolderImport({ folders });
 			this.jobId = job.id;
+			this._clearStatusRefresh();
 			this.error = null;
 			this.errorDiagnostic = null;
 			this.goTo('progress');
@@ -423,6 +416,7 @@ class SetupWizard {
 				refresh_decrypt: options.refreshDecrypt === true
 			});
 			this.jobId = job.id;
+			this._clearStatusRefresh();
 			this.error = null;
 			this.errorDiagnostic = null;
 			this.goTo('progress');
@@ -525,11 +519,58 @@ class SetupWizard {
 			// Re-arming is a fresh run: whatever detection said last time is
 			// history, and ensureLoaded() must ask again rather than reuse it.
 			this.detectState = 'idle';
+			this._clearStatusRefresh();
 		} catch (exc) {
 			this._fail(_message(exc));
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/**
+	 * Re-read setup status once THIS wizard's import job has settled, so Done
+	 * shows the daemon's last_import, not the snapshot from when the overlay
+	 * opened (issue #3422; the demon-llama preview, Thu 1 Oct 2026, said "No
+	 * import was recorded for this data directory" after a good import).
+	 *
+	 * Once per job id: the overlay calls this on every update of a settled
+	 * row, and a second call for the same id does not fetch again. A job id
+	 * other than the one this wizard started is ignored, so someone else's
+	 * import never rewrites this wizard's status. Until the read lands,
+	 * advanceRefusal() holds Continue on the progress step; a failed read is
+	 * kept on statusRefreshError (raw, for agents) and `error` (operator-safe).
+	 */
+	async refreshStatusAfterImport(jobId: string): Promise<void> {
+		if (this.statusRefreshJobId === jobId) return;
+		if (this.jobId !== null && jobId !== this.jobId) return;
+		const refusal = setupRefusal();
+		if (refusal !== null) {
+			this._fail(refusal);
+			this.statusRefreshError = refusal;
+			return;
+		}
+		this.busy = true;
+		this.statusRefreshError = null;
+		try {
+			const next = await getSetupStatus();
+			this.status = next;
+			this.detection = next.rekordbox;
+			this.error = null;
+			this.errorDiagnostic = null;
+			this.statusRefreshJobId = jobId;
+			this.statusRefreshError = null;
+		} catch (exc) {
+			const message = _message(exc);
+			this._fail(message);
+			this.statusRefreshError = message;
+		} finally {
+			this.busy = false;
+		}
+	}
+
+	_clearStatusRefresh(): void {
+		this.statusRefreshJobId = null;
+		this.statusRefreshError = null;
 	}
 
 	/** Drop everything, for tests. */
@@ -546,7 +587,7 @@ class SetupWizard {
 		this.detectState = 'idle';
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
-		this._statusReadForJob = null;
+		this._clearStatusRefresh();
 	}
 }
 

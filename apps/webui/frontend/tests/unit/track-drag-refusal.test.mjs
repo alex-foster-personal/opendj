@@ -55,6 +55,11 @@ describe('trackDragRefusal', () => {
 	});
 });
 
+test('72be3e505510 streaming refusal matches double-click wording', () => {
+	const phrase = 'streaming track - deck load not implemented (see PARITY-TODO)';
+	assert.equal(trackDragRefusal({ file_exists: true, is_streaming: true }), phrase);
+});
+
 test('the drag path words its refusals exactly as the load path does', () => {
 	// The two sentences are duplicated rather than shared: importing a shared
 	// constant into BrowserPanel pushed that file past the fan-out ratchet, and

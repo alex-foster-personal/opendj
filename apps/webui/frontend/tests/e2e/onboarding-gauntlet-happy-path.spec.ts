@@ -12,7 +12,7 @@
  * - if All Tracks does not list every imported track without a reload -> broken.
  * - if the Done screen does not report the imported count -> broken (#3422).
  * - if "Start playing" on the Done screen does not close the wizard -> broken
- *   (#3422: the same skip-then-close path as "Skip for now").
+ *   (#3422: the same close path that used to bounce "Skip for now").
  * - if a first-run screen shows a new user an endpoint path, an error code or
  *   an env-var name -> broken (#2590).
  */

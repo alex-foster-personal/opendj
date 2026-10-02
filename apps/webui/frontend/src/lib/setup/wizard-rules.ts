@@ -1,14 +1,12 @@
 /**
- * The first-run wizard's step model and refusal rules: which steps a branch
- * visits, and why Next or Back is refused on a step. Pure functions only, so
- * the rules are executable under node:test without the store. Split out of
- * wizard.svelte.ts, which re-exports all of it; import from there.
+ * Pure first-run wizard rules. Split out of wizard.svelte.ts so the rune
+ * module stays under the frontend file-size ratchet. Behavior is unchanged;
+ * wizard.svelte.ts re-exports every name.
  */
-
 import type { Job } from '../rb/jobs-store.svelte';
+import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 import { folderAdvanceRefusal, type FolderRow } from './folder-rows';
 import { humanAdvanceRefusal } from './present';
-import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 
 export const WIZARD_STEPS = [
 	'welcome',
@@ -40,6 +38,7 @@ export type ImportSourceSelection = ImportSource | null;
 /** The job kind the import runs as. Mirrors SETUP_IMPORT_KIND. */
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
 
+/** Job states after which nothing more will happen to the row. */
 export const TERMINAL = ['succeeded', 'failed', 'cancelled', 'unknown'];
 
 // ------------------------------------------------------------- pure rules
@@ -132,6 +131,12 @@ export interface AdvanceContext {
 	detection: RekordboxDetection | null;
 	folderRows: FolderRow[];
 	job: Job | null;
+	/** Job id whose post-import setup status has been re-read, or null. */
+	statusRefreshJobId?: string | null;
+	/** True while a setup HTTP call is in flight, including the status refresh. */
+	busy?: boolean;
+	/** Set when refreshStatusAfterImport failed for the current job. */
+	statusRefreshError?: string | null;
 }
 
 /**
@@ -163,13 +168,23 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
 		if (ctx.job.status !== 'succeeded') {
 			return `import ${ctx.job.status}; re-run it before finishing`;
 		}
+		// Done reads last_import from the status captured when the overlay
+		// opened. Continue stays refused until that snapshot is re-read, or
+		// the screen says nothing was imported (issue #3422).
+		if (ctx.statusRefreshError !== null && ctx.statusRefreshError !== undefined) {
+			return ctx.statusRefreshError;
+		}
+		if (ctx.busy === true || ctx.statusRefreshJobId !== ctx.job.id) {
+			return 'import status is still loading';
+		}
 		return null;
 	}
 	if (step === 'done') return 'this is the last step';
 	return null;
 }
 
-/** Operator-safe refusal copy for the current step. */
+/** Operator-safe refusal copy for the current step. The raw advanceRefusal()
+ * sentence still gates the button and rides on data-agent-refusal. */
 export function humanRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
 	return humanAdvanceRefusal(step, ctx, advanceRefusal(step, ctx));
 }

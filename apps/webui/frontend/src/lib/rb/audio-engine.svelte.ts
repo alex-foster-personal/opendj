@@ -493,8 +493,7 @@ interface _DeckRuntime {
 	/** Manual key-shift baseline captured when KEY SYNC latches on; restored
 	 * on disable so the Camelot offset cannot drift away from the latch. */
 	keySyncBaselineSemitones: number | null;
-	/** Decoded mix buffer retained for short sync-seek crossfades. */
-	audioBuffer: AudioBuffer | null;
+	audioBuffer: AudioBuffer | null; // decoded mix, retained for sync-seek crossfades and read by deckMixBuffer
 	/** Library-listed track duration; decoded buffer duration lives in deck state. */
 	metadataDurationMs: number | null;
 	/** Monotonic token; superseding transport/sync commands bump this deck's generation. */
@@ -674,6 +673,7 @@ export function deckPcmEstimatedBytes(): number {
 	}
 	return total;
 }
+export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
 
 // ---------------------------------------------------------------- _helpers
 
