@@ -89,6 +89,49 @@ def read(path: Path | str, *, image: bool = False, duration: bool = True) -> Tin
         raise TagReadError(str(exc) or type(exc).__name__) from exc
 
 
+_ADTS_RATES = (
+    96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000,
+    11025, 8000, 7350,
+)
+
+
+def adts_duration(path: Path | str) -> float | None:
+    """Duration in seconds of a raw ADTS AAC stream, or None if it is not one.
+
+    tinytag has no ADTS reader (see :func:`can_read`), and the upload duplicate
+    check needs a duration for every accepted type. Walks the frame headers
+    (1024 samples per raw data block) without decoding; a leading ID3v2 tag is
+    skipped. Reads by content, not suffix, so held ``.part`` files work.
+    """
+    samples = 0
+    rate = 0
+    with open(path, "rb") as fh:
+        head = fh.read(10)
+        offset = 0
+        if len(head) == 10 and head[:3] == b"ID3":
+            size = 0
+            for byte in head[6:10]:
+                size = (size << 7) | (byte & 0x7F)
+            offset = 10 + size + (10 if head[5] & 0x10 else 0)
+        while True:
+            fh.seek(offset)
+            hdr = fh.read(7)
+            if len(hdr) < 7 or hdr[0] != 0xFF or (hdr[1] & 0xF6) != 0xF0:
+                break
+            rate_index = (hdr[2] >> 2) & 0x0F
+            frame_len = ((hdr[3] & 0x03) << 11) | (hdr[4] << 3) | (hdr[5] >> 5)
+            if rate_index >= len(_ADTS_RATES) or frame_len < 7:
+                break
+            if rate and _ADTS_RATES[rate_index] != rate:
+                break
+            rate = _ADTS_RATES[rate_index]
+            samples += 1024 * ((hdr[6] & 0x03) + 1)
+            offset += frame_len
+    if not rate or not samples:
+        return None
+    return samples / rate
+
+
 def first_other(tag: TinyTag, key: str) -> str | None:
     """First non-empty value of tinytag's ``other`` field ``key`` (lowercase)."""
     values = (tag.other or {}).get(key) or ()
@@ -99,4 +142,12 @@ def first_other(tag: TinyTag, key: str) -> str | None:
     return None
 
 
-__all__ = ["HAS_TAG_READER", "TagReadError", "first_other", "read", "require"]
+__all__ = [
+    "HAS_TAG_READER",
+    "TagReadError",
+    "adts_duration",
+    "can_read",
+    "first_other",
+    "read",
+    "require",
+]

@@ -76,10 +76,16 @@ def _raise_tag_reader_unavailable() -> None:
 
 def _duration_s(path: Path) -> float | None:
     _tagreader.require()
-    try:
-        duration = _tagreader.read(path).duration
-    except _tagreader.TagReadError:
-        return None
+    # tinytag has no raw ADTS .aac reader (it reports 0.03 s for a 7.3 s
+    # stream), and without a true duration the duplicate check is skipped and
+    # an exact duplicate stages as new. Walk ADTS frames first; it returns
+    # None at once for any other format.
+    duration = _tagreader.adts_duration(path)
+    if duration is None:
+        try:
+            duration = _tagreader.read(path).duration
+        except _tagreader.TagReadError:
+            return None
     return float(duration) if duration else None
 
 

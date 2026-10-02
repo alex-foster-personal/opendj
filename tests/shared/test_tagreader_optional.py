@@ -218,3 +218,35 @@ def test_fingerprint_cache_backfills_a_null_bitrate(tmp_path):
     assert cache.get(track).bitrate == 127
     with sqlite3.connect(tmp_path / "fp.sqlite") as conn:
         assert conn.execute("SELECT bitrate FROM fingerprints").fetchone() == (127,)
+
+
+def _adts_frames(count: int, rate_index: int = 4, frame_len: int = 1024) -> bytes:
+    """``count`` ADTS frames (AAC-LC, mono, no CRC) of ``frame_len`` bytes."""
+    header = bytes([
+        0xFF, 0xF1,
+        (1 << 6) | (rate_index << 2),
+        (1 << 6) | ((frame_len >> 11) & 0x03),
+        (frame_len >> 3) & 0xFF,
+        ((frame_len & 0x07) << 5) | 0x1F,
+        0xFC,
+    ])
+    return (header + b"\x00" * (frame_len - 7)) * count
+
+
+def test_upload_duration_reads_raw_aac_held_as_part(tmp_path):
+    """A raw ADTS upload gets a true duration, so the duplicate check runs.
+
+    tinytag has no ADTS reader and reports a wrong, tiny duration (0.03 s
+    for a 7.3 s stream), and a None duration skipped duplicate detection
+    entirely (review of #4997). Uploads are held as ``.part``, so the walk
+    must work by content. Control: other formats still read via tinytag.
+    """
+    from apps.shared import _tagreader
+    from apps.webui.server.routes import ingest_upload
+
+    hold = tmp_path / "raw.aac.part"
+    hold.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x05" + b"\x00" * 5 + _adts_frames(430))
+    assert ingest_upload._duration_s(hold) == pytest.approx(430 * 1024 / 44100)
+
+    assert _tagreader.adts_duration(FIXTURE) is None
+    assert ingest_upload._duration_s(FIXTURE) == pytest.approx(3.06, abs=0.05)
