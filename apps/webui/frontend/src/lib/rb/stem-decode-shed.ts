@@ -106,11 +106,13 @@ export async function awaitEagerStemDecodeSlot(
 ): Promise<EagerStemDecodeStart> {
 	if (_shed === null) return 'immediate';
 	let cause: _ReleaseCause | null = null;
+	let release: ((cause: _ReleaseCause) => void) | null = null;
 	const slot = new Promise<_ReleaseCause>((resolve) => {
-		_pendingReleases.push((released) => {
+		release = (released) => {
 			cause = released;
 			resolve(released);
-		});
+		};
+		_pendingReleases.push(release);
 	});
 	// A shed that does not defer runs the resumer inside request(), so `cause`
 	// is already set when request() returns; anything else is a real hold.
@@ -131,5 +133,8 @@ export async function awaitEagerStemDecodeSlot(
 	});
 	const start = await Promise.race([slot, bound]);
 	clearTimer(handle);
+	// A timed-out decode is already running: it is no longer held, so a later
+	// release must neither count it nor call it.
+	if (start === 'timed_out') _pendingReleases = _pendingReleases.filter((r) => r !== release);
 	return start;
 }

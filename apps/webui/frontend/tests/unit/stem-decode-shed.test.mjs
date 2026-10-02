@@ -187,7 +187,28 @@ test('a hold nobody releases ends at the bound instead of lasting the whole trac
 	fire();
 	assert.equal(await pending, 'timed_out');
 	assert.equal(cleared, 1);
-	// The stale resolver left behind must not break a later release.
-	assert.equal(shedModule.releaseEagerStemDecodeNow(), 1);
+	// A timed-out decode is running, not held: a later release counts nothing,
+	// so a retry reads "already loading" instead of claiming a release.
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 0);
+	shedModule.setEagerStemDecodeShed(null);
+});
+
+test('a timed-out hold leaves other decodes held and countable', async () => {
+	// [if] one hold times out while another is still held [then] a release counts and starts only the held one, [else stop]
+	shedModule.setEagerStemDecodeShed(makeFakeShed({ deferred: true }));
+	let fire = null;
+	const timedOut = shedModule.awaitEagerStemDecodeSlot({
+		setTimer: (run) => {
+			fire = run;
+			return 'a';
+		},
+		clearTimer: () => {}
+	});
+	const held = shedModule.awaitEagerStemDecodeSlot({ setTimer: () => 'b', clearTimer: () => {} });
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	fire();
+	assert.equal(await timedOut, 'timed_out');
+	assert.equal(shedModule.releaseEagerStemDecodeNow(), 1, 'only the decode still held is counted');
+	assert.equal(await held, 'forced');
 	shedModule.setEagerStemDecodeShed(null);
 });
