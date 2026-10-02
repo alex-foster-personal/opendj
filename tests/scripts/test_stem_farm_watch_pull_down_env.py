@@ -27,6 +27,7 @@ def _run_without(*unset: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
 
 
@@ -44,7 +45,12 @@ def test_missing_ssh_key_fails_fast_with_a_named_error() -> None:
     env["MDT_STEM_HOST"] = "stem-farm.example.invalid"
     env["MDT_VOCAL_GCE_PROJECT"] = "example-project"
     result = subprocess.run(
-        ["bash", str(_SCRIPT)], env=env, capture_output=True, text=True, timeout=10
+        ["bash", str(_SCRIPT)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
     )
     assert result.returncode != 0
     assert "MDT_STEM_SSH_KEY" in result.stderr
@@ -56,7 +62,12 @@ def test_missing_gce_project_fails_fast_with_a_named_error() -> None:
     env["MDT_STEM_HOST"] = "stem-farm.example.invalid"
     env["MDT_STEM_SSH_KEY"] = "/dev/null"
     result = subprocess.run(
-        ["bash", str(_SCRIPT)], env=env, capture_output=True, text=True, timeout=10
+        ["bash", str(_SCRIPT)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
     )
     assert result.returncode != 0
     assert "MDT_VOCAL_GCE_PROJECT" in result.stderr
