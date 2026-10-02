@@ -159,15 +159,25 @@ def _unknown(reason: str) -> dict[str, Any]:
     return {"status": "unknown", "reason": reason}
 
 
+def _prob(value: Any) -> float | None:
+    """A probability in [0, 1], or None. Compared before float() so a huge JSON
+    integer is rejected instead of overflowing; JSON true/false are ints in
+    Python, and a boolean is not a probability."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value <= 1:
+        return None
+    return float(value)
+
+
 def _tag_answers(answers: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[str, float] | str:
     """P(yes) per tag question, or the reason one is missing or out of range."""
     out: dict[str, float] = {}
     for tag in tags:
         ans = answers.get(f"tag:{tag.name}")
         p = ans.get("noul") if isinstance(ans, Mapping) else None
-        if isinstance(p, bool) or not isinstance(p, int | float) or not 0.0 <= float(p) <= 1.0:
+        prob = _prob(p)
+        if prob is None:
             return f"tag {tag.name!r} answer missing or out of range"
-        out[tag.name] = round(float(p), 4)
+        out[tag.name] = round(prob, 4)
     return out
 
 
@@ -181,19 +191,22 @@ def _genre_answer(answers: Any) -> tuple[str, float, Mapping[str, Any]] | str:
     family, probs = genre.get("choice"), genre.get("probabilities")
     if not isinstance(family, str) or family not in FAMILY_CRITERIA or not isinstance(probs, Mapping):
         return f"genre answer {family!r} is not a family"
-    confidence = probs.get(family)
-    # JSON true/false are ints in Python; a boolean is not a probability.
-    if isinstance(confidence, bool) or not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
+    confidence = _prob(probs.get(family))
+    if confidence is None:
         return "genre confidence missing or out of range"
-    return str(family), float(confidence), probs
+    return str(family), confidence, probs
 
 
 def _cost(usage: Any) -> float | None:
     """The reported call cost, or None when it is missing or not a finite number."""
     cost = usage.get("cost") if isinstance(usage, Mapping) else None
-    if isinstance(cost, bool) or not isinstance(cost, int | float) or not math.isfinite(cost):
+    if isinstance(cost, bool) or not isinstance(cost, int | float):
         return None
-    return float(cost)
+    try:
+        value = float(cost)
+    except OverflowError:
+        return None
+    return value if math.isfinite(value) else None
 
 
 def parse_answer(doc: Any, tags: Iterable[TagQuestion]) -> dict[str, Any]:
@@ -211,7 +224,7 @@ def parse_answer(doc: Any, tags: Iterable[TagQuestion]) -> dict[str, Any]:
         "status": "ok",
         "family": family,
         "confidence": round(confidence, 4),
-        "probabilities": {k: round(float(v), 4) for k, v in probs.items() if isinstance(v, int | float)},
+        "probabilities": {k: round(v, 4) for k, raw in probs.items() if (v := _prob(raw)) is not None},
         "tags": tag_p,
         "model": doc.get("model"),
         "cost": _cost(doc.get("usage")),

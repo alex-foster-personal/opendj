@@ -303,6 +303,14 @@ def _cmd_jev(args: argparse.Namespace) -> int:
     return _jev_report(results, served, len(untagged), args.min_confidence)
 
 
+def _positive_int(text: str) -> int:
+    """A call cap of at least 1; a negative slice bound would select almost every track."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a positive integer")
+    return value
+
+
 def _probability(text: str) -> float:
     """A display floor in [0, 1]; NaN or out of range would expose every guess."""
     value = float(text)
@@ -334,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
     sh.set_defaults(func=_cmd_show)
     j = sub.add_parser("jev")
     j.add_argument("--stable-id", action="append", default=[])
-    j.add_argument("--limit", type=int, default=500)
+    j.add_argument("--limit", type=_positive_int, default=500)
     j.add_argument("--min-confidence", type=_probability, default=jev.DEFAULT_MIN_CONFIDENCE)
     j.add_argument("--workers", type=int, default=8)
     j.set_defaults(func=_cmd_jev)
