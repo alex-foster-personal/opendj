@@ -67,7 +67,7 @@ def _tri_peaks(columns: int = 600) -> np.ndarray:
 def test_a_current_entry_round_trips_exactly(source: Path) -> None:
     """The positive control: without this, every assertion below could pass
     because the cache never reads anything back at all."""
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     peaks = _tri_peaks()
     local_waveform._store_peaks(SID, key, peaks)
 
@@ -78,7 +78,7 @@ def test_a_current_entry_round_trips_exactly(source: Path) -> None:
 
 
 def test_a_pre_tri_band_mono_entry_is_a_cache_miss(source: Path) -> None:
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     mono = np.arange(600, dtype=np.uint8)
     assert mono.size % decode.BAND_COUNT == 0, (
         "the fixture must be reshapeable to (n, 3), or this test proves nothing: "
@@ -118,7 +118,7 @@ def test_peaks_written_under_another_producer_profile_are_a_cache_miss(
     assert local_waveform.peaks_version(other) != local_waveform.peaks_version(), (
         "the fixture profile must actually differ from the shipped one"
     )
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     peaks = _tri_peaks()
     local_waveform._write_json(
         local_waveform._entry_path(SID),
@@ -137,7 +137,7 @@ def test_peaks_written_under_another_producer_profile_are_a_cache_miss(
 def test_the_strip_sidecar_carries_the_same_version_as_the_entry(source: Path) -> None:
     """The half a cache-key change is easiest to forget: the browser strip is a
     separate file and would otherwise outlive the peaks it came from."""
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     local_waveform._store_peaks(SID, key, _tri_peaks())
     assert local_waveform.local_preview_strip(SID)[0] is not None, "precondition: a hit"
 
@@ -171,7 +171,7 @@ def test_the_version_moves_for_every_field_that_defines_the_peaks() -> None:
 
 
 def test_a_ragged_band_payload_is_refused_rather_than_guessed_at(source: Path) -> None:
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     ragged = np.arange(601, dtype=np.uint8)  # not a whole number of 3-band columns
     local_waveform._write_json(
         local_waveform._entry_path(SID),
@@ -186,7 +186,7 @@ def test_a_ragged_band_payload_is_refused_rather_than_guessed_at(source: Path) -
 
 
 def test_the_stored_entry_records_the_version_it_was_written_under(source: Path) -> None:
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     local_waveform._store_peaks(SID, key, _tri_peaks())
     entry = json.loads(local_waveform._entry_path(SID).read_text(encoding="utf-8"))
     assert entry["peaks_version"] == local_waveform.peaks_version()

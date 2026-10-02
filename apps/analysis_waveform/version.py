@@ -12,13 +12,20 @@ WHAT 1.0.0 IS. The shipped ffmpeg tri-band decode (`DecodeProfile` defaults,
 columns/s detail, 1200-column preview. Model-free: no third-party weights, so
 `uses_model=False` and `model_sha256=None` on every record it writes.
 
+WHAT 1.1.0 IS. The same profile, produced by the engine's own decoder
+(`odj-audio waveform`, symphonia) when it is available and by ffmpeg
+otherwise (`decode.select_decoder`). MINOR, because the engine filters at the
+file's own rate: a 48 kHz file's high band keeps its 22-24 kHz content, and
+`sample_rate` on the record is now the rate actually filtered at. On 44.1 kHz
+FLAC/MP3/WAV the peaks match 1.0.0 to within 1 of 255.
+
 -Cursor
 """
 from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.0.0"
+PRODUCER_VERSION = "1.1.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name.
 PRODUCER: Literal["backfill"] = "backfill"

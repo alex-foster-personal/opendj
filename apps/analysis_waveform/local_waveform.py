@@ -72,7 +72,8 @@ from apps.analysis_waveform.decode import (
     BAND_NAMES,
     OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
-    decode_peaks,
+    decode_peaks_from,
+    select_decoder,
 )
 
 # STRIP_COLUMNS is imported, not restated: the browser strip is ONE contract
@@ -169,6 +170,26 @@ def _source_key(path: Path) -> dict[str, Any]:
     return key
 
 
+NO_DECODER: str = "none"
+
+
+def _decode_key(path: Path) -> dict[str, Any]:
+    """``_source_key`` plus the decoder that would produce these peaks now.
+
+    The engine and ffmpeg agree to within 1 of 255 on 44.1 kHz files but not on
+    a 48 kHz high band or an AAC file's start (``decode`` module docstring), so
+    a switch of decoder is a different decode convention and rebuilds the entry
+    rather than serving the other decoder's columns. With no decoder available
+    the key says so (``NO_DECODER``): nothing is ever decoded under it, and the
+    decode attempt raises the reason.
+    """
+    try:
+        decoder: str = select_decoder(path)
+    except LocalDecodeUnavailable:
+        decoder = NO_DECODER
+    return {**_source_key(path), "decoder": decoder}
+
+
 def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
     """Whether ``entry`` was written by THIS decoder from THESE bytes.
 
@@ -181,7 +202,14 @@ def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
     return (
         entry.get("schema") == config.LOCAL_WAVEFORM_CACHE_SCHEMA
         and entry.get("peaks_version") == peaks_version()
-        and all(entry.get(name) == value for name, value in key.items())
+        and all(
+            entry.get(name) == value
+            for name, value in key.items()
+            # With no decoder on the host nothing can rebuild the entry, so the
+            # last real decode of these same bytes stands, whichever decoder
+            # wrote it; a pre-decoder-key entry (no "decoder") still misses.
+            if not (name == "decoder" and value == NO_DECODER and entry.get(name))
+        )
     )
 
 
@@ -325,7 +353,7 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
             raise
         raise LocalDecodeUnavailable(str(detail.get("message") or exc.detail)) from None
     try:
-        key = _source_key(path)
+        key = _decode_key(path)
     except OSError as exc:
         raise LocalDecodeUnavailable(f"audio file cannot be stat'd: {exc}") from None
 
@@ -351,7 +379,10 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
                     retryable=True,
                 )
             try:
-                peaks = decode_peaks(path)
+                decoder = key["decoder"]
+                if decoder == NO_DECODER:
+                    decoder = select_decoder(path)  # raises the reason
+                peaks = decode_peaks_from(decoder, path)
             finally:
                 _DECODE_SLOTS.release()
             _store_peaks(stable_id, key, peaks)
@@ -416,7 +447,7 @@ def local_preview_strip(stable_id: str) -> tuple[str | None, int | None]:
         return None, None
     source = entry.get("source")
     try:
-        key = _source_key(Path(str(source)))
+        key = _decode_key(Path(str(source)))
     except OSError:
         return None, None
     if not _entry_is_current(entry, key):

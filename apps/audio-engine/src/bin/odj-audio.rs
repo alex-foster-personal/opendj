@@ -4,8 +4,14 @@
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
 //!                   [--ws 127.0.0.1:0]
 //!                   [--midi] [--midi-map MAPS.json]
+//!   odj-audio waveform --in AUDIO --out PEAKS [--low-hz 200] [--high-hz 4000] [--sections 2] [--columns-per-s 150]
 //!   odj-audio fingerprint FILE... [--length SECONDS]
 //!   odj-audio version
+//!
+//! `waveform` writes the track's tri-band peak columns to PEAKS as raw bytes,
+//! three per column (low, mid, high), and prints one JSON line: the column
+//! count, the rate it filtered at and the file's channel count. See
+//! `src/waveform.rs`.
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
 //! sha256, when each event fired, which decks are heard when (the timeline
@@ -38,6 +44,7 @@ const USAGE: &str = "usage:
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
+  odj-audio waveform --in AUDIO --out PEAKS [--low-hz HZ] [--high-hz HZ] [--sections N] [--columns-per-s N]
   odj-audio fingerprint FILE... [--length SECONDS]   (0 = whole file; default 120, as fpcalc)
   odj-audio version";
 
@@ -564,6 +571,34 @@ fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen
     Err("this build has no device output; rebuild with --features device".into())
 }
 
+fn waveform_cmd(mut a: Args) -> Result<(), String> {
+    let path = a.take("--in")?.ok_or("waveform needs --in AUDIO")?;
+    let out = a.take("--out")?.ok_or("waveform needs --out PEAKS")?;
+    let mut p = odj_audio::waveform::Profile::default();
+    fn num<T: std::str::FromStr>(flag: &str, v: Option<String>, into: &mut T) -> Result<(), String> {
+        if let Some(v) = v {
+            *into = v.parse().map_err(|_| format!("{flag} {v} is not a number"))?;
+        }
+        Ok(())
+    }
+    num("--low-hz", a.take("--low-hz")?, &mut p.crossover_low_hz)?;
+    num("--high-hz", a.take("--high-hz")?, &mut p.crossover_high_hz)?;
+    num("--sections", a.take("--sections")?, &mut p.filter_sections)?;
+    num("--columns-per-s", a.take("--columns-per-s")?, &mut p.columns_per_s)?;
+    a.done()?;
+    let peaks = odj_audio::waveform::peaks_file(Path::new(&path), &p).map_err(|e| e.message)?;
+    let bytes: Vec<u8> = peaks.columns.iter().flatten().copied().collect();
+    std::fs::write(&out, &bytes).map_err(|e| format!("cannot write {out}: {e}"))?;
+    let v = json!({
+        "type": "waveform",
+        "columns": peaks.columns.len(),
+        "sample_rate": peaks.sample_rate,
+        "channels": peaks.channels,
+    });
+    println!("{v}");
+    Ok(())
+}
+
 /// One JSON line per file: `{"path", "duration", "fingerprint"}` on success,
 /// `{"path", "error"}` on failure, so one bad file never hides the rest. The
 /// exit status is nonzero when any file failed.
@@ -606,9 +641,17 @@ fn main() -> ExitCode {
     let r = match sub.as_str() {
         "render" => render(args),
         "serve" => serve_cmd(args),
+        "waveform" => waveform_cmd(args),
         "fingerprint" => fingerprint_cmd(args),
         "version" => {
-            let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
+            // `commands` lets a caller tell this build from an older one before it
+            // runs a subcommand the older one lacks (a stale cargo build in a
+            // reused CI workspace, say).
+            let v = json!({
+                "engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")),
+                "protocol": protocol::PROTOCOL_VERSION,
+                "commands": ["fingerprint", "render", "serve", "waveform", "version"],
+            });
             println!("{v}");
             Ok(())
         }

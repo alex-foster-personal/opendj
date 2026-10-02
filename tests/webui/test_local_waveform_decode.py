@@ -222,6 +222,9 @@ def test_cache_entry_dies_with_its_audio_file(
 def test_missing_ffmpeg_yields_an_explicit_not_decoded(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Pinned to ffmpeg: under the default ``auto`` a built engine decodes it
+    # (the next test), which is the point of having one.
+    monkeypatch.setenv("MDT_WAVEFORM_DECODER", "ffmpeg")
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     payload = _anlz(client, LOCAL_SID)
     assert payload["local_waveform"]["status"] == "not_decoded"
@@ -230,6 +233,28 @@ def test_missing_ffmpeg_yields_an_explicit_not_decoded(
         "length": 0, "low": [], "mid": [], "high": []
     }
     assert payload["waveform"]["preview"]["length"] == 0
+
+
+def test_missing_ffmpeg_still_decodes_through_the_engine(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Own waveforms with nothing installed: ``odj-audio waveform`` alone."""
+    from apps.analysis_waveform import decode
+
+    try:
+        decode.resolve_engine()
+    except decode.LocalDecodeUnavailable as exc:
+        pytest.skip(f"no odj-audio build here: {exc.reason}")
+    monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
+    # Control first, while nothing is cached: forcing the missing ffmpeg is an
+    # honest not_decoded, so the decoded state below comes from the engine.
+    monkeypatch.setenv("MDT_WAVEFORM_DECODER", "ffmpeg")
+    assert _anlz(client, LOCAL_SID)["local_waveform"]["status"] == "not_decoded"
+    monkeypatch.delenv("MDT_WAVEFORM_DECODER")
+    payload = _anlz(client, LOCAL_SID)
+    assert payload["local_waveform"]["status"] == "decoded", payload["local_waveform"]
+    assert payload["waveform"]["kind"] == "tri"
+    assert max(payload["waveform"]["detail"]["low"]) > 0.8
 
 
 @pytest.mark.requires_ffmpeg
@@ -313,13 +338,13 @@ def test_cache_entry_is_revalidated_against_its_source_file(
     _write_wav(source, loud_s=1.0, silent_s=0.0)
     peaks = _peaks(600)
 
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     local_waveform._store_peaks(LOCAL_SID, key, peaks)
     assert np.array_equal(local_waveform._cached_peaks(LOCAL_SID, key), peaks)
     assert local_waveform.local_preview_strip(LOCAL_SID)[0] is not None
 
     _write_wav(source, loud_s=2.0, silent_s=0.0)
-    moved = local_waveform._source_key(source)
+    moved = local_waveform._decode_key(source)
     assert local_waveform._cached_peaks(LOCAL_SID, moved) is None
     assert local_waveform.local_preview_strip(LOCAL_SID) == (None, None), (
         "a strip must not outlive the bytes it was decoded from"
@@ -333,7 +358,7 @@ def _seed_cached_source(
     monkeypatch.setattr(rb_config, "LOCAL_WAVEFORM_CACHE_DIR", tmp_path / "cache")
     source = tmp_path / "source.wav"
     _write_wav(source, loud_s=1.0, silent_s=0.0)
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     local_waveform._store_peaks(LOCAL_SID, key, _peaks(600))
     assert local_waveform._cached_peaks(LOCAL_SID, key) is not None
     return source, source.stat()
@@ -354,7 +379,7 @@ def test_a_same_mtime_same_size_replacement_is_still_detected_via_inode(
     assert new_stat.st_mtime == original_stat.st_mtime
     assert new_stat.st_size == original_stat.st_size
     assert new_stat.st_ino != original_stat.st_ino, "must land on a new inode to test the fix"
-    assert local_waveform._cached_peaks(LOCAL_SID, local_waveform._source_key(source)) is None
+    assert local_waveform._cached_peaks(LOCAL_SID, local_waveform._decode_key(source)) is None
 
 
 @pytest.mark.skipif(os.name != "posix", reason="ctime is POSIX-only; see _source_key")
@@ -381,7 +406,7 @@ def test_an_in_place_overwrite_with_restored_mtime_is_still_detected_via_ctime(
     assert new_stat.st_mtime_ns == original_stat.st_mtime_ns
     assert new_stat.st_size == original_stat.st_size
     assert new_stat.st_ino == original_stat.st_ino, "same inode: testing the in-place gap"
-    assert local_waveform._cached_peaks(LOCAL_SID, local_waveform._source_key(source)) is None
+    assert local_waveform._cached_peaks(LOCAL_SID, local_waveform._decode_key(source)) is None
 
 
 def test_a_crash_mid_publish_leaves_the_cache_recoverable_not_half_broken(
@@ -393,7 +418,7 @@ def test_a_crash_mid_publish_leaves_the_cache_recoverable_not_half_broken(
     monkeypatch.setattr(rb_config, "LOCAL_WAVEFORM_CACHE_DIR", tmp_path / "cache")
     source = tmp_path / "source.wav"
     _write_wav(source, loud_s=1.0, silent_s=0.0)
-    key = local_waveform._source_key(source)
+    key = local_waveform._decode_key(source)
     peaks = _peaks(600)
 
     real_write_json = local_waveform._write_json
@@ -510,6 +535,7 @@ def test_missing_ffmpeg_not_decoded_is_not_retryable_and_stays_revalidatable(
     (the own-beatgrid overlay applies on this same branch), so nothing about the
     LOCAL_SID fixture makes it exempt from the promotion-safety fix those
     commits describe (Codex P1 BLOCKING, PR #1587)."""
+    monkeypatch.setenv("MDT_WAVEFORM_DECODER", "ffmpeg")  # no engine fallback
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     response = client.get(f"/api/v1/tracks/{LOCAL_SID}/anlz")
     assert response.status_code == 200, response.text
