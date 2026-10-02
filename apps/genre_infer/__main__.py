@@ -56,6 +56,11 @@ def _family_labels(state: Path, master: Path) -> tuple[dict[str, str], list[str]
     return labels, unlabeled
 
 
+def _untagged(state: Path, master: Path) -> list[str]:
+    """stable_ids with no genre tag anywhere, as the wheel resolves tags."""
+    return sorted(sid for sid, tag in genre_tags_by_stable_id(state, master).items() if not (tag or "").strip())
+
+
 def _embed_targets(args: argparse.Namespace, state: Path, data_dir: Path) -> dict[str, Path | None]:
     """Selected stable_ids with their local audio path, None where the audio is not here."""
     vectors, failures, _m, _r = store.load_embeddings(data_dir)
@@ -253,8 +258,11 @@ def _cmd_jev(args: argparse.Namespace) -> int:
     """Ask JEV for a genre family (and the user's tag questions) for untagged tracks."""
     data_dir, state, master = _paths(args)
     tags = jev.load_tag_questions(jev_store.tags_path(data_dir))
-    _labels, unlabeled = _family_labels(state, master)
-    ids = list(args.stable_id) or unlabeled
+    untagged = _untagged(state, master)
+    # Only tracks with no genre tag at all: a tag the wheel cannot map is still
+    # a tag, and its row would never serve the guess (GENRE-02).
+    allowed = set(untagged)
+    ids = [sid for sid in args.stable_id if sid in allowed] if args.stable_id else untagged
     conn = state_db.open_ro(state)
     try:
         facts = jev_store.track_facts(conn, ids[: args.limit])
@@ -262,7 +270,7 @@ def _cmd_jev(args: argparse.Namespace) -> int:
         conn.close()
     results = jev.classify({sid: jev.build_state(f) for sid, f in facts.items()}, tags, workers=args.workers)
     served = _jev_write(data_dir, results, tags, args.min_confidence)
-    return _jev_report(results, served, len(unlabeled), args.min_confidence)
+    return _jev_report(results, served, len(untagged), args.min_confidence)
 
 
 def main(argv: list[str] | None = None) -> int:

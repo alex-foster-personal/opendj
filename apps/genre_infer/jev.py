@@ -37,7 +37,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,9 +103,6 @@ class TagQuestion:
     question: str
 
 
-Transport = Callable[[dict[str, Any], str], dict[str, Any]]
-
-
 def build_state(fields: Mapping[str, Any]) -> str:
     """The text JEV judges: one ``Label: value`` line per known field, empties left out.
 
@@ -125,7 +122,7 @@ def load_tag_questions(path: Path) -> list[TagQuestion]:
     """The user's yes/no tag questions, or none when the file does not exist."""
     if not path.is_file():
         return []
-    raw = json.loads(path.read_text())
+    raw = json.loads(path.read_text(encoding="utf-8"))
     out: list[TagQuestion] = []
     seen: set[str] = set()
     for item in raw:
@@ -188,8 +185,10 @@ def _genre_answer(answers: Any) -> tuple[str, float, Mapping[str, Any]] | str:
     return str(family), float(confidence), probs
 
 
-def parse_answer(doc: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[str, Any]:
+def parse_answer(doc: Any, tags: Iterable[TagQuestion]) -> dict[str, Any]:
     """One JEV response -> a suggestion, or ``unknown`` when any part is missing or out of range."""
+    if not isinstance(doc, Mapping):
+        return _unknown("response is not a JSON object")
     genre = _genre_answer(doc.get("answers"))
     if isinstance(genre, str):
         return _unknown(genre)
@@ -204,7 +203,7 @@ def parse_answer(doc: Mapping[str, Any], tags: Iterable[TagQuestion]) -> dict[st
         "probabilities": {k: round(float(v), 4) for k, v in probs.items() if isinstance(v, int | float)},
         "tags": tag_p,
         "model": doc.get("model"),
-        "cost": (doc.get("usage") or {}).get("cost"),
+        "cost": usage.get("cost") if isinstance(usage := doc.get("usage"), Mapping) else None,
     }
 
 
@@ -214,13 +213,11 @@ def classify(
     *,
     key: str | None = None,
     model: str | None = None,
-    transport: Transport | None = None,
     workers: int = 8,
 ) -> dict[str, dict[str, Any]]:
     """Ask JEV about every track in ``states`` (stable_id -> state text), one call per track."""
     key = key if key is not None else os.environ.get(KEY_ENV, "")
     model = model or os.environ.get(MODEL_ENV) or DEFAULT_MODEL
-    send = transport or _http_post
     if not key:
         return {sid: _unknown(f"no {KEY_ENV} in the environment") for sid in states}
 
@@ -231,7 +228,7 @@ def classify(
         if len(state) > MAX_STATE_CHARS:
             return sid, _unknown("state too large for JEV's context")
         try:
-            return sid, parse_answer(send(build_request(state, tags, model), key), tags)
+            return sid, parse_answer(_http_post(build_request(state, tags, model), key), tags)
         except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
             return sid, _unknown(f"call failed: {type(exc).__name__}")
 
