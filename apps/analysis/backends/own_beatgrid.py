@@ -76,7 +76,6 @@ from apps.analysis_beatgrid import activations
 from apps.analysis_beatgrid.grid_fit import GRID_FIT_RAW
 from apps.analysis_beatgrid.lane_payload import build_beatgrid_lane
 from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
-from apps.shared import engine_decode
 
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
@@ -172,9 +171,8 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
     """
     timeout = float(os.environ.get(TIMEOUT_ENV) or DEFAULT_TIMEOUT_S)
     activations_dir = activations.default_activations_dir()
-    stale_after_s = timeout + engine_decode.DECODE_TIMEOUT_S
     with (
-        own_beatgrid_input.runner_input(audio_path, stale_after_s=stale_after_s) as runner_input,
+        own_beatgrid_input.runner_input(audio_path) as runner_input,
         tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch,
     ):
         out_path = Path(scratch) / "beats.json"

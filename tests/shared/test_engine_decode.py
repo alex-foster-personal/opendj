@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import stat
 import struct
+import sys
+import threading
 import wave
 from pathlib import Path
 
@@ -149,20 +151,17 @@ def test_a_file_the_engine_cannot_read_is_a_decode_failure(
             engine_decode.decode_f32(junk, mono=True, exe=engine)
 
 
-@pytest.mark.parametrize("to_wav", [False, True])
-def test_output_shorter_than_the_stated_frames_is_refused(tmp_path: Path, to_wav: bool) -> None:
+@pytest.mark.parametrize(
+    ("nbytes", "ok"), [(4 * 2 * 10, True), (4 * 2 * 10 - 4, False), (0, False)]
+)
+def test_output_must_be_exactly_the_stated_frames(nbytes: int, ok: bool) -> None:
     # A decode cut short (killed, truncated pipe) must not pass as the track.
-    short = tmp_path / "odj-audio"
-    short.write_text(
-        "#!/bin/sh\nprintf 'abcd'\n"
-        "echo '{\"sample_rate\": 44100, \"channels\": 2, \"frames\": 10}' >&2\n"
-    )
-    short.chmod(short.stat().st_mode | stat.S_IXUSR)
-    with pytest.raises(EngineDecodeFailed, match=r"4 bytes .* not the 10 frames"):
-        if to_wav:
-            engine_decode.decode_to_wav(_M4A, tmp_path / "x.wav", exe=short)
-        else:
-            engine_decode.decode_f32(_M4A, mono=False, exe=short)
+    summary = {"sample_rate": 44100, "channels": 2, "frames": 10}
+    if ok:
+        engine_decode._require_stated_length(nbytes, summary, _M4A)
+    else:
+        with pytest.raises(EngineDecodeFailed, match=f"{nbytes} bytes .* not the 10 frames"):
+            engine_decode._require_stated_length(nbytes, summary, _M4A)
 
 
 def test_a_failed_decode_leaves_no_partial_wav(tmp_path: Path, engine: Path) -> None:
@@ -174,14 +173,24 @@ def test_a_failed_decode_leaves_no_partial_wav(tmp_path: Path, engine: Path) -> 
     assert not wav.exists()
 
 
-def test_a_decoder_that_stalls_with_stdout_open_is_killed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stall = tmp_path / "odj-audio"
-    stall.write_text("#!/bin/sh\nprintf 'abcd'\nexec sleep 30\n")
-    stall.chmod(stall.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setattr(engine_decode, "DECODE_TIMEOUT_S", 1)
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="os.mkfifo is POSIX-only, and a FIFO no writer opens is how this "
+    "test makes the real engine block",
+)
+def test_a_decode_that_stalls_is_killed_at_the_timeout(tmp_path: Path, engine: Path) -> None:
+    # The real engine opens a FIFO nobody writes to, so it blocks with its
+    # stdout open, which is the stall the read loop cannot time out by itself.
+    stalled = tmp_path / "stalled.m4a"
+    os.mkfifo(stalled)
     wav = tmp_path / "x.wav"
-    with pytest.raises(EngineDecodeFailed, match="within 1s"):
-        engine_decode.decode_to_wav(_M4A, wav, exe=stall)
+    # Backstop: if the watchdog is broken, unblock the engine after 10s so the
+    # test fails on the wrong error instead of hanging the suite.
+    backstop = threading.Timer(10, lambda: os.close(os.open(stalled, os.O_WRONLY)))
+    backstop.start()
+    try:
+        with pytest.raises(EngineDecodeFailed, match="within 1s"):
+            engine_decode.decode_to_wav(stalled, wav, exe=engine, timeout_s=1)
+    finally:
+        backstop.cancel()
     assert not wav.exists()

@@ -188,6 +188,19 @@ def _summary(stderr: bytes) -> dict[str, int]:
         ) from None
 
 
+def _require_stated_length(nbytes: int, summary: dict[str, int], path: Path) -> None:
+    """Refuse output that is not exactly the float32 frames the summary states.
+
+    A decode cut short (a killed or truncated pipe) must never pass as the
+    track, and neither may an empty one.
+    """
+    if nbytes == 0 or nbytes != 4 * summary["channels"] * summary["frames"]:
+        raise EngineDecodeFailed(
+            f"odj-audio decoded {nbytes} bytes of {path}, not the "
+            f"{summary['frames']} frames its summary states"
+        )
+
+
 def decode_f32(
     path: Path, *, mono: bool, exe: Path | None = None
 ) -> tuple[bytes, int, int]:
@@ -215,11 +228,7 @@ def decode_f32(
             f"odj-audio could not decode {path}: {tail[-1] if tail else done.returncode}"
         )
     summary = _summary(done.stderr)
-    if not done.stdout or len(done.stdout) != 4 * summary["channels"] * summary["frames"]:
-        raise EngineDecodeFailed(
-            f"odj-audio decoded {len(done.stdout)} bytes of {path}, not the "
-            f"{summary['frames']} frames its summary states"
-        )
+    _require_stated_length(len(done.stdout), summary, path)
     return done.stdout, summary["sample_rate"], summary["channels"]
 
 
@@ -236,7 +245,13 @@ def _wav_header(data_bytes: int, sample_rate: int, channels: int) -> bytes:
     )
 
 
-def decode_to_wav(path: Path, wav: Path, *, exe: Path | None = None) -> Path:
+def decode_to_wav(
+    path: Path,
+    wav: Path,
+    *,
+    exe: Path | None = None,
+    timeout_s: float = DECODE_TIMEOUT_S,
+) -> Path:
     """Decode ``path`` with the engine into a 32-bit float stereo WAV at ``wav``.
 
     Streamed to disk, so peak memory here is one chunk, not the track. For a
@@ -245,13 +260,13 @@ def decode_to_wav(path: Path, wav: Path, *, exe: Path | None = None) -> Path:
     applied. On any failure ``wav`` is removed, never left half written.
     """
     try:
-        return _decode_to_wav(path, wav, exe or resolve_engine_decoder())
+        return _decode_to_wav(path, wav, exe or resolve_engine_decoder(), timeout_s)
     except BaseException:
         wav.unlink(missing_ok=True)
         raise
 
 
-def _decode_to_wav(path: Path, wav: Path, binary: Path) -> Path:
+def _decode_to_wav(path: Path, wav: Path, binary: Path, timeout_s: float) -> Path:
     with wav.open("wb") as out, tempfile.TemporaryFile() as errors:
         out.write(_wav_header(0, 0, 2))
         try:
@@ -270,7 +285,7 @@ def _decode_to_wav(path: Path, wav: Path, binary: Path) -> Path:
             timed_out.set()
             process.kill()
 
-        watchdog = threading.Timer(DECODE_TIMEOUT_S, _expire)
+        watchdog = threading.Timer(timeout_s, _expire)
         watchdog.start()
         written = 0
         try:
@@ -288,7 +303,7 @@ def _decode_to_wav(path: Path, wav: Path, binary: Path) -> Path:
             returncode = process.wait()
         if timed_out.is_set():
             raise EngineDecodeFailed(
-                f"odj-audio did not decode {path} within {DECODE_TIMEOUT_S}s"
+                f"odj-audio did not decode {path} within {timeout_s:g}s"
             )
         errors.seek(0)
         stderr = errors.read()
@@ -298,11 +313,7 @@ def _decode_to_wav(path: Path, wav: Path, binary: Path) -> Path:
                 f"odj-audio could not decode {path}: {tail[-1] if tail else returncode}"
             )
         summary = _summary(stderr)
-        if written == 0 or written != 4 * summary["channels"] * summary["frames"]:
-            raise EngineDecodeFailed(
-                f"odj-audio decoded {written} bytes of {path}, not the "
-                f"{summary['frames']} frames its summary states"
-            )
+        _require_stated_length(written, summary, path)
         out.seek(0)
         out.write(_wav_header(written, summary["sample_rate"], summary["channels"]))
     return wav
