@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from apps.cloud import stem_cache_budget, stem_hydration, stem_index
+from apps.cloud import stem_hydration, stem_index
 from apps.cloud.hub_stem_client import STEM_BUNDLE_PRESIGN_PATH, STEM_INDEX_PATH
 from apps.cloud.stem_source import (
     STEM_BUNDLE_NOT_INDEXED,
@@ -503,7 +503,7 @@ def _hydration_progress(stable_id: str, stems_dir: Path) -> StemHydrationProgres
     """
     files_done = 0
     bytes_done = 0
-    prefix = f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}"
+    prefix = f"{stable_id}{stem_hydration.IN_FLIGHT_MARKER}"
     if stems_dir.is_dir():
         for tmp_dir in stems_dir.iterdir():
             if not tmp_dir.name.startswith(prefix) or not tmp_dir.is_dir():

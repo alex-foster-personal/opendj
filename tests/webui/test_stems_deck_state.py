@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 import apps.webui.server.routes.stems as stems_module
-from apps.cloud import stem_cache_budget
+from apps.cloud import stem_hydration
 from apps.cloud.stem_index import save_cached_index
 from tests.cloudsync.conftest import InMemoryAssetS3
 from tests.webui.test_stems_hydration import (  # noqa: F401 - fixture import
@@ -122,7 +122,7 @@ def test_fetching_state_reports_progress_from_the_in_flight_download(
     real_hydrate_one = stems_module.stem_hydration.hydrate_one
 
     def _held_hydrate_one(stable_id: str, **kwargs):
-        partial = kwargs["stems_dir"] / f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}held"
+        partial = kwargs["stems_dir"] / f"{stable_id}{stem_hydration.IN_FLIGHT_MARKER}held"
         partial.mkdir(parents=True)
         (partial / "manifest.json").write_bytes(b"x" * 10)
         (partial / "vocals.wav").write_bytes(b"x" * 30)
