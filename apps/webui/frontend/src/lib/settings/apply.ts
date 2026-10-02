@@ -367,10 +367,9 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				// Verified (PR #4014, Sol P1): the reset commits only after the disk
 				// delete lands, and a failure is shown rather than left for the next
 				// hydration to quietly restore Add or Move.
-				clearConfirmPref('playlist_drop_mode').catch((err: unknown) => {
-					const detail = err instanceof Error ? err.message : String(err);
-					reportSettingSaveError(`Could not reset the playlist drop choice to Ask: ${detail}`, err);
-				});
+				clearConfirmPref('playlist_drop_mode').catch((err: unknown) =>
+					reportSettingSaveError(`Could not reset playlist drop to Ask: ${err}`, err)
+				);
 			} else if (value === 'add' || value === 'move') {
 				setConfirmPref('playlist_drop_mode', value);
 			} else {

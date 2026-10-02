@@ -46,7 +46,6 @@ import {
 	type CompatibleFilterPrefs
 } from './compatible-filter-prefs';
 import { makeLevelCalibrationSetters } from './level-calibration-prefs';
-import { makeVerifiedPrefWriters } from './verified-pref-writes';
 import {
 	LYRICS_PREF_DEFAULTS,
 	makeLyricsPrefSetters,
@@ -817,32 +816,48 @@ export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeL
 	(patch) => void _syncDiskPrefs(patch)
 );
 
-/** Verified disk writes (PR #4014): each commits only after its PUT lands
- * and rejects otherwise; see verified-pref-writes.ts. */
-const _verified = makeVerifiedPrefWriters({
-	uiPrefs,
-	persist: _persist,
-	sync: _syncDiskPrefs,
-	put: putDiskPrefsVerified
-});
-export const { patchCompatibleFilter, setLibraryWatcherFolders } = _verified;
-
+/** Verified disk writes (PR #4014): each commits only after its PUT lands and
+ * rejects otherwise; see verified-pref-writes.ts. Loaded on first use, since
+ * nothing at first paint writes (library bundle budget). */
+type VerifiedWriters = ReturnType<typeof import('./verified-pref-writes').makeVerifiedPrefWriters>;
+let _verifiedLoad: Promise<VerifiedWriters> | null = null;
+function _verified(): Promise<VerifiedWriters> {
+	_verifiedLoad ??= import('./verified-pref-writes').then((m) =>
+		m.makeVerifiedPrefWriters({
+			uiPrefs,
+			persist: _persist,
+			sync: _syncDiskPrefs,
+			put: putDiskPrefsVerified,
+			unsavedConfirm: _unsavedConfirm
+		})
+	);
+	return _verifiedLoad;
+}
+/** Confirm keys disk has not acknowledged yet; hydration keeps them. */
+const _unsavedConfirm = new Set<string>();
+export const patchCompatibleFilter = (patch: Partial<CompatibleFilterPrefs>): Promise<void> =>
+	_verified().then((v) => v.patchCompatibleFilter(patch));
+/** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks. */
+export const setLibraryWatcherFolders = (paths: readonly string[]): Promise<void> =>
+	_verified().then((v) => v.setLibraryWatcherFolders(paths));
 /** Reset a remembered confirm choice to "ask". Rejects (and keeps the
  * remembered choice) when the disk delete fails, so the caller can show it. */
-export function clearConfirmPref<K extends keyof RbUiPrefs['confirm']>(key: K): Promise<void> {
-	return _verified.clearConfirmPref(key);
-}
+export const clearConfirmPref = (key: keyof RbUiPrefs['confirm']): Promise<void> =>
+	_verified().then((v) => v.clearConfirmPref(key));
 
-/** Remember a confirm choice (resetting to "ask" is `clearConfirmPref`). The
- * verified write keeps the key unsaved until disk acknowledges it, so a failed
- * PUT is resent by the next confirm write and hydration cannot drop it. */
+/** Remember a confirm choice (resetting to "ask" is `clearConfirmPref`): live at
+ * once, and unsaved until disk acknowledges it, so a failed PUT is resent by
+ * the next confirm write and hydration cannot drop it. */
 export function setConfirmPref<K extends keyof RbUiPrefs['confirm']>(
 	key: K,
 	value: Exclude<RbUiPrefs['confirm'][K], undefined>
 ): void {
-	_verified.setConfirmPref(key, value).catch((err: unknown) => {
-		console.warn(`[ui-prefs] confirm.${String(key)} not saved yet; the next write resends it`, err);
-	});
+	uiPrefs.confirm[key] = value;
+	_persist();
+	_unsavedConfirm.add(key);
+	_verified()
+		.then((v) => v.saveUnsavedConfirm())
+		.catch((err: unknown) => console.warn(`[ui-prefs] confirm.${key} unsaved; resent next write`, err));
 }
 
 /** Pull on-disk confirm + theme prefs once (daemon may have remembered choices). */
@@ -852,5 +867,5 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	applyThemeDom: _applyThemeDom,
 	storageKey: STORAGE_KEY,
 	defaults: DEFAULTS,
-	isConfirmUnsaved: _verified.isConfirmUnsaved
+	isConfirmUnsaved: (key) => _unsavedConfirm.has(key)
 });

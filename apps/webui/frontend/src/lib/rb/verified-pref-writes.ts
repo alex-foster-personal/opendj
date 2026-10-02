@@ -8,9 +8,32 @@
  * after the PUT lands. A failed step rejects to its own caller and commits
  * nothing, so a later queued step never carries the rejected change along
  * (Sol P2 r4167041284).
+ *
+ * Loaded on first use and alongside the boot GET, never at first paint, so the
+ * matching hydration for confirm and compatible-filter prefs lives here too
+ * (library bundle budget).
  */
-import type { CompatibleFilterPrefs } from './compatible-filter-prefs';
-import type { DiskPrefsPatch } from './prefs-hydrate';
+import {
+	COMPATIBLE_FILTER_DEFAULTS,
+	validateCompatibleFilterPrefs,
+	type CompatibleFilterPrefs
+} from './compatible-filter-prefs';
+
+/** Disk/wire confirm patch: null deletes a key; values are per-key typed.
+ * Defined here, not in prefs-hydrate.ts, so this lazily loaded module never
+ * imports its importer back (frontend.import_cycles). */
+export type DiskConfirmPatch = {
+	delete_playlist?: boolean | null;
+	playlist_drop_mode?: 'add' | 'move' | null;
+	dblclick_load_play?: boolean | null;
+};
+
+/** The disk-prefs fields these writers send (prefs-hydrate's DiskPrefsPatch is a superset). */
+type DiskPrefsPatch = {
+	confirm?: DiskConfirmPatch;
+	compatible_filter?: CompatibleFilterPrefs;
+	library_watcher_folders?: string[];
+};
 
 type VerifiedPrefsTarget = {
 	compatible_filter: CompatibleFilterPrefs;
@@ -28,13 +51,13 @@ export function makeVerifiedPrefWriters(deps: {
 	persist: () => void;
 	sync: SyncDiskPrefs;
 	put: (patch: DiskPrefsPatch) => Promise<void>;
+	/** Confirm keys set locally whose value disk has not acknowledged yet (in
+	 * flight or failed). Owned by prefs.svelte.ts so hydration can read it
+	 * before this module loads; every confirm write here resends them. */
+	unsavedConfirm: Set<string>;
 }) {
-	const { uiPrefs, persist, sync, put } = deps;
+	const { uiPrefs, persist, sync, put, unsavedConfirm } = deps;
 	const confirm = () => uiPrefs.confirm as Record<string, unknown>;
-	// Confirm keys set locally whose value disk has not acknowledged yet (in
-	// flight or failed). Hydration keeps them, and every confirm write resends
-	// them, so a failed write is retried rather than lost or overwritten.
-	const unsavedConfirm = new Set<string>();
 
 	function unsavedConfirmPatch(): Record<string, unknown> {
 		const patch: Record<string, unknown> = {};
@@ -100,24 +123,58 @@ export function makeVerifiedPrefWriters(deps: {
 			});
 		},
 
-		/** Remember a confirm choice: live at once (the prompt that set it has
-		 * already been answered), and unsaved until the verified PUT lands. A
-		 * failed PUT rejects and leaves the key unsaved for the next write. */
-		setConfirmPref(key: string, value: unknown): Promise<void> {
-			confirm()[key] = value;
-			persist();
-			unsavedConfirm.add(key);
+		/** Send every unsaved confirm choice with the verified PUT. A failed PUT
+		 * rejects and leaves the keys unsaved for the next write. */
+		saveUnsavedConfirm(): Promise<void> {
 			return sync({}, async () => {
 				const patch = unsavedConfirmPatch();
 				if (Object.keys(patch).length === 0) return;
 				await put({ confirm: patch } as DiskPrefsPatch);
 				markConfirmSaved(patch);
 			});
-		},
-
-		/** True while a local confirm choice is not yet acknowledged on disk. */
-		isConfirmUnsaved(key: string): boolean {
-			return unsavedConfirm.has(key);
 		}
 	};
+}
+
+const KNOWN_CONFIRM_KEYS = ['delete_playlist', 'playlist_drop_mode', 'dblclick_load_play'];
+
+/** A successful read is authoritative for the known confirm keys: one absent
+ * from the disk map is "ask" and is removed locally, so a reset made in another
+ * browser profile reaches this one (PR #4014, Sol). A key whose local write is
+ * not yet acknowledged on disk is kept, and the next write resends it. */
+export function hydrateConfirmFromDisk(
+	uiPrefs: { confirm: object },
+	diskConfirm: DiskConfirmPatch,
+	isUnsaved: (key: string) => boolean
+): void {
+	const next: Record<string, unknown> = { ...uiPrefs.confirm };
+	for (const key of KNOWN_CONFIRM_KEYS) {
+		if (!(key in diskConfirm) && !isUnsaved(key)) delete next[key];
+	}
+	for (const [key, value] of Object.entries(diskConfirm)) {
+		if (isUnsaved(key)) continue;
+		// null deletes; drop mode takes 'add'|'move'; every other key takes a boolean.
+		if (value === null) delete next[key];
+		else if (key === 'playlist_drop_mode' ? value === 'add' || value === 'move' : typeof value === 'boolean')
+			next[key] = value;
+	}
+	uiPrefs.confirm = next;
+}
+
+/** Compatible-filter ranges from GET /api/v1/ui-prefs (LIBUX-32): the disk copy
+ * wins over localStorage, so a fresh browser profile gets the saved ranges. An
+ * invalid object is reported and skipped rather than aborting the hydrate. */
+export function hydrateCompatibleFilter(
+	uiPrefs: { compatible_filter: CompatibleFilterPrefs },
+	body: { compatible_filter?: unknown }
+): void {
+	if (body.compatible_filter === undefined || body.compatible_filter === null) return;
+	try {
+		uiPrefs.compatible_filter = {
+			...COMPATIBLE_FILTER_DEFAULTS,
+			...validateCompatibleFilterPrefs(body.compatible_filter, 'GET /api/v1/ui-prefs')
+		};
+	} catch (exc) {
+		console.error('[ui-prefs] compatible_filter from disk rejected', exc);
+	}
 }

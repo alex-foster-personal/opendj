@@ -95,7 +95,7 @@ test('Settings "Ask each time" reports the failure when the reset fails', async 
 	await settle();
 
 	assert.equal(globalThis.__recordedSettingSaveErrors.length, 1);
-	assert.match(globalThis.__recordedSettingSaveErrors[0].message, /playlist drop choice.*disk full/);
+	assert.match(globalThis.__recordedSettingSaveErrors[0].message, /playlist drop.*disk full/);
 	assert.equal(apply.readSettingValue('confirm.playlist_drop_mode'), 'move');
 });
 

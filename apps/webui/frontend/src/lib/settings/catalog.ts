@@ -76,8 +76,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		group: 'library',
 		keywords: ['watcher', 'folder', 'import', 'auto', 'monitor', 'ingest'],
 		title: 'Folder paths to watch for auto-import (v2 - not active yet)',
-		detail:
-			'One absolute path per line. Saved paths are validated to exist on disk; no background watcher runs in v1 (see PARITY-TODO). Auto-import ships in v2.',
+		detail: 'One absolute path per line, checked to exist on save. No watcher runs until v2.',
 		implemented: true,
 		control: {
 			kind: 'path_lines',
