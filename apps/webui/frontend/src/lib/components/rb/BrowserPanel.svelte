@@ -85,12 +85,7 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs,
-		fetchPlaylistFirstPage,
-		prefetchPlaylistFirstPage,
-		prefetchPlaylistTreeIntent,
-		invalidatePlaylistFirstPage,
-		invalidateAllPlaylistFirstPages
+		PlaylistSetTabs
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -146,6 +141,15 @@
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
+	// Re-exported by browser-panel-support so BrowserPanel's import fan-out
+	// stays at main's figure (frontend.max_fan_out ratchet).
+	import {
+		fetchPlaylistFirstPage,
+		prefetchPlaylistFirstPage,
+		prefetchPlaylistTreeIntent,
+		invalidatePlaylistFirstPage,
+		invalidateAllPlaylistFirstPages
+	} from './browser/browser-panel-support';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		rememberSpotifyRecent,
