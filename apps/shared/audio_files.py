@@ -1,4 +1,4 @@
-"""Filesystem audio scanner + lightweight metadata reader (mutagen)."""
+"""Filesystem audio scanner + lightweight metadata reader (mutagen, else tinytag)."""
 from __future__ import annotations
 
 import os
@@ -72,14 +72,15 @@ def _first(tags, key: str) -> str | None:
 
 
 def read_metadata(path: Path) -> AudioMetadata | None:
-    """Read audio metadata via mutagen's easy interface. ``None`` on failure.
+    """Read audio metadata. ``None`` when the file cannot be parsed.
 
-    When the optional ``mutagen`` dep (``music-dj-tools[tags]``) is not
-    installed this is a best-effort no-op that returns ``None``; the scanner
-    layer still yields :class:`AudioFile` entries from the filesystem.
+    mutagen's easy interface when the optional ``tags`` extra is installed,
+    else tinytag (MIT, a core dependency), which is what the packaged app uses:
+    mutagen is GPL and never ships there, and without this a folder import
+    read no title or artist at all.
     """
     if not HAS_MUTAGEN:
-        return None
+        return _read_metadata_tinytag(path)
     import mutagen  # type: ignore  # guarded above
 
     try:
@@ -104,6 +105,32 @@ def read_metadata(path: Path) -> AudioMetadata | None:
         sample_rate=int(info.sample_rate) if info and getattr(info, "sample_rate", None) else None,
     )
 
+
+
+def _tinytag_text(value: object) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _read_metadata_tinytag(path: Path) -> AudioMetadata | None:
+    from tinytag import TinyTag
+
+    try:
+        tag = TinyTag.get(str(path), tags=True, duration=True, image=False)
+    except Exception:  # noqa: BLE001 - malformed tags must not stop scanning
+        return None
+    if tag.duration is None and not tag.other and tag.title is None and tag.artist is None:
+        return None  # nothing parsed: mutagen answers None here too
+    return AudioMetadata(
+        title=_tinytag_text(tag.title),
+        artist=_tinytag_text(tag.artist),
+        album=_tinytag_text(tag.album),
+        genre=_tinytag_text(tag.genre),
+        comment=_tinytag_text(tag.comment),
+        duration_s=float(tag.duration) if tag.duration else None,
+        bitrate_kbps=int(tag.bitrate) if tag.bitrate else None,
+        sample_rate=int(tag.samplerate) if tag.samplerate else None,
+    )
 
 _RASTER_MAGIC_BY_MIME: dict[str, tuple[bytes, ...]] = {
     "image/jpeg": (b"\xff\xd8\xff",),
