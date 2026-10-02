@@ -20,6 +20,7 @@ import {
 	AUDIO_ENGINE_PATH,
 	AudioEngineClient,
 	type AudioEngineStatus,
+	type EngineLoadFailed,
 	type EngineState
 } from './client';
 import { DECKS, type DeckId, displayLoops, link, loadFences, send, type RustToast } from './rust-link';
@@ -101,6 +102,7 @@ export async function connectRustEngine(): Promise<AudioEngineClient> {
 				if (loadFences[k] !== Infinity) loadFences[k] = -1;
 			}
 			c.onState(mirrorEngineState);
+			c.onLoadFailed(applyLoadFailed);
 			// The engine outlives the page: after a reload it still holds the
 			// previous page's decks. Silence what this page does not show.
 			await Promise.all(
@@ -261,6 +263,16 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 			clearRustDeck(deckStates[command.deck]);
 			break;
 	}
+}
+
+/** A decode that failed after the head loaded: the engine has already
+ * unloaded the deck, so the page clears it too and says why, rather than
+ * showing a track whose audio is gone. */
+export function applyLoadFailed(e: EngineLoadFailed): void {
+	const st = deckStates[e.deck as DeckId];
+	if (st === undefined || st.stable_id === null) return;
+	clearRustDeck(st);
+	st.processor_error = `${e.error.code}: ${e.error.message}`;
 }
 
 /** Transport truth from the engine: play state, tempo, loop, length, key. */

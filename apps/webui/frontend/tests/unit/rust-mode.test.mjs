@@ -128,6 +128,28 @@ test('an empty deck is never written from the feed', () => {
 	assert.equal(st.playing, false);
 });
 
+test('a late decode failure clears its deck and says why; an empty deck stays untouched', () => {
+	const st = m.deckStates[2];
+	st.stable_id = 'late';
+	st.title = 'Late';
+	st.processor_error = null;
+	m.applyLoadFailed({
+		type: 'load_failed',
+		deck: 2,
+		error: { code: 'decode', message: 'decode error in late.mp3: bad frame' }
+	});
+	assert.equal(st.stable_id, null, 'the page still shows a track the engine unloaded');
+	assert.equal(st.title, null);
+	assert.match(st.processor_error, /late\.mp3: bad frame/);
+
+	// Control: a deck with nothing loaded is not given an error.
+	const empty = m.deckStates[3];
+	empty.stable_id = null;
+	empty.processor_error = null;
+	m.applyLoadFailed({ type: 'load_failed', deck: 3, error: { code: 'decode', message: 'x' } });
+	assert.equal(empty.processor_error, null);
+});
+
 test('knobs follow acknowledged commands; unload clears the deck', () => {
 	m.applyAcknowledged({ type: 'crossfader', value: 0.2 });
 	assert.equal(m.mixerState.crossfader, 0.2);
