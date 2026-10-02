@@ -5,7 +5,7 @@ name: Full CI (on-demand)
 # the fast lane in ci.yml). Dispatch this before releases, after touching
 # the slow product-edge suites (tests/analysis, tests/vocals,
 # tests/sync/usb, tests/sets), or whenever a full-coverage snapshot is
-# wanted. Dispatched runs are priced by the CI Cost Guard.
+# wanted. Dispatched runs show up in the ledger of ci-budget-watch.yml.
 #
 # There is deliberately NO schedule and NO push trigger. Known trade-off:
 # a regression confined to the slow suites can land on main undetected
@@ -61,6 +61,12 @@ env:
   # for this name, so the pre-checkout hygiene step below is the repair path
   # for a root-run interpreter.
   PYTHONDONTWRITEBYTECODE: "1"
+  # No runner has a real rekordbox stick, so the live stick tests report the
+  # capability UNAVAILABLE in the skip summary instead of failing. This opts
+  # out of the stick ALONE (tests/sync/usb/live_stick.py); every other
+  # required fixture still fails closed here. Unset on a dev machine, a
+  # missing stick fails loud.
+  MDT_ALLOW_MISSING_USB_STICK: "1"
 
 permissions:
   contents: read

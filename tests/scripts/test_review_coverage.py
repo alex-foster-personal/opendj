@@ -430,14 +430,16 @@ def test_a_restored_reviewer_is_not_exempted_by_its_own_historical_outage_commen
 # the committed .coderabbit.yaml instead of the app dashboard.
 
 
-def test_codex_sol_and_claude_are_the_expected_reviewers() -> None:
-    """Sol joined Fri 5 Sep 2026 (issue #1211) and Claude Sun 6 Sep 2026, each
-    as an ALTERNATIVE to the others rather than as a further requirement: see
+def test_codex_sol_grok_cursor_and_claude_are_the_expected_reviewers() -> None:
+    """Sol joined Fri 5 Sep 2026 (issue #1211), Claude Sun 6 Sep 2026, and Grok
+    and Cursor Thu 1 Oct 2026 (the reviewer failover chain), each as an
+    ALTERNATIVE to the others rather than as a further requirement: see
     `review_sol.substitute_alternatives` and this suite's companions
-    tests/scripts/test_review_sol.py and tests/scripts/test_review_claude.py,
-    which pin that any one alone covers the set and that none reviewing still
-    fails."""
-    assert EXPECTED_REVIEWERS == ("Codex", "Sol", "Claude")
+    tests/scripts/test_review_sol.py, tests/scripts/test_review_claude.py and
+    tests/scripts/test_review_subscription.py, which pin that any one alone
+    covers the set and that none reviewing still fails. The ORDER is the
+    chain's order, Claude last (scripts/review_chain.py)."""
+    assert EXPECTED_REVIEWERS == ("Codex", "Sol", "Grok", "Cursor", "Claude")
     assert "CodeRabbit" not in EXPECTED_REVIEWERS
     assert "Devin Review" not in EXPECTED_REVIEWERS
 

@@ -60,9 +60,11 @@ const sveltePlugin = {
  * Bundle and import `entrySource`, TypeScript evaluated at the frontend root.
  *
  * Re-export the component under test plus whatever module state the test needs
- * to set before rendering, exactly as loadRuneModule's entry does.
+ * to set before rendering, exactly as loadRuneModule's entry does. `alias`
+ * adds import aliases on top of `$lib`, for a component that imports a
+ * SvelteKit runtime module (`$app/navigation`) this harness has no build of.
  */
-export async function loadSvelteSsrModule(entrySource) {
+export async function loadSvelteSsrModule(entrySource, { alias = {} } = {}) {
 	const bundled = await build({
 		stdin: {
 			contents: entrySource,
@@ -71,10 +73,13 @@ export async function loadSvelteSsrModule(entrySource) {
 			sourcefile: 'ssr-entry.ts'
 		},
 		absWorkingDir: FRONTEND_ROOT,
-		alias: { $lib: LIB_ROOT },
+		alias: { $lib: LIB_ROOT, ...alias },
 		bundle: true,
 		define: { 'import.meta.env.VITE_API_BASE': JSON.stringify('https://ssr-harness.example.test') },
 		format: 'esm',
+		// A side-effect stylesheet import has no meaning in an SSR string;
+		// without this a component that imports one cannot be rendered at all.
+		loader: { '.css': 'empty' },
 		logLevel: 'silent',
 		platform: 'node',
 		plugins: [sveltePlugin, viteUrlSuffixPlugin],

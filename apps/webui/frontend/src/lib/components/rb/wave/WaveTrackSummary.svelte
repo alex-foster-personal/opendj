@@ -1,8 +1,7 @@
 <script lang="ts">
 	// Compact track identity in a waveform gutter. Artwork failures and empty
 	// decks have named slates so either state cannot be mistaken for a blank.
-	import { artworkUrl } from '$lib/rb/api-rb';
-	import { shouldFetchArtwork } from '$lib/rb/optional-resource-availability';
+	import { deckArtworkUrl } from '$lib/rb/api-rb';
 	import type { DeckState } from '$lib/rb/deck-state-types';
 
 	const { deck }: { deck: DeckState } = $props();
@@ -12,9 +11,7 @@
 		return deck.title;
 	});
 	const artworkSrc = $derived(
-		deck.stable_id === null || !shouldFetchArtwork(deck.stable_id)
-			? null
-			: artworkUrl(deck.stable_id, 's')
+		deck.stable_id === null ? null : deckArtworkUrl(deck.stable_id, 's')
 	);
 	let artworkFailed = $state(false);
 	let artworkLoaded = $state(false);
@@ -58,7 +55,7 @@
 	{:else if deck.stable_id === null}
 		<span class="wave-art-slate visible standalone" title="No track loaded">EMPTY</span>
 	{:else}
-		<span class="wave-art-slate visible standalone" title="Artwork unavailable - image could not be loaded">NO ART</span>
+		<span class="wave-art-slate visible standalone" title="No artwork found: none in rekordbox, the file, a cover image in its folder, or online">NO ART</span>
 	{/if}
 	<span
 		bind:this={trackNameEl}

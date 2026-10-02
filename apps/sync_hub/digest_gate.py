@@ -207,6 +207,7 @@ def _copy_at(digest: SyncDigest, seq: int) -> SyncDigest:
         tables=dict(digest.tables),
         quarantined=None if digest.quarantined is None else dict(digest.quarantined),
         hash_pending=None if digest.hash_pending is None else dict(digest.hash_pending),
+        settled=None if digest.settled is None else dict(digest.settled),
     )
 
 

@@ -14,5 +14,6 @@
 export * from '$lib/api/capabilities.svelte';
 export * from '$lib/setup/detect-view';
 export * from '$lib/setup/overlay.svelte';
+export * from '$lib/setup/present';
 export * from '$lib/setup/setup-api';
 export * from '$lib/setup/wizard.svelte';

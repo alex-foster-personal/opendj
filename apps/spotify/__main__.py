@@ -248,7 +248,8 @@ def _print_summary(run) -> None:
                 f"  state: wrote playlist_id={ws.playlist_id}  "
                 f"matched={ws.matched_written}  pending={ws.pending_written}  "
                 f"synthetic={ws.synthetic_tracks_written}  "
-                f"vendor_ids={ws.vendor_ids_set}"
+                f"vendor_ids={ws.vendor_ids_set}  "
+                f"skipped: deleted by user={ws.tracks_skipped_deleted}"
             )
             if ws.odj_playlist_id:
                 created = "created" if ws.odj_created else "linked"
