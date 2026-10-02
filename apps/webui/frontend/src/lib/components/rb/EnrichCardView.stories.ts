@@ -62,7 +62,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Queued and analyzing: counts with their denominator on hover, nothing to click but Hide. */
+/** Background progress only, as it first opens: one line, clear of the track table. */
+export const Collapsed: Story = {
+	args: {
+		expanded: false,
+		summary: summary(
+			{ beatgrid: { done: 351, missing: 923 }, key: { done: 44, missing: 1230 } },
+			{ coverage: lyrics(243, 603, 428) }
+		)
+	}
+};
+
+/** Queued and analyzing, after More: counts with their denominator on hover, nothing to click but Hide. */
 export const Working: Story = {
 	args: {
 		summary: summary({
