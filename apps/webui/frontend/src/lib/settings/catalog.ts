@@ -7,6 +7,8 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
+import { WAVE_PALETTE_SETTING } from './wave-palette-setting';
+import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import {
 	WHEEL_SENSITIVITY,
 	WHEEL_SENSITIVITY_MAX,
@@ -245,23 +247,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			]
 		}
 	},
-	{
-		id: 'wave_palette',
-		label: 'Waveform colors',
-		group: 'performance',
-		keywords: ['waveform', 'color', 'colors', 'palette', 'band', '3band', 'rekordbox', 'cdj', 'legacy', 'blue', 'orange', 'amber'],
-		title: 'Waveform frequency-band colors',
-		detail:
-			'rekordbox 3Band (default) matches the CDJ: dark blue lows, amber mids, white highs. Legacy is the earlier Open DJ palette: orange lows, blue mids, near-white highs. Applies to the deck waveforms and the overview and preview strips, in both light and dark themes.',
-		implemented: true,
-		control: {
-			kind: 'enum',
-			options: [
-				{ value: 'rekordbox', label: 'rekordbox 3Band' },
-				{ value: 'legacy', label: 'Legacy (orange lows)' }
-			]
-		}
-	},
+	WAVE_PALETTE_SETTING,
 	{
 		id: 'deck_layout',
 		label: 'Deck layout (MORE/LESS)',
@@ -499,29 +485,8 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: { kind: 'boolean' }
 	},
-	{
-		id: 'hide_todo_settings',
-		label: 'Hide todo / grayed settings',
-		group: 'advanced',
-		keywords: ['todo', 'gray', 'parity', 'hide', 'stub', 'placeholder'],
-		title: 'Hide PARITY-TODO placeholder settings from the list',
-		detail:
-			'When on, only implemented settings appear in search results and category lists. Only shown while "Show developer pages" is on, since todo rows are hidden otherwise.',
-		implemented: true,
-		devOnly: true,
-		control: { kind: 'boolean' }
-	},
-	{
-		id: 'show_dev_ui',
-		label: 'Show developer pages',
-		group: 'advanced',
-		keywords: ['developer', 'dev', 'debug', 'admin', 'queues', 'progress', 'ledger', 'todo', 'unbuilt'],
-		title: 'Show developer-only pages and unbuilt settings',
-		detail:
-			'When on, the sidebar shows the Admin, Progress ledger and Queues links, and the settings list shows unbuilt (todo) rows and the Rekordbox / djay Pro parity groups. Default off. Saved in this browser only.',
-		implemented: true,
-		control: { kind: 'boolean' }
-	},
+	HIDE_TODO_SETTING,
+	DEV_UI_SETTING,
 
 	// ----- cloudsync (specs/cloudsync-spec.md D5) -------------------------
 	// Navigation entries to the policy matrix / pin list / overview on /cloudsync.

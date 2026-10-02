@@ -147,7 +147,9 @@ function isBlue(hex) {
 describe('#4219 waveform band palette', () => {
 	it('defaults to rekordbox 3Band', () => {
 		assert.equal(wp.WAVE_PALETTE_DEFAULT, 'rekordbox');
-		assert.deepEqual([...wp.WAVE_PALETTE_CHOICES], ['rekordbox', 'legacy']);
+		assert.equal(wp.parseWavePalette('rekordbox'), 'rekordbox');
+		assert.equal(wp.parseWavePalette('legacy'), 'legacy');
+		assert.throws(() => wp.parseWavePalette('neon'), /rekordbox\|legacy/);
 	});
 
 	it('default: low-band energy paints the dark blue low color on the wavestack', () => {

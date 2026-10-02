@@ -15,7 +15,7 @@ import {
 } from '$lib/components/rb/hotkeys/hotkeys-registry';
 import type { DeckLayoutMode } from './deck-layout-prefs';
 
-export interface TwoDeckToggleView {
+interface TwoDeckToggleView {
 	/** aria-pressed: true while the 2-deck (LESS) layout is showing. */
 	pressed: boolean;
 	/** The mode a click switches to. */

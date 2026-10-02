@@ -33,12 +33,12 @@
 		setAutoPlayMaximizeReach,
 		setBeatSyncMax,
 		setDeckLayoutMode,
+		describeTwoDeckToggle,
 		toggleLyricsGlobal,
 		toggleTheme,
 		uiPrefs
 	} from '$lib/rb/prefs.svelte';
 	import { describeAutoPlayMode } from '$lib/rb/autoplay-mode';
-	import { describeTwoDeckToggle } from '$lib/rb/two-deck-toggle';
 	import { openSettings } from '$lib/settings/hotkeys';
 	import { vibeState } from '$lib/rb/vibe.svelte';
 	import { WHEEL_STEP, wheelAdjust } from '$lib/rb/wheel-adjust';

@@ -22,17 +22,17 @@
 
 export type WavePaletteChoice = 'rekordbox' | 'legacy';
 
-export const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy'];
+const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy'];
 
 export const WAVE_PALETTE_DEFAULT: WavePaletteChoice = 'rekordbox';
 
 /** Undefined passes through (pref absent); any other non-choice throws. */
 export function parseWavePalette(raw: unknown): WavePaletteChoice | undefined {
 	if (raw === undefined) return undefined;
-	if (raw !== 'rekordbox' && raw !== 'legacy') {
+	if (!WAVE_PALETTE_CHOICES.includes(raw as WavePaletteChoice)) {
 		throw new Error(`wave_palette must be rekordbox|legacy, got ${String(raw)}`);
 	}
-	return raw;
+	return raw as WavePaletteChoice;
 }
 
 export type WaveScheme = 'dark' | 'light';

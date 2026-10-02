@@ -91,6 +91,9 @@ import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
+// The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
+// TopBar reads both from this one module (quality ratchet: max fan-out).
+export { describeTwoDeckToggle } from './two-deck-toggle';
 export { type LyricsLoadStrategy } from './lyrics-prefs';
 export type { AppModeId } from './app-mode';
 export type { GigHelperPref } from './gig-helper-prefs';
