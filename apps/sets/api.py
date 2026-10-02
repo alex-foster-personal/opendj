@@ -178,6 +178,19 @@ class RecorderDevicesResponse(BaseModel):
     default_name: str | None
 
 
+class RecorderRememberedInput(BaseModel):
+    """The input REC last started on: a named input, or none (tracklist only)."""
+
+    kind: Literal["device", "none"]
+    name: str | None = None
+
+
+class RecorderRememberedInputResponse(BaseModel):
+    """Wraps the choice so "nothing remembered yet" is a body, not a null one."""
+
+    remembered: RecorderRememberedInput | None
+
+
 class RecorderStatus(BaseModel):
     active: bool
     session_id: str | None
@@ -359,6 +372,19 @@ def api_recorder_devices(request: Request) -> dict[str, Any]:
         "devices": [asdict(device) for device in devices],
         "default_name": default.name if default is not None else None,
     }
+
+
+@router.get(
+    "/recorder/remembered-input",
+    response_model=RecorderRememberedInputResponse,
+)
+def api_recorder_remembered_input(request: Request) -> dict[str, Any]:
+    """The input REC last started on, kept by the daemon (null when unknown).
+
+    Server-side because the desktop shell serves the UI from a per-launch
+    loopback port, and browser storage forgets across ports (SET-10).
+    """
+    return {"remembered": _recorder_service(request).remembered_input()}
 
 
 @router.post(

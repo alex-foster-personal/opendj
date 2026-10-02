@@ -1,4 +1,4 @@
-/** The REC input choice, its per-machine memory and the start call (SET-10).
+/** The REC input choice, the daemon's memory of it and the start call (SET-10).
  *  Kept apart from performance-recorder.ts so only the lazily loaded picker
  *  pulls it in, outside the /performance bundle budget. */
 
@@ -18,48 +18,20 @@ export type RecordInputChoice =
 	| { kind: 'device'; name: string }
 	| { kind: 'none' };
 
-export const RECORD_INPUT_STORAGE_KEY = 'opendj.setRecord.input.v1';
-
-type ChoiceStorage = Pick<Storage, 'getItem' | 'setItem'>;
-
-function browserStorage(): ChoiceStorage | null {
+/** The input REC last started on, kept by the daemon under its sets root, or
+ *  null when unknown. Not localStorage: the desktop shell serves this UI from
+ *  a loopback port the OS assigns per launch, and web storage is per port, so
+ *  it would forget the choice on every restart (SET-10). The daemon writes it
+ *  when a start succeeds, so the picker never saves it itself. */
+export async function getRememberedInput(): Promise<RecordInputChoice | null> {
 	try {
-		return typeof localStorage === 'undefined' ? null : localStorage;
-	} catch {
-		return null;
-	}
-}
-
-function isChoice(value: unknown): value is RecordInputChoice {
-	if (typeof value !== 'object' || value === null) return false;
-	const kind = (value as { kind?: unknown }).kind;
-	if (kind === 'none') return true;
-	const name = (value as { name?: unknown }).name;
-	return kind === 'device' && typeof name === 'string' && name.length > 0;
-}
-
-/** The input the DJ last recorded from on this machine, or null. */
-export function loadRememberedInput(
-	storage: ChoiceStorage | null = browserStorage()
-): RecordInputChoice | null {
-	try {
-		const raw = storage?.getItem(RECORD_INPUT_STORAGE_KEY);
-		if (raw == null) return null;
-		const parsed: unknown = JSON.parse(raw);
-		return isChoice(parsed) ? parsed : null;
-	} catch {
-		return null;
-	}
-}
-
-export function rememberInput(
-	choice: RecordInputChoice,
-	storage: ChoiceStorage | null = browserStorage()
-): void {
-	try {
-		storage?.setItem(RECORD_INPUT_STORAGE_KEY, JSON.stringify(choice));
-	} catch {
-		// A private window or blocked storage only costs the preselection.
+		const { remembered } = await unwrap(api.GET('/api/sets/recorder/remembered-input', {}));
+		if (remembered == null) return null;
+		return remembered.kind === 'device' && remembered.name
+			? { kind: 'device', name: remembered.name }
+			: { kind: 'none' };
+	} catch (error) {
+		rethrowSetsError(error);
 	}
 }
 

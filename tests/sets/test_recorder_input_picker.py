@@ -244,6 +244,82 @@ def test_tracklist_only_start_records_no_audio(picker_client):
     assert _manifest(service, session_id)["capture_device"] == NO_AUDIO_DEVICE_LABEL
 
 
+def test_the_started_input_is_remembered_by_the_daemon_across_restarts(picker_client):
+    """[if] REC starts by name or with no audio [then] a new daemon reads that choice back."""
+    client, service = picker_client
+    assert client.get("/api/sets/recorder/remembered-input").json() == {"remembered": None}
+    first = "2026-10-02T22-00-00"
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": first, "device_name": "BlackHole 2ch", "sources": []},
+    )
+    client.post(f"/api/sets/recorder/{first}/stop")
+    assert client.get("/api/sets/recorder/remembered-input").json() == {
+        "remembered": {"kind": "device", "name": "BlackHole 2ch"}
+    }
+    restarted = RecorderService(
+        sets_root=service.sets_root, db_path=service.db_path, capture_enabled=False
+    )
+    assert restarted.remembered_input() == {"kind": "device", "name": "BlackHole 2ch"}
+
+    second = "2026-10-02T22-10-00"
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": second, "capture_audio": False, "sources": []},
+    )
+    client.post(f"/api/sets/recorder/{second}/stop")
+    assert client.get("/api/sets/recorder/remembered-input").json() == {
+        "remembered": {"kind": "none", "name": None}
+    }
+
+
+def test_a_refused_start_leaves_the_remembered_input_alone(picker_client):
+    """[if] a start fails [then] the last good choice stays remembered."""
+    client, service = picker_client
+    session_id = "2026-10-02T22-20-00"
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": session_id, "device_name": "BlackHole 2ch", "sources": []},
+    )
+    client.post(f"/api/sets/recorder/{session_id}/stop")
+    refused = client.post(
+        "/api/sets/recorder/start", json={"device_name": "Scarlett 2i2", "sources": []}
+    )
+    assert refused.status_code == 503
+    assert service.remembered_input() == {"kind": "device", "name": "BlackHole 2ch"}
+
+
+def test_a_start_by_index_does_not_overwrite_the_remembered_name(picker_client):
+    """[if] a script starts by ffmpeg index [then] the picker's remembered name is kept."""
+    client, service = picker_client
+    by_name = "2026-10-02T22-30-00"
+    client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": by_name, "device_name": "BlackHole 2ch", "sources": []},
+    )
+    client.post(f"/api/sets/recorder/{by_name}/stop")
+    by_index = "2026-10-02T22-40-00"
+    started = client.post(
+        "/api/sets/recorder/start",
+        json={"session_id": by_index, "ffmpeg_device_idx": 0, "sources": []},
+    )
+    assert started.status_code == 201
+    client.post(f"/api/sets/recorder/{by_index}/stop")
+    assert service.remembered_input() == {"kind": "device", "name": "BlackHole 2ch"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    ['{"kind": "device", "name": ""}', '{"kind": "device"}', "not json", '["none"]'],
+)
+def test_a_malformed_remembered_input_reads_as_unknown(picker_client, content):
+    """[if] the remembered-input file is junk [then] it reads as unknown, not a choice."""
+    client, service = picker_client
+    service.remembered_input_path.parent.mkdir(parents=True, exist_ok=True)
+    service.remembered_input_path.write_text(content, encoding="utf-8")
+    assert client.get("/api/sets/recorder/remembered-input").json() == {"remembered": None}
+
+
 @pytest.mark.parametrize(
     "body",
     [

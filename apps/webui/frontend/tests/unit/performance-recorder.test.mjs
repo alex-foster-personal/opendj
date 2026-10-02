@@ -13,6 +13,7 @@ let recorder;
 let choice;
 let originalFetch;
 let requests;
+let rememberedBody = '{"remembered":null}';
 
 before(async () => {
 	originalFetch = globalThis.fetch;
@@ -20,6 +21,9 @@ before(async () => {
 	globalThis.fetch = async (request) => {
 		const body = request.body === null ? null : await request.clone().text();
 		requests.push({ url: request.url, method: request.method, body });
+		if (request.url.endsWith('/api/sets/recorder/remembered-input')) {
+			return new Response(rememberedBody, { status: 200, headers: { 'content-type': 'application/json' } });
+		}
 		return new Response(
 			JSON.stringify({ active: true, session_id: '2026-09-05T12-00-00', pid: 42, owned: true, recoverable: false }),
 			{ status: 201, headers: { 'content-type': 'application/json' } }
@@ -63,21 +67,19 @@ test('performance REC tracklist-only start says so explicitly instead of omittin
 	});
 });
 
-function memoryStorage(initial = {}) {
-	const map = new Map(Object.entries(initial));
-	return { getItem: (k) => (map.has(k) ? map.get(k) : null), setItem: (k, v) => map.set(k, v), map };
-}
-
-test('the picked input is remembered per machine and read back; junk reads as nothing', () => {
-	const storage = memoryStorage();
-	assert.equal(choice.loadRememberedInput(storage), null);
-	choice.rememberInput({ kind: 'device', name: 'Loopback Audio' }, storage);
-	assert.deepEqual(choice.loadRememberedInput(storage), { kind: 'device', name: 'Loopback Audio' });
-	storage.setItem(choice.RECORD_INPUT_STORAGE_KEY, '{"kind":"device","name":7}');
-	assert.equal(choice.loadRememberedInput(storage), null);
-	storage.setItem(choice.RECORD_INPUT_STORAGE_KEY, 'not json');
-	assert.equal(choice.loadRememberedInput(storage), null);
-	assert.equal(choice.loadRememberedInput(null), null);
+test('the picked input is read back from the daemon, not browser storage that forgets per port', async () => {
+	requests.length = 0;
+	rememberedBody = JSON.stringify({ remembered: null });
+	assert.equal(await choice.getRememberedInput(), null);
+	rememberedBody = JSON.stringify({ remembered: { kind: 'device', name: 'Loopback Audio' } });
+	assert.deepEqual(await choice.getRememberedInput(), { kind: 'device', name: 'Loopback Audio' });
+	rememberedBody = JSON.stringify({ remembered: { kind: 'none', name: null } });
+	assert.deepEqual(await choice.getRememberedInput(), { kind: 'none' });
+	assert.deepEqual(
+		requests.map((r) => [r.method, r.url]),
+		Array(3).fill(['GET', `${API_BASE}/api/sets/recorder/remembered-input`])
+	);
+	assert.equal('rememberInput' in choice, false);
 });
 
 test('the picker opens on the remembered input while connected, else the loopback default, never a mic', () => {
@@ -111,7 +113,8 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(performanceRecorderRail, /recorder = await getRecorderStatus\(\)/);
 	assert.match(recordInputPicker, /const status = await startPerformanceRecorder\(choice\)/);
 	assert.match(performanceRecorderRail, /onstarted=\{\(status\) => \(\(recorder = status\), \(RecordInputPicker = null\)\)\}/);
-	assert.match(recordInputPicker, /rememberInput\(choice\);\n\t\t\tconst from/);
+	assert.match(recordInputPicker, /getRememberedInput\(\)/);
+	assert.doesNotMatch(recordInputPicker, /localStorage/);
 	assert.match(performanceRecorderRail, /<RecordInputPicker/);
 	assert.match(performanceRecorderRail, /import\('.\/RecordInputPicker.svelte'\)/);
 	assert.match(performanceRecorderRail, /recorder = await stopPerformanceRecorder\(recorder\)/);

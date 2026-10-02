@@ -7,10 +7,9 @@
 	import { onMount } from 'svelte';
 	import type { RecorderDevices, RecorderStatus } from '../../../../routes/sets/sets-api';
 	import {
+		getRememberedInput,
 		initialInputChoice,
 		listRecorderDevices,
-		loadRememberedInput,
-		rememberInput,
 		startPerformanceRecorder,
 		type RecordInputChoice
 	} from '$lib/sets/record-input-choice';
@@ -50,15 +49,18 @@
 
 	onMount(() => {
 		void (async () => {
-			try {
-				devices = await listRecorderDevices();
-			} catch (error) {
-				listError = error instanceof Error ? error.message : String(error);
-			} finally {
-				loading = false;
-				selected = toValue(initialInputChoice(loadRememberedInput(), devices));
-				queueMicrotask(() => startButton?.focus());
-			}
+			// The remembered choice only preselects, so failing to read it
+			// costs nothing but that; failing to list inputs is shown.
+			const [listed, remembered] = await Promise.allSettled([
+				listRecorderDevices(),
+				getRememberedInput()
+			]);
+			if (listed.status === 'fulfilled') devices = listed.value;
+			else listError = listed.reason instanceof Error ? listed.reason.message : String(listed.reason);
+			loading = false;
+			const last = remembered.status === 'fulfilled' ? remembered.value : null;
+			selected = toValue(initialInputChoice(last, devices));
+			queueMicrotask(() => startButton?.focus());
 		})();
 	});
 
@@ -68,7 +70,6 @@
 		busy = true;
 		try {
 			const status = await startPerformanceRecorder(choice);
-			rememberInput(choice);
 			const from = choice.kind === 'device' ? `from ${choice.name}` : 'tracklist only';
 			notify(`Recording ${status.session_id} (${from})`, 'info');
 			onstarted(status);

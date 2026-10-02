@@ -6,6 +6,8 @@ that object can settle its poll threads and ffmpeg process safely.
 from __future__ import annotations
 
 import ctypes
+import json
+import logging
 import os
 import threading
 from collections.abc import Callable
@@ -19,6 +21,12 @@ from .state import SetsState
 
 #: Manifest/DB capture_device for a session started without audio (SET-10).
 NO_AUDIO_DEVICE_LABEL = "none (tracklist only)"
+#: The last input REC started on, kept by the daemon under the sets root. Not
+#: browser storage: the desktop shell serves the UI from a loopback port the OS
+#: assigns per launch, and web storage is scoped to that port (SET-10).
+REMEMBERED_INPUT_FILENAME = "recorder-input.json"
+
+_log = logging.getLogger(__name__)
 
 
 class RecorderConflict(RuntimeError):
@@ -40,6 +48,7 @@ class RecorderService:
         self.db_path = Path(db_path or sets_paths.SETS_DB)
         self.capture_enabled = capture_enabled
         self.list_devices = list_devices
+        self.remembered_input_path = self.sets_root / REMEMBERED_INPUT_FILENAME
         self._lock = threading.Lock()
         self._recorder: record_mod.Recorder | None = None
 
@@ -133,6 +142,8 @@ class RecorderService:
                     )
                 raise
             self._recorder = recorder
+            if device_name is not None or not capture_audio:
+                self._remember_input(device_name if capture_audio else None)
             return {
                 "active": True,
                 "session_id": recorder.session_id,
@@ -163,6 +174,39 @@ class RecorderService:
         if device_name is not None:
             return self._index_of(device_name), device_name
         return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
+
+    def remembered_input(self) -> dict[str, str] | None:
+        """The input REC last started on by name, or none; None when unknown."""
+        try:
+            parsed: Any = json.loads(self.remembered_input_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            _log.warning("ignoring unreadable %s: %s", self.remembered_input_path, exc)
+            return None
+        if parsed == {"kind": "none"}:
+            return {"kind": "none"}
+        if (
+            isinstance(parsed, dict)
+            and parsed.keys() == {"kind", "name"}
+            and parsed["kind"] == "device"
+            and isinstance(parsed["name"], str)
+            and parsed["name"]
+        ):
+            return {"kind": "device", "name": parsed["name"]}
+        _log.warning("ignoring malformed %s: %r", self.remembered_input_path, parsed)
+        return None
+
+    def _remember_input(self, device_name: str | None) -> None:
+        """Record the started input; a failed write costs only the preselection."""
+        choice = {"kind": "none"} if device_name is None else {"kind": "device", "name": device_name}
+        tmp = self.remembered_input_path.with_suffix(".json.tmp")
+        try:
+            self.remembered_input_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(choice), encoding="utf-8")
+            os.replace(tmp, self.remembered_input_path)
+        except OSError as exc:
+            _log.warning("could not remember the REC input in %s: %s", self.remembered_input_path, exc)
 
     def _index_of(self, device_name: str) -> int:
         devices = self.list_devices()

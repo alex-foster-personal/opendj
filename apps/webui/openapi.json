@@ -16580,6 +16580,55 @@
         "title": "RecorderRecoveryRequest",
         "type": "object"
       },
+      "RecorderRememberedInput": {
+        "description": "The input REC last started on: a named input, or none (tracklist only).",
+        "properties": {
+          "kind": {
+            "enum": [
+              "device",
+              "none"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "RecorderRememberedInput",
+        "type": "object"
+      },
+      "RecorderRememberedInputResponse": {
+        "description": "Wraps the choice so \"nothing remembered yet\" is a body, not a null one.",
+        "properties": {
+          "remembered": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecorderRememberedInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "remembered"
+        ],
+        "title": "RecorderRememberedInputResponse",
+        "type": "object"
+      },
       "RecorderStartRequest": {
         "description": "Explicit real-capture configuration for the REC button.\n\nExactly one audio input: ``device_name`` (what the REC picker sends,\nresolved to an index at start), or a raw ``ffmpeg_device_idx``; or\n``capture_audio: false`` for a tracklist-only recording (SET-10).",
         "properties": {
@@ -24220,6 +24269,28 @@
           }
         },
         "summary": "Api Recorder Devices",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/remembered-input": {
+      "get": {
+        "description": "The input REC last started on, kept by the daemon (null when unknown).\n\nServer-side because the desktop shell serves the UI from a per-launch\nloopback port, and browser storage forgets across ports (SET-10).",
+        "operationId": "api_recorder_remembered_input_api_sets_recorder_remembered_input_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderRememberedInputResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Remembered Input",
         "tags": [
           "sets"
         ]
