@@ -66,7 +66,14 @@ from fastapi import HTTPException
 
 from apps.adapters.rekordbox import config
 from apps.analysis_waveform import decode
-from apps.analysis_waveform.bands import STRIP_COLUMNS, _bands_payload, _downsample_max
+from apps.analysis_waveform.bands import (
+    PWV6_SCALE_VERSION,
+    STRIP_COLUMNS,
+    _bands_payload,
+    _downsample_max,
+    pwv6_scale,
+    pwv6_scaled_bands,
+)
 from apps.analysis_waveform.decode import (
     BAND_COUNT,
     BAND_NAMES,
@@ -249,6 +256,7 @@ def _store_peaks(stable_id: str, key: dict[str, Any], peaks: np.ndarray) -> None
         {
             "schema": config.LOCAL_WAVEFORM_CACHE_SCHEMA,
             "peaks_version": peaks_version(),
+            "strip_scale": PWV6_SCALE_VERSION,
             "preview_b64": preview_b64,
             "preview_max": preview_max,
             **key,
@@ -272,11 +280,13 @@ def _strip_from_peaks(peaks: np.ndarray) -> tuple[str | None, int | None]:
     """The 120x3 browser strip, or ``(None, None)`` for too few columns.
 
     Under 120 columns (below 0.8 s of audio) there is nothing to downsample to
-    the contract width, and padding it would be invented data.
+    the contract width, and padding it would be invented data. The bytes are on
+    rekordbox PWV6's per-band scale (``bands.pwv6_scale``), so an own strip and
+    a rekordbox one in the same list are drawn with the same band balance.
     """
     if peaks.shape[0] < STRIP_COLUMNS:
         return None, None
-    strip = _downsample_max(peaks, STRIP_COLUMNS)
+    strip = _downsample_max(pwv6_scale(peaks), STRIP_COLUMNS)
     return base64.b64encode(strip.tobytes()).decode("ascii"), int(strip.max())
 
 
@@ -295,7 +305,7 @@ def _waveform_payload(peaks: np.ndarray, points: int) -> dict[str, Any]:
     overview = _downsample_max(peaks, OVERVIEW_COLUMNS)
     return {
         "kind": "tri",
-        "preview": _bands_payload(_bands_from_peaks(overview), points),
+        "preview": _bands_payload(pwv6_scaled_bands(overview), points),
         "detail": _bands_payload(_bands_from_peaks(peaks), points),
     }
 
@@ -421,6 +431,20 @@ def local_preview_strip(stable_id: str) -> tuple[str | None, int | None]:
         return None, None
     if not _entry_is_current(entry, key):
         return None, None
+    if entry.get("strip_scale") != PWV6_SCALE_VERSION:
+        # Written on another byte scale (or before strips had one): drawing it
+        # would put this row's band balance at odds with its neighbours'. The
+        # cached peaks it came from are still current, so re-derive it from
+        # them (no decode) and rewrite the sidecar once.
+        peaks = _cached_peaks(stable_id, key)
+        if peaks is None:
+            return None, None
+        preview_b64, preview_max = _strip_from_peaks(peaks)
+        _write_json(
+            _strip_path(stable_id),
+            {**entry, "strip_scale": PWV6_SCALE_VERSION, "preview_b64": preview_b64, "preview_max": preview_max},
+        )
+        return preview_b64, preview_max
     return entry["preview_b64"], entry["preview_max"]
 
 
