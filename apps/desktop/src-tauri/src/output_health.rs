@@ -83,7 +83,7 @@ pub(crate) fn pick_cycle_target(current: u32, candidates: &[(u32, u32)]) -> Opti
 }
 
 #[cfg(target_os = "macos")]
-mod platform {
+pub(crate) mod platform {
     use super::super::shell_health::utc_timestamp_iso;
     use super::{auhal_plan, fourcc, pick_cycle_target};
     use std::ffi::c_void;
@@ -92,36 +92,36 @@ mod platform {
     use std::thread;
     use std::time::Duration;
 
-    type OSStatus = i32;
-    type AudioObjectID = u32;
-    type AudioDeviceID = u32;
-    type AudioUnit = *mut c_void;
+    pub(crate) type OSStatus = i32;
+    pub(crate) type AudioObjectID = u32;
+    pub(crate) type AudioDeviceID = u32;
+    pub(crate) type AudioUnit = *mut c_void;
     type AudioComponent = *mut c_void;
     type AudioDeviceIOProcID = *mut c_void;
 
-    const NO_ERR: OSStatus = 0;
-    const K_AUDIO_OBJECT_SYSTEM_OBJECT: AudioObjectID = 1;
+    pub(crate) const NO_ERR: OSStatus = 0;
+    pub(crate) const K_AUDIO_OBJECT_SYSTEM_OBJECT: AudioObjectID = 1;
     const K_AUDIO_OBJECT_PROPERTY_ELEMENT_MAIN: u32 = 0;
-    const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = fourcc(b"glob");
-    const K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT: u32 = fourcc(b"outp");
-    const K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE: u32 = fourcc(b"dOut");
+    pub(crate) const K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL: u32 = fourcc(b"glob");
+    pub(crate) const K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT: u32 = fourcc(b"outp");
+    pub(crate) const K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE: u32 = fourcc(b"dOut");
     const K_AUDIO_HARDWARE_PROPERTY_DEVICES: u32 = fourcc(b"dev#");
     const K_AUDIO_DEVICE_PROPERTY_DEVICE_IS_RUNNING_SOMEWHERE: u32 = fourcc(b"gone");
-    const K_AUDIO_DEVICE_PROPERTY_DEVICE_UID: u32 = fourcc(b"uid ");
+    pub(crate) const K_AUDIO_DEVICE_PROPERTY_DEVICE_UID: u32 = fourcc(b"uid ");
     const K_AUDIO_DEVICE_PROPERTY_STREAM_CONFIGURATION: u32 = fourcc(b"slay");
-    const K_AUDIO_OBJECT_PROPERTY_NAME: u32 = fourcc(b"lnam");
+    pub(crate) const K_AUDIO_OBJECT_PROPERTY_NAME: u32 = fourcc(b"lnam");
 
-    const K_AUDIO_UNIT_TYPE_OUTPUT: u32 = fourcc(b"auou");
-    const K_AUDIO_UNIT_SUBTYPE_HAL_OUTPUT: u32 = fourcc(b"ahal");
-    const K_AUDIO_UNIT_MANUFACTURER_APPLE: u32 = fourcc(b"appl");
-    const K_AUDIO_UNIT_PROPERTY_SET_RENDER_CALLBACK: u32 = 23;
-    const K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT: u32 = 8;
-    const K_AUDIO_OUTPUT_UNIT_PROPERTY_ENABLE_IO: u32 = 2003;
-    const K_AUDIO_OUTPUT_UNIT_PROPERTY_CURRENT_DEVICE: u32 = 2000;
+    pub(crate) const K_AUDIO_UNIT_TYPE_OUTPUT: u32 = fourcc(b"auou");
+    pub(crate) const K_AUDIO_UNIT_SUBTYPE_HAL_OUTPUT: u32 = fourcc(b"ahal");
+    pub(crate) const K_AUDIO_UNIT_MANUFACTURER_APPLE: u32 = fourcc(b"appl");
+    pub(crate) const K_AUDIO_UNIT_PROPERTY_SET_RENDER_CALLBACK: u32 = 23;
+    pub(crate) const K_AUDIO_UNIT_PROPERTY_STREAM_FORMAT: u32 = 8;
+    pub(crate) const K_AUDIO_OUTPUT_UNIT_PROPERTY_ENABLE_IO: u32 = 2003;
+    pub(crate) const K_AUDIO_OUTPUT_UNIT_PROPERTY_CURRENT_DEVICE: u32 = 2000;
 
-    const K_AUDIO_FORMAT_LINEAR_PCM: u32 = fourcc(b"lpcm");
+    pub(crate) const K_AUDIO_FORMAT_LINEAR_PCM: u32 = fourcc(b"lpcm");
     const K_AUDIO_FORMAT_FLAG_IS_SIGNED_INTEGER: u32 = 0x4;
-    const K_AUDIO_FORMAT_FLAG_IS_PACKED: u32 = 0x8;
+    pub(crate) const K_AUDIO_FORMAT_FLAG_IS_PACKED: u32 = 0x8;
 
     const PROBE_SAMPLE_RATE: f64 = 44_100.0;
     const PROBE_DURATION_MS: u64 = 100;
@@ -130,59 +130,59 @@ mod platform {
     const PROBE_FREQ_HZ: f32 = 440.0;
 
     #[repr(C)]
-    struct AudioObjectPropertyAddress {
-        m_selector: u32,
-        m_scope: u32,
-        m_element: u32,
+    pub(crate) struct AudioObjectPropertyAddress {
+        pub(crate) m_selector: u32,
+        pub(crate) m_scope: u32,
+        pub(crate) m_element: u32,
     }
 
     #[repr(C)]
-    struct AudioComponentDescription {
-        component_type: u32,
-        component_sub_type: u32,
-        component_manufacturer: u32,
-        component_flags: u32,
-        component_flags_mask: u32,
+    pub(crate) struct AudioComponentDescription {
+        pub(crate) component_type: u32,
+        pub(crate) component_sub_type: u32,
+        pub(crate) component_manufacturer: u32,
+        pub(crate) component_flags: u32,
+        pub(crate) component_flags_mask: u32,
     }
 
     #[repr(C)]
-    struct AudioStreamBasicDescription {
-        m_sample_rate: f64,
-        m_format_id: u32,
-        m_format_flags: u32,
-        m_bytes_per_packet: u32,
-        m_frames_per_packet: u32,
-        m_bytes_per_frame: u32,
-        m_channels_per_frame: u32,
-        m_bits_per_channel: u32,
-        m_reserved: u32,
+    pub(crate) struct AudioStreamBasicDescription {
+        pub(crate) m_sample_rate: f64,
+        pub(crate) m_format_id: u32,
+        pub(crate) m_format_flags: u32,
+        pub(crate) m_bytes_per_packet: u32,
+        pub(crate) m_frames_per_packet: u32,
+        pub(crate) m_bytes_per_frame: u32,
+        pub(crate) m_channels_per_frame: u32,
+        pub(crate) m_bits_per_channel: u32,
+        pub(crate) m_reserved: u32,
     }
 
     #[repr(C)]
-    struct AudioBuffer {
-        m_number_channels: u32,
-        m_data_byte_size: u32,
-        m_data: *mut c_void,
+    pub(crate) struct AudioBuffer {
+        pub(crate) m_number_channels: u32,
+        pub(crate) m_data_byte_size: u32,
+        pub(crate) m_data: *mut c_void,
     }
 
     /// Variable-length in C: `m_buffers` really holds `m_number_buffers`
     /// entries, so any index past 0 is read through a raw pointer bounded by
     /// the byte size the HAL reported, never through this one-element array.
     #[repr(C)]
-    struct AudioBufferList {
-        m_number_buffers: u32,
-        m_buffers: [AudioBuffer; 1],
+    pub(crate) struct AudioBufferList {
+        pub(crate) m_number_buffers: u32,
+        pub(crate) m_buffers: [AudioBuffer; 1],
     }
 
     #[repr(C)]
-    struct AudioTimeStamp {
-        m_sample_time: f64,
-        m_host_time: u64,
-        m_rate_scalar: f64,
-        m_word_clock_time: u64,
-        m_smpte_time: [u8; 24],
-        m_flags: u32,
-        m_reserved: u32,
+    pub(crate) struct AudioTimeStamp {
+        pub(crate) m_sample_time: f64,
+        pub(crate) m_host_time: u64,
+        pub(crate) m_rate_scalar: f64,
+        pub(crate) m_word_clock_time: u64,
+        pub(crate) m_smpte_time: [u8; 24],
+        pub(crate) m_flags: u32,
+        pub(crate) m_reserved: u32,
     }
 
     type AudioDeviceIOProc = extern "C" fn(
@@ -195,7 +195,7 @@ mod platform {
         in_client_data: *mut c_void,
     ) -> OSStatus;
 
-    type AURenderCallback = extern "C" fn(
+    pub(crate) type AURenderCallback = extern "C" fn(
         in_ref_con: *mut c_void,
         _io_action_flags: *mut u32,
         _in_time_stamp: *const AudioTimeStamp,
@@ -205,9 +205,9 @@ mod platform {
     ) -> OSStatus;
 
     #[repr(C)]
-    struct AURenderCallbackStruct {
-        input_proc: AURenderCallback,
-        input_proc_ref_con: *mut c_void,
+    pub(crate) struct AURenderCallbackStruct {
+        pub(crate) input_proc: AURenderCallback,
+        pub(crate) input_proc_ref_con: *mut c_void,
     }
 
     struct IoCycleMonitor {
@@ -232,7 +232,7 @@ mod platform {
             in_qualifier_data: *const c_void,
             out_data_size: *mut u32,
         ) -> OSStatus;
-        fn AudioObjectGetPropertyData(
+        pub(crate) fn AudioObjectGetPropertyData(
             in_object_id: AudioObjectID,
             in_address: *const AudioObjectPropertyAddress,
             in_qualifier_data_size: u32,
@@ -264,17 +264,17 @@ mod platform {
 
     #[link(name = "AudioToolbox", kind = "framework")]
     extern "C" {
-        fn AudioComponentFindNext(
+        pub(crate) fn AudioComponentFindNext(
             in_component: AudioComponent,
             in_desc: *const AudioComponentDescription,
         ) -> AudioComponent;
-        fn AudioComponentInstanceNew(
+        pub(crate) fn AudioComponentInstanceNew(
             in_component: AudioComponent,
             out_instance: *mut AudioUnit,
         ) -> OSStatus;
-        fn AudioComponentInstanceDispose(in_instance: AudioUnit) -> OSStatus;
-        fn AudioUnitInitialize(in_unit: AudioUnit) -> OSStatus;
-        fn AudioUnitUninitialize(in_unit: AudioUnit) -> OSStatus;
+        pub(crate) fn AudioComponentInstanceDispose(in_instance: AudioUnit) -> OSStatus;
+        pub(crate) fn AudioUnitInitialize(in_unit: AudioUnit) -> OSStatus;
+        pub(crate) fn AudioUnitUninitialize(in_unit: AudioUnit) -> OSStatus;
         fn AudioUnitSetProperty(
             in_unit: AudioUnit,
             in_id: u32,
@@ -283,8 +283,8 @@ mod platform {
             in_data: *const c_void,
             in_data_size: u32,
         ) -> OSStatus;
-        fn AudioOutputUnitStart(in_unit: AudioUnit) -> OSStatus;
-        fn AudioOutputUnitStop(in_unit: AudioUnit) -> OSStatus;
+        pub(crate) fn AudioOutputUnitStart(in_unit: AudioUnit) -> OSStatus;
+        pub(crate) fn AudioOutputUnitStop(in_unit: AudioUnit) -> OSStatus;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -299,7 +299,7 @@ mod platform {
         fn CFRelease(cf: *const c_void);
     }
 
-    fn prop_addr(selector: u32, scope: u32) -> AudioObjectPropertyAddress {
+    pub(crate) fn prop_addr(selector: u32, scope: u32) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress {
             m_selector: selector,
             m_scope: scope,
@@ -307,11 +307,11 @@ mod platform {
         }
     }
 
-    fn global_addr(selector: u32) -> AudioObjectPropertyAddress {
+    pub(crate) fn global_addr(selector: u32) -> AudioObjectPropertyAddress {
         prop_addr(selector, K_AUDIO_OBJECT_PROPERTY_SCOPE_GLOBAL)
     }
 
-    fn get_u32(object_id: AudioObjectID, selector: u32) -> Result<u32, String> {
+    pub(crate) fn get_u32(object_id: AudioObjectID, selector: u32) -> Result<u32, String> {
         let address = global_addr(selector);
         let mut value = 0u32;
         let mut size = std::mem::size_of::<u32>() as u32;
@@ -335,7 +335,7 @@ mod platform {
     /// Byte size of a variable-length property. `AudioObjectGetPropertyData`
     /// with a zero-size, null buffer is not a size query: it writes nothing and
     /// reports 0, which read as "no devices" and made every cycle fail.
-    fn property_size(
+    pub(crate) fn property_size(
         object_id: AudioObjectID,
         address: &AudioObjectPropertyAddress,
     ) -> Result<u32, String> {
@@ -353,7 +353,7 @@ mod platform {
         Ok(size)
     }
 
-    fn get_device_list() -> Result<Vec<AudioDeviceID>, String> {
+    pub(crate) fn get_device_list() -> Result<Vec<AudioDeviceID>, String> {
         let address = global_addr(K_AUDIO_HARDWARE_PROPERTY_DEVICES);
         let mut size = property_size(K_AUDIO_OBJECT_SYSTEM_OBJECT, &address)?;
         let count = size as usize / std::mem::size_of::<AudioDeviceID>();
@@ -379,7 +379,7 @@ mod platform {
 
     /// Total OUTPUT channels a device exposes, summed over its output streams.
     /// 0 for an input-only device such as a microphone.
-    fn output_channel_count(device: AudioDeviceID) -> Result<u32, String> {
+    pub(crate) fn output_channel_count(device: AudioDeviceID) -> Result<u32, String> {
         let address = prop_addr(
             K_AUDIO_DEVICE_PROPERTY_STREAM_CONFIGURATION,
             K_AUDIO_OBJECT_PROPERTY_SCOPE_OUTPUT,
@@ -419,7 +419,7 @@ mod platform {
         Ok(channels)
     }
 
-    fn get_default_output_device() -> Result<AudioDeviceID, String> {
+    pub(crate) fn get_default_output_device() -> Result<AudioDeviceID, String> {
         let device = get_u32(K_AUDIO_OBJECT_SYSTEM_OBJECT, K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE)
             .map_err(|error| format!("default output device query failed: {error}"))?;
         if device == 0 {
@@ -428,7 +428,7 @@ mod platform {
         Ok(device)
     }
 
-    fn set_default_output_device(device: AudioDeviceID) -> Result<(), String> {
+    pub(crate) fn set_default_output_device(device: AudioDeviceID) -> Result<(), String> {
         let address = global_addr(K_AUDIO_HARDWARE_PROPERTY_DEFAULT_OUTPUT_DEVICE);
         // SAFETY: `device` is a live u32 and the size says exactly that.
         let status = unsafe {
@@ -447,7 +447,7 @@ mod platform {
         Ok(())
     }
 
-    fn get_cf_string(object_id: AudioObjectID, selector: u32) -> Result<String, String> {
+    pub(crate) fn get_cf_string(object_id: AudioObjectID, selector: u32) -> Result<String, String> {
         let address = global_addr(selector);
         let mut cf_str: *const c_void = ptr::null();
         let mut size = std::mem::size_of::<*const c_void>() as u32;
@@ -640,7 +640,7 @@ mod platform {
     ///
     /// # Safety
     /// `unit` must be a live AudioUnit and `value` must point at a live `T`.
-    unsafe fn set_unit_property<T>(
+    pub(crate) unsafe fn set_unit_property<T>(
         unit: AudioUnit,
         property: u32,
         target: auhal_plan::Target,
