@@ -1,4 +1,4 @@
-"""A SIGTERM'd engine exits even while a request is still open (INSTALL-30).
+"""A SIGTERM'd engine exits even while a request is still open (INSTALL-33).
 
 [if] a request is still open when the engine gets SIGTERM [then] the engine stays alive after closing its listener, [else stop].
 
@@ -34,7 +34,7 @@ import pytest
 from apps.engine_core.__main__ import GRACEFUL_SHUTDOWN_S
 
 pytestmark = [
-    pytest.mark.requirement("INSTALL-30"),
+    pytest.mark.requirement("INSTALL-33"),
     pytest.mark.skipif(
         sys.platform == "win32", reason="POSIX SIGTERM delivery to the engine process"
     ),

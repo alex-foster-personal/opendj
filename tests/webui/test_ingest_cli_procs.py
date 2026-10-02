@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 from apps.webui.server import app as app_mod
 from apps.webui.server.routes import ingest_cli_procs, ingest_job
 
-pytestmark = [pytest.mark.requirement("INSTALL-30"), pytest.mark.skipif(
+pytestmark = [pytest.mark.requirement("INSTALL-33"), pytest.mark.skipif(
     sys.platform == "win32", reason="the CLI stand-in prints a POSIX grandchild pid"
 )]
 

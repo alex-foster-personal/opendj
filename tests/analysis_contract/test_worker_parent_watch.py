@@ -25,7 +25,7 @@ import pytest
 
 from apps.analysis import worker_diagnostics
 
-pytestmark = [pytest.mark.requirement("INSTALL-30"), pytest.mark.skipif(
+pytestmark = [pytest.mark.requirement("INSTALL-33"), pytest.mark.skipif(
     sys.platform == "win32", reason="Windows does not reparent; the watch is POSIX-only"
 )]
 
