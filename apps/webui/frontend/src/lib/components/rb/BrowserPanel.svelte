@@ -926,10 +926,7 @@
 		// ever one refetch. Playlist TREE names refresh immediately on
 		// `playlists` / resync (see the handlers below); that is cheap and is
 		// user-visible undo/redo state.
-		const unsubscribeTracks = subscribeKind('tracks', () => {
-			invalidateAllPlaylistFirstPages();
-			_libraryRefreshGate.request();
-		});
+		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
 		// Tree names are user-visible undo/redo state (v1). The playing-gated
 		// full library refetch can be in flight, deferred, or throw after its
 		// GET /playlists snapshot, which left the history panel enabled while

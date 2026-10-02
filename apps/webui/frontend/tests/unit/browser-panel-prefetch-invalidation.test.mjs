@@ -34,8 +34,8 @@ test('_loadPane invalidates before beginLoad when reloading the playlist it alre
 	assert.ok(begin > guard, 'the guard must run before beginLoad overwrites playlist_id');
 });
 
-test('change events and resync drop every prefetch', () => {
-	for (const hook of ["subscribeKind('tracks'", "subscribeKind('playlists'", 'subscribeResync(']) {
+test('playlist change events and resync drop every prefetch', () => {
+	for (const hook of ["subscribeKind('playlists'", 'subscribeResync(']) {
 		const at = panel.indexOf(hook);
 		assert.ok(at >= 0, `${hook} subscription missing`);
 		const handler = panel.slice(at, panel.indexOf('});', at));
