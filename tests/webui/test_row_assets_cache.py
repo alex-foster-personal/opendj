@@ -17,6 +17,7 @@ import errno
 import os
 import shutil
 import struct
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -440,6 +441,13 @@ def test_same_size_rewrite_with_the_mtime_put_back_shows(share: Path) -> None:
     assert level_of(call()) == INSIDE
     leaf = share / ANLZ_DIR / "ANLZ0000.2EX"
     before = os.stat(leaf)
+    # The kernel stamps ctime from a coarse clock (one jiffy, up to 4 ms on
+    # ext4), so a rewrite inside the same tick as the fixture's own write keeps
+    # ctime too and is genuinely indistinguishable. A real rewrite comes later;
+    # wait the clock past the fixture's ctime so this models one (CI hit it).
+    deadline = time.monotonic() + 2.0
+    while time.time_ns() <= before.st_ctime_ns + 20_000_000 and time.monotonic() < deadline:
+        time.sleep(0.005)
     with open(leaf, "r+b") as handle:
         handle.write(two_ex(OTHER_LIBRARY))
     os.utime(leaf, ns=(before.st_atime_ns, before.st_mtime_ns))
@@ -447,6 +455,7 @@ def test_same_size_rewrite_with_the_mtime_put_back_shows(share: Path) -> None:
     assert (after.st_size, after.st_mtime_ns, after.st_ino) == (
         before.st_size, before.st_mtime_ns, before.st_ino,
     ), "the fixture did not produce a same-size same-mtime same-inode rewrite"
+    assert after.st_ctime_ns != before.st_ctime_ns, "ctime did not move; the rewrite is unobservable"
     assert level_of(call()) == OTHER_LIBRARY
 
 
