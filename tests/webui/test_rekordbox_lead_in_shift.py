@@ -13,6 +13,7 @@ Regression one-liners:
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -144,67 +145,33 @@ def test_pqtz_write_back_puts_the_lead_in_back(master: Path) -> None:
         conn.close()
 
 
-class _FakePqtz:
-    def get_beats(self) -> list[int]:
-        return [1, 2, 3]
-
-    def get_bpms(self) -> list[float]:
-        return [120.0, 120.0, 120.0]
-
-    def get_times(self) -> list[float]:
-        return [0.02, 0.52, 1.02]
-
-
-@pytest.mark.parametrize("cache_hit", [True, False], ids=["cache-hit", "fresh-parse"])
 def test_build_anlz_payload_serves_the_grid_on_our_timeline(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cache_hit: bool
+    master: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Both branches of the real builder shift, and the cache keeps rekordbox's numbers."""
-    from apps.adapters.rekordbox import paths as rb_paths
-    from apps.shared import platform_paths as pp
-    from apps.webui.server.rb_vendor_pkg import anlz as rb_anlz
-    from apps.webui.server.rb_vendor_pkg import anlz_cache as rb_anlz_cache
-    from apps.webui.server.rb_vendor_pkg import db as rb_db
+    """A real ANLZ file through the real parser and cache: both reads shift, the cache keeps rekordbox's."""
+    from apps.sync.analysis_writeback_pqtz import build_minimal_dat
 
+    monkeypatch.setattr(rb_config, "ANLZ_CACHE_DIR", tmp_path / "anlz-cache")
+    monkeypatch.setattr(rb_config, "BEATGRID_ISSUE_CACHE_DIR", tmp_path / "issue-cache")
+    dat = tmp_path / "anlz" / "ANLZ0000.DAT"
+    build_minimal_dat(dat, [{"n": n, "bpm": 120.0, "t": t} for n, t in ((1, 0.02), (2, 0.52), (3, 1.02))])
     content = rb_vendor.RbContent(
         stable_id="track-1",
-        vendor_id="vendor-1",
+        vendor_id=TAGGED_ID,
         folder_path=str(TAGGED),
         image_path=None,
-        analysis_data_path="ANLZ0000.DAT",
+        analysis_data_path=str(dat),
         length_s=None,
         comment=None,
         genre=None,
     )
-    stored: list[dict[str, Any]] = []
-    monkeypatch.setattr(rb_paths, "anlz_dir", lambda _content: tmp_path)
-    real_resolve = rb_paths.resolve_asset_path
-    monkeypatch.setattr(
-        rb_paths,
-        "resolve_asset_path",
-        lambda p, **kw: pp.MappedPath(
-            original=p, resolved=tmp_path / "ANLZ0000.DAT", mapped=True, reason="native"
-        )
-        if p == "ANLZ0000.DAT"
-        else real_resolve(p, **kw),
-    )
-    monkeypatch.setattr(rb_anlz_cache, "_anlz_mtime", lambda _directory: 1.0)
-    monkeypatch.setattr(
-        rb_anlz_cache,
-        "_load_cached_payload",
-        lambda *_a: {**_anlz_payload(), "waveform": {"kind": "tri"}, "vocals": {"status": "not_analyzed"}}
-        if cache_hit
-        else None,
-    )
-    monkeypatch.setattr(
-        rb_anlz_cache, "_store_cached_payload", lambda _s, _m, _p, payload: stored.append(payload)
-    )
-    monkeypatch.setattr(rb_db, "fetch_cues", lambda _vendor_id: [])
-    monkeypatch.setattr(rb_anlz, "_first_tags", lambda _directory: ({"PQTZ": _FakePqtz()}, []))
-    monkeypatch.setattr(rb_anlz, "vocals_payload", lambda _path: {"status": "not_analyzed"})
-
-    payload = rb_vendor.build_anlz_payload(content, points=16)
-
-    assert [b["t"] for b in payload["beatgrid"]["beats"]] == [0.47, 0.97]
-    if not cache_hit:
-        assert [b["t"] for b in stored[0]["beatgrid"]["beats"]] == [0.02, 0.52, 1.02]
+    state_db = tmp_path / "state.db"
+    fresh = rb_vendor.build_anlz_payload(content, points=16, state_db_path=state_db)
+    cached_file = tmp_path / "anlz-cache" / "track-1.json"
+    assert cached_file.is_file(), "control: the first read must have parsed and cached"
+    hit = rb_vendor.build_anlz_payload(content, points=16, state_db_path=state_db)
+    for payload in (fresh, hit):
+        assert [b["t"] for b in payload["beatgrid"]["beats"]] == [0.47, 0.97]
+        assert [c["in_ms"] for c in payload["cues"]] == [950, 3950]
+    raw = json.loads(cached_file.read_text(encoding="utf-8"))
+    assert [b["t"] for b in raw["payload"]["beatgrid"]["beats"]] == [0.02, 0.52, 1.02]
