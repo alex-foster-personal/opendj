@@ -22,7 +22,7 @@
 	import { midiState } from '$lib/rb/midi/webmidi.svelte';
 
 	const PERMISSION_LABEL: Record<typeof midiState.permission, string> = {
-		unsupported: 'not supported in this browser (WebMIDI needs Chrome or Edge)',
+		unsupported: 'not supported here: WebMIDI needs Chrome or Edge, and the desktop app has no MIDI yet',
 		prompt: 'not requested yet',
 		granted: 'granted',
 		denied: 'denied - re-enable in browser site settings, then reload'

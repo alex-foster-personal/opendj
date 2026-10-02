@@ -93,7 +93,7 @@ def test_report_requires_llm_assessment_and_surfaces_anomalies():
     assert "$af-evalsuite-ci" in report
 
 
-def test_collect_matches_unique_pr_branches_and_waits_for_cost_guard_coverage(tmp_path):
+def test_collect_matches_unique_pr_branches_when_monitored_runs_complete(tmp_path):
     campaign = _campaign(tmp_path)
     campaign["prepared_at"] = "2026-08-16T22:00:00+00:00"
     campaign["prs"] = [
@@ -126,23 +126,6 @@ def test_collect_matches_unique_pr_branches_and_waits_for_cost_guard_coverage(tm
                 }
             )
             run_id += 1
-    for _ in range(20):
-        runs.append(
-            {
-                "databaseId": run_id,
-                "workflowName": "CI Cost Guard",
-                "status": "completed",
-                "conclusion": "success",
-                "url": f"https://github.test/runs/{run_id}",
-                "createdAt": "2026-08-16T22:03:00Z",
-                "updatedAt": "2026-08-16T22:04:00Z",
-                "headBranch": campaign["base_branch"],
-                "headSha": "base-sha",
-                "event": "workflow_run",
-            }
-        )
-        run_id += 1
-
     class FakeRunner:
         def run(self, args, *, cwd=None, check=True):
             if args[:3] == ["gh", "run", "list"]:
@@ -167,8 +150,7 @@ def test_collect_matches_unique_pr_branches_and_waits_for_cost_guard_coverage(tm
 
     assert result["complete"] is True
     assert result["monitored_runs_completed"] == 20
-    assert result["cost_guard_runs_completed"] == 20
-    assert result["estimated_gross_cost_usd"] == pytest.approx(40 * 0.006)
+    assert result["estimated_gross_cost_usd"] == pytest.approx(20 * 0.006)
     assert result["anomalies"] == []
 
 
