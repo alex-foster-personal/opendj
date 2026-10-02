@@ -33,6 +33,7 @@ import functools
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from apps.shared import fs_residency, platform_paths
 
@@ -110,6 +111,21 @@ def _check_header(word: int) -> bool:
     )
 
 
+def _bitrate_bps(version: int, layer: int, br_index: int) -> int:
+    if version == 3:
+        table = {1: _BITRATES_MPEG1_L1, 2: _BITRATES_MPEG1_L2, 3: _BITRATES_MPEG1_L3}[layer]
+    else:
+        table = _BITRATES_MPEG2_L1 if layer == 1 else _BITRATES_MPEG2_L23
+    return table[br_index] * 1000
+
+
+def _layer2_forbidden(mono: bool, bitrate: int) -> bool:
+    """Layer II bit-rate and channel-mode pairs symphonia rejects."""
+    if mono:
+        return bitrate in (224_000, 256_000, 320_000, 384_000)
+    return bitrate in (32_000, 48_000, 56_000, 80_000)
+
+
 def _parse_header(word: int) -> _Header | None:
     """symphonia's ``parse_frame_header``, or None where it returns an error."""
     if word & 0xFFE0_0000 != 0xFFE0_0000 or not _check_header(word):
@@ -119,19 +135,11 @@ def _parse_header(word: int) -> _Header | None:
     br_index = (word >> 12) & 0xF
     if br_index == 0:
         return None  # free bit-rate: symphonia refuses it
-    if version == 3:
-        table = {1: _BITRATES_MPEG1_L1, 2: _BITRATES_MPEG1_L2, 3: _BITRATES_MPEG1_L3}[layer]
-    else:
-        table = _BITRATES_MPEG2_L1 if layer == 1 else _BITRATES_MPEG2_L23
-    bitrate = table[br_index] * 1000
+    bitrate = _bitrate_bps(version, layer, br_index)
     sample_rate = _SAMPLE_RATES[version][(word >> 10) & 0x3]
-    mode = (word >> 6) & 0x3
-    mono = mode == 0b11
-    if layer == 2:
-        if mono and bitrate in (224_000, 256_000, 320_000, 384_000):
-            return None
-        if not mono and bitrate in (32_000, 48_000, 56_000, 80_000):
-            return None
+    mono = (word >> 6) & 0x3 == 0b11
+    if layer == 2 and _layer2_forbidden(mono, bitrate):
+        return None
     factor = 12 if layer == 1 else (144 if layer == 2 or version == 3 else 72)
     slot = 4 if layer == 1 else 1
     slots = factor * bitrate // sample_rate + (1 if word & 0x200 else 0)
@@ -192,36 +200,44 @@ def _crc16_arc(data: bytes, crc: int = 0) -> int:
     return crc
 
 
-def _lame_delay(frame: bytes, header: _Header) -> tuple[int, str | None]:
-    """Trimmed frames and encoder name from the first frame's Xing/Info tag (0 when none)."""
+def _lame_ext_pos(frame: bytes, header: _Header) -> int | None:
+    """Where the LAME extension starts after a Xing/Info tag, or None when there is none."""
     if header.layer != 3:
-        return 0, None
+        return None
     offset = _HEADER_LEN + header.side_info_len
-    if len(frame) < offset + 8:
-        return 0, None
-    if frame[offset : offset + 4] not in (b"Xing", b"Info"):
-        return 0, None
+    if len(frame) < offset + 8 or frame[offset : offset + 4] not in (b"Xing", b"Info"):
+        return None
     if any(frame[header.header_size : offset]):
-        return 0, None
-    pos = offset + 4
-    flags = int.from_bytes(frame[pos : pos + 4], "big")
-    pos += 4
+        return None
+    flags = int.from_bytes(frame[offset + 4 : offset + 8], "big")
+    pos = offset + 8
     pos += 4 * bool(flags & 0x1) + 4 * bool(flags & 0x2) + 100 * bool(flags & 0x4)
     pos += 4 * bool(flags & 0x8)
     if pos > len(frame) or len(frame) - pos < _MIN_LAME_EXT_LEN:
+        return None
+    return pos
+
+
+def _lame_crc_rejects(frame: bytes, header: _Header, pos: int) -> bool:
+    """True when a checked, non-zero tag CRC does not match: symphonia then ignores the tag."""
+    after = pos + _MIN_LAME_EXT_LEN
+    if len(frame) - after < _LAME_EXT_LEN - _MIN_LAME_EXT_LEN:
+        return False
+    if not (header.has_crc or frame[pos : pos + 4] == b"LAME"):
+        return False
+    crc_at = after + 10
+    stored = int.from_bytes(frame[crc_at : crc_at + 2], "big")
+    return stored != 0 and stored != _crc16_arc(frame[:crc_at])
+
+
+def _lame_delay(frame: bytes, header: _Header) -> tuple[int, str | None]:
+    """Trimmed frames and encoder name from the first frame's Xing/Info tag (0 when none)."""
+    pos = _lame_ext_pos(frame, header)
+    if pos is None or _lame_crc_rejects(frame, header, pos):
         return 0, None
     encoder = frame[pos : pos + 9]
     trim = int.from_bytes(frame[pos + 21 : pos + 24], "big")
-    known = encoder[:4] in _LAME_ENCODERS
-    delay = DECODER_DELAY + (trim >> 12) if known else 0
-    after = pos + _MIN_LAME_EXT_LEN
-    if len(frame) - after >= _LAME_EXT_LEN - _MIN_LAME_EXT_LEN and (
-        header.has_crc or encoder[:4] == b"LAME"
-    ):
-        crc_at = after + 10
-        stored = int.from_bytes(frame[crc_at : crc_at + 2], "big")
-        if stored != 0 and stored != _crc16_arc(frame[:crc_at]):
-            return 0, None  # not a LAME tag after all: symphonia ignores it
+    delay = DECODER_DELAY + (trim >> 12) if encoder[:4] in _LAME_ENCODERS else 0
     name = encoder.split(b"\0", 1)[0].decode("latin-1").strip() or None
     return delay, name
 
@@ -287,6 +303,26 @@ def to_our_ms(rekordbox_ms: int, lead_in_s: float) -> int:
     return max(0, round(rekordbox_ms - lead_in_s * 1000))
 
 
+def cues_on_our_timeline(
+    cues: list[dict[str, Any]], folder_path: str | None
+) -> list[dict[str, Any]]:
+    """rekordbox cues (``in_ms``/``out_ms``) with the file's MP3 lead-in taken off.
+
+    The cue list is returned as is when there is no lead-in to take off.
+    """
+    lead_in_s = rekordbox_lead_in_s(folder_path) if cues else None
+    if not lead_in_s:
+        return cues
+    return [
+        {
+            **cue,
+            "in_ms": None if cue["in_ms"] is None else to_our_ms(cue["in_ms"], lead_in_s),
+            "out_ms": None if cue["out_ms"] is None else to_our_ms(cue["out_ms"], lead_in_s),
+        }
+        for cue in cues
+    ]
+
+
 def to_our_s(rekordbox_s: float, lead_in_s: float) -> float:
     """A rekordbox position in seconds on our timeline (may go below 0)."""
     return rekordbox_s - lead_in_s
@@ -301,6 +337,7 @@ __all__ = [
     "DECODER_DELAY",
     "NO_LEAD_IN",
     "LeadIn",
+    "cues_on_our_timeline",
     "lead_in_seconds",
     "read_lead_in",
     "rekordbox_lead_in_s",

@@ -7,7 +7,7 @@ Regression one-liners:
   - if a track with no local file has its cues moved anyway then broken (overshoot)
   - if /anlz serves PQTZ times or phrases unshifted for a tagged MP3 then broken
   - if a beat the shift puts before zero is served with a negative time then broken
-  - if ingest stores rekordbox's raw cue times in the own cue store then broken
+  - if a cue list for a tagged MP3 keeps rekordbox's raw times then broken
   - if PQTZ write-back sends our times to rekordbox without the lead-in then broken
   - if PQTZ write-back goes ahead when the lead-in cannot be read then broken
 """
@@ -20,8 +20,7 @@ from typing import Any
 import pytest
 
 from apps.adapters.rekordbox import config as rb_config
-from apps.shared.mp3_lead_in import rekordbox_lead_in_s
-from apps.shared.state.ingest import rekordbox as rb_ingest
+from apps.shared.mp3_lead_in import cues_on_our_timeline, rekordbox_lead_in_s
 from apps.sync.analysis_writeback import _beats_on_rekordbox_timeline
 from apps.sync.safety import SafetyAbort
 from apps.webui.server import rb_vendor
@@ -116,16 +115,16 @@ def test_anlz_payload_is_untouched_without_a_lead_in() -> None:
     assert on_our_timeline(raw, 0.0) is raw
 
 
-def test_ingest_imports_cues_on_our_timeline() -> None:
+def test_cue_lists_move_onto_our_timeline() -> None:
     cues = [
         {"kind": "hot_cue", "slot": "A", "in_ms": 1000, "out_ms": None},
         {"kind": "loop", "slot": None, "in_ms": 4000, "out_ms": 8000},
     ]
-    assert _positions(rb_ingest._cues_on_our_timeline(cues, str(TAGGED))) == [
+    assert _positions(cues_on_our_timeline(cues, str(TAGGED))) == [
         (950, None),
         (3950, 7950),
     ]
-    assert rb_ingest._cues_on_our_timeline(cues, "/nowhere/x.mp3") == cues
+    assert cues_on_our_timeline(cues, "/nowhere/x.mp3") == cues
 
 
 def test_pqtz_write_back_puts_the_lead_in_back(master: Path) -> None:
