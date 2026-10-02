@@ -21,7 +21,7 @@
 <select
 	class="xf-curve"
 	aria-label="crossfade curve"
-	title={selectedLabel}
+	title={`${selectedLabel}. ${plannedTitle('crossfade-curve')}`}
 	value={uiPrefs.crossfade_curve}
 	onchange={handleChange}
 >
