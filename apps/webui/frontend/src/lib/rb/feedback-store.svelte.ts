@@ -45,19 +45,8 @@
 import type { components } from "../api-types";
 import { API_BASE, ApiError, api, unwrap } from "../api/client";
 import { writePinsVisible } from "./feedback-pin-visibility";
-import {
-  describeFleetCorrelation,
-  classifySummaryFailure,
-  describePinOperatorSummary,
-  parseCommentSummary,
-  type CommentSummary,
-} from "./feedback-pin-operator-summary";
-import {
-  describePinStatusSummary,
-  makeDebounce,
-  type Debounced,
-  type PinDraft,
-} from "./feedback";
+import { describeFleetCorrelation, describePinOperatorSummary, type CommentSummary } from "./feedback-pin-operator-summary";
+import { describePinStatusSummary, makeDebounce, type Debounced, type PinDraft } from "./feedback";
 
 export type FeedbackTodo = components["schemas"]["TodoOut"];
 export type FeedbackPin = components["schemas"]["CommentOut"];
@@ -526,6 +515,11 @@ let _pinPollTimer: ReturnType<typeof setInterval> | null = null;
 
 let _summarySeq = 0;
 
+/* The summary body check and failure classifier load on the first refresh,
+ * off the "/" and /performance bundles (PR #4094); a failed chunk fetch is
+ * transient (counts kept, next poll retries the import). */
+let _summaryCheck: Promise<typeof import("./feedback-pin-summary-check")> | null = null;
+
 /** GET /comments/summary (FB-20). `classifySummaryFailure` decides a failure:
  * a 404 clears the summary, a transient miss keeps the last-known counts (the
  * next poll retries), and a persistent contract or data error drops the counts
@@ -533,14 +527,18 @@ let _summarySeq = 0;
  * poll's answer never overwrites a post-mutation refresh. */
 async function _refreshPinSummary(): Promise<void> {
   const seq = ++_summarySeq;
+  const mod = await (_summaryCheck ??= import("./feedback-pin-summary-check")).catch(() => {
+    _summaryCheck = null;
+  });
+  if (!mod) return;
   try {
-    const summary = parseCommentSummary(await unwrap(api.GET("/api/v1/feedback/comments/summary")));
+    const summary = mod.parseCommentSummary(await unwrap(api.GET("/api/v1/feedback/comments/summary")));
     if (seq !== _summarySeq) return;
     feedbackState.pinSummary = summary;
     feedbackState.pinSummaryError = null;
   } catch (err) {
     if (seq !== _summarySeq) return;
-    const outcome = classifySummaryFailure(err);
+    const outcome = mod.classifySummaryFailure(err);
     if (outcome.kind === "transient") return;
     feedbackState.pinSummary = null;
     feedbackState.pinSummaryError = outcome.kind === "error" ? outcome.message : null;

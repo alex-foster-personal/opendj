@@ -1,3 +1,10 @@
+<script lang="ts" module>
+	/* A plain counter, not $props.id(): this client-rendered app needs no
+	 * hydration-stable id, and $props.id() pulls its SSR-id helper into the
+	 * eager "/" runtime chunk (PR #4094, library bundle budget). */
+	let nextSummaryId = 0;
+</script>
+
 <script lang="ts">
 	/** Compact comment-pin affordance for the app-shell topbar (FB-16). The
 	 * FB-20 total + breakdown reaches hover (native title), keyboard focus
@@ -15,7 +22,7 @@
 		'Comment pins - this daemon does not serve /api/v1/feedback, so dropping a pin is unavailable';
 	const EXPLAINER_TITLE =
 		'Give feedback, ideas and suggestions to the developer, and track them in-app.';
-	const summaryId = $props.id();
+	const summaryId = `fb-shell-pin-summary-${++nextSummaryId}`;
 
 	const unavailable = $derived(feedbackState.availability === 'missing');
 	const commentPinTitle = $derived.by(() => {
