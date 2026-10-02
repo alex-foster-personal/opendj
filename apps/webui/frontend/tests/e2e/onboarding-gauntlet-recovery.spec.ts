@@ -128,6 +128,9 @@ test.describe('onboarding gauntlet: recovery', () => {
 	});
 
 	test('a Look again that never answers ends in "did not finish" at the deadline, and a retry recovers', async ({ page }) => {
+		// Waits out the real 20 s deadline, then retries: past the root
+		// chromium project's 30 s test timeout, which also runs this spec.
+		test.setTimeout(READ_DEADLINE_MS + 60_000);
 		await landAndTimeWizard(page, engine.origin);
 		const dialog = await chooseRekordboxBranch(page);
 
