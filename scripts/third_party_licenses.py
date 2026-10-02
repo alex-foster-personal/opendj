@@ -36,7 +36,7 @@ Requirements:
 
 - ✔︎ ✅ 🎯 The payload carries THIRD-PARTY-LICENSES.txt and NOTICE.
   -> :func:`write_payload_license_files`, called from
-  ``scripts.build_engine_payload.build`` (OSSPUB-04).
+  ``scripts.build_engine_payload.build`` (OSSPUB-05).
 - ✔︎ ✅ 🎯 Every component is classified; copyleft, non-commercial and unknown
   licenses are listed in the flag report, never silently passed.
   -> :func:`classify_license`, :func:`flag_report`.
