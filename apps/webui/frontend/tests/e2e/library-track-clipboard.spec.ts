@@ -9,6 +9,9 @@ const TRACK_ROW = '[data-testid="track-row"]';
 const TREE = '[data-testid="playlist-tree"]';
 const ROW = '[data-testid="playlist-row"]';
 
+/** Playlists the running test created; afterEach deletes them. */
+let created: string[] = [];
+
 async function createPlaylist(
 	page: import('@playwright/test').Page,
 	name: string,
@@ -17,6 +20,7 @@ async function createPlaylist(
 	const create = await page.request.post('/api/v1/playlists', { data: { name } });
 	expect(create.ok()).toBeTruthy();
 	const id = (await create.json()).playlist_id as string;
+	created.push(id);
 	if (stableIds.length > 0) {
 		const add = await page.request.post(`/api/v1/playlists/${id}/items:add`, {
 			data: { stable_ids: stableIds }
@@ -26,11 +30,33 @@ async function createPlaylist(
 	return id;
 }
 
+/** Delete what a test created, so later specs (track-playlists' "Show in
+ * playlists" popover lists every playlist holding a track) see the fixture
+ * library as it was. Same etag dance as track-playlists.spec.ts. */
+async function deletePlaylists(
+	page: import('@playwright/test').Page,
+	ids: readonly string[]
+): Promise<void> {
+	for (const id of ids) {
+		const detail = await page.request.get(`/api/v1/playlists/${id}`);
+		if (!detail.ok()) continue;
+		const etag = detail.headers().etag;
+		if (!etag) continue;
+		await page.request.delete(`/api/v1/playlists/${id}`, { headers: { 'If-Match': etag } });
+	}
+}
+
 async function memberIds(page: import('@playwright/test').Page, id: string): Promise<string[]> {
 	const r = await page.request.get(`/api/v1/playlists/${id}`);
 	expect(r.ok()).toBeTruthy();
 	return ((await r.json()).tracks as { stable_id: string }[]).map((t) => t.stable_id);
 }
+
+test.afterEach(async ({ page }) => {
+	const ids = created;
+	created = [];
+	await deletePlaylists(page, ids);
+});
 
 test('Cmd+A, Cmd+C, Cmd+V copies tracks into another playlist and shows them at once', async ({
 	page
