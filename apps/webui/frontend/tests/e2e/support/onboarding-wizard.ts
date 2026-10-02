@@ -146,7 +146,7 @@ export async function startFolderImport(page: Page): Promise<string> {
 /** From the progress step to the Done step, declining stems on the way. */
 export async function continueToDone(page: Page): Promise<Locator> {
 	const dialog = setupDialog(page);
-	await expect(dialog.getByText('succeeded', { exact: false }).first()).toBeVisible({ timeout: IMPORT_BUDGET_MS });
+	await expect(dialog.getByText('Import finished', { exact: false }).first()).toBeVisible({ timeout: IMPORT_BUDGET_MS });
 	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
 	await expect(dialog.getByRole('heading', { name: 'Stems analysis' })).toBeVisible();
 	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();

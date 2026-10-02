@@ -67,7 +67,15 @@ export const PLANNED_CONTROLS: Record<string, string> = {
 	'split-column-layout': 'Split-column library - stacks two track tables side by side so two playlists can be compared without switching panes.',
 	'export-eject': 'Export / eject - flushes a USB export and safely ejects the stick from the bottom bar, the same action as the USB panel.',
 	'pane-prev-track': 'Previous track in pane - moves the table selection up one row and, when a deck is focused, prepares that row as the next load.',
-	'pane-next-track': 'Next track in pane - moves the table selection down one row and, when a deck is focused, prepares that row as the next load.'
+	'pane-next-track': 'Next track in pane - moves the table selection down one row and, when a deck is focused, prepares that row as the next load.',
+	// Pin 552a810ba13b, second sweep (issue #4089): the remaining /performance
+	// controls that still showed the bare stub.
+	'mixer-knob': 'Mixer dial - a channel control (trim, EQ band, color filter, or headphone mix and level) whose audio path is not wired on this build. Once it is, drag, scroll or arrow keys turn it, double-click resets it, shift-click hands it the global scroll wheel and alt-click links it to its partner dial.',
+	'crossfade-curve': 'Crossfade curve - picks how the crossfader blends the A and B buses: bass swap trades the low end between the two sides at the center point, linear is a plain level fade. Only the magic crossfader curve plays today.',
+	'feedback-pin-visibility': "Other users' pins - shows the comment pins collaborators left on this screen beside your own and the agents', so shared review feedback appears in place. Needs community sharing first.",
+	'context-menu-unavailable': 'Library action - this menu command will act on the selected tracks or playlist. Its handler is not connected yet, so choosing it changes nothing.',
+	'track-table-filter': 'Column filter - narrows the track table to rows matching a value you pick per column (genre, key, BPM range, rating), like the rekordbox column filter funnel.',
+	'quantize-grid-phase': 'Phrase quantize - snaps seeks, cue points and loop ends to the detected phrase length from analysis (for example 16 or 32 bars) instead of a fixed 1, 4 or 8 beat grid.'
 };
 
 /** The tooltip for a planned control. Throws on an unknown id: an empty

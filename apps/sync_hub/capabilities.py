@@ -55,8 +55,8 @@ QUARANTINE_V1: str = "quarantine/v1"
 
 #: This hub reports how many live ``tracks`` rows it holds, so a spoke can
 #: tell SEEDING an empty hub from MERGING into a library another machine
-#: already put there (CLOUDSYNC-07, ``assert_merge_safe``). Only the second
-#: case can duplicate overlapping recordings.
+#: already put there (CLOUDSYNC-07). Only the second case can duplicate
+#: overlapping recordings. Reported only: nothing refuses on it since ADR-0068.
 LIBRARY_SIZE_V1: str = "library-size/v1"
 
 #: The caller understands ``hash_pending`` on row payloads, a hub ``/hash-pending``

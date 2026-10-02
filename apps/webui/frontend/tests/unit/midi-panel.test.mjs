@@ -121,11 +121,11 @@ test('midiLabelStatus: green when granted with a mapped device, red without', ()
 	assert.equal(fmt.midiLabelStatus('unsupported', false, false), 'grey');
 });
 
-test('midiLabelGlyph: tick for green, X for red, nothing otherwise', () => {
-	assert.equal(fmt.midiLabelGlyph('green'), '✓');
-	assert.equal(fmt.midiLabelGlyph('red'), '✗');
-	assert.equal(fmt.midiLabelGlyph('grey'), '');
-	assert.equal(fmt.midiLabelGlyph('amber'), '');
+test('midiLabelGlyph: check icon for green, cross icon for red, nothing otherwise (#3886: icons, not glyphs)', () => {
+	assert.equal(fmt.midiLabelGlyph('green'), 'check');
+	assert.equal(fmt.midiLabelGlyph('red'), 'cross');
+	assert.equal(fmt.midiLabelGlyph('grey'), null);
+	assert.equal(fmt.midiLabelGlyph('amber'), null);
 });
 
 test('midiLabelTitle: granted with zero mapped devices reads as disconnected', () => {
