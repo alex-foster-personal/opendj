@@ -62,6 +62,9 @@ Requirements (mini-PRD):
     the reviewed head (issues #2907, #2871, ADR-0049, REVIEW-08; see
     scripts/review_coverage_carry.py). When carry applies, triage prints both
     SHAs and the local ``git diff --name-only`` path list.
+  / Base merges carry coverage when main changed no path the PR touches and
+    the PR's net diff is byte-identical at both heads (REVIEW-16; see
+    scripts/review_coverage_base_merge.py). Unmeasurable reads carry UNKNOWN.
 
 Policy change, issue #1016 P1 BLOCKING (PR #1053, thread r3927136609, Thu 3
 Sep 2026): evidence used to count from ANY push, not just the current one.
@@ -107,12 +110,14 @@ try:
         _checks,
         _head_sha,
         _paginated_json_list,
+        _paginated_json_pages,  # noqa: F401  (review_control_plane's fetch seam)
     )
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_coverage") from None
     raise
 from scripts.review_claude import CLAUDE, is_claude_artifact
+from scripts.review_control_plane import enforce as enforce_control_plane
 from scripts.review_coverage_carry import (
     ReviewCarryInputs,
     print_carry_proofs,
@@ -121,6 +126,7 @@ from scripts.review_coverage_carry import (
 from scripts.review_docs_only import is_docs_only, render_docs_only_pass
 from scripts.review_gate_freshness import CHECKOUT_ROOT, require_gate_current_with_main
 from scripts.review_sol import SOL, is_sol_artifact, substitute_alternatives
+from scripts.review_subscription import CURSOR, GROK, LANES_BY_NAME
 
 REPO = "maintainer/music-dj-tools"
 
@@ -138,7 +144,11 @@ REPO = "maintainer/music-dj-tools"
 #: subscription seats Sol can reach were walled too, with a stated reset of
 #: Thu 11 Sep, so every named reviewer was down at once and no new PR head
 #: could be covered by anything.
-EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL, CLAUDE)
+#: Grok and Cursor joined Thu 1 Oct 2026 (the maintainer's "Auto failover chain"
+#: decision): subscription lanes via the af-sub-broker, tried by
+#: `just review <PR>` in exactly this order, Claude last because it bills
+#: the maintainer's own allowance. See scripts/review_chain.py.
+EXPECTED_REVIEWERS: tuple[str, ...] = ("Codex", SOL, GROK, CURSOR, CLAUDE)
 
 #: Substrings that mean the check reported success WITHOUT reviewing. Matched
 #: case-insensitively against the check's description.
@@ -176,6 +186,7 @@ REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
 _MARKER_REVIEWERS: dict[str, Callable[[str, str, str], bool]] = {
     SOL: is_sol_artifact,
     CLAUDE: is_claude_artifact,
+    **{name: lane.is_artifact for name, lane in LANES_BY_NAME.items()},
 }
 
 #: Reviewers that post NO check-run at all, ever -- they review by submitting a
@@ -189,7 +200,7 @@ _MARKER_REVIEWERS: dict[str, Callable[[str, str, str], bool]] = {
 #: its permanent absence as a failure.
 #: Sol and Claude post no check either: each is a CLI run whose only trace on
 #: the PR is the review it submits, so evidence is their sole instrument too.
-CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL, CLAUDE})
+CHECKLESS_REVIEWERS: frozenset[str] = frozenset({"Codex", SOL, CLAUDE, *LANES_BY_NAME})
 
 #: Reviewers KNOWN to be unavailable, with the owner of restoring each. A gate
 #: that can never go green blocks all work, so a known-dead reviewer must not
@@ -227,13 +238,10 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 def _changed_files(pr: str) -> list[str]:
-    """Every path this PR's diff touches, across all pages. Feeds the
-    docs-only check in `triage`; a `gh` failure raises `TriageError` exactly
-    like every other call in this module, so a listing failure is a failed
-    MEASUREMENT and never misread as an empty (and therefore non-docs-only)
-    PR.
-    """
-    return [entry["filename"] for entry in _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")]
+    """Every path the diff touches, rename sources included (REVIEW-13), across all pages. A `gh`
+    failure raises `TriageError`: a failed listing is never read as an empty, non-docs-only PR."""
+    entries = _paginated_json_list(f"repos/{REPO}/pulls/{pr}/files")
+    return [p for e in entries for p in (e["filename"], e.get("previous_filename")) if p]
 
 
 @dataclass(frozen=True)
@@ -335,6 +343,7 @@ class ReviewerVerdict:
     substituted_by: str = ""
     carried_from: str = ""  # full debt-only carry source SHA (issues #2907, #2871)
     carried_paths: frozenset[str] = frozenset()  # git diff paths for carry proof
+    carry_proof: tuple[str, ...] = ()  # base-merge carry proof lines (REVIEW-16)
     # True only when an OUTAGE_MARKERS string appeared in THIS run's check
     # description. Deliberately not set from a historical comment body: an old
     # "trial expired" artifact never leaves the PR, so keying the exemption on
@@ -511,6 +520,8 @@ def triage(pr: str) -> int:
     gate_commit = require_gate_current_with_main()
     head_sha = _head_sha(pr)
     changed_files = _changed_files(pr)
+    if control_plane_rc := enforce_control_plane(pr, head_sha, changed_files):
+        return control_plane_rc  # REVIEW-13, before the docs-only exemption: CLAUDE.md is *.md
     if is_docs_only(changed_files):
         # Coverage is the only thing this exemption waives. Re-sample the
         # head before printing, the same race guard the normal path applies
