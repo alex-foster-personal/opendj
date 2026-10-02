@@ -73,15 +73,19 @@ def test_tagged_fixture_reads_the_encoder_delay_plus_the_decoder_delay() -> None
     assert lead.seconds == pytest.approx(1105 / 22_050)
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg to decode")
+FFMPEG = shutil.which("ffmpeg")
+
+
+@pytest.mark.skipif(FFMPEG is None, reason="needs ffmpeg to decode")
 @pytest.mark.parametrize("path", CROSS_CHECKED, ids=lambda p: p.name)
 def test_lead_in_is_exactly_what_ffmpeg_trims(path: Path) -> None:
     """An independent decoder agrees: the trimmed decode is the raw one, lead-in samples in."""
     np = pytest.importorskip("numpy")
+    assert FFMPEG is not None
 
     def decode(*flags: str):
         out = subprocess.run(
-            ["ffmpeg", "-v", "error", *flags, "-i", str(path), "-f", "s16le", "-ac", "1", "-"],
+            [FFMPEG, "-v", "error", *flags, "-i", str(path), "-f", "s16le", "-ac", "1", "-"],
             capture_output=True,
             check=True,
         ).stdout

@@ -97,16 +97,31 @@ def _open_rw(path: Path, label: str) -> sqlite3.Connection:
     return sqlite3.connect(str(path))
 
 
-def _lead_in_s(conn: sqlite3.Connection, vendor_id: str) -> float:
+def _lead_in_s(
+    conn: sqlite3.Connection, vendor_id: str, *, for_write: bool = False
+) -> float:
     """The track's MP3 lead-in in seconds: rekordbox time minus ours.
 
-    Same rule as ``rb_vendor_pkg.db.fetch_cues``, so a cue saved here reads
-    back at the position it was saved at: a track with no local file reads 0.
+    Same rule as ``rb_vendor_pkg.db.fetch_cues`` for a read: a track with no
+    local file reads 0. A write to an MP3 whose file cannot be read refuses
+    instead, since the cue would land early in rekordbox once the file is back;
+    other formats have no lead-in, so 0 is their measured value.
     """
     row = conn.execute(
         "SELECT FolderPath FROM djmdContent WHERE ID = ?", (vendor_id,)
     ).fetchone()
-    return rekordbox_lead_in_s(row[0] if row else None) or 0.0
+    folder = row[0] if row else None
+    lead_in_s = rekordbox_lead_in_s(folder)
+    if lead_in_s is None and for_write and str(folder or "").lower().endswith(".mp3"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "HOT_CUE_LEAD_IN_UNKNOWN",
+                "message": "the MP3 is not on this machine, so its rekordbox "
+                "time base cannot be read",
+            },
+        )
+    return lead_in_s or 0.0
 
 
 def _on_our_timeline(view: dict[str, Any], lead_in_s: float) -> dict[str, Any]:
@@ -239,7 +254,7 @@ def save_hot_cue(
     master = open_rw()
     try:
         master.execute("BEGIN IMMEDIATE")
-        lead_in_s = _lead_in_s(master, vendor_id)
+        lead_in_s = _lead_in_s(master, vendor_id, for_write=True)
         preimage = _live_slot_snapshot(master, vendor_id, kind)
         in_ms = _stored_in_ms(in_ms, preimage, lead_in_s)
         _validate_cue_position(master, vendor_id, in_ms)

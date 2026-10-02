@@ -20,6 +20,7 @@ Regression one-liners:
   - if a hot cue on a tagged MP3 is stored without its lead-in put back then broken (NAE-22)
   - if the slot API and fetch_cues disagree on a tagged MP3's cue then broken (NAE-22)
   - if a rekordbox cue inside the lead-in moves when re-saved where it reads then broken (NAE-22)
+  - if a hot cue is saved on an MP3 whose lead-in cannot be read then broken (NAE-22)
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
@@ -523,12 +524,10 @@ def test_initial_empty_revision_cannot_write_after_save_clear_cycle(client: Test
 TAGGED_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-128.mp3"
 
 
-def _tag_as_mp3(master_db: Path) -> None:
+def _set_folder(master_db: Path, folder: Path = TAGGED_MP3) -> None:
     conn = sqlite3.connect(str(master_db))
     try:
-        conn.execute(
-            "UPDATE djmdContent SET FolderPath = ? WHERE ID = ?", (str(TAGGED_MP3), VENDOR_ID)
-        )
+        conn.execute("UPDATE djmdContent SET FolderPath = ? WHERE ID = ?", (str(folder), VENDOR_ID))
         conn.commit()
     finally:
         conn.close()
@@ -537,13 +536,8 @@ def _tag_as_mp3(master_db: Path) -> None:
 def _stored_slot_a(master_db: Path) -> int:
     conn = sqlite3.connect(str(master_db))
     try:
-        return int(
-            conn.execute(
-                "SELECT InMsec FROM djmdCue WHERE ContentID = ? AND Kind = 1 "
-                "AND rb_local_deleted = 0",
-                (VENDOR_ID,),
-            ).fetchone()[0]
-        )
+        sql = "SELECT InMsec FROM djmdCue WHERE ContentID = ? AND Kind = 1 AND rb_local_deleted = 0"
+        return int(conn.execute(sql, (VENDOR_ID,)).fetchone()[0])
     finally:
         conn.close()
 
@@ -553,7 +547,7 @@ def test_hot_cue_slots_round_trip_on_our_timeline_for_a_tagged_mp3(
     master_db: Path,
 ) -> None:
     """Saved where the deck plays it, stored where rekordbox plays it, read back unmoved."""
-    _tag_as_mp3(master_db)
+    _set_folder(master_db)
     # 1105 samples at 22.05 kHz, put back on the way into rekordbox.
     assert _save("A", 1_000)["cue"]["in_ms"] == 1_000
     assert _stored_slot_a(master_db) == 1_050
@@ -568,7 +562,7 @@ def test_hot_cue_slots_round_trip_on_our_timeline_for_a_tagged_mp3(
 @pytest.mark.requirement("NAE-22")
 def test_a_rekordbox_cue_inside_the_lead_in_survives_a_re_save(master_db: Path) -> None:
     """A cue rekordbox put at 5 ms reads as 0 here; re-saving it at 0 keeps 5 ms."""
-    _tag_as_mp3(master_db)
+    _set_folder(master_db)
     conn = sqlite3.connect(str(master_db))
     try:
         conn.execute(
@@ -587,3 +581,17 @@ def test_a_rekordbox_cue_inside_the_lead_in_survives_a_re_save(master_db: Path) 
     _save("A", 10)
     _save("A", 0)
     assert _stored_slot_a(master_db) == 50
+
+
+@pytest.mark.requirement("NAE-22")
+def test_a_hot_cue_save_on_an_unreadable_mp3_is_refused(master_db: Path, tmp_path: Path) -> None:
+    """Without the file, the lead-in is unknown; a guessed 0 would land the cue early later."""
+    _set_folder(master_db, tmp_path / "not-here.mp3")
+    with pytest.raises(HTTPException) as exc:
+        _save("A", 1_000)
+    assert exc.value.status_code == 409
+    assert [c["in_ms"] for c in rb_vendor.fetch_cues(VENDOR_ID)] == []
+    # Control: a missing WAV has no lead-in to read, so its save goes through as is.
+    _set_folder(master_db, tmp_path / "not-here.wav")
+    assert _save("A", 1_000)["cue"]["in_ms"] == 1_000
+    assert _stored_slot_a(master_db) == 1_000

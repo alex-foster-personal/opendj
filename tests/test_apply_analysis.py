@@ -426,13 +426,19 @@ def _write_state_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
+#: A real, local WAV: PQTZ write-back reads each track's MP3 lead-in from its
+#: file (NAE-22), and a WAV has none, so grids go back unshifted.
+_TRACK_AUDIO = Path(__file__).resolve().parent / "fixtures" / "phase7-dedup" / "src.wav"
+
+
 def _write_rb_db(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
+    folder = str(_TRACK_AUDIO).replace("'", "''")
     conn.executescript(
-        """
+        f"""
         CREATE TABLE djmdContent (
             ID TEXT PRIMARY KEY, BPM INTEGER, KeyID TEXT,
-            AnalysisDataPath TEXT, FolderPath TEXT,
+            AnalysisDataPath TEXT, FolderPath TEXT DEFAULT '{folder}',
             rb_local_deleted INTEGER DEFAULT 0
         );
         CREATE TABLE djmdKey (ID TEXT PRIMARY KEY, ScaleName TEXT);
@@ -1202,11 +1208,6 @@ class TestWritebackLive:
 
 
 class TestPqtzWritebackLive:
-    @pytest.fixture(autouse=True)
-    def _wav_has_no_lead_in(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """These tracks have no audio file; the MP3 lead-in shift has its own tests (NAE-22)."""
-        monkeypatch.setattr("apps.sync.analysis_writeback.rekordbox_lead_in_s", lambda _p: 0.0)
-
     def _beats(self, count: int = 8, bpm: float = 128.0) -> list[dict[str, float | int]]:
         return [
             {
