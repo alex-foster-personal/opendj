@@ -13,6 +13,8 @@ Regression lines:
 """
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from apps.webui.server import ahead_analysis as aa
@@ -32,6 +34,21 @@ class World:
         self.lane_runs: list[tuple[str, list[str]]] = []
         self.strip_runs: list[str] = []
         self.lane_error: str | None = None
+        self.blank: set[str] = set()
+        self.unreadable: set[str] = set()
+        self.locked: set[str] = set()
+        self.declined: dict[str, dict[str, str]] = {lane: {} for lane, _b in aa.LANE_ORDER}
+        self.tag_runs: list[str] = []
+
+    def refresh_tags(self, sid: str) -> bool:
+        self.tag_runs.append(sid)
+        if sid in self.locked:
+            self.locked.discard(sid)
+            raise sqlite3.OperationalError("database is locked")
+        if sid in self.unreadable:
+            return False
+        self.blank.discard(sid)
+        return True
 
     def write_strip(self, sid: str) -> None:
         self.strip_runs.append(sid)
@@ -54,6 +71,9 @@ class World:
                 done_fn=lambda lane, _backend: set(self.done[lane]),
                 run_lane_fn=self.run_lane,
                 playing_fn=lambda: self.playing,
+                blank_tags_fn=lambda: set(self.blank),
+                refresh_tags_fn=self.refresh_tags,
+                declined_fn=lambda lane, _backend: dict(self.declined[lane]),
             )
         )
 
@@ -222,3 +242,51 @@ def test_writer_that_leaves_no_strip_is_not_looped() -> None:
     drain.tick()
     assert world.strip_runs == ["a"]
     assert drain.coverage()["lanes"]["strip"]["failed"] == 1
+
+
+def test_never_read_tags_are_refreshed_before_any_strip() -> None:
+    """[if] a present row was never tag-read [then] it is re-read before strips, [else stop]."""
+    world = World(["a", "b", "c"])
+    world.blank = {"b", "gone"}
+    drain = world.drain()
+    assert drain.tick() == "ran:tags"
+    assert world.tag_runs == ["b"], "if an absent row or a read row is re-read then broken"
+    assert world.strip_runs == [], "if strips run before never-read tags then broken"
+    assert drain.tick() == "ran:strip"
+
+
+def test_a_still_unreadable_file_is_tried_once_not_looped() -> None:
+    world = World(["a"])
+    world.blank = {"a"}
+    world.unreadable = {"a"}
+    drain = world.drain()
+    _run_to_green(drain)
+    assert world.tag_runs == ["a"], "if an unreadable file is re-read every tick then broken"
+    tags = drain.coverage()["lanes"]["tags"]
+    assert tags["failed"] == 1 and tags["failed_reasons"] == {"the file still reads no tags": 1}
+
+
+def test_a_busy_state_db_defers_the_tag_read_instead_of_failing_it() -> None:
+    """Live on demon-llama: one boot-time 'database is locked' was recorded as
+    that track's verdict and never retried."""
+    world = World(["a"])
+    world.blank = {"a"}
+    world.locked = {"a"}
+    drain = world.drain()
+    _run_to_green(drain)
+    assert world.tag_runs == ["a", "a"], "if a locked write is not retried then broken"
+    assert drain.coverage()["lanes"]["tags"]["failed"] == 0
+
+
+def test_a_declined_key_is_counted_apart_from_done_and_never_rerun() -> None:
+    """[if] a key record declined (no_tonal_center) [then] coverage says declined, not done, [else stop]."""
+    world = World(["a", "b"])
+    world.strips = {"a", "b"}
+    for lane in world.done:
+        world.done[lane] = {"a", "b"}
+    world.declined["key"] = {"b": "no_tonal_center: ambiguous_margin"}
+    drain = world.drain()
+    assert drain.tick() == "green", "if a declined record is re-run then broken"
+    key = drain.coverage()["lanes"]["key"]
+    assert (key["done"], key["declined"], key["missing"]) == (1, 1, 0)
+    assert key["declined_reasons"] == {"no_tonal_center: ambiguous_margin": 1}

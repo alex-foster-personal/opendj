@@ -6394,35 +6394,6 @@
         "title": "DecideIn",
         "type": "object"
       },
-      "DecisionIn": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "enum": [
-              "merge",
-              "keep-all",
-              "skip"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "cluster_key": {
-            "title": "Cluster Key",
-            "type": "string"
-          },
-          "survivor": {
-            "title": "Survivor",
-            "type": "string"
-          }
-        },
-        "required": [
-          "cluster_key",
-          "survivor",
-          "action"
-        ],
-        "title": "DecisionIn",
-        "type": "object"
-      },
       "DecisionOut": {
         "properties": {
           "action": {
@@ -25911,6 +25882,48 @@
         ],
         "title": "WritebackTargetsOut",
         "type": "object"
+      },
+      "apps__webui__server__routes__dedup_review__DecisionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "merge",
+              "keep-all",
+              "skip"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "cluster_key": {
+            "title": "Cluster Key",
+            "type": "string"
+          },
+          "survivor": {
+            "title": "Survivor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cluster_key",
+          "survivor",
+          "action"
+        ],
+        "title": "DecisionIn",
+        "type": "object"
+      },
+      "apps__webui__server__routes__enrich__DecisionIn": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "DecisionIn",
+        "type": "object"
       }
     }
   },
@@ -30269,7 +30282,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DecisionIn"
+                "$ref": "#/components/schemas/apps__webui__server__routes__dedup_review__DecisionIn"
               }
             }
           },
@@ -30406,6 +30419,83 @@
         "summary": "Post Dedup Undo",
         "tags": [
           "dedup-review"
+        ]
+      }
+    },
+    "/api/v1/enrich/decisions/{lane}": {
+      "put": {
+        "operationId": "put_decision_api_v1_enrich_decisions__lane__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lane",
+            "required": true,
+            "schema": {
+              "title": "Lane",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/apps__webui__server__routes__enrich__DecisionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Decision Api V1 Enrich Decisions  Lane  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Decision",
+        "tags": [
+          "enrich"
+        ]
+      }
+    },
+    "/api/v1/enrich/summary": {
+      "get": {
+        "operationId": "get_summary_api_v1_enrich_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Summary Api V1 Enrich Summary Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Summary",
+        "tags": [
+          "enrich"
         ]
       }
     },

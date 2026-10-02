@@ -257,7 +257,7 @@ def _write_tracks(
         else:
             report.tracks_unchanged += 1
         report.tier_counts[tier] = report.tier_counts.get(tier, 0) + 1
-        _write_file_tag_metadata(writer, stable_id, metadata, report)
+        write_file_tag_metadata(writer, stable_id, metadata, report)
         # A folder import analyses nothing. A tag BPM / key is the file's own
         # claim, recorded with "inferred" provenance, not an analysis result.
         report.tracks_without_analysis += 1
@@ -327,7 +327,7 @@ def _artists(metadata: audio_files.AudioMetadata | None) -> list[str]:
     return [artist] if artist else []
 
 
-def _write_file_tag_metadata(
+def write_file_tag_metadata(
     writer: StateWriter,
     stable_id: str,
     metadata: audio_files.AudioMetadata | None,
@@ -436,4 +436,5 @@ __all__ = [
     "collect_audio",
     "ingest_folder",
     "run_cli",
+    "write_file_tag_metadata",
 ]

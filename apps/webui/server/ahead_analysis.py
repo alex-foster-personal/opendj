@@ -3,6 +3,11 @@
 A standing engine thread that fills what a listing or a deck would otherwise
 have to compute on demand:
 
+0. Phase 0, file tags. A row whose import could not read its tags (packaged
+   builds before Thu 1 Oct 2026 had no reader) carries its filename as the
+   title, no artist and no duration, and a folder rescan never revisits it.
+   This phase re-reads those files' tags into the app's own rows
+   (``tag_refresh``; the files are never written).
 1. Phase 1, the browser Preview strip. A present track that rekordbox never
    analyzed has no ANLZ strip, and the listing only READS
    ``local-waveform-cache/<sid>.strip.json`` (``local_waveform``). This phase
@@ -25,6 +30,8 @@ is bumped to the front (``bump``).
 for the real daemon; ``create_app`` leaves it unarmed so pytest spawns nothing.
 
 Requirements (mini-PRD):
+  ✔︎ never-read tags first (NATIVE-21)
+    [if] a present row was never tag-read [then] it is re-read before any strip
   ✔︎ strip first, lanes after (NATIVE-21)
     [if] any present unmapped track lacks a strip [then] no lane batch runs
     [if] a track was bumped [then] it is selected before older work
@@ -51,7 +58,10 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+from apps.webui.server.ahead_analysis_records import declined_ids, done_ids
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +70,8 @@ AHEAD_VALUES: tuple[str, ...] = ("on", "off")
 THREAD_NAME: str = "webui.ahead-analysis"
 #: Strip decodes per tick, run concurrently (local_waveform's own decode cap).
 STRIP_BATCH: int = 2
+#: Never-read rows re-tagged per tick; a tag read is milliseconds, no decode.
+TAG_BATCH: int = 25
 #: Tracks per queue batch in phase 2; small so a deck load waits one batch.
 LANE_CHUNK: int = 4
 ACTIVE_INTERVAL_S: float = 1.0
@@ -76,6 +88,7 @@ LANE_ORDER: tuple[tuple[str, str], ...] = (
     ("key", "own_key.backfill"),
 )
 STRIP_LANE: str = "strip"
+TAGS_LANE: str = "tags"
 
 
 def arm_from_environ(environ: Mapping[str, str]) -> bool:
@@ -188,6 +201,7 @@ class AheadStatus:
     reason: str | None = None
     ticks: int = 0
     strips_written: int = 0
+    tags_refreshed: int = 0
     lane_batches: int = 0
     unavailable: dict[str, str] = field(default_factory=dict)
     last_job: dict[str, Any] | None = None
@@ -209,6 +223,14 @@ class AheadSources:
     #: (lane, backend, ids) -> {sid: error} for ids that still lack a record.
     run_lane_fn: Callable[[str, str, list[str]], dict[str, str]]
     playing_fn: Callable[[], bool]
+    #: stable_ids whose row was never tag-read (no duration, a file path).
+    blank_tags_fn: Callable[[], set[str]]
+    #: Re-read one row's file tags; False when the file still reads nothing.
+    refresh_tags_fn: Callable[[str], bool]
+    #: (lane, backend) -> {sid: reason} for current records whose lane DECLINED
+    #: (status failed: key no_tonal_center, beatgrid grid_fit_*). They are
+    #: produced, so never re-run, but they are not a value either.
+    declined_fn: Callable[[str, str], dict[str, str]]
 
 
 class AheadDrain:
@@ -217,6 +239,7 @@ class AheadDrain:
         self._clock = clock
         self._status = AheadStatus()
         self._strip_failed: dict[str, str] = {}
+        self._tags_failed: dict[str, str] = {}
         self._lane_failed: dict[str, dict[str, str]] = {lane: {} for lane, _b in LANE_ORDER}
         self._bumped: list[str] = []
         self._bump_lock = threading.Lock()
@@ -256,6 +279,10 @@ class AheadDrain:
         with self._bump_lock:
             bumped = list(self._bumped)
         present = self._src.present_fn()
+        tag_targets = self._tag_targets(present, bumped)
+        if tag_targets:
+            self._refresh_tags(tag_targets)
+            return "ran:tags"
         mapped = self._src.mapped_fn(present)
         unmapped = [sid for sid in present if sid not in mapped]
         targets = strip_targets(unmapped, self._src.has_strip_fn, self._strip_failed, bumped)
@@ -274,6 +301,33 @@ class AheadDrain:
         backend = dict(LANE_ORDER)[lane]
         self._run_lane(lane, backend, chunk)
         return f"ran:{lane}"
+
+    def _tag_targets(self, present: list[str], bumped: list[str]) -> list[str]:
+        blank = self._src.blank_tags_fn()
+        never_read = [sid for sid in present if sid in blank]
+        return [sid for sid in front_first(never_read, bumped) if sid not in self._tags_failed][:TAG_BATCH]
+
+    def _refresh_tags(self, targets: list[str]) -> None:
+        errors: dict[str, str] = {}
+        for sid in targets:
+            try:
+                read = self._src.refresh_tags_fn(sid)
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) and "busy" not in str(exc):
+                    raise
+                # A contended write (seen at boot beside the folder rescan) is
+                # about the moment, not the track: the next tick retries it.
+                log.info("ahead analysis: tags for %s deferred, state db busy: %s", sid, exc)
+                continue
+            except Exception as exc:  # noqa: BLE001 - recorded per track, surfaced in coverage
+                errors[sid] = f"{type(exc).__name__}: {exc}"
+                continue
+            if read:
+                self._status.tags_refreshed += 1
+            else:
+                errors[sid] = "the file still reads no tags"
+        self._tags_failed.update(errors)
+        self._status.last_job = {"lane": TAGS_LANE, "ids": targets, "at": self._clock(), "errors": errors}
 
     def _write_strips(self, targets: list[str]) -> None:
         def one(sid: str) -> tuple[str, str | None]:
@@ -312,6 +366,7 @@ class AheadDrain:
 
     def retry_failed(self) -> None:
         self._strip_failed.clear()
+        self._tags_failed.clear()
         for failures in self._lane_failed.values():
             failures.clear()
         if self._status.unavailable:
@@ -324,13 +379,27 @@ class AheadDrain:
         present = self._src.present_fn()
         mapped = self._src.mapped_fn(present)
         unmapped = [sid for sid in present if sid not in mapped]
+        blank = self._src.blank_tags_fn()
         lanes: dict[str, Any] = {
+            TAGS_LANE: coverage_counts(
+                present, [sid for sid in present if sid not in blank], self._tags_failed
+            ),
             STRIP_LANE: coverage_counts(
                 unmapped, [sid for sid in unmapped if self._src.has_strip_fn(sid)], self._strip_failed
             )
         }
+        present_set = set(present)
         for lane, backend in LANE_ORDER:
             counts = coverage_counts(present, self._src.done_fn(lane, backend), self._lane_failed[lane])
+            declined = {
+                sid: why for sid, why in self._src.declined_fn(lane, backend).items() if sid in present_set
+            }
+            reasons: dict[str, int] = {}
+            for why in declined.values():
+                reasons[why] = reasons.get(why, 0) + 1
+            counts["done"] -= len(declined)
+            counts["declined"] = len(declined)
+            counts["declined_reasons"] = reasons
             counts["unavailable"] = self._status.unavailable.get(lane)
             lanes[lane] = counts
         return {
@@ -338,6 +407,7 @@ class AheadDrain:
             "present": len(present),
             "rekordbox_mapped": len(mapped),
             "strips_written": self._status.strips_written,
+            "tags_refreshed": self._status.tags_refreshed,
             "lane_batches": self._status.lane_batches,
             "lanes": lanes,
             "last_job": self._status.last_job,
@@ -383,42 +453,6 @@ class AheadDrain:
 #-----------------------------------------------------------------------------
 # engine wiring: real sources
 #-----------------------------------------------------------------------------
-def _done_ids(conn_factory: Callable[[], sqlite3.Connection], backend: str) -> set[str]:
-    version = producer_version(backend)
-    conn = conn_factory()
-    try:
-        rows = conn.execute(
-            "SELECT DISTINCT stable_id FROM analysis WHERE backend = ? AND backend_version = ?",
-            (backend, version),
-        ).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc):
-            return set()
-        raise
-    finally:
-        conn.close()
-    return {row[0] for row in rows}
-
-
-def producer_version(backend: str) -> str:
-    """The CURRENT producer version, from each lane's light version module
-    (importing the backend itself would pull model code into the engine)."""
-    from apps.analysis_beatgrid import version as beatgrid_version
-    from apps.analysis_key import version as key_version
-    from apps.analysis_loudness import backfill as loudness_backfill
-    from apps.analysis_waveform import version as waveform_version
-
-    versions = {
-        "own_loudness.backfill": loudness_backfill.PRODUCER_VERSION,
-        "own_waveform.backfill": waveform_version.PRODUCER_VERSION,
-        "own_beatgrid.backfill": beatgrid_version.PRODUCER_VERSION,
-        "own_key.backfill": key_version.PRODUCER_VERSION,
-    }
-    if backend not in versions:
-        raise ValueError(f"ahead analysis has no producer version for {backend!r}")
-    return versions[backend]
-
-
 def _queue_cli(args: list[str], db: str) -> tuple[int, str, str]:
     argv = [sys.executable, "-m", "apps.analysis.queue_cli", "--db", db, "--json", *args]
     proc = subprocess.run(
@@ -452,7 +486,7 @@ def run_lane_via_queue(
             return dict.fromkeys(ids, f"enqueue failed: {_last_line(err or out)}")
         batch_id = json.loads(out)["batch_id"]
         code, out, err = _queue_cli(["run", "--batch-id", batch_id, "--backend", backend], db)
-        done = _done_ids(conn_factory, backend)
+        done = done_ids(conn_factory, backend)
         reasons = _item_reasons(db, batch_id)
         fallback = f"queue run exit {code}: {_last_line(err or out)}"
         return {sid: reasons.get(sid) or fallback for sid in ids if sid not in done}
@@ -481,6 +515,9 @@ def _item_reasons(db: str, batch_id: str) -> dict[str, str]:
 
 def build_for_app(app: Any) -> AheadDrain:
     from apps.analysis_waveform import local_waveform
+    from apps.shared.state import db as state_db
+    from apps.shared.state.ingest import tag_refresh
+    from apps.shared.state.writer import StateWriter
     from apps.webui.server.coverage_drain_analysis import DeckGate
     from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
     from apps.webui.server.routes import ingest as ingest_routes
@@ -510,15 +547,39 @@ def build_for_app(app: Any) -> AheadDrain:
     def mirror() -> Any:
         return getattr(app.state, "ui_mirror", None)
 
+    def blank_tags() -> set[str]:
+        conn = ingest_routes.open_ro()
+        try:
+            return {row.stable_id for row in tag_refresh.blank_rows(conn)}
+        finally:
+            conn.close()
+
+    def refresh_tags(sid: str) -> bool:
+        conn = state_db.open_rw(Path(db))
+        try:
+            rows = tag_refresh.blank_rows(conn, [sid])
+            if not rows:
+                return True
+            writer = StateWriter(conn, actor="ahead-analysis-tags")
+            try:
+                return tag_refresh.refresh_row(writer, rows[0])
+            finally:
+                writer.close()
+        finally:
+            conn.close()
+
     return AheadDrain(
         AheadSources(
             present_fn=present,
             mapped_fn=mapped,
             has_strip_fn=has_strip,
             write_strip_fn=write_strip,
-            done_fn=lambda _lane, backend: _done_ids(ingest_routes.open_ro, backend),
+            done_fn=lambda _lane, backend: done_ids(ingest_routes.open_ro, backend),
             run_lane_fn=run_lane_via_queue(db, ingest_routes.open_ro),
             playing_fn=DeckGate(mirror),
+            blank_tags_fn=blank_tags,
+            refresh_tags_fn=refresh_tags,
+            declined_fn=lambda lane, backend: declined_ids(ingest_routes.open_ro, lane, backend),
         )
     )
 

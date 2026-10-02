@@ -89,6 +89,7 @@ from .routes import copilot as copilot_routes
 from .routes import coverage_drain as coverage_drain_routes
 from .routes import coverage_terminal as coverage_terminal_routes
 from .routes import dedup_review as dedup_review_routes
+from .routes import enrich as enrich_routes
 from .routes import error_feed as error_feed_routes
 from .routes import feedback as feedback_routes
 from .routes import feedback_attachments as feedback_attachments_routes
@@ -634,6 +635,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         library_jobs_routes.router,
         coverage_drain_routes.router,
         ahead_analysis_routes.router,
+        enrich_routes.router,
         coverage_terminal_routes.router,
         analysis_source_routes.router,
         auth_routes.router,
