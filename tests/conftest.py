@@ -291,5 +291,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_fpcalc)
         if not _HAS_FFMPEG and "requires_ffmpeg" in item.keywords:
             item.add_marker(skip_ffmpeg)
-        if not _HAS_CANONICAL_DECODE and "requires_canonical_decode" in item.keywords:
+        if (
+            not _HAS_CANONICAL_DECODE
+            and "requires_canonical_decode" in item.keywords
+            # The job that just built odj-audio sets this: there, a missing
+            # engine is a failure the test reports, not a skip.
+            and os.environ.get("MDT_REQUIRE_AUDIO_ENGINE_BUILD") != "1"
+        ):
             item.add_marker(skip_canonical_decode)
