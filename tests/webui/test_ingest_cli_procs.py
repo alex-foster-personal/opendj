@@ -13,6 +13,8 @@ Regression lines:
   - if the stopped CLI reads as exit 0 then a killed step reports success -> broken
   - if stop_all touches a process nobody registered then it kills work it does
     not own -> broken (the overshoot)
+  - if stop_all waits per CLI or per wait instead of once overall then two
+    CLIs that ignore SIGTERM outlast the shell's grace -> broken
   - if a finished step stays registered then shutdown signals a dead pid -> broken
   - if the lifespan never calls stop_all then none of this runs -> broken
 """
@@ -43,9 +45,22 @@ _CLI_WITH_POOL = (
 )
 
 
-def _start_cli() -> tuple[subprocess.Popen[str], int]:
+# The same CLI, but it and its grandchild both ignore SIGTERM.
+_STUBBORN_CLI_WITH_POOL = (
+    "import signal, subprocess, sys, time\n"
+    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    "child = subprocess.Popen([sys.executable, '-c', "
+    "'import signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+    "print(1, flush=True); time.sleep(60)'], stdout=subprocess.PIPE)\n"
+    "child.stdout.readline()\n"
+    "print(child.pid, flush=True)\n"
+    "time.sleep(60)\n"
+)
+
+
+def _start_cli(source: str = _CLI_WITH_POOL) -> tuple[subprocess.Popen[str], int]:
     proc = subprocess.Popen(
-        [sys.executable, "-c", _CLI_WITH_POOL], stdout=subprocess.PIPE, text=True
+        [sys.executable, "-c", source], stdout=subprocess.PIPE, text=True
     )
     assert proc.stdout is not None
     grandchild = int(proc.stdout.readline())
@@ -84,6 +99,27 @@ def test_stop_all_stops_the_cli_and_its_descendants() -> None:
         assert _gone(grandchild), "the CLI's grandchild outlived the shutdown"
     finally:
         _kill(proc, grandchild)
+
+
+def test_stop_all_is_bounded_when_every_cli_ignores_sigterm() -> None:
+    started = [_start_cli(_STUBBORN_CLI_WITH_POOL) for _ in range(2)]
+    try:
+        for proc, _ in started:
+            ingest_cli_procs.register(proc)
+
+        began = time.monotonic()
+        assert ingest_cli_procs.stop_all() == 2
+        took = time.monotonic() - began
+
+        # Waiting tree by tree would take at least 2 * STOP_GRACE_S here.
+        assert took <= ingest_cli_procs.STOP_ALL_MAX_S + 0.5, f"stop_all took {took:.1f}s"
+        for proc, grandchild in started:
+            assert proc.poll() is not None, "a stubborn CLI is still running"
+            assert proc.returncode != 0
+            assert _gone(grandchild), "a stubborn grandchild outlived the shutdown"
+    finally:
+        for proc, grandchild in started:
+            _kill(proc, grandchild)
 
 
 def test_stop_all_leaves_unregistered_processes_alone() -> None:

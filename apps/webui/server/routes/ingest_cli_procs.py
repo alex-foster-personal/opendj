@@ -26,13 +26,20 @@ import contextlib
 import logging
 import subprocess
 import threading
+import time
 
 import psutil
 
 log = logging.getLogger(__name__)
 
-#: How long stopped processes get between terminate and kill.
+#: How long stopped processes get, all together, between terminate and kill.
 STOP_GRACE_S: float = 3.0
+#: How long :func:`stop_all` waits for killed processes to be gone. SIGKILL
+#: cannot be caught, so this only covers the kernel tearing them down.
+KILL_WAIT_S: float = 1.0
+#: The longest :func:`stop_all` can take, however many CLIs are running and
+#: however they treat SIGTERM. The shell's grace is budgeted against this.
+STOP_ALL_MAX_S: float = STOP_GRACE_S + KILL_WAIT_S
 
 _lock = threading.Lock()
 _procs: set[subprocess.Popen[str]] = set()
@@ -50,25 +57,56 @@ def unregister(proc: subprocess.Popen[str]) -> None:
 
 
 def stop_all() -> int:
-    """Stop every running CLI and its descendants.
+    """Stop every running CLI and its descendants within :data:`STOP_ALL_MAX_S`.
+
+    Every process is signalled first and then all of them share ONE grace
+    window, so the total is bounded no matter how many CLIs run or how many
+    of them ignore SIGTERM. Waiting tree by tree, with a grace per wait,
+    added up past the shell's own grace, and its SIGKILL then landed
+    mid-reap with the pool workers still running.
 
     Returns how many CLIs were running, for the log line.
     """
     with _lock:
         running = list(_procs)
         _procs.clear()
+    if not running:
+        return 0
+    descendants = [member for proc in running for member in _descendants(proc)]
     for proc in running:
-        _stop_tree(proc)
-    if running:
-        log.info("shutdown stopped %d running pipeline CLI(s)", len(running))
+        if proc.poll() is None:
+            proc.terminate()
+    for member in descendants:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            member.terminate()
+
+    deadline = time.monotonic() + STOP_GRACE_S
+    for proc in running:
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+    _, alive = psutil.wait_procs(descendants, timeout=max(0.0, deadline - time.monotonic()))
+
+    for proc in running:
+        if proc.poll() is None:
+            proc.kill()
+    for member in alive:
+        with contextlib.suppress(psutil.NoSuchProcess):
+            member.kill()
+    kill_deadline = time.monotonic() + KILL_WAIT_S
+    for proc in running:
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=max(0.0, kill_deadline - time.monotonic()))
+    if alive:
+        psutil.wait_procs(alive, timeout=max(0.0, kill_deadline - time.monotonic()))
+    log.info("shutdown stopped %d running pipeline CLI(s)", len(running))
     return len(running)
 
 
-def _stop_tree(proc: subprocess.Popen[str]) -> None:
-    """Terminate ``proc`` and everything under it, then kill what is left.
+def _descendants(proc: subprocess.Popen[str]) -> list[psutil.Process]:
+    """Everything under ``proc``, listed BEFORE anything is signalled.
 
-    Descendants are listed BEFORE the parent is signalled: once the parent
-    dies they are reparented and no longer reachable as its children.
+    Once the CLI dies its workers are reparented and no longer reachable as
+    its children.
 
     The CLI itself is signalled and waited through its ``Popen``, never
     through psutil. psutil's wait would reap it behind the job thread's back,
@@ -76,25 +114,9 @@ def _stop_tree(proc: subprocess.Popen[str]) -> None:
     stopped step would read as a successful one.
     """
     try:
-        descendants = psutil.Process(proc.pid).children(recursive=True)
+        return psutil.Process(proc.pid).children(recursive=True)
     except psutil.NoSuchProcess:
-        descendants = []
-    if proc.poll() is None:
-        proc.terminate()
-    for member in descendants:
-        with contextlib.suppress(psutil.NoSuchProcess):
-            member.terminate()
-    try:
-        proc.wait(timeout=STOP_GRACE_S)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-    _, alive = psutil.wait_procs(descendants, timeout=STOP_GRACE_S)
-    for member in alive:
-        with contextlib.suppress(psutil.NoSuchProcess):
-            member.kill()
-    if alive:
-        psutil.wait_procs(alive, timeout=STOP_GRACE_S)
+        return []
 
 
-__all__ = ["STOP_GRACE_S", "register", "stop_all", "unregister"]
+__all__ = ["KILL_WAIT_S", "STOP_ALL_MAX_S", "STOP_GRACE_S", "register", "stop_all", "unregister"]

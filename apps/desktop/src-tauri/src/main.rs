@@ -797,7 +797,6 @@ mod tests {
         assert_eq!(exit_requested_trigger(None), "apple-event-quit");
     }
 
-    #[test]
     // - if a self-requested exit is held then the quit gate's own confirmed
     //   exit() goes back to the gate and the app never quits -> broken
     // - if a platform quit is let through then Cmd-Q skips the "are you
