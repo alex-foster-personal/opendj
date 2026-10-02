@@ -264,6 +264,11 @@ def run_find_clusters(
             conn.close()
         use_csv.parent.mkdir(parents=True, exist_ok=True)
         use_csv.write_text("cluster_id,canonical_path\n", encoding="utf-8")
+        use_manual.parent.mkdir(parents=True, exist_ok=True)
+        use_manual.write_text(
+            "cluster_id,reason,canonical_path,alias_path,similarity,duration_delta_s\n",
+            encoding="utf-8",
+        )
         return []
 
     uf = _UnionFind(n)

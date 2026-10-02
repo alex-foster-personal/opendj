@@ -121,3 +121,43 @@ def test_auto_sends_aac_to_ffmpeg_and_the_rest_to_the_engine(tmp_path: Path, mon
     # With the engine gone, auto still decodes the rest through ffmpeg.
     monkeypatch.setenv("ODJ_AUDIO_BIN", str(tmp_path / "no-such-odj-audio"))
     assert decode.select_decoder(tmp_path / "a.flac") == "ffmpeg"
+
+
+def _write_8k_wav(path: Path) -> None:
+    rate = 8_000
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(
+            b"".join(
+                struct.pack("<h", int(16000 * math.sin(2 * math.pi * 220 * i / rate)))
+                for i in range(rate)
+            )
+        )
+
+
+@pytest.mark.requires_ffmpeg
+def test_auto_falls_back_to_ffmpeg_for_a_file_the_engine_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An 8 kHz file has no room under Nyquist for the high crossover: the
+    engine refuses it, and auto still gives it a waveform through ffmpeg."""
+    from apps.engine_core.audio_engine import BIN_ENV
+    from apps.shared import platform_paths
+    from tests.rust_build_env import build_audio_engine
+
+    monkeypatch.setenv(BIN_ENV, str(build_audio_engine(platform_paths.PROJECT_ROOT / "apps" / "audio-engine")))
+    source = tmp_path / "phone.wav"
+    _write_8k_wav(source)
+
+    # Control that can say no: a forced engine refuses this file.
+    monkeypatch.setenv(decode.DECODER_ENV, "engine")
+    with pytest.raises(decode.LocalDecodeUnavailable, match="Nyquist"):
+        decode.decode_peaks_measured("engine", source)
+
+    monkeypatch.delenv(decode.DECODER_ENV)
+    assert decode.select_decoder(source) == "engine"
+    peaks, rate = decode.decode_peaks_measured("engine", source)
+    assert rate == decode.PROFILE.sample_rate_hz, "ffmpeg resamples; the engine would report 8000"
+    assert peaks.shape[1] == 3 and peaks[:, 0].max() > 30

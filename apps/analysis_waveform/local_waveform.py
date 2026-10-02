@@ -77,10 +77,10 @@ from apps.analysis_waveform.bands import (
 from apps.analysis_waveform.decode import (
     BAND_COUNT,
     BAND_NAMES,
-    DECODER_ENV,
     OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
     decode_peaks_from,
+    decoder_mode,
     select_decoder,
 )
 
@@ -200,8 +200,7 @@ def _decode_key(path: Path) -> dict[str, Any]:
     try:
         decoder: str = select_decoder(path)
     except LocalDecodeUnavailable:
-        mode = os.environ.get(DECODER_ENV, "auto").strip().lower() or "auto"
-        decoder = NO_DECODER if mode == "auto" else FORCED_DECODER_UNAVAILABLE
+        decoder = NO_DECODER if decoder_mode() == "auto" else FORCED_DECODER_UNAVAILABLE
     return {**_source_key(path), "decoder": decoder}
 
 

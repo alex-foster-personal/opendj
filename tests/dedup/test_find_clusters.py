@@ -281,10 +281,18 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (1,)
 
+    # A borderline row a previous run left for manual review.
+    with (tmp_path / "m.csv").open("a", encoding="utf-8") as handle:
+        handle.write("1,duration_delta,a.flac,b.mp3,0.95,12.0\n")
+
     assert fc_mod.run_find_clusters(fingerprints=[], **kwargs) == []
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (0,)
         assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (0,)
+    # The manual-review artifact is rewritten too, header only.
+    assert (tmp_path / "m.csv").read_text(encoding="utf-8").splitlines() == [
+        "cluster_id,reason,canonical_path,alias_path,similarity,duration_delta_s"
+    ]
 
 
 @pytest.mark.requirement("META-03")
