@@ -8,6 +8,10 @@ Public API:
   * :func:`detect_input_device(name)` -- parse ``ffmpeg -f avfoundation
     -list_devices true -i ""`` and return the numeric index of a named
     audio device (usually ``"BlackHole 2ch"``) or ``None`` if absent.
+  * :func:`list_input_devices()` -- the same listing as named
+    :class:`InputDevice` rows for the REC input picker (SET-10); raises
+    :class:`CaptureUnavailable` rather than returning an empty list when
+    it could not measure.
   * :func:`build_segment_argv(device_idx, output_dir, ...)` -- compose
     the rolling-segment command without running it (pure unit-testable).
   * :func:`start_capture(...)` -- spawn the subprocess.
@@ -25,8 +29,13 @@ import os
 import re
 import signal
 import subprocess
+import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg
 
 # The default name of the MIT-licensed BlackHole virtual device.
 DEFAULT_DEVICE_NAME = "BlackHole 2ch"
@@ -34,6 +43,22 @@ DEFAULT_DEVICE_NAME = "BlackHole 2ch"
 # 5-minute rolling segments at 320 kbps. CONTEXT D1.
 DEFAULT_SEGMENT_TIME_S = 300
 DEFAULT_BITRATE_KBPS = 320
+
+# Name fragments of virtual loopback inputs. A loopback carries the master
+# output back in as an input, so it is the right default for a set recording;
+# a microphone would record the room. Matched case-insensitively.
+LOOPBACK_NAME_HINTS: tuple[str, ...] = ("blackhole", "loopback", "soundflower")
+
+# Where Homebrew puts ffmpeg. A Finder-launched app inherits launchd's PATH
+# (/usr/bin:/bin:/usr/sbin:/sbin), which holds neither, so the PATH lookup in
+# apps.shared.ffmpeg finds nothing on a Mac that has ffmpeg installed.
+HOMEBREW_FFMPEG_PATHS: tuple[str, ...] = ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg")
+
+# How long a freshly spawned capture must stay alive before REC reports it
+# started. ffmpeg exits within this window for a vanished device or a refused
+# microphone permission; without the wait those read as a recording.
+CAPTURE_STARTUP_CHECK_S = 1.0
+LIST_DEVICES_TIMEOUT_S = 10.0
 
 # ``-strftime 1`` so ffmpeg can interpolate timestamps into segment names.
 _SEGMENT_NAME_PATTERN = "audio_%Y-%m-%dT%H-%M-%S.mp3"
@@ -54,14 +79,107 @@ class CaptureHandle:
     log_fh: "IO[bytes]"
 
 
+class CaptureUnavailable(RuntimeError):
+    """Audio capture cannot be measured or started here. Never an empty result."""
+
+
+@dataclass(frozen=True)
+class InputDevice:
+    """One AVFoundation audio input, as the REC picker shows it."""
+
+    index: int
+    name: str
+    loopback: bool
+
+
 # ---------------------------------------------------------------------------
 # device detection
 # ---------------------------------------------------------------------------
 
 
-def _list_devices_argv() -> list[str]:
+def resolve_capture_ffmpeg() -> str:
+    """ffmpeg for capture: ``MDT_FFMPEG``, then PATH, then Homebrew's prefixes.
+
+    The Homebrew step is what lets REC work in the packaged app, which is
+    launched without a shell PATH. A set-but-broken ``MDT_FFMPEG`` still
+    fails loud instead of falling through, as in :func:`resolve_ffmpeg`.
+    """
+    try:
+        return resolve_ffmpeg()
+    except FfmpegUnavailable as exc:
+        if os.environ.get("MDT_FFMPEG"):
+            raise CaptureUnavailable(str(exc)) from exc
+        for candidate in HOMEBREW_FFMPEG_PATHS:
+            if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        raise CaptureUnavailable(
+            "ffmpeg is needed to record set audio and was not found on PATH or in "
+            f"{', '.join(HOMEBREW_FFMPEG_PATHS)} (install it with `brew install "
+            "ffmpeg`, or set MDT_FFMPEG)"
+        ) from exc
+
+
+def is_loopback_name(name: str) -> bool:
+    lowered = name.lower()
+    return any(hint in lowered for hint in LOOPBACK_NAME_HINTS)
+
+
+def list_input_devices(
+    *,
+    run: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    platform: str | None = None,
+    ffmpeg: str | None = None,
+) -> list[InputDevice]:
+    """Every AVFoundation audio input, in ffmpeg's index order.
+
+    Raises :class:`CaptureUnavailable` off macOS, without ffmpeg, or when
+    ffmpeg's report has no audio-device header: an unparsable listing is a
+    failed measurement, not a Mac with no inputs.
+    """
+    host = platform if platform is not None else sys.platform
+    if host != "darwin":
+        raise CaptureUnavailable(
+            f"set audio capture uses macOS AVFoundation; this host is {host!r}"
+        )
+    exe = ffmpeg if ffmpeg is not None else resolve_capture_ffmpeg()
+    runner = run if run is not None else subprocess.run
+    argv = _list_devices_argv(exe)
+    try:
+        result = runner(
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=LIST_DEVICES_TIMEOUT_S,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CaptureUnavailable(f"listing audio inputs with {exe} failed: {exc}") from exc
+    stderr = result.stderr or ""
+    if "AVFoundation audio devices" not in stderr:
+        tail = " | ".join(stderr.strip().splitlines()[-3:]) or "no output"
+        raise CaptureUnavailable(f"{exe} did not list any AVFoundation audio devices: {tail}")
     return [
-        "ffmpeg",
+        InputDevice(index=idx, name=name, loopback=is_loopback_name(name))
+        for idx, name in parse_audio_devices(stderr)
+    ]
+
+
+def default_input_device(devices: list[InputDevice]) -> InputDevice | None:
+    """The input REC preselects: BlackHole 2ch, else any loopback, else none.
+
+    No loopback means no default on purpose: picking the microphone for the
+    DJ would record the room and call it the set.
+    """
+    for device in devices:
+        if device.name == DEFAULT_DEVICE_NAME:
+            return device
+    return next((device for device in devices if device.loopback), None)
+
+
+def _list_devices_argv(ffmpeg: str = "ffmpeg") -> list[str]:
+    return [
+        ffmpeg,
         "-hide_banner",
         "-f",
         "avfoundation",
@@ -142,6 +260,7 @@ def build_segment_argv(
     *,
     segment_time_s: int = DEFAULT_SEGMENT_TIME_S,
     bitrate_kbps: int = DEFAULT_BITRATE_KBPS,
+    ffmpeg: str = "ffmpeg",
 ) -> list[str]:
     """Compose the ffmpeg argv for rolling-MP3 capture.
 
@@ -150,7 +269,7 @@ def build_segment_argv(
     """
     out_pattern = str(output_dir / _SEGMENT_NAME_PATTERN)
     return [
-        "ffmpeg",
+        ffmpeg,
         "-hide_banner",
         "-loglevel",
         "warning",
@@ -186,12 +305,17 @@ def start_capture(
     segment_time_s: int = DEFAULT_SEGMENT_TIME_S,
     bitrate_kbps: int = DEFAULT_BITRATE_KBPS,
     popen: "type[subprocess.Popen] | None" = None,
+    ffmpeg: str | None = None,
+    startup_check_s: float = 0.0,
 ) -> CaptureHandle:
     """Spawn ffmpeg; return a :class:`CaptureHandle`.
 
     ``popen`` lets tests inject a fake Popen class. The subprocess is
     non-blocking; stderr is redirected to
     ``<session_dir>/ffmpeg.stderr.log`` for later post-mortem.
+
+    With ``startup_check_s`` > 0 the process must still be running after
+    that long, else :class:`CaptureUnavailable` carries its stderr tail.
     """
     session_dir.mkdir(parents=True, exist_ok=True)
     argv = build_segment_argv(
@@ -199,6 +323,7 @@ def start_capture(
         session_dir,
         segment_time_s=segment_time_s,
         bitrate_kbps=bitrate_kbps,
+        ffmpeg=ffmpeg if ffmpeg is not None else resolve_capture_ffmpeg(),
     )
     stderr_log = session_dir / "ffmpeg.stderr.log"
     popen_cls = popen if popen is not None else subprocess.Popen
@@ -214,7 +339,29 @@ def start_capture(
     except Exception:
         log_fh.close()
         raise
-    return CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh)
+    handle = CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh)
+    if startup_check_s > 0:
+        _require_running(handle, startup_check_s)
+    return handle
+
+
+def _require_running(handle: CaptureHandle, window_s: float) -> None:
+    deadline = time.monotonic() + window_s
+    while time.monotonic() < deadline:
+        if handle.proc.poll() is not None:
+            break
+        time.sleep(0.05)
+    code = handle.proc.poll()
+    if code is None:
+        return
+    handle.log_fh.close()
+    try:
+        tail = " | ".join(handle.stderr_log.read_text(errors="replace").strip().splitlines()[-3:])
+    except OSError:
+        tail = ""
+    raise CaptureUnavailable(
+        f"ffmpeg stopped {window_s:g}s after starting (exit {code}): {tail or 'no stderr'}"
+    )
 
 
 def stop_capture(handle: CaptureHandle, *, timeout: float = 10.0) -> int:
@@ -285,7 +432,13 @@ def check_silence(mp3_path: Path) -> float:
 
 
 __all__ = [
+    "CAPTURE_STARTUP_CHECK_S",
+    "CaptureUnavailable",
     "DEFAULT_DEVICE_NAME",
+    "InputDevice",
+    "default_input_device",
+    "list_input_devices",
+    "resolve_capture_ffmpeg",
     "DEFAULT_SEGMENT_TIME_S",
     "DEFAULT_BITRATE_KBPS",
     "CaptureHandle",

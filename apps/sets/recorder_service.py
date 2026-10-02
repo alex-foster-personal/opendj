@@ -8,12 +8,17 @@ from __future__ import annotations
 import ctypes
 import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from . import capture as capture_mod
 from . import paths as sets_paths
 from . import record as record_mod
 from .state import SetsState
+
+#: Manifest/DB capture_device for a session started without audio (SET-10).
+NO_AUDIO_DEVICE_LABEL = "none (tracklist only)"
 
 
 class RecorderConflict(RuntimeError):
@@ -29,10 +34,12 @@ class RecorderService:
         sets_root: Path | None = None,
         db_path: Path | None = None,
         capture_enabled: bool = True,
+        list_devices: Callable[[], list[capture_mod.InputDevice]] = capture_mod.list_input_devices,
     ) -> None:
         self.sets_root = Path(sets_root or sets_paths.SETS_DIR)
         self.db_path = Path(db_path or sets_paths.SETS_DB)
         self.capture_enabled = capture_enabled
+        self.list_devices = list_devices
         self._lock = threading.Lock()
         self._recorder: record_mod.Recorder | None = None
 
@@ -64,9 +71,24 @@ class RecorderService:
         self,
         *,
         session_id: str | None,
-        ffmpeg_device_idx: int,
+        ffmpeg_device_idx: int | None = None,
+        device_name: str | None = None,
+        capture_audio: bool = True,
         sources: tuple[str, ...],
     ) -> dict[str, Any]:
+        """Start a recording on one audio input, or on none.
+
+        ``device_name`` is resolved to ffmpeg's index HERE, at start: the
+        index of a named input moves whenever another input is plugged in,
+        so a remembered index records whatever now sits at it.
+        """
+        if capture_audio == (ffmpeg_device_idx is None and device_name is None):
+            raise ValueError(
+                "name exactly one audio input (ffmpeg_device_idx or device_name), "
+                "or set capture_audio false for a tracklist-only recording"
+            )
+        if ffmpeg_device_idx is not None and device_name is not None:
+            raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
         with self._lock:
             if self._recorder is not None:
                 raise RecorderConflict(
@@ -82,6 +104,13 @@ class RecorderService:
                     f"process {external['pid']}"
                 )
 
+            if not capture_audio:
+                device_idx, device_label = None, NO_AUDIO_DEVICE_LABEL
+            elif device_name is not None:
+                device_idx, device_label = self._index_of(device_name), device_name
+            else:
+                device_idx, device_label = ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
+
             state = SetsState(db_path=self.db_path)
             resolved_id = record_mod.resolve_session_id(
                 session_id,
@@ -89,8 +118,9 @@ class RecorderService:
             )
             config = record_mod.RecorderConfig(
                 sources=sources,
-                ffmpeg_device_idx=ffmpeg_device_idx,
-                capture_disabled=not self.capture_enabled,
+                capture_device_name=device_label,
+                ffmpeg_device_idx=device_idx,
+                capture_disabled=not (self.capture_enabled and capture_audio),
             )
             recorder: record_mod.Recorder | None = None
             try:
@@ -119,6 +149,16 @@ class RecorderService:
                 "owned": True,
                 "recoverable": False,
             }
+
+    def _index_of(self, device_name: str) -> int:
+        devices = self.list_devices()
+        for device in devices:
+            if device.name == device_name:
+                return device.index
+        connected = ", ".join(repr(device.name) for device in devices) or "none"
+        raise capture_mod.CaptureUnavailable(
+            f"audio input {device_name!r} is not connected (connected inputs: {connected})"
+        )
 
     def active_source(self, name: str) -> Any:
         """Return the named source attached to the owned recorder.

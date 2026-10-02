@@ -1,9 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { startPerformanceRecorder, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
+	import {
+		rememberInput,
+		startPerformanceRecorder,
+		stopPerformanceRecorder,
+		type RecordInputChoice
+	} from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './IconRail.svelte';
+	import RecordInputPicker from './RecordInputPicker.svelte';
 
 	let {
 		source,
@@ -21,6 +27,7 @@
 		recoverable: false
 	});
 	let recorderBusy = $state(false);
+	let pickerOpen = $state(false);
 
 	onMount(() => {
 		void refreshRecorderStatus();
@@ -43,11 +50,24 @@
 				pushToast('Recording stopped and session finalized.', 'info');
 				return;
 			}
-			const input = window.prompt('ffmpeg audio input index for set recording');
-			if (input === null) return;
-			if (input.trim() === '') throw new Error('ffmpeg device index is required');
-			recorder = await startPerformanceRecorder(Number(input));
-			pushToast(`Recording ${recorder.session_id}`, 'info');
+			// SET-10: pick the input by name in-app. A browser prompt dialog never shows in
+			// the desktop app's WKWebView, so the old index prompt did nothing.
+			pickerOpen = true;
+		} catch (error) {
+			pushToast(`REC failed: ${String(error)}`, 'error');
+		} finally {
+			recorderBusy = false;
+		}
+	}
+
+	async function startWithInput(choice: RecordInputChoice): Promise<void> {
+		recorderBusy = true;
+		try {
+			recorder = await startPerformanceRecorder(choice);
+			rememberInput(choice);
+			pickerOpen = false;
+			const from = choice.kind === 'device' ? `from ${choice.name}` : 'tracklist only';
+			pushToast(`Recording ${recorder.session_id} (${from})`, 'info');
 		} catch (error) {
 			pushToast(`REC failed: ${String(error)}`, 'error');
 		} finally {
@@ -63,3 +83,11 @@
 	recordingBusy={recorderBusy}
 	onrecord={() => void togglePerformanceRecording()}
 />
+
+{#if pickerOpen}
+	<RecordInputPicker
+		busy={recorderBusy}
+		onstart={(choice) => void startWithInput(choice)}
+		oncancel={() => (pickerOpen = false)}
+	/>
+{/if}

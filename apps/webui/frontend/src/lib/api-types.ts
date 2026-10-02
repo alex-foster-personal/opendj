@@ -84,6 +84,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sets/recorder/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Recorder Devices
+         * @description List audio inputs by name for the REC picker; 503 when unmeasurable.
+         *
+         *     Sync on purpose: listing spawns ffmpeg, so it runs in the threadpool
+         *     instead of stalling the event loop.
+         */
+        get: operations["api_recorder_devices_api_sets_recorder_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sets/recorder/start": {
         parameters: {
             query?: never;
@@ -12542,6 +12565,25 @@ export interface components {
             /** Total Tracks */
             total_tracks: number;
         };
+        /**
+         * RecorderDevicesResponse
+         * @description The audio inputs REC can record from, and the one it preselects.
+         */
+        RecorderDevicesResponse: {
+            /** Default Name */
+            default_name: string | null;
+            /** Devices */
+            devices: components["schemas"]["RecorderInputDevice"][];
+        };
+        /** RecorderInputDevice */
+        RecorderInputDevice: {
+            /** Index */
+            index: number;
+            /** Loopback */
+            loopback: boolean;
+            /** Name */
+            name: string;
+        };
         /** RecorderRecoveryRequest */
         RecorderRecoveryRequest: {
             /** Expected Pid */
@@ -12550,10 +12592,21 @@ export interface components {
         /**
          * RecorderStartRequest
          * @description Explicit real-capture configuration for the REC button.
+         *
+         *     Exactly one audio input: ``device_name`` (what the REC picker sends,
+         *     resolved to an index at start), or a raw ``ffmpeg_device_idx``; or
+         *     ``capture_audio: false`` for a tracklist-only recording (SET-10).
          */
         RecorderStartRequest: {
+            /**
+             * Capture Audio
+             * @default true
+             */
+            capture_audio: boolean;
+            /** Device Name */
+            device_name?: string | null;
             /** Ffmpeg Device Idx */
-            ffmpeg_device_idx: number;
+            ffmpeg_device_idx?: number | null;
             /** Session Id */
             session_id?: string | null;
             /** Sources */
@@ -15457,6 +15510,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecorderStatus"];
+                };
+            };
+        };
+    };
+    api_recorder_devices_api_sets_recorder_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecorderDevicesResponse"];
                 };
             };
         };

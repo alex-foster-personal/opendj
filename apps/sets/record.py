@@ -25,7 +25,7 @@ from typing import Any
 from apps.shared.paths import DJAY_WORKING_DB, REKORDBOX_WORKING_DB
 
 from . import paths as sets_paths
-from .capture import DEFAULT_DEVICE_NAME, CaptureHandle, start_capture
+from .capture import CAPTURE_STARTUP_CHECK_S, DEFAULT_DEVICE_NAME, CaptureHandle, start_capture
 from .manifest import AudioSegment, Manifest, write_manifest
 from .state import Event, SetsState
 
@@ -209,6 +209,7 @@ class Recorder:
         self._capture = start_capture_fn(
             self.session_dir,
             self.config.ffmpeg_device_idx,
+            startup_check_s=CAPTURE_STARTUP_CHECK_S,
         )
 
     def attach_source(self, name: str, source_obj: Any) -> None:

@@ -15,9 +15,17 @@ export type RecorderSourceName = NonNullable<
 	components['schemas']['RecorderStartRequest']['sources']
 >[number];
 
+export type RecorderDevices = components['schemas']['RecorderDevicesResponse'];
+export type RecorderInputDevice = components['schemas']['RecorderInputDevice'];
+
+/** One audio input by raw ffmpeg index or by name with `capture_audio: true`,
+ *  or `capture_audio: false` and no input for a tracklist-only set (SET-10);
+ *  the daemon 422s anything else. */
 export interface RecorderStartInput {
 	session_id: string | null;
-	ffmpeg_device_idx: number;
+	ffmpeg_device_idx?: number;
+	device_name?: string;
+	capture_audio: boolean;
 	sources: RecorderSourceName[];
 }
 
@@ -84,6 +92,16 @@ function rethrowSetsError(error: unknown): never {
 export async function getRecorderStatus(): Promise<RecorderStatus> {
 	try {
 		return await unwrap(api.GET('/api/sets/recorder', {}));
+	} catch (error) {
+		rethrowSetsError(error);
+	}
+}
+
+/** Audio inputs by name for the REC picker. Rejects with the daemon's reason
+ *  (no ffmpeg, not macOS) rather than resolving to an empty list. */
+export async function listRecorderDevices(): Promise<RecorderDevices> {
+	try {
+		return await unwrap(api.GET('/api/sets/recorder/devices', {}));
 	} catch (error) {
 		rethrowSetsError(error);
 	}
