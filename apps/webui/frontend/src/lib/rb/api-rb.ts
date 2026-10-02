@@ -600,7 +600,9 @@ export async function getReconcileSummary(): Promise<ReconcileSummary> {
 }
 
 /** Track listing item + contract point 1's per-row fields. STANDALONE-05
- * adds inline genre/genre_reason; is_streaming is still lazy via rb-meta. */
+ * adds inline genre/genre_reason; is_streaming is not on the wire: the row
+ * mapper settles it from `file_availability === 'streaming'` (issue #3934)
+ * and otherwise leaves it lazy via rb-meta. */
 export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;
@@ -853,6 +855,15 @@ export async function restoreHotCue(
  * slate on img error, never a fabricated image. */
 export function artworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
 	return `${RB_API_BASE}/api/v1/tracks/${encodeURIComponent(stable_id)}/artwork?size=${size}`;
+}
+
+/** Artwork for a loaded deck: the same chain as {@link artworkUrl}, and when
+ * the track has no local artwork (rekordbox, embedded picture, folder image)
+ * the server also looks it up on MusicBrainz + Cover Art Archive and caches
+ * what it finds. Only decks ask for this: the lookup is held to one request
+ * per second, so a library page of rows must never trigger it. */
+export function deckArtworkUrl(stable_id: string, size: ArtworkSize = 's'): string {
+	return `${artworkUrl(stable_id, size)}&online=true`;
 }
 
 /** Human label for rb_meta.artwork_status when the art cell is empty.

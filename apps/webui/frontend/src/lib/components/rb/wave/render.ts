@@ -336,7 +336,7 @@ function _drawCachedBands(
 		_drawBands(ctx, waveform, pxPerS, durS, w, h, palette, design);
 		return;
 	}
-	const key = `${design}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}`;
+	const key = `${design}:${pxPerS}:${w}:${h}:${palette.low}:${palette.mid}:${palette.high}:${palette.mono}`;
 	let image = _bandImages.get(waveform);
 	if (image === undefined || image.key !== key) {
 		image = { canvas: _buildBandImage(waveform, pxPerS, durS, h, palette, design), key };
@@ -441,14 +441,14 @@ function _drawBands(
 	}
 
 	if (line) {
-		ctx.strokeStyle = palette.mid;
+		ctx.strokeStyle = palette.mono;
 		ctx.lineWidth = 1.5;
 		ctx.stroke(lowPath);
 		return;
 	}
 	if (mono) {
 		// Single-colour waveform - never synthesised tri-bands.
-		ctx.fillStyle = palette.mid;
+		ctx.fillStyle = palette.mono;
 		ctx.fill(lowPath);
 		return;
 	}

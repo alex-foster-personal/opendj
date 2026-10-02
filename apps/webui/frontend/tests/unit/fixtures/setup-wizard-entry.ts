@@ -15,3 +15,11 @@ export * from '$lib/api/capabilities.svelte';
 export * from '$lib/setup/setup-api';
 export * from '$lib/setup/folder-rows';
 export * from '$lib/setup/wizard.svelte';
+// finish() re-reads preflight; the tests must see the SAME preflight store the
+// wizard writes, so it comes through this one bundle too.
+export {
+	_resetPreflightForTests,
+	checkPreflight,
+	preflightGate
+} from '$lib/preflight/preflight.svelte';
+export { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
