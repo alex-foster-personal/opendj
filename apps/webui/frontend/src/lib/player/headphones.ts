@@ -47,6 +47,13 @@ import {
 import { deriveAlignment } from '$lib/player/cue-align-policy';
 import type { CueAlignBus } from '$lib/player/cue-align.svelte';
 import type { CueBridgeWireResult } from '$lib/player/cue-bridge-wiring';
+import {
+	NativeCueSinkClient,
+	nativeCueSinkConfig,
+	nativeDeviceId,
+	nativeOutputsAsHeadphoneOutputs,
+	type NativeCueSinkEvent
+} from '$lib/player/cue-native-sink';
 import { loadMixerConfig, persistMixerConfig } from '$lib/player/mixer-config';
 import { deckStates, mixerState } from '$lib/player/state.svelte';
 import type { LivenessVerdict } from '$lib/rb/audio-output-liveness';
@@ -139,6 +146,23 @@ export function cueBridgeLatencyReport(): CueBridgeLatencyReport | null {
 	const main = _outputContext;
 	const nodes = _headphoneNodes;
 	if (main === null || nodes === null) return null;
+	const native = nodes.nativeCue;
+	if (native !== null) {
+		// CUEOUT-22: the shell's ring holds the same target fill as the in-page
+		// bridge, and the device's own latency is what CoreAudio reports for it.
+		const bridge_buffer_ms = CueBridgeRing.bufferLatencyMs(main.sampleRate);
+		const main_base_latency_ms = main.baseLatency * 1000;
+		const main_output_latency_ms = main.outputLatency * 1000;
+		const cue_output_latency_ms = native.opened?.device_latency_ms ?? 0;
+		return {
+			bridge_buffer_ms,
+			main_base_latency_ms,
+			main_output_latency_ms,
+			cue_base_latency_ms: 0,
+			cue_output_latency_ms,
+			total_ms: bridge_buffer_ms + main_base_latency_ms + main_output_latency_ms + cue_output_latency_ms
+		};
+	}
 	const cue = nodes.cueContext;
 	if (cue === null) return null;
 	const bridge_buffer_ms = CueBridgeRing.bufferLatencyMs(cue.sampleRate);
@@ -178,6 +202,8 @@ export interface HeadphoneNodes {
 	bridgeReceiver: AudioWorkletNode | null;
 	cueDeviceId: string | null;
 	bridgeControl: Int32Array | null;
+	/** CUEOUT-22: the Mac app's native cue output, in place of `cueContext`. */
+	nativeCue: NativeCueSinkClient | null;
 	practiceCueMix: GainNode;
 	practiceMasterMix: GainNode;
 	masterSplitter: ChannelSplitterNode;
@@ -819,6 +845,10 @@ export function dualSinkAssignment(args: {
 	outputs: readonly HeadphoneOutput[];
 	selectedCueId: string | null;
 	selectedMasterId: string | null;
+	/** CUEOUT-22: where the room already plays (the macOS default output in
+	 * the Mac app). Preferred over a label guess so auto-pinning MASTER keeps
+	 * the room where it is instead of moving it to the laptop speakers. */
+	currentRoomId?: string | null;
 }): { masterId: string | null; cueId: string | null; autoPinnedMaster: boolean } {
 	if (args.selectedCueId !== null && typeof args.selectedCueId !== 'string') {
 		throw new TypeError('selected cue output id must be a string or null');
@@ -834,6 +864,16 @@ export function dualSinkAssignment(args: {
 		args.selectedMasterId !== null && args.outputs.some((output) => output.id === args.selectedMasterId)
 			? args.selectedMasterId
 			: null;
+	const room =
+		args.currentRoomId !== undefined &&
+		args.currentRoomId !== null &&
+		args.currentRoomId !== cueId &&
+		args.outputs.some((output) => output.id === args.currentRoomId)
+			? args.currentRoomId
+			: null;
+	if (masterStillPresent === null && room !== null) {
+		return { masterId: room, cueId, autoPinnedMaster: true };
+	}
 	if (cueId !== null && masterStillPresent === null) {
 		const preferred = preferredMasterOutputDeviceId(args.outputs, cueId);
 		if (preferred !== null) {
@@ -977,6 +1017,86 @@ function _assertCurrentHeadphoneOperation(generation: number, nodes: HeadphoneNo
 	assertHeadphoneOwnership(generation, _headphoneGeneration, nodes === null || nodes === _headphoneNodes);
 }
 
+/** CUEOUT-22: the installed Mac app's native cue output, created on first
+ * use when the shell announced one. Null in Chrome and in any browser tab. */
+let _nativeCueSink: NativeCueSinkClient | null = null;
+/** The macOS default output at the last native listing: where the room plays. */
+let _nativeRoomOutputId: string | null = null;
+let _nativeEventsUnsubscribe: (() => void) | null = null;
+
+export function nativeCueSinkAvailable(): boolean {
+	return nativeCueSinkConfig() !== null;
+}
+
+function _nativeSink(): NativeCueSinkClient | null {
+	if (_nativeCueSink !== null && _nativeCueSink.disconnected === null) return _nativeCueSink;
+	const config = nativeCueSinkConfig();
+	if (config === null) return null;
+	_nativeEventsUnsubscribe?.();
+	_nativeCueSink?.dispose();
+	const client = new NativeCueSinkClient(config);
+	_nativeEventsUnsubscribe = client.onEvent(_onNativeCueEvent);
+	_nativeCueSink = client;
+	return client;
+}
+
+function _disposeNativeSink(): void {
+	_nativeEventsUnsubscribe?.();
+	_nativeEventsUnsubscribe = null;
+	_nativeCueSink?.dispose();
+	_nativeCueSink = null;
+	_nativeRoomOutputId = null;
+}
+
+function _onNativeCueEvent(event: NativeCueSinkEvent): void {
+	switch (event.type) {
+		case 'devices_changed':
+			_onHeadphoneDeviceChange();
+			return;
+		case 'device_lost': {
+			// The shell already stopped the device and never falls back to
+			// another one, so the cue cannot land in the room. Say so; the
+			// membership refresh that follows reconciles the selection and
+			// restores the device if it comes back.
+			_stopHeadphoneLiveness();
+			mixerState.headphones.active = false;
+			const message = 'headphone cue device disconnected; cue is off until it comes back';
+			mixerState.headphones.error = message;
+			recordPerfEvent('native-cue-device-lost', message, null, 'warn');
+			pushToast(`NO HEADPHONE OUTPUT: ${message}`, 'error');
+			_onHeadphoneDeviceChange();
+			return;
+		}
+		case 'master_reasserted':
+			recordPerfEvent(
+				'native-master-reasserted',
+				`macOS moved the default output to ${event.from_uid ?? 'another device'}; MASTER was put back`,
+				null,
+				'info'
+			);
+			return;
+		case 'stats':
+			return;
+		case 'disconnected':
+			if (mixerState.headphones.active && _headphoneNodes?.nativeCue != null) {
+				mixerState.headphones.active = false;
+				mixerState.headphones.error = `headphone cue output stopped: ${event.reason}`;
+				recordPerfEvent('native-cue-disconnected', event.reason, null, 'error');
+			}
+			return;
+	}
+}
+
+/** Output listing and selection need `navigator.mediaDevices` in a browser;
+ * the Mac app lists outputs natively and needs nothing from it. */
+function _requireOutputSelectionApi(): void {
+	if (_nativeSink() !== null) {
+		mixerState.headphones.supported = true;
+		return;
+	}
+	requireHeadphoneDeviceApi();
+}
+
 export function requireHeadphoneDeviceApi(): MediaDevices {
 	if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
 		mixerState.headphones.supported = false;
@@ -1013,6 +1133,14 @@ function _requireCueSinkApi(
 }
 
 async function _applyCueSink(deviceId: string, nodes: HeadphoneNodes): Promise<void> {
+	const native = nodes.nativeCue;
+	if (native !== null) {
+		const sampleRate = _outputContext?.sampleRate;
+		if (sampleRate === undefined) throw new Error('cue bridge has no main context');
+		await withHeadphoneOperationTimeout('native cue open', native.open(deviceId, sampleRate));
+		nodes.cueDeviceId = deviceId;
+		return;
+	}
 	const ctx = nodes.cueContext;
 	if (ctx === null) {
 		throw new Error('cue bridge is not initialized');
@@ -1078,7 +1206,8 @@ export async function failCueBridge(
 	nodes: Pick<
 		HeadphoneNodes,
 		'bridgeSender' | 'bridgeReceiver' | 'bridgeInput' | 'cueContext' | 'cueDeviceId' | 'bridgeControl'
-	>
+	> &
+		Partial<Pick<HeadphoneNodes, 'nativeCue'>>
 ): Promise<string> {
 	const message = `cue bridge ${side} worklet failed, so the headphones are silent; re-select the headphone output to rebuild it`;
 	recordPerfEvent('cue-bridge-processor-error', message, null, 'error');
@@ -1094,6 +1223,8 @@ export async function failCueBridge(
 	nodes.bridgeSender?.disconnect();
 	nodes.bridgeReceiver?.disconnect();
 	const cueContext = nodes.cueContext;
+	const native = nodes.nativeCue ?? null;
+	nodes.nativeCue = null;
 	nodes.bridgeSender = null;
 	nodes.bridgeReceiver = null;
 	nodes.bridgeControl = null;
@@ -1101,6 +1232,13 @@ export async function failCueBridge(
 	nodes.cueDeviceId = null;
 	_cueBridgeReady = null;
 	if (cueContext !== null) await _closeCueContext(cueContext);
+	if (native !== null) {
+		native.detachPcm();
+		await native.close().catch((closeError: unknown) => {
+			const detail = closeError instanceof Error ? closeError.message : String(closeError);
+			recordPerfEvent('native-cue-close-failed', detail, null, 'warn');
+		});
+	}
 	return message;
 }
 
@@ -1112,9 +1250,14 @@ async function _closeCueContext(cueContext: AudioContext): Promise<void> {
 }
 
 async function _ensureCueBridge(mainContext: AudioContext, nodes: HeadphoneNodes): Promise<void> {
-	if (nodes.bridgeSender !== null && nodes.cueContext !== null) return;
+	if (nodes.bridgeSender !== null && (nodes.cueContext !== null || nodes.nativeCue !== null)) return;
 	if (_cueBridgeReady !== null) {
 		await _cueBridgeReady;
+		return;
+	}
+	const native = _nativeSink();
+	if (native !== null) {
+		await _ensureNativeCueBridge(mainContext, nodes, native);
 		return;
 	}
 	_requireCueBridgeApi(mainContext);
@@ -1157,6 +1300,43 @@ async function _ensureCueBridge(mainContext: AudioContext, nodes: HeadphoneNodes
 		nodes.cueContext = cueContext;
 		nodes.bridgeReceiver = wired.bridgeReceiver;
 		nodes.bridgeControl = wired.bridgeControl;
+	})();
+	_cueBridgeReady = ready;
+	await ready;
+}
+
+/** CUEOUT-22: the sender worklet feeds the shell's native output through the
+ * relay worker; there is no receiver and no second AudioContext. */
+async function _ensureNativeCueBridge(
+	mainContext: AudioContext,
+	nodes: HeadphoneNodes,
+	native: NativeCueSinkClient
+): Promise<void> {
+	if (typeof AudioWorkletNode === 'undefined' || typeof mainContext.audioWorklet?.addModule !== 'function') {
+		throw _headphoneError(
+			'headphone output unsupported',
+			'AudioWorkletNode is unavailable; the cue monitor needs an AudioWorklet bridge'
+		);
+	}
+	let ready: Promise<void> | null = null;
+	ready = (async () => {
+		let wired: { bridgeSender: AudioWorkletNode; relayPort: MessagePort };
+		try {
+			const { wireNativeCueSender } = await import('$lib/player/cue-bridge-wiring');
+			wired = await wireNativeCueSender(mainContext, () => void failCueBridge('sender', nodes));
+		} catch (error) {
+			if (_cueBridgeReady === ready) _cueBridgeReady = null;
+			throw error;
+		}
+		if (_headphoneNodes !== nodes) {
+			wired.bridgeSender.disconnect();
+			wired.relayPort.close();
+			throw new Error('cue bridge start finished after the headphone graph was disposed');
+		}
+		native.attachPcmPort(wired.relayPort);
+		nodes.bridgeInput.connect(wired.bridgeSender);
+		nodes.bridgeSender = wired.bridgeSender;
+		nodes.nativeCue = native;
 	})();
 	_cueBridgeReady = ready;
 	await ready;
@@ -1348,6 +1528,16 @@ function _requireMasterSinkApi(context: AudioContext): AudioContext & { setSinkI
 }
 
 async function _applyMasterSink(deviceId: string, context: AudioContext): Promise<void> {
+	const native = _nativeSink();
+	if (native !== null) {
+		// The webview plays the room mix on the macOS default output, so MASTER
+		// is pinned by making the device the default; the shell puts it back if
+		// macOS moves the default (a headphone plug, a Bluetooth reconnect)
+		// while the pin holds (CUEOUT-09 P0).
+		await withHeadphoneOperationTimeout('native master select', native.setMaster(deviceId));
+		_outputContext = context;
+		return;
+	}
 	const ctx = _requireMasterSinkApi(context);
 	await withHeadphoneOperationTimeout('master setSinkId', ctx.setSinkId(deviceId));
 	_outputContext = context;
@@ -1359,7 +1549,14 @@ async function _applyMasterSink(deviceId: string, context: AudioContext): Promis
  * would put the monitor mix in the room. A restored device resumes it only
  * after its sink lands (`applyCueSinkTransaction`).
  */
-export async function silenceVanishedCueOutput(nodes: Pick<HeadphoneNodes, 'cueContext'> | null): Promise<void> {
+export async function silenceVanishedCueOutput(
+	nodes: (Pick<HeadphoneNodes, 'cueContext'> & Partial<Pick<HeadphoneNodes, 'nativeCue'>>) | null
+): Promise<void> {
+	const native = nodes?.nativeCue ?? null;
+	if (native !== null) {
+		await withHeadphoneOperationTimeout('native cue close after device vanished', native.close());
+		return;
+	}
 	const cueContext = nodes?.cueContext ?? null;
 	if (cueContext === null || cueContext.state !== 'running') return;
 	await withHeadphoneOperationTimeout('cue suspend after device vanished', cueContext.suspend());
@@ -1449,6 +1646,7 @@ export function ensureHeadphoneGraph(context: AudioContext, masterGain: GainNode
 		bridgeReceiver: null,
 		cueDeviceId: null,
 		bridgeControl: null,
+		nativeCue: null,
 		practiceCueMix,
 		practiceMasterMix,
 		masterSplitter,
@@ -1501,6 +1699,10 @@ function _disposeHeadphoneGraph(): void {
 	if (nodes.cueContext !== null) {
 		void nodes.cueContext.close();
 	}
+	if (nodes.nativeCue !== null) {
+		// Dropping the socket is what closes the device on the shell side.
+		_disposeNativeSink();
+	}
 	for (const node of [
 		nodes.cueSum,
 		nodes.masterMonitor,
@@ -1536,25 +1738,43 @@ export function disposeHeadphoneMonitor(): void {
 	_masterDelayNode = null;
 	_unwatchHeadphoneDeviceChanges();
 	_disposeHeadphoneGraph();
+	_disposeNativeSink();
 }
 
 export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Promise<void> {
 	if (monitorSource !== undefined) _lastMonitorSource = monitorSource;
 	const generation = _headphoneGeneration;
+	const native = _nativeSink();
 	let devices: MediaDeviceInfo[];
+	let outputs: { id: string; label: string }[];
 	try {
-		devices = await withHeadphoneOperationTimeout(
-			'enumerateDevices',
-			requireHeadphoneDeviceApi().enumerateDevices()
-		);
+		if (native !== null) {
+			// CUEOUT-22: outputs come from the shell. Inputs (AUDIO IN, the
+			// calibration mic) still come from the webview when it exposes them.
+			const listed = await withHeadphoneOperationTimeout('native output listing', native.list());
+			outputs = nativeOutputsAsHeadphoneOutputs(listed);
+			const room = listed.find((device) => device.is_default);
+			_nativeRoomOutputId = room === undefined ? null : nativeDeviceId(room.uid);
+			mixerState.headphones.supported = true;
+			devices =
+				typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.enumerateDevices === 'function'
+					? await withHeadphoneOperationTimeout('enumerateDevices', navigator.mediaDevices.enumerateDevices())
+					: [];
+		} else {
+			devices = await withHeadphoneOperationTimeout(
+				'enumerateDevices',
+				requireHeadphoneDeviceApi().enumerateDevices()
+			);
+			outputs = devices
+				.filter((device) => device.kind === 'audiooutput')
+				.map((device) => ({ id: device.deviceId, label: device.label }));
+		}
 		_assertCurrentHeadphoneOperation(generation, null);
 	} catch (error) {
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('headphone output enumeration failed', error);
 	}
-	mixerState.headphones.outputs = devices
-		.filter((device) => device.kind === 'audiooutput')
-		.map((device) => ({ id: device.deviceId, label: device.label }));
+	mixerState.headphones.outputs = outputs;
 	mixerState.headphones.inputs = devices
 		.filter((device) => device.kind === 'audioinput')
 		.map((device) => ({ id: device.deviceId, label: device.label }));
@@ -1571,7 +1791,8 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 	const assignment = dualSinkAssignment({
 		outputs: mixerState.headphones.outputs,
 		selectedCueId: mixerState.headphones.selected_output_device_id,
-		selectedMasterId: mixerState.headphones.selected_master_output_device_id
+		selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+		currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
 	});
 	mixerState.headphones.selected_master_output_device_id = assignment.masterId;
 	const plan = pinnedSinkReapplyPlan({
@@ -1599,7 +1820,8 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 		inputStillPresent ?? preferredAudioInputDeviceId(devices);
 	mixerState.headphones.error = null;
 	applyHeadphoneMix();
-	_watchHeadphoneDeviceChanges(requireHeadphoneDeviceApi());
+	// The native sink pushes its own device changes (`_onNativeCueEvent`).
+	if (native === null) _watchHeadphoneDeviceChanges(requireHeadphoneDeviceApi());
 	try {
 		await _reapplyPinnedSinks(monitorSource ?? _lastMonitorSource, plan);
 		_assertCurrentHeadphoneOperation(generation, null);
@@ -1618,6 +1840,14 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Promise<void> {
 	const generation = _headphoneGeneration;
 	try {
+		if (_nativeSink() !== null) {
+			// The shell names every device itself, so there is no label unlock
+			// and no microphone prompt on this path.
+			await refreshHeadphoneOutputs(monitorSource);
+			_assertCurrentHeadphoneOperation(generation, null);
+			await _autoSelectSoleBluetoothCue(monitorSource, generation);
+			return;
+		}
 		const kind = _probeAcquisitionKind();
 		if (kind === 'unsupported') {
 			requireHeadphoneDeviceApi();
@@ -1665,16 +1895,18 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 		}
 		await refreshHeadphoneOutputs(monitorSource);
 		_assertCurrentHeadphoneOperation(generation, null);
-		const bluetooth = mixerState.headphones.outputs.filter((output) =>
-			monitorLabelIsBluetooth(output.label)
-		);
-		if (bluetooth.length === 1 && mixerState.headphones.selected_output_device_id === null) {
-			await selectHeadphoneOutput(bluetooth[0].id, monitorSource);
-			_assertCurrentHeadphoneOperation(generation, null);
-		}
+		await _autoSelectSoleBluetoothCue(monitorSource, generation);
 	} catch (error) {
 		_assertCurrentHeadphoneOperation(generation, null);
 		throw _headphoneError('headphone output acquisition failed', error);
+	}
+}
+
+async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generation: number): Promise<void> {
+	const bluetooth = mixerState.headphones.outputs.filter((output) => monitorLabelIsBluetooth(output.label));
+	if (bluetooth.length === 1 && mixerState.headphones.selected_output_device_id === null) {
+		await selectHeadphoneOutput(bluetooth[0].id, monitorSource);
+		_assertCurrentHeadphoneOperation(generation, null);
 	}
 }
 
@@ -1688,7 +1920,7 @@ export async function selectHeadphoneOutput(
 	const previousMode = mixerState.headphones.output_mode;
 	let nodes: HeadphoneNodes | null = null;
 	try {
-		requireHeadphoneDeviceApi();
+		_requireOutputSelectionApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
 		const plan = cueOutputChangePlan({
 			currentCueId: previousId,
@@ -1711,7 +1943,8 @@ export async function selectHeadphoneOutput(
 		const assignment = dualSinkAssignment({
 			outputs: mixerState.headphones.outputs,
 			selectedCueId: deviceId,
-			selectedMasterId: mixerState.headphones.selected_master_output_device_id
+			selectedMasterId: mixerState.headphones.selected_master_output_device_id,
+			currentRoomId: _nativeCueSink === null ? null : _nativeRoomOutputId
 		});
 		const cueReady = (async () => {
 			await _applyCueSink(deviceId, liveNodes);
@@ -1758,7 +1991,7 @@ export async function selectMasterOutput(
 	const generation = _headphoneGeneration;
 	const previousId = mixerState.headphones.selected_master_output_device_id;
 	try {
-		requireHeadphoneDeviceApi();
+		_requireOutputSelectionApi();
 		assertHeadphoneOutputSelection(deviceId, mixerState.headphones.outputs);
 		if (sinkSelectIsNoop(previousId, deviceId, previousId !== null)) {
 			return;
