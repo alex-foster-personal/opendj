@@ -163,6 +163,30 @@ export function partitionPaste(
 	return { add, already };
 }
 
+/** Membership slots of the rows a paste just appended: the LAST row of each
+ * pasted track, since the transfer appends to the end of the playlist. Used
+ * to select and reveal what landed, which in a long playlist is otherwise
+ * below the fold. */
+export function pastedRowOrders(rows: readonly RowRef[], pastedIds: readonly string[]): number[] {
+	const wanted = new Set(pastedIds);
+	const lastOrder = new Map<string, number>();
+	for (const row of rows) {
+		if (wanted.has(row.stable_id)) lastOrder.set(row.stable_id, row.order);
+	}
+	return [...lastOrder.values()].sort((a, b) => a - b);
+}
+
+/** Select exactly the given rows, anchored on the first. */
+export function selectRowOrders(pane: SelectionPane, orders: readonly number[]): void {
+	const wanted = new Set(orders);
+	const picked = pane.rows.filter((r) => wanted.has(r.order));
+	if (picked.length === 0) return;
+	pane.selected_orders = picked.map((r) => r.order);
+	pane.selected_ids = [...new Set(picked.map((r) => r.stable_id))];
+	pane.selected_id = picked[0].stable_id;
+	pane.selected_order = picked[0].order;
+}
+
 export function clipboardToastMessage(count: number, mode: 'copy' | 'cut'): string {
 	const noun = count === 1 ? '1 track' : `${count} tracks`;
 	return mode === 'cut'
