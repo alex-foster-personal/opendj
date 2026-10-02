@@ -39,6 +39,25 @@ PERF_EVENT_MARKER: str = "[perf-event]"
 #: Vite dev-server console lines: they exist only under `vite dev` (the preview),
 #: never in a shipped build, and were 12 of 33 open issues on Mon 14 Sep 2026.
 DEV_TOOLING_MARKERS: tuple[str, ...] = ("[hmr]", "[vite]")
+#: Exact browser fetch/abort messages. Safari WebKit reports ``Load failed``
+#: (Sentry OPEN-DJ-FE-F); Chromium reports ``Failed to fetch``. Keep this set
+#: in lockstep with ``telemetry-network-noise.ts``. Do not substring-match:
+#: ``Failed to fetch dynamically imported module`` is a missing SPA chunk.
+TRANSIENT_NETWORK_MESSAGES: frozenset[str] = frozenset(
+    {
+        "Load failed",
+        "Failed to fetch",
+        "NetworkError when attempting to fetch resource.",
+        "The user aborted a request.",
+        "The operation was aborted.",
+    }
+)
+_TRANSIENT_NETWORK_PREFIXES: tuple[str, ...] = (
+    "TypeError: ",
+    "NetworkError: ",
+    "AbortError: ",
+    "DOMException: ",
+)
 
 _WINDOW_S: float = 3600.0
 
@@ -51,6 +70,24 @@ def is_perf_console_mirror(kind: str, message: str) -> bool:
 def is_dev_tooling_console(kind: str, message: str) -> bool:
     """A Vite dev-server console line (hot reload, reconnect): local only."""
     return kind in PERF_MIRROR_KINDS and message.lstrip().startswith(DEV_TOOLING_MARKERS)
+
+
+def is_transient_network_error(_name: str | None, message: str) -> bool:
+    """A browser fetch/abort TypeError: connectivity, not an application bug.
+
+    Exact messages only so a missing dynamically imported module still ships.
+    Callers pass the exception type plus message; matching is on the message,
+    including a ``TypeError: Load failed`` combined form.
+    """
+    text = message.strip()
+    if not text:
+        return False
+    if text in TRANSIENT_NETWORK_MESSAGES:
+        return True
+    for prefix in _TRANSIENT_NETWORK_PREFIXES:
+        if text.startswith(prefix) and text[len(prefix) :] in TRANSIENT_NETWORK_MESSAGES:
+            return True
+    return False
 
 
 @dataclass

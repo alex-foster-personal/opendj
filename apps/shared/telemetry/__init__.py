@@ -358,6 +358,7 @@ def capture_browser_error(
 
     Returns the Sentry event id, or None when telemetry is off (the common
     case, and not a failure), when the error is a perf-event console mirror,
+    a Vite console line, or a transient fetch/abort TypeError (OBS-07),
     when consent is not granted, when a deck is live, or when the quota
     budget refused it. Never raises: reporting an error must not become one.
 
@@ -368,7 +369,11 @@ def capture_browser_error(
     (None) falls back to the engine-side probe. The local sink row above
     is written either way.
     """
-    from apps.shared.telemetry.budget import is_dev_tooling_console, is_perf_console_mirror
+    from apps.shared.telemetry.budget import (
+        is_dev_tooling_console,
+        is_perf_console_mirror,
+        is_transient_network_error,
+    )
     from apps.shared.telemetry.sink import (
         capture_error_event,
         client_error_message,
@@ -381,7 +386,11 @@ def capture_browser_error(
         source_site=client_source_site(kind, url),
         kind="client",
     )
-    if is_perf_console_mirror(kind, message) or is_dev_tooling_console(kind, message):
+    if (
+        is_perf_console_mirror(kind, message)
+        or is_dev_tooling_console(kind, message)
+        or is_transient_network_error(name, message)
+    ):
         return None
     if _client() is None or held_for_consent():
         return None
