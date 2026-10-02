@@ -1063,13 +1063,17 @@ function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
 	});
 }
 
-function _requireLoaded(deck: DeckId, op: string): { st: DeckState; rt: _DeckRuntime } {
+function _deckIsLoaded(deck: DeckId): boolean {
 	const rt = _rt[deck];
 	const st = deckStates[deck];
-	if (rt.processor === null || rt.durationSec <= 0 || st.stable_id === null) {
+	return rt.processor !== null && rt.durationSec > 0 && st.stable_id !== null;
+}
+
+function _requireLoaded(deck: DeckId, op: string): { st: DeckState; rt: _DeckRuntime } {
+	if (!_deckIsLoaded(deck)) {
 		throw new Error(`${op}: no track loaded on deck ${deck}`);
 	}
-	return { st, rt };
+	return { st: deckStates[deck], rt: _rt[deck] };
 }
 
 function _durationSec(deck: DeckId): number {
@@ -3372,7 +3376,16 @@ class RbAudioEngine implements AudioEngine {
 	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		return withPauseOrigin('command', async () => {
 			this.clearQuantizedLaunch(deck);
-			const { st, rt } = _requireLoaded(deck, 'pause');
+			const rt = _rt[deck];
+			const st = deckStates[deck];
+			if (!_deckIsLoaded(deck)) {
+				// Idempotent stop: empty-deck pause must not become a client error.
+				rt.desiredActive = false;
+				st.playing = false;
+				st.audible = false;
+				st.transport_pending = false;
+				return;
+			}
 			if (!rt.desiredActive) return; // already paused is a valid state
 			_bumpReanchorOperation(deck);
 			if (_ctx === null) throw new Error('pause: audio graph not initialised');
