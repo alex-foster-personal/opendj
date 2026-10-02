@@ -197,6 +197,16 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
         audio_playable.probe_playable_audio(cut)
 
+    # .alac (MP4) is off tinytag's extension list but parses by content, so
+    # it gets the tag cross-check too: real audio passes, a bare ftyp fails.
+    alac = tmp_path / "real.alac"
+    shutil.copyfile(FIXTURE.parent / "src.m4a", alac)
+    audio_playable.probe_playable_audio(alac)
+    stub_alac = tmp_path / "stub.alac"
+    stub_alac.write_bytes(b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 4096)
+    with pytest.raises(audio_playable.UnplayableAudioError):
+        audio_playable.probe_playable_audio(stub_alac)
+
     # An MP4 container named .aac goes to the tag reader, not the ADTS walk.
     mp4 = tmp_path / "mp4.aac"
     shutil.copyfile(FIXTURE.parent / "src.m4a", mp4)

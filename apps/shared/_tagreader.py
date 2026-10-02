@@ -51,6 +51,9 @@ def require() -> None:
         raise ImportError(_INSTALL_HINT)
 
 
+_MP4_ALIASES = frozenset({".alac"})
+
+
 def can_read(path: Path | str) -> bool:
     """Whether tinytag parses this file type at all.
 
@@ -63,7 +66,10 @@ def can_read(path: Path | str) -> bool:
         return False
     from tinytag import TinyTag  # type: ignore
 
-    return Path(path).suffix.lower() in TinyTag.SUPPORTED_FILE_EXTENSIONS
+    suffix = Path(path).suffix.lower()
+    # .alac is an MP4 container: tinytag's extension list omits it, but its
+    # content sniff parses it like .m4a (measured on tinytag 2.3.2).
+    return suffix in TinyTag.SUPPORTED_FILE_EXTENSIONS or suffix in _MP4_ALIASES
 
 
 class TagReadError(Exception):
