@@ -238,8 +238,14 @@ def _generate_command(
     """The exact argv for this tier. One place, so CLI and UI cannot diverge."""
     root = _repo_root()
     if tier.where == "local":
+        # The installed app ships no uv; its launcher names the payload
+        # interpreter instead (apps/stems/worker_launch.py, issue #3421).
+        from apps.stems.worker_launch import packaged_python
+
+        packaged = packaged_python()
+        prefix = [packaged] if packaged else ["uv", "run", "--no-sync"]
         return [
-            "uv", "run", "--no-sync", str(root / "scripts/stem_bundle_worker.py"),
+            *prefix, str(root / "scripts/stem_bundle_worker.py"),
             "--audio", audio_path,
             "--stable-id", stable_id,
             "--out-dir", str(stems_dir / stable_id),
