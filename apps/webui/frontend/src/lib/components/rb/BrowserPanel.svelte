@@ -241,6 +241,8 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
+	import CommandBar from './CommandBar.svelte';
+	import type { CommandBarRow } from '$lib/rb/command-bar';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,
@@ -2606,6 +2608,23 @@
 		}
 	}
 
+	/** CMDK-02/03: the command bar loads through _loadOntoDeck like a
+	 * double-click, then solos the vocal stem when asked. A track whose stem
+	 * bundle is missing loads as the full mix, and says so. */
+	async function _commandBarLoad(row: CommandBarRow, deck: DeckId, vocalsOnly: boolean): Promise<void> {
+		await _loadOntoDeck(row, deck);
+		if (!vocalsOnly || decks[deck].stable_id !== row.stable_id) return;
+		if (decks[deck].stems.status === 'unavailable') {
+			pushToast(`No stems for this track yet; deck ${deck} plays the full mix`, 'warn');
+			return;
+		}
+		try {
+			await dispatchPerformanceCommand({ type: 'stem_solo', deck, stem: 'vocal', solo: true });
+		} catch {
+			// Dispatcher already toasted + recorded the deck alert.
+		}
+	}
+
 	function _offerUnload(deck: DeckId): void {
 		if (unloadOfferTimer !== null) clearTimeout(unloadOfferTimer);
 		unloadOffer = { deck, until: performance.now() + 2000 };
@@ -3597,6 +3616,8 @@
 	onpick={(node) => void addTracksToPlaylist(node)}
 	onclose={() => (addToPlaylistIds = null)}
 />
+
+<CommandBar rows={pane.rows} playlistTitle={pane.title} load={_commandBarLoad} />
 
 {#if folderDupPrompt !== null}
 	<PlaylistFolderDupModal
