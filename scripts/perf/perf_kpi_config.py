@@ -83,7 +83,7 @@ def require_machine_label(config: PerfKpiConfig) -> str:
         raise ValueError(
             "MDT_PERF_KPI_MACHINE must be set for the nightly path (the "
             "installed nightly plist always sets it once --host-label is "
-            "passed to install_perf_kpi_launchd.sh; a manual invocation "
+            "passed to the fleet-af perf-kpi installer; a manual invocation "
             "must export it explicitly). The health path does not require "
             "it, since a health tick never attributes a ledger entry."
         )

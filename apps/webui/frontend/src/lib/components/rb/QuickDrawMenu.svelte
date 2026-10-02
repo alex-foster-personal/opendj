@@ -26,6 +26,7 @@
 	import { getTrack } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
 	import { vocalFixMenuItem } from './vocal-correction-menu';
+	import { menuStemTiers } from '$lib/rb/stem-tier-menu';
 
 	type CtxItem = {
 		id: string;
@@ -107,7 +108,8 @@
 	}
 
 	function _stemItems(stableId: string): CtxItem[] {
-		return stemTiers.map((tier) => {
+		// INSTALL-32: a tier this engine cannot spawn is hidden, not disabled.
+		return menuStemTiers(stemTiers).map((tier) => {
 			const est = stemEstimateById[tier.key];
 			const suffix = est === undefined ? '...' : est;
 			const inert = tier.availability !== 'AVAILABLE';

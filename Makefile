@@ -192,16 +192,8 @@ spotify-rematch:
 spotify-watched:
 	$(PY) -m apps.spotify watched --ensure
 
-# Local spotDL bulk download for watched playlists. Runner lives in odj-private
-# (gitignored shim: scripts/spotdl_watched.py; pointer: scripts/spotdl_watched.md).
-spotdl-watched:
-	@if [ ! -f scripts/spotdl_watched.py ]; then \
-		echo "missing scripts/spotdl_watched.py -- see scripts/spotdl_watched.md"; exit 2; \
-	fi
-	$(PY) scripts/spotdl_watched.py $(SPOTDL_WATCHED_ARGS)
-
 # ----- Phase 11: cloud sync + web UI (CAT-04, CAT-05) --------------------
-.PHONY: spotify-import spotify-rematch spotify-watched spotdl-watched webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
+.PHONY: spotify-import spotify-rematch spotify-watched webui.dev webui.prod webui.openapi cloud.replicate cloud.self-check
 
 webui.dev:
 	just webui-backend

@@ -42,6 +42,9 @@ Acceptance:
        that file parses back to the payload
   [if] a filename in GET /bench/ratings/{name} escapes the ratings dir
        [then ⛔️] 400, never a read outside scripts/bench/ratings
+  [if] the engine is not running from a repo checkout (the packaged app)
+       [then ⛔️] POST is 503 dev_only_in_packaged_app and writes nothing
+       (INSTALL-30)
 """
 
 from __future__ import annotations
@@ -56,6 +59,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+
+from apps.shared.source_tree import dev_only_refusal, is_repo_checkout
 
 router = APIRouter(prefix="/bench", tags=["bench"])
 
@@ -277,6 +282,14 @@ def _stamp(now: datetime) -> str:
 
 @router.post("/ratings", response_model=RatingsSaved, status_code=201)
 def save_ratings(payload: RatingsIn) -> RatingsSaved:
+    # The ratings dir is a repo-tracked artifact store that developers commit.
+    # In the packaged app REPO_ROOT is the signed payload, where one added file
+    # breaks the bundle's code signature (INSTALL-30), so refuse before disk.
+    if not is_repo_checkout(REPO_ROOT):
+        raise HTTPException(
+            status_code=503,
+            detail=dev_only_refusal("Saving bench ratings", RATINGS_DIR),
+        )
     scored = [r for r in payload.ratings if r.human_score is not None]
     if not scored:
         raise HTTPException(

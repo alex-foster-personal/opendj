@@ -17,9 +17,12 @@ all three:
     instrumental or a drum stem is never graded blind against nothing.
   - Every graded arm is a real separator output.
 
-Configs are demucs checkpoints plus the rekordbox 7 STEMS ONNX graph, which is
-the shipping bar. The rekordbox arm reuses rekordbox_stems.separate so there is
-one implementation of that convention, not two.
+Configs are demucs checkpoints plus an OPTIONAL comparison arm (`rb7-stems`) that
+runs a user-supplied ONNX 4-stem model. That arm runs only when --with-rb7 is
+passed together with a model path (--rb7-model or the RB7_ONNX_MODEL env var);
+asking for it without a model fails loudly, and no model is ever fetched or
+located automatically. It reuses rekordbox_stems.separate (imported lazily, only
+for that arm) so there is one implementation of that convention, not two.
 
 Requirements (mini-PRD):
   ✔︎ ✅ 🎯 emit 4 stems per config at the input rate and channel count
@@ -34,7 +37,7 @@ Requirements (mini-PRD):
 Run:
   uv run scripts/bench/four_stem_ladder.py \
     --window-dir /path/to/window --out-dir .tmp/bench/4stem \
-    --rb7-model /path/to/hdemucs.onnx --json-out scripts/bench/four_stem_ladder.json
+    --json-out scripts/bench/four_stem_ladder.json
 
 -Claude
 """
@@ -42,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -49,7 +53,6 @@ from typing import Any
 
 import fast_bss_eval.numpy as fast_bss_eval_numpy
 import numpy as np
-import rekordbox_stems
 import soundfile as sf
 import torch
 from demucs.apply import apply_model
@@ -81,7 +84,7 @@ DEMUCS_ARMS: tuple[dict[str, Any], ...] = (
 )
 RB7_ARM: dict[str, Any] = {
     "id": "rb7-stems",
-    "params": "rekordbox 7 STEMS, its own hdemucs.onnx, overlap 0.25, 44.1 kHz",
+    "params": "user-supplied ONNX 4-stem model, overlap 0.25, 44.1 kHz",
 }
 RB6_ARM: dict[str, Any] = {
     "id": "rb6-spleeter",
@@ -184,15 +187,23 @@ def _require_uv() -> str:
 
 
 def run_rb7_arm(model_path: Path, mix: torch.Tensor, sr: int
-                ) -> tuple[dict[str, torch.Tensor], float]:
-    """rekordbox 7's own ONNX graph, via rekordbox_stems so the convention has
+                ) -> tuple[dict[str, torch.Tensor], float, float]:
+    """A user-supplied ONNX 4-stem graph, via rekordbox_stems so the convention has
     exactly one implementation."""
     import onnxruntime as ort
 
+    try:
+        import rekordbox_stems
+    except ImportError as exc:
+        raise RuntimeError(
+            "the rb7-stems arm needs the rekordbox_stems helper module next to this "
+            "script, which is not available in this checkout; drop --with-rb7"
+        ) from exc
+
     if sr != 44100:
-        raise RuntimeError(f"rekordbox STEMS expects 44.1 kHz, got {sr}")
+        raise RuntimeError(f"the ONNX arm expects 44.1 kHz, got {sr}")
     if not model_path.is_file():
-        raise RuntimeError(f"rekordbox ONNX model not found: {model_path}")
+        raise RuntimeError(f"ONNX model not found: {model_path}")
     sess = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
     stems, infer_s = rekordbox_stems.separate(sess, mix.unsqueeze(0))
 
@@ -200,10 +211,10 @@ def run_rb7_arm(model_path: Path, mix: torch.Tensor, sr: int
     scale = mix.abs().mean().item()
     if resid > 0.15 * scale:
         raise RuntimeError(
-            f"rekordbox stems do not sum to the mixture: {resid / scale:.1%} residual, "
+            f"ONNX stems do not sum to the mixture: {resid / scale:.1%} residual, "
             "convention is wrong")
     order = rekordbox_stems.SOURCES
-    return {s: stems[order.index(s)] for s in STEMS}, infer_s
+    return {s: stems[order.index(s)] for s in STEMS}, infer_s, rekordbox_stems.OVERLAP
 
 
 def _load_truth_stems(window_dir: Path, mix: torch.Tensor, sr: int) -> dict[str, torch.Tensor]:
@@ -228,12 +239,12 @@ def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any
             spec["model"], mix, sr, overlap=spec["overlap"], sep_rate=spec["sep_rate"],
         )
         arms.append({**spec, "engine": "demucs", "infer_s": round(infer_s, 2), "_audio": stems})
-    if args.rb7_model is not None:
+    if args.with_rb7:
         print(f"[run] {RB7_ARM['id']}", flush=True)
-        stems, infer_s = run_rb7_arm(args.rb7_model, mix, sr)
+        stems, infer_s, overlap = run_rb7_arm(args.rb7_model, mix, sr)
         arms.append({
-            **RB7_ARM, "engine": "rekordbox7-onnx", "model": "hdemucs.onnx",
-            "overlap": rekordbox_stems.OVERLAP, "sep_rate": sr,
+            **RB7_ARM, "engine": "user-supplied-onnx", "model": args.rb7_model.name,
+            "overlap": overlap, "sep_rate": sr,
             "infer_s": round(infer_s, 2), "_audio": stems,
         })
     if args.with_rb6:
@@ -254,8 +265,11 @@ def main() -> None:
     ap.add_argument("--window-dir", required=True, type=Path,
                     help="dir holding mixture.wav plus one wav per true stem")
     ap.add_argument("--out-dir", required=True, type=Path)
+    ap.add_argument("--with-rb7", action="store_true",
+                    help="also run the optional ONNX comparison arm; needs --rb7-model "
+                         "or the RB7_ONNX_MODEL env var")
     ap.add_argument("--rb7-model", type=Path, default=None,
-                    help="rekordbox 7 hdemucs.onnx; omit to skip that arm")
+                    help="path to a user-supplied ONNX 4-stem model (env: RB7_ONNX_MODEL)")
     ap.add_argument("--with-rb6", action="store_true",
                     help="also run rekordbox 6's Spleeter 4stems, out of process")
     ap.add_argument("--json-out", required=True, type=Path)
@@ -264,6 +278,12 @@ def main() -> None:
     ap.add_argument("--window-start-s", required=True, type=float)
     ap.add_argument("--window-length-s", required=True, type=float)
     args = ap.parse_args()
+    if args.with_rb7 and args.rb7_model is None and os.environ.get("RB7_ONNX_MODEL"):
+        args.rb7_model = Path(os.environ["RB7_ONNX_MODEL"])
+    if args.with_rb7 and args.rb7_model is None:
+        ap.error("--with-rb7 needs a model path: pass --rb7-model or set RB7_ONNX_MODEL")
+    if args.rb7_model is not None and not args.with_rb7:
+        ap.error("a model path was given without --with-rb7; pass --with-rb7 to run the arm")
 
     mix, sr = _load(args.window_dir / "mixture.wav")
     truth = _load_truth_stems(args.window_dir, mix, sr)
