@@ -286,6 +286,18 @@ def _pairing_id(from_id: str, to_id: str, direction: str) -> str:
     return f"pair-{digest[:24]}"
 
 
+def _pairing_matches(
+    pairing: Pairing, *, from_stable_id: str | None,
+    to_stable_id: str | None, source: str | None,
+) -> bool:
+    """Apply the list route's optional filters to one wire pairing."""
+    return (
+        (not from_stable_id or pairing.from_stable_id == from_stable_id)
+        and (not to_stable_id or pairing.to_stable_id == to_stable_id)
+        and (not source or pairing.source == source)
+    )
+
+
 def _row_to_pairing(row: tuple[Any, ...]) -> Pairing:
     """Map a stored pairings row onto the wire's :class:`Pairing`.
 
@@ -847,13 +859,13 @@ class SqliteBackend:
                 f"notes, created_at, modified_at, {snapshot_col} "
                 "FROM pairings"
             ).fetchall()
-        out = [_row_to_pairing(tuple(row)) for row in rows]
-        if from_stable_id:
-            out = [p for p in out if p.from_stable_id == from_stable_id]
-        if to_stable_id:
-            out = [p for p in out if p.to_stable_id == to_stable_id]
-        if source:
-            out = [p for p in out if p.source == source]
+        out = [
+            pairing for pairing in map(_row_to_pairing, map(tuple, rows))
+            if _pairing_matches(
+                pairing, from_stable_id=from_stable_id,
+                to_stable_id=to_stable_id, source=source,
+            )
+        ]
         out.sort(key=lambda p: p.created_at)
         return out
 
