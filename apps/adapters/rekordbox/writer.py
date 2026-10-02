@@ -121,6 +121,23 @@ def _on_our_timeline(view: dict[str, Any], lead_in_s: float) -> dict[str, Any]:
     }
 
 
+def _stored_in_ms(
+    in_ms: int, preimage: Mapping[str, Any] | None, lead_in_s: float
+) -> int:
+    """Our ``in_ms`` in rekordbox's time, keeping the stored value when it reads as ``in_ms``.
+
+    A cue rekordbox put inside the lead-in reads as 0, the earliest point we
+    can play; putting the lead-in back would move it. Re-saving a slot at the
+    position it reads (a comment or color edit, an undo, a re-save) therefore
+    keeps rekordbox's own number.
+    """
+    if preimage is not None and preimage["in_ms"] is not None:
+        stored = int(preimage["in_ms"])
+        if to_our_ms(stored, lead_in_s) == in_ms:
+            return stored
+    return round(in_ms + lead_in_s * 1000)
+
+
 def fetch_hot_cue_slots(
     vendor_id: str,
     *,
@@ -223,9 +240,9 @@ def save_hot_cue(
     try:
         master.execute("BEGIN IMMEDIATE")
         lead_in_s = _lead_in_s(master, vendor_id)
-        in_ms = round(in_ms + lead_in_s * 1000)
-        _validate_cue_position(master, vendor_id, in_ms)
         preimage = _live_slot_snapshot(master, vendor_id, kind)
+        in_ms = _stored_in_ms(in_ms, preimage, lead_in_s)
+        _validate_cue_position(master, vendor_id, in_ms)
         generation = _slot_generation(master, vendor_id, kind)
         _require_current_revision(
             expected_revision,
