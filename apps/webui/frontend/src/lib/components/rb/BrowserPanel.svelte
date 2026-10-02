@@ -85,7 +85,12 @@
 		fetchAllPages,
 		rowFromListWire as _rowFromListWire,
 		rowFromPlaylistWire as _rowFromPlaylistWire,
-		PlaylistSetTabs
+		PlaylistSetTabs,
+		fetchPlaylistFirstPage,
+		prefetchPlaylistFirstPage,
+		prefetchPlaylistTreeIntent,
+		invalidatePlaylistFirstPage,
+		invalidateAllPlaylistFirstPages
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -141,13 +146,6 @@
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
-	import {
-		fetchPlaylistFirstPage,
-		prefetchPlaylistFirstPage,
-		prefetchPlaylistTreeIntent,
-		invalidatePlaylistFirstPage,
-		invalidateAllPlaylistFirstPages
-	} from '$lib/rb/library-playlist-page-prefetch';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		rememberSpotifyRecent,
