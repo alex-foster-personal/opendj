@@ -69,6 +69,22 @@ def analyze_one(
     return stable_id, rec, None
 
 
+def spawn_pool(workers: int) -> ProcessPoolExecutor:
+    """The analysis worker pool: spawned workers, thread pins, parent watch.
+
+    Both pool owners (:func:`run_pool` and the queue runner) build it here,
+    so the initializer wiring the quit tests exercise is the one they run.
+    """
+    return ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=init_worker,
+        # The pool owner's pid and start time, read HERE: a worker reading
+        # them itself could name a reparented or recycled pid if the owner died first.
+        initargs=owner_identity(),
+    )
+
+
 def run_pool(
     targets: Iterable[tuple[str, str]],
     *,
@@ -91,14 +107,7 @@ def run_pool(
     entry point with ``if __name__ == "__main__":``. Every caller in this
     repository shells out to ``python -m apps.analysis.run``, which is safe.
     """
-    pool = ProcessPoolExecutor(
-        max_workers=workers,
-        mp_context=multiprocessing.get_context("spawn"),
-        initializer=init_worker,
-        # The pool owner's pid and start time, read HERE: a worker reading
-        # them itself could name a reparented or recycled pid if the owner died first.
-        initargs=owner_identity(),
-    )
+    pool = spawn_pool(workers)
     # The stdlib exposes no public handle on the worker processes, and
     # ``shutdown`` drops the private one, so snapshot the objects while they
     # are still reachable. Keyed by pid: a worker that dies is replaced, and

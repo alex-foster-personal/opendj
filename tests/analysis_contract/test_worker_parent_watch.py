@@ -4,8 +4,8 @@
 
 A spawned pool worker blocks on a call queue that never reports end-of-file
 when the parent dies, so three of them outlived the app on demon-llama and
-blocked the DMG installer. These cases run a real parent and a real worker
-that arms the same watch ``init_worker`` arms.
+blocked the DMG installer. These cases build the production pool
+(``spawn_pool``) in a real owner process and kill the owner.
 
 Regression lines:
   - if a worker whose parent died keeps running then the orphan stays -> broken
@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import psutil
 import pytest
@@ -32,36 +33,42 @@ from apps.analysis import worker_diagnostics
 
 pytestmark = pytest.mark.requirement("INSTALL-33")
 
-# The worker: arm the watch against the parent pid it was handed (argv[1]),
-# the way the pool owner hands its pid to init_worker, then idle.
-_WORKER = (
-    "import sys, time\n"
-    "from apps.analysis.worker_diagnostics import watch_parent\n"
-    "started_at = float(sys.argv[2]) if len(sys.argv) > 2 else None\n"
-    "watch_parent(int(sys.argv[1]), started_at, poll_s=0.05)\n"
-    "time.sleep(60)\n"
-)
-
-# The parent: start the worker, report its pid, then either exit at once
-# (argv[1] == 'die') or stay alive.
-_PARENT = (
-    "import os, subprocess, sys, time\n"
-    "worker = subprocess.Popen([sys.executable, '-c', sys.argv[2], str(os.getpid())])\n"
-    "print(worker.pid, flush=True)\n"
+# The pool owner: build the production analysis pool (``spawn_pool``: spawn
+# context, ``init_worker`` with the owner's identity), keep every worker busy,
+# report their pids, then exit at once (argv[1] == 'die') or stay alive.
+_OWNER = (
+    "import os, sys, time\n"
+    "from apps.analysis.pool import spawn_pool\n"
+    "pool = spawn_pool(2)\n"
+    "futures = [pool.submit(time.sleep, 60) for _ in range(2)]\n"
+    "while len(pool._processes) < 2:\n"
+    "    time.sleep(0.05)\n"
+    "print(' '.join(str(pid) for pid in pool._processes), flush=True)\n"
     "if sys.argv[1] == 'die':\n"
     "    os._exit(0)\n"
     "time.sleep(60)\n"
 )
 
+# A bare worker that arms the watch with the start time it is handed, for the
+# one case a real pool cannot stage: an owner whose pid was recycled before
+# the worker started.
+_WORKER = (
+    "import sys, time\n"
+    "from apps.analysis.worker_diagnostics import watch_parent\n"
+    "watch_parent(int(sys.argv[1]), float(sys.argv[2]), poll_s=0.05)\n"
+    "time.sleep(60)\n"
+)
 
-def _start(mode: str) -> tuple[subprocess.Popen[str], int]:
-    parent = subprocess.Popen(
-        [sys.executable, "-c", _PARENT, mode, _WORKER],
+
+def _start(mode: str) -> tuple[subprocess.Popen[str], list[int]]:
+    owner = subprocess.Popen(
+        [sys.executable, "-c", _OWNER, mode],
+        cwd=Path(__file__).resolve().parents[2],
         stdout=subprocess.PIPE,
         text=True,
     )
-    assert parent.stdout is not None
-    return parent, int(parent.stdout.readline())
+    assert owner.stdout is not None
+    return owner, [int(pid) for pid in owner.stdout.readline().split()]
 
 
 def _wait_gone(pid: int, within_s: float) -> bool:
@@ -76,31 +83,34 @@ def _wait_gone(pid: int, within_s: float) -> bool:
     return False
 
 
-def _cleanup(parent: subprocess.Popen[str], worker: int) -> None:
-    for pid in (worker, parent.pid):
+def _cleanup(owner: subprocess.Popen[str], workers: list[int]) -> None:
+    for pid in (*workers, owner.pid):
         with contextlib.suppress(psutil.NoSuchProcess):
             psutil.Process(pid).kill()
-    parent.wait()
+    owner.wait()
 
 
-def test_a_worker_exits_once_its_parent_is_gone() -> None:
-    parent, worker = _start("die")
+def test_pool_workers_exit_once_their_owner_is_gone() -> None:
+    owner, workers = _start("die")
     try:
-        parent.wait(timeout=10)
-        assert _wait_gone(worker, within_s=10), "the orphaned worker kept running"
+        assert len(workers) == 2, workers
+        owner.wait(timeout=10)
+        for pid in workers:
+            assert _wait_gone(pid, within_s=15), f"orphaned pool worker {pid} kept running"
     finally:
-        _cleanup(parent, worker)
+        _cleanup(owner, workers)
 
 
-def test_a_worker_keeps_running_while_its_parent_lives() -> None:
-    parent, worker = _start("live")
+def test_pool_workers_keep_running_while_their_owner_lives() -> None:
+    owner, workers = _start("live")
     try:
-        # Many poll intervals: a watch that fires on a live parent fires here.
-        time.sleep(1.0)
-        assert psutil.Process(worker).status() != psutil.STATUS_ZOMBIE
-        assert psutil.pid_exists(worker), "the worker exited with its parent alive"
+        assert len(workers) == 2, workers
+        # Several poll intervals: a watch that fires on a live owner fires here.
+        time.sleep(3 * worker_diagnostics.PARENT_POLL_S)
+        for pid in workers:
+            assert psutil.Process(pid).status() != psutil.STATUS_ZOMBIE, f"worker {pid} exited"
     finally:
-        _cleanup(parent, worker)
+        _cleanup(owner, workers)
 
 
 def test_parent_gone_compares_against_the_recorded_parent() -> None:
