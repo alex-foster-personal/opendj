@@ -180,6 +180,17 @@
 	} from '$lib/rb/runtime-policy.svelte';
 	import { PREVIEW_SUPERSEDED, previewCue, previewCueSeek, stopPreviewCue } from '$lib/player/preview-cue.svelte';
 	import { pushToast, TOAST_DEFAULT_MS } from '$lib/stores.svelte';
+	import {
+		clipboardToastMessage,
+		getTrackClipboard,
+		libraryEditShortcut,
+		partitionPaste,
+		pasteBlockReason,
+		pasteToastMessage,
+		selectAllRows,
+		selectedIdsInViewOrder,
+		setTrackClipboard
+	} from './browser/track-clipboard';
 	import type { UploadFileResult } from '$lib/rb/api-ingest';
 	import {
 		collectDroppedAudioFiles,
@@ -981,6 +992,7 @@
 			}
 		};
 		window.addEventListener('keydown', onKey);
+		window.addEventListener('keydown', onLibraryEditKey);
 		// PERF-UI-01: first crossing into a short viewport collapses
 		// Next/Recommended so thead + one track row fit in the leftover
 		// library row. Edge-triggered so a manual chevron re-expand is
@@ -1078,6 +1090,7 @@
 			unsubscribeResync();
 			unsubscribeSearch();
 			window.removeEventListener('keydown', onKey);
+			window.removeEventListener('keydown', onLibraryEditKey);
 			shortViewportMq.removeEventListener('change', applyShortViewport);
 		};
 	});
@@ -3260,6 +3273,98 @@
 		const p = pane;
 		const node = _currentNode(p);
 		if (node !== null) await _loadPane(p, node);
+	}
+
+	// Cmd/Ctrl+A, C, X, V on the track list (pins ce142ae7e22f, 0b1e12cc01d0).
+	// Pure rules live in ./browser/track-clipboard; this owns the key and the
+	// one write. Paste goes through the atomic transfer endpoint, which is a
+	// set-union on the destination, so a repeated Cmd+V never stacks
+	// duplicates and a cut paste removes the tracks from their source in the
+	// same transaction.
+	function onLibraryEditKey(e: KeyboardEvent): void {
+		if (e.repeat) return;
+		const action = libraryEditShortcut(e);
+		if (action === null) return;
+		// A modal dialog over the library owns the keyboard.
+		if (document.querySelector('dialog[open], [aria-modal="true"]') !== null) return;
+		if (action === 'copy' || action === 'cut') {
+			// Selected page text (a lyric line, a toast) keeps the native copy.
+			const sel = window.getSelection();
+			if (sel !== null && !sel.isCollapsed && sel.toString().trim() !== '') return;
+		}
+		e.preventDefault();
+		const p = pane;
+		if (action === 'select_all') {
+			if (selectAllRows(p, renderedRows) === 0) pushToast('no tracks to select', 'info');
+			return;
+		}
+		if (action === 'copy' || action === 'cut') {
+			const ids = selectedIdsInViewOrder(renderedRows, p.selected_orders, p.selected_ids);
+			if (ids.length === 0) {
+				pushToast(`select tracks to ${action} first`, 'info');
+				return;
+			}
+			const fromPlaylist =
+				source === 'collection' && p.kind === 'playlist' && p.playlist_id !== null && !p.whole_collection
+					? p.playlist_id
+					: null;
+			// Cutting from something that is not a playlist (All Tracks,
+			// search results) has nothing to remove the tracks from: copy.
+			const mode = action === 'cut' && fromPlaylist !== null ? 'cut' : 'copy';
+			setTrackClipboard({
+				stable_ids: ids,
+				mode,
+				source_playlist_id: fromPlaylist,
+				source_title: p.title
+			});
+			pushToast(clipboardToastMessage(ids.length, mode), 'info');
+			return;
+		}
+		void _pasteTracks();
+	}
+
+	async function _pasteTracks(): Promise<void> {
+		const p = pane;
+		const clip = getTrackClipboard();
+		const blocked = pasteBlockReason(p, source, clip);
+		if (blocked !== null || clip === null || p.playlist_id === null) {
+			pushToast(blocked ?? 'nothing to paste', 'info');
+			return;
+		}
+		const destId = p.playlist_id;
+		const destTitle = p.title;
+		const move = clip.mode === 'cut' && clip.source_playlist_id !== null && clip.source_playlist_id !== destId;
+		try {
+			const dest = await getPlaylistTracksEtag(destId);
+			const plan = partitionPaste(
+				clip.stable_ids,
+				dest.detail.tracks.map((t) => t.stable_id)
+			);
+			if (plan.add.length > 0 || move) {
+				const src = move && clip.source_playlist_id !== null
+					? await getPlaylistTracksEtag(clip.source_playlist_id)
+					: null;
+				await transferPlaylistTracks(destId, dest.etag, {
+					stable_ids: clip.stable_ids,
+					mode: move ? 'move' : 'add',
+					...(src !== null && clip.source_playlist_id !== null
+						? { source_playlist_id: clip.source_playlist_id, source_etag: src.etag }
+						: {})
+				});
+			}
+			// A cut pastes once, like a Finder move; copy can paste again.
+			if (move) setTrackClipboard({ ...clip, mode: 'copy', source_playlist_id: null });
+			pushToast(pasteToastMessage(plan.add.length, plan.already, destTitle, move), 'info');
+		} catch (exc) {
+			if (exc instanceof PlaylistConflictError) {
+				pushToast('playlist changed elsewhere - press Cmd+V again to paste into the latest version', 'error');
+			} else {
+				pushToast(`paste failed: ${String(exc)}`, 'error');
+			}
+			return;
+		}
+		await _refreshPlaylists();
+		if (pane === p && p.playlist_id === destId) await _reloadActivePane();
 	}
 
 	let addToPlaylistIds = $state<string[] | null>(null);
