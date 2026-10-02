@@ -199,8 +199,7 @@ def test_failed_fetch_is_a_named_error_and_hydrate_retries_it(tmp_path: Path):
 
 @pytest.mark.requirement("STEM-46")
 def test_a_fetch_landing_mid_state_read_reads_local_not_cloud(tmp_path: Path, monkeypatch):
-    """[if] the fetch lands between the state read's local check and its in-flight check
-    [then] the state is local, never cloud, [else stop].
+    """[if] a fetch lands mid state read [then] the state is local, never cloud, [else stop].
 
     CI hit this on a loaded runner: the retried hydrate answered "cloud" for a
     bundle that had just landed. Forcing the fetch to finish inside the
