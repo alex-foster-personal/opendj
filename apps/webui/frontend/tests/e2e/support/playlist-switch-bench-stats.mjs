@@ -20,8 +20,12 @@ export function summarizeSamples(samples) {
 	};
 }
 
+// playlist_tree_ready_ms is open-to-tree, counted from navigation start. Until
+// #3985 the app recorded `now() - timeOrigin` clamped to 0, so this metric read
+// 0 ms on every run and the old 150 ms cap never measured anything. 2000 ms is
+// the issue's own acceptance ("playlists load in <2 seconds").
 export const THRESHOLDS_P50_MS = {
-	playlist_tree_ready_ms: 150,
+	playlist_tree_ready_ms: 2000,
 	playlist_switch_first_rows_ms: 100,
 	all_tracks_first_rows_ms: 100
 };
