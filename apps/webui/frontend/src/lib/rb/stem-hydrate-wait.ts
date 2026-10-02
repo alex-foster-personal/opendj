@@ -8,11 +8,20 @@ import { releaseEagerStemDecodeNow } from '$lib/rb/stem-decode-shed';
 import { stemDecodeBlockReason } from '$lib/rb/stem-decode-policy';
 import { unavailableStemDeckState } from '$lib/rb/stem-graph';
 import type { StemDeckState, StemFetchProgress } from '$lib/rb/stem-types';
+import type { StemLandingOutcome, StemLandingPort } from '$lib/rb/stem-live-handoff';
 
 // The deck engine sits at its import fan-out ceiling, so the rest of the stem
 // landing surface reaches it through this module, which it already imports.
-export { landStemsOnDeck } from '$lib/rb/stem-live-handoff';
 export type { StemLandingOutcome } from '$lib/rb/stem-live-handoff';
+
+/** STEM-47. Land built stems on a deck (stem-live-handoff.ts). The handoff is
+ * imported on first use, not statically: the engine is in the library page's
+ * first paint, and a landing only ever follows a stem decode of seconds, so
+ * one local chunk fetch there costs the deck nothing it would notice. */
+export async function landStemsOnDeck(port: StemLandingPort): Promise<StemLandingOutcome> {
+	const handoff = await import('$lib/rb/stem-live-handoff');
+	return handoff.landStemsOnDeck(port);
+}
 
 /** Why a decode is held (shown on the deck while `waiting`). */
 export const STEM_HELD_BY_PRESSURE = 'this machine is under pressure while a deck is playing';
