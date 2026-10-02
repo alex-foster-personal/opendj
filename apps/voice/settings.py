@@ -5,21 +5,34 @@ restart: ``mute_until`` (so a 30-minute mute doesn't vanish if the
 process crashes), preferred backends, the last-trained wake-word
 model path.
 
-We write to ``data/voice/settings.sqlite`` by default. If the Phase 5
-state layer ships a shared SQLite handle later, we can flip to that
-without changing the public API.
+The default store is ``<data dir>/voice/settings.sqlite``, resolved at
+construction from ``apps.shared.platform_paths.DATA_DIR``. In a checkout
+that is ``<repo>/data/voice/settings.sqlite`` exactly as before; in the
+packaged app it is the app's data dir, never the signed payload
+(INSTALL-30). The pre-INSTALL-30 default, ``<source root>/data/voice/
+settings.sqlite``, is read ONCE as a fallback: when the data-dir store does
+not exist yet and the old file does, its rows are copied across through a
+read-only, immutable connection, so the old location is never written.
 """
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-_DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "voice" / "settings.sqlite"
+from apps.shared import platform_paths
+
+log = logging.getLogger(__name__)
+
+#: The engine's source root (``payload/app`` in the installed app). Only ever
+#: READ, as the location the store used before INSTALL-30.
+SOURCE_ROOT: Path = Path(__file__).resolve().parents[2]
+SETTINGS_FILENAME: str = "settings.sqlite"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
@@ -29,13 +42,64 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 
+def voice_data_dir() -> Path:
+    """``<data dir>/voice``, read at call time: every voice file lives here."""
+    return Path(platform_paths.DATA_DIR) / "voice"
+
+
+def default_db_path() -> Path:
+    """The store's default home, under the data dir."""
+    return voice_data_dir() / SETTINGS_FILENAME
+
+
+def legacy_db_path() -> Path:
+    """Where the store lived before INSTALL-30: under the source tree."""
+    return SOURCE_ROOT / "data" / "voice" / SETTINGS_FILENAME
+
+
+def _adopt_legacy(target: Path, legacy: Path) -> bool:
+    """Copy ``legacy`` into a not-yet-existing ``target``; never write legacy.
+
+    Returns True when rows were adopted. A legacy file that cannot be read is
+    logged and skipped: these are mute and debounce timestamps, and losing
+    them must not stop the voice probe from answering.
+    """
+    if target.exists() or not legacy.is_file():
+        return False
+    try:
+        if legacy.resolve() == target.resolve():
+            return False
+    except OSError:
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # immutable=1: sqlite takes no lock and creates no journal beside the
+    # source, so reading the old copy cannot add a file to the signed bundle.
+    source = sqlite3.connect(f"{legacy.as_uri()}?mode=ro&immutable=1", uri=True)
+    try:
+        dest = sqlite3.connect(target)
+        try:
+            source.backup(dest)
+        finally:
+            dest.close()
+    except sqlite3.Error as exc:
+        target.unlink(missing_ok=True)
+        log.warning("voice settings: legacy store %s not adopted: %s", legacy, exc)
+        return False
+    finally:
+        source.close()
+    log.info("voice settings: adopted legacy store %s into %s", legacy, target)
+    return True
+
+
 @dataclass
 class SettingsStore:
     """Thin key/value wrapper on SQLite."""
 
-    path: Path = _DEFAULT_DB
+    path: Path = field(default_factory=default_db_path)
 
     def __post_init__(self) -> None:
+        if self.path == default_db_path():
+            _adopt_legacy(self.path, legacy_db_path())
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
