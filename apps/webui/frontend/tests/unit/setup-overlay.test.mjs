@@ -511,6 +511,35 @@ test('human presentation helpers keep forbidden tokens out of operator copy', ()
 	);
 });
 
+test('a failed import says why, not its last progress line', () => {
+	// The job keeps its last progress message after it fails.
+	assert.equal(mod.humanImportJobMessage('ingest: reading master.plain.db', 'failed'), null);
+	assert.equal(mod.humanImportJobMessage('ingest: reading master.plain.db', 'cancelled'), null);
+	// Control: a live job still shows its (sanitized) progress line.
+	assert.equal(
+		mod.humanImportJobMessage('ingest: reading master.plain.db', 'running'),
+		'Working through your library...'
+	);
+	assert.equal(mod.humanImportJobMessage('imported 8 tracks', 'succeeded'), 'imported 8 tracks');
+
+	const decrypt = mod.humanImportFailure(
+		'Traceback...\n[ERROR] rekordbox_decrypt_failed: sqlcipher refused /Users/dj/Library/Pioneer/rekordbox/master.db'
+	);
+	assert.match(decrypt, /rekordbox library could not be opened/);
+	assert.doesNotMatch(decrypt, /\/Users\/|rekordbox_decrypt_failed|sqlcipher/);
+	assert.match(
+		mod.humanImportFailure('[ERROR] music_folder_access_denied: macOS refused to list /Volumes/X'),
+		/not allowed to read that folder/
+	);
+	assert.match(
+		mod.humanImportFailure('[ERROR] setup_import_already_running: setup import job-4 is queued'),
+		/already running/
+	);
+	// An unrecognized or missing tail still says something a user can act on.
+	assert.match(mod.humanImportFailure('exit 137'), /stopped before it finished/);
+	assert.match(mod.humanImportFailure(null), /stopped before it finished/);
+});
+
 test('the wizard gates on the FINAL refusal, never on an unfinished probe', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /const refusal = \$derived\(finalSetupRefusal\(\)\)/);
@@ -657,7 +686,9 @@ test('default setup markup keeps agent diagnostics in a closed disclosure', () =
 test('import progress renders human job copy and agent diagnostics separately', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	assert.match(overlay, /humanImportJobStatus\(job\.status\)/);
-	assert.match(overlay, /humanImportJobMessage\(job\.message\)/);
+	assert.match(overlay, /humanImportJobMessage\(job\.message, job\.status\)/);
+	assert.match(overlay, /humanImportFailure\(job\.error\)/);
+	assert.doesNotMatch(overlay, /placeholder="~\//);
 	assert.doesNotMatch(overlay, /job\.status === 'running' \? 'Import in progress' : job\.status/);
 	assert.match(overlay, /data-agent-job-status=\{job\.status\}/);
 	assert.match(overlay, /data-agent-job-message=\{job\.message/);

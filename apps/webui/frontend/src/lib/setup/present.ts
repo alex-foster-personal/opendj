@@ -302,7 +302,14 @@ export function humanImportJobStatus(status: string): string {
 	return 'Import status updating';
 }
 
-export function humanImportJobMessage(message: string | null | undefined): string | null {
+export function humanImportJobMessage(
+	message: string | null | undefined,
+	status?: string
+): string | null {
+	// A job keeps its last progress line after it ends, so a failed or
+	// cancelled import would read "Import failed -- Working through your
+	// library...". Only a live or finished job's message describes it.
+	if (status === 'failed' || status === 'cancelled' || status === 'unknown') return null;
 	if (message === null || message === undefined || message.trim() === '') return null;
 	const trimmed = message.trim();
 	if (containsForbiddenHumanToken(trimmed)) return 'Working through your library...';
@@ -312,6 +319,35 @@ export function humanImportJobMessage(message: string | null | undefined): strin
 	}
 	if (/job-/i.test(trimmed)) return 'Working through your library...';
 	return trimmed;
+}
+
+/**
+ * Why an import failed, in words a user can act on. The worker writes
+ * `[ERROR] <code>: <detail>` to the job's error tail; the detail can carry
+ * paths and library internals, so only the code picks the sentence and the
+ * raw tail stays in the agent details.
+ */
+export function humanImportFailure(error: string | null | undefined): string {
+	const code = /\[ERROR\]\s+([a-z_]+):/.exec(error ?? '')?.[1] ?? null;
+	if (code === 'music_folder_access_denied') {
+		return 'The app is not allowed to read that folder. Grant access in System Settings, Privacy & Security, then try again.';
+	}
+	if (code === 'rekordbox_not_found') {
+		return 'The library or folder to import could not be found. Check it still exists and try again.';
+	}
+	if (code === 'rekordbox_key_unavailable' || code === 'rekordbox_decrypt_failed') {
+		return 'The rekordbox library could not be opened. Quit rekordbox, then try again.';
+	}
+	if (code === 'rekordbox_share_missing') {
+		return 'The rekordbox analysis files were not found, so the import stopped. Open rekordbox once, then try again.';
+	}
+	if (code === 'setup_import_already_running') {
+		return 'An import is already running. Wait for it to finish.';
+	}
+	if (code === 'rekordbox_ingest_failed') {
+		return 'The import stopped partway through reading your library. Try again; if it fails again, choose a different source.';
+	}
+	return 'The import stopped before it finished. Try again, or choose a different source.';
 }
 
 export function humanStemsJobsUnavailable(): string {
