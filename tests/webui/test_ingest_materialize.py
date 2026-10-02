@@ -4,6 +4,7 @@
 [if] an exact duplicate is skipped and a new file staged [then] both resolve, [else stop].
 [if] any staged file yields no track row [then] nothing is committed, [else stop].
 [if] nested files share a basename [then] they stay distinct tracks, [else stop].
+[if] a dropped file is a track the user removed [then] it is added again, [else stop] (LIBM-141).
 """
 from __future__ import annotations
 
@@ -203,3 +204,37 @@ def test_materialize_nested_same_basename_files_stay_distinct(client, app):
     paths = sorted(t["relative_path"] for t in mat.json()["tracks"])
     assert paths == ["Album/Disc 1/01.mp3", "Album/Disc 2/01.mp3"]
     assert len({t["stable_id"] for t in mat.json()["tracks"]}) == 2
+
+
+@pytest.mark.requires_audio_stack
+@pytest.mark.requirement("LIBM-141")
+def test_materialize_adds_back_a_track_the_user_removed(client, app):
+    """The e2e folder-drop sequence: drop, remove, drop the same file again."""
+    from apps.shared.state.writer import StateWriter
+
+    src = FIXTURES / "src-128.mp3"
+    first = _upload(client, "first", [(src.name, src)])
+    assert first.status_code == 200, first.text
+    made = client.post(f"/api/v1/ingest/batch/{first.json()['batch']}/materialize")
+    assert made.status_code == 200, made.text
+    removed_id = made.json()["tracks"][0]["stable_id"]
+    conn = open_state_rw(app.state.state_db)
+    try:
+        with StateWriter(conn, actor="test") as writer:
+            writer.remove_from_library(removed_id)
+    finally:
+        conn.close()
+
+    second = _upload(client, "second", [(src.name, src)])
+    assert second.status_code == 200, second.text
+    again = client.post(f"/api/v1/ingest/batch/{second.json()['batch']}/materialize")
+    assert again.status_code == 200, again.text
+    (track,) = again.json()["tracks"]
+    conn = sqlite3.connect(app.state.state_db)
+    try:
+        live = conn.execute(
+            "SELECT deleted_at FROM tracks WHERE stable_id = ?", (track["stable_id"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert live == (None,), "the dropped file is not a live track"

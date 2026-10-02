@@ -11,9 +11,13 @@ Regression lines:
   - if the newest candidate does not load and the probe passes then CI skips an install it needs
   - if a real library that is not libclang counts as loaded then a broken host passes
   - if a host with a real libclang cannot load it through load_clang_version then broken
-  - if a loadable LLVM 17 libclang is not OK to the host audit then verify and CI disagree
+  - if the verify, expanded as the host audit ships it, fails on a libclang host then broken
   - if the contracts job builds the wheel or runs cargo before the probe step then broken
   - if the manifest verify does not carry this exact script then verify and CI disagree
+
+The host audit's VERDICT for this entry (an LLVM 17 success line is OK, a failure
+exit is MISSING) is pinned with the verifier itself, which moved to fleet-af
+(`runner_toolset/verify.py`, Thu 1 Oct 2026).
 """
 
 from __future__ import annotations
@@ -30,9 +34,7 @@ import pytest
 import yaml
 
 from scripts import ci_libclang_present as probe_mod
-from scripts import runner_toolset_verify as rtv
 from scripts.runner_toolset_scan import REPO_ROOT, load_manifest
-from scripts.runner_toolset_verify import expand_verify
 
 SCRIPT = REPO_ROOT / "scripts" / "ci_libclang_present.py"
 CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
@@ -265,6 +267,15 @@ def test_contracts_job_installs_only_when_the_probe_fails_then_reprobes() -> Non
     assert fallback.index(PROBE) > fallback.index(INSTALL), "no probe after the install"
 
 
+def _expanded(verify: str) -> str:
+    """`verify` with `{repo_b64:<path>}` inlined, as the host audit ships it to a host."""
+    return re.sub(
+        r"\{repo_b64:([^}]+)\}",
+        lambda m: base64.b64encode((REPO_ROOT / m.group(1)).read_bytes()).decode(),
+        verify,
+    )
+
+
 def _libclang_entry() -> dict:
     entries = [e for e in load_manifest()["entries"] if e["name"].startswith("libclang")]
     assert len(entries) == 1, [e["name"] for e in entries]
@@ -274,18 +285,8 @@ def _libclang_entry() -> dict:
 def test_manifest_entry_installs_what_ci_installs_and_verifies_with_the_probe() -> None:
     entry = _libclang_entry()
     assert entry["install"] == INSTALL
-    payloads = re.findall(r"echo (\S+) \| base64 -d", expand_verify(entry["verify"]))
+    payloads = re.findall(r"echo (\S+) \| base64 -d", _expanded(entry["verify"]))
     assert [base64.b64decode(p) for p in payloads] == [SCRIPT.read_bytes()]
-
-
-def _audit(entry: dict, rc: int, output: str) -> str:
-    """runner_toolset_verify's verdict for one verify record, as the host audit gives it."""
-    record = base64.b64encode(output.encode()).decode()
-    stdout = (
-        f"{rtv.RECORD} PATHSRC /r\n{rtv.RECORD} V {entry['name']} {rc} {record}\n{rtv.RECORD} END"
-    )
-    [result] = rtv.classify([entry], 0, stdout, "")
-    return result.status
 
 
 def test_the_expanded_verify_is_ok_on_a_host_with_libclang() -> None:
@@ -293,7 +294,7 @@ def test_the_expanded_verify_is_ok_on_a_host_with_libclang() -> None:
     _require_linux_libclang()
     entry = _libclang_entry()
     done = subprocess.run(
-        ["bash", "-o", "pipefail", "-c", expand_verify(entry["verify"])],
+        ["bash", "-o", "pipefail", "-c", _expanded(entry["verify"])],
         capture_output=True,
         text=True,
         timeout=60,
@@ -301,16 +302,6 @@ def test_the_expanded_verify_is_ok_on_a_host_with_libclang() -> None:
     )
     output = done.stdout + done.stderr
     assert done.returncode == 0 and re.match(r"libclang \d", output), output
-    assert _audit(entry, done.returncode, output) == "OK", output
-
-
-def test_a_loadable_llvm_17_is_ok_and_a_failed_probe_is_missing() -> None:
-    """Verdict mapping, no load claimed: the probe's success line for an LLVM 17 host is OK
-    (no LLVM 18 floor), and its failure exit stays MISSING whatever it prints."""
-    entry = _libclang_entry()
-    seventeen = "libclang 17.0.6 loaded from /usr/lib/llvm-17/lib/libclang-17.so.1"
-    assert _audit(entry, 0, seventeen) == "OK"
-    assert _audit(entry, 1, "[libclang] MISSING: libclang 21.1.2 would not load") == "MISSING"
 
 
 def test_capability_match_is_only_for_committed_probes() -> None:
@@ -324,6 +315,6 @@ def test_capability_match_is_only_for_committed_probes() -> None:
     assert not loose, f"capability match on a verify with no committed probe: {loose}"
 
 
-def test_expand_verify_refuses_a_missing_repo_file() -> None:
+def test_expanding_a_missing_repo_file_refuses() -> None:
     with pytest.raises(FileNotFoundError):
-        expand_verify('python3 -c "$(echo {repo_b64:scripts/no_such_probe.py} | base64 -d)"')
+        _expanded('python3 -c "$(echo {repo_b64:scripts/no_such_probe.py} | base64 -d)"')

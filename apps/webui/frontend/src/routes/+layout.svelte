@@ -6,8 +6,6 @@
 	import ToastStack from '$lib/components/rb/ToastStack.svelte';
 	import { health, pushToast, refreshHealth, TOAST_DEFAULT_MS, toasts } from '$lib/stores.svelte';
 	import { selectVisibleToasts } from '$lib/toast-tray-policy';
-
-	const visibleToasts = $derived(selectVisibleToasts(toasts));
 	import BannerWarning from '$lib/components/BannerWarning.svelte';
 	import SettingsOverlay from '$lib/components/settings/SettingsOverlay.svelte';
 	import {
@@ -30,11 +28,12 @@
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
 		LIBRARY_ATTACHED_CHECK_ID,
+		checkPreflight,
 		preflightGate,
 		shouldBlockOnPreflight
 	} from '$lib/preflight/preflight.svelte';
 	import { bootGateYielded } from '$lib/overlays/overlay-stack';
-	import { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
+	import { shouldAutoOpenEmptyLibrarySetup } from '$lib/preflight/fresh-install';
 	import { accountOverlay } from '$lib/account/overlay.svelte';
 	import { signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
 	import { runFirstRunGate } from '$lib/setup/first-run-gate.svelte';
@@ -46,10 +45,16 @@
 	import { readBootStampMirror, touchLastGigAt } from '$lib/rb/last-gig-stamp';
 	import { isPerformanceRoutePath, isTrackifyRoutePath } from '$lib/rb/performance-preset';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import {
+		headerPlaylistCountTitle,
+		headerTrackCountTitle,
+		isCurrentNavLink,
+		sidebarNavLinks
+	} from '$lib/shell/sidebar-nav';
 	import { startAppInstruments } from '$lib/rb/app-init';
 	import { installShellCommandPoll } from '$lib/rb/shell-commands';
 	import { installShellNavigationPoll } from '$lib/rb/shell-navigation';
-	import { installSettingsHotkeys, openSettings } from '$lib/settings/hotkeys';
+	import { installSettingsHotkeys } from '$lib/settings/hotkeys';
 	import { connect as connectEventsBus } from '$lib/api/events-bus';
 	import { capabilities, progressRefusal } from '$lib/api/capabilities.svelte';
 	import { entitlements } from '$lib/api/entitlements.svelte';
@@ -59,6 +64,8 @@
 	import type { Component } from 'svelte';
 	import { deferFeedbackPinShell } from '$lib/rb/feedback-pin-shell-boot';
 	import FeedbackPinTopbarControls from '$lib/components/rb/FeedbackPinTopbarControls.svelte';
+
+	const visibleToasts = $derived(selectVisibleToasts(toasts));
 
 	let { children } = $props();
 
@@ -80,6 +87,7 @@
 
 	/** Why the Progress link goes nowhere useful, or null when it works. */
 	const ledgerRefusal = $derived(progressRefusal());
+	const navLinks = $derived(sidebarNavLinks(uiPrefs.show_dev_ui));
 
 	// /performance is a pixel-faithful full-window rekordbox clone; it must
 	// bypass the app shell (sidebar/topbar/padding) - RECON-FRONTEND 5,
@@ -211,17 +219,31 @@
 	function raiseSetupOnFirstRun(): void {
 		void runFirstRunGate().then((show) => {
 			if (show !== true) return;
+			// A probe started before dismissal can resolve after the operator
+			// walked away. Honour that close instead of reopening.
+			if (setupOverlay.holdEmptyReopen) return;
 			openSetupForFirstRun();
 		});
 	}
 
-	// When preflight says the library is empty, open setup even if the daemon
-	// suppressed should_show_wizard (e.g. dev checkout) or the first-run probe
-	// raced entitlements. Decoupled from entitlements.load().
+	// Empty-library auto-open. holdEmptyReopen blocks the stale `fail` that
+	// is still on screen for one poll after Skip or Start playing (#3422).
 	$effect(() => {
-		if (!needsSetupForEmptyLibrary(preflightGate.checks, setupOpen)) return;
-		if (finalSetupRefusal() !== null) return;
+		const open = shouldAutoOpenEmptyLibrarySetup(
+			preflightGate.checks,
+			setupOpen,
+			setupOverlay.holdEmptyReopen
+		);
+		if (!open || finalSetupRefusal() !== null) return;
 		openSetupForFirstRun();
+	});
+
+	// Poll while the incomplete note is up, same 3s cadence as the boot gate.
+	$effect(() => {
+		if (!setupOverlay.incomplete) return;
+		void checkPreflight();
+		const preflightId = setInterval(() => void checkPreflight(), 3_000);
+		return () => clearInterval(preflightId);
 	});
 
 	// Run as soon as the client router is live; onMount alone is too late for
@@ -312,40 +334,43 @@
 	<aside class="sidebar">
 		<h1>Open DJ</h1>
 		<nav>
-			<a href="/">Library</a>
-			<a href="/pairings">Pairings</a>
-			<a href="/smartlists">Smartlists</a>
-			<a href="/queues">Queues</a>
-			<a href="/reconcile">Missing tracks</a>
-			<a href="/dedup">Dedup Review</a>
-			<a href="/performance">Performance</a>
-			<a href="/play-analytics">Play analytics</a>
-			<a href="/library-wheel">Library wheel</a>
-			<a href="/sets">Sessions / REC</a>
-			<a href="/cloudsync">CloudSync</a>
-			<!-- Ledger route: legacy-daemon only, so the link says so rather than
-			     leading to a page that can only apologise. -->
-			<a
-				href="/progress-tree"
-				class:nav-unavailable={ledgerRefusal !== null}
-				title={ledgerRefusal ?? 'Fan-out progress ledger (GET /api/v1/progress)'}
-			>
-				Progress
-			</a>
-			<a href="/admin">Admin</a>
-			<a href="/settings">Settings (daemon)</a>
-			<button type="button" class="nav-settings" onclick={() => openSettings()}>
-				Settings (Cmd+,)
-			</button>
+			<!-- Links come from $lib/shell/sidebar-nav: developer pages (Queues,
+			     Progress, Admin) only while "Show developer pages" is on, one
+			     Settings entry, and the current page marked. -->
+			{#each navLinks as link (link.href)}
+				{@const current = isCurrentNavLink(link.href, $page.url.pathname)}
+				{#if link.href === '/progress-tree'}
+					<!-- Ledger route: legacy-daemon only, so the link says so rather than
+					     leading to a page that can only apologize. -->
+					<a
+						href={link.href}
+						class:active={current}
+						class:nav-unavailable={ledgerRefusal !== null}
+						aria-current={current ? 'page' : undefined}
+						title={ledgerRefusal ?? 'Fan-out progress ledger (GET /api/v1/progress)'}
+					>
+						{link.label}
+					</a>
+				{:else}
+					<a
+						href={link.href}
+						class:active={current}
+						aria-current={current ? 'page' : undefined}
+						title={link.title}
+					>
+						{link.label}
+					</a>
+				{/if}
+			{/each}
 		</nav>
 	</aside>
 	<main>
 		<div class="topbar">
 			<div class="status-strip" data-testid="header-status-strip">
 				{#if health.data}
-					<span class="readout readout-numeric" title={String(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
+					<span class="readout readout-numeric" title={headerTrackCountTitle(health.data.state_db.tracks)}>{health.data.state_db.tracks} tracks</span>
 					<span class="sep" aria-hidden="true"> · </span>
-					<span class="readout readout-numeric" title={String(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
+					<span class="readout readout-numeric" title={headerPlaylistCountTitle(health.data.state_db.playlists)}>{health.data.state_db.playlists} playlists</span>
 					<span class="sep" aria-hidden="true"> · </span>
 					{#if health.data.cloud.lock_holder}
 						<span class="readout">lock: {health.data.cloud.lock_holder.holder}</span>
@@ -492,20 +517,12 @@
 		background: var(--surface);
 		border-top: 1px solid var(--border);
 	}
-	.nav-settings {
-		display: block;
-		width: 100%;
-		margin-top: 0.15rem;
-		padding: 0.2rem 0;
-		border: none;
-		background: transparent;
+	/* The page on screen: aria-current="page" plus a visible accent bar and
+	   color, on top of app.css's shared .active background. */
+	.sidebar nav a[aria-current='page'] {
 		color: var(--accent);
-		text-align: left;
-		font: inherit;
-		cursor: pointer;
-	}
-	.nav-settings:hover {
-		text-decoration: underline;
+		font-weight: 600;
+		box-shadow: inset 3px 0 0 var(--accent);
 	}
 	/* Still navigable (the page explains itself), just visibly not on offer. */
 	.nav-unavailable {

@@ -16,7 +16,12 @@ before(async () => {
 	types = await loadTypeScriptModule('src/routes/progress-tree/types.ts');
 });
 
-test('GITHUB_REPO_BASE points at the same repo as the origin remote', () => {
+// The public repository the shipped UI links to. A checkout of the private
+// source repository has a different origin by design, so origin alone cannot
+// be the invariant; the constant must name origin OR this public repository.
+const PUBLIC_REPO_IDENTITY = 'github.com/alex-foster-personal/opendj';
+
+test('GITHUB_REPO_BASE names the origin remote or the public repository', () => {
 	// INVARIANT, not a pinned value. The constant was seeded by hand from
 	// origin in July with a comment saying to re-resolve it if origin moved.
 	// Origin moved, nobody re-resolved, and every issue/PR chip in the ledger
@@ -44,7 +49,11 @@ test('GITHUB_REPO_BASE points at the same repo as the origin remote', () => {
 	}
 
 	assert.ok(remote.length > 0, 'origin remote resolved to an empty string');
-	assert.equal(canonicalRepoIdentity(types.GITHUB_REPO_BASE), canonicalRepoIdentity(remote));
+	const base = canonicalRepoIdentity(types.GITHUB_REPO_BASE);
+	assert.ok(
+		base === canonicalRepoIdentity(remote) || base === PUBLIC_REPO_IDENTITY,
+		`GITHUB_REPO_BASE (${base}) is neither origin (${canonicalRepoIdentity(remote)}) nor ${PUBLIC_REPO_IDENTITY}`
+	);
 });
 
 /** Why this value cannot serve as the chip base, or null if it can.
@@ -105,7 +114,7 @@ test('GITHUB_REPO_BASE stays a credential-free URL a browser can open', () => {
 test('githubIssueUrl builds a URL under the real origin', () => {
 	assert.equal(
 		types.githubIssueUrl('677'),
-		'https://github.com/maintainer/music-dj-tools/issues/677'
+		'https://github.com/alex-foster-personal/opendj/issues/677'
 	);
 });
 

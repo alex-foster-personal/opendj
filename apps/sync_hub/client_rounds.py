@@ -13,10 +13,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from apps.sync_hub import engine, protocol
 from apps.sync_hub.client_result import SyncResult
 from apps.sync_hub.client_transport_ops import _PullOutcome, _PushOutcome
+
+if TYPE_CHECKING:
+    from apps.sync_hub.rejected_rows import RejectedRow
 
 log = logging.getLogger("apps.sync_hub.client")
 
@@ -36,6 +40,10 @@ class _Round:
     #: :func:`_still_moving` can tell this machine's own bookkeeping from a
     #: concurrent local write, which look identical in ``local_seq`` alone.
     relogged: int = 0
+    #: Rows the identity repair offered once so the hub could confirm a
+    #: collapse (CLOUDSYNC-32). Not in ``pushed``: the hub refusing them is
+    #: the confirmation, so they are neither accepted nor rejected.
+    identity_repairs: int = 0
 
 
 def _watermark_after_hello(
@@ -114,6 +122,25 @@ def _refusal_verdicts(rounds: list[_Round], digest_inconclusive: bool) -> tuple[
     return push_refused, digest_inconclusive and not push_refused
 
 
+def _held_here(local_digest: protocol.SyncDigest) -> int:
+    """Rows this machine holds out of the sync set, less the settled ones (CLOUDSYNC-32).
+
+    A row the hub already answered for is out of the hash on both sides, so it
+    still explains a divergent table, but it is not held: no repair here will
+    make it travel, and counting it printed "152 row(s) held here" forever.
+    """
+    settled = sum((local_digest.settled or {}).values())
+    return max(0, (local_digest.quarantined_rows or 0) - settled)
+
+
+def _rejected_rows(rounds: list[_Round]) -> tuple[RejectedRow, ...]:
+    """Every row the hub named as rejected, across all rounds (CLOUDSYNC-31).
+
+    Split out of :func:`_result_from_rounds` to keep it under the quality-gate CC limit.
+    """
+    return tuple(row for round_ in rounds for row in round_.push.rejected_rows)
+
+
 def _result_from_rounds(
     rounds: list[_Round],
     *,
@@ -138,6 +165,8 @@ def _result_from_rounds(
         pushed=sum(round_.pushed for round_ in rounds),
         accepted=sum(round_.push.accepted for round_ in rounds),
         rejected=sum(round_.push.rejected for round_ in rounds),
+        rejected_rows=_rejected_rows(rounds),
+        identity_repairs=sum(round_.identity_repairs for round_ in rounds),
         pulled=sum(round_.pull.pulled for round_ in rounds),
         applied=sum(round_.pull.applied for round_ in rounds),
         hub_seq=rounds[-1].pull.seq,
@@ -150,7 +179,7 @@ def _result_from_rounds(
         # Off the digest, not the rounds: the fence-scoped sum above reads 0
         # on a machine whose selection was empty, which says nothing about
         # how many rows are outside the sync set.
-        quarantined_rows=local_digest.quarantined_rows or 0,
+        quarantined_rows=_held_here(local_digest),
         quarantined_incoming=sum(round_.pull.quarantined for round_ in rounds),
         hub_quarantined=hub_quarantined,
         hash_pending=local_digest.hash_pending_rows,

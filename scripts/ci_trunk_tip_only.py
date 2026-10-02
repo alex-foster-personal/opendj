@@ -27,8 +27,12 @@ MINI-PRD
             [then] cancel it and log reason=no-open-pr [else stop]
        [if] the open-PR list is empty while PR runs exist
             [then] refuse with a precondition error, never cancel them all [else stop]
+       [if] a run is a phantom (scripts/ci_phantom_runs.py) [then] name it, skip it [else stop]
        Measured Wed 16 Sep 2026 09:30Z: 13 of 28 unfinished runs were for PRs already
        merged or closed at the SHA under test, holding the 13-slot pytest pool.
+    R5 Completed-run cancel race ................................... done + regression
+       [if] a cancel POST 409s because the run already finished [then] count it
+            cancelled, logged already-completed [else: exit 10 unless not-yet-queued]
 
 USAGE
     uv run --no-sync python -m scripts.ci_trunk_tip_only --dry-run
@@ -44,7 +48,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from urllib.parse import quote
 
@@ -58,6 +62,7 @@ try:
         _parse_github_timestamp,
         _run_gh,
     )
+    from scripts.ci_phantom_runs import JobsOf, one_page_jobs, skip_phantoms
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.ci_trunk_tip_only") from None
@@ -66,7 +71,10 @@ except ModuleNotFoundError as exc:
 GATING_WORKFLOW = "CI"
 # CI Cost Guard and Stable evidence left this set on Tue 22 Sep 2026: each is a
 # scheduled batch pass now, not a per-SHA follower, so there is nothing of them
-# to supersede.
+# to supersede. Error sink rides the cost guard's pass since RUN-COUNT round 3, so
+# nothing is named this any more and the bookkeeping path below is inert; removing
+# it, and the FIX-409 lines that pin it, is its own change
+# (ADR-NEW-error-sink-rides-the-cost-guard).
 BOOKKEEPING_WORKFLOWS = frozenset({"Error sink"})
 PAGE_SIZE = 100
 
@@ -85,6 +93,7 @@ class CancelOutcome(Enum):
 
     CANCELLED = "cancelled"
     SKIPPED_NOT_YET_QUEUED = "skipped_not_yet_queued"
+    ALREADY_COMPLETED = "already_completed"
 
 
 @dataclass(frozen=True)
@@ -98,6 +107,8 @@ class QueuedRun:
     head_repo_owner: str
     head_sha: str
     created_at: datetime
+    status: str = ""  # read only by the closed-PR sweep's phantom rule
+    updated_at: datetime | None = None  # likewise: the phantom rule ages a run from this
 
 
 @dataclass(frozen=True)
@@ -168,6 +179,10 @@ def _parse_queued_run(raw: object) -> QueuedRun:
         head_repo_owner=head_repo_owner,
         head_sha=head_sha,
         created_at=_parse_github_timestamp(created_at, "created_at", run_id),
+        status=str(raw.get("status") or ""),
+        updated_at=(
+            _parse_github_timestamp(str(raw["updated_at"]), "updated_at", run_id) if raw.get("updated_at") else None
+        ),
     )
 
 
@@ -175,9 +190,7 @@ def _paginated_queued_runs(branch: str) -> list[QueuedRun]:
     return _paginated_runs(f"repos/{REPO}/actions/runs?branch={branch}&status=queued")
 
 
-def _paginated_runs(
-    path: str, fetch_json: Callable[[str], object] | None = None
-) -> list[QueuedRun]:
+def _paginated_runs(path: str, fetch_json: Callable[[str], object] | None = None) -> list[QueuedRun]:
     """Every run the listing serves, paged until a page comes back short.
 
     GitHub answers total_count from an index that lags the listing: measured live
@@ -223,9 +236,7 @@ def _paginated_runs(
         time.sleep(CENSUS_RETRY_SLEEP_SECONDS)
 
 
-def _list_runs_once(
-    path: str, fetch_json: Callable[[str], object]
-) -> tuple[list[QueuedRun], int, int]:
+def _list_runs_once(path: str, fetch_json: Callable[[str], object]) -> tuple[list[QueuedRun], int, int]:
     """The runs, the total_count page 1 reported, and how many pages were read."""
     sep = "&" if "?" in path else "?"
     runs: list[QueuedRun] = []
@@ -256,20 +267,12 @@ def _retained_ci_push_run_ids(ci_push_runs: list[QueuedRun]) -> frozenset[int]:
 
 def build_sweep_plan(trunk_tip: str, queued_runs: list[QueuedRun]) -> SweepPlan:
     """Pure selection logic: which queued runs to cancel and which SHAs to retain."""
-    ci_push_runs = [
-        run
-        for run in queued_runs
-        if run.name == GATING_WORKFLOW and run.event == "push"
-    ]
+    ci_push_runs = [run for run in queued_runs if run.name == GATING_WORKFLOW and run.event == "push"]
     retained_ci_run_ids = _retained_ci_push_run_ids(ci_push_runs)
-    retained_ci_shas = frozenset(
-        run.head_sha for run in ci_push_runs if run.run_id in retained_ci_run_ids
-    )
+    retained_ci_shas = frozenset(run.head_sha for run in ci_push_runs if run.run_id in retained_ci_run_ids)
     retained_head_shas = frozenset({trunk_tip}) | retained_ci_shas
 
-    ci_to_cancel = tuple(
-        run for run in ci_push_runs if run.run_id not in retained_ci_run_ids
-    )
+    ci_to_cancel = tuple(run for run in ci_push_runs if run.run_id not in retained_ci_run_ids)
 
     bookkeeping_to_cancel: list[QueuedRun] = []
     bookkeeping_kept = 0
@@ -311,15 +314,12 @@ class OpenPullRequests:
     heads: frozenset[tuple[str, str]]
 
 
-def closed_pr_runs_to_cancel(
-    runs: list[QueuedRun], open_prs: OpenPullRequests
-) -> tuple[QueuedRun, ...]:
+def closed_pr_runs_to_cancel(runs: list[QueuedRun], open_prs: OpenPullRequests) -> tuple[QueuedRun, ...]:
     """Pull request runs whose `(owner, branch)` has no open pull request."""
     return tuple(
         run
         for run in runs
-        if run.event == "pull_request"
-        and (run.head_repo_owner, run.head_branch) not in open_prs.heads
+        if run.event == "pull_request" and (run.head_repo_owner, run.head_branch) not in open_prs.heads
     )
 
 
@@ -327,9 +327,7 @@ def _open_pr_heads() -> OpenPullRequests:
     heads: set[tuple[str, str]] = set()
     page = 1
     while True:
-        payload = _gh_api_json(
-            f"repos/{REPO}/pulls?state=open&per_page={PAGE_SIZE}&page={page}"
-        )
+        payload = _gh_api_json(f"repos/{REPO}/pulls?state=open&per_page={PAGE_SIZE}&page={page}")
         if not isinstance(payload, list):
             raise PreconditionError(f"open pulls page {page} was not a list: {payload!r}")
         for pull in payload:
@@ -362,25 +360,33 @@ class SweepCounts:
 
     planned: int
     cancelled: int
+    phantom_skipped: tuple[int, ...] = ()
 
 
 def execute_closed_pr_sweep(
     runs: tuple[QueuedRun, ...],
     *,
     dry_run: bool,
-    still_closed: Callable[[QueuedRun], bool] = (
-        lambda run: _open_pr_count(run.head_repo_owner, run.head_branch) == 0
-    ),
+    still_closed: Callable[[QueuedRun], bool] = (lambda run: _open_pr_count(run.head_repo_owner, run.head_branch) == 0),
+    now: datetime | None = None,
+    jobs_of: JobsOf | None = None,
 ) -> SweepCounts:
-    """Cancel each selected run, logging one line per run.
+    """Cancel each selected run, logging one line per run. A phantom is named and skipped, never
+    cancelled: its cancel 409s, which raised on every pass (Thu 1 Oct 2026, ci_phantom_runs.py).
 
     The branch is rechecked immediately before each cancellation. The open-PR snapshot can
     go stale while the sweep runs, and a pull request REOPENED in that window owns a run
     this list still calls closed. Cancelling it breaks the one contract the sweep has.
     """
-    planned = 0
-    cancelled = 0
-    for run in runs:
+
+    def probe(r: QueuedRun) -> dict[str, object]:
+        return {"id": r.run_id, "name": r.name, "status": r.status, "updated_at": r.updated_at}
+
+    live, phantoms = skip_phantoms(
+        runs, probe, now or datetime.now(UTC), jobs_of=jobs_of or _run_jobs, caller="closed-PR sweep"
+    )
+    planned = cancelled = 0
+    for run in live:
         if not still_closed(run):
             line = (
                 f"closed-pr-skip workflow={run.name} run_id={run.run_id} "
@@ -396,9 +402,14 @@ def execute_closed_pr_sweep(
         print(f"::notice::{line}")
         print(line)
         planned += 1
-        if not dry_run and _cancel_run(run.run_id) is CancelOutcome.CANCELLED:
+        if not dry_run and _cancel_run(run.run_id) in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             cancelled += 1
-    return SweepCounts(planned, cancelled)
+    return SweepCounts(planned, cancelled, tuple(run.run_id for run in phantoms))
+
+
+def _run_jobs(run_id: int) -> list[dict[str, object]]:
+    path = f"repos/{REPO}/actions/runs/{run_id}/jobs?filter=latest&per_page={PAGE_SIZE}"
+    return one_page_jobs(_gh_api_json(path), run_id, PAGE_SIZE, PreconditionError)
 
 
 def _open_pr_count(head_repo_owner: str, branch: str) -> int:
@@ -442,20 +453,15 @@ def sweep_closed_pr_runs(*, dry_run: bool) -> SweepCounts:
     runs = unique_runs(
         [
             *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=queued"),
-            *_paginated_runs(
-                f"repos/{REPO}/actions/runs?event=pull_request&status=in_progress"
-            ),
+            *_paginated_runs(f"repos/{REPO}/actions/runs?event=pull_request&status=in_progress"),
         ]
     )
-    return execute_closed_pr_sweep(
-        closed_pr_runs_to_cancel(runs, _open_pr_heads()), dry_run=dry_run
-    )
+    return execute_closed_pr_sweep(closed_pr_runs_to_cancel(runs, _open_pr_heads()), dry_run=dry_run)
 
 
 def _cancel_log_line(run: QueuedRun, trunk_tip: str) -> str:
     return (
-        f"bookkeeping-cancel workflow={run.name} run_id={run.run_id} "
-        f"head_sha={run.head_sha} superseded_by={trunk_tip}"
+        f"bookkeeping-cancel workflow={run.name} run_id={run.run_id} head_sha={run.head_sha} superseded_by={trunk_tip}"
     )
 
 
@@ -477,6 +483,12 @@ def _cancel_run(run_id: int) -> CancelOutcome:
     except PreconditionError as exc:
         if _is_not_yet_queued_cancel_conflict(exc):
             return CancelOutcome.SKIPPED_NOT_YET_QUEUED
+        status = _gh_api_json(f"repos/{REPO}/actions/runs/{run_id}") if "HTTP 409" in str(exc) else None
+        if isinstance(status, dict) and status.get("status") == "completed":
+            line = f"cancel-already-completed run_id={run_id} reason=already-completed"
+            print(f"::notice::{line}")
+            print(line)
+            return CancelOutcome.ALREADY_COMPLETED
         raise
     return CancelOutcome.CANCELLED
 
@@ -493,7 +505,7 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
             ci_cancelled += 1
             continue
         outcome = _cancel_run(run.run_id)
-        if outcome is CancelOutcome.CANCELLED:
+        if outcome in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             ci_cancelled += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             ci_cancel_skipped_not_yet_queued += 1
@@ -506,7 +518,7 @@ def execute_sweep(plan: SweepPlan, *, dry_run: bool) -> SweepReport:
             bookkeeping_cancelled += 1
             continue
         outcome = _cancel_run(run.run_id)
-        if outcome is CancelOutcome.CANCELLED:
+        if outcome in (CancelOutcome.CANCELLED, CancelOutcome.ALREADY_COMPLETED):
             bookkeeping_cancelled += 1
         elif outcome is CancelOutcome.SKIPPED_NOT_YET_QUEUED:
             bookkeeping_cancel_skipped_not_yet_queued += 1
@@ -578,7 +590,8 @@ def main(argv: list[str] | None = None) -> int:
         f"bookkeeping_cancel_skipped_not_yet_queued="
         f"{report.bookkeeping_cancel_skipped_not_yet_queued} "
         f"bookkeeping_kept={report.bookkeeping_kept} "
-        f"closed_pr_planned={closed_pr.planned} closed_pr_cancelled={closed_pr.cancelled}"
+        f"closed_pr_planned={closed_pr.planned} closed_pr_cancelled={closed_pr.cancelled} "
+        f"closed_pr_phantom_skipped={list(closed_pr.phantom_skipped)}"
     )
     return EXIT_OK
 

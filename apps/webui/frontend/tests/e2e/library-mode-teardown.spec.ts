@@ -68,9 +68,16 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 	expect(librarySnapshot.prefetch_ready_count).toBe(0);
 	expect(librarySnapshot.anlz_cache_entry_count).toBe(0);
 	expect(librarySnapshot.deck_nodes_present).toBe(false);
+	// Decoded deck buffers are released, not merely disconnected: a runtime that
+	// survives dispose keeps every deck's AudioBuffer alive (mutation-tested).
+	expect(librarySnapshot.deck_pcm_bytes).toBe(0);
 	expect(librarySnapshot.audio_context_state).toBe('uninitialized');
 
-	const finalTelemetry = await _pollTelemetryUntilAvailable(request, API_BASE);
+	const finalTelemetry = await _pollTelemetryUntilMemberCount(
+		request,
+		API_BASE,
+		baselineMemberCount
+	);
 	const finalMemberCount = countLiveFamilyMembers(finalTelemetry);
 	// A stem worker (or anything else) still alive after teardown shows up as
 	// an EXTRA process-family member versus the pre-load baseline; a match or
@@ -80,6 +87,7 @@ test('library mode teardown clears gig resources', async ({ page, request }) => 
 
 const _TELEMETRY_POLL_ATTEMPTS = 5;
 const _TELEMETRY_POLL_INTERVAL_MS = 500;
+const _TELEMETRY_SETTLE_ATTEMPTS = 40;
 
 /** Poll the process telemetry endpoint until it reports `available: true`,
  * bounded, so a transiently-cold cache does not read as "no workers running"
@@ -94,6 +102,31 @@ async function _pollTelemetryUntilAvailable(
 		expect(response.ok()).toBeTruthy();
 		lastBody = (await response.json()) as Record<string, unknown>;
 		if (lastBody.available === true) return lastBody;
+		await new Promise((resolve) => setTimeout(resolve, _TELEMETRY_POLL_INTERVAL_MS));
+	}
+	return lastBody;
+}
+
+/** Deck loads can leave real decoder children finishing an already-issued
+ * response after the browser has torn its graph down. Require those children
+ * to exit within a finite 20 s window instead of sampling the first transient
+ * process snapshot after Library becomes idle. */
+async function _pollTelemetryUntilMemberCount(
+	request: import('@playwright/test').APIRequestContext,
+	apiBase: string,
+	maximumMembers: number
+): Promise<Record<string, unknown>> {
+	let lastBody: Record<string, unknown> = {};
+	for (let attempt = 0; attempt < _TELEMETRY_SETTLE_ATTEMPTS; attempt++) {
+		const response = await request.get(`${apiBase}/api/v1/performance/telemetry/processes`);
+		expect(response.ok()).toBeTruthy();
+		lastBody = (await response.json()) as Record<string, unknown>;
+		if (
+			lastBody.available === true &&
+			countLiveFamilyMembers(lastBody) <= maximumMembers
+		) {
+			return lastBody;
+		}
 		await new Promise((resolve) => setTimeout(resolve, _TELEMETRY_POLL_INTERVAL_MS));
 	}
 	return lastBody;

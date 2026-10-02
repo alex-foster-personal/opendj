@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 from scripts.review_claude import CLAUDE, is_claude_thread
 from scripts.review_sol import SOL, is_sol_thread
+from scripts.review_subscription import subscription_lane_of_thread
 
 # GitHub Copilot's reviewer has THREE spellings for one author: GraphQL
 # reviewThreads (what this gate reads) says `copilot-pull-request-reviewer`
@@ -364,7 +365,7 @@ def _reviewer_lane(login: str, body: str) -> str:
         return SOL
     if is_claude_thread(login, body):
         return CLAUDE
-    return ""
+    return subscription_lane_of_thread(login, body)
 
 
 def _is_reviewer_thread(login: str, body: str) -> bool:

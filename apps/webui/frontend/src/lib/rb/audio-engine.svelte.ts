@@ -234,7 +234,7 @@ import {
 import type { PitchRange } from '$lib/player/constants';
 import {
 	_defaultChannel,
-	_defaultHeadphones,
+	_defaultHeadphones, recordMasterWrite,
 	_emptyDeckState,
 	_hotCueRevisionsFrom,
 	deckEffectiveBpm,
@@ -493,8 +493,7 @@ interface _DeckRuntime {
 	/** Manual key-shift baseline captured when KEY SYNC latches on; restored
 	 * on disable so the Camelot offset cannot drift away from the latch. */
 	keySyncBaselineSemitones: number | null;
-	/** Decoded mix buffer retained for short sync-seek crossfades. */
-	audioBuffer: AudioBuffer | null;
+	audioBuffer: AudioBuffer | null; // decoded mix, retained for sync-seek crossfades and read by deckMixBuffer
 	/** Library-listed track duration; decoded buffer duration lives in deck state. */
 	metadataDurationMs: number | null;
 	/** Monotonic token; superseding transport/sync commands bump this deck's generation. */
@@ -674,6 +673,7 @@ export function deckPcmEstimatedBytes(): number {
 	}
 	return total;
 }
+export const deckMixBuffer = (deck: DeckId): AudioBuffer | null => _rt[deck].audioBuffer; // read-only, for the silence watchdog's source-PCM gate (#4030)
 
 // ---------------------------------------------------------------- _helpers
 
@@ -1350,13 +1350,10 @@ async function _scheduleDeck(
 	const expectedProcessor = rt.processor;
 	const predecessor = rt.scheduleTail;
 	let release!: () => void;
-	rt.desiredActive = active;
-	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
-	deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;
 	if (!active) {
 		const st = deckStates[deck];
 		notePlayingFallingEdge({
-			origin: readPauseOrigin(),
+			was_active: rt.desiredActive, origin: readPauseOrigin(),
 			deck,
 			position_ms: st.position_ms,
 			duration_ms: st.duration_ms,
@@ -1365,6 +1362,9 @@ async function _scheduleDeck(
 			context_state: _ctx?.state ?? 'uninitialized'
 		});
 	}
+	rt.desiredActive = active;
+	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
+	deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;
 	rt.scheduleIntentCount += 1;
 	rt.scheduleTail = new Promise<void>((resolve) => {
 		release = resolve;
@@ -3495,7 +3495,7 @@ class RbAudioEngine implements AudioEngine {
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
 			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
-			await _schedulePress(deck, _futureScheduleTime(deck), target / 1000, false, pressT0Ms);
+			await withPauseOrigin('command', () => _schedulePress(deck, _futureScheduleTime(deck), target / 1000, false, pressT0Ms));
 			return;
 		}
 		if (st.cue_ms === null) {
@@ -4323,7 +4323,7 @@ class RbAudioEngine implements AudioEngine {
 	/** Topbar master-volume slider -> master GainNode (COMPONENT-MAP 1.1). */
 	setMaster(value: number): void {
 		assertUnitRange('setMaster value', value);
-		mixerState.master = value;
+		recordMasterWrite(); mixerState.master = value;
 		if (_masterGain !== null) _setParam(_masterGain.gain, value * _ceilingGainMultiplier());
 	}
 

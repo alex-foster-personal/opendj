@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  Open DJ doc style: RUNBOOK template.
+  How to use: copy this file, fix the stylesheet href if you moved it, then replace
+  every {{PLACEHOLDER}}. Never leave a placeholder or a slot comment in a finished doc.
+  Voice rules for every slot: answer first (what this does and how long it takes),
+  imperative steps, one command per code block. Dates carry the weekday, times are UTC.
+  Every claim that can drift gets a source line; every number gets a title attribute.
+  Style guide: style-guide.html (sections S1 to S9).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Title: two to four words naming the task, starting with a verb. -->
+<title>{{SHORT_TITLE}}</title>
+<link rel="stylesheet" href="odj-doc.css">
+</head>
+<body>
+<main>
+<header class="mast" aria-label="Open DJ">
+  <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 367.72,144.28 A 188,188 0 0,0 101.85,410.15 Z" fill="var(--mark-dark)"/><path d="M 410.15,101.85 A 188,188 0 0,1 144.28,367.72 Z" fill="var(--mark-light)"/></svg>
+  <span class="wordmark">Open DJ</span><span class="stage" title="Open DJ is alpha software: features and stored formats can change between releases. Keep a library backup.">alpha</span>
+</header>
+
+<!-- Eyebrow: doc type, weekday date, and where the runbook's tooling lives. -->
+<p class="eyebrow">Runbook · {{WEEKDAY_DATE}} · {{TOOL_LOCATION}}</p>
+<!-- H1: the task, as an imperative ("Run the publish gate"). -->
+<h1>{{IMPERATIVE_TASK}}</h1>
+<!-- Lede: what running this achieves, then how long it takes and where. -->
+<p class="lede">{{WHAT_IT_ACHIEVES}} {{HOW_LONG_AND_WHERE}}</p>
+
+<!-- Facts card: Runs on, Needs, Writes. Say what it does NOT touch if a reader might fear it does. -->
+<dl class="facts">
+  <dt>Runs on</dt><dd>{{HOST_AND_DIRECTORY}}</dd>
+  <dt>Needs</dt><dd>{{PREREQUISITES}}</dd>
+  <dt>Writes</dt><dd>{{OUTPUTS}}; {{WHAT_IT_DOES_NOT_TOUCH}}</dd>
+</dl>
+
+<h2>What this is</h2>
+<!-- Two or three sentences of model: the parts and their fixed order. Name things the way a person knows them. -->
+<p>{{SHORT_MENTAL_MODEL}}</p>
+<!-- Note: only for the one rule that changes how the reader acts (a stop condition). Delete if none. -->
+<p class="note">{{STOP_CONDITION}}</p>
+
+<h2>Steps</h2>
+<!-- Steps: imperative, one action each. Every command in its own code block. Say what success looks like. -->
+<ol class="steps">
+  <li>{{STEP_ACTION}}
+    <pre><code>{{COMMAND}}</code></pre>
+    It ends with <code>{{SUCCESS_LINE}}</code>.</li>
+  <li>{{STEP_ACTION}}
+    <pre><code>{{COMMAND}}</code></pre></li>
+  <li>{{HOW_TO_READ_THE_RESULT}}</li>
+</ol>
+
+<h2>When a line is red</h2>
+<!-- Red-line table: exact output, what it means, what to do. An UNKNOWN is a failure until it runs. -->
+<div class="tbl"><table>
+  <thead><tr><th>Output</th><th>Means</th><th>Do</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{OUTPUT_LINE}}</code></td><td>{{MEANING}}</td><td>{{ACTION}}</td></tr>
+    <tr><td><code>[UNKNOWN]</code></td><td>A measurement could not run</td><td>Treat as failed until it runs</td></tr>
+  </tbody>
+</table></div>
+
+<!-- One button per page at most. It copies the main command and says what it did. Delete this block and the script if not needed. -->
+<div class="actions">
+  <button type="button" id="copy-main">Copy the {{COMMAND_NAME}} command</button>
+  <span class="status" id="copy-status" aria-live="polite">Copies step {{STEP_NUMBER}}.</span>
+</div>
+
+<!-- Footer: always present, always last. "What exactly was tested", or "Not verified" when corners were cut. -->
+<details class="tested">
+  <summary>What exactly was tested</summary>
+  <ul>
+    <li>{{WHAT_RAN_WHERE_AND_ON_WHICH_SHA}}</li>
+    <li>Not yet run: {{WHAT_WAS_NOT_RUN}}</li>
+  </ul>
+</details>
+</main>
+<script>
+document.getElementById('copy-main').addEventListener('click', async () => {
+  const cmd = '{{COMMAND}}';
+  const out = document.getElementById('copy-status');
+  try { await navigator.clipboard.writeText(cmd); out.textContent = 'Copied.'; }
+  catch { out.textContent = 'Copy blocked here. Select it from the step above.'; }
+});
+</script>
+</body>
+</html>

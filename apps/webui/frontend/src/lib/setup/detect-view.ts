@@ -22,9 +22,15 @@
  * caller renders INLINE rather than a tooltip.
  *
  * Requirements (mini-PRD):
- *   ✔︎ ✅ 🎯 detectPhase() never answers 'answered' for a null detection, so
- *     the failure visual cannot be painted before an answer exists.
- *     [if] a null detection renders the not-found state [then ⛔️] broken
+ *   ✔︎ ✅ 🎯 detectPhase() answers 'scanning' for a null detection that is
+ *     still idle or in flight, so a not-found visual cannot be painted before
+ *     an answer exists. A `failed` ask is the exception: that is a verdict,
+ *     and painting the scanning sentence beside the red error is issue #3422.
+ *     [if] a null detection that is not `failed` renders the not-found state [then ⛔️] broken
+ *     [if] detectState `failed` returns `scanning` [then ⛔️] broken
+ *   ✔︎ ✅ 🎯 detectNotice() says the search did not finish whenever the last
+ *     ask failed, including a failed Look again over an earlier answer.
+ *     [if] a failed re-check shows the earlier answer with nothing saying so [then ⛔️] broken
  *   ✔︎ ✅ 🎯 probeRows() marks a MISSING file as danger exactly when it is the
  *     reason nothing is importable, never merely because it is absent -- a
  *     working copy that is absent because the plain copy is being used is not
@@ -38,28 +44,61 @@
  *     [if] an escape action is gated on a blocker [then ⛔️] broken
  */
 
-import { formatBytes, isFatalBlocker, type RekordboxDetection } from './setup-api';
+import {
+	agentEscapeEndpoint,
+	humanEscapeTitle,
+	humanKeyLine,
+	humanProbeLabel,
+	humanScanningSentence,
+	shortenPath
+} from './present';
+import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 
 /**
  * What the detect step is doing right now.
  *
  * 'scanning' covers BOTH "the first answer has not arrived" and "we are
  * re-asking", because to an operator they are the same fact: the machine is
- * looking. 'answered' is the only phase allowed to draw a verdict.
+ * looking. 'answered' is the only phase allowed to draw a verdict. A failed
+ * ask is 'answered' with a null detection: the caller renders that as "the
+ * search did not finish", never as the scanning sentence (#3422).
  */
 export type DetectPhase = 'scanning' | 'answered';
 
+/** Mirrors wizard.svelte.ts detectState without importing the store. */
+export type DetectState = 'idle' | 'scanning' | 'answered' | 'failed';
+
 export function detectPhase(
 	detection: RekordboxDetection | null,
-	busy: boolean
+	detectState: DetectState
 ): DetectPhase {
+	// Failed is a verdict. The scanning sentence beside the red error is the
+	// #3422 detect bug; idle/scanning with no answer stays in flight.
+	if (detectState === 'failed') return 'answered';
+	if (detectState === 'scanning') return 'scanning';
 	if (detection === null) return 'scanning';
-	return busy ? 'scanning' : 'answered';
+	return 'answered';
+}
+
+/**
+ * What the detect step says when the last ask FAILED (an error or the read
+ * deadline), or null when it did not. With no earlier answer it is the
+ * did-not-finish sentence; with one, it says the answer below is the old one,
+ * so a failed Look again is never drawn as if it had succeeded.
+ */
+export function detectNotice(
+	detection: RekordboxDetection | null,
+	detectState: DetectState
+): string | null {
+	if (detectState !== 'failed') return null;
+	return detection === null
+		? 'The search for your music did not finish. Look again, or import a folder instead.'
+		: 'Looking again did not finish. What is shown below is from the earlier search.';
 }
 
 /** The sentence the scanning phase shows. Spelled once so the e2e can pin it
  * and so it can never be confused with a verdict. */
-export const SCANNING_SENTENCE = 'Looking for a rekordbox library on this machine...';
+export const SCANNING_SENTENCE = humanScanningSentence();
 
 /** How loud a blocker sentence is. 'danger' stops the import outright. */
 export type BlockerTone = 'danger' | 'warning';
@@ -78,13 +117,8 @@ export interface ProbeRow {
 	danger: boolean;
 	/** The hover explanation every readout carries (house rule). */
 	title: string;
-}
-
-function _line(label: string, path: string, exists: boolean, size: number | null): string {
-	const bytes = formatBytes(size);
-	return exists
-		? `${label}: ${path}${bytes === null ? '' : ` (${bytes})`}`
-		: `${label}: not present at ${path}`;
+	/** Raw path or detail for agent diagnostics. */
+	agentDetail: string;
 }
 
 /**
@@ -106,60 +140,40 @@ export function probeRows(detection: RekordboxDetection): ProbeRow[] {
 	return [
 		{
 			key: 'live_db',
-			text: _line(
-				'rekordbox database',
-				detection.live_db.path,
-				detection.live_db.exists,
-				detection.live_db.size_bytes ?? null
-			),
+			text: humanProbeLabel('Your DJ collection', detection.live_db.exists),
 			danger: !detection.live_db.exists && nothingToRead,
-			title:
-				'The rekordbox install on this machine. Never opened or copied by ' +
-				'this step -- only stat()ed.'
+			title: 'Whether a DJ collection database was found on this machine.',
+			agentDetail: detection.live_db.path
 		},
 		{
 			key: 'share_dir',
-			text: _line('Analysis folder', detection.share_dir.path, detection.share_dir.exists, null),
+			text: humanProbeLabel('Waveform data folder', detection.share_dir.exists),
 			// Absent is a real problem, but not THIS problem: without it the
 			// tracks still land and only waveforms and beatgrids are missing.
 			danger: false,
-			title:
-				'Where rekordbox keeps its ANLZ analyses (waveforms, beatgrids). ' +
-				'Tracks import without it; waveforms do not draw.'
+			title: 'Whether waveform and beatgrid data was found alongside the collection.',
+			agentDetail: detection.share_dir.path
 		},
 		{
 			key: 'working_copy',
-			text: _line(
-				'Encrypted working copy',
-				detection.working_copy.path,
-				detection.working_copy.exists,
-				detection.working_copy.size_bytes ?? null
-			),
+			text: humanProbeLabel('Saved collection copy', detection.working_copy.exists),
 			danger: !detection.working_copy.exists && nothingToRead,
-			title:
-				'A snapshot of the rekordbox database inside this engine data ' +
-				'dir. Absent is normal until the first import takes one.'
+			title: 'Whether a working copy of the collection is already saved locally.',
+			agentDetail: detection.working_copy.path
 		},
 		{
 			key: 'plain_copy',
-			text: _line(
-				'Decrypted working copy',
-				detection.plain_copy.path,
-				detection.plain_copy.exists,
-				detection.plain_copy.size_bytes ?? null
-			),
+			text: humanProbeLabel('Unlocked collection copy', detection.plain_copy.exists),
 			danger: !detection.plain_copy.exists && nothingToRead,
-			title:
-				'The decrypted snapshot the import reads. Absent is normal until ' +
-				'the first import decrypts one.'
+			title: 'Whether an unlocked copy is ready to read from.',
+			agentDetail: detection.plain_copy.path
 		},
 		{
 			key: 'key',
-			text: `Database key: ${detection.key_detail}`,
+			text: humanKeyLine(!keyMissing),
 			danger: keyMissing,
-			title:
-				'Whether this process can unlock an encrypted rekordbox database ' +
-				'right now, and why not when it cannot.'
+			title: 'Whether the collection can be unlocked for import right now.',
+			agentDetail: detection.key_detail
 		}
 	];
 }
@@ -183,20 +197,24 @@ export const ESCAPE_ACTIONS: readonly EscapeAction[] = [
 	{
 		id: 'redetect',
 		label: 'Look again',
-		title: 'Re-run detection now (GET /api/v1/setup/detect/rekordbox). Reads nothing else.'
+		title: humanEscapeTitle('redetect')
 	},
 	{
 		id: 'folder',
 		label: 'Choose a folder instead',
-		title:
-			'Import a folder of audio files instead of a rekordbox collection ' +
-			'(GET /api/v1/setup/detect/folder). Tags only: no BPM, key or beatgrid.'
+		title: humanEscapeTitle('folder')
 	},
 	{
 		id: 'dismiss',
 		label: 'Continue without importing',
-		title:
-			'Close setup and use the app with an empty library ' +
-			'(POST /api/v1/setup/dismiss). Re-openable from Settings > Run setup.'
+		title: humanEscapeTitle('dismiss')
 	}
 ] as const;
+
+/** Agent endpoint for an escape action. Not shown in default copy. */
+export function escapeAgentEndpoint(id: EscapeAction['id']): string {
+	return agentEscapeEndpoint(id);
+}
+
+/** Shorten a path for any human-visible setup copy. */
+export { shortenPath };

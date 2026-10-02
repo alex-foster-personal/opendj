@@ -14,7 +14,14 @@ file has a stable shape):
     or ``## v2 Requirements`` (whichever comes first).
   * ``## v1.1 Requirements`` (optional) - same bullet shape as v1; collects until
     ``## v2 Requirements``.
-  * ``## v2 Requirements`` — collects until ``## Out of Scope`` / ``## Traceability``.
+  * ``## v2 Requirements`` - collects until ``## v3 Requirements`` / ``## Out of
+    Scope`` / ``## Traceability``, whichever comes first.
+  * ``## v3 Requirements`` (optional) - same free-text-category, no-checkbox-
+    required bullet shape as v2 (a scope-move bucket, not a new release phase);
+    collects until ``## Out of Scope`` / ``## Traceability``. Present in
+    ``reqs.json`` only when the section exists, exactly like ``v1.1``. A v3 id
+    counts toward the duplicate-id check and ``_all_ids`` but never toward v1
+    totals or burndown.
   * ``## Out of Scope`` — reads the markdown table rows.
   * A category header is ``### <Name> (CODE)``; bullets beneath it matching
     ``- [x] **RECON-01** ...`` or ``- [ ] **RECON-01** ...`` / ``- **CROSS-01**``
@@ -187,13 +194,19 @@ def _parse_v1(lines: list[str]) -> dict:
     return _parse_versioned_requirements(lines, "v1 Requirements")
 
 
-# v2 categories often lack a parenthesized code: `### Cross-Platform` with
-# bullets like `- **CROSS-01**: ...`. We infer the code from the first ID.
+# v2 (and v3, which reuses this shape) categories often lack a parenthesized
+# code: `### Cross-Platform` with bullets like `- **CROSS-01**: ...`. We infer
+# the code from the first ID.
 _CATEGORY_V2_RE = re.compile(r"^###\s+(.+?)\s*$")
 
 
-def _parse_v2(lines: list[str]) -> dict:
-    start, end = _section_bounds(lines, "v2 Requirements")
+def _parse_v2_style(lines: list[str], header: str) -> dict:
+    """Parse a ``## <header>`` section using the free-text-category, optional-
+    checkbox bullet shape shared by v2 and v3. Returns ``{}`` when the section
+    is absent; callers distinguish "absent" from "present but empty" the same
+    way ``v1.1`` does, by checking ``_section_bounds`` themselves first.
+    """
+    start, end = _section_bounds(lines, header)
     if start < 0:
         return {}
     categories: dict[str, dict] = {}
@@ -236,6 +249,14 @@ def _parse_v2(lines: list[str]) -> dict:
             }
         )
     return categories
+
+
+def _parse_v2(lines: list[str]) -> dict:
+    return _parse_v2_style(lines, "v2 Requirements")
+
+
+def _parse_v3(lines: list[str]) -> dict:
+    return _parse_v2_style(lines, "v3 Requirements")
 
 
 def _parse_out_of_scope(lines: list[str]) -> list[dict]:
@@ -329,8 +350,23 @@ def _build_payload() -> dict:
         if v1_1_start >= 0
         else None
     )
-    duplicate_buckets: tuple[dict, ...] = (v1, v2) if v1_1 is None else (v1, v1_1, v2)
-    duplicates = _duplicate_ids(*duplicate_buckets)
+    # v3 is optional the same way v1.1 is: absent entirely (None, no payload
+    # key) rather than an empty dict, so a document with no v3 section behaves
+    # exactly as it did before this bucket existed.
+    v3_start, _ = _section_bounds(lines, "v3 Requirements")
+    v3 = _parse_v3(lines) if v3_start >= 0 else None
+
+    # Every bucket that actually exists in this document, in the order they
+    # appear in REQUIREMENTS.md. Both the duplicate-id check and the phase
+    # mapping below must walk this exact set -- a bucket present here but
+    # missing from either would let an id in it collide or traceability-match
+    # silently, same silent-miss shape as the _CODE widenings above.
+    present_buckets: tuple[dict, ...] = tuple(
+        bucket
+        for bucket in (v1, v1_1, v2, v3)
+        if bucket is not None
+    )
+    duplicates = _duplicate_ids(*present_buckets)
     if duplicates:
         listed = ", ".join(f"{rid} x{n}" for rid, n in sorted(duplicates.items()))
         raise ValueError(
@@ -343,8 +379,7 @@ def _build_payload() -> dict:
     oos = _parse_out_of_scope(lines)
 
     # Attach phase mapping.
-    phase_buckets: tuple[dict, ...] = (v1, v2) if v1_1 is None else (v1, v1_1, v2)
-    for bucket in phase_buckets:
+    for bucket in present_buckets:
         for cat in bucket.values():
             for req in cat["requirements"]:
                 if req["id"] in trace:
@@ -371,6 +406,8 @@ def _build_payload() -> dict:
     }
     if v1_1 is not None:
         payload["v1.1"] = v1_1
+    if v3 is not None:
+        payload["v3"] = v3
     return payload
 
 
@@ -380,6 +417,8 @@ def _all_ids(payload: dict) -> list[str]:
     if "v1.1" in payload:
         bucket_names.append("v1.1")
     bucket_names.append("v2")
+    if "v3" in payload:
+        bucket_names.append("v3")
     for bucket in bucket_names:
         for cat in payload.get(bucket, {}).values():
             for req in cat.get("requirements", []):

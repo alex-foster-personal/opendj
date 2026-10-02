@@ -56,7 +56,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from apps.shared.state import db as state_db
-from apps.shared.state import machine_identity
+from apps.shared.state import machine_identity, sync_stamp
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import (
     capabilities,
@@ -73,6 +73,7 @@ from apps.sync_hub import (
     service_enroll,
     service_shortfall,
     service_storage,
+    stale_copy,
     wire_version,
 )
 from apps.sync_hub import (
@@ -95,8 +96,11 @@ from apps.sync_hub.service_models import (
     PullResponse,
     PushRequest,
     PushResponse,
+    RejectedRowModel,
     RowModel,
     RowsResponse,
+    StaleCheckRequest,
+    StaleCheckResponse,
     StatusResponse,
     SyncRowSampleModel,
 )
@@ -270,6 +274,20 @@ def _policy_push_error(exc: policy_push.SyncPolicyViolationError) -> HTTPExcepti
     )
 
 
+def _stale_tracks_error(verdict: stale_copy.Verdict) -> HTTPException:
+    """409: the push would bring back tracks the fleet dropped (#4628)."""
+    examples = list(verdict.orphans[: stale_copy.EXAMPLES])
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": stale_copy.CODE,
+            "message": stale_copy.refusal_message(len(verdict.orphans), examples),
+            "count": len(verdict.orphans),
+            "examples": examples,
+        },
+    )
+
+
 def _require_registered(conn: sqlite3.Connection, machine_id: str) -> None:
     """Refuse a call from a machine that never said hello.
 
@@ -408,6 +426,7 @@ def hello(request: Request, payload: HelloRequest) -> HelloResponse:
                     ],
                     caller_id=payload.machine.machine_id,
                 )
+                engine.retire_tombstoned_remaps(conn, sync_stamp.canonical_now())
         except engine.SyncApplyError as exc:
             raise _apply_error(exc) from exc
         except protocol.SyncProtocolError as exc:
@@ -477,6 +496,14 @@ def enroll(
         **_auth("push"),
         **SYNC_VERSION_RESPONSES,
         **entitlement_gate.refusals("push"),
+        409: {
+            "description": (
+                f"{stale_copy.CODE}: the batch carries live tracks another "
+                "machine authored that this hub no longer holds (a stale or "
+                "copied library). Nothing applied. Also SYNC_WIRE_VERSION / "
+                "SYNC_SCHEMA_VERSION and FOREIGN KEY refusals."
+            ),
+        },
         422: {
             "description": (
                 "SYNC_PROTOCOL (stamp/capability gate) or SYNC_POLICY_VIOLATION "
@@ -513,6 +540,9 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                 )
                 engine.merge_machines(conn, fleet, caller_id=payload.machine_id)
                 policy_push.evaluate_push_policies(conn, payload.machine_id, changes)
+                stale_copy.refuse_orphans(
+                    conn, changes, payload.machine_id, reseed=payload.reseed
+                )
                 result = engine.hub_apply(conn, changes)
                 # INSIDE the transaction: a refusal must roll the whole batch
                 # back, which is what main's mid-apply raise did and what the
@@ -530,6 +560,8 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
             raise _apply_error(exc) from exc
         except policy_push.SyncPolicyViolationError as exc:
             raise _policy_push_error(exc) from exc
+        except stale_copy.StaleTracksRefusedError as exc:
+            raise _stale_tracks_error(exc.verdict) from exc
         except policy_store.PolicyInputError as exc:
             raise HTTPException(
                 status_code=exc.status,
@@ -553,7 +585,45 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                 )
                 for reject in result.identity_rejects
             ],
+            rejected_rows=[
+                RejectedRowModel(table=row.table, pk=list(row.pk), reason=row.reason)
+                for row in result.rejected_rows
+            ],
         )
+
+
+@router.post(
+    "/stale-check",
+    response_model=StaleCheckResponse,
+    responses={**_auth("stale-check"), **SYNC_VERSION_RESPONSES},
+)
+def stale_check(request: Request, payload: StaleCheckRequest) -> StaleCheckResponse:
+    """Which offered live tracks did the fleet drop? Read-only.
+
+    The spoke asks before it pushes, so it can refuse its own push and name
+    every orphan at once instead of meeting the ``/push`` backstop one batch
+    at a time. Same rule, same connection state: :mod:`apps.sync_hub.stale_copy`.
+    """
+    _require_same_wire(payload.wire_version, payload.schema_version)
+    with _hub_conn(request) as conn:
+        _require_credential(request, conn, payload.machine_id, "stale-check")
+        _require_registered(conn, payload.machine_id)
+        if payload.reseed:
+            return StaleCheckResponse(orphans=[])
+        verdict = stale_copy.classify(
+            conn,
+            [
+                stale_copy.Candidate(
+                    stable_id=candidate.stable_id,
+                    origin_device_id=candidate.origin_device_id,
+                )
+                for candidate in payload.candidates
+            ],
+            payload.machine_id,
+        )
+    return StaleCheckResponse(
+        orphans=list(verdict.orphans), unattributable=verdict.unattributable
+    )
 
 
 @router.get(
