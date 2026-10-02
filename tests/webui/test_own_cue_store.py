@@ -170,6 +170,44 @@ def test_local_track_position_is_bounded_by_its_own_duration(client: TestClient)
     assert beyond.json()["detail"]["code"] == "INVALID_CUE_POSITION"
 
 
+def test_a_zero_stored_duration_is_unknown_not_a_zero_length_bound(
+    client: TestClient, paths
+) -> None:
+    conn = state_db.open_rw(paths.state)
+    try:
+        conn.execute("UPDATE tracks SET duration_ms = 0 WHERE stable_id = ?", (LOCAL,))
+        conn.commit()
+    finally:
+        conn.close()
+    saved = _save(client, LOCAL, "A", 30_000)
+    assert saved.status_code == 200, saved.text
+
+
+def test_a_mapped_track_keeps_own_cues_without_a_rekordbox_database(
+    client: TestClient, paths
+) -> None:
+    paths.master.unlink()
+    assert all(row["cue"] is None for row in _slots(client, MAPPED).values())
+    saved = _save(client, MAPPED, "B", 5_000)
+    assert saved.status_code == 200, saved.text
+    assert _slots(client, MAPPED)["B"]["cue"]["in_ms"] == 5_000
+    # Control: an unknown track is still a 404, not an empty cue set.
+    assert client.get("/api/v1/tracks/no-such-track/hot-cues").status_code == 404
+
+
+def test_an_unusable_vendor_cue_is_dropped_not_a_500(paths) -> None:
+    vendor = [
+        {"kind": "hot_cue", "slot": "A", "in_ms": 1_000, "out_ms": None},
+        {"kind": "hot_cue", "slot": "B", "in_ms": None, "out_ms": None},
+    ]
+    conn = state_db.open_ro(paths.state)
+    try:
+        loaded = cue_store.load(conn, MAPPED, lambda: vendor)
+    finally:
+        conn.close()
+    assert [(c["slot"], c["in_ms"]) for c in loaded.cues] == [("A", 1_000)]
+
+
 # ----- rekordbox cues are the default, and survive an edit ------------------
 
 

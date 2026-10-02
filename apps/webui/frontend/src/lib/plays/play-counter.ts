@@ -153,7 +153,9 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 				playId: newPlayId(),
 				heardMs: 0,
 				lastSampleMs: null,
-				durationMs: deckState.duration_ms ?? null,
+				// A decoded duration is fractional (seconds * 1000); the server's
+				// duration_ms is an int and rejects a float with 422.
+				durationMs: deckState.duration_ms == null ? null : Math.round(deckState.duration_ms),
 				phase: 'counting',
 				attempts: 0
 			};

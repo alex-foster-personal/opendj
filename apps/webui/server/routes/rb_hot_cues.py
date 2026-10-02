@@ -146,13 +146,16 @@ def _rekordbox_content(stable_id: str) -> rb_vendor.RbContent | None:
     """The track's rekordbox row, ``None`` when it has no mapping.
 
     Raises 404 ``TRACK_NOT_FOUND`` for an unknown or removed track, exactly as
-    the rekordbox-only surface did.
+    the rekordbox-only surface did. ``MASTER_DB_UNAVAILABLE`` (no rekordbox
+    database on this machine, e.g. a CloudSync-delivered mapping) means no
+    vendor cues, not an error: own cues never need rekordbox. The track check
+    runs before the master DB is opened, so an unknown track is still a 404.
     """
     try:
         return rb_vendor.resolve_content(stable_id)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
-        if detail.get("code") != "VENDOR_MAPPING_NOT_FOUND":
+        if detail.get("code") not in ("VENDOR_MAPPING_NOT_FOUND", "MASTER_DB_UNAVAILABLE"):
             raise
         return None
 
@@ -169,7 +172,9 @@ def _duration_ms(conn: sqlite3.Connection, stable_id: str, content: Any) -> int 
     row = conn.execute(
         "SELECT duration_ms FROM tracks WHERE stable_id = ? AND deleted_at IS NULL", (stable_id,)
     ).fetchone()
-    if row is not None and row[0] is not None:
+    # 0 is how an unanalyzed import records "length unknown", not a real
+    # length: bounding by it would refuse every cue on the track.
+    if row is not None and row[0]:
         return int(row[0])
     length_s = getattr(content, "length_s", None)
     return int(length_s) * 1000 if length_s is not None else None

@@ -178,6 +178,22 @@ def read_row(conn: sqlite3.Connection, stable_id: str) -> tuple[dict[str, Any], 
     return value, str(row[1])
 
 
+def _valid_vendor_cues(raw: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The vendor cues ``normalize_cue`` accepts, the rest dropped.
+
+    Vendor rows are another app's data: one with no position or a slot we do
+    not model must not turn the whole track's cue list into a 500. Own stored
+    rows still raise, because a corrupt own row is ours to see.
+    """
+    cues: list[dict[str, Any]] = []
+    for row in raw:
+        try:
+            cues.append(normalize_cue(row))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return cues
+
+
 def load(
     conn: sqlite3.Connection,
     stable_id: str,
@@ -197,7 +213,7 @@ def load(
     fallback = vendor_cues() if vendor_cues is not None else []
     return StoredCues(
         stable_id=stable_id,
-        cues=_sorted(normalize_cue(c) for c in fallback),
+        cues=_sorted(_valid_vendor_cues(fallback)),
         generations={},
         reversals={},
         source=None,

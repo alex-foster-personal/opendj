@@ -92,6 +92,19 @@ test('a load posts exactly once, only after PLAY_THRESHOLD_S heard seconds', asy
 	assert.equal(h.posts.length, 1, 'one load must never count twice');
 });
 
+test('a fractional decoded duration is posted as whole milliseconds', async () => {
+	// The server's duration_ms is an int: a float like 215040.00000000003
+	// (AudioBuffer.duration * 1000) is a 422, and the play is never logged.
+	const h = harness();
+	h.deck1.duration_ms = 215_040.00000000003;
+	h.counter.tick();
+	h.run(mod.PLAY_THRESHOLD_S);
+	await settle();
+	assert.equal(h.posts.length, 1);
+	assert.equal(h.posts[0].durationMs, 215_040);
+	assert.ok(Number.isInteger(h.posts[0].durationMs));
+});
+
 test('unheard seconds are not credited, and a quiet stretch does not bridge the gap', async () => {
 	const h = harness();
 	h.counter.tick();
