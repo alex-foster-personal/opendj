@@ -12,12 +12,16 @@ Regression one-liners:
   - if a found cover is fetched again on the next view then broken
   - if a miss is looked up again within a week then broken
   - if a network failure is remembered as a miss then broken
+  - if an offline machine sends a lookup on every view then broken
+  - if a second view waits on a lookup already running then broken
   - if ODJ_ARTWORK_ONLINE=0 still sends a request then broken
 """
 from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -61,6 +65,7 @@ class RecordingHttp:
 @pytest.fixture(autouse=True)
 def _online_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ODJ_ARTWORK_ONLINE", "1")
+    monkeypatch.setattr(art._BACKOFF, "until", 0.0)
 
 
 # ----- folder image -----------------------------------------------------------
@@ -154,12 +159,47 @@ def test_miss_is_remembered(tmp_path: Path) -> None:
     assert not cache.has("sid")
 
 
-def test_network_failure_is_not_remembered(tmp_path: Path) -> None:
-    http = RecordingHttp({art.MB_URL: (-1, b"")})
+def test_network_failure_is_not_remembered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    http = RecordingHttp({art.MB_URL: (art.NETWORK_FAILURE, b"")})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    assert art.online_cover(cache, "sid", QUERY, http) is None
+    assert not cache.recent_miss("sid", 0.0) and not cache.has("sid")
+    monkeypatch.setattr(art._BACKOFF, "until", 0.0)  # the backoff has passed
+    assert art.online_cover(cache, "sid", QUERY, http) is None
+    assert len(http.calls) == 2, "an unreachable service must be retried on a later view"
+
+
+def test_offline_backs_off_instead_of_retrying_every_view(tmp_path: Path) -> None:
+    http = RecordingHttp({art.MB_URL: (art.NETWORK_FAILURE, b"")})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    assert art.online_cover(cache, "a", QUERY, http) is None
+    assert art.online_cover(cache, "a", QUERY, http) is None
+    assert art.online_cover(cache, "b", QUERY, http) is None
+    assert len(http.calls) == 1, "while offline no view may hold a thread on the network"
+
+
+def test_busy_queue_is_not_offline(tmp_path: Path) -> None:
+    http = RecordingHttp({art.MB_URL: (art.BUSY, b"")})
     cache = ArtworkCache(tmp_path / "artwork-cache")
     assert art.online_cover(cache, "sid", QUERY, http) is None
     assert art.online_cover(cache, "sid", QUERY, http) is None
-    assert len(http.calls) == 2, "an unreachable service must be retried on the next view"
+    assert len(http.calls) == 2, "a full queue is not a reason to stop trying"
+    assert not cache.recent_miss("sid", 0.0)
+
+
+def test_view_during_a_running_lookup_returns_at_once(tmp_path: Path) -> None:
+    http = RecordingHttp({art.MB_URL: (200, MB_FOUND.encode())})
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    with art._INFLIGHT_GUARD:
+        lock = art._INFLIGHT.setdefault("sid", threading.Lock())
+    lock.acquire()
+    try:
+        started = time.monotonic()
+        assert art.online_cover(cache, "sid", QUERY, http) is None
+        assert time.monotonic() - started < 0.2, "the second view waited on the first"
+    finally:
+        lock.release()
+    assert http.calls == []
 
 
 def test_disabled_sends_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

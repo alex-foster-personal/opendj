@@ -50,6 +50,9 @@ HTTP_TIMEOUT_S = 6.0
 DURATION_TOLERANCE_S = 5.0
 MAX_RELEASE_GROUPS = 3
 MISS_TTL_S = 7 * 24 * 3600
+# After a network failure every lookup is skipped for this long, so an offline
+# machine never holds a request thread on a dead connection per deck view.
+OFFLINE_BACKOFF_S = 120.0
 
 SIDECAR_STEMS = ("cover", "folder", "front", "album", "artwork")
 SIDECAR_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
@@ -252,8 +255,12 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+NETWORK_FAILURE = -1
+BUSY = -2  # our own MusicBrainz queue was full: try again on a later view
+
+
 class HttpGet(Protocol):
-    """What the lookup needs from HTTP: status and body, or -1 on a network failure."""
+    """What the lookup needs from HTTP: status and body, or a negative status of our own."""
 
     def get(self, url: str) -> tuple[int, bytes]: ...
 
@@ -268,14 +275,17 @@ class _Http:
     def get(self, url: str) -> tuple[int, bytes]:
         host = urllib.parse.urlsplit(url).hostname or ""
         if host == "musicbrainz.org":
-            with self._lock:
+            # Bounded wait: a queue of lookups must not pile up request threads.
+            if not self._lock.acquire(timeout=HTTP_TIMEOUT_S):
+                return BUSY, b""
+            try:
                 wait = self._last_mb + MB_SPACING_S - time.monotonic()
                 if wait > 0:
                     time.sleep(wait)
-                try:
-                    return self._fetch(url)
-                finally:
-                    self._last_mb = time.monotonic()
+                return self._fetch(url)
+            finally:
+                self._last_mb = time.monotonic()
+                self._lock.release()
         return self._fetch(url)
 
     @staticmethod
@@ -287,12 +297,19 @@ class _Http:
         except urllib.error.HTTPError as exc:
             return exc.code, b""
         except (urllib.error.URLError, TimeoutError, OSError):
-            return -1, b""
+            return NETWORK_FAILURE, b""
 
 
 _HTTP = _Http()
 _INFLIGHT: dict[str, threading.Lock] = {}
 _INFLIGHT_GUARD = threading.Lock()
+
+
+class _Backoff:
+    until = 0.0  # time.monotonic() before which lookups are skipped
+
+
+_BACKOFF = _Backoff()
 
 
 def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
@@ -301,46 +318,59 @@ def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
 
     Returns None when the lookup is off, the track has no artist or title,
     a recent lookup already missed, or nothing matched. A network failure is
-    NOT remembered as a miss: the next view tries again.
+    NOT remembered as a miss: lookups pause for :data:`OFFLINE_BACKOFF_S`
+    and a later view tries again. A view that arrives while the same track
+    is already being looked up returns None at once rather than waiting.
     """
     hit = cache.get(stable_id)
     if hit is not None:
         return hit
     if not online_enabled() or not query_title(query.title) or not query_artist(query.artist):
         return None
+    if time.monotonic() < _BACKOFF.until:
+        return None
     with _INFLIGHT_GUARD:
         lock = _INFLIGHT.setdefault(stable_id, threading.Lock())
-    with lock:
+    if not lock.acquire(blocking=False):
+        return None
+    try:
         hit = cache.get(stable_id)
         if hit is not None or cache.recent_miss(stable_id, time.time()):
             return hit
-        return _lookup(cache, stable_id, query, http or _HTTP)
+        result, offline = _lookup(cache, stable_id, query, http or _HTTP)
+        if offline:
+            _BACKOFF.until = time.monotonic() + OFFLINE_BACKOFF_S
+        return result
+    finally:
+        lock.release()
 
 
 def _lookup(cache: ArtworkCache, stable_id: str, query: TrackQuery,
-            http: HttpGet) -> tuple[bytes, str] | None:
+            http: HttpGet) -> tuple[tuple[bytes, str] | None, bool]:
+    """(cover or None, whether the network was unreachable)."""
     lucene = f'recording:"{_lucene(query_title(query.title))}" AND artist:"{_lucene(query_artist(query.artist))}"'
     status, body = http.get(f"{MB_URL}?fmt=json&limit=10&query={urllib.parse.quote(lucene)}")
     if status != 200:
-        return None  # unreachable or rate-limited: not a fact about the track
+        # unreachable, busy or rate-limited: not a fact about the track
+        return None, status == NETWORK_FAILURE
     try:
         groups = matching_release_groups(json.loads(body), query)
     except ValueError:
-        return None
+        return None, False
     if not groups:
         cache.put_miss(stable_id, "no matching recording")
-        return None
+        return None, False
     for group in groups[:MAX_RELEASE_GROUPS]:
         status, data = http.get(CAA_URL.format(rg=group))
         if status == 200 and len(data) <= audio_files.MAX_EMBEDDED_ARTWORK_BYTES:
             mime = _sniff_mime(data)
             if mime is not None:
                 cache.put_found(stable_id, data, mime, group)
-                return data, mime
+                return (data, mime), False
         elif status not in (200, 404):
-            return None  # transient: retry on the next view
+            return None, status == NETWORK_FAILURE  # transient: retry on a later view
     cache.put_miss(stable_id, "no front cover on the matching release groups")
-    return None
+    return None, False
 
 
 def _lucene(text: str) -> str:
