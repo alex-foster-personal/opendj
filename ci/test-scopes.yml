@@ -134,6 +134,7 @@ scopes:
   - name: genre_infer
     sources: ["apps/genre_infer/"]
     tests: ["tests/genre_infer/"]
+    dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "launcher", "loudness", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice", "webui"]
   - name: launcher
     sources: ["apps/launcher/"]
     tests: ["tests/launcher/"]
