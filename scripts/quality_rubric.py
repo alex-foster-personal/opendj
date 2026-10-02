@@ -19,6 +19,7 @@ try:
     )
     from scripts.quality_rubric_probes import run_probe
     from scripts.quality_rubric_score import score_dimension, sort_findings
+    from scripts.sparse_worktree import require_materialized_under
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.quality_rubric") from None
@@ -52,6 +53,8 @@ def _resolve_surface_root(
     else:
         resolved = (REPO / declared).resolve()
         display_root = declared
+    # A surface whose every file is skip-worktree is absent from a sparse tree (OPS-45).
+    require_materialized_under(REPO, resolved, purpose=f"rubric surface {surface_id}")
     if not resolved.is_dir():
         raise FileNotFoundError(f"surface root is not a directory: {resolved}")
     return resolved, display_root

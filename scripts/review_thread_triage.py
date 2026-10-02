@@ -99,7 +99,7 @@ import json
 import sys
 
 try:
-    from scripts import pr_scope_check, review_coverage
+    from scripts import pr_scope_check, review_blocker, review_coverage
 except ModuleNotFoundError as exc:
     if exc.name == "scripts":
         raise SystemExit("uv run --no-sync python -m scripts.review_thread_triage") from None
@@ -527,11 +527,9 @@ def _as_json(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """`argv` is `None` in normal CLI use, where `argparse` reads `sys.argv`
-    itself. Accepting it explicitly lets a test drive the real entrypoint with
-    real arguments instead of monkeypatching `sys.argv`, banned by AGENTS.md's
-    "No mocks" contract (#805 round 10-continued, Codex, discussion_r3918584365).
-    """
+    """`argv` is `None` in CLI use (argparse reads `sys.argv`). Taking it lets a test drive the
+    real entrypoint with real arguments instead of monkeypatching `sys.argv`, banned by AGENTS.md's
+    "No mocks" contract (#805 round 10-continued, Codex, discussion_r3918584365)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("pr", type=int, help="pull request number")
     parser.add_argument("--owner", default=OWNER, help=f"repo owner (default {OWNER})")
@@ -578,7 +576,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except review_coverage.TriageError as exc:
         # Could not measure is not a verdict, and must not read as either one.
-        print(f"[review-coverage] COULD NOT MEASURE: {exc}", file=sys.stderr)
+        review_blocker.unknown(f"[review-coverage] COULD NOT MEASURE: {exc}")
         return 3
     except (LedgerReadError, HeadMovedError, BaseRetargetedError) as exc:
         # Same rule for the thread fetch's own guards: a broken ledger read, or
@@ -593,7 +591,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{debt_report}")
     # OPS-41: over a declared issue scope is a failure (1); unmeasurable is 3.
     scope_rc = pr_scope_check.main([str(args.pr), "--owner", args.owner, "--repo", args.repo])
-    return max(scope_rc, 1 if (pr.failing or coverage or debt_error) else 0)
+    rc = max(scope_rc, 1 if (pr.failing or coverage or debt_error) else 0)
+    return review_blocker.report(rc, coverage, pr.failing, debt_error, scope_rc)
 
 
 if __name__ == "__main__":

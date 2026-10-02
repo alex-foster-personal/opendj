@@ -7,7 +7,7 @@ vendor id links, and playlists to the state layer.
 Safety:
 
 * Always opens the RB DB read-only -- no writes possible.
-* Dry-run by default (the outer SAVEPOINT is ROLLBACK-released).
+* Dry-run by default (the outer write unit is discarded, not kept).
 * Default source is ``paths.REKORDBOX_PLAIN_DB``, the decrypted working
   copy. ``paths.REKORDBOX_WORKING_DB`` is a byte-for-byte snapshot of the
   live master.db and is therefore still SQLCipher-encrypted, so the CLI
@@ -213,9 +213,9 @@ def ingest_rb(
 ) -> IngestReport:
     """Ingest the Rekordbox DB at ``rb_db_path`` into the state DB.
 
-    ``dry_run=True`` wraps everything in a SAVEPOINT that is
-    ROLLBACK-released at the end. ``dry_run=False`` releases the
-    SAVEPOINT to persist.
+    Everything runs in one :func:`apps.shared.state.db.write_unit`, which
+    holds the writer lock from its first read (STATE-15). ``dry_run=True``
+    discards the unit at the end; ``dry_run=False`` keeps it.
     """
     from pyrekordbox import Rekordbox6Database
 
@@ -249,8 +249,7 @@ def ingest_rb(
         ]
         assert_no_path_collisions(local_paths)
 
-        conn.execute(f"SAVEPOINT {savepoint}")
-        try:
+        with state_db.write_unit(conn, savepoint, keep=not dry_run):
             rb_to_stable: dict[str, str] = {}
             # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
             # multiple RB rows share a stable_id. Honour the first and skip
@@ -381,16 +380,6 @@ def ingest_rb(
                     f"dry_run={dry_run}"
                 ),
             )
-
-            if dry_run:
-                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            else:
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        except Exception:
-            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            raise
     finally:
         # Always restore the real bus, even if the ingest raised.
         writer.bus = original_bus

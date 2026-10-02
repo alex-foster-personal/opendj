@@ -34,11 +34,11 @@ from scripts.trunk_job_verdict_core import PASSING_JOB_CONCLUSIONS
 #
 # Trunk Merge Queue (issue #4168, adopted Mon 28 Sep 2026) posts its queue marker from the
 # `trunk-io` app. The name embeds the target branch, so only main's marker is named here: a
-# queue on another branch is a new name a person should classify, not a silent drop. The
-# Mergify pair stays until that queue is retired.
+# queue on another branch is a new name a person should classify, not a silent drop. Trunk
+# is the only merge queue (ADR-NEW-trunk-is-the-only-merge-queue, Wed 30 Sep 2026), so a
+# check-run from the retired queue's app is unrecognized again and raises.
 DROPPED_APP_CHECKS = frozenset(
     {
-        ("mergify", "Mergify Merge Queue"),
         ("trunk-io", "Trunk Merge Queue (main)"),
     }
 )
@@ -213,7 +213,7 @@ def _pull_request_triggered_runs(
     seen: dict[str, str] = {}
     kept: list[dict] = []
     for run in check_runs:
-        # A merge queue's marker (Mergify, Trunk) has no Actions run to ask for an event, so
+        # A merge queue's marker (Trunk's) has no Actions run to ask for an event, so
         # it is dropped by APP AND NAME rather than by "not GitHub Actions". Dropping every
         # external app removes
         # a required security, coverage or CI check from the observed AND expected sets at

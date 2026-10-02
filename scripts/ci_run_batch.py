@@ -27,6 +27,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.request import Request, urlopen
 
+from scripts.ci_phantom_runs import JobsOf, is_phantom, one_page_jobs, phantom_line, write_step_summary
+
 
 def parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -90,6 +92,35 @@ def fetch_run(
     """One workflow run by id."""
     fetch = get_json or (lambda url: _get_json(url, token, agent))
     return fetch(f"https://api.github.com/repos/{repository}/actions/runs/{run_id}")
+
+
+def fetch_attempt(
+    repository: str,
+    run_id: str,
+    attempt: int,
+    token: str,
+    agent: str,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """One attempt of a run: a listing shows only the latest, so an earlier attempt's
+    conclusion is read here."""
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    return fetch(
+        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/attempts/{attempt}"
+    )
+
+
+def fetch_run_jobs(
+    repository: str,
+    run_id: int,
+    token: str,
+    agent: str,
+    get_json: Callable[[str], dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """A run's latest-attempt jobs, one page or refused (scripts/ci_phantom_runs.py)."""
+    fetch = get_json or (lambda url: _get_json(url, token, agent))
+    url = f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs?filter=latest&per_page={PAGE_SIZE}"
+    return one_page_jobs(fetch(url), run_id, PAGE_SIZE, RuntimeError)
 
 
 def fetch_completed_runs(
@@ -373,10 +404,16 @@ def fetch_inflight_runs(
     return list(seen.values())
 
 
-def runs_held_back(
-    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
-) -> list[dict[str, Any]]:
-    """Watched runs still in flight that were created before `now - lookback`.
+def split_held_back(
+    inflight: list[dict[str, Any]],
+    watched: set[str],
+    now: datetime,
+    lookback: timedelta,
+    *,
+    jobs_of: JobsOf,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(held, phantoms): watched runs still in flight that were created before
+    `now - lookback`, split by whether each holds the mark.
 
     The listing filters on created_at, so the next pass cannot see a run created before
     its floor; a pass that succeeded now would move the mark past that run's completion
@@ -388,7 +425,23 @@ def runs_held_back(
     its old created_at whether or not a pass waits for it, so re-runs are the daily
     reconcile listing's case (`reconcile_listing`), and holding for them would only
     fail plain passes.
+
+    A PHANTOM (scripts/ci_phantom_runs.py: `in_progress`, idle for more than
+    PHANTOM_AFTER_HOURS, and no job waiting for a runner) never holds: GitHub lost it, it
+    will never complete, and holding for it pinned the pass red forever (runs
+    36802069871 and 36803336485, Thu 1 Oct 2026). Each run is classified once, so the
+    jobs read behind that verdict happens once per stale run.
     """
+    held: list[dict[str, Any]] = []
+    phantoms: list[dict[str, Any]] = []
+    for run in _older_than_lookback(inflight, watched, now, lookback):
+        (phantoms if is_phantom(run, now, jobs_of=jobs_of) else held).append(run)
+    return held, phantoms
+
+
+def _older_than_lookback(
+    inflight: list[dict[str, Any]], watched: set[str], now: datetime, lookback: timedelta
+) -> list[dict[str, Any]]:
     cutoff = now - lookback
     return sorted(
         (
@@ -435,18 +488,34 @@ def main(argv: list[str] | None = None) -> int:
             workflow_names=watched,
             created_before=iso(now - lookback),
         )
-        held = runs_held_back(inflight, watched, now, lookback)
+        held, phantoms = split_held_back(
+            inflight,
+            watched,
+            now,
+            lookback,
+            jobs_of=lambda run_id: fetch_run_jobs(args.repository, run_id, token, "ci-run-batch"),
+        )
         for run in held:
             print(
                 f"::error::run {run['id']} ({run['name']}, {run['status']}) was created "
                 f"{run['created_at']}, before the {args.lookback_hours}h lookback; this pass "
                 "will fail so the mark stays and the next pass still lists it"
             )
-        print(f"[census] in_flight={len(inflight)} held={len(held)}")
+        lines = [phantom_line(run, now, caller="ci_run_batch census") for run in phantoms]
+        for line in lines:
+            print(f"::warning::{line}; it does not hold the mark")
+        write_step_summary(lines, caller="ci_run_batch census")
+        phantom_ids = ",".join(str(run["id"]) for run in phantoms)
+        print(
+            f"[census] in_flight={len(inflight)} held={len(held)} "
+            f"phantom={len(phantoms)} phantom_ids={phantom_ids or 'none'}"
+        )
         output_file = os.environ.get("GITHUB_OUTPUT", "")
         if output_file:
             with open(output_file, "a", encoding="utf-8") as handle:
                 handle.write(f"held={len(held)}\n")
+                handle.write(f"phantom={len(phantoms)}\n")
+                handle.write(f"phantom_ids={phantom_ids}\n")
         return 0
     raise AssertionError(f"unhandled command {args.command}")
 

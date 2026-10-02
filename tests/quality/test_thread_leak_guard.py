@@ -50,6 +50,7 @@ def _start_real_sentry_monitor() -> None:
 
 def test_unclosed_sentry_client_leaks_a_named_monitor_and_closing_drains_it() -> None:
     """[if] an open monitor goes unnamed, or a closed one is named [then] broken, [else stop]."""
+    pytest.importorskip("sentry_sdk", reason="needs the optional observability extra")
     baseline = set(threading.enumerate())
     try:
         _start_real_sentry_monitor()

@@ -19,6 +19,7 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -172,6 +173,21 @@ def test_route_serves_the_payload_identity(tmp_path: Path) -> None:
         assert body["source"] == "payload"
         assert body["bundle_identifier"] == "com.opendj.desktop.lane-b"
         assert body["git_dirty"] is True
+
+
+def test_route_serves_this_process_own_pid_not_from_the_manifest() -> None:
+    """Sol P1/BLOCKING (PR #4034, discussion_r4137872466): a PERFMODE-14
+    capture cross-checks this field against its own local lsof result for
+    the engine's port, refusing when they disagree -- the one thing a local
+    SSH/TCP forward to a remote engine can never satisfy, since a forwarder
+    is never itself the engine. [if] the route serves a resolved identity
+    [then] its pid is THIS test process's own os.getpid(), because
+    add_build_info_route stamps it at construction regardless of source
+    [⛔️ if pid is None, from a manifest, or from a different process]."""
+    for client in _client({}):
+        response = client.get(BUILD_INFO_PATH)
+        assert response.status_code == 200
+        assert response.json()["pid"] == os.getpid()
 
 
 @pytest.mark.requirement("INSTALL-07")
