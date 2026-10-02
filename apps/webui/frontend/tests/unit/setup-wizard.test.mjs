@@ -338,13 +338,33 @@ test('progress refuses Next while the import is still live', () => {
 		mod.advanceRefusal('progress', { ...ctx, job: job({ status: 'failed' }) }),
 		/re-run it/
 	);
+	const succeeded = job({ status: 'succeeded', progress: 1 });
+	assert.match(
+		mod.advanceRefusal('progress', { ...ctx, job: succeeded, statusRefreshJobId: null }),
+		/still loading/
+	);
 	assert.equal(
 		mod.advanceRefusal('progress', {
 			...ctx,
-			job: job({ status: 'succeeded', progress: 1 })
+			job: succeeded,
+			statusRefreshJobId: succeeded.id
 		}),
 		null
 	);
+});
+
+test('progress surfaces a failed post-import status refresh', () => {
+	// [if] the post-import status refresh failed [then] Continue says so,
+	// [else stop].
+	const ctx = {
+		source: 'rekordbox',
+		detection: detection(),
+		folderRows: emptyFolderRows(),
+		job: job({ status: 'succeeded', progress: 1 }),
+		statusRefreshJobId: null,
+		statusRefreshError: 'state db is gone'
+	};
+	assert.match(mod.advanceRefusal('progress', ctx), /state db is gone/);
 });
 
 test('importPct clamps and rounds rather than trusting the row', () => {
@@ -412,6 +432,66 @@ test('a failed load records the server message and KEEPS what was on screen', as
 
 	assert.equal(wizard.error, 'state db is gone');
 	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+});
+
+test('refreshStatusAfterImport fills last_import once per completed job', async () => {
+	// [if] an import job succeeded [then] Done's status is re-read and a
+	// second notice does not fetch again, [else stop].
+	let statusCalls = 0;
+	routeFetch({
+		'/api/v1/setup/status': () => {
+			statusCalls += 1;
+			if (statusCalls === 1) return jsonResponse(status({ last_import: null }));
+			return jsonResponse(
+				status({
+					tracks: 4,
+					library_empty: false,
+					last_import: {
+						kind: 'folder',
+						finished_at: '2026-10-02T00:00:00.000Z',
+						started_at: '2026-10-02T00:00:00.000Z',
+						tracks_written: 4,
+						files_seen: 4,
+						tracks: 4,
+						tracks_without_analysis: 4,
+						analysis_detail: 'tags only',
+						analysis_available: false,
+						files_dataless: 0,
+						files_rejected_unplayable: 0,
+						files_without_tags: 0,
+						unreadable_roots: []
+					}
+				})
+			);
+		}
+	});
+	await wizard.load();
+	assert.equal(wizard.status.last_import, null);
+
+	await wizard.refreshStatusAfterImport('job-folder-1');
+	assert.equal(wizard.status.last_import.tracks_written, 4);
+	assert.equal(wizard.status.tracks, 4);
+	assert.equal(statusCalls, 2);
+
+	const before = statusCalls;
+	await wizard.refreshStatusAfterImport('job-folder-1');
+	assert.equal(statusCalls, before, 'a second completion notice must not re-fetch');
+});
+
+test('refreshStatusAfterImport keeps prior status when the server refuses', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			jsonResponse({ detail: { code: 'boom', message: 'state db is gone' } }, 500)
+	});
+	await wizard.refreshStatusAfterImport('job-folder-2');
+
+	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.statusRefreshError, 'state db is gone');
+	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+	assert.equal(wizard.statusRefreshJobId, null);
 });
 
 test('redetect re-asks the detect endpoint specifically', async () => {

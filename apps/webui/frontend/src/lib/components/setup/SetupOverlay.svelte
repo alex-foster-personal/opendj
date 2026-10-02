@@ -27,6 +27,7 @@
 	 * whether this tab is drawing the panel, the chip, or neither.
 	 */
 	import { goto } from '$app/navigation';
+	import { checkPreflight } from '$lib/preflight/preflight.svelte';
 	import AssistantSidebar from '$lib/components/assistant/AssistantSidebar.svelte';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
 	import { capabilities } from '$lib/api/capabilities.svelte';
@@ -117,7 +118,17 @@
 	const fatal = $derived(fatalBlockers(detection));
 	const source = $derived(setupWizard.source);
 	const folderRows = $derived(setupWizard.folderRows);
-	const nextRefusal = $derived(advanceRefusal(step, { source, detection, folderRows, job }));
+	const nextRefusal = $derived(
+		advanceRefusal(step, {
+			source,
+			detection,
+			folderRows,
+			job,
+			statusRefreshJobId: setupWizard.statusRefreshJobId,
+			busy: setupWizard.busy,
+			statusRefreshError: setupWizard.statusRefreshError
+		})
+	);
 	/** Why Back is refused here, or null. Same function that gates the button,
 	 * so the tooltip and the disabled state can never disagree. */
 	const backWhy = $derived(backRefusal(step, { source, detection, folderRows, job }));
@@ -132,7 +143,7 @@
 	const pct = $derived(importPct(job));
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
-	const phase = $derived(detectPhase(detection, detectState === 'scanning'));
+	const phase = $derived(detectPhase(detection, detectState));
 	const rows = $derived(detection === null ? [] : probeRows(detection));
 	/** Live while the panel is minimised, so the chip is never a lie. */
 	const importRunning = $derived(
@@ -260,9 +271,20 @@
 		return jobsStore.attach();
 	});
 
+	/** Re-read setup status once the import succeeds so Done shows the same
+	 * last_import as GET /api/v1/setup/status (issue #3422). */
+	$effect(() => {
+		if (!setupOverlay.open) return;
+		if (job === null || job.status !== 'succeeded') return;
+		void setupWizard.refreshStatusAfterImport(job.id);
+	});
+
 	async function dismissAndClose(): Promise<void> {
 		await setupWizard.skip();
 		if (setupWizard.error !== null) return;
+		// Refresh before close so the empty-library effect sees pending, not
+		// the stale fail from before the dismissal was written.
+		await checkPreflight();
 		// Honest close: the library really is whatever was already in it, and
 		// the chip that replaces the panel says so rather than vanishing.
 		closeSetupOverlay({ incomplete: (setupWizard.status?.tracks ?? 0) === 0 });
@@ -271,7 +293,20 @@
 	async function finish(): Promise<void> {
 		await setupWizard.skip();
 		if (setupWizard.error !== null) return;
+		// Same stale-fail window as Skip: the library row still says empty
+		// until this GET, and closing into it reopens the wizard.
+		await checkPreflight();
 		closeSetupOverlay();
+	}
+
+	/** Progress Continue waits for the post-import status refresh. */
+	async function continueFromProgress(): Promise<void> {
+		if (job !== null && job.status === 'succeeded' && setupWizard.statusRefreshJobId !== job.id) {
+			await setupWizard.refreshStatusAfterImport(job.id);
+			if (setupWizard.error !== null) return;
+		}
+		if (nextRefusal !== null || setupWizard.busy) return;
+		setupWizard.next();
 	}
 
 	function reopen(): void {
@@ -883,8 +918,8 @@
 								</button>
 								<button
 									type="button"
-									onclick={() => setupWizard.next()}
-									disabled={nextRefusal !== null}
+									onclick={() => void continueFromProgress()}
+									disabled={nextRefusal !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue'}
 								>
 									Continue
