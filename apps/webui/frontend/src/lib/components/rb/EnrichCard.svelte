@@ -2,8 +2,9 @@
 	ENRICH-01: the enrich-on-open card. One fixed card, bottom right, that says
 	what the library still lacks and asks the one opt-in question (stems).
 
-	Every word comes from `$lib/enrich/enrich-card` (pure, unit tested); this
-	component only fetches and wires buttons. Agent parity, one endpoint per
+	Every word comes from `$lib/enrich/enrich-card` (pure, unit tested) and
+	every pixel from EnrichCardView.svelte (props only, one story per state);
+	this component only fetches and wires buttons. Agent parity, one endpoint per
 	control:
 	  load      GET  /api/v1/enrich/summary          (enrich_cli summary)
 	  Retry     POST /api/v1/ahead-analysis/retry    (ahead_analysis_cli retry)
@@ -15,13 +16,8 @@
 	import { onMount } from 'svelte';
 	import { api, unwrap } from '$lib/api/client';
 	import StemsPrompt from '$lib/components/rb/StemsPrompt.svelte';
-	import {
-		type EnrichSummary,
-		analysisLines,
-		lyricsLine,
-		offersRetry,
-		stemsText
-	} from '$lib/enrich/enrich-card';
+	import EnrichCardView from '$lib/components/rb/EnrichCardView.svelte';
+	import type { EnrichSummary } from '$lib/enrich/enrich-card';
 
 	const REFRESH_MS = 30_000;
 	const HIDE_KEY = 'odj.enrich-card.hidden';
@@ -33,8 +29,6 @@
 	let asking = $state(false);
 	let busy = $state(false);
 
-	const lines = $derived(summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null)] : []);
-	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
 	const visible = $derived(!hidden && (loadError !== null || (summary?.show ?? false)));
 
 	function readHidden(): boolean {
@@ -95,108 +89,19 @@
 </script>
 
 {#if visible}
-	<section class="enrich-card" aria-label="Library enrichment" data-testid="enrich-card">
-		<header>
-			<h3>Getting your library ready</h3>
-			<button type="button" class="enrich-hide" onclick={hide} title="Hide until the app is next opened">Hide</button>
-		</header>
-		{#if loadError}
-			<p class="enrich-line failed">{loadError}</p>
-		{/if}
-		{#each lines as line (line.lane + line.tone)}
-			<p class="enrich-line {line.tone}" title={line.title ?? undefined} data-lane={line.lane} data-tone={line.tone}>
-				{line.text}
-			</p>
-		{/each}
-		{#if summary && offersRetry(summary)}
-			<button type="button" onclick={retry} disabled={busy}>Retry failed analysis</button>
-		{/if}
-		{#if stemsLine}
-			<p class="enrich-line {summary?.stems.state === 'ask' ? 'working' : 'unavailable'}" data-lane="stems">
-				{stemsLine}
-			</p>
-		{/if}
-		{#if summary?.stems.state === 'ask'}
-			{#if asking}
-				<StemsPrompt onenqueued={() => void load()} onskip={() => (asking = false)} />
-			{:else}
-				<div class="enrich-actions">
-					<button type="button" class="enrich-go" onclick={() => (asking = true)}>Separate stems...</button>
-					<button type="button" onclick={hide}>Not now</button>
-					<button type="button" onclick={never} disabled={busy}>Never for this library</button>
-				</div>
-			{/if}
-		{/if}
-		{#if actionError}
-			<p class="enrich-line failed">{actionError}</p>
-		{/if}
-	</section>
+	<EnrichCardView
+		{summary}
+		{loadError}
+		{actionError}
+		{busy}
+		{asking}
+		onhide={hide}
+		onretry={retry}
+		onask={() => (asking = true)}
+		onnever={never}
+	>
+		{#snippet stemsPrompt()}
+			<StemsPrompt onenqueued={() => void load()} onskip={() => (asking = false)} />
+		{/snippet}
+	</EnrichCardView>
 {/if}
-
-<style>
-	.enrich-card {
-		position: fixed;
-		right: 12px;
-		/* Clear of the feedback and help buttons that own the bottom-right corner. */
-		bottom: 48px;
-		z-index: 40;
-		width: min(380px, calc(100vw - 24px));
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		padding: 10px 12px;
-		background: var(--rb-panel);
-		border: 1px solid var(--rb-border);
-		color: var(--rb-text);
-		font-size: var(--rb-fs-label);
-		box-shadow: 0 4px 16px rgb(0 0 0 / 35%);
-	}
-	header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-	h3 {
-		margin: 0;
-		font-size: 13px;
-		letter-spacing: 0.04em;
-	}
-	.enrich-line {
-		margin: 0;
-		line-height: 16px;
-	}
-	.enrich-line.working {
-		color: var(--rb-text);
-	}
-	.enrich-line.note {
-		color: var(--rb-text-dim);
-	}
-	.enrich-line.failed {
-		color: var(--rb-red);
-	}
-	.enrich-line.unavailable {
-		color: var(--rb-text-dim);
-		font-style: italic;
-	}
-	.enrich-actions {
-		display: flex;
-		gap: 8px;
-		flex-wrap: wrap;
-	}
-	button {
-		font: inherit;
-		font-size: 11px;
-		padding: 4px 10px;
-		background: var(--rb-panel);
-		border: 1px solid var(--rb-border);
-		color: var(--rb-text);
-		cursor: pointer;
-		align-self: flex-start;
-	}
-	.enrich-go {
-		border-color: var(--rb-accent);
-	}
-	.enrich-hide {
-		padding: 2px 8px;
-	}
-</style>
