@@ -328,6 +328,23 @@ export async function settledTrackTitle(
 }
 
 /**
+ * The deck-facing text for a failed load (CLOUDSYNC-33): the title, from the
+ * loaded track or else the load's own in-flight metadata request, then the
+ * plain reason. Recorded against `error` so the deck banner shows the same.
+ */
+export async function failedDeckLoadMessage(
+	error: unknown,
+	title: string | null | undefined | Promise<{ track: { title?: string | null } }>,
+	stableId: string,
+	message: string
+): Promise<string> {
+	const resolved = title instanceof Promise ? await settledTrackTitle(title) : title;
+	const text = formatDeckLoadFailureMessage(resolved, stableId, message);
+	rememberDeckFacingMessage(error, text);
+	return text;
+}
+
+/**
  * Report one failed deck load: the user-facing toast, the client perf ring, and
  * - riding that same toast - the server-side error row carrying the stages.
  *

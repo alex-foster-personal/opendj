@@ -93,11 +93,9 @@ import {
 import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio-resource-disposal';
 import {
 	beginDeckLoad,
-	formatDeckLoadFailureMessage,
+	failedDeckLoadMessage,
 	recordDeckLoad,
-	rememberDeckFacingMessage,
-	reportDeckLoadFailure,
-	settledTrackTitle
+	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
 import {
@@ -3027,8 +3025,7 @@ class RbAudioEngine implements AudioEngine {
 		const token = ++rt.loadToken;
 		const replacingMaster = _masterDeck === deck;
 		deckLoadErrors[deck] = null;
-		let track: Track | null = null;
-		let trackRequest: ReturnType<typeof getTrack> | null = null;
+		let track: Track | null = null, trackRequest: ReturnType<typeof getTrack> | null = null;
 		let buffer: AudioBuffer | null = null;
 		let anlz: DeckState['anlz'] = null;
 		let hotCueSlots: HotCueSlotState[] | null = null;
@@ -3117,12 +3114,9 @@ class RbAudioEngine implements AudioEngine {
 			}
 			if (token !== rt.loadToken) throw exc;
 			assertDeckLoadConsistency(st.stable_id, rt.durationSec, rt.processor !== null);
-			// RbApiError's message already reads `CODE: detail`; prefixing the code again doubled it.
-			// The audio fetch usually rejects before getTrack is read, so the title comes from that request.
-			const title = track?.title ?? (await settledTrackTitle(trackRequest));
-			const msg = formatDeckLoadFailureMessage(title, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
+			// RbApiError's message already reads `CODE: detail`; the title falls back to this load's own getTrack request.
+			const msg = await failedDeckLoadMessage(exc, track?.title ?? trackRequest, stable_id, exc instanceof RbApiError ? exc.message : String(exc));
 			deckLoadErrors[deck] = msg;
-			rememberDeckFacingMessage(exc, msg);
 			reportDeckLoadFailure(deck, msg, exc, stages, options);
 			throw exc;
 		}

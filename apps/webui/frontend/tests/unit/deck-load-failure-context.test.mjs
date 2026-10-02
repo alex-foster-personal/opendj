@@ -111,16 +111,31 @@ test('[if] a load records its deck-facing message [then] only that same error ob
 	assert.equal(failureContext.deckFacingMessage(null), undefined);
 });
 
+test('[if] a failed load is worded [then] the title comes from the request when the track was never read, and the banner can read it back, [else stop].', async () => {
+	const failed = new Error('AUDIO_NOT_ON_THIS_MACHINE: x');
+	const text = await failureContext.failedDeckLoadMessage(
+		failed,
+		Promise.resolve({ track: { title: 'Outomorrow' } }),
+		'224a4561',
+		"AUDIO_NOT_ON_THIS_MACHINE: This file isn't on this computer."
+	);
+	assert.equal(text, "Outomorrow: This file isn't on this computer.");
+	assert.equal(failureContext.deckFacingMessage(failed), text);
+	// Control: a known title wins and is used as is.
+	assert.equal(
+		await failureContext.failedDeckLoadMessage(new Error('x'), 'Night Ride', 'abc', 'CLOUD_HYDRATING: fetching'),
+		'Night Ride: CLOUD_HYDRATING: fetching'
+	);
+});
+
 test('the deck banner reads the load path\'s wording, and the load path records it with the title', () => {
 	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {');
 	assert.ok(
-		body.includes('rememberDeckFacingMessage(exc, msg)'),
-		'if the load stops recording its wording then the banner shows RbApiError: CODE: detail again'
+		body.includes('await failedDeckLoadMessage(exc, track?.title ?? trackRequest, stable_id,'),
+		'if the load stops recording its wording, or stops falling back to its own getTrack ' +
+			'request for the title, then the banner shows RbApiError: CODE: detail or the stable id again'
 	);
-	assert.ok(
-		body.includes('settledTrackTitle(trackRequest)'),
-		'if the title is not read from the load\'s own getTrack request then the toast shows the stable id'
-	);
+	assert.ok(body.includes('(trackRequest = getTrack(stable_id))'), 'the title request must be the load\'s own getTrack');
 	const ipc = readFileSync(
 		fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
 		'utf8'
