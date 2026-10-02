@@ -24,7 +24,19 @@ from .feedback import _COMMENTS_FILE, _dir, _load
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
-_ISSUE_URL_RE = re.compile(r"/issues/(\d+)(?:$|[/?#])")
+_ISSUE_URL_RE = re.compile(
+    r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/(\d+)(?:$|[/?#])"
+)
+_REPO_REF_RE = re.compile(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)\b")
+# Bare ledger refs ("151", "#151") belong to this repository.
+_HOME_REPO = "maintainer/music-dj-tools"
+_KNOWN_STATUSES = frozenset(
+    {"open", "issued", "blocked", "fixed", "merged", "harvested", "archived"}
+)
+
+#: An issue identity: (lowercased "owner/repo", number). The number alone is
+#: not an identity -- another repository can have the same issue number.
+IssueKey = tuple[str, int]
 _PARTIAL_PREFIX = re.compile(r"^partial:", re.I)
 _PARTIAL_REF = re.compile(r"(#\d+|https?://\S+)")
 
@@ -68,30 +80,35 @@ class CommentSummaryOut(BaseModel):
     fleet_correlation: FleetCorrelation
 
 
-def _parse_issue_url(issue_url: str | None) -> int | None:
+def _parse_issue_url(issue_url: str | None) -> IssueKey | None:
     if not issue_url:
         return None
     m = _ISSUE_URL_RE.search(issue_url)
-    return int(m.group(1)) if m else None
+    if not m:
+        return None
+    return (f"{m.group(1)}/{m.group(2)}".lower(), int(m.group(3)))
 
 
-def _parse_progress_issue_ref(raw: str | int) -> int | None:
+def _parse_progress_issue_ref(raw: str | int) -> IssueKey | None:
     if isinstance(raw, int) and raw > 0:
-        return raw
+        return (_HOME_REPO, raw)
     text = str(raw).strip()
-    m = re.search(r"#(\d+)\b", text)
-    if m:
-        return int(m.group(1))
     m = _ISSUE_URL_RE.search(text)
     if m:
-        return int(m.group(1))
+        return (f"{m.group(1)}/{m.group(2)}".lower(), int(m.group(3)))
+    m = _REPO_REF_RE.search(text)
+    if m:
+        return (m.group(1).lower(), int(m.group(2)))
+    m = re.search(r"#(\d+)\b", text)
+    if m:
+        return (_HOME_REPO, int(m.group(1)))
     if text.isdigit():
-        return int(text)
+        return (_HOME_REPO, int(text))
     return None
 
 
-def _fleet_progress_issues(tree: dict[str, Any]) -> frozenset[int]:
-    out: set[int] = set()
+def _fleet_progress_issues(tree: dict[str, Any]) -> frozenset[IssueKey]:
+    out: set[IssueKey] = set()
     for area in tree.get("areas") or []:
         for node in area.get("nodes") or []:
             status = node.get("status") or ""
@@ -108,18 +125,22 @@ def _fleet_progress_issues(tree: dict[str, Any]) -> frozenset[int]:
 def _pin_status_raw(item: dict[str, Any]) -> str:
     raw = item.get("status")
     if raw is None:
+        # Legacy untriaged pin: the lifecycle view shows it as open, and the
+        # operator view counts it as sent to queue (never as in progress).
         return "open"
-    if raw in (
-        "open",
-        "issued",
-        "blocked",
-        "fixed",
-        "merged",
-        "harvested",
-        "archived",
-    ):
+    if raw in _KNOWN_STATUSES:
         return str(raw)
-    return "open"
+    # An unknown persisted status is malformed data or lifecycle drift. Read as
+    # "open" it would be counted in a bucket it never claimed, so refuse loudly.
+    raise HTTPException(
+        status_code=500,
+        detail={
+            "error": "unknown_pin_status",
+            "pin_id": item.get("id"),
+            "status": raw,
+            "message": f"pin status {raw!r} is not one of {sorted(_KNOWN_STATUSES)}",
+        },
+    )
 
 
 def _is_partial_note(note: str | None) -> bool:
@@ -161,7 +182,7 @@ def _summarize_lifecycle(items: list[dict[str, Any]]) -> PinStatusSummaryOut:
 
 
 def _summarize_operator(
-    items: list[dict[str, Any]], fleet_issues: frozenset[int]
+    items: list[dict[str, Any]], fleet_issues: frozenset[IssueKey]
 ) -> PinOperatorBreakdownOut:
     counts = {
         "total": 0,
@@ -182,20 +203,22 @@ def _summarize_operator(
             counts["sent_to_queue"] += 1
         if status == "issued":
             counts["delegated"] += 1
-        issue_num = _parse_issue_url(item.get("issue_url"))
-        fleet_match = issue_num is not None and issue_num in fleet_issues
-        # Explicit "open" only: a raw-null pin is untriaged (sent to queue) and
-        # must not also read as active work, even though _pin_status_raw
-        # normalizes it to "open" for the lifecycle view.
+        issue_key = _parse_issue_url(item.get("issue_url"))
+        fleet_match = issue_key is not None and issue_key in fleet_issues
+        # A raw-null pin is untriaged (sent to queue) and must not read as
+        # active work through ANY signal -- explicit open, a PARTIAL note, or
+        # fleet correlation -- even though _pin_status_raw normalizes it to
+        # "open" for the lifecycle view.
+        triaged = item.get("status") is not None
         explicit_open = item.get("status") == "open"
-        if explicit_open or _pin_visual_partial(item) or fleet_match:
+        if triaged and (explicit_open or _pin_visual_partial(item) or fleet_match):
             counts["in_progress"] += 1
         if status in ("fixed", "merged", "blocked", "harvested"):
             counts[status] += 1
     return PinOperatorBreakdownOut.model_validate(counts)
 
 
-def _load_fleet_issues() -> tuple[frozenset[int], FleetCorrelation]:
+def _load_fleet_issues() -> tuple[frozenset[IssueKey], FleetCorrelation]:
     progress_file = progress_module.PROGRESS_FILE
     if not progress_file.is_file():
         return frozenset(), "ledger_missing"
