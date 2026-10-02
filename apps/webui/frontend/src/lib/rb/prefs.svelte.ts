@@ -29,6 +29,11 @@ import {
 	WAVEFORM_DESIGN_DEFAULT,
 	type WaveformDesign
 } from '$lib/rb/waveform-design';
+import {
+	parseWavePalette,
+	WAVE_PALETTE_DEFAULT,
+	type WavePaletteChoice
+} from '$lib/rb/wave-palette';
 import { makeJogRadialWaveformSetters } from './jog-radial-prefs';
 import {
 	LIBRARY_FILTER_PREF_DEFAULTS,
@@ -204,6 +209,10 @@ export interface RbUiPrefs
 	show_stems: boolean;
 	/** DECKUX-20: tri-band, mono envelope, or line outline for waveforms. */
 	waveform_design: WaveformDesign;
+	/** Issue #4219: waveform band colors. 'rekordbox' (default) is CDJ 3Band:
+	 * dark blue low, amber mid, white high; 'legacy' is the pre-#4219 orange
+	 * low, blue mid, near-white high. Applied as html[data-wave-palette]. */
+	wave_palette: WavePaletteChoice;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -262,6 +271,7 @@ const DEFAULTS: RbUiPrefs = {
 	show_agent_pins: true,
 	show_stems: false,
 	waveform_design: WAVEFORM_DESIGN_DEFAULT,
+	wave_palette: WAVE_PALETTE_DEFAULT,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -293,6 +303,14 @@ function _applyThemeDom(theme: UiTheme): void {
 	document.documentElement.dataset.theme = theme;
 	document.documentElement.style.colorScheme = theme;
 	validateActiveScheme(theme);
+}
+
+/** theme.css keys the legacy waveform override blocks on this attribute;
+ * the default palette needs no attribute, so it is removed rather than set. */
+function _applyWavePaletteDom(choice: WavePaletteChoice): void {
+	if (typeof document === 'undefined') return;
+	if (choice === 'legacy') document.documentElement.dataset.wavePalette = 'legacy';
+	else delete document.documentElement.dataset.wavePalette;
 }
 
 function _load(): RbUiPrefs {
@@ -450,6 +468,7 @@ function _load(): RbUiPrefs {
 		);
 	}
 	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
+	const wavePalette = parseWavePalette(parsed.wave_palette);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
 		crossfadeCurve !== undefined &&
@@ -522,6 +541,7 @@ function _load(): RbUiPrefs {
 		show_agent_pins: parsed.show_agent_pins ?? DEFAULTS.show_agent_pins,
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
+		wave_palette: wavePalette ?? DEFAULTS.wave_palette,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
@@ -562,6 +582,7 @@ const _syncDiskPrefs = syncDiskPrefs;
 export const uiPrefs = $state<RbUiPrefs>(_load());
 
 _applyThemeDom(uiPrefs.theme);
+_applyWavePaletteDom(uiPrefs.wave_palette);
 
 export function setHideBrokenLinks(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
@@ -688,6 +709,15 @@ export function setShowStems(next: boolean): void {
 export function setWaveformDesign(next: WaveformDesign): void {
 	parseWaveformDesign(next);
 	uiPrefs.waveform_design = next;
+	_persist();
+}
+
+export function setWavePalette(next: WavePaletteChoice): void {
+	if (parseWavePalette(next) === undefined) {
+		throw new Error('wave_palette must be rekordbox|legacy, got undefined');
+	}
+	uiPrefs.wave_palette = next;
+	_applyWavePaletteDom(next);
 	_persist();
 }
 

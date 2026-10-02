@@ -531,7 +531,7 @@
 														<option value={opt.value}>{opt.label}</option>
 													{/each}
 												</select>
-												{#if def.id === 'waveform_design'}
+												{#if def.id === 'waveform_design' || def.id === 'wave_palette'}
 													<WaveformDesignPreview />
 												{/if}
 											{:else if def.control.kind === 'multi_bool'}

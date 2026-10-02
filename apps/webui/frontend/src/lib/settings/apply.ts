@@ -3,6 +3,7 @@
  * Unknown keys throw (fail-loud).
  */
 import { parseWaveformDesign } from '$lib/rb/waveform-design';
+import { parseWavePalette } from '$lib/rb/wave-palette';
 import {
 	DECK_LAYOUT_DURATIONS_MS,
 	setAutoPlayEnabled,
@@ -25,6 +26,7 @@ import {
 	setShowDevUi,
 	setShowStems,
 	setWaveformDesign,
+	setWavePalette,
 	setLibraryDensity,
 	setLyricsDeckLine,
 	setLyricsGlobal,
@@ -89,6 +91,7 @@ export const ALLOWED_SETTING_KEYS = [
 	'jog_radial_waveform',
 	'show_stems',
 	'waveform_design',
+	'wave_palette',
 	'deck_layout',
 	'deck_layout_animate',
 	'deck_layout_duration_ms',
@@ -165,6 +168,8 @@ export function readSettingValue(key: AllowedSettingKey): SettingValue {
 			return uiPrefs.show_stems;
 		case 'waveform_design':
 			return uiPrefs.waveform_design;
+		case 'wave_palette':
+			return uiPrefs.wave_palette;
 		case 'deck_layout':
 			return uiPrefs.deck_layout;
 		case 'deck_layout_animate':
@@ -299,6 +304,14 @@ export function applySettingChange(key: string, value: SettingValue): void {
 				throw new Error(`waveform_design must be tri-band|mono|line, got ${String(value)}`);
 			}
 			setWaveformDesign(design);
+			return;
+		}
+		case 'wave_palette': {
+			const choice = parseWavePalette(value);
+			if (choice === undefined) {
+				throw new Error(`wave_palette must be rekordbox|legacy, got ${String(value)}`);
+			}
+			setWavePalette(choice);
 			return;
 		}
 		case 'deck_layout': {

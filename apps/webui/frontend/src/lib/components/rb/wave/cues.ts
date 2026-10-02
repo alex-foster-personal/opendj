@@ -86,12 +86,15 @@ export interface WavePalette {
 	bg: string;
 	/** Decks 3/4 row and canvas fill (--rb-waverow-secondary). */
 	secondaryBg: string;
-	/** Lows band - orange (--rb-orange). */
+	/** Lows band - dark blue in the default rekordbox 3Band palette
+	 * (--rb-wave-low; issue #4219, orange under the legacy palette). */
 	low: string;
-	/** Mids band - blue (--rb-wave-mid). */
+	/** Mids band - amber by default (--rb-wave-mid). */
 	mid: string;
-	/** Highs band - near-white overlay (--rb-wave-high). */
+	/** Highs band - white overlay by default (--rb-wave-high). */
 	high: string;
+	/** Single-color mono / line designs (--rb-wave-mono). */
+	mono: string;
 	/** Beat/bar ticks (--rb-text). */
 	tick: string;
 	/** Non-loop hot cue markers - green (--rb-green), the same colour
@@ -114,17 +117,20 @@ export interface WavePalette {
 	phrase: string;
 }
 
-// cueLoop and cueOutline intentionally reuse `low` (--rb-orange) and `tick`
-// (--rb-text): rather than reading the same CSS var twice, they are derived
-// below once the loop resolves it the first time.
-const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueLoop' | 'cueOutline'>, string> = {
+// cueOutline intentionally reuses `tick` (--rb-text): rather than reading the
+// same CSS var twice, it is derived below once the loop resolves it. cueLoop
+// reads --rb-orange itself: it used to alias `low`, but issue #4219 moved the
+// lows band to --rb-wave-low (dark blue by default) while loops stay orange.
+const _PALETTE_VARS: Record<Exclude<keyof WavePalette, 'cueOutline'>, string> = {
 	bg: '--rb-bg',
 	secondaryBg: '--rb-waverow-secondary',
-	low: '--rb-orange',
+	low: '--rb-wave-low',
 	mid: '--rb-wave-mid',
 	high: '--rb-wave-high',
+	mono: '--rb-wave-mono',
 	tick: '--rb-text',
 	cueHotCue: '--rb-green',
+	cueLoop: '--rb-orange',
 	cueMemory: '--rb-red',
 	phrase: '--rb-text-dim'
 };
@@ -148,7 +154,6 @@ export function readPalette(el: HTMLElement): WavePalette {
 		}
 		out[key] = value;
 	}
-	out.cueLoop = out.low;
 	out.cueOutline = out.tick;
 	const outlineContrast = contrastRatio(out.cueOutline, out.bg);
 	if (outlineContrast < CUE_MIN_CONTRAST) {

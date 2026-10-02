@@ -242,6 +242,10 @@
 	$effect(() => {
 		const el = canvasEl;
 		if (!el) return;
+		// Re-resolve the CSS-var palette when the theme or the waveform band
+		// palette changes (issue #4219): both swap the --rb-wave-* vars.
+		void uiPrefs.theme;
+		void uiPrefs.wave_palette;
 		palette = readPalette(el); // throws if not under .perf-root
 		const observer = new ResizeObserver((entries) => {
 			const rect = entries[0].contentRect;

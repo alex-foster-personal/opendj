@@ -51,8 +51,10 @@ export const DARK_SCHEME_TOKENS: Record<string, string> = {
   'rb-accent': '#2f6fd6',
   'rb-green': '#35c04f',
   'rb-orange': '#e8a13a',
-  'rb-wave-mid': '#3d7dd9',
-  'rb-wave-high': '#cfe0f2',
+  'rb-wave-low': '#2767d8',
+  'rb-wave-mid': '#f0a020',
+  'rb-wave-high': '#f4f6f8',
+  'rb-wave-mono': '#3d7dd9',
   'rb-red': '#d0342c',
   'rb-yellow': '#e5c33a',
   'rb-select': '#1d3f73',
@@ -73,8 +75,10 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-accent': '#175ea8',
   'rb-green': '#1d7035',
   'rb-orange': '#a44b11',
-  'rb-wave-mid': '#2166b1',
-  'rb-wave-high': '#3a4653',
+  'rb-wave-low': '#1d4fa3',
+  'rb-wave-mid': '#9a5a00',
+  'rb-wave-high': '#4a4f57',
+  'rb-wave-mono': '#2166b1',
   'rb-red': '#ad2420',
   'rb-yellow': '#927000',
   'rb-select': '#d6e5f5',
@@ -83,8 +87,20 @@ export const LIGHT_SCHEME_TOKENS: Record<string, string> = {
   'rb-master-text': '#4a3700',
 };
 
-export function getSchemeTokens(theme: SchemeName): Record<string, string> {
-  return theme === 'dark' ? DARK_SCHEME_TOKENS : LIGHT_SCHEME_TOKENS;
+/** Mirrors the two `[data-wave-palette='legacy']` override blocks in
+ * theme.css (issue #4219): the pre-#4219 waveform bands, layered over the
+ * scheme's own tokens when the user picks the legacy waveform palette. */
+export const LEGACY_WAVE_TOKENS: Record<SchemeName, Record<string, string>> = {
+  dark: { 'rb-wave-low': '#e8a13a', 'rb-wave-mid': '#3d7dd9', 'rb-wave-high': '#cfe0f2' },
+  light: { 'rb-wave-low': '#a44b11', 'rb-wave-mid': '#2166b1', 'rb-wave-high': '#3a4653' },
+};
+
+export function getSchemeTokens(
+  theme: SchemeName,
+  wavePalette: 'rekordbox' | 'legacy' = 'rekordbox',
+): Record<string, string> {
+  const base = theme === 'dark' ? DARK_SCHEME_TOKENS : LIGHT_SCHEME_TOKENS;
+  return wavePalette === 'legacy' ? { ...base, ...LEGACY_WAVE_TOKENS[theme] } : base;
 }
 
 /**
