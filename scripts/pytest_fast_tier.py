@@ -229,7 +229,8 @@ class FastTier:
                 f"{LINE_PREFIX} ledger names {known} of {collected} collected tests "
                 f"({coverage:.1%}), under the {self.coverage_min:.0%} floor. pytest-split "
                 "balances unseen tests by a flat average, so shards are balanced by count, "
-                "not time. Regenerate the ledger from a full run before trusting a shard."
+                "not time. Check that durations-ledger.yml is publishing and this run's scope job "
+                "resolved it (a change set that edits `.test_durations` keeps its own file)."
             )
         if self.coverage_warn is not None and coverage < self.coverage_warn:
             # Stderr, not the terminal reporter: a GitHub annotation must start its own line,

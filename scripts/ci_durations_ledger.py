@@ -121,9 +121,12 @@ def _gh_json(path: str) -> dict:
     return json.loads(_gh(path))
 
 
-def _live_artifacts(repo: str, run_id: int) -> dict[str, int]:
-    listing = _gh_json(f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100")
-    return {a["name"]: a["id"] for a in listing.get("artifacts", []) if not a.get("expired")}
+def _live_artifact(repo: str, run_id: int, name: str) -> int | None:
+    """The id of a run's unexpired artifact called `name`, or None. Filtered by name, so
+    a run with more than one page of artifacts cannot hide it."""
+    listing = _gh_json(f"repos/{repo}/actions/runs/{run_id}/artifacts?name={name}&per_page=100")
+    live = [a["id"] for a in listing.get("artifacts", []) if a.get("name") == name and not a.get("expired")]
+    return live[0] if live else None
 
 
 def _artifact_file(repo: str, artifact_id: int) -> object:
@@ -142,12 +145,19 @@ def build(repo: str, out: Path, seed_path: Path) -> str:
         f"?branch=main&event=push&status=success&per_page={RUNS_TO_SCAN}"
     ).get("workflow_runs", [])
     names = [SHARD_ARTIFACT.format(n=n) for n in range(1, SHARDS + 1)]
+    skipped: list[str] = []
     for run in runs:
-        artifacts = _live_artifacts(repo, run["id"])
-        if not all(name in artifacts for name in names):
+        ids = [_live_artifact(repo, run["id"], name) for name in names]
+        if None in ids:
+            skipped.append(f"run {run['id']}: shard artifact(s) missing or expired")
             continue
-        ledger = merge([_artifact_file(repo, artifacts[name]) for name in names])
-        check_rows(ledger, seed)
+        # One bad run (a short run, a repeated test) must not hide an older good one.
+        try:
+            ledger = merge([_artifact_file(repo, artifact_id) for artifact_id in ids])
+            check_rows(ledger, seed)
+        except LedgerError as exc:
+            skipped.append(f"run {run['id']}: {exc}")
+            continue
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(render(ledger), encoding="utf-8")
         added, dropped = len(ledger.keys() - seed.keys()), len(seed.keys() - ledger.keys())
@@ -157,8 +167,8 @@ def build(repo: str, out: Path, seed_path: Path) -> str:
             f"slowest {max(ledger.values()):.1f} s"
         )
     raise LedgerError(
-        f"none of the newest {len(runs)} successful main-push {SOURCE_WORKFLOW} runs still has "
-        f"all {SHARDS} shard durations artifacts"
+        f"none of the newest {len(runs)} successful main-push {SOURCE_WORKFLOW} runs gave a valid "
+        f"ledger from all {SHARDS} shard durations artifacts: " + "; ".join(skipped)
     )
 
 
@@ -167,7 +177,7 @@ def resolve(repo: str) -> str:
         f"repos/{repo}/actions/workflows/{LEDGER_WORKFLOW}/runs?branch=main&status=success&per_page=10"
     ).get("workflow_runs", [])
     for run in runs:
-        if LEDGER_ARTIFACT in _live_artifacts(repo, run["id"]):
+        if _live_artifact(repo, run["id"], LEDGER_ARTIFACT) is not None:
             return str(run["id"])
     return ""
 
@@ -203,8 +213,9 @@ def main(argv: list[str] | None = None) -> int:
             print(resolve(args.repo))
         else:
             print(install(args.src, args.dest))
-    except LedgerError as exc:
-        print(f"::error title=durations ledger::{exc}", file=sys.stderr)
+    except (LedgerError, OSError, ValueError, KeyError, zipfile.BadZipFile, subprocess.TimeoutExpired) as exc:
+        # Every failure, expected or not, reaches the log as an annotation that names it.
+        print(f"::error title=durations ledger::{type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     return 0
 
