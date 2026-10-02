@@ -89,3 +89,48 @@ test('the bar loads through the browser deck-load path, not its own', () => {
 	const bar = readFileSync(`${SRC}/lib/components/rb/CommandBar.svelte`, 'utf8');
 	assert.doesNotMatch(bar, /dispatchPerformanceCommand|runPerformanceCommandFromUi/);
 });
+
+// requirement: CMDK-03
+function fakeClock() {
+	let t = 0;
+	return { now: () => t, sleep: async (ms) => { t += ms; } };
+}
+
+test('vocals-only waits while stems are loading, then reports ready', async () => {
+	const clock = fakeClock();
+	const states = ['loading', 'loading', 'ready'];
+	let i = 0;
+	const read = () => ({ stable_id: 'a', status: states[Math.min(i++, states.length - 1)] });
+	assert.equal(await mod.waitForStemsSettled(read, 'a', clock), 'ready');
+	assert.equal(i, 3);
+});
+
+test('vocals-only stops at once when the deck moves to another track', async () => {
+	// The overshoot to guard: soloing whatever is on the deck after a long wait.
+	const clock = fakeClock();
+	let i = 0;
+	const read = () => ({ stable_id: i++ < 2 ? 'a' : 'b', status: 'loading' });
+	assert.equal(await mod.waitForStemsSettled(read, 'a', clock), 'stale');
+});
+
+test('vocals-only reports a settled no-stems or error state without waiting', async () => {
+	const clock = fakeClock();
+	assert.equal(await mod.waitForStemsSettled(() => ({ stable_id: 'a', status: 'unavailable' }), 'a', clock), 'unavailable');
+	assert.equal(await mod.waitForStemsSettled(() => ({ stable_id: 'a', status: 'error' }), 'a', clock), 'error');
+	assert.equal(clock.now(), 0);
+});
+
+test('vocals-only gives up after its ceiling', async () => {
+	const clock = fakeClock();
+	const read = () => ({ stable_id: 'a', status: 'loading' });
+	assert.equal(await mod.waitForStemsSettled(read, 'a', { ...clock, maxWaitMs: 1000 }), 'timeout');
+	assert.ok(clock.now() >= 1000);
+});
+
+test('the load hook solos only after the stems settle', () => {
+	const panel = readFileSync(`${SRC}/lib/components/rb/BrowserPanel.svelte`, 'utf8');
+	const hook = panel.slice(panel.indexOf('async function _commandBarLoad'));
+	const wait = hook.indexOf('await waitForStemsSettled(');
+	const solo = hook.indexOf("type: 'stem_solo'");
+	assert.ok(wait > 0 && solo > wait, 'stem_solo must follow the stems wait');
+});

@@ -86,3 +86,35 @@ export function stepSelection(index: number, count: number, step: -1 | 1): numbe
 	if (count <= 0) return 0;
 	return Math.min(count - 1, Math.max(0, index + step));
 }
+
+/** How long vocals-only waits for the deck's stems before giving up. Stems
+ * decode after the mix, and a bundle the hub is still fetching from R2 can
+ * take minutes (STEM_HYDRATE_MAX_WAIT_MS allows ten). */
+export const VOCALS_ONLY_MAX_WAIT_MS = 10 * 60 * 1000;
+const VOCALS_ONLY_POLL_MS = 150;
+
+export type StemsSettled = 'ready' | 'unavailable' | 'error' | 'stale' | 'timeout';
+
+/**
+ * CMDK-03: the vocal solo can only land once the deck's stems have settled.
+ * Soloing while they are still `loading` is refused by the engine ("stems are
+ * loading: no aligned artifact"), so poll the deck until its stem status
+ * leaves `loading`. `stale` means the deck moved on to another track, and the
+ * caller must not touch it.
+ */
+export async function waitForStemsSettled(
+	read: () => { stable_id: string | null; status: 'unavailable' | 'loading' | 'ready' | 'error' },
+	stableId: string,
+	options: { maxWaitMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number } = {}
+): Promise<StemsSettled> {
+	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+	const now = options.now ?? (() => Date.now());
+	const deadline = now() + (options.maxWaitMs ?? VOCALS_ONLY_MAX_WAIT_MS);
+	for (;;) {
+		const deck = read();
+		if (deck.stable_id !== stableId) return 'stale';
+		if (deck.status !== 'loading') return deck.status;
+		if (now() >= deadline) return 'timeout';
+		await sleep(VOCALS_ONLY_POLL_MS);
+	}
+}

@@ -241,7 +241,7 @@
 	import LyricSearchResults from './browser/LyricSearchResults.svelte';
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
-	import CommandBar from './CommandBar.svelte';
+	import CommandBar, { waitForStemsSettled } from './CommandBar.svelte';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,
@@ -2608,13 +2608,20 @@
 	}
 
 	/** CMDK-02/03: the command bar loads through _loadOntoDeck like a
-	 * double-click, then solos the vocal stem when asked. A track whose stem
-	 * bundle is missing loads as the full mix, and says so. */
+	 * double-click, then solos the vocal stem when asked. The solo waits for
+	 * the deck's stems to settle (they decode after the mix), and a track
+	 * whose stem bundle is missing loads as the full mix, and says so. */
 	async function _commandBarLoad(row: LoadableRow, deck: DeckId, vocalsOnly: boolean): Promise<void> {
 		await _loadOntoDeck(row, deck);
 		if (!vocalsOnly || decks[deck].stable_id !== row.stable_id) return;
-		if (decks[deck].stems.status === 'unavailable') {
-			pushToast(`No stems for this track yet; deck ${deck} plays the full mix`, 'warn');
+		const settled = await waitForStemsSettled(
+			() => ({ stable_id: decks[deck].stable_id, status: decks[deck].stems.status }),
+			row.stable_id
+		);
+		if (settled === 'stale') return;
+		if (settled !== 'ready') {
+			const why = settled === 'unavailable' ? 'No stems for this track yet' : `Stems did not load (${settled})`;
+			pushToast(`${why}; deck ${deck} plays the full mix`, 'warn');
 			return;
 		}
 		try {

@@ -1,3 +1,9 @@
+<script module lang="ts">
+	// Re-exported so BrowserPanel's load hook reaches it through the import it
+	// already has (the quality ratchet counts each module a file imports).
+	export { waitForStemsSettled } from '$lib/rb/command-bar';
+</script>
+
 <script lang="ts">
 	// CMDK-01..03: Cmd-K (Ctrl-K off macOS) command bar over the browser.
 	// Searches the open playlist as you type; Tab widens it to the whole
