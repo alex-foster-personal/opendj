@@ -99,3 +99,16 @@ test('the setting is an implemented enum in the catalog and is applyable', async
 	assert.equal(apply.readSettingValue('wave_palette'), 'legacy');
 	assert.throws(() => apply.applySettingChange('wave_palette', 'rainbow'), /rekordbox\|legacy/);
 });
+
+test('an idle deck waveform repaints on a palette switch (palette is reactive state)', async () => {
+	// Mac check on PR #4923: WaveRow re-read the CSS palette on a switch but held
+	// it in a plain `let`, so the stopped-deck repaint effect never re-ran and
+	// the main waveform kept the old colors until a seek. A .svelte file cannot
+	// be mounted here, so this pins the two lines that make the repaint happen.
+	const { readFileSync } = await import('node:fs');
+	const src = readFileSync(new URL('../../src/lib/components/rb/wave/WaveRow.svelte', import.meta.url), 'utf8');
+	assert.match(src, /let palette = \$state\.raw<WavePalette \| null>\(null\);/);
+	assert.match(src, /void uiPrefs\.wave_palette;\s*\n\s*palette = readPalette\(el\);/);
+	const staticRepaint = src.slice(src.indexOf('// Static repaint on load/seek'));
+	assert.match(staticRepaint.slice(0, staticRepaint.indexOf('draw(true);')), /void palette;/);
+});

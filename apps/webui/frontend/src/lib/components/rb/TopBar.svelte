@@ -1102,8 +1102,10 @@
 		/* Was 1210px. The inert view-icon cluster, LINK and PAD are 233px of
 		   placeholder chrome that operate nothing; the deficits above 1211px run
 		   to 138px, so 1415px is the last measured failing width plus the same
-		   25px margin the other tiers use. */
-		.rb-topbar .icon-cluster,
+		   25px margin the other tiers use. Only the cluster's INERT members go:
+		   the 2-deck toggle is a real control since V1 (PR #4923) and is about
+		   22px, well inside the ~95px this tier frees at its tightest width. */
+		.rb-topbar .icon-cluster > :global(.explainer:has(.rb-inert)),
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}

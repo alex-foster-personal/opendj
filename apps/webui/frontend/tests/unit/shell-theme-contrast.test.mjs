@@ -103,3 +103,23 @@ for (const route of ['play-analytics', 'sets', 'dedup']) {
 		assert.deepEqual(style.match(/#[0-9a-fA-F]{3,6}\b/g) ?? [], []);
 	});
 }
+
+/** Shell chrome outside app.css that sits on the shell surfaces. A var() it
+ * reads must be a token app.css declares for BOTH themes: an undeclared one
+ * paints its hard-coded fallback in every theme (the feedback-pins label used
+ * --text-muted, declared nowhere, so light theme drew #94a3b8 at 2.52:1;
+ * Mac check on PR #4923). */
+const SHELL_CHROME = ['lib/components/rb/FeedbackPinTopbarControls.svelte'];
+
+for (const rel of SHELL_CHROME) {
+	test(`${rel} reads only shell tokens declared in both themes`, () => {
+		const dark = cc.parseColorTokens(APP_CSS, ':root');
+		const light = cc.parseColorTokens(APP_CSS, "html[data-theme='light']");
+		const src = read(rel);
+		const style = src.slice(src.indexOf('<style'));
+		const names = [...style.matchAll(/var\(--([\w-]+)/g)].map((m) => m[1]);
+		assert.ok(names.length > 0, `${rel} styles read at least one token`);
+		const undeclared = names.filter((name) => !(name in dark) || !(name in light));
+		assert.deepEqual(undeclared, [], `${rel} reads tokens app.css does not declare`);
+	});
+}

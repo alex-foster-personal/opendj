@@ -194,7 +194,10 @@
 	let canvasEl: HTMLCanvasElement | undefined = $state();
 	let cssW = $state(0);
 	let cssH = $state(0);
-	let palette: WavePalette | null = null;
+	// Reactive so the stopped-deck repaint effect below redraws when a theme
+	// or waveform palette switch re-reads it; as a plain let, an idle deck kept
+	// the old colors until the next seek (issue #4219, Mac check on PR #4923).
+	let palette = $state.raw<WavePalette | null>(null);
 	let seeking = $state(false);
 	/** SPIKE-PERF: gesture-local paint target. Not published as deck.position_ms
 	 * (presentation clock stays transport truth). Undo = always paint deck.position_ms. */
@@ -366,6 +369,7 @@
 		void masterState?.position_ms;
 		void cssW;
 		void cssH;
+		void palette;
 		draw(true);
 	});
 
