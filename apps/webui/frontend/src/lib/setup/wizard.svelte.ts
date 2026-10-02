@@ -52,8 +52,7 @@
  */
 
 import { capabilities } from '../api/capabilities.svelte';
-import { LIBRARY_ATTACHED_CHECK_ID, needsSetupForEmptyLibrary } from '../preflight/fresh-install';
-import { checkPreflight, preflightGate } from '../preflight/preflight.svelte';
+import { checkPreflight } from '../preflight/preflight.svelte';
 import type { Job } from '../rb/jobs-store.svelte';
 import {
 	detectRekordbox,
@@ -75,13 +74,14 @@ import {
 	newFolderRow,
 	type FolderRow,
 } from './folder-rows';
+import { agentApiError, humanApiError, humanSetupReadError } from './present';
 import {
-	agentApiError,
-	humanApiError,
-	humanFinishLibraryMissing,
-	humanSetupReadError,
-	humanFinishUnconfirmed
-} from './present';
+	SETUP_READ_TIMEOUT_MS,
+	SetupReadTimeout,
+	bounded,
+	errorMessage,
+	finishBlocker
+} from './setup-read';
 import {
 	backRefusal,
 	nextStepFor,
@@ -91,62 +91,8 @@ import {
 	type WizardStep,
 } from './wizard-rules';
 
-export {
-	SETUP_IMPORT_KIND,
-	STEP_TITLES,
-	TERMINAL,
-	WIZARD_STEPS,
-	advanceRefusal,
-	backRefusal,
-	fatalBlockers,
-	humanRefusal,
-	importPct,
-	nextStep,
-	nextStepFor,
-	previousStep,
-	previousStepFor,
-	stepCount,
-	stepIndex,
-	stepPosition,
-	visibleSteps,
-} from './wizard-rules';
-export type { AdvanceContext, ImportSource, ImportSourceSelection, WizardStep } from './wizard-rules';
-
-function _message(exc: unknown): string {
-	return exc instanceof Error ? exc.message : String(exc);
-}
-
-/** How long one setup read (status, detection) may take before the wizard
- * stops waiting and says the search did not finish. Detection on a large
- * collection answers in well under a second; 20 s is a stall, not a slow disk. */
-export const SETUP_READ_TIMEOUT_MS = 20_000;
-
-/** Thrown when a read hits its deadline. Carries the endpoint for agents. */
-class SetupReadTimeout extends Error {}
-
-/** Run one read under a deadline: abort the request and reject when it passes.
- * Raced as well as aborted, so a fetch that ignores its signal still settles. */
-async function bounded<T>(
-	what: string,
-	ms: number,
-	read: (signal: AbortSignal) => Promise<T>
-): Promise<T> {
-	const controller = new AbortController();
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const deadline = new Promise<never>((_, reject) => {
-		timer = setTimeout(() => {
-			controller.abort();
-			reject(new SetupReadTimeout(`${what} gave no answer within ${ms} ms; aborted`));
-		}, ms);
-	});
-	try {
-		return await Promise.race([read(controller.signal), deadline]);
-	} finally {
-		clearTimeout(timer);
-	}
-}
-
-// ------------------------------------------------------------------ store
+export * from './wizard-rules';
+export { SETUP_READ_TIMEOUT_MS } from './setup-read';
 
 class SetupWizard {
 	step = $state<WizardStep>('welcome');
@@ -200,7 +146,7 @@ class SetupWizard {
 	/** A failed status or detection read: a fixed sentence for the operator,
 	 * the raw message (plain-string details and paths included) for agents. */
 	private _failRead(exc: unknown): void {
-		this.errorDiagnostic = agentApiError(_message(exc));
+		this.errorDiagnostic = agentApiError(errorMessage(exc));
 		this.error = humanSetupReadError(exc instanceof SetupReadTimeout);
 		this.detectState = 'failed';
 	}
@@ -322,11 +268,9 @@ class SetupWizard {
 	 * there. Callers drive this from an effect on `capabilities.flavor`, so
 	 * the retry is demand-driven off a state change and never a poll.
 	 *
-	 * ONLY that race is retried here. A read the engine answered with an
-	 * error (or that timed out) stays 'failed' until the operator presses
-	 * Try again or Look again: retrying it from the effect looped load() with
-	 * Get started held disabled, and a failed Look again was repainted with
-	 * the old answer by a status re-read nobody asked for.
+	 * ONLY that race is retried. A read that failed or timed out stays
+	 * 'failed' until Try again or Look again: retrying it from the effect
+	 * looped load() and repainted a failed Look again with the old answer.
 	 */
 	async ensureLoaded(): Promise<void> {
 		if (this.detectState !== 'idle' && !this.awaitingEngine) return;
@@ -387,7 +331,7 @@ class SetupWizard {
 			this.error = null;
 			this.folderCandidatesState = 'answered';
 		} catch (exc) {
-			this._fail(_message(exc));
+			this._fail(errorMessage(exc));
 			this.folderCandidatesState = 'failed';
 		}
 	}
@@ -416,7 +360,7 @@ class SetupWizard {
 			this.error = null;
 			this.errorDiagnostic = null;
 		} catch (exc) {
-			this._fail(_message(exc));
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -454,7 +398,7 @@ class SetupWizard {
 			this.errorDiagnostic = null;
 			this.goTo('progress');
 		} catch (exc) {
-			this._fail(_message(exc));
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -487,7 +431,7 @@ class SetupWizard {
 			this.errorDiagnostic = null;
 			this.goTo('progress');
 		} catch (exc) {
-			this._fail(_message(exc));
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -510,7 +454,7 @@ class SetupWizard {
 			this.error = null;
 			this.errorDiagnostic = null;
 		} catch (exc) {
-			this._fail(_message(exc));
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -546,19 +490,10 @@ class SetupWizard {
 		} finally {
 			this.busy = false;
 		}
-		if (preflightGate.error !== null) {
-			this.errorDiagnostic =
-				'setup was saved, but the startup checks could not be re-read ' +
-				`(GET /api/v1/preflight), so setup cannot tell whether to close: ${preflightGate.error}`;
-			this.error = humanFinishUnconfirmed();
-			return false;
-		}
-		if (needsSetupForEmptyLibrary(preflightGate.checks, false)) {
-			const row = preflightGate.checks.find((check) => check.id === LIBRARY_ATTACHED_CHECK_ID);
-			this.errorDiagnostic =
-				'setup was saved, but the engine still reports no library attached ' +
-				`(${row?.detail ?? 'no detail given'}), so closing would only reopen setup`;
-			this.error = humanFinishLibraryMissing();
+		const blocker = finishBlocker();
+		if (blocker !== null) {
+			this.errorDiagnostic = blocker.diagnostic;
+			this.error = blocker.human;
 			return false;
 		}
 		return true;
@@ -587,7 +522,7 @@ class SetupWizard {
 			this.detectState = 'idle';
 			this._clearStatusRefresh();
 		} catch (exc) {
-			this._fail(_message(exc));
+			this._fail(errorMessage(exc));
 		} finally {
 			this.busy = false;
 		}
@@ -626,7 +561,7 @@ class SetupWizard {
 			this.statusRefreshJobId = jobId;
 			this.statusRefreshError = null;
 		} catch (exc) {
-			const message = _message(exc);
+			const message = errorMessage(exc);
 			this._fail(message);
 			this.statusRefreshError = message;
 		} finally {
