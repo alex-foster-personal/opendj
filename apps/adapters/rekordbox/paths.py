@@ -472,18 +472,25 @@ def _picked_from_path(path: Path, *, source: str) -> track_locations.PickedAudio
 def _rekordbox_copy(stable_id: str) -> Path | None:
     """rekordbox's own on-disk file for ``stable_id``, or None.
 
-    None covers every way there is no such file here: no vendor mapping, no
-    master database, no FolderPath, a streaming row, or a path that is missing
-    or not materialised. An unsupported extension (415) still propagates,
-    because then the file IS here and the deck should say why it won't play.
+    None covers every way there is no such file here: a 404 (no vendor
+    mapping, no FolderPath, a streaming row, a path that is missing or not
+    materialized) or no rekordbox install at all (``MASTER_DB_UNAVAILABLE``,
+    which the analysis route reads the same way). Anything else propagates: an
+    unsupported extension (415) because the file IS here and the deck should
+    say why it won't play, and any other server error because it means this
+    machine could not look, not that the file is absent.
     """
     try:
         path, _media_type = audio_file(resolve_content(stable_id))
     except HTTPException as exc:
-        if exc.status_code == 415:
-            raise
-        return None
+        if exc.status_code == 404 or _error_code(exc) == "MASTER_DB_UNAVAILABLE":
+            return None
+        raise
     return path
+
+
+def _error_code(exc: HTTPException) -> str | None:
+    return exc.detail.get("code") if isinstance(exc.detail, dict) else None
 
 
 def _local_only_fallback(stable_id: str, reason: str | None) -> track_locations.PickedAudio:

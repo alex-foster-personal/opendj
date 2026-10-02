@@ -299,3 +299,31 @@ def test_unconfigured_machine_plays_rekordboxs_copy_when_its_own_path_is_gone(
     missing = unconfigured_client.get(f"/api/v1/tracks/{REMOTE_SID}/audio")
     assert missing.status_code == 404
     assert missing.json()["detail"]["code"] == "AUDIO_NOT_ON_THIS_MACHINE"
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_rekordbox_lookup_failure_is_not_reported_as_absence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] the rekordbox lookup fails for a reason other than absence [then]
+    the error propagates instead of reading as "not on this computer",
+    [else stop]."""
+    from fastapi import HTTPException
+
+    from apps.adapters.rekordbox import paths as rb_paths
+
+    def fail(code: str, status: int) -> None:
+        def raiser(_stable_id: str) -> None:
+            raise HTTPException(status_code=status, detail={"code": code, "message": code})
+
+        monkeypatch.setattr(rb_paths, "resolve_content", raiser)
+
+    fail("STATE_DB_UNAVAILABLE", 500)
+    with pytest.raises(HTTPException) as excinfo:
+        rb_paths._rekordbox_copy("sid")
+    assert excinfo.value.status_code == 500
+    # Controls: no rekordbox install, and a plain 404, both mean no copy here.
+    fail("MASTER_DB_UNAVAILABLE", 500)
+    assert rb_paths._rekordbox_copy("sid") is None
+    fail("VENDOR_MAPPING_NOT_FOUND", 404)
+    assert rb_paths._rekordbox_copy("sid") is None
