@@ -72,7 +72,7 @@ def track_facts(conn: sqlite3.Connection, stable_ids: Iterable[str]) -> dict[str
         chunk = ids[start : start + 500]
         marks = ",".join("?" * len(chunk))
         for sid, title, artists_json, album, file_path in conn.execute(
-            f"SELECT stable_id, title, artists_json, album, file_path FROM tracks WHERE stable_id IN ({marks})",
+            f"SELECT stable_id, title, artists_json, album, file_path FROM tracks WHERE deleted_at IS NULL AND stable_id IN ({marks})",
             chunk,
         ):
             out[sid] = {
