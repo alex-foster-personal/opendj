@@ -20,8 +20,21 @@ export function parseWatcherFolderLines(text: string): string[] {
 	return out;
 }
 
+// Absolute on the platform the daemon runs on: POSIX (/Users/dev/Music), a
+// Windows drive letter (C:\Music or C:/Music) or a UNC share
+// (\\server\share\Music). Drive-relative (C:Music) and rooted-but-driveless
+// (\Music) forms stay rejected (PR #4014, Sol P2).
+const WINDOWS_DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/;
+const WINDOWS_UNC_ABSOLUTE = /^\\\\[^\\/]+[\\/][^\\/]+/;
+
+export function isAbsoluteWatcherFolderPath(path: string): boolean {
+	return (
+		path.startsWith('/') || WINDOWS_DRIVE_ABSOLUTE.test(path) || WINDOWS_UNC_ABSOLUTE.test(path)
+	);
+}
+
 export function validateWatcherFolderPathSyntax(path: string): void {
-	if (!path.startsWith('/')) {
+	if (!isAbsoluteWatcherFolderPath(path)) {
 		throw new Error(`watcher folder must be an absolute path: ${path}`);
 	}
 	if (path.includes('..')) {

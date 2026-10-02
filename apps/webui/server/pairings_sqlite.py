@@ -197,6 +197,16 @@ def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
 def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
     """Insert or merge like :class:`InMemoryBackend.create_pairing`."""
     ensure_http_pairings_table(conn)
+    # The supplied id is checked first: if it already names another edge, the
+    # create is refused even when its own edge exists under a different id, so
+    # the merge branch below can never answer for a pairing_id it does not own.
+    same_id = conn.execute(
+        f"SELECT {_SELECT_HTTP} FROM http_pairings WHERE pairing_id=?",
+        (pairing.pairing_id,),
+    ).fetchone()
+    raise_on_pairing_id_collision(
+        _row_to_pairing(same_id) if same_id is not None else None, pairing
+    )
     existing = _find_existing(conn, pairing)
     if existing is not None:
         if pairing.notes and pairing.notes != existing.notes:
@@ -219,13 +229,6 @@ def create_http_pairing(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
             )
             return _upsert_row(conn, updated)
         return existing
-    same_id = conn.execute(
-        f"SELECT {_SELECT_HTTP} FROM http_pairings WHERE pairing_id=?",
-        (pairing.pairing_id,),
-    ).fetchone()
-    raise_on_pairing_id_collision(
-        _row_to_pairing(same_id) if same_id is not None else None, pairing
-    )
     return _upsert_row(conn, pairing)
 
 

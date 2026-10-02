@@ -5,20 +5,32 @@
 	// out of the /performance route's eager bundle.
 	let { onEnter, onLeave }: { onEnter: () => void; onLeave: () => void } = $props();
 
+	// A range change commits only after the disk write lands (PR #4014, Sol P1);
+	// a rejection is shown here instead of leaving a range the disk never took.
+	let saveError = $state<string | null>(null);
+
+	function _patch(patch: Parameters<typeof patchCompatibleFilter>[0]): void {
+		saveError = null;
+		patchCompatibleFilter(patch).catch((err: unknown) => {
+			const detail = err instanceof Error ? err.message : String(err);
+			saveError = `Could not save compatible filter: ${detail}`;
+		});
+	}
+
 	function _setCamelot(steps: 0 | 1 | 2): void {
-		patchCompatibleFilter({ camelot_steps: steps });
+		_patch({ camelot_steps: steps });
 	}
 
 	function _setBpmWindow(n: number): void {
-		patchCompatibleFilter({ bpm_window_bpm: n, bpm_enabled: true });
+		_patch({ bpm_window_bpm: n, bpm_enabled: true });
 	}
 
 	function _setBpmOff(): void {
-		patchCompatibleFilter({ bpm_enabled: false });
+		_patch({ bpm_enabled: false });
 	}
 
 	function _setDirection(d: 'both' | 'above' | 'below' | 'same'): void {
-		patchCompatibleFilter({ bpm_direction: d });
+		_patch({ bpm_direction: d });
 	}
 </script>
 
@@ -54,6 +66,9 @@
 			? `BPM ±${uiPrefs.compatible_filter.bpm_window_bpm} (${uiPrefs.compatible_filter.bpm_direction})`
 			: 'BPM off'}
 	</p>
+	{#if saveError}
+		<p class="compat-filter-error" role="alert" title={saveError}>{saveError}</p>
+	{/if}
 </div>
 
 <style>
@@ -81,6 +96,11 @@
 	.compat-filter-row button {
 		font-size: 0.7rem;
 		padding: 0.15rem 0.35rem;
+	}
+	.compat-filter-error {
+		margin: 0.35rem 0 0;
+		font-size: 0.65rem;
+		color: var(--rb-danger, #f66);
 	}
 	.compat-filter-summary {
 		margin: 0.35rem 0 0;

@@ -1092,7 +1092,7 @@
 	   What pays, in the order it yields. Read-only STATUS yields before any
 	   control, which is the same ranking the 1530px note above states: the
 	   live perf readout, the Gig/Prep posture chip and the CloudSync status
-	   chip REPORT state and operate nothing, so the 1125px tier is where they
+	   chip REPORT state and operate nothing, so the 1160px tier is where they
 	   go. Below that the inert/duplicated chrome goes, then the clock, then
 	   the free badge and the utility icons, then - only on a window too narrow
 	   for the row to be honest about it - the vibe meter (Create pairing
@@ -1122,10 +1122,14 @@
 		.rb-topbar .link-btn,
 		.rb-topbar .topbar-slot-pad { display: none; }
 	}
-	@media (max-width: 1125px) {
+	@media (max-width: 1160px) {
 		/* New tier. Status first (see the note above), and the chrome the 825px
 		   tier used to evict, which now has to go 300px earlier because the label
-		   is still in the row at those widths. */
+		   is still in the row at those widths. Was 1125px: keeping Create pairing
+		   in the row at every width (PR #4014, as "Pair" below 1740px) crushed
+		   the command entry across [1126px, 1133px] in a 1px elementFromPoint
+		   sweep (tests/e2e/topbar-source-toggle.spec.ts failed at 1130px), so
+		   1160px is that last failing width plus the same ~25px margin. */
 		.rb-topbar :global(.perf-meters-root),
 		.rb-topbar :global(.posture-chip),
 		.rb-topbar :global(.cloudsync-status),

@@ -816,11 +816,26 @@ export const { setLevelCalibrationCapture, setLevelCalibrationDisabled } = makeL
 	(patch) => void _syncDiskPrefs(patch)
 );
 
-/** Persist a confirm skip / remembered choice. Pass `undefined` to clear. */
-export function patchCompatibleFilter(patch: Partial<CompatibleFilterPrefs>): void {
-	uiPrefs.compatible_filter = { ...uiPrefs.compatible_filter, ...patch };
+/** The latest compatible-filter value queued for disk and not yet settled, so
+ * two quick range clicks compose instead of the second dropping the first. */
+let _compatibleFilterPending: CompatibleFilterPrefs | null = null;
+
+/** LIBM compatible filter ranges (PR #4014, Sol P1): resolves only once the
+ * disk PUT succeeded, and only then commits the live pref and localStorage.
+ * A failed write rejects and leaves the committed ranges untouched, so the UI
+ * never shows a range that disk hydration would later revert. */
+export async function patchCompatibleFilter(patch: Partial<CompatibleFilterPrefs>): Promise<void> {
+	const next = { ...(_compatibleFilterPending ?? uiPrefs.compatible_filter), ...patch };
+	_compatibleFilterPending = next;
+	try {
+		await _syncDiskPrefs({ compatible_filter: next }, putDiskPrefsVerified);
+	} catch (err) {
+		if (_compatibleFilterPending === next) _compatibleFilterPending = null;
+		throw err;
+	}
+	if (_compatibleFilterPending === next) _compatibleFilterPending = null;
+	uiPrefs.compatible_filter = next;
 	_persist();
-	_syncDiskPrefs({ compatible_filter: uiPrefs.compatible_filter });
 }
 
 /** LIBM-129 v1 placeholder: paths must already pass syntax + existence checks.
