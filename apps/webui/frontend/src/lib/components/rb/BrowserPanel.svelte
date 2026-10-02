@@ -144,7 +144,9 @@
 	import {
 		fetchPlaylistFirstPage,
 		prefetchPlaylistFirstPage,
-		prefetchPlaylistTreeIntent
+		prefetchPlaylistTreeIntent,
+		invalidatePlaylistFirstPage,
+		invalidateAllPlaylistFirstPages
 	} from '$lib/rb/library-playlist-page-prefetch';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
@@ -924,13 +926,17 @@
 		// ever one refetch. Playlist TREE names refresh immediately on
 		// `playlists` / resync (see the handlers below); that is cheap and is
 		// user-visible undo/redo state.
-		const unsubscribeTracks = subscribeKind('tracks', () => _libraryRefreshGate.request());
+		const unsubscribeTracks = subscribeKind('tracks', () => {
+			invalidateAllPlaylistFirstPages();
+			_libraryRefreshGate.request();
+		});
 		// Tree names are user-visible undo/redo state (v1). The playing-gated
 		// full library refetch can be in flight, deferred, or throw after its
 		// GET /playlists snapshot, which left the history panel enabled while
 		// the renamed row never appeared (#1888). Refresh names immediately;
 		// the gate still refreshes pane membership and the health-dot total.
 		const unsubscribePlaylists = subscribeKind('playlists', () => {
+			invalidateAllPlaylistFirstPages();
 			void _refreshPlaylists();
 			_libraryRefreshGate.request();
 		});
@@ -938,6 +944,7 @@
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => {
+			invalidateAllPlaylistFirstPages();
 			void _refreshPlaylists();
 			_libraryRefreshGate.request();
 		});
@@ -1853,6 +1860,7 @@
 						source_playlist_id: srcId,
 						source_etag: src.etag
 					});
+					invalidatePlaylistFirstPage(srcId);
 					effectiveMode = 'move';
 				} else {
 					await appendTracksToPlaylist(playlistId, stableIds);
@@ -1860,6 +1868,7 @@
 			} else {
 				await appendTracksToPlaylist(playlistId, stableIds);
 			}
+			invalidatePlaylistFirstPage(playlistId);
 			if (effectiveMode === 'move') {
 				const node = _currentNode(panes[activePane]);
 				if (node !== null) await _loadPane(panes[activePane], node);
@@ -1941,6 +1950,11 @@
 				_writeCollectionQuery(node.playlist_id);
 			}
 		}
+		// A reload of the playlist this pane already shows (post-mutation
+		// refresh, undo, conflict recovery) must read the route: a prefetch
+		// taken before the write would repaint the old rows with the old etag.
+		// Only a switch from another playlist may join a prefetch.
+		if (p.playlist_id === node.playlist_id) invalidatePlaylistFirstPage(node.playlist_id);
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
@@ -3063,6 +3077,7 @@
 		addToPlaylistIds = null;
 		try {
 			await appendTracksToPlaylist(node.playlist_id, ids);
+			invalidatePlaylistFirstPage(node.playlist_id);
 			await _refreshPlaylists();
 			pushToast(addToPlaylistToastMessage(ids.length, node.name), 'info');
 		} catch (exc) {

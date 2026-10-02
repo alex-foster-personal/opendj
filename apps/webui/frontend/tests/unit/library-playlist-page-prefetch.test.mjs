@@ -188,3 +188,92 @@ test('prefetchTreeIntent caps eager prefetches', () => {
 	p.prefetchTreeIntent(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'], 3);
 	assert.deepEqual(seen, ['a', 'b', 'c']);
 });
+
+// Review of 674c1318 (P1): a prefetch taken before a membership write must not
+// be joined after it, or the reload repaints removed rows with the old etag
+// and the next edit 409s.
+function serverWithVersions() {
+	const state = { rows: ['t1', 't2', 't3'], version: 1, calls: 0 };
+	const fetchPage = () => {
+		state.calls += 1;
+		const rows = [...state.rows];
+		const etag = `v${state.version}`;
+		return Promise.resolve({
+			page: { tracks: rows.map((stable_id) => ({ stable_id })), total: rows.length, next_offset: null },
+			etag
+		});
+	};
+	return { state, fetchPage };
+}
+
+test('a playlist write invalidates its prefetch: the next load reads the written rows', async () => {
+	const { state, fetchPage } = serverWithVersions();
+	const p = prefetch.createPlaylistPagePrefetch(fetchPage);
+	p.prefetchFirstPage('pl-a');
+	state.rows = ['t1', 't3'];
+	state.version = 2;
+	p.invalidate('pl-a');
+	const page = await p.fetchFirstPage('pl-a', 0);
+	assert.equal(page.etag, 'v2');
+	assert.deepEqual(
+		page.page.tracks.map((t) => t.stable_id),
+		['t1', 't3']
+	);
+});
+
+test('control: without the invalidation the join serves the pre-write page (the bug)', async () => {
+	const { state, fetchPage } = serverWithVersions();
+	const p = prefetch.createPlaylistPagePrefetch(fetchPage);
+	p.prefetchFirstPage('pl-a');
+	state.rows = ['t1', 't3'];
+	state.version = 2;
+	const page = await p.fetchFirstPage('pl-a', 0);
+	assert.equal(page.etag, 'v1', 'the join is what makes invalidation necessary');
+});
+
+test('invalidating one playlist keeps the other prefetches joinable', async () => {
+	let calls = 0;
+	const p = prefetch.createPlaylistPagePrefetch(() => {
+		calls += 1;
+		return emptyPage(`e${calls}`);
+	});
+	p.prefetchFirstPage('pl-a');
+	p.prefetchFirstPage('pl-b');
+	p.invalidate('pl-a');
+	const b = await p.fetchFirstPage('pl-b', 0);
+	assert.equal(calls, 2, 'pl-b joined its prefetch without a third GET');
+	assert.equal(b.etag, 'e2');
+});
+
+test('invalidateAll drops every prefetch, so each switch reads the route', async () => {
+	let calls = 0;
+	const p = prefetch.createPlaylistPagePrefetch(() => {
+		calls += 1;
+		return emptyPage(`e${calls}`);
+	});
+	p.prefetchTreeIntent(['pl-a', 'pl-b']);
+	p.invalidateAll();
+	assert.equal(p.size(), 0);
+	await p.fetchFirstPage('pl-a', 0);
+	await p.fetchFirstPage('pl-b', 0);
+	assert.equal(calls, 4);
+});
+
+test('a new prefetch sweeps entries past the max age, bounding the map', () => {
+	let clock = 0;
+	const p = prefetch.createPlaylistPagePrefetch(() => emptyPage('e'), () => clock);
+	p.prefetchTreeIntent(['pl-a', 'pl-b', 'pl-c']);
+	assert.equal(p.size(), 3);
+	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS + 1;
+	p.prefetchFirstPage('pl-d');
+	assert.equal(p.size(), 1, 'only the fresh pl-d entry remains');
+});
+
+test('control: the sweep keeps entries still inside the max age', () => {
+	let clock = 0;
+	const p = prefetch.createPlaylistPagePrefetch(() => emptyPage('e'), () => clock);
+	p.prefetchTreeIntent(['pl-a', 'pl-b']);
+	clock = prefetch.PLAYLIST_PREFETCH_MAX_AGE_MS;
+	p.prefetchFirstPage('pl-c');
+	assert.equal(p.size(), 3);
+});

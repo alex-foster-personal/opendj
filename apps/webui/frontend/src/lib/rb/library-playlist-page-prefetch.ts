@@ -52,12 +52,34 @@ export function createPlaylistPagePrefetch(
 	const isFresh = (entry: PrefetchEntry): boolean =>
 		now() - entry.startedAt <= PLAYLIST_PREFETCH_MAX_AGE_MS;
 
+	/** Drop entries no switch can join any more, so hovering a large tree
+	 * does not keep every first page it ever read for the life of the tab. */
+	function sweepStale(): void {
+		for (const [playlistId, entry] of inflight) {
+			if (!isFresh(entry)) inflight.delete(playlistId);
+		}
+	}
+
+	/** Forget a playlist's prefetch because its membership was just written:
+	 * the page it holds (and its etag) predates the write, so joining it
+	 * would paint removed rows back and arm the next edit with a stale etag. */
+	function invalidate(playlistId: string): void {
+		inflight.delete(playlistId);
+	}
+
+	/** Forget every prefetch: a playlists/tracks change event or a bus resync
+	 * says some membership or row moved, and not necessarily which. */
+	function invalidateAll(): void {
+		inflight.clear();
+	}
+
 	/** Idempotent while a fresh prefetch is pending or unconsumed. A rejected
 	 * prefetch stays in the map so the switch that joins it reports that
 	 * failure (fail-fast); the no-op catch only marks it handled until then. */
 	function prefetchFirstPage(playlistId: string, pageSize = PLAYLIST_PREFETCH_PAGE_SIZE): void {
 		const existing = inflight.get(playlistId);
 		if (existing !== undefined && isFresh(existing)) return;
+		sweepStale();
 		const promise = fetchPage(playlistId, pageSize, 0);
 		const entry: PrefetchEntry = { promise, pageSize, startedAt: now() };
 		inflight.set(playlistId, entry);
@@ -94,7 +116,10 @@ export function createPlaylistPagePrefetch(
 		return entry.promise;
 	}
 
-	return { prefetchFirstPage, prefetchTreeIntent, fetchFirstPage };
+	/** Entries currently held (tests pin the stale sweep with it). */
+	const size = (): number => inflight.size;
+
+	return { prefetchFirstPage, prefetchTreeIntent, fetchFirstPage, invalidate, invalidateAll, size };
 }
 
 const shared = createPlaylistPagePrefetch();
@@ -102,3 +127,5 @@ const shared = createPlaylistPagePrefetch();
 export const prefetchPlaylistFirstPage = shared.prefetchFirstPage;
 export const prefetchPlaylistTreeIntent = shared.prefetchTreeIntent;
 export const fetchPlaylistFirstPage = shared.fetchFirstPage;
+export const invalidatePlaylistFirstPage = shared.invalidate;
+export const invalidateAllPlaylistFirstPages = shared.invalidateAll;
