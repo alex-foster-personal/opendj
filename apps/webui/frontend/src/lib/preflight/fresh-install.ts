@@ -33,3 +33,21 @@ export function needsSetupForEmptyLibrary(
 	// the fresh install it exists for.
 	return library === 'fail';
 }
+
+/**
+ * Whether the root layout may raise setup because the library row is a
+ * blocking fail.
+ *
+ * `operatorClosedSetup` is the in-tab latch set when the operator closes the
+ * wizard. Preflight can still say `library-attached: fail` until its next
+ * poll, and reopening on that stale row is what makes "Skip for now" and
+ * "Start playing" bounce straight back (issue #3422).
+ */
+export function shouldAutoOpenEmptyLibrarySetup(
+	checks: readonly PreflightCheck[],
+	setupOpen: boolean,
+	operatorClosedSetup: boolean
+): boolean {
+	if (operatorClosedSetup) return false;
+	return needsSetupForEmptyLibrary(checks, setupOpen);
+}

@@ -176,6 +176,12 @@ export interface AdvanceContext {
 	detection: RekordboxDetection | null;
 	folderRows: FolderRow[];
 	job: Job | null;
+	/** Job id whose post-import setup status has been re-read, or null. */
+	statusRefreshJobId?: string | null;
+	/** True while a setup HTTP call is in flight, including the status refresh. */
+	busy?: boolean;
+	/** Set when refreshStatusAfterImport failed for the current job. */
+	statusRefreshError?: string | null;
 }
 
 /**
@@ -206,6 +212,15 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
 		if (!TERMINAL.includes(ctx.job.status)) return `import is ${ctx.job.status}`;
 		if (ctx.job.status !== 'succeeded') {
 			return `import ${ctx.job.status}; re-run it before finishing`;
+		}
+		// Done reads last_import from the status captured when the overlay
+		// opened. Continue stays refused until that snapshot is re-read, or
+		// the screen says nothing was imported (issue #3422).
+		if (ctx.statusRefreshError !== null && ctx.statusRefreshError !== undefined) {
+			return ctx.statusRefreshError;
+		}
+		if (ctx.busy === true || ctx.statusRefreshJobId !== ctx.job.id) {
+			return 'import status is still loading';
 		}
 		return null;
 	}
@@ -253,6 +268,10 @@ class SetupWizard {
 	detectState = $state<'idle' | 'scanning' | 'answered' | 'failed'>('idle');
 	folderCandidates = $state<FolderCandidates['candidates']>([]);
 	folderCandidatesState = $state<'idle' | 'loading' | 'answered' | 'failed'>('idle');
+	/** Job id for which setup status was re-read after success. */
+	statusRefreshJobId = $state<string | null>(null);
+	/** Last refreshStatusAfterImport failure for the current job, if any. */
+	statusRefreshError = $state<string | null>(null);
 
 	goTo(step: WizardStep): void {
 		this.step = step;
@@ -487,6 +506,7 @@ class SetupWizard {
 		try {
 			const job = await startFolderImport({ folders });
 			this.jobId = job.id;
+			this._clearStatusRefresh();
 			this.error = null;
 			this.goTo('progress');
 		} catch (exc) {
@@ -518,6 +538,7 @@ class SetupWizard {
 				refresh_decrypt: options.refreshDecrypt === true
 			});
 			this.jobId = job.id;
+			this._clearStatusRefresh();
 			this.error = null;
 			this.goTo('progress');
 		} catch (exc) {
@@ -569,11 +590,47 @@ class SetupWizard {
 			// Re-arming is a fresh run: whatever detection said last time is
 			// history, and ensureLoaded() must ask again rather than reuse it.
 			this.detectState = 'idle';
+			this._clearStatusRefresh();
 		} catch (exc) {
 			this.error = _message(exc);
 		} finally {
 			this.busy = false;
 		}
+	}
+
+	/**
+	 * Re-read setup status after an import succeeds so Done shows the daemon's
+	 * last_import, not the snapshot from when the overlay opened (issue #3422).
+	 */
+	async refreshStatusAfterImport(jobId: string): Promise<void> {
+		if (this.statusRefreshJobId === jobId) return;
+		const refusal = setupRefusal();
+		if (refusal !== null) {
+			this.error = refusal;
+			this.statusRefreshError = refusal;
+			return;
+		}
+		this.busy = true;
+		this.statusRefreshError = null;
+		try {
+			const next = await getSetupStatus();
+			this.status = next;
+			this.detection = next.rekordbox;
+			this.error = null;
+			this.statusRefreshJobId = jobId;
+			this.statusRefreshError = null;
+		} catch (exc) {
+			const message = _message(exc);
+			this.error = message;
+			this.statusRefreshError = message;
+		} finally {
+			this.busy = false;
+		}
+	}
+
+	_clearStatusRefresh(): void {
+		this.statusRefreshJobId = null;
+		this.statusRefreshError = null;
 	}
 
 	/** Drop everything, for tests. */
@@ -589,6 +646,7 @@ class SetupWizard {
 		this.detectState = 'idle';
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
+		this._clearStatusRefresh();
 	}
 }
 
