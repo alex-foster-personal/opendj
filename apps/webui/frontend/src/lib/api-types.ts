@@ -9090,6 +9090,24 @@ export interface components {
             /** Tier */
             tier: string;
         };
+        /**
+         * GenreGuessOut
+         * @description GENRE-02: a JEV genre-family GUESS for a track with no genre tag.
+         *
+         *     Never a tag: it is served only while ``genre`` is empty, only at or above
+         *     the confidence floor its run recorded, and never written anywhere.
+         */
+        GenreGuessOut: {
+            /** Confidence */
+            confidence: number;
+            /** Family */
+            family: string;
+            /**
+             * Source
+             * @constant
+             */
+            source: "jev";
+        };
         /** GrantIn */
         GrantIn: {
             /**
@@ -12629,6 +12647,7 @@ export interface components {
             file_exists: boolean | null;
             /** Genre */
             genre: string | null;
+            genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
             /** Has Rb Mapping */
@@ -13851,6 +13870,7 @@ export interface components {
             file_path?: string | null;
             /** Genre */
             genre?: string | null;
+            genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
             /** Has Rb Mapping */
@@ -14078,6 +14098,7 @@ export interface components {
             file_exists: boolean | null;
             /** Genre */
             genre: string | null;
+            genre_guess?: components["schemas"]["GenreGuessOut"] | null;
             /** Genre Reason */
             genre_reason?: string | null;
             /** Has Rb Mapping */

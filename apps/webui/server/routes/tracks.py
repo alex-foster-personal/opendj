@@ -305,6 +305,7 @@ def list_tracks(
                 is_radio_edit=bool(row.get("is_radio_edit")),
                 genre=row.get("genre"),
                 genre_reason=row.get("genre_reason"),
+                genre_guess=row.get("genre_guess"),
             )
         )
     return TracksPage(items=items, next_cursor=page.next_cursor)

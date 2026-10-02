@@ -4,6 +4,7 @@
     python -m apps.genre_infer train                           # prints held-out accuracy
     python -m apps.genre_infer suggest [--min-confidence 0.6]  # untagged tracks only
     python -m apps.genre_infer show ID
+    python -m apps.genre_infer jev [--limit 500]                # JEV guesses, untagged tracks only
 
 Labels are the wheel's simple genre FAMILIES (``apps/library_wheel/genre_families.py``)
 of each track's tag, resolved with the wheel's own precedence
@@ -29,7 +30,7 @@ from apps.library_wheel.query import genre_tags_by_stable_id
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import store
+from . import jev, jev_store, store
 from .classify import GenreModel, suggest, train
 
 RUNNER = Path(__file__).with_name("clap_runner.py")
@@ -210,6 +211,55 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_jev(args: argparse.Namespace) -> int:
+    """Ask JEV for a genre family (and the user's tag questions) for untagged tracks."""
+    data_dir, state, master = _paths(args)
+    tags = jev.load_tag_questions(jev_store.tags_path(data_dir))
+    _labels, unlabeled = _family_labels(state, master)
+    ids = list(args.stable_id) or unlabeled
+    conn = state_db.open_ro(state)
+    try:
+        facts = jev_store.track_facts(conn, ids[: args.limit])
+    finally:
+        conn.close()
+    results = jev.classify(
+        {sid: jev.build_state(f) for sid, f in facts.items()}, tags, workers=args.workers
+    )
+    unknown = {sid: r["reason"] for sid, r in results.items() if r["status"] != "ok"}
+    served = sorted({str(r.get("model")) for r in results.values() if r["status"] == "ok"})
+    # Earlier runs' answers are kept; this run's answers replace theirs.
+    merged = {**jev_store.load_suggestions(data_dir).get("suggestions", {}), **results}
+    store.write_json(
+        jev_store.suggestions_path(data_dir),
+        {
+            "schema": jev.SCHEMA,
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "model": served,
+            "min_confidence": args.min_confidence,
+            "tags": [{"name": t.name, "question": t.question} for t in tags],
+            "suggestions": merged,
+        },
+    )
+    shown = sum(
+        1 for sid in results if jev_store.genre_guess(
+            {"suggestions": results, "min_confidence": args.min_confidence}, sid
+        )
+    )
+    cost = sum(float(r.get("cost") or 0.0) for r in results.values())
+    print(
+        f"asked JEV about {len(results)} untagged tracks ({len(unlabeled)} untagged in total): "
+        f"{len(results) - len(unknown)} answered, {len(unknown)} UNKNOWN, "
+        f"{shown} confident enough to show (>= {args.min_confidence}); "
+        f"model {', '.join(served) or 'none'}; cost ${cost:.5f}",
+        file=sys.stderr,
+    )
+    if unknown:
+        reasons = sorted(set(unknown.values()))
+        print(f"UNKNOWN reasons: {'; '.join(reasons[:5])}", file=sys.stderr)
+    # Every call failing is a measurement failure, not an empty result.
+    return 3 if results and len(unknown) == len(results) else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m apps.genre_infer")
     ap.add_argument("--data-dir")
@@ -231,6 +281,12 @@ def main(argv: list[str] | None = None) -> int:
     sh = sub.add_parser("show")
     sh.add_argument("stable_id")
     sh.set_defaults(func=_cmd_show)
+    j = sub.add_parser("jev")
+    j.add_argument("--stable-id", action="append", default=[])
+    j.add_argument("--limit", type=int, default=500)
+    j.add_argument("--min-confidence", type=float, default=jev.DEFAULT_MIN_CONFIDENCE)
+    j.add_argument("--workers", type=int, default=8)
+    j.set_defaults(func=_cmd_jev)
     args = ap.parse_args(argv)
     return int(args.func(args))
 
