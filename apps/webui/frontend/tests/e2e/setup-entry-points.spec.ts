@@ -464,7 +464,10 @@ test.describe('setup entry points', () => {
 
 		const continueButton = dialog.getByRole('button', { name: 'Continue', exact: true });
 		await expect(continueButton).toBeDisabled();
-		await expect(dialog.locator('.why')).toContainText('choose an import source');
+		// #2590: the visible reason is a plain sentence; the raw refusal an agent
+		// reads stays on the button.
+		await expect(dialog.locator('.why')).toContainText('Choose where your music comes from first.');
+		await expect(continueButton).toHaveAttribute('data-agent-refusal', /choose an import source/);
 
 		await rekordboxRadio.check();
 		await expect(rekordboxRadio).toBeChecked();

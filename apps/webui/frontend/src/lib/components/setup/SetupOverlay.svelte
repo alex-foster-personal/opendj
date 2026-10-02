@@ -523,6 +523,7 @@
 									class="secondary"
 									onclick={() => setupWizard.redetect()}
 									title={ESCAPE_ACTIONS[0].title}
+									data-agent-endpoint={escapeAgentEndpoint('redetect')}
 								>
 									{ESCAPE_ACTIONS[0].label}
 								</button>
@@ -531,6 +532,7 @@
 									class="secondary"
 									onclick={() => setupWizard.useSource('folder')}
 									title={ESCAPE_ACTIONS[1].title}
+									data-agent-endpoint={escapeAgentEndpoint('folder')}
 								>
 									{ESCAPE_ACTIONS[1].label}
 								</button>
@@ -540,6 +542,7 @@
 									onclick={() => void dismissAndClose()}
 									disabled={setupWizard.busy}
 									title={ESCAPE_ACTIONS[2].title}
+									data-agent-endpoint={escapeAgentEndpoint('dismiss')}
 								>
 									{ESCAPE_ACTIONS[2].label}
 								</button>
