@@ -92,6 +92,8 @@ export interface DeckLayoutPrefsState {
 	deck_layout_duration_ms: DeckLayoutDurationMs;
 	/** Mirror deck 2 main control row for right-column symmetry (issue #3983). */
 	deck_right_mirror: boolean;
+	/** Mirror deck 1 and 3 control rows. Local-only (not disk-synced). */
+	deck_left_mirror: boolean;
 }
 
 export interface DeckLayoutSetters {
@@ -100,6 +102,7 @@ export interface DeckLayoutSetters {
 	setDeckLayoutAnimate(next: boolean): void;
 	setDeckLayoutDurationMs(next: DeckLayoutDurationMs): void;
 	setDeckRightMirror(next: boolean): void;
+	setDeckLeftMirror(next: boolean): void;
 }
 
 /**
@@ -148,11 +151,17 @@ export function makeDeckLayoutSetters(
 		syncDiskPrefs({ deck_right_mirror: next });
 	}
 
+	function setDeckLeftMirror(next: boolean): void {
+		state.deck_left_mirror = next;
+		persist();
+	}
+
 	return {
 		setDeckLayoutMode,
 		toggleDeckLayoutMode,
 		setDeckLayoutAnimate,
 		setDeckLayoutDurationMs,
-		setDeckRightMirror
+		setDeckRightMirror,
+		setDeckLeftMirror
 	};
 }
