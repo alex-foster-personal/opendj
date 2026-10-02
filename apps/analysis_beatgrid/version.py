@@ -34,7 +34,11 @@ from typing import Literal
 #: 1.3.0 (NATIVE-17) changes the octave policy only: the model's own level wins
 #: a two-octave tie, a genre tempo family can pick the octave, and line mode
 #: folds half-time sections. The runner's beats are unchanged from 1.2.0.
-PRODUCER_VERSION = "1.3.0"
+#: 1.4.0 (NATIVE-19) changes the served grid only: the lane's grid fit now
+#: defaults to `const_regions` (one constant-tempo line where the track holds
+#: one tempo) instead of `raw`. The bump re-queues every record written under
+#: the raw default, so the library re-grids; the runner's beats are unchanged.
+PRODUCER_VERSION = "1.4.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record
 #: contract parses the backend name and checks it against the record body, so
