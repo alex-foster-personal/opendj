@@ -35,9 +35,15 @@
  *     staying stale until another edit or a page reload.
  *     [if] the socket reconnects after a missed midi_maps PUT and the
  *       registry is not reloaded [then ⛔️] broken
+ *   ✔︎ 🎯 A WebMIDI-less window (the macOS desktop app) keeps the shared
+ *     midi_enabled opt-in: maybeAutoEnableMidi() does not request, and an
+ *     'unsupported' failure does not clear it. A denial still clears it.
+ *     [if] opening the desktop app turns MIDI off in the Chrome tab
+ *       [then ⛔️] broken
+ *     [if] a Chrome denial leaves the opt-in set [then ⛔️] broken
  */
 
-import { initMidi } from '$lib/rb/midi/webmidi.svelte';
+import { initMidi, webMidiSupported } from '$lib/rb/midi/webmidi.svelte';
 import { registerAllDeviceMaps } from '$lib/rb/midi/maps';
 import { attachMidiGlue } from '$lib/rb/midi/action-glue.svelte';
 import { loadInstalledDeviceMaps } from '$lib/rb/midi/installed-maps';
@@ -163,6 +169,11 @@ export function midiEnabledPersisted(): boolean {
  * device maps + attaches the glue) so the invariant holds. No-op when the
  * choice was never made or a request is already in flight. */
 export async function maybeAutoEnableMidi(): Promise<void> {
+	// A WebMIDI-less window (the macOS desktop app) has nothing to request.
+	// Asking anyway would fail and clear the opt-in, which lives on disk and
+	// is shared with the Chrome tab, so opening the desktop app would switch
+	// MIDI off in Chrome.
+	if (!webMidiSupported()) return;
 	if (!midiEnabledPersisted()) return;
 	if (midiUi.requestPending) return;
 	await requestMidiAccess();
@@ -233,9 +244,11 @@ export async function requestMidiAccess(): Promise<void> {
 	} catch (exc) {
 		midiUi.lastError = exc instanceof Error ? exc.message : String(exc);
 		console.error('[midi-panel] permission request failed', exc);
-		// Denied/unsupported: forget the choice so we don't nag on every reload
-		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
-		setMidiEnabledChoice(false);
+		// Denied: forget the choice so we don't nag on every reload (the user
+		// re-opts-in from the panel when ready). Fail-fast, no retry.
+		// Unsupported keeps it: this window cannot answer for the Chrome tab
+		// that shares the on-disk choice (see maybeAutoEnableMidi).
+		if (webMidiSupported()) setMidiEnabledChoice(false);
 	} finally {
 		midiUi.requestPending = false;
 	}
