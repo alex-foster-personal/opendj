@@ -254,7 +254,11 @@ const BUDGETS = [
   // the measured size ceiled to KiB (245 KiB), no extra headroom; flagged in
   // docs/perf/performance-register.md. Payback candidates: the I/O panel body
   // and the USB browse store behind their first open.
-  { name: 'performance', limit: 250880, measured: 250293, note: '/performance and children' },
+  // MEASURED again Fri 2 Oct 2026 after main eede75a4 and the Preview's #5000
+  // (enrich card collapses beside the help buttons) merged in: 251,283, 403
+  // over 245 KiB. Raised to the measured size ceiled to KiB (246 KiB), no extra
+  // headroom; the same performance-register row covers it.
+  { name: 'performance', limit: 251904, measured: 251283, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
