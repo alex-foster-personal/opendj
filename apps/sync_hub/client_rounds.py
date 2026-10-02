@@ -138,6 +138,7 @@ def _result_from_rounds(
         pushed=sum(round_.pushed for round_ in rounds),
         accepted=sum(round_.push.accepted for round_ in rounds),
         rejected=sum(round_.push.rejected for round_ in rounds),
+        rejected_rows=tuple(row for round_ in rounds for row in round_.push.rejected_rows),
         pulled=sum(round_.pull.pulled for round_ in rounds),
         applied=sum(round_.pull.applied for round_ in rounds),
         hub_seq=rounds[-1].pull.seq,

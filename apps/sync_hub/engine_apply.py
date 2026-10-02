@@ -37,9 +37,17 @@ from apps.sync_hub.engine_identity_map import (
     _remove_remap_loser,
     load_identity_remap,
     record_identity_remap,
+    retire_tombstoned_remap_losers,
 )
 from apps.sync_hub.engine_watermark import current_seq
 from apps.sync_hub.protocol import MEMBERSHIP_TABLE, SPEC_BY_TABLE, RowChange, TableSpec
+from apps.sync_hub.rejected_rows import (
+    MAX_REJECTED_ROWS_NAMED,
+    REASON_IDENTITY_LOSER,
+    REASON_NOT_NEWER,
+    REASON_REMOVED_ON_HUB,
+    RejectedRow,
+)
 from apps.sync_hub.track_lifecycle import TrackHardDeleteRefusedError
 
 #: Same logger name as :mod:`apps.sync_hub.engine_changes`, for the reason
@@ -94,6 +102,9 @@ class ApplyResult:
     identity_conflicts: int = 0
     identity_rejects: tuple[protocol.IdentityReject, ...] = ()
     identity_repairs: tuple[IdentityRepairRequest, ...] = ()
+    #: Which offered rows ``rejected`` counts, and why, up to
+    #: :data:`MAX_REJECTED_ROWS_NAMED` (CLOUDSYNC-31).
+    rejected_rows: tuple[RejectedRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -104,6 +115,7 @@ class _ApplyOneOutcome:
     faults: tuple[protocol.StampFault, ...] = ()
     identity_reject: protocol.IdentityReject | None = None
     identity_repairs: tuple[IdentityRepairRequest, ...] = ()
+    reject_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -509,6 +521,7 @@ def _apply(
     held: set[str] = set()
     identity_rejects: list[protocol.IdentityReject] = []
     identity_repairs: list[IdentityRepairRequest] = []
+    rejected_rows: list[RejectedRow] = []
     # One PRAGMA table_info per table for the batch, not one per row (LIBM-120 L6).
     with protocol.table_columns_memo(conn):
         for change in ordered:
@@ -528,6 +541,14 @@ def _apply(
                     hash_pending += 1
             elif outcome.status == "rejected":
                 rejected += 1
+                if len(rejected_rows) < MAX_REJECTED_ROWS_NAMED:
+                    rejected_rows.append(
+                        RejectedRow(
+                            table=change.table,
+                            pk=tuple(str(part) for part in change.pk),
+                            reason=outcome.reject_reason or REASON_NOT_NEWER,
+                        )
+                    )
                 if outcome.identity_reject is not None:
                     identity_rejects.append(outcome.identity_reject)
             else:
@@ -546,6 +567,7 @@ def _apply(
         identity_conflicts=identity_conflicts,
         identity_rejects=tuple(identity_rejects),
         identity_repairs=tuple(identity_repairs),
+        rejected_rows=tuple(rejected_rows),
     )
 
 
@@ -586,7 +608,9 @@ def _apply_one(
         return _ApplyOneOutcome(status="quarantined", faults=verdict.faults)
     if verdict.loses:
         identity_reject: protocol.IdentityReject | None = None
+        reason = REASON_REMOVED_ON_HUB if verdict.tombstone_held else REASON_NOT_NEWER
         if verdict.rewrite_incoming_to is not None:
+            reason = REASON_IDENTITY_LOSER
             record_identity_remap(
                 conn, remap, change.pk[0], verdict.rewrite_incoming_to
             )
@@ -600,7 +624,9 @@ def _apply_one(
             # push, so a fresh changelog entry for the stored tombstone is
             # what brings it back in line instead of leaving it diverged.
             _log_hub_change(conn, change, stamp)
-        return _ApplyOneOutcome(status="rejected", identity_reject=identity_reject)
+        return _ApplyOneOutcome(
+            status="rejected", identity_reject=identity_reject, reject_reason=reason
+        )
     # Survivor PK must exist before children remap onto it. Incoming-wins
     # identity collapse writes the incoming row first, then moves stored
     # children, then drops the loser. The other order is a FOREIGN KEY
@@ -689,26 +715,23 @@ def _resolution_from_identity(
 
 
 def _resolve_same_key(
-    conn: sqlite3.Connection,
     spec: TableSpec,
     change: RowChange,
     stored: tuple[Any, ...],
     *,
     hub_authoritative: bool,
+    lifecycle: track_lifecycle.LifecycleVerdict | None,
 ) -> _Resolution:
     """Order ``change`` against the stored row under its own primary key.
 
     Removed-versus-live is decided before any stamp (CLOUDSYNC-29): a track
     tombstone is never dropped by a write that is not a later restore. Only
     writes on the same side of that event fall through to last-writer-wins.
+    ``lifecycle`` is :func:`track_lifecycle.judge`'s verdict, read once by
+    :func:`_resolve_against_stored` before content identity.
     """
-    lifecycle = track_lifecycle.judge(conn, change)
     if lifecycle is not None:
-        return _Resolution(
-            loses=lifecycle.incoming_loses,
-            faults=lifecycle.faults,
-            tombstone_held=lifecycle.tombstone_held,
-        )
+        return _lifecycle_resolution(lifecycle)
     stored_key = _sort_key_of(spec.name, stored)
     if hub_authoritative:
         # A pull defers to the hub only on an exact tie: a tie cannot hide a
@@ -716,6 +739,25 @@ def _resolve_same_key(
         # pulled row would overwrite one.
         return _Resolution(loses=change.sort_key < stored_key)
     return _Resolution(loses=change.sort_key <= stored_key)
+
+
+def _lifecycle_resolution(lifecycle: track_lifecycle.LifecycleVerdict) -> _Resolution:
+    return _Resolution(
+        loses=lifecycle.incoming_loses,
+        faults=lifecycle.faults,
+        tombstone_held=lifecycle.tombstone_held,
+    )
+
+
+def _tombstone_outranks(lifecycle: track_lifecycle.LifecycleVerdict) -> bool:
+    """True when the lifecycle verdict already refuses this ``tracks`` row.
+
+    Content identity must not decide a row whose own primary key is stored
+    removed and outranks it (CLOUDSYNC-29, CLOUDSYNC-31): a live copy of a
+    removed track, newer by ``updated_at``, otherwise won the collapse
+    against the live re-add of the same audio and dropped it.
+    """
+    return lifecycle.incoming_loses or bool(lifecycle.faults)
 
 
 def _resolve_against_stored(
@@ -748,7 +790,13 @@ def _resolve_against_stored(
         member_faults = _membership_faults(conn, change.pk[0])
         if member_faults:
             return _Resolution(loses=False, faults=member_faults)
+    lifecycle: track_lifecycle.LifecycleVerdict | None = None
     if change.table == "tracks":
+        # The repair bundle (``hub_row_authority``) is the hub's own verdict
+        # and never reaches the lifecycle rule.
+        lifecycle = None if hub_row_authority else track_lifecycle.judge(conn, change)
+        if lifecycle is not None and _tombstone_outranks(lifecycle):
+            return _lifecycle_resolution(lifecycle)
         decision = resolve_track_identity(conn, change)
         if decision.kind != "none":
             return _resolution_from_identity(
@@ -785,7 +833,9 @@ def _resolve_against_stored(
                 )
         if hub_row_authority:
             return _Resolution(loses=False)
-        return _resolve_same_key(conn, spec, change, stored, hub_authoritative=hub_authoritative)
+        return _resolve_same_key(
+            spec, change, stored, hub_authoritative=hub_authoritative, lifecycle=lifecycle
+        )
     return _resolve_against_duplicates(
         conn,
         spec,
@@ -892,8 +942,26 @@ def hub_apply(
     *,
     received_at: str | None = None,
 ) -> ApplyResult:
-    """Merge a spoke's push into the hub DB and append to ``hub_changelog``."""
-    return _apply(conn, changes, record_changelog=True, received_at=received_at)
+    """Merge a spoke's push into the hub DB and append to ``hub_changelog``.
+
+    First retires any identity remap whose loser the hub holds as a
+    tombstone, re-logging that tombstone so a spoke still holding the row
+    live pulls it (CLOUDSYNC-31, :func:`retire_tombstoned_remap_losers`).
+    """
+    stamp = received_at or sync_stamp.canonical_now()
+    for loser in retire_tombstoned_remap_losers(conn):
+        log.warning(
+            "retired identity remap for tracks %s: the hub holds it removed, so "
+            "it is a removal, not a collapsed duplicate; re-logged its tombstone",
+            loser,
+        )
+        _log_hub_change(conn, _tracks_change(loser), stamp)
+    return _apply(conn, changes, record_changelog=True, received_at=stamp)
+
+
+def _tracks_change(stable_id: str) -> RowChange:
+    """The stored ``tracks`` row as a change, enough for :func:`_log_hub_change`."""
+    return RowChange(table="tracks", pk=(stable_id,), values={"stable_id": stable_id})
 
 
 def spoke_apply(

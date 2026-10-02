@@ -12073,6 +12073,8 @@ export interface components {
             quarantined: number;
             /** Rejected */
             rejected: number;
+            /** Rejected Rows */
+            rejected_rows?: components["schemas"]["RejectedRowModel"][];
             /** Seq */
             seq: number;
         };
@@ -12455,6 +12457,18 @@ export interface components {
             message: string;
             /** Ui Title */
             ui_title: string;
+        };
+        /**
+         * RejectedRowModel
+         * @description One offered row the hub refused, and why (CLOUDSYNC-31).
+         */
+        RejectedRowModel: {
+            /** Pk */
+            pk: string[];
+            /** Reason */
+            reason: string;
+            /** Table */
+            table: string;
         };
         /**
          * RekordboxDetectionOut

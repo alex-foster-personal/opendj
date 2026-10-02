@@ -15513,6 +15513,13 @@
             "title": "Rejected",
             "type": "integer"
           },
+          "rejected_rows": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedRowModel"
+            },
+            "title": "Rejected Rows",
+            "type": "array"
+          },
           "seq": {
             "title": "Seq",
             "type": "integer"
@@ -16563,6 +16570,36 @@
           "ui_title"
         ],
         "title": "RefusalOut",
+        "type": "object"
+      },
+      "RejectedRowModel": {
+        "description": "One offered row the hub refused, and why (CLOUDSYNC-31).",
+        "properties": {
+          "pk": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Pk",
+            "type": "array"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "table": {
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "pk",
+          "reason"
+        ],
+        "title": "RejectedRowModel",
         "type": "object"
       },
       "RekordboxDetectionOut": {

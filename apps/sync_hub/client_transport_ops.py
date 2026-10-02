@@ -20,6 +20,7 @@ from typing import Any
 
 from apps.shared.state import schema as state_schema
 from apps.sync_hub import capabilities, client_refusal, engine, protocol, wire_version
+from apps.sync_hub import rejected_rows as rejected_rows_mod
 from apps.sync_hub.engine_identity_map import (
     IdentityRepairRequest,
     apply_hub_identity_rejects,
@@ -222,6 +223,9 @@ class _PushOutcome:
     hub_quarantined: int | None = None
     #: Identity-collapse rejections from the hub (issue #3057).
     identity_rejects: tuple[protocol.IdentityReject, ...] = ()
+    #: Which offered rows the hub rejected, and why (CLOUDSYNC-31). Empty
+    #: from a hub too old to name them, while ``rejected`` still counts them.
+    rejected_rows: tuple[rejected_rows_mod.RejectedRow, ...] = ()
     #: True when the hub answered a push request with 403
     #: ``entitlement_not_in_plan`` (:mod:`apps.sync_hub.client_refusal`).
     #: The batches before it are counted; nothing after it was sent.
@@ -308,6 +312,8 @@ def _push_chunk_with_split(
             "quarantined": left.get("quarantined"),
             "identity_rejects": list(left.get("identity_rejects") or [])
             + list(right.get("identity_rejects") or []),
+            "rejected_rows": list(left.get("rejected_rows") or [])
+            + list(right.get("rejected_rows") or []),
         }, left_requests + right_requests
 
 
@@ -337,6 +343,7 @@ def _push_in_batches(
     requests = 0
     reported: list[Any] = []
     identity_rejects: list[protocol.IdentityReject] = []
+    rejected_rows: list[rejected_rows_mod.RejectedRow] = []
     wire_fleet = [machine.to_wire() for machine in fleet]
     batches = _push_batches(
         [row.to_wire() for row in rows],
@@ -364,6 +371,7 @@ def _push_in_batches(
         rejected += _int_from(payload, "rejected", "push")
         reported.append(payload.get("quarantined"))
         identity_rejects.extend(_identity_rejects_from(payload))
+        rejected_rows.extend(rejected_rows_mod.from_push_answer(payload))
         requests += chunk_requests
     return _PushOutcome(
         accepted=accepted,
@@ -371,6 +379,7 @@ def _push_in_batches(
         requests=requests,
         hub_quarantined=_total_reported(reported),
         identity_rejects=tuple(identity_rejects),
+        rejected_rows=tuple(rejected_rows),
     )
 
 

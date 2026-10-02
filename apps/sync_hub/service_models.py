@@ -55,6 +55,14 @@ class IdentityRejectModel(BaseModel):
     survivor_pk: str = Field(min_length=1)
 
 
+class RejectedRowModel(BaseModel):
+    """One offered row the hub refused, and why (CLOUDSYNC-31)."""
+
+    table: str = Field(min_length=1)
+    pk: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 #: Carried on every request that can move rows (``hello``, ``push``,
 #: ``enroll``) and gated per request, like the capability tokens. ``None`` --
 #: the field absent -- is a build from before the wire/schema split, judged by
@@ -257,6 +265,10 @@ class PushResponse(BaseModel):
     #: (issue #3057). Only emitted for ``tracks`` rows where the hub
     #: kept a different PK for the same content identity.
     identity_rejects: list[IdentityRejectModel] = Field(default_factory=list)
+    #: Which offered rows ``rejected`` counts, and why, capped at
+    #: ``protocol.MAX_REJECTED_ROWS_NAMED`` (CLOUDSYNC-31). Optional: an older
+    #: client ignores it, an older hub omits it.
+    rejected_rows: list[RejectedRowModel] = Field(default_factory=list)
 
 
 class PullResponse(BaseModel):
@@ -346,6 +358,7 @@ __all__ = [
     "HelloRequest",
     "HelloResponse",
     "IdentityRejectModel",
+    "RejectedRowModel",
     "MachineModel",
     "PullResponse",
     "PushRequest",

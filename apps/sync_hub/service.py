@@ -96,6 +96,7 @@ from apps.sync_hub.service_models import (
     PullResponse,
     PushRequest,
     PushResponse,
+    RejectedRowModel,
     RowModel,
     RowsResponse,
     StaleCheckRequest,
@@ -582,6 +583,10 @@ def push(request: Request, payload: PushRequest) -> PushResponse:
                     survivor_pk=reject.survivor_pk,
                 )
                 for reject in result.identity_rejects
+            ],
+            rejected_rows=[
+                RejectedRowModel(table=row.table, pk=list(row.pk), reason=row.reason)
+                for row in result.rejected_rows
             ],
         )
 

@@ -124,6 +124,22 @@ def _find_matches(conn: sqlite3.Connection, change: RowChange) -> list[StoredMat
     return []
 
 
+def is_removed(values: Mapping[str, Any]) -> bool:
+    """True when a ``tracks`` row is a tombstone, so it takes no part in a collapse.
+
+    CLOUDSYNC-31: the stored side of a match already skips tombstones
+    (``matches_by_hash`` and ``matches_by_isrc`` filter ``deleted_at IS
+    NULL``); this is the incoming side of the same rule. A removed row and a
+    live row with the same audio are a removal and a deliberate re-add, not
+    two copies of one track: collapsing them either erased the tombstone
+    (the removed row lost, was hard-deleted on its sender, and a rescan
+    re-inserted it live) or erased the re-add (the tombstone won and the
+    live row was dropped). The removed row is decided by its own primary
+    key's lifecycle instead (:mod:`apps.sync_hub.track_lifecycle`).
+    """
+    return values.get(protocol.DELETED_AT) is not None
+
+
 def resolve_track_identity(conn: sqlite3.Connection, change: RowChange) -> IdentityDecision:
     """Decide content identity for an incoming ``tracks`` row.
 
@@ -135,6 +151,8 @@ def resolve_track_identity(conn: sqlite3.Connection, change: RowChange) -> Ident
     if change.table != "tracks":
         return IdentityDecision(kind="none")
     if change.hash_pending:
+        return IdentityDecision(kind="none")
+    if is_removed(change.values):
         return IdentityDecision(kind="none")
     matches = _find_matches(conn, change)
     if not matches:
@@ -470,6 +488,7 @@ __all__ = [
     "_follow_remap",
     "assert_identity_ready",
     "hub_library_size",
+    "is_removed",
     "log_hash_conflict",
     "names_held_parent",
     "remap_track_children",

@@ -109,6 +109,7 @@ from apps.sync_hub import (
     hosted_config,
     maintenance_enroll,
     maintenance_policy,
+    rejected_rows,
     single_flight,
     sync_set,
 )
@@ -264,6 +265,7 @@ def _journal_entry(
                 f"sync started at {started_at} completed, but the digest "
                 f"compare against hub {result.hub_machine_id} "
                 f"{exclusion_summary} Agreement was not verified."
+                f"{_rejected_note(result)}"
             ),
             pushed=result.pushed,
             pulled=result.pulled,
@@ -271,9 +273,19 @@ def _journal_entry(
     return sync_status.SyncResult(
         finished_at=sync_stamp.canonical_now(),
         status="ok",
-        message=f"completed sync started at {started_at}",
+        message=f"completed sync started at {started_at}{_rejected_note(result)}",
         pushed=result.pushed,
         pulled=result.pulled,
+    )
+
+
+def _rejected_note(result: client.SyncResult) -> str:
+    """Name the rows the hub rejected, for the journal message (CLOUDSYNC-31)."""
+    if not result.rejected_rows:
+        return ""
+    return (
+        f" The hub rejected {result.rejected} row(s): "
+        f"{rejected_rows.summarize(result.rejected_rows)}."
     )
 
 
@@ -479,6 +491,8 @@ def _report_sync(result: client.SyncResult, data_dir: Path) -> int:
         f"{result.location_twins_repaired} NFC location twin group(s) collapsed, "
         f"{result.stale_identity_remaps_dropped} stale identity remap(s) dropped"
     )
+    if result.rejected_rows:
+        print(f"rejected: {rejected_rows.summarize(result.rejected_rows, limit=20)}")
     if result.quarantined_rows or result.hub_quarantined:
         on_hub = "unreported" if result.hub_quarantined is None else result.hub_quarantined
         conn = _open(data_dir)
