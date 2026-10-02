@@ -203,17 +203,21 @@ def run_folder_import(
     middle one is the whole reason this is not just a walk -- a blocked
     listing and an empty one look identical from ``os.walk``.
     """
-    from apps.shared import fs_access
-    from apps.shared.state import db as state_db
-    from apps.shared.state.ingest import folder as folder_ingest
-    from apps.shared.state.writer import StateWriter
-
     started_at = _now()
     if not roots:
         raise SetupImportError(
             detect.CODE_REKORDBOX_NOT_FOUND,
             "a folder import needs at least one folder to walk",
         )
+
+    emit(
+        FOLDER_STAGE_PROGRESS["detect"],
+        "detect: preparing folder import",
+    )
+    from apps.shared import fs_access
+    from apps.shared.state import db as state_db
+    from apps.shared.state.ingest import folder as folder_ingest
+    from apps.shared.state.writer import StateWriter
 
     probes = fs_access.probe_all(roots)
     emit(

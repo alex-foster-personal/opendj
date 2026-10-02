@@ -63,9 +63,13 @@ def parse_payload(payload: dict[str, Any]) -> tuple[str, str, str, Path]:
 
 def build_argv(payload: dict[str, Any]) -> list[str]:
     stable_id, asset_kind, machine_id, data_dir = parse_payload(payload)
+    from apps.shared import platform_paths
+
+    # Absolute: the engine's cwd in the installed app is /, and the payload
+    # now ships this script under payload/app/scripts (issue #3421).
     return [
         sys.executable,
-        WORKER_SCRIPT,
+        str(Path(platform_paths.PROJECT_ROOT) / WORKER_SCRIPT),
         "--payload",
         json.dumps(
             {
@@ -110,9 +114,9 @@ def reconcile_from_disk(job: dict[str, Any]) -> str:
 
 
 __all__ = [
-    "CloudHydratePayloadError",
     "JOB_KIND",
     "WORKER_SCRIPT",
+    "CloudHydratePayloadError",
     "build_argv",
     "parse_payload",
     "reconcile_from_disk",

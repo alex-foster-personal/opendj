@@ -12,6 +12,12 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { placeFloating, type Size } from '$lib/ui/clamp-to-viewport';
+	import {
+		explainerPopInteractive,
+		explainerShowsAction,
+		resolveExplainerDismiss,
+		type ExplainerDismiss
+	} from '$lib/rb/explainer-dismiss';
 
 	const INTERACTIVE_HIDE_DELAY_MS = 150;
 
@@ -36,6 +42,7 @@
 		placement = 'auto',
 		showDelayMs = 0,
 		pinOnClick = false,
+		dismiss = undefined,
 		children
 	}: {
 		/** Native tooltip text mirrored for screen readers / slow hover. */
@@ -63,6 +70,14 @@
 		/** Click pins the popover open until Escape or an outside click. Native
 		 * selects in the action slot need this; hover-only would close them. */
 		pinOnClick?: boolean;
+		/**
+		 * `instant`: informational, click-through, closes the moment the pointer
+		 * leaves the trigger so it never blocks the control underneath; an action
+		 * slot shows only once click-pinned. `stay`: interactive, stays open while
+		 * the pointer is over the popover. Omitted: `stay` with an action, else
+		 * `instant` (see $lib/rb/explainer-dismiss).
+		 */
+		dismiss?: ExplainerDismiss;
 		children: Snippet;
 	} = $props();
 
@@ -75,12 +90,15 @@
 	let showTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const hasRich: boolean = $derived(bullets.length > 0 || warning !== null || action !== null || demo !== null);
+	const dismissMode: ExplainerDismiss = $derived(resolveExplainerDismiss(dismiss, action !== null));
+	const showAction: boolean = $derived(explainerShowsAction(dismissMode, action !== null, pinned));
+	const popInteractive: boolean = $derived(explainerPopInteractive(dismissMode, pinned));
 
 	function _estimateSize(): Size {
 		// Tall action menus (the I/O device pickers) must not be estimated as
 		// a 120px tooltip: clamp then paints them over the trigger and the
 		// CUEOUT-06 SHOW AUDIO I/O click hits the overlay.
-		return action !== null ? { width: 280, height: 320 } : { width: 240, height: 120 };
+		return showAction ? { width: 280, height: 320 } : { width: 240, height: 120 };
 	}
 
 	function _place(measured: Size | null = null): void {
@@ -155,7 +173,7 @@
 		if (pinned) return;
 		const next = event.relatedTarget;
 		if (next instanceof Node && wrapEl?.contains(next)) return;
-		if (event instanceof PointerEvent && action !== null) {
+		if (event instanceof PointerEvent && dismissMode === 'stay') {
 			if (hideTimer !== undefined) clearTimeout(hideTimer);
 			hideTimer = setTimeout(_close, INTERACTIVE_HIDE_DELAY_MS);
 			return;
@@ -242,11 +260,13 @@
 	{#if open && hasRich}
 		<div
 			class="pop"
-			class:has-action={action !== null}
+			class:has-action={showAction}
+			class:click-through={!popInteractive}
+			data-dismiss={dismissMode}
 			bind:this={popEl}
 			style={popStyle}
-			role={action === null ? 'tooltip' : 'dialog'}
-			aria-label={action === null ? undefined : title}
+			role={showAction ? 'dialog' : 'tooltip'}
+			aria-label={showAction ? title : undefined}
 			onpointerenter={_show}
 			onpointerleave={_hide}
 		>
@@ -353,7 +373,7 @@
 					{/each}
 				</ul>
 			{/if}
-			{#if action !== null}
+			{#if showAction && action !== null}
 				<div class="action">{@render action()}</div>
 			{/if}
 		</div>
@@ -383,6 +403,11 @@
 		line-height: 1.35;
 		pointer-events: auto;
 		text-align: left;
+	}
+	/* Instant (informational) popovers never take the pointer: the hit goes to
+	   the control underneath, the trigger gets pointerleave, and it closes. */
+	.pop.click-through {
+		pointer-events: none;
 	}
 	.pop.has-action {
 		max-width: 280px;

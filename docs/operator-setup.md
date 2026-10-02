@@ -36,17 +36,15 @@ Aggregate ERROR/WARN records from every server-readable sink for the last hour (
 - Python 3.11+. CI pins Python to 3.11 because `tflite-runtime` (pulled transitively by `openwakeword`) has no wheel for 3.12+ at the time of writing. Local dev on 3.14 also works for non-voice features (`docs/install-notes.md` documents the 3.14 dev path).
 - Homebrew.
 - Doppler CLI + access to the `construct` / `dev_af` project (only needed for commands that touch secrets; see Spotify and Cloud sections).
-- Create a venv and install Python deps:
+- Install uv, then create the environment from the lockfile (see the Install section of the
+  repository `README.md` for the full path, including the frontend):
 
 ```bash
-cd /Users/dev3/Music/music-dj-tools
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --no-build-isolation -r requirements.txt
-python -m pyrekordbox download-key   # one-time: cache master.db decryption key
+uv sync --frozen --extra dev --python 3.11.15
 ```
 
-The `--no-build-isolation` flag is required because `madmom`'s own build-requires ask for `numpy>2` while this venv pins `numpy<2`, so it must build against the ambient venv's numpy (see the comment in `requirements.txt`).
+Rekordbox's `master.db` key comes from `pyrekordbox` and is cached under `~/.pyrekordbox/` on
+first decrypt; there is no separate key-download step.
 
 ## Feature: Reconcile + djay matching + shared state (Milestones 1-5)
 

@@ -71,7 +71,7 @@ from apps.sync_hub import protocol
 #: ``PushResponse.identity_rejects`` (issue #3057) is an OPTIONAL response
 #: field older peers ignore, advertised by the ``identity-reject/v1``
 #: capability token: NOT a wire change under the rule above, so no bump.
-WIRE_VERSION: int = 6
+WIRE_VERSION: int = 7
 
 #: Row-shape fingerprint of every wire version that has shipped, oldest
 #: first. APPEND-ONLY: an entry is a fact about deployed peers, and rewriting
@@ -92,6 +92,10 @@ WIRE_FINGERPRINTS: dict[int, str] = {
     5: "8945d178ba66d099",
     # v6: tracks.audio_hash (tag-independent audio identity, issue #3864).
     6: "087fd8afdbb6c91b",
+    # v7: tracks.restored_at and tracks.deleted_reason, and a track tombstone
+    # outranks every write that is not a later restore (issue #4628). Shape
+    # AND meaning change: the semantic contract below carries the meaning half.
+    7: "1c03a42201eb8943",
 }
 
 #: Semantic contract ids keyed by wire version. Row-shape fingerprints cannot
@@ -101,6 +105,7 @@ WIRE_FINGERPRINTS: dict[int, str] = {
 WIRE_SEMANTIC_CONTRACTS: dict[int, str] = {
     5: "track_fields_modified_at_lww_fallback",
     6: "track_fields_modified_at_lww_fallback",
+    7: "track_fields_modified_at_lww_fallback+track_tombstone_outranks_lww",
 }
 
 #: 409 codes the gate answers with. SYNC_SCHEMA_VERSION is kept verbatim for

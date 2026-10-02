@@ -53,7 +53,6 @@
 import { capabilities } from '../api/capabilities.svelte';
 import { openSetupOverlay } from './overlay.svelte';
 import { finalSetupRefusal, setupRefusal } from './setup-api';
-import { setupWizard } from './wizard.svelte';
 
 /** The wizard's route. Spelled once so three entry points cannot disagree.
  *
@@ -111,6 +110,11 @@ export async function runSetup(navigate: (path: string) => unknown): Promise<str
 	await capabilities.probe();
 	const refusal = setupRefusal();
 	if (refusal !== null) return refusal;
+	// Loaded on click, not imported: this module sits in the root layout's
+	// first-paint graph (Settings and preflight entry points), and the wizard
+	// store with its copy rules is only needed once someone asks for setup.
+	// The overlay that renders it is lazy for the same reason.
+	const { setupWizard } = await import('./wizard.svelte');
 	await setupWizard.reopen();
 	// reopen() records the server's message rather than throwing, so the
 	// navigation gate is that field and not an exception.

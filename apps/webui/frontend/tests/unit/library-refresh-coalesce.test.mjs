@@ -214,12 +214,12 @@ test('BrowserPanel routes its bus-driven refresh through that gate', () => {
 	assert.match(source, /subscribeKind\('tracks', \(\) => _libraryRefreshGate\.request\(\)\)/);
 	assert.match(
 		source,
-		/subscribeKind\('playlists', \(\) => \{\s*void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
+		/subscribeKind\('playlists', \(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
 		'a playlist rename from the write API or undo stack must update tree names even if the full library refetch is in flight, deferred, or throws'
 	);
 	assert.match(
 		source,
-		/subscribeResync\(\(\) => \{\s*void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
+		/subscribeResync\(\(\) => \{\s*(?:invalidateAllPlaylistFirstPages\(\);\s*)?void _refreshPlaylists\(\);\s*_libraryRefreshGate\.request\(\);\s*\}\)/,
 		'a missed playlist invalidation on reconnect must refresh tree names, not only pane rows'
 	);
 	assert.match(source, /subscribeKind\('smartlists', \(\) => _libraryRefreshGate\.request\(\)\)/);

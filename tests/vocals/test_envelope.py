@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("modal", reason="needs the optional modal package")
+
 from apps.vocals.envelope import (
     ENVELOPE_SCHEMA,
     envelope_path,

@@ -78,7 +78,16 @@ export function recordUnexpectedPause(input: {
 	}
 }
 
+/**
+ * A stop request is a falling edge only when the deck's standing intent was to
+ * play. A schedule that carries `active: false` onto a deck that was already
+ * paused (a seek, cue jump or sync re-anchor landing while a pause is still in
+ * flight) re-states the pause; it is not a new stop. Classifying it anyway read
+ * the untagged origin plus the pre-pause position as a track cut short, and
+ * raised a false "stopped before the decoded audio ends" toast.
+ */
 export function notePlayingFallingEdge(input: {
+	was_active: boolean;
 	origin: PauseOrigin;
 	deck: DeckId;
 	position_ms: number;
@@ -87,6 +96,7 @@ export function notePlayingFallingEdge(input: {
 	processor_error: string | null;
 	context_state: string;
 }): void {
+	if (!input.was_active) return;
 	const autoplay = _autoplayReader();
 	const cause = diagnoseUnexpectedPause({
 		origin: input.origin,

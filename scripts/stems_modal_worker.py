@@ -20,11 +20,13 @@ Everything downstream of that choice is identical, which is the design: the
 credential edge moved, and the job kind, the progress protocol, the bundle
 writer and the UI did not.
 
-Reuse, not reinvention. The Modal app, the baked-weights image, the GPU
-function and the bundle writer all come from ``scripts/modal_vocal_farm.py``.
-Importing them means a direct run is a cache HIT on the same image layers the
-farm built, and a bundle written here is byte-for-byte the same contract as a
-bundle written by the farm, whichever transport produced it.
+Reuse, not reinvention. The Modal app, the baked-weights image and the GPU
+function come from ``scripts/modal_vocal_farm.py``, so a direct run is a cache
+HIT on the same image layers the farm built. The preset table and the bundle
+writer come from ``apps/stems/bundle_publish.py``, a test-enforced mirror of
+the farm's own, so the relay path never imports modal (the installed app does
+not ship it, issue #3421) and a bundle written here is still byte-for-byte the
+farm's contract, whichever transport produced it.
 
 The farm's own CLI is not used because it selects tracks by the VOCAL-cache
 gap: ``--only-stable-id`` refuses an id that is not in that gap, which is the
@@ -378,11 +380,15 @@ def modal_separator(
 
 
 def preset_for_tier(tier_key: str) -> Any:
-    """The farm Preset behind a tiers.py rung, refusing an unbaked model."""
-    import scripts.modal_vocal_farm as farm
-    from apps.stems.tiers import get_tier
+    """The farm Preset behind a tiers.py rung, refusing an unbaked model.
 
-    return farm._resolve_preset(get_tier(tier_key).preset_tag, False)
+    Read from apps.stems.bundle_publish, the modal-free mirror of the farm's
+    preset table, so the relay path runs where modal is not installed: the
+    installed app ships no modal (issue #3421).
+    """
+    from apps.stems.bundle_publish import preset_for_tier as _preset_for_tier
+
+    return _preset_for_tier(tier_key)
 
 
 # ----- run -------------------------------------------------------------------
@@ -396,7 +402,7 @@ def run(
     transport: str = TRANSPORT_RELAY,
 ) -> int:
     """Separate every track, writing and announcing each as it lands."""
-    import scripts.modal_vocal_farm as farm
+    from apps.stems.bundle_publish import publish_stems_local
 
     separator, separator_name = load_separator(transport)
     preset = preset_for_tier(tier_key)
@@ -440,7 +446,7 @@ def run(
             )
             continue
         track = next(t for t in tracks if t.stable_id == stable_id)
-        written, _elapsed = farm._publish_stems_local(
+        written, _elapsed = publish_stems_local(
             stable_id, track.audio_path, result, preset, data_dir
         )
         done += 1
