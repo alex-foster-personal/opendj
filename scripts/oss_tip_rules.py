@@ -242,7 +242,31 @@ _SYSTEMD_UNIT_TYPE_LABELS = frozenset(
     ("service", "timer", "socket", "mount", "automount", "path", "slice", "scope", "swap", "device")
 )
 
-MAILBOX_EXEMPT_PATHS = frozenset({".mailmap", "docs/git-author-convention.md"})
+MAILBOX_EXEMPT_PATHS = frozenset(
+    {
+        ".mailmap",
+        "docs/git-author-convention.md",
+        # Verbatim upstream license mirrors (docs/legal/python-build-standalone/README.md):
+        # bzip2's and zlib's own license texts name their authors by email. That is part
+        # of the license, not the maintainer's identity. Enumerated exactly, not prefix-matched
+        # (Codex P1, PR #4853 r4170573408): a directory-wide exemption would also cover
+        # any FUTURE file added to this dir, including one with a real mailbox in it.
+        # A new mirror needs an explicit line here, same as any other exemption.
+        "docs/legal/python-build-standalone/LICENSE.bzip2.txt",
+        "docs/legal/python-build-standalone/LICENSE.expat.txt",
+        "docs/legal/python-build-standalone/LICENSE.libedit.txt",
+        "docs/legal/python-build-standalone/LICENSE.libffi.txt",
+        "docs/legal/python-build-standalone/LICENSE.liblzma.txt",
+        "docs/legal/python-build-standalone/LICENSE.libuuid.txt",
+        "docs/legal/python-build-standalone/LICENSE.mpdecimal.txt",
+        "docs/legal/python-build-standalone/LICENSE.ncurses.txt",
+        "docs/legal/python-build-standalone/LICENSE.openssl-3.txt",
+        "docs/legal/python-build-standalone/LICENSE.sqlite.txt",
+        "docs/legal/python-build-standalone/LICENSE.tcl.txt",
+        "docs/legal/python-build-standalone/LICENSE.tix.txt",
+        "docs/legal/python-build-standalone/LICENSE.zlib.txt",
+    }
+)
 GENERATED_TEST_ID_PATHS = frozenset({".test_durations"})  # pytest-split cache, not a mailbox
 # Tailnet labels that are fixtures by construction. `example-tailnet` is the
 # synthetic label this repo standardized on for MagicDNS fixtures in tests, the

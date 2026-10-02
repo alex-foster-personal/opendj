@@ -332,13 +332,14 @@ def js_components(frontend_dir: Path) -> list[Component]:
 
 # ----- rust ---------------------------------------------------------------
 def rust_components(repo_root: Path) -> list[Component]:
-    if shutil.which("cargo") is None:
+    cargo_bin = shutil.which("cargo")
+    if cargo_bin is None:
         raise LicenseInventoryError("cargo is not on PATH")
     components: dict[tuple[str, str], Component] = {}
     for crate_relative, extra_args in RUST_CRATES:
         crate = repo_root / crate_relative
         result = subprocess.run(
-            ["cargo", "metadata", "--locked", "--format-version", "1",
+            [cargo_bin, "metadata", "--locked", "--format-version", "1",
              "--filter-platform", RUST_TARGET_TRIPLE, *extra_args],
             cwd=crate, capture_output=True, text=True, check=False,
         )
