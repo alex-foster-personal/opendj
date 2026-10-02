@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import math
 import os
 import urllib.error
 import urllib.request
@@ -187,6 +188,14 @@ def _genre_answer(answers: Any) -> tuple[str, float, Mapping[str, Any]] | str:
     return str(family), float(confidence), probs
 
 
+def _cost(usage: Any) -> float | None:
+    """The reported call cost, or None when it is missing or not a finite number."""
+    cost = usage.get("cost") if isinstance(usage, Mapping) else None
+    if isinstance(cost, bool) or not isinstance(cost, int | float) or not math.isfinite(cost):
+        return None
+    return float(cost)
+
+
 def parse_answer(doc: Any, tags: Iterable[TagQuestion]) -> dict[str, Any]:
     """One JEV response -> a suggestion, or ``unknown`` when any part is missing or out of range."""
     if not isinstance(doc, Mapping):
@@ -205,7 +214,7 @@ def parse_answer(doc: Any, tags: Iterable[TagQuestion]) -> dict[str, Any]:
         "probabilities": {k: round(float(v), 4) for k, v in probs.items() if isinstance(v, int | float)},
         "tags": tag_p,
         "model": doc.get("model"),
-        "cost": usage.get("cost") if isinstance(usage := doc.get("usage"), Mapping) else None,
+        "cost": _cost(doc.get("usage")),
     }
 
 

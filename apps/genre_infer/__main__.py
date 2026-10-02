@@ -213,7 +213,7 @@ def _cmd_suggest(args: argparse.Namespace) -> int:
 def _cmd_show(args: argparse.Namespace) -> int:
     data_dir, _s, _m = _paths(args)
     path = store.suggestions_path(data_dir)
-    doc = json.loads(path.read_text()) if path.is_file() else {"suggestions": {}}
+    doc = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"suggestions": {}}
     s = doc["suggestions"].get(args.stable_id)
     if s is None:
         print(f"no suggestion for {args.stable_id}", file=sys.stderr)
@@ -222,10 +222,28 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _tag_doc(tags: list[jev.TagQuestion]) -> list[dict[str, str]]:
+    return [{"name": t.name, "question": t.question} for t in tags]
+
+
+def _answered(data_dir: Path, tags: list[jev.TagQuestion]) -> set[str]:
+    """Tracks already answered (status ok) under these exact tag questions."""
+    doc = jev_store.load_suggestions(data_dir)
+    if doc.get("tags", []) != _tag_doc(tags):
+        return set()
+    return {sid for sid, r in doc["suggestions"].items() if isinstance(r, dict) and r.get("status") == "ok"}
+
+
 def _jev_write(data_dir: Path, results: dict, tags: list[jev.TagQuestion], min_confidence: float) -> list[str]:
-    """Merge this run into the sidecar (its answers replace earlier ones); return served models."""
+    """Merge this run into the sidecar (its answers replace earlier ones); return served models.
+
+    Earlier answers are kept only while they answered the same tag questions:
+    their tag probabilities mean nothing under renamed or reworded questions.
+    """
     served = sorted({str(r.get("model")) for r in results.values() if r["status"] == "ok"})
-    merged = {**jev_store.load_suggestions(data_dir).get("suggestions", {}), **results}
+    previous = jev_store.load_suggestions(data_dir)
+    kept = previous.get("suggestions", {}) if previous.get("tags", []) == _tag_doc(tags) else {}
+    merged = {**kept, **results}
     store.write_json(
         jev_store.suggestions_path(data_dir),
         {
@@ -233,7 +251,7 @@ def _jev_write(data_dir: Path, results: dict, tags: list[jev.TagQuestion], min_c
             "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "model": served,
             "min_confidence": min_confidence,
-            "tags": [{"name": t.name, "question": t.question} for t in tags],
+            "tags": _tag_doc(tags),
             "suggestions": merged,
         },
     )
@@ -268,7 +286,13 @@ def _cmd_jev(args: argparse.Namespace) -> int:
     # Only tracks with no genre tag at all: a tag the wheel cannot map is still
     # a tag, and its row would never serve the guess (GENRE-02).
     allowed = set(untagged)
-    ids = [sid for sid in args.stable_id if sid in allowed] if args.stable_id else untagged
+    if args.stable_id:
+        ids = [sid for sid in args.stable_id if sid in allowed]
+    else:
+        # Skip tracks already answered, so each run's --limit batch moves on to
+        # new tracks instead of paying for the same first batch again.
+        done = _answered(data_dir, tags)
+        ids = [sid for sid in untagged if sid not in done]
     conn = state_db.open_ro(state)
     try:
         facts = jev_store.track_facts(conn, ids[: args.limit])

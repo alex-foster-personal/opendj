@@ -131,7 +131,7 @@ def load_suggestions(data_dir: Path) -> dict[str, Any]:
         if hit is not None and hit[0] == mtime:
             return hit[1]
     try:
-        doc = json.loads(path.read_text())
+        doc = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"suggestions": {}}
     if not isinstance(doc, dict) or not isinstance(doc.get("suggestions"), dict):
