@@ -450,7 +450,10 @@ test('_resetForTests leaves source unselected', () => {
 	assert.equal(wizard.source, null);
 });
 
-test('a failed load records the server message and KEEPS what was on screen', async () => {
+const GENERIC = 'Something went wrong talking to the app. Try again in a moment.';
+const TOO_SLOW = 'The app took too long to answer. Try again in a moment.';
+
+test('a failed load keeps the server message for agents only, and KEEPS what was on screen', async () => {
 	routeFetch({ '/api/v1/setup/status': status() });
 	await wizard.load();
 
@@ -460,9 +463,141 @@ test('a failed load records the server message and KEEPS what was on screen', as
 	});
 	await wizard.load();
 
-	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.error, GENERIC);
 	assert.equal(wizard.errorDiagnostic, 'state db is gone');
 	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+});
+
+test('a plain-string status error never reaches the operator word for word (Mac check item 4)', async () => {
+	// FastAPI's own layer answers {"detail": "<string>"}; humanApiError passed
+	// such a sentence through whenever it carried no internals, so the engine's
+	// own words were drawn on Welcome.
+	routeFetch({
+		'/api/v1/setup/status': () => jsonResponse({ detail: 'the disk said no' }, 500)
+	});
+	await wizard.load();
+
+	assert.equal(wizard.error, GENERIC);
+	assert.equal(wizard.errorDiagnostic, 'the disk said no', 'agents keep the raw words');
+	assert.equal(wizard.detectState, 'failed');
+});
+
+/** A response that never comes on its own but rejects once the request's
+ * signal aborts, the way a browser fetch does. Records that it was aborted. */
+function stalled(request, seen) {
+	return new Promise((_, reject) => {
+		request.signal.addEventListener('abort', () => {
+			seen.aborted = true;
+			reject(new DOMException('The operation was aborted.', 'AbortError'));
+		});
+	});
+}
+
+/** Fail, instead of hanging the suite, when a call never settles. */
+async function settlesWithin(promise, ms, what) {
+	let timer;
+	const guard = new Promise((_, reject) => {
+		timer = setTimeout(() => reject(new Error(`${what} never settled within ${ms} ms`)), ms);
+	});
+	try {
+		return await Promise.race([promise, guard]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+test('the setup read deadline defaults to 20 s', () => {
+	assert.equal(mod.SETUP_READ_TIMEOUT_MS, 20_000);
+	assert.equal(wizard.readTimeoutMs, 20_000);
+});
+
+test('a status read that never answers is aborted at the deadline and ends failed (Mac check 3a)', async () => {
+	const seen = { aborted: false };
+	routeFetch({ '/api/v1/setup/status': (request) => stalled(request, seen) });
+	wizard.readTimeoutMs = 30;
+
+	await settlesWithin(wizard.load(), 2_000, 'load()');
+
+	assert.equal(wizard.detectState, 'failed', 'a stall must end, not stay scanning');
+	assert.equal(wizard.busy, false, 'Get started must not stay disabled');
+	assert.equal(seen.aborted, true, 'the stalled request must be aborted, not left open');
+	assert.equal(wizard.error, TOO_SLOW);
+	assert.match(wizard.errorDiagnostic, /GET \/api\/v1\/setup\/status gave no answer within 30 ms/);
+});
+
+test('control: a read that answers inside the deadline is not cut short', async () => {
+	// The overshoot of the deadline fix: a timer that fires anyway, or one
+	// shorter than the answer it is waiting for.
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			new Promise((resolve) => setTimeout(() => resolve(jsonResponse(status())), 20))
+	});
+	wizard.readTimeoutMs = 500;
+
+	await wizard.load();
+	await new Promise((resolve) => setTimeout(resolve, 30));
+
+	assert.equal(wizard.detectState, 'answered');
+	assert.equal(wizard.error, null);
+	assert.equal(wizard.detection.import_source, '/data/master.plain.db');
+});
+
+test('a Look again that never answers ends failed and keeps the earlier answer (Mac check 3a/3b)', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	const seen = { aborted: false };
+	routeFetch({ '/api/v1/setup/detect/rekordbox': (request) => stalled(request, seen) });
+	wizard.readTimeoutMs = 30;
+	await settlesWithin(wizard.redetect(), 2_000, 'redetect()');
+
+	assert.equal(wizard.detectState, 'failed');
+	assert.equal(seen.aborted, true);
+	assert.equal(wizard.error, TOO_SLOW);
+	assert.equal(wizard.detection.import_source, '/data/master.plain.db', 'the earlier answer stays');
+});
+
+test('ensureLoaded never re-runs a load the engine answered with a failure (Mac check 3c)', async () => {
+	// The overlay drives ensureLoaded() from an effect. Retrying a real
+	// failure from there looped load() and held Get started disabled.
+	let calls = 0;
+	routeFetch({
+		'/api/v1/setup/status': () => {
+			calls += 1;
+			return jsonResponse({ detail: 'down' }, 500);
+		}
+	});
+	await wizard.load();
+	assert.equal(calls, 1);
+
+	await wizard.ensureLoaded();
+	assert.equal(calls, 1, 'ensureLoaded retried a failed status read on its own');
+	assert.equal(wizard.detectState, 'failed');
+
+	// The operator's own retry still asks again.
+	await wizard.load();
+	assert.equal(calls, 2);
+});
+
+test('a failed Look again is not repainted by a status re-read (Mac check 3b)', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	routeFetch({
+		'/api/v1/setup/status': status({ rekordbox: detection({ installed: false }) }),
+		'/api/v1/setup/detect/rekordbox': () => jsonResponse({ detail: 'down' }, 500)
+	});
+	await wizard.redetect();
+	await wizard.ensureLoaded();
+
+	assert.equal(wizard.detectState, 'failed', 'the failure must stay on screen');
+	assert.equal(wizard.error, GENERIC);
+	assert.equal(
+		requests.filter((request) => request.url.endsWith('/api/v1/setup/status')).length,
+		1,
+		'only the first load may read status'
+	);
+	assert.equal(wizard.detection.installed, true, 'the earlier answer is what stays');
 });
 
 test('refreshStatusAfterImport fills last_import once per completed job', async () => {

@@ -39,6 +39,16 @@
  *     the status loaded when the overlay opened.
  *     [if] the job succeeded and Done still says no import was recorded [then ⛔️] broken
  *     [if] another wizard's job id triggers a status read [then ⛔️] broken
+ *   ✔︎ 🎯 load() and redetect() are bounded by `readTimeoutMs` (default
+ *     SETUP_READ_TIMEOUT_MS): a stalled request is aborted and ends 'failed'
+ *     with a plain sentence, never a scanning state with no end.
+ *     [if] a read that never answers leaves detectState 'scanning' [then ⛔️] broken
+ *   ✔︎ 🎯 ensureLoaded() re-runs load() only for the boot race (the daemon was
+ *     not identified yet), never after the engine answered with a failure.
+ *     [if] a failed status read or a failed Look again is retried by
+ *     ensureLoaded() [then ⛔️] broken: the retry loops (Get started stays
+ *     disabled) or repaints the old answer over the failure (Mac check of
+ *     2f449f863, Fri 2 Oct 2026)
  */
 
 import { capabilities } from '../api/capabilities.svelte';
@@ -69,6 +79,7 @@ import {
 	agentApiError,
 	humanApiError,
 	humanFinishLibraryMissing,
+	humanSetupReadError,
 	humanFinishUnconfirmed
 } from './present';
 import {
@@ -105,6 +116,36 @@ function _message(exc: unknown): string {
 	return exc instanceof Error ? exc.message : String(exc);
 }
 
+/** How long one setup read (status, detection) may take before the wizard
+ * stops waiting and says the search did not finish. Detection on a large
+ * collection answers in well under a second; 20 s is a stall, not a slow disk. */
+export const SETUP_READ_TIMEOUT_MS = 20_000;
+
+/** Thrown when a read hits its deadline. Carries the endpoint for agents. */
+class SetupReadTimeout extends Error {}
+
+/** Run one read under a deadline: abort the request and reject when it passes.
+ * Raced as well as aborted, so a fetch that ignores its signal still settles. */
+async function bounded<T>(
+	what: string,
+	ms: number,
+	read: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+	const controller = new AbortController();
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const deadline = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => {
+			controller.abort();
+			reject(new SetupReadTimeout(`${what} gave no answer within ${ms} ms; aborted`));
+		}, ms);
+	});
+	try {
+		return await Promise.race([read(controller.signal), deadline]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 // ------------------------------------------------------------------ store
 
 class SetupWizard {
@@ -139,6 +180,11 @@ class SetupWizard {
 	statusRefreshJobId = $state<string | null>(null);
 	/** Last refreshStatusAfterImport failure for the current job, if any. */
 	statusRefreshError = $state<string | null>(null);
+	/** Deadline for load() and redetect(). A field so tests can shorten it. */
+	readTimeoutMs = SETUP_READ_TIMEOUT_MS;
+	/** True only when the last load() was refused because the daemon was not
+	 * identified yet: the one failure ensureLoaded() may retry on its own. */
+	private awaitingEngine = false;
 
 	goTo(step: WizardStep): void {
 		this.step = step;
@@ -149,6 +195,14 @@ class SetupWizard {
 	private _fail(message: string): void {
 		this.errorDiagnostic = agentApiError(message);
 		this.error = humanApiError(message);
+	}
+
+	/** A failed status or detection read: a fixed sentence for the operator,
+	 * the raw message (plain-string details and paths included) for agents. */
+	private _failRead(exc: unknown): void {
+		this.errorDiagnostic = agentApiError(_message(exc));
+		this.error = humanSetupReadError(exc instanceof SetupReadTimeout);
+		this.detectState = 'failed';
 	}
 
 	next(): void {
@@ -203,21 +257,21 @@ class SetupWizard {
 			// was merely slow to boot heals itself instead of stranding the
 			// step on a scanning state nothing will ever clear.
 			this.detectState = 'failed';
+			this.awaitingEngine = true;
 			return;
 		}
+		this.awaitingEngine = false;
 		this.busy = true;
 		try {
-			// Sequential, not Promise.all: two requests whose second one is only
-			// meaningful if the first succeeded, and a combined rejection would
-			// lose which of them failed.
-			this.status = await getSetupStatus();
+			this.status = await bounded('GET /api/v1/setup/status', this.readTimeoutMs, (signal) =>
+				getSetupStatus(signal)
+			);
 			this.detection = this.status.rekordbox;
 			this.error = null;
 			this.errorDiagnostic = null;
 			this.detectState = 'answered';
 		} catch (exc) {
-			this._fail(_message(exc));
-			this.detectState = 'failed';
+			this._failRead(exc);
 		} finally {
 			this.busy = false;
 		}
@@ -240,13 +294,18 @@ class SetupWizard {
 		this.busy = true;
 		this.detectState = 'scanning';
 		try {
-			this.detection = await detectRekordbox();
+			this.detection = await bounded(
+				'GET /api/v1/setup/detect/rekordbox',
+				this.readTimeoutMs,
+				(signal) => detectRekordbox(signal)
+			);
 			this.error = null;
 			this.errorDiagnostic = null;
 			this.detectState = 'answered';
 		} catch (exc) {
-			this._fail(_message(exc));
-			this.detectState = 'failed';
+			// The earlier answer stays on `detection`; 'failed' beside it is
+			// what the detect step renders as "looking again did not finish".
+			this._failRead(exc);
 		} finally {
 			this.busy = false;
 		}
@@ -262,9 +321,16 @@ class SetupWizard {
 	 * in-flight sentence permanently, on a machine where rekordbox was right
 	 * there. Callers drive this from an effect on `capabilities.flavor`, so
 	 * the retry is demand-driven off a state change and never a poll.
+	 *
+	 * ONLY that race is retried here. A read the engine answered with an
+	 * error (or that timed out) stays 'failed' until the operator presses
+	 * Try again or Look again: retrying it from the effect looped load() with
+	 * Get started held disabled, and a failed Look again was repainted with
+	 * the old answer by a status re-read nobody asked for.
 	 */
 	async ensureLoaded(): Promise<void> {
-		if (this.detectState === 'answered' || this.detectState === 'scanning') return;
+		if (this.detectState !== 'idle' && !this.awaitingEngine) return;
+		if (this.detectState === 'scanning') return;
 		if (finalSetupRefusal() !== null) return;
 		await this.load();
 	}
@@ -585,6 +651,8 @@ class SetupWizard {
 		this.error = null;
 		this.errorDiagnostic = null;
 		this.detectState = 'idle';
+		this.awaitingEngine = false;
+		this.readTimeoutMs = SETUP_READ_TIMEOUT_MS;
 		this.folderCandidates = [];
 		this.folderCandidatesState = 'idle';
 		this._clearStatusRefresh();

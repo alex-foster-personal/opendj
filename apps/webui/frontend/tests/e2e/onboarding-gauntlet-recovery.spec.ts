@@ -17,8 +17,12 @@
  *   `succeeded` once it is back online, without a reload -> broken.
  * - if an engine killed mid-import leaves a job that is live forever, refuses
  *   the next import, or doubles rows on retry -> broken.
+ * - if a detection request that never answers leaves "Looking for your music"
+ *   up past the wizard's 20 s read deadline, or a failed Look again redraws
+ *   the earlier answer with nothing saying so -> broken (Mac check, 2f449f863).
+ * - if a failed first status read strands Welcome without a retry -> broken.
  */
-import { expect, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import { join } from 'node:path';
 
 import { type OnboardingEngine, startOnboardingEngine, writeMusicFolder } from './support/onboarding-engine';
@@ -41,6 +45,20 @@ import {
 const STAYS_CLOSED_MS = 7_000;
 /** Enough tiny files that a kill lands while the job is still running. */
 const KILL_FIXTURE_FILES = 400;
+/** The wizard's read deadline (SETUP_READ_TIMEOUT_MS, 20 s) plus slack. */
+const READ_DEADLINE_MS = 35_000;
+const SCANNING = 'Looking for your music on this machine...';
+const RECHECK_FAILED = 'Looking again did not finish. What is shown below is from the earlier search.';
+const DETECT = '**/api/v1/setup/detect/rekordbox';
+
+/** Welcome -> Get started -> the rekordbox branch, once detection has answered. */
+async function chooseRekordboxBranch(page: Page): Promise<Locator> {
+	const dialog = setupDialog(page);
+	await dialog.getByRole('button', { name: 'Get started' }).click();
+	await dialog.getByLabel('A rekordbox collection on this machine').check();
+	await expect(dialog.getByText('Your DJ collection:', { exact: false })).toBeVisible();
+	return dialog;
+}
 
 let engine: OnboardingEngine;
 
@@ -107,6 +125,84 @@ test.describe('onboarding gauntlet: recovery', () => {
 		await continueToDone(page);
 		await minimiseWizard(page);
 		await allTracksRowCount(page, 3);
+	});
+
+	test('a Look again that never answers ends in "did not finish" at the deadline, and a retry recovers', async ({ page }) => {
+		await landAndTimeWizard(page, engine.origin);
+		const dialog = await chooseRekordboxBranch(page);
+
+		// Held, never answered: the stall the Mac check saw for 75 s.
+		await page.route(DETECT, () => undefined);
+		const started = Date.now();
+		await dialog.getByRole('button', { name: 'Look again', exact: true }).click();
+		await expect(dialog.getByText(SCANNING)).toBeVisible();
+		await expect(dialog.getByText(RECHECK_FAILED)).toBeVisible({ timeout: READ_DEADLINE_MS });
+		const waitedMs = Date.now() - started;
+		expect(waitedMs, `the stall ended after ${waitedMs} ms, before the 20 s deadline`).toBeGreaterThanOrEqual(19_000);
+		await expect(dialog.getByText(SCANNING)).toHaveCount(0);
+		await expect(dialog.getByText('The app took too long to answer', { exact: false })).toBeVisible();
+		for (const name of ['Look again', 'Choose a folder instead', 'Continue without importing']) {
+			await expect(dialog.getByRole('button', { name, exact: true })).toBeEnabled();
+		}
+
+		await page.unrouteAll({ behavior: 'ignoreErrors' });
+		await dialog.getByRole('button', { name: 'Look again', exact: true }).click();
+		await expect(dialog.getByText(RECHECK_FAILED)).toHaveCount(0);
+		await expect(dialog.getByText('Your DJ collection:', { exact: false })).toBeVisible();
+	});
+
+	test('a Look again that errors says the re-check did not finish, never in the engine\'s words', async ({ page }) => {
+		await landAndTimeWizard(page, engine.origin);
+		const dialog = await chooseRekordboxBranch(page);
+
+		// A network fault, then a plain-string server body: both are failures
+		// the real engine never answered, and both must read the same way.
+		await page.route(DETECT, (route) => route.abort('internetdisconnected'));
+		await dialog.getByRole('button', { name: 'Look again', exact: true }).click();
+		await expect(dialog.getByText(RECHECK_FAILED)).toBeVisible();
+		await page.unrouteAll({ behavior: 'ignoreErrors' });
+
+		await page.route(DETECT, (route) =>
+			route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'the disk said no' }) })
+		);
+		await dialog.getByRole('button', { name: 'Look again', exact: true }).click();
+		await expect(dialog.getByText(RECHECK_FAILED)).toBeVisible();
+		// Present for agents (closed disclosure), never in the visible copy.
+		await expect(dialog.locator('[data-agent-error="the disk said no"]')).toHaveCount(1);
+		await expect(dialog.getByText('the disk said no')).toBeHidden();
+		await expect(dialog.getByText(SCANNING)).toHaveCount(0);
+	});
+
+	test('a failed first status read leaves Welcome with Try again and Get started, and Try again recovers', async ({ page }) => {
+		// The first status read is the packaged trigger's, which opens the
+		// wizard; every later one fails until released. If the trigger ever
+		// reads twice, Welcome shows counts and this case reds rather than
+		// passing on a read it did not fail.
+		let reads = 0;
+		let failing = true;
+		await page.route('**/api/v1/setup/status', async (route) => {
+			reads += 1;
+			if (reads === 1 || !failing) return route.continue();
+			return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'the disk said no' }) });
+		});
+		await landAndTimeWizard(page, engine.origin);
+		const dialog = setupDialog(page);
+
+		await expect(dialog.getByText('Your library could not be read yet', { exact: false })).toBeVisible();
+		// Present for agents (closed disclosure), never in the visible copy.
+		await expect(dialog.locator('[data-agent-error="the disk said no"]')).toHaveCount(1);
+		await expect(dialog.getByText('the disk said no')).toBeHidden();
+		await expect(dialog.getByRole('button', { name: 'Get started' })).toBeEnabled();
+		// No retry loop: before the fix the overlay's effect re-ran load() on
+		// every failure, hammering status and holding Get started disabled.
+		const settled = reads;
+		await page.waitForTimeout(3_000);
+		expect(reads, `status was re-read ${reads - settled} more time(s) with nobody asking`).toBe(settled);
+		await expect(dialog.getByRole('button', { name: 'Get started' })).toBeEnabled();
+		failing = false;
+		await dialog.getByRole('button', { name: 'Try again', exact: true }).click();
+		await expect(dialog.getByText('Library right now:', { exact: false })).toBeVisible();
+		await expect(dialog.getByRole('button', { name: 'Try again', exact: true })).toHaveCount(0);
 	});
 
 	test('the browser going offline mid-import still ends on succeeded once it is back', async ({ page, context }) => {

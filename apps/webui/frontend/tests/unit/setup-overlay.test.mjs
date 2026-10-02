@@ -458,6 +458,15 @@ test('a load that could not reach the daemon is FAILED, and retries', async () =
 
 // -------------------------------------------------------------- the markup
 
+test('the load effect does not track detectState (Mac check of 2f449f863, item 3c)', () => {
+	// ensureLoaded() reads detectState synchronously. Tracked, every failure
+	// re-ran the effect and looped load(); SSR cannot run effects, so the
+	// shape is pinned here and the loop itself in the onboarding gauntlet.
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /untrack\(\(\) => void setupWizard\.ensureLoaded\(\)\)/);
+	assert.doesNotMatch(overlay, /^\s*void setupWizard\.ensureLoaded\(\);/m);
+});
+
 test('the refusal renders inline, not only in a hover title', () => {
 	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
 	// The <p class="why"> block is the inline copy. Its presence next to the

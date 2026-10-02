@@ -284,6 +284,15 @@ export function humanApiError(message: string): string {
 	return shortened;
 }
 
+/** A failed setup READ (status or detection). Never the server's own words:
+ * a plain-string detail or a path in one must not reach the operator. A read
+ * that stalled past the wizard's deadline and was aborted says so. */
+export function humanSetupReadError(timedOut: boolean): string {
+	return timedOut
+		? 'The app took too long to answer. Try again in a moment.'
+		: GENERIC_SETUP_ERROR;
+}
+
 export function agentApiError(message: string): string {
 	return message;
 }
