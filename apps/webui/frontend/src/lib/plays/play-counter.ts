@@ -113,6 +113,9 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 	const now = options.now ?? (() => Date.now());
 	const newPlayId = options.newPlayId ?? _newPlayId;
 	const loads = new Map<DeckId, DeckLoad>();
+	// Plays waiting to be posted, kept apart from \`loads\` so a failed post is
+	// still retried after its deck unloads or loads the next track.
+	const outbox: Array<{ deck: DeckId; load: DeckLoad }> = [];
 	let posted = 0;
 	let failed = 0;
 
@@ -136,6 +139,7 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 					console.error(`play counter: giving up on ${load.stableId} deck ${deck}`, err);
 				} else {
 					load.phase = 'pending';
+					outbox.push({ deck, load });
 				}
 			}
 		);
@@ -174,8 +178,8 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 		load.lastSampleMs = isHeard ? at : null;
 		if (load.phase === 'counting' && load.heardMs >= PLAY_THRESHOLD_S * 1000) {
 			load.phase = 'pending';
+			outbox.push({ deck, load });
 		}
-		if (load.phase === 'pending') _send(deck, load);
 	}
 
 	return {
@@ -183,6 +187,7 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 			const state = sample();
 			const at = now();
 			for (const deck of DECK_IDS) _observe(state, deck, at);
+			for (const { deck, load } of outbox.splice(0)) _send(deck, load);
 		},
 		status(): PlayCounterStatus {
 			const decks: PlayCounterStatus['decks'] = {};

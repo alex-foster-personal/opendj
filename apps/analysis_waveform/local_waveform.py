@@ -79,7 +79,7 @@ from apps.analysis_waveform.decode import (
     BAND_NAMES,
     OVERVIEW_COLUMNS,
     LocalDecodeUnavailable,
-    decode_peaks_from,
+    decode_peaks_used,
     decoder_mode,
     select_decoder,
 )
@@ -204,6 +204,18 @@ def _decode_key(path: Path) -> dict[str, Any]:
     return {**_source_key(path), "decoder": decoder}
 
 
+def _auto_fallback_entry(entry: dict[str, Any], decoder: Any) -> bool:
+    """ffmpeg peaks for a file the engine refused stand in for an ``auto``
+    engine decode of the same bytes, and only for ``auto``: a forced engine
+    must try the engine and fail."""
+    return (
+        decoder == "engine"
+        and entry.get("decoder") == "ffmpeg"
+        and entry.get("engine_refused") is True
+        and decoder_mode() == "auto"
+    )
+
+
 def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
     """Whether ``entry`` was written by THIS decoder from THESE bytes.
 
@@ -218,6 +230,7 @@ def _entry_is_current(entry: dict[str, Any], key: dict[str, Any]) -> bool:
         and entry.get("peaks_version") == peaks_version()
         and all(
             entry.get(name) == value
+            or (name == "decoder" and _auto_fallback_entry(entry, value))
             for name, value in key.items()
             # With no decoder on the host nothing can rebuild the entry, so the
             # last real decode of these same bytes stands, whichever decoder
@@ -399,10 +412,13 @@ def ensure_local_peaks(stable_id: str, *, share: bool = False) -> np.ndarray:
                 decoder = key["decoder"]
                 if decoder in (NO_DECODER, FORCED_DECODER_UNAVAILABLE):
                     decoder = select_decoder(path)  # raises the reason
-                peaks = decode_peaks_from(decoder, path)
+                peaks, _rate, used = decode_peaks_used(decoder, path)
             finally:
                 _DECODE_SLOTS.release()
-            _store_peaks(stable_id, key, peaks)
+            # Recorded under the decoder that made the peaks: an auto engine
+            # refusal decoded by ffmpeg must never answer a forced engine.
+            stored = key if used == decoder else {**key, "decoder": used, "engine_refused": True}
+            _store_peaks(stable_id, stored, peaks)
     finally:
         _DECODE_ADMISSION.release()
     return peaks

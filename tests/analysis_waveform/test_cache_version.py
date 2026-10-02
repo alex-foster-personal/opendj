@@ -255,3 +255,26 @@ def test_a_forced_decoder_that_is_missing_never_serves_another_decoders_cache(
 
     monkeypatch.setenv(decode.DECODER_ENV, forced)
     assert local_waveform._cached_peaks(SID, local_waveform._decode_key(source)) is None
+
+
+def test_ffmpeg_peaks_for_an_engine_refused_file_never_answer_a_forced_engine(
+    source: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An auto decode the engine refused is stored as ffmpeg's. It stands in for
+    the next auto engine request, but a forced engine must miss and try the
+    engine itself."""
+    engine_key = {**local_waveform._source_key(source), "decoder": "engine"}
+    local_waveform._store_peaks(
+        SID, {**engine_key, "decoder": "ffmpeg", "engine_refused": True}, _tri_peaks()
+    )
+
+    monkeypatch.delenv(decode.DECODER_ENV, raising=False)
+    assert local_waveform._cached_peaks(SID, engine_key) is not None, "auto must reuse it"
+
+    monkeypatch.setenv(decode.DECODER_ENV, "engine")
+    assert local_waveform._cached_peaks(SID, engine_key) is None
+
+    # Control: plain ffmpeg peaks (no engine refusal) never stand in for the engine.
+    local_waveform._store_peaks(SID, {**engine_key, "decoder": "ffmpeg"}, _tri_peaks())
+    monkeypatch.delenv(decode.DECODER_ENV)
+    assert local_waveform._cached_peaks(SID, engine_key) is None

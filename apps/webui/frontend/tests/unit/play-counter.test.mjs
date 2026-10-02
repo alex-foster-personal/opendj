@@ -190,6 +190,31 @@ test('a failed post retries with the SAME play_id, and success stops the retries
 	assert.equal(h.counter.status().posted, 1);
 });
 
+test('a failed post is still retried after its deck unloads', async () => {
+	let fail = true;
+	const seen = [];
+	const h = harness({
+		post: async (play) => {
+			seen.push(play.playId);
+			if (fail) throw new Error('network down');
+		}
+	});
+	h.counter.tick();
+	h.run(60);
+	await settle();
+	assert.equal(seen.length, 1);
+	// The deck empties before the retry: the heard play must not be lost.
+	h.deck1.stable_id = null;
+	fail = false;
+	h.run(1);
+	await settle();
+	assert.deepEqual(seen, ['play-1', 'play-1'], 'the retry died with the unloaded deck');
+	assert.equal(h.counter.status().posted, 1);
+	h.run(5);
+	await settle();
+	assert.equal(seen.length, 2, 'a landed post was sent again');
+});
+
 test('the default post hits POST /api/v1/tracks/{id}/plays with the wire body', async () => {
 	const requests = [];
 	globalThis.fetch = async (input, init) => {
