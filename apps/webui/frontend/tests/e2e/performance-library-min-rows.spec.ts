@@ -221,6 +221,24 @@ test('performance: the track list never paints over the browser bottom bar at 12
 // which this pin's fix can no longer deliver in full.
 const LESS_MODE_CHORD = process.platform === 'darwin' ? 'Meta+2' : 'Control+2';
 
+/** `.table-wrap`'s on-screen height: its box clipped by every ancestor whose
+ *  overflow is not visible, and by the viewport. */
+async function visibleTableWrapHeight(page: import('@playwright/test').Page): Promise<number> {
+	return page.locator('.table-wrap').evaluate((wrap) => {
+		const box = wrap.getBoundingClientRect();
+		let top = Math.max(box.top, 0);
+		let bottom = Math.min(box.bottom, window.innerHeight);
+		for (let el = wrap.parentElement; el !== null; el = el.parentElement) {
+			const style = getComputedStyle(el);
+			if (style.overflowY === 'visible' && style.overflow === 'visible') continue;
+			const clip = el.getBoundingClientRect();
+			top = Math.max(top, clip.top);
+			bottom = Math.min(bottom, clip.bottom);
+		}
+		return Math.max(0, bottom - top);
+	});
+}
+
 test('performance: switching to LESS frees real height to the library versus MORE, at the same 1280x800 viewport', async ({
 	page
 }) => {
@@ -229,8 +247,10 @@ test('performance: switching to LESS frees real height to the library versus MOR
 
 	const tableWrap = page.locator('.table-wrap');
 	await expect(tableWrap).toBeVisible();
+	await expect(page.locator('[data-testid="track-row"]').first()).toBeVisible();
 	const moreBox = await tableWrap.boundingBox();
 	expect(moreBox).not.toBeNull();
+	const moreVisible = await visibleTableWrapHeight(page);
 
 	await page.keyboard.press(LESS_MODE_CHORD);
 	// The deck-layout transition is CSS-animated (--rb-deck-layout-duration);
@@ -254,6 +274,10 @@ test('performance: switching to LESS frees real height to the library versus MOR
 
 	const lessBox = await tableWrap.boundingBox();
 	expect(lessBox).not.toBeNull();
+	await expect
+		.poll(async () => visibleTableWrapHeight(page), { timeout: 10_000 })
+		.toBeGreaterThan(moreVisible);
+	const lessVisible = await visibleTableWrapHeight(page);
 
 	// LESS must still give the library a MEANINGFUL amount more room than
 	// MORE, not just any-positive-px - pin 246b0f5 shrank the margin (the
@@ -285,8 +309,24 @@ test('performance: switching to LESS frees real height to the library versus MOR
 	// that measured 59px (19px headroom), while still catching a regression
 	// toward a token few-px "gain": it fails just as hard on a 1px gain as
 	// the old 150px did.
+	//
+	// PR #4082 correction: the BOX comparison above stopped holding once the
+	// Next / Recommended strips (`.library-panels-strips`, 52px + a 12px
+	// collapse bar, acc92778) joined `.list-panel`'s column. Measured live at
+	// 1280x800 on this fixture: `.table-wrap`'s box is 147px (its floor) in
+	// BOTH modes, because in LESS the strips take the freed px that used to
+	// grow it, while `.rb-browser` itself still grows 76px -> 282px. So the
+	// box never moves, and the real gain is in what the user SEES: in MORE
+	// that floored box is clipped by `.list-panel{overflow:hidden}`, in LESS
+	// it is not. Measure the VISIBLE height (the box intersected with every
+	// clipping ancestor and the viewport), which is the quantity this test's
+	// title claims; the box delta is kept as a non-negative sanity check.
 	const MIN_LESS_LIBRARY_GAIN_PX = 40;
-	expect(lessBox!.height - moreBox!.height).toBeGreaterThanOrEqual(MIN_LESS_LIBRARY_GAIN_PX);
+	expect(lessBox!.height).toBeGreaterThanOrEqual(moreBox!.height);
+	expect(
+		lessVisible - moreVisible,
+		`visible .table-wrap height MORE=${moreVisible}px LESS=${lessVisible}px`
+	).toBeGreaterThanOrEqual(MIN_LESS_LIBRARY_GAIN_PX);
 
 	// Decks 1/2 must stay fully unclipped in LESS, same floor as MORE.
 	const deck1 = page.locator('.rb-deck').first();
@@ -455,6 +495,38 @@ test('performance: at the short 1280x720 window, the shortfall costs library row
 
 const MORE_MODE_CHORD = process.platform === 'darwin' ? 'Meta+1' : 'Control+1';
 
+async function tableWrapHeight(page: import('@playwright/test').Page): Promise<number> {
+	return page.locator('.table-wrap').evaluate((el) => el.getBoundingClientRect().height);
+}
+
+async function scrollRowNearViewportBottom(
+	page: import('@playwright/test').Page,
+	rowIndex: number
+): Promise<void> {
+	await page.evaluate((index) => {
+		const wrap = document.querySelector('.table-wrap');
+		const row = document.querySelectorAll('[data-testid="track-row"]')[index];
+		if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) {
+			throw new Error('table-wrap or target row missing');
+		}
+		const w = wrap.getBoundingClientRect();
+		const r = row.getBoundingClientRect();
+		const delta = r.bottom - w.bottom + 2;
+		wrap.scrollTop = Math.max(0, wrap.scrollTop + delta);
+	}, rowIndex);
+}
+
+async function selectedRowFullyVisible(page: import('@playwright/test').Page): Promise<boolean> {
+	return page.evaluate(() => {
+		const wrap = document.querySelector('.table-wrap');
+		const row = document.querySelector('[data-testid="track-row"].rb-row-selected');
+		if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
+		const w = wrap.getBoundingClientRect();
+		const r = row.getBoundingClientRect();
+		return r.top >= w.top - 0.5 && r.bottom <= w.bottom + 0.5;
+	});
+}
+
 test('performance: selected library row stays visible when toggling MORE and LESS (LIBUX-18, issue #3984)', async ({
 	page
 }) => {
@@ -464,30 +536,59 @@ test('performance: selected library row stays visible when toggling MORE and LES
 	await expect(tableWrap).toBeVisible();
 	const rows = page.locator('[data-testid="track-row"]');
 	const count = await rows.count();
-	if (count < 8) {
-		test.skip(true, 'needs at least 8 library rows');
-	}
-	const target = rows.nth(7);
-	await target.scrollIntoViewIfNeeded();
-	await target.click();
-	await expect(target).toHaveClass(/rb-row-selected/);
+	expect(count).toBeGreaterThanOrEqual(8);
 
-	const intersects = async (): Promise<boolean> => {
-		return page.evaluate(() => {
-			const wrap = document.querySelector('.table-wrap');
-			const row = document.querySelector('[data-testid="track-row"].rb-row-selected');
-			if (!(wrap instanceof HTMLElement) || !(row instanceof HTMLElement)) return false;
-			const w = wrap.getBoundingClientRect();
-			const r = row.getBoundingClientRect();
-			return r.bottom > w.top && r.top < w.bottom;
-		});
-	};
+	// LESS first: select a lower row near the bottom of the expanded viewport, then shrink to MORE.
+	await page.locator('.deck-layout-btn').filter({ hasText: 'LESS' }).click();
+	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
+	const lessHeight = await tableWrapHeight(page);
+	expect(lessHeight).toBeGreaterThan(100);
 
-	expect(await intersects()).toBe(true);
+	const shrinkTarget = rows.nth(7);
+	await tableWrap.evaluate((el) => {
+		el.scrollTop = 0;
+	});
+	await scrollRowNearViewportBottom(page, 7);
+	await shrinkTarget.click();
+	await expect(shrinkTarget).toHaveClass(/rb-row-selected/);
+	expect(await selectedRowFullyVisible(page)).toBe(true);
+	const shrinkStableId = await shrinkTarget.getAttribute('data-stable-id');
+	expect(shrinkStableId).toBeTruthy();
+
+	await page.locator('.deck-layout-btn').filter({ hasText: 'MORE' }).click();
+	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
+	await expect
+		.poll(async () => tableWrapHeight(page), { timeout: 10_000 })
+		.toBeLessThan(lessHeight - 4);
+	await expect
+		.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 })
+		.toBe(true);
+	await expect(page.locator(`[data-testid="track-row"][data-stable-id="${shrinkStableId}"]`)).toHaveClass(
+		/rb-row-selected/
+	);
+
+	// Inverse: establish a fresh selection in the smaller MORE viewport, then expand with the keyboard chord.
+	await tableWrap.evaluate((el) => {
+		el.scrollTop = 0;
+	});
+	const expandTarget = rows.nth(5);
+	await scrollRowNearViewportBottom(page, 5);
+	await expandTarget.click();
+	await expect(expandTarget).toHaveClass(/rb-row-selected/);
+	expect(await selectedRowFullyVisible(page)).toBe(true);
+	const expandStableId = await expandTarget.getAttribute('data-stable-id');
+	expect(expandStableId).toBeTruthy();
+	const moreHeight = await tableWrapHeight(page);
+
 	await page.keyboard.press(LESS_MODE_CHORD);
 	await expect(page.locator('.perf-root')).toHaveClass(/deck-layout-less/);
-	expect(await intersects()).toBe(true);
-	await page.keyboard.press(MORE_MODE_CHORD);
-	await expect(page.locator('.perf-root')).not.toHaveClass(/deck-layout-less/);
-	expect(await intersects()).toBe(true);
+	await expect
+		.poll(async () => tableWrapHeight(page), { timeout: 10_000 })
+		.toBeGreaterThan(moreHeight + 4);
+	await expect
+		.poll(async () => selectedRowFullyVisible(page), { timeout: 10_000 })
+		.toBe(true);
+	await expect(page.locator(`[data-testid="track-row"][data-stable-id="${expandStableId}"]`)).toHaveClass(
+		/rb-row-selected/
+	);
 });

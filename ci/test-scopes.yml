@@ -165,6 +165,7 @@ scopes:
   - name: parity
     sources: ["apps/parity/"]
     tests: ["tests/parity/"]
+    dependents: ["vocals"]
   - name: play_analytics
     sources: ["apps/play_analytics/"]
     tests: ["tests/play_analytics/"]
@@ -224,7 +225,8 @@ scopes:
     dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "genre_infer", "launcher", "loudness", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "webui"]
   - name: webui
     sources: ["apps/webui/"]
-    tests: ["tests/webui/"]
+    # tests/health_lights/ exercises apps/webui/server coverage, drain and playable routes.
+    tests: ["tests/webui/", "tests/health_lights/"]
     dependents: ["adapters", "agentbox", "agentic_testing", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_loudness", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "cloudsync", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "fixtures", "genre_infer", "launcher", "loudness", "lyrics", "lyrics_alignment", "mik", "open_dj", "opendj_cli", "pairings", "parity", "perf", "play_analytics", "playlist_sets", "quality", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "standalone", "stems", "streaming_transfer", "sync", "sync_hub", "tags", "vocals", "voice"]
   - name: webui_frontend
     # The Svelte/TypeScript app under apps/webui/. No Python imports it, so its consumers
@@ -235,7 +237,7 @@ scopes:
     sources: ["apps/webui/frontend/"]
     tests: []
     mentions: ["apps/webui/frontend", "frontend"]
-    dependents: ["agentic_testing", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "standalone", "stems", "webui"]
+    dependents: ["agentic_testing", "cloud", "cloudsync", "engine_core", "entitlements", "opendj_cli", "perf", "quality", "scripts", "standalone", "stems", "vocals", "webui"]
   - name: prose
     # Documentation trees. Round 5 measured that prose is NOT harmless here (24 files named
     # by literal path inside tests, six modules that glob for it), so an unclaimed prose path

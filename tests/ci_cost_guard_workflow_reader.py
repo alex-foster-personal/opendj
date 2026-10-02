@@ -1,10 +1,7 @@
-"""Reading the workflow files on disk the way the cost guard would price them.
+"""Reading workflow `runs-on` and `if` expressions for pricing unit tests.
 
-Shared by tests/test_ci_cost_guard.py, which drives these readers over
-hand-written expressions, and tests/test_ci_cost_guard_workflow_coverage.py,
-which runs them over `.github/workflows` and asserts on the arithmetic that
-comes out. Both modules ask the same question - what would GitHub bill for this
-definition - so the answer lives in one place rather than being restated twice.
+Shared by tests/test_ci_cost_guard.py and tests/quality/test_security_platform_scan_cadence.py
+(top_level_disjuncts). Fail-closed: unreadable shapes raise rather than guess.
 
 Every reader here is FAIL-CLOSED by design. A shape none of them understands
 raises rather than returning a plausible number, because a guessed runner or a
@@ -22,9 +19,6 @@ import json
 import re
 from pathlib import Path
 
-import yaml
-
-from scripts.ci_cost_guard import infer_standard_sku
 from tests.scripts.ci_runner_routes import (
     CANARY_RUNS_ON,
     CANARY_VENDOR_MATRIX,
@@ -32,7 +26,6 @@ from tests.scripts.ci_runner_routes import (
 )
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
-GUARD = WORKFLOW_DIR / "ci-cost-guard.yml"
 CANARY_CONFIG = WORKFLOW_DIR.parents[1] / "ci" / "runner-canary.json"
 
 
@@ -47,60 +40,6 @@ def canary_vendor_labels() -> list[str]:
     """
     vendors = json.loads(CANARY_CONFIG.read_text())["vendors"]
     return [vendor["label"] for vendor in vendors.values()]
-
-
-def guard_job() -> dict:
-    """The guard's one job. Its `env` carries the watch list and the E2E rule."""
-    return yaml.safe_load(GUARD.read_text())["jobs"]["assess"]
-
-
-def guard_watched() -> set[str]:
-    """The workflows the batch pass prices, from WATCHED_WORKFLOWS on the job."""
-    return {name.strip() for name in guard_job()["env"]["WATCHED_WORKFLOWS"].split(",")}
-
-
-def guard_e2e_priced_events() -> set[str]:
-    """The events E2E is priced on, from E2E_PRICED_EVENTS on the job."""
-    return {name.strip() for name in guard_job()["env"]["E2E_PRICED_EVENTS"].split(",")}
-
-
-MACOS_DESKTOP_COMPILE = WORKFLOW_DIR / "macos-desktop-compile.yml"
-MACOS_PACKAGING = WORKFLOW_DIR / "macos-packaging.yml"
-MACOS_NATIVE_COMPANION = WORKFLOW_DIR / "macos-native-companion.yml"
-
-
-# ----- the workflow definitions themselves ----------------------------------
-
-
-def workflow_docs() -> dict[str, dict]:
-    """Every workflow definition on disk, keyed by the `name:` the guard sees.
-
-    Both suffixes GitHub will execute, not just `.yml`: Codex pointed out on
-    #713 that a `.yaml` workflow whose ceiling exceeds the threshold stays
-    absent from the watch list while the repository-wide assertion in
-    tests/test_ci_cost_guard_workflow_coverage.py still passes, because the glob
-    never loads it.
-    """
-
-    out: dict[str, dict] = {}
-    seen: dict[str, Path] = {}
-    for path in sorted(p for pat in ("*.yml", "*.yaml") for p in WORKFLOW_DIR.glob(pat)):
-        doc = yaml.safe_load(path.read_text())
-        name = doc.get("name", path.stem)
-        # Refuse a collision rather than let the later file win. GitHub happily
-        # runs two workflows sharing a `name:`, and this dict keys on the name
-        # the guard sees, so a silent overwrite prices only one of them: an
-        # expensive definition can be hidden behind a cheap namesake and the
-        # shared name left off the watch list with everything still green.
-        # Reachable because the glob above deliberately reads BOTH suffixes.
-        assert name not in seen, (
-            f"{path.name} and {seen[name].name} both declare `name: {name}`, so "
-            "pricing one of them silently drops the other. Rename one, or price "
-            "every document per name."
-        )
-        seen[name] = path
-        out[name] = doc
-    return out
 
 
 #: The runner-switch expression `runs-on` carries since CI moved to self-hosted
@@ -256,95 +195,6 @@ def matrix_runs(job_id: str, job: dict) -> int:
     return runs
 
 
-def called_workflow_path(job_id: str, uses: str) -> Path:
-    """The local workflow a `uses:` job calls, refusing anything remote.
-
-    A remote reusable workflow (`owner/repo/.github/workflows/x.yml@ref`) is
-    not readable from this checkout, so its ceiling cannot be computed and
-    must not be assumed cheap.
-    """
-    assert uses.startswith("./.github/workflows/"), (
-        f"{job_id} calls {uses!r}, which this reader cannot price: only local "
-        "reusable workflows under ./.github/workflows/ can be read from this "
-        "checkout, and an unpriceable job must fail rather than read as free"
-    )
-    path = WORKFLOW_DIR.parents[1] / uses[2:]
-    assert path.is_file(), f"{job_id} calls {uses!r}, which does not exist"
-    return path
-
-
-def job_ceiling_usd(job_id: str, job: dict, _depth: int = 0) -> float:
-    """One job's worst-case cost, priced through the guard's own SKU table.
-
-    A matrix job is priced once per combination: the fast pytest lane shards
-    across runners, and each shard is its own billed job with its own timeout.
-
-    A CALLER job (`uses: ./.github/workflows/x.yml`) has no `runs-on` and no
-    `timeout-minutes` of its own: GitHub forbids both on a reusable-workflow
-    call. Its cost is the called workflow's own ceiling, so it is priced by
-    recursion rather than by the assertion below, which would otherwise
-    classify every caller as unpriceable. periodic-checks.yml calls
-    full-ci.yml this way.
-    """
-    uses = job.get("uses")
-    if isinstance(uses, str):
-        assert _depth < 4, f"{job_id}: reusable-workflow nesting is too deep to price"
-        called = yaml.safe_load(called_workflow_path(job_id, uses).read_text())
-        return sum(
-            job_ceiling_usd(f"{job_id}->{i}", j, _depth + 1)
-            for i, j in (called.get("jobs") or {}).items()
-        )
-
-    timeout = worst_case_timeout(job_id, job.get("timeout-minutes"))
-    labels = runner_labels(job_id, job.get("runs-on"))
-    sku = infer_standard_sku(labels)
-    assert sku is not None, f"{job_id} runs on {labels}, which has no known rate"
-    # One billed minute MORE than the timeout, because that is what production
-    # would charge. `price_jobs` bills `max(1, math.ceil(seconds / 60))`, so a
-    # job cancelled at a 30-minute timeout whose recorded duration runs even
-    # fractionally past the mark bills 31 minutes, not 30. Treating the timeout
-    # as an exact billed ceiling understates every workflow by up to one minute,
-    # and a workflow sitting exactly ON the threshold is then classified as
-    # unable to trip and dropped from the watch list. Codex found this on #713:
-    # Windows Parity priced at exactly $0.30 against a `> $0.30` alert.
-    return matrix_runs(job_id, job) * (timeout + 1) * sku.rate_usd_per_minute
-
-
-def worst_case_timeout(job_id: str, timeout: object) -> int:
-    """A job's timeout, or the largest one an expression can choose.
-
-    A pass that reconciles once a day sets `${{ reconciling && 30 || 10 }}`; the
-    ceiling is the case that costs most, so it is the largest literal the
-    expression can yield. An expression with no literal cannot be priced.
-    """
-    if isinstance(timeout, int):
-        return timeout
-    choices = re.findall(r"(?:&&|\|\|)\s*(\d+)", timeout) if isinstance(timeout, str) else []
-    assert choices, (
-        f"{job_id} has no explicit timeout-minutes, so its ceiling is "
-        "GitHub's 360-minute default and this arithmetic is meaningless"
-    )
-    return max(int(choice) for choice in choices)
-
-
-def ceiling_usd(doc: dict) -> float:
-    """Worst-case cost of one run: EVERY job at its own timeout.
-
-    Every job, including ones behind an `if`, because a ceiling that ignores a
-    conditional job is exactly the mistake this test exists to catch: the
-    guard's comment priced E2E at its 30-minute gate and missed the 45-minute
-    nightly `extended` job sitting beside it.
-
-    Priced through the production `infer_standard_sku`, so a runner the guard
-    could not price is a runner this cannot price either, and the missing
-    number fails the test instead of quietly reading as cheap.
-    """
-    return sum(job_ceiling_usd(i, j) for i, j in (doc.get("jobs") or {}).items())
-
-
-# ----- the conditions that decide which jobs run ----------------------------
-
-
 def top_level_disjuncts(condition: str) -> list[str]:
     """`condition` split on `||` at bracket depth zero.
 
@@ -379,8 +229,7 @@ def event_set(condition: str, variable: str) -> set[str]:
     did not mention `variable`, and Codex called that on #713: a disjunct like
     `github.ref == \'refs/heads/main\'` admits every event the workflow
     triggers on, including `push`, while the parser silently returned
-    `{\'schedule\'}` and the containment in
-    tests/test_ci_cost_guard_workflow_coverage.py still passed. A clause this
+    `{\'schedule\'}`. A clause this
     function cannot read may widen the set arbitrarily, so it must refuse
     rather than skip - an uncomputable set returned as a small one satisfies
     every containment, which is the failure it exists to prevent.
@@ -426,29 +275,3 @@ def admits_every_event(condition: str) -> bool:
     stripped = re.sub(r"\s+", " ", condition).strip()
     unwrapped = re.fullmatch(r"\$\{\{ (.+) \}\}", stripped)
     return bool(_EVENT_BLIND_CONDITION.fullmatch(unwrapped.group(1) if unwrapped else stripped))
-
-
-def e2e_ceiling_on(event: str, doc: dict) -> float:
-    """What an E2E run triggered by `event` can cost at worst.
-
-    Every job that would run on that event, priced. A job with no `if`, or an
-    event-blind one, runs on every trigger the workflow declares; a gated one
-    runs only on the events its condition admits, read by the fail-closed
-    parser above.
-    """
-    total = 0.0
-    for job_id, job in doc["jobs"].items():
-        gate = job.get("if")
-        if (
-            gate is None
-            or admits_every_event(gate)
-            or event in event_set(gate, "github.event_name")
-        ):
-            total += job_ceiling_usd(job_id, job)
-    return total
-
-
-def guard_threshold() -> float:
-    match = re.search(r"THRESHOLD_USD:\s*\"([0-9.]+)\"", GUARD.read_text())
-    assert match, "the guard no longer passes --threshold; this reader cannot measure"
-    return float(match.group(1))

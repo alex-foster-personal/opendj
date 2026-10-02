@@ -136,10 +136,16 @@ def _apply_reinsert(run: SimRun, machine: str, args: Mapping[str, Any]) -> None:
         _validate_editable_columns(conn, table, changes)
         stamp = _log_edit(conn, table, pk_tuple, origin, _stamp(args, run, machine))
         assignments = "".join(f"{column} = ?, " for column in changes)
+        restore: tuple[str, ...] = ()
+        if table == "tracks":
+            # The explicit restore, as StateWriter.undelete_track writes it:
+            # without restored_at a live row never outranks a tombstone.
+            assignments += "restored_at = ?, deleted_reason = NULL, "
+            restore = (stamp,)
         cursor = conn.execute(
             f"UPDATE {table} SET {assignments}deleted_at = NULL, updated_at = ?, "
             f"origin_device_id = ? WHERE {_where(pk)} AND deleted_at IS NOT NULL",
-            (*changes.values(), stamp, origin, *pk.values()),
+            (*changes.values(), *restore, stamp, origin, *pk.values()),
         )
         if cursor.rowcount == 0:
             raise ScenarioError(f"reinsert: no TOMBSTONED {table} row {pk}")
