@@ -1,7 +1,8 @@
 <script lang="ts" module>
 	// Re-exported for the top-bar button, so TopBar reaches it through the
 	// sheet it already imports (no new import edge on the widest module).
-	export { pairingUnavailableReason } from '$lib/rb/pairing-button-state';
+	import { pairingUnavailableReason as reason } from '$lib/rb/pairing-button-state';
+	export const pairingUnavailableReason = reason;
 </script>
 
 <script lang="ts">
