@@ -136,7 +136,7 @@ test('SOURCE: the Err cell, the sort key and the dismiss control are wired', () 
 	const popover = read('components/rb/browser/AnalysisDotsPopover.svelte');
 	assert.match(popover, /data-testid="grid-flag-dismiss"/);
 	assert.match(popover, /Beatgrid flag not \$\{dismissed \? 'dismissed' : 'restored'\}/, 'a refused dismiss is toasted');
-	assert.match(popover, /not implemented - see PARITY-TODO/, 'no handler means inert with a tooltip');
+	assert.match(popover, /plannedTitle\('grid-flag-dismiss'\)/, 'no handler means inert with a planned-explainer tooltip');
 	const dots = read('components/rb/browser/AnalysisDots.svelte');
 	assert.match(dots, /class:unknown=/, 'an unknown grid is drawn differently from ok');
 	const wire = read('components/rb/browser/browser-row-wire.ts');

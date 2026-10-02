@@ -77,7 +77,7 @@ test('unbuilt pad-mode items render inert with a tooltip, built ones stay live',
 	const item = padModeMenu.slice(padModeMenu.indexOf('class="pad-menu-item"'));
 	assert.match(item, /disabled=\{!entry\.built\}/);
 	assert.match(item, /title=\{entry\.built \? undefined : NOT_BUILT_TIP\}/);
-	assert.match(padModeMenu, /const NOT_BUILT_TIP = 'not implemented - see PARITY-TODO'/);
+	assert.match(padModeMenu, /const NOT_BUILT_TIP = plannedTitle\('pad-mode-unbuilt'\)/);
 });
 
 // The deck and its main row set overflow: hidden (Deck.svelte), so an

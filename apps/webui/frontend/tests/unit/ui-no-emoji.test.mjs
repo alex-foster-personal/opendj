@@ -50,7 +50,6 @@ const TOPBAR_BANNED_GLYPHS = [
  * Fri 2 Oct 2026 on f88353f5. Grandfathered per file AND per glyph: fixing
  * one means deleting its entry, never widening it. */
 const KNOWN_DEBT = new Map([
-	['src/lib/components/StarRating.svelte', ['★']],
 	['src/lib/components/TrackRow.svelte', ['★', '☆']],
 	['src/lib/components/rb/browser/LibrarySourceTabs.svelte', ['☰']],
 	['src/lib/components/rb/browser/PlaylistTree.svelte', ['✎']],
@@ -149,7 +148,8 @@ test('the top bar tree is actually measured (not an empty file set)', () => {
 	const files = topBarFiles().map(rel);
 	assert.ok(files.includes('src/lib/components/rb/TopBar.svelte'));
 	// Children the top bar renders today; if the import walk breaks, these vanish.
-	for (const child of ['src/lib/components/UserBauble.svelte', 'src/lib/components/rb/MidiPanel.svelte']) {
+	// The MIDI button left the top bar for the mixer I/O row (CHROME-07, Preview integration).
+	for (const child of ['src/lib/components/UserBauble.svelte', 'src/lib/components/rb/midi/MidiPanelLoader.svelte']) {
 		assert.ok(files.includes(child), `${child} missing from the top bar sweep: ${files.join(', ')}`);
 	}
 });
@@ -164,10 +164,13 @@ test('#3886: the top bar renders no emoji and no text-symbol stand-in icons', ()
 	assert.deepEqual(offenders, [], `use an inline SVG icon instead:\n${offenders.join('\n')}`);
 });
 
-test('#3886: the top bar MIDI status renders SVG check / cross icons', () => {
-	const src = readFileSync(join(LIB, 'components/rb/TopBar.svelte'), 'utf8');
-	assert.match(src, /<svg[^>]*class="midi-glyph"[^>]*data-icon="check"/);
-	assert.match(src, /<svg[^>]*class="midi-glyph"[^>]*data-icon="cross"/);
+test('#3886: the MIDI status renders SVG tick / cross icons (CHROME-07 moved it to the mixer I/O row)', () => {
+	const glyph = readFileSync(join(LIB, 'components/rb/mixer/MidiStatusGlyph.svelte'), 'utf8');
+	assert.match(glyph, /<svg\s+class="midi-glyph"/);
+	assert.match(glyph, /glyph === 'tick' \? MIDI_TICK_PATH : MIDI_CROSS_PATH/);
+	assert.deepEqual([...emojiIn(scannable(glyph)), ...bannedIn(scannable(glyph))], []);
+	const cluster = readFileSync(join(LIB, 'components/rb/mixer/HeadphoneCluster.svelte'), 'utf8');
+	assert.match(cluster, />MIDI<MidiStatusGlyph glyph=\{midiGlyph\} \/>/);
 });
 
 test('#3886: no NEW emoji anywhere in UI markup (src/lib/components, src/routes)', () => {

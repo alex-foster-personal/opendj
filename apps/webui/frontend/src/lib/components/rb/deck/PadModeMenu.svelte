@@ -13,8 +13,9 @@
 	import type { DeckId } from '$lib/rb/deck-id';
 	import { PAD_MODE_CATALOG, padModeMenuLabel } from '$lib/rb/pad-mode-catalog';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 
-	const NOT_BUILT_TIP = 'not implemented - see PARITY-TODO';
+	const NOT_BUILT_TIP = plannedTitle('pad-mode-unbuilt');
 
 	let { deckId }: { deckId: DeckId } = $props();
 

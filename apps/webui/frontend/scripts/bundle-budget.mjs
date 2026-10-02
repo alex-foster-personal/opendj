@@ -247,7 +247,14 @@ const BUDGETS = [
   // raise is kept because its features are all in the merged route; the
   // Preview's #3837 work fit the old 241,664 by deferral (+882 measured). NOT
   // re-measured on the merged tree at resolution time.
-  { name: 'performance', limit: 242688, measured: 241794, note: '/performance and children' },
+  // MEASURED Fri 2 Oct 2026 on the merged tree (claude/port-preview-ui-to-main):
+  // 250,293, 7,605 over 242,688. Both trees were reviewed under their own
+  // ceilings; the union carries main's V1 polish AND the Preview's I/O panel,
+  // Mixtour pickup, phase lock and USB play on /performance. Reviewed raise to
+  // the measured size ceiled to KiB (245 KiB), no extra headroom; flagged in
+  // docs/perf/performance-register.md. Payback candidates: the I/O panel body
+  // and the USB browse store behind their first open.
+  { name: 'performance', limit: 250880, measured: 250293, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -395,7 +402,10 @@ const BUDGETS = [
   // ~4.2 KB on top. NOT re-measured on the merged tree at resolution time; the
   // two notes predict roughly 284,759 + 4,183, so the first merged build decides
   // a payback (the ~3.6 KB MIDI split-chunk overhead above) or a reviewed raise.
-  { name: 'other-lazy', limit: 286720, measured: 284759, note: 'all other routes plus deferred shell' },
+  // MEASURED Fri 2 Oct 2026 on the merged tree: 291,430, 4,710 over (the two
+  // notes predicted ~288,942). Reviewed raise to the measured size ceiled to KiB
+  // (285 KiB), no extra headroom; the MIDI split-chunk payback stays open.
+  { name: 'other-lazy', limit: 291840, measured: 291430, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

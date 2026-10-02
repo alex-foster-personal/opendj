@@ -23,8 +23,11 @@ test('playlist tree view persists via setPlaylistTreeView', () => {
 	assert.match(hydrate, /playlist_tree_view/);
 });
 
-test('Deck applies mirror class on deck 2 when pref is on', () => {
+test('Deck applies the mirror class: decks 2+4 follow the right pref, decks 1+3 the left (pin e207535123b9)', () => {
 	const deck = source('src/lib/components/rb/Deck.svelte');
 	assert.match(deck, /mirror-main-row/);
-	assert.match(deck, /deckId === 2 && uiPrefs\.deck_right_mirror/);
+	assert.match(
+		deck,
+		/class:mirror-main-row=\{\(deckId === 2 \|\| deckId === 4\) \? uiPrefs\.deck_right_mirror : uiPrefs\.deck_left_mirror\}/
+	);
 });

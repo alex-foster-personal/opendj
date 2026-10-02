@@ -27,6 +27,7 @@ function source(relative) {
 const LAYOUT = source('routes/+layout.svelte');
 const TOP_BAR = source('lib/components/rb/TopBar.svelte');
 const APP_MODE = source('lib/rb/app-mode.ts');
+const SIDEBAR_NAV = source('lib/shell/sidebar-nav.ts');
 
 /** Every page the removed strip linked to, by route. */
 const FORMER_STRIP_ROUTES = ['/', '/reconcile', '/dedup', '/smartlists', '/admin'];
@@ -57,16 +58,19 @@ test('Library stays reachable from /performance through the mode picker', () => 
 });
 
 test('the app-shell sidebar still links every page the strip used to carry, and the ledger', () => {
-	const sidebarStart = LAYOUT.indexOf('<aside class="sidebar">');
-	const sidebarEnd = LAYOUT.indexOf('</aside>');
-	assert.ok(sidebarStart !== -1 && sidebarEnd > sidebarStart, 'sidebar block must exist');
-	const sidebar = LAYOUT.slice(sidebarStart, sidebarEnd);
+	// The sidebar renders SIDEBAR_NAV_LINKS (lib/shell/sidebar-nav.ts); Admin and
+	// the ledger are developer pages shown while "Show developer pages" is on.
+	assert.match(LAYOUT, /\{#each navLinks as link \(link\.href\)\}/);
+	assert.match(LAYOUT, /const navLinks = \$derived\(sidebarNavLinks\(uiPrefs\.show_dev_ui\)\)/);
+	const start = SIDEBAR_NAV.indexOf('export const SIDEBAR_NAV_LINKS');
+	assert.ok(start !== -1, 'SIDEBAR_NAV_LINKS must exist');
+	const list = SIDEBAR_NAV.slice(start, SIDEBAR_NAV.indexOf('];', start));
 	for (const route of FORMER_STRIP_ROUTES) {
-		assert.ok(sidebar.includes(`<a href="${route}">`), `sidebar must link ${route}`);
+		assert.ok(list.includes(`href: '${route}'`), `sidebar must link ${route}`);
 	}
-	assert.match(sidebar, /href="\/progress-tree"/);
+	assert.ok(list.includes("href: '/progress-tree'"), 'sidebar must link the ledger');
 	// Negative control: the same probe reports a route the sidebar never had.
-	assert.equal(sidebar.includes('<a href="/no-such-route">'), false);
+	assert.equal(list.includes("href: '/no-such-route'"), false);
 });
 
 test('each former strip destination still has a route file', () => {

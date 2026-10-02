@@ -94,6 +94,7 @@
 	import { pushToast } from '$lib/stores.svelte';
 	import { triggerFloatingAction } from '$lib/ui/clamp-to-viewport';
 	import type { GridFlag } from '$lib/rb/analysis-issues';
+	import { plannedTitle } from '$lib/rb/planned-explainers';
 	import AnalysisDots from './AnalysisDots.svelte';
 
 	let {
@@ -419,7 +420,7 @@
 						data-testid="grid-flag-dismiss"
 						disabled={ongridflagdismiss === undefined}
 						title={ongridflagdismiss === undefined
-							? 'not implemented - see PARITY-TODO'
+							? plannedTitle('grid-flag-dismiss')
 							: gridFlag.dismissed
 								? 'Show this beatgrid flag again for this track'
 								: 'Hide this beatgrid flag for this track. The grid is not changed, and you can restore the flag here.'}
