@@ -228,6 +228,22 @@ def _generate_command(
             "--stable-id", stable_id,
             "--out-dir", str(stems_dir / stable_id),
         ]
+    # Modal tiers run scripts/modal_vocal_farm.py through uv with modal. The
+    # installed app ships none of the three, and `uv run --no-sync` outside a
+    # project dies with an opaque error, so refuse before spawning (INSTALL-31).
+    from apps.shared.source_tree import DEV_ONLY_CODE, is_repo_checkout
+    from apps.stems.worker_launch import packaged_python
+
+    if packaged_python() or not is_repo_checkout(root):
+        raise HTTPException(status_code=503, detail={
+            "code": DEV_ONLY_CODE,
+            "message": (
+                f"tier {tier.key} separates on Modal through uv, which needs a "
+                "development checkout with uv and modal; this installed app "
+                "ships neither. Choose a local tier, or run the engine from a "
+                "checkout of the repo."
+            ),
+        })
     return [
         "uv", "run", "--no-sync", "--with", "modal", "python", "-m",
         "scripts.modal_vocal_farm",
