@@ -473,3 +473,4 @@ def test_would_evict_matches_what_enforce_then_evicts(tmp_path: Path):
     assert list(report.evicted_stable_ids) == ["old", "mid"]
     assert predicted["would_evict_count"] == len(report.evicted_stable_ids)
     assert predicted["would_evict_bytes"] == report.bytes_freed
+

@@ -85,6 +85,7 @@ def enforce_for_app(app: FastAPI, *, dry_run: bool = False) -> stem_cache_budget
         protected=inputs.protected,
         can_rehydrate=inputs.can_rehydrate,
         dry_run=dry_run,
+        live_protected=stem_hydration.OPEN_DECKS.open_ids,
     )
 
 

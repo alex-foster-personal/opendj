@@ -15,7 +15,10 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import tempfile
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -142,9 +145,22 @@ def save_settings(data_dir: Path, settings: StemCacheSettings) -> Path:
 
 
 def write_json_atomically(path: Path, payload: object) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    """Write ``payload`` to ``path`` through a temp file unique to this call.
+
+    The timer enforcer and a post-hydrate enforce can write the same file at
+    once; a shared ``<name>.tmp`` let one writer's replace consume the other's
+    temp file, so the second replace raised FileNotFoundError and a good
+    hydrate reported failure. Same directory, so the replace stays atomic.
+    """
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        os.replace(tmp_name, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp_name)
+        raise
 
 
 __all__ = [

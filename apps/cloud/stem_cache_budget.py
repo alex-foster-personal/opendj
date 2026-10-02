@@ -58,14 +58,24 @@ Requirements (mini-PRD):
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import json
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from apps.cloud.stem_bundles import (
+    IN_FLIGHT_MARKER,
+    REASON_CONTENT_DIFFERS,
+    REASON_FILES_DIFFER,
+    REASON_NOT_IN_INDEX,
+    LocalBundle,
+    StemAssetIndex,
+    index_gap,
+    scan_bundles,
+    unconfirmed_reason,
+)
 from apps.cloud.stem_cache_settings import (
     DEFAULT_ENFORCE_INTERVAL_S,
     DEFAULT_FLOOR_FRACTION,
@@ -84,22 +94,16 @@ from apps.cloud.stem_cache_settings import (
 GIB: int = 1024**3
 UPLOAD_QUEUE_FILENAME: str = "stem-upload-queue.json"
 UPLOAD_QUEUE_SCHEMA_VERSION: int = 1
-_HASH_CHUNK_BYTES: int = 4 * 1024 * 1024
-#: ``hydrate_one`` fetches into ``<stable_id>.tmp-hydrate-<random>`` beside the
-#: bundles. That directory is a download in progress, not a bundle: it is
-#: neither evicted nor queued for upload.
-IN_FLIGHT_MARKER: str = ".tmp-hydrate-"
-
-REASON_NOT_IN_INDEX: str = "not_in_r2_index"
-REASON_FILES_DIFFER: str = "file_set_differs_from_r2_index"
-REASON_CONTENT_DIFFERS: str = "content_differs_from_r2_index"
+#: How many bytes one timer pass may hash to find same-name re-renders. The
+#: first pass after this shipped meets every bundle unverified; a cap spreads
+#: that one-off cost over several passes instead of one long disk read.
+REVERIFY_HASH_BUDGET_BYTES: int = 2 * GIB
 
 BLOCKED_HYDRATION_NOT_ARMED: str = "hydration_not_armed"
 BLOCKED_AUTO_EVICT_OFF: str = "auto_evict_off"
 BLOCKED_NOTHING_EVICTABLE: str = "not_enough_evictable_bundles"
 
 CacheState = Literal["healthy", "low_disk"]
-StemAssetIndex = Mapping[str, Mapping[str, str]]
 
 
 # ----- disk and budget math ----------------------------------------------------
@@ -143,81 +147,6 @@ def derived_budget_bytes(
     return budget
 
 
-# ----- local bundles and R2 confirmation ---------------------------------------
-
-
-@dataclass(frozen=True)
-class LocalBundle:
-    stable_id: str
-    path: Path
-    size_bytes: int
-    newest_atime: float
-    filenames: frozenset[str]
-
-
-def scan_bundles(stems_dir: Path) -> list[LocalBundle]:
-    """Every bundle directory under ``stems_dir``, least recently used first.
-
-    A bundle's recency is its newest file's atime, so soloing one stem counts
-    the whole bundle as recently used. Symlinked children are skipped: this
-    module only ever removes directories it can see are really here. So is a
-    hydration still in flight.
-    """
-    root = Path(stems_dir)
-    if not root.is_dir():
-        return []
-    bundles: list[LocalBundle] = []
-    for child in sorted(root.iterdir()):
-        if not child.is_dir() or child.is_symlink() or IN_FLIGHT_MARKER in child.name:
-            continue
-        size, newest_atime = 0, 0.0
-        names: set[str] = set()
-        for file_path in child.rglob("*"):
-            if file_path.is_file():
-                stat_result = file_path.stat()
-                size += stat_result.st_size
-                newest_atime = max(newest_atime, stat_result.st_atime)
-                names.add(file_path.relative_to(child).as_posix())
-        bundles.append(LocalBundle(child.name, child, size, newest_atime, frozenset(names)))
-    bundles.sort(key=lambda bundle: (bundle.newest_atime, bundle.stable_id))
-    return bundles
-
-
-def index_gap(bundle: LocalBundle, index: StemAssetIndex) -> str | None:
-    """Why the index does NOT cover this bundle, by name alone (no hashing),
-    or ``None`` when every local file has an indexed digest. Cheap enough to
-    run over the whole cache on every status read."""
-    entry = index.get(bundle.stable_id)
-    if not entry:
-        return REASON_NOT_IN_INDEX
-    if not bundle.filenames or not bundle.filenames.issubset(entry):
-        return REASON_FILES_DIFFER
-    return None
-
-
-def _sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(_HASH_CHUNK_BYTES):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def unconfirmed_reason(bundle: LocalBundle, index: StemAssetIndex) -> str | None:
-    """Why R2 does NOT hold this bundle byte for byte, or ``None`` when it
-    does. The expensive half of the gate: keys are content-addressed, so a
-    local sha256 equal to the indexed digest proves the indexed object is
-    these exact bytes. Run only on a bundle about to be evicted."""
-    gap = index_gap(bundle, index)
-    if gap is not None:
-        return gap
-    entry = index[bundle.stable_id]
-    for filename in sorted(bundle.filenames):
-        if _sha256_of(bundle.path / filename) != entry[filename]:
-            return REASON_CONTENT_DIFFERS
-    return None
-
-
 # ----- upload queue --------------------------------------------------------------
 
 
@@ -234,12 +163,29 @@ def load_upload_queue(data_dir: Path) -> dict[str, dict[str, object]]:
     return dict(payload["bundles"])
 
 
-def _save_upload_queue(data_dir: Path, queue: dict[str, dict[str, object]]) -> None:
+def load_verified_fingerprints(data_dir: Path) -> dict[str, str]:
+    """``{stable_id: fingerprint}`` of bundles last hashed equal to the index.
+
+    Kept beside the queue (an additive key, absent in older files) so a
+    bundle is hashed once per change, not once per pass."""
+    path = upload_queue_path(data_dir)
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return dict(payload.get("verified", {}))
+
+
+def _save_upload_queue(
+    data_dir: Path,
+    queue: dict[str, dict[str, object]],
+    verified: dict[str, str] | None = None,
+) -> None:
     path = upload_queue_path(data_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomically(
-        path, {"schema_version": UPLOAD_QUEUE_SCHEMA_VERSION, "bundles": queue}
-    )
+    payload: dict[str, object] = {"schema_version": UPLOAD_QUEUE_SCHEMA_VERSION, "bundles": queue}
+    if verified:
+        payload["verified"] = verified
+    write_json_atomically(path, payload)
 
 
 def _refreshed_upload_queue(
@@ -248,23 +194,46 @@ def _refreshed_upload_queue(
     index: StemAssetIndex,
     content_differs: set[str],
     now_iso: str,
-) -> dict[str, dict[str, object]]:
-    """The queue as it should stand after this pass.
+    verified: dict[str, str] | None = None,
+    hash_budget_bytes: int | None = None,
+) -> tuple[dict[str, dict[str, object]], dict[str, str]]:
+    """The queue as it should stand after this pass, and the verified map.
 
     A bundle is queued while it is on disk and the index does not cover it.
     One previously queued for differing content is re-hashed (a handful at
-    most) so it leaves the queue as soon as a publish catches up.
+    most) so it leaves the queue as soon as a publish catches up. A bundle
+    whose names the index covers but whose fingerprint has changed since it
+    was last hashed equal (a same-name re-render) is hashed again, up to
+    ``hash_budget_bytes`` per pass, so different bytes reach the queue on a
+    healthy disk too, where no eviction walk ever hashes it. One over the
+    budget stays unverified, not queued, and is hashed on a later pass.
     """
     queue: dict[str, dict[str, object]] = {}
+    verified_now: dict[str, str] = {}
+    known = verified or {}
+    hashed_bytes = 0
     for bundle in bundles:
         reason = index_gap(bundle, index)
+        was_differing = (
+            previous.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS
+        )
         if reason is None and bundle.stable_id in content_differs:
             reason = REASON_CONTENT_DIFFERS
-        elif (
-            reason is None
-            and previous.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS
+        elif reason is None and (
+            was_differing or known.get(bundle.stable_id) != bundle.fingerprint
         ):
+            if (
+                not was_differing
+                and hash_budget_bytes is not None
+                and hashed_bytes + bundle.size_bytes > hash_budget_bytes
+            ):
+                continue
+            hashed_bytes += bundle.size_bytes
             reason = unconfirmed_reason(bundle, index)
+            if reason is None:
+                verified_now[bundle.stable_id] = bundle.fingerprint
+        elif reason is None:
+            verified_now[bundle.stable_id] = bundle.fingerprint
         if reason is None:
             continue
         queued_at = previous.get(bundle.stable_id, {}).get("queued_at", now_iso)
@@ -273,7 +242,7 @@ def _refreshed_upload_queue(
             "bytes": bundle.size_bytes,
             "queued_at": queued_at,
         }
-    return queue
+    return queue, verified_now
 
 
 # ----- enforcement -----------------------------------------------------------------
@@ -390,6 +359,7 @@ def _evict_lru(
     protected: frozenset[str],
     dry_run: bool,
     remove: Callable[[Path], None],
+    live_protected: Callable[[], frozenset[str]] | None = None,
 ) -> tuple[list[str], int, set[str]]:
     """Remove least-recently-used bundles until ``need_bytes`` is freed.
 
@@ -410,6 +380,12 @@ def _evict_lru(
             if reason == REASON_CONTENT_DIFFERS:
                 content_differs.add(bundle.stable_id)
             continue
+        # ``protected`` was read before the scan and the hash above, which
+        # takes seconds on a large bundle; a deck can open or be served this
+        # bundle in that window. Ask the live registry again right before
+        # removal, so only that sub-millisecond gap is left.
+        if live_protected is not None and bundle.stable_id in live_protected():
+            continue
         if not dry_run:
             remove(bundle.path)
         evicted.append(bundle.stable_id)
@@ -428,6 +404,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     disk: DiskUsage | None = None,
     dry_run: bool = False,
     max_evict_bytes: int | None = None,
+    live_protected: Callable[[], frozenset[str]] | None = None,
 ) -> EnforceReport:
     """Measure the volume and evict just enough R2-confirmed bundles to bring
     free space back to the floor. Refreshes the upload queue on the way.
@@ -438,7 +415,11 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     ``max_evict_bytes`` bounds one pass. The post-hydrate call passes the
     bytes it just fetched, so a deck load pays to hash about one bundle, not
     the whole backlog; the timer, which nobody is waiting on, passes nothing
-    and catches up in full.
+    and catches up in full. Looking for same-name re-renders is the timer's
+    job alone (``REVERIFY_HASH_BUDGET_BYTES`` a pass): the post-hydrate call
+    hashes nothing for it, so a deck load pays no extra read.
+    ``live_protected`` (``OPEN_DECKS.open_ids``) is asked again just before
+    each removal, so a bundle a deck opened during the pass is kept.
     """
     position = _measure_cache_position(stems_dir, data_dir, settings, disk)
     bundles, usage = position.bundles, position.usage
@@ -458,6 +439,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
             protected=protected,
             dry_run=dry_run,
             remove=shutil.rmtree,
+            live_protected=live_protected,
         )
         if freed < need:
             blocked = BLOCKED_NOTHING_EVICTABLE
@@ -466,9 +448,18 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     evicted_set = set(evicted)
     remaining = [bundle for bundle in bundles if bundle.stable_id not in evicted_set]
     previous = load_upload_queue(data_dir)
-    queue = _refreshed_upload_queue(previous, remaining, index, content_differs, now_iso)
-    if not dry_run and queue != previous:
-        _save_upload_queue(data_dir, queue)
+    previous_verified = load_verified_fingerprints(data_dir)
+    queue, verified = _refreshed_upload_queue(
+        previous,
+        remaining,
+        index,
+        content_differs,
+        now_iso,
+        verified=previous_verified,
+        hash_budget_bytes=0 if max_evict_bytes is not None else REVERIFY_HASH_BUDGET_BYTES,
+    )
+    if not dry_run and (queue != previous or verified != previous_verified):
+        _save_upload_queue(data_dir, queue, verified)
 
     return EnforceReport(
         at_utc=now_iso,
@@ -507,7 +498,15 @@ def status(
     bundles, usage = position.bundles, position.usage
     need = position.over_budget_bytes
 
-    local_only = [bundle for bundle in bundles if index_gap(bundle, index) is not None]
+    queued = load_upload_queue(data_dir)
+    # A bundle the last pass hashed different from R2 is local-only too, even
+    # though its names alone match the index.
+    local_only = [
+        bundle
+        for bundle in bundles
+        if index_gap(bundle, index) is not None
+        or queued.get(bundle.stable_id, {}).get("reason") == REASON_CONTENT_DIFFERS
+    ]
     local_only_ids = {bundle.stable_id for bundle in local_only}
     evictable = [
         bundle
@@ -539,7 +538,7 @@ def status(
         "local_only_count": len(local_only),
         "local_only_bytes": sum(bundle.size_bytes for bundle in local_only),
         "local_only_stable_ids": sorted(local_only_ids),
-        "upload_queue_count": len(load_upload_queue(data_dir)),
+        "upload_queue_count": len(queued),
         "protected_count": _protected_count(bundles, protected),
         "can_rehydrate": can_rehydrate,
         "blocked_reason": blocked,

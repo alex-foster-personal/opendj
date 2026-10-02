@@ -333,6 +333,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         # call, and confirming a bundle against R2 means hashing it; the
         # engine timer clears any larger backlog off the request path.
         max_evict_bytes=total,
+        live_protected=lambda: OPEN_DECKS.open_ids() | {stable_id},
     )
     return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
 
