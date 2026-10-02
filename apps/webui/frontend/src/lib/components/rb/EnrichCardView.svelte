@@ -9,6 +9,7 @@
 	import {
 		type EnrichSummary,
 		analysisLines,
+		collapsedLine,
 		lyricsLine,
 		offersRetry,
 		stemsText
@@ -25,6 +26,9 @@
 		/** The user chose "Separate stems...": render `stemsPrompt` in place of the three answers. */
 		asking?: boolean;
 		stemsPrompt?: Snippet;
+		/** False: only the header and one progress line, so the card stays off the track table. */
+		expanded?: boolean;
+		ontoggle?: () => void;
 		onhide?: () => void;
 		onretry?: () => void;
 		onask?: () => void;
@@ -38,6 +42,8 @@
 		busy = false,
 		asking = false,
 		stemsPrompt,
+		expanded = true,
+		ontoggle,
 		onhide,
 		onretry,
 		onask,
@@ -46,42 +52,58 @@
 
 	const lines = $derived(summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null)] : []);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
+	const collapsed = $derived(!expanded && summary !== null ? collapsedLine(summary) : null);
 </script>
 
-<section class="enrich-card" aria-label="Library enrichment" data-testid="enrich-card">
+<section class="enrich-card" class:collapsed={collapsed !== null} aria-label="Library enrichment" data-testid="enrich-card">
 	<header>
-		<h3>Getting your library ready</h3>
-		<button type="button" class="enrich-hide" onclick={onhide} title="Hide until the app is next opened">Hide</button>
-	</header>
-	{#if loadError}
-		<p class="enrich-line failed">{loadError}</p>
-	{/if}
-	{#each lines as line (line.lane + line.tone)}
-		<p class="enrich-line {line.tone}" title={line.title ?? undefined} data-lane={line.lane} data-tone={line.tone}>
-			{line.text}
-		</p>
-	{/each}
-	{#if summary && offersRetry(summary)}
-		<button type="button" onclick={onretry} disabled={busy}>Retry failed analysis</button>
-	{/if}
-	{#if stemsLine}
-		<p class="enrich-line {summary?.stems.state === 'ask' ? 'working' : 'unavailable'}" data-lane="stems">
-			{stemsLine}
-		</p>
-	{/if}
-	{#if summary?.stems.state === 'ask'}
-		{#if asking && stemsPrompt}
-			{@render stemsPrompt()}
+		{#if collapsed}
+			<p class="enrich-line working" title={collapsed.title} data-testid="enrich-collapsed">{collapsed.text}</p>
 		{:else}
-			<div class="enrich-actions">
-				<button type="button" class="enrich-go" onclick={onask}>Separate stems...</button>
-				<button type="button" onclick={onhide}>Not now</button>
-				<button type="button" onclick={onnever} disabled={busy}>Never for this library</button>
-			</div>
+			<h3>Getting your library ready</h3>
 		{/if}
-	{/if}
-	{#if actionError}
-		<p class="enrich-line failed">{actionError}</p>
+		<span class="enrich-header-actions">
+			<button
+				type="button"
+				class="enrich-hide"
+				onclick={ontoggle}
+				aria-expanded={expanded}
+				title={expanded ? 'Collapse to one line' : 'Show every lane'}>{expanded ? 'Less' : 'More'}</button
+			>
+			<button type="button" class="enrich-hide" onclick={onhide} title="Hide until the app is next opened">Hide</button>
+		</span>
+	</header>
+	{#if collapsed === null}
+		{#if loadError}
+			<p class="enrich-line failed">{loadError}</p>
+		{/if}
+		{#each lines as line (line.lane + line.tone)}
+			<p class="enrich-line {line.tone}" title={line.title ?? undefined} data-lane={line.lane} data-tone={line.tone}>
+				{line.text}
+			</p>
+		{/each}
+		{#if summary && offersRetry(summary)}
+			<button type="button" onclick={onretry} disabled={busy}>Retry failed analysis</button>
+		{/if}
+		{#if stemsLine}
+			<p class="enrich-line {summary?.stems.state === 'ask' ? 'working' : 'unavailable'}" data-lane="stems">
+				{stemsLine}
+			</p>
+		{/if}
+		{#if summary?.stems.state === 'ask'}
+			{#if asking && stemsPrompt}
+				{@render stemsPrompt()}
+			{:else}
+				<div class="enrich-actions">
+					<button type="button" class="enrich-go" onclick={onask}>Separate stems...</button>
+					<button type="button" onclick={onhide}>Not now</button>
+					<button type="button" onclick={onnever} disabled={busy}>Never for this library</button>
+				</div>
+			{/if}
+		{/if}
+		{#if actionError}
+			<p class="enrich-line failed">{actionError}</p>
+		{/if}
 	{/if}
 </section>
 
@@ -112,6 +134,24 @@
 		margin: 0;
 		font-size: 13px;
 		letter-spacing: 0.04em;
+	}
+	/* One row, parked beside the feedback and help buttons, so background
+	   progress never sits over the track table's columns. */
+	.enrich-card.collapsed {
+		right: 96px;
+		bottom: 20px;
+		width: auto;
+		max-width: calc(100vw - 108px);
+		padding: 3px 8px;
+		box-shadow: none;
+	}
+	.enrich-card.collapsed .enrich-line {
+		white-space: nowrap;
+	}
+	.enrich-header-actions {
+		display: flex;
+		gap: 6px;
+		margin-left: 12px;
 	}
 	.enrich-line {
 		margin: 0;

@@ -92,3 +92,30 @@ test('one declined track reads in the singular', () => {
 	const note = card.analysisLines(s).find((l) => l.tone === 'note');
 	assert.equal(note.text, 'Key: 1 had no confident answer and is left blank');
 });
+
+test('background progress alone opens collapsed and names the running lanes', () => {
+	const s = summary({ key: { done: 44, missing: 1230 }, loudness: { done: 196, missing: 1078 } });
+	assert.equal(card.needsAttention(s, null, null), false);
+	assert.deepEqual(card.collapsedLine(s), {
+		text: 'Library: 2 lanes still running',
+		title: 'Running in the background: Key, Loudness. More shows the counts.'
+	});
+	const one = summary({ key: { done: 44, missing: 1230 } });
+	assert.equal(card.collapsedLine(one).text, 'Library: 1 lane still running');
+});
+
+test('a question, a failure, a lane that cannot run or an unknown status opens expanded', () => {
+	assert.equal(card.needsAttention(summary({}, { stems: { state: 'ask', pending: 9, reason: null } }), null, null), true);
+	assert.equal(card.needsAttention(summary({ strip: { done: 1271, failed: 3 } }), null, null), true);
+	assert.equal(card.needsAttention(summary({ key: { unavailable: 'no model' } }), null, null), true);
+	assert.equal(card.needsAttention(null, 'GET failed', null), true);
+	assert.equal(card.needsAttention(summary(), null, 'PUT failed'), true);
+});
+
+test('a declined or impossible stems lane does not by itself force the card open', () => {
+	const declined = summary({ key: { done: 44, missing: 1230 } }, { stems: { state: 'user_declined', pending: 9, reason: null } });
+	const noSource = summary({}, { stems: { state: 'no_source', pending: 9, reason: 'no farm' } });
+	assert.equal(card.needsAttention(declined, null, null), false);
+	assert.equal(card.needsAttention(noSource, null, null), false);
+	assert.equal(card.collapsedLine(noSource).text, 'Library: nothing left running');
+});
