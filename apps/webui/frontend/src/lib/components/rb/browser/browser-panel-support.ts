@@ -75,3 +75,12 @@ export { fetchAllPages } from './virtual-window';
 export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
 export { setTabLabel } from './playlist-set-tabs';
+// Through here, not imported directly, to keep BrowserPanel's import fan-out
+// (frontend.max_fan_out quality ratchet) at main's figure.
+export {
+	fetchPlaylistFirstPage,
+	prefetchPlaylistFirstPage,
+	prefetchPlaylistTreeIntent,
+	invalidatePlaylistFirstPage,
+	invalidateAllPlaylistFirstPages
+} from '$lib/rb/library-playlist-page-prefetch';

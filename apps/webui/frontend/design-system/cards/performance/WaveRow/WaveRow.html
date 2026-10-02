@@ -10,7 +10,7 @@
 	.rb-waverow { position: relative; height: var(--rb-waverow-h); background: var(--rb-bg); border-bottom: 1px solid var(--rb-border); overflow: hidden; }
 	.rb-waverow.secondary { background: var(--rb-waverow-secondary); }
 	.ds-wave { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 1px; padding: 4px 0; }
-	.ds-wave i { flex: 1; display: block; background: var(--rb-orange); }
+	.ds-wave i { flex: 1; display: block; background: var(--rb-wave-low); }
 	.ds-wave i.mid { background: var(--rb-wave-mid); }
 	.ds-wave i.high { background: var(--rb-wave-high); }
 	.ds-tick { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--rb-red); }
@@ -39,6 +39,6 @@
 		<span class="ds-deck-label">4</span>
 	</div>
 </div>
-<p class="ds-note">One <code>.rb-waverow</code> per deck at <code>--rb-waverow-h</code> (43 px). Bands: lows <code>--rb-orange</code>, mids <code>--rb-wave-mid</code>, highs <code>--rb-wave-high</code>; cue markers and the position tick are <code>--rb-red</code>. Decks 3 and 4 use the lighter <code>--rb-waverow-secondary</code> fill so 1 and 2 keep the eye. When the transport settles at silence the <code>.finished-eject</code> chip appears right of center.</p>
+<p class="ds-note">One <code>.rb-waverow</code> per deck at <code>--rb-waverow-h</code> (43 px). Bands (rekordbox 3Band by default: dark blue low, amber mid, white high): lows <code>--rb-wave-low</code>, mids <code>--rb-wave-mid</code>, highs <code>--rb-wave-high</code>; cue markers and the position tick are <code>--rb-red</code>. Decks 3 and 4 use the lighter <code>--rb-waverow-secondary</code> fill so 1 and 2 keep the eye. When the transport settles at silence the <code>.finished-eject</code> chip appears right of center.</p>
 </body>
 </html>

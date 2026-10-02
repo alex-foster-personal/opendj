@@ -22,7 +22,7 @@
 	<div class="log-popout" class:minimized={midiUi.logPopoutMinimized} role="log" aria-label="MIDI learn log">
 		<header class="popout-head">
 			<span class="popout-title">MIDI log</span>
-			<span class="popout-count">{learnLog.length}</span>
+			<span class="popout-count" title="MIDI messages in the learn log (last 50 kept)">{learnLog.length}</span>
 			<span class="popout-spacer"></span>
 			<button
 				class="popout-btn"
@@ -30,7 +30,15 @@
 				title={midiUi.logPopoutMinimized ? 'restore' : 'minimize'}
 				onclick={toggleLogPopoutMinimized}
 			>
-				{midiUi.logPopoutMinimized ? '▢' : '—'}
+				{#if midiUi.logPopoutMinimized}
+					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" data-icon="restore">
+						<rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.2" />
+					</svg>
+				{:else}
+					<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" data-icon="minimize">
+						<path d="M1.5 5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+					</svg>
+				{/if}
 			</button>
 			<button class="popout-btn" aria-label="close MIDI log" title="close" onclick={closeLogPopout}>
 				&times;

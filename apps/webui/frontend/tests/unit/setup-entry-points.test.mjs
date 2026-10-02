@@ -162,7 +162,8 @@ test('a failed re-arm does not navigate', async () => {
 	};
 	const navigated = [];
 	const failure = await mod.runSetup((path) => navigated.push(path));
-	assert.match(failure, /dismiss write failed/);
+	assert.match(failure, /dismiss write failed|Something went wrong/);
+	assert.match(mod.setupWizard.errorDiagnostic ?? '', /dismiss write failed/);
 	assert.deepEqual(navigated, []);
 });
 
@@ -175,7 +176,7 @@ test('an unknown flavor does not disable the control; a legacy one does', async 
 
 	globalThis.fetch = async () => jsonResponse(legacyHealth());
 	assert.equal(await mod.capabilities.probe(), 'legacy');
-	assert.match(mod.runSetupBlocked(), /setup API not offered/);
+	assert.match(mod.runSetupBlocked(), /not available in this version/);
 });
 
 test('an engine never blocks the control', async () => {

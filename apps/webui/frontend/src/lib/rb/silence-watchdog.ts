@@ -37,6 +37,11 @@ export interface SilenceSample {
 	audible?: boolean;
 	masterRms: number;
 	tMs: number;
+	/**
+	 * When true, claimed-live master silence is explained by silent source PCM at
+	 * the playhead(s). The fold must not count this sample toward dropout.
+	 */
+	source_explains_silence?: boolean;
 }
 
 export interface SilenceState {
@@ -75,8 +80,9 @@ export function foldSilenceSample(
 				'arithmetic would go negative and the window would never elapse'
 		);
 	}
-	const silent = claimedLive && masterRms < SILENCE_RMS_FLOOR;
-	if (!silent) {
+	const masterQuiet = claimedLive && masterRms < SILENCE_RMS_FLOOR;
+	const countsAsDropout = masterQuiet && sample.source_explains_silence !== true;
+	if (!countsAsDropout) {
 		return { silentSinceMs: null, reported: false, lastTMs: tMs, verdict: 'ok' };
 	}
 	const since = state.silentSinceMs ?? tMs;

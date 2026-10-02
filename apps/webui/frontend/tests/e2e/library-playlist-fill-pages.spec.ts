@@ -68,6 +68,9 @@ test('a 1k playlist fills with a 30-row first page then 500-row pages, every mem
 	const membership = ((await detail.json()) as { items: string[] }).items;
 	expect(membership.length).toBe(1000);
 
+	// Record from before boot: PERF-UI-05's tree-intent prefetch (#3746) may
+	// request page 1 before the click, and the switch then joins that GET.
+	const calls = recordTracksPages(page);
 	await page.addInitScript(() => localStorage.removeItem('odj.brand-launch.v1'));
 	await page.goto('/performance', { waitUntil: 'domcontentloaded' });
 	await page.waitForFunction(
@@ -78,19 +81,23 @@ test('a 1k playlist fills with a 30-row first page then 500-row pages, every mem
 	const playlistRow = page.getByTestId('playlist-row').filter({ hasText: PLAYLIST_NAME });
 	await expect(playlistRow).toBeVisible({ timeout: 60_000 });
 
-	const calls = recordTracksPages(page);
 	const before = await page.evaluate(() => (window as PerfRingWindow).__mdtPerfLog?.().length ?? 0);
 	await playlistRow.click();
 	const filledRows = await waitForPlaylistFill(page, before);
-	await expect.poll(() => calls.length).toBe(3);
+	await expect.poll(() => calls.filter((c) => c.offset > 0).length).toBe(2);
 
-	calls.sort((a, b) => a.offset - b.offset);
-	expect(calls.map((c) => c.status)).toEqual([200, 200, 200]);
-	expect(calls.map((c) => [c.offset, c.limit])).toEqual([
+	// A prefetch older than its max age is replaced by a fresh one, so page 1
+	// can be requested more than once; the pane paints the latest.
+	const firstPages = calls.filter((c) => c.offset === 0);
+	expect(firstPages.length).toBeGreaterThanOrEqual(1);
+	const pages = [firstPages[firstPages.length - 1], ...calls.filter((c) => c.offset > 0)];
+	pages.sort((a, b) => a.offset - b.offset);
+	expect(pages.map((c) => c.status)).toEqual([200, 200, 200]);
+	expect(pages.map((c) => [c.offset, c.limit])).toEqual([
 		[0, 30],
 		[30, 500],
 		[530, 500]
 	]);
 	expect(filledRows).toBe(membership.length);
-	expect(calls.flatMap((c) => c.stableIds)).toEqual(membership);
+	expect(pages.flatMap((c) => c.stableIds)).toEqual(membership);
 });
