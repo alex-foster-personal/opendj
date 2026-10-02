@@ -72,6 +72,33 @@ def _tri_bands(tag: Any) -> dict[str, np.ndarray]:
     return {name: scaled[:, col] for name, col in _BAND_COLUMNS}
 
 
+# What rekordbox writes into PWV6 for a full-scale sine in each band, (low,
+# mid, high), parsed from rekordcrate's public sweep fixture
+# (docs/research/dj-waveform-display-sota-20260922.md section 7). rekordbox
+# does not encode its three bands on one scale: a sine that fills our low band
+# to 255 is a 69 there, and a high one is 176. Own peaks put through this
+# scale draw with rekordbox's balance (white highs on top, blue lows and amber
+# mids underneath) instead of a low band that buries the other two
+# (specs/ui-contracts/library-preview-waveform). One fixture on one rekordbox
+# version: a real-music calibration against PWV6 can replace it.
+PWV6_FULL_SCALE_SINE: tuple[int, int, int] = (69, 86, 176)
+#: Bumped whenever the bytes ``pwv6_scale`` writes for the same peaks change.
+PWV6_SCALE_VERSION: str = "pwv6-sine-1"
+_OWN_PEAK_FULL_SCALE: float = 255.0
+
+
+def pwv6_scale(peaks: np.ndarray) -> np.ndarray:
+    """Own ``(n, 3)`` uint8 peak columns re-encoded on rekordbox PWV6's scale."""
+    gain = np.asarray(PWV6_FULL_SCALE_SINE, dtype=np.float64) / _OWN_PEAK_FULL_SCALE
+    return np.clip(np.rint(peaks.astype(np.float64) * gain), 0, 255).astype(np.uint8)
+
+
+def pwv6_scaled_bands(peaks: np.ndarray) -> dict[str, np.ndarray]:
+    """Own peak columns as 0..1 bands, scaled exactly as a PWV6 tag is."""
+    scaled = np.clip(pwv6_scale(peaks).astype(np.float64) / _TRI_SCALE, 0.0, 1.0)
+    return {name: scaled[:, col] for name, col in _BAND_COLUMNS}
+
+
 def _mono_bands(tag: Any) -> dict[str, np.ndarray]:
     """PWAV/PWV3 heights (0..31) duplicated across all 3 band keys.
 
