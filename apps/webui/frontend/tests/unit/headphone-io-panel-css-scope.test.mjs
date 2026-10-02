@@ -19,7 +19,7 @@ const cluster = readFileSync(fileURLToPath(new URL('HeadphoneCluster.svelte', di
 const selectors = [...css.matchAll(/([^{}]+)\{[^}]*\}/g)].flatMap((m) => m[1].split(',').map((s) => s.trim()));
 
 test('the I/O panel stylesheet declares rules and is imported by the cluster', () => {
-	assert.ok(selectors.length >= 20, `expected the I/O panel rules, found ${selectors.length}`);
+	assert.ok(selectors.length >= 15, `expected the I/O panel rules, found ${selectors.length}`);
 	assert.match(cluster, /<style>\s*@import '\.\/HeadphoneCluster\.io-panel\.css';/);
 	assert.match(cluster, /class="hp-panel"[^>]*data-audio-io-panel/);
 });

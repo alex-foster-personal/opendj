@@ -1,8 +1,14 @@
-/* The Audio I/O panel's layout rules, @imported by HeadphoneCluster.svelte's
-   <style>. Svelte does NOT scope an imported stylesheet: Vite inlines it as
-   global CSS. Every rule is therefore rooted at the panel's own
-   .hp-panel[data-audio-io-panel] element, which also keeps each selector's
-   specificity equal to the scoped rule it replaced (class + hash). */
+/* The Audio I/O panel's class-only layout rules, @imported by
+   HeadphoneCluster.svelte's <style>. Svelte does NOT scope an imported
+   stylesheet: Vite inlines it as global CSS. So every rule here is rooted at
+   the panel's own .hp-panel[data-audio-io-panel] element, and only rules that
+   no scoped rule competes with move here. A selector with an element type
+   (`h3 span`, `button`, `select`, `input`) would reach into child components
+   such as ControlExplainer, and a class rule that a scoped rule overrides on
+   the same element (`.hp-delay-step` under `.hp-section button`) would change
+   which one wins, so both kinds stay scoped in the .svelte.
+   tests/unit/headphone-io-panel-css-scope.test.mjs holds the rooting. */
+
 .hp-panel[data-audio-io-panel] {
 	position: fixed;
 	z-index: 140;
@@ -29,8 +35,6 @@
 	padding: 10px 14px;
 	border-bottom: 1px solid var(--rb-border, #333);
 }
-.hp-panel[data-audio-io-panel] .hp-panel-header strong { display: block; font-size: 14px; }
-.hp-panel[data-audio-io-panel] .hp-panel-header small { display: block; color: var(--rb-text-dim, #838990); font-size: 9px; }
 .hp-panel[data-audio-io-panel] .hp-panel-close {
 	background: transparent;
 	border: 0;
@@ -41,24 +45,36 @@
 .hp-panel[data-audio-io-panel] .hp-panel-body { overflow: auto; padding: 10px 14px 14px; }
 .hp-panel[data-audio-io-panel] .hp-section { padding: 8px 0; border-bottom: 1px solid var(--rb-border, #333); }
 .hp-panel[data-audio-io-panel] .hp-section:last-child { border-bottom: 0; }
-.hp-panel[data-audio-io-panel] .hp-section h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.hp-panel[data-audio-io-panel] .hp-section h3 span { color: var(--rb-text-dim, #838990); text-transform: none; font-weight: 400; }
-.hp-panel[data-audio-io-panel] .hp-section-heading h3 { margin: 0; }
-.hp-panel[data-audio-io-panel] .hp-section button, .hp-panel[data-audio-io-panel] .hp-section select, .hp-panel[data-audio-io-panel] .hp-section input { font: inherit; }
 .hp-panel[data-audio-io-panel] .hp-mode-choices { display: flex; flex-wrap: wrap; gap: 5px; }
-.hp-panel[data-audio-io-panel] .hp-mode-choices button, .hp-panel[data-audio-io-panel] .hp-section-heading button, .hp-panel[data-audio-io-panel] .hp-calibrate-button, .hp-panel[data-audio-io-panel] .hp-acquire {
-	background: var(--rb-panel-raised, #1a1e25);
-	border: 1px solid var(--rb-border, #333);
-	border-radius: 3px;
-	color: var(--rb-text, #c8cdd2);
-	padding: 4px 7px;
-	cursor: pointer;
-}
-.hp-panel[data-audio-io-panel] .hp-mode-choices button[aria-pressed='true'] { border-color: var(--rb-accent, #4fb3ff); color: var(--rb-accent, #4fb3ff); }
 .hp-panel[data-audio-io-panel] .hp-context { color: var(--rb-text-dim, #838990); font-size: 10px; line-height: 1.35; margin: 5px 0; }
 .hp-panel[data-audio-io-panel] .hp-future { display: flex; justify-content: space-between; align-items: center; color: var(--rb-text-dim, #838990); margin: 3px 0; }
-.hp-panel[data-audio-io-panel] .hp-future button { background: transparent; border: 0; color: inherit; padding: 3px 0; }
-.hp-panel[data-audio-io-panel] .hp-future span { font-size: 9px; }
-.hp-panel[data-audio-io-panel] .hp-future button:disabled, .hp-panel[data-audio-io-panel] .hp-calibrate-button:disabled { opacity: .5; cursor: not-allowed; }
 .hp-panel[data-audio-io-panel] .hp-delay-visual { display: flex; flex-direction: column; gap: 2px; color: var(--rb-accent, #4fb3ff); font-size: 9px; letter-spacing: .05em; margin: 5px 0; }
 .hp-panel[data-audio-io-panel] .hp-calibration-section { display: block; }
+.hp-panel[data-audio-io-panel] .hp-menu {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+.hp-panel[data-audio-io-panel] .hp-pick {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	color: var(--rb-text-dim, #838990);
+}
+.hp-panel[data-audio-io-panel] .hp-delay {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 10px;
+	color: var(--rb-text-dim, #838990);
+}
+.hp-panel[data-audio-io-panel] .hp-delay-stepper {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 1px;
+}
+.hp-panel[data-audio-io-panel] .hp-access { display: grid; gap: 4px; justify-items: start; }
+.hp-panel[data-audio-io-panel] .hp-access-detail { opacity: 0.75; }

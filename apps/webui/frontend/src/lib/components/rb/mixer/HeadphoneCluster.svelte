@@ -498,6 +498,24 @@
 		gap: 2px;
 		align-items: center;
 	}
+	.hp-panel-header strong { display: block; font-size: 14px; }
+	.hp-panel-header small { display: block; color: var(--rb-text-dim, #838990); font-size: 9px; }
+	.hp-section h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+	.hp-section h3 span { color: var(--rb-text-dim, #838990); text-transform: none; font-weight: 400; }
+	.hp-section-heading h3 { margin: 0; }
+	.hp-section button, .hp-section select, .hp-section input { font: inherit; }
+	.hp-mode-choices button, .hp-section-heading button, .hp-calibrate-button, .hp-acquire {
+		background: var(--rb-panel-raised, #1a1e25);
+		border: 1px solid var(--rb-border, #333);
+		border-radius: 3px;
+		color: var(--rb-text, #c8cdd2);
+		padding: 4px 7px;
+		cursor: pointer;
+	}
+	.hp-mode-choices button[aria-pressed='true'] { border-color: var(--rb-accent, #4fb3ff); color: var(--rb-accent, #4fb3ff); }
+	.hp-future button { background: transparent; border: 0; color: inherit; padding: 3px 0; }
+	.hp-future span { font-size: 9px; }
+	.hp-future button:disabled, .hp-calibrate-button:disabled { opacity: .5; cursor: not-allowed; }
 	select {
 		font: inherit;
 		font-size: 7px;
@@ -505,20 +523,6 @@
 		padding: 0 2px;
 		background: var(--rb-panel-raised, #1a1e25);
 		border: 1px solid var(--rb-border, #23282f);
-		color: var(--rb-text-dim, #838990);
-	}
-	.hp-menu {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		min-width: 0;
-	}
-	.hp-pick {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		font-size: 10px;
-		letter-spacing: 0.04em;
 		color: var(--rb-text-dim, #838990);
 	}
 	.hp-pick select {
@@ -530,18 +534,6 @@
 	.hp-error {
 		color: var(--rb-danger, #ff6b6b);
 		font-size: 10px;
-	}
-	.hp-delay {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
-		font-size: 10px;
-		color: var(--rb-text-dim, #838990);
-	}
-	.hp-delay-stepper {
-		display: inline-flex;
-		flex-direction: column;
-		gap: 1px;
 	}
 	.hp-delay-step {
 		font: inherit;
@@ -578,8 +570,6 @@
 		color: var(--rb-accent, #4fb3ff);
 		white-space: nowrap;
 	}
-	.hp-access { display: grid; gap: 4px; justify-items: start; }
-	.hp-access-detail { opacity: 0.75; }
 	.hp-warn {
 		color: var(--rb-warn, #e6a23c);
 		font-size: 10px;
