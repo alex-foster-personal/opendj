@@ -1,0 +1,402 @@
+name: CI Budget Watch
+
+# The cumulative view of CI spend. The per-run CI Cost Guard that used to sit
+# beside it was retired (ADR-0121): nearly every runner is self-hosted and
+# prices at $0, so it priced one run at a time and alerted on nothing real.
+#
+# Individual run costs can still exhaust a cumulative allowance.
+#
+# This workflow sums the month, twice a day, and fails loudly with a tracking
+# issue while there is still headroom to react. The error sink that rode the
+# cost guard's pass lives in its own workflow, ci-error-sink.yml (ADR-0121).
+
+on:
+  schedule:
+    # Run twice daily; dispatch manually for additional measurements.
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "YYYY-MM to report (default: current UTC month)"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: ci-budget-watch
+  cancel-in-progress: true
+
+env:
+  # Keep .pyc out of the workspace: root-owned bytecode under .venv is what
+  # made actions/checkout fail with EACCES and skip every test step (#1338).
+  # This covers interpreters these workflows start directly. It does NOT reach
+  # anything run through `sudo`, which resets the environment with no env_keep
+  # for this name, so the pre-checkout hygiene step below is the repair path
+  # for a root-run interpreter.
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  watch:
+    name: Month-to-date allowance ledger
+    # Runner is a repo-variable switch; see ci.yml's `test` job for the full
+    # rationale. Empty vars.CI_RUNS_ON_LINUX -> hosted ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_LINUX || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+
+    steps:
+      # Pre-checkout hygiene for the persistent self-hosted workspace (#1338).
+      # checkout cleans the tree as the runner user, so one root-owned file in
+      # it fails the unlink with EACCES, dies at step 2, and skips every test
+      # step after it -- a red carrying no test evidence. The runner user has
+      # NOPASSWD sudo (e2e.yml documents it). This runs as root, so it is
+      # bounded three ways, and each bound is load-bearing. A mount point
+      # beneath the workspace fails the step outright: `-xdev` alone is not
+      # enough, because a bind mount from elsewhere on the SAME filesystem
+      # keeps the same st_dev and is traversed regardless (measured on the
+      # runner host, Fri 5 Sep 2026). `-xdev` then stops a cross-filesystem
+      # mount appearing after that check. The workspace path is escaped the way
+      # mountinfo escapes field 5 and handed to awk through ENVIRON, NOT `-v`:
+      # `-v` processes escape sequences, so it decodes \040 straight back to a
+      # space and undoes the escaping it was given. `chown -h` acts on a symlink
+      # itself rather than its referent, so a link pointing out of the tree cannot
+      # drag the repair outside. One `find` expression drives the count and
+      # the repair, so the number reported is the set acted on.
+      #
+      # The counts come from `find`, not from `chown -c`: GNU coreutils prints
+      # that report on stdout but uutils prints it on stderr, so a piped count
+      # reads 0 forever on a uutils host and the log would claim the step found
+      # nothing when it had just repaired thousands of files. `remaining` is
+      # the proof the repair landed, and a non-zero one fails here rather than
+      # letting checkout die at the next step with a worse message.
+      #
+      # It also NAMES the offending entries -- owner, UTC mtime, path -- and
+      # names them BEFORE the chown, because the repair destroys the very
+      # evidence that identifies the writer. #1338 could say 957 to 1130 files
+      # per runner but not which process wrote them, and cost a forensic
+      # session for want of exactly this. The listing goes to a file rather
+      # than into `head` down a pipe: under `pipefail` a SIGPIPE'd `find`
+      # fails the step. TZ reaches `find` through `env` because sudo here is
+      # `env_reset` with no SETENV, so `sudo TZ=UTC find` is refused outright,
+      # and an mtime printed in local time under a `Z` suffix is a lie.
+      - name: Reclaim workspace ownership before checkout
+        run: |
+          set -euo pipefail
+          ws="${GITHUB_WORKSPACE:-}"
+          [ -d "$ws" ] || { echo "[hygiene] no workspace yet, nothing to reclaim"; exit 0; }
+          uid="$(id -u)"; gid="$(id -g)"; LIST_CAP=20
+          esc=${ws//\\/\\134}; esc=${esc// /\\040}; esc=${esc//$'\t'/\\011}; esc=${esc//$'\n'/\\012}
+          nested=$(MDT_WS_ESC="$esc/" awk '$5 != "" && index($5, ENVIRON["MDT_WS_ESC"]) == 1 {print $5}' /proc/self/mountinfo)
+          [ -z "$nested" ] || {
+            echo "::error::mount point(s) beneath the workspace, refusing to chown across them: $nested"
+            exit 1
+          }
+          foreign() { sudo env TZ=UTC find "$ws" -xdev \( ! -user "$uid" -o ! -group "$gid" \) "$@"; }
+          entries() { tr -cd '\0' | wc -c; }
+          scanned=$(sudo find "$ws" -xdev -print0 | entries)
+          reclaimed=$(foreign -print0 | entries)
+          offenders="$(mktemp)"
+          trap 'rm -f "$offenders"' EXIT
+          name_offenders() {
+            foreign -printf '  %u:%g %TY-%Tm-%TdT%TH:%TM:%.2TSZ %p\n' >"$offenders"
+            head -n "$LIST_CAP" "$offenders"
+            [ "$1" -le "$LIST_CAP" ] || echo "  ... and $(( $1 - LIST_CAP )) more"
+          }
+          [ "$reclaimed" -eq 0 ] || {
+            echo "[hygiene] entries not owned by uid $uid, listed before the repair:"
+            name_offenders "$reclaimed"
+          }
+          [ "$reclaimed" -eq 0 ] || foreign -exec chown -h "$uid:$gid" {} +
+          remaining=$(foreign -print0 | entries)
+          echo "[hygiene] scanned=$scanned reclaimed=$reclaimed remaining=$remaining"
+          [ "$remaining" -eq 0 ] || {
+            echo "::error::$remaining of $scanned workspace entries are not owned by uid $uid; checkout would fail with EACCES"
+            name_offenders "$remaining"
+            exit 1
+          }
+          # A cancelled checkout can leave locks; require no live workspace git.
+          if [ -d "$ws/.git" ]; then
+            live=$(for p in $(pgrep -x git || true); do if [[ $(readlink -f "/proc/$p/cwd" 2>/dev/null) == "$ws"* ]]; then echo "$p"; fi; done)
+            if [ -z "$live" ]; then
+              echo "[hygiene] stale git locks removed=$(find "$ws/.git" -xdev -name '*.lock' -type f -print -delete | wc -l)"
+            else
+              echo "[hygiene] git still running in the workspace (pids: $(echo $live)); leaving its locks"
+            fi
+          fi
+
+      # A watcher that costs real allowance minutes to run is its own bug.
+      # Sparse checkout of the three files the ledger needs, and no
+      # setup-python: every script here is pure stdlib, so the runner image's
+      # preinstalled python3 runs them with no install step. That removes the
+      # fixed overhead; the variable cost is API calls, bounded above.
+      #
+      # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # Full history on every persistent runner: a shallow fetch here makes the next job --unshallow (test_ci_workspace_reuse.py).
+          fetch-depth: 0
+          persist-credentials: false
+          # The whole scripts/ directory, deliberately, not a hand-listed set
+          # of files. Listing files individually broke this workflow the
+          # moment ci_cost_ledger.py was split into three modules: the run
+          # died with ModuleNotFoundError and nothing local could have caught
+          # it, because every local test runs from a full checkout. A
+          # directory has no such coupling to the module layout.
+          #
+          # .github/workflows is also required (#3453): scripts/review_docs_only.py
+          # parses ci.yml's own pull_request paths filter from THIS checkout, and
+          # a sparse cone that omits the directory leaves ci.yml invisible to that
+          # parser, raising RuntimeError on every run.
+          sparse-checkout: |
+            scripts
+            .github/workflows
+          # false on purpose: the next step cleans all but the dependency trees.
+          clean: false
+
+      - name: Remove untracked build debris, keeping dependency dirs
+        timeout-minutes: 2
+        run: scripts/ci_clean_untracked.sh
+
+      - name: Resolve the current UTC month for the cache key
+        id: month
+        env:
+          MONTH_INPUT: ${{ inputs.month }}
+        run: echo "value=${MONTH_INPUT:-$(date -u +%Y-%m)}" >> "$GITHUB_OUTPUT"
+
+      # Stale-install guard (PR #4251): fail if this job's interpreter can import
+      # music-dj-tools from outside the checkout, e.g. a wheel left in the shared
+      # setup-python toolcache. Every self-hosted job that checks out the repo runs it,
+      # after each setup step; tests/scripts/test_ci_workflow_stale_install_coverage.py
+      # enforces that.
+      - name: Stale-install guard - the interpreter imports only this checkout
+        timeout-minutes: 1
+        run: scripts/ci_runner_preflight.sh python3
+
+      - name: Build the spend ledger
+        id: ledger
+        # Continue on measurement failure so the alarm can report UNKNOWN.
+        # Alarms use steps.ledger.outcome to distinguish WARN/STOP/HOSTED
+        # from unavailable measurement, even when no output was set.
+        continue-on-error: true
+        env:
+          # Billing requires the scoped CI_BILLING_READ_TOKEN; missing credentials fail loudly.
+          GH_TOKEN: ${{ secrets.CI_BILLING_READ_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MONTH: ${{ inputs.month }}
+        run: |
+          # --plan free = 2,000 included minutes/month. This repo is private
+          # on GitHub Free: docs/branching.md and CONTRIBUTING.md both record
+          # that the protection API returns "Upgrade to GitHub Pro or make
+          # this repository public", which is only returned below Pro. If the
+          # account moves to Pro/Team, change this to `--plan pro` (3,000).
+          #
+          # stderr is teed to a file, not just the log: this step's own
+          # workspace survives into later steps of the same job, but its log
+          # does not get parsed by them. The alert-issue step below reads the
+          # file to say WHY the guard is blind, not just THAT it is.
+          python3 -m scripts.ci_cost_ledger \
+            ${MONTH:+--month "$MONTH"} \
+            --plan free \
+            --billing-user "${{ github.repository_owner }}" \
+            --warn-pct 70 \
+            --stop-pct 90 \
+            --report-file ci-cost-ledger.md \
+            --json-file ci-cost-ledger.json \
+            2> >(tee ci-cost-ledger.stderr >&2)
+
+      - name: Publish the ledger as an artifact
+        if: always()
+        # SHA-pinned to the v4 tag commit (resolved 2026-04-17).
+        # Non-fatal: a byproduct upload must not red a job on a storage 403.
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-cost-ledger
+          path: |
+            ci-cost-ledger.md
+            ci-cost-ledger.json
+            ci-cost-ledger.stderr
+          if-no-files-found: error
+          # 90 days of history is enough to see a month-over-month trend
+          # without paying storage for a year of it.
+          retention-days: 2
+
+      - name: Open or update the budget alert issue
+        # One code path, five reasons: WARN, STOP and HOSTED are the ledger's
+        # own verdicts; UNKNOWN is the ledger's own "billing data missing or
+        # stale" verdict (DEVOPS-11); the ledger outcome check catches the
+        # ledger step failing outright, most often a credential that lost
+        # billing-read scope (#3166). The last two are both "cannot measure"
+        # and both alarm as BLIND, exactly as loud as STOP -- neither GitHub
+        # nor this repo currently alerts on either, which is the actual bug.
+        # HOSTED is named here, not only reached through the ledger's exit 1:
+        # BLIND means "no state was set", never "the step exited non-zero"
+        # BLIND is unavailable measurement, never a successful hosted verdict.
+        if: steps.ledger.outcome == 'failure' || steps.ledger.outputs.state == 'UNKNOWN' || steps.ledger.outputs.state == 'WARN' || steps.ledger.outputs.state == 'STOP' || steps.ledger.outputs.state == 'HOSTED'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LEDGER_OUTCOME: ${{ steps.ledger.outcome }}
+          STATE: ${{ steps.ledger.outputs.state }}
+          PCT: ${{ steps.ledger.outputs.allowance_pct }}
+          USED: ${{ steps.ledger.outputs.allowance_used }}
+          LIMIT: ${{ steps.ledger.outputs.allowance_limit }}
+          MONTH: ${{ steps.ledger.outputs.month }}
+          MONTH_INPUT: ${{ inputs.month }}
+        run: |
+          set -euo pipefail
+          # The ledger validates its own --month before it ever sets this
+          # output, so a set MONTH is trustworthy as-is. When the ledger
+          # failed before reaching that point, the workflow_dispatch input is
+          # still just operator-typed text -- verified live (#3166): a
+          # deterministic-failure test dispatched with `month: junk` put
+          # "junk" straight into an issue title and opened a stray issue
+          # instead of updating the month's real one, because nothing had
+          # validated it yet. Re-validate the same YYYY-MM shape here before
+          # trusting it, and fall back to the real current UTC month.
+          if [[ -z "$MONTH" ]]; then
+            if [[ "$MONTH_INPUT" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]]; then
+              MONTH="$MONTH_INPUT"
+            else
+              MONTH="$(date -u +%Y-%m)"
+            fi
+          fi
+          # One issue per month, reused. A fresh issue every 6 hours would be
+          # its own kind of noise, and noise is what gets muted.
+          # Filter the title locally rather than with --search: gh's --search
+          # hits the SEARCH API, which has a much tighter limit than REST and
+          # is shared with every other agent on the machine. A labelled list
+          # is a plain REST call and there will only ever be a handful.
+          existing=$(gh issue list \
+            --state open \
+            --label ci-budget \
+            --json number,title \
+            --jq "[.[] | select(.title | contains(\"${MONTH}\"))][0].number // empty")
+
+          body_file="ci-cost-ledger.md"
+          # The ledger writes its state BEFORE it exits 1 on HOSTED, so a set
+          # STATE is a measurement even when LEDGER_OUTCOME is failure.
+          if [[ -z "$STATE" || "$STATE" == "UNKNOWN" ]]; then
+            # Streak counted off this SAME issue's comment history, walking
+            # back from the newest comment while it carries the BLIND marker.
+            # A WARN/STOP comment (no marker) breaks the streak, same as a
+            # measured month would.
+            streak=1
+            if [[ -n "$existing" ]]; then
+              prior=$(gh issue view "$existing" --json comments --jq '
+                [.comments[].body] | reverse
+                | reduce .[] as $b ({count: 0, stopped: false};
+                    if .stopped then .
+                    elif ($b | startswith("<!-- ci-budget-watch:blind -->")) then {count: (.count + 1), stopped: false}
+                    else {count: .count, stopped: true}
+                    end)
+                | .count
+              ')
+              streak=$((prior + 1))
+            fi
+            if [[ -z "$STATE" ]]; then
+              reason="the ledger step itself failed before it could report a state"
+              detail=$(tail -c 4000 ci-cost-ledger.stderr 2>/dev/null || true)
+              detail="${detail:-(no stderr captured)}"
+            elif [[ "$STATE" == "UNKNOWN" ]]; then
+              reason="the ledger ran but reported UNKNOWN -- billing data is missing or stale"
+              detail=$(cat ci-cost-ledger.md 2>/dev/null || true)
+              detail="${detail:-(no ledger report produced)}"
+            fi
+            title="CI budget BLIND: ${MONTH} cannot measure spend (${streak} blind report(s) on this issue)"
+            body_file=$(mktemp)
+            {
+              echo "<!-- ci-budget-watch:blind -->"
+              echo "## CI budget watch is blind"
+              echo
+              echo "Cannot measure spend for **${MONTH}**: ${reason}. This is **${streak} consecutive blind report(s) on this issue** (counted from this issue's own comment history, most recently this one; a run that opened a fresh issue, or a WARN/STOP comment in between, would not be counted here), and the WARN/STOP thresholds never evaluated. A guard that cannot measure must not report success, so this run is failing loudly instead of skipping quietly."
+              echo
+              echo "Detail:"
+              echo '```'
+              echo "$detail"
+              echo '```'
+            } > "$body_file"
+          else
+            title="CI budget ${STATE}: ${MONTH} at ${PCT%.*}% of included minutes"
+          fi
+
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body-file "$body_file"
+            echo "Updated issue #${existing}"
+          else
+            gh label create ci-budget \
+              --description "GitHub Actions spend against the monthly allowance" \
+              --color B60205 --force
+            gh issue create \
+              --title "$title" \
+              --label ci-budget \
+              --body-file "$body_file"
+          fi
+
+      - name: Fail the job when hosted billing appears after the cutover
+        if: steps.ledger.outputs.state == 'HOSTED'
+        env:
+          STATE: ${{ steps.ledger.outputs.state }}
+        run: |
+          echo "::error title=Hosted Actions billing after self-hosted cutover::see ci-cost-ledger.md"
+          exit 1
+
+      - name: Fail the job when month-to-date is over the stop threshold
+        if: steps.ledger.outputs.state == 'STOP'
+        env:
+          PCT: ${{ steps.ledger.outputs.allowance_pct }}
+          USED: ${{ steps.ledger.outputs.allowance_used }}
+          LIMIT: ${{ steps.ledger.outputs.allowance_limit }}
+        run: |
+          echo "::error title=CI allowance ${PCT%.*}% consumed::${USED} of ${LIMIT} included minutes used this month. See the ci-budget issue for the per-workflow and per-branch breakdown."
+          exit 1
+
+      - name: Fail the job when the ledger cannot measure spend
+        # Keeps the job red without weakening the ledger's own
+        # continue-on-error: a green blind run is worse silence than a red
+        # one (#3166). Placed after the HOSTED/STOP fail steps rather than
+        # before them: a failing step here would otherwise sit above two
+        # alarm steps in the same job, the exact shape #1740 exists to rule
+        # out. This step's own condition and the two above it are mutually
+        # exclusive: it fires only when no state was set or the state is
+        # UNKNOWN. A HOSTED ledger also exits 1, so `outcome == 'failure'`
+        # alone would overlap the HOSTED step.
+        if: (steps.ledger.outcome == 'failure' && steps.ledger.outputs.state == '') || steps.ledger.outputs.state == 'UNKNOWN'
+        run: |
+          echo "::error title=CI budget watch is blind::the spend ledger could not measure this run (failed outright, or reported UNKNOWN); see the ci-budget alert issue and this run's ci-cost-ledger artifact for detail"
+          exit 1
+
+      # LAST, DELIBERATELY, AND IT MUST STAY LAST (#1740).
+      #
+      # This step is a reporting gate that FAILS the job, and GitHub skips every
+      # remaining step of a job the moment one fails. Placed above the two alarm
+      # Keep the reporting sentinel below the spend report and alarms.
+      #
+      # So the sentinel runs after everything it could otherwise suppress. It
+      # still fails the run -- that has not changed and must not -- but nothing
+      # below it depends on its verdict. Anything appended to this job belongs
+      # ABOVE this step; a second job for the sentinel was rejected because this
+      # workflow prices its own execution (see the `schedule` comment above) and a
+      # second job would repeat the ~40-line hygiene pre-check and the sparse
+      # checkout for one step's worth of work.
+      #
+      # `!cancelled()` is the other half, and it is not decoration. Last is not
+      # enough on its own: the STOP step above exits 1 once spend passes 90%, and
+      # GitHub's implicit success guard would then skip this step, so every
+      # over-threshold run would publish no coverage status at all -- the same
+      # suppression in the opposite direction, and it lands exactly on the month
+      # where the fleet most needs a working watchdog. `!cancelled()` still lets a
+      # concurrency-superseded run skip, which `always()` would not.
+      #
+      # tests/quality/test_ci_budget_watch_alarm.py fails if this moves back up
+      # with a conditional alarm step below it, if its own `if` stops letting it
+      # survive an earlier failure, and if it is silenced with continue-on-error.
+      - name: Refuse untested non-docs pull request heads
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 -m scripts.pr_ci_coverage --publish-status

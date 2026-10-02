@@ -35,9 +35,23 @@ from apps.cloud import asset_store, hydration_core, policy
 from apps.cloud.config import CloudConfig
 from apps.cloud.eviction import HydrationError
 from apps.lyrics import karaoke_cache, store
+from apps.lyrics.tail_sanitize import sanitize_words_for_artifact
 from apps.shared.state import sync_stamp
 
 ASSET_KIND: str = "karaoke_words"
+
+
+def _track_duration_s(conn: sqlite3.Connection, stable_id: str) -> float | None:
+    row = conn.execute(
+        "SELECT duration_ms FROM tracks WHERE stable_id = ? AND deleted_at IS NULL",
+        (stable_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    duration_ms = row[0]
+    if not isinstance(duration_ms, int) or duration_ms <= 0:
+        return None
+    return duration_ms / 1000.0
 
 
 @dataclass(frozen=True)
@@ -156,7 +170,9 @@ def produce_words_artifact(
     records ``content_hash`` on the verdict row; no ``track_locations`` row is
     ever written.
     """
-    built = karaoke_cache.build_words(stable_id=stable_id, source=source, words=words)
+    duration_s = _track_duration_s(conn, stable_id)
+    cleaned, _report = sanitize_words_for_artifact(words, duration_s=duration_s)
+    built = karaoke_cache.build_words(stable_id=stable_id, source=source, words=cleaned)
     path, content_hash, n_words, n_lines = karaoke_cache.write_words(
         karaoke_cache.cache_path(data_dir, stable_id), built
     )
