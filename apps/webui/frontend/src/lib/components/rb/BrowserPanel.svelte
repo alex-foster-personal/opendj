@@ -242,7 +242,6 @@
 	import SearchBox from './browser/SearchBox.svelte';
 	import TrackTable from './browser/TrackTable.svelte';
 	import CommandBar from './CommandBar.svelte';
-	import type { CommandBarRow } from '$lib/rb/command-bar';
 	import {
 		ensureAnlzPrefetch,
 		getAnlzEntry,
@@ -2611,7 +2610,7 @@
 	/** CMDK-02/03: the command bar loads through _loadOntoDeck like a
 	 * double-click, then solos the vocal stem when asked. A track whose stem
 	 * bundle is missing loads as the full mix, and says so. */
-	async function _commandBarLoad(row: CommandBarRow, deck: DeckId, vocalsOnly: boolean): Promise<void> {
+	async function _commandBarLoad(row: LoadableRow, deck: DeckId, vocalsOnly: boolean): Promise<void> {
 		await _loadOntoDeck(row, deck);
 		if (!vocalsOnly || decks[deck].stable_id !== row.stable_id) return;
 		if (decks[deck].stems.status === 'unavailable') {
