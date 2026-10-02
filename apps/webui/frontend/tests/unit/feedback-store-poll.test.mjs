@@ -411,6 +411,27 @@ test("pin 6af63c5e9b7c an undecodable summary body is surfaced, not swallowed", 
   assert.ok(store.feedbackState.pinSummaryError, "a decode failure must reach the error state");
 });
 
+test("pin 6af63c5e9b7c a body that fails to decode with a TypeError is persistent, not transient", async () => {
+  // Response.json() rejects with a TypeError for a body it cannot decode (a
+  // plain body labeled Content-Encoding: gzip); that must not read as an
+  // unreachable daemon and keep the stale counts on screen.
+  const undecodable = new ReadableStream({
+    start(controller) {
+      controller.error(new TypeError("Decompression failed"));
+    },
+  });
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () =>
+      new Response(undecodable, { status: 200, headers: { "content-type": "application/json" } }),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  await store.refreshPins();
+  assert.equal(store.feedbackState.pinSummary, null, "stale counts must not stay on screen");
+  assert.match(store.feedbackState.pinSummaryError ?? "", /undecodable \/comments\/summary body: Decompression failed/);
+});
+
 test("pin 6af63c5e9b7c an unreachable daemon keeps the last-known counts and raises no error", async () => {
   const last = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
   globalThis.fetch = mockFeedbackFetch({

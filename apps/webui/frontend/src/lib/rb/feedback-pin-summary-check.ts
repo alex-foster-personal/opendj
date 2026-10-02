@@ -20,7 +20,9 @@ export type SummaryFailure =
 
 /** How a failed GET /comments/summary must show (PR #4094 Sol P1):
  * - `missing`: 404, a daemon without the route; clear the summary, no error;
- * - `transient`: unreachable daemon (fetch rejects with a TypeError) or
+ * - `transient`: unreachable daemon (the request rejects with a TypeError; the
+ *   store reads the body separately through `decodeSummaryBody`, so a body
+ *   decode failure never arrives here as a TypeError) or
  *   408/429/502/503/504; keep the last-known counts and retry on the next poll;
  * - `error`: anything else (a 500 such as unknown_pin_status from a malformed
  *   persisted pin, another 4xx, an empty or undecodable body) is persistent, so
@@ -87,4 +89,20 @@ export function parseCommentSummary(body: unknown): CommentSummary {
 		fail(`fleet_correlation is ${JSON.stringify(record.fleet_correlation)}`);
 	}
 	return body as CommentSummary;
+}
+
+/** Decode a 2xx GET /comments/summary body read as a stream (PR #4094 Sol P1).
+ * `Response.json()` rejects with a TypeError for a body that cannot be decoded
+ * (for example a plain body labeled `Content-Encoding: gzip`), the same class a
+ * failed request rejects with. Reading the body here, apart from the request,
+ * turns every read or parse failure into a plain Error, which
+ * `classifySummaryFailure` treats as persistent rather than transient. */
+export async function decodeSummaryBody(stream: ReadableStream<Uint8Array>): Promise<unknown> {
+	try {
+		return JSON.parse(await new Response(stream).text());
+	} catch (err) {
+		throw new Error(
+			`undecodable /comments/summary body: ${err instanceof Error ? err.message : String(err)}`
+		);
+	}
 }

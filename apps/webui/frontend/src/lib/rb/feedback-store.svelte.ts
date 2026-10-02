@@ -521,7 +521,8 @@ let _summarySeq = 0;
 let _summaryCheck: Promise<typeof import("./feedback-pin-summary-check")> | null = null;
 
 /** GET /comments/summary (FB-20). `classifySummaryFailure` decides a failure:
- * a 404 clears the summary, a transient miss keeps the last-known counts (the
+ * a 404 clears the summary, a transient miss (the request itself failed, or a
+ * retryable status) keeps the last-known counts (the
  * next poll retries), and a persistent contract or data error drops the counts
  * and sets `pinSummaryError`. Only the newest request may write, so an older
  * poll's answer never overwrites a post-mutation refresh. */
@@ -532,7 +533,11 @@ async function _refreshPinSummary(): Promise<void> {
   });
   if (!mod) return;
   try {
-    const summary = mod.parseCommentSummary(await unwrap(api.GET("/api/v1/feedback/comments/summary")));
+    // Read the body as a stream so a rejection here is transport only; a body
+    // that fails to decode rejects inside decodeSummaryBody, which reports it
+    // as persistent (PR #4094 Sol P1).
+    const stream = await unwrap(api.GET("/api/v1/feedback/comments/summary", { parseAs: "stream" }));
+    const summary = mod.parseCommentSummary(await mod.decodeSummaryBody(stream));
     if (seq !== _summarySeq) return;
     feedbackState.pinSummary = summary;
     feedbackState.pinSummaryError = null;
