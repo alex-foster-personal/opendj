@@ -235,8 +235,8 @@
 	$effect(() => {
 		if (!setupOverlay.incomplete) return;
 		void checkPreflight();
-		const id = setInterval(() => void checkPreflight(), 3_000);
-		return () => clearInterval(id);
+		const preflightId = setInterval(() => void checkPreflight(), 3_000);
+		return () => clearInterval(preflightId);
 	});
 
 	// Run as soon as the client router is live; onMount alone is too late for
