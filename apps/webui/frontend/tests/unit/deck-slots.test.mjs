@@ -150,6 +150,17 @@ describe('pickDoubleClickDeck: never take the master, prefer idle slots', () => 
 		return base;
 	}
 
+	it('d2c156a503bb double-click never targets the live master deck', async () => {
+		const { pickDoubleClickDeck } = await _mod();
+		const out = pickDoubleClickDeck({
+			shift: false,
+			replace: false,
+			decks: state({ 2: { stable_id: null, playing: false } })
+		});
+		assert.notEqual(out.deck, 1, 'the picker took the master deck');
+		assert.equal(out.deck, 2);
+	});
+
 	it('never returns the master while any other slot is available', async () => {
 		const { pickDoubleClickDeck } = await _mod();
 		// Deck 1 is master AND least-recently-loaded: the old rule picked it.

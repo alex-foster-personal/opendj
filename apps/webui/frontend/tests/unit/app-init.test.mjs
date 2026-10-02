@@ -225,6 +225,24 @@ test('startAppInstruments wires silence dropout recovery', () => {
 	assert.match(source, /setSilenceDropoutHandler/);
 });
 
+test('startAppInstruments wires silence source PCM reader', () => {
+	const source = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/app-init.ts', import.meta.url)),
+		'utf8'
+	);
+	assert.match(source, /setSilenceSourceReader\(readSilenceSourceDeckSnaps\)/);
+	assert.match(
+		source,
+		/master_path_gain: _silenceMasterPathGain\(id\)/,
+		'each source snapshot must carry its mixer gain to the master (AUDIOLIVE-12)'
+	);
+	assert.match(
+		source,
+		/setSilenceSourceReader\(null\)/,
+		'teardown must clear the source reader'
+	);
+});
+
 test('the root layout actually calls startAppInstruments', () => {
 	// The gap the rest of this file cannot see. Every test above drives
 	// startAppInstruments directly, so all of them keep passing if the layout
