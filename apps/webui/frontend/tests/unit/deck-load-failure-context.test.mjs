@@ -72,8 +72,8 @@ test('[if] a track is not on this computer [then] the deck says so in plain word
 		"Outomorrow: This file isn't on this computer."
 	);
 	assert.equal(
-		failureContext.formatDeckLoadFailureMessage(null, 'abc123', 'AUDIO_FILE_MISSING: /Users/dev/Music/gone.mp3'),
-		"abc123: This file isn't on this computer."
+		failureContext.formatDeckLoadFailureMessage(null, 'abc123', 'AUDIO_FILE_MISSING: iCloud file not downloaded'),
+		'abc123: AUDIO_FILE_MISSING: iCloud file not downloaded'
 	);
 	// Controls: a code with no plain wording, and a message that only looks
 	// like one, pass through unchanged.

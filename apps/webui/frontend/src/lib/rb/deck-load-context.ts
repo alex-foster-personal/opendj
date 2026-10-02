@@ -266,27 +266,14 @@ export function deckLoadFailureContext(
 }
 
 /**
- * Report one failed deck load: the user-facing toast, the client perf ring, and
- * - riding that same toast - the server-side error row carrying the stages.
- *
- * The stages are the only record of WHERE the load died, and until this existed
- * they stopped at the client ring, which the next fader drag wipes. Riding the
- * toast's own error report is what carries them to the server WITHOUT a second
- * reportClientError per failure: client-error-reporting dedupes on `source`, so
- * two reports per failure would land as two rows with the diagnosis on neither.
- *
- * Ordering is load-bearing and the caller owns it: `stages.failedAt` must
- * already be stamped when this is called, or every report is missing the one
- * number that says when the load died.
- */
-/**
  * Load failures a DJ can act on, said plainly (CLOUDSYNC-33). The message
  * arrives as RbApiError's `CODE: detail`; for these codes the deck shows only
  * the sentence, while the toast's error report still carries the raw cause.
+ * AUDIO_FILE_MISSING is deliberately absent: it also covers iCloud stubs,
+ * unsupported extensions and unresolvable paths, where the file IS here.
  */
 const PLAIN_LOAD_FAILURES: Readonly<Record<string, string>> = {
-	AUDIO_NOT_ON_THIS_MACHINE: "This file isn't on this computer.",
-	AUDIO_FILE_MISSING: "This file isn't on this computer."
+	AUDIO_NOT_ON_THIS_MACHINE: "This file isn't on this computer."
 };
 
 function plainLoadFailure(message: string): string {
@@ -304,6 +291,20 @@ export function formatDeckLoadFailureMessage(
 	return title ? `${title}: ${reason}` : `${stableId}: ${reason}`;
 }
 
+/**
+ * Report one failed deck load: the user-facing toast, the client perf ring, and
+ * - riding that same toast - the server-side error row carrying the stages.
+ *
+ * The stages are the only record of WHERE the load died, and until this existed
+ * they stopped at the client ring, which the next fader drag wipes. Riding the
+ * toast's own error report is what carries them to the server WITHOUT a second
+ * reportClientError per failure: client-error-reporting dedupes on `source`, so
+ * two reports per failure would land as two rows with the diagnosis on neither.
+ *
+ * Ordering is load-bearing and the caller owns it: `stages.failedAt` must
+ * already be stamped when this is called, or every report is missing the one
+ * number that says when the load died.
+ */
 export function reportDeckLoadFailure(
 	deck: 1 | 2 | 3 | 4,
 	message: string,

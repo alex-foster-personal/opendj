@@ -364,10 +364,12 @@ def resolve_playback_source(
     local = _local_file(conn, stable_id, machine_id)
     try:
         policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
-    except PolicyUnconfigured:
+    except HydrationError as exc:
         # An unconfigured machine is local-only (CLOUDSYNC-33): its own copy
         # plays, and a track it has no copy of is not on this computer. It
         # never streams or hydrates, because nothing chose a mode that would.
+        # Any other policy error still lets a local copy play, but refuses
+        # loudly when there is none.
         content_hash = _content_hash(conn, stable_id)
         if local is not None:
             return PlaybackSource(
@@ -377,6 +379,8 @@ def resolve_playback_source(
                 path=local,
                 content_hash=content_hash,
             )
+        if not isinstance(exc, PolicyUnconfigured):
+            raise
         return PlaybackSource(
             origin="unavailable",
             mode="excluded",
