@@ -92,6 +92,43 @@ def _seed_then_rescan(hub: _TestClientTransport, spoke: Path, tmp_path: Path) ->
     return library, seed
 
 
+def _pair_ids(data_dir: Path, pair: tuple[Path, Path]) -> tuple[str, str]:
+    """``(survivor, loser)`` of one duplicate pair, as the hub answered it.
+
+    Read from the persisted hub remap, never from the pair's order: which
+    copy wins is an LWW election over ingest stamps, and ingest walks the
+    folder in directory order, which the filesystem decides (``os.walk``
+    does not sort). A test that assumed ``a.wav`` survives edited the
+    settled loser on a runner that listed ``a.wav`` first.
+    """
+    ids = {_id_at(data_dir, path) for path in pair}
+    losers = ids & set(_remaps(data_dir))
+    assert len(losers) == 1, f"premise: the hub answered for exactly one copy of {pair}, got {losers}"
+    loser = next(iter(losers))
+    return next(iter(ids - losers)), loser
+
+
+def _comments(data_dir: Path, stable_id: str) -> str | None:
+    conn = _open(data_dir)
+    try:
+        row = conn.execute(
+            "SELECT value_json FROM track_fields WHERE stable_id = ? AND field_name = 'comments'", (stable_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return None if row is None else str(row[0])
+
+
+def _set_comments(data_dir: Path, stable_id: str, text: str) -> None:
+    conn = _open(data_dir)
+    writer = StateWriter(conn, bus=FakeEventBus(), actor="webui")
+    try:
+        writer.set_field(stable_id, "comments", text, source="manual", modified_at=sync_stamp.canonical_now())
+    finally:
+        writer.close()
+        conn.close()
+
+
 def _assert_settled(result: client.SyncResult, label: str) -> None:
     assert (result.pushed, result.rejected, result.quarantined_rows) == (0, 0, 0), (
         f"{label}: pushed {result.pushed}, rejected {result.rejected} "
@@ -135,8 +172,7 @@ def test_rescanned_identity_losers_settle_and_release_the_fence(
 ) -> None:
     """Seed, rescan, remove, rescan, several syncs: the Mac's steady state."""
     library, _seed = _seed_then_rescan(hub, spoke_a, tmp_path)
-    losers = [_id_at(spoke_a, second) for _first, second in library.pairs]
-    assert set(losers) <= set(_remaps(spoke_a)), "premise: the hub answered for every loser"
+    losers = [_pair_ids(spoke_a, pair)[1] for pair in library.pairs]
 
     first = _sync(spoke_a, hub, "spoke-a")
     assert first.quarantined_rows == 0, f"{first.quarantined_rows} settled loser(s) still counted as held"
@@ -167,31 +203,68 @@ def test_a_real_edit_after_the_losers_settle_still_pushes(
     """Overshoot control: settling the losers must not swallow genuine edits."""
     library, _seed = _seed_then_rescan(hub, spoke_a, tmp_path)
     _sync(spoke_a, hub, "spoke-a")
-    survivor = _id_at(spoke_a, library.pairs[0][0])
-    conn = _open(spoke_a)
-    writer = StateWriter(conn, bus=FakeEventBus(), actor="webui")
-    try:
-        writer.set_field(
-            survivor, "comments", "edited after settling", source="manual", modified_at=sync_stamp.canonical_now()
-        )
-    finally:
-        writer.close()
-        conn.close()
+    survivor, _loser = _pair_ids(spoke_a, library.pairs[0])
+    _set_comments(spoke_a, survivor, "edited after settling")
 
     edit = _sync(spoke_a, hub, "spoke-a")
 
     assert edit.pushed > 0 and (edit.accepted, edit.rejected) == (edit.pushed, 0), (
         f"the edit did not reach the hub: {edit}"
     )
-    hub_conn = _open(hub_dir)
-    try:
-        stored = hub_conn.execute(
-            "SELECT value_json FROM track_fields WHERE stable_id = ? AND field_name = 'comments'", (survivor,)
-        ).fetchone()
-    finally:
-        hub_conn.close()
-    assert stored is not None and "edited after settling" in str(stored[0])
+    assert "edited after settling" in str(_comments(hub_dir, survivor))
     _assert_settled(_sync(spoke_a, hub, "spoke-a"), "the sync after the edit")
+
+
+def test_an_edit_on_a_settled_loser_follows_its_survivor_to_the_hub(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, tmp_path: Path
+) -> None:
+    """The loser is still a row in the local library, so the UI can edit it.
+
+    ``prepare_spoke_identity`` moves that edit onto the survivor before the
+    offer. The moved ``track_fields`` row is keyed by ``stable_id``, so the
+    move re-keys it; it used to drop the edit's changelog entry with the
+    loser's key and log nothing for the new one, so the row sat on the
+    survivor locally, was never offered, and the digest raised the ADR 04 c6
+    corruption alarm (``track_fields/<survivor>/comments row exists locally
+    but not on hub``) on this and every later sync.
+    """
+    library, _seed = _seed_then_rescan(hub, spoke_a, tmp_path)
+    _sync(spoke_a, hub, "spoke-a")
+    survivor, loser = _pair_ids(spoke_a, library.pairs[0])
+    _set_comments(spoke_a, loser, "edited on the duplicate")
+
+    edit = _sync(spoke_a, hub, "spoke-a")
+
+    assert edit.pushed > 0 and (edit.accepted, edit.rejected) == (edit.pushed, 0), (
+        f"the moved edit did not reach the hub: {edit}"
+    )
+    assert "edited on the duplicate" in str(_comments(hub_dir, survivor))
+    assert _comments(spoke_a, loser) is None, "the edit stayed on the settled loser"
+    _assert_settled(_sync(spoke_a, hub, "spoke-a"), "the sync after the moved edit")
+
+
+def test_a_loser_edit_the_survivor_already_answers_is_not_re_offered(
+    hub: _TestClientTransport, hub_dir: Path, spoke_a: Path, tmp_path: Path
+) -> None:
+    """Overshoot control: only a row the move actually wrote is re-offered.
+
+    Where the survivor already holds the field, the move keeps the survivor's
+    value and discards the loser's (``INSERT OR IGNORE``), so nothing changed
+    on the survivor and the loser's changelog entry must go, not be re-keyed
+    onto a row that has nothing new to say.
+    """
+    library, _seed = _seed_then_rescan(hub, spoke_a, tmp_path)
+    _sync(spoke_a, hub, "spoke-a")
+    survivor, loser = _pair_ids(spoke_a, library.pairs[0])
+    _set_comments(spoke_a, survivor, "the survivor's own")
+    _sync(spoke_a, hub, "spoke-a")
+    _set_comments(spoke_a, loser, "edited on the duplicate")
+
+    _assert_settled(_sync(spoke_a, hub, "spoke-a"), "the sync after the discarded loser edit")
+    assert "the survivor's own" in str(_comments(spoke_a, survivor))
+    assert "the survivor's own" in str(_comments(hub_dir, survivor))
+    last_push_seq, top = _fence(spoke_a)
+    assert last_push_seq == top, f"the push fence is pinned at {last_push_seq} below {top}"
 
 
 def test_a_restore_after_the_losers_settle_still_reaches_the_hub(

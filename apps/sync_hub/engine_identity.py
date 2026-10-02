@@ -268,20 +268,59 @@ def _table_columns(conn: sqlite3.Connection, table: str) -> tuple[str, ...]:
     return tuple(str(row[1]) for row in conn.execute(f"PRAGMA table_info({_ident(table)})"))
 
 
-def _prune_child_changelog(
-    conn: sqlite3.Connection, table: str, loser_pks: Sequence[Sequence[Any]]
+def _rekey_child_changelog(
+    conn: sqlite3.Connection,
+    table: str,
+    moves: Sequence[tuple[Sequence[Any], Sequence[Any] | None]],
 ) -> None:
+    """Carry each moved row's changelog entries to its new key, or drop them.
+
+    ``moves`` pairs a loser row's old key with the key it was written under
+    on the survivor, or ``None`` where the survivor already held that key and
+    the loser's row was discarded. A moved row keeps its entries, seq
+    included, so a write still above the push fence is offered under the key
+    it now lives at; dropping them left a row the offer never selects and the
+    digest still counts (CLOUDSYNC-32: an edit on a settled loser raised the
+    ADR 04 c6 alarm on every sync).
+    """
     if table not in SPEC_BY_TABLE and table != MEMBERSHIP_TABLE:
         return
-    for pk in loser_pks:
-        row_pk = protocol.encode_row_pk(tuple(str(part) for part in pk))
-        for changelog in (HUB_CHANGELOG_TABLE, LOCAL_CHANGELOG_TABLE):
-            if changelog not in CHANGELOG_TABLES:
-                continue
-            conn.execute(
-                f"DELETE FROM {changelog} WHERE table_name = ? AND row_pk = ?",
-                (table, row_pk),
-            )
+    changelogs = [name for name in (HUB_CHANGELOG_TABLE, LOCAL_CHANGELOG_TABLE) if name in CHANGELOG_TABLES]
+    for old_pk, new_pk in moves:
+        row_pk = protocol.encode_row_pk(tuple(str(part) for part in old_pk))
+        for changelog in changelogs:
+            _rekey_one(conn, changelog, table, row_pk, new_pk)
+
+
+def _rekey_one(
+    conn: sqlite3.Connection, changelog: str, table: str, row_pk: str, new_pk: Sequence[Any] | None
+) -> None:
+    if new_pk is None:
+        conn.execute(f"DELETE FROM {changelog} WHERE table_name = ? AND row_pk = ?", (table, row_pk))
+        return
+    conn.execute(
+        f"UPDATE {changelog} SET row_pk = ? WHERE table_name = ? AND row_pk = ?",
+        (protocol.encode_row_pk(tuple(str(part) for part in new_pk)), table, row_pk),
+    )
+
+
+def _key_held(conn: sqlite3.Connection, table: str, pk: Sequence[str], key: Sequence[Any]) -> bool:
+    where_pk = " AND ".join(f"{_ident(column)} IS ?" for column in pk)
+    return conn.execute(f"SELECT 1 FROM {_ident(table)} WHERE {where_pk}", tuple(key)).fetchone() is not None
+
+
+def _survivor_keys(
+    conn: sqlite3.Connection, table: str, pk: Sequence[str], loser: str, survivor: str
+) -> list[tuple[tuple[Any, ...], tuple[Any, ...]]]:
+    """Each loser row's key paired with the same key under ``survivor``."""
+    rows = conn.execute(
+        f"SELECT {', '.join(_ident(column) for column in pk)} FROM {_ident(table)} WHERE stable_id = ?",
+        (loser,),
+    ).fetchall()
+    return [
+        (tuple(old), tuple(survivor if column == "stable_id" else value for column, value in zip(pk, old, strict=True)))
+        for old in rows
+    ]
 
 
 def _remap_pk_includes_stable_id(
@@ -292,11 +331,14 @@ def _remap_pk_includes_stable_id(
     loser: str,
     survivor: str,
 ) -> None:
-    loser_pks = conn.execute(
-        f"SELECT {', '.join(_ident(column) for column in pk)} "
-        f"FROM {_ident(table)} WHERE stable_id = ?",
-        (loser,),
-    ).fetchall()
+    """Copy the loser's rows onto the survivor's key, keep the survivor's on a clash.
+
+    A key the survivor already held is decided before the copy, and a key
+    the copy did not write (another UNIQUE index refused it) is checked
+    after, so only a row that really moved keeps its changelog entries.
+    """
+    planned = _survivor_keys(conn, table, pk, loser, survivor)
+    free = [(old, new) for old, new in planned if not _key_held(conn, table, pk, new)]
     select_list = ", ".join("?" if column == "stable_id" else _ident(column) for column in columns)
     conn.execute(
         f"INSERT OR IGNORE INTO {_ident(table)} "
@@ -304,8 +346,9 @@ def _remap_pk_includes_stable_id(
         f"SELECT {select_list} FROM {_ident(table)} WHERE stable_id = ?",
         (survivor, loser),
     )
+    moved = {old: new for old, new in free if _key_held(conn, table, pk, new)}
     conn.execute(f"DELETE FROM {_ident(table)} WHERE stable_id = ?", (loser,))
-    _prune_child_changelog(conn, table, loser_pks)
+    _rekey_child_changelog(conn, table, [(old, moved.get(old)) for old, _new in planned])
 
 
 def _remap_locations(conn: sqlite3.Connection, loser: str, survivor: str) -> None:
