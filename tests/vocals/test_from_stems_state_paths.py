@@ -18,14 +18,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import json
+import wave
 
 import pytest
 
 from apps.shared.state import db as state_db
 from apps.shared.state.writer import StateWriter
+from apps.stems.artifacts import STEM_PARTS
 from apps.vocals import cli
 
-pytestmark = pytest.mark.requirement("CAT-05")
+pytestmark = pytest.mark.requirement("PARITY-08")
 
 
 def _state(data_dir: Path, tmp_path: Path) -> dict[str, Path]:
@@ -92,15 +94,39 @@ def test_state_tracks_apply_the_data_dirs_path_map(tmp_path: Path) -> None:
     assert tracks[0].audio_path == audio["mapped"]
 
 
+def _write_bundle(stems: Path, stable_id: str) -> None:
+    """A real, loadable v1 bundle: aligned silent PCM16 WAV parts plus manifest."""
+    bundle = stems / stable_id
+    bundle.mkdir(parents=True)
+    for part in STEM_PARTS:
+        with wave.open(str(bundle / f"{part}.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(44100)
+            w.writeframes(b"\x00\x00" * 4410)
+    (bundle / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "stable_id": stable_id,
+                "model": {"name": "htdemucs", "version": "4.0.1"},
+                "source": {"path": "/tmp/source.wav", "sha256": "a" * 64},
+                "files": {p: f"{p}.wav" for p in STEM_PARTS},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_from_stems_runs_without_master_db(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """[if] from-stems runs where no master.plain.db exists [then] it plans the mapped bundle and exits 0, [else stop]."""
     data_dir = tmp_path / "data"
     _state(data_dir, tmp_path)
-    monkeypatch.setattr(
-        cli.vfrom_stems, "list_bundle_ids", lambda _root: ["deleted", "mapped", "unmapped"]
-    )
+    stems = data_dir / "state" / "stems"
+    for sid in ("deleted", "mapped", "unmapped"):
+        _write_bundle(stems, sid)
 
     code = cli.main(["from-stems", "--data-dir", str(data_dir), "--dry-run"])
 
