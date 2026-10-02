@@ -219,28 +219,19 @@
 		});
 	}
 
-	// When preflight says the library is empty, open setup even if the daemon
-	// suppressed should_show_wizard (e.g. dev checkout) or the first-run probe
-	// raced entitlements. Decoupled from entitlements.load().
-	// A close sets holdEmptyReopen first: the library row is still the previous
-	// `fail` until the next poll, and reopening on it is issue #3422.
+	// Empty-library auto-open. holdEmptyReopen blocks the stale `fail` that
+	// is still on screen for one poll after Skip or Start playing (#3422).
 	$effect(() => {
-		if (
-			!shouldAutoOpenEmptyLibrarySetup(
-				preflightGate.checks,
-				setupOpen,
-				setupOverlay.holdEmptyReopen
-			)
-		) {
-			return;
-		}
-		if (finalSetupRefusal() !== null) return;
+		const open = shouldAutoOpenEmptyLibrarySetup(
+			preflightGate.checks,
+			setupOpen,
+			setupOverlay.holdEmptyReopen
+		);
+		if (!open || finalSetupRefusal() !== null) return;
 		openSetupForFirstRun();
 	});
 
-	// While the incomplete note is up, keep polling preflight on the boot
-	// gate's cadence so a dismissed-empty row becomes pending and the note
-	// stays the thing on screen across those cycles (issue #3422).
+	// Poll while the incomplete note is up, same 3s cadence as the boot gate.
 	$effect(() => {
 		if (!setupOverlay.incomplete) return;
 		void checkPreflight();
