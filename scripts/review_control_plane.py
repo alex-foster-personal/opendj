@@ -201,6 +201,13 @@ def last_failure() -> str | None:
     return _LAST_FAILURE[-1] if _LAST_FAILURE else None
 
 
+def verdict_line(ok: bool, head_sha: str, detail: str) -> str:
+    """REVIEW-13's verdict line. It names the head because on a FAIL triage exits
+    before its own `PR #N @ head` header, and review_chain reads the head from here."""
+    outcome = "ok" if ok else "FAIL"
+    return f"[review-coverage] {outcome}: control-plane dual review (REVIEW-13) @ head {head_sha}: {detail}"
+
+
 @dataclass(frozen=True)
 class DualReview:
     ok: bool | None  # None = could not measure
@@ -520,8 +527,8 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         return 0
     rc._require_head_unchanged(head_sha, rc._head_sha(pr))
     if verdict.ok:
-        print(f"[review-coverage] control-plane dual review (REVIEW-13) ok: {verdict.detail}")
+        print(verdict_line(True, head_sha, verdict.detail))
         return 0
     _LAST_FAILURE.append(verdict.detail)
-    print(f"[review-coverage] FAIL: control-plane dual review (REVIEW-13): {verdict.detail}")
+    print(verdict_line(False, head_sha, verdict.detail))
     return 1

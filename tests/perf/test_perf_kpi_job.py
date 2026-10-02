@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import socket
 import sqlite3
 import subprocess
@@ -18,10 +17,6 @@ from scripts.perf.perf_kpi_config import REPO_ROOT, load_config, require_machine
 from scripts.perf.perf_kpi_job import cmd_nightly
 from scripts.perf.perf_kpi_nightly import ENGINE_READY_TIMEOUT_S, SCRATCH_ENGINE_LOG_NAME
 from tests.perf.perf_kpi_job_fixtures import free_port, nightly_env
-
-INSTALL_SCRIPT = REPO_ROOT / "scripts" / "install_perf_kpi_launchd.sh"
-DECIDE_SCRIPT = REPO_ROOT / "scripts" / "perf_kpi_launchd_decide.sh"
-LAUNCHCTL_UNAVAILABLE = sys.platform != "darwin" or shutil.which("launchctl") is None
 
 
 def _history_events(state_dir: Path) -> list[str]:
