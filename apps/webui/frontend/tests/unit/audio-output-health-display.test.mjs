@@ -68,6 +68,15 @@ describe('describeAudioOutputHealth', () => {
 		assert.doesNotMatch(d.title, /Nothing is playing/);
 	});
 
+	it('idle because the browser binding is dead => says the binding is broken, not muted', () => {
+		for (const verdict of ['dead', 'dead-escalated']) {
+			const d = mod.describeAudioOutputHealth(snap('idle', verdict));
+			assert.equal(d.cssClass, 'idle');
+			assert.match(d.title, /Browser binding BROKEN/);
+			assert.doesNotMatch(d.title, /muted or silent|Nothing is playing/);
+		}
+	});
+
 	it('idle with no deck playing => says nothing is playing', () => {
 		const d = mod.describeAudioOutputHealth(snap('idle', 'idle'));
 		assert.match(d.title, /Nothing is playing right now/);
