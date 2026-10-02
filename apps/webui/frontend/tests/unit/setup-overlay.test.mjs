@@ -525,11 +525,11 @@ test('a failed import says why, not its last progress line', () => {
 	const decrypt = mod.humanImportFailure(
 		'Traceback...\n[ERROR] rekordbox_decrypt_failed: sqlcipher refused /Users/dj/Library/Pioneer/rekordbox/master.db'
 	);
-	assert.match(decrypt, /rekordbox library could not be opened/);
+	assert.match(decrypt, /Could not open the rekordbox library/);
 	assert.doesNotMatch(decrypt, /\/Users\/|rekordbox_decrypt_failed|sqlcipher/);
 	assert.match(
 		mod.humanImportFailure('[ERROR] music_folder_access_denied: macOS refused to list /Volumes/X'),
-		/not allowed to read that folder/
+		/may not read that folder/
 	);
 	assert.match(
 		mod.humanImportFailure('[ERROR] setup_import_already_running: setup import job-4 is queued'),

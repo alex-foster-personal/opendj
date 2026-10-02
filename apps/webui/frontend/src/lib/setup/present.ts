@@ -328,26 +328,15 @@ export function humanImportJobMessage(
  * raw tail stays in the agent details.
  */
 export function humanImportFailure(error: string | null | undefined): string {
-	const code = /\[ERROR\]\s+([a-z_]+):/.exec(error ?? '')?.[1] ?? null;
-	if (code === 'music_folder_access_denied') {
-		return 'The app is not allowed to read that folder. Grant access in System Settings, Privacy & Security, then try again.';
-	}
-	if (code === 'rekordbox_not_found') {
-		return 'The library or folder to import could not be found. Check it still exists and try again.';
-	}
-	if (code === 'rekordbox_key_unavailable' || code === 'rekordbox_decrypt_failed') {
-		return 'The rekordbox library could not be opened. Quit rekordbox, then try again.';
-	}
-	if (code === 'rekordbox_share_missing') {
-		return 'The rekordbox analysis files were not found, so the import stopped. Open rekordbox once, then try again.';
-	}
-	if (code === 'setup_import_already_running') {
-		return 'An import is already running. Wait for it to finish.';
-	}
-	if (code === 'rekordbox_ingest_failed') {
-		return 'The import stopped partway through reading your library. Try again; if it fails again, choose a different source.';
-	}
-	return 'The import stopped before it finished. Try again, or choose a different source.';
+	const code = /\[ERROR\]\s+([a-z_]+):/.exec(error ?? '')?.[1] ?? '';
+	const why: Record<string, string> = {
+		music_folder_access_denied: 'The app may not read that folder. Allow it in Privacy & Security.',
+		rekordbox_not_found: 'What you chose to import was not found.',
+		rekordbox_key_unavailable: 'Could not open the rekordbox library. Quit rekordbox.',
+		rekordbox_decrypt_failed: 'Could not open the rekordbox library. Quit rekordbox.',
+		setup_import_already_running: 'An import is already running.'
+	};
+	return `${why[code] ?? 'The import stopped before it finished.'} Then try again.`;
 }
 
 export function humanStemsJobsUnavailable(): string {
