@@ -4,6 +4,7 @@
 //!   odj-audio serve [--clock fake|wall|device] [--sample-rate 48000] [--block 256] [--record OUT.wav]
 //!                   [--ws 127.0.0.1:0]
 //!                   [--midi] [--midi-map MAPS.json]
+//!   odj-audio decode --in SOURCE --out OUT.wav
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
@@ -17,6 +18,12 @@
 //! and device clocks) has the engine read the controllers its device maps
 //! match; `--midi-map` adds onboarded maps that win over the built-in ones.
 //! `midi_inject` feeds recorded MIDI bytes on any clock, with or without it.
+//! `decode` writes SOURCE (any format a deck loads: MP3, AAC, FLAC, ...) as a
+//! 32-bit float WAV at its own rate and channel count, streamed a packet at a
+//! time, and prints one JSON line naming them and the frame count. It never
+//! replaces a file: OUT must not exist. This is how the stems and vocals
+//! workers read compressed audio in the installed app, which ships no ffmpeg
+//! (`docs/decisions/*-odj-audio-decode-for-workers.md`).
 
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -37,6 +44,7 @@ const USAGE: &str = "usage:
   odj-audio serve [--clock fake|wall|device] [--sample-rate HZ] [--block FRAMES] [--record OUT.wav]
                   [--ws LOOPBACK_ADDR:PORT]   (token from ODJ_AUDIO_WS_TOKEN)
                   [--midi] [--midi-map MAPS.json]
+  odj-audio decode --in SOURCE --out OUT.wav   (OUT must not exist)
   odj-audio version";
 
 struct Args {
@@ -557,6 +565,49 @@ fn device(sr: Option<u32>, midi: serve::MidiSetup, ws: Option<serve::WsListen>) 
     serve::serve_threaded(rate, "device", midi, odj_audio::device::run_device(probed), ws).map_err(|e| e.to_string())
 }
 
+/// `odj-audio decode`: SOURCE to a new float WAV at OUT (see the module
+/// docs). OUT is created, never replaced, so neither a typo nor OUT naming
+/// SOURCE itself (or a link to it) can truncate a library file; a failed
+/// decode removes the partial OUT it created.
+fn decode_cmd(mut args: Args) -> Result<(), String> {
+    let src = PathBuf::from(args.take("--in")?.ok_or("decode needs --in")?);
+    let out_path = PathBuf::from(args.take("--out")?.ok_or("decode needs --out")?);
+    args.done()?;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&out_path)
+        .map_err(|e| format!("cannot create {}: {e} (decode never replaces a file)", out_path.display()))?;
+    let mut w = BufWriter::new(file);
+    let written = odj_audio::decode::decode_to_wav(&src, &mut w)
+        .and_then(|r| {
+            w.get_ref().sync_all().map_err(|e| {
+                protocol::ProtoError::new(ErrorCode::Io, format!("cannot write {}: {e}", out_path.display()))
+            })?;
+            Ok(r)
+        });
+    let written = match written {
+        Ok(r) => r,
+        Err(e) => {
+            drop(w);
+            let _ = std::fs::remove_file(&out_path);
+            return Err(format!("{}: {}", e.code.as_str(), e.message));
+        }
+    };
+    let summary = json!({
+        "type": "decode",
+        "in": src.display().to_string(),
+        "out": out_path.display().to_string(),
+        "format": "wav_f32",
+        "sample_rate": written.sample_rate,
+        "channels": written.channels,
+        "frames": written.frames,
+        "duration_s": written.frames as f64 / written.sample_rate as f64,
+    });
+    println!("{summary}");
+    Ok(())
+}
+
 #[cfg(not(feature = "device"))]
 fn device(_sr: Option<u32>, _midi: serve::MidiSetup, _ws: Option<serve::WsListen>) -> Result<(), String> {
     Err("this build has no device output; rebuild with --features device".into())
@@ -572,6 +623,7 @@ fn main() -> ExitCode {
     let r = match sub.as_str() {
         "render" => render(args),
         "serve" => serve_cmd(args),
+        "decode" => decode_cmd(args),
         "version" => {
             let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
             println!("{v}");
