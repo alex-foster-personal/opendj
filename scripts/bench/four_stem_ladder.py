@@ -163,6 +163,7 @@ def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int, model_dir: Path
     environment is a fight with no upside, so this shells out to the existing
     single-purpose script and reads its four stem wavs back.
     """
+    model_dir = model_dir.resolve()
     if not (model_dir / "saved_model.pb").is_file():
         raise RuntimeError(f"Spleeter SavedModel not found (no saved_model.pb): {model_dir}")
     work_dir.mkdir(parents=True, exist_ok=True)
