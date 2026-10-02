@@ -203,12 +203,18 @@ test('performance: title text is vertically centered in the row and separator sp
 
 	const geometry = await page.evaluate(() => {
 		const selected = document.querySelector('[data-testid="track-row"].rb-row-selected');
+		// The fixture's one artwork row can sort LAST, so it has no next row.
+		// The balance is a property of the separator BETWEEN two rows, so
+		// measure the one below the selected row when it exists, else the one
+		// above it (the previous row's bottom separator), never neither.
 		const nextRow = selected?.nextElementSibling;
+		const prevRow = selected?.previousElementSibling;
 		const titleCell = selected?.querySelector('.c-title');
 		const artistCell = selected?.querySelector('.c-artist');
 		const title = selected?.querySelector('.title-text');
 		const artImg = selected?.querySelector('.c-art img');
 		const nextTitle = nextRow?.querySelector('.title-text');
+		const prevTitle = prevRow?.querySelector('.title-text');
 		if (!(selected instanceof HTMLElement) || !(title instanceof HTMLElement)) {
 			return null;
 		}
@@ -237,12 +243,23 @@ test('performance: title text is vertically centered in the row and separator sp
 		const separatorY = rowBox.bottom - 0.5;
 
 		let separatorBalanceDelta: number | null = null;
+		let separatorBalanceAgainst: 'next' | 'previous' | null = null;
 		if (nextRow instanceof HTMLElement && nextTitle instanceof HTMLElement) {
 			const nextTitleBox = nextTitle.getBoundingClientRect();
 			const nextTitleCenterY = (nextTitleBox.top + nextTitleBox.bottom) / 2;
 			const gapAbove = separatorY - titleCenterY;
 			const gapBelow = nextTitleCenterY - separatorY;
 			separatorBalanceDelta = Math.abs(gapAbove - gapBelow);
+			separatorBalanceAgainst = 'next';
+		} else if (prevRow instanceof HTMLElement && prevTitle instanceof HTMLElement) {
+			const prevBox = prevRow.getBoundingClientRect();
+			const prevTitleBox = prevTitle.getBoundingClientRect();
+			const prevTitleCenterY = (prevTitleBox.top + prevTitleBox.bottom) / 2;
+			const prevSeparatorY = prevBox.bottom - 0.5;
+			const gapAbove = prevSeparatorY - prevTitleCenterY;
+			const gapBelow = titleCenterY - prevSeparatorY;
+			separatorBalanceDelta = Math.abs(gapAbove - gapBelow);
+			separatorBalanceAgainst = 'previous';
 		}
 
 		return {
@@ -253,6 +270,7 @@ test('performance: title text is vertically centered in the row and separator sp
 			separatorSpanPx,
 			separatorSpanDelta: Math.abs(separatorSpanPx - rowBox.width),
 			separatorBalanceDelta,
+			separatorBalanceAgainst,
 			artWidth: artBox.width,
 			artLeft: artBox.left,
 			titleLeft: titleBox.left,
@@ -269,6 +287,10 @@ test('performance: title text is vertically centered in the row and separator sp
 	expect(geometry!.rowWidth).toBeGreaterThan(200);
 	expect(geometry!.artWidth).toBeGreaterThan(4);
 	expect(geometry!.separatorSpanDelta).toBeLessThan(2);
+	expect(
+		geometry!.separatorBalanceAgainst,
+		'the selected row must have a neighbor row to measure separator balance against'
+	).not.toBeNull();
 	expect(geometry!.separatorBalanceDelta).not.toBeNull();
 	expect(geometry!.separatorBalanceDelta!).toBeLessThanOrEqual(1);
 

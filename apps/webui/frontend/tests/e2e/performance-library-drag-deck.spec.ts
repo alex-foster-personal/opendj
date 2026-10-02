@@ -21,6 +21,135 @@ function isIgnorableOptionalRowProbe(url: string, draggedStableId: string): bool
 	return true;
 }
 
+/**
+ * The words route answers 404 for a track with no karaoke words by design
+ * (LYR-07: the deck strip then falls back to cached lines). A freshly loaded
+ * fixture track has none, so that one 404 for the DRAGGED row is the product
+ * naming an absence, not an error the drag or Space caused.
+ */
+function isDocumentedLyricsAbsence(url: string, status: number, draggedStableId: string): boolean {
+	if (status !== 404) return false;
+	const match = url.match(/\/api\/v1\/tracks\/([^/]+)\/lyrics\/words(\?|$)/);
+	return match?.[1] === draggedStableId;
+}
+
+const SCROLL_SETTLE_MS = 750;
+
+/**
+ * Samples `.table-wrap` and the document scroller every animation frame for
+ * `ms`, starting NOW, and returns every distinct value seen. A single read
+ * right after a key press can run before the browser applies the default
+ * Space scroll (Sol P2 on #4082), so a window of frames is what proves the
+ * browser never scrolled.
+ */
+async function sampleScroll(
+	page: Page,
+	ms: number,
+	during?: () => Promise<void>
+): Promise<{ wrap: number[]; doc: number[] }> {
+	// Start the sampler WITHOUT awaiting it (evaluate would wait for the whole
+	// window and the action would only run after sampling ended), act, then
+	// collect. The positive control below is what caught that ordering bug.
+	await page.evaluate((windowMs) => {
+		const wrapEl = document.querySelector('.table-wrap');
+		if (!(wrapEl instanceof HTMLElement)) throw new Error('.table-wrap missing');
+		const wrap = new Set<number>();
+		const doc = new Set<number>();
+		const end = performance.now() + windowMs;
+		(window as unknown as { __scrollSample: Promise<unknown> }).__scrollSample = new Promise(
+			(resolve) => {
+				const tick = () => {
+					wrap.add(wrapEl.scrollTop);
+					doc.add(document.scrollingElement?.scrollTop ?? 0);
+					if (performance.now() >= end) resolve({ wrap: [...wrap], doc: [...doc] });
+					else requestAnimationFrame(tick);
+				};
+				tick();
+			}
+		);
+	}, ms);
+	if (during !== undefined) await during();
+	return page.evaluate(
+		() =>
+			(window as unknown as { __scrollSample: Promise<{ wrap: number[]; doc: number[] }> })
+				.__scrollSample
+	);
+}
+
+/**
+ * Asserts Space leaves every scroller where it was for a whole settle window,
+ * after a POSITIVE CONTROL on the same probe: a real wheel scroll of the same
+ * table inside the same kind of window must be seen, so "unchanged" cannot
+ * pass because the table cannot scroll or the sampler cannot see it.
+ */
+async function expectSpaceDoesNotScroll(page: Page): Promise<void> {
+	const tableWrap = page.locator('.table-wrap');
+	const room = await tableWrap.evaluate((el) => ({
+		top: el.scrollTop,
+		max: el.scrollHeight - el.clientHeight
+	}));
+	expect(
+		room.max - room.top,
+		'.table-wrap must have room to scroll down, or Space could not scroll it anyway'
+	).toBeGreaterThan(4);
+
+	// Aim the wheel at the table's ON-SCREEN part: at 1280x800 in MORE its
+	// box is partly clipped by `.list-panel`, so the box centre can sit under
+	// other chrome and the wheel would scroll nothing.
+	const aim = await tableWrap.evaluate((wrap) => {
+		const box = wrap.getBoundingClientRect();
+		let top = Math.max(box.top, 0);
+		let bottom = Math.min(box.bottom, window.innerHeight);
+		for (let el = wrap.parentElement; el !== null; el = el.parentElement) {
+			if (getComputedStyle(el).overflow === 'visible') continue;
+			const clip = el.getBoundingClientRect();
+			top = Math.max(top, clip.top);
+			bottom = Math.min(bottom, clip.bottom);
+		}
+		// Below the sticky thead, inside the visible rows.
+		const thead = wrap.querySelector('thead')?.getBoundingClientRect().bottom ?? top;
+		const y = (Math.max(top, thead) + bottom) / 2;
+		const x = box.left + Math.min(box.width, wrap.clientWidth) / 2;
+		const hit = document.elementFromPoint(x, y);
+		return { x, y, hitsTable: hit !== null && wrap.contains(hit) };
+	});
+	expect(aim.hitsTable, 'the wheel control must aim at a visible point of .table-wrap').toBe(true);
+	const restoreFocus = await page.evaluate(() => {
+		const active = document.activeElement;
+		if (active instanceof HTMLElement) active.setAttribute('data-scroll-probe-focus', '1');
+		return active instanceof HTMLElement;
+	});
+	const control = await sampleScroll(page, SCROLL_SETTLE_MS, async () => {
+		await page.mouse.move(aim.x, aim.y);
+		await page.mouse.wheel(0, 120);
+	});
+	expect(
+		control.wrap.length,
+		`positive control: a real wheel scroll must be seen by the probe, saw ${control.wrap.join(',')}`
+	).toBeGreaterThan(1);
+	await tableWrap.evaluate((el, top) => {
+		el.scrollTop = top;
+	}, room.top);
+	await expect.poll(async () => tableWrap.evaluate((el) => el.scrollTop)).toBe(room.top);
+	if (restoreFocus) {
+		await page.locator('[data-scroll-probe-focus="1"]').focus();
+		await page.evaluate(() =>
+			document.querySelector('[data-scroll-probe-focus]')?.removeAttribute('data-scroll-probe-focus')
+		);
+	}
+
+	const docBefore = await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0);
+	const sampled = await sampleScroll(page, SCROLL_SETTLE_MS, async () => {
+		await page.keyboard.press('Space');
+	});
+	expect(sampled.wrap, 'Space must never scroll .table-wrap during the settle window').toEqual([
+		room.top
+	]);
+	expect(sampled.doc, 'Space must never scroll the document during the settle window').toEqual([
+		docBefore
+	]);
+}
+
 async function firstOnDiskStableId(request: APIRequestContext): Promise<string> {
 	const response = await request.get(`${API_BASE}/api/v1/tracks?limit=50&available=true`);
 	expect(response.ok(), 'track listing must succeed').toBeTruthy();
@@ -99,21 +228,31 @@ test('performance: drag library row onto deck loads track and Space toggles play
 	test.setTimeout(120_000);
 	const stableId = await firstOnDiskStableId(request);
 	const pageErrors: string[] = [];
-	page.on('pageerror', (err) => pageErrors.push(err.message));
+	const lyricsAbsenceUrls = new Set<string>();
+	let recording = false;
+	page.on('pageerror', (err) => {
+		if (recording) pageErrors.push(err.message);
+	});
 	page.on('console', (msg) => {
-		if (msg.type() !== 'error') return;
+		if (!recording || msg.type() !== 'error') return;
 		const text = msg.text();
 		if (
 			text.startsWith('Failed to load resource:') &&
-			isIgnorableOptionalRowProbe(msg.location().url, stableId)
+			(isIgnorableOptionalRowProbe(msg.location().url, stableId) ||
+				lyricsAbsenceUrls.has(msg.location().url) ||
+				isDocumentedLyricsAbsence(msg.location().url, 404, stableId))
 		) {
 			return;
 		}
 		pageErrors.push(text);
 	});
 	page.on('response', (response) => {
-		if (response.status() < 400) return;
+		if (!recording || response.status() < 400) return;
 		if (isIgnorableOptionalRowProbe(response.url(), stableId)) return;
+		if (isDocumentedLyricsAbsence(response.url(), response.status(), stableId)) {
+			lyricsAbsenceUrls.add(response.url());
+			return;
+		}
 		pageErrors.push(`http ${response.status()}: ${response.url()}`);
 	});
 	await page.goto('/performance');
@@ -124,6 +263,10 @@ test('performance: drag library row onto deck loads track and Space toggles play
 	const row = page.locator(`${TRACK_ROW}[data-stable-id="${stableId}"]`);
 	await row.scrollIntoViewIfNeeded();
 	await expect(row).toBeVisible({ timeout: 60_000 });
+	// Record from the gesture on: boot-time probes of routes this backend
+	// does not serve (entitlements, update check, rescue snapshots, USB) are
+	// page-load behavior, not something the drag or Space surfaced.
+	recording = true;
 	await row.click();
 
 	const gesture = await dragRowToDeck(page, stableId, 1);
@@ -137,11 +280,7 @@ test('performance: drag library row onto deck loads track and Space toggles play
 		{ timeout: 90_000 }
 	);
 
-	const tableWrap = page.locator('.table-wrap');
-	const scrollBefore = await tableWrap.evaluate((el) => el.scrollTop);
-	await page.keyboard.press('Space');
-	const scrollAfter = await tableWrap.evaluate((el) => el.scrollTop);
-	expect(scrollAfter).toEqual(scrollBefore);
+	await expectSpaceDoesNotScroll(page);
 
 	await page.waitForFunction(
 		() => window.musicDjToolsPerformance?.query().decks[1].playing === true,
@@ -179,11 +318,8 @@ test('performance: Space on library with no loaded deck does not scroll the tabl
 	await trackRow.focus();
 	await expect(trackRow).toBeFocused();
 
-	const scrollBefore = await tableWrap.evaluate((el) => el.scrollTop);
-	await page.keyboard.press('Space');
-	await expect
-		.poll(async () => tableWrap.evaluate((el) => el.scrollTop), { timeout: 5_000 })
-		.toBe(scrollBefore);
+	await expectSpaceDoesNotScroll(page);
+	await expect(trackRow).toBeFocused();
 
 	const afterSpace = await page.evaluate(() => window.musicDjToolsPerformance!.query());
 	assertAllDecksUnloadedAndStopped(afterSpace.decks);
