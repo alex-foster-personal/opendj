@@ -37187,7 +37187,7 @@
     },
     "/api/v1/tracks/{stable_id}/artwork": {
       "get": {
-        "description": "Serve artwork for the track: rekordbox's pre-rendered jpg variant when\nmapped, else the embedded tag picture read straight from the local file.\n\nThe embedded-tag path has no pre-rendered s/m/orig variants (rekordbox\nnever touched this file), so ``size`` is not honoured there -- the real\nembedded image is served at its original dimensions and mime type for\nall three, rather than fabricating a resize.",
+        "description": "Serve the track's artwork from the first source that has one.\n\nrekordbox's pre-rendered jpg variant, else the embedded picture, a cover\nimage beside the file, or a cached online cover (looked up only with\n``online=true``); see :func:`apps.adapters.rekordbox.paths.local_artwork`.\n``size`` applies to the rekordbox variants only; others are served as found.",
         "operationId": "get_track_artwork_api_v1_tracks__stable_id__artwork_get",
         "parameters": [
           {
@@ -37214,6 +37214,18 @@
               ],
               "title": "Size",
               "type": "string"
+            }
+          },
+          {
+            "description": "also try MusicBrainz + Cover Art Archive (decks only)",
+            "in": "query",
+            "name": "online",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "also try MusicBrainz + Cover Art Archive (decks only)",
+              "title": "Online",
+              "type": "boolean"
             }
           }
         ],

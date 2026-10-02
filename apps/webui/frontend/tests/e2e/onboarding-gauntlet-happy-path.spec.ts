@@ -14,7 +14,7 @@
  * - if "Start playing" on the Done screen does not close the wizard -> broken
  *   (#3422: the same close path that used to bounce "Skip for now").
  * - if a first-run screen shows a new user an endpoint path, an error code or
- *   an env-var name -> broken (#2590, test.fail).
+ *   an env-var name -> broken (#2590).
  */
 import { expect, test } from '@playwright/test';
 
@@ -143,8 +143,6 @@ test.describe('onboarding gauntlet: happy path', () => {
 		seen.push(await dialog.innerText());
 		expect(seen.every((text) => text.trim().length > 0), 'a first-run screen rendered no text').toBe(true);
 
-		// The three screens rendered; only what they show is the known defect.
-		test.fail(true, 'issue #2590: the wizard footnote names /api/v1/setup and detection shows raw codes');
 
 		const internals = [/\/api\/v1\//, /\brekordbox_not_found\b/, /\b[A-Z][A-Z0-9]*_[A-Z0-9_]{3,}\b/];
 		const leaks = seen.flatMap((text) => internals.filter((pattern) => pattern.test(text)).map(String));

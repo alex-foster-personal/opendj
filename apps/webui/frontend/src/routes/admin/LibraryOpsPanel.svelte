@@ -1,5 +1,5 @@
 <script lang="ts">
-	/** LIBM-135: library tidying entrypoints (no on-disk file deletion). */
+	/** LIBM-138: library tidying entrypoints (no on-disk file deletion). */
 </script>
 
 <section class="panel">

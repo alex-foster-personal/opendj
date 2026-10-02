@@ -6,6 +6,7 @@
 import type { Job } from '../rb/jobs-store.svelte';
 import { isFatalBlocker, type RekordboxDetection } from './setup-api';
 import { folderAdvanceRefusal, type FolderRow } from './folder-rows';
+import { humanAdvanceRefusal } from './present';
 
 export const WIZARD_STEPS = [
 	'welcome',
@@ -37,7 +38,8 @@ export type ImportSourceSelection = ImportSource | null;
 /** The job kind the import runs as. Mirrors SETUP_IMPORT_KIND. */
 export const SETUP_IMPORT_KIND = 'setup.import-rekordbox';
 
-const TERMINAL = ['succeeded', 'failed', 'cancelled', 'unknown'];
+/** Job states after which nothing more will happen to the row. */
+export const TERMINAL = ['succeeded', 'failed', 'cancelled', 'unknown'];
 
 // ------------------------------------------------------------- pure rules
 
@@ -181,6 +183,12 @@ export function advanceRefusal(step: WizardStep, ctx: AdvanceContext): string | 
 	return null;
 }
 
+/** Operator-safe refusal copy for the current step. The raw advanceRefusal()
+ * sentence still gates the button and rides on data-agent-refusal. */
+export function humanRefusal(step: WizardStep, ctx: AdvanceContext): string | null {
+	return humanAdvanceRefusal(step, ctx, advanceRefusal(step, ctx));
+}
+
 /** Percent for a progress bar, clamped. Mirrors progressPct in jobs-store, but
  * this module must not import a UI helper from another surface just for one
  * arithmetic line. */
@@ -188,4 +196,3 @@ export function importPct(job: Job | null): number {
 	if (job === null) return 0;
 	return Math.max(0, Math.min(100, Math.round(job.progress * 100)));
 }
-

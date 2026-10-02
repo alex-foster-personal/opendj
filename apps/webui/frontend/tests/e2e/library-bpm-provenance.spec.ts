@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// requirement: LIBUX-31
+// requirement: LIBUX-34
 // [if] All Tracks lists a row whose BPM has beatgrid provenance [then] its BPM
 // hover names the method, exactly as a playlist row does [else stop].
 // Mac check on PR #4014 (Fri 2 Oct 2026): GET /api/v1/tracks dropped

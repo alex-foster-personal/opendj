@@ -34,8 +34,11 @@ Performance surface (`.perf-root`, dark):
 - `--rb-text: #c8cdd2` primary, `--rb-text-dim: #838990` secondary (measured 4.5:1 on raised panels)
 - `--rb-accent: #2f6fd6` active blue for toggles, faders, lit buttons; `--rb-accent-glow` its glow
 - `--rb-green: #35c04f` loaded-track rows and loop-out chip
-- `--rb-orange: #e8a13a` waveform lows, looped fader line
-- `--rb-wave-mid: #3d7dd9`, `--rb-wave-high: #cfe0f2` waveform mids and highs
+- `--rb-orange: #e8a13a` loop cues, looped fader line, warnings
+- `--rb-wave-low: #2767d8`, `--rb-wave-mid: #f0a020`, `--rb-wave-high: #f4f6f8` waveform bands,
+  rekordbox/CDJ 3Band (dark blue low, amber mid, white high); `--rb-wave-mono: #3d7dd9` mono/line
+  designs. `<html data-wave-palette="legacy">` restores the pre-#4219 orange low, blue mid,
+  near-white high.
 - `--rb-red: #d0342c` cue markers, position tick, off-tempo tint
 - `--rb-yellow: #e5c33a` license badge; master-deck gold is `#c9b35a` on `#1a1608`
 - `--rb-select: #1d3f73` selected row

@@ -1,4 +1,4 @@
-"""LIBUX-31: All Tracks rows carry the same BPM provenance as playlist rows.
+"""LIBUX-34: All Tracks rows carry the same BPM provenance as playlist rows.
 
 [if] a track has BPM provenance [then] GET /api/v1/tracks serves its method and confidence, [else stop].
 
@@ -25,7 +25,7 @@ from apps.webui.server import rb_vendor
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 
-pytestmark = pytest.mark.requirement("LIBUX-31")
+pytestmark = pytest.mark.requirement("LIBUX-34")
 
 STABLE_ID = "c" * 40
 STAMP = "2026-10-02T00:00:00Z"

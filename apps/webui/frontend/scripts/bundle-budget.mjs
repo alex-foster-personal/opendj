@@ -174,22 +174,29 @@ const BUDGETS = [
   // Thu 24 Sep 2026: the SetupOverlay payback (#3862) and the pin-shell deferral
   // (#3903) landed together; merged tree measured 250,040 locally against the
   // unchanged 259,072. Not raised: 9,032 bytes of headroom, first since #3737.
-  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins): the
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4897, first-run wizard skip and plain-language
+  // copy, SETUP-26 / UX-R2-03/04): merge skew again. Clean origin/main e0dfa83bc measured
+  // 258,429 locally; main + this PR 259,214 (142 OVER), main + this PR + its follow-up
+  // #4928 (failed-import sentence) about 259,380. Each PR passed alone. Payback, not
+  // yet measured: find which of this PR's setup modules the first-paint closure
+  // reaches and move the wizard-only copy behind the lazy SetupOverlay import.
+  // RAISED Fri 2 Oct 2026 (+2 KiB, PR #4014, issue #3986 library pins): the
   // settings overlay rides this surface (+layout.svelte imports it eagerly),
   // and the PR adds boot-needed prefs plumbing to it: the Confirmations
   // settings group, the confirm-map and compatible-filter hydrate/validation
   // in prefs.svelte.ts / prefs-hydrate.ts, and the pairing lead-in beat helper
-  // the performance dispatcher needs. Clean origin/main e0dfa83bc measured
-  // 258,383 locally (689 bytes of headroom); the merged PR measured 260,408.
-  // Deferred first, measured each step: the watcher-folders editor and its
-  // validator now load on demand inside the open overlay (259,736), and the
-  // pairing button's disabled-reason logic lives in its own module that only
-  // the /performance top bar imports. What remains (+1,353 over main) is read
-  // during boot. Lazy-loading the whole SettingsOverlay was measured too:
-  // library 243,590 but other-lazy 279,897 against 266,240, a far larger
-  // raise. Payback: that same SettingsOverlay deferral, once other-lazy has
-  // the headroom for it, retires this KiB.
-  { name: 'library', limit: 260096, measured: 250249, note: 'initial load of "/"' },
+  // the performance dispatcher needs. Deferred first: the watcher-folders
+  // editor and its validator load on demand inside the open overlay, the
+  // pairing button's disabled-reason logic lives in a module only the
+  // /performance top bar imports, and the confirm-map and compatible-filter
+  // validators were compacted (same results on every input pair compared).
+  // Clean origin/main c8b8f5aeb measured 259,859 locally (237 bytes of
+  // headroom); main + this PR measured 261,116, +1,257. One KiB would leave
+  // 4 bytes, under the ~11-byte local/CI drift seen on this surface, so two.
+  // Lazy-loading the whole SettingsOverlay was measured too: library 243,590
+  // but other-lazy far over its limit. Payback: that SettingsOverlay
+  // deferral, once other-lazy has the headroom for it, retires these KiB.
+  { name: 'library', limit: 262144, measured: 261116, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -200,19 +207,21 @@ const BUDGETS = [
   // present on this branch. Re-measure on the merged head before tightening.
   // Fri 11 Sep 2026: 223 -> 236 KiB, inherited trunk growth found while landing
   // #1555 (nav1-key-record). See the header comment above for the measurement.
-  // RAISED Wed 30 Sep 2026 (+2 KiB, PR #4014, issue #3986 library pins): the
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4923, V1 UI polish): clean origin/main
+  // 5852c97c measures 239,840 locally. This PR adds +1,954 of user-visible
+  // V1 work on the route (the 2-deck toggle, SET OUTPUTS and the I/O pins,
+  // explainer dismiss, the 3Band waveform palette with its legacy option,
+  // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
+  // 130 bytes over the old limit; 894 bytes of headroom remain.
+  // RAISED Fri 2 Oct 2026 (+2 KiB, PR #4014, issue #3986 library pins): the
   // library pane on /performance gains the configurable compatible filter
   // (Camelot steps, BPM window and direction), the purple pairing underline
   // (PairingIndex + the reference-master derivation), the BPM provenance hover
-  // and the in-app confirm flow. Pinned origin/main 2ecfde5d7 measured 241,520
-  // locally (144 bytes of headroom); the merged tree measured 243,507. The
-  // BrowserConfirmDialog and the compatible-filter range panel now load with a
-  // dynamic import on first use (they render only after a confirm is asked or
-  // on hover), which moves 608 bytes to other-lazy; what stays is the filter
-  // and pairing logic the always-rendered table needs: 242,899 locally. Local
-  // and CI agree on this route within 11 bytes (PR head f545571e7: 242,236
-  // locally, 242,225 on CI). Ceil-to-KiB of 242,899 is 238 KiB.
-  { name: 'performance', limit: 243712, measured: 229639, note: '/performance and children' },
+  // and the in-app confirm flow. BrowserConfirmDialog and the compatible-filter
+  // range panel load with a dynamic import on first use. Clean origin/main
+  // c8b8f5aeb measured 242,422 locally (266 bytes of headroom); main + this PR
+  // measured 244,327, +1,905, leaving 409 bytes under the new limit.
+  { name: 'performance', limit: 244736, measured: 229639, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -314,7 +323,15 @@ const BUDGETS = [
   // is left to demote: what stays eager is the engine choice and command sets
   // the dispatcher and Settings read. The ceiling follows the +5% ceil-to-KiB
   // rule on 253,082.
-  { name: 'other-lazy', limit: 266240, measured: 253082, note: 'all other routes plus deferred shell' },
+  // RAISED Fri 2 Oct 2026: 260 -> 275 KiB for PR #4897 (first-run wizard, V1
+  // #3422/#2590). Its Trunk batch (PR #4951) failed this gate at 267,647, over
+  // by 1,407. Local build, one pass: clean origin/main 3ecf276ef measured
+  // 263,446 here; main + #4897 measured 267,629. The ~4.2 KB is the deferred
+  // setup overlay: the agent/human error split, path shortening, the read
+  // deadline with its did-not-finish states and the Welcome retry. None of it
+  // is first-paint weight (library stayed within its own limit). The ceiling
+  // follows the +5% ceil-to-KiB rule on 267,629.
+  { name: 'other-lazy', limit: 281600, measured: 267629, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---

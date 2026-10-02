@@ -869,7 +869,7 @@ jobs:
       # The onboarding gauntlet (SETUP-21..23, specs/onboarding-gauntlet.md):
       # every test boots its own brand-new PACKAGED engine on an OS-assigned
       # port against the production artifact, so it pins no port and needs no
-      # host lock. Known open bugs (#3422) are test.fail, so a fix flips the
+      # host lock. Known open bugs are test.fail, so a fix flips the
       # case red until its marker is removed, never silently green.
       - name: Onboarding gauntlet (packaged engine, production build)
         working-directory: apps/webui/frontend
