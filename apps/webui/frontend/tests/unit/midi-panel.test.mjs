@@ -71,6 +71,21 @@ function _uninstallLocalStorage() {
 	delete globalThis.localStorage;
 }
 
+/** Run fn with a WebMIDI whose request is denied (Node has none of its own). */
+async function _withDenyingWebMidi(fn) {
+	const desc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		value: { requestMIDIAccess: () => Promise.reject(new Error('denied')) }
+	});
+	try {
+		await fn();
+	} finally {
+		if (desc) Object.defineProperty(globalThis, 'navigator', desc);
+		else delete globalThis.navigator;
+	}
+}
+
 after(async () => {
 	uiState?.detachMidiGlueForRouteUnmount();
 	await vite.close();
@@ -248,6 +263,23 @@ test('requestMidiAccess on a WebMIDI-less runtime fails LOUDLY into lastError', 
 	assert.match(uiState.midiUi.lastError, /not supported/i);
 });
 
+test('CTRL-06: a runtime with no MIDI keeps the shared opt-in on failure and on boot', async () => {
+	// Node has neither navigator.requestMIDIAccess nor the Tauri bridge.
+	assert.equal(uiState.midiRuntimeAvailable(), false);
+	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
+	try {
+		await uiState.requestMidiAccess();
+		assert.match(uiState.midiUi.lastError, /not supported/i);
+		assert.equal(enabledChoice.midiEnabledPersisted(), true, 'unsupported keeps the opt-in');
+		uiState.midiUi.lastError = null;
+		await uiState.maybeAutoEnableMidi();
+		assert.equal(uiState.midiUi.lastError, null, 'boot must not request MIDI where none exists');
+		assert.equal(enabledChoice.midiEnabledPersisted(), true);
+	} finally {
+		_uninstallLocalStorage();
+	}
+});
+
 test('requestMidiAccess throws on a concurrent second call', async () => {
 	uiState.midiUi.requestPending = true; // simulate in-flight prompt
 	await assert.rejects(() => uiState.requestMidiAccess(), /already pending/);
@@ -287,11 +319,12 @@ test('midiEnabledPersisted is false (no throw) when localStorage is absent', () 
 });
 
 test('a failed requestMidiAccess clears the persisted enabled flag (no reload nag)', async () => {
-	// Simulate "user enabled MIDI before", then a reload where access fails
-	// (Node has no WebMIDI): the choice must be forgotten so we do not re-nag.
+	// Simulate "user enabled MIDI before", then a reload where WebMIDI denies
+	// access: the choice must be forgotten so we do not re-nag (CTRL-06 control:
+	// a runtime that HAS MIDI still clears it).
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	assert.equal(uiState.midiEnabledPersisted(), true);
-	await uiState.requestMidiAccess();
+	await _withDenyingWebMidi(() => uiState.requestMidiAccess());
 	assert.notEqual(uiState.midiUi.lastError, null); // failed loudly
 	assert.equal(uiState.midiEnabledPersisted(), false); // and forgot the choice
 	_uninstallLocalStorage();
@@ -307,11 +340,11 @@ test('maybeAutoEnableMidi is a no-op when the user never opted in', async () => 
 });
 
 test('maybeAutoEnableMidi re-runs the request when the choice was persisted', async () => {
-	// Persisted opt-in -> auto path calls requestMidiAccess, which fails loudly
-	// in Node (no WebMIDI) and clears the flag: proves the wire actually fired.
+	// Persisted opt-in -> auto path calls requestMidiAccess, which the stub
+	// WebMIDI denies, clearing the flag: proves the wire actually fired.
 	_installLocalStorage({ [enabledChoice.MIDI_ENABLED_KEY]: '1' });
 	uiState.midiUi.lastError = null;
-	await uiState.maybeAutoEnableMidi();
+	await _withDenyingWebMidi(() => uiState.maybeAutoEnableMidi());
 	assert.notEqual(uiState.midiUi.lastError, null);
 	assert.equal(uiState.midiEnabledPersisted(), false);
 	_uninstallLocalStorage();

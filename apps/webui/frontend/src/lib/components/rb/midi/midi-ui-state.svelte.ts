@@ -49,6 +49,17 @@ import {
 
 export { midiEnabledPersisted };
 
+/** True when this window can reach MIDI at all: WebMIDI (Chrome/Edge) or the
+ * installed macOS app's native CoreMIDI bridge. Mirrors initMidi()'s own
+ * transport choice in webmidi.svelte.ts without loading the MIDI engine. */
+export function midiRuntimeAvailable(): boolean {
+	if (typeof navigator !== 'undefined' && navigator.requestMIDIAccess !== undefined) return true;
+	return (
+		typeof window !== 'undefined' &&
+		typeof (globalThis as Record<string, unknown>)['__TAURI_INTERNALS__'] === 'object'
+	);
+}
+
 // The MIDI engine (device-map registry, action glue, takeover policy, installed
 // maps) is fetched on demand, not on first paint: nothing in it can act until
 // requestMidiAccess() has granted access, and most boots never connect a
@@ -189,6 +200,10 @@ export function setMidiEnabledChoice(enabled: boolean): void {
  * choice was never made or a request is already in flight. */
 export async function maybeAutoEnableMidi(): Promise<void> {
 	if (!midiEnabledPersisted()) return;
+	// CTRL-06: a window with neither WebMIDI nor the macOS app's native bridge
+	// (Safari) has no MIDI to ask for. Requesting would only fail and clear the
+	// on-disk opt-in that a Chrome tab on this machine shares.
+	if (!midiRuntimeAvailable()) return;
 	if (midiUi.requestPending) return;
 	await requestMidiAccess();
 }
@@ -306,7 +321,11 @@ async function _requestMidiAccess(generation: number): Promise<void> {
 		// (the user re-opts-in from the panel when ready). Fail-fast, no retry.
 		// A superseded request leaves the choice alone: the user has already
 		// set it since, and a re-enable must not be clobbered by a stale failure.
-		if (generation === _requestGeneration) setMidiEnabledChoice(false);
+		// Unsupported (CTRL-06) keeps it too: this window cannot answer for the
+		// Chrome tab that shares the on-disk choice.
+		if (generation === _requestGeneration && midiRuntimeAvailable()) {
+			setMidiEnabledChoice(false);
+		}
 	} finally {
 		midiUi.requestPending = false;
 	}
