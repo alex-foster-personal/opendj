@@ -52,6 +52,7 @@
 			type: 'pairing_snapshot_save', from_deck: selected[0], to_deck: selected[1]
 		});
 		open = false;
+		pushToast('Pairing saved', 'info');
 	}
 
 	interface LoadedPair {

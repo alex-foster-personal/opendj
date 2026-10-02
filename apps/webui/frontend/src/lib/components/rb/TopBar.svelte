@@ -1134,8 +1134,22 @@
 	   asserts it visible, labelled and hittable at 800x600. */
 
 	@media (max-width: 1740px) {
-		.rb-topbar .topbar-slot-pairing,
 		.rb-topbar .topbar-slot-vibe { display: none; }
+		/* Create pairing is the ONLY door to the pairing capture sheet, not
+		   read-only status, so it shrinks to a PAIR label (same idiom as STG,
+		   BSM and AP) instead of leaving with the vibe meter. Hiding it here
+		   hid it on every Mac laptop window (1470-1728px). Measured Fri 2 Oct
+		   2026 (playwright, chromium, fixture library, 10px sweep 780-1780px
+		   plus 2px across 1100-1260px): 34px wide, no row overflow at any
+		   width, and the command input stays hittable everywhere except
+		   1126-1136px, which the tier below covers. */
+		.rb-topbar .topbar-slot-pairing { font-size: 0; }
+		.rb-topbar .topbar-slot-pairing::after { content: 'PAIR'; font-size: 9px; }
+	}
+	@media (max-width: 1160px) {
+		/* 1136px (the last width where PAIR crushed the command input) + the
+		   same 25px margin the other tiers use. */
+		.rb-topbar .topbar-slot-pairing { display: none; }
 	}
 
 	.ap-wrap {

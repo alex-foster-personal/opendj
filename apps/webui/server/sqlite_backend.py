@@ -18,12 +18,13 @@ in ``track_fields`` with provenance (``source='webui'``,
 edits survive a daemon restart. There is NO in-memory fallback on this
 path: writer/lock failures raise.
 
-Phase 5 does NOT (yet) model:
+Pairings read and write the durable ``pairings`` table owned by
+:mod:`apps.shared.pairings` (the rows the ``apps.pairings`` CLI and the
+suggester's stage-2 rerank read), so a pairing saved in the UI survives a
+restart.
 
-  * the webui ``pairings`` entity,
-  * the triage ``queues`` (dedup / bad_beatgrid / auto_cue).
-
-For those methods we delegate to an :class:`InMemoryBackend` companion and
+Phase 5 does NOT (yet) model the triage ``queues`` (dedup / bad_beatgrid /
+auto_cue). For those methods we delegate to an :class:`InMemoryBackend` companion and
 log a one-shot warning per process so deployments know they are on the
 fallback path. When Phase 6/7/12 ship the missing tables, individual
 methods here should switch to real SQL without the fallback.
@@ -37,6 +38,7 @@ projection, the same etag is re-derived after restart.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -48,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis.selection import EffectiveField
+from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.state import db as _state_db
 from apps.shared.state import queries as _state_queries
 from apps.shared.state import schema as _state_schema
@@ -259,6 +262,52 @@ def _effective_updated_at(
         if dt > best_dt:
             best, best_dt = view.modified_at, dt
     return best
+
+
+# The wire speaks "->" (from flows into to) and "<->" (either way); the
+# durable pairings table (apps.shared.pairings) speaks into/out_of/either.
+_WIRE_TO_DB_DIRECTION: dict[str, str] = {"->": "into", "<->": "either"}
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _pairing_id(from_id: str, to_id: str, direction: str) -> str:
+    """Stable id for one stored edge, derived from its primary key.
+
+    The table predates the wire's ``pairing_id`` and the CLI writes rows
+    without one, so the id is a pure function of the key: the same edge has
+    the same id in every process and after every restart.
+    """
+    digest = hashlib.sha1(
+        f"{from_id}\x1f{to_id}\x1f{direction}".encode()
+    ).hexdigest()
+    return f"pair-{digest[:24]}"
+
+
+def _row_to_pairing(row: tuple[Any, ...]) -> Pairing:
+    """Map a stored pairings row onto the wire's :class:`Pairing`.
+
+    An ``out_of`` edge (CLI only) reads as its reverse ``->`` so every
+    pairing the UI shows points the way the mix runs.
+    """
+    from_id, to_id, direction, source, notes = row[0], row[1], row[2], row[3], row[4]
+    snapshot = None if row[7] is None else json.loads(row[7])
+    pairing_id = _pairing_id(from_id, to_id, direction)
+    if direction == "out_of":
+        from_id, to_id = to_id, from_id
+    return Pairing(
+        pairing_id=pairing_id,
+        from_stable_id=from_id,
+        to_stable_id=to_id,
+        direction="<->" if direction == "either" else "->",
+        source=source,
+        notes=notes,
+        snapshot=snapshot,
+        created_at=row[5],
+        updated_at=row[6],
+    )
 
 
 def _row_to_track(
@@ -473,7 +522,7 @@ class SqliteBackend:
     :class:`apps.shared.state.writer.StateWriter` (see module docstring).
     The constructor takes the path to ``state.db`` and a companion
     :class:`InMemoryBackend` used only for entities Phase 5 does not yet
-    model (``pairings``, queues).
+    model (the triage queues).
 
     The companion can be pre-seeded in tests to exercise fallback paths.
     """
@@ -784,14 +833,29 @@ class SqliteBackend:
         self, *, from_stable_id: str | None = None,
         to_stable_id: str | None = None, source: str | None = None,
     ) -> list[Pairing]:
-        # Phase 5 does not ship a pairings table yet.
-        _warn_fallback_once(
-            "list_pairings", "no pairings table in Phase 5 state.db",
-        )
-        return self._fallback.list_pairings(
-            from_stable_id=from_stable_id,
-            to_stable_id=to_stable_id, source=source,
-        )
+        with self._ro() as conn:
+            if not self._table_exists(conn, "pairings"):
+                return []
+            columns = {
+                col[1] for col in conn.execute("PRAGMA table_info(pairings)")
+            }
+            snapshot_col = (
+                "snapshot_json" if "snapshot_json" in columns else "NULL"
+            )
+            rows = conn.execute(
+                "SELECT from_stable_id, to_stable_id, direction, source, "
+                f"notes, created_at, modified_at, {snapshot_col} "
+                "FROM pairings"
+            ).fetchall()
+        out = [_row_to_pairing(tuple(row)) for row in rows]
+        if from_stable_id:
+            out = [p for p in out if p.from_stable_id == from_stable_id]
+        if to_stable_id:
+            out = [p for p in out if p.to_stable_id == to_stable_id]
+        if source:
+            out = [p for p in out if p.source == source]
+        out.sort(key=lambda p: p.created_at)
+        return out
 
     def get_queue(
         self, kind: QueueKind,
@@ -818,11 +882,13 @@ class SqliteBackend:
                 ).fetchone()[0]
             else:
                 _warn_fallback_once("stats:playlists", "no playlists table")
-        # pairings always from fallback (no Phase 5 table).
-        fb = self._fallback.stats()
+            pairings = 0
+            if self._table_exists(conn, "pairings"):
+                pairings = conn.execute(
+                    "SELECT COUNT(*) FROM pairings"
+                ).fetchone()[0]
         return {
-            "tracks": tracks, "playlists": playlists,
-            "pairings": fb.get("pairings", 0),
+            "tracks": tracks, "playlists": playlists, "pairings": pairings,
         }
 
     # --- writes -----------------------------------------------------------
@@ -1038,19 +1104,113 @@ class SqliteBackend:
                 self._sqlite_last_writer = (source, now)
             return len(updates)
 
+    @contextmanager
+    def _pairings_rw(self) -> Iterator[sqlite3.Connection]:
+        """One serialized write transaction over the durable pairings table.
+
+        The table belongs to :mod:`apps.shared.pairings` (the same rows the
+        ``apps.pairings`` CLI and the suggester's stage-2 rerank read), so its
+        own idempotent DDL creates or upgrades it before the write.
+        """
+        with self._write_lock:
+            conn = _state_db.open_rw(self._path)
+            try:
+                ensure_phase08_tables(conn)
+                conn.execute("BEGIN IMMEDIATE")
+                yield conn
+                conn.execute("COMMIT")
+            except Exception:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+            finally:
+                conn.close()
+
     def create_pairing(self, pairing: Pairing) -> Pairing:
-        _warn_fallback_once(
-            "create_pairing", "no pairings table in Phase 5 state.db",
+        """Persist ``pairing``; a repeat of the same edge merges into it.
+
+        Same contract as :meth:`InMemoryBackend.create_pairing`: new notes
+        append to the existing ones, and a snapshot is write-once (an edge
+        with none accepts the incoming capture, an edge with one keeps it).
+        """
+        direction = _WIRE_TO_DB_DIRECTION[pairing.direction]
+        key = (pairing.from_stable_id, pairing.to_stable_id, direction)
+        if pairing.from_stable_id == pairing.to_stable_id:
+            raise ValueError("a pairing needs two different tracks")
+        snapshot_json = (
+            None if pairing.snapshot is None
+            else json.dumps(pairing.snapshot, sort_keys=True)
         )
-        return self._fallback.create_pairing(pairing)
+        with self._pairings_rw() as conn:
+            row = conn.execute(
+                "SELECT notes, snapshot_json FROM pairings "
+                "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+                key,
+            ).fetchone()
+            now = _utcnow_iso()
+            if row is None:
+                conn.execute(
+                    "INSERT INTO pairings (from_stable_id, to_stable_id, "
+                    "direction, source, notes, confidence, created_at, "
+                    "modified_at, snapshot_json) "
+                    "VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                    (*key, pairing.source, pairing.notes,
+                     pairing.created_at, pairing.updated_at, snapshot_json),
+                )
+                self._sqlite_last_writer = (pairing.source, pairing.created_at)
+            else:
+                existing_notes, existing_snapshot = row[0], row[1]
+                notes = existing_notes
+                if pairing.notes and pairing.notes != existing_notes:
+                    notes = f"{existing_notes or ''}\n{pairing.notes}".strip()
+                snapshot = (
+                    existing_snapshot if existing_snapshot is not None
+                    else snapshot_json
+                )
+                if notes != existing_notes or snapshot != existing_snapshot:
+                    conn.execute(
+                        "UPDATE pairings SET notes=?, snapshot_json=?, "
+                        "modified_at=? WHERE from_stable_id=? "
+                        "AND to_stable_id=? AND direction=?",
+                        (notes, snapshot, now, *key),
+                    )
+                    self._sqlite_last_writer = (pairing.source, now)
+            stored = conn.execute(
+                "SELECT from_stable_id, to_stable_id, direction, source, "
+                "notes, created_at, modified_at, snapshot_json FROM pairings "
+                "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+                key,
+            ).fetchone()
+        return _row_to_pairing(tuple(stored))
 
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
-        _warn_fallback_once(
-            "delete_pairing", "no pairings table in Phase 5 state.db",
-        )
-        self._fallback.delete_pairing(
-            pairing_id, expected_etag=expected_etag,
-        )
+        from .etag import compute_etag, strip_quotes
+        with self._pairings_rw() as conn:
+            rows = conn.execute(
+                "SELECT from_stable_id, to_stable_id, direction, source, "
+                "notes, created_at, modified_at, snapshot_json FROM pairings"
+            ).fetchall()
+            match = None
+            for row in rows:
+                if _pairing_id(row[0], row[1], row[2]) == pairing_id:
+                    match = row
+                    break
+            if match is None:
+                raise NotFoundError(f"pairing not found: {pairing_id}")
+            existing = _row_to_pairing(tuple(match))
+            current = compute_etag(existing.pairing_id, existing.updated_at)
+            if strip_quotes(current) != strip_quotes(expected_etag):
+                raise ConflictError(
+                    current={"pairing_id": existing.pairing_id,
+                             "updated_at": existing.updated_at},
+                    etag=current,
+                )
+            conn.execute(
+                "DELETE FROM pairings WHERE from_stable_id=? "
+                "AND to_stable_id=? AND direction=?",
+                (match[0], match[1], match[2]),
+            )
+            self._sqlite_last_writer = ("webui", _utcnow_iso())
 
     def last_writer(self) -> tuple[str, str] | None:
         if self._sqlite_last_writer is not None:

@@ -35,6 +35,7 @@ _PAIRINGS_DDL: tuple[str, ...] = (
                                    (confidence BETWEEN 0 AND 1)),
         created_at     TEXT NOT NULL,
         modified_at    TEXT NOT NULL,
+        snapshot_json  TEXT,
         PRIMARY KEY (from_stable_id, to_stable_id, direction)
     )
     """,
@@ -79,6 +80,26 @@ def migrate_smartlists_deleted_at(conn: sqlite3.Connection) -> None:
     if "deleted_at" in columns:
         return
     conn.execute("ALTER TABLE smartlists ADD COLUMN deleted_at TEXT")
+
+
+def migrate_pairings_snapshot_json(conn: sqlite3.Connection) -> None:
+    """Add ``snapshot_json`` to an existing pairings table when missing.
+
+    The Create pairing sheet captures both decks' positions and EQ at the
+    moment the DJ saves a pairing. Before this column the webui kept those
+    pairings in process memory only, so they vanished on restart.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pairings'"
+    ).fetchone()
+    if row is None:
+        return
+    columns = {
+        col[1] for col in conn.execute("PRAGMA table_info(pairings)")
+    }
+    if "snapshot_json" in columns:
+        return
+    conn.execute("ALTER TABLE pairings ADD COLUMN snapshot_json TEXT")
 
 _PAIRING_CAPTURE_V1: tuple[str, ...] = (
     """
@@ -158,6 +179,7 @@ def ensure_phase08_tables(conn: sqlite3.Connection) -> None:
         for stmt in _SMARTLISTS_DDL:
             conn.execute(stmt)
         migrate_smartlists_deleted_at(conn)
+        migrate_pairings_snapshot_json(conn)
         if not in_transaction:
             conn.execute("COMMIT")
     except Exception:
