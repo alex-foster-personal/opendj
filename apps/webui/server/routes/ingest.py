@@ -66,6 +66,7 @@ from apps.shared.events import publish
 from apps.shared.paths import AUDIO_EXTENSIONS, INGEST_INBOX, STATE_DB
 from apps.shared.state.db import open_ro
 from apps.stems.artifacts import DEFAULT_STEMS_DIR, stem_roots
+from apps.webui.server.routes import ingest_coverage
 from apps.webui.server.routes.ingest_analysis_argv import CliFailed, build_analysis_argv
 from apps.webui.server.routes.ingest_job import (
     _JOBS,
@@ -83,7 +84,6 @@ from apps.webui.server.routes.ingest_job import (
 )
 from apps.webui.server.routes.ingest_scope import RefreshIn, resolve_scope, unmapped_steps
 from apps.webui.server.routes.ingest_track import select_track_target
-from apps.webui.soft_deletes import has_soft_deletes
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -110,6 +110,8 @@ LOG_TAIL_LINES: int = 200
 CONFIG_PATH: Path = STATE_DB.parent / "ingest-config.json"
 VOCAL_CACHE_DIR: Path = STATE_DB.parent / "vocal-cache"
 LYRICS_CACHE_DIR: Path = STATE_DB.parent / "lyrics-cache"
+#: Data dir the lyrics-fetch verdicts and the coverage outcome ledger live under.
+COVERAGE_DATA_DIR: Path = STATE_DB.parent.parent
 DUP_DURATION_TOLERANCE_MS: int = 1_500
 DUP_FP_THRESHOLD: float = 0.92          # matches apps.dedup.find_clusters
 DUP_MAX_FP_CANDIDATES: int = 5          # fingerprinting candidates is O(seconds) each
@@ -204,44 +206,45 @@ def put_config(body: ConfigIn) -> ConfigOut:
 
 # ----- coverage -------------------------------------------------------------
 class CoverageOut(BaseModel):
+    """Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.
+
+    ``on_disk`` is the denominator (``availability.present``). Per step,
+    ``done + terminal + failed + pending == on_disk``. ``missing`` and
+    ``corrupt`` keep their artifact meaning for the refresh job's targeting:
+    ``corrupt`` (structurally invalid entries) is a subset of ``missing``.
+    """
+
     total_tracks: int
     on_disk: int
     unreachable: int
     missing: dict[str, int]
-    #: Per-step count of entries that exist but are STRUCTURALLY INVALID
-    #: (malformed JSON, missing/invalid fields, identity mismatch) -- a
-    #: subset of ``missing``, never the other way round. Distinct from an
-    #: ordinary "not yet run" or "stale, needs re-run" verdict (a stale
-    #: vocal-cache entry whose audio_signature no longer matches is
-    #: legitimately missing, not corrupt) so a malformed write cannot hide
-    #: behind a quiet "incomplete" dot. lyrics/vocals/stems populate this;
-    #: analysis reports 0 (not yet distinguished for that step).
     corrupt: dict[str, int]
+    availability: dict[str, int]
+    done: dict[str, int]
+    terminal: dict[str, int]
+    failed: dict[str, int]
+    pending: dict[str, int]
+    waiting_on_stems: int
+    stems_source_refusal: str | None
     generated_at: float
+
+
+def build_snapshot(app: FastAPI) -> ingest_coverage.CoverageSnapshot:
+    """The one coverage measurement, shared by the route and the auto-drain."""
+    refusal_fn = getattr(
+        app.state, "stems_source_refusal_fn", ingest_coverage.default_stems_source_refusal
+    )
+    return ingest_coverage.compute_snapshot(
+        open_ro, _stem_roots(app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR, COVERAGE_DATA_DIR,
+        stems_source_refusal=refusal_fn(),
+    )
 
 
 @router.get("/coverage", response_model=CoverageOut)
 def get_coverage(request: Request) -> CoverageOut:
-    on_disk, unreachable = tracks_on_disk(open_ro)
-    missing, corrupt = missing_by_step(
-        on_disk, open_ro, _stem_roots(request.app), VOCAL_CACHE_DIR, LYRICS_CACHE_DIR
-    )
-    conn = open_ro()
-    try:
-        if has_soft_deletes(conn, "tracks"):
-            total_sql = "SELECT count(*) FROM tracks WHERE deleted_at IS NULL"
-        else:
-            total_sql = "SELECT count(*) FROM tracks"
-        total = conn.execute(total_sql).fetchone()[0]
-    finally:
-        conn.close()
+    snapshot = build_snapshot(request.app)
     return CoverageOut(
-        total_tracks=total,
-        on_disk=len(on_disk),
-        unreachable=unreachable,
-        missing={k: len(v) for k, v in missing.items()},
-        corrupt={k: len(v) for k, v in corrupt.items()},
-        generated_at=time.time(),
+        total_tracks=snapshot.playability.total, **ingest_coverage.response_fields(snapshot)
     )
 
 
