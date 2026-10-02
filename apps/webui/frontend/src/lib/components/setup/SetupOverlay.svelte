@@ -86,6 +86,7 @@
 	} from '$lib/setup/present';
 	import {
 		STEP_TITLES,
+		TERMINAL,
 		advanceRefusal,
 		backRefusal,
 		fatalBlockers,
@@ -133,12 +134,22 @@
 	const fatal = $derived(fatalBlockers(detection));
 	const source = $derived(setupWizard.source);
 	const folderRows = $derived(setupWizard.folderRows);
+	/** Everything the Next rules read. The status-refresh fields hold Continue
+	 * on the progress step until Done can show the import that just ran
+	 * (#3422). */
+	const advanceCtx = $derived({
+		source,
+		detection,
+		folderRows,
+		job,
+		statusRefreshJobId: setupWizard.statusRefreshJobId,
+		busy: setupWizard.busy,
+		statusRefreshError: setupWizard.statusRefreshError
+	});
 	/** Raw refusal: gates the button and rides on data-agent-refusal. */
-	const nextRefusalAgent = $derived(
-		advanceRefusal(step, { source, detection, folderRows, job })
-	);
+	const nextRefusalAgent = $derived(advanceRefusal(step, advanceCtx));
 	/** Operator-safe sentence for the same refusal, the only one rendered. */
-	const nextRefusal = $derived(humanRefusal(step, { source, detection, folderRows, job }));
+	const nextRefusal = $derived(humanRefusal(step, advanceCtx));
 	/** Why Back is refused here, or null. Same function that gates the button,
 	 * so the tooltip and the disabled state can never disagree. */
 	const backWhy = $derived(backRefusal(step, { source, detection, folderRows, job }));
@@ -153,9 +164,7 @@
 	const pct = $derived(importPct(job));
 	const stageLabels = $derived(source === 'folder' ? FOLDER_STAGE_LABELS : STAGE_LABELS);
 	const stageNames = $derived((source === 'folder' ? status?.folder_stages : status?.stages) ?? []);
-	const phase = $derived(
-		detectPhase(detection, detectState === 'scanning', detectState === 'failed')
-	);
+	const phase = $derived(detectPhase(detection, detectState));
 	const rows = $derived(detection === null ? [] : probeRows(detection));
 	/** Live while the panel is minimised, so the chip is never a lie. */
 	const importRunning = $derived(
@@ -272,13 +281,6 @@
 		void setupWizard.ensureLoaded();
 	});
 
-	/** Done reads `status.last_import`, and `status` was read when the overlay
-	 * opened, before the import ran. Hand the live row to the store, which
-	 * re-reads status once when this wizard's own job settles. */
-	$effect(() => {
-		void setupWizard.refreshStatusAfterImport(job);
-	});
-
 	/** The jobs store is the progress feed. Attached only while the overlay is
 	 * open and only when the daemon offers the jobs API, so a legacy boot
 	 * never opens a socket it cannot use. Attached for the whole overlay (not
@@ -290,9 +292,22 @@
 		return jobsStore.attach();
 	});
 
+	/** Re-read setup status once this wizard's import settles so Done (and
+	 * Welcome, after Back) shows the same last_import as GET
+	 * /api/v1/setup/status, not the snapshot from when the overlay opened
+	 * (issue #3422). Any terminal outcome: a failed import changes what the
+	 * engine has recorded too. The store reads once per job id. */
+	$effect(() => {
+		if (!setupOverlay.open) return;
+		if (job === null || !TERMINAL.includes(job.status)) return;
+		void setupWizard.refreshStatusAfterImport(job.id);
+	});
+
 	async function dismissAndClose(): Promise<void> {
 		// finish(), not skip(): it re-reads preflight before saying the close
-		// will stick. See the store for the reopen this prevents.
+		// will stick, and refuses with a visible reason when the engine still
+		// says the library needs setup. See the store for the reopen this
+		// prevents.
 		if (!(await setupWizard.finish())) return;
 		// Honest close: the library really is whatever was already in it, and
 		// the chip that replaces the panel says so rather than vanishing.
@@ -300,8 +315,20 @@
 	}
 
 	async function finish(): Promise<void> {
+		// Same door as Skip: dismiss, re-read preflight, close only when the
+		// fresh reading agrees (the stale-fail reopen of #3422).
 		if (!(await setupWizard.finish())) return;
 		closeSetupOverlay();
+	}
+
+	/** Progress Continue waits for the post-import status refresh. */
+	async function continueFromProgress(): Promise<void> {
+		if (job !== null && job.status === 'succeeded' && setupWizard.statusRefreshJobId !== job.id) {
+			await setupWizard.refreshStatusAfterImport(job.id);
+			if (setupWizard.error !== null) return;
+		}
+		if (nextRefusalAgent !== null || setupWizard.busy) return;
+		setupWizard.next();
 	}
 
 	function reopen(): void {
@@ -762,7 +789,7 @@
 							<h3>What is on this machine</h3>
 							{#if phase === 'scanning'}
 								<p class="scanning" role="status">{SCANNING_SENTENCE}</p>
-							{:else if phase === 'failed'}
+							{:else if detection === null}
 								<p class="muted" role="status" data-agent-detect-state="failed">
 									The search for your music did not finish. Look again, or import a
 									folder instead.
@@ -987,8 +1014,8 @@ message={job.message}
 								</button>
 								<button
 									type="button"
-									onclick={() => setupWizard.next()}
-									disabled={nextRefusalAgent !== null}
+									onclick={() => void continueFromProgress()}
+									disabled={nextRefusalAgent !== null || setupWizard.busy}
 									title={nextRefusal ?? 'Continue'}
 								>
 									Continue

@@ -343,13 +343,58 @@ test('progress refuses Next while the import is still live', () => {
 		mod.advanceRefusal('progress', { ...ctx, job: job({ status: 'failed' }) }),
 		/re-run it/
 	);
+	const succeeded = job({ status: 'succeeded', progress: 1 });
+	assert.match(
+		mod.advanceRefusal('progress', { ...ctx, job: succeeded, statusRefreshJobId: null }),
+		/still loading/
+	);
 	assert.equal(
 		mod.advanceRefusal('progress', {
 			...ctx,
-			job: job({ status: 'succeeded', progress: 1 })
+			job: succeeded,
+			statusRefreshJobId: succeeded.id
 		}),
 		null
 	);
+});
+
+test('progress surfaces a failed post-import status refresh', () => {
+	// [if] the post-import status refresh failed [then] Continue says so,
+	// [else stop].
+	const ctx = {
+		source: 'rekordbox',
+		detection: detection(),
+		folderRows: emptyFolderRows(),
+		job: job({ status: 'succeeded', progress: 1 }),
+		statusRefreshJobId: null,
+		statusRefreshError: 'state db is gone'
+	};
+	assert.match(mod.advanceRefusal('progress', ctx), /state db is gone/);
+});
+
+test('the operator copy for a pending status re-read never calls a finished import failed', () => {
+	// [if] the import succeeded and its status re-read is pending or failed
+	// [then] the operator reads that it finished, not "did not finish
+	// successfully", and the raw reason stays out of the copy, [else stop].
+	const succeeded = job({ status: 'succeeded', progress: 1 });
+	const ctx = {
+		source: 'folder',
+		detection: null,
+		folderRows: emptyFolderRows(),
+		job: succeeded,
+		statusRefreshJobId: null,
+		statusRefreshError: null
+	};
+	const loading = mod.humanRefusal('progress', ctx);
+	assert.match(loading, /import finished/i);
+	assert.doesNotMatch(loading, /did not finish/);
+	const failedRead = mod.humanRefusal('progress', { ...ctx, statusRefreshError: 'GET /api/v1/setup/status 500' });
+	assert.match(failedRead, /import finished/i);
+	assert.doesNotMatch(failedRead, /\/api\/v1|500/);
+	// control: a FAILED import still says it did not finish
+	assert.match(mod.humanRefusal('progress', { ...ctx, job: job({ status: 'failed' }) }), /did not finish/);
+	// control: once the re-read landed there is no refusal at all
+	assert.equal(mod.humanRefusal('progress', { ...ctx, statusRefreshJobId: succeeded.id }), null);
 });
 
 test('importPct clamps and rounds rather than trusting the row', () => {
@@ -418,6 +463,66 @@ test('a failed load records the server message and KEEPS what was on screen', as
 	assert.equal(wizard.error, 'state db is gone');
 	assert.equal(wizard.errorDiagnostic, 'state db is gone');
 	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+});
+
+test('refreshStatusAfterImport fills last_import once per completed job', async () => {
+	// [if] an import job succeeded [then] Done's status is re-read and a
+	// second notice does not fetch again, [else stop].
+	let statusCalls = 0;
+	routeFetch({
+		'/api/v1/setup/status': () => {
+			statusCalls += 1;
+			if (statusCalls === 1) return jsonResponse(status({ last_import: null }));
+			return jsonResponse(
+				status({
+					tracks: 4,
+					library_empty: false,
+					last_import: {
+						kind: 'folder',
+						finished_at: '2026-10-02T00:00:00.000Z',
+						started_at: '2026-10-02T00:00:00.000Z',
+						tracks_written: 4,
+						files_seen: 4,
+						tracks: 4,
+						tracks_without_analysis: 4,
+						analysis_detail: 'tags only',
+						analysis_available: false,
+						files_dataless: 0,
+						files_rejected_unplayable: 0,
+						files_without_tags: 0,
+						unreadable_roots: []
+					}
+				})
+			);
+		}
+	});
+	await wizard.load();
+	assert.equal(wizard.status.last_import, null);
+
+	await wizard.refreshStatusAfterImport('job-folder-1');
+	assert.equal(wizard.status.last_import.tracks_written, 4);
+	assert.equal(wizard.status.tracks, 4);
+	assert.equal(statusCalls, 2);
+
+	const before = statusCalls;
+	await wizard.refreshStatusAfterImport('job-folder-1');
+	assert.equal(statusCalls, before, 'a second completion notice must not re-fetch');
+});
+
+test('refreshStatusAfterImport keeps prior status when the server refuses', async () => {
+	routeFetch({ '/api/v1/setup/status': status() });
+	await wizard.load();
+
+	routeFetch({
+		'/api/v1/setup/status': () =>
+			jsonResponse({ detail: { code: 'boom', message: 'state db is gone' } }, 500)
+	});
+	await wizard.refreshStatusAfterImport('job-folder-2');
+
+	assert.equal(wizard.error, 'state db is gone');
+	assert.equal(wizard.statusRefreshError, 'state db is gone');
+	assert.equal(wizard.status.tracks, 0, 'previous status must survive a failure');
+	assert.equal(wizard.statusRefreshJobId, null);
 });
 
 test('redetect re-asks the detect endpoint specifically', async () => {
@@ -991,7 +1096,7 @@ async function openedBeforeImport() {
 test('a settled import re-reads status so the Done step shows the real import', async () => {
 	await openedBeforeImport();
 
-	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }));
+	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }).id);
 
 	assert.deepEqual(requests.map((request) => request.url), [`${API_BASE}/api/v1/setup/status`]);
 	assert.equal(wizard.status.last_import.tracks, 1200);
@@ -999,30 +1104,18 @@ test('a settled import re-reads status so the Done step shows the real import', 
 	assert.equal(wizard.error, null);
 });
 
-test('a failed import re-reads status too, so Done never shows the pre-import picture', async () => {
-	await openedBeforeImport();
-
-	await wizard.refreshStatusAfterImport(job({ status: 'failed', error: 'decrypt failed' }));
-
-	assert.equal(requests.length, 1);
-});
-
-test('a live import does not re-read status yet', async () => {
-	await openedBeforeImport();
-
-	await wizard.refreshStatusAfterImport(job({ status: 'running', progress: 0.4 }));
-	await wizard.refreshStatusAfterImport(null);
-
-	assert.deepEqual(requests, []);
-	assert.equal(wizard.status.last_import, null);
-});
+// "A failed import re-reads too" and "a live import does not re-read yet" are
+// the overlay's call now (it passes a job id only for a terminal row, any
+// outcome); setup-overlay.test.mjs pins that guard. The store's own rules
+// stay here: once per job id, never for someone else's job.
 
 test('the re-read happens once per settled job, not on every job-row update', async () => {
 	await openedBeforeImport();
 	const settled = job({ status: 'succeeded', progress: 1 });
 
-	await wizard.refreshStatusAfterImport(settled);
-	await wizard.refreshStatusAfterImport({ ...settled, message: 'done' });
+	// The overlay calls again on every update of the settled row.
+	await wizard.refreshStatusAfterImport(settled.id);
+	await wizard.refreshStatusAfterImport(settled.id);
 
 	assert.equal(requests.length, 1);
 });
@@ -1030,7 +1123,7 @@ test('the re-read happens once per settled job, not on every job-row update', as
 test("someone else's job never re-reads this wizard's status", async () => {
 	await openedBeforeImport();
 
-	await wizard.refreshStatusAfterImport(job({ id: 'job-other', status: 'succeeded' }));
+	await wizard.refreshStatusAfterImport(job({ id: 'job-other', status: 'succeeded' }).id);
 
 	assert.deepEqual(requests, []);
 });
@@ -1042,7 +1135,7 @@ test('a failed re-read says so and keeps the status it had', async () => {
 			jsonResponse({ detail: { code: 'boom', message: 'state db is gone' } }, 500)
 	});
 
-	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }));
+	await wizard.refreshStatusAfterImport(job({ status: 'succeeded', progress: 1 }).id);
 
 	assert.equal(wizard.error, 'state db is gone');
 	assert.equal(wizard.status.last_import, null, 'previous status must survive a failure');

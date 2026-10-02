@@ -37,6 +37,7 @@ const PANEL = fileURLToPath(
 
 let contract;
 let fillPlaylistPane;
+let prefetch;
 before(async () => {
 	contract = await loadTypeScriptModule(
 		'src/lib/components/rb/browser/pane-contract.svelte.ts'
@@ -45,12 +46,18 @@ before(async () => {
 		'src/lib/components/rb/browser/fill-playlist-pane.ts'
 	);
 	fillPlaylistPane = fillMod.fillPlaylistPane;
+	prefetch = await loadTypeScriptModule('src/lib/rb/library-playlist-page-prefetch.ts');
 });
 
 /** Builds the real `_loadPane`, evaluated straight from BrowserPanel.svelte,
  * with its closure-captured helpers supplied as factory arguments so it can
  * run outside the component. */
 function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
+	// _loadPane reaches the route through the first-page prefetch join
+	// (issue #3746); build one over this test's fake.
+	const playlistPages = prefetch.createPlaylistPagePrefetch((playlistId, limit, offset) =>
+		listPlaylistTracksPage(playlistId, { limit, offset })
+	);
 	const source = readFileSync(PANEL, 'utf8');
 	const start = source.indexOf('\tasync function _loadPane(');
 	const end = source.indexOf('\n\t/** Reconstructs the minimal PlaylistNode', start);
@@ -88,7 +95,7 @@ function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 		'_rowFromListWire',
 		'listTracksHydrated',
 		'fillPlaylistPane',
-		'listPlaylistTracksPage',
+		'fetchPlaylistFirstPage',
 		'recordPlaylistSwitchFirstRowsMs',
 		'recordOpenToLibraryRows',
 		'completeLibraryUsable',
@@ -128,7 +135,7 @@ function makeLoadPane({ listPlaylistTracksPage, pushToast }) {
 			throw new Error('listTracksHydrated must not be called');
 		},
 		fillPlaylistPane,
-		listPlaylistTracksPage,
+		playlistPages.fetchFirstPage,
 		() => {},
 		() => {},
 		() => {},

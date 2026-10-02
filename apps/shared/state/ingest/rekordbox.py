@@ -7,7 +7,7 @@ vendor id links, and playlists to the state layer.
 Safety:
 
 * Always opens the RB DB read-only -- no writes possible.
-* Dry-run by default (the outer SAVEPOINT is ROLLBACK-released).
+* Dry-run by default (the outer write unit is discarded, not kept).
 * Default source is ``paths.REKORDBOX_PLAIN_DB``, the decrypted working
   copy. ``paths.REKORDBOX_WORKING_DB`` is a byte-for-byte snapshot of the
   live master.db and is therefore still SQLCipher-encrypted, so the CLI
@@ -35,6 +35,7 @@ from apps.shared import paths as shared_paths
 from apps.shared.state import db as state_db
 from apps.shared.state import ids as state_ids
 from apps.shared.state import paths as state_paths
+from apps.shared.state.events import _DryRunSilentBus
 from apps.shared.state.ingest.path_collisions import (
     PathCollisionError,
     assert_no_path_collisions,
@@ -44,30 +45,6 @@ from apps.shared.state.writer import StateWriter, compute_playlist_id
 _log = logging.getLogger(__name__)
 
 _ClockFn = Callable[[], _dt.datetime]
-
-
-class _DryRunSilentBus:
-    """Drop-in replacement for :class:`EventBus` that discards publishes.
-
-    Used by :func:`ingest_rb` during ``dry_run=True`` so that the outer
-    SAVEPOINT's ROLLBACK does not leave subscribers with phantom events
-    for SQL mutations that were never committed. It records the number of
-    events it swallowed for diagnostics/tests but never invokes any
-    subscriber (addresses Codex P05-F02 / INFRA-03).
-    """
-
-    def __init__(self) -> None:
-        self.suppressed: int = 0
-
-    def publish(self, _event: Any) -> None:
-        self.suppressed += 1
-
-    def subscribe(self, _kind: str, _callback: Any) -> None:  # pragma: no cover
-        # Dry-run lifetime is a single call; no-op is safe.
-        return None
-
-    def close(self, timeout: float | None = None) -> None:  # noqa: ARG002
-        return None
 
 
 @dataclasses.dataclass
@@ -213,9 +190,9 @@ def ingest_rb(
 ) -> IngestReport:
     """Ingest the Rekordbox DB at ``rb_db_path`` into the state DB.
 
-    ``dry_run=True`` wraps everything in a SAVEPOINT that is
-    ROLLBACK-released at the end. ``dry_run=False`` releases the
-    SAVEPOINT to persist.
+    Everything runs in one :func:`apps.shared.state.db.write_unit`, which
+    holds the writer lock from its first read (STATE-15). ``dry_run=True``
+    discards the unit at the end; ``dry_run=False`` keeps it.
     """
     from pyrekordbox import Rekordbox6Database
 
@@ -249,8 +226,7 @@ def ingest_rb(
         ]
         assert_no_path_collisions(local_paths)
 
-        conn.execute(f"SAVEPOINT {savepoint}")
-        try:
+        with state_db.write_unit(conn, savepoint, keep=not dry_run):
             rb_to_stable: dict[str, str] = {}
             # Intra-run dedupe: tier-3 collisions (empty path + mtime=0) mean
             # multiple RB rows share a stable_id. Honour the first and skip
@@ -372,25 +348,17 @@ def ingest_rb(
                 member_sids = [rb_to_stable[tid] for tid in rb_tids if tid in rb_to_stable]
                 writer.set_playlist_memberships(pl_id, member_sids)
 
+            tracks_seen = (
+                report.tracks_inserted
+                + report.tracks_updated
+                + report.tracks_unchanged
+            )
             writer.register_adapter(
                 "rekordbox",
                 last_run_at=now_fn().isoformat(),
                 last_ok=True,
-                notes=(
-                    f"tracks={report.tracks_inserted + report.tracks_updated + report.tracks_unchanged} "
-                    f"dry_run={dry_run}"
-                ),
+                notes=f"tracks={tracks_seen} dry_run={dry_run}",
             )
-
-            if dry_run:
-                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            else:
-                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        except Exception:
-            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-            raise
     finally:
         # Always restore the real bus, even if the ingest raised.
         writer.bus = original_bus

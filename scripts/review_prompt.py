@@ -43,9 +43,11 @@ class Fence(NamedTuple):
 
 SOL_FENCE = Fence("<<<SOL_JSON", "SOL_JSON>>>")
 CLAUDE_FENCE = Fence("<<<CLAUDE_JSON", "CLAUDE_JSON>>>")
+GROK_FENCE = Fence("<<<GROK_JSON", "GROK_JSON>>>")
+CURSOR_FENCE = Fence("<<<CURSOR_JSON", "CURSOR_JSON>>>")
 #: Every lane's fence. The parser's unfenced fallback must skip what sits inside
 #: ANY of them: a block fenced for another lane is never this lane's answer.
-ALL_FENCES = (SOL_FENCE, CLAUDE_FENCE)
+ALL_FENCES = (SOL_FENCE, CLAUDE_FENCE, GROK_FENCE, CURSOR_FENCE)
 
 #: The placeholder the example block below carries where a real reply must
 #: carry this run's id. `codex exec` echoes the prompt into its own stdout, so

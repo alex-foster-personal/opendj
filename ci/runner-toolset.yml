@@ -20,7 +20,7 @@
 #     (CARGO_SYSTEM_LIBRARIES there) with no apt entry here.
 #   - tests/scripts/test_runner_toolset_repo_pins.py: fails when a `repo:`
 #     entry's version drifts from the file its source names.
-#   - scripts/runner_toolset_verify.py: runs every `verify` on a host as the
+#   - fleet-af runner_toolset/verify.py (moved Thu 1 Oct 2026): runs every `verify` on a host as the
 #     runner user and prints OK / MISMATCH / MISSING / UNKNOWN.
 #   - the Ansible CI-host playbook and the host audit (outside this repo),
 #     which install and check exactly this list.
@@ -150,6 +150,7 @@ entries:
   - {name: ffmpeg, kind: apt, version: "7:6.1.1-3ubuntu5", source: agentbox, provides: [ffmpeg, ffprobe], needed_by: [pytest, e2e, periodic], install: "apt-get install -y ffmpeg", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' ffmpeg | grep ^ii"}
   - {name: lame, kind: apt, version: "3.100-6build1", source: agentbox, provides: [lame], needed_by: [pytest], install: "apt-get install -y lame", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' lame | grep ^ii", notes: "tests/analysis/conftest.py encodes MP3 fixtures with it"}
   - {name: pulseaudio, kind: apt, version: "1:16.1+dfsg1-2ubuntu10.1", source: agentbox, provides: [pulseaudio], needed_by: [e2e], install: "apt-get install -y pulseaudio", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' pulseaudio | grep ^ii", notes: "jobs autospawn the daemon and load a per-job null sink (scripts/ci_pulse_sink.sh)"}
+  - {name: gdb, kind: apt, version: "15.0.50.20240403-0ubuntu1", source: agentbox, provides: [gdb], needed_by: [e2e], provision: job, install: "apt-get install -y gdb", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' gdb | grep ^ii", notes: "job-provisioned by e2e.yml's 'Debugger for the deck-load hang capture (#4281)' step (continue-on-error); scripts/ci_hang_capture.py uses it to backtrace a hung WebKitWebProcess and records gdb UNKNOWN when absent. The version floor is the Ubuntu 24.04 noble archive version, NOT yet read off agentbox (the first runner_toolset_verify there settles it)"}
   - {name: pulseaudio-utils, kind: apt, version: "1:16.1+dfsg1-2ubuntu10.1", source: agentbox, provides: [pactl], needed_by: [e2e], install: "apt-get install -y pulseaudio-utils", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' pulseaudio-utils | grep ^ii"}
   - {name: just, kind: apt, version: "1.21.0-1", source: agentbox, provides: [], needed_by: [pytest], install: "apt-get install -y just", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' just | grep ^ii", notes: "named by ci.yml's apt step; the justfile needs newer, so the `just-binary` entry shadows it in /usr/local/bin"}
   - {name: libsqlcipher-dev, kind: apt, version: "4.5.6-1build2", source: agentbox, provides: [], needed_by: [pytest, e2e, release-check], install: "apt-get install -y libsqlcipher-dev", verify: "dpkg-query -W -f='${db:Status-Abbrev}${Version}' libsqlcipher-dev | grep ^ii", notes: "sqlcipher3 wheel builds against it (rekordbox master.db)"}

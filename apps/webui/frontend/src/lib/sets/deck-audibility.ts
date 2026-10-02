@@ -168,7 +168,9 @@ export function masterPathGain(
  *  False unless the bundle is `ready`: an unavailable, loading or errored
  *  bundle is not in the signal path at all, so its control flags say nothing
  *  about what came out of the speakers. */
-export function everyStemPartSilent(deck: PerformanceState['decks'][DeckId]): boolean {
+export function everyStemPartSilent(
+	deck: Pick<PerformanceState['decks'][DeckId], 'stems'>
+): boolean {
 	const stems = deck.stems;
 	if (stems.status !== 'ready' || stems.layout === null) return false;
 	const gains = Object.values(stemPartGains(stems.controls, stems.layout));
