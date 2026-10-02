@@ -171,7 +171,7 @@ def build(repo: str, out: Path, seed_path: Path, api: Api = _gh) -> str:
             skipped.append(f"run {run['id']}: {exc}")
             continue
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(render(ledger), encoding="utf-8")
+        out.write_text(render(ledger), encoding="utf-8", newline="\n")
         added, dropped = len(ledger.keys() - seed.keys()), len(seed.keys() - ledger.keys())
         return (
             f"[durations-ledger] built {len(ledger)} rows from {SOURCE_WORKFLOW} run {run['id']} "
