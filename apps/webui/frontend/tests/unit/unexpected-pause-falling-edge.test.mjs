@@ -77,13 +77,12 @@ test('CONTROL: an operator pause of a playing deck is still not flagged', () => 
 	assert.equal(rows.length, 0);
 });
 
-test('_scheduleDeck captures the standing intent BEFORE overwriting it, and passes it on', () => {
+test('_scheduleDeck reports the falling edge with the intent it had BEFORE overwriting it', () => {
 	const body = engineBlockAfter(SCHEDULE_DECK_ANCHOR);
-	const capture = body.indexOf('const wasActive = rt.desiredActive;');
+	const report = body.search(/notePlayingFallingEdge\(\{\s*was_active: rt\.desiredActive,/);
 	const overwrite = body.indexOf('rt.desiredActive = active;');
-	assert.ok(capture >= 0, 'if _scheduleDeck does not capture the prior intent the edge cannot be told apart');
-	assert.ok(overwrite > capture, 'if the capture follows the overwrite then was_active always equals active');
-	assert.match(body, /notePlayingFallingEdge\(\{\s*was_active: wasActive,/);
+	assert.ok(report >= 0, 'if _scheduleDeck does not pass the prior intent the edge cannot be told apart');
+	assert.ok(overwrite > report, 'if the report follows the overwrite then was_active always equals active');
 });
 
 test("pressCue's stop of a playing deck is tagged as an operator command", () => {

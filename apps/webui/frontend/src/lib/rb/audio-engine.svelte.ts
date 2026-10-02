@@ -1350,15 +1350,10 @@ async function _scheduleDeck(
 	const expectedProcessor = rt.processor;
 	const predecessor = rt.scheduleTail;
 	let release!: () => void;
-	const wasActive = rt.desiredActive;
-	rt.desiredActive = active;
-	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
-	deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;
 	if (!active) {
 		const st = deckStates[deck];
 		notePlayingFallingEdge({
-			was_active: wasActive,
-			origin: readPauseOrigin(),
+			was_active: rt.desiredActive, origin: readPauseOrigin(),
 			deck,
 			position_ms: st.position_ms,
 			duration_ms: st.duration_ms,
@@ -1367,6 +1362,9 @@ async function _scheduleDeck(
 			context_state: _ctx?.state ?? 'uninitialized'
 		});
 	}
+	rt.desiredActive = active;
+	// LATENCY-01: optimistic play glyph; LATENCY-02 armed launch keeps triangle until commit.
+	deckStates[deck].playing = _quantizedLaunchAt[deck] !== null && active ? false : active;
 	rt.scheduleIntentCount += 1;
 	rt.scheduleTail = new Promise<void>((resolve) => {
 		release = resolve;
@@ -3497,11 +3495,7 @@ class RbAudioEngine implements AudioEngine {
 		if (st.playing) {
 			const target = st.cue_ms ?? 0;
 			if (_ctx === null) throw new Error('pressCue: audio graph not initialised');
-			// An operator stop: the falling edge is read synchronously inside
-			// _scheduleDeck, so the origin covers it before the first await.
-			await withPauseOrigin('command', () =>
-				_schedulePress(deck, _futureScheduleTime(deck), target / 1000, false, pressT0Ms)
-			);
+			await withPauseOrigin('command', () => _schedulePress(deck, _futureScheduleTime(deck), target / 1000, false, pressT0Ms));
 			return;
 		}
 		if (st.cue_ms === null) {
