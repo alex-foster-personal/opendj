@@ -21,6 +21,7 @@ from apps.lyrics.service import vocals_sha256_for_track
 from apps.stems.selection import has_bundle
 
 from . import queue_store
+from ._value_check import require_allowed_value
 from .queue import QueueError
 from .queue_user_lanes import (
     MAX_ENQUEUE_IDS,
@@ -101,9 +102,9 @@ def _item_from_row(row: Sequence[object]) -> UserJobItem:
 
 
 def require_lane(lane: str) -> str:
-    if lane not in USER_JOB_LANES:
-        raise QueueError(f"unknown user lane {lane!r}; lanes are {USER_JOB_LANES}")
-    return lane
+    return require_allowed_value(
+        lane, USER_JOB_LANES, "user lane", "lanes", QueueError
+    )
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:

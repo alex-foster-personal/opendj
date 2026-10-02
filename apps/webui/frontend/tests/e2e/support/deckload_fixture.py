@@ -108,6 +108,7 @@ from __future__ import annotations
 
 import argparse
 import array
+import hashlib
 import json
 import math
 import os
@@ -130,7 +131,7 @@ REPOSITORY_ROOT: Path = Path(__file__).resolve().parents[6]
 
 #: Bump to invalidate every generated fixture dir. Anything that changes what
 #: the audio SOUNDS like must bump this, or a stale dir keeps being measured.
-FIXTURE_REVISION: int = 5
+FIXTURE_REVISION: int = 7
 REVISION_MARKER: str = "fixture-revision.txt"
 
 SAMPLE_RATE_HZ: int = 44_100
@@ -208,6 +209,27 @@ RESCUE_PLAYBACK_TRACKS: tuple[FixtureTrack, ...] = (
     *FIXTURE_TRACKS,
     AUTOPLAY_CHAIN_TRACK,
     PERFORMANCE_FOLD_TRACK,
+)
+#: Four extra real ingested files for LIBUX-18 scroll/anchor e2e. No librosa
+#: analysis and not added to the autoplay-chain playlist; each row maps to
+#: its own wav through folder ingest.
+RESCUE_PLAYBACK_BROWSE_TRACKS: tuple[FixtureTrack, ...] = (
+    FixtureTrack(filename="webkit-fixture-e-120bpm-scroll.wav", bpm=120.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-f-122bpm-scroll.wav", bpm=122.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-g-126bpm-scroll.wav", bpm=126.0, seconds=60.0),
+    FixtureTrack(filename="webkit-fixture-h-118bpm-scroll.wav", bpm=118.0, seconds=60.0),
+)
+#: Eight real rows: four analysis-backed transport tracks plus four browse-only.
+RESCUE_PLAYBACK_LIBRARY_TRACKS: tuple[FixtureTrack, ...] = (
+    *RESCUE_PLAYBACK_TRACKS,
+    *RESCUE_PLAYBACK_BROWSE_TRACKS,
+)
+#: One browse-only rescue WAV carries embedded front-cover art (icon-192.png) so
+#: performance row-chrome e2e can exercise the production /artwork route.
+RESCUE_PLAYBACK_ARTWORK_TRACK: FixtureTrack = RESCUE_PLAYBACK_BROWSE_TRACKS[0]
+ARTWORK_SOURCE_PNG: Path = REPOSITORY_ROOT / "apps/webui/frontend/static/icon-192.png"
+ARTWORK_PNG_SHA256: str = (
+    "c402d6f75569ba9627423e39fb1b8d41cd24019bc14671824564b2234f006ae2"
 )
 
 #: --seed-autoplay-hunt only. Six tracks, own filenames, kept out of
@@ -699,45 +721,143 @@ def _run_librosa_analysis(
     pairs_path.unlink(missing_ok=True)
 
     state_db_path = data_dir / "state" / "state.db"
-    stable_ids = [stable_id for stable_id, _title, file_path in rows if file_path]
+    analysis_filenames = {track.filename for track in tracks}
+    stable_ids = [
+        stable_id
+        for stable_id, _title, file_path in rows
+        if file_path and Path(file_path).name in analysis_filenames
+    ]
     stored = fetch_records(stable_ids=stable_ids, backend="librosa", db_path=state_db_path)
     _assert_measured_downbeats(stored, tracks, label)
     _assert_fixture_bpms(rows, stored, tracks, label)
 
 
+_RESCUE_ARTWORK_EMBED_SCRIPT = """
+import hashlib
+import sys
+from pathlib import Path
+
+from apps.shared import audio_files
+from mutagen.id3 import APIC
+from mutagen.wave import WAVE
+
+wav_path = Path(sys.argv[1])
+png_path = Path(sys.argv[2])
+expected_sha = sys.argv[3]
+png_bytes = png_path.read_bytes()
+if hashlib.sha256(png_bytes).hexdigest() != expected_sha:
+    raise SystemExit("[ERROR] artwork PNG checksum mismatch in embed worker")
+def _assert_single_front_cover_apic(tags) -> None:
+    apics = tags.getall("APIC") or []
+    if len(apics) != 1:
+        raise SystemExit(f"[ERROR] expected exactly one APIC frame, got {len(apics)}")
+    frame = apics[0]
+    if frame.type != 3 or frame.mime != "image/png":
+        raise SystemExit(
+            f"[ERROR] expected front-cover PNG APIC, got type={frame.type} mime={frame.mime}"
+        )
+
+
+if audio_files.read_embedded_artwork(wav_path) == (png_bytes, "image/png"):
+    audio = WAVE(wav_path)
+    if audio.tags is None:
+        raise SystemExit("[ERROR] artwork wav has bytes but no ID3 tags")
+    _assert_single_front_cover_apic(audio.tags)
+    raise SystemExit(0)
+audio = WAVE(wav_path)
+if audio.tags is None:
+    audio.add_tags()
+audio.tags.delall("APIC")
+audio.tags.add(APIC(encoding=3, mime="image/png", type=3, desc="cover", data=png_bytes))
+audio.save()
+if audio_files.read_embedded_artwork(wav_path) != (png_bytes, "image/png"):
+    raise SystemExit("[ERROR] embedded rescue artwork did not round-trip")
+audio = WAVE(wav_path)
+_assert_single_front_cover_apic(audio.tags)
+"""
+
+
+def _ensure_rescue_artwork_embedded(audio_dir: Path) -> None:
+    """Embed the checked-in PNG on the designated browse-only rescue WAV (idempotent)."""
+    wav_path = audio_dir / RESCUE_PLAYBACK_ARTWORK_TRACK.filename
+    if not wav_path.is_file():
+        raise SystemExit(f"[ERROR] rescue artwork wav missing: {wav_path}")
+    png_bytes = ARTWORK_SOURCE_PNG.read_bytes()
+    if png_bytes[:8] != b"\x89PNG\r\n\x1a\n":
+        raise SystemExit(f"[ERROR] artwork source is not a PNG: {ARTWORK_SOURCE_PNG}")
+    digest = hashlib.sha256(png_bytes).hexdigest()
+    if digest != ARTWORK_PNG_SHA256:
+        raise SystemExit(
+            f"[ERROR] artwork PNG checksum mismatch for {ARTWORK_SOURCE_PNG}: {digest}"
+        )
+    command = [
+        "uv",
+        "run",
+        "--no-sync",
+        "--extra",
+        "tags",
+        "python",
+        "-c",
+        _RESCUE_ARTWORK_EMBED_SCRIPT,
+        str(wav_path),
+        str(ARTWORK_SOURCE_PNG),
+        ARTWORK_PNG_SHA256,
+    ]
+    result = subprocess.run(
+        command, cwd=REPOSITORY_ROOT, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        raise SystemExit(
+            f"[ERROR] rescue artwork embed failed with exit code {result.returncode}"
+        )
+
+
 def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | None]]:
-    """Build an analysis-backed performance rescue library for Beat Sync e2e."""
+    """Build the performance rescue library: eight ingested rows, four with librosa."""
     _discard_stale_revision(data_dir)
     _reset_feedback_dir(data_dir)
     audio_dir = data_dir / AUDIO_SUBDIR
-    files = ensure_audio(audio_dir, RESCUE_PLAYBACK_TRACKS)
+    files = ensure_audio(audio_dir, RESCUE_PLAYBACK_LIBRARY_TRACKS)
+    _ensure_rescue_artwork_embedded(audio_dir)
     state_db_path = data_dir / "state" / "state.db"
     rows = _ingest_and_verify(data_dir, audio_dir, files, "rescue-playback")
     _seed_playlists(state_db_path, rows)
 
-    stable_ids = [stable_id for stable_id, _title, _file_path in rows]
-    by_filename = {track.filename: track for track in RESCUE_PLAYBACK_TRACKS}
-    generated = [
-        by_filename[Path(file_path).name]
-        for _stable_id, _title, file_path in rows
-        if file_path is not None and Path(file_path).name in by_filename
+    transport_filenames = {track.filename for track in RESCUE_PLAYBACK_TRACKS}
+    autoplay_stable_ids = [
+        stable_id
+        for stable_id, _title, file_path in rows
+        if file_path and Path(file_path).name in transport_filenames
     ]
+    if len(autoplay_stable_ids) != len(RESCUE_PLAYBACK_TRACKS):
+        raise SystemExit(
+            f"[ERROR] rescue-playback expected {len(RESCUE_PLAYBACK_TRACKS)} autoplay-chain "
+            f"members, got {len(autoplay_stable_ids)}"
+        )
+    by_filename = {track.filename: track for track in RESCUE_PLAYBACK_LIBRARY_TRACKS}
     now = datetime.now(UTC).isoformat()
     conn = state_db.open_rw(state_db_path)
     writer = StateWriter(conn, actor="e2e-deckload-fixture")
-    bpm_by_stable_id = {
-        stable_id: track.bpm
-        for (stable_id, _title, file_path), track in zip(rows, generated, strict=True)
-        if file_path is not None and Path(file_path).name == track.filename
-    }
+    bpm_by_stable_id: dict[str, float] = {}
+    for stable_id, _title, file_path in rows:
+        if file_path is None:
+            raise SystemExit(f"[ERROR] rescue-playback row {stable_id!r} has no file_path")
+        track = by_filename.get(Path(file_path).name)
+        if track is None:
+            raise SystemExit(
+                f"[ERROR] rescue-playback ingested unknown file {Path(file_path).name!r}"
+            )
+        bpm_by_stable_id[stable_id] = track.bpm
     if len(bpm_by_stable_id) != len(rows):
         raise SystemExit(
             "[ERROR] rescue-playback could not match every ingested row to its generated file"
         )
     try:
-        for stable_id in stable_ids:
+        for stable_id, bpm in bpm_by_stable_id.items():
             writer.set_field(
-                stable_id, "bpm", bpm_by_stable_id[stable_id],
+                stable_id, "bpm", bpm,
                 source="manual", modified_at=now, confidence=1.0,
             )
             writer.set_field(
@@ -750,7 +870,7 @@ def build_rescue_playback(data_dir: Path) -> list[tuple[str, str | None, str | N
             vendor="fixture",
             vendor_pl_id=AUTOPLAY_CHAIN_PLAYLIST_ID,
         )
-        writer.set_playlist_memberships(AUTOPLAY_CHAIN_PLAYLIST_ID, stable_ids)
+        writer.set_playlist_memberships(AUTOPLAY_CHAIN_PLAYLIST_ID, autoplay_stable_ids)
     finally:
         writer.close()
         conn.close()

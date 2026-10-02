@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 
 import { loadSvelteSsrModule } from './load-svelte-ssr.mjs';
+import { loadTypeScriptModule } from './load-typescript.mjs';
 
 const SRC = fileURLToPath(new URL('../../src', import.meta.url));
 const MENU_PATH = `${SRC}/lib/components/rb/ContextMenu.svelte`;
@@ -21,9 +22,11 @@ const ENTRY = [
 ].join('\n');
 
 let mod;
+let plannedTitle;
 
 before(async () => {
 	mod = await loadSvelteSsrModule(ENTRY);
+	({ plannedTitle } = await loadTypeScriptModule('src/lib/rb/planned-explainers.ts'));
 });
 
 function renderMenu(items) {
@@ -57,7 +60,12 @@ test('SSR: available item has no aria-disabled, describedby, or description span
 	assert.equal(html.includes('visually-hidden'), false);
 });
 
-test('SSR: unavailable item without title uses aria-disabled and PARITY-TODO description', () => {
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Pin 552a810ba13b: the fallback explains what the action is (planned catalog),
+// not the bare PARITY-TODO stub.
+test('SSR: unavailable item without title uses aria-disabled and planned explainer description', () => {
+	const expected = escapeRe(plannedTitle('context-menu-unavailable'));
 	const html = renderMenu([
 		{ id: 'todo', label: 'Mark offline' }
 	]);
@@ -66,8 +74,11 @@ test('SSR: unavailable item without title uses aria-disabled and PARITY-TODO des
 	assert.match(buttons[0], /aria-disabled="true"/);
 	assert.equal(hasHtmlDisabledAttr(buttons[0]), false);
 	assert.match(buttons[0], /aria-describedby="ctx-menu-desc-todo"/);
-	assert.match(buttons[0], /title="not implemented - see PARITY-TODO"/);
-	assert.match(html, /id="ctx-menu-desc-todo"[^>]*class="visually-hidden[^"]*"[^>]*>not implemented - see PARITY-TODO<\/span>/);
+	assert.match(buttons[0], new RegExp(`title="${expected}"`));
+	assert.match(
+		html,
+		new RegExp(`id="ctx-menu-desc-todo"[^>]*class="visually-hidden[^"]*"[^>]*>${expected}<\\/span>`)
+	);
 });
 
 test('SSR: unavailable item with custom title uses that text for title and description', () => {

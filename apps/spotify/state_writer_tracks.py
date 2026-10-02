@@ -47,8 +47,13 @@ def _upsert_synthetic_track(
     *,
     machine_id: str,
     now: str,
-) -> str:
+) -> str | None:
     """Insert/update a placeholder track row for an unmatched Spotify track.
+
+    Returns the row's ``stable_id``, or None when the user removed that
+    placeholder: a re-import of the playlist is not a restore (LIBM-140), so
+    the tombstone is left byte-identical and the caller keeps the track out of
+    the playlist.
 
     ``file_path`` is the Spotify URI so ``is_streaming_path`` marks the row
     streaming (not broken-missing) in the browser.
@@ -66,8 +71,10 @@ def _upsert_synthetic_track(
     tier = "isrc" if src.isrc else "inferred"
     file_path = src.spotify_uri or f"spotify:track:{src.spotify_id or sid}"
     existing = conn.execute(
-        "SELECT stable_id FROM tracks WHERE stable_id = ?", (sid,)
+        "SELECT deleted_at FROM tracks WHERE stable_id = ?", (sid,)
     ).fetchone()
+    if existing is not None and existing[0] is not None:
+        return None
     track_stamp = sync_stamp.stamp_and_log(conn, "tracks", (sid,), machine_id, now=now)
     if existing is None:
         conn.execute(
@@ -97,8 +104,8 @@ def _upsert_synthetic_track(
             """
             UPDATE tracks SET stable_id_tier=?, title=?, artists_json=?,
               album=?, isrc=?, duration_ms=?, file_path=?, updated_at=?,
-              origin_device_id=?, deleted_at=NULL
-            WHERE stable_id=?
+              origin_device_id=?
+            WHERE stable_id=? AND deleted_at IS NULL
             """,
             (
                 tier,

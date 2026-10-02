@@ -95,3 +95,16 @@ test('a dismissed empty library is distinguishable from an undismissed one', () 
 		'dismissal must change the outcome, not merely the status string'
 	);
 });
+
+test('a stale fail after the operator closed setup does not auto-open', () => {
+	// [if] the operator has closed setup and library-attached is still fail
+	// [then] the wizard stays closed, [else stop].
+	const fail = libraryAt('fail', '0 tracks');
+	assert.equal(mod.shouldAutoOpenEmptyLibrarySetup(fail, false, false), true);
+	assert.equal(
+		mod.shouldAutoOpenEmptyLibrarySetup(fail, false, true),
+		false,
+		'closing setup must hold the auto-open across the stale preflight row'
+	);
+	assert.equal(mod.shouldAutoOpenEmptyLibrarySetup(fail, true, false), false);
+});

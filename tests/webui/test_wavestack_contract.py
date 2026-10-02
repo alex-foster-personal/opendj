@@ -85,8 +85,8 @@ def test_waveform_seek_canvas_remains_an_accessible_bounded_slider() -> None:
 def test_waveform_gutter_has_track_artwork_and_hover_scrubbable_title() -> None:
     source = _source(WAVE_TRACK_SUMMARY)
 
-    assert "shouldFetchArtwork" in source
-    assert "artworkUrl(deck.stable_id, 's')" in source
+    # PARITY-14: the deck asks for the online lookup too, so no local-miss skip.
+    assert "deckArtworkUrl(deck.stable_id, 's')" in source
     assert 'class="wave-art"' in source
     assert 'class="wave-track-name"' in source
     assert "trackNameScrubPx" in source
@@ -98,6 +98,6 @@ def test_waveform_gutter_labels_empty_and_unavailable_artwork_states() -> None:
     source = _source(WAVE_TRACK_SUMMARY)
 
     assert "No track loaded" in source
-    assert "Artwork unavailable" in source
+    assert "No artwork found" in source
     assert "artworkFailed" in source
     assert "loaded deck ${deck.stable_id} is missing a title" in source

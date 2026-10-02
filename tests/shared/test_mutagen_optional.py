@@ -55,12 +55,33 @@ def test_modules_still_importable_without_mutagen(no_mutagen):
         assert mod is not None
 
 
-def test_audio_files_read_metadata_returns_none_without_mutagen(tmp_path, no_mutagen):
+def test_audio_files_read_metadata_returns_none_for_unparseable_file_without_mutagen(
+    tmp_path, no_mutagen
+):
     from apps.shared import audio_files
 
     fake = tmp_path / "nothing.mp3"
     fake.write_bytes(b"")
     assert audio_files.read_metadata(fake) is None
+
+
+def test_audio_files_read_metadata_reads_tags_with_tinytag_without_mutagen(no_mutagen):
+    """The packaged app has no mutagen, so a folder import must still get its tags.
+
+    Regression: before tinytag took over this path, every folder import in
+    the packaged app came in with no title or artist (Silver check, Fri 2 Oct 2026).
+    """
+    from pathlib import Path
+
+    from apps.shared import audio_files
+
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-v2.mp3"
+    meta = audio_files.read_metadata(fixture)
+    assert meta is not None
+    assert (meta.title, meta.artist) == ("Source V2", "Fixture")
+    assert meta.duration_s is not None and 2.9 < meta.duration_s < 3.2
+    assert meta.sample_rate == 22050
+    assert meta.bitrate_kbps == 160
 
 
 def test_serato_geob_read_returns_empty_without_mutagen(tmp_path, no_mutagen):

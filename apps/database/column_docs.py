@@ -98,6 +98,21 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
             "Tag-independent SHA-256 of the decoded container audio payload; "
             "used beside content_hash for CloudSync identity merges."
         ),
+        "deleted_reason": (
+            "Why deleted_at is set: 'user' for Remove from library, which only "
+            "an explicit undelete lifts, or 'missing' for a watched-folder "
+            "rescan that found the file gone, which an ingest lifts when the "
+            "file is found again. NULL on a live row; NULL on a tombstone "
+            "written before schema v23, which is read as 'user'."
+        ),
+        "restored_at": (
+            "Sync stamp of the last time this track's tombstone was lifted: an "
+            "explicit undelete, or a missing file found again; NULL when it "
+            "never was. "
+            "Kept after a later delete: the later of deleted_at and "
+            "restored_at decides which copy of the row wins a sync merge, "
+            "so a removed track stays removed until the user restores it."
+        ),
         "created_at": "RFC 3339 UTC timestamp of first insert. Never rewritten.",
         "updated_at": (
             "RFC 3339 UTC timestamp of the most recent write to this row. "
