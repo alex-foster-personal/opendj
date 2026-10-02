@@ -10,11 +10,12 @@ from __future__ import annotations
 import os
 import shutil
 import time
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import pytest
 
-from apps.analysis.backends import own_beatgrid, own_key
+from apps.analysis.backends import own_beatgrid, own_beatgrid_input, own_key
 from apps.analysis.backends.base import BackendNotAvailable, TrackUnreadable, TrackVanished
 from apps.shared.engine_decode import BIN_ENV
 
@@ -28,6 +29,14 @@ _M4A = (
 # file where the engine was just built, where a missing build fails instead.
 pytestmark = pytest.mark.requires_canonical_decode
 
+_STALE_S = 900.0
+
+
+def _input(track: Path, decode_dir: Path) -> AbstractContextManager[Path]:
+    return own_beatgrid_input.runner_input(
+        track, stale_after_s=_STALE_S, decode_dir=decode_dir
+    )
+
 
 def test_the_runner_reads_a_wav_at_the_same_path_every_run(tmp_path: Path) -> None:
     soundfile = pytest.importorskip("soundfile")
@@ -35,7 +44,7 @@ def test_the_runner_reads_a_wav_at_the_same_path_every_run(tmp_path: Path) -> No
     shutil.copy(_M4A, track)
     seen = []
     for _ in range(2):
-        with own_beatgrid._runner_input(track, tmp_path / "decode") as wav:
+        with _input(track, tmp_path / "decode") as wav:
             assert soundfile.info(str(wav)).frames == 44100
             seen.append(wav)
     # The runner names its activation file after this path, so it must not move.
@@ -46,18 +55,18 @@ def test_the_runner_reads_a_wav_at_the_same_path_every_run(tmp_path: Path) -> No
 
 def test_the_runner_reads_an_mp3_as_itself(tmp_path: Path) -> None:
     track = tmp_path / "Song.mp3"
-    with own_beatgrid._runner_input(track, tmp_path) as runner_input:
+    with _input(track, tmp_path) as runner_input:
         assert runner_input == track
 
 
 def test_a_second_run_of_the_same_track_waits_rather_than_clobbering(tmp_path: Path) -> None:
     track = tmp_path / "Song.m4a"
     shutil.copy(_M4A, track)
-    with own_beatgrid._runner_input(track, tmp_path / "decode") as wav:
+    with _input(track, tmp_path / "decode") as wav:
         before = wav.read_bytes()
         with (
             pytest.raises(TrackVanished, match="another run"),
-            own_beatgrid._runner_input(track, tmp_path / "decode"),
+            _input(track, tmp_path / "decode"),
         ):
             pass
         # The first run's WAV and lock are untouched by the refused second one.
@@ -70,13 +79,13 @@ def test_a_lock_left_by_a_crashed_run_is_taken_over(
 ) -> None:
     track = tmp_path / "Song.m4a"
     shutil.copy(_M4A, track)
-    with own_beatgrid._runner_input(track, tmp_path / "decode") as wav:
+    with _input(track, tmp_path / "decode") as wav:
         lock = wav.parent / ".lock"
     lock.parent.mkdir(parents=True, exist_ok=True)
     lock.touch()
-    old = time.time() - own_beatgrid._stale_after_s() - 60
+    old = time.time() - _STALE_S - 60
     os.utime(lock, (old, old))
-    with own_beatgrid._runner_input(track, tmp_path / "decode") as wav:
+    with _input(track, tmp_path / "decode") as wav:
         assert wav.is_file()
 
 
@@ -85,13 +94,13 @@ def test_the_runner_wav_is_deleted_when_the_runner_fails(
 ) -> None:
     seen: list[Path] = []
 
-    def _fake_run(runner_input: Path, *_args: object, **_kwargs: object) -> dict:
+    def _fake_command(runner_input: Path, *_args: object, **_kwargs: object) -> list[str]:
         assert runner_input.is_file()
         seen.append(runner_input)
         raise RuntimeError("runner fault")
 
-    monkeypatch.setattr(own_beatgrid, "_engine_decode_dir", lambda: tmp_path / "decode")
-    monkeypatch.setattr(own_beatgrid, "_run_runner_on", _fake_run)
+    monkeypatch.setattr(own_beatgrid_input, "_engine_decode_dir", lambda: tmp_path / "decode")
+    monkeypatch.setattr(own_beatgrid, "runner_command", _fake_command)
     with pytest.raises(RuntimeError, match="runner fault"):
         own_beatgrid.run_runner(_M4A, tmp_path / "ckpt", device="cpu")
     assert len(seen) == 1 and not seen[0].exists()
@@ -116,7 +125,7 @@ def test_an_unreadable_m4a_is_one_bad_track(tmp_path: Path, lane: str) -> None:
     junk.write_bytes(b"not audio" * 256)
     with pytest.raises(TrackUnreadable, match="could not decode"):
         if lane == "beatgrid":
-            with own_beatgrid._runner_input(junk, tmp_path / "decode"):
+            with _input(junk, tmp_path / "decode"):
                 pass
         else:
             own_key._decode(junk)
@@ -131,7 +140,7 @@ def test_a_missing_engine_stops_the_lane(
     monkeypatch.setenv(BIN_ENV, str(tmp_path / "absent"))
     with pytest.raises(BackendNotAvailable):
         if lane == "beatgrid":
-            with own_beatgrid._runner_input(_M4A, tmp_path / "decode"):
+            with _input(_M4A, tmp_path / "decode"):
                 pass
         else:
             own_key._decode(_M4A)
