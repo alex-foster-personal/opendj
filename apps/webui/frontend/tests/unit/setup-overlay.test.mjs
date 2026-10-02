@@ -14,8 +14,11 @@
  * shape, the way capability-gating-markup.test.mjs pins its own.
  *
  * Regression lines:
- * - if a null detection ever reports phase 'answered' then the not-found
- *   visual can be painted before an answer exists, which is the whole bug
+ * - if a null detection that is still idle or scanning reports phase
+ *   'answered' then the not-found visual can be painted before an answer
+ *   exists, which is the whole bug
+ * - if a failed detection reports phase 'scanning' then the scanning sentence
+ *   renders beside the red error (issue #3422)
  * - if every absent probe reads red then the colour stops meaning "this is
  *   why nothing can be imported" and starts meaning "a file is missing"
  * - if a fatal blocker renders in the muted tone then a sentence that stops
@@ -102,17 +105,32 @@ beforeEach(() => {
 
 // ------------------------------------------------------------- the phase
 
-test('a null detection is SCANNING, never a verdict', () => {
+test('a null detection is SCANNING while idle, never a verdict', () => {
 	// The bug: null meant "never asked", "asking now" and "asked and failed"
 	// all at once, and the step painted all three as one grey sentence that
-	// nothing would ever clear.
-	assert.equal(mod.detectPhase(null, false), 'scanning');
-	assert.equal(mod.detectPhase(null, true), 'scanning');
+	// nothing would ever clear. Idle and scanning stay in flight.
+	assert.equal(mod.detectPhase(null, 'idle'), 'scanning');
+	assert.equal(mod.detectPhase(null, 'scanning'), 'scanning');
+});
+
+test('a failed detection is never SCANNING, even with a null answer', () => {
+	// [if] detectState is failed [then] detectPhase does not return scanning,
+	// [else stop].
+	assert.equal(mod.detectPhase(null, 'failed'), 'answered');
+	assert.equal(mod.detectPhase(detection(), 'failed'), 'answered');
+});
+
+test('the detect step passes detectState, and Done waits on a status refresh', () => {
+	const overlay = read('src/lib/components/setup/SetupOverlay.svelte');
+	assert.match(overlay, /detectPhase\(detection, detectState\)/);
+	assert.doesNotMatch(overlay, /detectPhase\(detection, detectState === 'scanning'\)/);
+	assert.match(overlay, /refreshStatusAfterImport\(job\.id\)/);
+	assert.match(overlay, /statusRefreshJobId: setupWizard\.statusRefreshJobId/);
 });
 
 test('a re-ask is scanning too, even with a previous answer on screen', () => {
-	assert.equal(mod.detectPhase(detection(), true), 'scanning');
-	assert.equal(mod.detectPhase(detection(), false), 'answered');
+	assert.equal(mod.detectPhase(detection(), 'scanning'), 'scanning');
+	assert.equal(mod.detectPhase(detection(), 'answered'), 'answered');
 });
 
 test('the scanning sentence says what is being looked for', () => {
@@ -264,10 +282,13 @@ test('dismissing without importing closes into an honest incomplete state', () =
 	mod.closeSetupOverlay({ incomplete: true });
 	assert.equal(mod.setupOverlay.open, false);
 	assert.equal(mod.setupOverlay.incomplete, true);
-	// A finished setup closes silently instead.
+	assert.equal(mod.setupOverlay.holdEmptyReopen, true);
+	// A finished setup closes silently instead, and still holds the auto-open.
 	mod.openSetupOverlay();
+	assert.equal(mod.setupOverlay.holdEmptyReopen, false);
 	mod.closeSetupOverlay();
 	assert.equal(mod.setupOverlay.incomplete, false);
+	assert.equal(mod.setupOverlay.holdEmptyReopen, true);
 });
 
 test('the layout keeps the wizard mounted while the incomplete note is due', () => {
@@ -278,6 +299,8 @@ test('the layout keeps the wizard mounted while the incomplete note is due', () 
 	// shape, as the markup facts above are: the guard names both flags.
 	const layout = read('src/routes/+layout.svelte');
 	assert.match(layout, /const setupMounted = \$derived\(setupOverlay\.open \|\| setupOverlay\.incomplete\);/);
+	assert.match(layout, /shouldAutoOpenEmptyLibrarySetup\(/);
+	assert.match(layout, /setupOverlay\.holdEmptyReopen/);
 	assert.match(layout, /\{#if setupMounted\}\s*\{#await loadSetupOverlay\(\)\}/);
 	assert.match(layout, /\{:then \{ default: SetupOverlay \}\}\s*<SetupOverlay \/>/);
 	assert.doesNotMatch(layout, /\{#if setupOpen\}/);

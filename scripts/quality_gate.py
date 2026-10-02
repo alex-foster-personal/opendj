@@ -513,6 +513,11 @@ def _python_files() -> list[Path]:
             rel = path.relative_to(REPO).as_posix()
             if "__pycache__" in rel or _is_vendored(rel) or _is_derived(rel):
                 continue
+            # A gitignored install that CI keeps between jobs (ci_clean_untracked.sh
+            # excludes node_modules): node-gyp ships Python, so a runner that once ran
+            # the electron job measured msvs.py at 3970 lines (agentbox-9, Fri 2 Oct 2026).
+            if "node_modules" in path.relative_to(REPO).parts:
+                continue
             out.append(path)
     return out
 

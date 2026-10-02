@@ -9,7 +9,7 @@
  *
  * Single-line acceptance checks:
  * - if "Skip for now" does not close the wizard into the incomplete note -> broken
- *   (#3422, test.fail).
+ *   (#3422).
  * - if a reload after skipping re-traps the user in the wizard, or setup can
  *   no longer be reached at all -> broken.
  * - if a failed import request strands the wizard, or a retry cannot import -> broken.
@@ -63,8 +63,6 @@ test.describe('onboarding gauntlet: recovery', () => {
 		await dialog.getByRole('button', { name: 'Skip for now' }).click();
 		expect((await dismissed).ok(), 'the engine refused the dismissal').toBe(true);
 		expect(await readSetupStatus(engine.origin)).toMatchObject({ dismissed: true, should_show_wizard: false });
-		// The engine recorded the skip; only the overlay bouncing back is the known defect.
-		test.fail(true, 'issue #3422: the empty-library reopen predicate raises the wizard again the moment it closes');
 		await expect(dialog).toHaveCount(0);
 		await expect(page.getByText('Setup incomplete -- library is', { exact: false })).toBeVisible();
 		await page.waitForTimeout(STAYS_CLOSED_MS);

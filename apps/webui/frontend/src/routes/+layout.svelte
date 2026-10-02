@@ -28,11 +28,12 @@
 	import PreflightScreen from '$lib/components/preflight/PreflightScreen.svelte';
 	import {
 		LIBRARY_ATTACHED_CHECK_ID,
+		checkPreflight,
 		preflightGate,
 		shouldBlockOnPreflight
 	} from '$lib/preflight/preflight.svelte';
 	import { bootGateYielded } from '$lib/overlays/overlay-stack';
-	import { needsSetupForEmptyLibrary } from '$lib/preflight/fresh-install';
+	import { shouldAutoOpenEmptyLibrarySetup } from '$lib/preflight/fresh-install';
 	import { accountOverlay } from '$lib/account/overlay.svelte';
 	import { signInOverlay } from '$lib/auth/sign-in-overlay.svelte';
 	import { runFirstRunGate } from '$lib/setup/first-run-gate.svelte';
@@ -218,17 +219,31 @@
 	function raiseSetupOnFirstRun(): void {
 		void runFirstRunGate().then((show) => {
 			if (show !== true) return;
+			// A probe started before dismissal can resolve after the operator
+			// walked away. Honour that close instead of reopening.
+			if (setupOverlay.holdEmptyReopen) return;
 			openSetupForFirstRun();
 		});
 	}
 
-	// When preflight says the library is empty, open setup even if the daemon
-	// suppressed should_show_wizard (e.g. dev checkout) or the first-run probe
-	// raced entitlements. Decoupled from entitlements.load().
+	// Empty-library auto-open. holdEmptyReopen blocks the stale `fail` that
+	// is still on screen for one poll after Skip or Start playing (#3422).
 	$effect(() => {
-		if (!needsSetupForEmptyLibrary(preflightGate.checks, setupOpen)) return;
-		if (finalSetupRefusal() !== null) return;
+		const open = shouldAutoOpenEmptyLibrarySetup(
+			preflightGate.checks,
+			setupOpen,
+			setupOverlay.holdEmptyReopen
+		);
+		if (!open || finalSetupRefusal() !== null) return;
 		openSetupForFirstRun();
+	});
+
+	// Poll while the incomplete note is up, same 3s cadence as the boot gate.
+	$effect(() => {
+		if (!setupOverlay.incomplete) return;
+		void checkPreflight();
+		const preflightId = setInterval(() => void checkPreflight(), 3_000);
+		return () => clearInterval(preflightId);
 	});
 
 	// Run as soon as the client router is live; onMount alone is too late for
