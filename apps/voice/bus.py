@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from apps.voice.settings import voice_data_dir
+
 log = logging.getLogger(__name__)
 
 
@@ -41,13 +43,10 @@ def _now_iso() -> str:
 
 @dataclass
 class JsonlStubBus:
-    """Fallback event bus: append JSON lines to ``data/voice/events.jsonl``."""
+    """Fallback event bus: append JSON lines to ``<data dir>/voice/events.jsonl``."""
 
     path: Path = field(
-        default_factory=lambda: Path(__file__).resolve().parents[2]
-        / "data"
-        / "voice"
-        / "events.jsonl"
+        default_factory=lambda: voice_data_dir() / "events.jsonl"
     )
     _next_id: int = 1
     _cache: list[dict] = field(default_factory=list)
@@ -240,7 +239,7 @@ def make_bus(force_stub: bool = False, warn=print) -> EventBus:
         if not _WARNED_STUB:
             warn(
                 "[voice] Phase 5 state layer unavailable "
-                f"({exc}); writing to JSONL stub bus at data/voice/events.jsonl"
+                f"({exc}); writing to JSONL stub bus at {voice_data_dir() / 'events.jsonl'}"
             )
             _WARNED_STUB = True
         return JsonlStubBus()
