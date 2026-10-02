@@ -450,6 +450,11 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		/* A <button> is shrink-to-fit, so without this a long cue or proposal
+		   label sized the pad to its text and spilled into the next column
+		   instead of ellipsizing (#4082, once the deck lyric strip shares
+		   the cue row). */
+		width: 100%;
 		min-width: 0;
 		height: 18px;
 		box-sizing: border-box;
