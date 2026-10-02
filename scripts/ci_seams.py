@@ -102,6 +102,8 @@ _PREFIXES: tuple[tuple[str, Kind], ...] = (
     ("open-dj/", Kind.PYTHON),
     ("site/", Kind.PYTHON),
     ("usb-profiles/", Kind.PYTHON),
+    # Dependency license register and policy; read by scripts/license_gate.py and its tests.
+    ("licenses/", Kind.PYTHON),
     ("reports/", Kind.PYTHON),
     ("data/", Kind.PYTHON),
     ("app_docs/", Kind.PYTHON),
