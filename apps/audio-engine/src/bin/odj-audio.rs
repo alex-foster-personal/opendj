@@ -20,7 +20,9 @@
 //! `midi_inject` feeds recorded MIDI bytes on any clock, with or without it.
 //! `decode` writes SOURCE (any format a deck loads: MP3, AAC, FLAC, ...) as a
 //! 32-bit float WAV at its own rate and channel count, streamed a packet at a
-//! time, and prints one JSON line naming them and the frame count. It never
+//! time, and prints one JSON line naming them and the frame count. An MP4's
+//! edit list is applied (encoder priming trimmed) so it starts where ffmpeg
+//! starts it; the deck's own decode does not do this. It never
 //! replaces a file: OUT must not exist. This is how the stems and vocals
 //! workers read compressed audio in the installed app, which ships no ffmpeg
 //! (`docs/decisions/*-odj-audio-decode-for-workers.md`).
@@ -603,6 +605,11 @@ fn decode_cmd(mut args: Args) -> Result<(), String> {
         "channels": written.channels,
         "frames": written.frames,
         "duration_s": written.frames as f64 / written.sample_rate as f64,
+        // MP4 edit list: encoder priming trimmed from the front, whole
+        // packets dropped past its end, and whether it was applied.
+        "trimmed_start_frames": written.trimmed_start,
+        "dropped_end_frames": written.dropped_end,
+        "edit_list": written.edit,
     });
     println!("{summary}");
     Ok(())

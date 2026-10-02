@@ -24,7 +24,7 @@ use rubato::{FftFixedIn, Resampler};
 
 use crate::engine::ErrorCode;
 use crate::protocol::ProtoError;
-use crate::wav;
+use crate::{edit_list, wav};
 
 pub struct Decoded {
     pub sample_rate: u32,
@@ -289,12 +289,55 @@ pub(crate) fn open_decoder(file: File, path: &Path) -> Result<Opened, ProtoError
 }
 
 /// What [`decode_to_wav`] wrote: the source's own rate and channel count,
-/// and how many frames.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// how many frames, and what the MP4 edit list (if any) trimmed.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WavWritten {
     pub sample_rate: u32,
     pub channels: u16,
     pub frames: u64,
+    /// Encoder priming trimmed from the front (MP4 edit list `media_time`).
+    pub trimmed_start: u64,
+    /// Frames of whole packets dropped past the edit's end.
+    pub dropped_end: u64,
+    /// `none`, `applied`, or `ignored: <why>` (decoded untrimmed).
+    pub edit: String,
+}
+
+/// Which decoded frames `decode_to_wav` keeps, per the file's edit list.
+struct Trim {
+    edit: Option<edit_list::Edit>,
+    /// Frames decoded so far, before trimming (the decoder's timeline).
+    pos: u64,
+    trimmed_start: u64,
+    dropped_end: u64,
+}
+
+impl Trim {
+    /// Of the next `n` decoded frames, (first kept, how many kept). The edit
+    /// list is read once, when the track's rate is first known.
+    fn window(&mut self, n: u64, path: &Path, track_id: u32, rate: u32) -> (u64, u64) {
+        let edit = self.edit.get_or_insert_with(|| edit_list::read(path, track_id, rate));
+        let at = self.pos;
+        self.pos += n;
+        let edit_list::Edit::Apply { skip, keep } = *edit else { return (0, n) };
+        // A packet that starts at or after the edit's end is dropped whole;
+        // one that straddles it is kept whole, as ffmpeg keeps it.
+        if keep.is_some_and(|k| at >= skip + k) {
+            self.dropped_end += n;
+            return (0, 0);
+        }
+        let from = skip.saturating_sub(at).min(n);
+        self.trimmed_start += from;
+        (from, n - from)
+    }
+
+    fn describe(&self) -> String {
+        match &self.edit {
+            None | Some(edit_list::Edit::None) => "none".into(),
+            Some(edit_list::Edit::Apply { .. }) => "applied".into(),
+            Some(edit_list::Edit::Ignored(why)) => format!("ignored: {why}"),
+        }
+    }
 }
 
 /// Decode `path` into `out` as a 32-bit float WAV at the file's own sample
@@ -303,13 +346,15 @@ pub struct WavWritten {
 /// track. This is what lets a stems or vocals worker in the installed app,
 /// which ships no ffmpeg, read an MP3 (`odj-audio decode`).
 ///
-/// Packets are read exactly as a deck reads them ([`open_decoder`]): encoder
+/// Packets are read as a deck reads them ([`open_decoder`]): MP3 encoder
 /// delay and padding are trimmed (gapless), a corrupt packet of known length
 /// becomes silence of that length, and a file none of whose packets decode,
 /// whose rate or channel count changes part-way, or which is chained, is an
-/// error. `out` must be seekable: the header is written last, once the
-/// length is known. On an error `out` holds a partial file the caller
-/// discards.
+/// error. Unlike the deck, an MP4's edit list is applied
+/// ([`crate::edit_list`]), so an M4A starts where ffmpeg starts it rather
+/// than 1024 priming frames early. `out` must be seekable: the header is
+/// written last, once the length is known. On an error `out` holds a partial
+/// file the caller discards.
 pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWritten, ProtoError> {
     let Opened { mut format, mut decoder, track_id, time_base, codec_rate, codec_channels, .. } =
         open_decoder(open(path)?, path)?;
@@ -323,6 +368,7 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     let mut channels = 0usize;
     let mut frames = 0u64;
     let mut decoded_any = false;
+    let mut trim = Trim { edit: None, pos: 0, trimmed_start: 0, dropped_end: 0 };
     let mut scratch: Vec<f32> = Vec::new();
     let mut bytes: Vec<u8> = Vec::new();
     // The most frames a WAV of this channel count can hold (32-bit sizes).
@@ -344,17 +390,18 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
                 let n = packet_frames(packet.dur.get(), time_base, rate)
                     .ok_or_else(|| dec_err("corrupt packet of unknown length in", &e))?;
                 let ch = if channels != 0 { channels } else { codec_channels.ok_or_else(|| dec_err("corrupt packet before the channel count is known in", &e))? };
-                if frames + n as u64 > room(ch) {
-                    return Err(too_long());
-                }
-                bytes.clear();
-                bytes.resize(n * ch * 4, 0);
-                out.write_all(&bytes).map_err(io_err)?;
-                frames += n as u64;
                 if sample_rate == 0 {
                     sample_rate = rate.unwrap_or(0);
                 }
                 channels = ch;
+                let (_, take) = trim.window(n as u64, path, track_id, sample_rate);
+                if frames + take > room(ch) {
+                    return Err(too_long());
+                }
+                bytes.clear();
+                bytes.resize(take as usize * ch * 4, 0);
+                out.write_all(&bytes).map_err(io_err)?;
+                frames += take;
                 continue;
             }
             Err(e) => return Err(dec_err("decode error in", &e)),
@@ -373,18 +420,23 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
             ));
         }
         channels = ch;
-        if frames + buf.frames() as u64 > room(ch) {
+        let (from, take) = trim.window(buf.frames() as u64, path, track_id, sample_rate);
+        if frames + take > room(ch) {
             return Err(too_long());
+        }
+        if take == 0 {
+            continue;
         }
         scratch.resize(buf.samples_interleaved(), 0.0);
         buf.copy_to_slice_interleaved(&mut scratch[..]);
+        let kept = &scratch[from as usize * ch..(from + take) as usize * ch];
         bytes.clear();
-        bytes.reserve(scratch.len() * 4);
-        for s in &scratch {
+        bytes.reserve(kept.len() * 4);
+        for s in kept {
             bytes.extend_from_slice(&s.to_le_bytes());
         }
         out.write_all(&bytes).map_err(io_err)?;
-        frames += buf.frames() as u64;
+        frames += take;
     }
     if !decoded_any {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
@@ -398,7 +450,14 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     out.seek(SeekFrom::Start(0)).map_err(io_err)?;
     wav::write_f32_header(out, ch16, sample_rate, data_bytes).map_err(io_err)?;
     out.flush().map_err(io_err)?;
-    Ok(WavWritten { sample_rate, channels: ch16, frames })
+    Ok(WavWritten {
+        sample_rate,
+        channels: ch16,
+        frames,
+        trimmed_start: trim.trimmed_start,
+        dropped_end: trim.dropped_end,
+        edit: trim.describe(),
+    })
 }
 
 /// The first rate decoded is the track's rate. A later buffer at another
@@ -453,6 +512,32 @@ mod tests {
         let e = lock_rate(&mut rate, 48000).unwrap_err();
         assert!(e.contains("44100 Hz, then 48000 Hz"), "{e}");
         assert_eq!(rate, 44100, "a refused rate must not relabel the track");
+    }
+
+    /// The windows `decode_to_wav` keeps for 1024-frame packets under `edit`.
+    fn windows(edit: edit_list::Edit, packets: usize) -> (Vec<(u64, u64)>, Trim) {
+        let mut t = Trim { edit: Some(edit), pos: 0, trimmed_start: 0, dropped_end: 0 };
+        let w = (0..packets).map(|_| t.window(1024, Path::new("unused"), 1, 44100)).collect();
+        (w, t)
+    }
+
+    #[test]
+    fn the_edit_list_trims_the_front_and_drops_whole_packets_past_its_end() {
+        // ffmpeg: skip 1024 (one packet), then 1500 frames; the packet that
+        // straddles the end (starting at 2048 < 2524) is kept whole, the one
+        // starting at 3072 is dropped.
+        let (w, t) = windows(edit_list::Edit::Apply { skip: 1024, keep: Some(1500) }, 4);
+        assert_eq!(w, vec![(1024, 0), (0, 1024), (0, 1024), (0, 0)]);
+        assert_eq!((t.trimmed_start, t.dropped_end, t.describe().as_str()), (1024, 1024, "applied"));
+        // A skip inside a packet keeps its tail.
+        let (w, _) = windows(edit_list::Edit::Apply { skip: 2112, keep: None }, 3);
+        assert_eq!(w, vec![(1024, 0), (1024, 0), (64, 960)]);
+        // Controls: no edit list and an ignored one keep every frame.
+        for e in [edit_list::Edit::None, edit_list::Edit::Ignored("2 edits".into())] {
+            let (w, t) = windows(e, 3);
+            assert_eq!(w, vec![(0, 1024); 3]);
+            assert_eq!((t.trimmed_start, t.dropped_end), (0, 0));
+        }
     }
 
     fn tb(numer: u32, denom: u32) -> Option<TimeBase> {

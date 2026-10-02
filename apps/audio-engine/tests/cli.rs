@@ -711,6 +711,11 @@ fn m4a_fixture() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/am-contra-heart-peripheral-cfg-a.m4a")
 }
 
+/// A tracked mono AAC clip (22.05 kHz, about 3 s) with an edit list.
+fn m4a_mono_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/phase7-dedup/src.m4a")
+}
+
 /// Interleaved f32 samples and (rate, channels) of a float WAV `decode` wrote.
 fn read_f32_wav(p: &std::path::Path) -> (u32, u16, Vec<f32>) {
     let b = std::fs::read(p).unwrap();
@@ -730,7 +735,16 @@ fn read_f32_wav(p: &std::path::Path) -> (u32, u16, Vec<f32>) {
 #[test]
 fn decode_writes_compressed_audio_as_a_wav_at_its_own_rate_and_channels() {
     let d = temp_dir("cli-decode");
-    for (src, want_sr, want_ch) in [(mp3_fixture(), 22050u32, 1u16), (m4a_fixture(), 44100, 2)] {
+    // (source, rate, channels, frames ffmpeg 6.1 decodes, the deck's frames,
+    // frames of encoder priming the deck keeps and `decode` trims). MP3 is
+    // gapless in both, so they agree; an M4A's edit list is applied by
+    // `decode` only, so the deck keeps 1024 frames of AAC priming in front.
+    let cases = [
+        (mp3_fixture(), 22050u32, 1u16, 66_150u64, 66_150u64, 0usize),
+        (m4a_fixture(), 44100, 2, 2_646_016, 2_647_040, 1024),
+        (m4a_mono_fixture(), 22050, 1, 66_560, 67_584, 1024),
+    ];
+    for (src, want_sr, want_ch, ffmpeg_frames, deck_frames, priming) in cases {
         let out = d.join(format!("{}.wav", src.file_stem().unwrap().to_string_lossy()));
         let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&out).output().unwrap();
         assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
@@ -738,18 +752,23 @@ fn decode_writes_compressed_audio_as_a_wav_at_its_own_rate_and_channels() {
         assert_eq!(s["type"], "decode");
         assert_eq!(s["sample_rate"], want_sr, "{}", src.display());
         assert_eq!(s["channels"], want_ch, "{}", src.display());
+        assert_eq!(s["edit_list"], if priming > 0 { "applied" } else { "none" }, "{}", src.display());
+        assert_eq!(s["trimmed_start_frames"], priming as u64, "{}", src.display());
         let (sr, ch, pcm) = read_f32_wav(&out);
         assert_eq!((sr, ch), (want_sr, want_ch));
         assert_eq!(s["frames"].as_u64().unwrap() as usize, pcm.len() / ch as usize);
-        // The same samples a deck decodes, streamed instead of held: the
-        // deck's decode is stereo, so compare each frame's first channel and,
-        // for mono, the copy it makes for the right side.
+        assert_eq!(pcm.len() as u64 / u64::from(ch), ffmpeg_frames, "ffmpeg's frame count: {}", src.display());
+        // The same samples a deck decodes, streamed instead of held, shifted
+        // past the priming: frame i is the deck's frame i + priming, so the
+        // audio starts where ffmpeg starts it (no offset). The deck's decode is
+        // stereo, so compare each frame's first channel and, for mono, the copy
+        // it makes for the right side.
         let deck = odj_audio::decode::decode_file(&src).unwrap();
         assert_eq!(deck.sample_rate, want_sr);
-        assert_eq!(deck.pcm.len() / 2, pcm.len() / ch as usize, "same frame count as the deck's decode");
-        for (frame, (l, r)) in pcm.chunks_exact(ch as usize).zip(deck.pcm.chunks_exact(2).map(|f| (f[0], f[1]))) {
-            assert_eq!(frame[0], l);
-            assert_eq!(*frame.get(1).unwrap_or(&frame[0]), r);
+        assert_eq!(deck.pcm.len() as u64 / 2, deck_frames, "the deck's decode is unchanged: {}", src.display());
+        for (i, (frame, (l, r))) in pcm.chunks_exact(ch as usize).zip(deck.pcm.chunks_exact(2).skip(priming).map(|f| (f[0], f[1]))).enumerate() {
+            assert_eq!(frame[0], l, "frame {i} of {}", src.display());
+            assert_eq!(*frame.get(1).unwrap_or(&frame[0]), r, "frame {i} of {}", src.display());
         }
         assert!(pcm.iter().any(|s| s.abs() > 0.01), "decoded audio, not silence");
     }
