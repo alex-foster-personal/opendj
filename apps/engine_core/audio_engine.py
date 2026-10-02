@@ -59,12 +59,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Literal
 
-# Re-exported (see __all__): the binary lookup lives below every domain package.
-from apps.shared.audio_engine_binary import (
+from apps.shared.odj_audio_binary import (
     BIN_ENV,
-    AudioEngineError,
+    EXE_NAME,
+    REPO_TARGET,
     Binary,
-    resolve_binary,
+    OdjAudioUnavailable,
+    find_binary,
 )
 
 log = logging.getLogger(__name__)
@@ -86,6 +87,14 @@ State = Literal[
 
 
 
+class AudioEngineError(RuntimeError):
+    """A start that cannot go ahead. ``code`` is the wire error code."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def autostart_from_environ(environ: Mapping[str, str]) -> str:
     """``ODJ_AUDIO_ENGINE`` as a fail-fast enum: off (default), wall, device."""
     raw = environ.get(AUTOSTART_ENV, "off").strip().lower() or "off"
@@ -94,6 +103,20 @@ def autostart_from_environ(environ: Mapping[str, str]) -> str:
             f"{AUTOSTART_ENV}={raw!r} is not one of {', '.join(AUTOSTART_VALUES)}"
         )
     return raw
+
+
+def resolve_binary(environ: Mapping[str, str], repo_root: Path) -> Binary:
+    """Find the engine binary, or raise ``AudioEngineError('unavailable')``.
+
+    The rule lives in :func:`apps.shared.odj_audio_binary.find_binary`, shared
+    with the workers' decoder: ``ODJ_AUDIO_BIN`` wins and is never
+    second-guessed, because a packaged app must never fall back to a repo
+    build; without it, the newest of the release and debug cargo builds.
+    """
+    try:
+        return find_binary(environ, repo_root)
+    except OdjAudioUnavailable as exc:
+        raise AudioEngineError("unavailable", str(exc)) from exc
 
 
 Popen = Callable[..., "subprocess.Popen[str]"]
@@ -523,6 +546,8 @@ def _close_quietly(stream: IO[str] | None) -> None:
 __all__ = [
     "AUTOSTART_ENV",
     "BIN_ENV",
+    "EXE_NAME",
+    "REPO_TARGET",
     "TOKEN_ENV",
     "AudioEngineError",
     "AudioEngineSupervisor",

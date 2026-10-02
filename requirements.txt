@@ -109,7 +109,7 @@ PyYAML>=6.0
 # rfc8785 produces RFC 8785 JCS canonical bytes for content hashing.
 # format-nongpl, not format: [format] pulls rfc3987 (GPL-3.0+) into the
 # shipped payload; scripts/license_gate.py denies it.
-jsonschema[format-nongpl]>=4.21,<5
+jsonschema[format-nongpl]>=4.25,<5
 rfc8785>=0.1.4,<1
 
 # --- Phase 14 -- voice commands (VOICE-01) ---

@@ -20,6 +20,7 @@
 		"test:e2e:performance:headed": "playwright test --config tests/e2e/playwright.performance.config.ts --headed",
 		"test:e2e:cue-marker-qa": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_CUE_QA=1 playwright test --config tests/e2e/playwright.performance.config.ts performance-cue-marker-qa.spec.ts",
     "test:e2e:performance:autoplay-proof": "PERFORMANCE_E2E_FIXTURE=0 PERFORMANCE_E2E_AUTOPLAY=0 PERFORMANCE_E2E_AUDIO_ACTIVATION=auto playwright test --config tests/e2e/playwright.performance.config.ts --grep @performance-autoplay-proof --reporter=list",
+    "test:e2e:vocals-demucs-overlay": "MDT_LIVE_DEMUCS_ACCEPTANCE=1 playwright test --config tests/e2e/playwright.vocals-demucs-overlay.config.ts",
     "api:gen": "openapi-typescript ../openapi.json -o src/lib/api-types.ts && node scripts/compact-headphone-api-types.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

@@ -45,6 +45,72 @@ WORDS = [word("one", start_s=1.0, end_s=1.2), word("two", start_s=1.5, line_fina
 AUDIO_DIGEST = "b" * 64
 
 
+@pytest.mark.requirement("LYR-08")
+def test_produce_strips_phantom_tail_and_keeps_source(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] produce sees a weak thank-you after silence and a past-duration word [then] both are omitted, [else stop]."""
+    use_local_mode(monkeypatch)
+    seed_track(conn, "sid-tail")
+    conn.execute(
+        "UPDATE tracks SET duration_ms = ? WHERE stable_id = ?",
+        (100_000, "sid-tail"),
+    )
+    words = [
+        word("sing", start_s=1.0, end_s=1.5, witness="agree", line_final=True),
+        word("thank", start_s=95.0, end_s=95.3, witness="contradict", line_final=False),
+        word("you", start_s=95.3, end_s=95.6, witness="lost", line_final=False),
+        word("ghost", start_s=100.5, end_s=101.0, witness="agree", line_final=False),
+    ]
+    artifact = artifacts.produce_words_artifact(
+        conn,
+        data_dir=data_dir,
+        stable_id="sid-tail",
+        source="lrclib get",
+        words=words,
+        s3=None,
+        cfg=None,
+    )
+    parsed = karaoke_cache.parse_words(artifact.path.read_bytes(), "sid-tail")
+    assert [w.word for w in parsed.words] == ["sing"]
+    assert parsed.source == "lrclib get"
+
+
+@pytest.mark.requirement("LYR-08")
+def test_produce_keeps_real_final_words_inside_duration(
+    conn: sqlite3.Connection,
+    data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[if] real lyrics end inside the duration, with a repeated chorus [then] every word is kept, [else stop]."""
+    use_local_mode(monkeypatch)
+    seed_track(conn, "sid-keep")
+    conn.execute(
+        "UPDATE tracks SET duration_ms = ? WHERE stable_id = ?",
+        (100_000, "sid-keep"),
+    )
+    words = [word("verse", start_s=1.0, end_s=1.5, witness="agree", line_final=True)]
+    t = 90.0
+    for _ in range(4):
+        words.append(word("thank", start_s=t, end_s=t + 0.3, witness="agree"))
+        words.append(word("you", start_s=t + 0.3, end_s=t + 0.6, witness="agree"))
+        t += 1.0
+    words.append(word("now", start_s=99.9, end_s=100.0, witness="agree", line_final=True))
+    artifact = artifacts.produce_words_artifact(
+        conn,
+        data_dir=data_dir,
+        stable_id="sid-keep",
+        source="lrclib get",
+        words=words,
+        s3=None,
+        cfg=None,
+    )
+    parsed = karaoke_cache.parse_words(artifact.path.read_bytes(), "sid-keep")
+    assert [w.word for w in parsed.words] == [str(w["word"]) for w in words]
+
+
 def _produce(
     conn: sqlite3.Connection,
     data_dir: Path,

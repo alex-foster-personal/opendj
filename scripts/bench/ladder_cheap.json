@@ -14,7 +14,7 @@
     "arm": "rb7-stems",
     "si_sdr": 8.39,
     "s_per_stem_minute": 11.08,
-    "note": "rekordbox 7's own STEMS engine, run from its own hdemucs.onnx. Anything at least this good is shippable."
+    "note": "a user-supplied ONNX 4-stem model. Anything at least this good is shippable."
   },
   "hardware": "Apple M3, 8 cores, CPU only (demucs cannot use MPS on this machine)",
   "clips": [
@@ -82,7 +82,7 @@
       "id": "rb7-stems",
       "file": "clips-cheap/zeno-signs-rb7-stems.m4a",
       "inst_file": "clips-cheap/zeno-signs-rb7-stems.inst.m4a",
-      "params": "REKORDBOX 7 STEMS, its OWN hdemucs.onnx - THIS IS THE BAR [11.08 s per stem-minute on Apple M3 CPU, median of 3 back-to-back runs]",
+      "params": "user-supplied ONNX 4-stem model - THIS IS THE BAR [11.08 s per stem-minute on Apple M3 CPU, median of 3 back-to-back runs]",
       "separate_s": 11.08,
       "si_sdr": 8.39,
       "s_per_stem_minute": 11.08,
