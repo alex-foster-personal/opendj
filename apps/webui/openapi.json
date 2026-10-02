@@ -5434,12 +5434,34 @@
         "type": "object"
       },
       "CoverageOut": {
+        "description": "Per-step coverage over ``present`` tracks; see routes/ingest_coverage.py.\n\n``on_disk`` is the denominator (``availability.present``). Per step,\n``done + terminal + failed + pending == on_disk``. ``missing`` and\n``corrupt`` keep their artifact meaning for the refresh job's targeting:\n``corrupt`` (structurally invalid entries) is a subset of ``missing``.",
         "properties": {
+          "availability": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Availability",
+            "type": "object"
+          },
           "corrupt": {
             "additionalProperties": {
               "type": "integer"
             },
             "title": "Corrupt",
+            "type": "object"
+          },
+          "done": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Done",
+            "type": "object"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Failed",
             "type": "object"
           },
           "generated_at": {
@@ -5457,12 +5479,41 @@
             "title": "On Disk",
             "type": "integer"
           },
+          "pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pending",
+            "type": "object"
+          },
+          "stems_source_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stems Source Refusal"
+          },
+          "terminal": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Terminal",
+            "type": "object"
+          },
           "total_tracks": {
             "title": "Total Tracks",
             "type": "integer"
           },
           "unreachable": {
             "title": "Unreachable",
+            "type": "integer"
+          },
+          "waiting_on_stems": {
+            "title": "Waiting On Stems",
             "type": "integer"
           }
         },
@@ -5472,6 +5523,13 @@
           "unreachable",
           "missing",
           "corrupt",
+          "availability",
+          "done",
+          "terminal",
+          "failed",
+          "pending",
+          "waiting_on_stems",
+          "stems_source_refusal",
           "generated_at"
         ],
         "title": "CoverageOut",
@@ -6522,6 +6580,165 @@
           "seq"
         ],
         "title": "DigestResponse",
+        "type": "object"
+      },
+      "DrainConfigIn": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DrainConfigIn",
+        "type": "object"
+      },
+      "DrainRetryOut": {
+        "properties": {
+          "rearmed": {
+            "title": "Rearmed",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DrainStatusOut"
+          }
+        },
+        "required": [
+          "rearmed",
+          "status"
+        ],
+        "title": "DrainRetryOut",
+        "type": "object"
+      },
+      "DrainStatusOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Failed",
+            "type": "object"
+          },
+          "jobs_failed": {
+            "title": "Jobs Failed",
+            "type": "integer"
+          },
+          "jobs_run": {
+            "title": "Jobs Run",
+            "type": "integer"
+          },
+          "last_job": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Job"
+          },
+          "next_retry_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Retry At"
+          },
+          "pending": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pending",
+            "type": "object"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "stems_needing_farm": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stems Needing Farm",
+            "type": "array"
+          },
+          "stems_needing_farm_count": {
+            "title": "Stems Needing Farm Count",
+            "type": "integer"
+          },
+          "stop_requested": {
+            "title": "Stop Requested",
+            "type": "boolean"
+          },
+          "ticks": {
+            "title": "Ticks",
+            "type": "integer"
+          },
+          "unavailable_steps": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Unavailable Steps",
+            "type": "object"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "waiting_on_stems": {
+            "title": "Waiting On Stems",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "enabled",
+          "stop_requested",
+          "reason",
+          "pending",
+          "failed",
+          "waiting_on_stems",
+          "stems_needing_farm",
+          "stems_needing_farm_count",
+          "unavailable_steps",
+          "next_retry_at",
+          "last_job",
+          "jobs_run",
+          "jobs_failed",
+          "ticks",
+          "updated_at"
+        ],
+        "title": "DrainStatusOut",
         "type": "object"
       },
       "EngineHealthOut": {
@@ -16254,6 +16471,20 @@
       },
       "ReconcileSummary": {
         "properties": {
+          "availability": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability"
+          },
           "orphan_broken": {
             "title": "Orphan Broken",
             "type": "integer"
@@ -27457,6 +27688,131 @@
         "summary": "Suggest Next Route",
         "tags": [
           "copilot"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/config": {
+      "put": {
+        "operationId": "drain_config_api_v1_coverage_drain_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drain Config",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/retry": {
+      "post": {
+        "operationId": "drain_retry_api_v1_coverage_drain_retry_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainRetryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Retry",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/start": {
+      "post": {
+        "operationId": "drain_start_api_v1_coverage_drain_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Start",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/status": {
+      "get": {
+        "operationId": "drain_status_api_v1_coverage_drain_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Status",
+        "tags": [
+          "coverage-drain"
+        ]
+      }
+    },
+    "/api/v1/coverage-drain/stop": {
+      "post": {
+        "operationId": "drain_stop_api_v1_coverage_drain_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drain Stop",
+        "tags": [
+          "coverage-drain"
         ]
       }
     },

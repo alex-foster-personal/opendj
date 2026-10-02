@@ -67,10 +67,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from apps.shared.platform_paths import is_unplayable_path
+from apps.shared.state.db import open_ro
 
-from .. import rb_vendor
+from .. import library_playable, rb_vendor
 from ..backend import MAX_LIMIT, Playlist, StateBackend, Track, TrackFilter
 from ..deps import get_read_state
+from ..sqlite_backend import SqliteBackend
 
 router = APIRouter(prefix="/reconcile", tags=["reconcile"])
 
@@ -126,9 +128,25 @@ class ReconcileSummary(BaseModel):
     # Missing Tracks folder, never via a playlist badge.
     orphan_broken: int
     playlists: list[PlaylistBrokenSummary]
+    #: Where every live row's audio stands on THIS machine, from the one
+    #: shared predicate (``library_playable``) that ingest coverage also
+    #: reads, so the two endpoints cannot disagree. Keys: total, present,
+    #: broken_here, off_machine, awaiting_volume, streaming, pathless.
+    #: ``None`` = unknown (the backend has no state.db to scan), never zero.
+    availability: dict[str, int] | None = None
 
 
 # ----- scan core -------------------------------------------------------------
+
+def _availability(backend: StateBackend) -> dict[str, int] | None:
+    if not isinstance(backend, SqliteBackend):
+        return None
+    conn = open_ro(backend.writeback_state_db_path)
+    try:
+        return library_playable.scan_playability(conn).counts()
+    finally:
+        conn.close()
+
 
 @dataclass(frozen=True)
 class _BrokenScan:
@@ -283,6 +301,7 @@ def reconcile_summary(
         total_broken=len(broken_ids),
         orphan_broken=orphan_broken,
         playlists=per_playlist,
+        availability=_availability(backend),
     )
 
 

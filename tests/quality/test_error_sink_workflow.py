@@ -1,8 +1,7 @@
 """OBS-01 Part 1: CI job failures post kind=build to the error sink.
 
-Since RUN-COUNT round 3 the sink rides the cost guard's scheduled pass instead of a
-workflow_run job per completion. Reads the shipped workflow, not a second
-hand-maintained representation.
+Since ADR-0121 the sink runs as its own workflow, ci-error-sink.yml (hourly at :30,
+daily reconcile at 03:23 UTC), instead of riding the retired cost guard's pass.
 
 Regression lines:
   - if a failed CI/E2E/macOS Packaging run cannot reach the poster, then broken
@@ -10,7 +9,7 @@ Regression lines:
   - if the poster does not invoke post_build_failure, then broken
   - if the workflow edits runner-switch variables, then broken
 
-[if] a watched workflow fails [then] the guard's pass posts it to the sink, [else stop].
+[if] a watched workflow fails [then] the batch pass posts it to the sink, [else stop].
 """
 
 from __future__ import annotations
@@ -22,19 +21,21 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO / ".github" / "workflows"
-GUARD = WORKFLOWS / "ci-cost-guard.yml"
+ERROR_SINK = WORKFLOWS / "ci-error-sink.yml"
 
 SINK_WORKFLOWS = {"CI", "E2E", "macOS Packaging"}
+HOURLY_CRON = "30 * * * *"
+RECONCILE_CRON = "23 3 * * *"
 
 
-def _guard() -> dict:
-    document = yaml.safe_load(GUARD.read_text(encoding="utf-8"))
-    assert isinstance(document, dict), "ci-cost-guard.yml is not a mapping"
+def _workflow() -> dict:
+    document = yaml.safe_load(ERROR_SINK.read_text(encoding="utf-8"))
+    assert isinstance(document, dict), "ci-error-sink.yml is not a mapping"
     return document
 
 
-def _job() -> dict:
-    return _guard()["jobs"]["assess"]
+def _sink_job() -> dict:
+    return _workflow()["jobs"]["sink"]
 
 
 def _names(csv: str) -> set[str]:
@@ -44,7 +45,7 @@ def _names(csv: str) -> set[str]:
 def _poster_step() -> dict:
     return next(
         step
-        for step in _job()["steps"]
+        for step in _sink_job()["steps"]
         if isinstance(step, dict) and "scripts.post_build_failure" in step.get("run", "")
     )
 
@@ -58,47 +59,42 @@ def _workflow_names() -> set[str]:
 
 def test_the_per_completion_sink_workflow_is_gone() -> None:
     assert not (WORKFLOWS / "error-sink.yml").exists(), (
-        "the sink rides the cost guard's pass; a workflow_run follower per completion "
+        "the sink rides a scheduled batch pass; a workflow_run follower per completion "
         "is the job this round removed"
     )
 
 
 def test_a_failed_watched_workflow_reaches_the_kind_build_poster() -> None:
-    """if CI, E2E or macOS Packaging fails then the guard's pass posts it."""
-    env = _job()["env"]
-    assert _names(env["SINK_WORKFLOWS"]) == SINK_WORKFLOWS
-    assert _names(env["SINK_WORKFLOWS"]) <= _names(env["WATCHED_WORKFLOWS"]), (
-        "the sink selects from the pass's own listing, so it can only see watched runs"
-    )
-    guard = next(step for step in _job()["steps"] if step.get("id") == "guard")
-    assert '--sink-workflows "$SINK_WORKFLOWS"' in guard["run"]
+    """if CI, E2E or macOS Packaging fails then the batch pass posts it."""
+    env = _sink_job()["env"]
+    assert _names(env["LISTED_WORKFLOWS"]) == SINK_WORKFLOWS
+    batch = next(step for step in _sink_job()["steps"] if step.get("id") == "sink")
+    assert "scripts.ci_error_sink_batch" in batch["run"]
+    assert '--listed "$LISTED_WORKFLOWS"' in batch["run"]
     poster = _poster_step()
     assert "--batch-file" in poster["run"]
-    assert poster["env"]["SINK_FAILURES_FILE"] == "${{ steps.guard.outputs.sink_failures_file }}"
-    body = GUARD.read_text(encoding="utf-8")
+    assert poster["env"]["SINK_FAILURES_FILE"] == "${{ steps.sink.outputs.sink_failures_file }}"
+    body = ERROR_SINK.read_text(encoding="utf-8")
     assert "CI_RUNS_ON_LINUX" in body
     assert "gh variable" not in body
 
 
 def test_every_sink_workflow_is_a_real_workflow_name() -> None:
-    """The old trigger watched `Full CI` and `macOS packaging`, and neither matched a
-    workflow, so those failures were never posted. Held against the names on disk."""
     missing = SINK_WORKFLOWS - _workflow_names()
     assert not missing, f"no workflow is named {sorted(missing)}"
 
 
-def test_the_sink_step_runs_after_the_alerts_and_before_the_census_gate() -> None:
-    """A sink failure must never delay an alert, and the census gate stays last."""
-    names = [step.get("name", "") for step in _job()["steps"]]
-    poster = names.index(_poster_step()["name"])
-    assert names.index("Open cost alert issues") < poster
-    assert poster == len(names) - 2
-    assert names[-1] == "Fail while the census holds the mark"
+def test_the_sink_job_runs_on_an_hourly_cadence_and_daily_reconcile() -> None:
+    # PyYAML reads the bare key `on:` as the boolean True (YAML 1.1).
+    triggers = _workflow()[True]
+    crons = [entry["cron"] for entry in triggers["schedule"]]
+    assert HOURLY_CRON in crons
+    assert RECONCILE_CRON in crons
+    assert "if" not in _sink_job(), "every run of this file is a sink pass, so no job is conditional"
 
 
 def test_ci_failure_poster_uses_canonical_host_not_runner_name() -> None:
-    """The posted host is always the canonical label, never a runner-derived value."""
-    body = GUARD.read_text(encoding="utf-8")
+    body = ERROR_SINK.read_text(encoding="utf-8")
     assert "${{ runner.name }}" not in body
     poster = _poster_step()
     assert '--host "github-actions"' in poster["run"]
@@ -107,3 +103,21 @@ def test_ci_failure_poster_uses_canonical_host_not_runner_name() -> None:
     assert re.search(r"mkdir -p \"\$HOME/jobs/logs\"", poster["run"]), (
         "sink_path() picks the nucbox JSONL only when its directory exists"
     )
+
+
+def test_the_checkout_holds_every_package_the_poster_imports() -> None:
+    """Sol P1 on #4844: a `scripts` + `.github/workflows` sparse checkout left out
+    `apps/shared/telemetry`, which scripts.post_build_failure imports, so on a clean runner
+    the post step died with ModuleNotFoundError before posting anything and no pass could
+    advance the mark. The workflow takes a full checkout, as the cost guard it replaces did."""
+    poster_source = (REPO / "scripts" / "post_build_failure.py").read_text(encoding="utf-8")
+    assert "from apps.shared.telemetry" in poster_source, (
+        "positive control: the poster imports a package outside scripts/, so a sparse checkout "
+        "of scripts alone cannot work"
+    )
+    checkout = next(
+        step
+        for step in _sink_job()["steps"]
+        if isinstance(step, dict) and str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    assert "sparse-checkout" not in checkout.get("with", {})
