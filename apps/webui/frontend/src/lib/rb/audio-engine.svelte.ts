@@ -217,13 +217,12 @@ import { buildDeckAudioSnapshot } from '$lib/rb/deck-audio-snapshot';
 import type { DeckAudioSnapshot, DeckState, LoopState, QuantizeGrid, SyncMode } from '$lib/rb/deck-state-types';
 import type { HotCue, HotCueSlot } from '$lib/rb/hot-cue-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
+import { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock } from '$lib/rb/context-time-wait';
 import type { CrossfaderAssign, EqBand, MixerChannelState, MixerState } from '$lib/rb/mixer-types';
 import type { StemControl, StemDeckState } from '$lib/rb/stem-types';
 import {
 	assertUnitRange,
 	AUDIO_CONTEXT_OPTIONS,
-	CONTEXT_WAIT_POLL_MS,
-	CONTEXT_WAIT_STALL_TIMEOUT_MS,
 	DECK_IDS,
 	eqDbFromKnob,
 	masterDelaySeconds,
@@ -308,6 +307,7 @@ import {
 	supersedingScheduleTime
 } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
+import { createWebAudioPhaseLock } from './phase-lock-webaudio';
 import {
 	_effectivePresentedScheduleAt,
 	acknowledgePresentedTransportSchedule,
@@ -391,6 +391,7 @@ export {
 	supersedingScheduleTime
 };
 export { pausedSeekClock };
+export { REAL_CONTEXT_WAIT_CLOCK, waitForAdvancingContextTime, type ContextTimeSource, type ContextWaitClock };
 // The headphone / cue monitor moved WHOLE to player/headphones.ts -- its state,
 // its device boundary and its algebra. Deliberately NOT re-exported here: no
 // module in src ever reached its pure surface through this barrel, and a
@@ -1028,9 +1029,12 @@ import {
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
 	type TransportMutationActivity,
+	planKeyShiftMutation,
+	type KeyShiftMutationPlan,
 	filterParamsFromKnob
 } from './audio-engine-guards';
 import {
+	AUTOMATIC_HANDOFF_REASONS,
 	electMaster,
 	onAirGain,
 	SILENCE_GAIN_EPSILON,
@@ -1047,7 +1051,9 @@ export {
 	masterSwitchFollowers,
 	naturalEndNeedsRevisionedStop,
 	transportNeedsScheduledMutation,
-	type TransportMutationActivity
+	type TransportMutationActivity,
+	planKeyShiftMutation,
+	type KeyShiftMutationPlan
 };
 
 function _assertCurrentDeckReplacementAllowed(deck: DeckId): void {
@@ -1146,8 +1152,15 @@ function _electionInput(): MasterElectionInput {
 
 function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason }): DeckId | null {
 	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
-	const next = electMaster(_electionInput());
-	_assignMaster(next, options?.reason ?? 'master-left');
+	const previous = _masterDeck, next = electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
+	_assignMaster(next, reason);
+	// An AUTOMATIC handoff re-joins the playing followers as setDeckMaster does;
+	// otherwise each phase lock drops ('master moved') and the decks free-run.
+	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
+		const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
+		_bumpReanchorOperation(next);
+		void _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) }).catch((e: unknown) => pushToast(`Beat Sync re-join to deck ${next} failed: ${e instanceof Error ? e.message : String(e)}`, 'error'));
+	}
 	return next;
 }
 
@@ -1628,38 +1641,6 @@ async function _setDeckKeyShift(deck: DeckId, keyShiftSemitones: number): Promis
 	);
 }
 
-export interface KeyShiftMutationPlan {
-	kind: 'immediate' | 'scheduled';
-	active: boolean;
-	publishedKeyShiftSemitones: number | null;
-}
-
-/** A stop acknowledged by the processor can remain audible at the output.
- * Key changes must join that revisioned schedule instead of publishing ahead
- * of the listener. */
-export function planKeyShiftMutation(
-	activity: TransportMutationActivity,
-	desiredActive: boolean,
-	requestedKeyShiftSemitones: number
-): KeyShiftMutationPlan {
-	if (typeof desiredActive !== 'boolean') {
-		throw new TypeError('key shift desired active must be boolean');
-	}
-	_assertKeyShift(requestedKeyShiftSemitones);
-	if (transportNeedsScheduledMutation(activity)) {
-		return {
-			kind: 'scheduled',
-			active: desiredActive,
-			publishedKeyShiftSemitones: null
-		};
-	}
-	return {
-		kind: 'immediate',
-		active: false,
-		publishedKeyShiftSemitones: requestedKeyShiftSemitones
-	};
-}
-
 function _desiredKeyShiftSemitones(deck: DeckId): number {
 	const rt = _rt[deck];
 	return rt.pending[rt.pending.length - 1]?.keyShiftSemitones ?? rt.controlKeyShiftSemitones;
@@ -2010,6 +1991,7 @@ function _tick(): void {
 			_updateSlipPosition(deck);
 			if (observation?.audible || observation?.transport_pending || deckStates[deck].playing || deckStates[deck].audible) anyTransport = true;
 		}
+		_phaseLock.tick(_ctx.currentTime); // NAE-19: keep Beat Sync followers on phase (throttled to 30 Hz)
 		// Feed TopBar audio-Hz meter (presentation publish rate ~= game FPS).
 		noteMasterSilence(_masterAnalyser, _externalRouteAnalyser, anyTransport, Date.now());
 		if (anyTransport) noteAudioPresentationTick();
@@ -2083,84 +2065,6 @@ async function _resumeContext(): Promise<AudioContext> {
 	// Belt for the statechange listener; the device-floor row stays idempotent.
 	stampContextDeviceFloors(ctx);
 	return ctx;
-}
-
-export interface ContextTimeSource {
-	readonly currentTime: number;
-	readonly state: string;
-}
-
-/**
- * The two time primitives the context-time wait below is built on: the
- * millisecond reading it measures stall progress against, and the sleep it
- * parks on between polls. They are injectable for one reason - the wait's
- * contract is "give up within `stallTimeoutMs` of the last observed
- * progress", and that is a statement about scheduling arithmetic, not about
- * how punctually a loaded machine delivers a timer callback. A test that
- * drives a virtual clock checks the arithmetic; a test that times real
- * `setTimeout` calls checks the host's spare CPU.
- */
-export interface ContextWaitClock {
-	nowMs(): number;
-	sleep(ms: number): Promise<void>;
-}
-
-export const REAL_CONTEXT_WAIT_CLOCK: ContextWaitClock = {
-	nowMs: () => Date.now(),
-	sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-};
-
-export async function waitForAdvancingContextTime(
-	ctx: ContextTimeSource,
-	targetContextTime: number,
-	stillCurrent: () => boolean = () => true,
-	stallTimeoutMs: number = CONTEXT_WAIT_STALL_TIMEOUT_MS,
-	clock: ContextWaitClock = REAL_CONTEXT_WAIT_CLOCK
-): Promise<void> {
-	if (!Number.isFinite(targetContextTime) || targetContextTime < 0) {
-		throw new RangeError(
-			`targetContextTime must be finite and non-negative, got ${targetContextTime}`
-		);
-	}
-	if (!Number.isFinite(stallTimeoutMs) || stallTimeoutMs <= 0) {
-		throw new RangeError(`stallTimeoutMs must be finite and positive, got ${stallTimeoutMs}`);
-	}
-	const initialContextTime = ctx.currentTime;
-	if (!Number.isFinite(initialContextTime) || initialContextTime < 0) {
-		throw new RangeError(
-			`AudioContext time must be finite and non-negative, got ${initialContextTime}`
-		);
-	}
-	let lastContextTime = initialContextTime;
-	let lastProgressAtMs = clock.nowMs();
-	while (ctx.currentTime < targetContextTime) {
-		if (!stillCurrent()) throw new Error('context-time wait state changed before target');
-		if (ctx.state !== 'running') {
-			throw new Error(`AudioContext is not running during context-time wait; got ${ctx.state}`);
-		}
-		const contextTime = ctx.currentTime;
-		if (!Number.isFinite(contextTime) || contextTime < lastContextTime) {
-			throw new Error(
-				`AudioContext time must be finite and monotonic, got ${contextTime} after ${lastContextTime}`
-			);
-		}
-		if (contextTime > lastContextTime) {
-			lastContextTime = contextTime;
-			lastProgressAtMs = clock.nowMs();
-		}
-		const stallRemainingMs = stallTimeoutMs - (clock.nowMs() - lastProgressAtMs);
-		if (stallRemainingMs <= 0) {
-			throw new Error(
-				`AudioContext time stalled before target ${targetContextTime} at ${contextTime}`
-			);
-		}
-		const contextRemainingMs = (targetContextTime - contextTime) * 1000;
-		const delayMs = Math.max(
-			1,
-			Math.ceil(Math.min(CONTEXT_WAIT_POLL_MS, contextRemainingMs, stallRemainingMs))
-		);
-		await clock.sleep(delayMs);
-	}
 }
 
 interface _MasterSyncSchedule {
@@ -2426,6 +2330,7 @@ async function _synchronizeFollowers(
 	options: _SyncOptions = {}
 ): Promise<void> {
 	if (followers.length === 0 && options.masterSchedule === undefined) return;
+	for (const deck of followers) _phaseLock.clear(deck); // no trim between this plan and its lock
 	// Every guard the two beatgrid-resync callers apply to their PORTS is asked
 	// before this function is entered; none of them survives the awaits INSIDE
 	// it. `_resumeContext()` alone is an open-ended wait, and everything below
@@ -2664,6 +2569,13 @@ async function _synchronizeFollowers(
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
 		);
+		// Lock every follower that DID sync before a partial failure throws (a
+		// failed master schedule leaves no tempo to lock against).
+		for (const item of planned) {
+			if (failedDecks.includes(item.deck) || failedDecks.includes(master)) continue;
+			item.st.sync_error = null;
+			_phaseLock.record(item.deck, { master, masterTempo: masterTempoRatio, base: item.plan.followerTempoRatio, normalization: item.plan.tempoNormalization });
+		}
 		if (failedDecks.length > 0) {
 			succeededDecks = schedules.map((item) => item.deck).filter((deck) => !failedDecks.includes(deck));
 			const message =
@@ -2676,7 +2588,6 @@ async function _synchronizeFollowers(
 				cause: outcomes.find((outcome) => outcome.status === 'rejected')
 			});
 		}
-		for (const item of planned) item.st.sync_error = null;
 		// What a completed sync tells the DJ is decided in beat-sync-math.ts as
 		// a pure function; the engine only performs the effects it returns.
 		for (const notice of beatSyncOutcomeNotices(planned, planFailed, master)) {
@@ -2705,6 +2616,17 @@ const _beatgridResyncPorts: BeatgridResyncPorts = {
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };
+// NAE-19 continuous phase lock: bookkeeping and ports in phase-lock-webaudio.ts.
+const _phaseLock = createWebAudioPhaseLock({
+	deckIds: DECK_IDS, syncMaster: _syncMaster, masterDeck: _ownedMaster, ownsTempo: _syncOwnsFollowerTempo, playing: (deck) => deckStates[deck].playing,
+	loadToken: (deck) => _rt[deck].loadToken, stableId: (deck) => deckStates[deck].stable_id,
+	settled: (deck) => { const rt = _rt[deck]; return rt.pending.length === 0 && rt.scheduleIntentCount === 0 && !_presentationPending(rt) && !_reanchorRampPending(rt) && _quantizedLaunchAt[deck] === null; },
+	desiredTempo: (deck) => _rt[deck].pending.at(-1)?.tempoRatio ?? _rt[deck].controlTempoRatio,
+	beats: (deck) => deckStates[deck].anlz?.beatgrid.beats ?? [], positionSec: _projectPositionAt,
+	pitchRangePct: (deck) => pitchRanges[deck], loopEngaged: (deck) => deckStates[deck].loop?.engaged === true,
+	scheduleTempo: (deck, ratio) => _scheduleDeck(deck, _futureScheduleTime(deck), (when) => _projectPositionAt(deck, when), true, ratio),
+	resync: (master, deck) => _synchronizeFollowers(master, [deck]), reportError: (deck, message) => (deckStates[deck].sync_error = message)
+});
 const _beatgridGuards = createBeatgridResyncGuards({
 	ports: _beatgridResyncPorts,
 	deckRuntime: (deck) => _rt[deck],
@@ -2965,6 +2887,7 @@ class RbAudioEngine implements AudioEngine {
 		const processors: _DeckProcessor[] = [];
 		const nodes: AudioNode[] = [];
 		_engineSession += 1;
+		_phaseLock.clearAll();
 		for (const deck of DECK_IDS) {
 			const rt = _rt[deck];
 			rt.loadToken += 1;

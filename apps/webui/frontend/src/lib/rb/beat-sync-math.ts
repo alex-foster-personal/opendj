@@ -33,6 +33,16 @@ export type BeatNumber = 1 | 2 | 3 | 4;
 export type SyncMode = 'beat' | 'bar';
 export type TempoNormalization = 0.5 | 1 | 2;
 
+/**
+ * Largest phase-lock trim, as a fraction of the base tempo: 0.3%, 0.38 BPM at
+ * 128 BPM. Below the pitch change a DJ hears on a varispeed deck (about 5
+ * cents), and twice the worst grid-rounding tempo error seen on real PQTZ
+ * (~0.15%, see `_windowedIntervalBpm`), so a real drift of that size is always
+ * out-run. Lives here, not in phase-lock.ts, so the tempo-lock tolerance can
+ * use it without an import cycle; phase-lock.ts re-exports it.
+ */
+export const PHASE_LOCK_MAX_TRIM = 0.003;
+
 export interface FollowerSyncRequest {
 	masterGrid: readonly AnlzBeat[];
 	followerGrid: readonly AnlzBeat[];
@@ -660,25 +670,39 @@ export function beatIsExtrapolated(beat: Pick<AnlzBeat, 'extrapolated'>): boolea
 export const DEFAULT_TEMPO_LOCK_TOLERANCE_BPM = 0.1;
 
 /**
+ * The default tolerance at one fold of the master tempo: the 0.1 BPM display
+ * slack PLUS the largest trim the phase lock itself applies
+ * (PHASE_LOCK_MAX_TRIM of the folded master BPM, 0.38 BPM at 128). A locked,
+ * in-phase follower carrying an ordinary trim must not read "Off tempo"; a
+ * real 1 BPM mismatch at 128 (tolerance 0.48) still does.
+ */
+export function tempoLockToleranceBpm(foldedMasterBpm: number): number {
+	return DEFAULT_TEMPO_LOCK_TOLERANCE_BPM + PHASE_LOCK_MAX_TRIM * foldedMasterBpm;
+}
+
+/**
  * True when candidateBpm is tempo-locked to masterBpm at 1x, 0.5x, or 2x
  * within toleranceBpm - the three ratios Beat Sync itself accepts (see
- * `TempoNormalization`). Null, non-finite, or non-positive inputs mean
- * there is no valid reference to compare against (no elected master, no
- * live BPM yet, or the master deck against itself); those cases return
- * true so the UI never shows a mismatch without a real error to report.
+ * `TempoNormalization`). Without an explicit toleranceBpm, each fold uses
+ * `tempoLockToleranceBpm` so a phase-lock trim is not read as off tempo.
+ * Null, non-finite, or non-positive inputs mean there is no valid reference
+ * to compare against (no elected master, no live BPM yet, or the master deck
+ * against itself); those cases return true so the UI never shows a mismatch
+ * without a real error to report.
  */
 export function isTempoLockedToMaster(
 	candidateBpm: number | null,
 	masterBpm: number | null,
-	toleranceBpm: number = DEFAULT_TEMPO_LOCK_TOLERANCE_BPM
+	toleranceBpm?: number
 ): boolean {
 	if (candidateBpm === null || masterBpm === null) return true;
 	if (!Number.isFinite(candidateBpm) || candidateBpm <= 0) return true;
 	if (!Number.isFinite(masterBpm) || masterBpm <= 0) return true;
 	const normalizations: readonly TempoNormalization[] = [1, 0.5, 2];
-	return normalizations.some(
-		(normalization) => Math.abs(candidateBpm - masterBpm * normalization) <= toleranceBpm
-	);
+	return normalizations.some((normalization) => {
+		const folded = masterBpm * normalization;
+		return Math.abs(candidateBpm - folded) <= (toleranceBpm ?? tempoLockToleranceBpm(folded));
+	});
 }
 
 // ------------------------------------------ beatgrid data-quality (Err col)
