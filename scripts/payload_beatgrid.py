@@ -30,7 +30,12 @@ WHAT THIS STAGES, AND WHY EACH IS A SEPARATE PIECE
   ``MDT_BEATGRID_WEIGHTS`` names. Fetched at BUILD time from Beat This!'s
   upstream URL into a content-addressed cache and refused unless its sha256
   is :data:`apps.analysis_beatgrid.weights.CHECKPOINT_SHA256`, the digest the
-  producer asserts again at load. Beat This! code and weights are MIT.
+  producer asserts again at load. Beat This! code and weights are MIT
+  (upstream README "License" section, CPJKU/beat_this b95c8ab, Thu 28 May
+  2026; ADR-NEW-beat-this-weights-license).
+- ``models/beatgrid/LICENSE-beat_this.txt``: the MIT notice for that
+  checkpoint. MIT's one condition is that the copyright and permission notice
+  travel with every copy, so the payload carries it next to the weights.
 
 Requirements:
 
@@ -40,6 +45,9 @@ Requirements:
 - ✔︎ ✅ 🎯 The checkpoint is staged only when its digest matches the pinned
   one; a wrong download or a corrupt cache entry fails the build and caches
   nothing. -> :func:`fetch_checkpoint`
+- ✔︎ ✅ 🎯 The checkpoint ships with its MIT notice; a payload without it
+  fails verification. -> :func:`stage_checkpoint`,
+  :func:`verify_bundled_beatgrid_runner`
 - ✔︎ ✅ 🎯 The runner interpreter sees the runner site and nothing else.
   -> :func:`write_runner_launcher`
 
@@ -73,6 +81,14 @@ RUNNER_SCRIPT_RELATIVE = Path("apps/analysis_beatgrid/beat_this_runner.py")
 RUNNER_SITE_RELATIVE = Path("runners/beatgrid/site")
 RUNNER_LAUNCHER_RELATIVE = Path("bin/opendj-beatgrid-python")
 CHECKPOINT_RELATIVE = Path("models/beatgrid") / weights.CHECKPOINT_FILENAME
+#: Beat This!'s MIT notice, verbatim from the upstream LICENSE, which upstream
+#: states covers the published weights too (ADR-NEW-beat-this-weights-license).
+CHECKPOINT_LICENSE_SOURCE = (
+    Path(__file__).resolve().parents[1] / "apps/analysis_beatgrid/beat_this_LICENSE.txt"
+)
+CHECKPOINT_LICENSE_RELATIVE = Path("models/beatgrid") / "LICENSE-beat_this.txt"
+#: The copyright line the staged notice must carry; checked, not assumed.
+CHECKPOINT_LICENSE_HOLDER = "Institute of Computational Perception, JKU Linz, Austria"
 
 #: Beat This!'s own published location for ``final0`` (``beat_this.inference.
 #: CHECKPOINT_URL`` + ``/final0.ckpt``). Read at build time only; the digest,
@@ -307,6 +323,7 @@ def stage_checkpoint(payload_dir: Path, cached: Path) -> Path:
     destination = payload_dir / CHECKPOINT_RELATIVE
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(cached, destination)
+    shutil.copyfile(CHECKPOINT_LICENSE_SOURCE, payload_dir / CHECKPOINT_LICENSE_RELATIVE)
     return destination
 
 
@@ -340,6 +357,14 @@ def verify_bundled_beatgrid_runner(payload_dir: Path, repo_root: Path) -> dict[s
             f"staged checkpoint {checkpoint} has sha256 {digest}, expected "
             f"{weights.CHECKPOINT_SHA256}"
         )
+    notice = payload_dir / CHECKPOINT_LICENSE_RELATIVE
+    if not notice.is_file():
+        raise PayloadBeatgridError(f"beatgrid checkpoint license notice missing at {notice}")
+    notice_text = notice.read_text(encoding="utf-8")
+    if not notice_text.startswith("MIT License") or CHECKPOINT_LICENSE_HOLDER not in notice_text:
+        raise PayloadBeatgridError(
+            f"beatgrid checkpoint license notice at {notice} is not Beat This!'s MIT notice"
+        )
     pins = runner_pins(repo_root / RUNNER_SCRIPT_RELATIVE)
     with tempfile.TemporaryDirectory(prefix="opendj-beatgrid-verify-") as sandbox:
         result = subprocess.run(
@@ -366,6 +391,7 @@ def verify_bundled_beatgrid_runner(payload_dir: Path, repo_root: Path) -> dict[s
         "launcher": str(RUNNER_LAUNCHER_RELATIVE),
         "checkpoint": str(CHECKPOINT_RELATIVE),
         "checkpoint_sha256": digest,
+        "checkpoint_license": str(CHECKPOINT_LICENSE_RELATIVE),
         "pins": probe["versions"],
         "bytes": {
             "site": sum(p.stat().st_size for p in site.rglob("*") if p.is_file()),
@@ -375,6 +401,7 @@ def verify_bundled_beatgrid_runner(payload_dir: Path, repo_root: Path) -> dict[s
 
 
 __all__ = [
+    "CHECKPOINT_LICENSE_RELATIVE",
     "CHECKPOINT_RELATIVE",
     "RUNNER_LAUNCHER_RELATIVE",
     "RUNNER_RUNTIME_LOAD_ALLOWLIST",
