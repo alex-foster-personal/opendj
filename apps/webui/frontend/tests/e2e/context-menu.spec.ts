@@ -43,7 +43,8 @@ test('track, playlist, and folder context menus are pointer and keyboard reachab
 		'title',
 		'not implemented - see PARITY-TODO'
 	);
-	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveAttribute('title', 'not implemented - see PARITY-TODO');
+	// Mark offline is unbuilt and HIDDEN for V1 (JIK, Thu 1 Oct 2026).
+	await expect(page.getByRole('menuitem', { name: 'Mark offline' })).toHaveCount(0);
 	await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toBeEnabled();
 	await expect(page.getByRole('menuitem', { name: 'Show in Finder' })).toHaveAttribute(
 		'title',
