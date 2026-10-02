@@ -546,6 +546,15 @@ def _hydration_arming(state: Any) -> tuple[str | None, Any, bool]:
     return unarmed_reason, data_dir, unarmed_reason is None and has_source and data_dir is not None
 
 
+def _bundle_landed(stable_id: str, stems_dir: Path, request: Request) -> bool:
+    """Whether a valid bundle for ``stable_id`` is on this machine now."""
+    try:
+        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
+    except (StemBundleNotFoundError, StemArtifactError):
+        return False
+    return True
+
+
 def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
@@ -604,6 +613,11 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     except stem_index.StemIndexError as exc:
         return _out("error", str(exc), error_code="STEM_INDEX_CORRUPT")
     if stable_id in index:
+        # A fetch that finished between the local read above and the in-flight
+        # check has already landed the bundle; read again before calling it
+        # cloud-only, so a just-landed retry never reads as "cloud".
+        if _bundle_landed(stable_id, stems_dir, request):
+            return _out("local", "stem bundle is on this machine")
         return _out("cloud", "stem bundle is in the cloud and is fetched on demand")
     return _out("none", "no stem bundle on this machine or in the cloud")
 

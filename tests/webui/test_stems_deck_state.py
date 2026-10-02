@@ -198,6 +198,37 @@ def test_failed_fetch_is_a_named_error_and_hydrate_retries_it(tmp_path: Path):
 
 
 @pytest.mark.requirement("STEM-46")
+def test_a_fetch_landing_mid_state_read_reads_local_not_cloud(tmp_path: Path, monkeypatch):
+    """[if] the fetch lands between the state read's local check and its in-flight check
+    [then] the state is local, never cloud, [else stop].
+
+    CI hit this on a loaded runner: the retried hydrate answered "cloud" for a
+    bundle that had just landed. Forcing the fetch to finish inside the
+    in-flight read makes that window deterministic.
+    """
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    cfg = _cfg()
+    s3 = InMemoryAssetS3()
+    save_cached_index(data_dir, {SID: _seed_bundle(s3, cfg, SID)})
+    real_in_flight = stems_module._hydration_in_flight
+
+    def _in_flight_after_landing(stable_id: str) -> bool:
+        with stems_module._INFLIGHT_LOCK:
+            future = stems_module._INFLIGHT.get(stable_id)
+        if future is not None:
+            future.result(timeout=20)
+        return real_in_flight(stable_id)
+
+    monkeypatch.setattr(stems_module, "_hydration_in_flight", _in_flight_after_landing)
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
+        hydrated = client.post(f"/api/v1/tracks/{SID}/stems/hydrate")
+
+    assert hydrated.status_code == 200
+    assert hydrated.json()["state"] == "local"
+
+
+@pytest.mark.requirement("STEM-46")
 def test_hydrate_on_a_local_bundle_is_a_no_op(tmp_path: Path):
     """[if] the bundle is already local [then] POST hydrate fetches nothing, [else stop]."""
     stems_dir = tmp_path / "stems"
