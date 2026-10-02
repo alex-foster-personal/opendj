@@ -47,7 +47,7 @@ test('pin c560a53603d4: WaveGutter mounts WaveTrackSummary beside the deck indic
 test('pin c560a53603d4: WaveTrackSummary stacks the artwork ABOVE the track name', () => {
 	assert.match(SUMMARY, /<div class="wave-track-summary">/);
 	assert.match(SUMMARY, /\.wave-track-summary\s*\{[^}]*flex-direction:\s*column/);
-	assert.match(SUMMARY, /artworkUrl\(deck\.stable_id, 's'\)/);
+	assert.match(SUMMARY, /deckArtworkUrl\(deck\.stable_id, 's'\)/);
 	assert.ok(
 		at(SUMMARY, 'class="wave-art"', 'WaveTrackSummary') <
 			at(SUMMARY, 'class="wave-track-name"', 'WaveTrackSummary'),
