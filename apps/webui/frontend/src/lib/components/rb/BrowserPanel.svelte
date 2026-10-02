@@ -1091,6 +1091,7 @@
 			spotify_selected_id: spotifySelectedId
 		});
 		let bootPaneRestored = false;
+		let bootPaneDone: Promise<void> | null = null;
 		const healthPromise = getHealthAtBoot(getHealth);
 		const playlistsPromise = bootPlaylistsPrefetch();
 		try {
@@ -1106,7 +1107,13 @@
 					currentValue: allTracksCount
 				});
 				if (!(source === 'spotify' && spotifySelectedId !== null)) {
-					await _restoreBootPane();
+					// Start the pane but do not wait for it: the tree used to sit on
+					// "Loading playlists..." until the whole All Tracks walk had paged
+					// through the library, 25 s at 10k tracks (#3985). The first-page
+					// fetch is already in flight, so painting the tree beside it does
+					// not delay first rows.
+					bootPaneDone = _restoreBootPane();
+					bootPaneDone.catch(() => {}); // surfaced by the await below
 					bootPaneRestored = true;
 				}
 			}
@@ -1129,9 +1136,11 @@
 			});
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
-			recordPlaylistTreeReadyMs(
-				Math.max(0, Math.round(performance.now() - bootTracksPrefetch().startedAt))
-			);
+			// Open-to-tree: performance.now() already counts from navigation start.
+			// The old `now() - startedAt` subtracted an epoch (timeOrigin) from a
+			// relative clock and clamped to 0, so the PERF-UI-05 gate read 0 ms on
+			// every run whatever the tree actually took (#3985).
+			recordPlaylistTreeReadyMs(Math.round(performance.now()));
 			bootScheduler.defer('browser-panel:refresh-playlist-availability', () => {
 				void _refreshPlaylists();
 			});
@@ -1151,6 +1160,7 @@
 			} else if (!bootPaneRestored) {
 				await _restoreBootPane();
 			}
+			if (bootPaneDone !== null) await bootPaneDone;
 		} catch (exc) {
 			libraryHealthError = exc instanceof Error ? exc.message : String(exc);
 			playlistsError = String(exc);
