@@ -5341,13 +5341,16 @@ export interface paths {
         };
         /**
          * Get Track Artwork
-         * @description Serve artwork for the track: rekordbox's pre-rendered jpg variant when
-         *     mapped, else the embedded tag picture read straight from the local file.
+         * @description Serve artwork for the track, first source that has one:
          *
-         *     The embedded-tag path has no pre-rendered s/m/orig variants (rekordbox
-         *     never touched this file), so ``size`` is not honoured there -- the real
-         *     embedded image is served at its original dimensions and mime type for
-         *     all three, rather than fabricating a resize.
+         *     rekordbox's pre-rendered jpg variant when mapped and present, else the
+         *     picture embedded in the local file, a cover image beside it, or a cover
+         *     found online (cached in the app's data dir; looked up now only with
+         *     ``online=true``). See :func:`apps.adapters.rekordbox.paths.local_artwork`.
+         *
+         *     Only the rekordbox path has pre-rendered s/m/orig variants, so ``size``
+         *     is not honoured for the others: the real image is served as found,
+         *     rather than fabricating a resize.
          */
         get: operations["get_track_artwork_api_v1_tracks__stable_id__artwork_get"];
         put?: never;
@@ -24587,6 +24590,8 @@ export interface operations {
             query?: {
                 /** @description s=80x80 browser rows, m=240x240 deck thumbs, orig */
                 size?: "s" | "m" | "orig";
+                /** @description also look the track up on MusicBrainz + Cover Art Archive when it has no local artwork (the decks ask; the listing does not) */
+                online?: boolean;
             };
             header?: never;
             path: {
