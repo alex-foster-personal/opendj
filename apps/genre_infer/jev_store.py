@@ -64,6 +64,11 @@ def _artists(artists_json: str | None) -> str | None:
     return str(value).strip() or None
 
 
+def live_track_ids(conn: sqlite3.Connection) -> list[str]:
+    """stable_ids of every track that is not deleted."""
+    return [r[0] for r in conn.execute("SELECT stable_id FROM tracks WHERE deleted_at IS NULL")]
+
+
 def local_genre_ids(conn: sqlite3.Connection) -> set[str]:
     """stable_ids with a non-empty local genre field (file, MIK or web edit).
 

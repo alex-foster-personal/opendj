@@ -61,6 +61,10 @@ def _untagged(state: Path, master: Path) -> list[str]:
     conn = state_db.open_ro(state)
     try:
         local = jev_store.local_genre_ids(conn)
+        if not master.is_file():
+            # No rekordbox database: rows show the local genre field only (every
+            # mapping reads as unmapped), so that field alone decides.
+            return sorted(sid for sid in jev_store.live_track_ids(conn) if sid not in local)
     finally:
         conn.close()
     tags = genre_tags_by_stable_id(state, master)
