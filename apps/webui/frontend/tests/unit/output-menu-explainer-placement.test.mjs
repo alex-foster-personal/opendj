@@ -23,7 +23,7 @@ before(async () => {
 test('every device picker in the output menu opens its explainer to the right', () => {
 	const menu = cluster.slice(cluster.indexOf('{#snippet outputMenu()}'), cluster.indexOf('{/snippet}', cluster.indexOf('{#snippet outputMenu()}')));
 	const tags = [...menu.matchAll(/<ControlExplainer[^>]*>/g)].map((m) => m[0]);
-	assert.equal(tags.length, 3, 'expected MASTER / MAIN, HEADPHONE CUE and AUDIO IN');
+	assert.equal(tags.length, 4, 'expected Rescan (pin d529a7e80a4e), MASTER / MAIN, HEADPHONE CUE and AUDIO IN');
 	for (const tag of tags) assert.match(tag, /placement="right"/);
 });
 

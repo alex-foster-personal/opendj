@@ -43,7 +43,7 @@ export async function fillPlaylistPane<T, Row>(opts: {
 	) => Promise<{ page: PlaylistTracksPage<T>; etag: string }>;
 	mapRow: (item: T, order: number) => Row;
 	progressTotal: number | null;
-	onFirstPaint?: () => void;
+	onFirstPaint?: (decomposition: { fetchMs: number; paintMs: number }) => void;
 	onComplete?: (info: { fetchMs: number; rows: number }) => void;
 	onFillError?: (error: string) => void;
 }): Promise<void> {
@@ -57,16 +57,20 @@ export async function fillPlaylistPane<T, Row>(opts: {
 	try {
 		while (pane.isCurrentLoad(seq)) {
 			const limit = painted ? PLAYLIST_FILL_PAGE : PLAYLIST_FIRST_PAGE;
+			const fetchStartedAt = performance.now();
 			const { page, etag } = await fetchPage(offset, limit);
+			const fetchMs = performance.now() - fetchStartedAt;
 			if (!pane.isCurrentLoad(seq)) return;
 			total = page.total;
 			const rows = page.tracks.map((item, i) => mapRow(item, offset + i + 1));
 			if (!painted) {
+				const paintStartedAt = performance.now();
 				if (!publishFirstPage(pane, seq, rows)) return;
 				pane.etag = etag;
 				painted = true;
 				pane.updateLoadProgress(seq, rows.length, total);
-				opts.onFirstPaint?.();
+				const paintMs = performance.now() - paintStartedAt;
+				opts.onFirstPaint?.({ fetchMs, paintMs });
 			} else {
 				appendRows(pane, seq, rows);
 				pane.updateLoadProgress(seq, pane.rows.length, total);

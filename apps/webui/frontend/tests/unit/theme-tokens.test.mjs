@@ -44,6 +44,28 @@ test("LIGHT_SCHEME_TOKENS mirrors theme.css's actual light block exactly", () =>
   assert.deepEqual(tt.LIGHT_SCHEME_TOKENS, parsed);
 });
 
+test("#4219 LEGACY_WAVE_TOKENS mirrors theme.css's legacy waveform override blocks", () => {
+  assert.deepEqual(
+    tt.LEGACY_WAVE_TOKENS.dark,
+    cc.parseColorTokens(THEME_CSS, "html[data-wave-palette='legacy'] .perf-root"),
+  );
+  assert.deepEqual(
+    tt.LEGACY_WAVE_TOKENS.light,
+    cc.parseColorTokens(THEME_CSS, "html[data-theme='light'][data-wave-palette='legacy'] .perf-root"),
+  );
+});
+
+test("#4219 getSchemeTokens layers the legacy waveform bands, and the result still validates", () => {
+  assert.equal(tt.getSchemeTokens("dark")["rb-wave-low"], "#2767d8");
+  assert.equal(tt.getSchemeTokens("dark", "legacy")["rb-wave-low"], "#e8a13a");
+  for (const theme of ["dark", "light"]) {
+    for (const choice of ["rekordbox", "legacy"]) {
+      const violations = cc.validateScheme(tt.getSchemeTokens(theme, choice), cc.PAIRINGS);
+      assert.deepEqual(violations, [], `${theme}/${choice}: ${cc.describeViolations(violations)}`);
+    }
+  }
+});
+
 test("getSchemeTokens returns the matching mirror for each theme", () => {
   assert.deepEqual(tt.getSchemeTokens("dark"), tt.DARK_SCHEME_TOKENS);
   assert.deepEqual(tt.getSchemeTokens("light"), tt.LIGHT_SCHEME_TOKENS);

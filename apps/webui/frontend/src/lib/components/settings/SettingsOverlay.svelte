@@ -38,7 +38,12 @@
 		setSettingsSelectedIndex,
 		settingsOverlay
 	} from '$lib/settings/overlay.svelte';
-	import { filterSettings, visibleGroups } from '$lib/settings/search';
+	import {
+		effectiveHideTodo,
+		filterSettings,
+		settingRowVisible,
+		visibleGroups
+	} from '$lib/settings/search';
 	import { subscribeWheelSensitivity } from '$lib/rb/wheel-adjust';
 	import {
 		setAutoSyncDestination,
@@ -70,14 +75,18 @@
 	 * on EVERY change, including writes this component did not make. */
 	let numberDraft = $state<Record<string, number>>({});
 
-	const hideTodo = $derived(uiPrefs.hide_todo_settings);
+	// Todo rows and developer-only rows are hidden unless "Show developer
+	// pages" (show_dev_ui) is on - V1 hide-unbuilt-UI, JIK Thu 1 Oct 2026.
+	const showDev = $derived(uiPrefs.show_dev_ui);
+	const hideTodo = $derived(effectiveHideTodo(uiPrefs));
 	const filterOpts = $derived({
 		hideTodo,
+		showDev,
 		group: settingsOverlay.group as SettingGroupId | null,
 		aiIds
 	});
 	const filtered = $derived(filterSettings(settingsOverlay.query, filterOpts));
-	const groupsShown = $derived(visibleGroups(settingsOverlay.query, { hideTodo, aiIds }));
+	const groupsShown = $derived(visibleGroups(settingsOverlay.query, { hideTodo, showDev, aiIds }));
 	const selected = $derived(
 		filtered.all[clampIndex(settingsOverlay.selectedIndex, filtered.all.length)] ?? null
 	);
@@ -118,7 +127,7 @@
 		const seq = ++aiSeq;
 		aiPending = true;
 		aiError = null;
-		const catalogIds = SETTINGS_CATALOG.filter((s) => !hideTodo || s.implemented).map(
+		const catalogIds = SETTINGS_CATALOG.filter((s) => settingRowVisible(s, { hideTodo, showDev })).map(
 			(s) => s.id
 		);
 		const handle = setTimeout(() => {
@@ -522,7 +531,7 @@
 														<option value={opt.value}>{opt.label}</option>
 													{/each}
 												</select>
-												{#if def.id === 'waveform_design'}
+												{#if def.id === 'waveform_design' || def.id === 'wave_palette'}
 													<WaveformDesignPreview />
 												{/if}
 											{:else if def.control.kind === 'multi_bool'}
@@ -602,14 +611,14 @@
 						</button>
 						{#if applyMsg}
 							<p class="so-apply-msg" class:ok={applyOk === true} class:bad={applyOk === false}>
-								{#if applyOk === true}✅{:else if applyOk === false}✗{/if}
+								{#if applyOk === true}<svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 4.2 3.1 6.3 7 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>{:else if applyOk === false}<svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>{/if}
 								{applyMsg}
 							</p>
 						{/if}
 						{#if pendingProposal}
 							<div class="so-confirm">
-								<button type="button" onclick={() => confirmProposal(true)}>✅ Apply</button>
-								<button type="button" onclick={() => confirmProposal(false)}>✗ Reject</button>
+								<button type="button" onclick={() => confirmProposal(true)}><svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 4.2 3.1 6.3 7 1.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg> Apply</button>
+								<button type="button" onclick={() => confirmProposal(false)}><svg class="so-icon" width="10" height="10" viewBox="0 0 8 8" aria-hidden="true"><path d="M1.6 1.6 6.4 6.4M6.4 1.6 1.6 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg> Reject</button>
 							</div>
 						{/if}
 					</div>
@@ -892,6 +901,9 @@
 	.so-ask-btn:disabled {
 		opacity: 0.45;
 		cursor: default;
+	}
+	.so-icon {
+		vertical-align: -1px;
 	}
 	.so-apply-msg {
 		margin: 8px 2px 0;
