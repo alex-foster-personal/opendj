@@ -9,7 +9,7 @@
  * cloudsync-scheduler-shed.ts): createBackgroundDemandShed's request(id)
  * non-deferred branch does `void run()` with no return value back to the
  * caller, so a caller that needs to know when it may proceed cannot rely on
- * that return. requestEagerStemDecodeSlot gives it a promise instead: push a
+ * that return. The bounded hold below gives it a promise instead: push a
  * resolver, then request the shed slot. If the shed does not defer, request()
  * invokes resumeEagerStemDecodeOwedJob synchronously-ish, which drains the
  * resolver right away. If it defers, the resolver waits for the eventual
@@ -38,14 +38,6 @@ export async function resumeEagerStemDecodeOwedJob(): Promise<void> {
  * returns how many were waiting (0 means nothing was held). */
 export function releaseEagerStemDecodeNow(): number {
 	return _releaseAll('forced');
-}
-
-/** Requests a shed slot; resolves once released (immediately if not deferred). */
-export function requestEagerStemDecodeSlot(shed: BackgroundDemandShed): Promise<void> {
-	return new Promise((resolve) => {
-		_pendingReleases.push(() => resolve());
-		shed.request('eager-stem-decode');
-	});
 }
 
 /**

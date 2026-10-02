@@ -530,6 +530,22 @@ def _hydration_in_flight(stable_id: str) -> bool:
         return future is not None and not future.done()
 
 
+def _hydration_arming(state: Any) -> tuple[str | None, Any, bool]:
+    """Read, never change, whether cloud stem hydration is armed on ``app.state``.
+
+    Returns the recorded reason it is not armed (or None), its data directory,
+    and whether a fetch could run now: no unarmed reason, a source, and a data
+    directory.
+    """
+    unarmed_reason = getattr(state, "stem_hydration_unarmed_reason", None)
+    data_dir = getattr(state, "stem_hydration_data_dir", None)
+    has_source = getattr(state, "stem_hydration_source", None) is not None or (
+        getattr(state, "stem_hydration_cfg", None) is not None
+        and getattr(state, "stem_hydration_s3", None) is not None
+    )
+    return unarmed_reason, data_dir, unarmed_reason is None and has_source and data_dir is not None
+
+
 def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
@@ -539,17 +555,7 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     """
     stems_dir = _stems_dir(request)
     deck_open = stable_id in stem_hydration.OPEN_DECKS.open_ids()
-    state = request.app.state
-    unarmed_reason = getattr(state, "stem_hydration_unarmed_reason", None)
-    data_dir = getattr(state, "stem_hydration_data_dir", None)
-    has_source = (
-        getattr(state, "stem_hydration_source", None) is not None
-        or (
-            getattr(state, "stem_hydration_cfg", None) is not None
-            and getattr(state, "stem_hydration_s3", None) is not None
-        )
-    )
-    armed = unarmed_reason is None and has_source and data_dir is not None
+    unarmed_reason, data_dir, armed = _hydration_arming(request.app.state)
 
     def _out(
         name: StemTrackState,
