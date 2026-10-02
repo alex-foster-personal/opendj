@@ -51,7 +51,7 @@ full_triggers:
 # list to it. Named by scope rather than written as path triggers because ownership is
 # longest-prefix (`apps/webui/frontend/` is its own scope inside `apps/webui/`), and a
 # prefix trigger on the parent would swallow the child. Round 9.
-helper_carried: ["adapters", "agentbox", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "launcher", "loudness", "lyrics", "mik", "open_dj", "play_analytics", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "sync", "sync_hub", "vocals", "voice", "webui"]
+helper_carried: ["adapters", "agentbox", "analysis", "analysis_beatgrid", "analysis_bench", "analysis_key", "analysis_structure", "analysis_waveform", "audit", "beatbench", "cloud", "database", "dedup", "dj_copilot", "engine_core", "entitlements", "genre_infer", "launcher", "loudness", "lyrics", "mik", "open_dj", "play_analytics", "reconcile", "scripts", "sets", "shared", "smartlists", "spotify", "stems", "sync", "sync_hub", "vocals", "voice", "webui"]
 
 # Tests no scope claims. Included in EVERY SCOPED plan rather than dropped from it.
 always:
