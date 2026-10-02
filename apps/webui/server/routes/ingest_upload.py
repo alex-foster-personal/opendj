@@ -10,7 +10,7 @@ Requirements (mini-PRD):
   ✔︎ ✅ POST upload: stage real bytes + duration & fingerprint dup check.
     [if] the file is not audio or the batch name is invalid [then ⛔️] 422
     [if] the upload is empty [then ⛔️] 422, temp file removed
-    [if] mutagen ([tags] extra) is not installed [then ⛔️] 503
+    [if] the tinytag tag reader is not importable [then ⛔️] 503
     TAG_READER_UNAVAILABLE before any bytes are staged
     [if] fingerprint >= threshold match exists and force is not set
     [then] file skipped with duplicate_of reported
@@ -26,14 +26,15 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from apps.shared._mutagen import HAS_MUTAGEN
+from apps.shared import _tagreader
+from apps.shared._tagreader import HAS_TAG_READER
 from apps.shared.fingerprints import ChromaprintMissing, compare, compute
 from apps.shared.paths import AUDIO_EXTENSIONS
 from apps.webui.server.routes import ingest as ingest_cfg
 
 _TAG_READER_UNAVAILABLE_MESSAGE = (
-    "ingest upload requires the optional 'mutagen' tag reader for "
-    "duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+    "ingest upload requires the 'tinytag' tag reader (a core dependency) for "
+    "duration-based duplicate detection; reinstall the environment (uv sync)"
 )
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -74,15 +75,12 @@ def _raise_tag_reader_unavailable() -> None:
 
 
 def _duration_s(path: Path) -> float | None:
-    from apps.shared._mutagen import require as require_mutagen
-
-    require_mutagen()
-    import mutagen
-
-    mf = mutagen.File(path)
-    if mf is None or mf.info is None:
+    _tagreader.require()
+    try:
+        duration = _tagreader.read(path).duration
+    except _tagreader.TagReadError:
         return None
-    return float(mf.info.length)
+    return float(duration) if duration else None
 
 
 def _dup_candidates(duration_s: float) -> list[tuple[str, str, str, str]]:
@@ -167,7 +165,7 @@ def _stage_one_upload(
             409,
             f"{rel_name!r} is awaiting a duplicate decision in batch {batch!r}",
         )
-    if not HAS_MUTAGEN:
+    if not HAS_TAG_READER:
         _raise_tag_reader_unavailable()
     final.parent.mkdir(parents=True, exist_ok=True)
     with hold.open("wb") as fh:
@@ -218,7 +216,7 @@ def _stage_one_upload(
     responses={
         503: {
             "description": (
-                "Optional mutagen tag reader ([tags] extra) is not installed."
+                "The tinytag tag reader is not importable."
             ),
             "content": {
                 "application/json": {

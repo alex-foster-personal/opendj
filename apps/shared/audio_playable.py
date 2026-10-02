@@ -14,7 +14,7 @@ as expected | `✔︎ ✅ 🎯` done + working + regression tests.
          insert with reason ``empty file``
     [if] a wav has no PCM frames or truncates on read [then ⛔️] reject
     [if] container magic does not match the extension [then ⛔️] reject
-    [if] mutagen is installed and claims absurd duration or bitrate [then ⛔️]
+    [if] the tag reader (tinytag) claims absurd duration or bitrate [then ⛔️]
          reject
 
   -> full decode, ffmpeg, librosa, or soundfile. Header + one frame only.
@@ -26,8 +26,8 @@ from __future__ import annotations
 import wave
 from pathlib import Path
 
-from apps.shared._mutagen import HAS_MUTAGEN
-from apps.shared import paths
+from apps.shared import _tagreader, paths
+from apps.shared._tagreader import HAS_TAG_READER
 
 __all__ = ["UnplayableAudioError", "probe_playable_audio"]
 
@@ -66,8 +66,8 @@ def probe_playable_audio(path: Path) -> None:
     elif ext in {".aiff", ".aif"}:
         _probe_aiff_header(header, size_bytes)
 
-    if HAS_MUTAGEN:
-        _probe_mutagen(path, size_bytes)
+    if HAS_TAG_READER:
+        _probe_tags(path, size_bytes)
 
 
 # ----- header helpers -------------------------------------------------------
@@ -185,20 +185,14 @@ def _check_duration_size(duration_s: float, size_bytes: int) -> None:
             )
 
 
-# ----- mutagen cross-check --------------------------------------------------
-def _probe_mutagen(path: Path, size_bytes: int) -> None:
-    import mutagen  # type: ignore  # guarded by HAS_MUTAGEN
-
+# ----- tag-reader cross-check -----------------------------------------------
+def _probe_tags(path: Path, size_bytes: int) -> None:
     try:
-        tagged = mutagen.File(str(path))
-    except Exception as exc:
-        raise UnplayableAudioError(f"mutagen parse failed: {exc}") from exc
+        tag = _tagreader.read(path)
+    except _tagreader.TagReadError as exc:
+        raise UnplayableAudioError(f"tag reader parse failed: {exc}") from exc
 
-    if tagged is None:
-        raise UnplayableAudioError("mutagen could not identify format")
-
-    info = getattr(tagged, "info", None)
-    length = getattr(info, "length", None) if info is not None else None
+    length = tag.duration
     if length is None or length <= 0:
         raise UnplayableAudioError("missing or zero duration")
 

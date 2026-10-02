@@ -222,3 +222,35 @@ class TestConfidence:
         # mutagen.
         assert MIN_SIGNALS_FOR_ACCEPT == 3
         assert MIN_CONFIDENCE_FOR_ACCEPT == 0.70
+
+
+_FIXTURE_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-128.mp3"
+
+
+class TestId3Signal:
+    """The id3 signal reads real tags (tinytag) and needs real tag evidence."""
+
+    def test_untagged_files_do_not_fire(self, tmp_path: Path) -> None:
+        """Two real but untagged mp3s share no tag evidence: no id3 match."""
+        a, b = tmp_path / "a.mp3", tmp_path / "b.mp3"
+        a.write_bytes(_FIXTURE_MP3.read_bytes())
+        b.write_bytes(_FIXTURE_MP3.read_bytes())
+        _, signals = score_pair(_FakeRB(file_path=a), _dj(file_path=b))
+        assert not _find(signals, "id3").fired
+
+    @pytest.mark.requires_mutagen
+    def test_matching_title_and_artist_fire(self, tmp_path: Path) -> None:
+        """Control for the test above: the same files, tagged alike, DO fire."""
+        from mutagen.id3 import ID3, TIT2, TPE1
+
+        paths = []
+        for name in ("a.mp3", "b.mp3"):
+            path = tmp_path / name
+            path.write_bytes(_FIXTURE_MP3.read_bytes())
+            tag = ID3()
+            tag.add(TIT2(encoding=3, text="Song"))
+            tag.add(TPE1(encoding=3, text="Artist"))
+            tag.save(path)
+            paths.append(path)
+        _, signals = score_pair(_FakeRB(file_path=paths[0]), _dj(file_path=paths[1]))
+        assert _find(signals, "id3").fired

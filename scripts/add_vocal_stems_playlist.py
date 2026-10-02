@@ -1,12 +1,12 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["mutagen", "httpx"]
+# dependencies = ["tinytag>=2.1,<3", "httpx"]
 # ///
 """Add the 100 clubsauna acapella vocal stems to open-dj as a playlist.
 
 - Parse 'NNN - Artist - Title - vocals.mp3' filenames in the vocals dir.
 - INSERT the files into state.db `tracks` (stable_id = sha1(file_path),
-  tier 'inferred', duration from mutagen). Idempotent (INSERT OR IGNORE).
+  tier 'inferred', duration from tinytag). Idempotent (INSERT OR IGNORE).
 - Create playlist via the daemon API, then PUT membership in NNN order.
 Fail-fast: any unresolved filename, DB error, or non-2xx API response raises.
 
@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-from mutagen import File as MutagenFile
+from tinytag import TinyTag
 
 REPO = Path(__file__).resolve().parents[1]
 DB = REPO / "data" / "state" / "state.db"
@@ -68,9 +68,9 @@ def parse(fp: Path) -> dict:
     artists = [a.strip() for a in artist.split(",")] if artist else []
     dur_ms = None
     try:
-        audio = MutagenFile(str(fp))
-        if audio is not None and audio.info is not None:
-            dur_ms = round(audio.info.length * 1000)
+        length = TinyTag.get(str(fp)).duration
+        if length:
+            dur_ms = round(length * 1000)
     except Exception as e:
         print(f"  warn: no duration for {fp.name}: {e}", file=sys.stderr)
     sid = hashlib.sha1(str(fp).encode("utf-8")).hexdigest()

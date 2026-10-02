@@ -1,13 +1,13 @@
-"""Regression: every guarded callsite must survive a missing mutagen install.
+"""Regression: every mutagen-guarded callsite must survive a missing mutagen install.
 
-Backstop for LIC-1 (dep-audit PR #43). The contract:
+Backstop for LIC-1 (dep-audit PR #43). Since Thu 1 Oct 2026 mutagen backs
+only the opt-in tag WRITE family (tag reads moved to tinytag, see
+``tests/shared/test_tagreader_optional.py``). The contract:
 
 * Modules still import cleanly with mutagen absent.
 * Public tag-write entry points raise :class:`ImportError` with an
   install hint so users self-serve ``pip install music-dj-tools[tags]``.
-* Read-only / best-effort paths (metadata scan, Serato GEOB read,
-  fingerprint bitrate probe, matcher ID3 probe) degrade to ``None`` or
-  an empty bundle without exploding.
+* The Serato GEOB read, paired with its writer, degrades to an empty bundle.
 
 Simulated by monkeypatching ``apps.shared._mutagen.HAS_MUTAGEN`` to
 ``False`` at runtime rather than uninstalling the real mutagen wheel.
@@ -25,10 +25,6 @@ def no_mutagen(monkeypatch):
     import apps.shared._mutagen as gate
 
     monkeypatch.setattr(gate, "HAS_MUTAGEN", False)
-    # audio_files imported HAS_MUTAGEN by value, so patch its local too.
-    import apps.shared.audio_files as af
-
-    monkeypatch.setattr(af, "HAS_MUTAGEN", False)
     return gate
 
 
@@ -44,44 +40,12 @@ def test_modules_still_importable_without_mutagen(no_mutagen):
     # Even with the flag flipped, re-importing the callsite modules must
     # not raise. (They do their mutagen work lazily.)
     for name in (
-        "apps.shared.audio_files",
         "apps.shared.tag_writer",
-        "apps.shared.fingerprints",
-        "apps.sync.matcher",
         "apps.adapters.serato.geob",
         "apps.analysis.write_tags",
     ):
         mod = importlib.import_module(name)
         assert mod is not None
-
-
-def test_audio_files_read_metadata_returns_none_for_unparseable_file_without_mutagen(
-    tmp_path, no_mutagen
-):
-    from apps.shared import audio_files
-
-    fake = tmp_path / "nothing.mp3"
-    fake.write_bytes(b"")
-    assert audio_files.read_metadata(fake) is None
-
-
-def test_audio_files_read_metadata_reads_tags_with_tinytag_without_mutagen(no_mutagen):
-    """The packaged app has no mutagen, so a folder import must still get its tags.
-
-    Regression: before tinytag took over this path, every folder import in
-    the packaged app came in with no title or artist (Silver check, Fri 2 Oct 2026).
-    """
-    from pathlib import Path
-
-    from apps.shared import audio_files
-
-    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-v2.mp3"
-    meta = audio_files.read_metadata(fixture)
-    assert meta is not None
-    assert (meta.title, meta.artist) == ("Source V2", "Fixture")
-    assert meta.duration_s is not None and 2.9 < meta.duration_s < 3.2
-    assert meta.sample_rate == 22050
-    assert meta.bitrate_kbps == 160
 
 
 def test_serato_geob_read_returns_empty_without_mutagen(tmp_path, no_mutagen):
@@ -138,40 +102,30 @@ def test_analysis_write_tags_raise_without_mutagen(tmp_path, no_mutagen):
         wt._write_tags(fake, {"BPM": "120"})
 
 
-def test_fingerprint_bitrate_soft_fails_without_mutagen(tmp_path, no_mutagen, monkeypatch):
-    # Simulate the ImportError at ``import mutagen`` inside _safe_bitrate.
-    import builtins
+def test_audio_files_read_metadata_returns_none_for_unparseable_file_without_mutagen(
+    tmp_path, no_mutagen
+):
+    from apps.shared import audio_files
 
-    from apps.shared import fingerprints
-
-    real_import = builtins.__import__
-
-    def fake_import(name, *a, **kw):
-        if name == "mutagen":
-            raise ImportError("simulated: mutagen not installed")
-        return real_import(name, *a, **kw)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    fake = tmp_path / "x.mp3"
+    fake = tmp_path / "nothing.mp3"
     fake.write_bytes(b"")
-    assert fingerprints._safe_bitrate(fake) is None
+    assert audio_files.read_metadata(fake) is None
 
 
-def test_matcher_read_id3_soft_fails_without_mutagen(tmp_path, no_mutagen, monkeypatch):
-    # Same trick as fingerprints: simulate ``from mutagen import File``
-    # raising so the caller hits its except branch.
-    import builtins
+def test_audio_files_read_metadata_reads_tags_with_tinytag_without_mutagen(no_mutagen):
+    """The packaged app has no mutagen, so a folder import must still get its tags.
 
-    from apps.sync import matcher
+    Regression: before tinytag took over this path, every folder import in
+    the packaged app came in with no title or artist (Silver check, Fri 2 Oct 2026).
+    """
+    from pathlib import Path
 
-    real_import = builtins.__import__
+    from apps.shared import audio_files
 
-    def fake_import(name, *a, **kw):
-        if name == "mutagen":
-            raise ImportError("simulated: mutagen not installed")
-        return real_import(name, *a, **kw)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    fake = tmp_path / "x.mp3"
-    fake.write_bytes(b"")
-    assert matcher._read_id3(fake) is None
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-v2.mp3"
+    meta = audio_files.read_metadata(fixture)
+    assert meta is not None
+    assert (meta.title, meta.artist) == ("Source V2", "Fixture")
+    assert meta.duration_s is not None and 2.9 < meta.duration_s < 3.2
+    assert meta.sample_rate == 22050
+    assert meta.bitrate_kbps == 160

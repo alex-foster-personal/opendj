@@ -59,7 +59,11 @@ def test_folder_import_reads_title_and_artist_without_mutagen(
     """The packaged app ships no mutagen; a real tagged mp3 still imports its tags."""
     import shutil
 
-    monkeypatch.setattr(audio_files, "HAS_MUTAGEN", False)
+    # Reads go through tinytag now and never consult the mutagen gate; flipping
+    # it off still models the packaged app, which ships no mutagen.
+    from apps.shared import _mutagen
+
+    monkeypatch.setattr(_mutagen, "HAS_MUTAGEN", False)
     fixture = Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-v2.mp3"
     audio_path = tmp_path / "music" / "src-v2.mp3"
     audio_path.parent.mkdir()

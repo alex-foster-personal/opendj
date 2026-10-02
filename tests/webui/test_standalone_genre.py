@@ -1,7 +1,7 @@
 """STANDALONE-05: genre works without rekordbox and never fails silently.
 
 - [if] a folder GENRE tag and no rekordbox [then] the wheel files it in a family, [else stop].
-- [if] the optional tags extra is not installed [then] the genre column names it, [else stop].
+- [if] the tag reader (tinytag) is not importable [then] the genre column names it, [else stop].
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.rb_vendor_pkg.track_rows import (
     GENRE_REASON_NO_FILE_TAG,
-    GENRE_REASON_TAGS_EXTRA_MISSING,
+    GENRE_REASON_TAG_READER_MISSING,
 )
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.webui.library_wheel_fixtures import _make_master_db, _make_state_db
@@ -270,7 +270,7 @@ def test_tracks_listing_hides_tombstoned_genre(tombstoned_genre_client: TestClie
     assert resp.status_code == 200, resp.text
     row = resp.json()["items"][0]
     assert row["genre"] is None
-    assert row["genre_reason"] in (GENRE_REASON_NO_FILE_TAG, GENRE_REASON_TAGS_EXTRA_MISSING)
+    assert row["genre_reason"] in (GENRE_REASON_NO_FILE_TAG, GENRE_REASON_TAG_READER_MISSING)
 
 
 @pytest.fixture
@@ -304,11 +304,10 @@ def untagged_state_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> It
         yield client
 
 
-@pytest.mark.requires_mutagen
-def test_tracks_listing_names_no_file_tag_reason_when_mutagen_available(
+def test_tracks_listing_names_no_file_tag_reason_when_tag_reader_available(
     untagged_state_client: TestClient,
 ) -> None:
-    """[if] mutagen is available and file has no genre [then] no-file-tag reason, [else stop]."""
+    """[if] the reader is available and file has no genre [then] no-file-tag reason, [else stop]."""
     resp = untagged_state_client.get("/api/v1/tracks")
     assert resp.status_code == 200, resp.text
     row = resp.json()["items"][0]
@@ -316,10 +315,10 @@ def test_tracks_listing_names_no_file_tag_reason_when_mutagen_available(
     assert row["genre_reason"] == GENRE_REASON_NO_FILE_TAG
 
 
-def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
+def test_tracks_listing_names_tag_reader_when_unavailable(
     tmp_path: Path,
 ) -> None:
-    """[if] tags extra is not installed [then] genre_reason names it, [else stop]."""
+    """[if] tinytag is not importable [then] genre_reason names it, [else stop]."""
     state_path = tmp_path / "state.db"
     conn = state_db.open_rw(state_path)
     try:
@@ -335,7 +334,7 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
     probe = textwrap.dedent(
         f"""
         import sys
-        sys.modules["mutagen"] = None
+        sys.modules["tinytag"] = None
 
         from pathlib import Path
 
@@ -343,11 +342,11 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
         from fastapi.testclient import TestClient
 
         from apps.adapters.rekordbox import config as rb_config
-        from apps.shared._mutagen import HAS_MUTAGEN
+        from apps.shared._tagreader import HAS_TAG_READER
         from apps.webui.server.app import create_app
         from apps.webui.server.sqlite_backend import SqliteBackend
 
-        assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
+        assert HAS_TAG_READER is False, "tinytag import was not actually blocked"
 
         state_path = Path({str(state_path)!r})
         rb_config.STATE_DB = state_path
@@ -383,9 +382,8 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
     ]
     assert len(reason_lines) == 1, completed.stdout
     reason = reason_lines[0].removeprefix("GENRE_REASON=")
-    assert reason == GENRE_REASON_TAGS_EXTRA_MISSING
-    assert "tags" in reason
-    assert "mutagen" in reason
+    assert reason == GENRE_REASON_TAG_READER_MISSING
+    assert "tinytag" in reason
 
 
 def _find_track(result: dict, stable_id: str) -> dict:

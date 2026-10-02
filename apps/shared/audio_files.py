@@ -1,4 +1,4 @@
-"""Filesystem audio scanner + lightweight metadata reader (mutagen, else tinytag)."""
+"""Filesystem audio scanner + lightweight metadata reader (tinytag)."""
 from __future__ import annotations
 
 import os
@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from . import paths
-from ._mutagen import HAS_MUTAGEN
+from . import _tagreader, paths
+from ._tagreader import HAS_TAG_READER
 
 
 @dataclass(slots=True)
@@ -58,79 +58,41 @@ def scan_music_files(roots: list[Path] | None = None) -> Iterator[AudioFile]:
                 yield AudioFile(path=full, size_bytes=st.st_size, mtime=st.st_mtime, ext=ext)
 
 
-def _first(tags, key: str) -> str | None:
-    val = tags.get(key) if tags else None
-    if not val:
+def _text(value: object) -> str | None:
+    if value is None:
         return None
-    # mutagen easy-mode returns lists of strings.
-    if isinstance(val, list):
-        val = val[0] if val else None
-    if val is None:
-        return None
-    s = str(val).strip()
-    return s or None
-
-
-def read_metadata(path: Path) -> AudioMetadata | None:
-    """Read audio metadata. ``None`` when the file cannot be parsed.
-
-    mutagen's easy interface when the optional ``tags`` extra is installed,
-    else tinytag (MIT, a core dependency), which is what the packaged app uses:
-    mutagen is GPL and never ships there, and without this a folder import
-    read no title or artist at all.
-    """
-    if not HAS_MUTAGEN:
-        return _read_metadata_tinytag(path)
-    import mutagen  # type: ignore  # guarded above
-
-    try:
-        f = mutagen.File(str(path), easy=True)
-    except Exception:  # noqa: BLE001 - malformed tags must not stop scanning
-        return None
-    if f is None:
-        return None
-
-    info = getattr(f, "info", None)
-    bitrate = getattr(info, "bitrate", None) if info is not None else None
-    bitrate_kbps = int(bitrate / 1000) if bitrate else None
-
-    return AudioMetadata(
-        title=_first(f, "title"),
-        artist=_first(f, "artist"),
-        album=_first(f, "album"),
-        genre=_first(f, "genre"),
-        comment=_first(f, "comment"),
-        duration_s=float(info.length) if info and getattr(info, "length", None) else None,
-        bitrate_kbps=bitrate_kbps,
-        sample_rate=int(info.sample_rate) if info and getattr(info, "sample_rate", None) else None,
-    )
-
-
-
-def _tinytag_text(value: object) -> str | None:
-    text = str(value).strip() if value is not None else ""
+    text = str(value).strip()
     return text or None
 
 
-def _read_metadata_tinytag(path: Path) -> AudioMetadata | None:
-    from tinytag import TinyTag
+def read_metadata(path: Path) -> AudioMetadata | None:
+    """Read audio metadata via tinytag. ``None`` on failure.
 
+    ``None`` too when the tag reader is unavailable (see
+    :mod:`apps.shared._tagreader`); the scanner layer still yields
+    :class:`AudioFile` entries from the filesystem.
+    """
+    if not HAS_TAG_READER:
+        return None
     try:
-        tag = TinyTag.get(str(path), tags=True, duration=True, image=False)
-    except Exception:  # noqa: BLE001 - malformed tags must not stop scanning
+        tag = _tagreader.read(path)
+    except _tagreader.TagReadError:  # malformed tags must not stop scanning
         return None
     if tag.duration is None and not tag.other and tag.title is None and tag.artist is None:
-        return None  # nothing parsed: mutagen answers None here too
+        return None  # nothing parsed: no tags and no stream info
+
+    bitrate = tag.bitrate
     return AudioMetadata(
-        title=_tinytag_text(tag.title),
-        artist=_tinytag_text(tag.artist),
-        album=_tinytag_text(tag.album),
-        genre=_tinytag_text(tag.genre),
-        comment=_tinytag_text(tag.comment),
+        title=_text(tag.title),
+        artist=_text(tag.artist),
+        album=_text(tag.album),
+        genre=_text(tag.genre),
+        comment=_text(tag.comment),
         duration_s=float(tag.duration) if tag.duration else None,
-        bitrate_kbps=int(tag.bitrate) if tag.bitrate else None,
+        bitrate_kbps=int(bitrate) if bitrate else None,
         sample_rate=int(tag.samplerate) if tag.samplerate else None,
     )
+
 
 _RASTER_MAGIC_BY_MIME: dict[str, tuple[bytes, ...]] = {
     "image/jpeg": (b"\xff\xd8\xff",),
@@ -170,8 +132,8 @@ def _is_safe_raster_image(header: bytes, mime: str) -> bool:
 def _safe_picture_mime(data: object, mime: str) -> str | None:
     """Normalized mime when ``data`` is a bounded, safe raster payload.
 
-    Mutagen already owns the frame payload. Check its length and only copy the
-    tiny magic-byte prefix before materializing a response-sized ``bytes``
+    The reader already owns the frame payload. Check its length and only copy
+    the tiny magic-byte prefix before materializing a response-sized ``bytes``
     object, so oversized tag frames cannot multiply the process's memory use.
     """
     try:
@@ -230,42 +192,50 @@ def _has_safe_picture(candidates: Iterator[tuple[object, str, int | None]]) -> b
     return any(_safe_picture_mime(data, mime) is not None for data, mime, _ in candidates)
 
 
-def _picture_candidates(path: Path) -> Iterator[tuple[object, str, int | None]]:
-    """Every embedded picture as ``(data, declared mime, type)``, read by tinytag.
+def _picture_candidates(tag: object) -> Iterator[tuple[object, str, int | None]]:
+    """Embedded pictures in the order tinytag parsed them.
 
-    tinytag (MIT) reads ID3 ``APIC`` (mp3/wav/aiff), FLAC and Ogg picture
-    blocks and the MP4 ``covr`` atom. mutagen did this before, but it is GPL,
-    so the packaged app never shipped it and every local import read no art
-    there (issue #4717). The front cover is reported as type 3 so
-    :func:`_first_safe_picture` prefers it. A file tinytag cannot parse
-    yields nothing.
+    tinytag files the first front cover (ID3 APIC type 3, FLAC picture type 3,
+    MP4 ``covr``) under ``front_cover``; that maps to picture type 3 so
+    :func:`_first_safe_picture` still prefers it over earlier non-cover frames.
     """
-    from tinytag import TinyTag, TinyTagException
-
-    try:
-        tag = TinyTag.get(str(path), tags=True, duration=False, image=True)
-    except (TinyTagException, OSError, ValueError):
+    images = getattr(tag, "images", None)
+    if images is None:
         return
-    for kind, images in tag.images.as_dict().items():
-        picture_type = 3 if kind == "front_cover" else None
-        for image in images:
-            yield image.data, image.mime_type or "", picture_type
+    for key, pictures in images.as_dict().items():
+        pic_type = 3 if key == "front_cover" else None
+        for picture in pictures:
+            yield picture.data, picture.mime_type or "", pic_type
 
 
 def read_embedded_artwork(path: Path) -> tuple[bytes, str] | None:
     """Real cover-art bytes + mime type embedded in ``path``'s tags, or ``None``.
 
-    ``None`` when the file cannot be parsed, has no picture, or every
-    picture fails :func:`_is_safe_raster_image` -- never a synthesised or
-    placeholder image, and never a tag-declared mime trusted verbatim into
-    an HTTP response.
+    Reads FLAC picture blocks, ID3 ``APIC`` frames (mp3/wav/aiff) and the MP4
+    ``covr`` atom (m4a/mp4) through tinytag. ``None`` when the tag reader is
+    unavailable, the file has no tags, no
+    picture frame is present, or the frame fails :func:`_is_safe_raster_image`
+    -- never a synthesised or placeholder image, and never a tag-declared
+    mime trusted verbatim into an HTTP response.
     """
-    return _first_safe_picture(_picture_candidates(path))
+    if not HAS_TAG_READER:
+        return None
+    try:
+        tag = _tagreader.read(path, image=True)
+    except _tagreader.TagReadError:
+        return None
+    return _first_safe_picture(_picture_candidates(tag))
 
 
 def embedded_artwork_available(path: Path) -> bool:
-    """Whether ``path`` contains a bounded safe picture."""
-    return _has_safe_picture(_picture_candidates(path))
+    """Whether ``path`` contains a bounded safe picture without copying it."""
+    if not HAS_TAG_READER:
+        return False
+    try:
+        tag = _tagreader.read(path, image=True)
+    except _tagreader.TagReadError:
+        return False
+    return _has_safe_picture(_picture_candidates(tag))
 
 
 __all__ = [

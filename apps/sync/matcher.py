@@ -192,20 +192,27 @@ def _basename_nfc(path: Path | None) -> str | None:
 
 
 def _read_id3(path: Path | None) -> tuple[str, str] | None:
-    """Return ``(title, artist)`` from ID3 tags, or ``None`` on any failure."""
+    """Return ``(title, artist)`` from the file's tags, or ``None``.
+
+    ``None`` on any read failure AND when the file carries neither a title nor
+    an artist: two untagged files share no tag evidence, and comparing their
+    empty strings would score a perfect 1.0 match.
+    """
     if path is None:
         return None
-    try:
-        from mutagen import File as MutagenFile
+    from apps.shared import _tagreader
 
-        audio = MutagenFile(str(path), easy=True)
-        if audio is None:
-            return None
-        title = (audio.get("title") or [""])[0] or ""
-        artist = (audio.get("artist") or [""])[0] or ""
-        return (title, artist)
-    except Exception:
+    if not _tagreader.HAS_TAG_READER:
         return None
+    try:
+        tag = _tagreader.read(path)
+    except _tagreader.TagReadError:
+        return None
+    title = (tag.title or "").strip()
+    artist = (tag.artist or "").strip()
+    if not title and not artist:
+        return None
+    return (title, artist)
 
 
 def _signal_isrc(rb: Any, dj: DjayTrack) -> Signal:

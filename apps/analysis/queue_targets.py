@@ -61,9 +61,10 @@ def _tracks_by_stable_id(
 def _measured_durations(paths: dict[str, str]) -> dict[str, float | None]:
     """ffmpeg's stated length for each track whose row stores none.
 
-    An installed app has no mutagen (the GPL ``tags`` extra is omitted), so a
-    folder import writes ``duration_ms = NULL`` for every track and admission
-    would refuse the whole library. ffmpeg is the decoder every lane already
+    A folder import writes ``duration_ms = NULL`` whenever the tag reader
+    states no length (payloads built before tinytag replaced mutagen, Thu 1
+    Oct 2026, did so for EVERY track), and admission would refuse those
+    tracks. ffmpeg is the decoder every lane already
     requires, so its header is the one honest source here. Without ffmpeg no
     lane can run anyway: every such track stays ``None`` and is refused by
     name, and the cause is logged once rather than per track.
