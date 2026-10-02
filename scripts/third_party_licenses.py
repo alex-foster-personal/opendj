@@ -294,11 +294,20 @@ def js_closure(frontend_dir: Path) -> tuple[list[str], set[str]]:
     return sorted(seen), seen - required
 
 
+def _pnpm_bin() -> str:
+    """Absolute path to pnpm; see scripts/quality_gate.py:_pnpm_bin for why a bare
+    ``pnpm`` never launches on Windows (CreateProcess ignores PATHEXT)."""
+    path = shutil.which("pnpm")
+    if path is None:
+        raise LicenseInventoryError("pnpm is not on PATH; required to inventory JS licenses")
+    return path
+
+
 def js_components(frontend_dir: Path) -> list[Component]:
     if not (frontend_dir / "node_modules").is_dir():
         raise LicenseInventoryError(f"{frontend_dir}/node_modules missing: run `pnpm install --frozen-lockfile` first")
     listing = subprocess.run(
-        ["pnpm", "licenses", "list", "--json", "--long"],
+        [_pnpm_bin(), "licenses", "list", "--json", "--long"],
         cwd=frontend_dir, capture_output=True, text=True, check=False,
     )
     if listing.returncode != 0:
