@@ -9,7 +9,7 @@
 	import {
 		type EnrichSummary,
 		analysisLines,
-		collapsedText,
+		collapsedLine,
 		lyricsLine,
 		offersRetry,
 		stemsText
@@ -52,11 +52,16 @@
 
 	const lines = $derived(summary ? [...analysisLines(summary), ...[lyricsLine(summary)].filter((l) => l !== null)] : []);
 	const stemsLine = $derived(summary ? stemsText(summary.stems) : null);
+	const collapsed = $derived(!expanded && summary !== null ? collapsedLine(summary) : null);
 </script>
 
-<section class="enrich-card" class:collapsed={!expanded} aria-label="Library enrichment" data-testid="enrich-card">
+<section class="enrich-card" class:collapsed={collapsed !== null} aria-label="Library enrichment" data-testid="enrich-card">
 	<header>
-		<h3>Getting your library ready</h3>
+		{#if collapsed}
+			<p class="enrich-line working" title={collapsed.title} data-testid="enrich-collapsed">{collapsed.text}</p>
+		{:else}
+			<h3>Getting your library ready</h3>
+		{/if}
 		<span class="enrich-header-actions">
 			<button
 				type="button"
@@ -68,9 +73,7 @@
 			<button type="button" class="enrich-hide" onclick={onhide} title="Hide until the app is next opened">Hide</button>
 		</span>
 	</header>
-	{#if !expanded && summary}
-		<p class="enrich-line working" data-testid="enrich-collapsed">{collapsedText(summary)}</p>
-	{:else}
+	{#if collapsed === null}
 		{#if loadError}
 			<p class="enrich-line failed">{loadError}</p>
 		{/if}
@@ -132,9 +135,18 @@
 		font-size: 13px;
 		letter-spacing: 0.04em;
 	}
+	/* One row, parked beside the feedback and help buttons, so background
+	   progress never sits over the track table's columns. */
 	.enrich-card.collapsed {
+		right: 96px;
+		bottom: 20px;
 		width: auto;
-		max-width: min(380px, calc(100vw - 24px));
+		max-width: calc(100vw - 108px);
+		padding: 3px 8px;
+		box-shadow: none;
+	}
+	.enrich-card.collapsed .enrich-line {
+		white-space: nowrap;
 	}
 	.enrich-header-actions {
 		display: flex;

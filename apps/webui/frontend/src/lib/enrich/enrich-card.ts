@@ -174,13 +174,17 @@ export function needsAttention(summary: EnrichSummary | null, loadError: string 
 	return lines.some((line) => line !== null && (line.tone === 'failed' || line.tone === 'unavailable'));
 }
 
-/** The one line a collapsed card shows: which lanes are still running. */
-export function collapsedText(summary: EnrichSummary): string {
+/** The collapsed card: a lane count, with the lane names on hover. */
+export function collapsedLine(summary: EnrichSummary): { text: string; title: string } {
 	const running = [...analysisLines(summary), lyricsLine(summary)].filter(
 		(line): line is CardLine => line !== null && line.tone === 'working'
 	);
 	const labels = running.map((line) => (line.lane === 'lyrics' ? 'Lyrics' : LANE_LABELS[line.lane]));
-	if (labels.length === 0) return 'Nothing left running';
-	const list = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
-	return `${list}: running in the background`;
+	if (labels.length === 0) {
+		return { text: 'Library: nothing left running', title: 'No analysis lane is still running in the background' };
+	}
+	return {
+		text: `Library: ${labels.length} ${labels.length === 1 ? 'lane' : 'lanes'} still running`,
+		title: `Running in the background: ${labels.join(', ')}. More shows the counts.`
+	};
 }

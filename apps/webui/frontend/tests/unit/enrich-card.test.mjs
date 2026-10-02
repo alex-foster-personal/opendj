@@ -96,7 +96,12 @@ test('one declined track reads in the singular', () => {
 test('background progress alone opens collapsed and names the running lanes', () => {
 	const s = summary({ key: { done: 44, missing: 1230 }, loudness: { done: 196, missing: 1078 } });
 	assert.equal(card.needsAttention(s, null, null), false);
-	assert.equal(card.collapsedText(s), 'Key and Loudness: running in the background');
+	assert.deepEqual(card.collapsedLine(s), {
+		text: 'Library: 2 lanes still running',
+		title: 'Running in the background: Key, Loudness. More shows the counts.'
+	});
+	const one = summary({ key: { done: 44, missing: 1230 } });
+	assert.equal(card.collapsedLine(one).text, 'Library: 1 lane still running');
 });
 
 test('a question, a failure, a lane that cannot run or an unknown status opens expanded', () => {
@@ -112,5 +117,5 @@ test('a declined or impossible stems lane does not by itself force the card open
 	const noSource = summary({}, { stems: { state: 'no_source', pending: 9, reason: 'no farm' } });
 	assert.equal(card.needsAttention(declined, null, null), false);
 	assert.equal(card.needsAttention(noSource, null, null), false);
-	assert.equal(card.collapsedText(noSource), 'Nothing left running');
+	assert.equal(card.collapsedLine(noSource).text, 'Library: nothing left running');
 });
