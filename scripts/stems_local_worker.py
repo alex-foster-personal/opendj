@@ -64,6 +64,21 @@ def _bundle_fresh(stable_id: str, root: Path) -> bool:
     return has_bundle(stable_id, root)
 
 
+def _bundle_worker_prefix() -> list[str]:
+    """What runs the PEP 723 Demucs worker: the payload's interpreter, or uv.
+
+    In the installed app there is no uv (issue #3421); the launcher names the
+    payload interpreter, whose pylib carries demucs and torch through the
+    ``vocals`` extra, exactly as local vocals already run.
+    """
+    from apps.stems.worker_launch import packaged_python
+
+    packaged = packaged_python()
+    if packaged is not None:
+        return [packaged]
+    return [UV_BIN, "run", "--no-sync"]
+
+
 def _run_one(
     track: TrackJob,
     *,
@@ -72,9 +87,7 @@ def _run_one(
     timeout_s: float,
 ) -> dict[str, Any]:
     cmd = [
-        UV_BIN,
-        "run",
-        "--no-sync",
+        *_bundle_worker_prefix(),
         str(WORKER_SCRIPT),
         "--audio",
         str(track.audio_path),
