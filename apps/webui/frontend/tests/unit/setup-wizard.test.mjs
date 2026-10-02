@@ -853,6 +853,18 @@ test('folderVerdict never quotes a file count for a denied folder', () => {
 	assert.match(verdict, /System Settings/);
 });
 
+test('folderVerdict keeps the engine\'s plain permission reason, but never one carrying internals', () => {
+	const said = mod.folderVerdict(
+		folderScan({ denied: true, readable: false, audio_files: 0, detail: 'macOS refused the listing (Permission denied)' })
+	);
+	assert.match(said, /^macOS refused the listing \(Permission denied\)\. /);
+	const dirty = mod.folderVerdict(
+		folderScan({ denied: true, readable: false, audio_files: 0, detail: "PermissionError: [Errno 13] '/Users/dj/Music/Locked'" })
+	);
+	assert.doesNotMatch(dirty, /\/Users\/|Errno/);
+	assert.match(dirty, /^This folder cannot be read yet\. /);
+});
+
 test('folderVerdict distinguishes empty from missing from unreadable', () => {
 	assert.match(mod.folderVerdict(folderScan({ audio_files: 0 })), /holds no audio files/);
 	assert.match(

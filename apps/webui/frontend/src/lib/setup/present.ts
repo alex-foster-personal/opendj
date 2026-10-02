@@ -121,7 +121,16 @@ export function agentBlockerDetail(code: string, detection: RekordboxDetection):
 
 export function humanFolderVerdict(scan: FolderScan): string {
 	if (scan.denied) {
-		return `This folder cannot be read yet. ${scan.how_to_grant}`;
+		// The engine's own reason ("macOS refused the listing (Permission
+		// denied)") is already a human sentence and is what tells a user this
+		// is a permission wall rather than an empty folder; keep it whenever it
+		// carries no internals, and fall back to a plain one when it does.
+		const reason = scan.detail.trim().replace(/\.+$/, '');
+		const said =
+			reason !== '' && !containsForbiddenHumanToken(reason)
+				? `${reason}.`
+				: 'This folder cannot be read yet.';
+		return `${said} ${scan.how_to_grant}`;
 	}
 	const label = shortenPath(scan.path);
 	if (!scan.exists) return `Nothing was found at ${label}.`;
