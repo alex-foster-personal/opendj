@@ -100,6 +100,10 @@ pub enum EngineCmd {
     /// The loaded audio with a new beatgrid, built off the audio thread by
     /// `Track::with_grid` from the deck's current track.
     Regrid { deck: DeckId, track: Arc<Track> },
+    /// The whole decoded track for the head a progressive load put on the
+    /// deck (`Deck::extend`), built off the audio thread with the deck's
+    /// current grid. Refused if the deck holds anything else by then.
+    Extend { deck: DeckId, track: Arc<Track> },
     Unload { deck: DeckId },
     Play { deck: DeckId, playing: bool },
     /// Play if paused, pause if playing, decided when the engine applies it,
@@ -169,6 +173,9 @@ pub struct DeckSnapshot {
     pub playing: bool,
     pub position_ms: f64,
     pub duration_ms: f64,
+    /// How much of the track is decoded: `duration_ms` once all of it is,
+    /// less while a progressive load is still decoding the rest.
+    pub decoded_ms: f64,
     pub tempo: f64,
     pub master_tempo: bool,
     pub key_shift: i32,
@@ -288,6 +295,12 @@ impl Engine {
             Regrid { deck, track } => {
                 return match self.deck_mut(deck) {
                     Ok(d) => d.regrid(track).map(Some).map_err(|(error, t)| Rejected { error, track: Some(t) }),
+                    Err(error) => Err(Rejected { error, track: Some(track) }),
+                }
+            }
+            Extend { deck, track } => {
+                return match self.deck_mut(deck) {
+                    Ok(d) => d.extend(track).map(Some).map_err(|(error, t)| Rejected { error, track: Some(t) }),
                     Err(error) => Err(Rejected { error, track: Some(track) }),
                 }
             }
@@ -432,6 +445,7 @@ impl Engine {
                 playing: d.playing,
                 position_ms: t.frames_to_ms(d.pos),
                 duration_ms: t.duration_ms(),
+                decoded_ms: if t.decoding { t.frames_to_ms(t.available() as f64) } else { t.duration_ms() },
                 tempo: d.tempo,
                 master_tempo: d.master_tempo,
                 key_shift: d.key_shift,
