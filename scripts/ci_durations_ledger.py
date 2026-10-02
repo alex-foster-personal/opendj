@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
 
 SHARDS = 5
@@ -72,13 +73,13 @@ def _validate(ledger: object, label: str) -> dict[str, float]:
     return ledger
 
 
-def merge(shards: list[dict[str, float]]) -> dict[str, float]:
+def merge(shards: Sequence[object]) -> dict[str, float]:
     """Union the per-shard ledgers; each test must come from exactly one shard."""
     if len(shards) != SHARDS:
         raise LedgerError(f"expected {SHARDS} shard ledgers, got {len(shards)}")
     merged: dict[str, float] = {}
-    for index, shard in enumerate(shards, start=1):
-        _validate(shard, f"shard {index}")
+    for index, raw in enumerate(shards, start=1):
+        shard = _validate(raw, f"shard {index}")
         overlap = merged.keys() & shard.keys()
         if overlap:
             raise LedgerError(f"shard {index} repeats {len(overlap)} test(s), e.g. {sorted(overlap)[0]}")
@@ -147,8 +148,9 @@ def build(repo: str, out: Path, seed_path: Path) -> str:
     names = [SHARD_ARTIFACT.format(n=n) for n in range(1, SHARDS + 1)]
     skipped: list[str] = []
     for run in runs:
-        ids = [_live_artifact(repo, run["id"], name) for name in names]
-        if None in ids:
+        found = [_live_artifact(repo, run["id"], name) for name in names]
+        ids = [artifact_id for artifact_id in found if artifact_id is not None]
+        if len(ids) != len(names):
             skipped.append(f"run {run['id']}: shard artifact(s) missing or expired")
             continue
         # One bad run (a short run, a repeated test) must not hide an older good one.
