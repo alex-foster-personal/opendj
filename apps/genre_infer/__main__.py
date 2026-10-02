@@ -279,6 +279,14 @@ def _cmd_jev(args: argparse.Namespace) -> int:
     return _jev_report(results, served, len(untagged), args.min_confidence)
 
 
+def _probability(text: str) -> float:
+    """A display floor in [0, 1]; NaN or out of range would expose every guess."""
+    value = float(text)
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a probability in [0, 1]")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m apps.genre_infer")
     ap.add_argument("--data-dir")
@@ -303,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
     j = sub.add_parser("jev")
     j.add_argument("--stable-id", action="append", default=[])
     j.add_argument("--limit", type=int, default=500)
-    j.add_argument("--min-confidence", type=float, default=jev.DEFAULT_MIN_CONFIDENCE)
+    j.add_argument("--min-confidence", type=_probability, default=jev.DEFAULT_MIN_CONFIDENCE)
     j.add_argument("--workers", type=int, default=8)
     j.set_defaults(func=_cmd_jev)
     args = ap.parse_args(argv)

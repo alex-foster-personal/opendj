@@ -178,7 +178,7 @@ def _genre_answer(answers: Any) -> tuple[str, float, Mapping[str, Any]] | str:
     if not isinstance(genre, Mapping):
         return "no genre answer"
     family, probs = genre.get("choice"), genre.get("probabilities")
-    if family not in FAMILY_CRITERIA or not isinstance(probs, Mapping):
+    if not isinstance(family, str) or family not in FAMILY_CRITERIA or not isinstance(probs, Mapping):
         return f"genre answer {family!r} is not a family"
     confidence = probs.get(family)
     # JSON true/false are ints in Python; a boolean is not a probability.
