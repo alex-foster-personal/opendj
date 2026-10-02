@@ -1147,12 +1147,11 @@ class SqliteBackend:
         """
         direction = _WIRE_TO_DB_DIRECTION[pairing.direction]
         key = (pairing.from_stable_id, pairing.to_stable_id, direction)
-        if pairing.from_stable_id == pairing.to_stable_id:
-            raise ValueError("a pairing needs two different tracks")
         snapshot_json = (
             None if pairing.snapshot is None
             else json.dumps(pairing.snapshot, sort_keys=True)
         )
+        writer: tuple[str, str] | None = None
         with self._pairings_rw() as conn:
             row = conn.execute(
                 "SELECT notes, snapshot_json FROM pairings "
@@ -1169,7 +1168,7 @@ class SqliteBackend:
                     (*key, pairing.source, pairing.notes,
                      pairing.created_at, pairing.updated_at, snapshot_json),
                 )
-                self._sqlite_last_writer = (pairing.source, pairing.created_at)
+                writer = (pairing.source, pairing.created_at)
             else:
                 existing_notes, existing_snapshot = row[0], row[1]
                 notes = existing_notes
@@ -1186,13 +1185,16 @@ class SqliteBackend:
                         "AND to_stable_id=? AND direction=?",
                         (notes, snapshot, now, *key),
                     )
-                    self._sqlite_last_writer = (pairing.source, now)
+                    writer = (pairing.source, now)
             stored = conn.execute(
                 "SELECT from_stable_id, to_stable_id, direction, source, "
                 "notes, created_at, modified_at, snapshot_json FROM pairings "
                 "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
                 key,
             ).fetchone()
+        # Only once the transaction committed: a rolled-back write is no writer.
+        if writer is not None:
+            self._sqlite_last_writer = writer
         return _row_to_pairing(tuple(stored))
 
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
@@ -1222,7 +1224,7 @@ class SqliteBackend:
                 "AND to_stable_id=? AND direction=?",
                 (match[0], match[1], match[2]),
             )
-            self._sqlite_last_writer = ("webui", _utcnow_iso())
+        self._sqlite_last_writer = ("webui", _utcnow_iso())
 
     def last_writer(self) -> tuple[str, str] | None:
         if self._sqlite_last_writer is not None:

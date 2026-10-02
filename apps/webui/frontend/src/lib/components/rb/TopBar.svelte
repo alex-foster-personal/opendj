@@ -535,6 +535,7 @@
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
+		aria-label="Create pairing"
 		onclick={() => void _openPairing()}
 	>
 		Create pairing

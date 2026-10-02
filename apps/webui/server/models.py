@@ -419,6 +419,8 @@ class PairingCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot_decks_match_pair(self) -> PairingCreate:
+        if self.from_stable_id == self.to_stable_id:
+            raise ValueError("a pairing needs two different tracks")
         if self.snapshot is None:
             return self
         snapshot_ids = {deck.stable_id for deck in self.snapshot.decks}

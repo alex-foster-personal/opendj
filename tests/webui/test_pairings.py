@@ -268,3 +268,16 @@ def test_create_pairing_notes_too_long_422(client):
     assert r.status_code == 422
 
 pytestmark = pytest.mark.rb_parity
+
+
+@pytest.mark.requirement("PAIR-04")
+def test_create_pairing_rejects_a_self_pair_with_422(client):
+    r = client.post(
+        "/api/v1/pairings",
+        json={"from_stable_id": "track-003", "to_stable_id": "track-003"},
+    )
+    assert r.status_code == 422
+    assert all(
+        p["to_stable_id"] != p["from_stable_id"]
+        for p in client.get("/api/v1/pairings").json()
+    )
