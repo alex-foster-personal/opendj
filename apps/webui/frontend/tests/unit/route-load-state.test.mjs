@@ -112,6 +112,15 @@ describe('the routes use these outcomes', () => {
 		assert.match(src, /No \$\{source\} pairings/);
 	});
 
+	it('/pairings names tracks by artist and title, falling back to the id only when the lookup fails', () => {
+		const src = read('src/routes/pairings/+page.svelte');
+		assert.match(src, /void resolveLabels\(next\)/);
+		assert.match(src, /await getTrack\(id\)/);
+		assert.match(src, /\{labels\[id\] \?\? id\}/);
+		assert.match(src, /not in the library/);
+		assert.match(src, /\{@render trackCell\(p\.from_stable_id\)\}[\s\S]*\{@render trackCell\(p\.to_stable_id\)\}/);
+	});
+
 	it('/track settles to not-found or an error instead of loading forever', () => {
 		const src = read('src/routes/track/[stable_id]/+page.svelte');
 		assert.match(src, /catch \(exc\) \{\s*loadError = routeLoadError\(exc\);/);

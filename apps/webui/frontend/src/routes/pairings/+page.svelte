@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createPairing, deletePairing, listPairings, type Pairing } from '$lib/api';
+	import { createPairing, deletePairing, getTrack, listPairings, type Pairing } from '$lib/api';
 	import { pushToast } from '$lib/stores.svelte';
 	import { describeLoadError } from '$lib/route-load-state';
 
@@ -13,6 +13,31 @@
 	let notes = $state('');
 	// A filter change while a load is in flight must not let the older answer win.
 	let loadSeq = 0;
+	// "Artist - Title" per stable_id, so rows read as tracks rather than raw ids.
+	// An id whose lookup fails stays shown as the id, with a tooltip saying why.
+	let labels = $state<Record<string, string>>({});
+	let missing = $state<Record<string, true>>({});
+
+	async function resolveLabels(rows: Pairing[]): Promise<void> {
+		const ids = new Set<string>();
+		for (const p of rows) {
+			ids.add(p.from_stable_id);
+			ids.add(p.to_stable_id);
+		}
+		await Promise.all(
+			[...ids]
+				.filter((id) => !(id in labels) && !(id in missing))
+				.map(async (id) => {
+					try {
+						const { track } = await getTrack(id);
+						const name = track.title ?? id;
+						labels[id] = track.artist ? `${track.artist} - ${name}` : name;
+					} catch {
+						missing[id] = true;
+					}
+				})
+		);
+	}
 
 	async function load(): Promise<void> {
 		const seq = ++loadSeq;
@@ -22,6 +47,7 @@
 			const next = await listPairings(source || undefined);
 			if (seq !== loadSeq) return;
 			pairings = next;
+			void resolveLabels(next);
 		} catch (exc) {
 			if (seq !== loadSeq) return;
 			pairings = [];
@@ -73,6 +99,10 @@
 	});
 </script>
 
+{#snippet trackCell(id: string)}
+	<td><a href={`/track/${id}`} title={missing[id] ? `Track ${id} is not in the library` : id}>{labels[id] ?? id}</a></td>
+{/snippet}
+
 <h2>Pairings</h2>
 <form onsubmit={(e) => { e.preventDefault(); create(); }}>
 	<input placeholder="From stable_id" bind:value={fromId} />
@@ -111,9 +141,9 @@
 		<tbody>
 			{#each pairings as p}
 				<tr>
-					<td><a href={`/track/${p.from_stable_id}`}>{p.from_stable_id}</a></td>
+					{@render trackCell(p.from_stable_id)}
 					<td>{p.direction}</td>
-					<td><a href={`/track/${p.to_stable_id}`}>{p.to_stable_id}</a></td>
+					{@render trackCell(p.to_stable_id)}
 					<td>{p.source}</td>
 					<td>{p.notes ?? ''}</td>
 					<td><button onclick={() => remove(p)} title="Delete this pairing" aria-label="Delete this pairing">×</button></td>
