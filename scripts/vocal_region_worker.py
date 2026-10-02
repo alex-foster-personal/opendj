@@ -36,12 +36,15 @@ Requirements (mini-PRD):
   ✔︎ ✅ fail fast: missing file / ffmpeg / weird audio raises, no fallbacks
     [if] audio path does not exist [then ⛔️] non-zero exit + stderr reason
   ✔︎ ✅ WAV inputs decode via soundfile, never ffmpeg (Windows portability:
-    ffmpeg is not guaranteed on PATH). Non-WAV inputs still need ffmpeg on
-    PATH (optionally via MDT_FFMPEG) and fail fast, naming remedies, when
-    it is absent - never a silent wrong decode.
+    ffmpeg is not guaranteed on PATH). Non-WAV inputs use ffmpeg on PATH
+    (optionally via MDT_FFMPEG) when it resolves, else ``odj-audio decode``
+    (the installed app ships no ffmpeg; STEM-50), and fail fast, naming
+    remedies, when neither does - never a silent wrong decode.
     [if] audio_path.suffix is .wav [then] no ffmpeg subprocess is spawned
-    [if] non-WAV input and ffmpeg is absent and MDT_FFMPEG unset [then ⛔️]
-    RuntimeError names the file + MDT_FFMPEG + pre-transcode remedy
+    [if] non-WAV input, no ffmpeg, ODJ_AUDIO_BIN names odj-audio [then] it
+    decodes into a system temp dir and the WAV fast-path reads that
+    [if] non-WAV input and neither ffmpeg nor odj-audio resolves [then ⛔️]
+    RuntimeError names the file + MDT_FFMPEG + ODJ_AUDIO_BIN + pre-transcode
 
 Run standalone:  uv run scripts/vocal_region_worker.py <audio-file>
 Invoked by:      python -m apps.vocals trickle --live  (subprocess)
@@ -270,10 +273,9 @@ def _read_wav_fastpath(audio_path: Path, model: Any) -> tuple[int, float, Any]:
 def _read_via_ffmpeg(audio_path: Path, model: Any) -> tuple[int, float, Any]:
     """Non-WAV decode via demucs.audio.AudioFile (shells to ffmpeg/ffprobe).
 
-    A decoder must be reachable first: MDT_FFMPEG (path to the ffmpeg
-    executable, e.g. a D:/tools/ffmpeg drop's bin/ffmpeg.exe) is prepended
-    onto PATH when set. Still missing -> fail fast naming the file and the
-    remedies; never fall back to a wrong decode."""
+    MDT_FFMPEG (path to the ffmpeg executable, e.g. a D:/tools/ffmpeg drop's
+    bin/ffmpeg.exe) is prepended onto PATH when set. The caller has already
+    checked that ffmpeg resolves (``_read_non_wav``)."""
     from demucs.audio import AudioFile
 
     ffmpeg_override = os.environ.get("MDT_FFMPEG")
@@ -281,21 +283,51 @@ def _read_via_ffmpeg(audio_path: Path, model: Any) -> tuple[int, float, Any]:
         os.environ["PATH"] = os.pathsep.join(
             [str(Path(ffmpeg_override).parent), os.environ.get("PATH", "")]
         )
-    if shutil.which("ffmpeg") is None:
-        raise RuntimeError(
-            f"ffmpeg not found on PATH; cannot decode non-WAV input "
-            f"{audio_path}. Fix one of: (1) set MDT_FFMPEG to the ffmpeg "
-            f"executable path (e.g. a D:/tools/ffmpeg drop's "
-            f"bin/ffmpeg.exe); (2) pre-transcode this file to WAV on the "
-            f"Mac and re-run the worker there (WAV inputs bypass ffmpeg "
-            f"entirely via the soundfile fast-path)."
-        )
-
     af = AudioFile(audio_path)
     source_sr = int(af.samplerate())
     source_duration_s = float(af.duration)
     wav = af.read(streams=0, samplerate=model.samplerate, channels=model.audio_channels)
     return source_sr, source_duration_s, wav
+
+
+def _odj_audio_decode_module() -> Any:
+    """``apps.shared.odj_audio_decode``, importable from a checkout too: this
+    script runs under ``uv run``, whose sys.path[0] is ``scripts/``, not the
+    repo root (the installed app's PYTHONPATH already names ``payload/app``)."""
+    root = str(Path(__file__).resolve().parents[1])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from apps.shared import odj_audio_decode
+
+    return odj_audio_decode
+
+
+def _ffmpeg_reachable() -> bool:
+    """The worker's ffmpeg lookup: MDT_FFMPEG's directory first, then PATH."""
+    search = os.environ.get("PATH", os.defpath)
+    override = os.environ.get("MDT_FFMPEG")
+    if override:
+        search = os.pathsep.join([str(Path(override).parent), search])
+    return shutil.which("ffmpeg", path=search) is not None
+
+
+def _read_via_odj_audio(audio_path: Path, model: Any) -> tuple[int, float, Any]:
+    """Non-WAV decode via ``odj-audio decode`` (the installed app ships no
+    ffmpeg) into a system temp dir, gone on return, then the WAV fast-path.
+    No such engine either -> fail fast naming the file and every remedy."""
+    decode = _odj_audio_decode_module()
+    with decode.decoded_wav(audio_path, prefix="odj-vocal-decode-") as decoded:
+        _log(f"decoded {audio_path.name} via odj-audio ({decoded.sample_rate} Hz)")
+        return _read_wav_fastpath(decoded.path, model)
+
+
+def _read_non_wav(audio_path: Path, model: Any) -> tuple[int, float, Any]:
+    """ffmpeg when it resolves (unchanged on a development machine), else
+    odj-audio; neither -> RuntimeError naming the file, MDT_FFMPEG,
+    ODJ_AUDIO_BIN and the pre-transcode remedy."""
+    if _ffmpeg_reachable():
+        return _read_via_ffmpeg(audio_path, model)
+    return _read_via_odj_audio(audio_path, model)
 
 
 def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
@@ -323,7 +355,7 @@ def analyse(audio_path: Path, device_pref: str) -> dict[str, Any]:
     if audio_path.suffix.lower() == ".wav":
         source_sr, source_duration_s, wav = _read_wav_fastpath(audio_path, model)
     else:
-        source_sr, source_duration_s, wav = _read_via_ffmpeg(audio_path, model)
+        source_sr, source_duration_s, wav = _read_non_wav(audio_path, model)
 
     # Drift trap guard (NOTE-musicbot-alignment-learnings): region seconds
     # are computed on the resampled 44.1k tensor; that is only the source
