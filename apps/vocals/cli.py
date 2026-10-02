@@ -106,6 +106,7 @@ from apps.shared.process_groups import (
     signal_group,
     wait_group_gone,
 )
+from apps.shared.state import locations as state_locations
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 
@@ -319,6 +320,45 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
                 audio_on_disk=on_disk,
             )
         )
+    tracks.sort(key=lambda t: t.stable_id)
+    return tracks
+
+
+def load_state_tracks(ctx: Ctx) -> list[VocalTrack]:
+    """Rekordbox-mapped tracks with their local audio, read from state.db only.
+
+    from-stems needs only an id and an audio file, so it must not depend on
+    the decrypted rekordbox copy (``master.plain.db``): the packaged app has
+    no such file, and requiring it failed every library refresh. Same track
+    set as :func:`load_tracks` (live, rekordbox-mapped), with audio resolved
+    the way the library listing resolves it.
+    """
+    state = _open_ro(ctx.state_db, "STATE_DB")
+    try:
+        rows = state.execute(
+            "SELECT t.stable_id, COALESCE(t.title, '') "
+            "FROM tracks t "
+            "JOIN track_vendor_ids v "
+            "  ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox' "
+            "WHERE t.deleted_at IS NULL"
+        ).fetchall()
+        ids = [str(sid) for sid, _title in rows]
+        audio = state_locations.bulk_local_audio_paths(state, ids)
+    finally:
+        state.close()
+    tracks = [
+        VocalTrack(
+            stable_id=str(sid),
+            vendor_id="",
+            title=str(title),
+            length_s=0,
+            folder_path=None,
+            analysis_data_path=None,
+            audio_path=audio.get(str(sid)),
+            audio_on_disk=audio.get(str(sid)) is not None,
+        )
+        for sid, title in rows
+    ]
     tracks.sort(key=lambda t: t.stable_id)
     return tracks
 
@@ -1142,7 +1182,7 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
     else:
         ids = vfrom_stems.list_bundle_ids(root)
 
-    by_id = {t.stable_id: t for t in load_tracks(ctx, None)}
+    by_id = {t.stable_id: t for t in load_state_tracks(ctx)}
     planned: list[VocalTrack] = []
     for sid in ids:
         tr = by_id.get(sid)
@@ -1154,8 +1194,7 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
             continue
         if tr.audio_path is None or not tr.audio_path.is_file():
             print(
-                f"[SKIP missing-file] {sid} {tr.title!r}: "
-                f"{tr.folder_path or '(no FolderPath)'}",
+                f"[SKIP missing-file] {sid} {tr.title!r}: no local audio file",
                 file=sys.stderr,
             )
             continue
