@@ -53,6 +53,9 @@ MISS_TTL_S = 7 * 24 * 3600
 # After a network failure every lookup is skipped for this long, so an offline
 # machine never holds a request thread on a dead connection per deck view.
 OFFLINE_BACKOFF_S = 120.0
+# A deck asks for two sizes at once; the second waits this long for the first
+# lookup of the same track (its worst case), then answers without a cover.
+INFLIGHT_WAIT_S = HTTP_TIMEOUT_S * (MAX_RELEASE_GROUPS + 2)
 
 SIDECAR_STEMS = ("cover", "folder", "front", "album", "artwork")
 SIDECAR_EXTS = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
@@ -320,7 +323,8 @@ def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
     a recent lookup already missed, or nothing matched. A network failure is
     NOT remembered as a miss: lookups pause for :data:`OFFLINE_BACKOFF_S`
     and a later view tries again. A view that arrives while the same track
-    is already being looked up returns None at once rather than waiting.
+    is already being looked up waits for that lookup (bounded by
+    :data:`INFLIGHT_WAIT_S`) and serves its result rather than a second one.
     """
     hit = cache.get(stable_id)
     if hit is not None:
@@ -331,12 +335,14 @@ def online_cover(cache: ArtworkCache, stable_id: str, query: TrackQuery,
         return None
     with _INFLIGHT_GUARD:
         lock = _INFLIGHT.setdefault(stable_id, threading.Lock())
-    if not lock.acquire(blocking=False):
-        return None
+    if not lock.acquire(timeout=INFLIGHT_WAIT_S):
+        return None  # nothing learned, so nothing cached
     try:
         hit = cache.get(stable_id)
         if hit is not None or cache.recent_miss(stable_id, time.time()):
             return hit
+        if time.monotonic() < _BACKOFF.until:
+            return None  # the lookup we waited on found the network down
         result, offline = _lookup(cache, stable_id, query, http or _HTTP)
         if offline:
             _BACKOFF.until = time.monotonic() + OFFLINE_BACKOFF_S

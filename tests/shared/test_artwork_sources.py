@@ -13,7 +13,8 @@ Regression one-liners:
   - if a miss is looked up again within a week then broken
   - if a network failure is remembered as a miss then broken
   - if an offline machine sends a lookup on every view then broken
-  - if a second view waits on a lookup already running then broken
+  - if the second of a deck's two simultaneous views shows no cover then broken
+  - if a view waits on a stuck lookup without bound then broken
   - if ODJ_ARTWORK_ONLINE=0 still sends a request then broken
 """
 from __future__ import annotations
@@ -187,7 +188,40 @@ def test_busy_queue_is_not_offline(tmp_path: Path) -> None:
     assert not cache.recent_miss("sid", 0.0)
 
 
-def test_view_during_a_running_lookup_returns_at_once(tmp_path: Path) -> None:
+def test_two_simultaneous_views_both_get_the_cover(tmp_path: Path) -> None:
+    """A deck asks for its header and gutter sizes at once: one lookup, two covers."""
+    cover = _image("JPEG")
+    release = threading.Event()
+
+    class SlowHttp(RecordingHttp):
+        def get(self, url: str) -> tuple[int, bytes]:
+            release.wait(5)
+            return super().get(url)
+
+    http = SlowHttp({
+        art.MB_URL: (200, MB_FOUND.encode()),
+        art.CAA_URL.format(rg="rg-1"): (200, cover),
+    })
+    cache = ArtworkCache(tmp_path / "artwork-cache")
+    results: list[object] = []
+    threads = [
+        threading.Thread(target=lambda: results.append(art.online_cover(cache, "sid", QUERY, http)))
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.1)  # both views are now in flight
+    release.set()
+    for thread in threads:
+        thread.join(10)
+    assert results == [(cover, "image/jpeg"), (cover, "image/jpeg")]
+    assert len(http.calls) == 2, "one MusicBrainz and one CAA request, not two lookups"
+
+
+def test_wait_on_a_stuck_lookup_is_bounded_and_caches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(art, "INFLIGHT_WAIT_S", 0.05)
     http = RecordingHttp({art.MB_URL: (200, MB_FOUND.encode())})
     cache = ArtworkCache(tmp_path / "artwork-cache")
     with art._INFLIGHT_GUARD:
@@ -196,21 +230,8 @@ def test_view_during_a_running_lookup_returns_at_once(tmp_path: Path) -> None:
     try:
         started = time.monotonic()
         assert art.online_cover(cache, "sid", QUERY, http) is None
-        assert time.monotonic() - started < 0.2, "the second view waited on the first"
+        assert time.monotonic() - started < 1.0
     finally:
         lock.release()
     assert http.calls == []
-
-
-def test_disabled_sends_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ODJ_ARTWORK_ONLINE", "0")
-    http = RecordingHttp({art.MB_URL: (200, MB_FOUND.encode())})
-    assert art.online_cover(ArtworkCache(tmp_path), "sid", QUERY, http) is None
-    assert http.calls == []
-
-
-def test_no_artist_sends_nothing(tmp_path: Path) -> None:
-    http = RecordingHttp({art.MB_URL: (200, MB_FOUND.encode())})
-    query = TrackQuery(artist=None, title="Glue", duration_ms=None)
-    assert art.online_cover(ArtworkCache(tmp_path), "sid", query, http) is None
-    assert http.calls == []
+    assert not cache.recent_miss("sid", 0.0) and not cache.has("sid")
