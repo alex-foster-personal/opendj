@@ -3,57 +3,44 @@
  */
 import { expect, test } from '@playwright/test';
 
-test('Show in playlists lists live memberships and navigates on click', async ({ page }) => {
+const PLAYLIST_ROW = '[data-testid="playlist-row"]';
+const FIXTURE_PLAYLIST_NAME = 'E2E Fixture Set';
+
+test('Show in playlists lists seeded fixture membership and navigates on click', async ({
+	page
+}) => {
 	test.setTimeout(90_000);
-	const stamp = Date.now();
-	const nameA = `LIBM-29 A ${stamp}`;
-	const nameB = `LIBM-29 B ${stamp}`;
-	const createdIds: string[] = [];
 
-	await page.goto('/performance');
-	const trackRow = page.locator('[data-testid="track-row"]').first();
-	await expect(trackRow).toBeVisible({ timeout: 30_000 });
-	const stableId = await trackRow.getAttribute('data-stable-id');
-	expect(stableId).toBeTruthy();
+	let stableId = '';
 
-	try {
-		for (const name of [nameA, nameB]) {
-			const created = await page.request.post('/api/v1/playlists', { data: { name } });
-			expect(created.ok(), await created.text()).toBeTruthy();
-			const body = (await created.json()) as { playlist_id: string };
-			createdIds.push(body.playlist_id);
-			const etag = created.headers().etag;
-			expect(etag).toBeTruthy();
-			const replaced = await page.request.put(`/api/v1/playlists/${body.playlist_id}/tracks`, {
-				headers: { 'If-Match': etag as string },
-				data: { stable_ids: [stableId as string] }
-			});
-			expect(replaced.ok(), await replaced.text()).toBeTruthy();
-		}
+	await test.step('boot performance with fixture playlist in tree', async () => {
+		await page.goto('/performance');
+		const firstRow = page.locator('[data-testid="track-row"]').first();
+		await expect(firstRow).toBeVisible({ timeout: 30_000 });
+		stableId = (await firstRow.getAttribute('data-stable-id')) ?? '';
+		expect(stableId).toBeTruthy();
 
+		await expect(
+			page.locator(PLAYLIST_ROW).filter({ hasText: FIXTURE_PLAYLIST_NAME })
+		).toBeVisible({ timeout: 30_000 });
+	});
+
+	await test.step('popover lists fixture playlist membership', async () => {
 		const targetRow = page.locator(`[data-testid="track-row"][data-stable-id="${stableId}"]`);
 		await targetRow.click({ button: 'right' });
 		await page.getByRole('menuitem', { name: 'Show in playlists' }).click();
 
 		const popover = page.locator('[data-testid="track-playlists-menu"]');
 		await expect(popover).toBeVisible();
-		await expect(popover).toContainText(nameA);
-		await expect(popover).toContainText(nameB);
+		await expect(popover).toContainText(FIXTURE_PLAYLIST_NAME);
+	});
 
-		await popover.getByRole('menuitem', { name: nameA }).click();
-		const selectedRow = page.locator(`[data-testid="playlist-row"].selected`, {
-			hasText: nameA
+	await test.step('navigation selects playlist in tree', async () => {
+		const popover = page.locator('[data-testid="track-playlists-menu"]');
+		await popover.getByRole('menuitem', { name: FIXTURE_PLAYLIST_NAME }).click();
+		const selectedRow = page.locator(`${PLAYLIST_ROW}.selected`, {
+			hasText: FIXTURE_PLAYLIST_NAME
 		});
 		await expect(selectedRow).toBeVisible({ timeout: 15_000 });
-	} finally {
-		for (const playlistId of createdIds) {
-			const detail = await page.request.get(`/api/v1/playlists/${playlistId}`);
-			if (!detail.ok()) continue;
-			const etag = detail.headers().etag;
-			if (!etag) continue;
-			await page.request.delete(`/api/v1/playlists/${playlistId}`, {
-				headers: { 'If-Match': etag }
-			});
-		}
-	}
+	});
 });

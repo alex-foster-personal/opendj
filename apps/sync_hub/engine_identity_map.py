@@ -222,6 +222,35 @@ def apply_hub_identity_rejects(
     return applied, tuple(repairs)
 
 
+def retire_tombstoned_remap_losers(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Drop every remap whose loser this database still holds as a tombstone.
+
+    CLOUDSYNC-31: a remap means "the loser's recording lives on under the
+    survivor", and a collapse drops the loser row. A loser that is still
+    stored, removed, is a removal the collapse should never have touched:
+    before CLOUDSYNC-31 a removed row re-offered after the same audio was
+    added back lost the collapse to the re-add, so its sender hard-deleted
+    it, a rescan re-inserted it live, and the sender then held it out of
+    every offer as an identity loser, so the hub's tombstone never reached
+    it again. Retiring the remap lets the removed row stand under its own
+    id; the caller re-logs it so every machine pulls the tombstone. Returns
+    the retired losers, sorted.
+    """
+    if not _identity_remap_table_exists(conn):
+        return ()
+    losers = tuple(
+        str(row[0])
+        for row in conn.execute(
+            f"SELECT r.loser_pk FROM {REMAP_TABLE} AS r "
+            "JOIN tracks AS t ON t.stable_id = r.loser_pk "
+            "WHERE t.deleted_at IS NOT NULL ORDER BY r.loser_pk"
+        )
+    )
+    for loser in losers:
+        conn.execute(f"DELETE FROM {REMAP_TABLE} WHERE loser_pk = ?", (loser,))
+    return losers
+
+
 def _busy_timeout_ms(conn: sqlite3.Connection) -> int:
     row = conn.execute("PRAGMA busy_timeout").fetchone()
     return int(row[0]) if row is not None else 0
@@ -307,4 +336,5 @@ __all__ = [
     "load_identity_remap",
     "prepare_spoke_identity",
     "record_identity_remap",
+    "retire_tombstoned_remap_losers",
 ]
