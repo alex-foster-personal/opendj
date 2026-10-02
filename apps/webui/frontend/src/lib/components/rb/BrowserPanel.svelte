@@ -24,7 +24,6 @@
 		getReconcileSummary,
 		getTrack,
 		listPlaylistsHydrated,
-		listPlaylistTracksPage,
 		listTracksHydrated,
 		patchTrack,
 		searchCollection,
@@ -142,6 +141,15 @@
 		fetchBootTracksFirstPage,
 		LIBRARY_BOOT_PAGE_SIZE,
 	} from '$lib/rb/library-boot-hydration';
+	// Re-exported by browser-panel-support so BrowserPanel's import fan-out
+	// stays at main's figure (frontend.max_fan_out ratchet).
+	import {
+		fetchPlaylistFirstPage,
+		prefetchPlaylistFirstPage,
+		prefetchPlaylistTreeIntent,
+		invalidatePlaylistFirstPage,
+		invalidateAllPlaylistFirstPages
+	} from './browser/browser-panel-support';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {
 		rememberSpotifyRecent,
@@ -927,6 +935,7 @@
 		// the renamed row never appeared (#1888). Refresh names immediately;
 		// the gate still refreshes pane membership and the health-dot total.
 		const unsubscribePlaylists = subscribeKind('playlists', () => {
+			invalidateAllPlaylistFirstPages();
 			void _refreshPlaylists();
 			_libraryRefreshGate.request();
 		});
@@ -934,6 +943,7 @@
 		// A resync means the bus knows it missed events but not which, so the
 		// only sound response is to refetch as if everything changed.
 		const unsubscribeResync = subscribeResync(() => {
+			invalidateAllPlaylistFirstPages();
 			void _refreshPlaylists();
 			_libraryRefreshGate.request();
 		});
@@ -1068,6 +1078,16 @@
 		}
 	}
 
+	function _prefetchPlaylistTreeIntent(
+		nodes: Array<{ playlist_id: string; kind?: string }>
+	): void {
+		prefetchPlaylistTreeIntent(
+			nodes
+				.filter((node) => node.kind !== 'folder' && node.kind !== 'taglist')
+				.map((node) => node.playlist_id)
+		);
+	}
+
 	async function _loadReconcileSummary(): Promise<void> {
 		try {
 			const summary = await getReconcileSummary();
@@ -1134,6 +1154,11 @@
 				bootValue: lists,
 				currentValue: playlists
 			});
+			_prefetchPlaylistTreeIntent(lists);
+			const rememberedPlaylist = uiPrefs.last_playlist;
+			if (rememberedPlaylist !== null && rememberedPlaylist.kind === 'playlist') {
+				prefetchPlaylistFirstPage(rememberedPlaylist.playlist_id);
+			}
 			// Playlist navigation is ready even while the initial track pane loads.
 			playlistsLoading = false;
 			// Open-to-tree: performance.now() already counts from navigation start.
@@ -1844,6 +1869,7 @@
 						source_playlist_id: srcId,
 						source_etag: src.etag
 					});
+					invalidatePlaylistFirstPage(srcId);
 					effectiveMode = 'move';
 				} else {
 					await appendTracksToPlaylist(playlistId, stableIds);
@@ -1851,6 +1877,7 @@
 			} else {
 				await appendTracksToPlaylist(playlistId, stableIds);
 			}
+			invalidatePlaylistFirstPage(playlistId);
 			if (effectiveMode === 'move') {
 				const node = _currentNode(panes[activePane]);
 				if (node !== null) await _loadPane(panes[activePane], node);
@@ -1932,6 +1959,11 @@
 				_writeCollectionQuery(node.playlist_id);
 			}
 		}
+		// A reload of the playlist this pane already shows (post-mutation
+		// refresh, undo, conflict recovery) must read the route: a prefetch
+		// taken before the write would repaint the old rows with the old etag.
+		// Only a switch from another playlist may join a prefetch.
+		if (p.playlist_id === node.playlist_id) invalidatePlaylistFirstPage(node.playlist_id);
 		// beginLoad returns the stale-response token for rapid re-selection;
 		// completeLoad/failLoad no-op when a newer load superseded this one.
 		const seq = p.beginLoad(node.playlist_id, node.name, node.kind);
@@ -1954,6 +1986,7 @@
 				return;
 			}
 			if (node.kind === 'all_tracks') {
+				_prefetchPlaylistTreeIntent(treeNodes);
 				const switchStartedAt = performance.now();
 				await fillAllTracksPane({
 					pane: p,
@@ -2005,13 +2038,14 @@
 					pane: p,
 					seq,
 					fetchPage: (offset, limit) =>
-						listPlaylistTracksPage(node.playlist_id, { limit, offset }),
+						fetchPlaylistFirstPage(node.playlist_id, offset, limit),
 					mapRow: (wire, order) => _rowFromPlaylistWire(wire, order),
 					progressTotal: node.track_count,
-					onFirstPaint: () => {
+					onFirstPaint: (decomposition) => {
 						recordPlaylistSwitchFirstRowsMs(
 							'playlist',
-							performance.now() - switchStartedAt
+							performance.now() - switchStartedAt,
+							decomposition
 						);
 						recordOpenToLibraryRows({ source: 'playlist' });
 						completeLibraryUsable({ source: 'playlist' });
@@ -3053,6 +3087,7 @@
 		addToPlaylistIds = null;
 		try {
 			await appendTracksToPlaylist(node.playlist_id, ids);
+			invalidatePlaylistFirstPage(node.playlist_id);
 			await _refreshPlaylists();
 			pushToast(addToPlaylistToastMessage(ids.length, node.name), 'info');
 		} catch (exc) {
