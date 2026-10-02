@@ -104,6 +104,10 @@ pub fn decode_at(path: &Path, sample_rate: u32) -> Result<Decoded, ProtoError> {
 }
 
 /// Input chunk for the FFT resampler. Larger chunks cost memory, not quality.
+/// Part of the analysis decode fingerprint (`RESAMPLER` in
+/// `apps/analysis/pcm_fingerprint.py`): changing it, the sub-chunk count, or
+/// the resampler changes every stored fingerprint, so it moves only with a
+/// spec change there.
 const RESAMPLE_CHUNK: usize = 4096;
 
 /// Convert interleaved stereo to `to` Hz. The output has exactly
