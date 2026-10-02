@@ -310,26 +310,20 @@ export function deckFacingMessage(error: unknown): string | undefined {
 
 /**
  * The track title from a load's own metadata request, for a load that failed
- * before that request was read (the audio fetch rejects first). Bounded, so a
- * slow metadata answer never holds up the failure, and never throws.
+ * before that request was read (the audio fetch rejects first). Never throws.
+ *
+ * Deliberately unbounded and timer-free: the request is already in flight to a
+ * server that has just answered the audio fetch, and the load-failure path
+ * must not schedule stray timers (audio-engine-controller's timer guard).
  */
 export async function settledTrackTitle(
-	request: Promise<{ track: { title?: string | null } }> | null,
-	timeoutMs = 300
+	request: Promise<{ track: { title?: string | null } }> | null
 ): Promise<string | null> {
 	if (request === null) return null;
-	const title = request.then(
-		(res) => res.track.title ?? null,
-		() => null
-	);
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const timeout = new Promise<null>((resolve) => {
-		timer = setTimeout(() => resolve(null), timeoutMs);
-	});
 	try {
-		return await Promise.race([title, timeout]);
-	} finally {
-		clearTimeout(timer);
+		return (await request).track.title ?? null;
+	} catch {
+		return null;
 	}
 }
 
