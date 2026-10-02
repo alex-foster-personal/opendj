@@ -211,6 +211,48 @@ def test_snapshot_column_add_survives_losing_the_race(tmp_path: Path) -> None:
     rival.close()
 
 
+def test_ensure_tables_waits_out_a_rival_wal_writer_adding_the_column(
+    tmp_path: Path,
+) -> None:
+    """If a rival WAL writer adds snapshot_json mid-open then ensure waits and succeeds, else stop."""
+    import threading
+
+    from apps.shared.pairings import schema_sql
+
+    path = tmp_path / "wal_race.db"
+    setup = sqlite3.connect(path, isolation_level=None)
+    setup.execute("PRAGMA journal_mode = WAL")
+    setup.execute(schema_sql._PAIRINGS_DDL[0].replace("        snapshot_json  TEXT,\n", ""))
+    setup.close()
+
+    rival = sqlite3.connect(path, isolation_level=None)
+    rival.execute("BEGIN IMMEDIATE")
+    rival.execute("ALTER TABLE pairings ADD COLUMN snapshot_json TEXT")
+
+    ours = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    ours.execute("PRAGMA busy_timeout = 5000")
+    errors: list[sqlite3.Error] = []
+
+    def _open() -> None:
+        try:
+            schema_sql.ensure_phase08_tables(ours)
+        except sqlite3.Error as exc:  # surfaced below, not swallowed
+            errors.append(exc)
+
+    worker = threading.Thread(target=_open)
+    worker.start()
+    worker.join(0.3)  # ours is now waiting on (or about to need) the write lock
+    rival.execute("COMMIT")
+    worker.join(10)
+
+    assert not worker.is_alive()
+    assert errors == []
+    columns = [row[1] for row in ours.execute("PRAGMA table_info(pairings)")]
+    assert columns.count("snapshot_json") == 1
+    ours.close()
+    rival.close()
+
+
 def test_snapshot_column_add_still_raises_a_real_failure(tmp_path: Path) -> None:
     """If the ALTER fails and the column is still absent then it raises, else stop."""
     from apps.shared.pairings import schema_sql

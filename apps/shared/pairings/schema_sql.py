@@ -179,11 +179,14 @@ def ensure_phase08_tables(conn: sqlite3.Connection) -> None:
     """Create the Phase 08 tables if they don't already exist.
 
     Idempotent. Wraps everything in a single transaction so partial
-    failure rolls back cleanly.
+    failure rolls back cleanly. IMMEDIATE, not DEFERRED: the column checks
+    below read and then ALTER, and a deferred reader that loses the write
+    lock to another process keeps its old snapshot, so it would see the
+    column still absent after the rival added it and fail the write.
     """
     in_transaction = conn.in_transaction
     if not in_transaction:
-        conn.execute("BEGIN")
+        conn.execute("BEGIN IMMEDIATE")
     try:
         for stmt in _PAIRINGS_DDL:
             conn.execute(stmt)
