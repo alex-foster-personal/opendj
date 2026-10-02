@@ -51,6 +51,21 @@ def require() -> None:
         raise ImportError(_INSTALL_HINT)
 
 
+def can_read(path: Path | str) -> bool:
+    """Whether tinytag parses this file type at all.
+
+    tinytag has no reader for some formats the library accepts (raw ADTS
+    ``.aac``, measured on tinytag 2.3.2), and returns no duration for them
+    rather than raising. A caller that treats a missing duration as damage
+    must ask this first, or every such file reads as broken.
+    """
+    if _tinytag is None:
+        return False
+    from tinytag import TinyTag  # type: ignore
+
+    return Path(path).suffix.lower() in TinyTag.SUPPORTED_FILE_EXTENSIONS
+
+
 class TagReadError(Exception):
     """The file could not be parsed as tagged audio (corrupt, truncated, not audio)."""
 

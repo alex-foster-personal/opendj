@@ -66,7 +66,10 @@ def probe_playable_audio(path: Path) -> None:
     elif ext in {".aiff", ".aif"}:
         _probe_aiff_header(header, size_bytes)
 
-    if HAS_TAG_READER:
+    # The tag reader cross-checks duration only for formats it can parse; a
+    # raw ADTS .aac is vouched for by its magic check alone, as it was in the
+    # packaged app before tinytag (which had no tag reader at all).
+    if HAS_TAG_READER and _tagreader.can_read(path):
         _probe_tags(path, size_bytes)
 
 

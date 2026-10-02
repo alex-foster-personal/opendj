@@ -141,3 +141,29 @@ def test_read_paths_never_import_mutagen(tmp_path):
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     assert proc.stdout.strip().endswith("OK")
+
+
+def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
+    """A raw ADTS .aac passes ingest: tinytag has no reader for it.
+
+    Regression from the tinytag switch (review of #4997): tinytag returns no
+    duration for formats it cannot parse instead of raising, so the
+    duration cross-check rejected every raw .aac as "missing or zero
+    duration". The control below proves the cross-check still runs for a
+    format tinytag does read.
+    """
+    from apps.shared import _tagreader, audio_playable
+
+    adts_frame = bytes.fromhex("fff1508001 3ffc".replace(" ", "")) + b"\x00" * 1017
+    track = tmp_path / "raw.aac"
+    track.write_bytes(adts_frame * 64)
+    assert _tagreader.can_read(track) is False
+    audio_playable.probe_playable_audio(track)
+
+    # Control: a tinytag-readable type with valid magic but no audio frames is
+    # still rejected by the tag cross-check.
+    bogus = tmp_path / "bogus.mp3"
+    bogus.write_bytes(b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\x00" * 4096)
+    assert _tagreader.can_read(bogus) is True
+    with pytest.raises(audio_playable.UnplayableAudioError):
+        audio_playable.probe_playable_audio(bogus)
