@@ -93,6 +93,7 @@ after(() => {
 afterEach(() => {
   store.stopPinWatch();
   store.feedbackState.pinSummary = null;
+  store.feedbackState.pinSummaryError = null;
   store.feedbackState.availability = "unknown";
   store.feedbackState.pins = [];
 });
@@ -373,4 +374,106 @@ test("pin 6af63c5e9b7c a 404 for the summary route clears it (daemon without FB-
   await store.refreshPins();
   assert.equal(store.feedbackState.pinSummary, null);
   assert.equal(store.feedbackState.availability, "ok", "only the summary route is missing, not feedback");
+});
+
+// ----- persistent summary failures surface (PR #4094 Sol P1) ----------------
+function errorEnvelope(status, code, message) {
+  return new Response(JSON.stringify({ detail: { code, message } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("pin 6af63c5e9b7c a 500 unknown_pin_status drops the counts and surfaces the error", async () => {
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => errorEnvelope(500, "unknown_pin_status", "pin abc has status 'bogus'"),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  await store.refreshPins();
+  assert.equal(store.feedbackState.pinSummary, null, "stale counts must not stay on screen as if measured");
+  assert.match(store.feedbackState.pinSummaryError ?? "", /HTTP 500 unknown_pin_status/);
+  assert.match(store.commentPinSummaryTitle([]), /^Comment pin summary failed: HTTP 500 unknown_pin_status/);
+});
+
+test("pin 6af63c5e9b7c an undecodable summary body is surfaced, not swallowed", async () => {
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () =>
+      new Response("{not json", { status: 200, headers: { "content-type": "application/json" } }),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  await store.refreshPins();
+  assert.equal(store.feedbackState.pinSummary, null);
+  assert.ok(store.feedbackState.pinSummaryError, "a decode failure must reach the error state");
+});
+
+test("pin 6af63c5e9b7c an unreachable daemon keeps the last-known counts and raises no error", async () => {
+  const last = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => {
+      throw new TypeError("fetch failed");
+    },
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = last;
+  await store.refreshPins();
+  assert.deepEqual(store.feedbackState.pinSummary, last);
+  assert.equal(store.feedbackState.pinSummaryError, null);
+});
+
+test("pin 6af63c5e9b7c a later successful summary clears the surfaced error", async () => {
+  const fresh = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => jsonResponse(fresh),
+    comments: () => jsonResponse({ comments: [] }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummaryError = "HTTP 500 unknown_pin_status: x";
+  await store.refreshPins();
+  assert.equal(store.feedbackState.pinSummaryError, null);
+  assert.deepEqual(store.feedbackState.pinSummary, fresh);
+});
+
+// ----- summary follows local mutations (PR #4094 Sol P2) --------------------
+test("pin 6af63c5e9b7c a successful addPin refreshes the operator summary at once", async () => {
+  const after = {
+    ...EMPTY_PIN_SUMMARY,
+    operator: { ...EMPTY_PIN_SUMMARY.operator, total: 1, sent_to_queue: 1 },
+    fleet_correlation: "ok",
+  };
+  let summaryGets = 0;
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => {
+      summaryGets++;
+      return jsonResponse(after);
+    },
+    comments: () => jsonResponse({ id: "new1", status: null }),
+  });
+  store.feedbackState.availability = "ok";
+  store.feedbackState.pinSummary = { ...EMPTY_PIN_SUMMARY, fleet_correlation: "ok" };
+  const created = await store.addPin({ text: "hi", x: 0, y: 0 });
+  assert.equal(created?.id, "new1");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(summaryGets, 1, "a mutation must schedule exactly one summary refresh");
+  assert.deepEqual(store.feedbackState.pinSummary, after);
+});
+
+test("pin 6af63c5e9b7c a failed addPin does not refresh the summary", async () => {
+  let summaryGets = 0;
+  globalThis.fetch = mockFeedbackFetch({
+    summary: () => {
+      summaryGets++;
+      return jsonResponse(EMPTY_PIN_SUMMARY);
+    },
+    comments: () => errorEnvelope(422, "bad_pin", "no"),
+  });
+  store.feedbackState.availability = "ok";
+  assert.equal(await store.addPin({ text: "hi", x: 0, y: 0 }), null);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(summaryGets, 0);
+  store.feedbackState.error = null;
 });

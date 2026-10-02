@@ -61,6 +61,7 @@ afterEach(() => {
 	mod.feedbackState.availability = 'unknown';
 	mod.feedbackState.pins = [];
 	mod.feedbackState.pinSummary = null;
+	mod.feedbackState.pinSummaryError = null;
 });
 
 function decode(html) {
@@ -136,4 +137,18 @@ test('pin 6af63c5e9b7c explainer bullets: untracked stub only without the route,
 		noLedger.some((b) => /In-progress excludes fleet work: this daemon has no progress ledger/.test(b)),
 		'an unmeasured fleet correlation must be said, never shown as zero fleet work'
 	);
+});
+
+test('pin 6af63c5e9b7c a persistent summary failure reaches both controls as an error, not counts', () => {
+	mod.feedbackState.availability = 'ok';
+	mod.feedbackState.pins = [{ id: 'a', status: null }];
+	mod.feedbackState.pinSummaryError = 'HTTP 500 unknown_pin_status: pin a has status bogus';
+	for (const component of [mod.Shell, mod.Widget]) {
+		const title = titleOfCommentButton(mod.render(component, { props: {} }).body);
+		assert.match(title, /^Comment pin summary failed: HTTP 500 unknown_pin_status/);
+		assert.doesNotMatch(title, /Active comment pins/);
+	}
+	const bullets = mod.commentPinSummaryBullets([]);
+	assert.match(bullets[0], /^Comment pin summary failed/);
+	assert.ok(!bullets.some((b) => /not tracked by the comment API yet/.test(b)), bullets.join(' | '));
 });

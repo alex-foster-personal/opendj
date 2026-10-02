@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client';
 import type { components } from '../api-types';
 
 /**
@@ -41,4 +42,31 @@ export function describeFleetCorrelation(
 		return 'In-progress excludes fleet work: the progress ledger on this daemon did not parse.';
 	}
 	return null;
+}
+
+/** Statuses a retry can fix: the daemon was busy, restarting, or behind a
+ * proxy that gave up. Anything else is the daemon (or its data) refusing. */
+const TRANSIENT_SUMMARY_STATUSES = new Set([408, 429, 502, 503, 504]);
+
+export type SummaryFailure =
+	| { kind: 'missing' }
+	| { kind: 'transient' }
+	| { kind: 'error'; message: string };
+
+/** How a failed GET /comments/summary must show (PR #4094 Sol P1):
+ * - `missing`: 404, a daemon without the route; clear the summary, no error;
+ * - `transient`: unreachable daemon (fetch rejects with a TypeError) or
+ *   408/429/502/503/504; keep the last-known counts and retry on the next poll;
+ * - `error`: anything else (a 500 such as unknown_pin_status from a malformed
+ *   persisted pin, another 4xx, an empty or undecodable body) is persistent, so
+ *   the counts are dropped and the reason is shown (fail fast, no silent
+ *   fallback to stale numbers). */
+export function classifySummaryFailure(err: unknown): SummaryFailure {
+	if (err instanceof ApiError) {
+		if (err.status === 404) return { kind: 'missing' };
+		if (TRANSIENT_SUMMARY_STATUSES.has(err.status)) return { kind: 'transient' };
+		return { kind: 'error', message: `HTTP ${err.status} ${err.code}: ${err.message}` };
+	}
+	if (err instanceof TypeError) return { kind: 'transient' };
+	return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
 }

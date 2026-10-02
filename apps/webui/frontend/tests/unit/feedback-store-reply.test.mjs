@@ -34,6 +34,8 @@ afterEach(() => {
   store.feedbackState.availability = "unknown";
   store.feedbackState.pins = [];
   store.feedbackState.error = null;
+  store.feedbackState.pinSummary = null;
+  store.feedbackState.pinSummaryError = null;
 });
 
 test("addReply POSTs the replies path with operator author", async () => {
@@ -48,7 +50,13 @@ test("addReply POSTs the replies path with operator author", async () => {
     replies: [{ id: "r1", author: "operator", text: "follow-up", created_at: "t" }],
   };
   let seen;
+  let summaryGets = 0;
   globalThis.fetch = async (request) => {
+    // A successful reply also refreshes the operator summary (PR #4094 Sol P2).
+    if (new URL(request.url).pathname === "/api/v1/feedback/comments/summary") {
+      summaryGets++;
+      return jsonResponse({ operator: {}, lifecycle: {}, fleet_correlation: "ok" });
+    }
     seen = request;
     return jsonResponse(pin);
   };
@@ -64,6 +72,7 @@ test("addReply POSTs the replies path with operator author", async () => {
   assert.equal(store.feedbackState.pins.length, 1);
   assert.equal(store.feedbackState.pins[0].replies.length, 1);
   assert.equal(store.feedbackState.error, null);
+  assert.equal(summaryGets, 1, "a successful reply refreshes the summary once");
 });
 
 test("addReply failure leaves pins unchanged and sets error", async () => {
