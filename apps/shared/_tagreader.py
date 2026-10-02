@@ -113,30 +113,39 @@ def adts_duration(path: Path | str) -> float | None:
     samples = 0
     rate = 0
     with open(path, "rb") as fh:
-        head = fh.read(10)
-        offset = 0
-        if len(head) == 10 and head[:3] == b"ID3":
-            size = 0
-            for byte in head[6:10]:
-                size = (size << 7) | (byte & 0x7F)
-            offset = 10 + size + (10 if head[5] & 0x10 else 0)
+        offset = _id3v2_end(fh.read(10))
         while True:
             fh.seek(offset)
-            hdr = fh.read(7)
-            if len(hdr) < 7 or hdr[0] != 0xFF or (hdr[1] & 0xF6) != 0xF0:
+            frame = _adts_frame(fh.read(7))
+            if frame is None or (rate and frame[0] != rate):
                 break
-            rate_index = (hdr[2] >> 2) & 0x0F
-            frame_len = ((hdr[3] & 0x03) << 11) | (hdr[4] << 3) | (hdr[5] >> 5)
-            if rate_index >= len(_ADTS_RATES) or frame_len < 7:
-                break
-            if rate and _ADTS_RATES[rate_index] != rate:
-                break
-            rate = _ADTS_RATES[rate_index]
-            samples += 1024 * ((hdr[6] & 0x03) + 1)
-            offset += frame_len
+            rate = frame[0]
+            samples += frame[2]
+            offset += frame[1]
     if not rate or not samples:
         return None
     return samples / rate
+
+
+def _id3v2_end(head: bytes) -> int:
+    """Byte offset just past a leading ID3v2 tag, or 0 when there is none."""
+    if len(head) < 10 or head[:3] != b"ID3":
+        return 0
+    size = 0
+    for byte in head[6:10]:
+        size = (size << 7) | (byte & 0x7F)
+    return 10 + size + (10 if head[5] & 0x10 else 0)
+
+
+def _adts_frame(hdr: bytes) -> tuple[int, int, int] | None:
+    """(sample rate, frame bytes, samples) of one ADTS header, or None."""
+    if len(hdr) < 7 or hdr[0] != 0xFF or (hdr[1] & 0xF6) != 0xF0:
+        return None
+    rate_index = (hdr[2] >> 2) & 0x0F
+    frame_len = ((hdr[3] & 0x03) << 11) | (hdr[4] << 3) | (hdr[5] >> 5)
+    if rate_index >= len(_ADTS_RATES) or frame_len < 7:
+        return None
+    return _ADTS_RATES[rate_index], frame_len, 1024 * ((hdr[6] & 0x03) + 1)
 
 
 def first_other(tag: TinyTag, key: str) -> str | None:

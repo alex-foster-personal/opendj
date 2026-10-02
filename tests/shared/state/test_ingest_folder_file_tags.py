@@ -58,12 +58,15 @@ def test_folder_import_reads_title_and_artist_without_mutagen(
 ) -> None:
     """The packaged app ships no mutagen; a real tagged mp3 still imports its tags."""
     import shutil
+    import sys
 
-    # Reads go through tinytag now and never consult the mutagen gate; flipping
-    # it off still models the packaged app, which ships no mutagen.
-    from apps.shared import _mutagen
-
-    monkeypatch.setattr(_mutagen, "HAS_MUTAGEN", False)
+    # Make mutagen genuinely unimportable, as in the packaged app: a None entry
+    # in sys.modules makes every `import mutagen...` raise ImportError.
+    for name in [m for m in sys.modules if m == "mutagen" or m.startswith("mutagen.")]:
+        monkeypatch.setitem(sys.modules, name, None)
+    monkeypatch.setitem(sys.modules, "mutagen", None)
+    with pytest.raises(ImportError):
+        import mutagen.id3  # noqa: F401
     fixture = Path(__file__).resolve().parents[2] / "fixtures" / "phase7-dedup" / "src-v2.mp3"
     audio_path = tmp_path / "music" / "src-v2.mp3"
     audio_path.parent.mkdir()

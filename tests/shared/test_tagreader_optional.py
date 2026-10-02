@@ -161,11 +161,16 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     """
     from apps.shared import _tagreader, audio_playable
 
-    adts_frame = bytes.fromhex("fff1508001 3ffc".replace(" ", "")) + b"\x00" * 1017
     track = tmp_path / "raw.aac"
-    track.write_bytes(adts_frame * 64)
+    track.write_bytes(_adts_frames(64))
     assert _tagreader.can_read(track) is False
     audio_playable.probe_playable_audio(track)
+
+    # A bare ADTS sync word passes the magic check but holds no frame.
+    stub = tmp_path / "stub.aac"
+    stub.write_bytes(b"\xff\xf1")
+    with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
+        audio_playable.probe_playable_audio(stub)
 
     # Control: a tinytag-readable type with valid magic but no audio frames is
     # still rejected by the tag cross-check.
