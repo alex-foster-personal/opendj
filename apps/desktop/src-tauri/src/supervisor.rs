@@ -100,6 +100,9 @@ struct RuntimeState {
     phase: SupervisorPhase,
     dead_at: Option<Instant>,
     exit_code: Option<i32>,
+    /// The last death was a live engine that stopped answering health
+    /// checks, not an exit, so `exit_code` holds nothing to report.
+    unresponsive: bool,
     lock_pid: Option<u32>,
     lock_port: Option<u16>,
     auto_restart_attempted: bool,
@@ -134,6 +137,7 @@ impl EngineSupervisor {
                 phase: SupervisorPhase::Running,
                 dead_at: None,
                 exit_code: None,
+                unresponsive: false,
                 lock_pid: None,
                 lock_port: None,
                 auto_restart_attempted: false,
@@ -299,6 +303,7 @@ fn tick(app: &AppHandle, supervisor: &EngineSupervisor) {
                 guard.phase = SupervisorPhase::Dead;
                 guard.dead_at = Some(Instant::now());
                 guard.exit_code = dead.exit_code;
+                guard.unresponsive = dead.unresponsive;
                 guard.lock_pid = dead.lock_pid;
                 guard.lock_port = dead.lock_port;
                 engine::append_shell_log(
@@ -492,7 +497,7 @@ fn reap_child(guard: &mut RuntimeState) {
 
 fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_requested: bool) -> bool {
     let mut guard = supervisor.inner.lock().expect("supervisor mutex");
-    let exit_code = guard.exit_code.unwrap_or(-1);
+    let reason = death_reason(&guard);
     let payload = guard.paths.payload.clone();
     let data_dir = guard.paths.data_dir.clone();
     let log_path = guard.paths.log_path.clone();
@@ -525,7 +530,7 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
             guard.dead_at = None;
             guard.auto_restart_attempted = false;
             guard.health_misses = 0;
-            log_restart_success(exit_code);
+            log_restart_success(&reason);
             let origin = guard.supervised.as_ref().expect("adopted").origin();
             update_surfaces(app, supervisor, &guard);
             navigate_to_origin(app, &origin, &product_name);
@@ -582,7 +587,7 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
             guard.dead_at = None;
             guard.auto_restart_attempted = false;
             guard.health_misses = 0;
-            log_restart_success(exit_code);
+            log_restart_success(&reason);
             let origin = guard.supervised.as_ref().expect("spawned").origin();
             update_surfaces(app, supervisor, &guard);
             navigate_to_origin(app, &origin, &product_name);
@@ -599,12 +604,17 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
     }
 }
 
-fn log_restart_success(exit_code: i32) {
-    let line = format!(
-        "{} engine restarted after exit code {}",
-        utc_timestamp_iso(),
-        exit_code
-    );
+/// What happened to the engine, for the restart log and the fatal dialog.
+fn death_reason(guard: &RuntimeState) -> String {
+    if guard.unresponsive {
+        "it stopped answering health checks".to_string()
+    } else {
+        format!("exit code {}", guard.exit_code.unwrap_or(-1))
+    }
+}
+
+fn log_restart_success(reason: &str) {
+    let line = format!("{} engine restarted after {reason}", utc_timestamp_iso());
     engine::append_shell_log("INFO", &line);
 }
 
@@ -765,11 +775,15 @@ fn navigate_to_origin(app: &AppHandle, origin: &str, product_name: &str) {
 }
 
 fn show_fatal_dialog(app: &AppHandle, guard: &RuntimeState) {
-    let exit_code = guard.exit_code.unwrap_or(-1);
     let pid = guard.lock_pid.unwrap_or(0);
     let port = guard.lock_port.unwrap_or(0);
+    let what = if guard.unresponsive {
+        "The engine stopped answering".to_string()
+    } else {
+        format!("The engine exited with code {}", guard.exit_code.unwrap_or(-1))
+    };
     let detail = format!(
-        "The engine exited with code {exit_code} (pid {pid}, port {port}).\n\n\
+        "{what} (pid {pid}, port {port}).\n\n\
          Relaunch starts a fresh engine, or quit the app."
     );
     let app_clone = app.clone();
@@ -921,7 +935,7 @@ mod tests {
     #[test]
     fn force_stop_group_stops_a_process_group() {
         use std::os::unix::process::CommandExt;
-        let mut child = std::process::Command::new("sleep")
+        let mut child = std::process::Command::new("/bin/sleep")
             .arg("30")
             .process_group(0)
             .spawn()
