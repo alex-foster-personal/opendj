@@ -13,10 +13,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from apps.sync_hub import engine, protocol
 from apps.sync_hub.client_result import SyncResult
 from apps.sync_hub.client_transport_ops import _PullOutcome, _PushOutcome
+
+if TYPE_CHECKING:
+    from apps.sync_hub.rejected_rows import RejectedRow
 
 log = logging.getLogger("apps.sync_hub.client")
 
@@ -114,6 +118,14 @@ def _refusal_verdicts(rounds: list[_Round], digest_inconclusive: bool) -> tuple[
     return push_refused, digest_inconclusive and not push_refused
 
 
+def _rejected_rows(rounds: list[_Round]) -> tuple[RejectedRow, ...]:
+    """Every row the hub named as rejected, across all rounds (CLOUDSYNC-31).
+
+    Split out of :func:`_result_from_rounds` to keep it under the quality-gate CC limit.
+    """
+    return tuple(row for round_ in rounds for row in round_.push.rejected_rows)
+
+
 def _result_from_rounds(
     rounds: list[_Round],
     *,
@@ -138,7 +150,7 @@ def _result_from_rounds(
         pushed=sum(round_.pushed for round_ in rounds),
         accepted=sum(round_.push.accepted for round_ in rounds),
         rejected=sum(round_.push.rejected for round_ in rounds),
-        rejected_rows=tuple(row for round_ in rounds for row in round_.push.rejected_rows),
+        rejected_rows=_rejected_rows(rounds),
         pulled=sum(round_.pull.pulled for round_ in rounds),
         applied=sum(round_.pull.applied for round_ in rounds),
         hub_seq=rounds[-1].pull.seq,
