@@ -237,8 +237,8 @@ class FastTier:
             print(
                 f"::warning title=fast-tier ledger is going stale::{LINE_PREFIX} ledger names "
                 f"{known} of {collected} collected tests ({coverage:.1%}), under the "
-                f"{self.coverage_warn:.0%} warning line; the run goes ahead. Refresh "
-                "`.test_durations` from a full run on main.",
+                f"{self.coverage_warn:.0%} warning line; the run goes ahead. Check that "
+                "durations-ledger.yml is publishing and this run's scope job resolved it.",
                 file=sys.stderr,
             )
         if self.tier in ("fast", "slow"):
