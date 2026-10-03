@@ -160,6 +160,25 @@ export function listIoDevices(devices: readonly EnumeratedDevice[]): IoDeviceLis
 	};
 }
 
+/**
+ * CUEOUT-22: the listing in the Mac app, where the shell names every output
+ * and only the inputs (AUDIO IN, the calibration mic) come from the webview.
+ *
+ * The shell's outputs are always named, so only the webview's inputs can be
+ * withheld, and that state is kept: a webview that hides its microphones
+ * behind placeholders must still read as `permission_needed`, not `listed`,
+ * or the panel offers no grant and AUDIO IN stays empty.
+ */
+export function listNativeShellDevices(
+	nativeOutputs: readonly HeadphoneOutputDevice[],
+	webviewDevices: readonly EnumeratedDevice[]
+): IoDeviceListing {
+	if (!Array.isArray(nativeOutputs)) throw new TypeError('native outputs must be an array');
+	if (!Array.isArray(webviewDevices)) throw new TypeError('enumerated devices must be an array');
+	const inputs = _listKind(webviewDevices, 'audioinput', 'Input device');
+	return { outputs: [...nativeOutputs], inputs: inputs.listed, names_withheld: inputs.withheld };
+}
+
 function _access(
 	status: IoDeviceAccessStatus,
 	detail: string | null,

@@ -15,6 +15,7 @@ Regression one-liners:
 from __future__ import annotations
 
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,11 @@ def test_gpl_licence_text_is_a_violation() -> None:
     assert lgpl.licence_violations(LGPL_L) == []
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the fake ffmpeg is a #!/bin/sh script, which Windows cannot execute; "
+    "the LGPL payload is built and verified on macOS and Linux only",
+)
 def test_mutation_control_fake_gpl_binary_is_refused(tmp_path: Path) -> None:
     """[if] a real-shaped binary reports --enable-gpl [then] verify_lgpl_binary raises.
 

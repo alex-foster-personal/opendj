@@ -52,6 +52,7 @@ import {
 	IO_OPERATION_TIMEOUT_ERROR_NAME,
 	ioDeviceAccessForFailure,
 	ioDeviceAccessForListing,
+	listNativeShellDevices,
 	ioDeviceAccessRequestWasNotGranted,
 	ioOperationTimedOut,
 	listIoDevices,
@@ -2068,11 +2069,7 @@ export async function refreshHeadphoneOutputs(monitorSource?: MonitorSource): Pr
 					: [];
 			_assertCurrentHeadphoneOperation(generation, null);
 			permission = await _microphonePermissionState();
-			listing = {
-				outputs: nativeOutputsAsHeadphoneOutputs(listed),
-				inputs: listIoDevices(devices.filter((device) => device.kind === 'audioinput')).inputs,
-				names_withheld: false
-			};
+			listing = listNativeShellDevices(nativeOutputsAsHeadphoneOutputs(listed), devices);
 		} else {
 			devices = await withHeadphoneOperationTimeout(
 				'enumerateDevices',
@@ -2170,10 +2167,17 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 	const generation = _headphoneGeneration;
 	try {
 		if (nativeCueSinkAvailable()) {
-			// The shell names every device itself, so there is no label unlock
-			// and no microphone prompt on this path.
+			// The shell names every output itself, so outputs need no unlock.
+			// The webview's inputs (AUDIO IN, the calibration mic) still do when
+			// it withholds them, and this press is the operator's consent.
 			await refreshHeadphoneOutputs(monitorSource);
 			_assertCurrentHeadphoneOperation(generation, null);
+			if (mixerState.headphones.device_access.status !== 'listed') {
+				const unlocked = await _unlockWebviewInputs(generation);
+				if (!unlocked) return;
+				await refreshHeadphoneOutputs(monitorSource);
+				_assertCurrentHeadphoneOperation(generation, null);
+			}
 			await _autoSelectSoleBluetoothCue(monitorSource, generation);
 			return;
 		}
@@ -2272,6 +2276,28 @@ export async function requestIoDeviceNames(monitorSource?: MonitorSource): Promi
 	// Recorded on the panel and in the diagnostic ring, not thrown: the listing
 	// above is the state, and this is why it is still withheld.
 	_headphoneError('audio device access request failed', requestError);
+}
+
+/** CUEOUT-22: ask the webview for the microphone grant that names its inputs.
+ * False when nothing was opened (declined, or no microphone), with the
+ * reason left on the panel exactly as the browser path leaves it. */
+async function _unlockWebviewInputs(generation: number): Promise<boolean> {
+	const decision = labelUnlockDecision(await _microphonePermissionState(), true);
+	_assertCurrentHeadphoneOperation(generation, null);
+	if (decision === 'declined') {
+		mixerState.headphones.error = MIC_DECLINED_NOTICE;
+		return false;
+	}
+	try {
+		await _unlockHeadphoneOutputLabels(requireHeadphoneDeviceApi());
+	} catch (error) {
+		if (!microphoneIsMissing(error)) throw error;
+		_assertCurrentHeadphoneOperation(generation, null);
+		mixerState.headphones.error = MIC_ABSENT_NOTICE;
+		return false;
+	}
+	_assertCurrentHeadphoneOperation(generation, null);
+	return true;
 }
 
 async function _autoSelectSoleBluetoothCue(monitorSource: MonitorSource, generation: number): Promise<void> {
