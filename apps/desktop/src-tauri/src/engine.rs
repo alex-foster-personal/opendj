@@ -59,7 +59,8 @@ pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 /// window (`GRACEFUL_SHUTDOWN_S`, apps/engine_core/__main__.py), the refresh
 /// job's CLIs being stopped (`STOP_ALL_MAX_S`,
 /// apps/webui/server/routes/ingest_cli_procs.py), and the job runner settling
-/// jobs still forking (`_SPAWN_SETTLE_S`, apps/engine_core/jobs/runner.py)
+/// jobs still forking (`_SPAWN_SETTLE_S`, apps/engine_core/jobs/runner.py),
+/// cancelling the forks that outlast it (`_FORK_ABORT_WAIT_S`, same file)
 /// then reaping its worker groups (`WORKER_TERMINATE_GRACE_S`,
 /// apps/engine_core/jobs/reap.py), worst case one after another. tests/scripts/test_desktop_quit_budget.py holds
 /// that sum under this number. Job
