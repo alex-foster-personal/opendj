@@ -14,7 +14,8 @@ from dataclasses import dataclass
 
 from scripts.runner_toolset_shell_lex import PLACEHOLDER
 
-PROCESS = {"run", "call", "check_call", "check_output", "Popen", "create_subprocess_exec"}
+PROCESS = {"run", "call", "check_call", "check_output", "Popen"}
+ASYNC_PROCESS = {"create_subprocess_exec"}
 Value = tuple[tuple[str, ...], ...]
 UNKNOWN: Value = ((PLACEHOLDER,),)
 LIMIT = 32
@@ -101,13 +102,17 @@ def _bind(function: ast.FunctionDef | ast.AsyncFunctionDef, call: ast.Call,
     return bound
 
 
-def _imports(tree: ast.Module) -> tuple[set[str], set[str]]:
-    modules, functions = set(), set()
+def _imports(tree: ast.Module) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    modules: dict[str, str] = {}
+    functions: dict[str, tuple[str, str]] = {}
     for node in tree.body:
         if isinstance(node, ast.Import):
-            modules.update(a.asname or a.name for a in node.names if a.name in {"subprocess", "asyncio"})
+            modules.update((a.asname or a.name, a.name) for a in node.names
+                           if a.name in {"subprocess", "asyncio"})
         elif isinstance(node, ast.ImportFrom) and node.module in {"subprocess", "asyncio"}:
-            functions.update(a.asname or a.name for a in node.names if a.name in PROCESS)
+            allowed = PROCESS if node.module == "subprocess" else ASYNC_PROCESS
+            functions.update((a.asname or a.name, (node.module, a.name)) for a in node.names
+                             if a.name in allowed)
     return modules, functions
 
 
@@ -127,11 +132,16 @@ class _Flow:
     def trace(self, call: ast.Call, env: dict[str, Value], origin: int,
               chain: tuple[str, ...] = (), active: frozenset[str] = frozenset()) -> None:
         owner, name = target(call)
-        if chain and name in PROCESS and ((owner in self.modules and owner not in env) or (not owner and name in self.sinks and name not in env)):
+        module, underlying = (self.modules.get(owner, ""), name) if owner else self.sinks.get(name, ("", ""))
+        allowed = PROCESS if module == "subprocess" else ASYNC_PROCESS if module == "asyncio" else set()
+        if chain and underlying in allowed and (owner or name) not in env:
             if not call.args:
                 return
             executable = next((kw.value for kw in call.keywords if kw.arg == "executable"), None)
-            for argv in _value(call.args[0], env):
+            values = (_combine([_value(n.value if isinstance(n, ast.Starred) else n, env)
+                                for n in call.args]) if module == "asyncio"
+                      else _value(call.args[0], env))
+            for argv in values:
                 if executable is not None:
                     override = _value(executable, env)
                     if len(override) != 1 or override[0] == (PLACEHOLDER,):
@@ -143,7 +153,7 @@ class _Flow:
                                               and k.value.value is True for k in call.keywords):
                         shell = argv[0]
                     self.results.append(Command("shell", shell, origin,
-                                                (*chain, f"{owner or name}.{name}@{call.lineno}")))
+                                                (*chain, f"{module}.{underlying}@{call.lineno}(alias:{owner or name})")))
         elif not owner and name in self.functions and name not in active and len(active) < 12:
             function = self.functions[name]
             bound = _bind(function, call, env, self.globals)
@@ -195,7 +205,8 @@ def commands(text: str) -> list[Command]:
         word = constant(node.args[0])
         if name == "which" and owner in {"shutil", ""} and word:
             direct.append(Command("name", word, node.lineno))
-        elif name in PROCESS and owner in {"subprocess", "sp", "asyncio", ""}:
+        elif ((name in PROCESS and owner in {"subprocess", "sp", ""})
+              or (name in ASYNC_PROCESS and owner == "asyncio")):
             if not any(kw.arg == "executable" for kw in node.keywords) and (shell := literal_shell(node)):
                 direct.append(Command("shell", shell, node.lineno))
         flow.trace(node, flow.globals, node.lineno)
