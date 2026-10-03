@@ -80,7 +80,7 @@ def test_root_playwright_command_claims_its_isolated_port_pair() -> None:
 
     assert "test:e2e" in script
     assert "apps.webui.port_config claim" in script
-    assert "uv sync --extra dev --extra analysis" in script
+    assert "uv sync --locked --extra dev --extra analysis" in script
 
 
 def test_fixture_reset_is_bounded_to_the_repository_fixtures_directory() -> None:
