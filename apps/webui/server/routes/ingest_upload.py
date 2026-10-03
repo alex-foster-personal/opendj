@@ -82,6 +82,10 @@ def _duration_s(path: Path) -> float | None:
     # None at once for any other format.
     duration = _tagreader.adts_duration(path)
     if duration is None:
+        if _tagreader.starts_with_adts(path):
+            # A damaged ADTS stream is refused, never staged as new on a
+            # tinytag misread; see _stage_one_upload.
+            raise _tagreader.TagReadError("damaged ADTS stream: the frame walk failed")
         try:
             duration = _tagreader.read(path).duration
         except _tagreader.TagReadError:
@@ -152,6 +156,19 @@ def _hold_path(final: Path) -> Path:
     return final.parent / (final.name + ".part")
 
 
+def _hold_duration(hold: Path, rel_name: str) -> float | None:
+    """Duration of a held upload; drop the hold and raise when it cannot be staged."""
+    try:
+        return _duration_s(hold)
+    except ImportError:
+        if hold.exists():
+            hold.unlink()
+        _raise_tag_reader_unavailable()
+    except _tagreader.TagReadError as exc:
+        hold.unlink(missing_ok=True)
+        raise HTTPException(422, f"damaged audio: {rel_name}: {exc}") from exc
+
+
 def _stage_one_upload(
     dest_dir: Path, up: UploadFile, batch: str, force: bool
 ) -> UploadFileResult:
@@ -180,12 +197,7 @@ def _stage_one_upload(
         hold.unlink()
         raise HTTPException(422, f"empty upload: {rel_name}")
 
-    try:
-        duration = _duration_s(hold)
-    except ImportError:
-        if hold.exists():
-            hold.unlink()
-        _raise_tag_reader_unavailable()
+    duration = _hold_duration(hold, rel_name)
     dup, method = (None, "duration")
     if duration is not None:
         dup, method = _best_duplicate(hold, duration)
