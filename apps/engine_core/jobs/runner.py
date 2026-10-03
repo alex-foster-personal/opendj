@@ -266,16 +266,27 @@ class JobRunner:
         if supervisor is not None:
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
-        await self._settle_spawn_window()
+        still_forking = await self._settle_spawn_window()
         for job_id in list(self._running):
             await self._cancel_for_shutdown(job_id)
-        if self._tasks:
-            await asyncio.gather(
-                *self._tasks.values(), return_exceptions=True
-            )
+        # A job still forking after the settle window has no worker anyone
+        # can cancel yet, so its task ends only when that worker does. The
+        # gather leaves it out: waiting on it unbounded outlived the shell's
+        # grace, and the shell's SIGKILL of the engine group cannot reach the
+        # worker's own session. Boot recovery reaps it by worker_pgid.
+        waiting = [
+            task
+            for job_id, task in self._tasks.items()
+            if job_id not in still_forking
+        ]
+        if waiting:
+            await asyncio.gather(*waiting, return_exceptions=True)
 
-    async def _settle_spawn_window(self) -> None:
+    async def _settle_spawn_window(self) -> set[str]:
         """Wait for every claimed job to finish forking, so none is skipped.
+
+        Returns the jobs still forking when the wait gave up (empty when every
+        job registered), so :meth:`stop` does not wait on them either.
 
         ``_tasks`` is the claim-time truth and ``_running`` the
         registration-time one; between them sits the fork. A shutdown that
@@ -297,7 +308,7 @@ class JobRunner:
                 job_id for job_id in self._tasks if job_id not in self._running
             ]
             if not forking:
-                return
+                return set()
             if time.monotonic() >= deadline:
                 log.error(
                     "shutdown waited %.0fs and jobs %s are still between the "
@@ -307,7 +318,7 @@ class JobRunner:
                     _SPAWN_SETTLE_S,
                     forking,
                 )
-                return
+                return set(forking)
             await asyncio.sleep(_SPAWN_SETTLE_POLL_S)
 
     async def _cancel_for_shutdown(self, job_id: str) -> None:

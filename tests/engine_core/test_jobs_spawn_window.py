@@ -217,3 +217,41 @@ def test_cancelling_an_unheld_running_row_names_the_spawn_window(
     assert "worker_pgid" in error, error
     assert "cannot be established from here" in error, error
     store.close()
+
+
+def test_shutdown_is_bounded_when_a_fork_outlasts_the_settle_window(
+    tmp_path: Path, kinds: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A spawn still unresolved after the settle window must not hold stop().
+
+    stop() used to give up on the settle window and then gather every task
+    anyway, so a ``create_subprocess_exec`` that had not returned kept the
+    whole shutdown waiting, past the desktop shell's grace. The opposite
+    overshoot is pinned by the test above: a fork that DOES resolve inside
+    the window is still waited for and cancelled.
+    """
+    from apps.engine_core.jobs import runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "_SPAWN_SETTLE_S", 0.5)
+    real_exec = asyncio.create_subprocess_exec
+
+    async def stalled_exec(*args: Any, **kwargs: Any) -> Any:
+        await asyncio.sleep(60)
+        return await real_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", stalled_exec)
+    store = _store(tmp_path)
+
+    async def drive() -> float:
+        runner = JobRunner(store, poll_s=10.0)
+        store.enqueue("brief", {})
+        (claimed,) = store.claim_queued(limit=1)
+        runner._spawn(claimed)
+        started = asyncio.get_running_loop().time()
+        await asyncio.wait_for(runner.stop(), timeout=_SHUTDOWN_BUDGET_S)
+        return asyncio.get_running_loop().time() - started
+
+    elapsed = asyncio.run(drive())
+
+    assert elapsed < 0.5 + 2.0, f"stop() took {elapsed:.1f}s past a 0.5s settle window"
+    store.close()
