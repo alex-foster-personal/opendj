@@ -331,6 +331,11 @@ class CheckReport:
     marked: tuple[str, ...]
 
 
+#: First retry of an inconclusive probe, doubling per failure up to the cap.
+INCONCLUSIVE_RETRY_S: float = 120.0
+INCONCLUSIVE_RETRY_MAX_S: float = 3600.0
+
+
 class StemsCheck:
     """Classify pending-stems tracks once per audio generation per process.
 
@@ -353,6 +358,8 @@ class StemsCheck:
         self._probe_fn = probe_fn
         self._clock = clock
         self._seen: set[tuple[str, str]] = set()
+        #: Inconclusive probes: key -> (earliest retry time, failures so far).
+        self._retry: dict[tuple[str, str], tuple[float, int]] = {}
         self.marked_total: int = 0
 
     def run(self, pending: Sequence[Target], *, limit: int) -> CheckReport:
@@ -369,20 +376,28 @@ class StemsCheck:
             key = (stable_id, outcomes_mod.audio_token(path))
             if key in self._seen:
                 continue
+            retry_at, failures = self._retry.get(key, (0.0, 0))
+            if self._clock() < retry_at:
+                continue
             self._seen.add(key)
             checked += 1
             kinds: list[ProbeKind] = []
 
-            def recording_probe(p: Path) -> Probe:
+            def recording_probe(p: Path, kinds: list[ProbeKind] = kinds) -> Probe:
                 result = self._probe_fn(p)
                 kinds.append(result.kind)
                 return result
 
             reason = classify(path, self._title_fn(stable_id), probe_fn=recording_probe)
             if reason is None and "unknown" in kinds:
-                # Inconclusive (a timeout, a refused open): retry on a later
-                # tick, since recovering does not change size or mtime.
+                # Inconclusive (a timeout, a refused open): recovering does not
+                # change size or mtime, so retry, but on a growing backoff so
+                # a file that never opens cannot keep every tick busy.
                 self._seen.discard(key)
+                delay = min(INCONCLUSIVE_RETRY_MAX_S, INCONCLUSIVE_RETRY_S * 2**failures)
+                self._retry[key] = (self._clock() + delay, failures + 1)
+            else:
+                self._retry.pop(key, None)
             if reason is not None:
                 self._outcomes.record_no_source(
                     STEP, stable_id, key[1], f"{AUTO_PREFIX}: {reason}", now=self._clock()
@@ -394,6 +409,8 @@ class StemsCheck:
 
 __all__ = [
     "AUTO_PREFIX",
+    "INCONCLUSIVE_RETRY_MAX_S",
+    "INCONCLUSIVE_RETRY_S",
     "KEEP_PENDING_FILENAME",
     "MANUAL_PREFIX",
     "MIN_SEPARABLE_S",

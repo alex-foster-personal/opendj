@@ -418,13 +418,14 @@ def test_concurrent_clears_keep_every_id(tmp_path: Path, monkeypatch: pytest.Mon
     assert [p.name for p in keep.path.parent.iterdir()] == [keep.path.name]
 
 
-def _check_with(tmp_path: Path, probe_fn) -> st.StemsCheck:
+def _check_with(tmp_path: Path, probe_fn, now: list[float] | None = None) -> st.StemsCheck:
+    clock = now if now is not None else [1.0]
     return st.StemsCheck(
         outcomes=co.OutcomeStore(co.store_path(tmp_path)),
         keep=st.KeepPending(st.keep_pending_path(tmp_path)),
         title_fn=lambda _stable_id: None,
         probe_fn=probe_fn,
-        clock=lambda: 1.0,
+        clock=lambda: clock[0],
     )
 
 
@@ -437,8 +438,10 @@ def test_an_inconclusive_probe_is_retried_on_a_later_tick(tmp_path: Path) -> Non
     audio = tmp_path / "short.mp3"
     audio.write_bytes(b"x")
     answers = [st.Probe("unknown", detail="timed out"), st.Probe("duration", duration_s=2.0)]
-    check = _check_with(tmp_path, lambda _p: answers.pop(0))
+    now = [1.0]
+    check = _check_with(tmp_path, lambda _p: answers.pop(0), now)
     assert check.run([("sid", str(audio))], limit=5).marked == ()
+    now[0] += st.INCONCLUSIVE_RETRY_S
     assert check.run([("sid", str(audio))], limit=5).marked == ("sid",)
 
 
@@ -459,3 +462,39 @@ def test_a_conclusive_pending_verdict_is_not_probed_again(tmp_path: Path) -> Non
     check.run([("sid", str(audio))], limit=5)
     assert check.run([("sid", str(audio))], limit=5).checked == 0
     assert len(calls) == 1
+
+
+def test_a_never_conclusive_probe_backs_off_and_does_not_starve_later_tracks(tmp_path: Path) -> None:
+    """[if] a probe is never conclusive [then] it backs off, is not counted as work, and later tracks still classify, [else stop].
+
+    MUTATION TARGET: retry inconclusive probes on every tick and the drain's
+    stems check reports work forever, so no real phase ever runs.
+    """
+    gone = tmp_path / "unmounted.mp3"
+    gone.write_bytes(b"x")
+    later = tmp_path / "later.mp3"
+    later.write_bytes(b"x")
+    probed: list[str] = []
+
+    def probe_fn(p: Path) -> st.Probe:
+        probed.append(p.name)
+        if p == gone:
+            return st.Probe("unknown", detail="cannot open the file")
+        return st.Probe("duration", duration_s=2.0)
+
+    now = [1.0]
+    check = _check_with(tmp_path, probe_fn, now)
+    first = check.run([("gone", str(gone)), ("later", str(later))], limit=1)
+    assert first.checked == 1 and first.marked == ()
+    second = check.run([("gone", str(gone)), ("later", str(later))], limit=1)
+    assert second.marked == ("later",)
+    third = check.run([("gone", str(gone)), ("later", str(later))], limit=1)
+    assert third.checked == 0, "a backed-off probe is not work"
+    assert probed == ["unmounted.mp3", "later.mp3"]
+    # The backoff grows: one retry window later it is probed once more, then not
+    # again until the doubled window passes.
+    now[0] += st.INCONCLUSIVE_RETRY_S
+    check.run([("gone", str(gone))], limit=1)
+    now[0] += st.INCONCLUSIVE_RETRY_S
+    assert check.run([("gone", str(gone))], limit=1).checked == 0
+    assert probed.count("unmounted.mp3") == 2
