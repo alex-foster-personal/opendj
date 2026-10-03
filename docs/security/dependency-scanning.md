@@ -18,7 +18,7 @@ unchanged while new advisories land against them.
 | `uv.lock` | PyPI | Daemon runtime + dev tools |
 | `requirements.txt` | PyPI | Source of `pylock.ci.toml` and `pylock.release-check.toml` (via `requirements-*.in`, compiled by `scripts/ci_lock.py`), which self-hosted CI syncs. It is a second source of truth that can drift from `uv.lock` |
 | `ops/quality/requirements.txt`, `requirements-docs.txt` | PyPI | CI tooling, docs build |
-| `pylock.ci.toml`, `pylock.release-check.toml`, `pylock.docs.toml`, `ops/fleet/pylock.duplicate-writer.toml` | PyPI | The exact, hash-pinned packages self-hosted CI syncs (`scripts/ci_lock.py`), transitive versions included |
+| `pylock.ci.toml`, `pylock.release-check.toml`, `pylock.docs.toml` | PyPI | The exact, hash-pinned packages self-hosted CI syncs (`scripts/ci_lock.py`), transitive versions included |
 | `apps/webui/frontend/pnpm-lock.yaml` | npm | UI (prod) + Vite/Storybook toolchain (dev) |
 | `apps/desktop/pnpm-lock.yaml` | npm | Desktop test tooling (wdio) |
 | `apps/desktop/src-tauri/Cargo.lock` | crates.io | Tauri shell, updater TLS |
