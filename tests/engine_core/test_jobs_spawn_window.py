@@ -219,39 +219,36 @@ def test_cancelling_an_unheld_running_row_names_the_spawn_window(
     store.close()
 
 
-def test_shutdown_is_bounded_when_a_fork_outlasts_the_settle_window(
-    tmp_path: Path, kinds: None, monkeypatch: pytest.MonkeyPatch
+
+def test_a_fork_outlasting_the_settle_window_neither_holds_stop_nor_escapes(
+    tmp_path: Path, kinds: None
 ) -> None:
-    """A spawn still unresolved after the settle window must not hold stop().
+    """stop() returns at the settle deadline, and the late worker still dies.
 
-    stop() used to give up on the settle window and then gather every task
-    anyway, so a ``create_subprocess_exec`` that had not returned kept the
-    whole shutdown waiting, past the desktop shell's grace. The opposite
-    overshoot is pinned by the test above: a fork that DOES resolve inside
-    the window is still waited for and cancelled.
+    With a zero settle window the job below is still forking when stop()
+    gives up on it, so stop() must return without waiting for it: waiting
+    there was unbounded, past the desktop shell's grace. Its real fork then
+    completes on the same loop AFTER stop() has walked the workers, so
+    nothing in stop() can cancel it. The worker must cancel itself on
+    registering, or its separate session outlives the engine.
     """
-    from apps.engine_core.jobs import runner as runner_mod
-
-    monkeypatch.setattr(runner_mod, "_SPAWN_SETTLE_S", 0.5)
-    real_exec = asyncio.create_subprocess_exec
-
-    async def stalled_exec(*args: Any, **kwargs: Any) -> Any:
-        await asyncio.sleep(60)
-        return await real_exec(*args, **kwargs)
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", stalled_exec)
     store = _store(tmp_path)
 
-    async def drive() -> float:
-        runner = JobRunner(store, poll_s=10.0)
-        store.enqueue("brief", {})
+    async def drive() -> tuple[bool, dict[str, Any]]:
+        runner = JobRunner(store, poll_s=10.0, spawn_settle_s=0.0)
+        job = store.enqueue("mute", {})
         (claimed,) = store.claim_queued(limit=1)
         runner._spawn(claimed)
-        started = asyncio.get_running_loop().time()
+        assert not runner._running, "the premise is wrong: it already forked"
+        task = runner._tasks[job["id"]]
         await asyncio.wait_for(runner.stop(), timeout=_SHUTDOWN_BUDGET_S)
-        return asyncio.get_running_loop().time() - started
+        returned_before_fork = not task.done()
+        await asyncio.wait_for(task, timeout=_SHUTDOWN_BUDGET_S)
+        return returned_before_fork, store.get(job["id"])
 
-    elapsed = asyncio.run(drive())
+    returned_before_fork, final = asyncio.run(drive())
 
-    assert elapsed < 0.5 + 2.0, f"stop() took {elapsed:.1f}s past a 0.5s settle window"
+    assert returned_before_fork, "stop() waited for a fork past its settle window"
+    assert final["status"] == "cancelled", final
+    assert final["worker_pgid"] is not None, "the late worker never registered"
     store.close()

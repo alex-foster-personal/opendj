@@ -236,17 +236,25 @@ class JobRunner:
         *,
         poll_s: float = 0.2,
         max_concurrent: int = 1,
+        spawn_settle_s: float = _SPAWN_SETTLE_S,
     ) -> None:
         self.store = store
         self.poll_s = poll_s
         self.max_concurrent = max_concurrent
+        self.spawn_settle_s = spawn_settle_s
         self._running: dict[str, _Worker] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._supervisor: asyncio.Task[None] | None = None
+        #: Set by stop(). A worker that registers after it cancels itself,
+        #: since stop() may already have walked past it (see _run).
+        self._stopping = False
+        #: Jobs _run cancelled itself, so stop() does not cancel them twice.
+        self._self_cancelled: set[str] = set()
 
     async def start(self) -> None:
         if self._supervisor is not None:
             raise RuntimeError("job runner already started")
+        self._stopping = False
         self._supervisor = asyncio.create_task(self._supervise())
         self._supervisor.add_done_callback(_log_supervisor_exit)
 
@@ -262,18 +270,22 @@ class JobRunner:
         runner already holds skipped anything still forking, and the gather at
         the end then waited for that worker to finish by itself.
         """
+        self._stopping = True
         supervisor, self._supervisor = self._supervisor, None
         if supervisor is not None:
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
         still_forking = await self._settle_spawn_window()
         for job_id in list(self._running):
-            await self._cancel_for_shutdown(job_id)
+            if job_id not in self._self_cancelled:
+                await self._cancel_for_shutdown(job_id)
         # A job still forking after the settle window has no worker anyone
         # can cancel yet, so its task ends only when that worker does. The
         # gather leaves it out: waiting on it unbounded outlived the shell's
-        # grace, and the shell's SIGKILL of the engine group cannot reach the
-        # worker's own session. Boot recovery reaps it by worker_pgid.
+        # grace. When its fork does return, _run sees _stopping and cancels
+        # the worker itself, on the loop the rest of the lifespan is still
+        # running; if the process dies first, boot recovery reaps it by
+        # worker_pgid.
         waiting = [
             task
             for job_id, task in self._tasks.items()
@@ -302,7 +314,7 @@ class JobRunner:
         shutdown continues, because the alternative is abandoning the workers
         it CAN still cancel.
         """
-        deadline = time.monotonic() + _SPAWN_SETTLE_S
+        deadline = time.monotonic() + self.spawn_settle_s
         while True:
             forking = [
                 job_id for job_id in self._tasks if job_id not in self._running
@@ -315,7 +327,7 @@ class JobRunner:
                     "fork and their registration; their worker groups may "
                     "outlive this engine, and only boot recovery can reach "
                     "them now",
-                    _SPAWN_SETTLE_S,
+                    self.spawn_settle_s,
                     forking,
                 )
                 return set(forking)
@@ -535,6 +547,13 @@ class JobRunner:
         self._running[job_id] = worker
         try:
             self.store.record_worker(job_id, pid=proc.pid, identity=identity)
+            if self._stopping:
+                # Registered after stop() began, maybe after it walked
+                # _running: nothing else will cancel this worker. Marked
+                # before the first await, so stop() cannot cancel it too.
+                self._self_cancelled.add(job_id)
+                await self._cancel_for_shutdown(job_id)
+                return
             await self._drive_worker(job_id, worker)
         except BaseException:
             await self._abandon(job_id, worker)
