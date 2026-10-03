@@ -359,7 +359,13 @@ const BUDGETS = [
   // deadline with its did-not-finish states and the Welcome retry. None of it
   // is first-paint weight (library stayed within its own limit). The ceiling
   // follows the +5% ceil-to-KiB rule on 267,629.
-  { name: 'other-lazy', limit: 281600, measured: 267629, note: 'all other routes plus deferred shell' },
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4906, STEM-44..48): the retry decision and
+  // the live stem handoff are dynamic imports (stem-retry.ts, stem-live-handoff.ts),
+  // so their weight lands here rather than on first paint. After origin/main merged,
+  // `pnpm build` measured 281,838 locally (CI on the pre-merge head: 281,828), 238
+  // over 281,600. +1 KiB, not another +5%: the overage is a few hundred bytes and
+  // the +5% rule on 281,838 would add ~15 KiB of unused slack. 786 bytes remain.
+  { name: 'other-lazy', limit: 282624, measured: 281838, note: 'all other routes plus deferred shell' },
 ];
 
 // ---------------------------------------------------------------- helpers ---
