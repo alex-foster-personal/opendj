@@ -127,8 +127,9 @@ async function _join(
 	if (options.play) cmds.push({ type: 'play', deck: follower, playing: true });
 	// Sent together: the engine applies what arrives before its next block
 	// in that block, so tempo, position and start land as one.
+	if (!current()) throw new Error('Beat Sync: join superseded by a replacement load');
 	await Promise.all(cmds.map(send));
-	if (!current()) return;
+	if (!current()) throw new Error('Beat Sync: join superseded by a replacement load');
 	st.pitch = join.tempo;
 	st.sync_error = null;
 	if (options.play) _setPlaying(follower, true);
