@@ -257,8 +257,10 @@ _require_app_entitlements() {
         die "$(basename "$app") is not validly signed, so its entitlements cannot be read: $verify"
     ents=$(codesign -d --entitlements - --xml "$app" 2>&1) ||
         die "could not read the entitlements of $(basename "$app"): $ents"
-    printf '%s' "$ents" | grep -q "<key>$APP_MIC_ENTITLEMENT</key>" || die \
-        "$(basename "$app") is signed without $APP_MIC_ENTITLEMENT. Under the hardened runtime macOS refuses the microphone before any prompt, so the I/O device lists stay unnamed and getUserMedia fails with NotAllowedError. Sign with apps/desktop/src-tauri/Entitlements.app.plist."
+    # The key must be TRUE: <false/> is a valid signature that still denies
+    # the microphone. Whitespace between key and value is dropped first.
+    printf '%s' "$ents" | tr -d ' \t\r\n' | grep -qF "<key>$APP_MIC_ENTITLEMENT</key><true/>" || die \
+        "$(basename "$app") is signed without $APP_MIC_ENTITLEMENT set to true. Under the hardened runtime macOS refuses the microphone before any prompt, so the I/O device lists stay unnamed and getUserMedia fails with NotAllowedError. Sign with apps/desktop/src-tauri/Entitlements.app.plist."
     ok "$(basename "$app") carries $APP_MIC_ENTITLEMENT"
 }
 

@@ -125,8 +125,10 @@ def test_an_entitled_signature_passes(tmp_path: Path) -> None:
         {f"{MIC}.extra": True},
         # The engine's JIT key alone: entitled, just not for the microphone.
         {ENGINE_JIT: True},
+        # Present but false: a valid signature that still denies the microphone.
+        {MIC: False},
     ],
-    ids=["no-entitlements", "longer-key", "engine-key-only"],
+    ids=["no-entitlements", "longer-key", "engine-key-only", "key-false"],
 )
 def test_a_signature_without_the_microphone_is_refused(tmp_path: Path, entitlements: dict[str, bool]) -> None:
     """[if] a signature without the microphone key passes [then] fail, [else stop]."""
