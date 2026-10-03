@@ -66,7 +66,6 @@ import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from scripts.review_claude import CLAUDE_MARKER
 from scripts.review_control_plane_carry import (
@@ -77,11 +76,12 @@ from scripts.review_control_plane_carry import (
     debt_only_carry,
     print_carry_proofs,
 )
-from scripts.review_gh import TriageError, _body_is_at_head, _matches
+from scripts.review_control_plane_codex import (
+    codex_head_tied_issue_comment as _codex_head_tied_issue_comment,
+    harness_reviewed_at_head as _harness_reviewed_at_head,
+)
+from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
-
-if TYPE_CHECKING:
-    from scripts.review_coverage import ReviewerEvidence
 
 _SOL_MARKER_GROUPS = 4
 _CLAUDE_MARKER_GROUPS = 3
@@ -461,42 +461,6 @@ def complete_commits(
     if shas[-1] != head_sha:
         return CommitList(None, f"the full listing ends at {shas[-1][:9]}; it does not end at head {head_sha[:9]}")
     return CommitList(listed, "")
-
-
-def _codex_head_tied_issue_comment(issue_comments: Sequence[Mapping[str, object]], head_sha: str) -> bool:
-    """True when a Codex bot issue comment is head-tied the way _collect_evidence requires."""
-    for comment in issue_comments:
-        login = str((comment.get("user") or {}).get("login", ""))
-        if not _matches(login, "Codex"):
-            continue
-        body = str(comment.get("body") or "")
-        if _body_is_at_head(body, head_sha):
-            return True
-    return False
-
-
-def _harness_reviewed_at_head(
-    name: str,
-    evidence: ReviewerEvidence,
-    reviewed: bool,
-    issue_comments: Sequence[Mapping[str, object]],
-    head_sha: str,
-) -> bool:
-    """Whether a harness counts at the current head for REVIEW-13's dual-review map.
-
-    Codex, Sol and Claude use review_coverage._collect_evidence; Grok and Cursor
-    are layered on separately. Sol, Claude, Grok and Cursor require a SUBMITTED
-    review at head. Codex also accepts a head-tied clean-pass issue comment from
-    its bot login, using the same `_matches` normalization and `_body_is_at_head`
-    tie as review_coverage._collect_evidence on raw issue payloads.
-    """
-    if not reviewed:
-        return False
-    if evidence.submitted_reviews > 0:
-        return True
-    if name != "Codex":
-        return False
-    return _codex_head_tied_issue_comment(issue_comments, head_sha)
 
 
 def dual_review(
