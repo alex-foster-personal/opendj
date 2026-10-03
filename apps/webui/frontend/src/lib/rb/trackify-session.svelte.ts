@@ -11,7 +11,8 @@ import { blockStemDecode } from '$lib/rb/stem-decode-policy';
 import { installTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
 import { installTrackifyBrowserIpc } from '$lib/rb/trackify-ipc.svelte';
 import { dispatchPerformanceCommand, pushToast } from '$lib/rb/performance-ipc.svelte';
-import { TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
+import { TRACKIFY_ANLZ_ENTRY_CAP, TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
+import { holdAnlzEntryCap } from '$lib/components/rb/wave/anlz-cache-caps';
 
 /** Decks Gig left loaded that Trackify must not inherit (PERFMODE-15, Codex
  * review PR #4039): decks 2 to 4 (Trackify is one deck, so their PCM is pure
@@ -43,6 +44,8 @@ export function installTrackifySession(): () => Promise<void> {
 	// PERFMODE-15: Trackify has no stems. Blocked for the whole session, at
 	// every stem entry point the engine has, not per load.
 	const releaseStemDecode = blockStemDecode('Trackify mode has no stems (PERFMODE-15)');
+	// No waveform rows paint here, so played tracks' ANLZ must not pile up.
+	const releaseAnlzCap = holdAnlzEntryCap(TRACKIFY_ANLZ_ENTRY_CAP);
 	setAppMode('music-player');
 	setAutoPlayEnabled(true);
 	const uninstallFeed = installTrackifyFeed();
@@ -63,6 +66,7 @@ export function installTrackifySession(): () => Promise<void> {
 		// route (Gig) can mount before the awaits below settle, and it must
 		// already have its stems back.
 		releaseStemDecode();
+		releaseAnlzCap();
 		uninstallTrackifyIpc();
 		uninstallPerfIpc();
 		uninstallAutoplay();
