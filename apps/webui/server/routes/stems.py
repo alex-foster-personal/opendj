@@ -593,6 +593,21 @@ def _index_proves_absent(stable_id: str, data_dir: object) -> bool:
         return False
 
 
+def _local_bundle_read(stable_id: str, stems_dir: Path, request: Request) -> str | None:
+    """Read the bundle on this machine: ``"local"`` when it loads, the reason
+    when it is invalid and no fetch is replacing it, else ``None``.
+
+    An invalid bundle a fetch is replacing reads as that fetch, not an error.
+    """
+    try:
+        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
+    except StemBundleNotFoundError:
+        return None
+    except StemArtifactError as exc:
+        return None if _hydration_in_flight(stable_id) else str(exc)
+    return "local"
+
+
 def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
@@ -621,15 +636,11 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
             deck_open=deck_open,
         )
 
-    try:
-        load_stem_bundle(stable_id, stems_dir=stems_dir, roots=_stem_roots(request))
-    except StemBundleNotFoundError:
-        pass
-    except StemArtifactError as exc:
-        if not _hydration_in_flight(stable_id):
-            return _out("error", str(exc), error_code="STEM_ARTIFACT_INVALID")
-    else:
+    local = _local_bundle_read(stable_id, stems_dir, request)
+    if local == "local":
         return _out("local", "stem bundle is on this machine")
+    if local is not None:
+        return _out("error", local, error_code="STEM_ARTIFACT_INVALID")
 
     if _hydration_in_flight(stable_id):
         return _out(

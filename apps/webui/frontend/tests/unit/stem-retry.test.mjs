@@ -20,7 +20,7 @@ let mod;
 let graph;
 
 before(async () => {
-	mod = await loadTypeScriptModule('src/lib/rb/stem-hydrate-wait.ts');
+	mod = await loadTypeScriptModule('src/lib/rb/stem-retry.ts');
 	graph = await loadTypeScriptModule('src/lib/rb/stem-graph.ts');
 });
 

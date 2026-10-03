@@ -24,6 +24,7 @@ import { loadTypeScriptModule } from './load-typescript.mjs';
 const API_BASE = 'https://rekordbox-api.example.test';
 let api;
 let wait;
+let retry;
 let originalFetch;
 
 // Every body below is the real route's answer, captured into this fixture and
@@ -65,6 +66,7 @@ function fakeClock() {
 before(async () => {
 	api = await loadTypeScriptModule('src/lib/rb/api-rb.ts', { viteApiBase: API_BASE });
 	wait = await loadTypeScriptModule('src/lib/rb/stem-hydrate-wait.ts', { viteApiBase: API_BASE });
+	retry = await loadTypeScriptModule('src/lib/rb/stem-retry.ts', { viteApiBase: API_BASE });
 	originalFetch = globalThis.fetch;
 });
 
@@ -212,10 +214,10 @@ test('a retry is a POST to the hydrate route, and a refusal rejects with its sta
 		requests.push([String(url), init?.method]);
 		return Response.json({ state: 'fetching' });
 	};
-	await wait.requestStemHydration('sid 1', ok);
+	await retry.requestStemHydration('sid 1', ok);
 	assert.equal(requests.length, 1);
 	assert.match(requests[0][0], /\/api\/v1\/tracks\/sid%201\/stems\/hydrate$/);
 	assert.equal(requests[0][1], 'POST');
 	const refused = async () => Response.json({}, { status: 503 });
-	await assert.rejects(wait.requestStemHydration('sid-1', refused), /HTTP 503/);
+	await assert.rejects(retry.requestStemHydration('sid-1', refused), /HTTP 503/);
 });
