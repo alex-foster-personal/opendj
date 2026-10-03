@@ -14,6 +14,7 @@ import os
 import secrets
 import shutil
 import sys
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,14 @@ IN_FLIGHT_MARKER: str = ".tmp-hydrate-"
 #: An eviction renames a bundle to ``<stable_id>.evicting-<random>`` before
 #: deleting it; scans skip it like a download in progress.
 EVICTING_MARKER: str = ".evicting-"
+#: ``hydrate_one`` writes ``<stable_id>.hydrate-pin`` (a file, so scans skip
+#: it) BEFORE it publishes a bundle and refreshes it once the bundle is
+#: verified. Eviction in ANY process skips a bundle whose pin is fresh, which
+#: covers the window between the publishing rename and the deck reading it,
+#: when the in-process open-deck registry does not name it yet. A pin older
+#: than ``HYDRATE_PIN_TTL_S`` is a crashed hydrate's leftover and is removed.
+HYDRATE_PIN_SUFFIX: str = ".hydrate-pin"
+HYDRATE_PIN_TTL_S: float = 300.0
 
 REASON_NOT_IN_INDEX: str = "not_in_r2_index"
 REASON_FILES_DIFFER: str = "file_set_differs_from_r2_index"
@@ -179,6 +188,38 @@ def unconfirmed_reason(bundle: LocalBundle, index: StemAssetIndex) -> str | None
     return None
 
 
+def hydrate_pin_path(bundle_dir: Path) -> Path:
+    return bundle_dir.with_name(f"{bundle_dir.name}{HYDRATE_PIN_SUFFIX}")
+
+
+def pin_for_hydrate(bundle_dir: Path) -> None:
+    """Create or refresh the pin that keeps ``bundle_dir`` off every eviction
+    pass for ``HYDRATE_PIN_TTL_S``."""
+    pin = hydrate_pin_path(bundle_dir)
+    pin.touch()
+    os.utime(pin)
+
+
+def unpin_hydrate(bundle_dir: Path) -> None:
+    hydrate_pin_path(bundle_dir).unlink(missing_ok=True)
+
+
+def is_hydrate_pinned(bundle_dir: Path, *, now: float | None = None) -> bool:
+    """True while a fresh pin names this bundle. A stale pin is removed."""
+    pin = hydrate_pin_path(bundle_dir)
+    try:
+        age = (time.time() if now is None else now) - pin.stat().st_mtime
+    except FileNotFoundError:
+        return False
+    if age < HYDRATE_PIN_TTL_S:
+        return True
+    try:
+        pin.unlink(missing_ok=True)
+    except OSError:
+        pass  # best effort; an unreadable leftover is retried next pass
+    return False
+
+
 def claim_and_remove(bundle_dir: Path) -> bool:
     """Remove a bundle directory, or return False when another pass got it first.
 
@@ -199,6 +240,8 @@ def claim_and_remove(bundle_dir: Path) -> bool:
 
 __all__ = [
     "EVICTING_MARKER",
+    "HYDRATE_PIN_SUFFIX",
+    "HYDRATE_PIN_TTL_S",
     "IN_FLIGHT_MARKER",
     "REASON_CONTENT_DIFFERS",
     "REASON_FILES_DIFFER",
@@ -208,8 +251,12 @@ __all__ = [
     "StemAssetIndex",
     "claim_and_remove",
     "current_fingerprint",
+    "hydrate_pin_path",
     "index_gap",
+    "is_hydrate_pinned",
+    "pin_for_hydrate",
     "scan_bundles",
     "sweep_abandoned_claims",
     "unconfirmed_reason",
+    "unpin_hydrate",
 ]

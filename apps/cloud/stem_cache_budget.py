@@ -74,6 +74,7 @@ from apps.cloud.stem_bundles import (
     StemAssetIndex,
     claim_and_remove,
     index_gap,
+    is_hydrate_pinned,
     scan_bundles,
     sweep_abandoned_claims,
     unconfirmed_reason,
@@ -377,6 +378,10 @@ def _evict_lru(
         # ``protected`` predates the scan and the hash (seconds on a big bundle),
         # so a deck may have opened this one since: ask the live registry again.
         if live_protected is not None and bundle.stable_id in live_protected():
+            continue
+        # A hydrate in any process pins a bundle before publishing it, so a
+        # bundle no deck registry names yet is kept until it is handed over.
+        if is_hydrate_pinned(bundle.path):
             continue
         covered += bundle.size_bytes
         if not dry_run and not remove(bundle.path):

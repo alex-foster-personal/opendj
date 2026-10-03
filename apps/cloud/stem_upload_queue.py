@@ -9,12 +9,20 @@ saw (and did not evict) is kept while that bundle's directory still exists,
 and so is the on-disk verdict for a bundle this pass did see when the bundle
 was re-rendered after this pass scanned it (its fingerprint moved), since a
 newer pass may have judged the new bytes.
+
+The passes can run in different processes (the engine timer and a
+``python -m apps.stems.hydrate_runner`` job on the same data dir), so the
+transaction holds an OS file lock beside the queue file as well as the
+in-process lock: ``fcntl.flock`` on POSIX, ``msvcrt.locking`` on Windows, the
+same primitive ``apps.webui.server.dedup_decisions.decision_file_lock`` uses.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import sys
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import TypeVar
 
@@ -27,9 +35,40 @@ UPLOAD_QUEUE_SCHEMA_VERSION: int = 1
 _SAVE_LOCK = threading.Lock()
 _V = TypeVar("_V")
 
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
 
 def upload_queue_path(data_dir: Path) -> Path:
     return Path(data_dir) / "state" / UPLOAD_QUEUE_FILENAME
+
+
+def upload_queue_lock_path(data_dir: Path) -> Path:
+    path = upload_queue_path(data_dir)
+    return path.with_name(f"{path.name}.lock")
+
+
+@contextlib.contextmanager
+def upload_queue_file_lock(data_dir: Path) -> Iterator[None]:
+    """Hold the cross-process lock on ``data_dir``'s upload queue (blocking)."""
+    lock_path = upload_queue_lock_path(data_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        if sys.platform == "win32":
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _payload(data_dir: Path) -> dict[str, object]:
@@ -82,7 +121,7 @@ def save_upload_queue(
         merged.update({k: on_disk[k] for k in kept if k in on_disk})
         return merged
 
-    with _SAVE_LOCK:
+    with _SAVE_LOCK, upload_queue_file_lock(data_dir):
         merged = merge(queue, load_upload_queue(data_dir))
         merged_verified = merge(verified, load_verified_fingerprints(data_dir))
         path = upload_queue_path(data_dir)

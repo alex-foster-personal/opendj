@@ -26,6 +26,10 @@ Two entry points:
   ``"reserved"``.
 * [if] a bundle is open on a deck [then] budget enforcement never evicts it,
   regardless of its recency.
+* [if] a hydrate is about to publish a bundle [then] it pins it first, so no
+  eviction pass in any process removes it between the publishing rename, the
+  verify and the post-hydrate pass; a deck-load hydrate marks it served before
+  the pin is dropped (STEM-42).
 * [if] a hydrate lands [then] the disk-aware budget is enforced at once, and
   only bundles the R2 index holds byte for byte are ever removed (STEM-39,
   STEM-40). Supersedes: the fixed-budget ``enforce_budget`` this module used
@@ -35,6 +39,7 @@ Two entry points:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 import tempfile
@@ -47,6 +52,7 @@ from typing import Literal
 
 from apps.cloud import asset_store, stem_cache_budget, stem_index
 from apps.cloud.eviction import HydrationError
+from apps.cloud.stem_bundles import pin_for_hydrate, unpin_hydrate
 from apps.cloud.stem_source import (
     STEM_HUB_INDEX_FAILED,
     STEM_HUB_UNREACHABLE,
@@ -218,8 +224,14 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
     stems_dir: Path | None = None,
     skip_reserved: bool = False,
     reserved_ids: frozenset[str] | None = None,
+    hand_off_to_deck: bool = False,
 ) -> HydrationOutcome:
     """Hydrate one bundle from R2, or explain precisely why it did not.
+
+    ``hand_off_to_deck`` is the deck-load path's flag: the bundle is marked
+    served (``OPEN_DECKS``) before its hydrate pin is dropped, so the deck's
+    next read finds it. Bulk and drain callers leave it off, so the bundle is
+    evictable as soon as this call returns.
 
     ``skip_reserved`` is the BULK-path-only guard: the on-demand deck-load
     caller must always pass ``False`` (its default) because opening a deck
@@ -280,12 +292,17 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 file_hashes=file_hashes,
                 tmp_dir=tmp_dir,
             )
+            # Pin BEFORE publishing: an eviction pass in any process may scan
+            # the bundle the moment the rename lands, before the verify below
+            # and before any deck registry names it.
+            pin_for_hydrate(bundle_dir)
             if bundle_dir.exists():
                 # Cross-process race: something else already published a
                 # valid bundle while we were fetching. Keep the winner,
                 # discard our own copy rather than clobbering it.
                 if _is_local(stable_id, root):
                     shutil.rmtree(tmp_dir, ignore_errors=True)
+                    unpin_hydrate(bundle_dir)
                     return HydrationOutcome(stable_id, "already_local")
                 shutil.rmtree(bundle_dir)
             bundle_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -297,6 +314,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 shutil.rmtree(bundle_dir, ignore_errors=True)
             else:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+            unpin_hydrate(bundle_dir)
             status = (
                 "hub_error"
                 if hub_transport_failure_kind(exc) is not None
@@ -319,6 +337,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 # Fetch failed before publish: remove only OUR OWN temp
                 # dir, never bundle_dir (which we never touched).
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+            unpin_hydrate(bundle_dir)
             return HydrationOutcome(stable_id, "error", reason=str(exc))
 
     # A hydrate just succeeded, so this machine can demonstrably get an
@@ -335,6 +354,10 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         max_evict_bytes=total,
         live_protected=lambda: OPEN_DECKS.open_ids() | {stable_id},
     )
+    if hand_off_to_deck:
+        OPEN_DECKS.mark_served(stable_id)
+    with contextlib.suppress(OSError):  # a leftover pin only delays eviction until it expires
+        unpin_hydrate(bundle_dir)
     return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
 
 

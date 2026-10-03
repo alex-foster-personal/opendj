@@ -317,6 +317,7 @@ def _run_hydration(
             index=index,
             stems_dir=stems_dir,
             skip_reserved=False,  # on-demand deck load NEVER skips reserved ids (D5)
+            hand_off_to_deck=True,  # the deck polls for this bundle next
         )
     except StemSourceError as exc:
         with _INFLIGHT_LOCK:
