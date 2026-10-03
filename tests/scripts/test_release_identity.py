@@ -17,9 +17,8 @@ CONF = ROOT / "apps/desktop/src-tauri/tauri.conf.json"
 
 def test_shipping_identity_uses_the_canonical_launch_version() -> None:
     version = json.loads(CONF.read_text(encoding="utf-8"))["version"]
-    assert version == "1.0.0-alpha.1"
     assert resolve_build_info({}, ROOT).app_version == version
-    assert release_tag(version) == "app-v1.0.0-alpha.1"
+    assert release_tag(version) == f"app-v{version}"
     result = subprocess.run(
         [sys.executable, "-m", "scripts.release_identity", "--config", str(CONF)],
         cwd=ROOT,

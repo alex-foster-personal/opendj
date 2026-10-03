@@ -103,12 +103,12 @@ if gh release view "$tag" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
     trap cleanup EXIT
     gh release download "$tag" --repo "$PUBLIC_REPO" --dir "$existing_dir" --pattern latest.json
     [ -f "$existing_dir/latest.json" ] || die "release $tag exists without latest.json"
-    VERSION="$version" GIT_SHA="$git_sha" MANIFEST="$existing_dir/latest.json" python3 - <<'PY'
+    PUBLIC_REPO="$PUBLIC_REPO" VERSION="$version" GIT_SHA="$git_sha" MANIFEST="$existing_dir/latest.json" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
 
-from scripts.release_identity import release_asset_url, release_tag
+from scripts.release_identity import release_asset_url
 
 manifest = json.loads(Path(os.environ["MANIFEST"]).read_text(encoding="utf-8"))
 entry = manifest.get("platforms", {}).get("darwin-aarch64", {})
@@ -124,7 +124,7 @@ if os.environ["GIT_SHA"] not in str(manifest.get("notes", "")):
     raise SystemExit("existing latest.json does not name this build SHA")
 if not isinstance(entry.get("signature"), str) or not entry["signature"].strip():
     raise SystemExit("existing latest.json has no updater signature")
-if f"/releases/download/{release_tag(os.environ['VERSION'])}/" not in str(entry.get("url", "")):
+if release_asset_url(os.environ["PUBLIC_REPO"], os.environ["VERSION"], "") not in str(entry.get("url", "")):
     raise SystemExit("existing latest.json does not point at its immutable release tag")
 PY
     echo "[OK] release $tag already exists with a valid manifest"
@@ -176,7 +176,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.release_identity import release_asset_url, release_tag
+from scripts.release_identity import release_asset_url
 
 signature = Path(os.environ["SIGNATURE"]).read_text(encoding="utf-8").strip()
 if not signature:
