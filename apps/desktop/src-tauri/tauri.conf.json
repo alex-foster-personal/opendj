@@ -29,6 +29,7 @@
     },
     "macOS": {
       "minimumSystemVersion": "11.0",
+      "bundleVersion": "1.0.0",
       "entitlements": "./Entitlements.app.plist"
     }
   },

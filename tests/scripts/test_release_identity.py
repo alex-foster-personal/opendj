@@ -1,6 +1,8 @@
 """[if] app release identity is constructed [then] tag and URL agree, [else stop]."""
 
 import json
+import plistlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -46,3 +48,18 @@ def test_asset_url_encodes_metadata_and_names() -> None:
 def test_prefixed_or_invalid_config_versions_fail_explicitly(version: str) -> None:
     with pytest.raises(ValueError):
         release_tag(version)
+
+
+def test_macos_platform_versions_match_the_canonical_semver_core() -> None:
+    """Apple numeric bundle metadata preserves the prerelease app/update identity."""
+    config = json.loads(CONF.read_text(encoding="utf-8"))
+    version = config["version"]
+    core = version.partition("-")[0].partition("+")[0]
+    plist = plistlib.loads((CONF.parent / "Info.plist").read_bytes())
+    short_version = plist["CFBundleShortVersionString"]
+    build_version = config["bundle"]["macOS"]["bundleVersion"]
+    assert re.fullmatch(r"\d+\.\d+\.\d+", short_version)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", build_version)
+    assert short_version == build_version == core
+    assert resolve_build_info({}, ROOT).app_version == version
+    assert release_tag(version) == f"app-v{version}"
