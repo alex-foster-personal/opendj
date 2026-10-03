@@ -860,6 +860,31 @@ fn an_m4a_decodes_without_its_priming_frames() {
     assert_eq!(v["delay"], 1024);
 }
 
+/// An AAC m4a with no edit list, only iTunes gapless metadata, also decodes
+/// in time: Apple's encoders commonly write just the `iTunSMPB` tag, and with
+/// nothing reading it those files played 2112 frames (47.9 ms) late. The
+/// fixture is the same one-second click encoded by ffmpeg with
+/// `-use_editlist 0`, then tagged with an `iTunSMPB` stating its 1024 priming
+/// frames and 44100-frame length, so the tag is the only thing that can trim it.
+#[test]
+fn an_m4a_with_only_an_itunes_gapless_tag_decodes_without_its_priming() {
+    let m4a = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms-aac-itunsmpb.m4a");
+    let raw = std::fs::read(m4a).unwrap();
+    assert!(!raw.windows(4).any(|w| w == b"elst"), "the fixture must have no edit list");
+    assert!(raw.windows(8).any(|w| w == b"iTunSMPB"), "the fixture must carry the gapless tag");
+    let out = Command::new(BIN).args(["decode", "--mono", m4a]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    assert_eq!(pcm.len(), 44100, "the tag's original length, padding dropped");
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
+    assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
+
+    let out = Command::new(BIN).args(["probe", m4a]).output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["frames"], 44100);
+    assert_eq!(v["delay"], 1024);
+}
+
 /// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still
 /// opens. symphonia's probe counted the tag against its 1 MiB scan limit and
 /// gave up with "no suitable format reader found", while ffmpeg read the file.

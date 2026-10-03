@@ -13,6 +13,13 @@
 //! Only the first non-empty edit of the first sound track is read. That is the
 //! one every AAC encoder writes; a multi-edit audio file is not something a
 //! music library contains, and reading one edit is never worse than none.
+//!
+//! A sound track with no edit list falls back to iTunes gapless metadata: the
+//! `iTunSMPB` freeform tag under `moov/udta/meta/ilst`, which states the same
+//! priming delay, the end padding and the original sample count as hex. Files
+//! from Apple's encoders (iTunes, Music, afconvert) commonly carry only that,
+//! so without the fallback they decode 2112 frames (47.9 ms at 44.1 kHz) late.
+//! An edit list, when present, wins: it is the container's own statement.
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -179,13 +186,69 @@ pub fn read_raw_edit<R: Read + Seek>(r: &mut R) -> std::io::Result<Option<RawEdi
         let Some(media_ts) = mdia_kids.iter().find(|b| &b.kind == b"mdhd").map(|b| body(r, b)).transpose()?.flatten().and_then(|v| timescale(&v)) else {
             return Ok(None);
         };
-        let Some(edts) = kids.iter().find(|b| &b.kind == b"edts") else { return Ok(None) };
-        let edts_kids = children(r, edts.body, edts.end)?;
-        let Some(elst) = edts_kids.iter().find(|b| &b.kind == b"elst") else { return Ok(None) };
-        let Some((dur, time)) = body(r, elst)?.and_then(|v| first_edit(&v)) else { return Ok(None) };
+        let elst = match kids.iter().find(|b| &b.kind == b"edts") {
+            Some(edts) => children(r, edts.body, edts.end)?.into_iter().find(|b| &b.kind == b"elst"),
+            None => None,
+        };
+        let Some(elst) = elst else {
+            // No edit list: the iTunes gapless tag, counted in the track's own
+            // sample frames, so both timescales are the media timescale.
+            return Ok(itunsmpb(r, &moov_kids)?.map(|(delay, count)| RawEdit { media_time: delay, media_ts, duration: count, movie_ts: media_ts }));
+        };
+        let Some((dur, time)) = body(r, &elst)?.and_then(|v| first_edit(&v)) else { return Ok(None) };
         return Ok(Some(RawEdit { media_time: time, media_ts, duration: dur, movie_ts }));
     }
     Ok(None)
+}
+
+/// The (priming delay, original sample count) of the `iTunSMPB` tag under
+/// `moov/udta/meta/ilst`, or `None` when the file has no such tag or it does
+/// not parse. A count of 0 means the tag states no length.
+fn itunsmpb<R: Read + Seek>(r: &mut R, moov_kids: &[BoxHead]) -> std::io::Result<Option<(u64, u64)>> {
+    let Some(udta) = moov_kids.iter().find(|b| &b.kind == b"udta") else { return Ok(None) };
+    let udta_kids = children(r, udta.body, udta.end)?;
+    let Some(meta) = udta_kids.iter().find(|b| &b.kind == b"meta") else { return Ok(None) };
+    // `meta` is a FullBox in ISO files (4 bytes of version and flags before
+    // its children) and a plain box in QuickTime ones; take whichever holds
+    // the `ilst`.
+    let mut ilst = None;
+    for from in [meta.body + 4, meta.body] {
+        ilst = children(r, from, meta.end)?.into_iter().find(|b| &b.kind == b"ilst");
+        if ilst.is_some() {
+            break;
+        }
+    }
+    let Some(ilst) = ilst else { return Ok(None) };
+    for item in children(r, ilst.body, ilst.end)?.iter().filter(|b| &b.kind == b"----") {
+        let parts = children(r, item.body, item.end)?;
+        // `mean` and `name` are FullBoxes too: the text follows 4 bytes.
+        let text = |r: &mut R, kind: &[u8; 4], skip: usize| -> std::io::Result<Option<Vec<u8>>> {
+            match parts.iter().find(|b| &b.kind == kind) {
+                Some(b) => Ok(body(r, b)?.and_then(|v| v.get(skip..).map(<[u8]>::to_vec))),
+                None => Ok(None),
+            }
+        };
+        if text(r, b"name", 4)?.as_deref() != Some(b"iTunSMPB") {
+            continue;
+        }
+        // `data`: 4 bytes of type, 4 of locale, then the ASCII value.
+        return Ok(text(r, b"data", 8)?.and_then(|v| parse_itunsmpb(&v)));
+    }
+    Ok(None)
+}
+
+/// Parse an `iTunSMPB` value: space-separated hex words, the second the
+/// priming delay, the third the end padding, the fourth the original sample
+/// count. A delay of zero with no count trims nothing and reads as `None`.
+fn parse_itunsmpb(v: &[u8]) -> Option<(u64, u64)> {
+    let s = std::str::from_utf8(v).ok()?;
+    let words: Vec<u64> = s.split_whitespace().take(4).map(|w| u64::from_str_radix(w, 16).ok()).collect::<Option<_>>()?;
+    let (&delay, &count) = (words.get(1)?, words.get(3)?);
+    // An absurd delay (over 10 s at 48 kHz) is a corrupt tag, not priming.
+    if delay > 480_000 || (delay == 0 && count == 0) {
+        return None;
+    }
+    Some((delay, count))
 }
 
 /// Apply `edit` to interleaved stereo `pcm`: drop `skip` frames from the
@@ -236,6 +299,20 @@ mod tests {
     }
 
     fn file(handler: &[u8; 4], edits: Option<&[(u32, i32)]>) -> Vec<u8> {
+        tagged(handler, edits, None)
+    }
+
+    /// The `moov/udta/meta/ilst` of an iTunes-tagged file holding `smpb`.
+    fn udta(smpb: &str) -> Vec<u8> {
+        let mean = bx(b"mean", &[&[0u8; 4][..], b"com.apple.iTunes"].concat());
+        let name = bx(b"name", &[&[0u8; 4][..], b"iTunSMPB"].concat());
+        let data = bx(b"data", &[&[0, 0, 0, 1, 0, 0, 0, 0][..], smpb.as_bytes()].concat());
+        let other = bx(b"----", &[mean.clone(), bx(b"name", b"\0\0\0\0iTunNORM"), bx(b"data", b"\0\0\0\x01\0\0\0\0 1 2")].concat());
+        let ilst = bx(b"ilst", &[other, bx(b"----", &[mean, name, data].concat())].concat());
+        bx(b"udta", &bx(b"meta", &[&[0u8; 4][..], &bx(b"hdlr", &[0u8; 25]), &ilst].concat()))
+    }
+
+    fn tagged(handler: &[u8; 4], edits: Option<&[(u32, i32)]>, extra: Option<Vec<u8>>) -> Vec<u8> {
         let mut hdlr = vec![0u8; 8];
         hdlr.extend_from_slice(handler);
         hdlr.extend_from_slice(&[0u8; 12]);
@@ -245,7 +322,7 @@ mod tests {
             trak.extend(bx(b"edts", &bx(b"elst", &elst(e))));
         }
         trak.extend(bx(b"mdia", &mdia));
-        let moov = [bx(b"mvhd", &hd(1000)), bx(b"trak", &trak)].concat();
+        let moov = [bx(b"mvhd", &hd(1000)), bx(b"trak", &trak), extra.unwrap_or_default()].concat();
         [bx(b"ftyp", b"M4A \0\0\0\0"), bx(b"moov", &moov)].concat()
     }
 
@@ -273,6 +350,47 @@ mod tests {
         let mut cut = file(b"soun", Some(&[(20_000, 1024)]));
         cut.truncate(30);
         assert_eq!(read_edit(&mut Cursor::new(cut), 44100).unwrap(), None);
+    }
+
+    /// Apple's encoder: 2112 frames of priming, 0x1CA of padding, 0x4AF0F6
+    /// original frames, and no edit list.
+    const APPLE: &str = " 00000000 00000840 000001CA 00000000004AF0F6 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000";
+
+    #[test]
+    fn with_no_edit_list_the_itunes_gapless_tag_states_the_trim() {
+        let f = tagged(b"soun", None, Some(udta(APPLE)));
+        let e = read_edit(&mut Cursor::new(f), 44100).unwrap().unwrap();
+        assert_eq!(e, Edit { skip: 2112, keep: Some(0x4AF0F6) });
+        // Decoded at a different rate than the track's, it scales like an edit.
+        let f = tagged(b"soun", None, Some(udta(APPLE)));
+        assert_eq!(read_edit(&mut Cursor::new(f), 88200).unwrap().unwrap().skip, 4224);
+    }
+
+    #[test]
+    fn an_edit_list_wins_over_the_itunes_gapless_tag() {
+        let f = tagged(b"soun", Some(&[(20_000, 1024)]), Some(udta(APPLE)));
+        assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap().unwrap(), Edit { skip: 1024, keep: Some(882_000) });
+    }
+
+    #[test]
+    fn a_quicktime_style_meta_without_version_bytes_is_read_too() {
+        let full = udta(APPLE);
+        // Drop the 4 version/flags bytes and fix the two enclosing sizes.
+        let meta = &full[8..];
+        let plain = bx(b"udta", &bx(b"meta", &meta[12..]));
+        let f = tagged(b"soun", None, Some(plain));
+        assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap().unwrap().skip, 2112);
+    }
+
+    #[test]
+    fn a_missing_or_unreadable_gapless_tag_trims_nothing() {
+        for bad in ["", "garbage", " 00000000 00000000 00000000 0000000000000000", " 00000000 FFFFFFFF 00000000 0000000000000010", " 00000000 00000840"] {
+            let f = tagged(b"soun", None, Some(udta(bad)));
+            assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap(), None, "{bad:?}");
+        }
+        // A delay with no stated length still trims the front.
+        let f = tagged(b"soun", None, Some(udta(" 00000000 00000840 00000000 0000000000000000")));
+        assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap().unwrap(), Edit { skip: 2112, keep: None });
     }
 
     #[test]
