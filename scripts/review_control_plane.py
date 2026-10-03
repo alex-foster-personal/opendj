@@ -116,6 +116,7 @@ CONTROL_PLANE_PATHS: tuple[str, ...] = (
     "scripts/worker_worktree_guard.py",
     "scripts/worktree_census.py",
     "scripts/worktree_lifecycle.py",
+    "scripts/worktree_tools.py",
     "tests/scripts/test_enqueue_gate*.py",
     "tests/scripts/enqueue_gate_*.py",
     "tests/scripts/test_review_submitted_state.py",

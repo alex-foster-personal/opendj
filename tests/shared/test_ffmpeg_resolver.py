@@ -26,7 +26,6 @@ from pathlib import Path
 
 import pytest
 
-from apps.analysis.pcm_fingerprint import FingerprintUnavailable, _resolve_or_raise
 from apps.analysis_waveform.decode import LocalDecodeUnavailable
 from apps.analysis_waveform.decode import resolve_ffmpeg as decode_resolve
 from apps.shared import ffmpeg as shared_ffmpeg
@@ -89,15 +88,6 @@ def test_waveform_decode_translates_the_failure_to_its_own_type(
     monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
     with pytest.raises(LocalDecodeUnavailable, match="MDT_FFMPEG"):
         decode_resolve()
-
-
-def test_pcm_fingerprint_translates_the_failure_to_its_own_type(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("MDT_FFMPEG", raising=False)
-    monkeypatch.setenv("PATH", str(tmp_path / "no-binaries-here"))
-    with pytest.raises(FingerprintUnavailable, match="MDT_FFMPEG"):
-        _resolve_or_raise()
 
 
 def test_the_shared_module_is_the_only_copy_of_the_lookup() -> None:

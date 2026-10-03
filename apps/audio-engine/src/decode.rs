@@ -24,7 +24,7 @@ use rubato::{FftFixedIn, Resampler};
 
 use crate::engine::ErrorCode;
 use crate::protocol::ProtoError;
-use crate::{edit_list, wav};
+use crate::wav;
 
 pub struct Decoded {
     pub sample_rate: u32,
@@ -101,6 +101,10 @@ pub fn decode_at(path: &Path, sample_rate: u32) -> Result<Decoded, ProtoError> {
 }
 
 /// Input chunk for the FFT resampler. Larger chunks cost memory, not quality.
+/// Part of the analysis decode fingerprint (`RESAMPLER` in
+/// `apps/analysis/pcm_fingerprint.py`): changing it, the sub-chunk count, or
+/// the resampler changes every stored fingerprint, so it moves only with a
+/// spec change there.
 const RESAMPLE_CHUNK: usize = 4096;
 
 /// Convert interleaved stereo to `to` Hz. The output has exactly
@@ -361,11 +365,17 @@ fn decode_stream_with(
     on_track: impl FnOnce(Option<u64>),
     mut sink: impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
 ) -> Result<(u32, Option<SourceId>), ProtoError> {
-    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, frames, source, .. } = open_decoder(file, path)?;
+    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, frames, source, edit, .. } = open_decoder(file, path)?;
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
-    on_track(frames);
+    // The stated length is the playable one: the edit's, when it states it.
+    let stated = match edit.zip(codec_rate).and_then(|(e, r)| e.at(r)) {
+        Some(e) => e.keep.filter(|&k| k > 0).or(frames.map(|n| n.saturating_sub(e.skip))),
+        None => frames,
+    };
+    on_track(stated);
+    let mut trim = StreamTrim::new(edit);
 
     let mut scratch: Vec<f32> = Vec::new();
     let mut block: Vec<f32> = Vec::new();
@@ -398,7 +408,7 @@ fn decode_stream_with(
                 }
                 block.clear();
                 block.resize(frames * 2, 0.0);
-                sink(sample_rate, 0, &block)?;
+                trim.feed(sample_rate, 0, &block, &mut sink)?;
                 continue;
             }
             Err(e) => return Err(dec_err("decode error in", &e)),
@@ -420,7 +430,7 @@ fn decode_stream_with(
             block.push(l);
             block.push(r);
         }
-        sink(sample_rate, ch, &block)?;
+        trim.feed(sample_rate, ch, &block, &mut sink)?;
     }
     if !decoded_any {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
@@ -428,7 +438,211 @@ fn decode_stream_with(
     if sample_rate == 0 {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
+    trim.finish(sample_rate, &mut sink)?;
     Ok((sample_rate, source))
+}
+
+/// An MP4 edit ([`crate::mp4edit`]) applied packet by packet at the track's
+/// own rate, cut exactly where [`crate::mp4edit::apply_stereo`] cuts a whole
+/// decode, so every streamed decode (deck load, head, waveform) keeps the
+/// same frames ffmpeg starts the file on. The skipped priming frames are held
+/// until the skip is passed: a file that ends inside them is handed over
+/// untrimmed, as `apply_stereo` ignores an edit that would leave nothing.
+struct StreamTrim {
+    raw: Option<crate::mp4edit::RawEdit>,
+    /// The edit in frames, resolved once the decoded rate is known.
+    edit: Option<Option<crate::mp4edit::Edit>>,
+    /// Frames decoded so far, before trimming.
+    pos: u64,
+    /// Frames handed over so far, after trimming.
+    passed: u64,
+    held: Vec<f32>,
+    held_channels: usize,
+}
+
+impl StreamTrim {
+    fn new(raw: Option<crate::mp4edit::RawEdit>) -> Self {
+        StreamTrim { raw, edit: None, pos: 0, passed: 0, held: Vec::new(), held_channels: 0 }
+    }
+
+    fn feed(
+        &mut self,
+        rate: u32,
+        channels: usize,
+        block: &[f32],
+        sink: &mut impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+    ) -> Result<(), ProtoError> {
+        if self.edit.is_none() && rate != 0 {
+            let raw = self.raw;
+            self.edit = Some(raw.and_then(|e| e.at(rate)));
+        }
+        let Some(Some(crate::mp4edit::Edit { skip, keep })) = self.edit else {
+            return sink(rate, channels, block);
+        };
+        let n = (block.len() / 2) as u64;
+        let at = self.pos;
+        self.pos += n;
+        let mut rest = block;
+        if at < skip {
+            let k = (skip - at).min(n) as usize;
+            self.held.extend_from_slice(&block[..k * 2]);
+            self.held_channels = self.held_channels.max(channels);
+            rest = &block[k * 2..];
+        }
+        if self.pos > skip && !self.held.is_empty() {
+            self.held = Vec::new();
+        }
+        if let Some(keep) = keep.filter(|&k| k > 0) {
+            let room = keep.saturating_sub(self.passed) as usize;
+            rest = &rest[..rest.len().min(room * 2)];
+        }
+        if rest.is_empty() {
+            return Ok(());
+        }
+        self.passed += (rest.len() / 2) as u64;
+        sink(rate, channels, rest)
+    }
+
+    /// Hand over the held priming frames when the file ended inside them.
+    fn finish(
+        self,
+        rate: u32,
+        sink: &mut impl FnMut(u32, usize, &[f32]) -> Result<(), ProtoError>,
+    ) -> Result<(), ProtoError> {
+        if self.held.is_empty() {
+            return Ok(());
+        }
+        sink(rate, self.held_channels, &self.held)
+    }
+}
+
+/// The MP4 edit of `file`, leaving it positioned at its start for the decoder.
+/// Best effort: a stream that is not a regular file (a pipe cannot be read
+/// twice) or a header that cannot be read yields no edit, never a failed load.
+fn mp4_edit(file: &mut File, path: &Path) -> Result<Option<crate::mp4edit::RawEdit>, ProtoError> {
+    use std::io::{Seek, SeekFrom};
+    if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
+        return Ok(None);
+    }
+    let edit = crate::mp4edit::read_raw_edit(file).ok().flatten();
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot read {}: {e}", path.display())))?;
+    Ok(edit)
+}
+
+/// How far symphonia scans for a format marker when no tag is in front: its
+/// own default.
+const PROBE_DEPTH: u64 = 1 << 20;
+
+/// Bytes of ID3v2 tag at the front of `file` (several stacked tags summed),
+/// leaving it positioned at its start. symphonia's probe counts a leading tag
+/// against its 1 MiB scan limit, so an MP3 with a few MB of embedded artwork
+/// failed to open with "no suitable format reader found" while ffmpeg read it
+/// (found by the Platinum Notes thread on a real 320k MP3, Thu 1 Oct 2026).
+/// Best effort, like the MP4 edit: anything unreadable is no tag.
+fn leading_tag_bytes(file: &mut File, path: &Path) -> Result<u64, ProtoError> {
+    use std::io::{Read, Seek, SeekFrom};
+    if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
+        return Ok(0);
+    }
+    let mut lead = 0u64;
+    // A file can carry more than one tag back to back; a few is plenty.
+    for _ in 0..8 {
+        let mut h = [0u8; 10];
+        if file.seek(SeekFrom::Start(lead)).is_err() || file.read_exact(&mut h).is_err() {
+            break;
+        }
+        let Some(n) = id3v2_tag_len(&h) else { break };
+        lead += n;
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot read {}: {e}", path.display())))?;
+    Ok(lead)
+}
+
+/// The full length of an ID3v2 tag from its 10-byte header (header, body and
+/// footer), or `None` when `h` is not one.
+fn id3v2_tag_len(h: &[u8; 10]) -> Option<u64> {
+    if &h[..3] != b"ID3" || h[3] == 0xff || h[4] == 0xff || h[6..].iter().any(|b| b & 0x80 != 0) {
+        return None;
+    }
+    let body = h[6..].iter().fold(0u64, |acc, &b| (acc << 7) | u64::from(b));
+    let footer = if h[5] & 0x10 != 0 { 10 } else { 0 };
+    Some(10 + body + footer)
+}
+
+/// A probe that scans past `lead` bytes of leading tag plus its usual depth.
+/// The shared default probe is used when the tag is small, so a file that is
+/// not audio costs no deeper a scan than before.
+enum ProbeFor {
+    Default(&'static symphonia::core::formats::probe::Probe),
+    Deep(Box<symphonia::core::formats::probe::Probe>),
+}
+
+impl std::ops::Deref for ProbeFor {
+    type Target = symphonia::core::formats::probe::Probe;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ProbeFor::Default(p) => p,
+            ProbeFor::Deep(p) => p,
+        }
+    }
+}
+
+fn probe_for(lead: u64) -> ProbeFor {
+    use symphonia::core::formats::probe::{Probe, ProbeOptions};
+    // Under half the default depth, the tag leaves the default scan room.
+    if lead <= PROBE_DEPTH / 2 {
+        return ProbeFor::Default(symphonia::default::get_probe());
+    }
+    let depth = u32::try_from(lead + PROBE_DEPTH).unwrap_or(u32::MAX);
+    let mut p = Probe::new_with_options(&ProbeOptions { max_probe_depth: depth, ..Default::default() });
+    symphonia::default::register_enabled_formats(&mut p);
+    ProbeFor::Deep(Box::new(p))
+}
+
+/// What a file's container states about its length, read without decoding.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Probe {
+    pub sample_rate: Option<u32>,
+    /// Playable frames (encoder delay and padding excluded), when stated.
+    pub frames: Option<u64>,
+    /// Leading encoder frames the reader skips, when stated.
+    pub delay: Option<u32>,
+    /// Trailing encoder frames the reader skips, when stated.
+    pub padding: Option<u32>,
+}
+
+/// Read `path`'s header: rate and playable length when the container states
+/// them. Never an estimate: an MP3 with no Xing/Info header states no length,
+/// and `frames` is then `None` for the caller to decode and count.
+pub fn probe_file(path: &Path) -> Result<Probe, ProtoError> {
+    let mut file = open(path)?;
+    let edit = mp4_edit(&mut file, path)?;
+    let lead = leading_tag_bytes(&mut file, path)?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let format = probe_for(lead)
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .map_err(|e| ProtoError::new(ErrorCode::Decode, format!("unrecognized format in {}: {e}", path.display())))?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or_else(|| ProtoError::new(ErrorCode::Decode, format!("no audio track in {}", path.display())))?;
+    let sample_rate = track.codec_params.as_ref().and_then(|p| p.audio()).and_then(|a| a.sample_rate);
+    let mut frames = track.num_frames.filter(|&n| n > 0);
+    let mut delay = track.delay;
+    // An MP4 edit states the playable length; symphonia's count includes the
+    // priming and padding frames the edit excludes.
+    if let Some(e) = edit.zip(sample_rate).and_then(|(e, r)| e.at(r)) {
+        delay = Some(e.skip as u32);
+        if let Some(keep) = e.keep {
+            frames = Some(keep);
+        }
+    }
+    Ok(Probe { sample_rate, frames, delay, padding: track.padding })
 }
 
 /// A file probed and ready to decode: its demuxer, the decoder for its
@@ -445,15 +659,22 @@ pub(crate) struct Opened {
     /// it, when it does (see `Head::frames`).
     pub(crate) frames: Option<u64>,
     pub(crate) source: Option<SourceId>,
+    /// The MP4 edit list as the file states it ([`crate::mp4edit`]), read
+    /// before the probe because symphonia does not apply it.
+    pub(crate) edit: Option<crate::mp4edit::RawEdit>,
 }
 
 /// Probe `file`, opened from `path` (which names it in errors and gives the
 /// format hint), and make the decoder for its default audio track. Shared by
 /// the whole-file decode a deck loads with and the streaming
 /// [`decode_to_wav`], so both read a file the same way.
-pub(crate) fn open_decoder(file: File, path: &Path) -> Result<Opened, ProtoError> {
+pub(crate) fn open_decoder(mut file: File, path: &Path) -> Result<Opened, ProtoError> {
     // Taken from the file the samples come from, not from its path again.
     let source = SourceId::of(&file).ok();
+    // symphonia does not apply an MP4 edit list, so its priming frames are
+    // read here and trimmed after the decode (src/mp4edit.rs).
+    let edit = mp4_edit(&mut file, path)?;
+    let lead = leading_tag_bytes(&mut file, path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -462,7 +683,7 @@ pub(crate) fn open_decoder(file: File, path: &Path) -> Result<Opened, ProtoError
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
-    let format = symphonia::default::get_probe()
+    let format = probe_for(lead)
         .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(|e| dec_err("unrecognized format in", &e))?;
     let track = format
@@ -481,7 +702,7 @@ pub(crate) fn open_decoder(file: File, path: &Path) -> Result<Opened, ProtoError
     let decoder = symphonia::default::get_codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|e| dec_err("unsupported codec in", &e))?;
-    Ok(Opened { format, decoder, track_id, time_base, codec_rate, codec_channels, frames, source })
+    Ok(Opened { format, decoder, track_id, time_base, codec_rate, codec_channels, frames, source, edit })
 }
 
 /// What [`decode_to_wav`] wrote: the source's own rate and channel count,
@@ -495,13 +716,16 @@ pub struct WavWritten {
     pub trimmed_start: u64,
     /// Frames of whole packets dropped past the edit's end.
     pub dropped_end: u64,
-    /// `none`, `applied`, or `ignored: <why>` (decoded untrimmed).
+    /// `none` or `applied`.
     pub edit: String,
 }
 
 /// Which decoded frames `decode_to_wav` keeps, per the file's edit list.
 struct Trim {
-    edit: Option<edit_list::Edit>,
+    /// The edit as the file states it, converted to frames once the rate is
+    /// known (`resolved`).
+    raw: Option<crate::mp4edit::RawEdit>,
+    resolved: Option<Option<crate::mp4edit::Edit>>,
     /// Frames decoded so far, before trimming (the decoder's timeline).
     pos: u64,
     trimmed_start: u64,
@@ -509,13 +733,18 @@ struct Trim {
 }
 
 impl Trim {
+    fn new(raw: Option<crate::mp4edit::RawEdit>) -> Self {
+        Trim { raw, resolved: None, pos: 0, trimmed_start: 0, dropped_end: 0 }
+    }
+
     /// Of the next `n` decoded frames, (first kept, how many kept). The edit
-    /// list is read once, when the track's rate is first known.
-    fn window(&mut self, n: u64, path: &Path, track_id: u32, rate: u32) -> (u64, u64) {
-        let edit = self.edit.get_or_insert_with(|| edit_list::read(path, track_id, rate));
+    /// is converted to frames once, when the track's rate is first known.
+    fn window(&mut self, n: u64, rate: u32) -> (u64, u64) {
+        let raw = self.raw;
+        let edit = *self.resolved.get_or_insert_with(|| raw.and_then(|e| e.at(rate)));
         let at = self.pos;
         self.pos += n;
-        let edit_list::Edit::Apply { skip, keep } = *edit else { return (0, n) };
+        let Some(crate::mp4edit::Edit { skip, keep }) = edit else { return (0, n) };
         // A packet that starts at or after the edit's end is dropped whole;
         // one that straddles it is kept whole, as ffmpeg keeps it.
         if keep.is_some_and(|k| at >= skip + k) {
@@ -528,10 +757,9 @@ impl Trim {
     }
 
     fn describe(&self) -> String {
-        match &self.edit {
-            None | Some(edit_list::Edit::None) => "none".into(),
-            Some(edit_list::Edit::Apply { .. }) => "applied".into(),
-            Some(edit_list::Edit::Ignored(why)) => format!("ignored: {why}"),
+        match self.resolved {
+            Some(Some(_)) => "applied".into(),
+            _ => "none".into(),
         }
     }
 }
@@ -546,13 +774,14 @@ impl Trim {
 /// delay and padding are trimmed (gapless), a corrupt packet of known length
 /// becomes silence of that length, and a file none of whose packets decode,
 /// whose rate or channel count changes part-way, or which is chained, is an
-/// error. Unlike the deck, an MP4's edit list is applied
-/// ([`crate::edit_list`]), so an M4A starts where ffmpeg starts it rather
-/// than 1024 priming frames early. `out` must be seekable: the header is
+/// error. An MP4's edit list is applied ([`crate::mp4edit`]), as the deck
+/// applies it, so an M4A starts where ffmpeg starts it rather than 1024
+/// priming frames early; unlike the deck's exact cut at the edit's end, a
+/// packet that straddles the end is kept whole, as ffmpeg keeps it. `out` must be seekable: the header is
 /// written last, once the length is known. On an error `out` holds a partial
 /// file the caller discards.
 pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWritten, ProtoError> {
-    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, codec_channels, .. } =
+    let Opened { mut format, mut decoder, track_id, time_base, codec_rate, codec_channels, edit, .. } =
         open_decoder(open(path)?, path)?;
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
@@ -564,7 +793,7 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     let mut channels = 0usize;
     let mut frames = 0u64;
     let mut decoded_any = false;
-    let mut trim = Trim { edit: None, pos: 0, trimmed_start: 0, dropped_end: 0 };
+    let mut trim = Trim::new(edit);
     let mut scratch: Vec<f32> = Vec::new();
     let mut bytes: Vec<u8> = Vec::new();
     // The most frames a WAV of this channel count can hold (32-bit sizes).
@@ -590,7 +819,7 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
                     sample_rate = rate.unwrap_or(0);
                 }
                 channels = ch;
-                let (_, take) = trim.window(n as u64, path, track_id, sample_rate);
+                let (_, take) = trim.window(n as u64, sample_rate);
                 if frames + take > room(ch) {
                     return Err(too_long());
                 }
@@ -616,7 +845,7 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
             ));
         }
         channels = ch;
-        let (from, take) = trim.window(buf.frames() as u64, path, track_id, sample_rate);
+        let (from, take) = trim.window(buf.frames() as u64, sample_rate);
         if frames + take > room(ch) {
             return Err(too_long());
         }
@@ -699,6 +928,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_id3v2_header_gives_the_whole_tag_length() {
+        // Body 0x7f syncsafe bytes: 2^28 - 1; here 1 << 7 = 128 bytes.
+        let h = *b"ID3\x03\x00\x00\x00\x00\x01\x00";
+        assert_eq!(id3v2_tag_len(&h), Some(10 + 128));
+        // The footer flag adds another 10 bytes.
+        let f = *b"ID3\x04\x00\x10\x00\x00\x01\x00";
+        assert_eq!(id3v2_tag_len(&f), Some(10 + 128 + 10));
+        // Not a tag: wrong magic, or a size byte with its high bit set.
+        assert_eq!(id3v2_tag_len(b"RIFF\x00\x00\x00\x00\x01\x00"), None);
+        assert_eq!(id3v2_tag_len(b"ID3\x03\x00\x00\x80\x00\x01\x00"), None);
+    }
+
+    #[test]
     fn the_first_decoded_rate_is_the_tracks() {
         let mut rate = 0;
         lock_rate(&mut rate, 44100).unwrap();
@@ -710,30 +952,90 @@ mod tests {
         assert_eq!(rate, 44100, "a refused rate must not relabel the track");
     }
 
+    /// `StreamTrim` over `pcm` in blocks of `sizes` (cycled), collected.
+    fn streamed(pcm: &[f32], edit: crate::mp4edit::Edit, sizes: &[usize]) -> Vec<f32> {
+        let mut t = StreamTrim::new(None);
+        t.edit = Some(Some(edit));
+        let mut out = Vec::new();
+        let mut sink = |_: u32, _: usize, b: &[f32]| -> Result<(), ProtoError> {
+            out.extend_from_slice(b);
+            Ok(())
+        };
+        let mut at = 0;
+        for &n in sizes.iter().cycle() {
+            if at >= pcm.len() {
+                break;
+            }
+            let end = (at + n * 2).min(pcm.len());
+            t.feed(44100, 2, &pcm[at..end], &mut sink).unwrap();
+            at = end;
+        }
+        t.finish(44100, &mut sink).unwrap();
+        out
+    }
+
+    #[test]
+    fn a_streamed_edit_keeps_exactly_what_a_whole_decode_keeps() {
+        use crate::mp4edit::{apply_stereo, Edit};
+        let pcm: Vec<f32> = (0..2 * 5000).map(|i| i as f32).collect();
+        let edits = [
+            Edit { skip: 1024, keep: Some(3000) },
+            Edit { skip: 1024, keep: None },
+            Edit { skip: 0, keep: Some(10) },
+            Edit { skip: 4999, keep: Some(1) },
+            // Nothing left after the skip: the edit is ignored.
+            Edit { skip: 5000, keep: None },
+            Edit { skip: 9000, keep: Some(5) },
+            // keep 0 or past the end trims nothing at the end.
+            Edit { skip: 100, keep: Some(0) },
+            Edit { skip: 100, keep: Some(99_999) },
+        ];
+        for e in edits {
+            let mut whole = pcm.clone();
+            apply_stereo(&mut whole, e);
+            for sizes in [&[1024usize][..], &[1][..], &[7, 1500, 3][..], &[5000][..], &[6000][..]] {
+                assert_eq!(streamed(&pcm, e, sizes), whole, "edit {e:?}, blocks {sizes:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_progressive_load_of_an_m4a_is_trimmed_like_the_whole_decode() {
+        let path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms-aac.m4a"));
+        let whole = decode_at(path, 48000).unwrap();
+        let mut head = None;
+        let d = decode_progressive(open(path).unwrap(), path, Some(48000), u64::MAX, 4800, |h| head = Some(h)).unwrap();
+        assert_eq!(d.pcm.len(), 48000 * 2, "the edit's one playable second at 48 kHz");
+        assert_eq!(d.pcm, whole.pcm);
+        let head = head.expect("a head");
+        assert_eq!(head.frames, Some(48000), "the stated length is the edit's");
+        assert_eq!(head.pcm[..], d.pcm[..head.pcm.len()]);
+    }
+
     /// The windows `decode_to_wav` keeps for 1024-frame packets under `edit`.
-    fn windows(edit: edit_list::Edit, packets: usize) -> (Vec<(u64, u64)>, Trim) {
-        let mut t = Trim { edit: Some(edit), pos: 0, trimmed_start: 0, dropped_end: 0 };
-        let w = (0..packets).map(|_| t.window(1024, Path::new("unused"), 1, 44100)).collect();
+    fn windows(edit: Option<crate::mp4edit::Edit>, packets: usize) -> (Vec<(u64, u64)>, Trim) {
+        let mut t = Trim::new(None);
+        t.resolved = Some(edit);
+        let w = (0..packets).map(|_| t.window(1024, 44100)).collect();
         (w, t)
     }
 
     #[test]
     fn the_edit_list_trims_the_front_and_drops_whole_packets_past_its_end() {
+        use crate::mp4edit::Edit;
         // ffmpeg: skip 1024 (one packet), then 1500 frames; the packet that
         // straddles the end (starting at 2048 < 2524) is kept whole, the one
         // starting at 3072 is dropped.
-        let (w, t) = windows(edit_list::Edit::Apply { skip: 1024, keep: Some(1500) }, 4);
+        let (w, t) = windows(Some(Edit { skip: 1024, keep: Some(1500) }), 4);
         assert_eq!(w, vec![(1024, 0), (0, 1024), (0, 1024), (0, 0)]);
         assert_eq!((t.trimmed_start, t.dropped_end, t.describe().as_str()), (1024, 1024, "applied"));
         // A skip inside a packet keeps its tail.
-        let (w, _) = windows(edit_list::Edit::Apply { skip: 2112, keep: None }, 3);
+        let (w, _) = windows(Some(Edit { skip: 2112, keep: None }), 3);
         assert_eq!(w, vec![(1024, 0), (1024, 0), (64, 960)]);
-        // Controls: no edit list and an ignored one keep every frame.
-        for e in [edit_list::Edit::None, edit_list::Edit::Ignored("2 edits".into())] {
-            let (w, t) = windows(e, 3);
-            assert_eq!(w, vec![(0, 1024); 3]);
-            assert_eq!((t.trimmed_start, t.dropped_end), (0, 0));
-        }
+        // Control: no edit list keeps every frame.
+        let (w, t) = windows(None, 3);
+        assert_eq!(w, vec![(0, 1024); 3]);
+        assert_eq!((t.trimmed_start, t.dropped_end, t.describe().as_str()), (0, 0, "none"));
     }
 
     fn tb(numer: u32, denom: u32) -> Option<TimeBase> {

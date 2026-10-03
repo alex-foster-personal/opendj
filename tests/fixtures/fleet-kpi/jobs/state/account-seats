@@ -1,8 +1,0 @@
-# acct-nomeasure is deliberately ABSENT: an account whose meter no credential on
-# this host can read must report unmeasurable, never a number.
-acct-green $HOME/.claude
-acct-warm $HOME/.claude
-acct-hot $HOME/.claude
-acct-stale $HOME/.claude
-acct-noread $HOME/.claude
-acct-cold $HOME/.claude

@@ -1,15 +1,20 @@
-"""Fail-closed worker worktree creation and pull-request scope checks.
+"""Fail-closed worker source preflight and pull-request scope checks.
 
 This is the repository-side contract for fleet workers. A worker must branch
 from an explicit remote base, never from a mutable primary checkout.
+
+Two halves stay here, because something in this repo or on nucbox calls them by
+this module path: `preflight`, which nucbox-jobs `lib/worker-source-preflight.sh`
+runs inside the worker-source checkout before every fresh spawn, and the scope
+check, whose types the merge gate imports (`scripts/pr_scope_check.py`). The
+`create` half, with the worktree lifecycle guard it calls, moved to fleet-af
+`agents_worktree_tools/worker_guard.py` on Fri 2 Oct 2026 (`just worker-worktree`).
 
 REQUIREMENTS (OPS-41)
   R-1 Refuse an unpublished primary checkout. [done, run]
       [if] the primary is dirty or ahead of the requested base [then] preflight
       raises with the exact condition, [else stop]
-  R-2 Create from a pinned base. [done, run]
-      [if] a worker worktree is created [then] its branch starts at the base ref,
-      [else stop]
+  R-2 Create from a pinned base. [moved to fleet-af agents_worktree_tools/worker_guard.py]
   R-3 Surface implausible scope. [done, run]
       [if] measured commits or files exceed declared issue limits [then] the
       pre-review check fails with both measurements, [else stop]
@@ -21,8 +26,6 @@ import argparse
 import dataclasses
 import subprocess
 from pathlib import Path
-
-from scripts import worktree_lifecycle
 
 
 class PreflightError(RuntimeError):
@@ -75,42 +78,6 @@ def assert_clean_origin_base(repo: Path, base_ref: str) -> None:
         )
 
 
-def create_worker_worktree(
-    repo: Path, target: Path, branch: str, base_ref: str, *, floor_gb: float | None = None
-) -> None:
-    """Create one worker branch, proving the source is safe first.
-
-    `floor_gb` forwards to the lifecycle guard's own `--floor-gb`. It is not
-    exposed on the `create` CLI, so production always gets the guard's real
-    disk-floor policy; tests
-    that are not about the disk floor pass an explicit low value so the
-    guard's live `shutil.disk_usage` read of the HOST (not of `repo`'s
-    content) cannot fail them on a host with little real free space.
-    """
-    assert_clean_origin_base(repo, base_ref)
-    guard_argv = ["guard", "--repo", str(repo)]
-    if floor_gb is not None:
-        guard_argv += ["--floor-gb", str(floor_gb)]
-    lifecycle_status = worktree_lifecycle.main(guard_argv)
-    if lifecycle_status != 0:
-        raise PreflightError("worktree lifecycle guard refused worker creation")
-    process = subprocess.run(
-        ["git", "worktree", "add", str(target), "-b", branch, base_ref],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if process.returncode != 0:
-        raise PreflightError(f"git worktree add failed: {process.stderr.strip()}")
-    actual = _git(target, "rev-parse", "HEAD")
-    expected = _git(repo, "rev-parse", base_ref)
-    if actual != expected:
-        raise PreflightError(
-            f"worker worktree started at {actual[:12]}, expected {expected[:12]} from {base_ref}"
-        )
-
-
 def measure_scope(repo: Path, base_ref: str) -> Scope:
     """Measure the committed branch diff against the exact declared base."""
     counts = _git(repo, "rev-list", "--count", f"{base_ref}..HEAD")
@@ -147,11 +114,6 @@ def main(argv: list[str] | None = None) -> int:
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument("--repo", type=Path, required=True)
     preflight.add_argument("--base", required=True)
-    create = subparsers.add_parser("create")
-    create.add_argument("--repo", type=Path, required=True)
-    create.add_argument("--target", type=Path, required=True)
-    create.add_argument("--branch", required=True)
-    create.add_argument("--base", required=True)
     scope = subparsers.add_parser("scope")
     scope.add_argument("--repo", type=Path, required=True)
     scope.add_argument("--base", required=True)
@@ -161,9 +123,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "preflight":
         assert_clean_origin_base(args.repo, args.base)
         print(f"[worker-preflight] OK: clean source at {args.base}")
-    elif args.command == "create":
-        create_worker_worktree(args.repo, args.target, args.branch, args.base)
-        print(f"[worker-worktree] OK: {args.branch} at {args.target} from {args.base}")
     elif args.command == "scope":
         measured = measure_scope(args.repo, args.base)
         assert_scope(measured, max_commits=args.max_commits, max_files=args.max_files)

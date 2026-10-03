@@ -25,13 +25,19 @@ band keeps its 22-24 kHz content, and `sample_rate` on the record is now the
 rate actually filtered at. On 44.1 kHz FLAC/MP3/WAV the engine's
 peaks match the ffmpeg decode's to within 1 of 255 (measured for 1.1.0).
 
+WHAT 1.4.0 IS. The same peaks; the preview's per-band gains are re-fitted on
+real music (`bands.PWV6_MUSIC_GAIN`, 83/56/176) because the sine-derived ones
+drew own rows with no blue lows at all. MINOR: emitted preview values change.
+1.3.0 is the engine decoder ported from main-electron-rust (#5013); this
+number sits above it whichever of the two lands first.
+
 -Cursor
 """
 from __future__ import annotations
 
 from typing import Literal
 
-PRODUCER_VERSION = "1.3.0"
+PRODUCER_VERSION = "1.4.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name.
 PRODUCER: Literal["backfill"] = "backfill"

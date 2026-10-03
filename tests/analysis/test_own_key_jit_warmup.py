@@ -86,6 +86,7 @@ def test_jit_cache_roots_follow_numba_cache_dir(tmp_path: Path) -> None:
 @pytest.mark.slow
 @pytest.mark.requires_audio_stack
 @pytest.mark.requires_ffmpeg
+@pytest.mark.requires_canonical_decode
 def test_warmup_compiles_everything_the_key_lane_runs(tmp_path: Path) -> None:
     cache = tmp_path / "numba-cache"
     cache.mkdir()

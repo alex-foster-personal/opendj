@@ -205,14 +205,21 @@ const BUDGETS = [
   // explainer dismiss, the 3Band waveform palette with its legacy option,
   // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
   // 130 bytes over the old limit; 894 bytes of headroom remain.
+  // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4904, V1 copy and paste between
+  // playlists): clean origin/main c8b8f5ae measures 242,439 locally (249
+  // bytes of headroom). The library browser is part of /performance, and the
+  // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
+  // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
+  // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
   // RAISED Fri 2 Oct 2026: 237 -> 252 KiB for PR #5013 (V1 ports from
   // main-electron-rust). Beat Sync's continuous phase lock (#4602, #4653, #4733:
   // phase-lock-webaudio, phase-lock, context-time-wait, the preset runner split)
   // is real always-loaded deck weight on this route; on main-electron-rust the
   // same code shipped under a 249 KiB ceiling. Local build on this head measured
   // 245,752 (CI agreed to the byte), 3,064 over. The ceiling follows the +5%
-  // ceil-to-KiB rule on 245,752.
-  { name: 'performance', limit: 258048, measured: 245752, note: '/performance and children' },
+  // ceil-to-KiB rule on 245,752. Re-measured after merging main (#4904 copy
+  // and paste, #4766): 246,970, still inside the ceiling.
+  { name: 'performance', limit: 258048, measured: 246970, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
