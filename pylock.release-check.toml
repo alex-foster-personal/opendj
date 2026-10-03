@@ -3137,4 +3137,4 @@ wheels = [
 ]
 
 [tool.music-dj-tools]
-source-sha256 = "dbd98cd2568c21807dcbd0df1cbd5574fe8d81c0801e9d011f9d4fdd75433999"
+source-sha256 = "60dc60ea40dfea59f1d7cfe78e51ed95d37b3944c6c09e879a026bc3c08f656a"
