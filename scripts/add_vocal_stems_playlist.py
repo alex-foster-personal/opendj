@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["tinytag>=2.1,<3", "httpx"]
+# dependencies = ["tinytag>=2.2.1,<3", "httpx"]
 # ///
 """Add the 100 clubsauna acapella vocal stems to open-dj as a playlist.
 
