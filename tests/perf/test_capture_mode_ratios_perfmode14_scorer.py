@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from scripts.perf.capture_kpi_ledger import session_meta
-from scripts.perf.capture_library_mode import (
+from scripts.perf.perfmode14_scorer import (
     PERFMODE14_SCORER,
     _MIN_SCORED_SAMPLES,
     perfmode14_medians_from_lists,
