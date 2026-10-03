@@ -9,9 +9,10 @@
   WHY audio-input. The app is signed with the hardened runtime, which
   notarization requires, and a hardened app without this key is refused every
   audio INPUT silently: no permission prompt, just silence. Two features read
-  an input: set recording (SET-10), where ffmpeg, launched by the engine and
-  so attributed to this app by macOS privacy (TCC), captures the input the DJ
-  picked on the REC button (usually a loopback such as BlackHole); and the
+  an input: set recording (SET-10, SET-11), where the engine's odj-audio,
+  attributed to this app by macOS privacy (TCC), captures the input the DJ
+  picked on the REC button (usually a loopback such as BlackHole), and carries
+  the same key itself (Entitlements.engine.plist); and the
   headphone cue latency calibration (CUEOUT-11), which listens briefly in the
   web view. NSMicrophoneUsageDescription in Info.plist is the prompt text.
 

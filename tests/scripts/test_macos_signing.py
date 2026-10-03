@@ -518,19 +518,32 @@ def test_no_shell_mktemp_template_carries_a_suffix_after_its_xs() -> None:
 
 ENGINE_ENTITLEMENTS: Path = REPO_ROOT / "apps/desktop/src-tauri/Entitlements.engine.plist"
 JIT_ENTITLEMENT = "com.apple.security.cs.allow-unsigned-executable-memory"
+AUDIO_INPUT_ENTITLEMENT = "com.apple.security.device.audio-input"
 
 
-def test_engine_entitlements_grant_exactly_unsigned_executable_memory() -> None:
-    """If the engine plist loses this key, or swaps it for allow-jit, every numba
-    JIT under the hardened runtime is SIGKILLed and own analysis never runs.
+def test_engine_entitlements_grant_exactly_jit_memory_and_audio_input() -> None:
+    """If the engine plist loses the JIT key, or swaps it for allow-jit, every
+    numba JIT under the hardened runtime is SIGKILLed and own analysis never
+    runs; if it loses audio-input, odj-audio records silence (SET-11).
 
-    Exactly one key: anything wider is attack surface the engine has not been
-    measured to need.
+    Exactly these keys: anything wider is attack surface the engine has not
+    been measured to need.
     """
     import plistlib
 
     entitlements = plistlib.loads(ENGINE_ENTITLEMENTS.read_bytes())
-    assert entitlements == {JIT_ENTITLEMENT: True}
+    assert entitlements == {JIT_ENTITLEMENT: True, AUDIO_INPUT_ENTITLEMENT: True}
+
+
+def test_signing_refuses_an_engine_executable_without_audio_input() -> None:
+    """If the post-sign check only looks for the JIT key, a plist that drops
+    audio-input ships an engine that records silence and still signs green."""
+    source = SIGN_SCRIPT.read_text()
+    start = source.index("_sign_engine_executables() {")
+    body = source[start : source.index("\n}\n", start)]
+    assert f'ENGINE_AUDIO_INPUT_ENTITLEMENT="{AUDIO_INPUT_ENTITLEMENT}"' in source
+    assert 'for key in "$ENGINE_JIT_ENTITLEMENT" "$ENGINE_AUDIO_INPUT_ENTITLEMENT"; do' in body
+    assert 'die "$exe was signed but does not carry $key"' in body
 
 
 def test_the_payload_stage_applies_the_engine_entitlements_and_proves_a_jit() -> None:

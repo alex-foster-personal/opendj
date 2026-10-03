@@ -124,3 +124,62 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(recordInputPicker, /listRecorderDevices\(\)/);
 	assert.match(recordInputPicker, /Tracklist only \(no audio\)/);
 });
+
+test('REC lights only once audio is written, not while the macOS microphone prompt is up', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
+	const waiting = recorder.recordRailState({ ...base, capture: 'waiting_permission' });
+	assert.equal(waiting.recording, false);
+	assert.equal(waiting.waiting, true);
+	assert.equal(waiting.poll, 1000);
+	assert.match(waiting.tip, /Waiting for microphone permission/);
+	assert.equal(recorder.recordRailState({ ...base, capture: 'starting' }).recording, false);
+	const failed = recorder.recordRailState({ ...base, capture: 'failed' });
+	assert.equal(failed.recording, false);
+	assert.equal(failed.poll, null);
+	assert.match(failed.tip, /stopped recording/);
+	// Controls: audio being written, and a tracklist-only recording, light REC.
+	for (const capture of ['recording', 'none', 'unknown']) {
+		const state = recorder.recordRailState({ ...base, capture });
+		assert.deepEqual([state.recording, state.waiting, state.tip], [true, false, null], capture);
+	}
+	// Codex P1 (PR #5164): a capture that is recording is still watched, so an
+	// input unplugged mid-set reaches 'failed' and unlights REC; one with no
+	// capture of ours (tracklist only, another process) is not polled.
+	assert.equal(recorder.recordRailState({ ...base, capture: 'recording' }).poll, 3000);
+	assert.equal(recorder.recordRailState({ ...base, capture: 'none' }).poll, null);
+	assert.equal(recorder.recordRailState({ ...base, capture: 'unknown' }).poll, null);
+	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).recording, false);
+});
+
+test('the rail lights REC from the capture state and polls while it is waiting', () => {
+	assert.match(performanceRecorderRail, /recording=\{rail\.recording\}/);
+	assert.match(performanceRecorderRail, /recordingWaiting=\{rail\.waiting\}/);
+	assert.match(performanceRecorderRail, /const after = rail\.poll;\s*if \(after === null\) return;/);
+	assert.match(performanceRecorderRail, /setTimeout\(\(\) => void refreshRecorderStatus\(\), after\)/);
+	assert.match(iconRail, /class:waiting=\{isRecord && recordingWaiting\}/);
+});
+
+test('a capture that fails says why when the engine said, on both REC surfaces', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
+	const why = 'microphone access for Open DJ is off; turn it on in System Settings';
+	assert.match(recorder.captureFailureMessage({ ...base, capture: 'failed', capture_error: why }), /System Settings/);
+	assert.match(recorder.captureFailureMessage({ ...base, capture: 'failed', capture_error: null }), /audio input stopped\. Press REC/);
+	// Controls: no failure, no message.
+	assert.equal(recorder.captureFailureMessage({ ...base, capture: 'recording', capture_error: null }), null);
+	assert.equal(recorder.captureFailureMessage({ ...base, active: false, capture: 'none' }), null);
+	assert.match(performanceRecorderRail, /captureFailureMessage\(recorder\)/);
+});
+
+test('the /sets panel reads the capture state, not just active, and polls it', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'waiting_permission' }), 'Waiting for microphone permission');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'starting' }), 'Starting the audio input');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'failed' }), 'Audio input stopped');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'recording' }), 'Recording');
+	assert.equal(recorder.recorderHeadline({ ...base, active: false, capture: 'none' }), 'Recorder ready');
+	const page = readFileSync(new URL('../../src/routes/sets/+page.svelte', import.meta.url), 'utf8');
+	assert.match(page, /class:live=\{recorder\.active && rail\.recording\}/);
+	assert.match(page, /<strong>\{recorderHeadline\(recorder\)\}<\/strong>/);
+	assert.match(page, /setTimeout\(\(\) => void refreshRecorder\(\), after\)/);
+	assert.match(page, /captureFailureMessage\(recorder\)/);
+});
