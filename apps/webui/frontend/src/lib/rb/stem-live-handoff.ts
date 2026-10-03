@@ -29,8 +29,11 @@
  *       [if] a rejected stem schedule stops or retires the mix [then ⛔️]
  *       [if] a late acknowledgement commits [then ⛔️]
  *       [if] the deck commits before the mix acknowledged its stop [then ⛔️]
- *       [if] a refused or late mix stop leaves the stems scheduled, or the mix
- *            stopped, or is swallowed [then ⛔️]
+ *       [if] a refused or timed-out mix stop (which poisons the mix, so it
+ *            cannot be put back) leaves the deck on the dead mix, or is
+ *            swallowed [then ⛔️]
+ *       [if] a rollback whose stems cancel fails skips putting the mix back
+ *            [then ⛔️]
  *       [if] the stopped mix's retirement is armed before its stop is
  *            acknowledged [then ⛔️]
  */
@@ -86,8 +89,10 @@ export interface StemHandoffDeps {
 	/** Undo a posted mix stop: schedule the mix at `at` as the control clock
 	 * says the deck is then, which replaces a stop at the same instant. */
 	restoreOutgoing(at: number, segment: StemHandoffSegment): Promise<void>;
-	/** Retire the stopped mix once its stop at `when` has rendered. */
-	retireOutgoingAfter(when: number): void;
+	/** Retire the stopped mix `tailSec` after `when`. */
+	retireOutgoingAfter(when: number, tailSec: number): void;
+	/** The mix refused its stop or never acknowledged it; the stems took over. */
+	reportOutgoingFailure(error: unknown): void;
 	/** Make the stems the deck's processor and publish `ready`. Synchronous. */
 	commit(when: number, segment: StemHandoffSegment): void;
 	/** The load this upgrade belongs to is gone (track swapped, graph rebuilt). */
@@ -126,8 +131,8 @@ function _idle(snap: StemHandoffSnapshot): boolean {
  * `busy`: the deck was not idle, nothing was scheduled. `moved`: the deck
  * changed, or an acknowledgement came too late, after the stems were
  * scheduled; that schedule is canceled and the mix is put back as it was.
- * Either way the caller may try again. A rejected stem schedule, or a
- * rejected mix stop (after the rollback), propagates.
+ * Either way the caller may try again. A rejected stem schedule, or a failed
+ * rollback, propagates.
  */
 export async function handOffStemsLive(
 	deps: StemHandoffDeps,
@@ -146,39 +151,51 @@ export async function handOffStemsLive(
 		await deps.cancelIncoming(when);
 		return 'moved';
 	}
-	// The mix's stop is acknowledged BEFORE the deck points at the stems: a
-	// stop the worklet refused, or one that came back too late, must not leave
-	// the deck committed to stems while the mix is silent early or still
-	// playing under them. The ack is a second await, so the deck is checked
-	// again after it; anything that moved rolls both processors back.
+	// The mix's stop is acknowledged BEFORE the deck points at the stems, and
+	// the ack is a second await, so the deck is checked again after it.
 	let stopError: unknown = null;
 	try {
 		await deps.stopOutgoing(when);
 	} catch (error) {
 		stopError = error;
 	}
+	if (stopError !== null) {
+		// A refused or timed-out command poisons the mix's processor: it takes
+		// no further command, so it cannot be put back. The stems' start is
+		// acknowledged, so they take the deck, the mix is cut at the handoff
+		// instant (never left under the stems), and the failure is reported.
+		if (deps.stale()) return 'moved';
+		deps.commit(when, segment);
+		deps.retireOutgoingAfter(when, 0);
+		deps.reportOutgoingFailure(stopError);
+		return 'handed_off';
+	}
 	const settled = deps.snapshot();
 	const earliest = safeTransportScheduleTime(deps.now(), deps.leadSec);
-	if (
-		stopError !== null ||
-		deps.stale() ||
-		settled.revision !== before.revision ||
-		!_idle(settled) ||
-		earliest > when
-	) {
+	if (deps.stale() || settled.revision !== before.revision || !_idle(settled) || earliest > when) {
 		// Undo at `when` while that is still ahead (an exact replacement of
 		// both scheduled changes); once it has passed, at the first instant
-		// the processors can still take, where the deck then is.
+		// the processors can still take, where the deck then is. The mix is put
+		// back even when the stems' cancel fails.
 		const at = earliest > when ? earliest : when;
-		await deps.cancelIncoming(at);
-		await deps.restoreOutgoing(at, deps.segmentAt(at));
-		if (stopError !== null) throw stopError;
+		let rollbackError: unknown = null;
+		try {
+			await deps.cancelIncoming(at);
+		} catch (error) {
+			rollbackError = error;
+		}
+		try {
+			await deps.restoreOutgoing(at, deps.segmentAt(at));
+		} catch (error) {
+			rollbackError ??= error;
+		}
+		if (rollbackError !== null) throw rollbackError;
 		return 'moved';
 	}
 	// From here to the end is synchronous: no command can interleave between
 	// the check above and the deck pointing at the stems.
 	deps.commit(when, segment);
-	deps.retireOutgoingAfter(when);
+	deps.retireOutgoingAfter(when, STEM_HANDOFF_RETIRE_AFTER_SEC);
 	return 'handed_off';
 }
 
@@ -248,6 +265,8 @@ export interface StemLandingPort {
 	 * active, a hold at its position when it is not. */
 	startChange(segment: StemHandoffSegment): StretchScheduleChange;
 	retire(processor: StemLandingProcessor): void;
+	/** The mix refused or never acknowledged its stop; the stems took over. */
+	reportOutgoingFailure(error: unknown): void;
 	/** Point the deck at the stems and publish `ready`. */
 	commit(when: number): void;
 	/** Keep the bundle for the deck's next stop, and say so on the deck. */
@@ -306,13 +325,14 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 		restoreOutgoing: async (at, segment) => {
 			if (outgoing !== null) await outgoing.schedule(at, port.startChange(segment));
 		},
-		retireOutgoingAfter: (when) => {
+		retireOutgoingAfter: (when, tailSec) => {
 			const retiring = outgoing;
 			if (retiring === null) return;
 			// Retired once its stop has rendered, never while it is the audible tail.
-			const delaySec = Math.max(0, when - port.clock.currentTime) + STEM_HANDOFF_RETIRE_AFTER_SEC;
+			const delaySec = Math.max(0, when - port.clock.currentTime) + tailSec;
 			setTimer(() => port.retire(retiring), delaySec * 1000);
 		},
+		reportOutgoingFailure: (error) => port.reportOutgoingFailure(error),
 		commit: (when) => port.commit(when),
 		stale: () => port.stale(),
 		replaceable: () => port.replaceable(),

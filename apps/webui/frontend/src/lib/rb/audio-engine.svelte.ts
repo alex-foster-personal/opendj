@@ -2802,6 +2802,7 @@ function _landStems(
 		controlSegmentAt: (when) => _controlSegmentAt(rt, when),
 		startChange: (seg) => stretchScheduleChange(seg.positionSec, seg.active, seg.tempoRatio, seg.masterTempoEnabled, seg.keyShiftSemitones, seg.loop),
 		retire: (processor) => _retireProcessor(processor as _DeckProcessor),
+		reportOutgoingFailure: (error) => recordPerfEvent('stem-live-handoff', `deck ${deck} mix stop failed, stems took over: ${error instanceof Error ? error.message : String(error)}`, deck),
 		commit: (when) => {
 			rt.processor = upgrade.processor;
 			st.stems = upgrade.state;

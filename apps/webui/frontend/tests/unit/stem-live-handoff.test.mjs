@@ -16,8 +16,10 @@
 // [if] scheduling the stems fails [then] the error propagates and the playing
 //   mix is never touched
 // [if] the deck is not idle [then] nothing is scheduled at all
-// [if] the mix refuses its stop [then] the stems are canceled, the mix is put
-//   back, nothing is committed, and the refusal propagates
+// [if] the mix refuses its stop (which poisons it) [then] the stems take the
+//   deck, the mix is cut at the handoff instant, and the refusal is reported
+// [if] the stems' cancel fails during a rollback [then] the mix is still put
+//   back, and the cancel's error propagates
 // [if] the deck commits before the mix acknowledged its stop [then ⛔️]
 // [if] the mix's stop is acknowledged too late [then] both are rolled back at
 //   the first instant still ahead, and nothing is committed
@@ -73,8 +75,11 @@ function deck(overrides = {}) {
 		restoreOutgoing: async (at, segment) => {
 			log.push(['restoreOutgoing', at, segment.positionSec]);
 		},
-		retireOutgoingAfter: (when) => {
-			log.push(['retireOutgoingAfter', when]);
+		retireOutgoingAfter: (when, tailSec) => {
+			log.push(['retireOutgoingAfter', when, tailSec]);
+		},
+		reportOutgoingFailure: (error) => {
+			log.push(['reportOutgoingFailure', error.message]);
 		},
 		commit: (when, segment) => {
 			log.push(['commit', when, segment.positionSec]);
@@ -107,6 +112,7 @@ test('a playing idle deck hands off at one shared instant, stems first', async (
 	assert.equal(log[2][1], when, 'the mix does not stop at the instant the stems start');
 	assert.equal(log[3][1], when);
 	assert.equal(log[4][1], when, 'the mix must be retired after the handoff instant, not another');
+	assert.equal(log[4][2], mod.STEM_HANDOFF_RETIRE_AFTER_SEC, 'an acknowledged stop keeps its audible tail');
 	assert.equal(log[1][2], SEGMENT.positionSec, 'stems must start at the projected position');
 });
 
@@ -180,17 +186,34 @@ for (const [label, patch] of [
 	});
 }
 
-test('a mix that refuses its stop rolls both back, commits nothing, and surfaces the refusal', async () => {
+test('a mix that refuses its stop is cut at the handoff instant and the stems take the deck', async () => {
+	// A refused or timed-out command poisons the mix: it cannot be put back, so
+	// staying on it would leave the deck silent while it reads playing.
 	const { deps, log } = deck();
 	deps.stopOutgoing = async (when) => {
 		log.push(['stopOutgoing', when]);
 		throw new Error('stop refused');
 	};
-	await assert.rejects(mod.handOffStemsLive(deps, 0.15), /stop refused/);
-	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'stopOutgoing', 'cancelIncoming', 'segmentAt', 'restoreOutgoing']);
+	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
+	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'stopOutgoing', 'commit', 'retireOutgoingAfter', 'reportOutgoingFailure']);
 	const when = log[1][1];
-	assert.equal(log[3][1], when, 'the stems start was not canceled at its own instant');
-	assert.equal(log[5][1], when, 'the mix was not put back at the instant its stop was posted for');
+	assert.deepEqual(log[4], ['retireOutgoingAfter', when, 0], 'the dead mix must be cut at the handoff instant, with no tail');
+	assert.deepEqual(log[5], ['reportOutgoingFailure', 'stop refused'], 'the refusal was swallowed');
+	assert.ok(!names(log).includes('cancelIncoming') && !names(log).includes('restoreOutgoing'));
+});
+
+test('a rollback whose stems cancel fails still puts the mix back', async () => {
+	const { deps, log, state } = deck();
+	deps.stopOutgoing = async (when) => {
+		log.push(['stopOutgoing', when]);
+		state.snap.revision += 1;
+	};
+	deps.cancelIncoming = async () => {
+		throw new Error('cancel refused');
+	};
+	await assert.rejects(mod.handOffStemsLive(deps, 0.15), /cancel refused/);
+	assert.equal(names(log).at(-1), 'restoreOutgoing', 'the mix was left stopped after the cancel failed');
+	assert.ok(!names(log).includes('commit'));
 });
 
 test('the deck is not committed until the mix acknowledges its stop', async () => {
@@ -350,6 +373,7 @@ function landing(overrides = {}) {
 		}),
 		startChange: (segment) => ({ start: segment.positionSec }),
 		retire: (target) => log.push(['retire', target.name]),
+		reportOutgoingFailure: () => {},
 		commit: (when) => {
 			log.push(['commit', when]);
 			runtime.processor = stems;
@@ -421,20 +445,34 @@ test('a stopped deck is adopted through the port, with nothing scheduled', async
 	assert.deepEqual(names(log), ['serialized', 'adoptStopped']);
 });
 
-test('the binding puts a mix whose stop was refused back as the control clock says', async () => {
-	const { port, log, mix } = landing();
+test('the binding puts the mix back as the control clock says when a command lands during its stop', async () => {
+	const { port, log, mix, runtime } = landing();
 	mix.stop = async (when) => {
 		log.push(['mix.stop', when]);
-		throw new Error('stop refused');
+		runtime.nextScheduleRevision += 1;
 	};
-	await assert.rejects(mod.landStemsOnDeck(port), /stop refused/);
+	assert.equal(await mod.landStemsOnDeck(port), 'deferred');
 	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
 	const restore = log.find((entry) => entry[0] === 'mix.schedule');
 	assert.ok(restore !== undefined, 'the mix was not put back');
 	assert.equal(restore[1], when);
 	assert.ok(Math.abs(restore[2].start - (10 + (when - 90) * 1.25)) < 1e-9, 'the mix was put back at the wrong position');
 	assert.ok(names(log).includes('stems.stop'), 'the stems start was not canceled');
-	assert.ok(!names(log).includes('commit') && !names(log).includes('retire'));
+	assert.ok(!names(log).includes('commit'));
+});
+
+test('the binding cuts a mix that refused its stop at the handoff instant and reports it', async () => {
+	const reported = [];
+	const { port, log, mix, timers } = landing({ autoTimers: false, port: { reportOutgoingFailure: (error) => reported.push(error.message) } });
+	mix.stop = async (when) => {
+		log.push(['mix.stop', when]);
+		throw new Error('stop refused');
+	};
+	assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
+	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
+	assert.deepEqual(reported, ['stop refused']);
+	assert.equal(timers.length, 1);
+	assert.ok(Math.abs(timers[0].ms - (when - 100) * 1000) < 1e-6, 'the dead mix is not cut at the handoff instant');
 });
 
 test('a deck with no audio graph rejects and leaves the mix alone', async () => {
