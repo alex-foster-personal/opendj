@@ -235,6 +235,23 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     crc_ok[1] = 0xF0
     empty.write_bytes(bytes(crc_ok))
     assert _tagreader.adts_duration(empty) == pytest.approx(1024 / 44100)
+    # Four raw data blocks need a byte each plus their CRC and position
+    # table (27 bytes in all): a 26-byte CRC frame of four blocks is truncated.
+    multi = bytearray(_adts_frames(1, frame_len=26))
+    multi[1] = 0xF0
+    multi[6] = 0xFF
+    empty.write_bytes(bytes(multi))
+    assert _tagreader.adts_duration(empty) is None
+    multi = bytearray(_adts_frames(1, frame_len=7 + 16 + 4))
+    multi[1] = 0xF0
+    multi[6] = 0xFF
+    empty.write_bytes(bytes(multi))
+    assert _tagreader.adts_duration(empty) == pytest.approx(4096 / 44100)
+    # Without the CRC, four blocks still need a byte each (11 bytes in all).
+    multi = bytearray(_adts_frames(1, frame_len=10))
+    multi[6] = 0xFF
+    empty.write_bytes(bytes(multi))
+    assert _tagreader.adts_duration(empty) is None
     # And a full header with ADTS sync but a reserved sample-rate index.
     bad = tmp_path / "bad.aac"
     bad.write_bytes(_adts_frames(1) + _adts_frames(1, rate_index=15))

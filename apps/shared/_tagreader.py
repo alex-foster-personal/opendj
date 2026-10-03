@@ -224,13 +224,21 @@ def _adts_frame(hdr: bytes) -> tuple[int, int, int, int] | None:
         return None
     rate_index = (hdr[2] >> 2) & 0x0F
     frame_len = ((hdr[3] & 0x03) << 11) | (hdr[4] << 3) | (hdr[5] >> 5)
-    # A frame must hold its header (9 bytes with the CRC, 7 without) and a
-    # nonempty payload: a header-only frame carries no audio.
-    header_len = 7 if hdr[1] & 0x01 else 9
-    if rate_index >= len(_ADTS_RATES) or frame_len <= header_len:
+    blocks = (hdr[6] & 0x03) + 1
+    if rate_index >= len(_ADTS_RATES) or frame_len < _adts_min_frame(hdr[1] & 0x01, blocks):
         return None
     channels = ((hdr[2] & 0x01) << 2) | (hdr[3] >> 6)
-    return _ADTS_RATES[rate_index], frame_len, 1024 * ((hdr[6] & 0x03) + 1), channels
+    return _ADTS_RATES[rate_index], frame_len, 1024 * blocks, channels
+
+
+def _adts_min_frame(protection_absent: int, blocks: int) -> int:
+    """Smallest frame that holds its 7-byte header and ``blocks`` nonempty raw
+    data blocks, plus the CRC bytes when protected: one 2-byte CRC for a single
+    block; for several, a block-position table and CRC (2 bytes per block) and
+    a 2-byte CRC after each block (ISO/IEC 13818-7, adts_error_check)."""
+    if protection_absent:
+        return 7 + blocks
+    return 7 + (2 if blocks == 1 else 4 * blocks) + blocks
 
 
 def first_other(tag: TinyTag, key: str) -> str | None:
