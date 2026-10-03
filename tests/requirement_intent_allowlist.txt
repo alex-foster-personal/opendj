@@ -19,8 +19,6 @@ tests/analysis/test_mik_backend.py
 tests/analysis/test_record.py
 tests/analysis/test_run_cli.py
 tests/analysis/test_store.py
-tests/analysis/test_write_tags.py
-tests/analysis/test_write_tags_atomic.py
 tests/audit/test_rekordbox_vs_music.py
 tests/audit/test_sync_diff_prefer.py
 tests/cloud/test_config.py

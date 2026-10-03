@@ -33,7 +33,6 @@ from fastapi.testclient import TestClient
 
 from apps.analysis import store as analysis_store
 from apps.lyrics import cache as lyrics_cache
-from apps.shared import tag_reader
 from apps.shared.state.db import open_rw as open_state_rw
 from apps.stems import artifacts as stem_artifacts
 from apps.vocals import cache as vocals_cache
@@ -479,7 +478,8 @@ def test_upload_stages_new_file(client, app):
 @pytest.mark.requires_fpcalc
 def test_upload_skips_exact_duplicate_unless_forced(client, app):
     src = FIXTURES / "src-128.mp3"
-    dur_ms = int(tag_reader.read_tags(Path(src)).duration_s * 1000)
+    from tinytag import TinyTag
+    dur_ms = int(TinyTag.get(src).duration * 1000)
     _seed_track(app, "dup01", src, duration_ms=dur_ms)
 
     r = client.post(

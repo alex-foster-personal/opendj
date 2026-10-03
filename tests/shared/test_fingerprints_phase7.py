@@ -14,7 +14,6 @@ from pathlib import Path
 import pytest
 
 from apps.shared import fingerprints as fp_mod
-from apps.shared import tag_reader
 from apps.shared.fingerprints import (
     ChromaprintMissing,
     FingerprintCache,
@@ -58,8 +57,13 @@ class _FakeAcoustid:
         # 192 kbps yields distinct byte content, so we DO differ. To
         # simulate real chromaprint behaviour (stable first 64 chars on
         # cross-bitrate twins) we include the file extension-independent
-        # ``audio_prefix`` derived from the tag reader's duration.
-        duration = tag_reader.read_tags(Path(path)).duration_s or 0.0
+        # ``audio_prefix`` derived from tinytag duration.
+        try:
+            from tinytag import TinyTag
+
+            duration = TinyTag.get(path).duration or 0.0
+        except Exception:
+            duration = 0.0
         # Bucket the duration so round-off does not break same-source ids.
         dur_bucket = round(duration)
         # First 64 chars: derive from the stem of the path (same source

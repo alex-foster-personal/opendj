@@ -28,10 +28,7 @@ from __future__ import annotations
 import base64
 import struct
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
-
-from apps.shared import id3v2
 
 # ============================================================= Markers2 ===
 
@@ -330,14 +327,12 @@ class SeratoGEOB:
     opaque_frames: dict[str, bytes] = field(default_factory=dict)
 
 
-# ============================================================ file I/O ===
+# ========================================================= mutagen I/O ===
 #
 # These helpers wire ``encode_markers2`` / ``encode_beatgrid`` onto real audio
-# files through the in-house :mod:`apps.shared.id3v2` (Apache-2.0; the GPL
-# mutagen was removed for licensing). They are the plumbing layer the
-# ``SeratoAdapter`` calls from ``write()`` / ``read()`` so per-track cues +
-# beatgrid actually land in (and are recovered from) the audio file's GEOB
-# ID3 frames.
+# files through ``mutagen``. They are the plumbing layer the ``SeratoAdapter``
+# calls from ``write()`` / ``read()`` so per-track cues + beatgrid actually
+# land in (and are recovered from) the audio file's GEOB ID3 frames.
 #
 # Scope: MP3 (ID3v2) only for v1. FLAC/AIFF/WAV use different Serato tagging
 # conventions (FLAC: a Vorbis ``SERATO_MARKERS_V2`` base64 comment; AIFF:
@@ -345,9 +340,10 @@ class SeratoGEOB:
 # structured warning for non-MP3 files so the write doesn't silently lose
 # cue data.
 #
-# Clean-room note: frame layout comes from our own ``encode_markers2`` /
-# ``encode_beatgrid`` (see above) and the public ID3v2 specification. No
-# triseratops source is consulted or transcribed.
+# Frame layout comes from ``encode_markers2`` / ``encode_beatgrid`` (see
+# above). Writing those bytes into an ID3 GEOB frame used mutagen, which
+# this Apache-2.0 product does not depend on. ``write_geob_frames`` refuses
+# without touching the file. ``read_geob_frames`` returns an empty bundle.
 
 
 GEOB_OWNER: str = "DJ Pool"
@@ -358,7 +354,9 @@ GEOB_BEATGRID_DESC: str = "Serato BeatGrid"
 
 
 def _is_mp3(path) -> bool:
-    return Path(path).suffix.lower() == ".mp3"
+    from pathlib import Path as _Path
+
+    return _Path(path).suffix.lower() == ".mp3"
 
 
 def write_geob_frames(
@@ -368,62 +366,29 @@ def write_geob_frames(
     beatgrid: BeatGrid | None = None,
     opaque: dict[str, bytes] | None = None,
 ) -> None:
-    """Upsert Serato GEOB frames onto an MP3 at ``audio_path``.
+    """Refuse to write Serato GEOB frames. Does not modify ``audio_path``.
 
-    ``markers2`` and ``beatgrid`` are encoded via :func:`encode_markers2` and
-    :func:`encode_beatgrid` respectively. ``opaque`` is a mapping of GEOB
-    description -> raw payload bytes (e.g. ``{"Serato Overview": b"..."}``)
-    that is round-tripped verbatim. Every other frame in the tag is kept
-    byte-for-byte, and a file with no tag gets a new ID3v2.3 one (the version
-    Serato DJ Pro itself writes).
-
-    Only MP3 is supported in v1; callers must screen the path themselves or
-    use :func:`is_mp3_like_path`. For non-MP3 this raises ``ValueError``.
+    Encoding of Markers2 and BeatGrid payloads remains available as pure
+    Python (:func:`encode_markers2`, :func:`encode_beatgrid`). Putting those
+    bytes into an ID3 GEOB frame required mutagen (GPL-2.0-or-later).
     """
-    path = Path(audio_path)
-    if not _is_mp3(path):
-        raise ValueError(f"write_geob_frames only supports .mp3 files; got {path.suffix!r}")
-    if not path.exists():
-        raise FileNotFoundError(f"audio file does not exist: {path}")
+    del markers2, beatgrid, opaque
+    from apps.shared.tag_writer import TagWriteRemoved
 
-    tag = id3v2.load_or_new(path, new_version=3)
-    if markers2 is not None:
-        tag.set_geob(GEOB_MARKERS2_DESC, encode_markers2(markers2))
-    if beatgrid is not None and beatgrid.markers:
-        tag.set_geob(GEOB_BEATGRID_DESC, encode_beatgrid(beatgrid))
-    if opaque:
-        for desc, payload in opaque.items():
-            tag.set_geob(desc, bytes(payload))
-    id3v2.save(path, tag)
+    raise TagWriteRemoved(
+        "writing Serato GEOB frames into audio files was removed because "
+        f"mutagen is GPL-2.0-or-later (refusing {audio_path})"
+    )
 
 
 def read_geob_frames(audio_path) -> SeratoGEOB:
-    """Read every Serato GEOB frame from an MP3 into a :class:`SeratoGEOB`.
+    """Return an empty :class:`SeratoGEOB`.
 
-    Returns an empty bundle if the file lacks an ID3 tag or has no Serato
-    frames, and for non-MP3 paths (v1 scope). A tag that is present but
-    unreadable raises :class:`apps.shared.id3v2.Id3Error` rather than
-    reading as "no cues".
+    Reading ID3 GEOB frames required mutagen. Serato database reads do not
+    go through this function. ``audio_path`` is unused.
     """
-    path = Path(audio_path)
-    if not path.exists() or not _is_mp3(path):
-        return SeratoGEOB()
-    tag = id3v2.read_tag(path)
-    if tag is None:
-        return SeratoGEOB()
-
-    markers2 = Markers2()
-    beatgrid = BeatGrid(markers=())
-    opaque: dict[str, bytes] = {}
-    for _mime, _filename, desc, payload in tag.geob():
-        if desc == GEOB_MARKERS2_DESC:
-            markers2 = parse_markers2(payload)
-        elif desc == GEOB_BEATGRID_DESC:
-            beatgrid = parse_beatgrid(payload)
-        elif desc.startswith("Serato "):
-            opaque[desc] = payload
-
-    return SeratoGEOB(markers2=markers2, beatgrid=beatgrid, opaque_frames=opaque)
+    del audio_path
+    return SeratoGEOB()
 
 
 def is_mp3_like_path(audio_path) -> bool:

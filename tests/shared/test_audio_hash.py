@@ -1,9 +1,7 @@
 """Per-format audio identity regression tests.
 
-The tag blocks are written in CI by the in-house ID3v2 / FLAC writers (MP3,
-FLAC) and by an ffmpeg stream-copy remux (AIFF, M4A, WAV), not Mixed In Key. A
-Mac capture with MIK remains the open acceptance item documented in issue
-#3864.
+The tag blocks are written with ffmpeg ``-c copy -metadata``, not Mixed In
+Key. A Mac capture with MIK remains the open acceptance item in issue #3864.
 """
 from __future__ import annotations
 
@@ -13,38 +11,24 @@ from pathlib import Path
 
 import pytest
 
-from apps.shared import flac_meta, id3v2
 from apps.shared.hashing import sha256_audio_payload, sha256_file
 
-
-def _tag(path: Path, value: str) -> None:
-    """Rewrite ``path``'s title tag in place, leaving the audio payload alone."""
-    suffix = path.suffix.lower()
-    if suffix == ".mp3":
-        tag = id3v2.load_or_new(path)
-        tag.set_text("TIT2", value)
-        id3v2.save(path, tag)
-        return
-    if suffix == ".flac":
-        meta = flac_meta.read(path)
-        meta.set("TITLE", value)
-        flac_meta.save(path, meta)
-        return
-    remuxed = path.with_name(f"retag-{path.name}")
-    id3_args = ["-write_id3v2", "1"] if suffix in {".aiff", ".aif"} else []
+def _tag(src: Path, dst: Path, value: str) -> None:
     subprocess.run(
         [
-            "ffmpeg", "-loglevel", "error", "-y", "-i", str(path), "-c", "copy",
-            "-map_metadata", "-1", "-metadata", f"title={value}", *id3_args, str(remuxed),
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", str(src),
+            "-c", "copy",
+            "-metadata", f"title={value}",
+            str(dst),
         ],
         check=True,
     )
-    remuxed.replace(path)
 
 
 @pytest.mark.parametrize("extension", ("mp3", "aiff", "flac", "m4a", "wav"))
 def test_library_written_retags_preserve_audio_identity(tmp_path: Path, extension: str) -> None:
-    """if a tag rewrite in each supported format happens then payload identity is stable"""
+    """if ffmpeg rewrites the title in each supported format then payload identity is stable"""
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg is required to create the per-format payload")
     original = tmp_path / f"original.{extension}"
@@ -61,9 +45,12 @@ def test_library_written_retags_preserve_audio_identity(tmp_path: Path, extensio
         ["ffmpeg", "-loglevel", "error", "-i", str(source), str(original)],
         check=True,
     )
-    tagged.write_bytes(original.read_bytes())
-    _tag(original, "before")
-    _tag(tagged, "after")
+    before = tmp_path / f"before.{extension}"
+    after = tmp_path / f"after.{extension}"
+    _tag(original, before, "before")
+    _tag(original, after, "after")
+    original = before
+    tagged = after
     assert sha256_file(original) != sha256_file(tagged)
     assert sha256_audio_payload(original) == sha256_audio_payload(tagged)
 
@@ -82,5 +69,7 @@ def test_different_recordings_with_same_tags_do_not_share_audio_identity(tmp_pat
             ],
             check=True,
         )
-        _tag(path, "same tags")
+        tagged = path.with_name(path.stem + "-tagged.wav")
+        _tag(path, tagged, "same tags")
+        path.write_bytes(tagged.read_bytes())
     assert sha256_audio_payload(first) != sha256_audio_payload(second)

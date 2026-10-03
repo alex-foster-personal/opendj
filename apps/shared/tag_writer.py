@@ -1,27 +1,11 @@
-"""Unified tag read/write wrapper (Phase 7 Plan 02), licence-clean.
+"""Unified tag read wrapper. Writing tags into audio files is removed.
 
-Reads go through :mod:`apps.shared.tag_reader` (tinytag, MIT) for every
-container, except MP3 where the in-house :mod:`apps.shared.id3v2` reader is
-used so POPM ratings and TXXX frames are exact. Writes:
+Reads go through :mod:`apps.shared._tagreader` (tinytag, MIT). Writing used
+to go through ``mutagen`` (GPL-2.0-or-later). This Apache-2.0 product does
+not depend on it, so :func:`write_tags` raises :class:`TagWriteRemoved` and
+does not modify the file.
 
-* **ID3v2** -- MP3 (``.mp3``) via :mod:`apps.shared.id3v2` (in-house).
-* **Vorbis comments** -- FLAC (``.flac``) via :mod:`apps.shared.flac_meta`
-  (in-house).
-* **iTunes atoms** -- MP4 (``.m4a`` / ``.mp4`` / ``.aac`` / ``.alac``) via
-  :mod:`apps.shared.mp4_meta` (in-house): ``©nam`` ``©ART`` ``©alb`` ``©gen``,
-  ``tmpo`` and ``----:com.apple.iTunes:`` free-form atoms, the same atoms the
-  GPL ``mutagen`` writer they replace used.
-* **Vorbis comments** -- Ogg Vorbis / Opus (``.ogg`` / ``.oga`` / ``.opus``)
-  via :mod:`apps.shared.ogg_comment` (in-house).
-
-See ``docs/decisions/ADR-NEW-permissive-audio-tag-io.md``.
-
-Design constraints:
-
-* Never rename the file. Only tag blocks change, via temp file + replace.
-* POPM rating mapping (RB + Windows-compatible):
-  ``{0: 0, 1: 51, 2: 102, 3: 153, 4: 204, 5: 255}``.
-* Raises :class:`UnsupportedContainer` for ``.aiff`` / ``.wav``.
+Containers this reader refuses (historical writer scope): ``.aiff`` / ``.wav``.
 """
 from __future__ import annotations
 
@@ -30,14 +14,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import flac_meta, id3v2, mp4_meta, ogg_comment, tag_reader
-
 POPM_EMAIL = "music-dj-tools@local"
 POPM_BUCKETS: dict[int, int] = {0: 0, 1: 51, 2: 102, 3: 153, 4: 204, 5: 255}
 
+TAG_WRITE_REMOVED = (
+    "writing tags into audio files was removed because mutagen is "
+    "GPL-2.0-or-later; the Apache-2.0 product does not depend on it"
+)
+
+
+class TagWriteRemoved(RuntimeError):
+    """Tag writing into an audio file is not available."""
+
+    def __init__(self, detail: str = TAG_WRITE_REMOVED) -> None:
+        super().__init__(detail)
+
 
 class UnsupportedContainer(RuntimeError):
-    """Raised for a container this module cannot read or write."""
+    """Raised for ``.aiff`` / ``.wav``."""
 
 
 @dataclass(frozen=True)
@@ -59,9 +53,8 @@ class TagRead:
 class UnifiedTags:
     """Plan computed by ``apps.tags.unify``.
 
-    Only fields with an explicit value are written; a ``None`` means
-    "leave alone". Callers can build a partial plan (e.g. genre + bpm
-    only) without touching title / artist.
+    Only fields with an explicit value were written when writing existed.
+    A ``None`` means "leave alone".
     """
 
     title: str | None = None
@@ -84,13 +77,6 @@ class WriteResult:
     dry_run: bool = True
 
 
-# --------------------------------------------------------------- dispatch
-
-
-_MP3 = {".mp3"}
-_MP4 = {".m4a", ".mp4", ".aac", ".alac"}
-_FLAC = {".flac"}
-_OGG = {".ogg", ".oga", ".opus"}
 _UNSUPPORTED = {".aiff", ".aif", ".wav"}
 
 
@@ -98,237 +84,85 @@ def _ext(path: Path) -> str:
     return path.suffix.lower()
 
 
-def _rating_to_popm(rating: int | None) -> int | None:
-    if rating is None:
+def _other_first(other: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        for candidate in (key, key.lower(), key.upper()):
+            val = other.get(candidate)
+            if val is None:
+                continue
+            if isinstance(val, (list, tuple)):
+                if not val:
+                    continue
+                val = val[0]
+            text = str(val).strip()
+            if text:
+                return text
+    return None
+
+
+def _safe_float(v: Any) -> float | None:
+    if v is None or v == "":
         return None
-    if rating < 0 or rating > 5:
-        raise ValueError(f"rating out of range: {rating}")
-    return POPM_BUCKETS[rating]
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(v: Any) -> int | None:
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
 
 
 def _popm_to_rating(popm: int | None) -> int | None:
     if popm is None:
         return None
-    # Choose the closest bucket.
     best = min(POPM_BUCKETS.items(), key=lambda kv: abs(kv[1] - popm))
     return best[0]
 
 
-# ----------------------------------------------------------------- read
-
-
-def _read_mp3(path: Path) -> TagRead:
-    t = id3v2.read_tag(path)
-    if t is None:
-        return TagRead(raw={})
-    raw = {frame.frame_id: frame.data.hex() for frame in t.frames}
-    return TagRead(
-        title=t.first_text("TIT2"),
-        artist=t.first_text("TPE1"),
-        album=t.first_text("TALB"),
-        genre=t.first_text("TCON"),
-        bpm=_safe_float(t.first_text("TBPM")),
-        key_openkey=t.first_text("TKEY"),
-        key_camelot=t.txxx("Camelot"),
-        energy=_safe_int(t.txxx("ENERGY")),
-        rating=_popm_to_rating(t.popm_rating()),
-        isrc=t.first_text("TSRC"),
-        raw=raw,
-    )
-
-
-def _read_generic(path: Path) -> TagRead:
-    """MP4 / FLAC / Ogg through tinytag: standard fields plus custom ones."""
-    t = tag_reader.read_tags(path)
-    return TagRead(
-        title=t.title,
-        artist=t.artist,
-        album=t.album,
-        genre=t.genre,
-        bpm=t.bpm,
-        key_openkey=t.key,
-        key_camelot=t.first_other("camelot"),
-        energy=_safe_int(t.first_other("energy")),
-        rating=_safe_int(t.first_other("rating")),
-        isrc=t.isrc,
-        raw={name: list(values) for name, values in t.other.items()},
-    )
-
-
 def read_tags(path: Path) -> TagRead:
-    """Read tags from ``path``. Raises :class:`UnsupportedContainer`
-    for ``.aiff`` / ``.wav`` and for anything the tag reader cannot parse.
+    """Read tags from ``path`` via tinytag.
+
+    Raises :class:`UnsupportedContainer` for ``.aiff`` / ``.wav``.
     """
     ext = _ext(path)
     if ext in _UNSUPPORTED:
         raise UnsupportedContainer(f"Unsupported container: {ext}")
-    if ext in _MP3:
-        return _read_mp3(path)
-    try:
-        return _read_generic(path)
-    except tag_reader.TagReadError as exc:
-        raise UnsupportedContainer(str(exc)) from exc
+    from apps.shared._tagreader import read as read_audio
 
-
-# ---------------------------------------------------------------- write
-
-
-def _write_mp3(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
-    t = id3v2.load_or_new(path, new_version=4)
-    applied: dict[str, Any] = {}
-    for frame_id, field_name, value in (
-        ("TIT2", "title", u.title),
-        ("TPE1", "artist", u.artist),
-        ("TALB", "album", u.album),
-        ("TCON", "genre", u.genre),
-        ("TKEY", "key_openkey", u.key_openkey),
-        ("TSRC", "isrc", u.isrc),
-    ):
-        if value is not None:
-            t.set_text(frame_id, value)
-            applied[field_name] = value
-    if u.bpm is not None:
-        t.set_text("TBPM", str(round(u.bpm)))
-        applied["bpm"] = u.bpm
-    if u.key_camelot is not None:
-        t.set_txxx("CAMELOT", u.key_camelot)
-        applied["key_camelot"] = u.key_camelot
-    if u.energy is not None:
-        t.set_txxx("ENERGY", str(u.energy))
-        applied["energy"] = u.energy
-    if u.rating is not None:
-        t.set_popm(POPM_EMAIL, _rating_to_popm(u.rating) or 0)
-        applied["rating"] = u.rating
-    if not dry_run:
-        id3v2.save(path, t)
-    return WriteResult(path=path, applied=applied, dry_run=dry_run)
-
-
-def _apply_vorbis_comments(meta: flac_meta.FlacMeta | ogg_comment.OggMeta, u: UnifiedTags) -> dict[str, Any]:
-    """FLAC and Ogg carry the same Vorbis comment fields."""
-    applied: dict[str, Any] = {}
-    for key, field_name, value in (
-        ("TITLE", "title", u.title),
-        ("ARTIST", "artist", u.artist),
-        ("ALBUM", "album", u.album),
-        ("GENRE", "genre", u.genre),
-        ("KEY", "key_openkey", u.key_openkey),
-        ("CAMELOT", "key_camelot", u.key_camelot),
-        ("ISRC", "isrc", u.isrc),
-    ):
-        if value is not None:
-            meta.set(key, value)
-            applied[field_name] = value
-    if u.bpm is not None:
-        meta.set("BPM", str(round(u.bpm)))
-        applied["bpm"] = u.bpm
-    if u.energy is not None:
-        meta.set("ENERGY", str(u.energy))
-        applied["energy"] = u.energy
-    if u.rating is not None:
-        meta.set("RATING", str(u.rating))
-        applied["rating"] = u.rating
-    return applied
-
-
-def _write_flac(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
-    meta = flac_meta.read(path)
-    applied = _apply_vorbis_comments(meta, u)
-    if not dry_run:
-        flac_meta.save(path, meta)
-    return WriteResult(path=path, applied=applied, dry_run=dry_run)
-
-
-def _write_ogg(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
-    meta = ogg_comment.read(path)
-    applied = _apply_vorbis_comments(meta, u)
-    if not dry_run:
-        ogg_comment.save(path, meta)
-    return WriteResult(path=path, applied=applied, dry_run=dry_run)
-
-
-def _write_mp4(path: Path, u: UnifiedTags, *, dry_run: bool) -> WriteResult:
-    meta = mp4_meta.read(path)
-    applied: dict[str, Any] = {}
-    for atom_name, field_name, value in (
-        ("\xa9nam", "title", u.title),
-        ("\xa9ART", "artist", u.artist),
-        ("\xa9alb", "album", u.album),
-        ("\xa9gen", "genre", u.genre),
-    ):
-        if value is not None:
-            meta.set_text(atom_name, value)
-            applied[field_name] = value
-    if u.bpm is not None:
-        meta.set_tempo(round(u.bpm))
-        applied["bpm"] = u.bpm
-    for name, field_name, value in (
-        ("INITIALKEY", "key_openkey", u.key_openkey),
-        ("CAMELOT", "key_camelot", u.key_camelot),
-        ("ENERGY", "energy", None if u.energy is None else str(u.energy)),
-        ("RATING", "rating", None if u.rating is None else str(u.rating)),
-        ("ISRC", "isrc", u.isrc),
-    ):
-        if value is not None:
-            meta.set_freeform(name, value)
-            applied[field_name] = getattr(u, field_name)
-    if not dry_run:
-        mp4_meta.save(path, meta)
-    return WriteResult(path=path, applied=applied, dry_run=dry_run)
+    tag = read_audio(path, image=False, duration=False)
+    other = getattr(tag, "other", None) or {}
+    rating_raw = _safe_int(_other_first(other, "rating", "popm"))
+    if rating_raw is not None and rating_raw > 5:
+        rating_raw = _popm_to_rating(rating_raw)
+    return TagRead(
+        title=(tag.title or None),
+        artist=(tag.artist or None),
+        album=(tag.album or None),
+        genre=(tag.genre or None),
+        bpm=_safe_float(_other_first(other, "bpm", "tbpm")),
+        key_openkey=_other_first(other, "initialkey", "key", "tkey"),
+        key_camelot=_other_first(other, "camelot"),
+        energy=_safe_int(_other_first(other, "energy")),
+        rating=rating_raw,
+        isrc=_other_first(other, "isrc"),
+        raw={k: v for k, v in other.items()},
+    )
 
 
 def write_tags(
     path: Path, unified: UnifiedTags, *, dry_run: bool = True
 ) -> WriteResult:
-    """Dispatch to the right writer; return a :class:`WriteResult`.
+    """Refuse to write tags. Does not open or modify ``path``.
 
-    Raises :class:`UnsupportedContainer` for AIFF / WAV -- also on
-    ``dry_run``, so a preview never promises a write that cannot happen. A file
-    whose bytes do not match its extension raises the container module's own
-    error (``Mp4Error``, ``OggError``, ``FlacError``) before anything is written.
+    ``dry_run`` does not preview a write: writing is not a product feature.
     """
-    ext = _ext(path)
-    if ext in _UNSUPPORTED:
-        raise UnsupportedContainer(f"Unsupported container: {ext}")
-    if ext in _MP3:
-        return _write_mp3(path, unified, dry_run=dry_run)
-    if ext in _MP4:
-        return _write_mp4(path, unified, dry_run=dry_run)
-    if ext in _FLAC:
-        return _write_flac(path, unified, dry_run=dry_run)
-    if ext in _OGG:
-        return _write_ogg(path, unified, dry_run=dry_run)
-    raise UnsupportedContainer(f"No tag writer for: {ext}")
-
-
-# ------------------------------------------------------------- helpers
-
-
-def _safe_float(val: Any) -> float | None:
-    if val is None:
-        return None
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
-
-
-def _safe_int(val: Any) -> int | None:
-    if val is None:
-        return None
-    try:
-        return int(float(val))
-    except (TypeError, ValueError):
-        return None
-
-
-__all__ = [
-    "POPM_BUCKETS",
-    "POPM_EMAIL",
-    "TagRead",
-    "UnifiedTags",
-    "UnsupportedContainer",
-    "WriteResult",
-    "read_tags",
-    "write_tags",
-]
+    del unified, dry_run
+    raise TagWriteRemoved(
+        f"{TAG_WRITE_REMOVED} (refusing {path.name})"
+    )

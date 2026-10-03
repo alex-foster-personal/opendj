@@ -13,8 +13,10 @@ Phase 16 scope (OPEN-02c):
     ``file_path|title`` with a ``serato_`` prefix (see
     :func:`_stable_track_id` below for rationale).
 
-Per-file GEOB frame mutation (via apps.shared.id3v2) is plumbed through
-``SeratoAdapter.write()`` via :func:`apps.adapters.serato.geob.write_geob_frames`
+Per-file GEOB frame mutation (via mutagen) is plumbed through
+``SeratoAdapter.write()`` calls :func:`apps.adapters.serato.geob.write_geob_frames`,
+which refuses (tag writing into audio files was removed; mutagen is GPL) and
+is recorded as a warning. The Serato database write is unchanged.
 (v1.0 P0 follow-up, GH #2). Hot cues, loops, and beatgrid round-trip on MP3
 via the ``Serato Markers2`` + ``Serato BeatGrid`` ID3 GEOB frames. Missing
 or non-MP3 audio files downgrade to a structured warning and skip the GEOB
@@ -482,7 +484,7 @@ class SeratoAdapter:
         """Upsert Serato Markers2 + BeatGrid GEOB frames onto each audio file.
 
         Rail 2 (timestamped backup): each MP3 is copied into
-        :meth:`_resolve_backup_dir` *before* any GEOB mutation, so a
+        :meth:`_resolve_backup_dir` *before* any mutagen mutation, so a
         crash mid-write leaves a bit-exact restore source on disk. If
         the backup step itself fails we skip the track with a structured
         warning rather than proceeding blind -- this was the v1.0
@@ -517,7 +519,7 @@ class SeratoAdapter:
                     ),
                 )
                 continue
-            # Rail 2: back up the MP3 BEFORE any GEOB mutation. A
+            # Rail 2: back up the MP3 BEFORE any mutagen mutation. A
             # failed backup is a safety violation, not a write failure.
             try:
                 backup_file(audio_path, backup_dir)

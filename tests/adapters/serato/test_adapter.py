@@ -228,7 +228,7 @@ def test_playlist_membership_roundtrip(tmp_path) -> None:
 
 
 # ====================================================================
-# GEOB cue + beatgrid write/read round-trip via apps.shared.id3v2 (GH #2 / P0).
+# GEOB cue + beatgrid writes are refused (mutagen is GPL). Reads return empty.
 # ====================================================================
 
 
@@ -249,7 +249,7 @@ def _stage_mp3(tmp_path: Path, rel: str = "audio/track.mp3") -> tuple[Path, Path
 
 @pytest.mark.requirement("OPEN-02c")
 def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
-    """Library with hot cues + loop -> Serato write -> read back -> identical cues."""
+    """Cue writes into the MP3 are refused; the crate DB is still written."""
     audio_root, _ = _stage_mp3(tmp_path)
     adapter = SeratoAdapter(
         options=SeratoAdapterOptions(
@@ -280,33 +280,17 @@ def test_geob_cues_roundtrip_via_real_mp3(tmp_path) -> None:
     lib = OpenDjLibrary(version="0.1", tracks=(track,))
     target = tmp_path / "_Serato_"
     write_report = adapter.write(lib, target)
-    assert write_report.counts.get("geob_frames_written") == 1
+    assert write_report.counts.get("geob_frames_written", 0) == 0
+    assert any("GPL" in w.reason for w in write_report.warnings)
 
     lib_back, read_report = adapter.read(target)
-    assert read_report.counts.get("geob_frames_read", 0) == 1
-    back_track = lib_back.tracks[0]
-    # Order in Markers2: hots first, then loops (stable per _markers2_to_opendj_cues).
-    back_hots = tuple(c for c in back_track.cues if c.type == "hot")
-    back_loops = tuple(c for c in back_track.cues if c.type == "loop")
-    assert len(back_hots) == 3
-    assert len(back_loops) == 1
-    # Hot cues: position + index + colour preserved.
-    assert [(c.index, c.position_ms, c.name, c.color_rgb) for c in back_hots] == [
-        (0, 0, "Intro", 0xCC0000),
-        (1, 15_000, "Verse", 0x00CC00),
-        (2, 30_000, "Chorus", 0x0000CC),
-    ]
-    # Loop: start + length round-trip.
-    lo = back_loops[0]
-    assert lo.index == 3
-    assert lo.position_ms == 45_000
-    assert lo.length_ms == 4_000
-    assert lo.color_rgb == 0xCCCC00
+    assert read_report.counts.get("geob_frames_read", 0) == 0
+    assert lib_back.tracks[0].cues == ()
 
 
 @pytest.mark.requirement("OPEN-02c")
 def test_geob_beatgrid_roundtrip(tmp_path) -> None:
-    """Beatgrid written to GEOB frame round-trips back through the adapter."""
+    """Beatgrid writes into the MP3 are refused; read-back beats are empty."""
     audio_root, _ = _stage_mp3(tmp_path)
     adapter = SeratoAdapter(
         options=SeratoAdapterOptions(
@@ -326,16 +310,10 @@ def test_geob_beatgrid_roundtrip(tmp_path) -> None:
         beats=beats,
     )
     lib = OpenDjLibrary(version="0.1", tracks=(track,))
-    adapter.write(lib, tmp_path / "_Serato_")
+    report = adapter.write(lib, tmp_path / "_Serato_")
+    assert report.counts.get("geob_frames_written", 0) == 0
     lib_back, _ = adapter.read(tmp_path / "_Serato_")
-    back = lib_back.tracks[0]
-    assert len(back.beats) == 2
-    # Position round-trips to the ms (we stash seconds in the Serato frame).
-    assert back.beats[0].position_ms == 0
-    assert back.beats[-1].position_ms == 120_000
-    assert back.beats[-1].terminal is True
-    # Terminal BPM propagates back.
-    assert back.beats[-1].bpm == pytest.approx(124.0)
+    assert lib_back.tracks[0].beats == ()
 
 
 @pytest.mark.requirement("OPEN-02c")
@@ -385,10 +363,8 @@ def test_geob_write_skips_non_mp3_with_warning(tmp_path) -> None:
 
 @pytest.mark.requirement("OPEN-02c")
 def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
-    """Rail 2 regression (adversarial #2, HIGH): a GEOB write MUST
-    produce a pre-mutation backup copy of the MP3 on disk before any
-    GEOB mutation runs. Pre-fix ``_write_geob_for_library`` claimed
-    Rail 2 in its docstring but took no backup.
+    """A refused GEOB write still copies the MP3 before the attempt, and
+    does not change the file.
     """
     import hashlib
 
@@ -414,7 +390,8 @@ def test_geob_write_backs_up_mp3_before_mutation(tmp_path: Path) -> None:
     )
     lib = OpenDjLibrary(version="0.1", tracks=(track,))
     report = adapter.write(lib, tmp_path / "_Serato_")
-    assert report.counts.get("geob_frames_written") == 1
+    assert report.counts.get("geob_frames_written", 0) == 0
+    assert hashlib.sha256(full.read_bytes()).hexdigest() == pre_sha
 
     # A backup file must exist under the configured backup_dir, and its
     # contents must hash to the pre-write MP3 sha256.

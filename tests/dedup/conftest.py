@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from apps.shared import fingerprints as fp_mod
-from apps.shared import tag_reader
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 
@@ -32,7 +31,12 @@ class _FakeAcoustid:
 
     def fingerprint_file(self, path: str):  # type: ignore[no-untyped-def]
         data = Path(path).read_bytes()
-        duration = tag_reader.read_tags(Path(path)).duration_s or 0.0
+        try:
+            from tinytag import TinyTag
+
+            duration = TinyTag.get(path).duration or 0.0
+        except Exception:
+            duration = 0.0
         dur_bucket = round(duration)
         stem_key = Path(path).stem.split("-")[0].lower()
         prefix_seed = f"{stem_key}|{dur_bucket}".encode()

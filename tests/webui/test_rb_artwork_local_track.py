@@ -7,9 +7,9 @@ for every unmapped row even when the file itself carries a real embedded
 cover. It now falls back to reading that embedded tag directly, mirroring
 the existing ``/anlz`` and ``/rb-meta`` VENDOR_MAPPING_NOT_FOUND fallbacks.
 
-A real MP3 fixture gets a REAL APIC frame written by the in-house ID3v2
-writer and read back by tinytag -- never synthesised bytes -- so the test
-proves actual tag parsing, not a stub.
+A real MP3 fixture gets an ID3v2.3 APIC tag prepended with the stdlib
+helper in ``tests/support/embed_picture.py``. The product does not depend
+on mutagen.
 
 Regression one-liners:
   - if /artwork 404s for an unmapped track with real embedded art then broken
@@ -21,9 +21,7 @@ Regression one-liners:
     404s and rb-meta reports it unavailable then broken
   - if a genuinely unknown stable_id stops 404ing TRACK_NOT_FOUND then broken
 
-The tag reader (tinytag) is a core dependency, so there is no "reader
-unavailable" verdict any more; ``tests/shared/test_no_gpl_tag_library.py``
-proves artwork is read with mutagen made unimportable.
+The reader-unavailable path lives in ``test_rb_artwork_reader_unavailable.py``.
 """
 from __future__ import annotations
 
@@ -37,12 +35,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
-from apps.shared import id3v2
 from apps.shared.state import db as state_db
 from apps.webui.server.routes.rb_assets import router
 from apps.webui.server.sqlite_backend import make_backend
-from tests.fixtures import tagged_audio as ta
 from tests.fixtures.conftest import resolve_required_fixture
+from tests.support.embed_picture import with_id3_apic
 
 pytestmark = [
     pytest.mark.requirement("CAT-05"),
@@ -90,8 +87,8 @@ def jpeg_bytes() -> bytes:
 @pytest.fixture
 def track_with_art(tmp_path: Path, jpeg_bytes: bytes) -> Path:
     dst = tmp_path / "has art.mp3"
-    shutil.copy2(FIXTURE_ROOT / "src-320.mp3", dst)
-    ta.add_apic(dst, jpeg_bytes, mime="image/jpeg")
+    raw = (FIXTURE_ROOT / "src-320.mp3").read_bytes()
+    dst.write_bytes(with_id3_apic(raw, jpeg_bytes))
     return dst
 
 
@@ -206,11 +203,13 @@ def test_oversized_embedded_artwork_is_not_served_or_advertised(
     client: TestClient, track_with_art: Path, jpeg_bytes: bytes
 ) -> None:
     """The route and rb-meta share the embedded-artwork size ceiling."""
-    tag = id3v2.load_or_new(track_with_art)
-    tag.remove(lambda frame: frame.frame_id == "APIC")
-    id3v2.save(track_with_art, tag)
-    ta.add_apic(
-        track_with_art, jpeg_bytes + b"\x00" * (4 * 1024 * 1024), mime="image/jpeg", desc="oversized cover"
+    raw = (FIXTURE_ROOT / "src-320.mp3").read_bytes()
+    track_with_art.write_bytes(
+        with_id3_apic(
+            raw,
+            jpeg_bytes + b"\x00" * (4 * 1024 * 1024),
+            desc="oversized cover",
+        )
     )
 
     artwork = client.get(f"/api/v1/tracks/{WITH_ART_SID}/artwork")
@@ -220,3 +219,7 @@ def test_oversized_embedded_artwork_is_not_served_or_advertised(
     meta = client.get(f"/api/v1/tracks/{WITH_ART_SID}/rb-meta")
     assert meta.status_code == 200, meta.text
     assert meta.json()["artwork_available"] is False
+
+
+# The reader-unavailable case lives in test_rb_artwork_reader_unavailable.py.
+# caught this live on PR #773 (P1/BLOCKING).

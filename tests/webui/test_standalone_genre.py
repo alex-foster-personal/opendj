@@ -365,6 +365,7 @@ def test_tracks_listing_names_tag_reader_when_unavailable(
         assert resp.status_code == 200, resp.text
         row = resp.json()["items"][0]
         assert row["genre"] is None
+        assert "mutagen" not in {{k for k, v in sys.modules.items() if v is not None}}
         print("GENRE_REASON=" + str(row["genre_reason"]))
         """
     )
@@ -389,7 +390,7 @@ def test_tracks_listing_names_tag_reader_when_unavailable(
 def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
     tmp_path: Path,
 ) -> None:
-    """[if] mutagen is absent, as in the packaged app [then] the reason is no-file-tag, [else stop]."""
+    """[if] the listing has no file genre [then] the reason is no-file-tag and names no tag library, [else stop]."""
     state_path = tmp_path / "state.db"
     conn = state_db.open_rw(state_path)
     try:
@@ -405,7 +406,6 @@ def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
     probe = textwrap.dedent(
         f"""
         import sys
-        sys.modules["mutagen"] = None
 
         from pathlib import Path
 
@@ -433,6 +433,7 @@ def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
         assert resp.status_code == 200, resp.text
         row = resp.json()["items"][0]
         assert row["genre"] is None
+        assert "mutagen" not in {{k for k, v in sys.modules.items() if v is not None}}
         print("GENRE_REASON=" + str(row["genre_reason"]))
         """
     )

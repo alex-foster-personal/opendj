@@ -18,7 +18,6 @@ from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.cloudsync.conftest import InMemoryAssetS3
-from tests.fixtures import tagged_audio as ta
 
 
 @pytest.fixture
@@ -396,13 +395,14 @@ def test_track_detail_artwork_available_agrees_with_listing_unmapped(
     flags_client: TestClient, tmp_path: Path
 ) -> None:
     """[if] unmapped embedded art [then] list and detail agree on artwork_available, [else stop]."""
+    from tests.support.embed_picture import with_id3_apic
+
     fixture = (
         Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-320.mp3"
     )
     jpeg_bytes = _minimal_jpeg_bytes()
     audio_path = tmp_path / "embedded-art.mp3"
-    shutil.copy2(fixture, audio_path)
-    ta.add_apic(audio_path, jpeg_bytes, mime="image/jpeg")
+    audio_path.write_bytes(with_id3_apic(fixture.read_bytes(), jpeg_bytes))
 
     stable_id = "c" * 40
     state_dir = tmp_path / "state"
