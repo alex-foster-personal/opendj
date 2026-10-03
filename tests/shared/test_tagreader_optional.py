@@ -412,6 +412,17 @@ def test_shared_read_rejects_a_damaged_adts_stream(tmp_path):
         assert _tagreader.starts_with_adts(track)
         with pytest.raises(_tagreader.TagReadError):
             _tagreader.read(track)
+    # A leading ID3v2 tag declaring an extent past EOF hides the stream;
+    # it is refused, not read as "not ADTS" (review of #4997).
+    track.write_bytes(b"ID3\x04\x00\x00\x7f\x7f\x7f\x7f" + _adts_frames(2))
+    assert _tagreader.starts_with_adts(track)
+    with pytest.raises(_tagreader.TagReadError):
+        _tagreader.read(track)
     assert not _tagreader.starts_with_adts(FIXTURE)
+    # A file gone between tinytag's read and the frame walk is a read error
+    # for that file, not an OSError that aborts a whole library walk.
+    gone = tmp_path / "gone.aac"
+    with pytest.raises(_tagreader.TagReadError):
+        _tagreader._apply_adts(gone, None)
     track.write_bytes(_adts_frames(8))
     assert _tagreader.read(track).duration == pytest.approx(8 * 1024 / 44100)

@@ -108,10 +108,14 @@ def _apply_adts(path: Path | str, tag: TinyTag) -> None:
     A file that opens with an ADTS frame but fails the walk (truncated,
     corrupt, mixed rates) raises rather than keeping tinytag's bogus values.
     """
-    stream = adts_stream(path)
+    try:
+        stream = adts_stream(path)
+        damaged = stream is None and starts_with_adts(path)
+    except OSError as exc:  # removed or unreadable since tinytag closed it
+        raise TagReadError(str(exc) or type(exc).__name__) from exc
+    if damaged:
+        raise TagReadError("damaged ADTS stream: the frame walk failed")
     if stream is None:
-        if starts_with_adts(path):
-            raise TagReadError("damaged ADTS stream: the frame walk failed")
         return
     tag.duration = stream.duration
     tag.samplerate = stream.samplerate
@@ -183,10 +187,17 @@ def starts_with_adts(path: Path | str) -> bool:
     Only the sync word and the zero layer bits are checked, not a whole valid
     header, so a damaged first frame still reads as ADTS (and is refused)
     rather than falling back to tinytag. MPEG audio sets nonzero layer bits,
-    so an mp3 never matches.
+    so an mp3 never matches. A leading ID3v2 tag that claims more bytes than
+    the file holds hides whatever follows it, so it also counts: the file is
+    damaged either way and must be refused, not read as "not ADTS".
     """
     with open(path, "rb") as fh:
-        fh.seek(_id3v2_end(fh.read(10)))
+        size = fh.seek(0, 2)
+        fh.seek(0)
+        start = _id3v2_end(fh.read(10))
+        if start > size:
+            return True
+        fh.seek(start)
         head = fh.read(2)
     return len(head) == 2 and head[0] == 0xFF and (head[1] & 0xF6) == 0xF0
 
