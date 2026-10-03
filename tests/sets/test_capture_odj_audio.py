@@ -5,16 +5,18 @@ checkout fallback, never a silent fallback in the installed app), the
 odj-audio listing and record/stop process contract, and that every segment
 consumer takes the ``.wav`` segments odj-audio writes.
 
+[if] REC starts on a Mac without ffmpeg [then] the bundled odj-audio records the input as WAV, [else stop].
+
 Everything here drives the real ``odj-audio``, built from this checkout: the
 default build (no audio input) and a ``--features device`` build. Recording
 needs an input that cannot hear a room, so it uses ALSA's ``null`` capture
 device (zero samples) and reports UNAVAILABLE on a host without one, as it
 does where the crate cannot build (tests/rust_build_env.py).
 """
+
 from __future__ import annotations
 
 import io
-import json
 import os
 import shutil
 import signal
@@ -180,8 +182,26 @@ def _wait_for(predicate: Any, timeout: float = 10.0) -> bool:
     return predicate()
 
 
-def _start(capture_engine: Path, session: Path, name: str) -> capture.CaptureHandle:
-    return capture.start_capture(
+@pytest.fixture
+def started() -> Any:
+    """Handles a test started; any still running at teardown are killed, so a
+    failed assertion never leaves an engine (or a frozen one) behind."""
+    handles: list[capture.CaptureHandle] = []
+    yield handles
+    for handle in handles:
+        if handle.proc.poll() is None:
+            if sys.platform != "win32":
+                os.kill(handle.proc.pid, signal.SIGCONT)
+            handle.proc.kill()
+            handle.proc.wait(timeout=5)
+        if not handle.log_fh.closed:
+            handle.log_fh.close()
+
+
+def _start(
+    capture_engine: Path, session: Path, name: str, started: list[capture.CaptureHandle]
+) -> capture.CaptureHandle:
+    handle = capture.start_capture(
         session,
         0,
         backend=capture.CaptureBackend("odj-audio", str(capture_engine)),
@@ -189,19 +209,22 @@ def _start(capture_engine: Path, session: Path, name: str) -> capture.CaptureHan
         device_name=name,
         startup_check_s=0.5,
     )
+    started.append(handle)
+    return handle
 
 
 def test_odj_audio_records_wav_by_name_and_stops_when_stdin_closes(
-    tmp_path: Path, capture_engine: Path, null_input: str
+    tmp_path: Path, capture_engine: Path, null_input: str, started: Any
 ):
     """[if] REC starts on odj-audio by name [then] it writes WAV from that input and stops on stdin EOF."""
     session = tmp_path / "session"
-    handle = _start(capture_engine, session, null_input)
+    handle = _start(capture_engine, session, null_input, started)
     assert handle.backend == "odj-audio"
     assert handle.argv[handle.argv.index("--device") + 1] == null_input
     assert handle.stderr_log == session / "odj-audio.stderr.log"
     assert _wait_for(lambda: handle.current_state() == "recording")
-    time.sleep(0.3)
+    # A header is rewritten every second, so a segment with frames proves audio is landing.
+    assert _wait_for(lambda: any(p.stat().st_size > 44 for p in sets_paths.segment_files(session)))
     assert capture.stop_capture(handle) == 0
     assert handle.current_state() == "stopped"
     assert handle.log_fh.closed and handle.proc.stdin is not None and handle.proc.stdin.closed
@@ -234,9 +257,9 @@ def test_an_input_that_is_gone_refuses_rec_with_the_reason(tmp_path: Path, captu
     assert sets_paths.segment_files(tmp_path / "s") == []
 
 
-def test_a_capture_that_dies_reads_failed(tmp_path: Path, capture_engine: Path, null_input: str):
+def test_a_capture_that_dies_reads_failed(tmp_path: Path, capture_engine: Path, null_input: str, started: Any):
     """[if] odj-audio exits without its stopped line [then] REC shows the capture failed."""
-    handle = _start(capture_engine, tmp_path / "s", null_input)
+    handle = _start(capture_engine, tmp_path / "s", null_input, started)
     assert _wait_for(lambda: handle.current_state() == "recording")
     handle.proc.kill()
     handle.proc.wait(timeout=5)
@@ -245,9 +268,9 @@ def test_a_capture_that_dies_reads_failed(tmp_path: Path, capture_engine: Path, 
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGSTOP is POSIX; Windows has no way to freeze a process")
-def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, capture_engine: Path, null_input: str):
+def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, capture_engine: Path, null_input: str, started: Any):
     """[if] closing stdin does not end it (here: frozen) [then] stop still returns, by kill."""
-    handle = _start(capture_engine, tmp_path / "s", null_input)
+    handle = _start(capture_engine, tmp_path / "s", null_input, started)
     assert _wait_for(lambda: handle.current_state() == "recording")
     os.kill(handle.proc.pid, signal.SIGSTOP)
     assert capture.stop_capture(handle, timeout=0.3) != 0
@@ -265,36 +288,36 @@ PROMPT_LINES = [
 ]
 
 
-def _follow(lines: list[bytes]) -> tuple[CaptureState, list[str], io.BytesIO]:
-    """Feed ``lines`` through a pipe to the reader; the states it passed through."""
+def _follow(lines: list[bytes], expect: list[str]) -> tuple[CaptureState, io.BytesIO]:
+    """Feed ``lines`` through a pipe to the reader, one at a time, waiting after
+    each for the state ``expect`` names (the reader logs a line before it sets
+    the state, so the log is not the signal)."""
     read_fd, write_fd = os.pipe()
     state = CaptureState("starting")
     log = io.BytesIO()
-    seen: list[str] = []
     with os.fdopen(read_fd, "rb") as stdout, os.fdopen(write_fd, "wb", buffering=0) as feed:
         thread = follow_record_output(stdout, log, state)
-        for line in lines:
+        for line, want in zip(lines, expect, strict=True):
             feed.write(line)
-            assert _wait_for(lambda: log.getvalue().endswith(line), timeout=5)
-            seen.append(state.value)
+            assert _wait_for(lambda w=want: state.value == w, timeout=5), (line, want, state.value)
         feed.close()
         thread.join(timeout=5)
-    return state, seen, log
+    assert not thread.is_alive()
+    return state, log
 
 
 def test_rec_waits_while_the_macos_microphone_prompt_is_up():
     """[if] macOS is still asking for the microphone [then] the state is waiting, not recording,
     until audio is written (Silver lost 42 s to a REC that looked live during the prompt)."""
-    state, seen, log = _follow(PROMPT_LINES)
-    assert seen == ["waiting_permission", "recording", "stopped"]
+    state, log = _follow(PROMPT_LINES, ["waiting_permission", "recording", "stopped"])
     assert state.value == "stopped"
     assert log.getvalue() == b"".join(PROMPT_LINES)
 
 
 def test_output_that_ends_without_stopped_is_a_failed_capture():
     """Control: the same prompt, then the engine gone, ends failed, not waiting."""
-    state, seen, _ = _follow(PROMPT_LINES[:1])
-    assert seen == ["waiting_permission"] and state.value == "failed"
+    state, _ = _follow(PROMPT_LINES[:1], ["waiting_permission"])
+    assert state.value == "failed"
 
 
 # ---------------------------------------------------------------------------
