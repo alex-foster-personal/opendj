@@ -1,3 +1,5 @@
+import { runAutomaticRejoin } from './automatic-rejoin';
+export { installAutomaticRejoinRunner, type AutomaticRejoinRunner } from './automatic-rejoin';
 import {
 	SILENT_METER_READING,
 	createMasterMeterSource,
@@ -1161,7 +1163,7 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 		// Under the shared sync claim, queued behind the command that moved the
 		// master, so a load, seek or tempo sent after it never completes first
 		// and then has its follower position or tempo overwritten by this.
-		void _automaticRejoinRunner(async () => {
+		void runAutomaticRejoin(async () => {
 			if (_masterDeck !== next || !deckStates[next].playing) return;
 			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
 			await _synchronizeFollowers(next, followers, { reanchorDecks: new Set(followers) });
@@ -1170,19 +1172,6 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 	return next;
 }
 
-/** Runs an automatic master handoff's follower re-join. The dispatcher installs
- * one that takes every deck's scope plus 'sync' (installed rather than
- * imported, since this module is imported FROM there); until then it runs now. */
-export type AutomaticRejoinRunner = (work: () => Promise<void>) => Promise<void>;
-let _automaticRejoinRunner: AutomaticRejoinRunner = (work) => work();
-
-export function installAutomaticRejoinRunner(runner: AutomaticRejoinRunner): () => void {
-	const previous = _automaticRejoinRunner;
-	_automaticRejoinRunner = runner;
-	return () => {
-		_automaticRejoinRunner = previous;
-	};
-}
 
 function _maybeHandoffOnAir(): void {
 	if (_masterMode !== 'auto' || _masterDeck === null) return;

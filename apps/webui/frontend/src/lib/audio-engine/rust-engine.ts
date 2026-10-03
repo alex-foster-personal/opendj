@@ -1,3 +1,4 @@
+import { runAutomaticRejoin } from '$lib/rb/automatic-rejoin';
 /**
  * Rust engine mode's connection to `odj-audio`: start and connect, load a
  * library track with its beatgrid, forward the commands the engine plays as
@@ -30,6 +31,7 @@ import {
 	decideOnPage,
 	electAndRejoin,
 	phaseLockTick,
+	invalidateRustPhaseLocks,
 	rustHotCueDriver,
 	rustMaster
 } from './rust-transport';
@@ -170,6 +172,8 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 /** Load a library track: the page's metadata fetches plus the engine load. */
 export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<void> {
 	if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+	invalidateRustPhaseLocks(deck);
+	deckStates[deck].load_generation += 1;
 	loadFences[deck] = Infinity;
 	holdLoadFailures(deck);
 	let trackRes, anlz, slots, loaded: unknown;
@@ -207,7 +211,6 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.has_rb_mapping = track.has_rb_mapping;
 	st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
 	displayLoops[deck] = st.loop;
-	st.load_generation += 1;
 	const loadedPath =
 		typeof loaded === 'object' && loaded !== null && 'path' in loaded && typeof loaded.path === 'string'
 			? loaded.path
@@ -315,7 +318,12 @@ export function applyLoadFailed(e: EngineLoadFailed): void {
 	// lost its audio hands sync to the next deck rather than lingering.
 	const deck = e.deck as DeckId;
 	cancelArmedJump(deck);
-	if (rustMaster.deck === deck) void electAndRejoin({ force: true });
+	if (rustMaster.deck === deck) void runAutomaticRejoin(async () => {
+		if (rustMaster.deck !== deck || deckStates[deck].stable_id !== null || loadFences[deck] === Infinity) return;
+		await electAndRejoin({ force: true });
+	}).catch((error: unknown) => {
+		st.sync_error = `Beat Sync re-join failed: ${error instanceof Error ? error.message : String(error)}`;
+	});
 }
 
 /** Transport truth from the engine: play state, tempo, loop, length, key. */
@@ -354,7 +362,10 @@ export function mirrorEngineState(s: EngineState): void {
 	}
 	// Not awaited: a state frame must not wait on a re-join; `_reanchor`
 	// reports a follower that cannot lock in its own sync_error.
-	if (masterStopped) void electAndRejoin();
+	if (masterStopped) void runAutomaticRejoin(() => electAndRejoin()).catch((error: unknown) => {
+		const master = rustMaster.deck;
+		if (master !== null) deckStates[master].sync_error = `Beat Sync re-join failed: ${error instanceof Error ? error.message : String(error)}`;
+	});
 	// Each frame is a fresh playhead for both decks: keep followers on phase.
 	phaseLockTick();
 }

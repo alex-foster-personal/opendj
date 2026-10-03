@@ -1,3 +1,5 @@
+import { phaseLocks, type PhaseLock } from './rust-phase-lock';
+export { phaseLocksForTest, invalidateRustPhaseLocks } from './rust-phase-lock';
 /**
  * Rust engine mode's page-decided commands: play, pause, CUE, seek, tempo,
  * Beat Sync, master and quantize, plus the hot-cue driver. Each is DECIDED on
@@ -14,7 +16,7 @@ import {
 	pausedMasterSelectionBlockers
 } from '$lib/rb/audio-engine-guards';
 import { syncModeForBeatSyncMax } from '$lib/rb/beat-sync-decisions';
-import { resolveArmAtPosition, type TempoNormalization } from '$lib/rb/beat-sync-math';
+import { resolveArmAtPosition } from '$lib/rb/beat-sync-math';
 import type { DeckState } from '$lib/rb/deck-state-types';
 import { hotCuesFromAnlz } from '$lib/rb/hot-cue-from-anlz';
 import { electMaster } from '$lib/rb/master-election';
@@ -22,7 +24,7 @@ import type { PerformanceCommand, PerformanceHotCueDriver } from '$lib/rb/perfor
 import { phaseLockDecision, phaseLockFeedForwardBase, phaseLockShouldSend } from '$lib/rb/phase-lock';
 import { uiPrefs } from '$lib/rb/prefs.svelte';
 import type { EngineCommand } from './client';
-import { DECKS, type DeckId, displayLoops, notify, playheadMs, send } from './rust-link';
+import { DECKS, type DeckId, displayLoops, loadFences, notify, playheadMs, send } from './rust-link';
 import {
 	electionInputFrom,
 	lateJumpPositionMs,
@@ -117,6 +119,15 @@ async function _join(
 	} = {}
 ): Promise<void> {
 	const st = deckStates[follower];
+	const followerGeneration = st.load_generation;
+	const masterGeneration = deckStates[master].load_generation;
+	const followerTrack = st.stable_id;
+	const masterTrack = deckStates[master].stable_id;
+	const current = (): boolean => st.load_generation === followerGeneration &&
+		deckStates[master].load_generation === masterGeneration &&
+		st.stable_id === followerTrack && deckStates[master].stable_id === masterTrack &&
+		loadFences[follower] !== Infinity && loadFences[master] !== Infinity;
+	if (loadFences[follower] === Infinity || loadFences[master] === Infinity) return;
 	// No phase-lock trim may land between this join's tempo and the lock it
 	// records: the trim would be relative to the old base.
 	delete phaseLocks[follower];
@@ -134,7 +145,13 @@ async function _join(
 	if (options.play) cmds.push({ type: 'play', deck: follower, playing: true });
 	// Sent together: the engine applies what arrives before its next block
 	// in that block, so tempo, position and start land as one.
-	await Promise.all(cmds.map(send));
+	try {
+		await Promise.all(cmds.map(send));
+	} catch (error) {
+		if (!current()) return;
+		throw error;
+	}
+	if (!current()) return;
 	st.pitch = join.tempo;
 	st.sync_error = null;
 	if (options.play) _setPlaying(follower, true);
@@ -149,29 +166,6 @@ async function _join(
 	};
 }
 
-/**
- * What a join leaves for the continuous phase lock (`phaseLockTick`): the
- * BASE tempo every trim is relative to, and what the join assumed about the
- * master. A lock whose assumptions no longer hold is dropped, never trimmed.
- */
-interface PhaseLock {
-	master: DeckId;
-	masterTempo: number;
-	stableId: string | null;
-	base: number;
-	normalization: TempoNormalization;
-	/** The tempo the engine was last sent for this follower. */
-	sent: number;
-	/** A trim or re-seek is in flight; the next tick waits for it. */
-	busy: boolean;
-}
-
-const phaseLocks: Partial<Record<DeckId, PhaseLock>> = {};
-
-/** The locks in force, for tests. */
-export function phaseLocksForTest(): Readonly<Partial<Record<DeckId, Readonly<PhaseLock>>>> {
-	return phaseLocks;
-}
 
 function _lockHolds(deck: DeckId, lock: PhaseLock, master: DeckId): boolean {
 	const st = deckStates[deck];
