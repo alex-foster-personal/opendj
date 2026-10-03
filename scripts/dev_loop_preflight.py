@@ -1,6 +1,7 @@
 """Refuse to start a dev loop whose code is BEHIND the shipped app.
 
     python -m scripts.dev_loop_preflight [--app "/Applications/Open DJ.app"] [--allow-behind-main]
+        [--sync-ref origin/af--preview-live] [--preview-app "/Applications/Open DJ (Preview).app"]
 
 The Chrome dev loop (docs/architecture/chrome-dev-loop.md) serves whatever commit the
 worktree sits on. The shipped DMG is stamped with its own commit in
@@ -17,6 +18,17 @@ Checks, in order:
    ``[dev-loop] HEAD 6341f421 (af--docs-x) | shipped 4158f361 +23 | main 525e16a9 +2 | OK``
 
 No app installed -> check 1 is reported as ``shipped n/a`` and skipped, never assumed.
+
+Which installed app check 1 judges (issue #5162, Sat 3 Oct 2026): a loop that follows a shared
+preview branch (``--sync-ref`` other than origin/main, e.g. the Air on af--preview-live) is a
+preview OF the Preview app, not of the plain app, which moves with main. Judging it against
+the plain app refused every boot once a newer main DMG was installed, and KeepAlive relaunched
+it about 360 times an hour. So ``--sync-ref`` picks the reference: origin/main -> ``--app``,
+anything else -> ``--preview-app``. Every other part of check 1 is unchanged.
+
+    [if] the loop follows a preview branch, the plain app is newer and the Preview app is in HEAD [then] exit 0
+    [if] the loop follows a preview branch and the Preview app carries runtime fixes HEAD lacks [then] exit 2
+    [if] the loop follows origin/main and only the Preview app is in HEAD [then] the plain app still decides
 
 History rewrite (Thu 3 Sep 2026, #911): the shipped app is stamped with a SHA from the OLD
 history, which shares no merge base with the rewritten one, so check 1 cannot be answered
@@ -40,6 +52,8 @@ import sys
 from pathlib import Path
 
 DEFAULT_APP = Path("/Applications/Open DJ.app")
+DEFAULT_PREVIEW_APP = Path("/Applications/Open DJ (Preview).app")
+MAIN_REF = "origin/main"
 MANIFEST_REL = Path("Contents/Resources/payload/manifest.json")
 
 
@@ -110,9 +124,25 @@ def _shipped_sha(app: Path) -> str | None:
     return sha
 
 
+def _reference_app(sync_ref: str, app: Path, preview_app: Path) -> Path:
+    """The installed build this loop previews: the plain app on main, the Preview app otherwise."""
+    return app if sync_ref == MAIN_REF else preview_app
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--app", type=Path, default=DEFAULT_APP)
+    parser.add_argument(
+        "--preview-app",
+        type=Path,
+        default=DEFAULT_PREVIEW_APP,
+        help="the app check 1 judges when --sync-ref is a preview branch",
+    )
+    parser.add_argument(
+        "--sync-ref",
+        default=MAIN_REF,
+        help=f"the ref this loop follows; anything but {MAIN_REF} is judged against --preview-app",
+    )
     parser.add_argument("--allow-behind-main", action="store_true")
     parser.add_argument("--no-fetch", action="store_true", help="skip `git fetch origin main`")
     parser.add_argument(
@@ -133,7 +163,10 @@ def main(argv: list[str] | None = None) -> int:
     verdict = "OK"
     code = 0
 
-    shipped = _shipped_sha(args.app)
+    reference_app = _reference_app(args.sync_ref, args.app, args.preview_app)
+    if args.sync_ref != MAIN_REF:
+        parts.append(f"follows {args.sync_ref}, judged against {reference_app.name}")
+    shipped = _shipped_sha(reference_app)
     if shipped is None:
         parts.append("shipped n/a (no app installed)")
     elif _is_ancestor(shipped, head):
