@@ -368,8 +368,9 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
     if not beat_this_notice.is_file():
         raise LicenseInventoryError(f"{beat_this_notice} missing: the weights ship without their notice")
     font_license = repo_root / FRONTEND_RELATIVE / "static/fonts/Anybody-OFL.txt"
-    if not font_license.is_file():
-        raise LicenseInventoryError(f"{font_license} missing")
+    staged_fonts = list((payload_dir / "app" / FRONTEND_RELATIVE / "build/fonts").glob("anybody-*.woff2"))
+    if not font_license.is_file() or not staged_fonts:  # attribute only a font the payload ships (Sol P1)
+        raise LicenseInventoryError(f"{font_license} missing, or no Anybody font in the staged SPA: {staged_fonts}")
     mpg123_copying = repo_root / "docs/legal/mpg123-COPYING.txt"
     if not mpg123_copying.is_file():
         raise LicenseInventoryError(f"{mpg123_copying} missing: mpg123 (LGPL-2.1) ships with no license text")
