@@ -88,10 +88,13 @@ def platform_neutral_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_onelibrary_dependency_contract_is_declared_for_ci() -> None:
-    """Both CI install contracts provide sqlcipher3, and neither brings back rbox.
+    """sqlcipher3 is a core dep; rbox is not, and CI still pins it.
 
-    rbox 0.1.6+ is GPL-3.0-only; the OneLibrary handle is our own
-    (apps/sync/usb/pioneer/onelibrary.py) over sqlcipher3-wheels.
+    The OneLibrary handle is apps/sync/usb/pioneer/onelibrary.py over
+    sqlcipher3-wheels. rbox is GPL-3.0-only (issue #5143): not a core
+    dependency, optional usb-export extra, repeated on dev, and present in
+    requirements.txt because that file is what CI installs. First use goes
+    through ensure_rbox(); the desktop payload does not ship the wheel.
     """
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
     deps = pyproject["project"]["dependencies"]
@@ -99,13 +102,17 @@ def test_onelibrary_dependency_contract_is_declared_for_ci() -> None:
         "pyproject.toml must declare sqlcipher3-wheels so fresh Windows parity "
         "environments install the OneLibrary runtime."
     )
-    assert not any(d.split("=")[0].split(">")[0].strip() == "rbox" for d in deps)
+    assert "rbox==0.1.7" not in deps
+    assert not any(d.split("=")[0].split(">")[0].split("[")[0].strip() == "rbox" for d in deps)
+    optional = pyproject["project"]["optional-dependencies"]
+    assert optional["usb-export"] == ["rbox==0.1.7"]
+    assert "rbox==0.1.7" in optional["dev"]
     requirements = (REPO_ROOT / "requirements.txt").read_text("utf-8").splitlines()
     assert any(r.startswith("sqlcipher3-wheels") for r in requirements), (
         "requirements.txt must declare sqlcipher3-wheels so the Linux CI job "
         "installs the OneLibrary runtime."
     )
-    assert not any(r.startswith("rbox") for r in requirements)
+    assert "rbox==0.1.7" in requirements
 
 
 @pytest.fixture

@@ -32,6 +32,9 @@ Regression one-liners:
   - if a crash between the strip and entry writes leaves the entry but not the strip then broken
   - if a same-mtime, same-size rename to a new inode still reads as cache-current then broken
   - if an in-place rewrite with a restored mtime and same inode reads as cache-current then broken
+
+[if] an unmapped track is decoded locally [then] peaks cache on disk and failures stay
+explicit, [else stop].
 """
 from __future__ import annotations
 
@@ -131,9 +134,11 @@ def client(
     monkeypatch.setattr(
         rb_config, "LOCAL_WAVEFORM_CACHE_DIR", tmp_path / "local-waveform-cache"
     )
+    monkeypatch.setenv("MDT_LIBRARY_MODE", "local")
 
     app = FastAPI()
-    app.state.backend = make_backend()
+    app.state.backend = make_backend(state_path)
+    app.state.state_db_path = str(state_path)
     app.include_router(router, prefix="/api/v1")
     with TestClient(app) as test_client:
         yield test_client

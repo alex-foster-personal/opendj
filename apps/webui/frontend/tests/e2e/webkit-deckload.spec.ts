@@ -937,10 +937,17 @@ test.describe('webkit performance controls on the engine-served build', () => {
 		page = await browser.newPage();
 		page.on('console', _onConsole);
 		page.on('pageerror', (error) => pageErrors.push(String(error)));
-		// The app's REAL persistence, not a stub: a prefs blob it would have
-		// written itself, so the double-click load takes the deterministic
-		// no-confirm path. The perf ring is cleared so a stale entry from an
-		// earlier run cannot be mistaken for this run's telemetry.
+		// The app's REAL persistence, not a stub: the remembered choice it would
+		// have written itself, on disk AND in localStorage, so the double-click
+		// load takes the deterministic no-confirm path. Disk is authoritative for
+		// confirm keys since PR #4014 (hydrateConfirmFromDisk drops a key the disk
+		// map lacks), so a localStorage-only seed is reset to "ask" by the boot
+		// GET. The perf ring is cleared so a stale entry from an earlier run
+		// cannot be mistaken for this run's telemetry.
+		const put = await page.request.put('/api/v1/ui-prefs', {
+			data: { confirm: { dblclick_load_play: false } }
+		});
+		expect(put.ok(), `seed confirm.dblclick_load_play: HTTP ${put.status()}`).toBe(true);
 		await page.addInitScript(
 			({ prefsKey, perfKey }) => {
 				window.localStorage.setItem(
@@ -963,6 +970,9 @@ test.describe('webkit performance controls on the engine-served build', () => {
 	});
 
 	test.afterAll(async () => {
+		await page.request.put('/api/v1/ui-prefs', {
+			data: { confirm: { dblclick_load_play: null } }
+		});
 		await page.close();
 	});
 

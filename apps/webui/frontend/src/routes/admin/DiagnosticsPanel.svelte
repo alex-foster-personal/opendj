@@ -17,6 +17,7 @@
 	import { health } from '$lib/stores.svelte';
 	import { staleness } from './health-history';
 	import { fetchWorktreePorts, type WorktreePorts } from './diagnostics-api';
+	import LibraryOpsPanel from './LibraryOpsPanel.svelte';
 
 	let busState = $state<ConnectionState>(getConnectionState());
 	let ports = $state<WorktreePorts | null>(null);
@@ -207,6 +208,8 @@ frontend http://127.0.0.1:{ports.frontend}
 proxy    {ports.api_proxy_target}</pre>
 	{/if}
 </section>
+
+<LibraryOpsPanel />
 
 <style>
 	.panel {

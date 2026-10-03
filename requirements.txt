@@ -11,6 +11,12 @@ rich>=13.0
 # (zlib license; replaced GPL-3.0-only rbox on Thu 1 Oct 2026).
 sqlcipher3-wheels>=0.5.7
 
+# rbox is not a core dependency (GPL-3.0-only). Optional extra usb-export,
+# repeated on the dev extra, fetched on first use by ensure_rbox(). CI
+# installs this file, so the pin stays here; the desktop payload must not
+# ship it. Keep this exact: the writer capability contract is rbox 0.1.7.
+rbox==0.1.7
+
 # Phase 7 -- chromaprint fingerprinting. The fpcalc CLI is an external
 # dependency installed via `brew install chromaprint`. See
 # scripts/check-chromaprint.sh + docs/install-notes.md.
