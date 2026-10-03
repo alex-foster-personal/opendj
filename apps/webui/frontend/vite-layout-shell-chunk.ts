@@ -142,6 +142,20 @@ export function bootManualChunks(): (moduleId: string, meta: ManualChunkMeta) =>
 			);
 			chunksByGraph.set(meta.getModuleInfo, chunkByModuleId);
 		}
-		return chunkByModuleId.get(moduleId);
+		if (chunkByModuleId.size === 0) return undefined;
+		const boot = chunkByModuleId.get(moduleId);
+		if (boot !== undefined) return boot;
+		// These views are all fetched when the drawer first mounts. Keep
+		// their shared UI code together without pulling its runtime
+		// dependencies into another surface (onlyExplicitManualChunks).
+		if (/\/src\/lib\/components\/rb\/(?:MidiPanel|midi\/(?:MidiDeviceList|MidiLearnLog|MidiLearnLogRows|MidiLearnLogPopout))\.svelte$/.test(moduleId)) {
+			return 'midi-drawer-ui';
+		}
+		// The deferred feedback shell loads its three roots together.
+		// Only exclusive child views/helpers join them; route-shared widget stays separate.
+		if (/\/src\/lib\/rb\/feedback-pin-(?:draft-restore|draft-persist|anchor-highlight|placement|position)\.ts$/.test(moduleId) || /\/src\/lib\/components\/rb\/(?:FeedbackPinLayer|FeedbackPinShellButton|FeedbackDock|FeedbackSupportPanel|FeedbackPinDraftBubble|FeedbackPinCard|feedback\/FeedbackPinMarkers)\.svelte$/.test(moduleId)) {
+			return 'feedback-shell-ui';
+		}
+		return undefined;
 	};
 }

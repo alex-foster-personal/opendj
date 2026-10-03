@@ -49,9 +49,14 @@ export default defineConfig(({ command, mode }) => {
 			// already recorded for the performance budget, so these deltas are on
 			// the same footing as the numbers the ceilings were derived from.
 			//
-			// Defaults only, deliberately. `compress.passes: 2` was measured and
-			// bought a further 85 bytes, which does not earn a tuning knob that a
-			// later reader has to reason about.
+			// The combined main + Preview graph needs another compression pass
+			// over function declarations. Terser hoists declarations that JavaScript
+			// already hoists; extra safe compression passes then remove their
+			// repeated wrappers. No unsafe transforms or property mangling.
+			// Sat 3 Oct 2026, same source graph as 028d06401 + explicit UI chunks:
+			// library 255762 -> 257475, performance 249829 -> 247002,
+			// other-lazy 298278 -> 296855 gzip bytes. The total falls by 2537.
+			// Worklet assets bypass minification. Real UI/runtime checks still apply.
 			//
 			// This does NOT touch the AudioWorklet processors: they are emitted as
 			// assets (see assetsInlineLimit below), never as chunks, so the minifier
@@ -76,11 +81,11 @@ export default defineConfig(({ command, mode }) => {
 			// workaround guards nothing here. Measured Thu 1 Oct 2026 on
 			// af--preview-mixtour-io 7e14328ea0: library 270,039 -> 269,310,
 			// performance 242,107 -> 241,529, other-lazy 293,004 -> 292,698.
-			terserOptions: { safari10: false },
+			terserOptions: { safari10: false, ecma: 2020, compress: { passes: 5, hoist_funs: true } },
 			rollupOptions: {
 				// See vite-layout-shell-chunk.ts for what this merges, the
 				// measured bytes, and why it does not change behavior.
-				output: { manualChunks: bootManualChunks() }
+				output: { manualChunks: bootManualChunks(), onlyExplicitManualChunks: true }
 			},
 			// AudioWorklet modules must stay REAL FILES. Anything under the
 			// default 4096-byte inline limit is emitted as a `data:` URI, and
