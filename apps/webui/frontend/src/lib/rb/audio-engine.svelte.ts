@@ -3372,13 +3372,14 @@ class RbAudioEngine implements AudioEngine {
 	async pause(deck: DeckId, pressT0Ms?: number): Promise<void> {
 		return withPauseOrigin('command', async () => {
 			this.clearQuantizedLaunch(deck);
-			const { st, rt } = _requireLoaded(deck, 'pause');
+			const rt = _rt[deck], st = deckStates[deck];
+			if (rt.processor === null || rt.durationSec <= 0 || st.stable_id === null) {
+				rt.desiredActive = st.playing = st.audible = st.transport_pending = false;
+				return;
+			}
 			if (!rt.desiredActive) return; // already paused is a valid state
 			_bumpReanchorOperation(deck);
 			if (_ctx === null) throw new Error('pause: audio graph not initialised');
-			// Unrefusable by construction: with no grid the memory cue lands on the
-			// exact pause point instead of a snapped one. A deck that cannot be
-			// stopped is the worst failure this transport has.
 			const pauseBeats = _quantizeGrid(st);
 			const when = _futureScheduleTime(deck);
 			const positionSec = await _schedulePress(
@@ -3393,8 +3394,7 @@ class RbAudioEngine implements AudioEngine {
 				: positionSec * 1000;
 			st.cue_ms = cueMs;
 			if (st.slip_active) _clearSlip(deck);
-			// LAZY-STEMS: the deck has just come to rest, so a stem bundle that
-			// finished decoding mid-play can land now without touching live audio.
+			// LAZY-STEMS: rest is the window a mid-play stem decode can land.
 			_drainPendingStemUpgrade(deck);
 		});
 	}

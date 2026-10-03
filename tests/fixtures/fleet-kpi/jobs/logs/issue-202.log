@@ -1,1 +1,0 @@
-TIER=codex ACCOUNT=workers-token MODEL_ARGS=codex:gpt-5.6-terra EFFORT=high MODE=fresh SID=cccc ATTEMPT_START=2026-09-04T07:23:20ZZ

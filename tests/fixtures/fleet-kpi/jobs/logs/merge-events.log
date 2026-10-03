@@ -1,4 +1,0 @@
-2026-09-04T16:00:00Z MERGE lane=backend pr=1000 kind=self
-2026-09-04T17:45:00Z MERGE lane=backend pr=1131 kind=self
-2026-09-04T18:00:00Z MERGE lane=frontend-hotspots pr=1132 kind=self
-2026-09-04T18:10:00Z MERGE lane=merge-odd pr=1133 kind=merge-lane

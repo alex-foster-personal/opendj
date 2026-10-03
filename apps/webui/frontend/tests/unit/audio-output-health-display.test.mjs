@@ -61,6 +61,28 @@ describe('describeAudioOutputHealth', () => {
 		assert.ok(!/broken/i.test(d.title));
 	});
 
+	it('idle while a deck plays muted => says a deck is playing, never "nothing is playing"', () => {
+		const d = mod.describeAudioOutputHealth(snap('idle', 'ok'));
+		assert.equal(d.cssClass, 'idle');
+		assert.match(d.title, /A deck is playing, but the master output is muted or silent/);
+		assert.doesNotMatch(d.title, /Nothing is playing/);
+	});
+
+	it('idle because the browser binding is dead => says the binding is broken, not muted', () => {
+		for (const verdict of ['dead', 'dead-escalated']) {
+			const d = mod.describeAudioOutputHealth(snap('idle', verdict));
+			assert.equal(d.cssClass, 'idle');
+			assert.match(d.title, /Browser binding BROKEN/);
+			assert.doesNotMatch(d.title, /muted or silent|Nothing is playing/);
+		}
+	});
+
+	it('idle with no deck playing => says nothing is playing', () => {
+		const d = mod.describeAudioOutputHealth(snap('idle', 'idle'));
+		assert.match(d.title, /Nothing is playing right now/);
+		assert.doesNotMatch(d.title, /A deck is playing/);
+	});
+
 	it('ok => accent colour, title states the measured latency', () => {
 		const d = mod.describeAudioOutputHealth(snap('ok', 'ok', 192));
 		assert.equal(d.cssClass, 'ok');

@@ -80,18 +80,29 @@ export function installShellCommandPoll(deps: ShellCommandDeps = defaultDeps()):
 		if (handling) return;
 		handling = true;
 		try {
-			const response = await fetch(`${API_BASE}${NEXT_PATH}`);
+			let response: Response;
+			try {
+				response = await fetch(`${API_BASE}${NEXT_PATH}`);
+			} catch {
+				// Engine unreachable: same class as usage-heartbeat, not an
+				// unhandledrejection (Safari `Load failed`).
+				return;
+			}
 			if (!response.ok) return;
 			const body = (await response.json()) as ShellNextBody | null;
 			if (body == null || typeof body.id !== 'string' || body.kind !== 'shell') {
 				return;
 			}
 			const result = await dispatchShellCommand(body, deps);
-			await fetch(`${API_BASE}/api/v1/commands/${body.id}/result`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(result)
-			});
+			try {
+				await fetch(`${API_BASE}/api/v1/commands/${body.id}/result`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify(result)
+				});
+			} catch {
+				return;
+			}
 		} finally {
 			handling = false;
 		}

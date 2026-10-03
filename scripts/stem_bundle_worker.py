@@ -73,6 +73,10 @@ works as expected.
       model load, no GPU spend
   OK+run guard test with a sabotage-verify pass:
     tests/scripts/test_stem_bundle_worker_codec.py
+  OK+run no ffmpeg (the installed app): non-WAV decodes via ``odj-audio
+    decode`` into a temp WAV, neither -> raise before model load, and mp3
+    policy parts are FLAC with size_policy.codec_fallback (STEM-50, STEM-51).
+    tests/scripts/test_stem_bundle_worker_decode.py
 
 -Claude
 """
@@ -183,34 +187,55 @@ def _guard_duration(source_s: float, model_s: float) -> None:
 # ----- load / separate -------------------------------------------------------
 
 
-def _load_audio(audio_path: Path, model: Any) -> tuple[Any, int, float]:
-    """Return (wav[C,T] float tensor at model rate, source_sr, source_duration_s)."""
-    import torch
-    from demucs.audio import AudioFile, convert_audio
+def _ffmpeg_reachable() -> bool:
+    from apps.shared.odj_audio_decode import ffmpeg_on_path
 
+    return ffmpeg_on_path()
+
+
+def _read_wav(wav_path: Path, model: Any) -> tuple[Any, int, float]:
+    """(wav[C,T] at model rate, source_sr, duration_s) of a WAV, via soundfile."""
+    import soundfile as sf
+    import torch
+    from demucs.audio import convert_audio
+
+    info = sf.info(str(wav_path))
+    source_sr = int(info.samplerate)
+    source_duration_s = float(info.frames) / source_sr
+    data, read_sr = sf.read(str(wav_path), dtype="float32", always_2d=True)
+    if int(read_sr) != source_sr:
+        raise RuntimeError(f"soundfile sr mismatch: header {source_sr} read {read_sr}")
+    wav = convert_audio(torch.from_numpy(data.T), source_sr, model.samplerate, model.audio_channels)
+    return wav, source_sr, source_duration_s
+
+
+def _preflight_decoder(audio_path: Path) -> None:
+    """Raise before the model loads when nothing here decodes the source."""
+    if audio_path.suffix.lower() != ".wav" and not _ffmpeg_reachable():
+        from apps.shared.odj_audio_decode import resolve_odj_audio
+
+        resolve_odj_audio(audio_path)
+
+
+def _load_audio(audio_path: Path, model: Any) -> tuple[Any, int, float]:
+    """Return (wav[C,T] float tensor at model rate, source_sr, source_duration_s).
+
+    WAV: soundfile. Anything else: ffmpeg when it resolves (a development
+    machine, unchanged), else ``odj-audio decode`` (the installed app); with
+    neither, the error names both (STEM-50).
+    """
     suffix = audio_path.suffix.lower()
     if suffix == ".wav":
-        import soundfile as sf
+        return _read_wav(audio_path, model)
 
-        info = sf.info(str(audio_path))
-        source_sr = int(info.samplerate)
-        source_duration_s = float(info.frames) / source_sr
-        data, read_sr = sf.read(str(audio_path), dtype="float32", always_2d=True)
-        if int(read_sr) != source_sr:
-            raise RuntimeError(
-                f"soundfile sr mismatch: header {source_sr} read {read_sr}"
-            )
-        wav = torch.from_numpy(data.T)  # [C, T]
-        wav = convert_audio(wav, source_sr, model.samplerate, model.audio_channels)
-        return wav, source_sr, source_duration_s
+    if not _ffmpeg_reachable():
+        from apps.shared.odj_audio_decode import decoded_wav
 
-    if shutil.which(
-        os.environ.get("MDT_FFMPEG", "ffmpeg")
-    ) is None and not os.environ.get("MDT_FFMPEG"):
-        raise RuntimeError(
-            f"non-WAV input {audio_path.name} needs ffmpeg on PATH "
-            "(or MDT_FFMPEG) / pre-transcode to wav"
-        )
+        with decoded_wav(audio_path, prefix="odj-stem-decode-") as decoded:
+            _log(f"[stem] decoded {audio_path.name} via odj-audio ({decoded.sample_rate} Hz)")
+            return _read_wav(decoded.path, model)
+    from demucs.audio import AudioFile
+
     source_duration_s = _ffprobe_duration_s(audio_path)
     # AudioFile shells to ffmpeg; returns [C, T] at native rate then we convert.
     wav = AudioFile(str(audio_path)).read(
@@ -224,6 +249,18 @@ def _load_audio(audio_path: Path, model: Any) -> tuple[Any, int, float]:
     if not isinstance(wav, _torch.Tensor):
         wav = _torch.as_tensor(wav)
     return wav, model.samplerate, source_duration_s
+
+
+def _effective_output_codec(policy_codec: str) -> tuple[str, str | None]:
+    """(codec to write, why it is not the policy's, or None). MP3 parts need
+    ffmpeg's libmp3lame, which the installed app lacks: there they are FLAC,
+    recorded in the manifest, not a failure after the separation (STEM-51)."""
+    if policy_codec == "mp3" and not _ffmpeg_reachable():
+        return "flac", (
+            "policy codec mp3 needs ffmpeg (libmp3lame), which this install "
+            "does not have; wrote lossless flac instead"
+        )
+    return policy_codec, None
 
 
 def _separate_all(model: Any, wav: Any, device: str) -> dict[str, Any]:
@@ -392,8 +429,12 @@ def write_bundle(
     audio_path = audio_path.resolve()
     # Resolve the output codec before spending any GPU time: an unrecognised
     # source extension is a policy gap, not a guess (UnknownSourceFormatError).
-    output_codec = pol.stem_output_codec_for_source_ext(audio_path.suffix)
-    ext = _stem_file_suffix(audio_path)
+    policy_codec = pol.stem_output_codec_for_source_ext(audio_path.suffix)
+    output_codec, codec_fallback = _effective_output_codec(policy_codec)
+    ext = "." + output_codec
+    if codec_fallback is not None:
+        _log(f"[stem] {codec_fallback}")
+    _preflight_decoder(audio_path)
     source_bytes = audio_path.stat().st_size
 
     device_used = _pick_device(device)
@@ -474,6 +515,8 @@ def write_bundle(
                 "mp3_settings": mp3_settings_by_part or None,
                 "part_bytes": part_sizes,
                 "violations": violations,
+                "policy_codec": policy_codec,
+                "codec_fallback": codec_fallback,
             },
         )
         (tmp / "manifest.json").write_text(
@@ -499,6 +542,7 @@ def write_bundle(
         "wall_s": round(wall_s, 1),
         "realtime_factor": round(wall_s / source_duration_s, 3),
         "size_violations": violations,
+        "codec_fallback": codec_fallback,
     }
     _log(
         f"[stem] done id={stable_id} wall={wall_s:.1f}s "
