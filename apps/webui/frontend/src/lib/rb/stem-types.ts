@@ -29,6 +29,35 @@ export interface StemAlignment {
  * control it can offer -- not a control that happens to be silent. */
 export type StemLayout = 'demucs4' | 'roformer2';
 
+/** Where a stem bundle's secondary load has got to (STEM-48). Each phase is a
+ * NAMED on-deck state, so a stem button that is not live yet always says why:
+ * `probing` asks the engine what exists, `fetching` is the engine pulling a
+ * cloud-only bundle onto this machine, `downloading` is the browser reading the
+ * parts, `decoding` is the audio decode, `waiting` is a decode or a swap held
+ * back for a stated reason, `switching` is the live handoff onto a playing deck. */
+export type StemLoadPhase =
+	| 'probing'
+	| 'fetching'
+	| 'downloading'
+	| 'decoding'
+	| 'waiting'
+	| 'switching';
+
+/** Progress of a cloud fetch, as the engine reads it from the fetch's temp dir. */
+export interface StemFetchProgress {
+	files_total: number;
+	files_done: number;
+	bytes_done: number;
+}
+
+export interface StemLoadDetail {
+	phase: StemLoadPhase;
+	/** Set only while `phase` is `fetching` and the engine has reported it. */
+	progress: StemFetchProgress | null;
+	/** Why a `waiting` load is held; null for every other phase. */
+	reason: string | null;
+}
+
 /** Serializable stem graph capability and control read model. `ready` means
  * every part of the bundle's OWN layout decoded and aligned -- four parts for
  * demucs4, two for roformer2.
@@ -49,4 +78,6 @@ export interface StemDeckState {
 	alignment: StemAlignment | null;
 	controls: Record<StemControl, StemControlState>;
 	error: string | null;
+	/** The named phase of a load in flight; null unless `status` is `loading`. */
+	load: StemLoadDetail | null;
 }

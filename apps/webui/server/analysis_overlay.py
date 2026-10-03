@@ -102,6 +102,7 @@ def selection_tag(fields: dict[str, EffectiveField]) -> str:
             view.source.startswith(analysis_lanes.OWN_BACKEND_PREFIX)
             or view.source == _OWN_ANALYSIS_SOURCE
         )
+        and (view.modified_at or view.status == "missing")
     )
     return "|".join(own)
 

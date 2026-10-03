@@ -27,6 +27,7 @@ from apps.analysis.store import open_conn, upsert_record
 from apps.shared.state import db as state_db
 from apps.shared.state.events import FakeEventBus
 from apps.shared.state.writer import StateWriter
+from apps.smartlists.evaluator import evaluate
 from apps.webui.server.app import create_app
 from apps.webui.server.backend import TrackFilter
 from apps.webui.server.sqlite_backend import SqliteBackend
@@ -156,6 +157,20 @@ def test_tag_bpm_is_served_while_no_own_record_exists(state_path: Path) -> None:
     assert _served_bpm(state_path) == (TAG_BPM, "manual")
     page = SqliteBackend(state_path).list_tracks(TrackFilter(bpm_min=120.0, bpm_max=125.0))
     assert [t.stable_id for t in page.items] == [STABLE_ID]
+
+
+def test_tag_bpm_smartlist_matches_under_implicit_rbx_lane(state_path: Path) -> None:
+    """[if] unpromoted lane, tag bpm only [then] smartlist bpm rule matches, [else stop]."""
+    conn = sqlite3.connect(state_path)
+    try:
+        assert selection.effective_source(conn, "beatgrid") == "rbx"
+        matched = evaluate(
+            {"field": "bpm", "op": "between", "value": [120.0, 125.0]},
+            conn,
+        )
+    finally:
+        conn.close()
+    assert matched == [STABLE_ID]
 
 
 def test_an_own_record_still_wins_over_the_tag_bpm(state_path: Path) -> None:

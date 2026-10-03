@@ -7,9 +7,11 @@ PUT  /api/v1/ui-prefs  - merge patch into data/state/ui-prefs.json
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -62,6 +64,7 @@ _TOPBAR_BOOL_DEFAULTS: dict[str, bool] = {
 # Issue #2854: library browser prefs, wheel sensitivity, MIDI enabled choice.
 LibraryDensity = Literal["compact", "cosy"]
 PlaylistTreeView = Literal["tree", "column"]
+CompatibleBpmDirection = Literal["both", "above", "below", "same"]
 _DEFAULT_HIDE_BROKEN_LINKS = False
 _DEFAULT_DECK_RIGHT_MIRROR = False
 _DEFAULT_PLAYLIST_TREE_VIEW: PlaylistTreeView = "tree"
@@ -473,6 +476,93 @@ def _parse_app_posture(raw: dict[str, Any]) -> str:
     return value
 
 
+def _parse_library_watcher_folders(raw: dict[str, Any]) -> list[str]:
+    if "library_watcher_folders" not in raw:
+        return []
+    value = raw["library_watcher_folders"]
+    if not isinstance(value, list):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "UI_PREFS_INVALID",
+                "message": "library_watcher_folders must be a list of strings",
+            },
+        )
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": "library_watcher_folders must be a list of strings",
+                },
+            )
+        out.append(item)
+    return out
+
+
+# LIBUX-32 compatible filter ranges. Mirrors COMPATIBLE_FILTER_DEFAULTS and
+# validateCompatibleFilterPrefs in apps/webui/frontend/src/lib/rb/compatible-filter-prefs.ts.
+_DEFAULT_COMPATIBLE_FILTER: dict[str, Any] = {
+    "camelot_steps": 1,
+    "bpm_window_bpm": 20.0,
+    "bpm_enabled": True,
+    "allow_half_double": True,
+    "bpm_direction": "both",
+}
+
+
+def _is_bpm_window(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+    )
+
+
+_COMPATIBLE_FILTER_CHECKS: dict[str, tuple[Callable[[Any], bool], str]] = {
+    "camelot_steps": (
+        lambda v: not isinstance(v, bool) and v in (0, 1, 2),
+        "must be 0, 1 or 2",
+    ),
+    "bpm_window_bpm": (_is_bpm_window, "must be a finite number >= 0"),
+    "bpm_enabled": (lambda v: isinstance(v, bool), "must be a boolean"),
+    "allow_half_double": (lambda v: isinstance(v, bool), "must be a boolean"),
+    "bpm_direction": (
+        lambda v: v in ("both", "above", "below", "same"),
+        "must be both|above|below|same",
+    ),
+}
+
+
+def _parse_compatible_filter(raw: Any) -> dict[str, Any]:
+    """Stored compatible-filter ranges over the defaults; a wrong type refuses (422)."""
+    if raw is None:
+        return dict(_DEFAULT_COMPATIBLE_FILTER)
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "UI_PREFS_INVALID", "message": "compatible_filter must be an object"},
+        )
+    out = dict(_DEFAULT_COMPATIBLE_FILTER)
+    for key, (check, rule) in _COMPATIBLE_FILTER_CHECKS.items():
+        if key not in raw:
+            continue
+        value = raw[key]
+        if not check(value):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UI_PREFS_INVALID",
+                    "message": f"compatible_filter.{key} {rule}",
+                },
+            )
+        out[key] = float(value) if key == "bpm_window_bpm" else value
+    return out
+
+
 def _parse_gig_helper(raw: dict[str, Any]) -> str:
     if "gig_helper" not in raw:
         return _DEFAULT_GIG_HELPER
@@ -509,6 +599,8 @@ def _load(path: Path) -> dict[str, Any]:
             **_library_browser_bool_defaults(),
             "library_density": _DEFAULT_LIBRARY_DENSITY,
             "wheel_sensitivity": dict(_DEFAULT_WHEEL_SENSITIVITY),
+            "library_watcher_folders": [],
+            "compatible_filter": dict(_DEFAULT_COMPATIBLE_FILTER),
         }
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -592,6 +684,8 @@ def _load(path: Path) -> dict[str, Any]:
         **_parse_library_browser_bool_prefs(raw),
         "library_density": _parse_library_density(raw),
         "wheel_sensitivity": _parse_wheel_sensitivity(raw.get("wheel_sensitivity")),
+        "library_watcher_folders": _parse_library_watcher_folders(raw),
+        "compatible_filter": _parse_compatible_filter(raw.get("compatible_filter")),
     }
 
 
@@ -615,6 +709,18 @@ class WheelSensitivityOut(BaseModel):
 
     mouse: float = _DEFAULT_WHEEL_SENSITIVITY["mouse"]
     trackpad: float = _DEFAULT_WHEEL_SENSITIVITY["trackpad"]
+
+
+class CompatibleFilterOut(BaseModel):
+    """Compatible-filter ranges (LIBUX-32): Camelot steps plus the BPM window."""
+
+    model_config = ConfigDict(frozen=True)
+
+    camelot_steps: Literal[0, 1, 2] = _DEFAULT_COMPATIBLE_FILTER["camelot_steps"]
+    bpm_window_bpm: float = Field(default=_DEFAULT_COMPATIBLE_FILTER["bpm_window_bpm"], ge=0)
+    bpm_enabled: bool = _DEFAULT_COMPATIBLE_FILTER["bpm_enabled"]
+    allow_half_double: bool = _DEFAULT_COMPATIBLE_FILTER["allow_half_double"]
+    bpm_direction: CompatibleBpmDirection = _DEFAULT_COMPATIBLE_FILTER["bpm_direction"]
 
 
 class LevelCalibrationOut(BaseModel):
@@ -670,6 +776,8 @@ class UiPrefsOut(BaseModel):
     midi_enabled: bool = _DEFAULT_MIDI_ENABLED
     deck_right_mirror: bool = _DEFAULT_DECK_RIGHT_MIRROR
     playlist_tree_view: PlaylistTreeView = _DEFAULT_PLAYLIST_TREE_VIEW
+    library_watcher_folders: list[str] = Field(default_factory=list)
+    compatible_filter: CompatibleFilterOut = Field(default_factory=CompatibleFilterOut)
 
 
 class UiPrefsPatch(BaseModel):
@@ -709,6 +817,8 @@ class UiPrefsPatch(BaseModel):
     midi_enabled: bool | None = None
     deck_right_mirror: bool | None = None
     playlist_tree_view: PlaylistTreeView | None = None
+    library_watcher_folders: list[str] | None = None
+    compatible_filter: CompatibleFilterOut | None = None
 
 
 def _merge_topbar_bool_prefs(current: dict[str, Any], body: UiPrefsPatch) -> None:
@@ -737,6 +847,18 @@ def _merge_lyrics(current: dict[str, Any], body: UiPrefsPatch) -> None:
         value = getattr(body, key)
         if value is not None:
             current[key] = value
+
+
+def _merge_compatible_filter(current: dict[str, Any], body: UiPrefsPatch) -> None:
+    """Merge the named compatible-filter fields onto what is stored (LIBUX-32)."""
+    if body.compatible_filter is None:
+        return
+    current["compatible_filter"] = _parse_compatible_filter(
+        {
+            **current["compatible_filter"],
+            **body.compatible_filter.model_dump(exclude_unset=True),
+        }
+    )
 
 
 def persist_master_muted(request: Request, muted: bool) -> None:
@@ -820,4 +942,31 @@ def _merge_ui_prefs_patch(current: dict[str, Any], body: UiPrefsPatch) -> dict[s
         current["deck_right_mirror"] = body.deck_right_mirror
     if body.playlist_tree_view is not None:
         current["playlist_tree_view"] = body.playlist_tree_view
+    if body.library_watcher_folders is not None:
+        current["library_watcher_folders"] = _parse_library_watcher_folders(
+            {"library_watcher_folders": body.library_watcher_folders}
+        )
+    _merge_compatible_filter(current, body)
     return current
+
+
+class WatcherFoldersValidateIn(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    paths: list[str] = Field(default_factory=list)
+
+
+@router.post("/watcher-folders:validate")
+def validate_watcher_folders(body: WatcherFoldersValidateIn) -> dict[str, bool]:
+    """LIBM-129 v1: existence check only; no watcher daemon."""
+    missing: list[str] = []
+    for raw in body.paths:
+        path = Path(raw)
+        if not path.is_dir():
+            missing.append(raw)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "watcher folder path does not exist", "missing": missing},
+        )
+    return {"ok": True}

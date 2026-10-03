@@ -88,12 +88,16 @@ def platform_neutral_promotion(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_rbox_dependency_contract_is_pinned_for_ci() -> None:
-    """Both CI install contracts must provide the tested rbox runtime."""
+    """CI and the dev extra install rbox; the core deps and the DMG do not.
+
+    rbox is GPL-3.0-only (issue #5143). Fresh Windows parity environments
+    and Linux CI still get the pin through the dev extra and requirements.txt.
+    """
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
-    assert "rbox==0.1.7" in pyproject["project"]["dependencies"], (
-        "pyproject.toml must pin rbox==0.1.7 so fresh Windows parity "
-        "environments install the OneLibrary runtime."
-    )
+    assert "rbox==0.1.7" not in pyproject["project"]["dependencies"]
+    optional = pyproject["project"]["optional-dependencies"]
+    assert optional["usb-export"] == ["rbox==0.1.7"]
+    assert "rbox==0.1.7" in optional["dev"]
     requirements = (REPO_ROOT / "requirements.txt").read_text("utf-8").splitlines()
     assert "rbox==0.1.7" in requirements, (
         "requirements.txt must pin rbox==0.1.7 so the Linux CI job installs "
