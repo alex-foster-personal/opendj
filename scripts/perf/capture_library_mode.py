@@ -20,11 +20,7 @@ from typing import Any
 from scripts.perf.capture_build_identity import _git_sha
 from scripts.perf.capture_kpi_ledger import append_entries, format_appended
 from scripts.perf.capture_library_targets import _verify_capture_targets
-from scripts.perf.perfmode14_scorer import (
-    PERFMODE14_SCORER,
-    _MIN_SCORED_SAMPLES,
-    perfmode14_require_scored_sample_count,
-)
+from scripts.perf.perfmode14_scorer import _MIN_SCORED_SAMPLES
 
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"

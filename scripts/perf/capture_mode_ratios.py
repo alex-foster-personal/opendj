@@ -38,12 +38,7 @@ from scripts.perf.mode_ratio_identity import (
     _capture_identity_reason,
 )
 from scripts.perf.mode_ratio_engine import EngineTarget, verify_engine_target
-from scripts.perf.mode_ratio_sampler import (
-    _ProcessTreeSampler,
-    _PsRow,
-    _parse_ps_table,
-    _read_ps_by_pid,
-)
+from scripts.perf.mode_ratio_sampler import _ProcessTreeSampler
 from scripts.perf.perfmode14_scorer import (
     _MIN_SCORED_SAMPLES,
     perfmode14_median,

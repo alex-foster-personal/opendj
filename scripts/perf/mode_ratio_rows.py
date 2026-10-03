@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from scripts.perf.capture_kpi_ledger import CaptureMeta, build_row
-from scripts.perf.capture_library_mode import (
+from scripts.perf.perfmode14_scorer import (
     PERFMODE14_SCORER,
     perfmode14_require_scored_sample_count,
 )
