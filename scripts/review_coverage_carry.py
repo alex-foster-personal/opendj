@@ -16,7 +16,9 @@ reported as `carry UNKNOWN` on the MISS row, never as a carry.
 
 from __future__ import annotations
 
+import functools
 import re
+import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -45,9 +47,18 @@ def debt_file_path(pr: str) -> str:
     return f".planning/debt/{pr}.md"
 
 
+@functools.cache
+def _git() -> str:
+    """git by resolved path, once (AGENTS.md: launch programs by resolved path)."""
+    git = shutil.which("git")
+    if git is None:
+        raise TriageError("git is not on PATH: the debt-only carry cannot be measured")
+    return git
+
+
 def _object_exists(root: Path, sha: str) -> bool:
     proc = subprocess.run(
-        ["git", "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
+        [_git(), "-C", str(root), "cat-file", "-e", f"{sha}^{{commit}}"],
         capture_output=True,
         text=True,
     )
@@ -61,7 +72,7 @@ def fetch_commits(root: Path, *shas: str) -> None:
             continue
         proc = subprocess.run(
             [
-                "git",
+                _git(),
                 "-C",
                 str(root),
                 "fetch",
@@ -81,7 +92,7 @@ def fetch_commits(root: Path, *shas: str) -> None:
 def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
     proc = subprocess.run(
         [
-            "git",
+            _git(),
             "-C",
             str(root),
             "merge-base",
@@ -139,7 +150,7 @@ def print_carry_proofs(verdicts, head_sha: str, repo_root: Path) -> None:
 
 def paths_between(root: Path, older: str, newer: str) -> frozenset[str]:
     proc = subprocess.run(
-        ["git", "-C", str(root), "diff", "--name-only", f"{older}..{newer}"],
+        [_git(), "-C", str(root), "diff", "--name-only", f"{older}..{newer}"],
         capture_output=True,
         text=True,
         check=True,
@@ -153,7 +164,7 @@ def paths_touched_by_any_commit(root: Path, older: str, newer: str) -> frozenset
     The endpoint diff hides a path changed and later restored; this union does not (#4876).
     """
     proc = subprocess.run(
-        ["git", "-C", str(root), "log", "--format=", "--name-only", "--no-renames", "-m", f"{older}..{newer}"],
+        [_git(), "-C", str(root), "log", "--format=", "--name-only", "--no-renames", "-m", f"{older}..{newer}"],
         capture_output=True,
         text=True,
         check=True,
@@ -269,7 +280,7 @@ def reviewed_shas_for_reviewer(
 
 def _commits_since(root: Path, base: str, head: str) -> int:
     proc = subprocess.run(
-        ["git", "-C", str(root), "rev-list", "--count", f"{base}..{head}"],
+        [_git(), "-C", str(root), "rev-list", "--count", f"{base}..{head}"],
         capture_output=True,
         text=True,
         check=True,

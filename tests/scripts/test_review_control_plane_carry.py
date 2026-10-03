@@ -7,16 +7,18 @@ reviewed by Grok and Cursor (the harnesses that need no Codex/Sol setup).
 
 from __future__ import annotations
 
-import shutil
+import os
 import subprocess
+from collections.abc import Iterator
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from scripts import review_control_plane, review_coverage
+from scripts import review_control_plane, review_coverage, review_coverage_carry
 from scripts.review_coverage_carry import debt_file_path
+from scripts.review_gh import TriageError
 
 _PR = "4626"
 _DEBT = debt_file_path(_PR)
@@ -24,16 +26,7 @@ _LOGIN = "maintainer"
 _UNFETCHABLE = "c" * 40
 _CONTROL_PLANE_FILES = ["CLAUDE.md", _DEBT]
 
-
-def _resolved_git() -> str:
-    """git by resolved path, once (AGENTS.md: launch programs by resolved path)."""
-    git = shutil.which("git")
-    if git is None:
-        raise RuntimeError("git is not on PATH; these tests drive real git repositories")
-    return git
-
-
-_GIT = _resolved_git()
+_GIT = review_coverage_carry._git()  # the production resolution, so tests and carry agree
 
 
 def _git(root: Path, *args: str) -> str:
@@ -268,3 +261,31 @@ def test_a_review_of_the_head_itself_is_not_a_carry(repo: Path, monkeypatch: pyt
     rc, out = _enforce(monkeypatch, repo, head, [_grok(head), _cursor(head)])
     assert rc == 0, out
     assert "carried from" not in out
+
+
+# ----- (c) git by resolved path ----------------------------------------------
+
+
+@pytest.fixture
+def fresh_git_resolution() -> Iterator[None]:
+    review_coverage_carry._git.cache_clear()
+    yield
+    review_coverage_carry._git.cache_clear()
+
+
+@pytest.mark.requirement("REVIEW-13")
+@pytest.mark.usefixtures("fresh_git_resolution")
+def test_the_carry_launches_git_by_an_absolute_path() -> None:
+    """[if] the carry resolves git [then] it is an absolute executable path, [else stop]."""
+    git = review_coverage_carry._git()
+    assert Path(git).is_absolute(), git
+    assert os.access(git, os.X_OK), git
+
+
+@pytest.mark.requirement("REVIEW-13")
+@pytest.mark.usefixtures("fresh_git_resolution")
+def test_no_git_on_path_is_an_error_not_a_verdict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[if] git is not on PATH [then] TriageError, never a carry verdict, [else stop]."""
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(TriageError, match="git is not on PATH"):
+        review_coverage_carry._git()
