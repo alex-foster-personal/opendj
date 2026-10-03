@@ -89,7 +89,7 @@ require_command spctl
 [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] || die "TAURI_SIGNING_PRIVATE_KEY is required for just release"
 
 version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$CONF")"
-tag="v$version"
+tag="$(python3 -m scripts.release_identity --config "$CONF")"
 
 git -C "$ROOT" diff --quiet || die "release requires a clean tracked working tree"
 git -C "$ROOT" diff --cached --quiet || die "release requires a clean index"
@@ -108,6 +108,8 @@ import json
 import os
 from pathlib import Path
 
+from scripts.release_identity import release_asset_url, release_tag
+
 manifest = json.loads(Path(os.environ["MANIFEST"]).read_text(encoding="utf-8"))
 entry = manifest.get("platforms", {}).get("darwin-aarch64", {})
 if manifest.get("version") != os.environ["VERSION"]:
@@ -122,7 +124,7 @@ if os.environ["GIT_SHA"] not in str(manifest.get("notes", "")):
     raise SystemExit("existing latest.json does not name this build SHA")
 if not isinstance(entry.get("signature"), str) or not entry["signature"].strip():
     raise SystemExit("existing latest.json has no updater signature")
-if f"/releases/download/v{os.environ['VERSION']}/" not in str(entry.get("url", "")):
+if f"/releases/download/{release_tag(os.environ['VERSION'])}/" not in str(entry.get("url", "")):
     raise SystemExit("existing latest.json does not point at its immutable release tag")
 PY
     echo "[OK] release $tag already exists with a valid manifest"
@@ -174,6 +176,8 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.release_identity import release_asset_url, release_tag
+
 signature = Path(os.environ["SIGNATURE"]).read_text(encoding="utf-8").strip()
 if not signature:
     raise SystemExit("updater signature is empty")
@@ -187,7 +191,7 @@ manifest = {
     "platforms": {
         "darwin-aarch64": {
             "signature": signature,
-            "url": f"https://github.com/{repo}/releases/download/v{os.environ['VERSION']}/{asset}",
+            "url": release_asset_url(repo, os.environ["VERSION"], asset),
         }
     },
 }
