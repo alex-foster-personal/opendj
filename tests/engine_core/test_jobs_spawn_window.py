@@ -32,7 +32,7 @@ import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -237,7 +237,7 @@ def test_a_fork_outlasting_the_settle_window_neither_holds_stop_nor_escapes(
     async def drive() -> tuple[bool, dict[str, Any]]:
         runner = JobRunner(store, poll_s=10.0, spawn_settle_s=0.0)
         job = store.enqueue("mute", {})
-        (claimed,) = store.claim_queued(limit=1)
+        claimed = cast("list[dict[str, Any]]", store.claim_queued(limit=1))[0]
         runner._spawn(claimed)
         assert not runner._running, "the premise is wrong: it already forked"
         task = runner._tasks[job["id"]]
