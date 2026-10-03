@@ -22,6 +22,9 @@
 
 const POLL_MS = 100;
 
+/** Internal sentinel: an in-flight `Runtime.evaluate` lost the race to `waitForFunction`'s deadline. */
+const _EVALUATION_DEADLINE = 'uninstrumented-page evaluation deadline';
+
 /** The domains this page may enable. `Network` is excluded by construction. */
 export function assertUninstrumentedMethod(method) {
 	if (typeof method !== 'string' || method.startsWith('Network.')) {
@@ -139,35 +142,94 @@ export async function openUninstrumentedPage(browser) {
 		return result;
 	}
 
-	async function evaluate(fn, arg) {
-		const { result, exceptionDetails } = await send('Runtime.evaluate', {
+	function _runtimeEvaluateParams(fn, arg) {
+		return {
 			expression: _expression(fn, arg),
 			awaitPromise: true,
 			returnByValue: true,
 			// Playwright's evaluate passes userGesture: true, which is what lets the
 			// page's AudioContext start without a click; keep the same semantics.
 			userGesture: true
-		});
+		};
+	}
+
+	async function sendWithDeadline(method, params, remainingMs) {
+		assertUninstrumentedMethod(method);
+		if (goneReason !== null) throw new Error(`${method}: ${goneReason}`);
+		if (remainingMs <= 0) throw new Error(_EVALUATION_DEADLINE);
+		sentMethods.push(method);
+		const id = ++nextId;
+		let timer;
+		const result = new Promise((resolve, reject) => pending.set(id, { method, resolve, reject }));
+		result.catch(() => undefined);
+		try {
+			await browserSession.send('Target.sendMessageToTarget', {
+				sessionId,
+				message: JSON.stringify({ id, method, params })
+			});
+		} catch (error) {
+			pending.delete(id);
+			throw error;
+		}
+		try {
+			return await Promise.race([
+				result,
+				new Promise((_, reject) => {
+					timer = setTimeout(() => {
+						const waiter = pending.get(id);
+						if (waiter !== undefined) {
+							pending.delete(id);
+							waiter.reject(new Error(_EVALUATION_DEADLINE));
+						}
+						reject(new Error(_EVALUATION_DEADLINE));
+					}, remainingMs);
+				})
+			]);
+		} finally {
+			if (timer !== undefined) clearTimeout(timer);
+		}
+	}
+
+	async function evaluate(fn, arg) {
+		const { result, exceptionDetails } = await send('Runtime.evaluate', _runtimeEvaluateParams(fn, arg));
 		if (exceptionDetails !== undefined) throw new Error(_exceptionText(exceptionDetails));
 		return result.value;
+	}
+
+	async function evaluateWithDeadline(fn, arg, remainingMs) {
+		const { result, exceptionDetails } = await sendWithDeadline(
+			'Runtime.evaluate',
+			_runtimeEvaluateParams(fn, arg),
+			remainingMs
+		);
+		if (exceptionDetails !== undefined) throw new Error(_exceptionText(exceptionDetails));
+		return result.value;
+	}
+
+	function _waitForFunctionTimeoutError(fn, timeout) {
+		return new Error(`waitForFunction timed out after ${timeout}ms: ${fn.toString().slice(0, 160)}`);
 	}
 
 	async function waitForFunction(fn, arg, { timeout = 30_000 } = {}) {
 		const deadline = Date.now() + timeout;
 		for (;;) {
+			const remaining = deadline - Date.now();
+			if (remaining <= 0) throw _waitForFunctionTimeoutError(fn, timeout);
 			let value;
 			try {
-				value = await evaluate(fn, arg);
+				value = await evaluateWithDeadline(fn, arg, remaining);
 			} catch (error) {
+				if (error instanceof Error && error.message === _EVALUATION_DEADLINE) {
+					throw _waitForFunctionTimeoutError(fn, timeout);
+				}
 				// A navigation swaps the execution context under a poll; Playwright
 				// retries those too. A throw from the predicate itself propagates.
 				if (!isContextLossError(error)) throw error;
 			}
 			if (value) return value;
-			if (Date.now() >= deadline) {
-				throw new Error(`waitForFunction timed out after ${timeout}ms: ${fn.toString().slice(0, 160)}`);
-			}
-			await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+			if (Date.now() >= deadline) throw _waitForFunctionTimeoutError(fn, timeout);
+			const pollMs = Math.min(POLL_MS, Math.max(0, deadline - Date.now()));
+			if (pollMs > 0) await new Promise((resolve) => setTimeout(resolve, pollMs));
 		}
 	}
 
