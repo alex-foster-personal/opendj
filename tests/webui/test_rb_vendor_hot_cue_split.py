@@ -47,7 +47,8 @@ def _make_master_plain_db(path: Path) -> None:
     try:
         conn.execute(
             "CREATE TABLE djmdContent (ID VARCHAR(255) PRIMARY KEY, "
-            "Length INTEGER, rb_local_deleted TINYINT(1) DEFAULT 0)"
+            "FolderPath VARCHAR(255), Length INTEGER, "
+            "rb_local_deleted TINYINT(1) DEFAULT 0)"
         )
         conn.execute(
             "CREATE TABLE djmdCue ("
