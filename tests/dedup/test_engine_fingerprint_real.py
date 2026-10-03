@@ -112,11 +112,12 @@ def test_engine_and_fpcalc_fingerprints_are_interchangeable(engine: Path, tracks
 
     A cache filled by fpcalc on a dev machine compares against engine rows.
     """
-    if shutil.which("fpcalc") is None:
+    fpcalc = shutil.which("fpcalc")
+    if fpcalc is None:
         pytest.skip("UNAVAILABLE: fpcalc is not installed here, so cross-backend parity is unmeasured")
     ours = compute(tracks["a"])
     theirs = subprocess.run(
-        ["fpcalc", "-plain", str(tracks["a"])], capture_output=True, text=True, check=True
+        [fpcalc, "-plain", str(tracks["a"])], capture_output=True, text=True, check=True
     ).stdout.strip()
     assert compare(ours, theirs) >= 0.98
 
