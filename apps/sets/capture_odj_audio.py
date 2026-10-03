@@ -8,13 +8,14 @@ segments (``record``); see ``docs/decisions/*-set-recording-without-ffmpeg.md``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import IO
 
-from apps.shared.odj_audio_binary import BIN_ENV, OdjAudioUnavailable, find_binary
+from apps.shared.odj_audio_binary import BIN_ENV, EXE_NAME, REPO_TARGET, OdjAudioUnavailable, find_binary
 
 from .capture_types import (
     CaptureBackend,
@@ -51,6 +52,16 @@ def _capture_refusal(exe: Path, run: Callable[..., subprocess.CompletedProcess[s
     return ""
 
 
+def _repo_builds(repo_root: Path) -> list[Path]:
+    """Every local cargo build of odj-audio, newest first."""
+    found = [
+        p
+        for profile in ("release", "debug")
+        if (p := repo_root / REPO_TARGET / profile / EXE_NAME).is_file() and os.access(p, os.X_OK)
+    ]
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
 def odj_audio_backend(
     environ: Mapping[str, str],
     repo_root: Path,
@@ -60,21 +71,32 @@ def odj_audio_backend(
 
     An ``ODJ_AUDIO_BIN`` (the installed app) that cannot capture raises
     :class:`CaptureUnavailable` instead: the app must never quietly record
-    through some other ffmpeg than the one it does not ship.
+    through some other ffmpeg than the one it does not ship. In a checkout,
+    every local build is asked, newest first, since the newest may be a
+    default-features build while an older one was built with ``device``.
     """
-    from_env = bool(environ.get(BIN_ENV, "").strip())
-    try:
-        binary = find_binary(environ, repo_root)
-    except OdjAudioUnavailable as exc:
-        if from_env:
+    if environ.get(BIN_ENV, "").strip():
+        try:
+            binary = find_binary(environ, repo_root)
+        except OdjAudioUnavailable as exc:
             raise CaptureUnavailable(f"cannot record set audio: {exc}") from exc
-        return None, str(exc)
-    reason = _capture_refusal(binary.path, run)
-    if not reason:
+        reason = _capture_refusal(binary.path, run)
+        if reason:
+            raise CaptureUnavailable(f"cannot record set audio: {reason}")
         return CaptureBackend("odj-audio", str(binary.path)), ""
-    if from_env:
-        raise CaptureUnavailable(f"cannot record set audio: {reason}")
-    return None, reason
+    builds = _repo_builds(repo_root)
+    if not builds:
+        try:
+            find_binary(environ, repo_root)
+        except OdjAudioUnavailable as exc:
+            return None, str(exc)
+    reasons = []
+    for exe in builds:
+        reason = _capture_refusal(exe, run)
+        if not reason:
+            return CaptureBackend("odj-audio", str(exe)), ""
+        reasons.append(reason)
+    return None, "; ".join(reasons)
 
 
 def list_odj_audio_inputs(

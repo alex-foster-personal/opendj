@@ -21,6 +21,8 @@ import pytest
 REQUIRE_ENV = "MDT_REQUIRE_AUDIO_ENGINE_BUILD"
 # bindgen's own panic text when clang-sys finds no libclang shared library.
 NO_LIBCLANG = "Unable to find libclang"
+# alsa-sys's build script when pkg-config finds no ALSA development files (Linux).
+NO_ALSA = "`alsa` required by crate `alsa-sys`"
 
 
 def bindgen_env(environ: Mapping[str, str]) -> dict[str, str]:
@@ -50,15 +52,22 @@ def _unavailable(reason: str) -> None:
     pytest.skip(f"UNAVAILABLE: {reason}; the contracts job runs this with {REQUIRE_ENV}=1")
 
 
-def build_audio_engine(crate: Path) -> Path:
+def build_audio_engine(crate: Path, *, features: tuple[str, ...] = ()) -> Path:
     """``cargo build`` odj-audio in ``crate`` and return the debug binary.
 
     Rebuilt every call (cargo does nothing when it is fresh) so a stale binary
-    can't answer. Only a missing cargo or libclang is UNAVAILABLE; any other
-    build failure fails the test with cargo's stderr.
+    can't answer. Only a missing cargo or libclang (or, for a ``features``
+    build, ALSA's headers) is UNAVAILABLE; any other build failure fails the
+    test with cargo's stderr. A ``features`` build gets its own target dir, so
+    it never overwrites the default build other tests run concurrently.
     """
     if shutil.which("cargo") is None:
         _unavailable("no cargo here, so odj-audio cannot be built from this checkout")
+    target = crate / "target"
+    extra: list[str] = []
+    if features:
+        target = target / ("features-" + "-".join(features))
+        extra = ["--features", ",".join(features), "--target-dir", str(target)]
     result = subprocess.run(
         [
             "cargo",
@@ -68,6 +77,7 @@ def build_audio_engine(crate: Path) -> Path:
             "odj-audio",
             "--manifest-path",
             str(crate / "Cargo.toml"),
+            *extra,
         ],
         capture_output=True,
         text=True,
@@ -77,9 +87,9 @@ def build_audio_engine(crate: Path) -> Path:
     if result.returncode != 0:
         if NO_LIBCLANG in result.stderr:
             _unavailable("no libclang here, so bindgen cannot build signalsmith-stretch")
+        if features and NO_ALSA in result.stderr:
+            _unavailable("no ALSA development files here, so the device feature cannot build")
         pytest.fail(
             f"cargo build of odj-audio exited {result.returncode}:\n{result.stderr[-4000:]}"
         )
-    return (
-        crate / "target" / "debug" / ("odj-audio.exe" if sys.platform == "win32" else "odj-audio")
-    )
+    return target / "debug" / ("odj-audio.exe" if sys.platform == "win32" else "odj-audio")

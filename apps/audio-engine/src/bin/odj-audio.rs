@@ -734,13 +734,16 @@ fn probe_cmd(mut args: Args) -> Result<(), String> {
     Ok(())
 }
 
-/// Where `record` writes, how long each segment is, and which input.
+/// Where `record` writes, how long each segment is, and which input. Parsed
+/// (and its errors tested) without `device` too, where nothing reads it.
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 struct RecordArgs {
     dir: PathBuf,
     segment_seconds: u32,
     select: RecordSelect,
 }
 
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 enum RecordSelect {
     Name(String),
     Index(usize),

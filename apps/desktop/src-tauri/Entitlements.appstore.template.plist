@@ -52,5 +52,13 @@
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
+
+    <!-- Set recording (SET-10, SET-11): REC captures its input through the
+         bundled odj-audio, a payload executable signed with the inherited
+         sandbox, so the microphone grant has to come from this parent
+         profile. Without it the sandbox hands REC silence or an error, and
+         Info.plist's NSMicrophoneUsageDescription prompt never appears. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

@@ -4,51 +4,87 @@ Covers backend choice (odj-audio when it can capture, ffmpeg only as a
 checkout fallback, never a silent fallback in the installed app), the
 odj-audio listing and record/stop process contract, and that every segment
 consumer takes the ``.wav`` segments odj-audio writes.
+
+Everything here drives the real ``odj-audio``, built from this checkout: the
+default build (no audio input) and a ``--features device`` build. Recording
+needs an input that cannot hear a room, so it uses ALSA's ``null`` capture
+device (zero samples) and reports UNAVAILABLE on a host without one, as it
+does where the crate cannot build (tests/rust_build_env.py).
 """
 from __future__ import annotations
 
+import io
 import json
 import os
+import shutil
+import signal
 import subprocess
 import sys
 import time
+import wave
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from apps.sets import audio as sets_audio
 from apps.sets import capture, retention
 from apps.sets import paths as sets_paths
+from apps.sets.capture_odj_audio import (
+    _parse_odj_audio_devices,
+    follow_record_output,
+    odj_audio_backend,
+)
+from apps.sets.capture_types import CaptureState
 from apps.sets.record import _segment_start_from_name
+from apps.shared import platform_paths
+from apps.shared.odj_audio_binary import EXE_NAME, REPO_TARGET
+from tests.rust_build_env import build_audio_engine
 
 pytestmark = pytest.mark.requirement("SET-11")
 
-
-def _exe(tmp_path: Path, name: str = "odj-audio") -> Path:
-    path = tmp_path / name
-    path.write_text("#!/bin/sh\n")
-    path.chmod(0o755)
-    return path
+CRATE = platform_paths.PROJECT_ROOT / "apps" / "audio-engine"
+#: ALSA's null PCM as cpal names it: zero samples, no microphone, no prompt.
+NULL_INPUT_HINT = "generate zero samples"
 
 
-def _result(argv: list[str], stdout: str = "", code: int = 0, stderr: str = "") -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(argv, code, stdout=stdout, stderr=stderr)
+@pytest.fixture(scope="module")
+def plain_engine() -> Path:
+    """The default build: decode and render, no audio input."""
+    return build_audio_engine(CRATE)
 
 
-def _version_runner(capture_flag: object, calls: list[list[str]] | None = None):
-    def run(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
-        if calls is not None:
-            calls.append(argv)
-        assert argv[1:] == ["version"], argv
-        return _result(argv, json.dumps({"engine": "odj-audio 0.1.0", "protocol": 1, "capture": capture_flag}))
-
-    return run
+@pytest.fixture(scope="module")
+def capture_engine() -> Path:
+    """The ``--features device`` build, which the app bundles."""
+    return build_audio_engine(CRATE, features=("device",))
 
 
-def _no_ffmpeg() -> str:
-    raise capture.CaptureUnavailable("ffmpeg is needed to record set audio: not found")
+@pytest.fixture(scope="module")
+def null_input(capture_engine: Path) -> str:
+    listing = subprocess.run(
+        [str(capture_engine), "input-devices"], capture_output=True, text=True, check=False, timeout=30
+    )
+    devices = (_parse_odj_audio_devices(listing.stdout) if listing.returncode == 0 else None) or []
+    if listing.returncode != 0:
+        pytest.skip(f"UNAVAILABLE: odj-audio input-devices exited {listing.returncode}: {listing.stderr[-300:]}")
+    names = [d.name for d in devices if NULL_INPUT_HINT in d.name]
+    if not names:
+        pytest.skip(
+            "UNAVAILABLE: no silent ALSA null input here to record without a microphone "
+            f"(inputs: {[d.name for d in devices]}, listing: {listing.stdout[-300:]!r})"
+        )
+    return names[0]
+
+
+def _install(src: Path, repo: Path, profile: str, mtime: float) -> Path:
+    """A copy of a real build where a checkout's cargo would put it."""
+    dest = repo / REPO_TARGET / profile / EXE_NAME
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    os.utime(dest, (mtime, mtime))
+    return dest
 
 
 # ---------------------------------------------------------------------------
@@ -56,129 +92,78 @@ def _no_ffmpeg() -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_a_capture_capable_odj_audio_is_chosen_over_ffmpeg(tmp_path: Path):
-    """[if] the bundled engine can capture [then] REC uses it, even with ffmpeg present."""
-    exe = _exe(tmp_path)
-    backend = capture.capture_backend(
-        environ={"ODJ_AUDIO_BIN": str(exe)},
-        repo_root=tmp_path,
-        run=_version_runner(True),
-        resolve_ffmpeg=lambda: "/opt/homebrew/bin/ffmpeg",
-    )
-    assert backend == capture.CaptureBackend("odj-audio", str(exe))
+def test_the_installed_app_records_through_its_engine(tmp_path: Path, capture_engine: Path):
+    """[if] the bundled engine can capture [then] REC uses it, whatever ffmpeg there is."""
+    backend = capture.capture_backend(environ={"ODJ_AUDIO_BIN": str(capture_engine)}, repo_root=tmp_path)
+    assert backend == capture.CaptureBackend("odj-audio", str(capture_engine))
 
 
-def test_the_installed_app_never_falls_back_to_ffmpeg(tmp_path: Path):
-    """[if] ODJ_AUDIO_BIN cannot capture [then] refuse, naming it, without trying ffmpeg."""
-    exe = _exe(tmp_path)
-
-    def ffmpeg_must_not_be_asked() -> str:
-        raise AssertionError("the installed app must not reach for ffmpeg")
-
-    with pytest.raises(capture.CaptureUnavailable, match="without audio input"):
-        capture.capture_backend(
-            environ={"ODJ_AUDIO_BIN": str(exe)},
-            repo_root=tmp_path,
-            run=_version_runner(False),
-            resolve_ffmpeg=ffmpeg_must_not_be_asked,
-        )
+def test_the_installed_app_never_falls_back_to_ffmpeg(tmp_path: Path, plain_engine: Path):
+    """[if] ODJ_AUDIO_BIN cannot capture [then] refuse, naming why, without trying ffmpeg."""
+    with pytest.raises(capture.CaptureUnavailable, match="without audio input") as exc:
+        capture.capture_backend(environ={"ODJ_AUDIO_BIN": str(plain_engine)}, repo_root=tmp_path)
+    assert "ffmpeg" not in str(exc.value)
     with pytest.raises(capture.CaptureUnavailable, match="is not a file"):
-        capture.capture_backend(
-            environ={"ODJ_AUDIO_BIN": str(tmp_path / "missing")},
-            repo_root=tmp_path,
-            run=_version_runner(True),
-            resolve_ffmpeg=ffmpeg_must_not_be_asked,
-        )
+        capture.capture_backend(environ={"ODJ_AUDIO_BIN": str(tmp_path / "missing")}, repo_root=tmp_path)
+    # A program that is not odj-audio at all prints no version object.
+    with pytest.raises(capture.CaptureUnavailable, match="without a version object"):
+        capture.capture_backend(environ={"ODJ_AUDIO_BIN": sys.executable}, repo_root=tmp_path)
 
 
-def test_a_checkout_build_without_capture_falls_back_to_ffmpeg(tmp_path: Path):
-    """[if] the repo build lacks the device feature [then] ffmpeg records, as before."""
-    build = tmp_path / "apps" / "audio-engine" / "target" / "debug"
-    build.mkdir(parents=True)
-    _exe(build)
-    backend = capture.capture_backend(
-        environ={}, repo_root=tmp_path, run=_version_runner(False), resolve_ffmpeg=lambda: "/usr/bin/ffmpeg"
-    )
-    assert backend == capture.CaptureBackend("ffmpeg", "/usr/bin/ffmpeg")
-    # Control: the same build reporting capture is chosen.
-    backend = capture.capture_backend(
-        environ={}, repo_root=tmp_path, run=_version_runner(True), resolve_ffmpeg=lambda: "/usr/bin/ffmpeg"
-    )
-    assert backend.kind == "odj-audio"
+def test_a_checkout_finds_its_capture_build_behind_a_newer_plain_one(
+    tmp_path: Path, plain_engine: Path, capture_engine: Path
+):
+    """[if] the newest local build lacks the device feature [then] an older one that has it records."""
+    now = time.time()
+    _install(plain_engine, tmp_path, "debug", now)
+    release = _install(capture_engine, tmp_path, "release", now - 3600)
+    assert odj_audio_backend({}, tmp_path, subprocess.run) == (capture.CaptureBackend("odj-audio", str(release)), "")
+    # Control: with only the plain build, there is no odj-audio capture, and why.
+    release.unlink()
+    backend, why = odj_audio_backend({}, tmp_path, subprocess.run)
+    assert backend is None and "without audio input" in why, why
 
 
-def test_with_neither_the_error_names_both_reasons(tmp_path: Path):
-    """[if] no odj-audio and no ffmpeg [then] the error says what is missing for each."""
-    with pytest.raises(capture.CaptureUnavailable) as exc:
-        capture.capture_backend(environ={}, repo_root=tmp_path, run=_version_runner(True), resolve_ffmpeg=_no_ffmpeg)
-    message = str(exc.value)
-    assert "ffmpeg is needed" in message and "no local build" in message, message
-
-
-@pytest.mark.parametrize(
-    "version",
-    [_result(["x"], "not json"), _result(["x"], "", code=1, stderr="boom"), _result(["x"], "[1]")],
-)
-def test_an_unreadable_version_probe_is_not_a_capture(tmp_path: Path, version: subprocess.CompletedProcess[str]):
-    """[if] `version` fails or prints garbage [then] that build is not trusted to record."""
-    exe = _exe(tmp_path)
-    with pytest.raises(capture.CaptureUnavailable, match="cannot record set audio"):
-        capture.capture_backend(
-            environ={"ODJ_AUDIO_BIN": str(exe)},
-            repo_root=tmp_path,
-            run=lambda argv, **_: version,
-            resolve_ffmpeg=lambda: "/usr/bin/ffmpeg",
-        )
+def test_with_no_build_the_reason_says_to_build_one(tmp_path: Path):
+    backend, why = odj_audio_backend({}, tmp_path, subprocess.run)
+    assert backend is None and "no local build" in why, why
 
 
 # ---------------------------------------------------------------------------
 # listing
 # ---------------------------------------------------------------------------
 
-ODJ = capture.CaptureBackend("odj-audio", "/app/bin/odj-audio")
+#: `odj-audio input-devices` as the device build printed it on a Linux host.
+LISTING = (
+    '{"devices":[{"channels":2,"index":0,"name":"Discard all samples (playback) or generate zero samples '
+    '(capture)","rate":48000},{"channels":2,"index":1,"name":"BlackHole 2ch","rate":48000}]}'
+)
 
 
-def test_odj_audio_lists_inputs_on_any_host_and_flags_loopbacks():
-    """[if] odj-audio lists inputs [then] the picker gets its indices and names, macOS or not."""
-    listing = {
-        "devices": [
-            {"index": 0, "name": "MacBook Pro Microphone", "channels": 1, "rate": 48000},
-            {"index": 1, "name": "BlackHole 2ch", "channels": 2, "rate": 48000},
-        ]
-    }
-    calls: list[list[str]] = []
-
-    def run(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
-        calls.append(argv)
-        return _result(argv, json.dumps(listing))
-
-    devices = capture.list_input_devices(run=run, platform="linux", backend=ODJ)
-    assert calls == [["/app/bin/odj-audio", "input-devices"]]
-    assert devices == [
-        capture.InputDevice(0, "MacBook Pro Microphone", False),
-        capture.InputDevice(1, "BlackHole 2ch", True),
-    ]
+def test_the_listing_gives_the_picker_indices_names_and_loopbacks():
+    devices = _parse_odj_audio_devices(LISTING)
+    assert devices is not None
+    assert [(d.index, d.loopback) for d in devices] == [(0, False), (1, True)]
     assert capture.default_input_device(devices) == devices[1]
 
 
-@pytest.mark.parametrize(
-    "result",
-    [
-        _result(["x"], "", code=2, stderr="odj-audio: cannot list audio inputs: no host"),
-        _result(["x"], "{}"),
-        _result(["x"], '{"devices": [{"index": 0}]}'),
-        _result(["x"], "garbage"),
-    ],
-)
-def test_an_unreadable_odj_audio_listing_is_unavailable_not_empty(result: subprocess.CompletedProcess[str]):
-    """[if] the listing fails or is malformed [then] CaptureUnavailable, never []."""
-    with pytest.raises(capture.CaptureUnavailable, match="input-devices"):
-        capture.list_input_devices(run=lambda argv, **_: result, backend=ODJ)
+@pytest.mark.parametrize("stdout", ["{}", '{"devices": [{"index": 0}]}', "garbage", '{"devices": 3}'])
+def test_a_malformed_listing_is_not_a_list(stdout: str):
+    assert _parse_odj_audio_devices(stdout) is None
+    assert _parse_odj_audio_devices('{"devices": []}') == []
 
 
-def test_a_real_empty_odj_audio_listing_is_an_empty_list():
-    """[if] odj-audio measured no inputs [then] that is a real empty list."""
-    assert capture.list_input_devices(run=lambda argv, **_: _result(argv, '{"devices": []}'), backend=ODJ) == []
+def test_the_device_build_lists_this_hosts_inputs(capture_engine: Path):
+    """[if] odj-audio can capture [then] its listing reaches the picker, on any host."""
+    backend = capture.CaptureBackend("odj-audio", str(capture_engine))
+    devices = capture.list_input_devices(backend=backend)
+    assert [d.index for d in devices] == list(range(len(devices)))
+
+
+def test_a_build_that_cannot_list_is_unavailable_not_empty(plain_engine: Path):
+    """[if] the listing fails [then] CaptureUnavailable with odj-audio's reason, never []."""
+    with pytest.raises(capture.CaptureUnavailable, match="rebuild with --features device"):
+        capture.list_input_devices(backend=capture.CaptureBackend("odj-audio", str(plain_engine)))
 
 
 # ---------------------------------------------------------------------------
@@ -186,50 +171,7 @@ def test_a_real_empty_odj_audio_listing_is_an_empty_list():
 # ---------------------------------------------------------------------------
 
 
-# A stand-in for `odj-audio record` run as a real process, so the pipe
-# contract (state lines on stdout, stop on stdin EOF) is what is tested. It
-# is a Python file named `record`, run as `python record ...` from its own
-# directory, which works on every OS. `mode` picks its behavior.
-_STUB = """
-import json, pathlib, sys, time
-here = pathlib.Path(__file__).resolve().parent
-(here / "argv.json").write_text(json.dumps(sys.argv[1:]))
-mode = (here / "mode").read_text()
-if mode == "denied":
-    print("odj-audio: microphone access for Open DJ is off", file=sys.stderr)
-    sys.exit(2)
-if mode == "prompt":
-    print(json.dumps({"waiting": "microphone_permission"}), flush=True)
-    while not (here / "granted").exists():
-        time.sleep(0.02)
-print(json.dumps({"recording": {"device": "BlackHole 2ch"}}), flush=True)
-if mode == "deaf":
-    time.sleep(60)
-for line in sys.stdin:
-    if line.strip() == "stop":
-        break
-if mode == "dies":
-    sys.exit(1)
-print(json.dumps({"stopped": {"segments": [], "frames": 0, "dropped_samples": 0}}), flush=True)
-"""
-
-
-@pytest.fixture
-def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    home = tmp_path / "stub"
-    home.mkdir()
-    (home / "record").write_text(_STUB)
-    monkeypatch.chdir(home)
-
-    def make(mode: str) -> capture.CaptureBackend:
-        (home / "mode").write_text(mode)
-        return capture.CaptureBackend("odj-audio", sys.executable)
-
-    make.home = home  # type: ignore[attr-defined]
-    return make
-
-
-def _wait_for(predicate: Any, timeout: float = 5.0) -> bool:
+def _wait_for(predicate: Any, timeout: float = 10.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -238,20 +180,36 @@ def _wait_for(predicate: Any, timeout: float = 5.0) -> bool:
     return predicate()
 
 
-def test_odj_audio_records_by_name_and_stops_when_stdin_closes(tmp_path: Path, stub: Any):
-    """[if] REC starts on odj-audio by name [then] it opens that exact name and stops on stdin EOF."""
-    session = tmp_path / "session"
-    handle = capture.start_capture(
-        session, 1, backend=stub("ok"), segment_time_s=300, device_name="BlackHole 2ch", startup_check_s=0.3
+def _start(capture_engine: Path, session: Path, name: str) -> capture.CaptureHandle:
+    return capture.start_capture(
+        session,
+        0,
+        backend=capture.CaptureBackend("odj-audio", str(capture_engine)),
+        segment_time_s=300,
+        device_name=name,
+        startup_check_s=0.5,
     )
+
+
+def test_odj_audio_records_wav_by_name_and_stops_when_stdin_closes(
+    tmp_path: Path, capture_engine: Path, null_input: str
+):
+    """[if] REC starts on odj-audio by name [then] it writes WAV from that input and stops on stdin EOF."""
+    session = tmp_path / "session"
+    handle = _start(capture_engine, session, null_input)
     assert handle.backend == "odj-audio"
+    assert handle.argv[handle.argv.index("--device") + 1] == null_input
     assert handle.stderr_log == session / "odj-audio.stderr.log"
     assert _wait_for(lambda: handle.current_state() == "recording")
+    time.sleep(0.3)
     assert capture.stop_capture(handle) == 0
     assert handle.current_state() == "stopped"
     assert handle.log_fh.closed and handle.proc.stdin is not None and handle.proc.stdin.closed
-    argv = json.loads((stub.home / "argv.json").read_text())
-    assert argv == ["--dir", str(session), "--device", "BlackHole 2ch", "--segment-seconds", "300"]
+    segments = sets_paths.segment_files(session)
+    assert segments and all(p.suffix == ".wav" for p in segments), segments
+    with wave.open(str(segments[0])) as w:
+        assert (w.getnchannels(), w.getsampwidth()) == (2, 2)
+        assert w.getframerate() > 0 and w.getnframes() > 0
     log = handle.stderr_log.read_text()
     assert '"recording"' in log and '"stopped"' in log
 
@@ -262,61 +220,81 @@ def test_odj_audio_without_a_name_records_the_index():
     assert argv[argv.index("--device-index") + 1] == "4" and "--device" not in argv
 
 
-def test_rec_waits_while_the_macos_microphone_prompt_is_up(tmp_path: Path, stub: Any):
-    """[if] macOS is still asking for the microphone [then] the state is waiting, not recording,
-    until the grant (Silver lost 42 s to a REC that looked live during the prompt)."""
-    handle = capture.start_capture(tmp_path / "s", 1, backend=stub("prompt"), startup_check_s=0.3)
-    assert _wait_for(lambda: handle.current_state() == "waiting_permission")
-    time.sleep(0.2)
-    assert handle.current_state() == "waiting_permission"
-    (stub.home / "granted").write_text("")
-    assert _wait_for(lambda: handle.current_state() == "recording")
-    assert capture.stop_capture(handle) == 0
+def test_an_input_that_is_gone_refuses_rec_with_the_reason(tmp_path: Path, capture_engine: Path, null_input: str):
+    """[if] odj-audio refuses at start [then] REC fails with its message, and nothing records."""
+    with pytest.raises(capture.CaptureUnavailable) as exc:
+        capture.start_capture(
+            tmp_path / "s",
+            0,
+            backend=capture.CaptureBackend("odj-audio", str(capture_engine)),
+            device_name="No Such Input",
+            startup_check_s=5.0,
+        )
+    assert "odj-audio stopped" in str(exc.value) and "is not connected" in str(exc.value)
+    assert sets_paths.segment_files(tmp_path / "s") == []
 
 
-def test_a_capture_that_dies_reads_failed(tmp_path: Path, stub: Any):
+def test_a_capture_that_dies_reads_failed(tmp_path: Path, capture_engine: Path, null_input: str):
     """[if] odj-audio exits without its stopped line [then] REC shows the capture failed."""
-    handle = capture.start_capture(tmp_path / "s", 1, backend=stub("dies"), startup_check_s=0.3)
+    handle = _start(capture_engine, tmp_path / "s", null_input)
     assert _wait_for(lambda: handle.current_state() == "recording")
-    assert capture.stop_capture(handle) == 1
-    assert handle.current_state() == "failed"
+    handle.proc.kill()
+    handle.proc.wait(timeout=5)
+    assert _wait_for(lambda: handle.current_state() == "failed")
+    assert capture.stop_capture(handle) != 0
 
 
-def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, stub: Any):
-    """[if] closing stdin does not end it [then] stop still returns, by kill."""
-    handle = capture.start_capture(tmp_path / "s", 1, backend=stub("deaf"), startup_check_s=0.3)
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGSTOP is POSIX; Windows has no way to freeze a process")
+def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, capture_engine: Path, null_input: str):
+    """[if] closing stdin does not end it (here: frozen) [then] stop still returns, by kill."""
+    handle = _start(capture_engine, tmp_path / "s", null_input)
     assert _wait_for(lambda: handle.current_state() == "recording")
-    assert capture.stop_capture(handle, timeout=0.2) != 0
+    os.kill(handle.proc.pid, signal.SIGSTOP)
+    assert capture.stop_capture(handle, timeout=0.3) != 0
     assert handle.proc.poll() is not None
     assert handle.log_fh.closed
 
 
-def test_microphone_access_turned_off_refuses_rec_with_the_reason(tmp_path: Path, stub: Any):
-    """[if] odj-audio refuses at start (access off) [then] REC fails with its message, pipes closed."""
-    with pytest.raises(capture.CaptureUnavailable) as exc:
-        capture.start_capture(tmp_path / "s", 1, backend=stub("denied"), startup_check_s=1.0)
-    assert "odj-audio stopped" in str(exc.value) and "microphone access" in str(exc.value)
+#: `odj-audio record` stdout during a first-run macOS microphone prompt, as
+#: record_cmd prints it (apps/audio-engine/src/bin/odj-audio.rs). The prompt
+#: only exists on macOS, so this is that protocol, read through a real pipe.
+PROMPT_LINES = [
+    b'{"waiting":"microphone_permission"}\n',
+    b'{"recording":{"channels":2,"device":"BlackHole 2ch","rate":48000,"source_channels":2}}\n',
+    b'{"stopped":{"dropped_samples":0,"frames":96000,"segments":["audio_2026-10-03T03-29-00.wav"]}}\n',
+]
 
 
-class _FfmpegPopen:
-    def __init__(self, argv: list[str], **kwargs: Any) -> None:
-        self.argv = argv
-        self.returncode: int | None = None
+def _follow(lines: list[bytes]) -> tuple[CaptureState, list[str], io.BytesIO]:
+    """Feed ``lines`` through a pipe to the reader; the states it passed through."""
+    read_fd, write_fd = os.pipe()
+    state = CaptureState("starting")
+    log = io.BytesIO()
+    seen: list[str] = []
+    with os.fdopen(read_fd, "rb") as stdout, os.fdopen(write_fd, "wb", buffering=0) as feed:
+        thread = follow_record_output(stdout, log, state)
+        for line in lines:
+            feed.write(line)
+            assert _wait_for(lambda: log.getvalue().endswith(line), timeout=5)
+            seen.append(state.value)
+        feed.close()
+        thread.join(timeout=5)
+    return state, seen, log
 
-    def poll(self) -> int | None:
-        return self.returncode
+
+def test_rec_waits_while_the_macos_microphone_prompt_is_up():
+    """[if] macOS is still asking for the microphone [then] the state is waiting, not recording,
+    until audio is written (Silver lost 42 s to a REC that looked live during the prompt)."""
+    state, seen, log = _follow(PROMPT_LINES)
+    assert seen == ["waiting_permission", "recording", "stopped"]
+    assert state.value == "stopped"
+    assert log.getvalue() == b"".join(PROMPT_LINES)
 
 
-def test_a_pinned_ffmpeg_still_records_mp3_through_avfoundation(tmp_path: Path):
-    """Control: the ffmpeg backend is unchanged when it is the one picked."""
-    handle = capture.start_capture(
-        tmp_path, 2, popen=cast(Any, _FfmpegPopen), backend=capture.CaptureBackend("ffmpeg", "/usr/bin/ffmpeg")
-    )
-    assert handle.backend == "ffmpeg"
-    assert handle.current_state() == "recording"
-    assert handle.argv[0] == "/usr/bin/ffmpeg" and handle.argv[handle.argv.index("-i") + 1] == ":2"
-    assert handle.argv[-1].endswith(".mp3")
-    handle.log_fh.close()
+def test_output_that_ends_without_stopped_is_a_failed_capture():
+    """Control: the same prompt, then the engine gone, ends failed, not waiting."""
+    state, seen, _ = _follow(PROMPT_LINES[:1])
+    assert seen == ["waiting_permission"] and state.value == "failed"
 
 
 # ---------------------------------------------------------------------------
