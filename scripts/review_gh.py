@@ -65,6 +65,31 @@ def _body_is_at_head(body: str, head_sha: str) -> bool:
     return False
 
 
+#: The bot login each expected reviewer posts under. A reviewer's STATUS is not
+#: evidence it reviewed; #682 carried CodeRabbit "Review completed" with zero
+#: submitted reviews and zero inline comments (Tue 1 Sep 2026). Only an ARTIFACT
+#: -- a submitted review, an inline comment, or a review summary comment -- shows
+#: that something actually looked at the diff.
+REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
+    "Codex": ("chatgpt-codex-connector",),
+}
+
+
+def _matches(login: str, name: str) -> bool:
+    """Exact match on the normalized login, never a substring test.
+
+    issue #1016 P1 BLOCKING, thread r3929765931 (PR #1053, Thu 3 Sep 2026): a
+    substring check accepted `chatgpt-codex-connector-attacker` as Codex,
+    because `"chatgpt-codex-connector" in login.lower()` is true for any
+    login merely CONTAINING the trusted stem. On a public repo any commenter
+    could post a current-head `Completed` line under that name and pass
+    coverage without a real Codex review. Normalize the `[bot]` suffix and
+    require full equality, the same rule `review_thread_parse._is_bot` already
+    applies to its own bot-identity check.
+    """
+    return login.removesuffix("[bot]").lower() in REVIEWER_LOGINS.get(name, ())
+
+
 class TriageError(RuntimeError):
     """Measurement failed. Never rendered as a verdict."""
 
