@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { stopPerformanceRecorder } from '$lib/sets/performance-recorder';
+	import { captureFailureMessage, recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './IconRail.svelte';
 
@@ -18,8 +18,10 @@
 		session_id: null,
 		pid: null,
 		owned: false,
-		recoverable: false
+		recoverable: false,
+		capture: 'none'
 	});
+	let rail = $derived(recordRailState(recorder));
 	let recorderBusy = $state(false);
 	// Lazy: the picker renders only after a REC click, so it stays out of the
 	// /performance bundle budget (charged to other-lazy instead). Non-null
@@ -28,6 +30,23 @@
 
 	onMount(() => {
 		void refreshRecorderStatus();
+	});
+
+	// SET-11: while the capture is starting or waiting on the macOS microphone
+	// prompt, re-read it so REC lights the moment audio is really written; and
+	// while it records, so an input that stops mid-set unlights REC.
+	$effect(() => {
+		const after = rail.poll;
+		if (after === null) return;
+		const timer = setTimeout(() => void refreshRecorderStatus(), after);
+		return () => clearTimeout(timer);
+	});
+
+	let failureShown = false;
+	$effect(() => {
+		const failure = captureFailureMessage(recorder);
+		if (failure !== null && !failureShown) pushToast(failure, 'error');
+		failureShown = failure !== null;
 	});
 
 	async function refreshRecorderStatus(): Promise<void> {
@@ -61,8 +80,10 @@
 <IconRail
 	{source}
 	{onspotify}
-	recording={recorder.active}
+	recording={rail.recording}
 	recordingBusy={recorderBusy}
+	recordingWaiting={rail.waiting}
+	recordingTip={rail.tip}
 	onrecord={() => void togglePerformanceRecording()}
 />
 

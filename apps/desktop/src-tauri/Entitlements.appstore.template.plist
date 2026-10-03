@@ -52,5 +52,16 @@
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
+
+    <!-- Two users of the microphone, one key. The webview's getUserMedia:
+         WebKit names output devices only once an input is granted, and
+         headphone cue calibration listens for its click train (INSTALL-34;
+         the Developer ID build carries the same key in Entitlements.app.plist).
+         And set recording (SET-10, SET-11): REC captures its input through
+         the bundled odj-audio, a payload executable signed with only the
+         inherited sandbox, so its grant comes from this parent profile.
+         A sandbox without this key refuses the microphone outright. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>
