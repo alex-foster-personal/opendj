@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .models_grid_quality import GridQualityRowOut
+from .models_tempo_pref import TempoPrefOut, TempoPrefPatch
 
 FileAvailabilityStatus = Literal[
     "present",
@@ -34,31 +35,6 @@ class ProvenanceOut(BaseModel):
     modified_at: str
     status: Literal["ok", "failed", "missing", "available-not-selected"]
     reason: str | None = None
-
-
-class TempoPrefOut(BaseModel):
-    """PREF-01: a track's user-set preferred tempo plus its playable range.
-
-    Any of the three may be null (unset). Never fabricated on read - a track
-    with no tempo_pref field row at all projects as a null ``TrackOut.tempo_pref``,
-    not this shape with all-null members (see sqlite_backend._row_to_track).
-    """
-
-    regular: float | None = None
-    min: float | None = None
-    max: float | None = None
-
-
-class TempoPrefPatch(BaseModel):
-    regular: float | None = None
-    min: float | None = None
-    max: float | None = None
-
-    @model_validator(mode="after")
-    def _min_less_than_max(self) -> TempoPrefPatch:
-        if self.min is not None and self.max is not None and self.min >= self.max:
-            raise ValueError("tempo_pref.min must be less than tempo_pref.max")
-        return self
 
 
 class TrackOut(BaseModel):
