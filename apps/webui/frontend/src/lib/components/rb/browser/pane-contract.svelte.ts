@@ -80,6 +80,8 @@ export interface BrowserRow extends Pick<
 	genre: string | null;
 	/** Explains an empty genre cell (missing tags extra, no file tag, etc.). */
 	genre_reason?: string | null;
+	/** GENRE-02: a JEV genre-family guess; shown only while genre is empty. */
+	genre_guess?: { family: string; confidence: number; source: 'jev' } | null;
 	/** Disk truth (contract 1/4, PERF-RB-01); null ONLY while pending. */
 	file_exists: boolean | null;
 	/** Typed disk-truth lane; pending rows are neither playable nor broken. */

@@ -19,10 +19,7 @@ from apps.library_wheel.query import query_library_wheel
 from apps.shared import paths as shared_paths
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
-from apps.webui.server.rb_vendor_pkg.track_rows import (
-    GENRE_REASON_NO_FILE_TAG,
-    GENRE_REASON_TAGS_EXTRA_MISSING,
-)
+from apps.webui.server.rb_vendor_pkg.track_rows import GENRE_REASON_NO_FILE_TAG
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.webui.library_wheel_fixtures import _make_master_db, _make_state_db
 
@@ -270,7 +267,7 @@ def test_tracks_listing_hides_tombstoned_genre(tombstoned_genre_client: TestClie
     assert resp.status_code == 200, resp.text
     row = resp.json()["items"][0]
     assert row["genre"] is None
-    assert row["genre_reason"] in (GENRE_REASON_NO_FILE_TAG, GENRE_REASON_TAGS_EXTRA_MISSING)
+    assert row["genre_reason"] == GENRE_REASON_NO_FILE_TAG
 
 
 @pytest.fixture
@@ -316,10 +313,10 @@ def test_tracks_listing_names_no_file_tag_reason_when_mutagen_available(
     assert row["genre_reason"] == GENRE_REASON_NO_FILE_TAG
 
 
-def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
+def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
     tmp_path: Path,
 ) -> None:
-    """[if] tags extra is not installed [then] genre_reason names it, [else stop]."""
+    """[if] mutagen is absent, as in the packaged app [then] the reason is no-file-tag, [else stop]."""
     state_path = tmp_path / "state.db"
     conn = state_db.open_rw(state_path)
     try:
@@ -383,9 +380,11 @@ def test_tracks_listing_names_tags_extra_when_mutagen_unavailable(
     ]
     assert len(reason_lines) == 1, completed.stdout
     reason = reason_lines[0].removeprefix("GENRE_REASON=")
-    assert reason == GENRE_REASON_TAGS_EXTRA_MISSING
-    assert "tags" in reason
-    assert "mutagen" in reason
+    # tinytag reads file genres when mutagen is absent, so a missing mutagen is
+    # not a missing genre reader, and the packaged app never ships mutagen.
+    assert reason == GENRE_REASON_NO_FILE_TAG
+    assert "install" not in reason
+    assert "mutagen" not in reason
 
 
 def _find_track(result: dict, stable_id: str) -> dict:
