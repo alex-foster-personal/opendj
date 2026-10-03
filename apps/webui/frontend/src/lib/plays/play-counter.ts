@@ -212,6 +212,17 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 			return { decks, posted, failed };
 		},
 		stop(): void {
+			if (stopped) return;
+			// Credit the audible stretch since the last tick first, so a load that
+			// crossed the threshold between ticks is not dropped on unmount. The
+			// deck engine may already be gone; then the last tick's count stands.
+			try {
+				const state = sample();
+				const at = now();
+				for (const deck of DECK_IDS) _observe(state, deck, at);
+			} catch {
+				// keep what earlier ticks counted
+			}
 			stopped = true;
 			for (const { deck, load } of outbox.splice(0)) _send(deck, load);
 		}

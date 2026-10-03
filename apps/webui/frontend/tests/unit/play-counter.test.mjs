@@ -16,6 +16,8 @@
  * - if the default post stops hitting POST /api/v1/tracks/{id}/plays then the
  *   counter runs and nothing is ever logged
  * - if /performance stops installing the counter then nothing counts at all
+ * - if stop does not sample once more then a play that crossed the threshold
+ *   since the last tick is lost when /performance unmounts
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -244,6 +246,46 @@ test('a post that fails after the counter stops retries on its own, not on a tic
 	assert.deepEqual(seen, ['play-1', 'play-1', 'play-1']);
 	assert.equal(h.counter.status().posted, 1);
 	assert.equal(later.length, 0);
+});
+
+test('stopping between ticks credits the heard time since the last tick', async () => {
+	const h = harness();
+	h.counter.tick();
+	h.run(mod.PLAY_THRESHOLD_S - 1);
+	// The threshold is crossed half a sample later, then /performance unmounts.
+	h.world.t += 1000;
+	h.counter.stop();
+	await settle();
+	assert.equal(h.posts.length, 1, 'a play heard past the threshold was dropped on stop');
+	assert.equal(Math.round(h.posts[0].audibleS), mod.PLAY_THRESHOLD_S);
+});
+
+test('stopping short of the threshold posts nothing, and a second stop is a no-op', async () => {
+	const h = harness();
+	h.counter.tick();
+	h.run(mod.PLAY_THRESHOLD_S - 2);
+	h.world.t += 1000;
+	h.counter.stop();
+	h.world.t += 5000;
+	h.counter.stop();
+	await settle();
+	assert.equal(h.posts.length, 0, 'stop credited time past the moment it was called');
+});
+
+test('a stop whose final read fails keeps the plays already counted', async () => {
+	const h = harness();
+	h.counter.tick();
+	h.run(mod.PLAY_THRESHOLD_S);
+	const broken = mod.createPlayCounter({
+		sample: () => {
+			throw new Error('engine gone');
+		},
+		post: async () => {}
+	});
+	assert.doesNotThrow(() => broken.stop());
+	h.counter.stop();
+	await settle();
+	assert.equal(h.posts.length, 1);
 });
 
 test('the default post hits POST /api/v1/tracks/{id}/plays with the wire body', async () => {

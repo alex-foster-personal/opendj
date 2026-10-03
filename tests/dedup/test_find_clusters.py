@@ -283,6 +283,7 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
     assert len(run(members)) == 1
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (1,)
+    found_header = (tmp_path / "c.csv").read_text(encoding="utf-8").splitlines()[0]
 
     # A borderline row a previous run left for manual review.
     with (tmp_path / "m.csv").open("a", encoding="utf-8") as handle:
@@ -292,7 +293,12 @@ def test_rerun_with_no_fingerprints_clears_previous_clusters(tmp_path: Path) -> 
     with sqlite3.connect(db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM duplicate_clusters").fetchone() == (0,)
         assert conn.execute("SELECT COUNT(*) FROM track_aliases").fetchone() == (0,)
-    # The manual-review artifact is rewritten too, header only.
+    # Both artifacts are rewritten header only, with the same schema a run
+    # that found clusters writes.
+    assert (tmp_path / "c.csv").read_text(encoding="utf-8").splitlines() == [
+        found_header
+    ]
+    assert found_header.split(",") == list(fc_mod.CLUSTERS_CSV_HEADER)
     assert (tmp_path / "m.csv").read_text(encoding="utf-8").splitlines() == [
         "cluster_id,reason,canonical_path,alias_path,similarity,duration_delta_s"
     ]

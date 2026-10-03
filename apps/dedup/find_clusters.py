@@ -37,6 +37,25 @@ from . import schema as dedup_schema
 DEFAULT_THRESHOLD = 0.92
 DEFAULT_MAX_CLUSTER = 8
 DEFAULT_DURATION_DELTA_S = 3.0
+# Both CSVs keep one header whether or not the scan found anything, so a
+# consumer of an empty run reads a header-only file, not a different schema.
+CLUSTERS_CSV_HEADER = (
+    "cluster_id",
+    "canonical_path",
+    "canonical_stable_id",
+    "alias_path",
+    "alias_stable_id",
+    "similarity",
+    "rationale",
+)
+MANUAL_REVIEW_CSV_HEADER = (
+    "cluster_id",
+    "reason",
+    "canonical_path",
+    "alias_path",
+    "similarity",
+    "duration_delta_s",
+)
 # Identical sub-fingerprints at one offset before a pair is scored at all.
 # At the 0.92 threshold about 7% of a pair's sub-fingerprints are still
 # bit-exact (0.92^32), which is ~66 for a 120 s fingerprint and still 2 or
@@ -263,11 +282,10 @@ def run_find_clusters(
         finally:
             conn.close()
         use_csv.parent.mkdir(parents=True, exist_ok=True)
-        use_csv.write_text("cluster_id,canonical_path\n", encoding="utf-8")
+        use_csv.write_text(",".join(CLUSTERS_CSV_HEADER) + "\n", encoding="utf-8")
         use_manual.parent.mkdir(parents=True, exist_ok=True)
         use_manual.write_text(
-            "cluster_id,reason,canonical_path,alias_path,similarity,duration_delta_s\n",
-            encoding="utf-8",
+            ",".join(MANUAL_REVIEW_CSV_HEADER) + "\n", encoding="utf-8"
         )
         return []
 
@@ -303,27 +321,8 @@ def run_find_clusters(
     ) as manual_f:
         w = csv.writer(csv_f)
         m = csv.writer(manual_f)
-        w.writerow(
-            [
-                "cluster_id",
-                "canonical_path",
-                "canonical_stable_id",
-                "alias_path",
-                "alias_stable_id",
-                "similarity",
-                "rationale",
-            ]
-        )
-        m.writerow(
-            [
-                "cluster_id",
-                "reason",
-                "canonical_path",
-                "alias_path",
-                "similarity",
-                "duration_delta_s",
-            ]
-        )
+        w.writerow(CLUSTERS_CSV_HEADER)
+        m.writerow(MANUAL_REVIEW_CSV_HEADER)
 
         for members_idx in buckets.values():
             if len(members_idx) < 2:
