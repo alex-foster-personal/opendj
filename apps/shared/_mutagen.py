@@ -1,4 +1,4 @@
-"""Single import-guard for the optional ``mutagen`` tag-library dependency.
+"""Single import-guard for the optional ``mutagen`` tag-WRITING dependency.
 
 Why this exists
 ---------------
@@ -8,7 +8,12 @@ To keep the Apache wheel ``pip install``-clean of a GPL *runtime* requirement
 (see LIC-1 in the dep audit) we demoted ``mutagen`` from ``[project]
 .dependencies`` to the ``[project.optional-dependencies].tags`` extra.
 
-Every callsite that needs tag I/O imports from this module and invokes
+Since Thu 1 Oct 2026 every tag READ goes through ``tinytag`` (MIT, core;
+see :mod:`apps.shared._tagreader`). What remains here is the opt-in write
+family: ``apps.shared.tag_writer`` (and the ``apps.tags`` unify pipeline
+built on it), ``apps.analysis.write_tags`` and the Serato GEOB codec.
+
+Every such callsite imports from this module and invokes
 :func:`require` at the public-function entry point, so:
 
 * Modules can still be imported without ``mutagen`` present; tests,

@@ -62,6 +62,7 @@ from apps.sync_hub import maintenance
 from tests.cloudsync.live_engine_rig import (
     BOOT_ID,
     boot_real_engine,
+    bound_loopback,
     free_port,
     start_hanging_listener,
     start_path_delaying_proxy,
@@ -95,8 +96,8 @@ def real_engine(
     ``app.state`` directly (see `test_verified_engine_error_status_is_inconclusive_not_safe`).
     """
     data_dir = tmp_path / "engine-data"
-    port = free_port()
-    app, server, thread, lock = boot_real_engine(data_dir, monkeypatch, port=port)
+    listener, port = bound_loopback()
+    app, server, thread, lock = boot_real_engine(data_dir, monkeypatch, listener=listener)
     try:
         yield f"http://127.0.0.1:{port}", data_dir, app
     finally:
@@ -245,9 +246,9 @@ def test_409_with_unexpected_body_is_inconclusive_not_safe(
     def ui_mirror() -> JSONResponse:
         return JSONResponse(status_code=409, content={"client_open": True})
 
-    port = free_port()
+    listener, port = bound_loopback()
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server, thread = start_uvicorn_in_thread(config, what="the unexpected-409 fake engine")
+    server, thread = start_uvicorn_in_thread(config, what="the unexpected-409 fake engine", sockets=[listener])
     try:
         write_lock(tmp_path, port=port)
         with pytest.raises(SyncDeferredError) as excinfo:
@@ -272,9 +273,9 @@ def test_malformed_200_body_fails_closed_not_crashes(tmp_path: Path) -> None:
     def ui_mirror() -> PlainTextResponse:
         return PlainTextResponse("not json", status_code=200)
 
-    port = free_port()
+    listener, port = bound_loopback()
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server, thread = start_uvicorn_in_thread(config, what="the malformed-body fake engine")
+    server, thread = start_uvicorn_in_thread(config, what="the malformed-body fake engine", sockets=[listener])
     try:
         write_lock(tmp_path, port=port)
         with pytest.raises(SyncDeferredError) as excinfo:
@@ -309,8 +310,7 @@ def test_locked_engine_health_check_timeout_fails_closed(
     engine or from nothing implementing HTTP on the other end.
     """
     monkeypatch.setattr(engine_origin, "IDENTITY_PROBE_TIMEOUT_S", 0.2)
-    port = free_port()
-    listener, thread = start_hanging_listener(port=port)
+    listener, thread, port = start_hanging_listener()
     try:
         write_lock(tmp_path, port=port)
         with pytest.raises(SyncDeferredError) as excinfo:
@@ -347,13 +347,13 @@ def _run_two_engine_probe(
     """
     override_data_dir = tmp_path / "sandboxed-engine"
     data_dir = tmp_path / "unrelated-data-dir"
-    override_port = free_port()
-    data_dir_port = free_port()
+    override_listener, override_port = bound_loopback()
+    data_dir_listener, data_dir_port = bound_loopback()
     _override_app, override_server, override_thread, override_lock = boot_real_engine(
-        override_data_dir, monkeypatch, port=override_port
+        override_data_dir, monkeypatch, listener=override_listener
     )
     _data_dir_app, data_dir_server, data_dir_thread, data_dir_lock = boot_real_engine(
-        data_dir, monkeypatch, port=data_dir_port
+        data_dir, monkeypatch, listener=data_dir_listener
     )
     try:
         if override_playing:
@@ -438,8 +438,8 @@ def test_verified_engine_mirror_timeout_fails_closed(
     """
     monkeypatch.setattr(maintenance, "_LIVE_MIRROR_PROBE_TIMEOUT_S", 0.2)
     data_dir = tmp_path / "engine-data"
-    engine_port = free_port()
-    _app, server, engine_thread, lock = boot_real_engine(data_dir, monkeypatch, port=engine_port)
+    engine_listener, engine_port = bound_loopback()
+    _app, server, engine_thread, lock = boot_real_engine(data_dir, monkeypatch, listener=engine_listener)
     proxy_listener, proxy_thread, proxy_port = start_path_delaying_proxy(
         upstream_port=engine_port,
         delay_path="/api/v1/state/ui-mirror",

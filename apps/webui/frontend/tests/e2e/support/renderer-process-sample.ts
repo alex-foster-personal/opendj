@@ -1,6 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import type { CDPSession } from '@playwright/test';
 
+/** macOS system tool paths (resolved explicitly; do not rely on PATH). */
+const LSOF_BIN = '/usr/sbin/lsof';
+const PS_BIN = '/bin/ps';
+const FOOTPRINT_BIN = '/usr/bin/footprint';
+
 export interface ProcessInfoEntry {
 	id: number;
 	type: string;
@@ -311,7 +316,7 @@ function uvRunsEngineModule(args: string[]): boolean {
  * it is, and an ssh/socat/kubectl/nc/bespoke-proxy forwarder can never
  * satisfy it, because none of them run engine code. */
 export function assertLocalProcessIsTheEngine(pid: number): void {
-	const command = execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], {
+	const command = execFileSync(PS_BIN, ['-ww', '-o', 'command=', '-p', String(pid)], {
 		encoding: 'utf-8'
 	}).trim();
 	if (!isEngineCommand(command)) {
@@ -395,7 +400,7 @@ export async function engineRootPids(apiBase: string, expectedPid?: number): Pro
 	assertLoopbackOrigin(apiBase);
 	const port = new URL(apiBase).port;
 	if (port === '') throw new Error(`API base ${apiBase} has no explicit port`);
-	const output = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
+	const output = execFileSync(LSOF_BIN, ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
 		encoding: 'utf-8'
 	});
 	const pids = [...new Set(output.split(/\s+/).filter(Boolean).map(Number))];
@@ -410,12 +415,12 @@ export async function engineRootPids(apiBase: string, expectedPid?: number): Pro
 }
 
 function readPsTable(): PsRow[] {
-	return parsePsTable(execFileSync('ps', ['-Ao', 'pid=,ppid=,rss=,%cpu='], { encoding: 'utf-8' }));
+	return parsePsTable(execFileSync(PS_BIN, ['-Ao', 'pid=,ppid=,rss=,%cpu='], { encoding: 'utf-8' }));
 }
 
 function readFootprintMb(pid: number): number {
 	return parseFootprintMb(
-		execFileSync('footprint', ['-p', String(pid)], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }),
+		execFileSync(FOOTPRINT_BIN, ['-p', String(pid)], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }),
 		pid
 	);
 }
