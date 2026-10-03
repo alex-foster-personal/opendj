@@ -191,6 +191,17 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     assert _tagreader.adts_duration(track) == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
     audio_playable.probe_playable_audio(track)
 
+    # A leading ID3v2 tag before the ADTS frames is skipped, as the upload
+    # duration path skips it, so a file that staged also materializes.
+    tagged = tmp_path / "tagged.aac"
+    tagged.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x05" + b"\x00" * 5 + _real_aac())
+    audio_playable.probe_playable_audio(tagged)
+    # An ID3v2 tag followed by no ADTS stream is still refused.
+    id3_only = tmp_path / "id3-only.aac"
+    id3_only.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x05" + b"\x00" * 5)
+    with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
+        audio_playable.probe_playable_audio(id3_only)
+
     # A bare ADTS sync word passes the magic check but holds no frame.
     stub = tmp_path / "stub.aac"
     stub.write_bytes(b"\xff\xf1")

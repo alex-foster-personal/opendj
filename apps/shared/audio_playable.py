@@ -99,9 +99,7 @@ def _check_container_magic(ext: str, header: bytes) -> None:
         return
 
     if ext == ".aac":
-        if not _adts_sync_ok(header) and not (
-            len(header) >= 12 and header[4:8] == b"ftyp"
-        ):
+        if not _aac_magic_ok(header):
             raise UnplayableAudioError("missing aac/adts magic")
         return
 
@@ -128,6 +126,14 @@ def _mp3_magic_ok(header: bytes) -> bool:
         layer = (header[1] >> 1) & 0x03
         return layer != 0
     return False
+
+
+def _aac_magic_ok(header: bytes) -> bool:
+    # A raw ADTS stream may open with an ID3v2 tag; the frame walk in
+    # _probe_adts skips it and refuses the file if no ADTS follows.
+    if _adts_sync_ok(header) or header.startswith(b"ID3"):
+        return True
+    return len(header) >= 12 and header[4:8] == b"ftyp"
 
 
 def _adts_sync_ok(header: bytes) -> bool:
