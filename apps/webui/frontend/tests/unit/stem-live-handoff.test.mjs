@@ -75,6 +75,9 @@ function deck(overrides = {}) {
 		commit: (when, segment) => {
 			log.push(['commit', when, segment.positionSec]);
 		},
+		holdCommandsUntil: (when) => {
+			log.push(['holdCommandsUntil', when]);
+		},
 		stale: () => state.stale,
 		replaceable: () => state.replaceable,
 		adoptStopped: () => {
@@ -94,7 +97,7 @@ test('a playing idle deck hands off at one shared instant, stems first', async (
 	const { deps, log } = deck();
 	const outcome = await mod.handOffStemsLive(deps, 0.15);
 	assert.equal(outcome, 'handed_off');
-	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'connectIncoming', 'stopOutgoing', 'commit']);
+	assert.deepEqual(names(log), ['segmentAt', 'scheduleIncoming', 'connectIncoming', 'stopOutgoing', 'commit', 'holdCommandsUntil']);
 	const when = log[0][1];
 	assert.ok(when >= 100 + 0.05 + 0.15, `handoff instant ${when} is inside the processor lead`);
 	// The whole point: one instant for both sides. A different stop time is a
@@ -204,7 +207,7 @@ test('a busy deck is retried, then handed off once it is idle', async () => {
 	};
 	assert.equal(await mod.landStemUpgrade(deps), 'handed_off');
 	assert.equal(sleeps, 2);
-	assert.equal(names(log).at(-1), 'commit');
+	assert.deepEqual(names(log).slice(-2), ['commit', 'holdCommandsUntil']);
 });
 
 test('a deck that goes stale mid-retry lands nothing', async () => {
@@ -276,7 +279,8 @@ function landing(overrides = {}) {
 		controlActive: true,
 		nextScheduleRevision: 3,
 		scheduleIntentCount: 0,
-		pending: []
+		pending: [],
+		scheduleTail: Promise.resolve()
 	};
 	const port = {
 		runtime,
@@ -341,7 +345,7 @@ test('the stopped mix is retired only after its stop instant has passed', async 
 	assert.equal(await done, 'handed_off');
 	assert.ok(!names(log).includes('retire'), 'the mix was retired while it could still be the audible tail');
 	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
-	assert.equal(timers.length, 2);
+	assert.equal(timers.length, 3);
 	// The stop was acknowledged, so the timer at the handoff instant does nothing.
 	timers[0].run();
 	assert.ok(!names(log).includes('retire'), 'an acknowledged stop was retired at the instant it renders');
@@ -349,6 +353,21 @@ test('the stopped mix is retired only after its stop instant has passed', async 
 	assert.ok(Math.abs(timers[1].ms - expectedMs) < 1e-6, `retire timer ${timers[1].ms}ms, expected ${expectedMs}ms`);
 	timers[1].run();
 	assert.deepEqual(log.at(-1), ['retire', 'mix']);
+});
+
+test('a command sent before the handoff instant waits for it, so it never reaches the stems beside the mix', async () => {
+	const { port, log, timers } = landing({ autoTimers: false });
+	assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
+	const when = log.find((entry) => entry[0] === 'commit')[1];
+	let commandRan = false;
+	const command = port.runtime.scheduleTail.then(() => (commandRan = true));
+	await new Promise((resolve) => setImmediate(resolve));
+	assert.equal(commandRan, false, 'a transport command reached the stems while the mix was still audible');
+	const hold = timers.find((timer) => Math.abs(timer.ms - (when - 100) * 1000) < 1e-6 && timer !== timers[0]);
+	assert.ok(hold, 'no hold was armed at the handoff instant');
+	hold.run();
+	await command;
+	assert.equal(commandRan, true);
 });
 
 test('a mix whose stop is still unacknowledged when the stems start is retired then', async () => {
@@ -380,9 +399,9 @@ test('a mix that refuses its stop keeps playing until the stems start, then is r
 	assert.ok(!names(log).includes('retire'), 'the mix was retired before the stems were audible: the deck goes silent');
 	assert.ok(errors.some((args) => args.some((arg) => arg instanceof Error && arg.message === 'stop timed out')), 'the stop error was swallowed');
 	const when = log.find((entry) => entry[0] === 'commit')[1];
-	assert.equal(timers.length, 3);
-	assert.ok(Math.abs(timers[2].ms - (when - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[2].ms}ms, expected the handoff instant`);
-	timers[2].run();
+	assert.equal(timers.length, 4);
+	assert.ok(Math.abs(timers[3].ms - (when - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[3].ms}ms, expected the handoff instant`);
+	timers[3].run();
 	timers[0].run();
 	timers[1].run();
 	assert.deepEqual(log.filter((entry) => entry[0] === 'retire'), [['retire', 'mix']], 'the mix was retired twice');

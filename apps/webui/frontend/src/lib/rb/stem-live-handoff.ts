@@ -25,6 +25,7 @@
  *       [if] the schedule revision moved during the ack and it commits [then ⛔️]
  *       [if] a command is still queued and it commits [then ⛔️]
  *       [if] a canceled handoff stops the mix [then ⛔️]
+ *       [if] a command sent between the commit and the handoff instant reaches the stems before the mix has stopped [then ⛔️]
  *   ✔︎ ✅ 🎯 A failed or late handoff never disturbs the playing mix.
  *       [if] a rejected stem schedule stops or retires the mix [then ⛔️]
  *       [if] a late acknowledgement commits [then ⛔️]
@@ -90,6 +91,10 @@ export interface StemHandoffDeps {
 	retireRefusedOutgoing(when: number, error: unknown): void;
 	/** Make the stems the deck's processor and publish `ready`. Synchronous. */
 	commit(when: number, segment: StemHandoffSegment): void;
+	/** Queue the deck's transport commands behind `when`. Until then the mix is
+	 * still the audible processor and only its scheduled stop reaches it, so a
+	 * command sent to the stems alone would double or outlive the mix. */
+	holdCommandsUntil(when: number): void;
 	/** The load this upgrade belongs to is gone (track swapped, graph rebuilt). */
 	stale(): boolean;
 	/** The deck is at rest, so the plain stopped swap applies. */
@@ -150,6 +155,7 @@ export async function handOffStemsLive(
 	deps.connectIncoming();
 	void deps.stopOutgoing(when).catch((error: unknown) => deps.retireRefusedOutgoing(when, error));
 	deps.commit(when, segment);
+	deps.holdCommandsUntil(when);
 	return 'handed_off';
 }
 
@@ -194,6 +200,9 @@ export interface StemLandingRuntime {
 	readonly nextScheduleRevision: number;
 	readonly scheduleIntentCount: number;
 	readonly pending: readonly unknown[];
+	/** The deck's transport command queue: every play, pause, seek or tempo
+	 * command waits on it before reaching the processor. */
+	scheduleTail: Promise<void>;
 }
 
 /**
@@ -300,6 +309,11 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			setTimer(retireOutgoingOnce, Math.max(0, when - port.clock.currentTime) * 1000);
 		},
 		commit: (when) => port.commit(when),
+		holdCommandsUntil: (when) => {
+			const queued = rt.scheduleTail;
+			const untilMs = Math.max(0, when - port.clock.currentTime) * 1000;
+			rt.scheduleTail = queued.then(() => new Promise<void>((resolve) => setTimer(resolve, untilMs)));
+		},
 		stale: () => port.stale(),
 		replaceable: () => port.replaceable(),
 		adoptStopped: () => port.adoptStopped(),
