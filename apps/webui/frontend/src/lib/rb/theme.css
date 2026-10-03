@@ -112,6 +112,97 @@ html[data-theme='light'][data-wave-palette='legacy'] .perf-root {
 	--rb-wave-high: #3a4653;
 }
 
+/* Mono grayscale waveform palette (skin preview). TS mirror in wave-palette.ts. */
+html[data-wave-palette='mono'] .perf-root {
+	--rb-wave-low: #5c5c5c;
+	--rb-wave-mid: #9a9a9a;
+	--rb-wave-high: #e4e4e4;
+	--rb-wave-mono: #cfcfcf;
+}
+html[data-theme='light'][data-wave-palette='mono'] .perf-root {
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #4a4a4a;
+	--rb-wave-high: #2a2a2a;
+	--rb-wave-mono: #3a3a3a;
+}
+
+/* -------- skin: mono-dev (preview) --------
+ * Near-black grayscale chrome. Declared after the theme blocks so it wins at
+ * equal specificity; dark-only by design (it repaints light too). Red is kept
+ * for errors and missing-file badges only. Section 1 is pure token overrides;
+ * section 2 overrides shapes the token set has no knob for (radius, gradient
+ * fills, BPM size) and is the list of what resisted the theme. */
+html[data-skin='mono-dev'] {
+	color-scheme: dark;
+}
+html[data-skin='mono-dev'] .perf-root {
+	--rb-bg: #0a0a0a;
+	--rb-panel: #0e0e0e;
+	--rb-panel-raised: #141414;
+	--rb-waverow-secondary: #121212;
+	--rb-border: #2a2a2a;
+	--rb-text: #d6d6d6;
+	--rb-text-dim: #8c8c8c;
+	--rb-accent: #d6d6d6;
+	--rb-accent-glow: transparent;
+	--rb-green: #e8e8e8;
+	--rb-orange: #9a9a9a;
+	--rb-wave-low: #5c5c5c;
+	--rb-wave-mid: #9a9a9a;
+	--rb-wave-high: #e4e4e4;
+	--rb-wave-mono: #cfcfcf;
+	--rb-red: #d0342c;
+	--rb-yellow: #b4b4b4;
+	--rb-select: #262626;
+	--rb-master: #cfcfcf;
+	--rb-master-ink: #0a0a0a;
+	--rb-master-text: #f2f2f2;
+	--rb-font: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+	--rb-fs-browser: 10.5px;
+	--rb-fs-label: 9.5px;
+}
+/* Track artwork in grayscale, color back on hover. Keyed on the artwork
+ * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it
+ * covers the deck header, wavestack summary, library rows and the dedup page
+ * (which sits outside .perf-root, hence the html-level token). */
+html[data-skin='mono-dev'] {
+	--rb-artwork-filter: grayscale(1) contrast(1.05);
+}
+html[data-skin='mono-dev'] img[src*='/artwork'] {
+	filter: var(--rb-artwork-filter);
+	transition: filter 120ms ease-out;
+}
+html[data-skin='mono-dev'] img[src*='/artwork']:hover {
+	filter: none;
+}
+/* section 2: shape overrides (no token exists for these) */
+html[data-skin='mono-dev'] .perf-root :is(button, .rb-knob, .rb-fader-thumb, .slot, .round, .pad) {
+	border-radius: 0;
+}
+html[data-skin='mono-dev'] .perf-root :is(.round, .rb-knob) {
+	background: var(--rb-panel);
+	box-shadow: none;
+}
+html[data-skin='mono-dev'] .perf-root .round {
+	border-color: var(--rb-text-dim);
+}
+html[data-skin='mono-dev'] .perf-root .rb-lit-button.lit {
+	color: var(--rb-bg);
+	box-shadow: none;
+}
+html[data-skin='mono-dev'] .perf-root .rb-fader-track {
+	background: var(--rb-bg);
+}
+html[data-skin='mono-dev'] .perf-root .rb-fader-thumb {
+	background: var(--rb-panel-raised);
+}
+html[data-skin='mono-dev'] .perf-root .readout .bpm {
+	font-size: 22px;
+	font-weight: 500;
+	color: #bdbdbd;
+	letter-spacing: -0.02em;
+}
+
 /* -------- panel chrome -------- */
 .perf-root .rb-panel {
 	background: var(--rb-panel);

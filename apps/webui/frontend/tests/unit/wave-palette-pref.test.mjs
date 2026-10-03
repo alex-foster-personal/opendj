@@ -91,7 +91,7 @@ test('the setting is an implemented enum in the catalog and is applyable', async
 	assert.equal(def.implemented, true);
 	assert.deepEqual(
 		def.control.options.map((o) => o.value),
-		['rekordbox', 'legacy']
+		['rekordbox', 'legacy', 'mono']
 	);
 	const apply = await loadTypeScriptModule('src/lib/settings/apply.ts', { viteApiBase: API_BASE });
 	assert.ok(apply.ALLOWED_SETTING_KEYS.includes('wave_palette'));

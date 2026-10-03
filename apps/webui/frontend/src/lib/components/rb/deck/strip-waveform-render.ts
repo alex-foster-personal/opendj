@@ -12,6 +12,8 @@
  * band paints only for an engaged loop the engine actually reports.
  */
 import {
+	BLOCK_BAR_PX,
+	BLOCK_PITCH_PX,
 	drawLoopRegion,
 	resolveStripWaveformKind,
 	VOCAL_BLUE,
@@ -171,6 +173,10 @@ function _drawPreview(
 	const n = bands.length;
 	if (n === 0) return;
 	const w = widthPx / n;
+	if (design === 'blocks') {
+		_drawBlocks(ctx, bands, widthPx, heightPx, colors.mono);
+		return;
+	}
 	if (design === 'line') {
 		ctx.strokeStyle = colors.mono;
 		ctx.lineWidth = 1;
@@ -234,5 +240,27 @@ function _drawLoopCueBands(
 		ctx.lineWidth = 1;
 		ctx.strokeStyle = LOOP_CUE_OUTLINE;
 		ctx.strokeRect(band.left + 0.5, 0.5, Math.max(0, band.right - band.left - 1), markerHeight - 1);
+	}
+}
+
+/** 'blocks' design: mirrored single-color bars, BLOCK_BAR_PX wide on a
+ * BLOCK_PITCH_PX pitch, each the max of the preview points it covers. */
+function _drawBlocks(
+	ctx: CanvasRenderingContext2D,
+	bands: StripBands,
+	widthPx: number,
+	heightPx: number,
+	color: string
+): void {
+	const n = bands.length;
+	const mid = heightPx / 2;
+	ctx.fillStyle = color;
+	for (let x = 0; x < widthPx; x += BLOCK_PITCH_PX) {
+		const p0 = Math.floor((x / widthPx) * n);
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		let v = 0;
+		for (let i = p0; i <= p1; i++) v = Math.max(v, bands.low[i], bands.mid[i], bands.high[i]);
+		const half = Math.round(Math.max(0, Math.min(1, v)) * mid);
+		if (half > 0) ctx.fillRect(x, mid - half, BLOCK_BAR_PX, half * 2);
 	}
 }

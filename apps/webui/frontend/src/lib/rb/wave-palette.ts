@@ -20,9 +20,9 @@
  * color-contrast.ts) against both light row backgrounds.
  */
 
-export type WavePaletteChoice = 'rekordbox' | 'legacy';
+export type WavePaletteChoice = 'rekordbox' | 'legacy' | 'mono';
 
-const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy'];
+const WAVE_PALETTE_CHOICES: readonly WavePaletteChoice[] = ['rekordbox', 'legacy', 'mono'];
 
 export const WAVE_PALETTE_DEFAULT: WavePaletteChoice = 'rekordbox';
 
@@ -30,7 +30,7 @@ export const WAVE_PALETTE_DEFAULT: WavePaletteChoice = 'rekordbox';
 export function parseWavePalette(raw: unknown): WavePaletteChoice | undefined {
 	if (raw === undefined) return undefined;
 	if (!WAVE_PALETTE_CHOICES.includes(raw as WavePaletteChoice)) {
-		throw new Error(`wave_palette must be rekordbox|legacy, got ${String(raw)}`);
+		throw new Error(`wave_palette must be rekordbox|legacy|mono, got ${String(raw)}`);
 	}
 	return raw as WavePaletteChoice;
 }
@@ -55,11 +55,13 @@ export const WAVE_BAND_COLORS: Readonly<
 > = {
 	dark: {
 		rekordbox: { low: '#2767d8', mid: '#f0a020', high: '#f4f6f8', mono: '#3d7dd9' },
-		legacy: { low: '#e8a13a', mid: '#3d7dd9', high: '#cfe0f2', mono: '#3d7dd9' }
+		legacy: { low: '#e8a13a', mid: '#3d7dd9', high: '#cfe0f2', mono: '#3d7dd9' },
+		mono: { low: '#5c5c5c', mid: '#9a9a9a', high: '#e4e4e4', mono: '#cfcfcf' }
 	},
 	light: {
 		rekordbox: { low: '#1d4fa3', mid: '#9a5a00', high: '#4a4f57', mono: '#2166b1' },
-		legacy: { low: '#a44b11', mid: '#2166b1', high: '#3a4653', mono: '#2166b1' }
+		legacy: { low: '#a44b11', mid: '#2166b1', high: '#3a4653', mono: '#2166b1' },
+		mono: { low: '#6a6a6a', mid: '#4a4a4a', high: '#2a2a2a', mono: '#3a3a3a' }
 	}
 };
 

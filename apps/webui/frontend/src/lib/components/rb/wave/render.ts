@@ -110,6 +110,11 @@ export const WAVE_WINDOW_S = 24;
 const HIGH_BAND_SCALE = 0.6;
 const MID_BAND_SCALE = 0.85;
 
+/** 'blocks' design geometry: BLOCK_BAR_PX-wide bars on a BLOCK_PITCH_PX
+ * pitch, i.e. a 1px gap. Rendering style only, heights are the real data. */
+export const BLOCK_BAR_PX = 2;
+export const BLOCK_PITCH_PX = 3;
+
 /** Perceptual amplitude shaping (rendering only, the band DATA is never
  * modified). Raw PWV6/PWV7 bytes sit mostly in the 0.3-0.7 range after
  * /127 scaling, which painted linearly reads as a thin ribbon in a 40px
@@ -259,7 +264,7 @@ export function resolveStripWaveformKind(
 	waveformKind: 'tri' | 'mono',
 	design: WaveformDesign
 ): 'tri' | 'mono' {
-	if (design === 'mono') return 'mono';
+	if (design === 'mono' || design === 'blocks') return 'mono';
 	return waveformKind;
 }
 
@@ -388,6 +393,27 @@ function _drawBands(
 	// Mono payloads mix all three arrays into one height, so normalize by
 	// the loudest band's p99 rather than any single band's.
 	const monoNorm = Math.max(norms.low, norms.mid, norms.high);
+
+	if (design === 'blocks') {
+		const blockPath = new Path2D();
+		for (let x = 0; x < w; x += BLOCK_PITCH_PX) {
+			const p0 = Math.max(0, Math.floor((x / w) * n));
+			const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / w) * n) - 1));
+			const v = _amp(
+				Math.max(
+					_bucketMax(bands.low, p0, p1),
+					_bucketMax(bands.mid, p0, p1),
+					_bucketMax(bands.high, p0, p1)
+				),
+				monoNorm
+			);
+			const half = Math.round(v * halfH);
+			if (half > 0) blockPath.rect(x, centerY - half, BLOCK_BAR_PX, half * 2);
+		}
+		ctx.fillStyle = palette.mono;
+		ctx.fill(blockPath);
+		return;
+	}
 
 	const lowPath = new Path2D();
 	const midPath = new Path2D();

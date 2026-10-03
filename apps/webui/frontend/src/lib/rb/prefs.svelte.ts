@@ -89,6 +89,7 @@ import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLi
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
+import { applyUiSkinDom, parseUiSkin, UI_SKIN_DEFAULT, type UiSkin } from './ui-skin';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 // The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
@@ -216,6 +217,8 @@ export interface RbUiPrefs
 	 * dark blue low, amber mid, white high; 'legacy' is the pre-#4219 orange
 	 * low, blue mid, near-white high. Applied as html[data-wave-palette]. */
 	wave_palette: WavePaletteChoice;
+	/** Chrome skin layered over the theme, applied as html[data-skin]. */
+	ui_skin: UiSkin;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -275,6 +278,7 @@ const DEFAULTS: RbUiPrefs = {
 	show_stems: false,
 	waveform_design: WAVEFORM_DESIGN_DEFAULT,
 	wave_palette: WAVE_PALETTE_DEFAULT,
+	ui_skin: UI_SKIN_DEFAULT,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -317,8 +321,8 @@ function _applyThemeDom(theme: UiTheme): void {
  * the default palette needs no attribute, so it is removed rather than set. */
 function _applyWavePaletteDom(choice: WavePaletteChoice): void {
 	if (typeof document === 'undefined') return;
-	if (choice === 'legacy') document.documentElement.dataset.wavePalette = 'legacy';
-	else delete document.documentElement.dataset.wavePalette;
+	if (choice === 'rekordbox') delete document.documentElement.dataset.wavePalette;
+	else if (choice === 'legacy' || choice === 'mono') document.documentElement.dataset.wavePalette = choice;
 }
 
 function _load(): RbUiPrefs {
@@ -477,6 +481,7 @@ function _load(): RbUiPrefs {
 	}
 	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
 	const wavePalette = parseWavePalette(parsed.wave_palette);
+	const uiSkin = parseUiSkin(parsed.ui_skin);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
 		crossfadeCurve !== undefined &&
@@ -550,6 +555,7 @@ function _load(): RbUiPrefs {
 		show_stems: parsed.show_stems ?? DEFAULTS.show_stems,
 		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
 		wave_palette: wavePalette ?? DEFAULTS.wave_palette,
+		ui_skin: uiSkin ?? DEFAULTS.ui_skin,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
@@ -591,6 +597,7 @@ export const uiPrefs = $state<RbUiPrefs>(_load());
 
 _applyThemeDom(uiPrefs.theme);
 _applyWavePaletteDom(uiPrefs.wave_palette);
+applyUiSkinDom(uiPrefs.ui_skin);
 
 export function setHideBrokenLinks(next: boolean): void {
 	setLibraryBrowserDiskPref(uiPrefs, _persist, _syncDiskPrefs, 'hide_broken_links', next);
@@ -722,7 +729,7 @@ export function setWaveformDesign(next: WaveformDesign): void {
 
 export function setWavePalette(next: WavePaletteChoice): void {
 	if (parseWavePalette(next) === undefined) {
-		throw new Error('wave_palette must be rekordbox|legacy, got undefined');
+		throw new Error('wave_palette must be rekordbox|legacy|mono, got undefined');
 	}
 	uiPrefs.wave_palette = next;
 	_applyWavePaletteDom(next);
@@ -819,3 +826,10 @@ export const hydrateConfirmPrefsFromDisk = makePrefsHydrator({
 	storageKey: STORAGE_KEY,
 	defaults: DEFAULTS
 });
+
+export function setUiSkin(next: UiSkin): void {
+	if (parseUiSkin(next) === undefined) throw new Error('ui_skin must be set, got undefined');
+	uiPrefs.ui_skin = next;
+	applyUiSkinDom(next);
+	_persist();
+}

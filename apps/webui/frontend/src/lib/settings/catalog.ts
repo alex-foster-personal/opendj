@@ -7,7 +7,7 @@ import { APP_POSTURE_SETTING } from './app-posture-setting';
 import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
-import { WAVE_PALETTE_SETTING } from './wave-palette-setting';
+import { UI_SKIN_SETTING, WAVE_PALETTE_SETTING } from './wave-palette-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import {
 	WHEEL_SENSITIVITY,
@@ -243,11 +243,13 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			options: [
 				{ value: 'tri-band', label: 'Tri-band bars' },
 				{ value: 'mono', label: 'Mono envelope' },
-				{ value: 'line', label: 'Line outline' }
+				{ value: 'line', label: 'Line outline' },
+				{ value: 'blocks', label: 'Blocks (mono bars)' }
 			]
 		}
 	},
 	WAVE_PALETTE_SETTING,
+	UI_SKIN_SETTING,
 	{
 		id: 'deck_layout',
 		label: 'Deck layout (MORE/LESS)',
