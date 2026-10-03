@@ -246,7 +246,8 @@ fn itunsmpb<R: Read + Seek>(r: &mut R, moov_kids: &[BoxHead]) -> std::io::Result
                 None => Ok(None),
             }
         };
-        if text(r, b"name", 4)?.as_deref() != Some(b"iTunSMPB") {
+        // A free-form key is its `mean` namespace and its `name` together.
+        if text(r, b"name", 4)?.as_deref() != Some(b"iTunSMPB") || text(r, b"mean", 4)?.as_deref() != Some(b"com.apple.iTunes") {
             continue;
         }
         // `data`: 4 bytes of type, 4 of locale, then the ASCII value.
@@ -322,7 +323,11 @@ mod tests {
 
     /// The `moov/udta/meta/ilst` of an iTunes-tagged file holding `smpb`.
     fn udta(smpb: &str) -> Vec<u8> {
-        let mean = bx(b"mean", &[&[0u8; 4][..], b"com.apple.iTunes"].concat());
+        udta_in(b"com.apple.iTunes", smpb)
+    }
+
+    fn udta_in(namespace: &[u8], smpb: &str) -> Vec<u8> {
+        let mean = bx(b"mean", &[&[0u8; 4][..], namespace].concat());
         let name = bx(b"name", &[&[0u8; 4][..], b"iTunSMPB"].concat());
         let data = bx(b"data", &[&[0, 0, 0, 1, 0, 0, 0, 0][..], smpb.as_bytes()].concat());
         let other = bx(b"----", &[mean.clone(), bx(b"name", b"\0\0\0\0iTunNORM"), bx(b"data", b"\0\0\0\x01\0\0\0\0 1 2")].concat());
@@ -382,6 +387,12 @@ mod tests {
         // Decoded at a different rate than the track's, it scales like an edit.
         let f = tagged(b"soun", None, Some(udta(APPLE)));
         assert_eq!(read_edit(&mut Cursor::new(f), 88200).unwrap().unwrap().skip, 4224);
+    }
+
+    #[test]
+    fn an_itunsmpb_name_outside_apples_namespace_is_not_the_gapless_tag() {
+        let f = tagged(b"soun", None, Some(udta_in(b"com.example.vendor", APPLE)));
+        assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap(), None);
     }
 
     #[test]

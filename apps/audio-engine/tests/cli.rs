@@ -897,6 +897,27 @@ fn an_m4a_with_only_an_itunes_gapless_tag_decodes_without_its_priming() {
     assert_eq!(pcm.len() / ch as usize, 44100, "the tag's exact length, straddling packet cut");
     let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap() / ch as usize;
     assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
+
+    // A stale tag whose delay (0xF000 = 61440) outlasts the stream (45
+    // packets, 46080 frames) is ignored by both paths, which decode untrimmed rather
+    // than fail or go silent.
+    let stale_bytes = {
+        let i = raw.windows(8).position(|w| w == b"00000400").unwrap();
+        let mut b = raw.clone();
+        b[i..i + 8].copy_from_slice(b"0000F000");
+        b
+    };
+    let stale = d.join("stale.m4a");
+    std::fs::write(&stale, stale_bytes).unwrap();
+    let wav = d.join("stale.wav");
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&stale).arg("--out").arg(&wav).output().unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!((s["edit_list"].as_str(), s["trimmed_start_frames"].as_u64()), (Some("none"), Some(0)));
+    let (_, ch, pcm) = read_f32_wav(&wav);
+    assert_eq!(pcm.len() / ch as usize, 46080, "every decoded frame, untrimmed");
+    let deck = odj_audio::decode::decode_file(&stale).unwrap();
+    assert_eq!(deck.pcm.len() / 2, 46080, "the deck ignores the same edit");
 }
 
 /// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still

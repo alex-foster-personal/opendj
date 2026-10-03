@@ -513,10 +513,25 @@ impl Trim {
 /// priming frames early; unlike the deck's exact cut at the edit's end, a
 /// packet that straddles the end is kept whole, as ffmpeg keeps it. `out` must be seekable: the header is
 /// written last, once the length is known. On an error `out` holds a partial
-/// file the caller discards.
+/// file the caller discards. An edit that would leave no audio (a stale
+/// priming delay longer than the stream) is ignored, as the deck ignores it,
+/// and the file is decoded again untrimmed.
 pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWritten, ProtoError> {
+    match decode_to_wav_edit(path, out, true)? {
+        Ok(w) => Ok(w),
+        Err(()) => {
+            out.seek(SeekFrom::Start(0)).map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot rewrite the WAV of {}: {e}", path.display())))?;
+            decode_to_wav_edit(path, out, false)?.map_err(|()| ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())))
+        }
+    }
+}
+
+/// [`decode_to_wav`] with or without the file's edit. `Ok(Err(()))` when the
+/// edit trimmed away every decoded frame.
+fn decode_to_wav_edit<W: Write + Seek>(path: &Path, out: &mut W, apply_edit: bool) -> Result<Result<WavWritten, ()>, ProtoError> {
     let Opened { mut format, mut decoder, track_id, time_base, codec_rate, codec_channels, edit, .. } =
         open_decoder(open(path)?, path)?;
+    let edit = edit.filter(|_| apply_edit);
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
@@ -600,6 +615,9 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     if !decoded_any {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
     }
+    if frames == 0 && trim.trimmed_start > 0 {
+        return Ok(Err(()));
+    }
     if sample_rate == 0 || channels == 0 || frames == 0 {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
@@ -609,14 +627,14 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     out.seek(SeekFrom::Start(0)).map_err(io_err)?;
     wav::write_f32_header(out, ch16, sample_rate, data_bytes).map_err(io_err)?;
     out.flush().map_err(io_err)?;
-    Ok(WavWritten {
+    Ok(Ok(WavWritten {
         sample_rate,
         channels: ch16,
         frames,
         trimmed_start: trim.trimmed_start,
         dropped_end: trim.dropped_end,
         edit: trim.describe(),
-    })
+    }))
 }
 
 /// The first rate decoded is the track's rate. A later buffer at another
