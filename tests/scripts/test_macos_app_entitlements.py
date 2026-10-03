@@ -19,8 +19,8 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
   tauri.conf.json stops pointing the bundler at it -> broken.
 - if `verify-app-entitlements` passes a signature without the key, the gate
   reads an unentitled app as fine -> broken.
-- if it passes when `codesign -d` itself fails, an unreadable signature is
-  reported as a verdict -> broken.
+- if an unsigned app passes, or is reported as merely missing the key, the
+  gate answers a question it never asked -> broken.
 - if `notarize-app` submits an unentitled app, Apple accepts it and the user
   still cannot name a device -> broken.
 """
@@ -55,7 +55,7 @@ needs_codesign = pytest.mark.skipif(
 def _app(tmp_path: Path, entitlements: dict[str, bool] | None) -> Path:
     """A real, minimal app bundle, ad hoc signed by real codesign.
 
-    `entitlements=None` leaves it unsigned, so `codesign -d` genuinely fails."""
+    `entitlements=None` leaves it unsigned."""
     app = tmp_path / "Open DJ.app"
     macos = app / "Contents/MacOS"
     macos.mkdir(parents=True)
@@ -139,14 +139,16 @@ def test_a_signature_without_the_microphone_is_refused(tmp_path: Path, entitleme
 
 @pytest.mark.requirement("INSTALL-33")
 @needs_codesign
-def test_an_unreadable_signature_is_not_a_verdict(tmp_path: Path) -> None:
-    """[if] a failing codesign is read as a verdict [then] fail, [else stop].
+def test_an_unsigned_app_is_not_read_as_missing_the_key(tmp_path: Path) -> None:
+    """[if] an unsigned app passes, or is reported as merely missing the key [then] fail, [else stop].
 
-    An unsigned bundle makes real `codesign -d` fail: that is UNKNOWN, never a pass."""
+    Real `codesign -d` on an unsigned bundle exits 0 with no entitlements on
+    macOS 26, so the gate verifies the signature first and says it is unsigned."""
     result = _sign("verify-app-entitlements", str(_app(tmp_path, None)))
     assert result.returncode != 0
     combined = result.stdout + result.stderr
-    assert "could not read the entitlements" in combined
+    assert "is not validly signed" in combined
+    assert f"is signed without {MIC}" not in combined
     assert "[OK]" not in combined
 
 

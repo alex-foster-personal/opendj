@@ -250,6 +250,11 @@ _require_app_entitlements() {
     local app="$1" ents
     _require_tool codesign
     [ -d "$app" ] || die "no app bundle at $app"
+    # An unsigned bundle makes `codesign -d` exit 0 with no entitlements
+    # (macOS 26), which would read as "missing key". Say what it really is.
+    local verify
+    verify=$(codesign --verify "$app" 2>&1) ||
+        die "$(basename "$app") is not validly signed, so its entitlements cannot be read: $verify"
     ents=$(codesign -d --entitlements - --xml "$app" 2>&1) ||
         die "could not read the entitlements of $(basename "$app"): $ents"
     printf '%s' "$ents" | grep -q "<key>$APP_MIC_ENTITLEMENT</key>" || die \
