@@ -22,7 +22,8 @@ WHERE EACH ECOSYSTEM'S INVENTORY COMES FROM (the shipped artifact, not the decla
   engine (feature ``device``, as staged) and the waveform PyO3 extension,
   following normal dependency edges only (build and dev edges never ship).
 - Bundled data and runtimes that are not package-manager managed: the relocatable CPython, the Beat
-  This! weights notice, the Anybody font, and the native codecs compiled into the JS audio decoders.
+  This! weights notice, the Anybody font, the native codecs compiled into the JS audio decoders,
+  and vendored source under ``apps/**/_vendor``.
 
 Industry-standard equivalents (pip-licenses, license-checker, cargo-about) were considered; this stays
 one stdlib-only module because the build already stages every ecosystem and a second tool per ecosystem
@@ -90,6 +91,11 @@ RUST_CRATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("apps/webui/server/native/waveform", ()),
 )
 RUST_TARGET_TRIPLE = "aarch64-apple-darwin"
+
+_UPSTREAM_LICENSE_HEADER = re.compile(
+    r"Upstream license:\s+.*?\((?P<spdx>[A-Za-z0-9.+-]+)\)"
+)
+_GITHUB_REPO_URL = re.compile(r"https://github.com/(?P<org>[^/\s]+)/(?P<repo>[^/\s]+)/")
 
 LICENSE_FILE_PATTERN = re.compile(r"(licen[sc]e|copying|notice|copyright|unlicense)", re.IGNORECASE)
 NOTICE_FILE_PATTERN = re.compile(r"notice", re.IGNORECASE)
@@ -360,6 +366,63 @@ def rust_components(repo_root: Path) -> list[Component]:
 
 
 # ----- bundled, not package-manager managed -------------------------------
+def vendored_source_components(repo_root: Path) -> list[Component]:
+    """Every ``apps/**/_vendor/*.py`` source file the dmg redistributes, with its license text.
+
+    Header contract (first ~30 lines): ``Upstream license: ... (<SPDX-id>)`` and a
+    ``https://github.com/<org>/<repo>/`` URL. ``docs/legal/<SPDX>.txt`` must exist.
+    """
+    apps_root = (repo_root / "apps").resolve()
+    if not apps_root.is_dir():
+        return []
+    components: list[Component] = []
+    for vendor_dir in sorted(apps_root.rglob("_vendor")):
+        if not vendor_dir.is_dir():
+            continue
+        if "node_modules" in vendor_dir.parts:
+            continue
+        try:
+            vendor_dir.resolve().relative_to(apps_root)
+        except ValueError:
+            continue
+        for source in sorted(vendor_dir.glob("*.py")):
+            if source.name.startswith("__init__"):
+                continue
+            header = "\n".join(source.read_text(encoding="utf-8", errors="replace").splitlines()[:30])
+            license_match = _UPSTREAM_LICENSE_HEADER.search(header)
+            if license_match is None:
+                raise LicenseInventoryError(
+                    f"{source.relative_to(repo_root)} has no parseable "
+                    "'Upstream license: ... (<SPDX-id>)' header"
+                )
+            github_match = _GITHUB_REPO_URL.search(header)
+            if github_match is None:
+                raise LicenseInventoryError(
+                    f"{source.relative_to(repo_root)} has no https://github.com/<org>/<repo>/ URL in its header"
+                )
+            spdx = license_match.group("spdx")
+            project = github_match.group("repo")
+            homepage = f"https://github.com/{github_match.group('org')}/{project}/"
+            text_path = repo_root / "docs" / "legal" / f"{spdx}.txt"
+            if not text_path.is_file():
+                raise LicenseInventoryError(
+                    f"{text_path} missing: vendored {source.relative_to(repo_root)} is {spdx} with no license text"
+                )
+            rel = source.relative_to(repo_root).as_posix()
+            components.append(
+                Component(
+                    "bundled",
+                    f"{source.name} (vendored {project} Kaitai code)",
+                    "",
+                    spdx,
+                    homepage,
+                    [(f"{spdx}.txt", _read_text(text_path))],
+                    note=f"Vendored generated source at {rel}.",
+                )
+            )
+    return components
+
+
 def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]:
     runtime_licenses = sorted((payload_dir / "runtime/lib").glob("python3*/LICENSE.txt"))
     if not runtime_licenses:
@@ -423,6 +486,7 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
                  "PR #4853); COPYING.Xiph is mirrored from xiph/flac at 1507800de4b, the wasm-audio-decoders "
                  "modules/flac submodule pin at 3c74930e67, fetched Sat 3 Oct 2026.",
         ),
+        *vendored_source_components(repo_root),
     ]
 
 

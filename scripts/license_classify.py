@@ -49,7 +49,10 @@ def _token_category(token: str) -> str:
         return Cat.WEAK
     if "gpl" in lowered or "gnu general public" in lowered or _has_marker(lowered, _STRONG_MARKERS):
         return Cat.STRONG
-    if any(marker in lowered for marker in ("mpl", "mozilla", "epl", "eclipse", "cddl", "cecill-c")):
+    if any(
+        marker in lowered
+        for marker in ("mpl", "mozilla", "epl", "epl-1.0", "epl-2.0", "eclipse", "cddl", "cecill-c")
+    ):
         return Cat.WEAK
     if _has_marker(lowered, _PERMISSIVE_MARKERS):
         return Cat.PERMISSIVE
