@@ -8,7 +8,7 @@
                                  "probabilities", "tags": {name: P(yes)}}}}
 
 Machine-local and regenerable, like ``suggestions.json`` beside it. Reading it
-is read-only and cached by modification time, so a library listing pays one
+is read-only and cached by the file's stat signature, so a library listing pays one
 stat per request, not a JSON parse.
 
 -Claude
@@ -121,28 +121,40 @@ def track_facts(conn: sqlite3.Connection, stable_ids: Iterable[str]) -> dict[str
 
 
 _cache_lock = threading.Lock()
-_cache: dict[Path, tuple[float, dict[str, Any]]] = {}
+# Keyed on inode, nanosecond mtime and size, not mtime alone: two writes inside one
+# coarse mtime tick (seen on a CI runner) left a float-mtime key serving the old doc.
+_cache: dict[Path, tuple[tuple[int, int, int], dict[str, Any]]] = {}
 
 
-def load_suggestions(data_dir: Path) -> dict[str, Any]:
-    """The suggestions document, or an empty one when there is none (cached by mtime)."""
-    path = suggestions_path(data_dir)
+def read_suggestions(data_dir: Path) -> dict[str, Any]:
+    """The suggestions document read from disk now, or an empty one when there is none.
+
+    Uncached: the CLI's read-modify-write uses this so it never merges into a stale copy.
+    """
     try:
-        mtime = path.stat().st_mtime
-    except OSError:
-        return {"suggestions": {}}
-    with _cache_lock:
-        hit = _cache.get(path)
-        if hit is not None and hit[0] == mtime:
-            return hit[1]
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(suggestions_path(data_dir).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"suggestions": {}}
     if not isinstance(doc, dict) or not isinstance(doc.get("suggestions"), dict):
         return {"suggestions": {}}
+    return doc
+
+
+def load_suggestions(data_dir: Path) -> dict[str, Any]:
+    """The suggestions document for serving rows, cached by the file's stat signature."""
+    path = suggestions_path(data_dir)
+    try:
+        st = path.stat()
+    except OSError:
+        return {"suggestions": {}}
+    key = (st.st_ino, st.st_mtime_ns, st.st_size)
     with _cache_lock:
-        _cache[path] = (mtime, doc)
+        hit = _cache.get(path)
+        if hit is not None and hit[0] == key:
+            return hit[1]
+    doc = read_suggestions(data_dir)
+    with _cache_lock:
+        _cache[path] = (key, doc)
     return doc
 
 
@@ -164,6 +176,7 @@ def genre_guess(doc: dict[str, Any], stable_id: str) -> dict[str, Any] | None:
 __all__ = [
     "genre_guess",
     "load_suggestions",
+    "read_suggestions",
     "suggestions_path",
     "tags_path",
     "track_facts",

@@ -232,7 +232,7 @@ def _tag_doc(tags: list[jev.TagQuestion]) -> list[dict[str, str]]:
 
 def _answered(data_dir: Path, tags: list[jev.TagQuestion]) -> set[str]:
     """Tracks already answered (status ok) under these exact tag questions."""
-    doc = jev_store.load_suggestions(data_dir)
+    doc = jev_store.read_suggestions(data_dir)
     if doc.get("tags", []) != _tag_doc(tags):
         return set()
     return {sid for sid, r in doc["suggestions"].items() if isinstance(r, dict) and r.get("status") == "ok"}
@@ -245,7 +245,7 @@ def _jev_write(data_dir: Path, results: dict, tags: list[jev.TagQuestion], min_c
     their tag probabilities mean nothing under renamed or reworded questions.
     """
     served = sorted({str(r.get("model")) for r in results.values() if r["status"] == "ok"})
-    previous = jev_store.load_suggestions(data_dir)
+    previous = jev_store.read_suggestions(data_dir)
     kept = previous.get("suggestions", {}) if previous.get("tags", []) == _tag_doc(tags) else {}
     merged = {**kept, **results}
     store.write_json(
