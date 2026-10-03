@@ -205,6 +205,19 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
         short = tmp_path / f"short{keep}.aac"
         short.write_bytes(_adts_frames(2)[: 1024 + keep])
         assert _tagreader.adts_duration(short) is None, keep
+    # A header-only frame carries no audio: 7 bytes without the CRC, and 9
+    # with it (protection_absent cleared), so neither is a frame.
+    empty = tmp_path / "empty.aac"
+    empty.write_bytes(_adts_frames(1, frame_len=7))
+    assert _tagreader.adts_duration(empty) is None
+    crc = bytearray(_adts_frames(1, frame_len=9))
+    crc[1] = 0xF0
+    empty.write_bytes(bytes(crc))
+    assert _tagreader.adts_duration(empty) is None
+    crc_ok = bytearray(_adts_frames(1, frame_len=10))
+    crc_ok[1] = 0xF0
+    empty.write_bytes(bytes(crc_ok))
+    assert _tagreader.adts_duration(empty) == pytest.approx(1024 / 44100)
     # And a full header with ADTS sync but a reserved sample-rate index.
     bad = tmp_path / "bad.aac"
     bad.write_bytes(_adts_frames(1) + _adts_frames(1, rate_index=15))

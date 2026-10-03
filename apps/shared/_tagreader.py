@@ -224,7 +224,10 @@ def _adts_frame(hdr: bytes) -> tuple[int, int, int, int] | None:
         return None
     rate_index = (hdr[2] >> 2) & 0x0F
     frame_len = ((hdr[3] & 0x03) << 11) | (hdr[4] << 3) | (hdr[5] >> 5)
-    if rate_index >= len(_ADTS_RATES) or frame_len < 7:
+    # A frame must hold its header (9 bytes with the CRC, 7 without) and a
+    # nonempty payload: a header-only frame carries no audio.
+    header_len = 7 if hdr[1] & 0x01 else 9
+    if rate_index >= len(_ADTS_RATES) or frame_len <= header_len:
         return None
     channels = ((hdr[2] & 0x01) << 2) | (hdr[3] >> 6)
     return _ADTS_RATES[rate_index], frame_len, 1024 * ((hdr[6] & 0x03) + 1), channels
