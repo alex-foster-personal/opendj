@@ -205,7 +205,16 @@ def _pairings_conn(
         "  direction TEXT NOT NULL,"
         "  source TEXT NOT NULL)"
     )
-    for pairing in backend.list_pairings(from_stable_id=from_stable_id):
+    # An undirected edge can be stored with the current track second, as
+    # the CLI does for (x, current, either); stage 2 reads it both ways.
+    reverse_undirected = [
+        p for p in backend.list_pairings(to_stable_id=from_stable_id)
+        if p.direction == "<->"
+    ]
+    for pairing in [
+        *backend.list_pairings(from_stable_id=from_stable_id),
+        *reverse_undirected,
+    ]:
         if pairing.direction == "->":
             direction = "into"
         elif pairing.direction == "<->":
