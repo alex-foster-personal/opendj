@@ -16725,6 +16725,32 @@
             "title": "Active",
             "type": "boolean"
           },
+          "capture": {
+            "description": "The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).",
+            "enum": [
+              "none",
+              "unknown",
+              "starting",
+              "waiting_permission",
+              "recording",
+              "stopped",
+              "failed"
+            ],
+            "title": "Capture",
+            "type": "string"
+          },
+          "capture_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).",
+            "title": "Capture Error"
+          },
           "owned": {
             "title": "Owned",
             "type": "boolean"
@@ -16761,7 +16787,8 @@
           "session_id",
           "pid",
           "owned",
-          "recoverable"
+          "recoverable",
+          "capture"
         ],
         "title": "RecorderStatus",
         "type": "object"
@@ -24754,12 +24781,12 @@
             }
           },
           {
-            "description": "audio_<iso>.mp3",
+            "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
             "in": "path",
             "name": "segment",
             "required": true,
             "schema": {
-              "description": "audio_<iso>.mp3",
+              "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
               "title": "Segment",
               "type": "string"
             }

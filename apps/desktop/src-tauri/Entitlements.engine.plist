@@ -3,7 +3,7 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Entitlements for the Mach-O EXECUTABLES in the bundled engine payload of the
-  Developer ID dmg (runtime/bin/python3.N). Libraries carry none: macOS reads
+  Developer ID dmg (runtime/bin/python3.N, bin/odj-audio). Libraries carry none: macOS reads
   entitlements from the executable that starts the process, never from a
   dylib or extension module it loads.
 
@@ -23,10 +23,19 @@
   scripts/sign_macos_developer_id.sh applies this file and then runs a numba
   JIT under the signed interpreter, so a build that loses the key fails there
   rather than on a user's first import.
+
+  WHY audio-input. Set recording (SET-10, SET-11) captures the REC input in
+  bin/odj-audio itself, since the app bundles no ffmpeg. The hardened runtime
+  refuses an audio input to any process whose own signature lacks this key,
+  silently: the stream opens and delivers silence. The app's own copy
+  (Entitlements.app.plist) does not cover a child executable. The signing
+  script checks every executable carries it.
 -->
 <plist version="1.0">
 <dict>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
     <true/>
 </dict>
 </plist>
