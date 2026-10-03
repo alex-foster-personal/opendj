@@ -204,6 +204,10 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     tagged_tail = tmp_path / "tagged_tail.aac"
     tagged_tail.write_bytes(_adts_frames(2) + b"TAG" + b"\x00" * 125)
     assert _tagreader.adts_duration(tagged_tail) == pytest.approx(2 * 1024 / 44100)
+    for sig in (b"APETAGEX", b"LYRICSBEGIN"):
+        tail_tag = tmp_path / "tail_tag.aac"
+        tail_tag.write_bytes(_adts_frames(2) + sig + b"\x00" * 32)
+        assert _tagreader.adts_duration(tail_tag) == pytest.approx(2 * 1024 / 44100), sig
     with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
         audio_playable.probe_playable_audio(cut)
 

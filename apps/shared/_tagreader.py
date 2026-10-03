@@ -147,7 +147,7 @@ def adts_stream(path: Path | str) -> AdtsStream | None:
         start = offset = _id3v2_end(fh.read(10))
         while True:
             fh.seek(offset)
-            hdr = fh.read(7)
+            hdr = fh.read(_TAIL_PROBE)  # enough for the longest tag signature
             frame = _adts_frame(hdr)
             if frame is None:
                 if hdr and not hdr.startswith(_TRAILING_TAGS):
@@ -178,6 +178,7 @@ def _id3v2_end(head: bytes) -> int:
 # Metadata a raw AAC file may carry after its last frame: ID3v1, ID3v2
 # (appended), APEv2 and Lyrics3. Anything else after a frame is damage.
 _TRAILING_TAGS = (b"TAG", b"ID3", b"APETAGEX", b"LYRICSBEGIN")
+_TAIL_PROBE = max(7, *(len(sig) for sig in _TRAILING_TAGS))
 
 
 def _adts_frame(hdr: bytes) -> tuple[int, int, int, int] | None:
