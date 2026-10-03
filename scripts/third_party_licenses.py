@@ -93,6 +93,7 @@ RUST_TARGET_TRIPLE = "aarch64-apple-darwin"
 
 LICENSE_FILE_PATTERN = re.compile(r"(licen[sc]e|copying|notice|copyright|unlicense)", re.IGNORECASE)
 NOTICE_FILE_PATTERN = re.compile(r"notice", re.IGNORECASE)
+NON_TEXT_SUFFIXES: frozenset[str] = frozenset({".py", ".pyc", ".pyi", ".so", ".dylib", ".dll", ".h", ".c", ".js", ".json"})
 
 #: A real inventory renders hundreds of license texts; a stub cannot pass.
 MIN_LICENSES_FILE_CHARS = 100_000
@@ -212,10 +213,12 @@ def python_components(payload_dir: Path) -> list[Component]:
                 continue
             texts: list[tuple[str, str]] = []
             for file in dist.files or []:
-                if LICENSE_FILE_PATTERN.search(file.name) and ".dist-info" in str(file) and file.suffix not in {".py"}:
+                # Anywhere in RECORD, not only .dist-info: a wheel may vendor a native lib with its own
+                # COPYING (soundfile's _soundfile_data/COPYING for libsndfile, Codex P1 PR #4853).
+                if LICENSE_FILE_PATTERN.search(file.name) and file.suffix not in NON_TEXT_SUFFIXES:
                     located = Path(str(dist.locate_file(file)))
                     if located.is_file():
-                        texts.append((file.name, _read_text(located)))
+                        texts.append((file.name if ".dist-info" in str(file) else str(file), _read_text(located)))
             components[key] = Component(
                 ecosystem="python",
                 name=name,
