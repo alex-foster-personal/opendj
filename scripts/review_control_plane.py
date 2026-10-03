@@ -36,7 +36,7 @@ Reviewer recognition for Codex, Sol and Claude is review_coverage's own
 place; Grok and Cursor are recognized here from `/pulls/{n}/reviews` markers.
 
 Requirements (mini-PRD):
-  / A control-plane PR with fewer than 2 independent submitted reviews at head fails.
+  / A control-plane PR with fewer than 2 independent harness reviews at head fails.
     [if] CLAUDE.md edited by a -Claude author with only a Codex review passes [then] broken
     [if] a -Codex author counts Sol as independent [then] broken
   / A PR that touches no control-plane path is untouched by this rule.
@@ -56,6 +56,8 @@ Requirements (mini-PRD):
     [if] two reviews at R and a debt-only commit for this PR's file fail [then] broken
     [if] another path, another PR's debt file or a force-push still carries [then] broken
     [if] a carried review of the author's own family counts [then] broken
+  / Codex issue-comment evidence requires a completed Code Review table row at head.
+    [if] Security Review completed at head with Code Review queued still passes [then] broken
 """
 
 from __future__ import annotations
@@ -75,6 +77,10 @@ from scripts.review_control_plane_carry import (
     Carry,
     debt_only_carry,
     print_carry_proofs,
+)
+from scripts.review_control_plane_codex import (
+    codex_head_tied_issue_comment as _codex_head_tied_issue_comment,
+    harness_reviewed_at_head as _harness_reviewed_at_head,
 )
 from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
@@ -466,7 +472,7 @@ def dual_review(
     reviewed_at_head: Mapping[str, bool],
     carry: Carry = _NO_CARRY,
 ) -> DualReview:
-    """Pure verdict. `reviewed_at_head[name]`: that harness left a SUBMITTED review at head.
+    """Pure verdict. `reviewed_at_head[name]`: that harness left a review at head.
 
     `carry` adds reviewers whose submitted review sits at an earlier, debt-only-equivalent head.
     """
@@ -538,8 +544,9 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         reviews = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/reviews")
         inline = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/comments")
         issue = rc._paginated_json_list(f"repos/{rc.REPO}/issues/{pr}/comments")
-        # Only SUBMITTED reviews count, at head and when carried: a DISMISSED or PENDING Codex,
-        # Sol or Claude review at an earlier head must not become a carried reviewer (#4876).
+        # SUBMITTED reviews count at head and when carried; Codex may also count a clean-pass
+        # issue comment tied to head via review_coverage._collect_evidence. A DISMISSED or
+        # PENDING Codex, Sol or Claude review at an earlier head must not carry (#4876).
         unambiguous_reviews = [
             review
             for review in reviews
@@ -554,7 +561,7 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         for name in rc.EXPECTED_REVIEWERS:
             evidence = rc._collect_evidence(name, unambiguous_reviews, inline, issue, sha)
             reviewed = rc._classify_from_evidence(name, evidence).reviewed
-            found[name] = reviewed and evidence.submitted_reviews > 0
+            found[name] = _harness_reviewed_at_head(name, evidence, reviewed, issue, sha)
         found.update(subscription_reviewed_at_head(unambiguous_reviews, sha, cp_hits))
         return found
 
