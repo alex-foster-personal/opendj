@@ -92,6 +92,7 @@ from .routes import feedback_attachments as feedback_attachments_routes
 from .routes import feedback_performance_marks as feedback_performance_marks_routes
 from .routes import feedback_pins as feedback_pins_routes
 from .routes import feedback_replies as feedback_replies_routes
+from .routes import feedback_summary as feedback_summary_routes
 from .routes import feedback_sync as feedback_sync_routes
 from .routes import find_replace as find_replace_routes
 from .routes import health as health_routes
@@ -555,6 +556,7 @@ def _mount_api_routers(app: FastAPI) -> None:
         feedback_performance_marks_routes.router,
         feedback_pins_routes.router,
         feedback_replies_routes.router,
+        feedback_summary_routes.router,
         feedback_sync_routes.router,
         share_routes.router,
         rb_assets_routes.router,

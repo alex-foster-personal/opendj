@@ -1,18 +1,19 @@
-"""POST /ingest/upload TAG_READER_UNAVAILABLE 503, proved WITHOUT mutagen.
+"""POST /ingest/upload TAG_READER_UNAVAILABLE 503, proved WITHOUT the tag reader.
 
-[if] mutagen is absent [then] upload answers 503 TAG_READER_UNAVAILABLE and no .part stays, [else stop].
+[if] tinytag is absent [then] upload answers 503 TAG_READER_UNAVAILABLE and no .part stays, [else stop].
 
 Regression one-liners:
-  - if mutagen-less upload returns 500 then broken
-  - if mutagen-less upload leaves a .part hold file then broken
-  - if this test requires mutagen installed to run then it proves nothing
+  - if a reader-less upload returns 500 then broken
+  - if a reader-less upload leaves a .part hold file then broken
+  - if this test requires the reader installed to run then it proves nothing
 
-Acceptance (issue #3070 / LIBMX-14):
-  [if] mutagen is absent and a well-formed audio file is uploaded [then]
-  a structured 503 names the missing optional dependency, not a bare 500
+Acceptance (issue #3070 / LIBMX-14; reader is tinytag since Thu 1 Oct 2026,
+replacing the GPL mutagen extra):
+  [if] tinytag is absent and a well-formed audio file is uploaded [then]
+  a structured 503 names the missing reader, not a bare 500
   [if] tag-duration lookup raises ImportError inside _stage_one_upload [then]
   the route catches it before any bytes are staged, else stop
-  [if] mutagen genuinely is installed [then] this route's existing behavior
+  [if] tinytag genuinely is installed [then] this route's existing behavior
   is unchanged, else stop
 """
 from __future__ import annotations
@@ -30,25 +31,25 @@ FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_upload_refuses_before_staging_when_mutagen_genuinely_absent(
+def test_upload_refuses_before_staging_when_tag_reader_genuinely_absent(
     tmp_path: Path,
 ) -> None:
-    """503 TAG_READER_UNAVAILABLE under a genuinely blocked mutagen import."""
+    """503 TAG_READER_UNAVAILABLE under a genuinely blocked tinytag import."""
     ingest_root = tmp_path / "_ingest"
     src_mp3 = FIXTURE_ROOT / "src-128.mp3"
     probe = textwrap.dedent(
         f"""
             import sys
-            sys.modules["mutagen"] = None  # force a genuine ImportError, not a flag flip
+            sys.modules["tinytag"] = None  # force a genuine ImportError, not a flag flip
 
             from pathlib import Path
 
             from fastapi import FastAPI
             from fastapi.testclient import TestClient
 
-            from apps.shared._mutagen import HAS_MUTAGEN
+            from apps.shared._tagreader import HAS_TAG_READER
 
-            assert HAS_MUTAGEN is False, "mutagen import was not actually blocked"
+            assert HAS_TAG_READER is False, "tinytag import was not actually blocked"
 
             from apps.webui.server.routes import ingest as ingest_mod
             from apps.webui.server.routes import ingest_upload as ingest_upload_mod
@@ -73,8 +74,8 @@ def test_upload_refuses_before_staging_when_mutagen_genuinely_absent(
             assert resp.status_code == 503, resp.text
             detail = resp.json()["detail"]
             assert detail["code"] == "TAG_READER_UNAVAILABLE"
-            assert "mutagen" in detail["message"]
-            assert "music-dj-tools[tags]" in detail["message"]
+            assert "tinytag" in detail["message"]
+            assert "uv sync" in detail["message"]
 
             hold = dest_dir / "dup.mp3.part"
             final = dest_dir / "dup.mp3"

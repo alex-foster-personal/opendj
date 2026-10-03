@@ -72,7 +72,7 @@ class FolderIngestReport:
     files_seen: int = 0
     #: iCloud placeholders: present, sized, no local bytes. Never opened.
     files_dataless: int = 0
-    #: Files whose tags could not be read at all (mutagen absent, or the file
+    #: Files whose tags could not be read at all (tag reader absent, or the file
     #: is not parseable). They are still imported, titled from the filename.
     files_without_tags: int = 0
     #: Allowlisted files that failed the playable-audio probe. Never imported.
@@ -318,7 +318,7 @@ def _identify(
 
 
 def _has_file_tags(metadata: audio_files.AudioMetadata | None) -> bool:
-    """True when mutagen (or a stub) supplied a user-facing tag, not just duration."""
+    """True when the tag reader (or a stub) supplied a user-facing tag, not just duration."""
     if metadata is None:
         return False
     return any(

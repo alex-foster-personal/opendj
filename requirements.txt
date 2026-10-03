@@ -4,7 +4,7 @@ pyrekordbox>=0.4.4
 kaitaistruct>=0.11
 mutagen>=1.47
 # Embedded cover art reads (MIT); mirrors pyproject.toml.
-tinytag>=2.1,<3
+tinytag>=2.2.1,<3
 rich>=13.0
 
 # Pioneer OneLibrary USB export and mounted-target readback open the

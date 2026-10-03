@@ -20,6 +20,7 @@ from typing import Any
 from scripts.perf.capture_build_identity import _git_sha
 from scripts.perf.capture_kpi_ledger import append_entries, format_appended
 from scripts.perf.capture_library_targets import _verify_capture_targets
+from scripts.perf.perfmode14_scorer import _MIN_SCORED_SAMPLES
 
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
@@ -34,18 +35,6 @@ _DEFAULT_CAPTURE_TIMEOUT_S = 600
 # #4034: settle conforming alone is not the floor -- a --settle-seconds 60
 # with a --dwell-seconds 10 still scored until both periods were checked).
 _MIN_SCORED_SETTLE_SECONDS = 60
-
-# Codex P1/BLOCKING, PR #4034, discussion_r4138153190: the Playwright spec's
-# own floor (library-mode-perf-capture.spec.ts's MIN_SAMPLE_FRACTION) is
-# relative to `expectedTicks`, which collapses to 1 when
-# KPI_CAPTURE_SAMPLE_INTERVAL_S is set to the full dwell length or longer --
-# a single reading would then satisfy that floor and could still flip
-# LIB-MODE/PERFMODE-14 to PASS without establishing steady-state behavior.
-# This is an ABSOLUTE floor, independent of whatever interval produced the
-# samples: at the documented default (60s dwell, 5s interval) a conforming
-# capture yields about 12 ticks per mode, so 6 is a conservative minimum that
-# only a materially widened interval (or heavy sample failures) can miss.
-_MIN_SCORED_SAMPLES = 6
 
 
 def _machine_name() -> str:

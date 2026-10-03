@@ -235,6 +235,8 @@ const BUDGETS = [
   // 245,752 (CI agreed to the byte), 3,064 over. The ceiling follows the +5%
   // ceil-to-KiB rule on 245,752. Re-measured after merging main (#4904 copy
   // and paste, #4766): 246,970, still inside the ceiling.
+  // Main's Sat 3 Oct #4094 raise (244,736 for the pin-summary hover) is below
+  // that measurement, so the merged tree keeps this ceiling.
   { name: 'performance', limit: 258048, measured: 246970, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager

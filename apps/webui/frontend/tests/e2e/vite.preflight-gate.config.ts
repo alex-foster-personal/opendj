@@ -29,12 +29,12 @@ export default defineConfig({
 		port: frontendPort,
 		strictPort: true,
 		// The layout import()s the setup overlay only once the wizard is due, so
-		// on a cold dev server that first open pays for compiling the whole
-		// overlay graph on demand. fresh-install-onboarding.spec.ts gives the
-		// dialog 10 s to appear; measured Thu 1 Oct 2026 the cold compile alone
-		// was 6-7 s locally and over 10 s on a loaded CI runner (run
-		// 36940380093). Warming the graph at startup keeps that budget about
-		// the app's open path, not vite's transform queue. A production build
+		// on a cold dev server that first open may pay for compiling the overlay
+		// graph on demand. The preflight-gate specs keep a 10 s budget for
+		// reaching either the loading status or the final dialog (the app's open
+		// decision); final dialog rendering has a separate bounded allowance for
+		// dev-only lazy compilation (see expect-first-run-setup.ts). Warmup here
+		// speeds cold starts but is not a correctness barrier. A production build
 		// ships the chunk precompiled, so this changes nothing a user sees.
 		warmup: {
 			clientFiles: ['./src/lib/components/setup/SetupOverlay.svelte']
