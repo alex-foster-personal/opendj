@@ -167,8 +167,8 @@ def probe_duration_s(path: Path) -> float | None:
 __all__ = [
     "BUNDLED_ENV",
     "FFMPEG_BINARY",
-    "OVERRIDE_ENV",
     "HOMEBREW_FFMPEG_PATHS",
+    "OVERRIDE_ENV",
     "FfmpegUnavailable",
     "probe_duration_s",
     "resolve_ffmpeg",

@@ -111,7 +111,6 @@
 	// Deck state remains engine-owned; real load interactions route through
 	// the same validated dispatcher exposed to browser agents.
 	import { deckStates as decks, DECK_IDS, mixerState } from '$lib/rb/audio-engine.svelte';
-	import { computeNextOnlyRef } from '$lib/rb/next-only-filter';
 	import {
 		createFilterDebounce,
 		recordCollectionSearchTiming,
@@ -162,7 +161,8 @@
 		prefetchPlaylistFirstPage,
 		prefetchPlaylistTreeIntent,
 		invalidatePlaylistFirstPage,
-		invalidateAllPlaylistFirstPages
+		invalidateAllPlaylistFirstPages,
+		computeNextOnlyRef
 	} from './browser/browser-panel-support';
 	import { bootScheduler } from '$lib/rb/boot-scheduler';
 	import {

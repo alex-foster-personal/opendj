@@ -67,3 +67,5 @@ def resolve_cache_dir() -> Path:
 def mypy_cache_dir_flag() -> str:
     """`--cache-dir` target for a pinned mypy invocation."""
     return str(resolve_cache_dir())
+
+_MYPY_CACHE_PROBE: int = 'warm-must-see-this'

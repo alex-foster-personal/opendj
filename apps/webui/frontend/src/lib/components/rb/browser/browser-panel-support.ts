@@ -16,6 +16,7 @@ export {
 	resolveRowVocals
 } from '$lib/rb/row-vocals';
 export {
+	computeNextOnlyRef,
 	isAppropriateNext,
 	resolveSearchFilterFallback,
 	selectSearchFilterFallback,

@@ -358,7 +358,12 @@ def _restore_from_snapshot(snapshot: Path, target: Path) -> None:
     tmp = Path(tmp_name)
     try:
         shutil.copy2(snapshot, tmp)
-        copy_extended_metadata(target, tmp)  # the snapshot's copy2 kept no ACL
+        try:
+            copy_extended_metadata(target, tmp)  # the snapshot's copy2 kept no ACL
+        except OSError as exc:
+            # A rollback that refuses to restore the audio over lost Finder
+            # tags would leave the user with the half-written file instead.
+            log.warning("restore of %s keeps its bytes but not its xattrs/ACL: %s", target, exc)
         os.replace(tmp, target)
     except Exception:
         try:
@@ -414,16 +419,28 @@ AUDIO = Path({str(delta.path)!r})
 
 
 def keep_metadata(src: str, dst: str) -> None:
-    """Carry the live file's ACL and xattrs onto the restored copy."""
+    """Carry the live file's ACL and xattrs onto the restored copy, best
+    effort: an attribute this filesystem or user cannot set is reported on
+    stderr and skipped, so it never blocks restoring the audio itself."""
     if not os.path.exists(src):
         return
-    if sys.platform == "darwin":
-        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
-        if libc.copyfile(os.fsencode(src), os.fsencode(dst), None, (1 << 0) | (1 << 2)) < 0:
-            raise OSError(ctypes.get_errno(), "copyfile ACL/xattr")
-    elif hasattr(os, "listxattr"):
-        for name in os.listxattr(src):
+    try:
+        if sys.platform == "darwin":
+            libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+            if libc.copyfile(os.fsencode(src), os.fsencode(dst), None, (1 << 0) | (1 << 2)) < 0:
+                raise OSError(ctypes.get_errno(), "copyfile ACL/xattr")
+            return
+        if not hasattr(os, "listxattr"):
+            return
+        names = os.listxattr(src)
+    except OSError as exc:
+        print(f"warning: ACL/xattrs not kept: {{exc}}", file=sys.stderr)
+        return
+    for name in names:
+        try:
             os.setxattr(dst, name, os.getxattr(src, name))
+        except OSError as exc:
+            print(f"warning: xattr {{name}} not kept: {{exc}}", file=sys.stderr)
 
 
 def main() -> int:
@@ -432,9 +449,13 @@ def main() -> int:
         return 1
     fd, tmp = tempfile.mkstemp(prefix=f".{{AUDIO.name}}.restore-", dir=str(AUDIO.parent))
     os.close(fd)
-    shutil.copy2(SNAPSHOT, tmp)
-    keep_metadata(str(AUDIO), tmp)
-    os.replace(tmp, AUDIO)
+    try:
+        shutil.copy2(SNAPSHOT, tmp)
+        keep_metadata(str(AUDIO), tmp)
+        os.replace(tmp, AUDIO)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
     print(f"Restored {{AUDIO}} from {{SNAPSHOT}}")
     return 0
 

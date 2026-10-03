@@ -183,9 +183,9 @@ def test_a_rollback_carries_the_live_files_metadata(
 
 def _user_xattrs_supported(path: Path) -> bool:
     try:
-        getattr(os, "setxattr")(path, "user.opendj.probe", b"1")
-        getattr(os, "removexattr")(path, "user.opendj.probe")
-    except (AttributeError, OSError):
+        getattr(os, "setxattr", None)(path, "user.opendj.probe", b"1")
+        getattr(os, "removexattr", None)(path, "user.opendj.probe")
+    except (TypeError, OSError):  # TypeError: no xattr API on this platform
         return False
     return True
 
@@ -208,7 +208,68 @@ def test_the_reversal_script_keeps_the_live_files_xattrs(
         old=wt._read_current_tags(flac_fixture), new=wt._build_new_tags(_rec("rev-xattr")),
     )
     s = wt.apply_writes([delta], live=True, bulk=False)
-    getattr(os, "setxattr")(flac_fixture, "user.opendj.tag", b"kept")  # set after the snapshot
+    getattr(os, "setxattr", None)(flac_fixture, "user.opendj.tag", b"kept")  # set after the snapshot
     r = subprocess.run([sys.executable, str(s.reversal_scripts[0])], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    assert getattr(os, "getxattr")(flac_fixture, "user.opendj.tag") == b"kept"
+    assert getattr(os, "getxattr", None)(flac_fixture, "user.opendj.tag") == b"kept"
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_a_rollback_restores_the_bytes_when_metadata_cannot_be_kept(
+    flac_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the metadata copy fails during a rollback [then] the snapshot's bytes are still restored and no temp file is left, [else stop].
+
+    MUTATION TARGET: let ``copy_extended_metadata``'s OSError escape
+    ``_restore_from_snapshot`` again. The control is
+    ``test_a_rollback_carries_the_live_files_metadata``, which still requires
+    the copy to be attempted.
+    """
+    original = flac_fixture.read_bytes()
+    snapshot = tmp_path / "snap.flac"
+    snapshot.write_bytes(original)
+    flac_fixture.write_bytes(b"half-written")
+
+    def refuse(_src: Path, _dst: Path) -> None:
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(wt, "copy_extended_metadata", refuse)
+    wt._restore_from_snapshot(snapshot, flac_fixture)
+    assert flac_fixture.read_bytes() == original
+    assert not list(flac_fixture.parent.glob(f".{flac_fixture.name}.restore-*"))
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_the_reversal_script_restores_the_bytes_when_an_xattr_cannot_be_set(
+    flac_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the reversal script cannot set a live file's xattr [then] it still restores the audio, warns and leaves no temp file, [else stop].
+
+    MUTATION TARGET: drop the ``except OSError`` around ``os.setxattr`` in the
+    generated script's ``keep_metadata``.
+    """
+    if sys.platform == "darwin" or not _user_xattrs_supported(flac_fixture):
+        pytest.skip("needs the Linux xattr path with user xattrs to refuse")
+    monkeypatch.setattr(wt, "BACKUP_ROOT", tmp_path / "tb")
+    monkeypatch.setattr(wt, "REVERSAL_ROOT", tmp_path / "rv")
+    monkeypatch.setattr(wt, "FILE_BACKUP_ROOT", tmp_path / "fb")
+    original = flac_fixture.read_bytes()
+    delta = wt.TagDelta(
+        path=flac_fixture, stable_id="rev-refuse",
+        old=wt._read_current_tags(flac_fixture), new=wt._build_new_tags(_rec("rev-refuse")),
+    )
+    s = wt.apply_writes([delta], live=True, bulk=False)
+    assert flac_fixture.read_bytes() != original
+    getattr(os, "setxattr", None)(flac_fixture, "user.opendj.tag", b"kept")
+    driver = (
+        "import os, runpy, sys\n"
+        "def refuse(*_a, **_k):\n"
+        "    raise PermissionError(1, 'Operation not permitted')\n"
+        "os.setxattr = refuse\n"
+        f"sys.exit(runpy.run_path({str(s.reversal_scripts[0])!r}, run_name='reversal')['main']())\n"
+    )
+    r = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, check=False)
+    assert r.returncode == 0, r.stderr
+    assert "user.opendj.tag not kept" in r.stderr
+    assert flac_fixture.read_bytes() == original
+    assert not list(flac_fixture.parent.glob(f".{flac_fixture.name}.restore-*"))
