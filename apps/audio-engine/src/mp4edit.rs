@@ -37,6 +37,10 @@ pub struct Edit {
 /// tens of bytes; anything bigger is not one of them.
 const MAX_SMALL_BOX: u64 = 1 << 16;
 
+/// Largest skip or length an edit may state, in decoded frames: 2^40 is over
+/// 250 days at 48 kHz, so anything past it is a corrupt edit or tag.
+pub const MAX_EDIT_FRAMES: u64 = 1 << 40;
+
 struct BoxHead {
     kind: [u8; 4],
     /// Offset of the body.
@@ -144,11 +148,16 @@ pub struct RawEdit {
 }
 
 impl RawEdit {
-    /// The edit in frames at `rate`, or `None` when it trims nothing.
+    /// The edit in frames at `rate`, or `None` when it trims nothing or
+    /// states a position past [`MAX_EDIT_FRAMES`]: a corrupt edit or tag
+    /// leaves the file untrimmed rather than wrap into a tiny length.
     pub fn at(&self, rate: u32) -> Option<Edit> {
-        let to_frames = |t: u64, ts: u32| ((t as u128 * rate as u128 + ts as u128 / 2) / ts as u128) as u64;
-        let skip = to_frames(self.media_time, self.media_ts);
-        let keep = (self.duration > 0).then(|| to_frames(self.duration, self.movie_ts));
+        let to_frames = |t: u64, ts: u32| u64::try_from((t as u128 * rate as u128 + ts as u128 / 2) / ts as u128).ok().filter(|&f| f <= MAX_EDIT_FRAMES);
+        let skip = to_frames(self.media_time, self.media_ts)?;
+        let keep = match self.duration {
+            0 => None,
+            d => Some(to_frames(d, self.movie_ts)?),
+        };
         (skip > 0 || keep.is_some()).then_some(Edit { skip, keep })
     }
 }
@@ -384,13 +393,24 @@ mod tests {
 
     #[test]
     fn a_missing_or_unreadable_gapless_tag_trims_nothing() {
-        for bad in ["", "garbage", " 00000000 00000000 00000000 0000000000000000", " 00000000 FFFFFFFF 00000000 0000000000000010", " 00000000 00000840"] {
+        let huge = " 00000000 00000840 00000000 FFFFFFFFFFFFFFFF";
+        for bad in ["", "garbage", huge, " 00000000 00000000 00000000 0000000000000000", " 00000000 FFFFFFFF 00000000 0000000000000010", " 00000000 00000840"] {
             let f = tagged(b"soun", None, Some(udta(bad)));
             assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap(), None, "{bad:?}");
         }
         // A delay with no stated length still trims the front.
         let f = tagged(b"soun", None, Some(udta(" 00000000 00000840 00000000 0000000000000000")));
         assert_eq!(read_edit(&mut Cursor::new(f), 44100).unwrap().unwrap(), Edit { skip: 2112, keep: None });
+    }
+
+    #[test]
+    fn an_edit_past_the_frame_bound_is_ignored_not_wrapped() {
+        let raw = |media_time, duration| RawEdit { media_time, media_ts: 44100, duration, movie_ts: 44100 };
+        assert_eq!(raw(1024, u64::MAX).at(44100), None);
+        assert_eq!(raw(u64::MAX, 0).at(44100), None);
+        assert_eq!(raw(1024, MAX_EDIT_FRAMES + 1).at(44100), None);
+        // The bound itself is still an edit.
+        assert_eq!(raw(1024, MAX_EDIT_FRAMES).at(44100), Some(Edit { skip: 1024, keep: Some(MAX_EDIT_FRAMES) }));
     }
 
     #[test]

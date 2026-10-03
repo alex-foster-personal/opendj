@@ -473,7 +473,7 @@ impl Trim {
         let Some(crate::mp4edit::Edit { skip, keep }) = edit else { return (0, n) };
         // A packet that starts at or after the edit's end is dropped whole;
         // one that straddles it is kept whole, as ffmpeg keeps it.
-        if keep.is_some_and(|k| at >= skip + k) {
+        if keep.is_some_and(|k| at >= skip.saturating_add(k)) {
             self.dropped_end += n;
             return (0, 0);
         }
