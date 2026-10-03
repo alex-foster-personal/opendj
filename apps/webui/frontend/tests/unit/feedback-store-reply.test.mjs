@@ -34,6 +34,8 @@ afterEach(() => {
   store.feedbackState.availability = "unknown";
   store.feedbackState.pins = [];
   store.feedbackState.error = null;
+  store.feedbackState.pinSummary = null;
+  store.feedbackState.pinSummaryError = null;
 });
 
 test("addReply POSTs the replies path with operator author", async () => {
@@ -48,7 +50,18 @@ test("addReply POSTs the replies path with operator author", async () => {
     replies: [{ id: "r1", author: "operator", text: "follow-up", created_at: "t" }],
   };
   let seen;
+  let summaryGets = 0;
   globalThis.fetch = async (request) => {
+    // A successful reply also refreshes the operator summary (PR #4094 Sol P2).
+    if (new URL(request.url).pathname === "/api/v1/feedback/comments/summary") {
+      summaryGets++;
+      const zero = { total: 0, blocked: 0, fixed: 0, merged: 0, harvested: 0 };
+      return jsonResponse({
+        operator: { ...zero, sent_to_queue: 0, in_progress: 0, delegated: 0 },
+        lifecycle: { ...zero, untriaged: 0, open: 0, issued: 0 },
+        fleet_correlation: "ok",
+      });
+    }
     seen = request;
     return jsonResponse(pin);
   };
@@ -64,6 +77,14 @@ test("addReply POSTs the replies path with operator author", async () => {
   assert.equal(store.feedbackState.pins.length, 1);
   assert.equal(store.feedbackState.pins[0].replies.length, 1);
   assert.equal(store.feedbackState.error, null);
+  // The refresh is scheduled, not awaited, and first loads its lazy chunk:
+  // wait (bounded) for it to land rather than assume it already has.
+  for (let i = 0; i < 200 && store.feedbackState.pinSummary === null; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(summaryGets, 1, "a successful reply refreshes the summary once");
+  assert.ok(store.feedbackState.pinSummary, "the refreshed summary is stored");
+  assert.equal(store.feedbackState.pinSummaryError, null, "the fixture is a valid summary");
 });
 
 test("addReply failure leaves pins unchanged and sets error", async () => {

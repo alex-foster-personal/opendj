@@ -8,6 +8,10 @@
     [if] origin/main is ahead and --allow-behind-main is supplied [then] exit 0
     [if] a shipped-only divergence changes tooling alone [then] exit 0
     [if] an installed app lacks payload/manifest.json [then] the guard refuses explicitly
+    [if] a preview-branch loop holds the Preview app's commit but not a newer plain app's [then] exit 0
+    [if] a preview-branch loop lacks the Preview app's runtime fixes [then] exit 2
+    [if] a preview-branch loop meets a Preview app from unrelated history [then] exit 4
+    [if] a main loop holds the Preview app's commit but not the plain app's [then] exit 2
 """
 
 from __future__ import annotations
@@ -150,3 +154,76 @@ def test_existing_app_without_manifest_refuses(loop_repo) -> None:
 
     with pytest.raises(SystemExit, match=r"lacks payload/manifest\.json"):
         dev_loop_preflight.main(["--app", str(manifest.parents[3]), "--no-fetch"])
+
+
+# --- reference app by sync ref (issue #5162) --------------------------------------------------
+
+PREVIEW_REF = "origin/af--preview-live"
+
+
+def _preview_manifest(plain_manifest: Path) -> Path:
+    manifest = plain_manifest.parents[3].parent / "Open DJ (Preview).app" / dev_loop_preflight.MANIFEST_REL
+    manifest.parent.mkdir(parents=True)
+    return manifest
+
+
+def _argv(plain: Path, preview: Path, *extra: str) -> list[str]:
+    return ["--app", str(plain.parents[3]), "--preview-app", str(preview.parents[3]), "--no-fetch", *extra]
+
+
+def _runtime_commit_the_loop_lacks(repo: Path, base: str) -> str:
+    shipped = _commit(repo, "apps/shipped_only_fix.py", "fix\n")
+    _git(repo, "reset", "--hard", base)
+    return shipped
+
+
+def test_preview_branch_loop_is_judged_against_the_preview_app(loop_repo, capsys) -> None:
+    repo, plain, base = loop_repo
+    preview = _preview_manifest(plain)
+    _stamp_manifest(plain, _runtime_commit_the_loop_lacks(repo, base))
+    _stamp_manifest(preview, base)
+
+    assert dev_loop_preflight.main(_argv(plain, preview, "--sync-ref", PREVIEW_REF)) == 0, (
+        "if a preview-branch loop is refused because a newer MAIN app is installed "
+        "then the Air's preview engine crash-loops (#5162) - broken"
+    )
+    assert f"follows {PREVIEW_REF}, judged against Open DJ (Preview).app" in capsys.readouterr().out
+
+
+def test_preview_branch_loop_behind_its_preview_app_is_refused(loop_repo, capsys) -> None:
+    repo, plain, base = loop_repo
+    preview = _preview_manifest(plain)
+    _stamp_manifest(plain, base)
+    _stamp_manifest(preview, _runtime_commit_the_loop_lacks(repo, base))
+
+    assert dev_loop_preflight.main(_argv(plain, preview, "--sync-ref", PREVIEW_REF)) == 2, (
+        "if a preview-branch loop lacking the Preview app's runtime fixes starts "
+        "then the preview tab is behind the build it previews - broken"
+    )
+    assert "apps/shipped_only_fix.py" in capsys.readouterr().out
+
+
+def test_preview_branch_loop_with_unrelated_preview_app_exits_4(loop_repo) -> None:
+    repo, plain, base = loop_repo
+    preview = _preview_manifest(plain)
+    unrelated = _git(repo, "commit-tree", f"{base}^{{tree}}", "-m", "parentless, so no shared history")
+    _stamp_manifest(plain, base)
+    _stamp_manifest(preview, unrelated)
+
+    assert dev_loop_preflight.main(_argv(plain, preview, "--sync-ref", PREVIEW_REF)) == 4, (
+        "if a Preview app from an unrelated history passes check 1 "
+        "then the preview branch skips the shipped-app check entirely - broken"
+    )
+
+
+def test_main_loop_is_still_judged_against_the_plain_app(loop_repo, capsys) -> None:
+    repo, plain, base = loop_repo
+    preview = _preview_manifest(plain)
+    _stamp_manifest(plain, _runtime_commit_the_loop_lacks(repo, base))
+    _stamp_manifest(preview, base)
+
+    assert dev_loop_preflight.main(_argv(plain, preview)) == 2, (
+        "if a loop on origin/main is judged against the Preview app "
+        "then it can start behind the shipped main app - broken"
+    )
+    assert "judged against" not in capsys.readouterr().out

@@ -50,7 +50,7 @@ _CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(
 
 
 def _write_wav(path: Path, seconds: float = 0.1) -> Path:
-    """A real, playable wav. Not a stub: mutagen has to be able to read it."""
+    """A real, playable wav. Not a stub: the tag reader has to be able to read it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     frames = int(44100 * seconds)
     with wave.open(str(path), "w") as handle:
@@ -297,11 +297,16 @@ def test_run_folder_import_reports_progress_and_records_the_outcome(
     assert outcome.tracks_written == 3
     assert outcome.tracks_without_analysis == 3
     messages = [message for _, message in sink]
-    preparing = "detect: preparing folder import"
-    checking = "detect: checking 1 folder(s)"
-    assert preparing in messages
-    assert checking in messages
-    assert messages.index(preparing) < messages.index(checking)
+    detect = [message for message in messages if message.startswith("detect:")]
+    assert detect == [
+        "detect: preparing folder import",
+        "detect: loading filesystem access",
+        "detect: loading state database",
+        "detect: loading folder ingest",
+        "detect: loading state writer",
+        "detect: probing 1 folder(s)",
+        "detect: checking 1 folder(s)",
+    ]
     progresses = [progress for progress, _ in sink]
     assert progresses == sorted(progresses)
     assert progresses[-1] == pytest.approx(1.0)

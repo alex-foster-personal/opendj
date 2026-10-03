@@ -14,7 +14,6 @@
 		publishMetadataShare,
 		recoverRecorder,
 		sessionAudioUrl,
-		startRecorder,
 		stopRecorder,
 		type RecorderStatus,
 		type MetadataShare,
@@ -23,6 +22,7 @@
 		type TimelineEvent,
 		type Transition
 	} from './sets-api';
+	import { captureFailureMessage, recordRailState, recorderHeadline } from '$lib/sets/performance-recorder';
 
 	type SessionView = SessionDetail & { transitions: Transition[] };
 
@@ -31,13 +31,13 @@
 		session_id: null,
 		pid: null,
 		owned: false,
-		recoverable: false
+		recoverable: false,
+		capture: 'none'
 	});
 	let sessions = $state<SessionSummary[]>([]);
 	let selected = $state<SessionView | null>(null);
 	let timeline = $state<TimelineEvent[]>([]);
 	let busy = $state(false);
-	let deviceIndex = $state('');
 	let shareLink = $state<string | null>(null);
 	let selectionRequest = 0;
 	let exportBusy = $state(false);
@@ -177,25 +177,45 @@
 		}
 	}
 
-	async function startRecording(): Promise<void> {
-		const parsedDeviceIndex = Number(deviceIndex);
-		if (deviceIndex.trim() === '' || !Number.isInteger(parsedDeviceIndex) || parsedDeviceIndex < 0) {
-			pushToast('Enter the ffmpeg audio input index before recording.', 'error');
-			return;
+	// SET-11: the panel shows the capture's own state, as the /performance REC
+	// rail does, and re-reads it while it can change, so a pending microphone
+	// prompt or an input that fails mid-set never reads as "Recording".
+	let rail = $derived(recordRailState(recorder));
+
+	$effect(() => {
+		const after = rail.poll;
+		if (after === null) return;
+		const timer = setTimeout(() => void refreshRecorder(), after);
+		return () => clearTimeout(timer);
+	});
+
+	let failureShown = false;
+	$effect(() => {
+		const failure = captureFailureMessage(recorder);
+		if (failure !== null && !failureShown) pushToast(failure, 'error');
+		failureShown = failure !== null;
+	});
+
+	async function refreshRecorder(): Promise<void> {
+		try {
+			recorder = await getRecorderStatus();
+		} catch (error) {
+			pushToast(`REC status failed: ${error}`, 'error');
 		}
+	}
+
+	// SET-11: REC picks its input by name, through the same picker as the
+	// /performance rail. A typed ffmpeg index meant nothing to odj-audio, whose
+	// inputs are numbered in another order (Codex, PR #5164). Lazy, so the
+	// picker stays out of this page's first load.
+	let RecordInputPicker = $state<typeof import('$lib/components/rb/browser/RecordInputPicker.svelte').default | null>(
+		null
+	);
+
+	async function openInputPicker(): Promise<void> {
 		busy = true;
 		try {
-			recorder = await startRecorder({
-				session_id: null,
-				ffmpeg_device_idx: parsedDeviceIndex,
-				capture_audio: true,
-				// opendj_decks records OUR own decks; the browser emitter installed
-				// on /performance posts their state to /api/sets/deck-observations
-				// while this session is live. Without it in this list REC captures
-				// djay only and an Open DJ set records zero tracks.
-				sources: ['djay_monitor', 'opendj_decks']
-			});
-			pushToast(`Recording ${recorder.session_id}`);
+			RecordInputPicker = (await import('$lib/components/rb/browser/RecordInputPicker.svelte')).default;
 		} catch (error) {
 			pushToast(`REC failed: ${error}`, 'error');
 		} finally {
@@ -263,10 +283,10 @@
 
 <section class="rec-panel" aria-label="Recording controls">
 	<div class="rec-state">
-		<span class:live={recorder.active} class="rec-dot"></span>
+		<span class:live={recorder.active && rail.recording} class:waiting={rail.waiting} class="rec-dot"></span>
 		<div>
-			<strong>{recorder.active ? 'Recording' : 'Recorder ready'}</strong>
-			<p>{recorder.session_id ?? 'No active session'}</p>
+			<strong>{recorderHeadline(recorder)}</strong>
+			<p title={rail.tip ?? undefined}>{recorder.session_id ?? 'No active session'}</p>
 		</div>
 	</div>
 	{#if recorder.active && recorder.owned}
@@ -276,13 +296,17 @@
 	{:else if recorder.active}
 		<span class="external-owner" title="Operating-system process id of the recorder that owns this capture">Owned by process {recorder.pid}</span>
 	{:else}
-		<label>
-			<span>ffmpeg input index</span>
-			<input bind:value={deviceIndex} inputmode="numeric" placeholder="Required" aria-label="ffmpeg input index" />
-		</label>
-		<button class="record" onclick={startRecording} disabled={busy || deviceIndex.trim() === ''}>REC</button>
+		<button class="record" onclick={openInputPicker} disabled={busy}>REC</button>
 	{/if}
 </section>
+
+{#if RecordInputPicker !== null}
+	<RecordInputPicker
+		onstarted={(status) => ((recorder = status), (RecordInputPicker = null))}
+		oncancel={() => (RecordInputPicker = null)}
+		notify={pushToast}
+	/>
+{/if}
 
 <div class="session-layout">
 	<aside class="session-list" aria-label="Recorded sessions">
@@ -440,9 +464,8 @@
 	.rec-state { display: flex; align-items: center; gap: 0.8rem; margin-right: auto; }
 	.rec-state p, label span, small { display: block; color: var(--muted); font-size: 0.75rem; }
 	.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 5px var(--surface-raised); }
+	.rec-dot.waiting { background: var(--warning); }
 	.rec-dot.live { background: var(--danger); box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 30%, var(--surface)); }
-	.rec-panel label { display: flex; align-items: center; gap: 0.65rem; }
-	.rec-panel input { width: 92px; }
 	.record { background: var(--danger); border-color: var(--danger); color: var(--on-danger); font-weight: 800; letter-spacing: 0.08em; }
 	.stop { border-color: var(--danger); color: var(--danger); }
 	.external-owner { color: var(--muted); font-size: 0.8rem; }

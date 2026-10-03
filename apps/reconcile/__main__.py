@@ -100,7 +100,7 @@ def _apply(argv: list[str]) -> int:
 
 # Imports are lazy inside each handler on purpose: ``relink`` must not pay for
 # pyrekordbox (pulled in by ``apply``) and ``list-broken`` must not pay for
-# mutagen. Handlers, not module objects, keep that laziness explicit.
+# the tag reader. Handlers, not module objects, keep that laziness explicit.
 COMMANDS: dict[str, tuple[Handler, str]] = {
     "index-disk": (_index_disk, "walk audio roots, cache tags (read-only)"),
     "match": (_match, "score relink candidates, classify every row (read-only)"),

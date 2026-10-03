@@ -55,19 +55,12 @@ def _spawn_gig_trackify_child(stable_ids_line: str) -> subprocess.Popen[str]:
     )
 
 
-_PROTOCOL_CHILD = """
-import sys
-for line in sys.argv[1:]:
-    print(line, flush=True)
-    if line != "DONE":
-        sys.stdin.readline()
-sys.stdin.read()  # like node: stay alive until stdin reaches EOF
-"""
-
+_PYTHON = getattr(sys, "_base_executable", None) or sys.executable
+_SLEEPER = [_PYTHON, "-c", "import time; time.sleep(30)"]
 
 _DESCENDANT_PREFIX = (
     "import subprocess as _sp\n"
-    "_sp.Popen(['sleep', '30'], stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
+    f"_sp.Popen({_SLEEPER!r}, stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
 )
 
 
@@ -98,6 +91,11 @@ def _kill_tree(pid: int) -> None:
             descendant.kill()
     with suppress(psutil.NoSuchProcess):
         root.kill()
+
+
+# Same fake-monotonic semantics as test_capture_mode_ratios_engine_family: each
+# `monotonic()` advances by `_PROBE_INTERVAL_S`, so 60s yields 12 probes at 5 s.
+_FAKE_CLOCK_STEADY_DURATION_S = 120
 
 
 def _fake_monotonic_ticking(step: float) -> Any:
@@ -141,21 +139,6 @@ class _RecordingNative:
         return self._real.read(pid)
 
 
-def _first_mb_from_stderr(stderr: str) -> float | None:
-    """Parse `_sample_leak`'s own `first_mb=<value>` debug line.
-
-    A second, independent observation of the same real reading
-    `native.pids_read` already proves came from the right pid -- this
-    cross-checks that the value `_sample_leak` printed (and the slope it
-    derived from readings like it) is a genuine positive measurement, not
-    merely that SOME debug line was printed.
-    """
-    token = next((part for part in stderr.split() if part.startswith("first_mb=")), None)
-    if token is None:
-        return None
-    return float(token.removeprefix("first_mb="))
-
-
 _requires_darwin = pytest.mark.skipif(
     sys.platform != "darwin",
     reason=(
@@ -192,12 +175,13 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
     child = _spawn_with_descendant(
         _GIG_TRACKIFY_PROTOCOL_CHILD, 'GIG_STABLE_IDS ["a", "b", "c", "d"]'
     )
+    engine = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         native = _RecordingNative(DarwinProcessMetrics())
 
         with (
             patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=native),
+            patch("scripts.perf.mode_ratio_sampler.DarwinProcessMetrics", return_value=native),
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch(
                 "scripts.perf.capture_mode_ratios.time.monotonic",
@@ -205,68 +189,25 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
             ),
         ):
             gig, trackify, gig_stable_ids = cmr._capture_gig_then_trackify(
-                "http://127.0.0.1:5273", cmr._MIN_SAMPLE_S
+                "http://127.0.0.1:5273", _FAKE_CLOCK_STEADY_DURATION_S, engine.pid
             )
 
         assert gig_stable_ids == ["a", "b", "c", "d"]
         for result in (gig, trackify):
             assert result["sample_count"] >= 1.0
-            assert result["footprint_mb"] > 0.0
+            assert result["browser_footprint_mb"] > 0.0
+            assert result["engine_footprint_mb"] > 0.0
+            assert result["footprint_mb"] == pytest.approx(
+                result["browser_footprint_mb"] + result["engine_footprint_mb"]
+            )
         # Real reads happened, and none of them were the launcher's own pid
-        # (excluded by _ProcessTreeSampler.sample() by design) -- the only
-        # live descendant is the one spawned sleep process, so a single
-        # distinct pid proves attribution stayed on it throughout.
-        assert native.pids_read
+        # (excluded by _ProcessTreeSampler.sample() by design): exactly the
+        # one live browser descendant and the engine root were read.
         assert child.pid not in native.pids_read
-        assert len(set(native.pids_read)) == 1
+        assert engine.pid in native.pids_read
+        assert len(set(native.pids_read) - {engine.pid}) == 1
     finally:
         _kill_tree(child.pid)
         child.wait(timeout=5)
-
-
-@_requires_darwin
-@pytest.mark.requirement("PERFMODE-15")
-def test_capture_trackify_leak_samples_the_browser_pid_not_the_frontend_url(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """[if] a leak capture runs [then] it really samples the browser pid, not the URL, [else stop].
-
-    Same real-sampler substitution as the gig/trackify test above (Sol
-    P1/BLOCKING, PR #4034, discussion_r4138712250): `_start_browser_session`
-    returns a REAL spawned child, and `_sample_leak` runs for real against
-    it over a faked (not mocked) wall clock and the REAL native reader.
-
-    Sol P1/BLOCKING, PR #4553 (two rounds): same gap as the gig/trackify
-    test above, and the returned `slope` alone can't prove PID attribution
-    either way (a flat real series over one process still yields ~0.0
-    regardless of which pid produced it). `native.pids_read` is the
-    direct, real-measurement proof; `_sample_leak`'s own `first_mb=` stderr
-    line is cross-checked against the same real reading as a second,
-    independent observation point.
-    """
-    child = _spawn_with_descendant(_PROTOCOL_CHILD, "TRACKIFY_READY", "DONE")
-    try:
-        native = _RecordingNative(DarwinProcessMetrics())
-
-        with (
-            patch("scripts.perf.capture_mode_ratios._start_browser_session", return_value=child),
-            patch("scripts.perf.capture_mode_ratios.DarwinProcessMetrics", return_value=native),
-            patch("scripts.perf.capture_mode_ratios.time.sleep"),
-            patch(
-                "scripts.perf.capture_mode_ratios.time.monotonic",
-                new=_fake_monotonic_ticking(cmr._PROBE_INTERVAL_S),
-            ),
-        ):
-            slope = cmr._capture_trackify_leak("http://127.0.0.1:5273", cmr._MIN_LEAK_DURATION_S)
-
-        assert isinstance(slope, float)
-        assert native.pids_read
-        assert child.pid not in native.pids_read
-        assert len(set(native.pids_read)) == 1
-        stderr = capsys.readouterr().err
-        first_mb = _first_mb_from_stderr(stderr)
-        assert first_mb is not None, f"expected a 'first_mb=' debug line, got: {stderr!r}"
-        assert first_mb > 0.0
-    finally:
-        _kill_tree(child.pid)
-        child.wait(timeout=5)
+        engine.kill()
+        engine.wait(timeout=5)

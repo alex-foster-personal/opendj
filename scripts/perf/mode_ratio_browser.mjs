@@ -12,6 +12,8 @@ import {
   watchContinuousPlaybackUntil,
   watchGigDecksPlayingUntil,
 } from "./trackify-playback-watch.mjs";
+import { createLineReader, runLeakProtocol } from "./trackify-quiescent-checkpoint.mjs";
+import { openUninstrumentedPage } from "./uninstrumented-page.mjs";
 
 async function loadChromium() {
   const resolver = createRequire(path.join(process.cwd(), "package.json"));
@@ -34,6 +36,20 @@ const { values } = parseArgs({
 const frontend = values.frontend?.replace(/\/$/, "");
 const MAX_LISTING_PAGES = 40;
 const mode = values.mode;
+// PERFMODE-14 protocol: same 60 s settle before each mode dwell as
+// library-mode-perf-capture.spec.ts (KPI_CAPTURE_SETTLE_SECONDS default 60).
+const SETTLE_S = 60;
+const SETTLE_MS = SETTLE_S * 1000;
+
+function emitSettleS() {
+  console.log(`SETTLE_S ${SETTLE_S}`);
+}
+
+function settleDone() {
+  return new Promise((resolve) => {
+    setTimeout(resolve, SETTLE_MS);
+  });
+}
 
 if (!frontend || (mode !== "gig-trackify" && mode !== "trackify-leak")) {
   console.error(
@@ -98,7 +114,7 @@ async function waitForQueueIdle(page) {
 }
 
 async function loadGigSteadyState(page) {
-  await page.goto(`${frontend}/performance?muted=1`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${frontend}/performance?muted=1`);
   await waitForPerformanceIpc(page);
   // The first four library rows are not four playable tracks on a real
   // library (most rows can be absent, and `file_exists` can name a path the
@@ -153,11 +169,12 @@ async function loadGigSteadyState(page) {
     );
     await waitForQueueIdle(page);
   }
-  await page.waitForTimeout(5_000);
-  // Queue-idle and HEAD 200 do not prove a load landed, so before GIG_READY
-  // require each deck to hold exactly its picked track with a positive
-  // duration and be playing (Sol P1/BLOCKING, PR #4540). The whole-window
-  // watch after GIG_READY then keeps that true while the sampler runs.
+  // Queue-idle and HEAD 200 do not prove a load landed, so before the settle
+  // watch require each deck to hold exactly its picked track with a positive
+  // duration and be playing (Sol P1/BLOCKING, PR #4540). The settle watch
+  // then keeps all four playing through SETTLE_MS; a stall here aborts
+  // before SETTLE_S. The whole-window watch after GIG_READY keeps that true
+  // while the sampler runs.
   const decks = await page.evaluate((count) => {
     const ipc = window.musicDjToolsPerformance;
     if (ipc === undefined) throw new Error("performance IPC is not installed");
@@ -176,6 +193,7 @@ async function loadGigSteadyState(page) {
   if (deckFaults.length > 0) {
     throw new Error(`Gig baseline is not four loaded, playing decks: ${deckFaults.join("; ")}`);
   }
+  await watchGigDecksPlayingUntil(page, settleDone(), [1, 2, 3, 4]);
   return stableIds;
 }
 
@@ -189,25 +207,30 @@ async function loadGigSteadyState(page) {
  * capture_mode_ratios.py samples from) never changes across this handoff,
  * so the process-tree sampler still finds whichever Chromium is currently
  * this process's child at sample time -- no Python-side change needed.
+ *
+ * Both phases drive an uninstrumented page (`uninstrumented-page.mjs`), never
+ * a Playwright `context.newPage()`: Playwright enables the Network domain on
+ * its pages, and the renderer then buffers every response body (each track's
+ * audio file) for DevTools, up to about 200 MB, which this footprint capture
+ * would count as the app's own memory.
  */
 async function openFreshTrackifyBrowser() {
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.goto(`${frontend}/music-player?muted=1`, { waitUntil: "domcontentloaded" });
+  const page = await openUninstrumentedPage(browser);
+  await page.goto(`${frontend}/music-player?muted=1`);
   await waitForTrackifyIpc(page);
   await waitForTrackifyPlaying(page);
-  await page.waitForTimeout(5_000);
+  await watchContinuousPlaybackUntil(page, settleDone());
   return { browser, page };
 }
 
 if (mode === "gig-trackify") {
   const gigBrowser = await chromium.launch({ headless: true });
   try {
-    const gigContext = await gigBrowser.newContext();
-    const gigPage = await gigContext.newPage();
+    const gigPage = await openUninstrumentedPage(gigBrowser);
     const gigStableIds = await loadGigSteadyState(gigPage);
     console.log("GIG_STABLE_IDS " + JSON.stringify(gigStableIds));
+    emitSettleS();
     console.log("GIG_READY");
     // GIG_READY only proves the four load/play commands were issued before
     // the wait started; nothing else verifies all four decks are STILL
@@ -222,6 +245,7 @@ if (mode === "gig-trackify") {
 
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
   try {
+    emitSettleS();
     console.log("TRACKIFY_READY");
     // The sample loop only reads process RSS/CPU, so it cannot itself detect
     // an operator quarantine, a feed running dry, or the page navigating away
@@ -236,13 +260,24 @@ if (mode === "gig-trackify") {
     await trackifyBrowser.close();
   }
 } else {
+  // Leak capture: capture_mode_ratios.py interleaves quiescent checkpoints
+  // (CHECKPOINT/QUIESCENT/RESUME/RESUMED) with playback, and ends with NEXT
+  // (ADR-NEW-trackify-leak-kpi-quiescent-baselines).
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
+  const reader = createLineReader(process.stdin);
   try {
+    emitSettleS();
     console.log("TRACKIFY_READY");
-    await watchContinuousPlaybackUntil(trackifyPage, waitForLine());
+    await runLeakProtocol(
+      trackifyPage,
+      () => reader.next(),
+      (line) => console.log(line),
+      watchContinuousPlaybackUntil
+    );
     await waitForTrackifyPlaying(trackifyPage);
     console.log("DONE");
   } finally {
+    reader.close();
     await trackifyBrowser.close();
   }
 }

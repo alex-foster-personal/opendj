@@ -5118,6 +5118,32 @@
         "title": "CommentReplyOut",
         "type": "object"
       },
+      "CommentSummaryOut": {
+        "properties": {
+          "fleet_correlation": {
+            "enum": [
+              "ok",
+              "ledger_missing",
+              "ledger_unreadable"
+            ],
+            "title": "Fleet Correlation",
+            "type": "string"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/PinStatusSummaryOut"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/PinOperatorBreakdownOut"
+          }
+        },
+        "required": [
+          "operator",
+          "lifecycle",
+          "fleet_correlation"
+        ],
+        "title": "CommentSummaryOut",
+        "type": "object"
+      },
       "CommentUpdateIn": {
         "properties": {
           "agent_note": {
@@ -13093,6 +13119,7 @@
             "type": "string"
           },
           "from_stable_id": {
+            "minLength": 1,
             "title": "From Stable Id",
             "type": "string"
           },
@@ -13129,6 +13156,7 @@
             "type": "string"
           },
           "to_stable_id": {
+            "minLength": 1,
             "title": "To Stable Id",
             "type": "string"
           }
@@ -13895,6 +13923,118 @@
           "playlist_id"
         ],
         "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinOperatorBreakdownOut": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "delegated": {
+            "minimum": 0.0,
+            "title": "Delegated",
+            "type": "integer"
+          },
+          "fixed": {
+            "minimum": 0.0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "harvested": {
+            "minimum": 0.0,
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "in_progress": {
+            "minimum": 0.0,
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "merged": {
+            "minimum": 0.0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "sent_to_queue": {
+            "minimum": 0.0,
+            "title": "Sent To Queue",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "sent_to_queue",
+          "in_progress",
+          "delegated",
+          "fixed",
+          "merged",
+          "blocked",
+          "harvested"
+        ],
+        "title": "PinOperatorBreakdownOut",
+        "type": "object"
+      },
+      "PinStatusSummaryOut": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "fixed": {
+            "minimum": 0.0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "harvested": {
+            "minimum": 0.0,
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "issued": {
+            "minimum": 0.0,
+            "title": "Issued",
+            "type": "integer"
+          },
+          "merged": {
+            "minimum": 0.0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "open": {
+            "minimum": 0.0,
+            "title": "Open",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "untriaged": {
+            "minimum": 0.0,
+            "title": "Untriaged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "untriaged",
+          "open",
+          "issued",
+          "blocked",
+          "fixed",
+          "merged",
+          "harvested"
+        ],
+        "title": "PinStatusSummaryOut",
         "type": "object"
       },
       "PinSyncOut": {
@@ -16220,7 +16360,7 @@
         "type": "object"
       },
       "RbMetaOut": {
-        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False and no cues). Genre and comment instead come from the\nstate layer's import-time file tags, alongside ``folder_path``,\n``file_exists`` and ``quality``.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the optional ``mutagen``\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
+        "description": "COMPONENT-MAP 2.4 response (+ duration_s / comment per build brief).\n\n``vendor`` is ``local`` for a track with no rekordbox vendor mapping: the\nrekordbox-sourced fields are then honestly empty (``vendor_id`` None,\nanalysis False and no cues). Genre and comment instead come from the\nstate layer's import-time file tags, alongside ``folder_path``,\n``file_exists`` and ``quality``.\n``artwork_available`` is the one exception -- it reflects a real embedded\ntag picture on the local file when present, since ``/artwork`` now\nserves that instead of a rekordbox-rendered jpg for these rows. See\n:func:`_local_rb_meta`.\n\n``artwork_available`` is tri-state (``bool | None``) rather than a plain\nbool: for a local-vendor row it is ``None`` when the tinytag\ntag reader was never available to check with, distinct from a checked\n``False`` (no embedded picture). A rekordbox-vendor row never needs the\nreader, so it is always a definite ``True``/``False`` there. See\n:func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).",
         "properties": {
           "analysis_available": {
             "title": "Analysis Available",
@@ -16723,6 +16863,32 @@
             "title": "Active",
             "type": "boolean"
           },
+          "capture": {
+            "description": "The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).",
+            "enum": [
+              "none",
+              "unknown",
+              "starting",
+              "waiting_permission",
+              "recording",
+              "stopped",
+              "failed"
+            ],
+            "title": "Capture",
+            "type": "string"
+          },
+          "capture_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).",
+            "title": "Capture Error"
+          },
           "owned": {
             "title": "Owned",
             "type": "boolean"
@@ -16759,7 +16925,8 @@
           "session_id",
           "pid",
           "owned",
-          "recoverable"
+          "recoverable",
+          "capture"
         ],
         "title": "RecorderStatus",
         "type": "object"
@@ -24638,12 +24805,12 @@
             }
           },
           {
-            "description": "audio_<iso>.mp3",
+            "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
             "in": "path",
             "name": "segment",
             "required": true,
             "schema": {
-              "description": "audio_<iso>.mp3",
+              "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
               "title": "Segment",
               "type": "string"
             }
@@ -28618,6 +28785,27 @@
         ]
       }
     },
+    "/api/v1/feedback/comments/summary": {
+      "get": {
+        "operationId": "comments_summary_api_v1_feedback_comments_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Comments Summary",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
     "/api/v1/feedback/comments/{comment_id}": {
       "patch": {
         "description": "Agent-native half of the pin lifecycle (issue #858, first slice).\n\nA pin is never deleted by a fix. The agent that acts on it records what it\ndid here so the pin itself shows progress: ``status`` moves\nopen -> issued -> fixed -> merged, ``issue_url`` links the queue item, and\n``agent_note`` is the one-paragraph reply the widget renders under the\noriginal text. ``blocked`` is deliberately narrow: use it only when the maintainer\nmust supply credentials/auth, make a destructive-action decision, or choose\na genuine product fork. \"I could not work out what you meant\" is a question\nin the note, never blocked. A blocked pin's note starts with one sentence\nsaying exactly what the maintainer needs, before any supporting detail. Its first\nsentence is `auth: the maintainer must ...`, `destructive-action: the maintainer must ...`, or\n`product-fork: the maintainer must ...`. Every write is a partial update; unset fields\nare untouched.\n\nPartial-fix convention (pin 58a16ac781db, follow-on to #907): when only\nPART of a pin's defect is fixed, do NOT invent a new ``status`` value\n(there isn't one, and there is no plan to add one - see that pin's PR\nbody for the sizing call). Leave ``status`` at ``open`` or ``issued`` and\nwrite an ``agent_note`` that starts with the literal prefix ``PARTIAL:``\nand names where the remaining work went (a ``#123`` issue/PR reference,\nor a URL) - e.g. ``\"PARTIAL: markers fixed, remainder tracked in #1150\"``.\nThe frontend (``pinVisualState`` in ``feedback.ts``) recognises that\nconvention and paints the pin's marker half orange/half green instead of\nplain amber. A ``PARTIAL:`` note with nothing to point at is NOT\nrecognised - a partial pin must always say where the rest of the work is.",
@@ -29620,12 +29808,12 @@
                 "example": {
                   "detail": {
                     "code": "TAG_READER_UNAVAILABLE",
-                    "message": "ingest upload requires the optional 'mutagen' tag reader for duration-based duplicate detection (pip install 'music-dj-tools[tags]')"
+                    "message": "ingest upload requires the 'tinytag' tag reader (a core dependency) for duration-based duplicate detection; reinstall the environment (uv sync)"
                   }
                 }
               }
             },
-            "description": "Optional mutagen tag reader ([tags] extra) is not installed."
+            "description": "The tinytag tag reader is not importable."
           }
         },
         "summary": "Upload",

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "provenance": "Remuxed Fri 2 Oct 2026 with ffmpeg 6.1.1 (Ubuntu 6.1.1-3ubuntu5) from tests/fixtures/phase7-dedup/src.m4a, its own AAC-LC stream copied without re-encoding: ffmpeg -i src.m4a -c copy -f adts src.aac. Re-running that command reproduces the checksum below byte for byte. Kept outside phase7-dedup because that directory is the dedup suite's fixed seven-file corpus.",
+  "immutable": "Canonical fixture. Verify by checksum before use; tests mutate only disposable copies.",
+  "files": {
+    "src.aac": {
+      "sha256": "2176a32dd99822d77c2c7038e1fa97a6a315851d6f9b2724c8f112c2e86481e4",
+      "bytes": 24223,
+      "source": "tests/fixtures/phase7-dedup/src.m4a",
+      "source_sha256": "a4154a2261bb53c81e8a8b1d02aa5e5202f2d90e633bcafbb4bb15d8e9f5521c",
+      "samplerate": 22050,
+      "channels": 1,
+      "frame_walk_seconds": 3.065,
+      "ffprobe_seconds": 3.050
+    }
+  }
+}

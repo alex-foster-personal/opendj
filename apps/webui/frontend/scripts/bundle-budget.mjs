@@ -231,7 +231,25 @@ const BUDGETS = [
   // c8b8f5aeb measured 242,439 locally; main + this PR 243,377, 689 bytes over.
   // Re-measured after #4904 landed on main (b6c894194) with its own +1 KiB raise:
   // both together measure 244,434, so this PR keeps its +1 KiB on top; 302 bytes remain.
-  { name: 'performance', limit: 244736, measured: 244434, note: '/performance and children' },
+  // RAISED Sat 3 Oct 2026 (+1 KiB, SET-11 set recording without ffmpeg, V1): REC now
+  // lights only once audio is really written, and shows "Waiting for microphone
+  // permission" while macOS's first-run prompt is up (Silver lost 42 s of a set to a
+  // REC that looked live during it). recordRailState, its tooltips and the 1 s status
+  // poll sit on the REC rail, which is first paint. Main measured 243,599 on Sat 3 Oct
+  // (ci/2026-10-03-quality-ratchets.md); this branch 243,933, +334 of its own and 221
+  // over the old limit. #4906 raises to the same 244,736 for its own +1,319: if it
+  // lands first, the merged tree needs one more KiB. Payback, not yet measured: load
+  // the REC tooltips with the lazy RecordInputPicker.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4094, FB-20 comment hover counts; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin-summary
+  // hover rides the /performance FeedbackWidget. Main 5504f60e7 + this PR
+  // measured 243,886 locally, 174 bytes over 243,712 (CI measured 243,884); 850
+  // bytes remain. Payback, not yet measured: load the summary popover lazily.
+  // Merge of #4906 with main: each side raises the post-#4904 ceiling (243,712) by
+  // 1 KiB to the same 244,736. SET-11's note says those two raises together need one
+  // more KiB, which also covers #4094's +174. Ceiling 245,760 (240 KiB). measured
+  // stays 244,434, the larger figure either side recorded.
+  { name: 'performance', limit: 245760, measured: 244434, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the

@@ -61,6 +61,16 @@ CI_ONLY_STEPS = (
 )
 
 
+#: ci.yml `test` steps BEFORE pytest the canary omits: they install the main-side shard
+#: durations ledger the scope job resolved (scripts/ci_durations_ledger.py). The canary has
+#: no scope job and runs in the vendors' repositories, where no ledger is published, so it
+#: splits on the committed seed. Removed by name, each required exactly once before pytest.
+CI_ONLY_PRE_PYTEST_STEPS = (
+    "Download the main-side durations ledger",
+    "Install the main-side durations ledger over the committed seed",
+)
+
+
 #: Keys ci.yml's pytest step carries that the canary's must NOT: continue-on-error defers
 #: ci.yml's verdict to the step above, and the canary has no such step, so there it would
 #: turn every red shard green.
@@ -266,6 +276,12 @@ def _canary_expected_steps(ci_doc: dict[str, Any]) -> list[dict[str, Any]]:
     # after a point the canary stops at.
     assert names[-len(CI_ONLY_STEPS) :] == list(CI_ONLY_STEPS), names[-len(CI_ONLY_STEPS) :]
     kept = steps[: -len(CI_ONLY_STEPS)]
+    pytest_index = [s.get("name") for s in kept].index(CONFIG["pytest_step_name"])
+    for name in CI_ONLY_PRE_PYTEST_STEPS:
+        found = [i for i, s in enumerate(kept) if s.get("name") == name]
+        assert len(found) == 1, f"declared CI-only step {name!r} appears {len(found)} times in ci.yml"
+        assert found[0] < pytest_index, f"declared CI-only step {name!r} moved after pytest"
+    kept = [s for s in kept if s.get("name") not in CI_ONLY_PRE_PYTEST_STEPS]
     old, new = PYTEST_BUDGET_SUBSTITUTION
     pytest_step = next(s for s in kept if s.get("name") == CONFIG["pytest_step_name"])
     assert pytest_step["run"].count(old) == 1, "ci.yml's shard budget line moved"

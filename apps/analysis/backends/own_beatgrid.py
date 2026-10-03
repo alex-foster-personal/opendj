@@ -79,7 +79,7 @@ from apps.analysis_beatgrid.version import LANE, PRODUCER, PRODUCER_VERSION
 
 from ..lanes import LaneResult, own_backend
 from ..record import AnalysisRecord
-from . import register
+from . import own_beatgrid_input, register
 from .base import BackendNotAvailable, TrackUnreadable, TrackVanished
 from .genre_hint import library_genre
 
@@ -171,10 +171,13 @@ def run_runner(audio_path: Path, checkpoint: Path, *, device: str) -> dict[str, 
     """
     timeout = float(os.environ.get(TIMEOUT_ENV) or DEFAULT_TIMEOUT_S)
     activations_dir = activations.default_activations_dir()
-    with tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch:
+    with (
+        own_beatgrid_input.runner_input(audio_path) as runner_input,
+        tempfile.TemporaryDirectory(prefix="own-beatgrid-") as scratch,
+    ):
         out_path = Path(scratch) / "beats.json"
         command = runner_command(
-            audio_path, out_path, checkpoint, device=device, activations_dir=activations_dir
+            runner_input, out_path, checkpoint, device=device, activations_dir=activations_dir
         )
         log.info("own_beatgrid: %s", " ".join(command))
         try:
