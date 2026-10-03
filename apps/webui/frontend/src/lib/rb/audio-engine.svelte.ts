@@ -2800,7 +2800,7 @@ function _landStems(
 		rampPending: () => _reanchorRampPending(rt),
 		launchArmed: () => _quantizedLaunchAt[deck] !== null,
 		controlSegmentAt: (when) => _controlSegmentAt(rt, when),
-		startChange: (seg) => stretchScheduleChange(seg.positionSec, true, seg.tempoRatio, seg.masterTempoEnabled, seg.keyShiftSemitones, seg.loop),
+		startChange: (seg) => stretchScheduleChange(seg.positionSec, seg.active, seg.tempoRatio, seg.masterTempoEnabled, seg.keyShiftSemitones, seg.loop),
 		retire: (processor) => _retireProcessor(processor as _DeckProcessor),
 		commit: (when) => {
 			rt.processor = upgrade.processor;
