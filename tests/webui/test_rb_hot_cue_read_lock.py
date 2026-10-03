@@ -1,5 +1,7 @@
 """Hot-cue reads stay open while the CloudSync writer lock is closed (CUES-01).
 
+[if] another machine holds the writer lock [then] hot cues still read and writes are refused, [else stop].
+
 Regression one-liners:
   - if GET hot-cues is write-gated then a peer holding the writer lock, or a
     lock probe outage, fails every deck load that reads its cue slots
@@ -25,6 +27,7 @@ def _probe_down() -> NoReturn:
 def test_hot_cue_reads_ignore_the_writer_lock_and_writes_do_not(
     client: TestClient,  # noqa: F811  # fixture
 ) -> None:
+    """[if] the writer lock is closed (probe down) [then] GET hot-cues answers 200 and PUT/DELETE 503, [else stop]."""
     url = f"/api/v1/tracks/{STABLE_ID}/hot-cues"
     revision = next(row["revision"] for row in client.get(url).json() if row["slot"] == "A")
     client.app.state.lock_status_fn = _probe_down
