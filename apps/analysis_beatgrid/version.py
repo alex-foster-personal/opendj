@@ -34,7 +34,13 @@ from typing import Literal
 #: 1.3.0 (NATIVE-17) changes the octave policy only: the model's own level wins
 #: a two-octave tie, a genre tempo family can pick the octave, and line mode
 #: folds half-time sections. The runner's beats are unchanged from 1.2.0.
-PRODUCER_VERSION = "1.3.0"
+#: 1.4.0 is NATIVE-19's bump on the main-electron-rust line (default grid fit
+#: `const_regions`); it is skipped here so one number never means two things.
+#: 1.5.0 (NAE-22) changes the served offset only, +15 ms to -10 ms, because
+#: rekordbox positions moved onto our MP3-lead-in-trimmed timeline
+#: (`grid_design` docstring). The bump re-queues every record so stored grids
+#: move with the rekordbox grids they sit beside; the runner's beats are unchanged.
+PRODUCER_VERSION = "1.5.0"
 
 #: The producer half of the `own_<lane>.<producer>` backend name. The record
 #: contract parses the backend name and checks it against the record body, so

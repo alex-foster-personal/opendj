@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 from apps.adapters.rekordbox import config
+from apps.shared.mp3_lead_in import rekordbox_lead_in_s, to_our_ms
 from apps.adapters.rekordbox.cues import HOT_CUE_SLOTS, _cue_snapshot_from_row
 from apps.adapters.rekordbox.errors import _open_ro
 
@@ -74,9 +75,18 @@ def playlist_order_index() -> dict[str, int]:
 
 
 def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
-    """Live djmdCue rows mapped to the COMPONENT-MAP 2.3 cue shape."""
+    """Live djmdCue rows mapped to the COMPONENT-MAP 2.3 cue shape, on OUR timeline.
+
+    rekordbox stores positions from the first sample of a raw decode; our
+    decoders trim an MP3's encoder lead-in, so every position here has that
+    lead-in taken off (``apps.shared.mp3_lead_in``). A track with no local file
+    has no lead-in to read and cannot play here, so it is served as stored.
+    """
     master = _open_ro(config.MASTER_PLAIN_DB, "MASTER_DB")
     try:
+        folder = master.execute(
+            "SELECT FolderPath FROM djmdContent WHERE ID = ?", (vendor_id,)
+        ).fetchone()
         rows = master.execute(
             "SELECT ID, Kind, InMsec, InFrame, InMpegFrame, InMpegAbs, "
             "       OutMsec, OutFrame, ActiveLoop, BeatLoopSize, "
@@ -87,6 +97,7 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
     finally:
         master.close()
 
+    lead_in_s = rekordbox_lead_in_s(folder[0] if folder else None) or 0.0
     cues: list[dict[str, Any]] = []
     for row in rows:
         snapshot = _cue_snapshot_from_row(row)
@@ -110,8 +121,8 @@ def fetch_cues(vendor_id: str) -> list[dict[str, Any]]:
             {
                 "kind": kind,
                 "slot": slot,
-                "in_ms": int(in_ms) if in_ms is not None else None,
-                "out_ms": int(out_ms) if is_loop else None,
+                "in_ms": to_our_ms(int(in_ms), lead_in_s) if in_ms is not None else None,
+                "out_ms": to_our_ms(int(out_ms), lead_in_s) if is_loop else None,
                 "is_loop": is_loop,
                 "active_loop": bool(active_loop),
                 "beat_loop_size": int(loop_size) if loop_size is not None else None,
