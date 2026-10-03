@@ -1,5 +1,6 @@
 /**
  * HEALTH-01: Library health counts only audio expected on this machine.
+ * Supersedes: the legacy total_tracks - total_broken dot verdict.
  * The shared reconcile API supplies the production availability predicate.
  * Counts from a failed or malformed measurement are never a verdict.
  * Adapted from Preview source 574f6add3; coverage policy remains separate.
