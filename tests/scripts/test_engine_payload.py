@@ -127,6 +127,22 @@ def test_source_newer_than_build_stops_the_build_and_is_never_rebuilt(
     assert "Rebuild the frontend" in str(excinfo.value)
 
 
+
+@pytest.mark.requirement("INSTALL-08")
+@pytest.mark.parametrize("bundle_input", ["pnpm-lock.yaml", "patches/some-dep.patch"])
+def test_a_lock_or_patch_newer_than_build_stops_the_build(tmp_path: Path, bundle_input: str) -> None:
+    """Codex P1 (PR #4853): a lock-only refresh or a patch changes the bundle as much as a source edit."""
+    import os
+
+    frontend = _frontend(tmp_path)
+    edited = frontend / bundle_input
+    edited.parent.mkdir(parents=True, exist_ok=True)
+    edited.write_text("changed", encoding="utf-8")
+    build_mtime = (frontend / "build/index.html").stat().st_mtime
+    os.utime(edited, (build_mtime + 60, build_mtime + 60))
+    with pytest.raises(PayloadBuildError, match=edited.name):
+        assert_spa_is_fresh(frontend)
+
 # ----- the deck-load asset ------------------------------------------------
 @pytest.mark.requirement("INSTALL-09")
 def test_exactly_one_stretch_asset_is_accepted(tmp_path: Path) -> None:
