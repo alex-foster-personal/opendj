@@ -229,7 +229,8 @@ class FastTier:
                 f"{LINE_PREFIX} ledger names {known} of {collected} collected tests "
                 f"({coverage:.1%}), under the {self.coverage_min:.0%} floor. pytest-split "
                 "balances unseen tests by a flat average, so shards are balanced by count, "
-                "not time. Regenerate the ledger from a full run before trusting a shard."
+                "not time. Check that durations-ledger.yml is publishing and this run's scope job "
+                "resolved it (a change set that edits `.test_durations` keeps its own file)."
             )
         if self.coverage_warn is not None and coverage < self.coverage_warn:
             # Stderr, not the terminal reporter: a GitHub annotation must start its own line,
@@ -237,8 +238,8 @@ class FastTier:
             print(
                 f"::warning title=fast-tier ledger is going stale::{LINE_PREFIX} ledger names "
                 f"{known} of {collected} collected tests ({coverage:.1%}), under the "
-                f"{self.coverage_warn:.0%} warning line; the run goes ahead. Refresh "
-                "`.test_durations` from a full run on main.",
+                f"{self.coverage_warn:.0%} warning line; the run goes ahead. Check that "
+                "durations-ledger.yml is publishing and this run's scope job resolved it.",
                 file=sys.stderr,
             )
         if self.tier in ("fast", "slow"):
