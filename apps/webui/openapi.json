@@ -24485,12 +24485,12 @@
             }
           },
           {
-            "description": "audio_<iso>.mp3",
+            "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
             "in": "path",
             "name": "segment",
             "required": true,
             "schema": {
-              "description": "audio_<iso>.mp3",
+              "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
               "title": "Segment",
               "type": "string"
             }

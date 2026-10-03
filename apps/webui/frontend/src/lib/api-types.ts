@@ -15737,7 +15737,7 @@ export interface operations {
             header?: never;
             path: {
                 session_id: string;
-                /** @description audio_<iso>.mp3 */
+                /** @description audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg) */
                 segment: string;
             };
             cookie?: never;
