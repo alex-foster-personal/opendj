@@ -20,10 +20,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Protocol, TypeVar
+from typing import Any
 
 from apps.shared.paths import DATA_DIR
-from apps.stems import cache_cli
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -194,37 +193,6 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
-class _HasStableId(Protocol):
-    @property
-    def stable_id(self) -> str: ...
-
-
-T = TypeVar("T", bound=_HasStableId)
-
-
-def read_ids_file(path: Path) -> set[str]:
-    """The stable ids a caller restricted this run to, one per line."""
-    try:
-        ids = set(path.read_text(encoding="utf-8").split())
-    except OSError as error:
-        raise SystemExit(f"error: cannot read --ids-file {path}: {error}") from error
-    if not ids:
-        raise SystemExit(f"error: --ids-file {path} lists no stable ids")
-    return ids
-
-
-def restrict_to_ids(todo: list[T], ids: set[str] | None) -> list[T]:
-    """``todo`` in its own order, kept to ``ids`` when a caller gave any.
-
-    This CLI only sees the local disk. A caller that knows more (the engine's
-    refresh job knows which bundles R2 holds) names the tracks worth
-    rendering; without a list the whole local todo stands.
-    """
-    if ids is None:
-        return todo
-    return [track for track in todo if track.stable_id in ids]
-
-
 def cmd_trickle(args: argparse.Namespace) -> int:
     live = bool(getattr(args, "live", False))
     ctx = Ctx(data_dir=args.data_dir)
@@ -233,8 +201,6 @@ def cmd_trickle(args: argparse.Namespace) -> int:
     classify_stems(tracks, root)
     rank = best_playlist_rank(ctx, tracks)
     todo = order_todo([t for t in tracks if t.category == CATEGORY_TODO], rank)
-    ids_file: Path | None = getattr(args, "ids_file", None)
-    todo = restrict_to_ids(todo, None if ids_file is None else read_ids_file(ids_file))
     batch = todo[: args.limit]
     device = (
         args.device
@@ -644,10 +610,6 @@ def build_parser() -> argparse.ArgumentParser:
     trickle = sub.add_parser("trickle", parents=[common])
     trickle.add_argument("--playlist", default=None)
     trickle.add_argument("--limit", type=int, default=DEFAULT_TRICKLE_LIMIT)
-    trickle.add_argument(
-        "--ids-file", type=Path, default=None,
-        help="render only the stable ids listed in this file, one per line",
-    )
     # A mutating subcommand must state its mode explicitly. A bare --live with
     # a silent dry-run default reads as "safe by default" while leaving the
     # operator no way to say which they meant, so argparse refuses instead.
@@ -730,8 +692,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bulk_hydrate.add_argument("--json", action="store_true")
     bulk_hydrate.set_defaults(func=cmd_bulk_hydrate)
-
-    cache_cli.register(sub)
 
     return p
 

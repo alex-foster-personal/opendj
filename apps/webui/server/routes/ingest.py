@@ -51,7 +51,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -319,21 +318,11 @@ def _step_stems(job: _RefreshJob, targets: list[tuple[str, str]]) -> None:
             )
             job.step_done = 1
             return
-        # The CLI ranks and picks its own batch, and it only sees this disk:
-        # left alone it re-renders bundles R2 already holds. Hand it the
-        # job's targets so it can render nothing else.
-        with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", prefix="stems-targets-", suffix=".txt", delete=False
-        ) as ids_file:
-            ids_file.write("".join(f"{stable_id}\n" for stable_id, _path in targets))
-        try:
-            _run_cli(
-                job,
-                [sys.executable, "-m", "apps.stems", "trickle", "--live",
-                 "--limit", str(STEMS_TRICKLE_LIMIT), "--ids-file", ids_file.name],
-            )
-        finally:
-            Path(ids_file.name).unlink(missing_ok=True)
+        _run_cli(
+            job,
+            [sys.executable, "-m", "apps.stems", "trickle", "--live",
+             "--limit", str(STEMS_TRICKLE_LIMIT)],
+        )
         job.step_done = job.step_total
 
 

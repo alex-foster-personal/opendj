@@ -4,7 +4,6 @@ Regression lines:
   - if a refresh targets a bundle that R2 holds and this machine can fetch then broken
   - if a refresh skips a bundle that is in neither place then broken
   - if a refresh treats anything as in cloud when the index is off or unreadable then broken
-  - if the stems CLI is free to pick tracks the job did not target then broken
   - if a refresh runs the stems CLI when every missing bundle is in the cloud then broken
 
 [if] a library refresh targets a stem bundle the cloud index holds and this machine can fetch [then] fail, [else stop].
@@ -18,11 +17,9 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from apps.stems import cli as stems_cli
 from apps.webui.server import coverage_cloud
 from apps.webui.server.routes import ingest as ingest_mod
 from tests.cloudsync.conftest import InMemoryAssetS3
@@ -128,27 +125,6 @@ def test_the_job_log_says_how_many_missing_bundles_are_in_the_cloud(
     ), list(job.log)
 
 
-def test_the_stems_cli_is_handed_exactly_the_jobs_targets(
-    library: Library, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    seen: dict[str, Any] = {}
-
-    def fake_run_cli(_job: ingest_mod._RefreshJob, argv: list[str]) -> None:
-        ids_file = Path(argv[argv.index("--ids-file") + 1])
-        seen["argv"] = argv
-        seen["path"] = ids_file
-        seen["ids"] = ids_file.read_text(encoding="utf-8").split()
-
-    monkeypatch.setattr(ingest_mod, "_run_cli", fake_run_cli)
-    job = _job(library, ["stems"])
-
-    ingest_mod._step_stems(job, [("neither", "/music/neither.mp3"), ("other", "/music/other.mp3")])
-
-    assert seen["ids"] == ["neither", "other"]
-    assert "trickle" in seen["argv"] and "--live" in seen["argv"]
-    assert not seen["path"].exists(), "the id list is a scratch file and must not be left behind"
-
-
 def _wait_refresh(library: Library) -> dict:
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
@@ -186,14 +162,12 @@ def test_a_refresh_over_the_route_still_renders_what_is_in_neither_place(
     library: Library, s3, cfg, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The control for the test above: same route, one bundle genuinely
-    missing, and the renderer IS run, with that track and only that track."""
+    missing, and the renderer IS run. (Handing it exactly the job's targets,
+    ``trickle --ids-file``, was split out of #4974 with the other stems CLI
+    changes and returns in the follow-up.)"""
     fx.arm_cloud(library.app, library.data_dir, s3, cfg, _three_tracks(library, s3, cfg, tmp_path))
     handed: list[list[str]] = []
-
-    def fake_run_cli(_job: ingest_mod._RefreshJob, argv: list[str]) -> None:
-        handed.append(Path(argv[argv.index("--ids-file") + 1]).read_text("utf-8").split())
-
-    monkeypatch.setattr(ingest_mod, "_run_cli", fake_run_cli)
+    monkeypatch.setattr(ingest_mod, "_run_cli", lambda _job, argv: handed.append(argv))
     library.client.put(
         "/api/v1/ingest/config",
         json={"enabled": {"analysis": False, "stems": True, "vocals": False}},
@@ -203,43 +177,7 @@ def test_a_refresh_over_the_route_still_renders_what_is_in_neither_place(
     status = _wait_refresh(library)
 
     assert status["phase"] == "done", status["log_tail"]
-    assert handed == [["neither"]]
-
-
-# ----- the stems CLI honors the list ----------------------------------------
-def test_trickle_accepts_an_ids_file() -> None:
-    args = stems_cli.build_parser().parse_args(
-        ["trickle", "--live", "--ids-file", "/tmp/ids.txt"]
-    )
-    assert args.ids_file == Path("/tmp/ids.txt")
-    assert stems_cli.build_parser().parse_args(["trickle", "--live"]).ids_file is None
-
-
-def test_read_ids_file_returns_the_listed_ids(tmp_path: Path) -> None:
-    ids_file = tmp_path / "ids.txt"
-    ids_file.write_text("b\na\n\n", encoding="utf-8")
-    assert stems_cli.read_ids_file(ids_file) == {"a", "b"}
-
-
-def test_read_ids_file_fails_loudly_on_a_missing_or_empty_list(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match="cannot read"):
-        stems_cli.read_ids_file(tmp_path / "absent.txt")
-    empty = tmp_path / "empty.txt"
-    empty.write_text("\n", encoding="utf-8")
-    with pytest.raises(SystemExit, match="lists no stable ids"):
-        stems_cli.read_ids_file(empty)
-
-
-class _Track:
-    def __init__(self, stable_id: str) -> None:
-        self.stable_id = stable_id
-
-
-def test_restricting_the_batch_keeps_only_listed_tracks_in_their_order() -> None:
-    todo = [_Track("c"), _Track("a"), _Track("b")]
-    kept = stems_cli.restrict_to_ids(todo, {"b", "c", "not-in-todo"})
-    assert [track.stable_id for track in kept] == ["c", "b"]
-    assert stems_cli.restrict_to_ids(todo, None) == todo
+    assert len(handed) == 1 and "trickle" in handed[0]
 
 
 def test_stem_cloud_default_on_a_job_is_off_not_ok() -> None:

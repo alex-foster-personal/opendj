@@ -1,6 +1,6 @@
-"""Stem cache budget over HTTP, on the engine timer, and through the CLI (STEM-43).
+"""Stem cache budget over HTTP and on the engine timer (STEM-43).
 
-The routes, the timer tick and the CLI verbs all resolve the same
+The routes and the timer tick resolve the same
 ``cache_inputs(app)``, so these tests drive each surface against one real app
 and one real stems directory. Disk is injected by monkeypatching
 ``measure_disk``: the surfaces must not depend on the test host's free space.
@@ -9,22 +9,17 @@ and one real stems directory. Disk is injected by monkeypatching
   ``low_disk`` and names why nothing was done when it is blocked.
 * [if] a bundle is loaded on a deck in THIS engine [then] neither the route
   nor the timer evicts it.
-* [if] the CLI is pointed at a running engine [then] it reports what the
-  route reports, byte for byte.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import socket
 import time
 import wave
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -32,11 +27,8 @@ from apps.cloud import stem_cache_budget
 from apps.cloud.stem_cache_budget import GIB, DiskUsage, StemCacheSettings
 from apps.cloud.stem_hydration import OPEN_DECKS
 from apps.cloud.stem_index import save_cached_index
-from apps.stems.cache_cli import EXIT_LOW_DISK
-from apps.stems.cli import main as stems_cli_main
 from apps.webui.server.routes.stem_cache import router
 from apps.webui.server.stem_cache_enforcer import StemCacheEnforcer
-from tests.waits import start_uvicorn_in_thread
 
 VOLUME: int = 460 * GIB
 FLOOR: int = 23 * GIB
@@ -360,99 +352,6 @@ def test_enforcer_thread_ticks_on_its_own_and_stops_cleanly(
         enforcer.stop()
     assert not enforcer.running
     assert (tmp_path / "stems" / "local-only").exists()
-
-
-# --- CLI parity ----------------------------------------------------------------------
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-@pytest.fixture
-def live_engine(tmp_path: Path, two_bundles) -> Iterator[str]:
-    """A real uvicorn server on the routes under test: the CLI talks real
-    HTTP to it, exactly as it does to the engine."""
-    port = _free_port()
-    config = uvicorn.Config(
-        _app(tmp_path, armed=True), host="127.0.0.1", port=port, log_level="warning"
-    )
-    server, thread = start_uvicorn_in_thread(config, what="the stem cache test engine")
-    try:
-        yield f"http://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        thread.join(timeout=10.0)
-
-
-@pytest.mark.requirement("STEM-43")
-def test_cli_cache_status_matches_the_route_and_gates_on_low_disk(
-    live_engine: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-):
-    """[if] cache-status runs on a low disk [then] it prints the route payload and exits 3 when gated, [else stop]."""
-    _set_disk(monkeypatch, free=4 * GIB)
-
-    assert stems_cli_main(["cache-status", "--engine-url", live_engine]) == 0
-    printed = json.loads(capsys.readouterr().out)
-    assert printed["state"] == "low_disk"
-    assert printed["local_only_stable_ids"] == ["local-only"]
-
-    assert (
-        stems_cli_main(["cache-status", "--engine-url", live_engine, "--fail-on-low-disk"])
-        == EXIT_LOW_DISK
-    )
-    capsys.readouterr()
-
-    _set_disk(monkeypatch, free=300 * GIB)
-    assert (
-        stems_cli_main(["cache-status", "--engine-url", live_engine, "--fail-on-low-disk"])
-        == 0
-    )
-
-
-@pytest.mark.requirement("STEM-43")
-def test_cli_cache_enforce_and_settings_drive_the_engine(
-    tmp_path: Path,
-    live_engine: str,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-):
-    """[if] cache-enforce or cache-settings runs [then] the running engine performs it, [else stop]."""
-    _set_disk(monkeypatch, free=0)
-
-    assert stems_cli_main(["cache-enforce", "--engine-url", live_engine, "--dry-run"]) == 0
-    assert json.loads(capsys.readouterr().out)["dry_run"] is True
-    assert (tmp_path / "stems" / "indexed").exists()
-
-    assert stems_cli_main(["cache-enforce", "--engine-url", live_engine]) == 0
-    assert json.loads(capsys.readouterr().out)["evicted_stable_ids"] == ["indexed"]
-    assert not (tmp_path / "stems" / "indexed").exists()
-    assert (tmp_path / "stems" / "local-only").exists()
-
-    assert (
-        stems_cli_main(
-            ["cache-settings", "--engine-url", live_engine, "--floor-gib", "55",
-             "--auto-evict", "off"]
-        )
-        == 0
-    )
-    written = json.loads(capsys.readouterr().out)
-    assert written["floor_gib"] == 55.0 and written["auto_evict"] is False
-
-    assert stems_cli_main(["cache-settings", "--engine-url", live_engine]) == 0
-    assert json.loads(capsys.readouterr().out) == written
-
-
-@pytest.mark.requirement("STEM-43")
-def test_cli_refuses_to_act_without_an_engine(capsys: pytest.CaptureFixture[str]):
-    """[if] no engine answers [then] the verb exits non-zero naming the URL, never enforcing in-process where it cannot see the decks, [else stop]."""
-    dead = f"http://127.0.0.1:{_free_port()}"
-    with pytest.raises(SystemExit) as raised:
-        stems_cli_main(["cache-enforce", "--engine-url", dead])
-    assert "engine not reachable" in str(raised.value)
-    assert dead in str(raised.value)
 
 
 # --- the real app: armed with hydration, started and stopped by the lifespan -----
