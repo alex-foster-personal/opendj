@@ -167,16 +167,14 @@ _UNIC = (
 
 _OBJC2_REASON = (
     "the crates.io package at this lock version ships no LICENSE file; madsmtm/objc2 LICENSE.md "
-    "(identical at git SHAs 8852b424, 7b1abfd7, 8d214f54, b4167b58) plus the MIT, Apache-2.0 and "
-    "Zlib texts that document cites are staged as one combined file"
+    "(identical at git SHAs 8852b424, 7b1abfd7, 8d214f54, b4167b58), workspace authors from "
+    "Cargo.toml at 8852b424, and the MIT, Apache-2.0 and Zlib texts LICENSE.md cites are staged "
+    "as one combined file (SPDX MIT template copyright line omitted; authors field is the "
+    "locked-revision attribution)"
 )
 _DASP_REASON = (
     "the crates.io package ships no LICENSE file; RustAudio LICENSE-MIT at the crate git SHA is "
     "staged (bytes identical across dasp 221b810, sample 97c3bb9 and dasp window e4d5353)"
-)
-_SPDX_MIT_REASON = (
-    "the locked package declares MIT and ships no LICENSE file in the distribution or at the "
-    "pinned VCS revision; canonical MIT terms from spdx.org/licenses/MIT.txt are staged"
 )
 
 REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
@@ -255,25 +253,30 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
     *_each(
         "javascript",
         (("is-reference", "3.0.3"),),
-        text_relative="docs/legal/MIT.txt",
-        source_url="https://spdx.org/licenses/MIT.txt",
-        sha256="c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4",
-        reason="npm 3.0.3 and gitHead 8bb05312 declare MIT and ship no LICENSE; " + _SPDX_MIT_REASON,
+        text_relative="docs/legal/is-reference-3.0.3-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/Rich-Harris/is-reference/8bb053129bfabe2f6a7d7ed050159d67ebe82829/package.json",
+        sha256="c5e20d6bf1bbed90e7f08a2c64ce86131bba2c3eca5c08d1d6d73f1531841cf5",
+        reason="npm 3.0.3 and gitHead 8bb053129b declare MIT and ship no LICENSE in the tarball or "
+        "at that revision; package.json author/license and README License from that gitHead are "
+        "staged with the MIT permission notice (SPDX template copyright line omitted)",
     ),
     *_each(
         "javascript",
         (("locate-character", "3.0.0"),),
-        text_relative="docs/legal/MIT.txt",
-        source_url="https://spdx.org/licenses/MIT.txt",
-        sha256="c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4",
-        reason="npm 3.0.0 and gitHead 4f08a59e declare MIT and ship no LICENSE; " + _SPDX_MIT_REASON,
+        text_relative="docs/legal/locate-character-3.0.0-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/Rich-Harris/locate-character/4f08a59ec248121f7002abd02ee7b94e8eda06bc/package.json",
+        sha256="a397185c0bd097bb68329bbf21323ebf29123928ccabe14c26ef11c38662ef6c",
+        reason="npm 3.0.0 and gitHead 4f08a59ec2 declare MIT and ship no LICENSE in the tarball or "
+        "at that revision (npm repository field is GitLab; the gitHead is on GitHub); "
+        "package.json author/license and README License from that gitHead are staged with the "
+        "MIT permission notice (SPDX template copyright line omitted)",
     ),
     *_each(
         "rust",
         _OBJC2_MIT + _OBJC2_TRIO,
         text_relative="docs/legal/objc2-licenses.txt",
         source_url="https://raw.githubusercontent.com/madsmtm/objc2/8852b424193ca41602281b3d7540d7c8ed51e49a/LICENSE.md",
-        sha256="0228c74f6b4a26c276cdeb29175e2a5170906fd9f6028832402962097ca39cbb",
+        sha256="2001f1ac74823ea95c52652785873026e36246088d72908175eeb4a3075e015e",
         reason=_OBJC2_REASON,
     ),
     *_each(
@@ -327,19 +330,22 @@ REVIEWED_LICENSE_TEXTS: tuple[ReviewedLicenseText, ...] = (
     *_each(
         "rust",
         (("selectors", "0.36.1"),),
-        text_relative="docs/legal/MPL-2.0.txt",
-        source_url="https://www.mozilla.org/media/MPL/2.0/index.txt",
-        sha256="3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04",
-        reason="the crates.io package ships no LICENSE; Cargo.toml declares MPL-2.0 so the canonical "
-        "Mozilla MPL-2.0 text is staged",
+        text_relative="docs/legal/selectors-0.36.1-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/servo/stylo/635e1a19d02960588a00e189bd4bd5bdb150ec3d/selectors/lib.rs",
+        sha256="8fb842f37e6e40c174b850d5c0816fd64efc2347d50bc4b6d7a68031b9b2b192",
+        reason="the crates.io package at 0.36.1 (git SHA 635e1a19, path_in_vcs selectors) ships no "
+        "LICENSE; MPL Exhibit A from lib.rs, Cargo.toml authors/license, and the canonical "
+        "Mozilla MPL-2.0 text are staged",
     ),
     *_each(
         "rust",
         (("realfft", "3.5.0"),),
-        text_relative="docs/legal/MIT.txt",
-        source_url="https://spdx.org/licenses/MIT.txt",
-        sha256="c3b1b78bc8bd3ea13aa4bc9778442d16560270afa235006d816e5e88cef24db4",
-        reason="HEnquist/realfft 3.5.0 (git SHA d0d4eee0) declares MIT in Cargo.toml and ships no LICENSE; "
-        + _SPDX_MIT_REASON,
+        text_relative="docs/legal/realfft-3.5.0-LICENSE.txt",
+        source_url="https://raw.githubusercontent.com/HEnquist/realfft/d0d4eee0525fd27c96c8a046d6d107acd5ed84a6/Cargo.toml",
+        sha256="8eb17835ae38101a31dca0aa580fefded3fa604c9b6a3f761faa8b84fb63b061",
+        reason="HEnquist/realfft 3.5.0 (git SHA d0d4eee052) declares MIT in Cargo.toml and ships no "
+        "LICENSE in the crate or at that revision; Cargo.toml authors/license and README "
+        "License from that SHA are staged with the MIT permission notice (SPDX template "
+        "copyright line omitted)",
     ),
 )

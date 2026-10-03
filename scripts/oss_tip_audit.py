@@ -147,11 +147,17 @@ NO_KNOWN_LOGINS = KnownLogins()
 # attribution text. Path AND sha256 of the published blob audit_index already
 # holds: a future file under docs/legal/ is not exempt, and an edited copy at
 # a listed path is not exempt. Only consumer-mailbox is waived. Pins match
-# scripts/license_mirrors.py REVIEWED_LICENSE_TEXTS for these two paths.
+# scripts/license_mirrors.py REVIEWED_LICENSE_TEXTS for these paths.
 UPSTREAM_LICENSE_MAILBOX_BLOBS: Mapping[str, str] = MappingProxyType(
     {
         "docs/legal/lukeed-MIT.txt": (
             "ba573393f24555ac0528612ad39665fab5bdcc80330a61096024bbf5f736526d"
+        ),
+        "docs/legal/objc2-licenses.txt": (
+            "2001f1ac74823ea95c52652785873026e36246088d72908175eeb4a3075e015e"
+        ),
+        "docs/legal/realfft-3.5.0-LICENSE.txt": (
+            "8eb17835ae38101a31dca0aa580fefded3fa604c9b6a3f761faa8b84fb63b061"
         ),
         "docs/legal/rollup-LICENSE.md": (
             "fa1bd040c5bdeefe65b3821cebf474f2733ce65df13089bd151dda1778e62fe8"
@@ -172,7 +178,7 @@ def is_exempt(finding: Finding, blob_sha256: str = "") -> bool:
     mirrors under docs/legal/python-build-standalone/ are enumerated exactly in
     MAILBOX_EXEMPT_PATHS (Codex P1, PR #4853 r4170573408), not prefix-matched, so
     a future file added to that directory is NOT auto-exempt. Identity-surface
-    and PBS paths stay path-only. lukeed-MIT.txt and rollup-LICENSE.md also
+    and PBS paths stay path-only. The UPSTREAM_LICENSE_MAILBOX_BLOBS paths also
     require the published blob SHA256 to equal the reviewed pin.
     """
     if finding.rule != "consumer-mailbox":
