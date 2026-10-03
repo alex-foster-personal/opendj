@@ -4,6 +4,7 @@
     python -m apps.genre_infer train                           # prints held-out accuracy
     python -m apps.genre_infer suggest [--min-confidence 0.6]  # untagged tracks only
     python -m apps.genre_infer show ID
+    python -m apps.genre_infer jev [--limit 500]                # JEV guesses, untagged tracks only
 
 Labels are the wheel's simple genre FAMILIES (``apps/library_wheel/genre_families.py``)
 of each track's tag, resolved with the wheel's own precedence
@@ -29,7 +30,7 @@ from apps.library_wheel.query import genre_tags_by_stable_id
 from apps.shared.state import db as state_db
 from apps.shared.state.locations import bulk_local_audio_paths
 
-from . import store
+from . import jev, jev_store, store
 from .classify import GenreModel, suggest, train
 
 RUNNER = Path(__file__).with_name("clap_runner.py")
@@ -53,6 +54,21 @@ def _family_labels(state: Path, master: Path) -> tuple[dict[str, str], list[str]
         else:
             labels[sid] = fam[0]
     return labels, unlabeled
+
+
+def _untagged(state: Path, master: Path) -> list[str]:
+    """stable_ids with no genre tag anywhere: neither rekordbox nor the local genre field."""
+    conn = state_db.open_ro(state)
+    try:
+        local = jev_store.local_genre_ids(conn)
+        if not master.is_file():
+            # No rekordbox database: rows show the local genre field only (every
+            # mapping reads as unmapped), so that field alone decides.
+            return sorted(sid for sid in jev_store.live_track_ids(conn) if sid not in local)
+    finally:
+        conn.close()
+    tags = genre_tags_by_stable_id(state, master)
+    return sorted(sid for sid, tag in tags.items() if not (tag or "").strip() and sid not in local)
 
 
 def _embed_targets(args: argparse.Namespace, state: Path, data_dir: Path) -> dict[str, Path | None]:
@@ -201,13 +217,110 @@ def _cmd_suggest(args: argparse.Namespace) -> int:
 def _cmd_show(args: argparse.Namespace) -> int:
     data_dir, _s, _m = _paths(args)
     path = store.suggestions_path(data_dir)
-    doc = json.loads(path.read_text()) if path.is_file() else {"suggestions": {}}
+    doc = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"suggestions": {}}
     s = doc["suggestions"].get(args.stable_id)
     if s is None:
         print(f"no suggestion for {args.stable_id}", file=sys.stderr)
         return 1
     print(json.dumps({**s, "model_cv_accuracy": doc.get("cv_accuracy")}, indent=1))
     return 0
+
+
+def _tag_doc(tags: list[jev.TagQuestion]) -> list[dict[str, str]]:
+    return [{"name": t.name, "question": t.question} for t in tags]
+
+
+def _answered(data_dir: Path, tags: list[jev.TagQuestion]) -> set[str]:
+    """Tracks already answered (status ok) under these exact tag questions."""
+    doc = jev_store.read_suggestions(data_dir)
+    if doc.get("tags", []) != _tag_doc(tags):
+        return set()
+    return {sid for sid, r in doc["suggestions"].items() if isinstance(r, dict) and r.get("status") == "ok"}
+
+
+def _jev_write(data_dir: Path, results: dict, tags: list[jev.TagQuestion], min_confidence: float) -> list[str]:
+    """Merge this run into the sidecar (its answers replace earlier ones); return served models.
+
+    Earlier answers are kept only while they answered the same tag questions:
+    their tag probabilities mean nothing under renamed or reworded questions.
+    """
+    served = sorted({str(r.get("model")) for r in results.values() if r["status"] == "ok"})
+    previous = jev_store.read_suggestions(data_dir)
+    kept = previous.get("suggestions", {}) if previous.get("tags", []) == _tag_doc(tags) else {}
+    merged = {**kept, **results}
+    store.write_json(
+        jev_store.suggestions_path(data_dir),
+        {
+            "schema": jev.SCHEMA,
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "model": served,
+            "min_confidence": min_confidence,
+            "tags": _tag_doc(tags),
+            "suggestions": merged,
+        },
+    )
+    return served
+
+
+def _jev_report(results: dict, served: list[str], untagged: int, min_confidence: float) -> int:
+    """Print counts, UNKNOWN reasons and cost; exit 3 when every call failed."""
+    unknown = {sid: r["reason"] for sid, r in results.items() if r["status"] != "ok"}
+    doc = {"suggestions": results, "min_confidence": min_confidence}
+    shown = sum(1 for sid in results if jev_store.genre_guess(doc, sid))
+    cost = sum(float(r.get("cost") or 0.0) for r in results.values())
+    print(
+        f"asked JEV about {len(results)} untagged tracks ({untagged} untagged in total): "
+        f"{len(results) - len(unknown)} answered, {len(unknown)} UNKNOWN, "
+        f"{shown} confident enough to show (>= {min_confidence}); "
+        f"model {', '.join(served) or 'none'}; cost ${cost:.5f}",
+        file=sys.stderr,
+    )
+    if unknown:
+        reasons = sorted(set(unknown.values()))
+        print(f"UNKNOWN reasons: {'; '.join(reasons[:5])}", file=sys.stderr)
+    # Every call failing is a measurement failure, not an empty result.
+    return 3 if results and len(unknown) == len(results) else 0
+
+
+def _cmd_jev(args: argparse.Namespace) -> int:
+    """Ask JEV for a genre family (and the user's tag questions) for untagged tracks."""
+    data_dir, state, master = _paths(args)
+    tags = jev.load_tag_questions(jev_store.tags_path(data_dir))
+    untagged = _untagged(state, master)
+    # Only tracks with no genre tag at all: a tag the wheel cannot map is still
+    # a tag, and its row would never serve the guess (GENRE-02).
+    allowed = set(untagged)
+    if args.stable_id:
+        ids = [sid for sid in args.stable_id if sid in allowed]
+    else:
+        # Skip tracks already answered, so each run's --limit batch moves on to
+        # new tracks instead of paying for the same first batch again.
+        done = _answered(data_dir, tags)
+        ids = [sid for sid in untagged if sid not in done]
+    conn = state_db.open_ro(state)
+    try:
+        facts = jev_store.track_facts(conn, ids[: args.limit])
+    finally:
+        conn.close()
+    results = jev.classify({sid: jev.build_state(f) for sid, f in facts.items()}, tags, workers=args.workers)
+    served = _jev_write(data_dir, results, tags, args.min_confidence)
+    return _jev_report(results, served, len(untagged), args.min_confidence)
+
+
+def _positive_int(text: str) -> int:
+    """A call cap of at least 1; a negative slice bound would select almost every track."""
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a positive integer")
+    return value
+
+
+def _probability(text: str) -> float:
+    """A display floor in [0, 1]; NaN or out of range would expose every guess."""
+    value = float(text)
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a probability in [0, 1]")
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -231,6 +344,12 @@ def main(argv: list[str] | None = None) -> int:
     sh = sub.add_parser("show")
     sh.add_argument("stable_id")
     sh.set_defaults(func=_cmd_show)
+    j = sub.add_parser("jev")
+    j.add_argument("--stable-id", action="append", default=[])
+    j.add_argument("--limit", type=_positive_int, default=500)
+    j.add_argument("--min-confidence", type=_probability, default=jev.DEFAULT_MIN_CONFIDENCE)
+    j.add_argument("--workers", type=int, default=8)
+    j.set_defaults(func=_cmd_jev)
     args = ap.parse_args(argv)
     return int(args.func(args))
 
