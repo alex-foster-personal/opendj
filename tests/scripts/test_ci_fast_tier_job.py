@@ -314,6 +314,7 @@ def test_scope_selection_ignores_match_the_shard_job() -> None:
     assert ignores(scope) == ignores(shard)
 
 
+@pytest.mark.requirement("TESTCUT-01")
 def test_the_legs_together_cover_the_whole_fast_tier() -> None:
     """if --splits differs from the number of legs then the legs run only part of the fast
     tier: with `--splits 4` and two legs, groups 3 and 4 never run and nothing reads red
@@ -332,6 +333,7 @@ def test_the_legs_together_cover_the_whole_fast_tier() -> None:
     )
 
 
+@pytest.mark.requirement("TESTCUT-01")
 def test_every_leg_label_names_the_real_leg_count() -> None:
     """if a label still says "of 4" after the leg count changed then the job name, the
     TIMEOUT annotation and the cancel decision all misname the leg"""
