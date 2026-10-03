@@ -305,6 +305,8 @@
 	let allTracksNonBrokenCount = $state<number | null>(null);
 	let allTracksBrokenCount = $state<number | null>(null);
 	let allTracksReconcileError = $state<string | null>(null);
+	let libraryAvailability = $state<unknown>(null);
+	let reconcileReadGeneration = 0;
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -338,23 +340,14 @@
 		detail: 'checking backend'
 	});
 	let libraryHealthError = $state<string | null>(null);
-	/**
-	 * Derived, not assigned. pin a66ee132a14e: this dot used to quote
-	 * `state_db.tracks`, the RAW row count, so it advertised ">5k tracks
-	 * available" on a library where most of those rows are broken links to
-	 * files that are permanently gone. The playable total is
-	 * `allTracksNonBrokenCount`, which the reconcile summary settles a moment
-	 * AFTER init - assigning the dot at init time is precisely how it came to
-	 * quote the wrong number, so the dot is computed from whatever has landed
-	 * instead of frozen at the first thing that did.
-	 */
+	/** HEALTH-01: the health verdict uses present + broken_here, while the
+	 * source tree retains its non-broken library navigation count. */
 	const libraryHealth = $derived<LibraryHealthDot>(
 		_computeLibraryHealthDot(
 			libraryHealthError,
 			allTracksCount,
 			playlists.length,
-			allTracksNonBrokenCount,
-			allTracksBrokenCount,
+			libraryAvailability,
 			allTracksReconcileError
 		)
 	);
@@ -1095,12 +1088,17 @@
 	}
 
 	async function _loadReconcileSummary(): Promise<void> {
+		const generation = ++reconcileReadGeneration;
+		libraryAvailability = null;
 		try {
 			const summary = await getReconcileSummary();
+			if (generation !== reconcileReadGeneration) return;
+			libraryAvailability = summary.availability;
 			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
+			if (generation !== reconcileReadGeneration) return;
 			allTracksReconcileError = error instanceof Error ? error.message : String(error);
 		}
 	}
