@@ -94,13 +94,13 @@ def test_the_real_locked_export_passes_the_extras_audit() -> None:
 @pytest.mark.requirement("INSTALL-12")
 @pytest.mark.parametrize(
     "package,spec,extra",
-    [("mutagen", "mutagen==1.47.0", "tags"), ("boto3", "boto3==1.34.0", "cloud")],
+    [("spotipy", "spotipy==2.24.0", "spotify"), ("boto3", "boto3==1.34.0", "cloud")],
 )
 def test_an_omitted_extras_package_in_the_lock_fails_the_build(
     package: str, spec: str, extra: str
 ) -> None:
     """Any audited extra's package leaking into the export must be caught,
-    not just mutagen/tags -- issue #795's registry must not narrow to one."""
+    not just one omitted extra -- issue #795's registry must not narrow to one."""
     lock = LOCK_SAMPLE + f"{spec}\n    # via music-dj-tools\n"
     with pytest.raises(PayloadBuildError) as excinfo:
         _verify_omitted_extras(parse_locked_export(lock), PYPROJECT)
@@ -136,7 +136,7 @@ def test_a_dev_extra_package_in_the_lock_fails_the_build() -> None:
 @pytest.mark.requirement("INSTALL-12")
 def test_a_registry_entry_pyproject_no_longer_defines_fails_the_build() -> None:
     stale_pyproject = {
-        "project": {"optional-dependencies": {"tags": ["mutagen>=1.47,<2"]}}
+        "project": {"optional-dependencies": {"voice": ["openwakeword>=0.6"]}}
     }
     with pytest.raises(PayloadBuildError) as excinfo:
         _verify_omitted_extras(parse_locked_export(LOCK_SAMPLE), stale_pyproject)

@@ -14,7 +14,9 @@ Phase 16 scope (OPEN-02c):
     :func:`_stable_track_id` below for rationale).
 
 Per-file GEOB frame mutation (via mutagen) is plumbed through
-``SeratoAdapter.write()`` via :func:`apps.adapters.serato.geob.write_geob_frames`
+``SeratoAdapter.write()`` calls :func:`apps.adapters.serato.geob.write_geob_frames`,
+which refuses (tag writing into audio files was removed; mutagen is GPL) and
+is recorded as a warning. The Serato database write is unchanged.
 (v1.0 P0 follow-up, GH #2). Hot cues, loops, and beatgrid round-trip on MP3
 via the ``Serato Markers2`` + ``Serato BeatGrid`` ID3 GEOB frames. Missing
 or non-MP3 audio files downgrade to a structured warning and skip the GEOB

@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
+import { selectGigBaselineIds } from "./gig-baseline-tracks.mjs";
 import {
   gigBaselineDeckFaults,
   watchContinuousPlaybackUntil,
@@ -116,38 +117,50 @@ async function waitForQueueIdle(page) {
 async function loadGigSteadyState(page) {
   await page.goto(`${frontend}/performance?muted=1`);
   await waitForPerformanceIpc(page);
-  // The first four library rows are not four playable tracks on a real
-  // library (most rows can be absent, and `file_exists` can name a path the
-  // audio route then answers 404). Page the available listing and keep only
-  // rows whose audio route serves bytes, so the Gig baseline is four decks
-  // actually playing.
-  const stableIds = await page.evaluate(async (maxPages) => {
-    const picked = [];
+  // The first four playable rows are not a Beat Sync gig: phase lock aborts
+  // when a follower's BPM is outside [0.84, 1.16] of deck 1, or the track
+  // has no beat grid. Page the listing the harness already uses, keep rows
+  // whose audio route serves bytes, and choose four tempo-compatible
+  // grid-backed tracks. Sync stays engaged — the baseline is a real synced
+  // gig, not four free-running decks.
+  const listing = await page.evaluate(async (maxPages) => {
+    const candidates = [];
     const rejected = [];
     let cursor = null;
-    for (let pageIndex = 0; pageIndex < maxPages && picked.length < 4; pageIndex += 1) {
+    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
       const query = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`;
       const response = await fetch(`/api/v1/tracks?limit=50&available=true${query}`);
       if (!response.ok) throw new Error(`tracks list failed (${response.status})`);
       const payload = await response.json();
       const items = Array.isArray(payload.items) ? payload.items : [];
       for (const row of items) {
-        if (picked.length >= 4) break;
         if (row.file_exists !== true) continue;
         const audio = await fetch(`/api/v1/tracks/${row.stable_id}/audio`, { method: "HEAD" });
-        if (audio.status === 200) picked.push(row.stable_id);
-        else rejected.push(`${row.stable_id.slice(0, 8)}=${audio.status}`);
+        if (audio.status !== 200) {
+          rejected.push(`${String(row.stable_id).slice(0, 8)}=${audio.status}`);
+          continue;
+        }
+        candidates.push({
+          stable_id: row.stable_id,
+          bpm: row.bpm,
+          beatgrid: row.beatgrid ?? null,
+          beat_grid: row.beat_grid ?? null,
+          has_beatgrid: row.has_beatgrid ?? null,
+        });
       }
       cursor = typeof payload.next_cursor === "string" ? payload.next_cursor : null;
       if (cursor === null) break;
     }
-    if (picked.length < 4) {
-      throw new Error(
-        `need 4 tracks whose audio route serves bytes, got ${picked.length} (rejected: ${rejected.join(", ") || "none"})`
-      );
-    }
-    return picked;
+    return { candidates, rejected };
   }, MAX_LISTING_PAGES);
+  let stableIds;
+  try {
+    stableIds = selectGigBaselineIds(listing.candidates);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const rejected = listing.rejected.length > 0 ? listing.rejected.join(", ") : "none";
+    throw new Error(`${detail} (rejected audio: ${rejected})`);
+  }
   for (let deck = 1; deck <= 4; deck += 1) {
     const stableId = stableIds[deck - 1];
     await page.evaluate(
