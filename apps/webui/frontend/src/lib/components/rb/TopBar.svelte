@@ -82,7 +82,6 @@
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
-	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -121,6 +120,9 @@
 
 	let pairingOpen = $state(false);
 	let pairingSnapshot = $state<PairingSnapshot | null>(null);
+	/** The capture sheet loads on its first open, so it stays out of the
+	 * /performance route's initial bundle (budget in scripts/bundle-budget.mjs). */
+	let PairingSheet = $state<typeof import('./CreatePairingSheet.svelte').default | null>(null);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
@@ -302,6 +304,7 @@
 	}
 
 	async function _openPairing(): Promise<void> {
+		PairingSheet ??= (await import('./CreatePairingSheet.svelte')).default;
 		const state = await dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
 		if (state.pairing_snapshot === null) throw new Error('pairing snapshot was not captured');
 		pairingSnapshot = state.pairing_snapshot;
@@ -895,7 +898,9 @@
 	<UserBauble size={20} showLabel />
 </header>
 
-<CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
+{#if PairingSheet}
+	<PairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
+{/if}
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
