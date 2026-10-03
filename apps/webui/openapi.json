@@ -8356,6 +8356,33 @@
         "title": "GenerateIn",
         "type": "object"
       },
+      "GenreGuessOut": {
+        "description": "GENRE-02: a JEV genre-family GUESS, served only while ``genre`` is empty; never a tag.",
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "source": {
+            "const": "jev",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "confidence",
+          "source"
+        ],
+        "title": "GenreGuessOut",
+        "type": "object"
+      },
       "GrantIn": {
         "additionalProperties": false,
         "properties": {
@@ -17688,6 +17715,16 @@
             ],
             "title": "Genre"
           },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "genre_reason": {
             "anyOf": [
               {
@@ -20935,6 +20972,16 @@
             ],
             "title": "Genre"
           },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "genre_reason": {
             "anyOf": [
               {
@@ -21665,6 +21712,16 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "genre_reason": {
             "anyOf": [
