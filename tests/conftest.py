@@ -45,6 +45,24 @@ if importlib.util.find_spec("starlette") is not None:
     install_loopback_testclient_default()
 
 
+@pytest.fixture(autouse=True)
+def _reopen_ingest_cli_registry():
+    """Hand every test the CLI registry a freshly started engine would have.
+
+    A lifespan shutdown closes ``ingest_cli_procs`` for the rest of the
+    process, as a real shutdown should, and only a lifespan START reopens it.
+    A test that runs a lifespan therefore left every later test that drives a
+    refresh job through a plain ``TestClient(app)`` (no lifespan) with each
+    pipeline step stopped the moment it registered (#4992, pytest shard 3).
+    Only reached when the module is already loaded, so suites that never touch
+    the webui pay nothing.
+    """
+    yield
+    procs = sys.modules.get("apps.webui.server.routes.ingest_cli_procs")
+    if procs is not None:
+        procs.reopen()
+
+
 def _can_import(module_name: str) -> bool:
     """Return whether an optional dependency is actually importable."""
     try:
