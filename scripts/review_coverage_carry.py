@@ -147,6 +147,20 @@ def paths_between(root: Path, older: str, newer: str) -> frozenset[str]:
     return frozenset(line for line in proc.stdout.splitlines() if line)
 
 
+def paths_touched_by_any_commit(root: Path, older: str, newer: str) -> frozenset[str]:
+    """Every path any commit in older..newer touched, merges diffed against each parent.
+
+    The endpoint diff hides a path changed and later restored; this union does not (#4876).
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(root), "log", "--format=", "--name-only", "--no-renames", "-m", f"{older}..{newer}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return frozenset(line for line in proc.stdout.splitlines() if line)
+
+
 def is_debt_only_since(
     root: Path,
     pr: str,
@@ -168,7 +182,9 @@ def is_debt_only_since(
     if not paths:
         return False
     expected = allowed_paths if allowed_paths is not None else frozenset({debt_file_path(pr)})
-    return paths == expected
+    # Every intervening commit, not only the net diff: a path changed then restored still
+    # means a commit since the review touched it (CLAUDE.md "every commit since then").
+    return paths == expected and paths_touched_by_any_commit(root, carried_sha, head_sha) <= expected
 
 
 def _sha_completed_in_body(body: str) -> str | None:

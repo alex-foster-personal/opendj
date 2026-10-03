@@ -538,10 +538,13 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         reviews = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/reviews")
         inline = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/comments")
         issue = rc._paginated_json_list(f"repos/{rc.REPO}/issues/{pr}/comments")
+        # Only SUBMITTED reviews count, at head and when carried: a DISMISSED or PENDING Codex,
+        # Sol or Claude review at an earlier head must not become a carried reviewer (#4876).
         unambiguous_reviews = [
             review
             for review in reviews
-            if not _subscription_review_body_ambiguous(_review_body_text(review))
+            if str(review["state"]).upper() in SUBMITTED_REVIEW_STATES
+            and not _subscription_review_body_ambiguous(_review_body_text(review))
         ]
         return unambiguous_reviews, inline, issue
 
