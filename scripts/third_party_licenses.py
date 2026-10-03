@@ -374,6 +374,9 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
     mpg123_copying = repo_root / "docs/legal/mpg123-COPYING.txt"
     if not mpg123_copying.is_file():
         raise LicenseInventoryError(f"{mpg123_copying} missing: mpg123 (LGPL-2.1) ships with no license text")
+    flac_copying = repo_root / "docs/legal/libFLAC-COPYING.Xiph.txt"
+    if not flac_copying.is_file():
+        raise LicenseInventoryError(f"{flac_copying} missing: libFLAC (BSD-3-Clause) ships with no license text")
     native_lib_dir = repo_root / PBS_NATIVE_LICENSES_RELATIVE
     native_lib_licenses = [native_lib_dir / f"LICENSE.{lib}.txt" for lib in PBS_NATIVE_LIBRARIES]
     if missing_native := [path.name for path in native_lib_licenses if not path.is_file()]:
@@ -411,6 +414,14 @@ def supplement_components(repo_root: Path, payload_dir: Path) -> list[Component]
                  "LGPL-2.1; the wrapper package ships no license text, so mpg123's own COPYING is "
                  "mirrored from libsdl-org/mpg123 (an upstream mirror) instead. A human must still "
                  "confirm the compiled .wasm's relinking and source-offer obligations under LGPL-2.1.",
+        ),
+        Component(
+            "bundled", "libFLAC (compiled to WebAssembly inside @wasm-audio-decoders/flac)", "", "BSD-3-Clause",
+            "https://xiph.org/flac/",
+            [("libFLAC-COPYING.Xiph.txt", _read_text(flac_copying))],
+            note="The npm wrapper ships no license text but compiles libFLAC into its WebAssembly (Codex P1, "
+                 "PR #4853); COPYING.Xiph is mirrored from xiph/flac at 1507800de4b, the wasm-audio-decoders "
+                 "modules/flac submodule pin at 3c74930e67, fetched Sat 3 Oct 2026.",
         ),
     ]
 

@@ -33,6 +33,8 @@ PBS_NATIVE_LIBRARIES: tuple[str, ...] = (
 #: own, hence the BOTH above. eshaz/wasm-audio-decoders below IS verified at
 #: both: every package declares MIT but ships no LICENSE file, and the
 #: monorepo's GitHub root has none either (commit 3c74930e67, Fri 2 Oct 2026).
+#: The wrappers are textless, but the native code they compile in is not: mpg123 and libFLAC
+#: ship as bundled components with their own mirrored texts (scripts/third_party_licenses.py).
 KNOWN_TEXTLESS: frozenset[tuple[str, str]] = frozenset(
     {
         ("javascript", "mpg123-decoder"),
