@@ -14,6 +14,7 @@
 import { bootScheduler, type BootScheduler } from './boot-scheduler';
 import { applyExplicitPerfTierPref, fetchPerfTier } from './perf-tier-client';
 import {
+	kernelPressureIsElevated,
 	pressureIsElevated,
 	readMachinePressure,
 	startMachinePressurePolling,
@@ -199,7 +200,7 @@ export function startAppInstruments(scheduler: BootScheduler = bootScheduler): (
 				() => readXrunSessionCounter().xruns
 			);
 			setAudioPrefetchShedRequest((id) => shed.request(id));
-			setEagerStemDecodeShed(shed);
+			setEagerStemDecodeShed(shed, () => kernelPressureIsElevated(readMachinePressure()));
 			setAnlzPrefetchShedRequest((id) => shed.request(id));
 		}
 	});

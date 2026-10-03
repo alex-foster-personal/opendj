@@ -44,7 +44,10 @@ test('the shared row remains the sole availability and RoFormer drums-reason imp
 	assert.match(row, /disabled=\{!ready \|\| unavailable\(stem\.id\)\}/);
 	assert.match(row, /aria-busy=\{pending\}/);
 	assert.match(row, /it is mixed into INST, so it cannot be muted on its own/);
-	assert.match(row, /stems \$\{deck\.stems\.status\}: \$\{deck\.stems\.error \?\? 'no aligned artifact'\}/);
+	// STEM-48: the reason a chip is not live comes from the one shared mapping,
+	// for the deck and the mixer strip alike (tests/unit/stem-status-view.test.mjs).
+	assert.match(row, /const view = \$derived\(stemStatusView\(deck\.stems\)\);/);
+	assert.match(row, /const statusTip: string = \$derived\(view\.tip\);/);
 });
 
 test('deck and mixer scopes publish distinct stem chip testids', async () => {

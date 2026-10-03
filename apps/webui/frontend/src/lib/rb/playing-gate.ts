@@ -238,6 +238,9 @@ export interface BackgroundDemandShed {
 	request(id: BackgroundShedJobId): void;
 	sync(): void;
 	readonly pending: boolean;
+	/** PERFMODE-18: an xrun landed since the last sync. Audio is being
+	 * damaged now, which a consumer may weigh above an early warning. */
+	readonly xrunsInWindow: boolean;
 }
 
 function _assertShedJobId(id: string): void {
@@ -327,6 +330,9 @@ export function createBackgroundDemandShed(
 		},
 		get pending(): boolean {
 			return owed.size > 0 || gate.pending;
+		},
+		get xrunsInWindow(): boolean {
+			return _xrunWindowDelta() > S1_XRUN_DELTA_MAX;
 		}
 	};
 }

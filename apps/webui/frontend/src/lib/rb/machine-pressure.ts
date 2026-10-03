@@ -125,10 +125,16 @@ export function storeMachinePressure(snapshot: PressureSnapshot): boolean {
 	return true;
 }
 
+/** True when the KERNEL reports memory pressure (level 2 or above). The churn
+ * early warning alone does not count: it leads the kernel (PERFMODE-18). */
+export function kernelPressureIsElevated(snapshot: PressureSnapshot | null): boolean {
+	return snapshot !== null && snapshot.kernelLevel !== null && snapshot.kernelLevel >= KERNEL_ELEVATED_LEVEL;
+}
+
 /** True when kernel or churn crosses the locked PERFMODE-04 thresholds. */
 export function pressureIsElevated(snapshot: PressureSnapshot | null): boolean {
 	if (snapshot === null) return false;
-	if (snapshot.kernelLevel !== null && snapshot.kernelLevel >= KERNEL_ELEVATED_LEVEL) return true;
+	if (kernelPressureIsElevated(snapshot)) return true;
 	if (snapshot.churnScore !== null && snapshot.churnScore >= PRESSURE_CHURN_EARLY_WARNING)
 		return true;
 	return false;

@@ -19201,6 +19201,30 @@
         "title": "StemHydrateIn",
         "type": "object"
       },
+      "StemHydrationProgressOut": {
+        "description": "How far an in-flight cloud fetch has got, read from its temp directory.",
+        "properties": {
+          "bytes_done": {
+            "title": "Bytes Done",
+            "type": "integer"
+          },
+          "files_done": {
+            "title": "Files Done",
+            "type": "integer"
+          },
+          "files_total": {
+            "title": "Files Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files_total",
+          "files_done",
+          "bytes_done"
+        ],
+        "title": "StemHydrationProgressOut",
+        "type": "object"
+      },
       "StemIndexBuildIn": {
         "properties": {
           "data_dir": {
@@ -19397,6 +19421,68 @@
         "title": "StemPushMissingIn",
         "type": "object"
       },
+      "StemStateOut": {
+        "description": "One track's stem bundle, named: where it is and what is happening to it.\n\n``local`` is on this machine and playable; ``cloud`` is only in the R2\nindex and a hydrate will fetch it; ``fetching`` is being downloaded now;\n``error`` is a bundle that should exist and could not be produced;\n``none`` is no bundle anywhere this engine can see.",
+        "properties": {
+          "deck_open": {
+            "default": false,
+            "title": "Deck Open",
+            "type": "boolean"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "hydration_armed": {
+            "title": "Hydration Armed",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemHydrationProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stable_id": {
+            "title": "Stable Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "local",
+              "cloud",
+              "fetching",
+              "error",
+              "none"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stable_id",
+          "state",
+          "message",
+          "hydration_armed"
+        ],
+        "title": "StemStateOut",
+        "type": "object"
+      },
       "StemTierOut": {
         "description": "One real separation rung, straight out of apps.stems.tiers.",
         "properties": {
@@ -19451,6 +19537,16 @@
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StemHydrationProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "stable_id": {
             "title": "Stable Id",
@@ -38982,6 +39078,98 @@
           }
         },
         "summary": "Mark Stem Deck Open",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/hydrate": {
+      "post": {
+        "description": "Fetch this track's stem bundle from the cloud now, and retry a failure.\n\nThe manifest route records a failed fetch and answers 502 from then on so\na hot loop cannot hammer R2 with the same doomed request. This is the\nexplicit way back: it drops that record and starts a fresh fetch through\nthe same single-flight path, so the cache floor and the evictor apply\nexactly as they do for a deck load. A bundle already on disk is a no-op.\nReturns at once with the resulting state; poll ``.../stems/state``.",
+        "operationId": "hydrate_stem_bundle_api_v1_tracks__stable_id__stems_hydrate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "Index-dependent hydration failure: STEM_BUNDLE_HYDRATION_FAILED when the bundle is indexed but cannot be fetched, STEM_INDEX_CORRUPT when the local index cache is unreadable, STEM_HYDRATION_NOT_ARMED when this engine is configured for hydration but could not arm it at boot (for example boto3 is absent or the hub was unreachable). Transient boot failures such as HTTP 403/5xx may self-recover on the next throttled stems miss; structural failures such as missing boto3, unusable sync credential, or HTTP 401 STEM_HUB_AUTH_REFUSED stay terminal until operator action. STEM_HUB_AUTH_REFUSED when the hub rejects the sync credential, or STEM_HUB_INDEX_FAILED when the hub index or presign path fails with a non-unreachable error"
+          },
+          "503": {
+            "description": "Configured sync hub unreachable (SYNC_HUB_UNREACHABLE with endpoint and underlying error)"
+          }
+        },
+        "summary": "Hydrate Stem Bundle",
+        "tags": [
+          "stems"
+        ]
+      }
+    },
+    "/api/v1/tracks/{stable_id}/stems/state": {
+      "get": {
+        "description": "Name this track's stem state. Read-only: never starts a download.\n\nAgent-native parity for what the deck's stem row shows. Registered BEFORE\nthe ``{part}`` route on purpose, which would otherwise read ``state`` as a\nstem part name.",
+        "operationId": "get_stem_state_api_v1_tracks__stable_id__stems_state_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StemStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stem State",
         "tags": [
           "stems"
         ]
