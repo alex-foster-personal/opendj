@@ -536,6 +536,11 @@ COLUMN_DOCS: dict[str, dict[str, str]] = {
         "confidence": ("Optional 0-1 confidence, for 'learned'/'ai' sourced pairings."),
         "created_at": "First-insert timestamp.",
         "modified_at": "Most recent write timestamp.",
+        "snapshot_json": (
+            "Optional JSON capture from the Create pairing sheet: both decks' "
+            "positions, beat or time timestamps and EQ adjustments when the "
+            "pairing was saved. Write-once; NULL for CLI-added pairings."
+        ),
     },
     "smartlists": {
         "id": "Primary key.",

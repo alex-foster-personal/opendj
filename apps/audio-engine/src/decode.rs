@@ -456,11 +456,13 @@ struct Trim {
     pos: u64,
     trimmed_start: u64,
     dropped_end: u64,
+    /// Cut the packet that straddles the end too (an `iTunSMPB` length).
+    exact_end: bool,
 }
 
 impl Trim {
     fn new(raw: Option<crate::mp4edit::RawEdit>) -> Self {
-        Trim { raw, resolved: None, pos: 0, trimmed_start: 0, dropped_end: 0 }
+        Trim { raw, resolved: None, pos: 0, trimmed_start: 0, dropped_end: 0, exact_end: raw.is_some_and(|e| e.exact_end()) }
     }
 
     /// Of the next `n` decoded frames, (first kept, how many kept). The edit
@@ -473,13 +475,19 @@ impl Trim {
         let Some(crate::mp4edit::Edit { skip, keep }) = edit else { return (0, n) };
         // A packet that starts at or after the edit's end is dropped whole;
         // one that straddles it is kept whole, as ffmpeg keeps it.
-        if keep.is_some_and(|k| at >= skip + k) {
+        if keep.is_some_and(|k| at >= skip.saturating_add(k)) {
             self.dropped_end += n;
             return (0, 0);
         }
         let from = skip.saturating_sub(at).min(n);
         self.trimmed_start += from;
-        (from, n - from)
+        let mut take = n - from;
+        if let (true, Some(k)) = (self.exact_end, keep) {
+            let room = skip.saturating_add(k).saturating_sub(at + from);
+            self.dropped_end += take.saturating_sub(room);
+            take = take.min(room);
+        }
+        (from, take)
     }
 
     fn describe(&self) -> String {
@@ -505,10 +513,25 @@ impl Trim {
 /// priming frames early; unlike the deck's exact cut at the edit's end, a
 /// packet that straddles the end is kept whole, as ffmpeg keeps it. `out` must be seekable: the header is
 /// written last, once the length is known. On an error `out` holds a partial
-/// file the caller discards.
+/// file the caller discards. An edit that would leave no audio (a stale
+/// priming delay longer than the stream) is ignored, as the deck ignores it,
+/// and the file is decoded again untrimmed.
 pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWritten, ProtoError> {
+    match decode_to_wav_edit(path, out, true)? {
+        Ok(w) => Ok(w),
+        Err(()) => {
+            out.seek(SeekFrom::Start(0)).map_err(|e| ProtoError::new(ErrorCode::Io, format!("cannot rewrite the WAV of {}: {e}", path.display())))?;
+            decode_to_wav_edit(path, out, false)?.map_err(|()| ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())))
+        }
+    }
+}
+
+/// [`decode_to_wav`] with or without the file's edit. `Ok(Err(()))` when the
+/// edit trimmed away every decoded frame.
+fn decode_to_wav_edit<W: Write + Seek>(path: &Path, out: &mut W, apply_edit: bool) -> Result<Result<WavWritten, ()>, ProtoError> {
     let Opened { mut format, mut decoder, track_id, time_base, codec_rate, codec_channels, edit, .. } =
         open_decoder(open(path)?, path)?;
+    let edit = edit.filter(|_| apply_edit);
     let dec_err = |what: &str, e: &dyn std::fmt::Display| {
         ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()))
     };
@@ -592,6 +615,9 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     if !decoded_any {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no packet of {} decoded", path.display())));
     }
+    if frames == 0 && trim.trimmed_start > 0 {
+        return Ok(Err(()));
+    }
     if sample_rate == 0 || channels == 0 || frames == 0 {
         return Err(ProtoError::new(ErrorCode::Decode, format!("no audio decoded from {}", path.display())));
     }
@@ -601,14 +627,14 @@ pub fn decode_to_wav<W: Write + Seek>(path: &Path, out: &mut W) -> Result<WavWri
     out.seek(SeekFrom::Start(0)).map_err(io_err)?;
     wav::write_f32_header(out, ch16, sample_rate, data_bytes).map_err(io_err)?;
     out.flush().map_err(io_err)?;
-    Ok(WavWritten {
+    Ok(Ok(WavWritten {
         sample_rate,
         channels: ch16,
         frames,
         trimmed_start: trim.trimmed_start,
         dropped_end: trim.dropped_end,
         edit: trim.describe(),
-    })
+    }))
 }
 
 /// The first rate decoded is the track's rate. A later buffer at another
@@ -698,6 +724,13 @@ mod tests {
         // A skip inside a packet keeps its tail.
         let (w, _) = windows(Some(Edit { skip: 2112, keep: None }), 3);
         assert_eq!(w, vec![(1024, 0), (1024, 0), (64, 960)]);
+        // An iTunSMPB length is exact: the straddling packet is cut at the
+        // end (2524 - 2048 = 476 frames), not kept whole.
+        let mut t = Trim::new(None);
+        (t.resolved, t.exact_end) = (Some(Some(Edit { skip: 1024, keep: Some(1500) })), true);
+        let w: Vec<_> = (0..4).map(|_| t.window(1024, 44100)).collect();
+        assert_eq!(w, vec![(1024, 0), (0, 1024), (0, 476), (0, 0)]);
+        assert_eq!(t.dropped_end, 548 + 1024);
         // Control: no edit list keeps every frame.
         let (w, t) = windows(None, 3);
         assert_eq!(w, vec![(0, 1024); 3]);

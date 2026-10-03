@@ -2,11 +2,11 @@
 # requires-python = ">=3.11"
 # dependencies = ["tensorflow", "numpy<2", "soundfile", "scipy"]
 # ///
-"""Run rekordbox 6's Track Separation engine: the Spleeter 4stems SavedModel.
+"""Run a user-supplied Spleeter 4stems SavedModel (optional comparison arm).
 
-The weights ship with rekordbox and are already on this machine, so this is the
-older rekordbox bar rather than a reimplementation of it. The graph takes a
-complex STFT and returns four masked complex STFTs; spleeter's own 4stems config
+The model directory is supplied by the caller via --model (or the
+RB6_SPLEETER_MODEL env var); nothing is fetched or located automatically, and a
+missing or invalid path fails loudly. The graph takes a complex STFT and returns four masked complex STFTs; spleeter's own 4stems config
 fixes frame_length 4096, frame_step 1024, T 512, F 1024, mask_extension zeros.
 
 --sep-rate resamples before separation and back after, so the cost of the
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -24,15 +25,6 @@ import soundfile as sf
 import tensorflow as tf
 from scipy.signal import resample_poly
 
-MODEL = str(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Pioneer"
-    / "rekordbox6"
-    / "models"
-    / "spleeter_model"
-)
 FRAME_LENGTH, FRAME_STEP, T, F = 4096, 1024, 512, 1024
 STEMS = ("vocals", "drums", "bass", "other")
 
@@ -69,7 +61,15 @@ def main() -> None:
     ap.add_argument("--sep-rate", type=int, default=44100)
     ap.add_argument("--mono", action="store_true")
     ap.add_argument("--label", required=True)
+    ap.add_argument("--model", type=Path, default=None,
+                    help="Spleeter 4stems SavedModel directory (env: RB6_SPLEETER_MODEL)")
     args = ap.parse_args()
+    model_dir = args.model or (
+        Path(os.environ["RB6_SPLEETER_MODEL"]) if os.environ.get("RB6_SPLEETER_MODEL") else None)
+    if model_dir is None:
+        ap.error("a model path is required: pass --model or set RB6_SPLEETER_MODEL")
+    if not (model_dir / "saved_model.pb").is_file():
+        ap.error(f"not a SavedModel directory (no saved_model.pb): {model_dir}")
 
     wav, sr = sf.read(str(args.input), dtype="float32", always_2d=True)
     if wav.shape[1] == 1:
@@ -81,7 +81,7 @@ def main() -> None:
         work = np.repeat(work.mean(axis=1, keepdims=True), 2, axis=1)
     n = work.shape[0]
 
-    fn = tf.saved_model.load(MODEL).signatures["serving_default"]
+    fn = tf.saved_model.load(str(model_dir)).signatures["serving_default"]
 
     t0 = time.perf_counter()
     spec = _stft(work)
@@ -116,7 +116,7 @@ def main() -> None:
 
     dur = orig_n / sr
     print(json.dumps({
-        "label": args.label, "engine": "rekordbox6-spleeter-4stems",
+        "label": args.label, "engine": "user-supplied-spleeter-4stems",
         "sep_rate": args.sep_rate, "mono": args.mono,
         "audio_s": round(dur, 2), "infer_s": round(infer_s, 2),
         "s_per_stem_minute": round(infer_s / (dur / 60), 2),

@@ -13093,6 +13093,7 @@
             "type": "string"
           },
           "from_stable_id": {
+            "minLength": 1,
             "title": "From Stable Id",
             "type": "string"
           },
@@ -13129,6 +13130,7 @@
             "type": "string"
           },
           "to_stable_id": {
+            "minLength": 1,
             "title": "To Stable Id",
             "type": "string"
           }
