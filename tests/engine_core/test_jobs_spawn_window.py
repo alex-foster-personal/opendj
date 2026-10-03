@@ -28,15 +28,18 @@ Single-line intent:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import psutil
 import pytest
 
 from apps.engine_core.jobs.runner import (
+    FORK_ABORTED_ERROR,
     JobRunner,
     register_worker,
     unregister_worker,
@@ -216,4 +219,65 @@ def test_cancelling_an_unheld_running_row_names_the_spawn_window(
     assert "spawn window" in error, error
     assert "worker_pgid" in error, error
     assert "cannot be established from here" in error, error
+    store.close()
+
+
+def test_a_fork_outlasting_the_settle_window_is_killed_not_abandoned(
+    tmp_path: Path, kinds: None
+) -> None:
+    """stop() cancels a fork it stopped waiting for, and its worker dies.
+
+    The task below has forked -- its worker process exists -- but is still
+    awaiting its transport, so no worker_pgid is written and nothing outside
+    this engine can ever name that process. With a zero settle window stop()
+    gives up on it at once; abandoning it there left the worker leading its
+    own session after the engine was gone. stop() must instead cancel the
+    fork within its bound, which takes the worker down with it.
+    """
+    store = _store(tmp_path)
+    token = f"spawn-window-{tmp_path.name}"
+    register_worker("marked", lambda _p: [sys.executable, "-c", _MUTE, token])
+
+    def _marked() -> list[psutil.Process]:
+        found = []
+        for child in psutil.Process().children(recursive=True):
+            with contextlib.suppress(psutil.Error):
+                if token in child.cmdline() and child.status() != psutil.STATUS_ZOMBIE:
+                    found.append(child)
+        return found
+
+    async def drive() -> tuple[int, bool, dict[str, Any]]:
+        runner = JobRunner(store, poll_s=10.0, spawn_settle_s=0.0)
+        job = store.enqueue("marked", {})
+        claimed = cast("list[dict[str, Any]]", store.claim_queued(limit=1))[0]
+        runner._spawn(claimed)
+        task = runner._tasks[job["id"]]
+        # One loop step runs the task up to its transport await: the fork has
+        # happened and the registration has not.
+        await asyncio.sleep(0)
+        assert not runner._running, "the premise is wrong: it already registered"
+        forked = len(_marked())
+        await asyncio.wait_for(runner.stop(), timeout=_SHUTDOWN_BUDGET_S)
+        task_done = task.done()
+        if not task_done:
+            # Fail on the assertions below rather than wedge the suite on a
+            # worker that never exits.
+            task.cancel()
+            await asyncio.wait({task}, timeout=_SHUTDOWN_BUDGET_S)
+        return forked, task_done, store.get(job["id"])
+
+    try:
+        forked, task_done, final = asyncio.run(drive())
+        leftover = _marked()
+    finally:
+        unregister_worker("marked")
+        for child in _marked():
+            child.kill()
+
+    assert forked == 1, "the premise is wrong: the worker had not forked yet"
+    assert task_done, "stop() returned while the aborted fork was still running"
+    assert not leftover, f"the forked worker outlived stop(): {leftover}"
+    assert final["status"] == "cancelled", final
+    assert final["worker_pgid"] is None, final
+    assert final["error"] == FORK_ABORTED_ERROR, final
     store.close()

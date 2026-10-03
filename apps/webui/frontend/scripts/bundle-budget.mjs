@@ -243,6 +243,19 @@ const BUDGETS = [
   // 5504f60e7, /performance measured 245,836, 76 bytes over 245,760: main's own
   // growth since the last merge plus this PR's two-track pairing readiness check in
   // the top bar. 948 bytes remain. Payback: the same compatible-filter deferral as the library entry.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, SET-11 set recording without ffmpeg, V1): REC now
+  // lights only once audio is really written, and shows "Waiting for microphone
+  // permission" while macOS's first-run prompt is up (Silver lost 42 s of a set to a
+  // REC that looked live during it). recordRailState, its tooltips and the 1 s status
+  // poll sit on the REC rail, which is first paint. Main measured 243,599 on Sat 3 Oct
+  // (ci/2026-10-03-quality-ratchets.md); this branch 243,933, +334 of its own and 221
+  // over the old limit. #4906 raises to the same 244,736 for its own +1,319: if it
+  // lands first, the merged tree needs one more KiB. Payback, not yet measured: load
+  // the REC tooltips with the lazy RecordInputPicker.
+  // Merge note (PR #4014 x SET-11): both diffs land on this head. #4014's ceiling
+  // (246,784, measured 245,836 against main 5504f60e7) is the wider of the two.
+  // SET-11's stated +334 fits inside the 948 bytes that ceiling left (245,836 + 334
+  // = 246,170). Re-measure on the merged head before tightening.
   { name: 'performance', limit: 246784, measured: 245836, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager

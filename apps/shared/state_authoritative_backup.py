@@ -63,9 +63,20 @@ class TableRestoreGroup:
     optional_tables: tuple[OptionalRestoreTable, ...] = ()
 
 
+# Placeholder in a group's insert SQL for the columns the live table and the
+# backup's table share, resolved at restore time by ``_shared_columns``.
+_SHARED_COLUMNS = "{shared_columns}"
+
+
 def _full_table_group(name: str) -> TableRestoreGroup:
     delete = (f'DELETE FROM "{name}"',)
-    insert = (f'INSERT INTO main."{name}" SELECT * FROM restore_src."{name}"',)
+    # Named columns, not SELECT *: a backup taken before a column was added
+    # (pairings.snapshot_json, PAIR-04) must still restore into the newer
+    # table, which fills the missing column with its default.
+    insert = (
+        f'INSERT INTO main."{name}" ({_SHARED_COLUMNS}) '
+        f'SELECT {_SHARED_COLUMNS} FROM restore_src."{name}"',
+    )
     count = (f'SELECT COUNT(*) FROM restore_src."{name}"',)
     return TableRestoreGroup(
         cli_name=name,
@@ -229,6 +240,22 @@ def _scoped_live_count(conn: sqlite3.Connection, group: TableRestoreGroup) -> in
     )
 
 
+def _resolve_shared_columns(
+    conn: sqlite3.Connection, group: TableRestoreGroup, insert: str
+) -> str:
+    if _SHARED_COLUMNS not in insert:
+        return insert
+    (table,) = group.physical_tables
+    live = [row[1] for row in conn.execute(f'PRAGMA main.table_info("{table}")')]
+    old = {row[1] for row in conn.execute(f'PRAGMA restore_src.table_info("{table}")')}
+    shared = [col for col in live if col in old]
+    if not shared:
+        raise StateAuthoritativeBackupError(
+            f"backup table {table!r} shares no columns with the live table"
+        )
+    return insert.replace(_SHARED_COLUMNS, ", ".join(f'"{col}"' for col in shared))
+
+
 def _restore_optional_tables(
     conn: sqlite3.Connection, group: TableRestoreGroup, expected_counts: dict[str, int]
 ) -> tuple[int, int]:
@@ -274,7 +301,7 @@ def _restore_group(
     for delete in group.delete_sql:
         conn.execute(delete)
     for insert in group.insert_sql:
-        conn.execute(insert)
+        conn.execute(_resolve_shared_columns(conn, group, insert))
     live_scope = _scoped_live_count(conn, group)
     optional_expected, optional_live = _restore_optional_tables(conn, group, expected_counts)
     expected_scope += optional_expected

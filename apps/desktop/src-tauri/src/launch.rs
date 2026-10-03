@@ -192,7 +192,7 @@ pub fn stop_holder_pid(pid: u32) {
             libc::kill(pgid, libc::SIGTERM);
         }
     }
-    let deadline = sigterm_sent + std::time::Duration::from_secs(5);
+    let deadline = sigterm_sent + engine::SHUTDOWN_GRACE;
     while std::time::Instant::now() < deadline {
         if !pid_alive(pid) {
             engine::append_shell_log(

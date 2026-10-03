@@ -18,12 +18,13 @@ in ``track_fields`` with provenance (``source='webui'``,
 edits survive a daemon restart. There is NO in-memory fallback on this
 path: writer/lock failures raise.
 
-Phase 5 does NOT (yet) model:
+Pairings read and write the durable ``pairings`` table owned by
+:mod:`apps.shared.pairings` (the rows the ``apps.pairings`` CLI and the
+suggester's stage-2 rerank read), so a pairing saved in the UI survives a
+restart.
 
-  * the webui ``pairings`` entity,
-  * the triage ``queues`` (dedup / bad_beatgrid / auto_cue).
-
-For those methods we delegate to an :class:`InMemoryBackend` companion and
+Phase 5 does NOT (yet) model the triage ``queues`` (dedup / bad_beatgrid /
+auto_cue). For those methods we delegate to an :class:`InMemoryBackend` companion and
 log a one-shot warning per process so deployments know they are on the
 fallback path. When Phase 6/7/12 ship the missing tables, individual
 methods here should switch to real SQL without the fallback.
@@ -37,6 +38,7 @@ projection, the same etag is re-derived after restart.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -48,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.analysis.selection import EffectiveField
+from apps.shared.pairings.schema_sql import ensure_phase08_tables
 from apps.shared.state import db as _state_db
 from apps.shared.state import queries as _state_queries
 from apps.shared.state import schema as _state_schema
@@ -267,6 +270,114 @@ def _effective_updated_at(
     return best
 
 
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _pairing_id(from_id: str, to_id: str, direction: str) -> str:
+    """Stable id for one stored edge, derived from its primary key.
+
+    The table predates the wire's ``pairing_id`` and the CLI writes rows
+    without one, so the id is a pure function of the key: the same edge has
+    the same id in every process and after every restart.
+    """
+    digest = hashlib.sha1(
+        f"{from_id}\x1f{to_id}\x1f{direction}".encode()
+    ).hexdigest()
+    return f"pair-{digest[:24]}"
+
+
+def _pairing_matches(
+    pairing: Pairing, *, from_stable_id: str | None,
+    to_stable_id: str | None, source: str | None,
+) -> bool:
+    """Apply the list route's optional filters to one wire pairing."""
+    return (
+        (not from_stable_id or pairing.from_stable_id == from_stable_id)
+        and (not to_stable_id or pairing.to_stable_id == to_stable_id)
+        and (not source or pairing.source == source)
+    )
+
+
+def _row_to_pairing(row: tuple[Any, ...]) -> Pairing:
+    """Map a stored pairings row onto the wire's :class:`Pairing`.
+
+    An ``out_of`` edge (CLI only) reads as its reverse ``->`` so every
+    pairing the UI shows points the way the mix runs.
+    """
+    from_id, to_id, direction, source, notes = row[0], row[1], row[2], row[3], row[4]
+    snapshot = None if row[7] is None else json.loads(row[7])
+    pairing_id = _pairing_id(from_id, to_id, direction)
+    if direction == "out_of":
+        from_id, to_id = to_id, from_id
+    return Pairing(
+        pairing_id=pairing_id,
+        from_stable_id=from_id,
+        to_stable_id=to_id,
+        direction="<->" if direction == "either" else "->",
+        source=source,
+        notes=notes,
+        snapshot=snapshot,
+        created_at=row[5],
+        updated_at=row[6],
+    )
+
+
+def _graph_pairings(conn: sqlite3.Connection) -> list[Pairing]:
+    """Wire view of the durable graph ``pairings`` table.
+
+    A missing table reads as empty. A table from before ``snapshot_json``
+    still lists; that column is projected as NULL until a write upgrades it.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pairings'"
+    ).fetchone()
+    if exists is None:
+        return []
+    columns = {col[1] for col in conn.execute("PRAGMA table_info(pairings)")}
+    snapshot_col = "snapshot_json" if "snapshot_json" in columns else "NULL"
+    rows = conn.execute(
+        "SELECT from_stable_id, to_stable_id, direction, source, "
+        f"notes, created_at, modified_at, {snapshot_col} "
+        "FROM pairings"
+    ).fetchall()
+    return [_row_to_pairing(tuple(row)) for row in rows]
+
+
+def _delete_graph_pairing(
+    conn: sqlite3.Connection, pairing_id: str, *, expected_etag: str,
+) -> None:
+    """CAS-delete one graph edge addressed by its derived pairing id.
+
+    HTTP ids are handled by :func:`delete_http_pairing`. This path is the
+    graph table's own id (a CLI edge the HTTP table does not store).
+    """
+    rows = conn.execute(
+        "SELECT from_stable_id, to_stable_id, direction, source, "
+        "notes, created_at, modified_at, snapshot_json FROM pairings"
+    ).fetchall()
+    match = None
+    for row in rows:
+        if _pairing_id(row[0], row[1], row[2]) == pairing_id:
+            match = row
+            break
+    if match is None:
+        raise NotFoundError(f"pairing not found: {pairing_id}")
+    existing = _row_to_pairing(tuple(match))
+    current = compute_etag(existing.pairing_id, existing.updated_at)
+    if strip_quotes(current) != strip_quotes(expected_etag):
+        raise ConflictError(
+            current={"pairing_id": existing.pairing_id,
+                     "updated_at": existing.updated_at},
+            etag=current,
+        )
+    conn.execute(
+        "DELETE FROM pairings WHERE from_stable_id=? "
+        "AND to_stable_id=? AND direction=?",
+        (match[0], match[1], match[2]),
+    )
+
+
 def _row_to_track(
     row: sqlite3.Row,
     fields: dict[str, EffectiveField],
@@ -479,7 +590,7 @@ class SqliteBackend:
     :class:`apps.shared.state.writer.StateWriter` (see module docstring).
     The constructor takes the path to ``state.db`` and a companion
     :class:`InMemoryBackend` used only for entities Phase 5 does not yet
-    model (``pairings``, queues).
+    model (the triage queues).
 
     The companion can be pre-seeded in tests to exercise fallback paths.
     """
@@ -791,12 +902,35 @@ class SqliteBackend:
         to_stable_id: str | None = None, source: str | None = None,
     ) -> list[Pairing]:
         with self._ro() as conn:
-            return list_http_pairings(
+            http_rows = list_http_pairings(
                 conn,
                 from_stable_id=from_stable_id,
                 to_stable_id=to_stable_id,
                 source=source,
             )
+            graph_rows = [
+                pairing for pairing in _graph_pairings(conn)
+                if _pairing_matches(
+                    pairing, from_stable_id=from_stable_id,
+                    to_stable_id=to_stable_id, source=source,
+                )
+            ]
+        # HTTP rows keep the wire id and snapshot. A graph edge with the
+        # same visible endpoints is that row's mirror (or a CLI edge the
+        # HTTP table already captured) and is not listed twice. Graph-only
+        # edges, including a reversed ``out_of`` read as ``->``, stay.
+        covered = {
+            (pairing.from_stable_id, pairing.to_stable_id, pairing.direction)
+            for pairing in http_rows
+        }
+        out = list(http_rows)
+        out.extend(
+            pairing for pairing in graph_rows
+            if (pairing.from_stable_id, pairing.to_stable_id, pairing.direction)
+            not in covered
+        )
+        out.sort(key=lambda pairing: pairing.created_at)
+        return out
 
     def get_queue(
         self, kind: QueueKind,
@@ -823,11 +957,20 @@ class SqliteBackend:
                 ).fetchone()[0]
             else:
                 _warn_fallback_once("stats:playlists", "no playlists table")
-        with self._ro() as conn:
+            http_rows = list_http_pairings(conn)
             pairings = count_http_pairings(conn)
+            covered = {
+                (pairing.from_stable_id, pairing.to_stable_id, pairing.direction)
+                for pairing in http_rows
+            }
+            if self._table_exists(conn, "pairings"):
+                pairings += sum(
+                    1 for pairing in _graph_pairings(conn)
+                    if (pairing.from_stable_id, pairing.to_stable_id,
+                        pairing.direction) not in covered
+                )
         return {
-            "tracks": tracks, "playlists": playlists,
-            "pairings": pairings,
+            "tracks": tracks, "playlists": playlists, "pairings": pairings,
         }
 
     # --- writes -----------------------------------------------------------
@@ -1043,38 +1186,56 @@ class SqliteBackend:
                 self._sqlite_last_writer = (source, now)
             return len(updates)
 
-    def create_pairing(self, pairing: Pairing) -> Pairing:
+    @contextmanager
+    def _pairings_rw(self) -> Iterator[sqlite3.Connection]:
+        """One serialized write transaction over the durable pairings table.
+
+        The table belongs to :mod:`apps.shared.pairings` (the same rows the
+        ``apps.pairings`` CLI and the suggester's stage-2 rerank read), so its
+        own idempotent DDL creates or upgrades it before the write.
+        """
         with self._write_lock:
             conn = _state_db.open_rw(self._path)
-            conn.row_factory = sqlite3.Row
             try:
-                created = create_http_pairing(conn, pairing)
-                conn.commit()
+                ensure_phase08_tables(conn)
+                conn.execute("BEGIN IMMEDIATE")
+                yield conn
+                conn.execute("COMMIT")
             except Exception:
                 if conn.in_transaction:
-                    conn.rollback()
+                    conn.execute("ROLLBACK")
                 raise
             finally:
                 conn.close()
-            self._sqlite_last_writer = (pairing.source, pairing.created_at)
-            return created
+
+    def create_pairing(self, pairing: Pairing) -> Pairing:
+        """Persist ``pairing``; a repeat of the same edge merges into it.
+
+        The HTTP row keeps the wire id, direction and write-once snapshot.
+        The same transaction mirrors an edge this pairing owns into the
+        durable graph table. Notes append, and a snapshot already stored is
+        kept. Same contract as :meth:`InMemoryBackend.create_pairing`. An
+        edge this pairing does not own (CLI or other graph tooling) is left
+        unchanged.
+        """
+        with self._pairings_rw() as conn:
+            conn.row_factory = sqlite3.Row
+            created = create_http_pairing(conn, pairing)
+        self._sqlite_last_writer = (pairing.source, pairing.created_at)
+        return created
 
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
-        with self._write_lock:
-            conn = _state_db.open_rw(self._path)
+        with self._pairings_rw() as conn:
             conn.row_factory = sqlite3.Row
             try:
-                delete_http_pairing(conn, pairing_id, expected_etag=expected_etag)
-                conn.commit()
-            except Exception:
-                if conn.in_transaction:
-                    conn.rollback()
-                raise
-            finally:
-                conn.close()
-            self._sqlite_last_writer = ("webui", datetime.now(UTC).strftime(
-                "%Y-%m-%dT%H:%M:%S.%fZ",
-            ))
+                delete_http_pairing(
+                    conn, pairing_id, expected_etag=expected_etag,
+                )
+            except NotFoundError:
+                _delete_graph_pairing(
+                    conn, pairing_id, expected_etag=expected_etag,
+                )
+        self._sqlite_last_writer = ("webui", _utcnow_iso())
 
     def last_writer(self) -> tuple[str, str] | None:
         if self._sqlite_last_writer is not None:

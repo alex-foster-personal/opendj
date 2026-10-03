@@ -82,7 +82,7 @@
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
-	import CreatePairingSheet, { pairingUnavailableReason } from './CreatePairingSheet.svelte';
+	import { pairingUnavailableReason } from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -136,6 +136,9 @@
 			uiPrefs.beat_sync_max
 		)
 	);
+	/** The capture sheet loads on its first open, so it stays out of the
+	 * /performance route's initial bundle (budget in scripts/bundle-budget.mjs). */
+	let PairingSheet = $state<typeof import('./CreatePairingSheet.svelte').default | null>(null);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
@@ -317,6 +320,7 @@
 	}
 
 	async function _openPairing(): Promise<void> {
+		PairingSheet ??= (await import('./CreatePairingSheet.svelte')).default;
 		const state = await dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
 		if (state.pairing_snapshot === null) throw new Error('pairing snapshot was not captured');
 		pairingSnapshot = state.pairing_snapshot;
@@ -911,7 +915,9 @@
 	<UserBauble size={20} showLabel />
 </header>
 
-<CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
+{#if PairingSheet}
+	<PairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
+{/if}
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen -->
 <MidiPanel />
@@ -1156,8 +1162,9 @@
 	   asserts it visible, labelled and hittable at 800x600. */
 
 	/* The vibe meter is decoration and yields at 1740px. Create pairing is a
-	   real control (the only door to DECKUX-12), so it stays at every width
-	   and shortens its label instead, never wrapping or crushing. */
+	   real control (the only door to DECKUX-12), so it shortens to the Pair
+	   span instead of leaving with the vibe meter. It leaves the row only at
+	   1160px, where that short label still crushed the command input. */
 	.rb-topbar .topbar-slot-pairing {
 		flex-shrink: 0;
 		white-space: nowrap;
@@ -1165,8 +1172,17 @@
 	.rb-topbar .pair-short { display: none; }
 	@media (max-width: 1740px) {
 		.rb-topbar .topbar-slot-vibe { display: none; }
+		/* Shorten in the DOM (pair-long / pair-short) rather than a ::after
+		   label. Hiding the control at this width hid it on every Mac laptop
+		   window (1470-1728px). */
 		.rb-topbar .pair-long { display: none; }
 		.rb-topbar .pair-short { display: inline; }
+	}
+	@media (max-width: 1160px) {
+		/* 1136px (the last width where the short label crushed the command
+		   input; playwright, chromium, fixture library, Fri 2 Oct 2026) plus
+		   the same 25px margin the other tiers use. */
+		.rb-topbar .topbar-slot-pairing { display: none; }
 	}
 
 	.ap-wrap {

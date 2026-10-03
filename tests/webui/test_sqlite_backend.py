@@ -822,17 +822,40 @@ class TestFallbackPaths:
         backend = SqliteBackend(fresh_state_db)
         now = _iso_now()
         p = backend.create_pairing(Pairing(
-            pairing_id="p-a", from_stable_id="sid-001",
+            pairing_id="ignored", from_stable_id="sid-001",
             to_stable_id="sid-002", direction="->",
             source="manual", notes="test",
             created_at=now, updated_at=now,
         ))
-        assert p.pairing_id == "p-a"
+        # create_pairing stores the supplied wire id on http_pairings.
+        assert p.pairing_id == "ignored"
         listed = backend.list_pairings()
         assert len(listed) == 1
         assert listed[0].notes == "test"
         etag = compute_etag(p.pairing_id, p.updated_at)
-        backend.delete_pairing("p-a", expected_etag=etag)
+        backend.delete_pairing(p.pairing_id, expected_etag=etag)
+        assert backend.list_pairings() == []
+        backend2 = SqliteBackend(fresh_state_db)
+        assert backend2.list_pairings() == []
+
+    def test_create_and_delete_pairing_persists_in_state_db(
+        self, fresh_state_db: Path,
+    ) -> None:
+        backend = SqliteBackend(fresh_state_db)
+        now = _iso_now()
+        p = backend.create_pairing(Pairing(
+            pairing_id="ignored", from_stable_id="sid-001",
+            to_stable_id="sid-002", direction="->",
+            source="manual", notes="test",
+            created_at=now, updated_at=now,
+        ))
+        # A second backend is a restarted daemon: the pairing is still there.
+        reborn = SqliteBackend(fresh_state_db)
+        [listed] = reborn.list_pairings()
+        assert listed == p
+        assert (listed.from_stable_id, listed.to_stable_id) == ("sid-001", "sid-002")
+        etag = compute_etag(p.pairing_id, p.updated_at)
+        reborn.delete_pairing(p.pairing_id, expected_etag=etag)
         assert backend.list_pairings() == []
         backend2 = SqliteBackend(fresh_state_db)
         assert backend2.list_pairings() == []

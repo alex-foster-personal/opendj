@@ -7,6 +7,8 @@
 //!   odj-audio decode --in SOURCE --out OUT.wav
 //!   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
 //!   odj-audio probe PATH
+//!   odj-audio input-devices
+//!   odj-audio record --dir DIR (--device NAME | --device-index N) [--segment-seconds 300]
 //!   odj-audio version
 //!
 //! `render` prints one JSON summary line: the plan it rendered, the output's
@@ -27,6 +29,15 @@
 //! and a deck start it. It never replaces a file: OUT must not exist. This is how the stems and vocals
 //! workers read compressed audio in the installed app, which ships no ffmpeg
 //! (`docs/decisions/*-odj-audio-decode-for-workers.md`).
+//! `input-devices` (build feature `device`) prints the audio inputs as one
+//! JSON line, and `record` records one of them into DIR as rolling 16-bit WAV
+//! segments named by their UTC start (`src/record.rs`), printing a JSON line
+//! when it is recording (`{"recording":...}`, after `{"waiting":
+//! "microphone_permission"}` while macOS's first-run prompt is up) and another
+//! when it stops. It stops, closing
+//! the last segment, when stdin reaches end of file or reads `stop`. This is
+//! how REC records a set in the installed app, which ships no ffmpeg
+//! (`docs/decisions/*-set-recording-without-ffmpeg.md`).
 
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
@@ -50,6 +61,9 @@ const USAGE: &str = "usage:
   odj-audio decode --in SOURCE --out OUT.wav   (OUT must not exist)
   odj-audio decode PATH [--rate HZ] [--mono] [--format f32le|s16le]
   odj-audio probe PATH
+  odj-audio input-devices
+  odj-audio record --dir DIR (--device NAME | --device-index N) [--segment-seconds SECONDS]
+                   (stops on `stop` or end of file on stdin)
   odj-audio version";
 
 struct Args {
@@ -720,6 +734,116 @@ fn probe_cmd(mut args: Args) -> Result<(), String> {
     Ok(())
 }
 
+/// Where `record` writes, how long each segment is, and which input. Parsed
+/// (and its errors tested) without `device` too, where nothing reads it.
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+struct RecordArgs {
+    dir: PathBuf,
+    segment_seconds: u32,
+    select: RecordSelect,
+}
+
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+enum RecordSelect {
+    Name(String),
+    Index(usize),
+}
+
+fn parse_record(mut args: Args) -> Result<RecordArgs, String> {
+    let dir = PathBuf::from(args.take("--dir")?.ok_or("record needs --dir")?);
+    let name = args.take("--device")?;
+    let index = args.take("--device-index")?;
+    let segment_seconds = match args.take("--segment-seconds")? {
+        None => 300,
+        Some(s) => s.parse().map_err(|_| format!("--segment-seconds {s} is not a whole number"))?,
+    };
+    args.done()?;
+    let select = match (name, index) {
+        (Some(n), None) if !n.is_empty() => RecordSelect::Name(n),
+        (None, Some(i)) => RecordSelect::Index(i.parse().map_err(|_| format!("--device-index {i} is not an index"))?),
+        _ => return Err("record needs exactly one of --device NAME or --device-index N".into()),
+    };
+    Ok(RecordArgs { dir, segment_seconds, select })
+}
+
+#[cfg(feature = "device")]
+fn input_devices_cmd(args: Args) -> Result<(), String> {
+    args.done()?;
+    let devices = odj_audio::capture::input_devices()?;
+    println!("{}", json!({ "devices": devices }));
+    Ok(())
+}
+
+#[cfg(not(feature = "device"))]
+fn input_devices_cmd(args: Args) -> Result<(), String> {
+    args.done()?;
+    Err("this build has no audio input; rebuild with --features device".into())
+}
+
+/// Set `stop` when stdin reaches end of file or reads a `stop` line: the
+/// parent closing the pipe (or dying) ends the recording cleanly.
+#[cfg(feature = "device")]
+fn stop_on_stdin(stop: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    use std::io::BufRead;
+    std::thread::spawn(move || {
+        for line in io::stdin().lock().lines() {
+            match line {
+                Ok(l) if l.trim() == "stop" => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+}
+
+#[cfg(feature = "device")]
+fn record_cmd(args: Args) -> Result<(), String> {
+    use odj_audio::capture::{record, Select};
+    use std::io::Write;
+    let a = parse_record(args)?;
+    let select = match a.select {
+        RecordSelect::Name(n) => Select::Name(n),
+        RecordSelect::Index(i) => Select::Index(i),
+    };
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    stop_on_stdin(stop.clone());
+    let stopped = match record(
+        &select,
+        &a.dir,
+        a.segment_seconds,
+        stop,
+        || {
+            println!("{}", json!({ "waiting": "microphone_permission" }));
+            let _ = io::stdout().flush();
+        },
+        |started| {
+            println!("{}", json!({ "recording": started }));
+            let _ = io::stdout().flush();
+        },
+    ) {
+        Ok(stopped) => stopped,
+        Err(e) => {
+            // On stdout too, so whoever started the recording can show why
+            // it ended (a microphone denied at the prompt, an unplugged input).
+            println!("{}", json!({ "failed": e }));
+            let _ = io::stdout().flush();
+            return Err(e);
+        }
+    };
+    if stopped.dropped_samples > 0 {
+        eprintln!("odj-audio: dropped {} samples the writer could not keep up with", stopped.dropped_samples);
+    }
+    println!("{}", json!({ "stopped": stopped }));
+    Ok(())
+}
+
+#[cfg(not(feature = "device"))]
+fn record_cmd(args: Args) -> Result<(), String> {
+    parse_record(args)?;
+    Err("this build has no audio input; rebuild with --features device".into())
+}
+
 fn main() -> ExitCode {
     let mut argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.is_empty() {
@@ -732,8 +856,17 @@ fn main() -> ExitCode {
         "serve" => serve_cmd(args),
         "decode" => decode_cmd(args),
         "probe" => probe_cmd(args),
+        "input-devices" => input_devices_cmd(args),
+        "record" => record_cmd(args),
         "version" => {
-            let v = json!({"engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")), "protocol": protocol::PROTOCOL_VERSION});
+            // `capture`: whether this build can list and record audio inputs
+            // (feature `device`), which the sets recorder checks before
+            // choosing it over ffmpeg.
+            let v = json!({
+                "engine": concat!("odj-audio ", env!("CARGO_PKG_VERSION")),
+                "protocol": protocol::PROTOCOL_VERSION,
+                "capture": cfg!(feature = "device"),
+            });
             println!("{v}");
             Ok(())
         }
@@ -972,5 +1105,30 @@ mod tests {
         assert_eq!(files.len(), 3);
         assert_eq!(std::fs::read(d.join("keep.wav")).unwrap(), b"old");
         assert!(d.join("n").join("deck1.wav").exists() && d.join("n").join("deck2.wav").exists());
+    }
+
+    fn args(v: &[&str]) -> Args {
+        Args { rest: v.iter().map(|s| s.to_string()).collect() }
+    }
+
+    #[test]
+    fn record_takes_exactly_one_input_and_a_whole_segment_length() {
+        let a = parse_record(args(&["--dir", "/tmp/x", "--device", "BlackHole 2ch"])).unwrap();
+        assert_eq!((a.dir, a.segment_seconds), (PathBuf::from("/tmp/x"), 300));
+        assert!(matches!(a.select, RecordSelect::Name(ref n) if n == "BlackHole 2ch"));
+        let a = parse_record(args(&["--device-index", "3", "--dir", "d", "--segment-seconds", "60"])).unwrap();
+        assert!(matches!(a.select, RecordSelect::Index(3)));
+        assert_eq!(a.segment_seconds, 60);
+        for bad in [
+            &["--dir", "d"][..],
+            &["--dir", "d", "--device", "A", "--device-index", "1"],
+            &["--dir", "d", "--device", ""],
+            &["--dir", "d", "--device-index", "x"],
+            &["--dir", "d", "--device", "A", "--segment-seconds", "1.5"],
+            &["--device", "A"],
+            &["--dir", "d", "--device", "A", "--loud"],
+        ] {
+            assert!(parse_record(args(bad)).is_err(), "{bad:?}");
+        }
     }
 }

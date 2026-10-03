@@ -16,6 +16,15 @@ one lane marker among sol, claude, grok, or cursor counts for no harness in
 REVIEW-13's dual-review count; duplicate markers of one lane with differing sha,
 model, seat, or skipped values are likewise ambiguous and count for no harness.
 Claude's marker regex is imported from review_claude.py (same as Sol from review_sol).
+
+REVIEW-13 DEBT-ONLY CARRY (Thu 1 Oct 2026): a review counts at an earlier head when every
+commit since changed only `.planning/debt/<this-pr>.md`, the same rule review_coverage
+applies (`review_coverage_carry.is_debt_only_since`, imported, not copied). Without it each
+debt-log push reset REVIEW-13 to "(none)" and drew two fresh paid reviews (#4626: Sol
+re-raised the same logged P2s 8 times). Independence is unchanged: carried reviews are
+still filtered by AUTHOR_EXCLUDES and still need two distinct harnesses. A force-push, any
+other path, or another PR's debt file requires fresh reviews; a reviewed SHA that cannot
+be fetched is named `carry UNKNOWN` and never counts.
 Enforce drops ambiguous submitted reviews before review_coverage collects
 evidence, so Sol and Claude are affected too. A Grok or Cursor review whose
 skipped= list intersects this PR's control-plane hits does not count.
@@ -43,16 +52,30 @@ Requirements (mini-PRD):
     [if] Sol plus a valid Grok marker at head on a Claude control-plane PR fails [then] broken
     [if] a Grok author counts its own Grok review [then] broken
     [if] sol+grok in one body still counts as Sol via enforce [then] broken
+  / REVIEW-13 carries two independent reviews across a debt-only push.
+    [if] two reviews at R and a debt-only commit for this PR's file fail [then] broken
+    [if] another path, another PR's debt file or a force-push still carries [then] broken
+    [if] a carried review of the author's own family counts [then] broken
 """
 
 from __future__ import annotations
 
 import fnmatch
+import functools
 import re
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from scripts.review_claude import CLAUDE_MARKER
+from scripts.review_control_plane_carry import (
+    _NO_CARRY,
+    SUBMITTED_REVIEW_STATES,
+    CarriedReview,
+    Carry,
+    debt_only_carry,
+    print_carry_proofs,
+)
 from scripts.review_gh import TriageError
 from scripts.review_sol import SOL_MARKER
 
@@ -170,8 +193,6 @@ AUTHOR_EXCLUDES: Mapping[str, frozenset[str]] = {
 }
 AUTHOR_MARKER = re.compile(r"-(Claude|Codex|Cursor|Grok)[ \t]*")
 GIT_TRAILER_LINE = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
-#: Pull-request review states that count as submitted (excludes PENDING and DISMISSED).
-SUBMITTED_REVIEW_STATES: frozenset[str] = frozenset({"COMMENTED", "APPROVED", "CHANGES_REQUESTED"})
 #: Same trusted-login rule as Sol's SOL_LOGINS in scripts/review_sol.py; login AND marker required.
 SUBSCRIPTION_REVIEW_LOGINS: frozenset[str] = frozenset({"maintainer"})
 GROK_REVIEW_MARKER = re.compile(
@@ -213,6 +234,7 @@ def verdict_line(ok: bool, head_sha: str, detail: str) -> str:
 class DualReview:
     ok: bool | None  # None = could not measure
     detail: str
+    carried: tuple[CarriedReview, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -442,29 +464,45 @@ def dual_review(
     authors: frozenset[str] | None,
     author_detail: str,
     reviewed_at_head: Mapping[str, bool],
+    carry: Carry = _NO_CARRY,
 ) -> DualReview:
-    """Pure verdict. `reviewed_at_head[name]`: that harness left a SUBMITTED review at head."""
+    """Pure verdict. `reviewed_at_head[name]`: that harness left a SUBMITTED review at head.
+
+    `carry` adds reviewers whose submitted review sits at an earlier, debt-only-equivalent head.
+    """
     if not hits:
         return DualReview(True, "no control-plane path touched")
     shown = ", ".join(hits[:5]) + (f" (+{len(hits) - 5} more)" if len(hits) > 5 else "")
     if authors is None:
         return DualReview(None, f"control plane ({shown}): {author_detail}")
     excluded = frozenset().union(*(AUTHOR_EXCLUDES[a] for a in authors))
-    counted = sorted(n for n, ok in reviewed_at_head.items() if ok and n not in excluded)
+    carried = {c.reviewer: c for c in carry.reviews if not reviewed_at_head.get(c.reviewer)}
+    counted_names = sorted(
+        n for n in {*reviewed_at_head, *carried} if (reviewed_at_head.get(n) or n in carried) and n not in excluded
+    )
+    counted = [carried[n].phrase if n in carried else n for n in counted_names]
+    ok = len(counted) >= DUAL_REVIEW_MIN
     detail = (
         f"control plane ({shown}); {author_detail}; independent submitted reviews at head: "
         f"{', '.join(counted) or '(none)'} (need {DUAL_REVIEW_MIN}; excluded as author: "
         f"{', '.join(sorted(excluded)) or '(none)'})"
     )
-    return DualReview(len(counted) >= DUAL_REVIEW_MIN, detail)
+    if carry.unknown and not ok:
+        detail += f"; carry UNKNOWN ({'; '.join(carry.unknown)}), so a review at head is required"
+    used = tuple(carried[n] for n in counted_names if n in carried)
+    return DualReview(ok, detail, used)
 
 
 def measure(
     changed_files: Sequence[str],
     commits: Callable[[], CommitList],
     reviewed_at_head: Callable[[], Mapping[str, bool]],
+    carried: Callable[[Mapping[str, bool]], Carry] = lambda _at_head: _NO_CARRY,
 ) -> DualReview:
-    """Read only what a control-plane PR needs; a PR outside it costs no extra call."""
+    """Read only what a control-plane PR needs; a PR outside it costs no extra call.
+
+    Carry is read only when the head alone fails, so a PR with two fresh reviews pays no git call.
+    """
     hits = control_plane_hits(changed_files)
     if not hits:
         return dual_review(hits, frozenset(), "", {})
@@ -474,7 +512,11 @@ def measure(
     authors, author_detail = author_harnesses(listing.commits)
     if authors is None:
         return dual_review(hits, None, author_detail, {})  # unmeasured already: spend no review reads
-    return dual_review(hits, authors, author_detail, reviewed_at_head())
+    at_head = reviewed_at_head()
+    verdict = dual_review(hits, authors, author_detail, at_head)
+    if verdict.ok is not False:
+        return verdict
+    return dual_review(hits, authors, author_detail, at_head, carried(at_head))
 
 
 def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
@@ -489,23 +531,35 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
     _LAST_FAILURE.clear()
 
     cp_hits = control_plane_hits(changed_files)
+    repo_root: Path = rc.CHECKOUT_ROOT
 
-    def reviewed_at_head() -> dict[str, bool]:
+    @functools.cache
+    def payloads() -> tuple[list[dict], list[dict], list[dict]]:
         reviews = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/reviews")
         inline = rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/comments")
         issue = rc._paginated_json_list(f"repos/{rc.REPO}/issues/{pr}/comments")
+        # Only SUBMITTED reviews count, at head and when carried: a DISMISSED or PENDING Codex,
+        # Sol or Claude review at an earlier head must not become a carried reviewer (#4876).
         unambiguous_reviews = [
             review
             for review in reviews
-            if not _subscription_review_body_ambiguous(_review_body_text(review))
+            if str(review["state"]).upper() in SUBMITTED_REVIEW_STATES
+            and not _subscription_review_body_ambiguous(_review_body_text(review))
         ]
+        return unambiguous_reviews, inline, issue
+
+    def reviewed_at(sha: str) -> dict[str, bool]:
+        unambiguous_reviews, inline, issue = payloads()
         found = {}
         for name in rc.EXPECTED_REVIEWERS:
-            evidence = rc._collect_evidence(name, unambiguous_reviews, inline, issue, head_sha)
+            evidence = rc._collect_evidence(name, unambiguous_reviews, inline, issue, sha)
             reviewed = rc._classify_from_evidence(name, evidence).reviewed
             found[name] = reviewed and evidence.submitted_reviews > 0
-        found.update(subscription_reviewed_at_head(unambiguous_reviews, head_sha, cp_hits))
+        found.update(subscription_reviewed_at_head(unambiguous_reviews, sha, cp_hits))
         return found
+
+    def carried(at_head: Mapping[str, bool]) -> Carry:
+        return debt_only_carry(pr, head_sha, repo_root, payloads()[0], reviewed_at, at_head)
 
     def uncapped() -> tuple[list[dict], int]:
         (pull,) = rc._paginated_json_pages(f"repos/{rc.REPO}/pulls/{pr}")
@@ -520,7 +574,8 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
         commits=lambda: complete_commits(
             rc._paginated_json_list(f"repos/{rc.REPO}/pulls/{pr}/commits"), uncapped, head_sha
         ),
-        reviewed_at_head=reviewed_at_head,
+        reviewed_at_head=lambda: reviewed_at(head_sha),
+        carried=carried,
     )
     if verdict.ok is None:
         raise TriageError(f"control-plane dual review (REVIEW-13) could not measure: {verdict.detail}")
@@ -529,7 +584,9 @@ def enforce(pr: str, head_sha: str, changed_files: Sequence[str]) -> int:
     rc._require_head_unchanged(head_sha, rc._head_sha(pr))
     if verdict.ok:
         print(verdict_line(True, head_sha, verdict.detail))
+        print_carry_proofs(verdict.carried, head_sha)
         return 0
     _LAST_FAILURE.append(verdict.detail)
     print(verdict_line(False, head_sha, verdict.detail))
+    print_carry_proofs(verdict.carried, head_sha)
     return 1

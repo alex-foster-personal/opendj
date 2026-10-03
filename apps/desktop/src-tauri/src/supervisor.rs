@@ -4,7 +4,8 @@
 //! and reap zombies before restart.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -18,6 +19,17 @@ use crate::shell_health::{ShellHealthServer, ShellHealthSnapshot, utc_timestamp_
 
 pub const POLL_INTERVAL: Duration = Duration::from_secs(5);
 pub const RECOVERY_TIMEOUT: Duration = Duration::from_secs(30);
+/// Consecutive failed health checks on an engine whose pid is still alive
+/// before it is declared unresponsive and restarted. One miss is not a death:
+/// a busy engine can take longer than the 750ms socket timeout to answer, and
+/// on Fri 2 Oct 2026 a single miss on demon-llama put up the fatal page over
+/// an engine that was still serving and then wedged the quit (see
+/// `reap_child`). Six polls is about 30s of silence.
+pub const UNRESPONSIVE_AFTER_MISSES: u32 = 6;
+/// How long `EngineSupervisor::shutdown` waits for the supervisor lock before
+/// stopping the engine without it. The lock can be held through a restart
+/// (up to `engine::BOOT_TIMEOUT`), and a quit must never wait on that.
+pub const SHUTDOWN_LOCK_WAIT: Duration = Duration::from_secs(3);
 const WINDOW_LABEL: &str = "main";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,9 +100,14 @@ struct RuntimeState {
     phase: SupervisorPhase,
     dead_at: Option<Instant>,
     exit_code: Option<i32>,
+    /// The last death was a live engine that stopped answering health
+    /// checks, not an exit, so `exit_code` holds nothing to report.
+    unresponsive: bool,
     lock_pid: Option<u32>,
     lock_port: Option<u16>,
     auto_restart_attempted: bool,
+    /// Consecutive failed health checks while the engine pid is alive.
+    health_misses: u32,
     paths: SupervisorPaths,
 }
 
@@ -98,6 +115,13 @@ struct RuntimeState {
 pub struct EngineSupervisor {
     inner: Arc<Mutex<RuntimeState>>,
     shell_health: ShellHealthServer,
+    /// Set once the shell is quitting: no further restarts, and the poll
+    /// thread stops.
+    stopping: AtomicBool,
+    /// The engine pid (its pgid when spawned), readable WITHOUT the lock so
+    /// a quit can always stop the engine even while a tick holds it. 0 means
+    /// none.
+    engine_pid: AtomicU32,
 }
 
 impl EngineSupervisor {
@@ -106,27 +130,64 @@ impl EngineSupervisor {
         paths: SupervisorPaths,
         shell_health: ShellHealthServer,
     ) -> Self {
+        let engine_pid = AtomicU32::new(supervised.pid().unwrap_or(0));
         Self {
             inner: Arc::new(Mutex::new(RuntimeState {
                 supervised: Some(supervised),
                 phase: SupervisorPhase::Running,
                 dead_at: None,
                 exit_code: None,
+                unresponsive: false,
                 lock_pid: None,
                 lock_port: None,
                 auto_restart_attempted: false,
+                health_misses: 0,
                 paths,
             })),
             shell_health,
+            stopping: AtomicBool::new(false),
+            engine_pid,
         }
     }
 
+    /// Stop the engine on quit. Bounded: it never waits on the supervisor
+    /// lock for longer than `SHUTDOWN_LOCK_WAIT`.
+    ///
+    /// The unbounded `lock()` this replaces is how a quit hung on Fri 2 Oct
+    /// 2026: the poll thread held the lock in a blocking wait on a live
+    /// engine, `RunEvent::Exit` blocked behind it on the main thread, and
+    /// from then on the app ignored every quit, Apple Event or click.
     pub fn shutdown(&self) {
-        if let Ok(mut guard) = self.inner.lock() {
-            if let Some(mut running) = guard.supervised.take() {
-                running.shutdown();
+        self.stopping.store(true, Ordering::SeqCst);
+        match lock_within(&self.inner, SHUTDOWN_LOCK_WAIT) {
+            Some(mut guard) => {
+                if let Some(mut running) = guard.supervised.take() {
+                    running.shutdown();
+                }
+                self.engine_pid.store(0, Ordering::SeqCst);
+            }
+            None => {
+                let pid = self.engine_pid.swap(0, Ordering::SeqCst);
+                engine::append_shell_log(
+                    "WARN",
+                    &format!(
+                        "supervisor busy for {}ms at quit; stopping engine pgid {pid} without it",
+                        SHUTDOWN_LOCK_WAIT.as_millis()
+                    ),
+                );
+                if pid != 0 {
+                    force_stop_group(pid);
+                }
             }
         }
+    }
+
+    fn is_stopping(&self) -> bool {
+        self.stopping.load(Ordering::SeqCst)
+    }
+
+    fn record_engine_pid(&self, pid: Option<u32>) {
+        self.engine_pid.store(pid.unwrap_or(0), Ordering::SeqCst);
     }
 
     pub fn shell_health_port(&self) -> u16 {
@@ -168,8 +229,61 @@ pub fn start_runtime_supervisor(
     spawn_runtime_supervisor(app, supervised, paths, data_dir)
 }
 
+/// Lock `mutex`, giving up after `wait`. A poisoned lock is still usable
+/// here: the state it guards is the engine handle, and stopping the engine is
+/// exactly what a quit needs even after a panic elsewhere.
+fn lock_within<T>(mutex: &Mutex<T>, wait: Duration) -> Option<MutexGuard<'_, T>> {
+    let deadline = Instant::now() + wait;
+    loop {
+        match mutex.try_lock() {
+            Ok(guard) => return Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => return Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => {
+                if Instant::now() >= deadline {
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+}
+
+/// SIGTERM a process group, wait up to 5s, then SIGKILL it. Never waits
+/// after the SIGKILL: this runs on the quit path without the child handle,
+/// so a spawned engine's zombie cannot be reaped here and the process is
+/// about to exit anyway.
+fn force_stop_group(pid: u32) {
+    let pgid = pid as i32;
+    engine::append_shell_log("shutdown", &format!("stopping engine pgid {pgid}: SIGTERM"));
+    // SAFETY: killpg/kill on the engine pid this shell spawned or adopted;
+    // a zero pid never reaches here.
+    unsafe {
+        if libc::killpg(pgid, libc::SIGTERM) != 0 {
+            libc::kill(pgid, libc::SIGTERM);
+        }
+    }
+    let deadline = Instant::now() + engine::SHUTDOWN_GRACE;
+    while Instant::now() < deadline {
+        if !launch::pid_can_act(pid) {
+            engine::append_shell_log("shutdown", &format!("engine pgid {pgid} stopped after SIGTERM"));
+            return;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    engine::append_shell_log("shutdown", &format!("engine pgid {pgid} still running; SIGKILL"));
+    unsafe {
+        if libc::killpg(pgid, libc::SIGKILL) != 0 {
+            libc::kill(pgid, libc::SIGKILL);
+        }
+    }
+}
+
 fn runtime_loop(app: AppHandle, supervisor: Arc<EngineSupervisor>) {
     loop {
+        if supervisor.is_stopping() {
+            engine::append_shell_log("INFO", "runtime supervisor stopped polling for quit");
+            return;
+        }
         tick(&app, supervisor.as_ref());
         if supervisor.shell_health.take_relaunch_request() {
             supervisor.request_relaunch(&app);
@@ -180,12 +294,16 @@ fn runtime_loop(app: AppHandle, supervisor: Arc<EngineSupervisor>) {
 
 fn tick(app: &AppHandle, supervisor: &EngineSupervisor) {
     let mut guard = supervisor.inner.lock().expect("supervisor mutex");
+    if supervisor.is_stopping() {
+        return;
+    }
     match guard.phase {
         SupervisorPhase::Running => {
             if let Some(dead) = detect_death(&mut guard) {
                 guard.phase = SupervisorPhase::Dead;
                 guard.dead_at = Some(Instant::now());
                 guard.exit_code = dead.exit_code;
+                guard.unresponsive = dead.unresponsive;
                 guard.lock_pid = dead.lock_pid;
                 guard.lock_port = dead.lock_port;
                 engine::append_shell_log(
@@ -265,13 +383,22 @@ struct DeathInfo {
     signal: Option<i32>,
     lock_pid: Option<u32>,
     lock_port: Option<u16>,
+    /// The pid was still alive: the engine stopped answering health, it did
+    /// not exit. Logged as such, never as an exit code it never had.
+    unresponsive: bool,
 }
 
 impl DeathInfo {
     /// `engine-exited(signal N)` / `engine-exited(code N)`, matching the
     /// naming the shell log uses for every other exit trigger, so a reader
     /// can tell a killed engine from one that exited on its own.
+    /// `engine-unresponsive(...)` when the process was still alive.
     fn exit_reason(&self) -> String {
+        if self.unresponsive {
+            return format!(
+                "engine-unresponsive(pid alive, {UNRESPONSIVE_AFTER_MISSES} health checks missed)"
+            );
+        }
         match (self.signal, self.exit_code) {
             (Some(signal), _) => format!("engine-exited(signal {signal})"),
             (None, Some(code)) => format!("engine-exited(code {code})"),
@@ -283,7 +410,7 @@ impl DeathInfo {
 fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
     let lock_path = launch::lock_path(&guard.paths.data_dir);
     let lock_holder = launch::read_lock_fields(&lock_path);
-    match guard.supervised.as_mut() {
+    let (pid, port) = match guard.supervised.as_mut() {
         Some(Supervised::Spawned(engine)) => {
             if let Some(status) = engine.try_reap() {
                 use std::os::unix::process::ExitStatusExt;
@@ -292,6 +419,7 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
                     signal: status.signal(),
                     lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(engine.pid())),
                     lock_port: lock_holder.map(|(_, port)| port).or(Some(engine.port())),
+                    unresponsive: false,
                 });
             }
             if engine.is_log_failed() {
@@ -300,48 +428,68 @@ fn detect_death(guard: &mut RuntimeState) -> Option<DeathInfo> {
                     signal: None,
                     lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(engine.pid())),
                     lock_port: lock_holder.map(|(_, port)| port).or(Some(engine.port())),
+                    unresponsive: false,
                 });
             }
-            let port = engine.port();
-            if !engine::health_ok(port) {
-                let pid = engine.pid();
-                if !launch::pid_can_act(pid) {
-                    return Some(DeathInfo {
-                        exit_code: Some(1),
-                        signal: None,
-                        lock_pid: Some(pid),
-                        lock_port: Some(port),
-                    });
-                }
-                return Some(DeathInfo {
-                    exit_code: Some(1),
-                    signal: None,
-                    lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(pid)),
-                    lock_port: Some(port),
-                });
-            }
-            None
+            (engine.pid(), engine.port())
         }
-        Some(Supervised::Adopted { pid, port, .. }) => {
-            if !launch::pid_can_act(*pid) || !engine::health_ok(*port) {
-                return Some(DeathInfo {
-                    exit_code: Some(1),
-                    signal: None,
-                    lock_pid: Some(*pid),
-                    lock_port: Some(*port),
-                });
-            }
-            None
-        }
-        None => None,
+        Some(Supervised::Adopted { pid, port, .. }) => (*pid, *port),
+        None => return None,
+    };
+    if !launch::pid_can_act(pid) {
+        guard.health_misses = 0;
+        return Some(DeathInfo {
+            exit_code: Some(1),
+            signal: None,
+            lock_pid: Some(pid),
+            lock_port: Some(port),
+            unresponsive: false,
+        });
     }
+    if engine::health_ok(port) {
+        guard.health_misses = 0;
+        return None;
+    }
+    guard.health_misses += 1;
+    if !unresponsive_after(guard.health_misses) {
+        engine::append_shell_log(
+            "WARN",
+            &format!(
+                "engine health check missed ({}/{UNRESPONSIVE_AFTER_MISSES}) pid={pid} port={port}; pid alive, not restarting yet",
+                guard.health_misses
+            ),
+        );
+        return None;
+    }
+    guard.health_misses = 0;
+    Some(DeathInfo {
+        exit_code: None,
+        signal: None,
+        lock_pid: lock_holder.map(|(pid, _)| pid).or(Some(pid)),
+        lock_port: Some(port),
+        unresponsive: true,
+    })
 }
 
+/// Whether `misses` consecutive failed health checks on a live engine are
+/// enough to call it unresponsive.
+fn unresponsive_after(misses: u32) -> bool {
+    misses >= UNRESPONSIVE_AFTER_MISSES
+}
+
+/// Reap a dead child, or stop one that is still running.
+///
+/// Never a bare blocking wait: an unresponsive engine is still alive, and a
+/// `wait()` on it, made while holding the supervisor lock, blocked until
+/// something else killed it. That is the Fri 2 Oct 2026 quit hang.
+/// `Engine::shutdown` is bounded (SIGTERM, grace, SIGKILL, then a wait that
+/// a SIGKILLed child always satisfies) and reaps either way.
 fn reap_child(guard: &mut RuntimeState) {
     guard.phase = SupervisorPhase::Reaping;
     if let Some(Supervised::Spawned(engine)) = guard.supervised.as_mut() {
         if engine.try_reap().is_none() {
-            let _ = engine.wait_reap();
+            engine::append_shell_log("WARN", "engine pid still alive at reap; stopping it");
+            engine.shutdown();
         }
     }
     engine::append_shell_log("INFO", "engine child reaped");
@@ -349,13 +497,23 @@ fn reap_child(guard: &mut RuntimeState) {
 
 fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_requested: bool) -> bool {
     let mut guard = supervisor.inner.lock().expect("supervisor mutex");
-    let exit_code = guard.exit_code.unwrap_or(-1);
+    let reason = death_reason(&guard);
     let payload = guard.paths.payload.clone();
     let data_dir = guard.paths.data_dir.clone();
     let log_path = guard.paths.log_path.clone();
     let product_name = guard.paths.product_name.clone();
+    if supervisor.is_stopping() {
+        return false;
+    }
     if let Some(mut old) = guard.supervised.take() {
         old.shutdown();
+    }
+    supervisor.record_engine_pid(None);
+    // A quit can start during the stop above, which may take the full grace.
+    // It found no engine to stop, so starting one now would outlive the shell.
+    if supervisor.is_stopping() {
+        engine::append_shell_log("INFO", "quit began during restart; not respawning");
+        return false;
     }
     if let Err(err) = write_parent_file(&data_dir) {
         engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
@@ -366,11 +524,21 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
     let lock_path = launch::lock_path(&data_dir);
     match launch::inspect_lock(&lock_path, engine::health_ok) {
         launch::LaunchPlan::Adopt { pid, host, port } => {
+            supervisor.record_engine_pid(Some(pid));
+            // Same latch order as the spawn branch below: a quit that took
+            // the pid before this record never saw the adopted engine.
+            if supervisor.is_stopping() {
+                engine::append_shell_log("INFO", "quit began during restart; stopping the adopted engine");
+                launch::stop_holder_pid(pid);
+                supervisor.record_engine_pid(None);
+                return false;
+            }
             guard.supervised = Some(Supervised::Adopted { pid, host, port });
             guard.phase = SupervisorPhase::Running;
             guard.dead_at = None;
             guard.auto_restart_attempted = false;
-            log_restart_success(exit_code);
+            guard.health_misses = 0;
+            log_restart_success(&reason);
             let origin = guard.supervised.as_ref().expect("adopted").origin();
             update_surfaces(app, supervisor, &guard);
             navigate_to_origin(app, &origin, &product_name);
@@ -397,7 +565,12 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
         }
     };
     let mut running = match engine::spawn(&payload, &data_dir, &log_path, port) {
-        Ok(engine) => engine,
+        Ok(engine) => {
+            // Recorded before the health wait, so a quit during the boot
+            // still has a pid to stop.
+            supervisor.record_engine_pid(Some(engine.pid()));
+            engine
+        }
         Err(err) => {
             engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
             guard.phase = SupervisorPhase::Fatal;
@@ -405,13 +578,24 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
             return false;
         }
     };
+    // `shutdown` sets the latch before it takes the recorded pid, and the pid
+    // was recorded before this load, so either the quit saw this engine's pid
+    // or this load sees the latch. Without the check, a quit that won the
+    // race took pid 0 and the new engine outlived the shell.
+    if supervisor.is_stopping() {
+        engine::append_shell_log("INFO", "quit began during restart; stopping the new engine");
+        running.shutdown();
+        supervisor.record_engine_pid(None);
+        return false;
+    }
     match running.wait_until_healthy(engine::BOOT_TIMEOUT) {
         Ok(()) => {
             guard.supervised = Some(Supervised::Spawned(running));
             guard.phase = SupervisorPhase::Running;
             guard.dead_at = None;
             guard.auto_restart_attempted = false;
-            log_restart_success(exit_code);
+            guard.health_misses = 0;
+            log_restart_success(&reason);
             let origin = guard.supervised.as_ref().expect("spawned").origin();
             update_surfaces(app, supervisor, &guard);
             navigate_to_origin(app, &origin, &product_name);
@@ -419,6 +603,7 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
         }
         Err(err) => {
             running.shutdown();
+            supervisor.record_engine_pid(None);
             engine::append_shell_log("ERROR", &format!("restart failed: {err}"));
             guard.phase = SupervisorPhase::Fatal;
             update_surfaces(app, supervisor, &guard);
@@ -427,12 +612,17 @@ fn attempt_restart(app: &AppHandle, supervisor: &EngineSupervisor, _user_request
     }
 }
 
-fn log_restart_success(exit_code: i32) {
-    let line = format!(
-        "{} engine restarted after exit code {}",
-        utc_timestamp_iso(),
-        exit_code
-    );
+/// What happened to the engine, for the restart log and the fatal dialog.
+fn death_reason(guard: &RuntimeState) -> String {
+    if guard.unresponsive {
+        "it stopped answering health checks".to_string()
+    } else {
+        format!("exit code {}", guard.exit_code.unwrap_or(-1))
+    }
+}
+
+fn log_restart_success(reason: &str) {
+    let line = format!("{} engine restarted after {reason}", utc_timestamp_iso());
     engine::append_shell_log("INFO", &line);
 }
 
@@ -593,11 +783,15 @@ fn navigate_to_origin(app: &AppHandle, origin: &str, product_name: &str) {
 }
 
 fn show_fatal_dialog(app: &AppHandle, guard: &RuntimeState) {
-    let exit_code = guard.exit_code.unwrap_or(-1);
     let pid = guard.lock_pid.unwrap_or(0);
     let port = guard.lock_port.unwrap_or(0);
+    let what = if guard.unresponsive {
+        "The engine stopped answering".to_string()
+    } else {
+        format!("The engine exited with code {}", guard.exit_code.unwrap_or(-1))
+    };
     let detail = format!(
-        "The engine exited with code {exit_code} (pid {pid}, port {port}).\n\n\
+        "{what} (pid {pid}, port {port}).\n\n\
          Relaunch starts a fresh engine, or quit the app."
     );
     let app_clone = app.clone();
@@ -660,6 +854,7 @@ mod tests {
             signal,
             lock_pid: None,
             lock_port: None,
+            unresponsive: false,
         }
     }
 
@@ -684,5 +879,81 @@ mod tests {
     #[test]
     fn neither_signal_nor_code_says_so_rather_than_guessing() {
         assert_eq!(death(None, None).exit_reason(), "engine-exited(unknown)");
+    }
+
+    // - if one missed health check on a live pid counts as a death then a
+    //   busy engine gets the fatal page while it is still serving -> broken
+    //   (demon-llama, Fri 2 Oct 2026)
+    // - if misses never add up to unresponsive then a hung engine is never
+    //   restarted -> broken (the opposite overshoot)
+    // - if an unresponsive engine is logged as an exit code then the log
+    //   says it exited when it did not -> broken
+
+    #[test]
+    fn a_single_missed_health_check_is_not_unresponsive() {
+        assert!(!unresponsive_after(1));
+        assert!(!unresponsive_after(UNRESPONSIVE_AFTER_MISSES - 1));
+    }
+
+    #[test]
+    fn enough_consecutive_misses_are_unresponsive() {
+        assert!(unresponsive_after(UNRESPONSIVE_AFTER_MISSES));
+        assert!(unresponsive_after(UNRESPONSIVE_AFTER_MISSES + 1));
+    }
+
+    #[test]
+    fn an_unresponsive_engine_is_not_reported_as_an_exit() {
+        let info = DeathInfo { unresponsive: true, ..death(None, None) };
+        let reason = info.exit_reason();
+        assert!(reason.starts_with("engine-unresponsive("), "{reason}");
+        assert!(!reason.contains("exited"), "{reason}");
+    }
+
+    // - if a held lock blocks shutdown forever then quit hangs behind a busy
+    //   supervisor tick -> broken (the Fri 2 Oct 2026 hang)
+    // - if a free lock is given up on then a normal quit skips the clean
+    //   path that reaps the child -> broken
+
+    #[test]
+    fn lock_within_gives_up_on_a_held_lock() {
+        let mutex = Arc::new(Mutex::new(0_u8));
+        let holder = Arc::clone(&mutex);
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let handle = thread::spawn(move || {
+            let _guard = holder.lock().unwrap();
+            held_tx.send(()).unwrap();
+            let _ = release_rx.recv();
+        });
+        held_rx.recv().unwrap();
+        let started = Instant::now();
+        assert!(lock_within(&mutex, Duration::from_millis(200)).is_none());
+        assert!(started.elapsed() >= Duration::from_millis(200));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn lock_within_takes_a_free_lock() {
+        let mutex = Mutex::new(7_u8);
+        assert_eq!(*lock_within(&mutex, Duration::from_millis(10)).unwrap(), 7);
+    }
+
+    #[test]
+    fn force_stop_group_stops_a_process_group() {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id();
+        let reaper = thread::spawn(move || child.wait());
+        let started = Instant::now();
+        force_stop_group(pid);
+        let status = reaper.join().unwrap().expect("wait");
+        assert!(!status.success());
+        assert!(started.elapsed() < engine::SHUTDOWN_GRACE);
     }
 }
