@@ -26,3 +26,23 @@ describe('TrackifyPlayer component contract', () => {
 		assert.doesNotMatch(barSource, /<canvas/i);
 	});
 });
+
+describe('TrackifyPlayer with no track loaded', () => {
+	// if Play is clickable with nothing loaded, the press raises a red "Deck audio hit a limit" toast -- broken.
+	const source = readFileSync(
+		new URL('../../src/lib/components/rb/TrackifyPlayer.svelte', import.meta.url),
+		'utf8'
+	);
+
+	it('disables Play and says why', () => {
+		const play = source.slice(source.indexOf('<button'), source.indexOf('</button>'));
+		assert.match(play, /togglePlay\(\)/, 'the first transport button is Play');
+		assert.match(play, /disabled=\{!loaded\}/);
+		assert.match(play, /title=\{playTitle\}/);
+		assert.match(source, /!loaded \? 'no track loaded - nothing to play'/);
+	});
+
+	it('derives loaded from the deck having a track', () => {
+		assert.match(source, /const loaded = \$derived\(deck\.stable_id !== null\);/);
+	});
+});

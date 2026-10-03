@@ -106,6 +106,53 @@ def _seed_stream_policy(state_path: Path) -> None:
         conn.close()
 
 
+def _map_to_rekordbox(stable_id: str, folder_path: Path) -> None:
+    """Give ``stable_id`` a rekordbox row whose FolderPath is ``folder_path``,
+    in a master database at the fixture's (otherwise absent) master path."""
+    import sqlite3
+
+    conn = sqlite3.connect(rb_config.MASTER_PLAIN_DB)
+    try:
+        conn.executescript(
+            "CREATE TABLE djmdContent (ID TEXT, FolderPath TEXT, ImagePath TEXT, "
+            "AnalysisDataPath TEXT, Length INTEGER, Commnt TEXT, GenreID TEXT, "
+            "rb_local_deleted INTEGER DEFAULT 0);"
+            "CREATE TABLE djmdGenre (ID TEXT, Name TEXT, rb_local_deleted INTEGER DEFAULT 0);"
+        )
+        conn.execute(
+            "INSERT INTO djmdContent (ID, FolderPath) VALUES ('208807409', ?)",
+            (str(folder_path),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        state.execute(
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
+            "VALUES (?, 'rekordbox', '208807409')",
+            (stable_id,),
+        )
+        state.commit()
+    finally:
+        state.close()
+
+
+def _add_alternate_location(stable_id: str, path: Path) -> None:
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        machine_id = sync_stamp.ensure_local_machine(state)
+        state.execute(
+            "INSERT INTO track_locations(stable_id, machine_id, kind, role, file_path, "
+            "available, created_at, updated_at) "
+            "VALUES (?, ?, 'local', 'alternate', ?, 1, '2026-01-02', '2026-01-02')",
+            (stable_id, machine_id, str(path)),
+        )
+        state.commit()
+    finally:
+        state.close()
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     assert REAL_AUDIO.is_file()
@@ -206,3 +253,168 @@ def test_missing_content_hash_refuses_audio_route(client: TestClient) -> None:
     detail = response.json()["detail"]
     assert detail["code"] == "CLOUD_ASSET_UNAVAILABLE"
     assert "content_hash" in detail["message"]
+
+
+@pytest.fixture
+def unconfigured_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    """A machine nobody configured CloudSync on: no ``sync_policies`` rows."""
+    state_path = tmp_path / "state.db"
+    _seed_believed_state(state_path)
+    conn = state_db.open_rw(state_path)
+    try:
+        conn.execute("DELETE FROM sync_policies")
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setattr(rb_config, "STATE_DB", state_path)
+    monkeypatch.setattr(rb_config, "MASTER_PLAIN_DB", tmp_path / "absent-master.db")
+    monkeypatch.setattr(rb_config, "DATA_DIR", tmp_path)
+    app = create_app(
+        backend=InMemoryBackend(),
+        bind_host="127.0.0.1",
+        hostname="test-host",
+        lock_status_fn=lambda: None,
+        syncthing_status_fn=lambda: None,
+    )
+    with TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1") as tc:
+        yield tc
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_says_a_missing_file_is_not_on_this_computer(
+    unconfigured_client: TestClient,
+) -> None:
+    """[if] a machine with no CloudSync policy loads a track it has no copy of
+    [then] the route answers 404 AUDIO_NOT_ON_THIS_MACHINE with a plain
+    sentence, not CLOUD_POLICY_UNCONFIGURED, [else stop]."""
+    response = unconfigured_client.get(f"/api/v1/tracks/{REMOTE_SID}/audio")
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["code"] == "AUDIO_NOT_ON_THIS_MACHINE"
+    assert detail["message"] == "This file isn't on this computer."
+    # Control: the same machine still plays its own copy.
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{PLAYABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_plays_rekordboxs_copy_when_its_own_path_is_gone(
+    unconfigured_client: TestClient,
+) -> None:
+    """[if] a local-only machine's own location for a track is gone but
+    rekordbox's FolderPath for it is on disk [then] the deck plays rekordbox's
+    file, as the listing already counts it available, [else stop]."""
+    _map_to_rekordbox(UNAVAILABLE_SID, REAL_AUDIO)
+
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
+    # Control: a track with neither its own copy nor a rekordbox one still
+    # says, plainly, that it is not here.
+    missing = unconfigured_client.get(f"/api/v1/tracks/{REMOTE_SID}/audio")
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "AUDIO_NOT_ON_THIS_MACHINE"
+
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_rekordbox_lookup_failure_is_not_reported_as_absence(
+    unconfigured_client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the rekordbox lookup fails for a reason other than absence [then]
+    the error propagates instead of reading as "not on this computer",
+    [else stop]."""
+    from fastapi import HTTPException
+
+    from apps.adapters.rekordbox import paths as rb_paths
+
+    # Absence: a track with no rekordbox mapping (404) has no copy here.
+    assert rb_paths._rekordbox_copy(UNAVAILABLE_SID) is None
+    # Absence: a mapped track on a machine with no master database at all
+    # (no rekordbox install; the fixture's master path is not on disk).
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        state.execute(
+            "INSERT INTO track_vendor_ids (stable_id, vendor, vendor_id) "
+            "VALUES (?, 'rekordbox', '208807409')",
+            (UNAVAILABLE_SID,),
+        )
+        state.commit()
+    finally:
+        state.close()
+    assert not rb_config.MASTER_PLAIN_DB.exists()
+    assert rb_paths._rekordbox_copy(UNAVAILABLE_SID) is None
+    # Not absence: the state database itself is gone, so nothing could look.
+    monkeypatch.setattr(rb_config, "STATE_DB", tmp_path / "gone-state.db")
+    with pytest.raises(HTTPException) as excinfo:
+        rb_paths._rekordbox_copy(UNAVAILABLE_SID)
+    assert excinfo.value.status_code == 500
+    assert excinfo.value.detail["code"] == "STATE_DB_UNAVAILABLE"
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_plays_a_working_alternate_location(
+    unconfigured_client: TestClient,
+) -> None:
+    """[if] a local-only machine's primary location is gone but another
+    location row for the track is on disk [then] the deck plays that copy,
+    chosen by the same picker the share cap uses, [else stop]."""
+    state = state_db.open_rw(rb_config.STATE_DB)
+    try:
+        machine_id = sync_stamp.ensure_local_machine(state)
+        state.execute(
+            "INSERT INTO track_locations(stable_id, machine_id, kind, role, file_path, "
+            "available, created_at, updated_at) "
+            "VALUES (?, ?, 'local', 'alternate', ?, 1, '2026-01-02', '2026-01-02')",
+            (UNAVAILABLE_SID, machine_id, str(REAL_AUDIO)),
+        )
+        state.commit()
+    finally:
+        state.close()
+
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
+    assert played.headers.get("x-audio-source", "").startswith("location:")
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_keeps_rekordboxs_reason_for_a_file_that_is_here(
+    unconfigured_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] a local-only machine has no playable copy but rekordbox's file IS
+    on disk and won't play [then] the deck gets that reason, not "not on this
+    computer", and a working alternate location still plays first, [else stop]."""
+    unplayable = tmp_path / "set.ogg"
+    unplayable.write_bytes(b"OggS")
+    _map_to_rekordbox(UNAVAILABLE_SID, unplayable)
+
+    refused = unconfigured_client.get(f"/api/v1/tracks/{UNAVAILABLE_SID}/audio")
+    assert refused.status_code == 415
+    assert refused.json()["detail"]["code"] == "AUDIO_FORMAT_UNSUPPORTED"
+
+    _add_alternate_location(UNAVAILABLE_SID, REAL_AUDIO)
+    played = unconfigured_client.get(
+        f"/api/v1/tracks/{UNAVAILABLE_SID}/audio", headers={"Range": "bytes=0-0"}
+    )
+    assert played.status_code == 206
+    assert played.headers.get("x-audio-source", "").startswith("location:")
+
+
+@pytest.mark.requirement("CLOUDSYNC-33")
+def test_unconfigured_machine_says_a_missing_rekordbox_file_is_not_here(
+    unconfigured_client: TestClient, tmp_path: Path
+) -> None:
+    """[if] rekordbox maps the track to a file that is not on disk [then] the
+    deck still says plainly it is not on this computer, [else stop]."""
+    _map_to_rekordbox(UNAVAILABLE_SID, tmp_path / "never-downloaded.mp3")
+
+    missing = unconfigured_client.get(f"/api/v1/tracks/{UNAVAILABLE_SID}/audio")
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "AUDIO_NOT_ON_THIS_MACHINE"

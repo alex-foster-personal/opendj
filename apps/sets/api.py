@@ -32,7 +32,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from fastapi import Path as FPath
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from . import paths as sets_paths
 from .audio import (
@@ -40,9 +40,10 @@ from .audio import (
     list_segments,
     resolve_segment_path,
 )
+from .capture import CaptureUnavailable, default_input_device
 from .classify import CLASS_LIST, read_transitions
 from .label import append_label
-from .recorder_service import RecorderConflict, RecorderService
+from .recorder_service import RecorderConflict, RecorderService, RememberedInputUnreadable
 from .sessions import Session, get_session, list_sessions, summary_to_dict
 from .share import (
     SetShareConfig,
@@ -138,14 +139,56 @@ def _default_sources() -> list[SourceName]:
 
 
 class RecorderStartRequest(BaseModel):
-    """Explicit real-capture configuration for the REC button."""
+    """Explicit real-capture configuration for the REC button.
+
+    Exactly one audio input: ``device_name`` (what the REC picker sends,
+    resolved to an index at start), or a raw ``ffmpeg_device_idx``; or
+    ``capture_audio: false`` for a tracklist-only recording (SET-10).
+    """
 
     session_id: str | None = Field(
         default=None,
         pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:_\d+)?$",
     )
-    ffmpeg_device_idx: int = Field(ge=0)
+    ffmpeg_device_idx: int | None = Field(default=None, ge=0)
+    device_name: str | None = Field(default=None, min_length=1, max_length=256)
+    capture_audio: bool = True
     sources: list[SourceName] = Field(default_factory=_default_sources)
+
+    @model_validator(mode="after")
+    def _one_audio_input(self) -> RecorderStartRequest:
+        named = (self.ffmpeg_device_idx is not None) + (self.device_name is not None)
+        if self.capture_audio and named != 1:
+            raise ValueError("name exactly one of ffmpeg_device_idx or device_name")
+        if not self.capture_audio and named != 0:
+            raise ValueError("capture_audio false records no audio, so names no input")
+        return self
+
+
+class RecorderInputDevice(BaseModel):
+    index: int
+    name: str
+    loopback: bool
+
+
+class RecorderDevicesResponse(BaseModel):
+    """The audio inputs REC can record from, and the one it preselects."""
+
+    devices: list[RecorderInputDevice]
+    default_name: str | None
+
+
+class RecorderRememberedInput(BaseModel):
+    """The input REC last started on: a named input, or none (tracklist only)."""
+
+    kind: Literal["device", "none"]
+    name: str | None = None
+
+
+class RecorderRememberedInputResponse(BaseModel):
+    """Wraps the choice so "nothing remembered yet" is a body, not a null one."""
+
+    remembered: RecorderRememberedInput | None
 
 
 class RecorderStatus(BaseModel):
@@ -154,6 +197,23 @@ class RecorderStatus(BaseModel):
     pid: int | None
     owned: bool
     recoverable: bool
+    capture: Literal[
+        "none", "unknown", "starting", "waiting_permission", "recording", "stopped", "failed"
+    ] = Field(
+        description=(
+            "The audio capture of the recording: none (not recording, or tracklist only), "
+            "unknown (owned by another process), waiting_permission (macOS's microphone "
+            "prompt is up and nothing is written yet), recording, or failed (SET-11)."
+        )
+    )
+    capture_error: str | None = Field(
+        default=None,
+        description=(
+            "Why the capture failed, in the engine's words (for example microphone "
+            "access turned off at the macOS prompt), when capture is failed and the "
+            "engine said why; null otherwise (SET-11)."
+        ),
+    )
 
 
 class RecorderRecoveryRequest(BaseModel):
@@ -307,8 +367,44 @@ def _share_visible_session(request: Request, session_id: str) -> Session:
 
 
 @router.get("/recorder", response_model=RecorderStatus)
-async def api_recorder_status(request: Request) -> dict[str, Any]:
+def api_recorder_status(request: Request) -> dict[str, Any]:
+    # Sync: status() can wait on the recorder lock while a start spawns
+    # ffmpeg, and that wait must not stall the event loop.
     return _recorder_service(request).status()
+
+
+@router.get("/recorder/devices", response_model=RecorderDevicesResponse)
+def api_recorder_devices(request: Request) -> dict[str, Any]:
+    """List audio inputs by name for the REC picker; 503 when unmeasurable.
+
+    Sync on purpose: listing spawns ffmpeg, so it runs in the threadpool
+    instead of stalling the event loop.
+    """
+    try:
+        devices = _recorder_service(request).list_devices()
+    except CaptureUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    default = default_input_device(devices)
+    return {
+        "devices": [asdict(device) for device in devices],
+        "default_name": default.name if default is not None else None,
+    }
+
+
+@router.get(
+    "/recorder/remembered-input",
+    response_model=RecorderRememberedInputResponse,
+)
+def api_recorder_remembered_input(request: Request) -> dict[str, Any]:
+    """The input REC last started on, kept by the daemon (null when unknown).
+
+    Server-side because the desktop shell serves the UI from a per-launch
+    loopback port, and browser storage forgets across ports (SET-10).
+    """
+    try:
+        return {"remembered": _recorder_service(request).remembered_input()}
+    except RememberedInputUnreadable as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post(
@@ -316,18 +412,24 @@ async def api_recorder_status(request: Request) -> dict[str, Any]:
     response_model=RecorderStatus,
     status_code=201,
 )
-async def api_recorder_start(
+def api_recorder_start(
     request: Request,
     body: RecorderStartRequest,
 ) -> dict[str, Any]:
+    # Sync: a start resolves the input with ffmpeg and waits out the
+    # capture startup check, both blocking.
     try:
         return _recorder_service(request).start(
             session_id=body.session_id,
             ffmpeg_device_idx=body.ffmpeg_device_idx,
+            device_name=body.device_name,
+            capture_audio=body.capture_audio,
             sources=tuple(body.sources),
         )
     except RecorderConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CaptureUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/recorder/{session_id}/stop", response_model=RecorderStatus)
@@ -578,7 +680,7 @@ async def api_relabel(
 async def api_audio(
     request: Request,
     session_id: str,
-    segment: str = FPath(..., description="audio_<iso>.mp3"),
+    segment: str = FPath(..., description="audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)"),
 ) -> FileResponse:
     if getattr(request.state, "share_audience", "local") == "share":
         raise HTTPException(status_code=404, detail="segment not found")
@@ -594,7 +696,8 @@ async def api_audio(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not path.exists():
         raise HTTPException(status_code=404, detail="segment not found")
-    return FileResponse(str(path), media_type="audio/mpeg", filename=segment)
+    media_type = sets_paths.SEGMENT_MEDIA_TYPES[path.suffix]
+    return FileResponse(str(path), media_type=media_type, filename=segment)
 
 
 __all__ = [

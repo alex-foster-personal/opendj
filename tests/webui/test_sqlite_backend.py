@@ -397,29 +397,6 @@ class TestRoundTripReads:
 # --- fallbacks for Phase-5-missing entities ------------------------------
 
 class TestFallbackPaths:
-    def test_list_pairings_falls_back_with_warning(
-        self, fresh_state_db: Path, caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        fallback = InMemoryBackend()
-        now = _iso_now()
-        fallback.seed_pairing(Pairing(
-            pairing_id="p-1", from_stable_id="a", to_stable_id="b",
-            direction="->", source="manual", notes=None,
-            created_at=now, updated_at=now,
-        ))
-        backend = SqliteBackend(fresh_state_db, fallback=fallback)
-        with caplog.at_level(logging.WARNING, logger=sb_mod.log.name):
-            out = backend.list_pairings()
-            # Second call: no new warning (once-per-process)
-            backend.list_pairings()
-        assert len(out) == 1
-        assert out[0].pairing_id == "p-1"
-        warnings = [
-            r for r in caplog.records
-            if "list_pairings" in r.getMessage()
-        ]
-        assert len(warnings) == 1
-
     def test_get_queue_falls_back(
         self, fresh_state_db: Path, caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -823,20 +800,24 @@ class TestFallbackPaths:
         assert backend.get_track("sid-002").tags == ["late"]
         assert backend.get_track("sid-001").tags == ["deep-house", "smooth"]
 
-    def test_create_and_delete_pairing_via_fallback(
+    def test_create_and_delete_pairing_persists_in_state_db(
         self, fresh_state_db: Path,
     ) -> None:
         backend = SqliteBackend(fresh_state_db)
         now = _iso_now()
         p = backend.create_pairing(Pairing(
-            pairing_id="p-a", from_stable_id="sid-001",
+            pairing_id="ignored", from_stable_id="sid-001",
             to_stable_id="sid-002", direction="->",
             source="manual", notes="test",
             created_at=now, updated_at=now,
         ))
-        assert p.pairing_id == "p-a"
+        # A second backend is a restarted daemon: the pairing is still there.
+        reborn = SqliteBackend(fresh_state_db)
+        [listed] = reborn.list_pairings()
+        assert listed == p
+        assert (listed.from_stable_id, listed.to_stable_id) == ("sid-001", "sid-002")
         etag = compute_etag(p.pairing_id, p.updated_at)
-        backend.delete_pairing("p-a", expected_etag=etag)
+        reborn.delete_pairing(p.pairing_id, expected_etag=etag)
         assert backend.list_pairings() == []
 
     def test_last_writer_delegates(

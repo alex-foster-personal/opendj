@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { startPerformanceRecorder, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
+	import { captureFailureMessage, recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './IconRail.svelte';
 
@@ -18,12 +18,35 @@
 		session_id: null,
 		pid: null,
 		owned: false,
-		recoverable: false
+		recoverable: false,
+		capture: 'none'
 	});
+	let rail = $derived(recordRailState(recorder));
 	let recorderBusy = $state(false);
+	// Lazy: the picker renders only after a REC click, so it stays out of the
+	// /performance bundle budget (charged to other-lazy instead). Non-null
+	// means the picker is open.
+	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
 
 	onMount(() => {
 		void refreshRecorderStatus();
+	});
+
+	// SET-11: while the capture is starting or waiting on the macOS microphone
+	// prompt, re-read it so REC lights the moment audio is really written; and
+	// while it records, so an input that stops mid-set unlights REC.
+	$effect(() => {
+		const after = rail.poll;
+		if (after === null) return;
+		const timer = setTimeout(() => void refreshRecorderStatus(), after);
+		return () => clearTimeout(timer);
+	});
+
+	let failureShown = false;
+	$effect(() => {
+		const failure = captureFailureMessage(recorder);
+		if (failure !== null && !failureShown) pushToast(failure, 'error');
+		failureShown = failure !== null;
 	});
 
 	async function refreshRecorderStatus(): Promise<void> {
@@ -43,11 +66,9 @@
 				pushToast('Recording stopped and session finalized.', 'info');
 				return;
 			}
-			const input = window.prompt('ffmpeg audio input index for set recording');
-			if (input === null) return;
-			if (input.trim() === '') throw new Error('ffmpeg device index is required');
-			recorder = await startPerformanceRecorder(Number(input));
-			pushToast(`Recording ${recorder.session_id}`, 'info');
+			// SET-10: pick the input by name in-app. A browser prompt dialog never shows in
+			// the desktop app's WKWebView, so the old index prompt did nothing.
+			RecordInputPicker = (await import('./RecordInputPicker.svelte')).default;
 		} catch (error) {
 			pushToast(`REC failed: ${String(error)}`, 'error');
 		} finally {
@@ -59,7 +80,17 @@
 <IconRail
 	{source}
 	{onspotify}
-	recording={recorder.active}
+	recording={rail.recording}
 	recordingBusy={recorderBusy}
+	recordingWaiting={rail.waiting}
+	recordingTip={rail.tip}
 	onrecord={() => void togglePerformanceRecording()}
 />
+
+{#if RecordInputPicker !== null}
+	<RecordInputPicker
+		onstarted={(status) => ((recorder = status), (RecordInputPicker = null))}
+		oncancel={() => (RecordInputPicker = null)}
+		notify={pushToast}
+	/>
+{/if}

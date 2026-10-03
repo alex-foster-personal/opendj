@@ -8356,6 +8356,33 @@
         "title": "GenerateIn",
         "type": "object"
       },
+      "GenreGuessOut": {
+        "description": "GENRE-02: a JEV genre-family GUESS, served only while ``genre`` is empty; never a tag.",
+        "properties": {
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "source": {
+            "const": "jev",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "confidence",
+          "source"
+        ],
+        "title": "GenreGuessOut",
+        "type": "object"
+      },
       "GrantIn": {
         "additionalProperties": false,
         "properties": {
@@ -13066,6 +13093,7 @@
             "type": "string"
           },
           "from_stable_id": {
+            "minLength": 1,
             "title": "From Stable Id",
             "type": "string"
           },
@@ -13102,6 +13130,7 @@
             "type": "string"
           },
           "to_stable_id": {
+            "minLength": 1,
             "title": "To Stable Id",
             "type": "string"
           }
@@ -16514,6 +16543,58 @@
         "title": "ReconcileSummary",
         "type": "object"
       },
+      "RecorderDevicesResponse": {
+        "description": "The audio inputs REC can record from, and the one it preselects.",
+        "properties": {
+          "default_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Name"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/RecorderInputDevice"
+            },
+            "title": "Devices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices",
+          "default_name"
+        ],
+        "title": "RecorderDevicesResponse",
+        "type": "object"
+      },
+      "RecorderInputDevice": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "loopback": {
+            "title": "Loopback",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "name",
+          "loopback"
+        ],
+        "title": "RecorderInputDevice",
+        "type": "object"
+      },
       "RecorderRecoveryRequest": {
         "properties": {
           "expected_pid": {
@@ -16528,13 +16609,87 @@
         "title": "RecorderRecoveryRequest",
         "type": "object"
       },
-      "RecorderStartRequest": {
-        "description": "Explicit real-capture configuration for the REC button.",
+      "RecorderRememberedInput": {
+        "description": "The input REC last started on: a named input, or none (tracklist only).",
         "properties": {
+          "kind": {
+            "enum": [
+              "device",
+              "none"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "RecorderRememberedInput",
+        "type": "object"
+      },
+      "RecorderRememberedInputResponse": {
+        "description": "Wraps the choice so \"nothing remembered yet\" is a body, not a null one.",
+        "properties": {
+          "remembered": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecorderRememberedInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "remembered"
+        ],
+        "title": "RecorderRememberedInputResponse",
+        "type": "object"
+      },
+      "RecorderStartRequest": {
+        "description": "Explicit real-capture configuration for the REC button.\n\nExactly one audio input: ``device_name`` (what the REC picker sends,\nresolved to an index at start), or a raw ``ffmpeg_device_idx``; or\n``capture_audio: false`` for a tracklist-only recording (SET-10).",
+        "properties": {
+          "capture_audio": {
+            "default": true,
+            "title": "Capture Audio",
+            "type": "boolean"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
           "ffmpeg_device_idx": {
-            "minimum": 0.0,
-            "title": "Ffmpeg Device Idx",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ffmpeg Device Idx"
           },
           "session_id": {
             "anyOf": [
@@ -16561,9 +16716,6 @@
             "type": "array"
           }
         },
-        "required": [
-          "ffmpeg_device_idx"
-        ],
         "title": "RecorderStartRequest",
         "type": "object"
       },
@@ -16572,6 +16724,32 @@
           "active": {
             "title": "Active",
             "type": "boolean"
+          },
+          "capture": {
+            "description": "The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).",
+            "enum": [
+              "none",
+              "unknown",
+              "starting",
+              "waiting_permission",
+              "recording",
+              "stopped",
+              "failed"
+            ],
+            "title": "Capture",
+            "type": "string"
+          },
+          "capture_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).",
+            "title": "Capture Error"
           },
           "owned": {
             "title": "Owned",
@@ -16609,7 +16787,8 @@
           "session_id",
           "pid",
           "owned",
-          "recoverable"
+          "recoverable",
+          "capture"
         ],
         "title": "RecorderStatus",
         "type": "object"
@@ -17549,6 +17728,16 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "genre_reason": {
             "anyOf": [
@@ -20797,6 +20986,16 @@
             ],
             "title": "Genre"
           },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "genre_reason": {
             "anyOf": [
               {
@@ -21527,6 +21726,16 @@
               }
             ],
             "title": "Genre"
+          },
+          "genre_guess": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenreGuessOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "genre_reason": {
             "anyOf": [
@@ -24129,6 +24338,50 @@
         ]
       }
     },
+    "/api/sets/recorder/devices": {
+      "get": {
+        "description": "List audio inputs by name for the REC picker; 503 when unmeasurable.\n\nSync on purpose: listing spawns ffmpeg, so it runs in the threadpool\ninstead of stalling the event loop.",
+        "operationId": "api_recorder_devices_api_sets_recorder_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderDevicesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Devices",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
+    "/api/sets/recorder/remembered-input": {
+      "get": {
+        "description": "The input REC last started on, kept by the daemon (null when unknown).\n\nServer-side because the desktop shell serves the UI from a per-launch\nloopback port, and browser storage forgets across ports (SET-10).",
+        "operationId": "api_recorder_remembered_input_api_sets_recorder_remembered_input_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecorderRememberedInputResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Recorder Remembered Input",
+        "tags": [
+          "sets"
+        ]
+      }
+    },
     "/api/sets/recorder/start": {
       "post": {
         "operationId": "api_recorder_start_api_sets_recorder_start_post",
@@ -24318,12 +24571,12 @@
             }
           },
           {
-            "description": "audio_<iso>.mp3",
+            "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
             "in": "path",
             "name": "segment",
             "required": true,
             "schema": {
-              "description": "audio_<iso>.mp3",
+              "description": "audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)",
               "title": "Segment",
               "type": "string"
             }

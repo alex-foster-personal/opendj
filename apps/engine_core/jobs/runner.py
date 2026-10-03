@@ -79,6 +79,19 @@ _DRAIN_BACKOFF_MAX_S: float = 30.0
 _SPAWN_SETTLE_S: float = 5.0
 _SPAWN_SETTLE_POLL_S: float = 0.01
 
+# How long shutdown waits for a fork it gave up on to unwind once cancelled.
+# Cancelling create_subprocess_exec mid-fork has asyncio SIGKILL the child it
+# already started and wait for it, which is milliseconds; this only bounds it.
+_FORK_ABORT_WAIT_S: float = 1.0
+
+# The row of a job whose fork shutdown cancelled. asyncio killed the worker
+# process it had started, if any, but no worker_pgid was ever recorded.
+FORK_ABORTED_ERROR: str = (
+    "engine shutdown cancelled this job while its worker was still forking; "
+    "the worker process, if one had started, was killed with it before any "
+    "worker_pgid was recorded"
+)
+
 # A 'running' row this engine holds no worker for. Naming the two ways in is
 # the point: "holds no worker" describes the engine's bookkeeping, which is
 # the thing a reader already knows, and says nothing about the process that
@@ -236,10 +249,12 @@ class JobRunner:
         *,
         poll_s: float = 0.2,
         max_concurrent: int = 1,
+        spawn_settle_s: float = _SPAWN_SETTLE_S,
     ) -> None:
         self.store = store
         self.poll_s = poll_s
         self.max_concurrent = max_concurrent
+        self.spawn_settle_s = spawn_settle_s
         self._running: dict[str, _Worker] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._supervisor: asyncio.Task[None] | None = None
@@ -266,16 +281,28 @@ class JobRunner:
         if supervisor is not None:
             supervisor.cancel()
             await asyncio.gather(supervisor, return_exceptions=True)
-        await self._settle_spawn_window()
+        still_forking = await self._settle_spawn_window()
+        # Nothing may yield between the settle and the abort: a fork that
+        # registered in that gap would be neither aborted nor walked below.
+        await self._abort_forks(still_forking)
         for job_id in list(self._running):
             await self._cancel_for_shutdown(job_id)
-        if self._tasks:
-            await asyncio.gather(
-                *self._tasks.values(), return_exceptions=True
-            )
+        # An aborted fork's task has already ended, or is reported by
+        # _abort_forks as stuck; either way the gather leaves it out, because
+        # waiting on it unbounded outlived the shell's grace.
+        waiting = [
+            task
+            for job_id, task in self._tasks.items()
+            if job_id not in still_forking
+        ]
+        if waiting:
+            await asyncio.gather(*waiting, return_exceptions=True)
 
-    async def _settle_spawn_window(self) -> None:
+    async def _settle_spawn_window(self) -> set[str]:
         """Wait for every claimed job to finish forking, so none is skipped.
+
+        Returns the jobs still forking when the wait gave up (empty when every
+        job registered), so :meth:`stop` can cancel their forks.
 
         ``_tasks`` is the claim-time truth and ``_running`` the
         registration-time one; between them sits the fork. A shutdown that
@@ -291,24 +318,63 @@ class JobRunner:
         shutdown continues, because the alternative is abandoning the workers
         it CAN still cancel.
         """
-        deadline = time.monotonic() + _SPAWN_SETTLE_S
+        deadline = time.monotonic() + self.spawn_settle_s
         while True:
             forking = [
                 job_id for job_id in self._tasks if job_id not in self._running
             ]
             if not forking:
-                return
+                return set()
             if time.monotonic() >= deadline:
                 log.error(
                     "shutdown waited %.0fs and jobs %s are still between the "
-                    "fork and their registration; their worker groups may "
-                    "outlive this engine, and only boot recovery can reach "
-                    "them now",
-                    _SPAWN_SETTLE_S,
+                    "fork and their registration; cancelling their forks",
+                    self.spawn_settle_s,
                     forking,
                 )
-                return
+                return set(forking)
             await asyncio.sleep(_SPAWN_SETTLE_POLL_S)
+
+    async def _abort_forks(self, job_ids: set[str]) -> None:
+        """Cancel the jobs still forking after the settle window, boundedly.
+
+        Abandoning them instead left the one process nothing can name: a
+        forked worker whose worker_pgid is not written yet, leading its own
+        session, so neither the shell's SIGKILL nor boot recovery reaches it.
+        Cancelling the task while create_subprocess_exec is still awaiting its
+        transport makes asyncio close that transport, which SIGKILLs the child
+        it already started and waits for it. A task that has not started yet
+        never forks at all. Either way its row is settled here, since _run
+        never got as far as writing it.
+        """
+        forking = {
+            job_id: self._tasks[job_id]
+            for job_id in job_ids
+            if job_id in self._tasks and job_id not in self._running
+        }
+        if not forking:
+            return
+        for task in forking.values():
+            task.cancel()
+        _, stuck = await asyncio.wait(forking.values(), timeout=_FORK_ABORT_WAIT_S)
+        for job_id, task in forking.items():
+            if task in stuck:
+                log.error(
+                    "job %s did not unwind within %.0fs of shutdown cancelling "
+                    "its fork; its row is left for boot recovery",
+                    job_id,
+                    _FORK_ABORT_WAIT_S,
+                )
+                continue
+            try:
+                self.store.finish(job_id, "cancelled", error=FORK_ABORTED_ERROR)
+            except (JobConflict, JobNotFound, sqlite3.Error) as exc:
+                log.error(
+                    "could not record job %s's aborted fork (%s); the row is "
+                    "left for boot recovery",
+                    job_id,
+                    exc,
+                )
 
     async def _cancel_for_shutdown(self, job_id: str) -> None:
         """cancel(), tolerating a row that finished on its own mid-shutdown.
@@ -810,6 +876,7 @@ def _log_supervisor_exit(task: asyncio.Task[None]) -> None:
 
 
 __all__ = [
+    "FORK_ABORTED_ERROR",
     "ORPHANED_WORKER_ERROR",
     "PROGRESS_WRITE_INTERVAL_S",
     "RECONCILE_RESULTS",

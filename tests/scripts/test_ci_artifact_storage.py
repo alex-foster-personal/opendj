@@ -33,6 +33,9 @@ DELIVERABLE_UPLOADS = {
     ("macos-native-companion.yml", "Upload macOS production wheel"),
     ("release-check.yml", "Upload built dists"),
     ("ci.yml", "Upload production frontend artifact"),
+    # The published ledger IS the job: ci.yml installs it, so a silent failure
+    # here would leave CI splitting on a stale seed with nothing red.
+    ("durations-ledger.yml", "Publish the ledger for ci.yml"),
 }
 #: Deliverables that commit 220fa886b made continue-on-error because the Actions
 #: artifact quota is exhausted (issue #2176). Each entry is asserted BOTH ways: the
