@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NoReturn
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -64,7 +64,7 @@ class DecideIn(BaseModel):
     action: Literal["accept", "reject"]
 
 
-def _raise_tag_reader_unavailable() -> None:
+def _raise_tag_reader_unavailable() -> NoReturn:
     raise HTTPException(
         status_code=503,
         detail={
