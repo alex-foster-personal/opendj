@@ -157,6 +157,18 @@ test('S1: two faders moving at once each drop their own overtaken steps and end 
 	assert.equal(deckTwo.at(-1), 'tempo2=0.98');
 });
 
+test('S1: a command on the same deck scope alone is a barrier too', async () => {
+	const { tempo, other, executed, drain, tick } = harness();
+	const first = tempo(1, 1.01);
+	await tick();
+	const pinned = tempo(1, 1.02);
+	const seek = other('seek1', 1, [1]);
+	const last = tempo(1, 1.03);
+	await drain();
+	await Promise.all([first, pinned, seek, last]);
+	assert.deepEqual(executed, ['tempo1=1.01', 'tempo1=1.02', 'seek1', 'tempo1=1.03']);
+});
+
 test('S1 control: a tempo already executing is never cut short by a newer one', async () => {
 	const { tempo, executed, drain, tick } = harness();
 	const first = tempo(1, 1.01);

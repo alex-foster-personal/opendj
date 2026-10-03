@@ -25,7 +25,7 @@ export class TempoCoalescer<Deck, Scope> {
 		}
 		const all = scopes.includes(sync);
 		for (const [tempoDeck, ticket] of this.#latest) {
-			if (all || scopes.includes(tempoDeck as unknown as Scope)) {
+			if (all || scopes.some((scope) => Object.is(scope, tempoDeck))) {
 				this.#pinned.add(ticket);
 				this.#latest.delete(tempoDeck);
 			}
