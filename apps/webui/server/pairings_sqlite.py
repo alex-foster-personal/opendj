@@ -7,6 +7,7 @@ lossy, and mirrors edges into the graph table for CAT-03 tooling.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import replace
@@ -86,15 +87,107 @@ def _graph_direction(http_dir: str) -> str:
     return "either" if http_dir == "<->" else "into"
 
 
-def _graph_edge_stamp(conn: sqlite3.Connection, pairing: Pairing) -> str | None:
-    """``created_at|modified_at`` of the CAT-03 edge for ``pairing``, or None when absent."""
+def _graph_edge_candidates(pairing: Pairing) -> tuple[tuple[str, str, str], tuple[str, str, str]]:
+    """Direct graph key, then the reverse form that reads as the same wire edge.
+
+    ``a -> b`` is stored as ``(a, b, into)`` or, from the CLI, ``(b, a, out_of)``.
+    ``a <-> b`` is ``(a, b, either)`` or the swapped ``(b, a, either)``. The
+    direct key wins when both rows exist.
+    """
+    direct = (pairing.from_stable_id, pairing.to_stable_id, _graph_direction(pairing.direction))
+    if pairing.direction == "<->":
+        reverse = (pairing.to_stable_id, pairing.from_stable_id, "either")
+    else:
+        reverse = (pairing.to_stable_id, pairing.from_stable_id, "out_of")
+    return direct, reverse
+
+
+def _stored_graph_pairing_id(from_id: str, to_id: str, direction: str) -> str:
+    """Same derivation as ``sqlite_backend._pairing_id`` for a stored graph key."""
+    digest = hashlib.sha1(
+        f"{from_id}\x1f{to_id}\x1f{direction}".encode()
+    ).hexdigest()
+    return f"pair-{digest[:24]}"
+
+
+_GRAPH_EDGE_SELECT = (
+    "from_stable_id, to_stable_id, direction, source, notes, "
+    "snapshot_json, created_at, modified_at"
+)
+
+
+def _graph_edge_row(conn: sqlite3.Connection, pairing: Pairing) -> sqlite3.Row | None:
+    """First existing candidate: the direct key, else the reverse-stored form."""
     PairingsRepo(conn, ensure_schema=True)
-    row = conn.execute(
-        "SELECT created_at, modified_at FROM pairings "
-        "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
-        (pairing.from_stable_id, pairing.to_stable_id, _graph_direction(pairing.direction)),
-    ).fetchone()
-    return None if row is None else f"{row[0]}|{row[1]}"
+    for from_id, to_id, direction in _graph_edge_candidates(pairing):
+        row = conn.execute(
+            f"SELECT {_GRAPH_EDGE_SELECT} FROM pairings "
+            "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+            (from_id, to_id, direction),
+        ).fetchone()
+        if row is not None:
+            return row
+    return None
+
+
+def _is_reverse_stored(pairing: Pairing, row: sqlite3.Row) -> bool:
+    direct = _graph_edge_candidates(pairing)[0]
+    return (row[0], row[1], row[2]) != direct
+
+
+def _graph_edge_stamp(conn: sqlite3.Connection, pairing: Pairing) -> str | None:
+    """``created_at|modified_at`` of the CAT-03 edge for ``pairing``, or None when absent.
+
+    The lookup is the direct key, then the reverse-stored form (``out_of`` /
+    swapped ``either``). A reverse row is the edge a capture must update.
+    """
+    row = _graph_edge_row(conn, pairing)
+    return None if row is None else f"{row[6]}|{row[7]}"
+
+
+def _merge_reverse_stored_edge(
+    conn: sqlite3.Connection, pairing: Pairing, row: sqlite3.Row,
+) -> Pairing:
+    """Update the reverse-stored primary key in place and return its wire view.
+
+    Notes append. A snapshot already on the row is kept. ``PairingsRepo.add``
+    is not used: that would insert a second ``into`` / ``either`` row beside
+    this key. The returned id is the stored key's id, not the capture's wire id.
+    """
+    from_id, to_id, direction = row[0], row[1], row[2]
+    source, notes, snap_raw, created_at, modified_at = (
+        row[3], row[4], row[5], row[6], row[7],
+    )
+    existing_snap = json.loads(snap_raw) if snap_raw else None
+    new_notes = notes
+    if pairing.notes and pairing.notes != notes:
+        new_notes = f"{notes or ''}\n{pairing.notes}".strip()
+    new_snap = existing_snap if existing_snap is not None else pairing.snapshot
+    updated_at = modified_at
+    if new_notes != notes or new_snap != existing_snap:
+        updated_at = pairing.updated_at
+        snap_json = None if new_snap is None else json.dumps(
+            new_snap, separators=(",", ":"),
+        )
+        conn.execute(
+            "UPDATE pairings SET notes=?, snapshot_json=?, modified_at=? "
+            "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
+            (new_notes, snap_json, updated_at, from_id, to_id, direction),
+        )
+    wire_from, wire_to = (
+        (to_id, from_id) if direction == "out_of" else (from_id, to_id)
+    )
+    return Pairing(
+        pairing_id=_stored_graph_pairing_id(from_id, to_id, direction),
+        from_stable_id=wire_from,
+        to_stable_id=wire_to,
+        direction="<->" if direction == "either" else "->",
+        source=source,
+        notes=new_notes,
+        snapshot=new_snap,
+        created_at=created_at,
+        updated_at=updated_at,
+    )
 
 
 def _owner_stamp(conn: sqlite3.Connection, pairing_id: str) -> str | None:
@@ -185,6 +278,16 @@ def _find_existing(
 
 
 def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
+    # A reverse-stored CLI edge (``b -> a`` stored as out_of, or swapped either)
+    # is this capture's edge. Update that primary key; do not insert a second one.
+    # An HTTP row already covering the wire endpoints keeps the #4014 merge path.
+    matched = _graph_edge_row(conn, pairing)
+    if (
+        matched is not None
+        and _is_reverse_stored(pairing, matched)
+        and _find_existing(conn, pairing) is None
+    ):
+        return _merge_reverse_stored_edge(conn, pairing, matched)
     # Decided before the row write: the edge is this pairing's to (re)write when
     # nobody holds it yet, or when it still carries this pairing's marker.
     owns_edge = _graph_edge_stamp(conn, pairing) is None or _http_owns_graph_edge(
@@ -301,12 +404,13 @@ def delete_http_pairing(
             etag=current,
         )
     owns_edge = _http_owns_graph_edge(conn, existing)
+    # Resolved before the HTTP row goes away: direct key, else the reverse form
+    # this pairing matched. Delete removes that stored key, not a fresh ``into``.
+    matched = _graph_edge_row(conn, existing) if owns_edge else None
     conn.execute("DELETE FROM http_pairings WHERE pairing_id=?", (pairing_id,))
-    if owns_edge:
+    if matched is not None:
         PairingsRepo(conn, ensure_schema=True).remove(
-            existing.from_stable_id,
-            existing.to_stable_id,
-            _graph_direction(existing.direction),
+            matched[0], matched[1], matched[2],
         )
 
 

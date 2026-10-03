@@ -1214,9 +1214,10 @@ class SqliteBackend:
         The HTTP row keeps the wire id, direction and write-once snapshot.
         The same transaction mirrors an edge this pairing owns into the
         durable graph table. Notes append, and a snapshot already stored is
-        kept. Same contract as :meth:`InMemoryBackend.create_pairing`. An
-        edge this pairing does not own (CLI or other graph tooling) is left
-        unchanged.
+        kept. Same contract as :meth:`InMemoryBackend.create_pairing`. A
+        direct edge this pairing does not own (CLI or other graph tooling)
+        is left unchanged. A reverse-stored edge that reads as this capture
+        is updated in place and the returned id is that stored key's id.
         """
         with self._pairings_rw() as conn:
             conn.row_factory = sqlite3.Row
