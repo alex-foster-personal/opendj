@@ -329,3 +329,21 @@ def test_shared_read_reports_true_raw_aac_duration(tmp_path):
     assert (tag.samplerate, tag.channels) == (44100, 1)
     assert tag.bitrate == pytest.approx(1024 * 8 * 44100 / 1024 / 1000)
     assert _tagreader.read(FIXTURE).duration == pytest.approx(3.06, abs=0.05)
+
+
+def test_shared_read_rejects_a_damaged_adts_stream(tmp_path):
+    """A file that opens as ADTS but fails the walk raises, never tinytag's misread.
+
+    tinytag reports a bogus positive duration for raw ADTS, so falling back
+    to it would persist those values (review of #4997). Control: the
+    same frames intact read cleanly.
+    """
+    from apps.shared import _tagreader
+
+    track = tmp_path / "cut.aac"
+    track.write_bytes(_adts_frames(8)[:-100])
+    with pytest.raises(_tagreader.TagReadError):
+        _tagreader.read(track)
+    assert _tagreader.read(track, duration=False) is not None
+    track.write_bytes(_adts_frames(8))
+    assert _tagreader.read(track).duration == pytest.approx(8 * 1024 / 44100)

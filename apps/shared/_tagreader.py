@@ -98,13 +98,25 @@ def read(path: Path | str, *, image: bool = False, duration: bool = True) -> Tin
         # rather than failing, and fills bitrate, samplerate and channels
         # from the same bogus frames; every stream property comes from the
         # frame walk instead.
-        stream = adts_stream(path)
-        if stream is not None:
-            tag.duration = stream.duration
-            tag.samplerate = stream.samplerate
-            tag.channels = stream.channels
-            tag.bitrate = stream.bitrate
+        _apply_adts(path, tag)
     return tag
+
+
+def _apply_adts(path: Path | str, tag: TinyTag) -> None:
+    """Overwrite tinytag's stream properties from the ADTS frame walk.
+
+    A file that opens with an ADTS frame but fails the walk (truncated,
+    corrupt, mixed rates) raises rather than keeping tinytag's bogus values.
+    """
+    stream = adts_stream(path)
+    if stream is None:
+        if starts_with_adts(path):
+            raise TagReadError("damaged ADTS stream: the frame walk failed")
+        return
+    tag.duration = stream.duration
+    tag.samplerate = stream.samplerate
+    tag.channels = stream.channels
+    tag.bitrate = stream.bitrate
 
 
 _ADTS_RATES = (
@@ -165,6 +177,13 @@ def adts_stream(path: Path | str) -> AdtsStream | None:
     return AdtsStream(duration, first[0], first[3], kbps)
 
 
+def starts_with_adts(path: Path | str) -> bool:
+    """True when the first header past any leading ID3v2 tag is an ADTS frame."""
+    with open(path, "rb") as fh:
+        fh.seek(_id3v2_end(fh.read(10)))
+        return _adts_frame(fh.read(7)) is not None
+
+
 def _id3v2_end(head: bytes) -> int:
     """Byte offset just past a leading ID3v2 tag, or 0 when there is none."""
     if len(head) < 10 or head[:3] != b"ID3":
@@ -213,4 +232,5 @@ __all__ = [
     "first_other",
     "read",
     "require",
+    "starts_with_adts",
 ]
