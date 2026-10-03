@@ -24,6 +24,7 @@ from typing import Any
 from fastapi import Depends, HTTPException, Request, status
 
 from .backend import StateBackend
+from .shell_output_health import data_dir_from_state_db
 
 
 def get_backend(request: Request) -> StateBackend:
@@ -51,8 +52,9 @@ def get_lock_status(request: Request) -> dict[str, Any] | None:
 
 
 def get_library_data_dir(request: Request) -> Path:
-    """This app's library data root: ``state_db_path`` is ``data_dir/state/state.db``."""
-    return Path(getattr(request.app.state, "state_db_path", "data/state/state.db")).parent.parent
+    """This app's library data root, from ``state_db_path``: ``data_dir/state/state.db``
+    or a flat ``data_dir/<name>.db`` (the same layout rule the shell-output health uses)."""
+    return data_dir_from_state_db(Path(getattr(request.app.state, "state_db_path", "data/state/state.db")))
 
 
 def get_read_state(backend: StateBackend = Depends(get_backend)) -> StateBackend:  # noqa: B008  # FastAPI DI

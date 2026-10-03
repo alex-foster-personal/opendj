@@ -28,7 +28,7 @@ from apps.stems.artifacts import DEFAULT_STEMS_DIR, bulk_stem_summaries
 
 from .. import rb_vendor
 from ..backend import ConflictError, StateBackend, Track, TrackFilter
-from ..deps import get_read_state, get_write_state
+from ..deps import get_library_data_dir, get_read_state, get_write_state
 from ..errors import precondition_required
 from ..etag import compute_etag
 from ..models import (
@@ -267,7 +267,7 @@ def list_tracks(
     jobs_store = getattr(request.app.state, "jobs_store", None)
     state_db_path = Path(request.app.state.state_db_path)
     data_dir = _data_dir_from_state_db(state_db_path)
-    rows = rb_vendor.build_track_rows(page.items, jobs_store=jobs_store, data_dir=data_dir)
+    rows = rb_vendor.build_track_rows(page.items, jobs_store=jobs_store, data_dir=get_library_data_dir(request))
     stable_ids = [t.stable_id for t in page.items]
     lyrics_by_sid = _lyrics_available_bulk(data_dir, stable_ids)
     auto_cues_by_sid = _auto_cues_available_bulk(_analysis_db_path(request), stable_ids)
