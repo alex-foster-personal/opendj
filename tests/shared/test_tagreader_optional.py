@@ -33,22 +33,28 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "phase7-dedup" / "src-128.mp3"
-# Real raw ADTS AAC: src.m4a's own AAC-LC stream remuxed without re-encoding
-# (``ffmpeg -i src.m4a -c copy -f adts src.aac``), 22050 Hz mono. ffprobe
-# reports 3.050 s; the frame walk counts the encoder priming the m4a's edit
-# list hides, so it reads 3.065 s.
-REAL_AAC = REPO_ROOT / "tests" / "fixtures" / "phase7-dedup" / "src.aac"
-REAL_AAC_SHA256 = "2176a32dd99822d77c2c7038e1fa97a6a315851d6f9b2724c8f112c2e86481e4"
+# Real raw ADTS AAC: src.m4a's own AAC-LC stream remuxed without re-encoding,
+# 22050 Hz mono; provenance, version and checksum live in its manifest.
+# ffprobe reports 3.050 s; the frame walk counts the encoder priming the
+# m4a's edit list hides, so it reads 3.065 s.
+REAL_AAC = REPO_ROOT / "tests" / "fixtures" / "adts" / "src.aac"
+REAL_AAC_MANIFEST = REAL_AAC.parent / "manifest.json"
 REAL_AAC_SECONDS = 3.065
 
 
 def _real_aac() -> bytes:
-    """The real ADTS fixture's bytes, refused if they are not the checked-in file."""
+    """The real ADTS fixture's bytes, refused unless they match its manifest."""
     import hashlib
 
+    manifest = json.loads(REAL_AAC_MANIFEST.read_text())
+    assert manifest["version"] == 1, "adts fixture manifest version changed"
+    entry = manifest["files"][REAL_AAC.name]
     data = REAL_AAC.read_bytes()
-    assert hashlib.sha256(data).hexdigest() == REAL_AAC_SHA256, "src.aac changed"
+    assert len(data) == entry["bytes"], "src.aac size differs from its manifest"
+    assert hashlib.sha256(data).hexdigest() == entry["sha256"], "src.aac changed"
+    assert entry["frame_walk_seconds"] == REAL_AAC_SECONDS
     return data
+
 
 _DEPENDENTS = (
     "apps.shared.audio_files",
@@ -445,7 +451,7 @@ def test_shared_read_reports_true_raw_aac_duration(tmp_path):
     assert tag.bitrate == pytest.approx(len(_real_aac()) * 8 / tag.duration / 1000)
     # tinytag reads the same AAC in its m4a container on its own: a
     # cross-check from an independent parser, within the priming offset.
-    assert _tagreader.read(REAL_AAC.with_suffix(".m4a")).duration == pytest.approx(
+    assert _tagreader.read(FIXTURE.with_name("src.m4a")).duration == pytest.approx(
         tag.duration, abs=0.1
     )
     assert _tagreader.read(FIXTURE).duration == pytest.approx(3.06, abs=0.05)
