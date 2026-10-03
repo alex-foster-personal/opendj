@@ -174,7 +174,7 @@ class RecorderService:
         if not capture_audio:
             return None, NO_AUDIO_DEVICE_LABEL
         if self.capture_enabled:
-            capture_mod.resolve_capture_ffmpeg()
+            capture_mod.capture_backend()
         if device_name is not None:
             return self._index_of(device_name), device_name
         return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"

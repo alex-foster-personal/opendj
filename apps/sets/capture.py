@@ -1,7 +1,17 @@
-"""ffmpeg AVFoundation capture wrapper (subprocess-only).
+"""Set audio capture (subprocess-only): odj-audio, else ffmpeg.
 
 Plan 12-01 Step 2 + CONTEXT D1. The recorder never imports an audio
-library; it shells out to ffmpeg and reads its MP3 segments off disk.
+library; it runs a capture process and reads its segments off disk.
+
+Two backends, chosen by :func:`capture_backend`:
+
+  * ``odj-audio`` (the Rust engine, built with feature ``device``): records
+    16-bit PCM WAV segments through CoreAudio/WASAPI/ALSA. The installed app
+    bundles it and no ffmpeg (decision #4766), so this is how REC records
+    there (``docs/decisions/*-set-recording-without-ffmpeg.md``).
+  * ``ffmpeg`` (AVFoundation, macOS only): MP3 segments. Used only when no
+    capture-capable odj-audio is found, i.e. a checkout without a
+    ``--features device`` build.
 
 Public API:
 
@@ -15,8 +25,8 @@ Public API:
   * :func:`build_segment_argv(device_idx, output_dir, ...)` -- compose
     the rolling-segment command without running it (pure unit-testable).
   * :func:`start_capture(...)` -- spawn the subprocess.
-  * :func:`stop_capture(proc, timeout)` -- graceful SIGTERM + SIGKILL
-    fallback; ffmpeg's segmenter flushes the active segment on SIGTERM.
+  * :func:`stop_capture(proc, timeout)` -- graceful stop (odj-audio: close
+    its stdin; ffmpeg: SIGTERM), then SIGKILL; both close the active segment.
   * :func:`check_silence(mp3_path)` -- mean dB via ``ffmpeg -af
     volumedetect``; returns ``-inf`` for empty files, used to warn when
     BlackHole isn't being routed through.
@@ -25,6 +35,7 @@ No ffprobe; duration is recovered later from filenames + manifest.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
@@ -34,8 +45,12 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO, Literal
 
 from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg_including_homebrew
+from apps.shared.odj_audio_binary import OdjAudioUnavailable, find_binary
+
+REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 # The default name of the MIT-licensed BlackHole virtual device.
 DEFAULT_DEVICE_NAME = "BlackHole 2ch"
@@ -54,6 +69,7 @@ LOOPBACK_NAME_HINTS: tuple[str, ...] = ("blackhole", "loopback", "soundflower")
 # microphone permission; without the wait those read as a recording.
 CAPTURE_STARTUP_CHECK_S = 1.0
 LIST_DEVICES_TIMEOUT_S = 10.0
+VERSION_PROBE_TIMEOUT_S = 10.0
 
 # ``-strftime 1`` so ffmpeg can interpolate timestamps into segment names.
 _SEGMENT_NAME_PATTERN = "audio_%Y-%m-%dT%H-%M-%S.mp3"
@@ -63,15 +79,16 @@ _SEGMENT_NAME_PATTERN = "audio_%Y-%m-%dT%H-%M-%S.mp3"
 class CaptureHandle:
     """Live handle returned by :func:`start_capture`.
 
-    Stores the ``Popen`` plus the ffmpeg argv (so tests can assert on
-    it), the resolved stderr log path, and the open log file handle so
-    it can be closed in :func:`stop_capture`.
+    Stores the ``Popen`` plus the capture argv (so tests can assert on
+    it), the resolved stderr log path, the open log file handle so it
+    can be closed in :func:`stop_capture`, and which backend runs it.
     """
 
     proc: subprocess.Popen
     argv: list[str]
     stderr_log: Path
-    log_fh: "IO[bytes]"
+    log_fh: IO[bytes]
+    backend: Literal["odj-audio", "ffmpeg"] = "ffmpeg"
 
 
 class CaptureUnavailable(RuntimeError):
@@ -79,8 +96,16 @@ class CaptureUnavailable(RuntimeError):
 
 
 @dataclass(frozen=True)
+class CaptureBackend:
+    """The program that records: ``kind`` and the executable to run."""
+
+    kind: Literal["odj-audio", "ffmpeg"]
+    exe: str
+
+
+@dataclass(frozen=True)
 class InputDevice:
-    """One AVFoundation audio input, as the REC picker shows it."""
+    """One audio input, as the REC picker shows it, in its backend's order."""
 
     index: int
     name: str
@@ -104,6 +129,69 @@ def resolve_capture_ffmpeg() -> str:
         raise CaptureUnavailable(f"ffmpeg is needed to record set audio: {exc}") from exc
 
 
+def _odj_audio_capture(
+    environ: dict[str, str] | None,
+    repo_root: Path | None,
+    run: Callable[..., subprocess.CompletedProcess[str]],
+) -> tuple[CaptureBackend | None, str]:
+    """A capture-capable odj-audio, or None and why not.
+
+    An ``ODJ_AUDIO_BIN`` (the installed app) that cannot capture raises
+    :class:`CaptureUnavailable` instead: the app must never quietly record
+    through some other ffmpeg than the one it does not ship.
+    """
+    try:
+        binary = find_binary(os.environ if environ is None else environ, repo_root or REPO_ROOT)
+    except OdjAudioUnavailable as exc:
+        if (os.environ if environ is None else environ).get("ODJ_AUDIO_BIN", "").strip():
+            raise CaptureUnavailable(f"cannot record set audio: {exc}") from exc
+        return None, str(exc)
+    reason = ""
+    try:
+        result = run(
+            [str(binary.path), "version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=VERSION_PROBE_TIMEOUT_S,
+        )
+        version = json.loads(result.stdout) if result.returncode == 0 else None
+        if isinstance(version, dict) and version.get("capture") is True:
+            return CaptureBackend("odj-audio", str(binary.path)), ""
+        reason = (
+            f"{binary.path} was built without audio input (feature device)"
+            if isinstance(version, dict)
+            else f"{binary.path} version exited {result.returncode}: {(result.stderr or '').strip()[-200:]}"
+        )
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        reason = f"{binary.path} version failed: {exc}"
+    if binary.source == "env":
+        raise CaptureUnavailable(f"cannot record set audio: {reason}")
+    return None, reason
+
+
+def capture_backend(
+    *,
+    environ: dict[str, str] | None = None,
+    repo_root: Path | None = None,
+    run: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    resolve_ffmpeg: Callable[[], str] | None = None,
+) -> CaptureBackend:
+    """odj-audio when it can capture, else ffmpeg, else :class:`CaptureUnavailable`.
+
+    The error names why each was refused, so "REC cannot record" always
+    says what to install or rebuild.
+    """
+    odj, why_not = _odj_audio_capture(environ, repo_root, run if run is not None else subprocess.run)
+    if odj is not None:
+        return odj
+    try:
+        return CaptureBackend("ffmpeg", (resolve_ffmpeg or resolve_capture_ffmpeg)())
+    except CaptureUnavailable as exc:
+        raise CaptureUnavailable(f"{exc}; and odj-audio cannot record either: {why_not}") from exc
+
+
 def is_loopback_name(name: str) -> bool:
     lowered = name.lower()
     return any(hint in lowered for hint in LOOPBACK_NAME_HINTS)
@@ -114,20 +202,65 @@ def list_input_devices(
     run: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     platform: str | None = None,
     ffmpeg: str | None = None,
+    backend: CaptureBackend | None = None,
 ) -> list[InputDevice]:
-    """Every AVFoundation audio input, in ffmpeg's index order.
+    """Every audio input, in the capture backend's index order.
 
-    Raises :class:`CaptureUnavailable` off macOS, without ffmpeg, or when
-    ffmpeg's report has no audio-device header: an unparsable listing is a
-    failed measurement, not a Mac with no inputs.
+    ``ffmpeg`` pins the ffmpeg backend; otherwise :func:`capture_backend`
+    picks. Raises :class:`CaptureUnavailable` when nothing can capture, or
+    when the listing cannot be read: an unparsable listing is a failed
+    measurement, not a machine with no inputs.
     """
+    runner = run if run is not None else subprocess.run
+    if ffmpeg is None:
+        chosen = backend if backend is not None else capture_backend(run=runner)
+        if chosen.kind == "odj-audio":
+            return _odj_audio_input_devices(chosen.exe, runner)
+        ffmpeg = chosen.exe
+    return _ffmpeg_input_devices(ffmpeg, runner, platform)
+
+
+def _odj_audio_input_devices(
+    exe: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> list[InputDevice]:
+    try:
+        result = runner(
+            [exe, "input-devices"],
+            check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=LIST_DEVICES_TIMEOUT_S,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CaptureUnavailable(f"listing audio inputs with {exe} failed: {exc}") from exc
+    try:
+        listed = json.loads(result.stdout) if result.returncode == 0 else None
+        rows = listed["devices"] if isinstance(listed, dict) else None
+        if not isinstance(rows, list):
+            raise ValueError("no devices list")
+        return [
+            InputDevice(index=int(row["index"]), name=str(row["name"]), loopback=is_loopback_name(str(row["name"])))
+            for row in rows
+        ]
+    except (ValueError, KeyError, TypeError) as exc:
+        tail = (result.stderr or "").strip()[-300:] or "no stderr"
+        raise CaptureUnavailable(
+            f"{exe} input-devices exited {result.returncode} without a device list ({exc}): {tail}"
+        ) from exc
+
+
+def _ffmpeg_input_devices(
+    exe: str,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    platform: str | None,
+) -> list[InputDevice]:
     host = platform if platform is not None else sys.platform
     if host != "darwin":
         raise CaptureUnavailable(
-            f"set audio capture uses macOS AVFoundation; this host is {host!r}"
+            f"set audio capture through ffmpeg uses macOS AVFoundation; this host is {host!r}"
         )
-    exe = ffmpeg if ffmpeg is not None else resolve_capture_ffmpeg()
-    runner = run if run is not None else subprocess.run
     argv = _list_devices_argv(exe)
     try:
         result = runner(
@@ -292,26 +425,35 @@ def start_capture(
     popen: "type[subprocess.Popen] | None" = None,
     ffmpeg: str | None = None,
     startup_check_s: float = 0.0,
+    backend: CaptureBackend | None = None,
 ) -> CaptureHandle:
-    """Spawn ffmpeg; return a :class:`CaptureHandle`.
+    """Spawn the capture process; return a :class:`CaptureHandle`.
 
-    ``popen`` lets tests inject a fake Popen class. The subprocess is
-    non-blocking; stderr is redirected to
-    ``<session_dir>/ffmpeg.stderr.log`` for later post-mortem.
+    ``ffmpeg`` pins the ffmpeg backend; otherwise :func:`capture_backend`
+    picks. ``popen`` lets tests inject a fake Popen class. The subprocess
+    is non-blocking; its output goes to ``<session_dir>/<backend>.stderr.log``
+    for later post-mortem.
 
     With ``startup_check_s`` > 0 the process must still be running after
     that long, else :class:`CaptureUnavailable` carries its stderr tail.
     """
     session_dir.mkdir(parents=True, exist_ok=True)
+    chosen = (
+        CaptureBackend("ffmpeg", ffmpeg)
+        if ffmpeg is not None
+        else backend if backend is not None else capture_backend()
+    )
+    popen_cls = popen if popen is not None else subprocess.Popen
+    if chosen.kind == "odj-audio":
+        return _start_odj_audio(chosen.exe, session_dir, device_idx, segment_time_s, popen_cls, startup_check_s)
     argv = build_segment_argv(
         device_idx,
         session_dir,
         segment_time_s=segment_time_s,
         bitrate_kbps=bitrate_kbps,
-        ffmpeg=ffmpeg if ffmpeg is not None else resolve_capture_ffmpeg(),
+        ffmpeg=chosen.exe,
     )
     stderr_log = session_dir / "ffmpeg.stderr.log"
-    popen_cls = popen if popen is not None else subprocess.Popen
     # Open the log fresh each start; stderr_log cleanup is retention's job.
     log_fh = stderr_log.open("ab", buffering=0)
     try:
@@ -334,6 +476,48 @@ def start_capture(
     return handle
 
 
+def build_record_argv(exe: str, device_idx: int, output_dir: Path, *, segment_time_s: int) -> list[str]:
+    """The odj-audio argv for rolling WAV capture of input ``device_idx``.
+
+    The index is a place in ``odj-audio input-devices``, the listing
+    :func:`list_input_devices` returns on this backend.
+    """
+    return [
+        exe,
+        "record",
+        "--dir",
+        str(output_dir),
+        "--device-index",
+        str(device_idx),
+        "--segment-seconds",
+        str(segment_time_s),
+    ]
+
+
+def _start_odj_audio(
+    exe: str,
+    session_dir: Path,
+    device_idx: int,
+    segment_time_s: int,
+    popen_cls: "type[subprocess.Popen]",
+    startup_check_s: float,
+) -> CaptureHandle:
+    argv = build_record_argv(exe, device_idx, session_dir, segment_time_s=segment_time_s)
+    stderr_log = session_dir / "odj-audio.stderr.log"
+    log_fh = stderr_log.open("ab", buffering=0)
+    try:
+        # stdin is the stop signal: closing it (or this process dying) ends
+        # the recording and closes the last segment with its final sizes.
+        proc = popen_cls(argv, stdin=subprocess.PIPE, stdout=log_fh, stderr=log_fh)
+    except Exception:
+        log_fh.close()
+        raise
+    handle = CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh, backend="odj-audio")
+    if startup_check_s > 0:
+        _require_running(handle, startup_check_s)
+    return handle
+
+
 def _require_running(handle: CaptureHandle, window_s: float) -> None:
     deadline = time.monotonic() + window_s
     while time.monotonic() < deadline:
@@ -349,21 +533,24 @@ def _require_running(handle: CaptureHandle, window_s: float) -> None:
     except OSError:
         tail = ""
     raise CaptureUnavailable(
-        f"ffmpeg stopped {window_s:g}s after starting (exit {code}): {tail or 'no stderr'}"
+        f"{handle.backend} stopped {window_s:g}s after starting (exit {code}): {tail or 'no stderr'}"
     )
 
 
 def stop_capture(handle: CaptureHandle, *, timeout: float = 10.0) -> int:
-    """Graceful stop: SIGTERM, wait, SIGKILL on timeout.
+    """Graceful stop, then SIGKILL on timeout.
 
-    Returns the subprocess return code. After SIGTERM, ffmpeg's
-    segmenter flushes the active segment's muxer so the trailing MP3
-    file is not corrupt.
+    Returns the subprocess return code. odj-audio stops when its stdin
+    closes and closes the open WAV segment; ffmpeg gets SIGTERM, after
+    which its segmenter flushes the active segment's muxer so the
+    trailing MP3 file is not corrupt.
     """
     proc = handle.proc
     try:
         if proc.poll() is not None:
             return int(proc.returncode)
+        if handle.backend == "odj-audio":
+            return _stop_odj_audio(proc, timeout)
         try:
             proc.send_signal(signal.SIGTERM)
         except ProcessLookupError:
@@ -377,6 +564,22 @@ def stop_capture(handle: CaptureHandle, *, timeout: float = 10.0) -> int:
     finally:
         if handle.log_fh and not handle.log_fh.closed:
             handle.log_fh.close()
+
+
+def _stop_odj_audio(proc: subprocess.Popen, timeout: float) -> int:
+    try:
+        if proc.stdin is not None:
+            proc.stdin.close()
+    except OSError:
+        pass  # already gone: wait() below reads its exit
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Its header is rewritten every second, so even this leaves a WAV
+        # that plays up to the last second written.
+        proc.kill()
+        proc.wait(timeout=2.0)
+    return int(proc.returncode or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +625,10 @@ def check_silence(mp3_path: Path) -> float:
 
 __all__ = [
     "CAPTURE_STARTUP_CHECK_S",
+    "CaptureBackend",
     "CaptureUnavailable",
+    "build_record_argv",
+    "capture_backend",
     "DEFAULT_DEVICE_NAME",
     "InputDevice",
     "default_input_device",

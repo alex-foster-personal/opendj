@@ -5,6 +5,8 @@
 //! device clock, a wall clock, or a fake clock (`serve`, `offline`). See
 //! `.planning/phases/20-rust-audio-engine/20-CONTEXT.md` for the decisions.
 
+#[cfg(feature = "device")]
+pub mod capture;
 pub mod deck;
 pub mod decode;
 pub mod edit_list;
@@ -20,6 +22,7 @@ pub mod mp4edit;
 pub mod offline;
 pub mod plan;
 pub mod protocol;
+pub mod record;
 pub mod serve;
 pub mod stretch;
 pub mod wav;

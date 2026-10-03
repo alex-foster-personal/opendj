@@ -67,6 +67,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_ENTITLEMENTS="$SCRIPT_DIR/../apps/desktop/src-tauri/Entitlements.engine.plist"
 ENGINE_JIT_ENTITLEMENT="com.apple.security.cs.allow-unsigned-executable-memory"
+# odj-audio records the REC input itself (SET-11); without this key the
+# hardened runtime hands it silence.
+ENGINE_AUDIO_INPUT_ENTITLEMENT="com.apple.security.device.audio-input"
 
 # macho_files / macho_count. Shared with scripts/ship_appstore.sh so the two
 # signing paths cannot disagree about which files are Mach-O.
@@ -151,7 +154,7 @@ cmd_payload() {
 # pass above signs every Mach-O without entitlements, which is right for the
 # libraries; an executable is the one place macOS reads them from.
 _sign_engine_executables() {
-    local payload="$1" exe exes=0
+    local payload="$1" exe exes=0 signed_entitlements key
     [ -f "$ENGINE_ENTITLEMENTS" ] || die "no engine entitlements at $ENGINE_ENTITLEMENTS"
     while IFS= read -r -d '' exe; do
         case "$(file -b "$exe")" in
@@ -160,8 +163,12 @@ _sign_engine_executables() {
                 --entitlements "$ENGINE_ENTITLEMENTS" \
                 --sign "$MDT_MACOS_SIGNING_IDENTITY" "$exe" ||
                 die "codesign failed applying the engine entitlements to $exe"
-            codesign -d --entitlements - --xml "$exe" 2>/dev/null | grep -q "$ENGINE_JIT_ENTITLEMENT" ||
-                die "$exe was signed but does not carry $ENGINE_JIT_ENTITLEMENT"
+            signed_entitlements="$(codesign -d --entitlements - --xml "$exe" 2>/dev/null)" ||
+                die "cannot read the entitlements $exe was signed with"
+            for key in "$ENGINE_JIT_ENTITLEMENT" "$ENGINE_AUDIO_INPUT_ENTITLEMENT"; do
+                grep -q "$key" <<<"$signed_entitlements" ||
+                    die "$exe was signed but does not carry $key"
+            done
             exes=$((exes + 1))
             ;;
         esac

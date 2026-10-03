@@ -663,7 +663,7 @@ async def api_relabel(
 async def api_audio(
     request: Request,
     session_id: str,
-    segment: str = FPath(..., description="audio_<iso>.mp3"),
+    segment: str = FPath(..., description="audio_<iso>.wav (odj-audio capture) or audio_<iso>.mp3 (ffmpeg)"),
 ) -> FileResponse:
     if getattr(request.state, "share_audience", "local") == "share":
         raise HTTPException(status_code=404, detail="segment not found")
@@ -679,7 +679,8 @@ async def api_audio(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not path.exists():
         raise HTTPException(status_code=404, detail="segment not found")
-    return FileResponse(str(path), media_type="audio/mpeg", filename=segment)
+    media_type = sets_paths.SEGMENT_MEDIA_TYPES[path.suffix]
+    return FileResponse(str(path), media_type=media_type, filename=segment)
 
 
 __all__ = [

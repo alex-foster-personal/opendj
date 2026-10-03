@@ -288,19 +288,19 @@ class Recorder:
     # ------------------------------------------------------------------
 
     def list_segments(self) -> list[AudioSegment]:
-        """Return one :class:`AudioSegment` per ``audio_*.mp3`` on disk.
+        """Return one :class:`AudioSegment` per audio segment on disk.
 
         Duration is cached (None) here; a follow-up step (Plan 12-03
         audio helper) can ffprobe if we need precise values. For the
         manifest it's enough to have the size + wall-clock start.
         """
         out: list[AudioSegment] = []
-        for mp3 in sorted(self.session_dir.glob("audio_*.mp3")):
-            stat = mp3.stat()
-            start_t = _segment_start_from_name(mp3.name, self.session_started_at)
+        for seg_path in sets_paths.segment_files(self.session_dir):
+            stat = seg_path.stat()
+            start_t = _segment_start_from_name(seg_path.name, self.session_started_at)
             out.append(
                 AudioSegment(
-                    name=mp3.name,
+                    name=seg_path.name,
                     start_t_s=start_t,
                     duration_s=None,
                     size_bytes=stat.st_size,
@@ -313,7 +313,7 @@ def _segment_start_from_name(
     name: str,
     session_started_at: datetime,
 ) -> float:
-    """Extract the audio_<iso>.mp3 wall timestamp and return rel seconds."""
+    """Extract the audio_<iso>.(wav|mp3) UTC timestamp and return rel seconds."""
     stem = Path(name).stem
     prefix = "audio_"
     if not stem.startswith(prefix):
