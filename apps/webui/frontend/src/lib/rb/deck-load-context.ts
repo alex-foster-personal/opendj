@@ -37,6 +37,7 @@
  * module, one import, both halves of a load's telemetry.
  */
 
+import { ApiError } from '$lib/api/client';
 import { reportClientError, type ClientErrorContext } from '$lib/client-error-reporting';
 import type { DeckLoadOptions } from '$lib/rb/audio-engine-types';
 import { concurrencyLabels, type DeckLoadSpan } from '$lib/rb/deck-load-concurrency';
@@ -333,6 +334,22 @@ function _shortReason(cause: unknown): string {
 	return firstLine.length <= HEADLINE_REASON_MAX_CHARS
 		? firstLine
 		: `${firstLine.slice(0, HEADLINE_REASON_MAX_CHARS - 3)}...`;
+}
+
+/**
+ * The track route answers an unknown stable_id with a bare 404 (`errors.py`
+ * handle_not_found carries no detail.code), so getTrack rejects with
+ * HTTP_404 while the audio route rejects the same load with TRACK_NOT_FOUND.
+ * The load fetches both at once and whichever rejects first names the toast,
+ * so the headline flipped between "no longer in the library" and "could not
+ * load the track: Not Found" by timing alone. Give the lookup's 404 the same
+ * code. A stick lookup's 404 carries USB_TRACK_NOT_FOUND and is left alone.
+ */
+export function libraryTrackLookupError(error: unknown): unknown {
+	if (error instanceof ApiError && error.status === 404 && error.code === 'HTTP_404') {
+		return new ApiError(404, 'TRACK_NOT_FOUND', error.message, error.response, error.body);
+	}
+	return error;
 }
 
 /** The toast headline for a failed deck load: always names the reason. */

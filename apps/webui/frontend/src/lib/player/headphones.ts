@@ -2172,9 +2172,9 @@ export async function acquireHeadphoneOutput(monitorSource: MonitorSource): Prom
 			// it withholds them, and this press is the operator's consent.
 			await refreshHeadphoneOutputs(monitorSource);
 			_assertCurrentHeadphoneOperation(generation, null);
-			if (mixerState.headphones.device_access.status !== 'listed') {
-				const unlocked = await _unlockWebviewInputs(generation);
-				if (!unlocked) return;
+			// A declined or absent microphone only leaves the inputs unnamed: the
+			// outputs are already named, so cue picking below still runs.
+			if (mixerState.headphones.device_access.status !== 'listed' && (await _unlockWebviewInputs(generation))) {
 				await refreshHeadphoneOutputs(monitorSource);
 				_assertCurrentHeadphoneOperation(generation, null);
 			}
@@ -2279,21 +2279,18 @@ export async function requestIoDeviceNames(monitorSource?: MonitorSource): Promi
 }
 
 /** CUEOUT-22: ask the webview for the microphone grant that names its inputs.
- * False when nothing was opened (declined, or no microphone), with the
- * reason left on the panel exactly as the browser path leaves it. */
+ * False when nothing was opened. A declined or absent microphone sets no
+ * error: the panel's access state already says why AUDIO IN is unnamed, and
+ * the MIC_* notices talk about hidden OUTPUT names, which the shell names. */
 async function _unlockWebviewInputs(generation: number): Promise<boolean> {
 	const decision = labelUnlockDecision(await _microphonePermissionState(), true);
 	_assertCurrentHeadphoneOperation(generation, null);
-	if (decision === 'declined') {
-		mixerState.headphones.error = MIC_DECLINED_NOTICE;
-		return false;
-	}
+	if (decision === 'declined') return false;
 	try {
 		await _unlockHeadphoneOutputLabels(requireHeadphoneDeviceApi());
 	} catch (error) {
 		if (!microphoneIsMissing(error)) throw error;
 		_assertCurrentHeadphoneOperation(generation, null);
-		mixerState.headphones.error = MIC_ABSENT_NOTICE;
 		return false;
 	}
 	_assertCurrentHeadphoneOperation(generation, null);

@@ -13,6 +13,8 @@
  * - if one failed load raises two toasts -> broken
  * - if a load refused before the engine is not reported as a load -> broken
  * - if a stick refusal loses its own wording -> broken (the overshoot)
+ * - if the track lookup's bare 404 names the toast differently from the audio
+ *   route's TRACK_NOT_FOUND for the same missing track -> broken (a timing race)
  *
  * Synthetic ids and placeholder titles only.
  */
@@ -140,4 +142,18 @@ test('the command dispatcher routes a failed load through the deck-load reporter
 		body.indexOf('suppressCommandErrorToast') < body.indexOf('reportDeckLoadCommandFailure'),
 		'a caller that suppresses the command toast must still be honored first'
 	);
+});
+
+test("the track lookup's bare 404 reads as TRACK_NOT_FOUND, and nothing else is rewritten", () => {
+	const response = new Response(null, { status: 404 });
+	const lookup = harness.libraryTrackLookupError(new harness.ApiError(404, 'HTTP_404', 'Not Found', response));
+	assert.equal(lookup.code, 'TRACK_NOT_FOUND');
+	assert.equal(harness.deckLoadFailureHeadline(1, lookup), 'Deck 1: this track is no longer in the library');
+	// Controls: a coded 404 (a stick), another status, and a non-ApiError pass through as the same object.
+	const stick = new harness.ApiError(404, 'USB_TRACK_NOT_FOUND', 'gone', response);
+	assert.equal(harness.libraryTrackLookupError(stick), stick);
+	const server = new harness.ApiError(500, 'HTTP_500', 'Internal Server Error', response);
+	assert.equal(harness.libraryTrackLookupError(server), server);
+	const plain = new Error('Not Found');
+	assert.equal(harness.libraryTrackLookupError(plain), plain);
 });

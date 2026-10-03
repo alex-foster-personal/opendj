@@ -10,6 +10,7 @@
  */
 export {
 	deckLoadFailureHeadline,
+	libraryTrackLookupError,
 	reportDeckLoadCommandFailure,
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
