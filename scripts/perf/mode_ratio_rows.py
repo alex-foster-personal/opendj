@@ -27,6 +27,10 @@ from scripts.perf.trackify_leak_series import (
 
 GIG_DECKS = 4
 
+# PERFMODE-14 release evidence requires 60 s settle before each dwell
+# (capture_library_mode._MIN_SCORED_SETTLE_SECONDS, library-mode-perf-capture.spec.ts).
+_MIN_SCORED_SETTLE_S = 60
+
 #: Rows whose ratio is over the PERFMODE-14 family carry this, and only these
 #: rows can satisfy the PERFMODE-15 ratio clauses (the requirement reader in
 #: tests/scripts/test_trackify_mode_requirement.py ignores ratio rows without it).
@@ -84,6 +88,22 @@ def _require_engine_family(mode: str, phase: dict[str, float]) -> None:
 
 def _savings(trackify: float, gig: float) -> float:
     return 1.0 - (trackify / gig)
+
+
+def _ratio_row_settle_s(gig: dict[str, float], trackify: dict[str, float]) -> float | None:
+    """Both phases must name settle_s explicitly; return the lesser (no defaults)."""
+    settles: list[float] = []
+    for phase, name in ((gig, "gig"), (trackify, "trackify")):
+        if "settle_s" not in phase:
+            return None
+        raw = phase["settle_s"]
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise ValueError(f"{name} settle_s must be numeric, got {raw!r}")
+        value = float(raw)
+        if value < 0:
+            raise ValueError(f"{name} settle_s must be non-negative, got {value}")
+        settles.append(value)
+    return min(settles)
 
 
 def gig_baseline_rows(
@@ -145,9 +165,13 @@ def gig_baseline_rows(
             ("trackify_mode_cpu_ratio", cpu_ratio),
         )
     ]
+    settle_s = _ratio_row_settle_s(gig, trackify)
     for row in rows:
         row["process_family"] = PROCESS_FAMILY
-        row["scorer"] = PERFMODE14_SCORER
+        if settle_s is not None:
+            row["settle_s"] = settle_s
+        if settle_s is not None and settle_s >= _MIN_SCORED_SETTLE_S:
+            row["scorer"] = PERFMODE14_SCORER
     return rows
 
 

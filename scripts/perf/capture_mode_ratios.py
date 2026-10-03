@@ -380,6 +380,41 @@ def _read_browser_line(proc: subprocess.Popen[str], expected: str) -> None:
         )
 
 
+_SETTLE_S_PREFIX = "SETTLE_S "
+
+
+def _read_phase_ready(proc: subprocess.Popen[str], ready: str) -> float | None:
+    """Read optional ``SETTLE_S <n>`` then ``ready`` (e.g. GIG_READY).
+
+    When the helper omits SETTLE_S, returns None and does not set settle_s on
+    the phase dict downstream.
+    """
+    if proc.stdout is None:
+        raise RuntimeError("mode_ratio_browser stdout is not piped")
+    line = proc.stdout.readline().strip()
+    settle_s: float | None = None
+    if line.startswith(_SETTLE_S_PREFIX):
+        raw = line[len(_SETTLE_S_PREFIX) :].strip()
+        try:
+            settle_s = float(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"SETTLE_S payload is not numeric: {line!r}") from exc
+        if settle_s < 0:
+            raise RuntimeError(f"SETTLE_S must be non-negative, got {settle_s}")
+        line = proc.stdout.readline().strip()
+    if line != ready:
+        raise RuntimeError(
+            f"mode_ratio_browser expected {ready!r}, got {line!r}; "
+            f"helper stderr: {_browser_stderr_tail(proc)}"
+        )
+    return settle_s
+
+
+def _attach_settle_s(phase: dict[str, float], settle_s: float | None) -> None:
+    if settle_s is not None:
+        phase["settle_s"] = settle_s
+
+
 def _browser_stderr_tail(proc: subprocess.Popen[str]) -> str:
     """The browser helper's own error, which a bare "expected X, got ''" hides."""
     if proc.poll() is None:
@@ -462,11 +497,13 @@ def _capture_gig_then_trackify(
     proc = _start_browser_session(frontend, "gig-trackify")
     try:
         gig_stable_ids = _read_gig_stable_ids(proc)
-        _read_browser_line(proc, "GIG_READY")
+        gig_settle_s = _read_phase_ready(proc, "GIG_READY")
         gig = _sample_steady(proc.pid, duration_s, engine_root_pid)
+        _attach_settle_s(gig, gig_settle_s)
         _signal_browser(proc)
-        _read_browser_line(proc, "TRACKIFY_READY")
+        trackify_settle_s = _read_phase_ready(proc, "TRACKIFY_READY")
         trackify = _sample_steady(proc.pid, duration_s, engine_root_pid)
+        _attach_settle_s(trackify, trackify_settle_s)
         _signal_browser(proc)
         _finish_browser_session(proc)
         return gig, trackify, gig_stable_ids
@@ -478,7 +515,7 @@ def _capture_gig_then_trackify(
 def _capture_trackify_leak(frontend: str, duration_s: int) -> LeakSeries:
     proc = _start_browser_session(frontend, "trackify-leak")
     try:
-        _read_browser_line(proc, "TRACKIFY_READY")
+        _read_phase_ready(proc, "TRACKIFY_READY")
         series = _sample_leak(proc, duration_s)
         _signal_browser(proc)
         _finish_browser_session(proc)

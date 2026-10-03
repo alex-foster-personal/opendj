@@ -36,6 +36,14 @@ const { values } = parseArgs({
 const frontend = values.frontend?.replace(/\/$/, "");
 const MAX_LISTING_PAGES = 40;
 const mode = values.mode;
+// PERFMODE-14 protocol: same 60 s settle before each mode dwell as
+// library-mode-perf-capture.spec.ts (KPI_CAPTURE_SETTLE_SECONDS default 60).
+const SETTLE_S = 60;
+const SETTLE_MS = SETTLE_S * 1000;
+
+function emitSettleS() {
+  console.log(`SETTLE_S ${SETTLE_S}`);
+}
 
 if (!frontend || (mode !== "gig-trackify" && mode !== "trackify-leak")) {
   console.error(
@@ -155,7 +163,7 @@ async function loadGigSteadyState(page) {
     );
     await waitForQueueIdle(page);
   }
-  await page.waitForTimeout(5_000);
+  await page.waitForTimeout(SETTLE_MS);
   // Queue-idle and HEAD 200 do not prove a load landed, so before GIG_READY
   // require each deck to hold exactly its picked track with a positive
   // duration and be playing (Sol P1/BLOCKING, PR #4540). The whole-window
@@ -204,7 +212,7 @@ async function openFreshTrackifyBrowser() {
   await page.goto(`${frontend}/music-player?muted=1`);
   await waitForTrackifyIpc(page);
   await waitForTrackifyPlaying(page);
-  await page.waitForTimeout(5_000);
+  await page.waitForTimeout(SETTLE_MS);
   return { browser, page };
 }
 
@@ -214,6 +222,7 @@ if (mode === "gig-trackify") {
     const gigPage = await openUninstrumentedPage(gigBrowser);
     const gigStableIds = await loadGigSteadyState(gigPage);
     console.log("GIG_STABLE_IDS " + JSON.stringify(gigStableIds));
+    emitSettleS();
     console.log("GIG_READY");
     // GIG_READY only proves the four load/play commands were issued before
     // the wait started; nothing else verifies all four decks are STILL
@@ -228,6 +237,7 @@ if (mode === "gig-trackify") {
 
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
   try {
+    emitSettleS();
     console.log("TRACKIFY_READY");
     // The sample loop only reads process RSS/CPU, so it cannot itself detect
     // an operator quarantine, a feed running dry, or the page navigating away
@@ -248,6 +258,7 @@ if (mode === "gig-trackify") {
   const { browser: trackifyBrowser, page: trackifyPage } = await openFreshTrackifyBrowser();
   const reader = createLineReader(process.stdin);
   try {
+    emitSettleS();
     console.log("TRACKIFY_READY");
     await runLeakProtocol(
       trackifyPage,

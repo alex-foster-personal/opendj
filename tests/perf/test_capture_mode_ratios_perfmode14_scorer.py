@@ -23,8 +23,9 @@ def _phase(
     engine_cpu: float,
     *,
     sample_count: int = _MIN_SCORED_SAMPLES,
+    settle_s: float | None = 60.0,
 ) -> dict[str, float]:
-    return {
+    phase = {
         "footprint_mb": browser_fp + engine_fp,
         "cpu_percent": browser_cpu + engine_cpu,
         "browser_footprint_mb": browser_fp,
@@ -34,6 +35,9 @@ def _phase(
         "engine_pid_count_max": 1.0,
         "sample_count": float(sample_count),
     }
+    if settle_s is not None:
+        phase["settle_s"] = float(settle_s)
+    return phase
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -66,14 +70,43 @@ def test_perfmode14_scorer_refuses_fewer_than_six_samples() -> None:
 
 @pytest.mark.requirement("PERFMODE-15")
 def test_gig_baseline_ratio_rows_carry_perfmode14_scorer() -> None:
-    """[if] ratio rows are built [then] each carries scorer perfmode14, [else stop]."""
+    """[if] both phases settle_s>=60 [then] ratio rows carry scorer perfmode14, [else stop]."""
     rows = gig_baseline_rows(
-        _phase(1300.0, 100.0, 400.0, 5.0),
-        _phase(300.0, 20.0, 400.0, 5.0),
+        _phase(1300.0, 100.0, 400.0, 5.0, settle_s=60),
+        _phase(300.0, 20.0, 400.0, 5.0, settle_s=60),
         list(_IDS),
         session_meta(sha="deadbeef"),
     )
     assert len(rows) == 2
     for row in rows:
         assert row["process_family"] == PROCESS_FAMILY
+        assert row["settle_s"] == 60.0
         assert row["scorer"] == PERFMODE14_SCORER
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_gig_baseline_ratio_rows_omit_scorer_when_settle_s_below_floor() -> None:
+    """[if] settle_s is below 60 [then] ratio rows omit scorer perfmode14, [else stop]."""
+    rows = gig_baseline_rows(
+        _phase(1300.0, 100.0, 400.0, 5.0, settle_s=5),
+        _phase(300.0, 20.0, 400.0, 5.0, settle_s=5),
+        list(_IDS),
+        session_meta(sha="deadbeef"),
+    )
+    for row in rows:
+        assert row["settle_s"] == 5.0
+        assert "scorer" not in row
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_gig_baseline_ratio_rows_omit_scorer_when_settle_s_missing() -> None:
+    """[if] either phase omits settle_s [then] ratio rows omit scorer perfmode14, [else stop]."""
+    rows = gig_baseline_rows(
+        _phase(1300.0, 100.0, 400.0, 5.0, settle_s=None),
+        _phase(300.0, 20.0, 400.0, 5.0, settle_s=60),
+        list(_IDS),
+        session_meta(sha="deadbeef"),
+    )
+    for row in rows:
+        assert "settle_s" not in row
+        assert "scorer" not in row
