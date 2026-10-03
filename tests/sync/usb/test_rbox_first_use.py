@@ -14,8 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 @pytest.mark.requirement("OSSPUB-06")
 def test_rbox_is_absent_from_core_and_payload_dependencies() -> None:
-    """[if] rbox is a core dependency or the payload export installs it
-    [then] the Apache-2.0 DMG would distribute a GPLv3 wheel."""
+    """[if] rbox is a core or payload dependency [then] the DMG ships GPLv3, [else stop]."""
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     core_names = {_requirement_name(req) for req in pyproject["project"]["dependencies"]}
     assert "rbox" not in core_names
@@ -25,7 +24,7 @@ def test_rbox_is_absent_from_core_and_payload_dependencies() -> None:
 
 @pytest.mark.requirement("OSSPUB-06")
 def test_ensure_rbox_returns_the_installed_module() -> None:
-    """[if] the dev extra installed rbox [then] ensure_rbox returns that module."""
+    """[if] the dev extra installed rbox [then] ensure_rbox returns that module, [else stop]."""
     module = ensure_rbox()
     assert module.__name__ == "rbox"
     assert callable(module.OneLibrary)
