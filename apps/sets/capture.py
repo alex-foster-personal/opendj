@@ -42,13 +42,13 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Literal
 
 from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg_including_homebrew
-from apps.shared.odj_audio_binary import OdjAudioUnavailable, find_binary
+from apps.shared.odj_audio_binary import BIN_ENV, OdjAudioUnavailable, find_binary
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -129,9 +129,31 @@ def resolve_capture_ffmpeg() -> str:
         raise CaptureUnavailable(f"ffmpeg is needed to record set audio: {exc}") from exc
 
 
+def _capture_refusal(exe: Path, run: Callable[..., subprocess.CompletedProcess[str]]) -> str:
+    """Why ``exe`` cannot capture, from ``exe version``; "" when it can."""
+    try:
+        result = run(
+            [str(exe), "version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=VERSION_PROBE_TIMEOUT_S,
+        )
+        version = json.loads(result.stdout) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        return f"{exe} version failed: {exc}"
+    if not isinstance(version, dict):
+        stderr = (result.stderr or "").strip()[-200:] or "no stderr"
+        return f"{exe} version exited {result.returncode} without a version object: {stderr}"
+    if version.get("capture") is not True:
+        return f"{exe} was built without audio input (feature device)"
+    return ""
+
+
 def _odj_audio_capture(
-    environ: dict[str, str] | None,
-    repo_root: Path | None,
+    environ: Mapping[str, str],
+    repo_root: Path,
     run: Callable[..., subprocess.CompletedProcess[str]],
 ) -> tuple[CaptureBackend | None, str]:
     """A capture-capable odj-audio, or None and why not.
@@ -140,40 +162,24 @@ def _odj_audio_capture(
     :class:`CaptureUnavailable` instead: the app must never quietly record
     through some other ffmpeg than the one it does not ship.
     """
+    from_env = bool(environ.get(BIN_ENV, "").strip())
     try:
-        binary = find_binary(os.environ if environ is None else environ, repo_root or REPO_ROOT)
+        binary = find_binary(environ, repo_root)
     except OdjAudioUnavailable as exc:
-        if (os.environ if environ is None else environ).get("ODJ_AUDIO_BIN", "").strip():
+        if from_env:
             raise CaptureUnavailable(f"cannot record set audio: {exc}") from exc
         return None, str(exc)
-    reason = ""
-    try:
-        result = run(
-            [str(binary.path), "version"],
-            check=False,
-            capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=VERSION_PROBE_TIMEOUT_S,
-        )
-        version = json.loads(result.stdout) if result.returncode == 0 else None
-        if isinstance(version, dict) and version.get("capture") is True:
-            return CaptureBackend("odj-audio", str(binary.path)), ""
-        reason = (
-            f"{binary.path} was built without audio input (feature device)"
-            if isinstance(version, dict)
-            else f"{binary.path} version exited {result.returncode}: {(result.stderr or '').strip()[-200:]}"
-        )
-    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        reason = f"{binary.path} version failed: {exc}"
-    if binary.source == "env":
+    reason = _capture_refusal(binary.path, run)
+    if not reason:
+        return CaptureBackend("odj-audio", str(binary.path)), ""
+    if from_env:
         raise CaptureUnavailable(f"cannot record set audio: {reason}")
     return None, reason
 
 
 def capture_backend(
     *,
-    environ: dict[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
     repo_root: Path | None = None,
     run: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     resolve_ffmpeg: Callable[[], str] | None = None,
@@ -183,7 +189,11 @@ def capture_backend(
     The error names why each was refused, so "REC cannot record" always
     says what to install or rebuild.
     """
-    odj, why_not = _odj_audio_capture(environ, repo_root, run if run is not None else subprocess.run)
+    odj, why_not = _odj_audio_capture(
+        os.environ if environ is None else environ,
+        repo_root or REPO_ROOT,
+        run if run is not None else subprocess.run,
+    )
     if odj is not None:
         return odj
     try:
@@ -235,20 +245,23 @@ def _odj_audio_input_devices(
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CaptureUnavailable(f"listing audio inputs with {exe} failed: {exc}") from exc
+    devices = _parse_odj_audio_devices(result.stdout) if result.returncode == 0 else None
+    if devices is None:
+        tail = (result.stderr or "").strip()[-300:] or "no stderr"
+        raise CaptureUnavailable(f"{exe} input-devices exited {result.returncode} without a device list: {tail}")
+    return devices
+
+
+def _parse_odj_audio_devices(stdout: str) -> list[InputDevice] | None:
+    """The ``{"devices": [{"index", "name", ...}]}`` line, or None if it is not one."""
     try:
-        listed = json.loads(result.stdout) if result.returncode == 0 else None
-        rows = listed["devices"] if isinstance(listed, dict) else None
-        if not isinstance(rows, list):
-            raise ValueError("no devices list")
+        rows = json.loads(stdout)["devices"]
         return [
             InputDevice(index=int(row["index"]), name=str(row["name"]), loopback=is_loopback_name(str(row["name"])))
             for row in rows
         ]
-    except (ValueError, KeyError, TypeError) as exc:
-        tail = (result.stderr or "").strip()[-300:] or "no stderr"
-        raise CaptureUnavailable(
-            f"{exe} input-devices exited {result.returncode} without a device list ({exc}): {tail}"
-        ) from exc
+    except (ValueError, KeyError, TypeError):
+        return None
 
 
 def _ffmpeg_input_devices(
@@ -422,7 +435,7 @@ def start_capture(
     *,
     segment_time_s: int = DEFAULT_SEGMENT_TIME_S,
     bitrate_kbps: int = DEFAULT_BITRATE_KBPS,
-    popen: "type[subprocess.Popen] | None" = None,
+    popen: type[subprocess.Popen] | None = None,
     ffmpeg: str | None = None,
     startup_check_s: float = 0.0,
     backend: CaptureBackend | None = None,
@@ -499,7 +512,7 @@ def _start_odj_audio(
     session_dir: Path,
     device_idx: int,
     segment_time_s: int,
-    popen_cls: "type[subprocess.Popen]",
+    popen_cls: type[subprocess.Popen],
     startup_check_s: float,
 ) -> CaptureHandle:
     argv = build_record_argv(exe, device_idx, session_dir, segment_time_s=segment_time_s)
@@ -625,22 +638,22 @@ def check_silence(mp3_path: Path) -> float:
 
 __all__ = [
     "CAPTURE_STARTUP_CHECK_S",
-    "CaptureBackend",
-    "CaptureUnavailable",
-    "build_record_argv",
-    "capture_backend",
-    "DEFAULT_DEVICE_NAME",
-    "InputDevice",
-    "default_input_device",
-    "list_input_devices",
-    "resolve_capture_ffmpeg",
-    "DEFAULT_SEGMENT_TIME_S",
     "DEFAULT_BITRATE_KBPS",
+    "DEFAULT_DEVICE_NAME",
+    "DEFAULT_SEGMENT_TIME_S",
+    "CaptureBackend",
     "CaptureHandle",
-    "parse_audio_devices",
-    "detect_input_device",
+    "CaptureUnavailable",
+    "InputDevice",
+    "build_record_argv",
     "build_segment_argv",
+    "capture_backend",
+    "check_silence",
+    "default_input_device",
+    "detect_input_device",
+    "list_input_devices",
+    "parse_audio_devices",
+    "resolve_capture_ffmpeg",
     "start_capture",
     "stop_capture",
-    "check_silence",
 ]

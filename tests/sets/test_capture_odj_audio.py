@@ -195,15 +195,12 @@ class _Stdin:
 class _RecordPopen:
     """Exits as soon as its stdin closes, as `odj-audio record` does."""
 
-    instances: list["_RecordPopen"] = []
-
     def __init__(self, argv: list[str], **kwargs: Any) -> None:
         self.argv = argv
         self.kwargs = kwargs
         self.stdin = _Stdin()
         self.returncode: int | None = None
         self.killed = False
-        _RecordPopen.instances.append(self)
 
     def poll(self) -> int | None:
         return self.returncode
