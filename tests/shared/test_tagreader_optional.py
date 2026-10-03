@@ -330,6 +330,16 @@ def test_upload_duration_reads_raw_aac_held_as_part(tmp_path):
     assert _tagreader.adts_duration(FIXTURE) is None
     assert ingest_upload._duration_s(FIXTURE) == pytest.approx(3.06, abs=0.05)
 
+    # Tags but no audio frames (the real fixture's ID3v2 tag alone) is
+    # damaged, not durationless: refused, never staged without a duplicate check.
+    data = FIXTURE.read_bytes()
+    assert data[:3] == b"ID3", "control: the fixture must open with an ID3v2 tag"
+    tag_len = 10 + int.from_bytes(bytes(b & 0x7F for b in data[6:10]), "big")
+    id3_only = tmp_path / "id3only.mp3.part"
+    id3_only.write_bytes(data[:tag_len])
+    with pytest.raises(_tagreader.TagReadError):
+        ingest_upload._duration_s(id3_only)
+
 
 def test_upload_refuses_a_damaged_raw_aac(tmp_path):
     """A truncated ADTS upload 422s and leaves no hold file, not a ``new`` stage.

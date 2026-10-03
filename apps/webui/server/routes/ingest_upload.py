@@ -89,7 +89,11 @@ def _duration_s(path: Path) -> float | None:
         # A file tinytag cannot parse is damaged, not durationless: the
         # TagReadError reaches _hold_duration, which refuses it with a 422.
         duration = _tagreader.read(path).duration
-    return float(duration) if duration else None
+    if not duration:
+        # Parsed, but no audio frames (an ID3-only mp3, an empty container):
+        # damaged like a parse failure, as audio_playable._probe_tags rules.
+        raise _tagreader.TagReadError("no audio frames: missing or zero duration")
+    return float(duration)
 
 
 def _dup_candidates(duration_s: float) -> list[tuple[str, str, str, str]]:
