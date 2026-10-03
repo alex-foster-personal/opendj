@@ -540,7 +540,7 @@ const PROBE_DEPTH: u64 = 1 << 20;
 /// failed to open with "no suitable format reader found" while ffmpeg read it
 /// (found by the Platinum Notes thread on a real 320k MP3, Thu 1 Oct 2026).
 /// Best effort, like the MP4 edit: anything unreadable is no tag.
-fn leading_tag_bytes(file: &mut File, path: &Path) -> Result<u64, ProtoError> {
+pub(crate) fn leading_tag_bytes(file: &mut File, path: &Path) -> Result<u64, ProtoError> {
     use std::io::{Read, Seek, SeekFrom};
     if !file.metadata().map(|m| m.is_file()).unwrap_or(false) {
         return Ok(0);
@@ -574,7 +574,7 @@ fn id3v2_tag_len(h: &[u8; 10]) -> Option<u64> {
 /// A probe that scans past `lead` bytes of leading tag plus its usual depth.
 /// The shared default probe is used when the tag is small, so a file that is
 /// not audio costs no deeper a scan than before.
-enum ProbeFor {
+pub(crate) enum ProbeFor {
     Default(&'static symphonia::core::formats::probe::Probe),
     Deep(Box<symphonia::core::formats::probe::Probe>),
 }
@@ -589,7 +589,7 @@ impl std::ops::Deref for ProbeFor {
     }
 }
 
-fn probe_for(lead: u64) -> ProbeFor {
+pub(crate) fn probe_for(lead: u64) -> ProbeFor {
     use symphonia::core::formats::probe::{Probe, ProbeOptions};
     // Under half the default depth, the tag leaves the default scan room.
     if lead <= PROBE_DEPTH / 2 {

@@ -18,7 +18,7 @@ use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
-use crate::decode::open;
+use crate::decode::{leading_tag_bytes, open, probe_for};
 use crate::engine::ErrorCode;
 use crate::protocol::ProtoError;
 
@@ -37,14 +37,17 @@ pub struct AudioFingerprint {
 
 /// Fingerprint the first `length_s` seconds of `path` (0 means the whole file).
 pub fn fingerprint_file(path: &Path, length_s: u32) -> Result<AudioFingerprint, ProtoError> {
-    let file = open(path)?;
+    let mut file = open(path)?;
+    // Probe past a large leading ID3 tag the way deck load does, so a file
+    // the decoder plays is never "unrecognized" here.
+    let lead = leading_tag_bytes(&mut file, path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
     let err = |what: &str, e: &dyn std::fmt::Display| ProtoError::new(ErrorCode::Decode, format!("{what} {}: {e}", path.display()));
-    let mut format = symphonia::default::get_probe()
+    let mut format = probe_for(lead)
         .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(|e| err("unrecognized format in", &e))?;
     let track = format
