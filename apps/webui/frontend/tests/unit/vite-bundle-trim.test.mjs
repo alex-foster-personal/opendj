@@ -260,9 +260,20 @@ test('the FLAC decoder still selects only flac or ogg and rejects every non-FLAC
 	assert.match(decoder, /if \(codec !== "flac"\)\s*throw new Error/);
 });
 
-test('vite.config.ts wires both trims and the terser option', () => {
-	const config = readFileSync(join(FRONTEND, 'vite.config.ts'), 'utf8');
-	assert.match(config, /plugins: \[[^\]]*codecParserTrimPlugin\(\)[^\]]*\]/);
-	assert.match(config, /output: \{ manualChunks: bootManualChunks\(\) \}/);
-	assert.match(config, /terserOptions: \{ safari10: false \}/);
+test('production Vite config retains safe minification and explicit lazy boundaries', async () => {
+	const { loadConfigFromFile } = await import('vite');
+	const loaded = await loadConfigFromFile(
+		{ command: 'build', mode: 'production' },
+		join(FRONTEND, 'vite.config.ts')
+	);
+	assert.ok(loaded, 'the actual production config must load');
+	const { build, plugins } = loaded.config;
+	assert.equal(build.minify, 'terser');
+	assert.equal(build.terserOptions.safari10, false);
+	assert.equal(build.terserOptions.ecma, 2020);
+	assert.equal(build.terserOptions.compress.hoist_funs, true);
+	assert.equal(build.terserOptions.compress.passes, 5);
+	assert.equal(build.rollupOptions.output.onlyExplicitManualChunks, true);
+	assert.equal(typeof build.rollupOptions.output.manualChunks, 'function');
+	assert.ok(plugins.flat(Infinity).some((plugin) => plugin?.name === 'opendj-codec-parser-trim'));
 });
