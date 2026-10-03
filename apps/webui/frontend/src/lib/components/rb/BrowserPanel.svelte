@@ -357,7 +357,8 @@
 	let allTracksReconcileError = $state<string | null>(null);
 	/** The reconcile summary's per-machine breakdown; 'unknown' when the
 	 * engine answered without one, null until the first answer lands. */
-	let libraryAvailability = $state<Record<string, number> | 'unknown' | null>(null);
+	let libraryAvailability = $state<unknown>(null);
+	let reconcileReadGeneration = 0;
 	let playlistsLoading = $state(true);
 	let playlistsError = $state<string | null>(null);
 	let source = $state<'collection' | 'spotify'>('collection');
@@ -396,6 +397,7 @@
 	 * frozen at init. The verdict comes from the reconcile summary's
 	 * per-machine `availability` breakdown (HEALTH-01), never the raw row
 	 * count: green means every track expected on THIS machine resolves.
+	 * The source tree retains its non-broken library navigation count.
 	 */
 	const libraryHealth = $derived<LibraryHealthDot>(
 		_computeLibraryHealthDot(
@@ -1171,13 +1173,17 @@
 	}
 
 	async function _loadReconcileSummary(): Promise<void> {
+		const generation = ++reconcileReadGeneration;
+		libraryAvailability = null;
 		try {
 			const summary = await getReconcileSummary();
+			if (generation !== reconcileReadGeneration) return;
 			allTracksNonBrokenCount = summary.total_tracks - summary.total_broken;
 			allTracksBrokenCount = summary.total_broken;
 			libraryAvailability = summary.availability ?? 'unknown';
 			allTracksReconcileError = null;
 		} catch (error: unknown) {
+			if (generation !== reconcileReadGeneration) return;
 			allTracksReconcileError = error instanceof Error ? error.message : String(error);
 		}
 	}

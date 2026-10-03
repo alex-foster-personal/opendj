@@ -8,13 +8,20 @@
  * without a component, an AudioContext, or a network mock. The tests import
  * and call these exact functions.
  *
+ * HEALTH-01: Library health counts only audio expected on this machine.
+ * Supersedes: the legacy total_tracks - total_broken dot verdict.
+ * The shared reconcile API supplies the production availability predicate.
+ * Counts from a failed or malformed measurement are never a verdict.
+ * Coverage policy stays in this module, separate from that predicate.
+ *
  * The rules (HEALTH-01, HEALTH-03, HEALTH-04):
  *
  * - Library health is green when every track whose audio is EXPECTED ON THIS
  *   MACHINE resolves. Rows that live on another machine, wait for an
  *   unmounted volume, stream, or have no path are reported in the detail and
  *   never make the dot amber. Amber is only for a link this machine recorded
- *   as working that no longer resolves.
+ *   as working that no longer resolves. The availability buckets must sum to
+ *   the live row total or the dot stays grey.
  * - A coverage dot is green when nothing is pending or failed over `present`
  *   tracks. "Nothing to make" (no lyrics available, no stems source) is a
  *   finished state, counted on its own so it is never mistaken for done.
@@ -103,7 +110,7 @@ const TERMINAL_WORDING: Record<CoverageStep, string> = {
 };
 
 function isCount(value: unknown): value is number {
-	return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+	return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -126,7 +133,7 @@ export function libraryHealthDot(
 ): LibraryHealthDot {
 	const label = 'Library health' as const;
 	if (libraryHealthError !== null) {
-		return { label, state: 'error', detail: libraryHealthError };
+		return unknownDot(label, libraryHealthError);
 	}
 	// HEALTH-14: the availability check runs after the listing, so while rows
 	// are still arriving the light says how far the listing has got instead
@@ -161,6 +168,9 @@ export function libraryHealthDot(
 		return unknownDot(label, 'the engine returned no availability breakdown for this library');
 	}
 	const here = availability as LibraryAvailability;
+	if (AVAILABILITY_KEYS.filter((key) => key !== 'total').reduce((sum, key) => sum + here[key], 0) !== here.total) {
+		return unknownDot(label, 'the availability buckets do not sum to the live row total');
+	}
 	const playlistPart =
 		playlistCount > 0 ? `${plural(playlistCount, 'playlist', 'playlists')} found` : 'no playlists found';
 	const elsewhere =
