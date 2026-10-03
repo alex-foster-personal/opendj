@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 
 from apps.adapters.rekordbox import config as rb_config
 from apps.adapters.rekordbox.paths import local_artwork_available
-from apps.shared._mutagen import HAS_MUTAGEN
+from apps.shared._tagreader import HAS_TAG_READER
 from apps.webui.server.app import create_app
 from apps.webui.server.rb_vendor_pkg.track_rows import bulk_rb_meta
 from apps.webui.server.sqlite_backend import SqliteBackend
@@ -118,7 +118,7 @@ def _probe_listing(spec: dict[str, Any], data_dir: Path) -> dict[str, Any]:
         "measured": measured,
         "fetched": fetched,
         "oracle": {sid: local_artwork_available(sid) for sid in spec["oracle_ids"]},
-        "has_mutagen": HAS_MUTAGEN,
+        "has_tag_reader": HAS_TAG_READER,
     }
 
 

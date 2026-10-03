@@ -597,11 +597,19 @@ def _rewrite_part_with_new_duration(
     bundle_dir: Path, part: str, *, duration_s: float, sr: int
 ) -> None:
     n_frames = int(duration_s * sr)
-    with wave.open(str(bundle_dir / f"{part}.wav"), "wb") as wav_file:
+    path = bundle_dir / f"{part}.wav"
+    mtime_before_ns = path.stat().st_mtime_ns
+    with wave.open(str(path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sr)
         wav_file.writeframes(b"\x00\x00" * n_frames)
+    # A real re-render lands later than the file it replaces. A rewrite inside the
+    # same filesystem timestamp tick keeps the old mtime_ns, and at the same size
+    # the part is byte-for-byte indistinguishable to `bundle_stem_identity` (main
+    # push CI run 37119163338). Stamp the rewrite strictly later, as a repair is.
+    later_ns = max(path.stat().st_mtime_ns, mtime_before_ns + 1_000_000_000)
+    os.utime(path, ns=(later_ns, later_ns))
 
 
 def _seed_matching_cache(

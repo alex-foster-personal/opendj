@@ -149,7 +149,10 @@ def is_exempt(finding: Finding) -> bool:
 
     Reported and counted separately rather than dropped: an exemption that hides
     its own matches cannot be checked, and a NEW address in one of these files
-    must still be visible to whoever runs the gate.
+    must still be visible to whoever runs the gate. The verbatim upstream license
+    mirrors under docs/legal/python-build-standalone/ are enumerated exactly in
+    MAILBOX_EXEMPT_PATHS (Codex P1, PR #4853 r4170573408), not prefix-matched, so
+    a future file added to that directory is NOT auto-exempt.
     """
     if finding.rule != "consumer-mailbox":
         return False

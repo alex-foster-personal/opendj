@@ -252,10 +252,18 @@ const BUDGETS = [
   // over the old limit. #4906 raises to the same 244,736 for its own +1,319: if it
   // lands first, the merged tree needs one more KiB. Payback, not yet measured: load
   // the REC tooltips with the lazy RecordInputPicker.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4094, FB-20 comment hover counts; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin-summary
+  // hover rides the /performance FeedbackWidget. Main 5504f60e7 + this PR
+  // measured 243,886 locally, 174 bytes over 243,712 (CI measured 243,884); 850
+  // bytes remain. Payback, not yet measured: load the summary popover lazily.
   // Merge note (PR #4014 x SET-11): both diffs land on this head. #4014's ceiling
   // (246,784, measured 245,836 against main 5504f60e7) is the wider of the two.
   // SET-11's stated +334 fits inside the 948 bytes that ceiling left (245,836 + 334
   // = 246,170). Re-measure on the merged head before tightening.
+  // Merge note (PR #4014 x #4094): #4094's stated ceiling is 244,736 (measured
+  // 243,886, 174 over 243,712). 246,784 is the larger ceiling and covers that
+  // raise as well as SET-11's +334. Re-measure on the merged head before tightening.
   { name: 'performance', limit: 246784, measured: 245836, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager

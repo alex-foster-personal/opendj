@@ -301,10 +301,10 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
     the fixture is captured input, never a replacement implementation (AGENTS.md
     "No mocks and locked real fixtures").
 
-    RE-CAPTURE ONLY WITH THE `tags` EXTRA INSTALLED. `artwork_available` is
+    RE-CAPTURE ONLY WITH tinytag INSTALLED (a core dependency). `artwork_available` is
     tri-state: `local_artwork_available` returns a real False for a resident
     file with no embedded art, but degrades to None ("could not check") when
-    mutagen is missing. A capture taken in a venv without it records that None
+    the tag reader is missing. A capture taken in a venv without it records that None
     and then fails here on any complete install, CI included - which is exactly
     how this assertion first went red.
 
@@ -323,8 +323,8 @@ def test_frontend_fixture_capture_matches_the_live_route(client: TestClient) -> 
     rb_meta_body["folder_path"] = "<audio-file-path>"
     if rb_meta_body.get("artwork_available") is not False:
         pytest.fail(
-            "rb_meta artwork_available must be False before capture; install the "
-            "project `tags` extra so mutagen is available (uv sync --extra tags)"
+            "rb_meta artwork_available must be False before capture; reinstall the "
+            "environment so the tinytag tag reader is available (uv sync)"
         )
 
     fallback_ok = client.get(f"/api/v1/tracks/{ANALYZED_SID}/beatgrid-fallback")

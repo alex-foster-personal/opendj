@@ -50,7 +50,7 @@ _CAN_TEST_PERMISSION_DENIAL = posix_permission_denial_supported(
 
 
 def _write_wav(path: Path, seconds: float = 0.1) -> Path:
-    """A real, playable wav. Not a stub: mutagen has to be able to read it."""
+    """A real, playable wav. Not a stub: the tag reader has to be able to read it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     frames = int(44100 * seconds)
     with wave.open(str(path), "w") as handle:

@@ -9,7 +9,9 @@ export { deckStates, engine } from '$lib/rb/audio-engine.svelte';
 export { installPerformanceBrowserIpc } from '$lib/rb/performance-ipc.svelte';
 export { uiPrefs } from '$lib/rb/prefs.svelte';
 export { toasts } from '$lib/stores.svelte';
-export { TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
+export { TRACKIFY_ANLZ_ENTRY_CAP, TRACKIFY_DECK_ID } from '$lib/rb/trackify-autoplay';
+export { effectiveAnlzEntryCap } from '$lib/components/rb/wave/anlz-cache-caps';
+export { anlzEntryCap } from '$lib/rb/perf-tier';
 export { e2ePrimeTrackifyFeed } from '$lib/rb/trackify-feed.svelte';
 export {
 	currentGigRuntimeGeneration,
