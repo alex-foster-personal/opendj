@@ -23,6 +23,10 @@ passed together with a model path (--rb7-model or the RB7_ONNX_MODEL env var);
 asking for it without a model fails loudly, and no model is ever fetched or
 located automatically. It reuses rekordbox_stems.separate (imported lazily, only
 for that arm) so there is one implementation of that convention, not two.
+A second OPTIONAL arm (`rb6-spleeter`) runs a user-supplied Spleeter 4stems
+SavedModel out of process; it runs only with --with-rb6 plus a model directory
+(--rb6-model or RB6_SPLEETER_MODEL), fails loudly without one, and never locates
+a model on its own.
 
 Requirements (mini-PRD):
   ✔︎ ✅ 🎯 emit 4 stems per config at the input rate and channel count
@@ -44,6 +48,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -88,7 +93,7 @@ RB7_ARM: dict[str, Any] = {
 }
 RB6_ARM: dict[str, Any] = {
     "id": "rb6-spleeter",
-    "params": "rekordbox 6 Track Separation, its own Spleeter 4stems weights, 44.1 kHz",
+    "params": "user-supplied Spleeter 4stems SavedModel, 44.1 kHz",
 }
 
 
@@ -151,19 +156,23 @@ def run_demucs_arm(model_name: str, mix: torch.Tensor, sr: int, *, overlap: floa
     return stems, infer_s
 
 
-def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int
+def run_rb6_arm(mixture_wav: Path, work_dir: Path, sr: int, model_dir: Path
                 ) -> tuple[dict[str, torch.Tensor], float]:
-    """rekordbox 6's Spleeter 4stems engine, out of process.
+    """A user-supplied Spleeter 4stems SavedModel, out of process.
 
     Spleeter needs tensorflow and demucs needs torch; resolving both into one
     environment is a fight with no upside, so this shells out to the existing
     single-purpose script and reads its four stem wavs back.
     """
+    model_dir = model_dir.resolve()
+    if not (model_dir / "saved_model.pb").is_file():
+        raise RuntimeError(f"Spleeter SavedModel not found (no saved_model.pb): {model_dir}")
     work_dir.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         [_require_uv(), "run", "--python", "3.11", "--no-project",
          str(_HERE / "rekordbox6_spleeter.py"), "--input", str(mixture_wav),
-         "--out-dir", str(work_dir), "--sep-rate", "44100", "--label", "rb6-spleeter"],
+         "--out-dir", str(work_dir), "--sep-rate", "44100", "--label", "rb6-spleeter",
+         "--model", str(model_dir)],
         capture_output=True, text=True, cwd=str(_HERE), check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"rekordbox6_spleeter.py failed:\n{proc.stderr[-3000:]}")
@@ -231,6 +240,22 @@ def _load_truth_stems(window_dir: Path, mix: torch.Tensor, sr: int) -> dict[str,
     return truth
 
 
+def _model_sha256(path: Path) -> str:
+    """Content identity of a user-supplied model: one file, or every file under a directory.
+
+    The optional arms no longer use a fixed model, so the basename alone cannot tell two
+    same-named model directories, or weights replaced in place, apart (Codex P2, PR #4861).
+    """
+    digest = hashlib.sha256()
+    files = [path] if path.is_file() else sorted(f for f in path.rglob("*") if f.is_file())
+    if not files:
+        raise RuntimeError(f"model path has no files to identify: {path}")
+    for f in files:
+        digest.update(str(f.relative_to(path) if f != path else f.name).encode() + b"\0")
+        digest.update(f.read_bytes())
+    return digest.hexdigest()
+
+
 def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any]]:
     arms: list[dict[str, Any]] = []
     for spec in DEMUCS_ARMS:
@@ -244,20 +269,39 @@ def _run_separation_arms(args, mix: torch.Tensor, sr: int) -> list[dict[str, Any
         stems, infer_s, overlap = run_rb7_arm(args.rb7_model, mix, sr)
         arms.append({
             **RB7_ARM, "engine": "user-supplied-onnx", "model": args.rb7_model.name,
+            "model_sha256": _model_sha256(args.rb7_model),
             "overlap": overlap, "sep_rate": sr,
             "infer_s": round(infer_s, 2), "_audio": stems,
         })
     if args.with_rb6:
         print(f"[run] {RB6_ARM['id']}", flush=True)
-        stems, infer_s = run_rb6_arm(args.window_dir / "mixture.wav", args.out_dir / "_rb6-work", sr)
+        stems, infer_s = run_rb6_arm(
+            args.window_dir / "mixture.wav", args.out_dir / "_rb6-work", sr, args.rb6_model)
         arms.append({
-            **RB6_ARM, "engine": "rekordbox6-spleeter", "model": "spleeter_4stems",
+            **RB6_ARM, "engine": "user-supplied-spleeter", "model": args.rb6_model.name,
+            "model_sha256": _model_sha256(args.rb6_model),
             "overlap": 0.0, "sep_rate": sr, "infer_s": round(infer_s, 2), "_audio": stems,
         })
     return arms
 
 
 #----- main -------------------------------------------------------------------
+
+
+def _resolve_optional_arm_models(ap: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Fill model paths from env and refuse any flag/model mismatch for the optional arms."""
+    if args.with_rb7 and args.rb7_model is None and os.environ.get("RB7_ONNX_MODEL"):
+        args.rb7_model = Path(os.environ["RB7_ONNX_MODEL"])
+    if args.with_rb7 and args.rb7_model is None:
+        ap.error("--with-rb7 needs a model path: pass --rb7-model or set RB7_ONNX_MODEL")
+    if args.rb7_model is not None and not args.with_rb7:
+        ap.error("a model path was given without --with-rb7; pass --with-rb7 to run the arm")
+    if args.with_rb6 and args.rb6_model is None and os.environ.get("RB6_SPLEETER_MODEL"):
+        args.rb6_model = Path(os.environ["RB6_SPLEETER_MODEL"])
+    if args.with_rb6 and args.rb6_model is None:
+        ap.error("--with-rb6 needs a model path: pass --rb6-model or set RB6_SPLEETER_MODEL")
+    if args.rb6_model is not None and not args.with_rb6:
+        ap.error("a model path was given without --with-rb6; pass --with-rb6 to run the arm")
 
 
 def main() -> None:
@@ -271,19 +315,18 @@ def main() -> None:
     ap.add_argument("--rb7-model", type=Path, default=None,
                     help="path to a user-supplied ONNX 4-stem model (env: RB7_ONNX_MODEL)")
     ap.add_argument("--with-rb6", action="store_true",
-                    help="also run rekordbox 6's Spleeter 4stems, out of process")
+                    help="also run the optional Spleeter comparison arm, out of process; needs "
+                         "--rb6-model or the RB6_SPLEETER_MODEL env var")
+    ap.add_argument("--rb6-model", type=Path, default=None,
+                    help="path to a user-supplied Spleeter 4stems SavedModel directory "
+                         "(env: RB6_SPLEETER_MODEL)")
     ap.add_argument("--json-out", required=True, type=Path)
     ap.add_argument("--track", required=True)
     ap.add_argument("--genre", required=True)
     ap.add_argument("--window-start-s", required=True, type=float)
     ap.add_argument("--window-length-s", required=True, type=float)
     args = ap.parse_args()
-    if args.with_rb7 and args.rb7_model is None and os.environ.get("RB7_ONNX_MODEL"):
-        args.rb7_model = Path(os.environ["RB7_ONNX_MODEL"])
-    if args.with_rb7 and args.rb7_model is None:
-        ap.error("--with-rb7 needs a model path: pass --rb7-model or set RB7_ONNX_MODEL")
-    if args.rb7_model is not None and not args.with_rb7:
-        ap.error("a model path was given without --with-rb7; pass --with-rb7 to run the arm")
+    _resolve_optional_arm_models(ap, args)
 
     mix, sr = _load(args.window_dir / "mixture.wav")
     truth = _load_truth_stems(args.window_dir, mix, sr)

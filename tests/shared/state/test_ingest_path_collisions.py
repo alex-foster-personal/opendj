@@ -165,13 +165,13 @@ def test_same_physical_file_two_spellings_allowed(
     root = tmp_path / "library"
     path = _write_wav(root / "Only.wav")
     alias = path.parent / "only.wav"
-    if alias.exists() and alias.resolve() != path.resolve():
+    # Compare inodes, not resolve(): on macOS APFS resolve() keeps the spelling
+    # it was given, so a same-file case alias resolves to a different path.
+    if not (alias.exists() and os.path.samefile(alias, path)):
         pytest.skip(
-            "platform can create two distinct case-only files; "
-            "same-inode test needs a case-insensitive filesystem"
+            "filesystem keeps case-only spellings distinct, so there is no "
+            "second spelling of one file; needs a case-insensitive filesystem"
         )
-    if not alias.exists():
-        alias = path
 
     from apps.shared.state.ingest.path_collisions import assert_no_path_collisions
 

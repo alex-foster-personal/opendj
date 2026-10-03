@@ -139,6 +139,14 @@ def read_pins(feedback_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
     return pins
 
 
+def _published_source(source: Path) -> str:
+    """Pin provenance without the operator login: a path under the home dir is written `~/...`."""
+    try:
+        return f"~/{source.relative_to(Path.home())}"
+    except ValueError:
+        return str(source)
+
+
 def export_rows(feedback_dir: Path) -> list[dict[str, Any]]:
     """Map stored pins onto the common prompt fields while retaining pin provenance."""
     rows: list[dict[str, Any]] = []
@@ -147,7 +155,7 @@ def export_rows(feedback_dir: Path) -> list[dict[str, Any]]:
         row.update({
             "tool": "opendj-feedback-pin",
             "ssid": pin["id"],
-            "source": str(source),
+            "source": _published_source(source),
             "at": pin["created_at"],
             "text": pin["text"],
         })

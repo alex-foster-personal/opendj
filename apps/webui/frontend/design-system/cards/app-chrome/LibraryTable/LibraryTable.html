@@ -1,0 +1,23 @@
+<!-- @dsCard group="App chrome" name="LibraryTable" subtitle="Sticky header, hover rows, stars, chips" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LibraryTable</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+</head>
+<body>
+<table class="library">
+	<thead>
+		<tr><th>Title</th><th>Artist</th><th title="Tempo in BPM">BPM</th><th title="Camelot key">Key</th><th>Rating</th><th>Tags</th></tr>
+	</thead>
+	<tbody>
+		<tr><td>Skyline Drive (Extended)</td><td>Pell Arden</td><td title="Tempo 136.00 BPM">136.00</td><td>11B</td><td><span class="star filled">★</span><span class="star filled">★</span><span class="star filled">★</span><span class="star filled">★</span><span class="star">★</span></td><td><span class="chip">trance</span><span class="chip">anthem</span></td></tr>
+		<tr><td>Sunday Clay</td><td>Hollis Wren, Odette Marsh</td><td title="Tempo 122.00 BPM">122.00</td><td>6A</td><td><span class="star filled">★</span><span class="star filled">★</span><span class="star filled">★</span><span class="star">★</span><span class="star">★</span></td><td><span class="chip">house</span></td></tr>
+		<tr><td>Open Windows</td><td>Cass Delaney</td><td title="Tempo 125.00 BPM">125.00</td><td>8A</td><td><span class="star filled">★</span><span class="star filled">★</span><span class="star filled">★</span><span class="star filled">★</span><span class="star filled">★</span></td><td><span class="chip">tech house</span><span class="chip">peak</span></td></tr>
+	</tbody>
+</table>
+<p class="ds-note"><code>table.library</code>: 0.9 rem, collapsed borders, sticky muted header on the page background, pointer rows with a hover fill. Ratings are <code>.star</code> (dim accent) and <code>.star.filled</code> (accent). Numeric cells carry a hover <code>title</code> with the unit.</p>
+</body>
+</html>
