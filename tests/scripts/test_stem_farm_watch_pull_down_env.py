@@ -30,6 +30,7 @@ def _bash() -> str:
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("UNAVAILABLE: bash is required to run stem_farm_watch_pull_down.sh")
+        raise AssertionError("unreachable: pytest.skip raises")  # narrows bash for the isolated mypy gate
     return bash
 
 
