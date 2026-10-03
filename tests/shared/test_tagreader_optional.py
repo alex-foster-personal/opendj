@@ -343,6 +343,8 @@ def test_upload_refuses_a_damaged_raw_aac(tmp_path):
     frames = _real_aac()
     (tmp_path / "cut.bin").write_bytes(frames[:-100])
     (tmp_path / "ok.bin").write_bytes(frames)
+    # A truncated non-ADTS file tinytag cannot parse is refused the same way.
+    (tmp_path / "cutflac.bin").write_bytes((FIXTURE.parent / "src.flac").read_bytes()[:60])
     dest = tmp_path / "staged"
     dest.mkdir()
     code = textwrap.dedent(
@@ -366,6 +368,15 @@ def test_upload_refuses_a_damaged_raw_aac(tmp_path):
         except HTTPException as exc:
             out["cut"] = exc.status_code
         out["left"] = sorted(p.name for p in dest.iterdir())
+        try:
+            ingest_upload._stage_one_upload(
+                dest, UploadFile(io.BytesIO((src / "cutflac.bin").read_bytes()), filename="cut.flac"),
+                "b", False,
+            )
+            out["cutflac"] = "staged"
+        except HTTPException as exc:
+            out["cutflac"] = exc.status_code
+        out["left_flac"] = sorted(p.name for p in dest.iterdir())
         ok = ingest_upload._stage_one_upload(
             dest, UploadFile(io.BytesIO((src / "ok.bin").read_bytes()), filename="ok.aac"),
             "b", False,
@@ -384,6 +395,8 @@ def test_upload_refuses_a_damaged_raw_aac(tmp_path):
     assert out["db"] == str(tmp_path / "data" / "state" / "state.db")
     assert out["cut"] == 422
     assert out["left"] == []
+    assert out["cutflac"] == 422
+    assert out["left_flac"] == []
     assert out["ok"][0] == "new"
     assert out["ok"][1] == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
     assert out["ok"][2] == "duration"

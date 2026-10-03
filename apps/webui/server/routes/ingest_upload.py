@@ -86,10 +86,9 @@ def _duration_s(path: Path) -> float | None:
             # A damaged ADTS stream is refused, never staged as new on a
             # tinytag misread; see _stage_one_upload.
             raise _tagreader.TagReadError("damaged ADTS stream: the frame walk failed")
-        try:
-            duration = _tagreader.read(path).duration
-        except _tagreader.TagReadError:
-            return None
+        # A file tinytag cannot parse is damaged, not durationless: the
+        # TagReadError reaches _hold_duration, which refuses it with a 422.
+        duration = _tagreader.read(path).duration
     return float(duration) if duration else None
 
 
