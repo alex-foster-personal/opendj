@@ -341,11 +341,26 @@ test('the stopped mix is retired only after its stop instant has passed', async 
 	assert.equal(await done, 'handed_off');
 	assert.ok(!names(log).includes('retire'), 'the mix was retired while it could still be the audible tail');
 	const when = log.find((entry) => entry[0] === 'mix.stop')[1];
-	assert.equal(timers.length, 1);
-	const expectedMs = (when - 100 + mod.STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000;
-	assert.ok(Math.abs(timers[0].ms - expectedMs) < 1e-6, `retire timer ${timers[0].ms}ms, expected ${expectedMs}ms`);
+	assert.equal(timers.length, 2);
+	// The stop was acknowledged, so the timer at the handoff instant does nothing.
 	timers[0].run();
+	assert.ok(!names(log).includes('retire'), 'an acknowledged stop was retired at the instant it renders');
+	const expectedMs = (when - 100 + mod.STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000;
+	assert.ok(Math.abs(timers[1].ms - expectedMs) < 1e-6, `retire timer ${timers[1].ms}ms, expected ${expectedMs}ms`);
+	timers[1].run();
 	assert.deepEqual(log.at(-1), ['retire', 'mix']);
+});
+
+test('a mix whose stop is still unacknowledged when the stems start is retired then', async () => {
+	const { port, log, timers } = landing({ autoTimers: false });
+	port.runtime.processor.stop = () => new Promise(() => {}); // the ack never comes back in time
+	assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
+	const when = log.find((entry) => entry[0] === 'commit')[1];
+	assert.ok(Math.abs(timers[0].ms - (when - 100) * 1000) < 1e-6, `first retire check at ${timers[0].ms}ms, expected the handoff instant`);
+	timers[0].run();
+	assert.deepEqual(log.filter((entry) => entry[0] === 'retire'), [['retire', 'mix']], 'the unstopped mix stayed under the stems');
+	timers[1].run();
+	assert.equal(log.filter((entry) => entry[0] === 'retire').length, 1, 'the mix was retired twice');
 });
 
 test('a mix that refuses its stop keeps playing until the stems start, then is retired once', async () => {
@@ -365,10 +380,11 @@ test('a mix that refuses its stop keeps playing until the stems start, then is r
 	assert.ok(!names(log).includes('retire'), 'the mix was retired before the stems were audible: the deck goes silent');
 	assert.ok(errors.some((args) => args.some((arg) => arg instanceof Error && arg.message === 'stop timed out')), 'the stop error was swallowed');
 	const when = log.find((entry) => entry[0] === 'commit')[1];
-	assert.equal(timers.length, 2);
-	assert.ok(Math.abs(timers[1].ms - (when - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[1].ms}ms, expected the handoff instant`);
-	timers[1].run();
+	assert.equal(timers.length, 3);
+	assert.ok(Math.abs(timers[2].ms - (when - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[2].ms}ms, expected the handoff instant`);
+	timers[2].run();
 	timers[0].run();
+	timers[1].run();
 	assert.deepEqual(log.filter((entry) => entry[0] === 'retire'), [['retire', 'mix']], 'the mix was retired twice');
 });
 

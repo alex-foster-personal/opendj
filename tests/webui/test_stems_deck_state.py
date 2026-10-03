@@ -112,6 +112,23 @@ def test_armed_state_before_the_index_is_fetched_is_never_none(tmp_path: Path):
     assert body["hydration_armed"] is True
 
 
+@pytest.mark.requirement("STEM-44")
+def test_deck_open_names_an_open_deck_not_a_recently_served_bundle(tmp_path: Path):
+    """[if] a bundle was only served [then] deck_open is false; open then close flips it, [else stop]."""
+    stems_dir = tmp_path / "stems"
+    _write_local_bundle(stems_dir, SID)
+    with _client(stems_dir, data_dir=tmp_path / "data") as client:
+        assert client.get(f"/api/v1/tracks/{SID}/stems").status_code == 200
+        served = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+        client.post(f"/api/v1/tracks/{SID}/stems/deck-open")
+        opened = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+        client.post(f"/api/v1/tracks/{SID}/stems/deck-close")
+        closed = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+    assert served["deck_open"] is False
+    assert opened["deck_open"] is True
+    assert closed["deck_open"] is False
+
+
 class _SlowAfterTwoS3(InMemoryAssetS3):
     """The in-memory object store, with the third download held open.
 

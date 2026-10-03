@@ -608,7 +608,7 @@ def _local_bundle_read(stable_id: str, stems_dir: Path, request: Request) -> str
     return "local"
 
 
-def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
+def _stem_state(stable_id: str, request: Request) -> StemStateOut:
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
     Deliberately reads ``app.state`` directly instead of calling
@@ -616,7 +616,7 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     read that changes the state it reports is not a read.
     """
     stems_dir = _stems_dir(request)
-    deck_open = stable_id in stem_hydration.OPEN_DECKS.open_ids()
+    deck_open = stem_hydration.OPEN_DECKS.is_open(stable_id)
     unarmed_reason, data_dir, armed = _hydration_arming(request.app.state)
 
     def _out(
@@ -660,26 +660,31 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
             "none",
             "no stem bundle on this machine, and cloud stems are not configured here",
         )
-    if not stem_index.local_index_cache_path(Path(data_dir)).is_file():
+    name, message, code = _armed_index_state(stable_id, Path(data_dir), stems_dir, request)
+    return _out(name, message, error_code=code)
+
+
+def _armed_index_state(
+    stable_id: str, data_dir: Path, stems_dir: Path, request: Request
+) -> tuple[StemTrackState, str, str | None]:
+    """Name an armed engine's state for a track that is neither local nor
+    being fetched, from the cached cloud index: cloud, local, none or error."""
+    if not stem_index.local_index_cache_path(data_dir).is_file():
         # load_cached_index reads a missing cache as empty; that is "not
         # fetched yet", never proof the track has no cloud bundle.
-        return _out(
-            "error",
-            "the cloud stem index has not been fetched yet",
-            error_code="STEM_INDEX_NOT_FETCHED",
-        )
+        return "error", "the cloud stem index has not been fetched yet", "STEM_INDEX_NOT_FETCHED"
     try:
-        index = stem_index.load_cached_index(Path(data_dir))
+        index = stem_index.load_cached_index(data_dir)
     except stem_index.StemIndexError as exc:
-        return _out("error", str(exc), error_code="STEM_INDEX_CORRUPT")
-    if stable_id in index:
-        # A fetch that finished between the local read above and the in-flight
-        # check has already landed the bundle; read again before calling it
-        # cloud-only, so a just-landed retry never reads as "cloud".
-        if _bundle_landed(stable_id, stems_dir, request):
-            return _out("local", "stem bundle is on this machine")
-        return _out("cloud", "stem bundle is in the cloud and is fetched on demand")
-    return _out("none", "no stem bundle on this machine or in the cloud")
+        return "error", str(exc), "STEM_INDEX_CORRUPT"
+    if stable_id not in index:
+        return "none", "no stem bundle on this machine or in the cloud", None
+    # A fetch that finished between the local read and the in-flight check has
+    # already landed the bundle; read again before calling it cloud-only, so a
+    # just-landed retry never reads as "cloud".
+    if _bundle_landed(stable_id, stems_dir, request):
+        return "local", "stem bundle is on this machine", None
+    return "cloud", "stem bundle is in the cloud and is fetched on demand", None
 
 
 def _manifest_out(bundle: StemBundle) -> StemManifestOut:

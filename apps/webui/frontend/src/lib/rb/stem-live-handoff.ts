@@ -30,6 +30,7 @@
  *       [if] a late acknowledgement commits [then ⛔️]
  *       [if] a mix that refuses its stop keeps playing under the stems [then ⛔️]
  *       [if] a mix that refuses its stop is retired before the stems start [then ⛔️]
+ *       [if] a mix whose stop is still unacknowledged when the stems start keeps playing under them [then ⛔️]
  */
 import { _positionForSegment, safeTransportScheduleTime } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
@@ -283,9 +284,16 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			if (outgoing === null) return;
 			const retiring = outgoing;
 			// Retired once its stop has rendered, never while it is the audible tail.
-			const delaySec = Math.max(0, when - port.clock.currentTime) + STEM_HANDOFF_RETIRE_AFTER_SEC;
-			setTimer(retireOutgoingOnce, delaySec * 1000);
+			const untilWhenSec = Math.max(0, when - port.clock.currentTime);
+			// A stop still unacknowledged when the stems start (a slow or timed-out
+			// command) must not leave the mix under them: retire it then.
+			let stopAcknowledged = false;
+			setTimer(() => {
+				if (!stopAcknowledged) retireOutgoingOnce();
+			}, untilWhenSec * 1000);
+			setTimer(retireOutgoingOnce, (untilWhenSec + STEM_HANDOFF_RETIRE_AFTER_SEC) * 1000);
 			await retiring.stop(when);
+			stopAcknowledged = true;
 		},
 		retireRefusedOutgoing: (when, error) => {
 			console.error('stem handoff: the mix refused its stop; retiring it at the handoff instant', error);
