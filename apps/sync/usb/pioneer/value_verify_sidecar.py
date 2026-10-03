@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from apps.sync.analysis_writeback import _SCALAR_TABLE
+from apps.sync.usb.pioneer.rbox_runtime import ensure_rbox
 
 
 def probe_odj_analysis_scalar(db_path: Path) -> dict[int, dict[str, str]]:
@@ -46,8 +47,8 @@ def read_scalar_sidecar_from_onelibrary(
         shutil.copy2(one_lib_path, copy_path)
 
         try:
-            from rbox import OneLibrary
-        except ImportError:
+            OneLibrary = ensure_rbox().OneLibrary
+        except (ImportError, RuntimeError):
             unread.append("rbox not installed; OneLibrary loudness unread")
             return sidecar, contents_by_filename, unread
 

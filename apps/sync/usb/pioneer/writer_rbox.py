@@ -90,8 +90,10 @@ from pathlib import Path
 from typing import Any
 
 try:  # pragma: no cover - optional dep; tests skip when missing.
-    import rbox
-    from rbox import OneLibrary
+    from apps.sync.usb.pioneer.rbox_runtime import ensure_rbox
+
+    rbox = ensure_rbox()
+    OneLibrary = rbox.OneLibrary
 
     RBOX_AVAILABLE = True
     RBOX_IMPORT_ERROR: str | None = None
