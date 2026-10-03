@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -305,8 +306,11 @@ def locked_packages(root: Path, policy: dict) -> list[Locked]:
 
 
 def tracked_lockfiles(root: Path) -> list[str]:
+    git = shutil.which("git")
+    if git is None:
+        raise GateError("git not found on PATH; cannot list tracked lockfiles")
     try:
-        listing = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True).stdout
+        listing = subprocess.run([git, "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError) as exc:
         raise GateError(f"git ls-files failed: {exc}") from exc
     files = [f for f in listing.split("\0") if f]
