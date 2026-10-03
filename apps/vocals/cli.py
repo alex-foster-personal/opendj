@@ -57,8 +57,11 @@ Requirements (mini-PRD):
     [if] MDT_VOCAL_WORKER_SCRIPT names a missing or unreadable file [then ⛔️]
     reinstall-from-a-complete-dmg guidance, no worker spawned
     [if] input is not .wav and no ffmpeg is reachable (MDT_FFMPEG or PATH,
-    the worker's own lookup) [then ⛔️] a decoder message naming the file
-    and the remedies, no worker spawned
+    the worker's own lookup) and no odj-audio either (ODJ_AUDIO_BIN, else a
+    local cargo build) [then ⛔️] a decoder message naming the file and the
+    remedies, no worker spawned
+    [if] input is not .wav, no ffmpeg, odj-audio resolves [then] the worker
+    is launched and decodes through ``odj-audio decode`` (STEM-50)
   → per-night budget (--max-minutes) - PARITY-TODO follow-up, not here.
 
 Exact command lines:
@@ -106,6 +109,7 @@ from apps.shared.process_groups import (
     signal_group,
     wait_group_gone,
 )
+from apps.shared.state import locations as state_locations
 from apps.vocals import cache as vcache
 from apps.vocals import from_stems as vfrom_stems
 
@@ -319,6 +323,47 @@ def load_tracks(ctx: Ctx, playlist: str | None) -> list[VocalTrack]:
                 audio_on_disk=on_disk,
             )
         )
+    tracks.sort(key=lambda t: t.stable_id)
+    return tracks
+
+
+def load_state_tracks(ctx: Ctx) -> list[VocalTrack]:
+    """Rekordbox-mapped tracks with their local audio, read from state.db only.
+
+    from-stems needs only an id and an audio file, so it must not depend on
+    the decrypted rekordbox copy (``master.plain.db``): the packaged app has
+    no such file, and requiring it failed every library refresh. Same track
+    set as :func:`load_tracks` (live, rekordbox-mapped), with audio resolved
+    the way the library listing resolves it.
+    """
+    state = _open_ro(ctx.state_db, "STATE_DB")
+    try:
+        rows = state.execute(
+            "SELECT t.stable_id, COALESCE(t.title, '') "
+            "FROM tracks t "
+            "JOIN track_vendor_ids v "
+            "  ON v.stable_id = t.stable_id AND v.vendor = 'rekordbox' "
+            "WHERE t.deleted_at IS NULL"
+        ).fetchall()
+        ids = [str(sid) for sid, _title in rows]
+        audio = state_locations.bulk_local_audio_paths(
+            state, ids, path_map=load_path_map(ctx.data_dir)
+        )
+    finally:
+        state.close()
+    tracks = [
+        VocalTrack(
+            stable_id=str(sid),
+            vendor_id="",
+            title=str(title),
+            length_s=0,
+            folder_path=None,
+            analysis_data_path=None,
+            audio_path=audio.get(str(sid)),
+            audio_on_disk=audio.get(str(sid)) is not None,
+        )
+        for sid, title in rows
+    ]
     tracks.sort(key=lambda t: t.stable_id)
     return tracks
 
@@ -543,8 +588,8 @@ def preflight_worker(audio_path: Path, environ: Mapping[str, str]) -> None:
 
     Two launches are knowable failures before the worker imports torch:
     a packaged worker script that is not there (an incomplete install),
-    and a non-WAV input with no ffmpeg to decode it (the worker decodes
-    only ``.wav`` itself, via soundfile). ``environ`` is the environment
+    and a non-WAV input with neither ffmpeg nor odj-audio to decode it (the
+    worker decodes only ``.wav`` itself, via soundfile). ``environ`` is the environment
     the worker would inherit.
     """
     packaged_script = environ.get(PACKAGED_WORKER_SCRIPT_ENV)
@@ -553,12 +598,20 @@ def preflight_worker(audio_path: Path, environ: Mapping[str, str]) -> None:
         if not (script.is_file() and os.access(script, os.R_OK)):
             raise WorkerUnavailableError(WORKER_UNAVAILABLE_MESSAGE)
     if audio_path.suffix.lower() != ".wav" and not _ffmpeg_reachable(environ):
-        raise WorkerUnavailableError(
-            f"Vocal separation cannot read {audio_path.name}: only WAV files "
-            "can be decoded without ffmpeg, and ffmpeg was not found. "
-            f"Install ffmpeg, set {FFMPEG_OVERRIDE_ENV} to its path, or "
-            "convert the track to WAV, then try again."
-        )
+        # The installed app ships no ffmpeg; the worker decodes through
+        # odj-audio instead, which the launcher names in ODJ_AUDIO_BIN.
+        from apps.shared.odj_audio_decode import NoDecoderError, resolve_odj_audio
+
+        try:
+            resolve_odj_audio(audio_path, environ)
+        except NoDecoderError as exc:
+            raise WorkerUnavailableError(
+                f"Vocal separation cannot read {audio_path.name}: only WAV files "
+                "can be decoded without ffmpeg or the odj-audio engine, and "
+                f"neither was found ({exc}). Install ffmpeg, set "
+                f"{FFMPEG_OVERRIDE_ENV} to its path, set ODJ_AUDIO_BIN to the "
+                "odj-audio engine, or convert the track to WAV, then try again."
+            ) from None  # its text is in the message; no cause means "never launched"
 
 
 def run_worker(audio_path: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
@@ -1142,7 +1195,7 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
     else:
         ids = vfrom_stems.list_bundle_ids(root)
 
-    by_id = {t.stable_id: t for t in load_tracks(ctx, None)}
+    by_id = {t.stable_id: t for t in load_state_tracks(ctx)}
     planned: list[VocalTrack] = []
     for sid in ids:
         tr = by_id.get(sid)
@@ -1154,8 +1207,7 @@ def cmd_from_stems(args: argparse.Namespace) -> int:
             continue
         if tr.audio_path is None or not tr.audio_path.is_file():
             print(
-                f"[SKIP missing-file] {sid} {tr.title!r}: "
-                f"{tr.folder_path or '(no FolderPath)'}",
+                f"[SKIP missing-file] {sid} {tr.title!r}: no local audio file",
                 file=sys.stderr,
             )
             continue

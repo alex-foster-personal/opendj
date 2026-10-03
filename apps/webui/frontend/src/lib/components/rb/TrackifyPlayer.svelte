@@ -7,6 +7,10 @@
 
 	const deck = $derived(deckStates[TRACKIFY_DECK_ID]);
 	const positionMs = $derived(deckAudioClockPositionMs(TRACKIFY_DECK_ID));
+	const loaded = $derived(deck.stable_id !== null);
+	const playTitle = $derived(
+		!loaded ? 'no track loaded - nothing to play' : deck.playing ? 'Pause' : 'Play'
+	);
 
 	async function togglePlay(): Promise<void> {
 		await runPerformanceCommandFromUi({
@@ -30,7 +34,7 @@
 	<PositionBar positionMs={positionMs} durationMs={deck.duration_ms} />
 
 	<div class="transport">
-		<button type="button" onclick={() => void togglePlay()} title={deck.playing ? 'Pause' : 'Play'}>
+		<button type="button" onclick={() => void togglePlay()} disabled={!loaded} title={playTitle}>
 			{deck.playing ? 'Pause' : 'Play'}
 		</button>
 		<button type="button" onclick={skipNext} title="Skip to next track">Skip</button>

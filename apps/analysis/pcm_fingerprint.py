@@ -1,9 +1,10 @@
 """The canonical decode fingerprint every own record is stamped with.
 
 `specs/native-analysis-v1.md` defines `decode_fingerprint` as the sha256 of
-the decoded PCM at FIXED parameters: 44100 Hz, mono, s16, resampler `soxr` at
-a pinned precision. That is what makes it useful. Two hosts decoding the same
-file agree on it, the parity gate compares it across macOS, Linux and Windows,
+the decoded PCM at FIXED parameters: 44100 Hz, mono, s16, decoded and
+resampled by the app's own engine, `odj-audio` (fingerprint v2; v1 was
+ffmpeg with `soxr`, see `DECODER` below). That is what makes it useful. Two
+hosts decoding the same file agree on it, the parity gate compares it across macOS, Linux and Windows,
 and the player can check that a served grid came from the same decode it is
 about to play.
 
@@ -23,33 +24,45 @@ re-backfill, never as a local preference.
 from __future__ import annotations
 
 import hashlib
+import math
+import struct
 import subprocess
 import tempfile
 import threading
+import wave
 from pathlib import Path
 
-from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg
+from apps.shared.engine_decode import EngineDecoderUnavailable, resolve_engine_decoder
 
 #-----------------------------------------------------------------------------
 # the contract
 #-----------------------------------------------------------------------------
 
+DECODER = "odj-audio"
+"""The app's own Rust engine (symphonia decode, MP4 edit list applied).
+
+Fingerprint v2 (Fri 2 Oct 2026). v1 was ffmpeg with ``aresample=soxr`` at
+precision 28, which the shipped app does not bundle and Homebrew's default
+macOS build cannot run, so an installed app took no fingerprint and wrote no
+own record (``research/audio-decode/2026-10-01-packaging-audio-decode.md``).
+Every payload ships ``odj-audio``, and it is the decoder the Rust player uses,
+so the player's check now compares against the decode it plays.
+"""
 SAMPLE_RATE_HZ = 44100
 CHANNELS = 1
 SAMPLE_FORMAT = "s16le"
-RESAMPLER = "soxr"
-# soxr's own default precision has moved between ffmpeg releases, so the
-# number is stated rather than inherited: an inherited default is a parameter
-# that changes when the host's ffmpeg changes, which is the one thing this
-# fingerprint may not do.
-RESAMPLER_PRECISION = 28
+RESAMPLER = "rubato-fft-4096x2"
+"""rubato's ``FftFixedIn`` with 4096-frame input chunks and 2 sub-chunks, as
+``odj-audio`` resamples on every load (``resample`` in
+``apps/audio-engine/src/decode.rs``). Fixed by the engine's source, not by a
+host build option, so every host that runs the same engine agrees."""
 TIMEOUT_S = 300.0
 _CHUNK_BYTES = 1 << 20
 
-
-_RESAMPLE_FILTER = (
-    f"aresample={SAMPLE_RATE_HZ}:resampler={RESAMPLER}:precision={RESAMPLER_PRECISION}"
-)
+#: A positive control for :func:`require_resampler`: 0.1 s of 440 Hz at
+#: 48 kHz, which the canonical decode must resample to 44.1 kHz.
+_PROBE_RATE_HZ = 48000
+_PROBE_SECONDS = 0.1
 
 
 class FingerprintUnavailable(Exception):
@@ -66,18 +79,25 @@ class FingerprintUnavailable(Exception):
 #-----------------------------------------------------------------------------
 
 def _resolve_or_raise() -> str:
-    """The shared ffmpeg lookup, as this module's own failure type.
-
-    Resolved through apps.shared.ffmpeg rather than
-    apps.analysis_waveform.decode: a fingerprint needs the binary, not a
-    waveform decoder, and catching that module's LocalDecodeUnavailable for
-    a resolution failure made "ffmpeg is missing" read as "the waveform
-    could not be decoded" in a module that decodes no waveform.
-    """
+    """The engine lookup (``ODJ_AUDIO_BIN``, else the newest repo build), as
+    this module's own failure type."""
     try:
-        return resolve_ffmpeg()
-    except FfmpegUnavailable as exc:
+        return str(resolve_engine_decoder())
+    except EngineDecoderUnavailable as exc:
         raise FingerprintUnavailable(str(exc)) from None
+
+
+def _write_probe_tone(path: Path) -> None:
+    """A real 16-bit PCM WAV, written with the standard library."""
+    frames = int(_PROBE_RATE_HZ * _PROBE_SECONDS)
+    samples = (
+        int(16000 * math.sin(2 * math.pi * 440 * n / _PROBE_RATE_HZ)) for n in range(frames)
+    )
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(_PROBE_RATE_HZ)
+        out.writeframes(b"".join(struct.pack("<h", s) for s in samples))
 
 
 #-----------------------------------------------------------------------------
@@ -85,78 +105,65 @@ def _resolve_or_raise() -> str:
 #-----------------------------------------------------------------------------
 
 def canonical_decode_command(path: Path, exe: str) -> list[str]:
-    """The exact ffmpeg argv the fingerprint is defined over.
+    """The exact argv the fingerprint is defined over.
 
     Public because the value only means something alongside the parameters it
     was measured under, so callers and reports print this rather than
     paraphrasing it.
     """
     return [
-        exe, "-nostdin", "-v", "error",
-        "-i", str(path),
-        "-vn", "-map", "0:a:0",
-        "-ac", str(CHANNELS),
-        "-af", _RESAMPLE_FILTER,
-        "-f", SAMPLE_FORMAT, "-acodec", "pcm_s16le",
-        "-",
+        exe, "decode",
+        "--rate", str(SAMPLE_RATE_HZ),
+        "--mono",
+        "--format", SAMPLE_FORMAT,
+        str(path),
     ]
 
 
 def require_resampler(timeout_s: float = 30.0) -> None:
-    """Prove this host's ffmpeg can actually run the pinned resampler.
+    """Prove this host can run the canonical decode, resampler included.
 
-    `soxr` is a BUILD option, not a runtime one: the `resampler=soxr` value is
-    listed in `-h full` on every ffmpeg, and a build without libsoxr accepts
-    the argument and then fails at filter-configure time with "Requested
-    resampling engine is unavailable". Homebrew's ffmpeg 9.0.1 on macOS is
-    such a build, measured Wed 9 Sep 2026, and it fails for a 44100 Hz source
-    too, so nothing rescues it - a fingerprint pass on this host would be zero
-    tracks, per track, with a decode error each time.
-
-    So the capability is proven ONCE, on a synthetic tone, before a backfill
-    touches the library. This is a positive control: it runs the real filter
-    chain the fingerprint uses and asserts bytes come out, rather than
-    checking a version string or the presence of an option name.
+    Checked once, before a backfill touches the library: without it EVERY
+    record fails its fingerprint, and a host-wide gap reported once per file
+    reads as thousands of unreadable tracks. This is a positive control: it
+    decodes a real 48 kHz WAV through the exact command the fingerprint uses
+    and asserts the expected number of 44.1 kHz s16 bytes comes out, rather
+    than checking a version string or the presence of a subcommand.
     """
     exe = _resolve_or_raise()
-    probe = [
-        exe, "-nostdin", "-v", "error",
-        "-f", "lavfi", "-i", "sine=frequency=440:duration=0.1:sample_rate=48000",
-        "-ac", str(CHANNELS),
-        "-af", _RESAMPLE_FILTER,
-        "-f", SAMPLE_FORMAT, "-acodec", "pcm_s16le",
-        "-",
-    ]
-    try:
-        done = subprocess.run(  # fixed argv, never a shell
-            probe,
-            check=False,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            timeout=timeout_s,
-        )
-    except OSError as exc:
-        raise FingerprintUnavailable(f"ffmpeg could not be launched: {exc}") from None
-    except subprocess.TimeoutExpired:
-        raise FingerprintUnavailable(
-            f"the ffmpeg resampler probe did not finish within {timeout_s:.3g}s"
-        ) from None
-    if done.returncode != 0 or not done.stdout:
+    with tempfile.TemporaryDirectory() as tmp:
+        tone = Path(tmp) / "probe-48k.wav"
+        _write_probe_tone(tone)
+        try:
+            done = subprocess.run(  # fixed argv, never a shell
+                canonical_decode_command(tone, exe),
+                check=False,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=timeout_s,
+            )
+        except OSError as exc:
+            raise FingerprintUnavailable(f"{DECODER} could not be launched: {exc}") from None
+        except subprocess.TimeoutExpired:
+            raise FingerprintUnavailable(
+                f"the {DECODER} decode probe did not finish within {timeout_s:.3g}s"
+            ) from None
+    # The engine's resampler emits exactly round(frames * to / from) frames.
+    want = 2 * CHANNELS * round(SAMPLE_RATE_HZ * _PROBE_SECONDS)
+    if done.returncode != 0 or len(done.stdout) != want:
         tail = done.stderr.decode("utf-8", "replace").strip().splitlines()
-        reason = tail[-1] if tail else f"exit {done.returncode}, {len(done.stdout)} bytes out"
+        reason = tail[-1] if tail else f"exit {done.returncode}"
         raise FingerprintUnavailable(
-            f"{exe} cannot run the pinned resampler ({RESAMPLER}): {reason}. "
-            "decode_fingerprint is defined over that resampler, so a build "
-            "without it cannot produce a comparable digest. Install an ffmpeg "
-            "built --enable-libsoxr (Homebrew's default macOS build is not) or "
-            "point MDT_FFMPEG at one."
+            f"{exe} cannot run the canonical decode ({RESAMPLER} to "
+            f"{SAMPLE_RATE_HZ} Hz): {reason}; {len(done.stdout)} bytes out, "
+            f"expected {want}"
         )
 
 
 def canonical_decode_fingerprint(path: Path) -> str:
     """sha256 hex of ``path`` decoded at the fixed parameters above.
 
-    Raises `FingerprintUnavailable` for a missing ffmpeg, a launch failure, a
+    Raises `FingerprintUnavailable` for a missing engine, a launch failure, a
     decode error, a timeout, or an empty stream.
     """
     audio_path = Path(path)
@@ -177,10 +184,10 @@ def canonical_decode_fingerprint(path: Path) -> str:
                 stderr=errors,
             )
         except OSError as exc:
-            raise FingerprintUnavailable(f"ffmpeg could not be launched: {exc}") from None
+            raise FingerprintUnavailable(f"canonical decoder could not be launched: {exc}") from None
         stdout = process.stdout
         if stdout is None:  # pragma: no cover - Popen(stdout=PIPE) always sets it
-            raise FingerprintUnavailable("ffmpeg stdout could not be opened")
+            raise FingerprintUnavailable("decoder stdout could not be opened")
 
         def _kill_on_deadline() -> None:
             timed_out.set()
@@ -202,16 +209,16 @@ def canonical_decode_fingerprint(path: Path) -> str:
 
         if timed_out.is_set():
             raise FingerprintUnavailable(
-                f"ffmpeg did not finish decoding {audio_path} within {TIMEOUT_S:.3g}s"
+                f"{DECODER} did not finish decoding {audio_path} within {TIMEOUT_S:.3g}s"
             )
         if returncode != 0:
             errors.seek(0)
             tail = errors.read().decode("utf-8", "replace").strip().splitlines()
             reason = tail[-1] if tail else f"exit {returncode}"
-            raise FingerprintUnavailable(f"ffmpeg could not decode {audio_path}: {reason}")
+            raise FingerprintUnavailable(f"{DECODER} could not decode {audio_path}: {reason}")
         if decoded_bytes == 0:
             raise FingerprintUnavailable(
-                f"ffmpeg decoded 0 bytes of audio from {audio_path}, so there is "
+                f"{DECODER} decoded 0 bytes of audio from {audio_path}, so there is "
                 "nothing to fingerprint"
             )
     return digest.hexdigest()

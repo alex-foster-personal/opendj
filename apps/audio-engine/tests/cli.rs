@@ -700,3 +700,195 @@ fn set_beatgrid_reaches_a_loaded_deck_without_reloading() {
     drop(stdin);
     assert!(child.wait().unwrap().success());
 }
+
+/// A tracked MP3 (mono, 22.05 kHz, about 3 s) from the repo's fixtures.
+fn mp3_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/phase7-dedup/src-128.mp3")
+}
+
+/// A tracked AAC clip (stereo, 44.1 kHz, about 60 s).
+fn m4a_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bench/clips-edge/am-contra-heart-peripheral-cfg-a.m4a")
+}
+
+/// A tracked mono AAC clip (22.05 kHz, about 3 s) with an edit list.
+fn m4a_mono_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/phase7-dedup/src.m4a")
+}
+
+/// Interleaved f32 samples and (rate, channels) of a float WAV `decode` wrote.
+fn read_f32_wav(p: &std::path::Path) -> (u32, u16, Vec<f32>) {
+    let b = std::fs::read(p).unwrap();
+    assert_eq!(&b[0..4], b"RIFF");
+    assert_eq!(&b[8..16], b"WAVEfmt ");
+    assert_eq!(u16::from_le_bytes([b[20], b[21]]), 3, "IEEE float");
+    let ch = u16::from_le_bytes([b[22], b[23]]);
+    let sr = u32::from_le_bytes([b[24], b[25], b[26], b[27]]);
+    assert_eq!(&b[36..40], b"data");
+    let n = u32::from_le_bytes([b[40], b[41], b[42], b[43]]) as usize;
+    assert_eq!(b.len(), 44 + n, "the data size in the header is the file's");
+    assert_eq!(u32::from_le_bytes([b[4], b[5], b[6], b[7]]) as usize, 36 + n);
+    let pcm = b[44..].chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    (sr, ch, pcm)
+}
+
+#[test]
+fn decode_writes_compressed_audio_as_a_wav_at_its_own_rate_and_channels() {
+    let d = temp_dir("cli-decode");
+    // (source, rate, channels, frames ffmpeg 6.1 decodes, the deck's frames,
+    // frames of encoder priming both trim). MP3 is gapless in both. Both
+    // apply an M4A's edit list (src/mp4edit.rs), so both start after the
+    // 1024 frames of AAC priming; at the edit's end the deck cuts exactly
+    // while `decode` keeps the straddling packet whole, as ffmpeg does.
+    let cases = [
+        (mp3_fixture(), 22050u32, 1u16, 66_150u64, 66_150u64, 0usize),
+        (m4a_fixture(), 44100, 2, 2_646_016, 2_646_000, 1024),
+        (m4a_mono_fixture(), 22050, 1, 66_560, 66_150, 1024),
+    ];
+    for (src, want_sr, want_ch, ffmpeg_frames, deck_frames, priming) in cases {
+        let out = d.join(format!("{}.wav", src.file_stem().unwrap().to_string_lossy()));
+        let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&out).output().unwrap();
+        assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+        let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(s["type"], "decode");
+        assert_eq!(s["sample_rate"], want_sr, "{}", src.display());
+        assert_eq!(s["channels"], want_ch, "{}", src.display());
+        assert_eq!(s["edit_list"], if priming > 0 { "applied" } else { "none" }, "{}", src.display());
+        assert_eq!(s["trimmed_start_frames"], priming as u64, "{}", src.display());
+        let (sr, ch, pcm) = read_f32_wav(&out);
+        assert_eq!((sr, ch), (want_sr, want_ch));
+        assert_eq!(s["frames"].as_u64().unwrap() as usize, pcm.len() / ch as usize);
+        assert_eq!(pcm.len() as u64 / u64::from(ch), ffmpeg_frames, "ffmpeg's frame count: {}", src.display());
+        // The same samples a deck decodes, streamed instead of held, from the
+        // same first frame: frame i is the deck's frame i, so neither is offset
+        // against the other or against ffmpeg. The deck's decode is stereo, so
+        // compare each frame's first channel and, for mono, the copy it makes
+        // for the right side.
+        let deck = odj_audio::decode::decode_file(&src).unwrap();
+        assert_eq!(deck.sample_rate, want_sr);
+        assert_eq!(deck.pcm.len() as u64 / 2, deck_frames, "the deck's frame count: {}", src.display());
+        for (i, (frame, (l, r))) in pcm.chunks_exact(ch as usize).zip(deck.pcm.chunks_exact(2).map(|f| (f[0], f[1]))).enumerate() {
+            assert_eq!(frame[0], l, "frame {i} of {}", src.display());
+            assert_eq!(*frame.get(1).unwrap_or(&frame[0]), r, "frame {i} of {}", src.display());
+        }
+        assert!(pcm.iter().any(|s| s.abs() > 0.01), "decoded audio, not silence");
+    }
+}
+
+#[test]
+fn decode_never_replaces_a_file_and_leaves_nothing_when_it_fails() {
+    let d = temp_dir("cli-decode-refuse");
+    // OUT naming the source itself: refused, and the source is untouched.
+    let src = d.join("src.mp3");
+    std::fs::copy(mp3_fixture(), &src).unwrap();
+    let before = std::fs::read(&src).unwrap();
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&src).output().unwrap();
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("never replaces"), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(std::fs::read(&src).unwrap(), before, "the source must be untouched");
+    // Input that is not audio: an error, and no partial OUT left behind.
+    let junk = d.join("junk.mp3");
+    std::fs::write(&junk, b"this is not an mp3").unwrap();
+    let out = d.join("junk.wav");
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&junk).arg("--out").arg(&out).output().unwrap();
+    assert!(!o.status.success());
+    assert!(!out.exists(), "a failed decode removes the OUT it created");
+    // Control: the same OUT path is written once the input is real audio.
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&src).arg("--out").arg(&out).output().unwrap();
+    assert!(o.status.success(), "stderr: {}", String::from_utf8_lossy(&o.stderr));
+    assert!(out.is_file());
+    // Missing flags are usage errors, not a panic.
+    let o = Command::new(BIN).args(["decode", "--in"]).arg(&src).output().unwrap();
+    assert_eq!(o.status.code(), Some(2));
+}
+
+/// `decode` writes the file's PCM to stdout and names what it wrote on stderr.
+#[test]
+fn decode_streams_pcm_and_a_summary() {
+    let d = temp_dir("cli-decode");
+    let wav = write_wav(&d, "a.wav", 44100, &sine(44100, 440.0, 1.0));
+    let out = Command::new(BIN).args(["decode", "--mono", "--format", "s16le"]).arg(&wav).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(out.stdout.len(), 44100 * 2, "one s16 sample per frame in mono");
+    let summary: Value = serde_json::from_str(String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap()).unwrap();
+    assert_eq!(summary, json!({"sample_rate": 44100, "channels": 1, "frames": 44100, "format": "s16le"}));
+
+    // --rate resamples to exactly round(frames * to / from) frames.
+    let out = Command::new(BIN).args(["decode", "--rate", "48000"]).arg(&wav).output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(out.stdout.len(), 48000 * 2 * 4, "stereo f32 at 48 kHz");
+
+    // Not audio: a failure with a reason, and no PCM a reader could mistake for a decode.
+    let junk = d.join("junk.mp3");
+    std::fs::write(&junk, b"not audio at all").unwrap();
+    let out = Command::new(BIN).arg("decode").arg(&junk).output().unwrap();
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+}
+
+/// `probe` reports the length the header states, without decoding.
+#[test]
+fn probe_reports_the_stated_length() {
+    let d = temp_dir("cli-probe");
+    let wav = write_wav(&d, "a.wav", 48000, &sine(48000, 440.0, 2.5));
+    let out = Command::new(BIN).arg("probe").arg(&wav).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sample_rate"], 48000);
+    assert_eq!(v["frames"], 120000);
+    assert_eq!(v["duration_s"], 2.5);
+    assert_eq!(v["source"], "header");
+}
+
+/// An AAC m4a decodes in time with the file: its encoder priming frames are
+/// trimmed by the MP4 edit list, which symphonia itself does not apply. The
+/// fixture (ffmpeg's AAC encoder, 1024 priming frames) is one second with a
+/// click at exactly 0.25 s; untrimmed, the click lands 1024 frames late.
+#[test]
+fn an_m4a_decodes_without_its_priming_frames() {
+    let m4a = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms-aac.m4a");
+    let out = Command::new(BIN).args(["decode", "--mono", m4a]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    assert_eq!(pcm.len(), 44100, "the edit's playable length, padding dropped");
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
+    assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
+
+    let out = Command::new(BIN).args(["probe", m4a]).output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["frames"], 44100);
+    assert_eq!(v["delay"], 1024);
+}
+
+/// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still
+/// opens. symphonia's probe counted the tag against its 1 MiB scan limit and
+/// gave up with "no suitable format reader found", while ffmpeg read the file.
+#[test]
+fn an_mp3_behind_a_large_id3_tag_opens() {
+    let d = temp_dir("cli-big-tag");
+    let mp3 = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms.mp3")).unwrap();
+    // One 3 MB private frame in an ID3v2.3 tag; sizes are syncsafe.
+    let payload = vec![0u8; 3_000_000];
+    let mut frame = b"PRIV".to_vec();
+    frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&[0, 0]);
+    frame.extend_from_slice(&payload);
+    let n = frame.len() as u32;
+    let mut file = b"ID3\x03\x00\x00".to_vec();
+    file.extend_from_slice(&[(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
+    file.extend_from_slice(&frame);
+    file.extend_from_slice(&mp3);
+    let tagged = d.join("tagged.mp3");
+    std::fs::write(&tagged, file).unwrap();
+
+    let out = Command::new(BIN).args(["probe"]).arg(&tagged).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sample_rate"], 44100);
+
+    let out = Command::new(BIN).args(["decode", "--mono"]).arg(&tagged).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
+    assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
+}
