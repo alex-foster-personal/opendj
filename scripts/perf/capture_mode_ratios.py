@@ -47,8 +47,8 @@ from scripts.perf.mode_ratio_engine import EngineTarget, reverify_engine_target,
 from scripts.perf.mode_ratio_rows import gig_baseline_rows as _gig_baseline_rows
 from scripts.perf.mode_ratio_rows import leak_rows as _leak_rows
 from scripts.perf.mode_ratio_rows import validate_gig_stable_ids as _validate_gig_stable_ids
+from scripts.perf.node_runtime import resolved_node
 from scripts.perf.trackify_leak_series import (
-    CHECKPOINT_INTERVAL_S,
     CHECKPOINT_SAMPLE_GAP_S,
     CHECKPOINT_SAMPLES,
     LeakSeries,
@@ -427,7 +427,7 @@ def _finish_browser_session(
 
 def _start_browser_session(frontend: str, mode: str) -> subprocess.Popen[str]:
     proc = subprocess.Popen(
-        ["node", str(_BROWSER_SCRIPT), "--frontend", frontend.rstrip("/"), "--mode", mode],
+        [resolved_node(), str(_BROWSER_SCRIPT), "--frontend", frontend.rstrip("/"), "--mode", mode],
         cwd=_FRONTEND_ROOT,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -505,13 +505,18 @@ def _append_rows_after_reverification(
     repo_root: Path = _REPO,
     *,
     engine: EngineTarget | None,
+    leak_series_out: tuple[LeakSeries, Path] | None = None,
 ) -> None:
-    """Re-run every identity gate after sampling, then append; never append on a refusal.
+    """Re-run every identity gate after sampling, then save and append; never either on a refusal.
 
     Sol P1/BLOCKING (PR #4034, discussion_r4149791234): the leak capture can
     run for an hour, so every identity gate runs again after sampling and
     before any row is appended, as capture_library_mode.py does. With an
     `engine`, the PERFMODE-14 target gate also runs with its pid pinned.
+
+    The leak series TSV is evidence too, so it is written only after the gates
+    pass (Codex P2/BLOCKING r4171071154, PR #4888): a series saved before a
+    refusal would sit under its normal name looking like a valid capture.
     """
     post_reason = _capture_identity_reason(frontend, sha, repo_root)
     if post_reason is None and engine is not None:
@@ -521,6 +526,9 @@ def _append_rows_after_reverification(
             "refusing to write rows: post-capture reverification failed (checkout or "
             f"frontend changed during the capture): {post_reason}"
         )
+    if leak_series_out is not None:
+        series, path = leak_series_out
+        series.write_tsv(path)
     append_ledger_rows(ledger, rows)
 
 
@@ -569,6 +577,7 @@ def main(argv: list[str] | None = None) -> int:
 
     meta = session_meta(sha=sha)
     rows: list[dict[str, Any]] = []
+    leak_series_out: tuple[LeakSeries, Path] | None = None
 
     if engine is not None:
         gig, trackify, gig_stable_ids = _capture_gig_then_trackify(
@@ -580,13 +589,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.leak_duration_s > 0:
         series = _capture_trackify_leak(args.frontend, args.leak_duration_s)
         if args.leak_series_out is not None:
-            series.write_tsv(args.leak_series_out)
+            leak_series_out = (series, args.leak_series_out)
         rows.extend(_leak_rows(series, meta))
 
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
-    _append_rows_after_reverification(args.ledger, rows, args.frontend, sha, engine=engine)
+    _append_rows_after_reverification(
+        args.ledger, rows, args.frontend, sha, engine=engine, leak_series_out=leak_series_out
+    )
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0
 

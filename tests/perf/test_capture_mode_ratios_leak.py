@@ -137,6 +137,17 @@ def test_the_real_helper_refuses_an_unknown_protocol_line(leak_session: subproce
         cmr._read_browser_line(leak_session, "QUIESCENT")
 
 
+@pytest.mark.timeout(300)  # a protocol line that never arrives fails here, never hangs the suite
+@pytest.mark.requirement("PERFMODE-15")
+def test_the_real_helper_refuses_to_end_a_checkpoint_without_resume(leak_session: subprocess.Popen[str]) -> None:
+    """[if] the capture sends NEXT while the deck is quiescent [then] the helper exits nonzero asking for RESUME, [else stop]."""
+    cmr._send_browser_line(leak_session, "CHECKPOINT")
+    cmr._read_browser_line(leak_session, "QUIESCENT")
+    cmr._send_browser_line(leak_session, "NEXT")
+    with pytest.raises(RuntimeError, match='expected RESUME after QUIESCENT, got "NEXT"'):
+        cmr._read_browser_line(leak_session, "RESUMED")
+
+
 # ----- real footprints at real checkpoints ------------------------------------
 
 

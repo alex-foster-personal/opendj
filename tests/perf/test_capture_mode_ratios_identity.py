@@ -32,6 +32,7 @@ from tests.perf.test_library_mode_capture_identity import (
     _disposable_git_repo,
     _git_head,
 )
+from tests.perf.test_trackify_leak_series import _series
 
 _FOUR_GIG_IDS = [f"{deck}" * 40 for deck in "abcd"]
 _GIG_SAMPLE = {
@@ -264,3 +265,48 @@ def test_rows_refused_for_a_capture_that_cannot_name_four_gig_decks(repo: Path) 
         cmr._gig_baseline_rows(
             _GIG_SAMPLE, _TRACKIFY_SAMPLE, [_FOUR_GIG_IDS[0]], session_meta(sha=_git_head(repo))
         )
+
+
+# ----- the leak series file is written only after reverification --------------
+
+
+def _leak_capture(sha: str) -> tuple[cmr.LeakSeries, list[dict[str, object]]]:
+    series = _series(lambda played: 130.0 + played / 3600.0, lambda played: 200.0)
+    return series, cmr._leak_rows(series, session_meta(sha=sha))
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_leak_series_is_saved_with_its_rows_when_identity_still_holds(
+    tmp_path: Path, repo: Path, frontend: str
+) -> None:
+    """[if] a leak capture ends with every gate still passing [then] its series file and rows are both written, [else stop]."""
+    sha = _git_head(repo)
+    ledger = _empty_ledger(tmp_path)
+    series, rows = _leak_capture(sha)
+    out = tmp_path / "series.tsv"
+    cmr._append_rows_after_reverification(ledger, rows, frontend, sha, repo, engine=None, leak_series_out=(series, out))
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("baseline\t") for line in lines) == len(series.baselines)
+    assert _ledger_entries(ledger)
+
+
+@pytest.mark.requirement("PERFMODE-15")
+def test_leak_series_is_not_saved_when_the_checkout_goes_dirty_during_sampling(
+    tmp_path: Path, repo: Path, frontend: str
+) -> None:
+    """[if] reverification refuses a leak capture [then] no series file and no row is written, [else stop].
+
+    Codex P2/BLOCKING r4171071154, PR #4888: the series was written before the
+    gate, so a refused capture still left a normally named TSV behind.
+    """
+    sha = _git_head(repo)
+    ledger = _empty_ledger(tmp_path)
+    series, rows = _leak_capture(sha)
+    out = tmp_path / "series.tsv"
+    (repo / "harness-edit.txt").write_text("edited mid-capture\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=r"post-capture reverification failed.*is DIRTY"):
+        cmr._append_rows_after_reverification(
+            ledger, rows, frontend, sha, repo, engine=None, leak_series_out=(series, out)
+        )
+    assert not out.exists()
+    assert _ledger_entries(ledger) == []

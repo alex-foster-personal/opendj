@@ -87,9 +87,26 @@ export async function openUninstrumentedPage(browser) {
 	let nextId = 0;
 	const pending = new Map();
 	const sentMethods = [];
+	// Codex P1 r4171125805, PR #4888: a target that crashes or detaches never
+	// answers its in-flight commands, and `evaluate` blocked on one would hang
+	// the capture past every timeout. Once gone, every pending and later
+	// command rejects with the reason instead.
+	let goneReason = null;
+	function _targetGone(reason) {
+		if (goneReason !== null) return;
+		goneReason = reason;
+		for (const waiter of pending.values()) waiter.reject(new Error(`${waiter.method}: ${reason}`));
+		pending.clear();
+	}
+	browserSession.on('Target.detachedFromTarget', (event) => {
+		if (event.sessionId === sessionId) _targetGone('the page target detached');
+	});
+	browser.on('disconnected', () => _targetGone('the browser disconnected'));
 	browserSession.on('Target.receivedMessageFromTarget', (event) => {
 		if (event.sessionId !== sessionId) return;
 		const message = JSON.parse(event.message);
+		if (message.method === 'Inspector.targetCrashed') return _targetGone('the page renderer crashed');
+		if (message.method === 'Inspector.detached') return _targetGone(`the page inspector detached (${message.params?.reason})`);
 		const waiter = message.id === undefined ? undefined : pending.get(message.id);
 		if (waiter === undefined) return;
 		pending.delete(message.id);
@@ -102,13 +119,23 @@ export async function openUninstrumentedPage(browser) {
 
 	async function send(method, params = {}) {
 		assertUninstrumentedMethod(method);
+		if (goneReason !== null) throw new Error(`${method}: ${goneReason}`);
 		sentMethods.push(method);
 		const id = ++nextId;
 		const result = new Promise((resolve, reject) => pending.set(id, { method, resolve, reject }));
-		await browserSession.send('Target.sendMessageToTarget', {
-			sessionId,
-			message: JSON.stringify({ id, method, params })
-		});
+		// Registered before the send so a fast reply is never missed. The caller
+		// still gets every rejection through `return result` below; this handler
+		// only stops Node from reporting a detach that lands mid-send as unhandled.
+		result.catch(() => undefined);
+		try {
+			await browserSession.send('Target.sendMessageToTarget', {
+				sessionId,
+				message: JSON.stringify({ id, method, params })
+			});
+		} catch (error) {
+			pending.delete(id);
+			throw error;
+		}
 		return result;
 	}
 

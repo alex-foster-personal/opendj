@@ -27,6 +27,7 @@ from pathlib import Path
 
 from scripts.perf.capture_build_identity import _REPO, _http_json
 from scripts.perf.capture_library_targets import _verify_capture_targets
+from scripts.perf.node_runtime import resolved_node
 
 _ENGINE_ROOT_SCRIPT = _REPO / "scripts" / "perf" / "engine_root_pid.mjs"
 _ENGINE_ROOT_TIMEOUT_S = 60
@@ -42,7 +43,7 @@ def _engine_root_pid_reason(engine: str, expected_pid: int) -> str | None:
     """None when PERFMODE-14's `engineRootPids` resolves `engine` to exactly `expected_pid`."""
     proc = subprocess.run(
         # The helper imports a .ts module; type stripping is off by default below Node 22.18.
-        ["node", "--experimental-strip-types", str(_ENGINE_ROOT_SCRIPT), engine, str(expected_pid)],
+        [resolved_node(), "--experimental-strip-types", str(_ENGINE_ROOT_SCRIPT), engine, str(expected_pid)],
         cwd=_REPO,
         capture_output=True,
         text=True,

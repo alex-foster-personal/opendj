@@ -128,3 +128,74 @@ def test_a_throwing_predicate_fails_at_once_instead_of_polling_to_timeout() -> N
     outcome = json.loads(completed.stdout.strip().splitlines()[-1])
     assert "AudioContext was not allowed to start" in outcome["message"], outcome
     assert outcome["elapsed_ms"] < 5000, outcome
+
+
+# ----- a target that goes away mid-command (Codex P1 r4171125805, PR #4888) ---
+
+_DETACH_SCRIPT = """
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const [pageModule, mode] = process.argv.slice(1);
+const { openUninstrumentedPage } = await import(pathToFileURL(pageModule).href);
+const mod = await import(pathToFileURL(createRequire(path.join(process.cwd(), 'package.json')).resolve('@playwright/test')).href);
+const browser = await (mod.default ?? mod).chromium.launch({ headless: true });
+const page = await openUninstrumentedPage(browser);
+const outcome = page.evaluate(() => new Promise(() => {})).then(
+  () => ({ settled: true, error: null }),
+  (error) => ({ settled: true, error: String(error.message) })
+);
+await new Promise((resolve) => setTimeout(resolve, 500));
+if (mode === 'crash') page.send('Page.crash').catch(() => undefined);
+else await page.close();
+const deadline = new Promise((resolve) => setTimeout(() => resolve({ settled: false, error: null }), 15000));
+const result = await Promise.race([outcome, deadline]);
+let later = null;
+try { await Promise.race([page.send('Runtime.evaluate', { expression: '1' }), deadline]); }
+catch (error) { later = String(error.message); }
+console.log(JSON.stringify({ ...result, later_error: later }));
+await browser.close();
+process.exit(0);
+"""
+
+
+def _unavailable_chromium_reason() -> str | None:
+    if shutil.which("node") is None:
+        return "UNAVAILABLE: node is not on PATH"
+    if not (_FRONTEND / "node_modules" / "@playwright" / "test").is_dir():
+        return "UNAVAILABLE: the frontend has no @playwright/test install for a real Chromium"
+    return None
+
+
+@pytest.mark.requirement("PERFMODE-15")
+@pytest.mark.parametrize(("mode", "reason"), [("crash", "renderer crashed"), ("close", "target detached")])
+def test_an_in_flight_command_rejects_when_its_target_goes_away(mode: str, reason: str) -> None:
+    """[if] the page's renderer crashes or its target closes mid-evaluate [then] that evaluate and later sends reject, never hang, [else stop].
+
+    Real headless Chromium, real crash (`Page.crash`) and real close. Before
+    the fix both cases left the evaluate pending past the 15 s deadline
+    (measured on nucbox, Sat 3 Oct 2026), so `settled` is the discriminator.
+    """
+    unavailable = _unavailable_chromium_reason()
+    if unavailable is not None:
+        pytest.skip(unavailable)
+    completed = subprocess.run(
+        [
+            _node(),
+            "--input-type=module",
+            "-e",
+            _DETACH_SCRIPT,
+            str(_REPO / "scripts" / "perf" / "uninstrumented-page.mjs"),
+            mode,
+        ],
+        cwd=_FRONTEND,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr[-2000:]
+    outcome = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert outcome["settled"] is True, outcome
+    assert reason in outcome["error"], outcome
+    assert outcome["later_error"] is not None and reason in outcome["later_error"], outcome

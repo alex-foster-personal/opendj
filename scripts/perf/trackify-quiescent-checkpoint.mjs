@@ -46,14 +46,27 @@ export async function quiesceTrackify(
 	page,
 	{ settleMs = QUIESCE_SETTLE_MS, pressureSettleMs = PRESSURE_SETTLE_MS } = {}
 ) {
-	await page.evaluate(() => {
+	// Bounded (Codex P1 r4171164376, PR #4888): turning autoplay off does not
+	// cancel a deck-1 load already in flight, and the unload queues behind it.
+	// If that load never settles, the unload must fail the checkpoint by name
+	// rather than hold the capture forever without a QUIESCENT.
+	await page.evaluate((timeoutMs) => {
 		const trackify = window.musicDjToolsTrackify;
 		const performance = window.musicDjToolsPerformance;
 		if (trackify === undefined) throw new Error('Trackify IPC is not installed');
 		if (performance === undefined) throw new Error('Performance IPC is not installed');
 		trackify.toggle_autoplay(false);
-		return performance.dispatch({ type: 'unload', deck: 1 });
-	});
+		let timer;
+		const refusal = new Promise((_, reject) => {
+			timer = setTimeout(
+				() => reject(new Error(`quiescent checkpoint invalid: deck 1 unload did not settle within ${timeoutMs} ms`)),
+				timeoutMs
+			);
+		});
+		return Promise.race([performance.dispatch({ type: 'unload', deck: 1 }), refusal]).finally(() =>
+			clearTimeout(timer)
+		);
+	}, UNLOAD_TIMEOUT_MS);
 	await page.waitForFunction(
 		() => window.musicDjToolsTrackify?.query().deck.stable_id === null,
 		undefined,
