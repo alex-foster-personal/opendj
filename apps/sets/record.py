@@ -135,6 +135,9 @@ class RecorderConfig:
     heartbeat_interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S
     capture_device_name: str = DEFAULT_DEVICE_NAME
     ffmpeg_device_idx: int | None = None
+    # The input's exact name when REC picked it by name: odj-audio opens it
+    # by that name rather than by an index that can move (SET-11).
+    capture_input_name: str | None = None
     # When True we skip the ffmpeg subprocess entirely (test mode).
     capture_disabled: bool = False
     djay_db_path: Path | None = None
@@ -210,7 +213,14 @@ class Recorder:
             self.session_dir,
             self.config.ffmpeg_device_idx,
             startup_check_s=CAPTURE_STARTUP_CHECK_S,
+            device_name=self.config.capture_input_name,
         )
+
+    def capture_state(self) -> str:
+        """``none`` without audio capture, else the capture's own state."""
+        if self._capture is None:
+            return "none"
+        return self._capture.current_state()
 
     def attach_source(self, name: str, source_obj: Any) -> None:
         """Register a deck-state source that exposes ``poll_once()``."""

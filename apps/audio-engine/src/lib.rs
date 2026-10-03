@@ -15,6 +15,7 @@ pub mod device;
 pub mod dsp;
 pub mod engine;
 pub mod midi;
+pub mod mic_permission;
 #[cfg(feature = "midi")]
 pub mod midi_in;
 pub mod mixer;

@@ -16696,6 +16696,20 @@
             "title": "Active",
             "type": "boolean"
           },
+          "capture": {
+            "description": "The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).",
+            "enum": [
+              "none",
+              "unknown",
+              "starting",
+              "waiting_permission",
+              "recording",
+              "stopped",
+              "failed"
+            ],
+            "title": "Capture",
+            "type": "string"
+          },
           "owned": {
             "title": "Owned",
             "type": "boolean"
@@ -16732,7 +16746,8 @@
           "session_id",
           "pid",
           "owned",
-          "recoverable"
+          "recoverable",
+          "capture"
         ],
         "title": "RecorderStatus",
         "type": "object"

@@ -10,12 +10,13 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::Serialize;
 
-use crate::record::SegmentWriter;
+use crate::mic_permission::{self, Permission, Waited};
+use crate::record::{discard_ring, drain_ring, SegmentWriter, StallWatch, STALL_LIMIT};
 
 /// One input as `odj-audio input-devices` lists it. `index` is its place in
 /// this listing, which `record --device-index` takes.
@@ -99,8 +100,20 @@ pub struct Stopped {
     pub dropped_samples: u64,
 }
 
+/// Errors after which the stream delivers no more audio.
+fn is_fatal(kind: cpal::ErrorKind) -> bool {
+    matches!(
+        kind,
+        cpal::ErrorKind::DeviceNotAvailable
+            | cpal::ErrorKind::StreamInvalidated
+            | cpal::ErrorKind::HostUnavailable
+            | cpal::ErrorKind::PermissionDenied
+    )
+}
+
 fn build<T>(
     device: &cpal::Device,
+    channels: usize,
     config: cpal::StreamConfig,
     mut prod: rtrb::Producer<f32>,
     dropped: Arc<AtomicU64>,
@@ -114,7 +127,9 @@ where
         .build_input_stream(
             config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
-                // Whole buffers only, so the ring always holds whole frames.
+                // Whole frames of whole buffers only, so the ring always holds
+                // whole frames: a partial frame would shift every channel after it.
+                let data = &data[..data.len() - data.len() % channels];
                 match prod.write_chunk_uninit(data.len()) {
                     Ok(chunk) => {
                         chunk.fill_from_iter(data.iter().map(|s| cpal::Sample::to_sample::<f32>(*s)));
@@ -124,37 +139,24 @@ where
                     }
                 }
             },
-            move |err| {
+            move |err: cpal::Error| {
                 eprintln!("odj-audio: input stream error: {err}");
-                failed.store(true, Ordering::Relaxed);
+                // An overrun, a reroute or a busy moment leaves the stream
+                // running; only an error that ends it ends the recording.
+                if is_fatal(err.kind()) {
+                    failed.store(true, Ordering::Relaxed);
+                }
             },
             None,
         )
         .map_err(|e| format!("cannot open the input stream: {e}"))
 }
 
-fn drain(cons: &mut rtrb::Consumer<f32>, writer: &mut SegmentWriter, channels: usize) -> Result<(), String> {
-    let n = cons.slots() - cons.slots() % channels;
-    if n == 0 {
-        return Ok(());
-    }
-    let chunk = cons.read_chunk(n).map_err(|e| e.to_string())?;
-    let (a, b) = chunk.as_slices();
-    // The ring wraps on a sample boundary that need not be a frame boundary.
-    if a.len() % channels == 0 {
-        writer.push(a).and_then(|_| writer.push(b)).map_err(|e| e.to_string())?;
-    } else {
-        let mut joined = Vec::with_capacity(n);
-        joined.extend_from_slice(a);
-        joined.extend_from_slice(b);
-        writer.push(&joined).map_err(|e| e.to_string())?;
-    }
-    chunk.commit_all();
-    Ok(())
-}
-
 /// Record `select` into `dir` until `stop` is set, then close the last
-/// segment. `on_started` runs once the stream is running. A stream error
+/// segment. On macOS, while the microphone prompt is up (`on_waiting` runs
+/// once), the silence the input delivers is discarded and nothing is written;
+/// access turned off is an error before anything opens. `on_started` runs
+/// once audio is really being recorded. A stream error that ends the stream
 /// (the input went away) ends the recording with an error, after closing
 /// what was written.
 pub fn record(
@@ -162,8 +164,13 @@ pub fn record(
     dir: &Path,
     segment_seconds: u32,
     stop: Arc<AtomicBool>,
+    on_waiting: impl FnOnce(),
     on_started: impl FnOnce(&Started),
 ) -> Result<Stopped, String> {
+    let first = mic_permission::current();
+    if first == Permission::Denied {
+        return Err(mic_permission::DENIED_MESSAGE.into());
+    }
     let (device, name) = pick(inputs()?, select)?;
     let supported = device
         .default_input_config()
@@ -178,37 +185,64 @@ pub fn record(
     let dropped = Arc::new(AtomicU64::new(0));
     let failed = Arc::new(AtomicBool::new(false));
     let (d, f) = (dropped.clone(), failed.clone());
+    let ch = source_channels as usize;
     let stream = match format {
-        cpal::SampleFormat::F32 => build::<f32>(&device, config, prod, d, f),
-        cpal::SampleFormat::F64 => build::<f64>(&device, config, prod, d, f),
-        cpal::SampleFormat::I8 => build::<i8>(&device, config, prod, d, f),
-        cpal::SampleFormat::I16 => build::<i16>(&device, config, prod, d, f),
-        cpal::SampleFormat::I32 => build::<i32>(&device, config, prod, d, f),
-        cpal::SampleFormat::U8 => build::<u8>(&device, config, prod, d, f),
-        cpal::SampleFormat::U16 => build::<u16>(&device, config, prod, d, f),
-        cpal::SampleFormat::U32 => build::<u32>(&device, config, prod, d, f),
+        cpal::SampleFormat::F32 => build::<f32>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::F64 => build::<f64>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::I8 => build::<i8>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::I16 => build::<i16>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::I32 => build::<i32>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::U8 => build::<u8>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::U16 => build::<u16>(&device, ch, config, prod, d, f),
+        cpal::SampleFormat::U32 => build::<u32>(&device, ch, config, prod, d, f),
         other => Err(format!("audio input {name:?} delivers {other:?} samples, which this build cannot record")),
     }?;
     stream.play().map_err(|e| format!("cannot start the input stream: {e}"))?;
+    if first == Permission::Undetermined {
+        on_waiting();
+    }
+    let waited = mic_permission::wait_for_grant(mic_permission::current, || {
+        discard_ring(&mut cons);
+        if failed.load(Ordering::Relaxed) {
+            return Err(format!("audio input {name:?} stopped delivering audio (disconnected?)"));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        Ok(stop.load(Ordering::Relaxed))
+    })?;
+    if waited == Waited::Stopped {
+        return Ok(Stopped { segments: Vec::new(), frames: 0, dropped_samples: 0 });
+    }
+    // What arrived before the grant is the prompt's silence, not the set.
+    discard_ring(&mut cons);
+    dropped.store(0, Ordering::Relaxed);
     let (channels, _) = writer.format();
     on_started(&Started { device: name.clone(), rate, source_channels, channels });
-    let ch = source_channels as usize;
+    let mut watch = StallWatch::new(Instant::now(), STALL_LIMIT);
     let mut result = Ok(());
     while !stop.load(Ordering::Relaxed) {
-        if let Err(e) = drain(&mut cons, &mut writer, ch) {
-            result = Err(e);
-            break;
-        }
+        let moved = match drain_ring(&mut cons, &mut writer, ch) {
+            Ok(n) => n,
+            Err(e) => {
+                result = Err(e.to_string());
+                break;
+            }
+        };
         if failed.load(Ordering::Relaxed) {
             result = Err(format!("audio input {name:?} stopped delivering audio (disconnected?)"));
             break;
         }
+        if watch.stalled(moved, Instant::now()) {
+            result = Err(format!("audio input {name:?} delivered nothing for {}s", STALL_LIMIT.as_secs()));
+            break;
+        }
         std::thread::sleep(Duration::from_millis(20));
     }
-    // No more callbacks after this; then write what they left in the ring.
+    // No more callbacks after this; then write what they left in the ring,
+    // which on a failure is still the audio before it.
     drop(stream);
+    let last = drain_ring(&mut cons, &mut writer, ch).map_err(|e| e.to_string());
     if result.is_ok() {
-        result = drain(&mut cons, &mut writer, ch);
+        result = last.map(|_| ());
     }
     let frames = writer.frames();
     let segments = writer.finish().map_err(|e| e.to_string());

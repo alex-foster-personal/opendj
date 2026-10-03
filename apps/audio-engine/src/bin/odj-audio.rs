@@ -32,7 +32,9 @@
 //! `input-devices` (build feature `device`) prints the audio inputs as one
 //! JSON line, and `record` records one of them into DIR as rolling 16-bit WAV
 //! segments named by their UTC start (`src/record.rs`), printing a JSON line
-//! when the input is running and another when it stops. It stops, closing
+//! when it is recording (`{"recording":...}`, after `{"waiting":
+//! "microphone_permission"}` while macOS's first-run prompt is up) and another
+//! when it stops. It stops, closing
 //! the last segment, when stdin reaches end of file or reads `stop`. This is
 //! how REC records a set in the installed app, which ships no ffmpeg
 //! (`docs/decisions/*-set-recording-without-ffmpeg.md`).
@@ -803,10 +805,20 @@ fn record_cmd(args: Args) -> Result<(), String> {
     };
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     stop_on_stdin(stop.clone());
-    let stopped = record(&select, &a.dir, a.segment_seconds, stop, |started| {
-        println!("{}", json!({ "recording": started }));
-        let _ = io::stdout().flush();
-    })?;
+    let stopped = record(
+        &select,
+        &a.dir,
+        a.segment_seconds,
+        stop,
+        || {
+            println!("{}", json!({ "waiting": "microphone_permission" }));
+            let _ = io::stdout().flush();
+        },
+        |started| {
+            println!("{}", json!({ "recording": started }));
+            let _ = io::stdout().flush();
+        },
+    )?;
     if stopped.dropped_samples > 0 {
         eprintln!("odj-audio: dropped {} samples the writer could not keep up with", stopped.dropped_samples);
     }

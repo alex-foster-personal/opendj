@@ -31,7 +31,8 @@
 		session_id: null,
 		pid: null,
 		owned: false,
-		recoverable: false
+		recoverable: false,
+		capture: 'none'
 	});
 	let sessions = $state<SessionSummary[]>([]);
 	let selected = $state<SessionView | null>(null);

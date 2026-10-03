@@ -9,12 +9,21 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 from collections.abc import Callable, Mapping
+from typing import IO
 from pathlib import Path
 
 from apps.shared.odj_audio_binary import BIN_ENV, OdjAudioUnavailable, find_binary
 
-from .capture_types import CaptureBackend, CaptureUnavailable, InputDevice, is_loopback_name
+from .capture_types import (
+    CaptureBackend,
+    CaptureState,
+    CaptureStateName,
+    CaptureUnavailable,
+    InputDevice,
+    is_loopback_name,
+)
 
 LIST_DEVICES_TIMEOUT_S = 10.0
 VERSION_PROBE_TIMEOUT_S = 10.0
@@ -102,22 +111,58 @@ def _parse_odj_audio_devices(stdout: str) -> list[InputDevice] | None:
         return None
 
 
-def build_record_argv(exe: str, device_idx: int, output_dir: Path, *, segment_time_s: int) -> list[str]:
-    """The odj-audio argv for rolling WAV capture of input ``device_idx``.
+def build_record_argv(
+    exe: str,
+    device_idx: int,
+    output_dir: Path,
+    *,
+    segment_time_s: int,
+    device_name: str | None = None,
+) -> list[str]:
+    """The odj-audio argv for rolling WAV capture of one input.
 
-    The index is a place in ``odj-audio input-devices``, the listing
-    :func:`list_input_devices` returns on this backend.
+    By exact ``device_name`` when known, so an input plugged in between the
+    listing and the start cannot move REC onto another one; else by
+    ``device_idx``, a place in ``odj-audio input-devices``.
     """
-    return [
-        exe,
-        "record",
-        "--dir",
-        str(output_dir),
-        "--device-index",
-        str(device_idx),
-        "--segment-seconds",
-        str(segment_time_s),
-    ]
+    pick = ["--device", device_name] if device_name else ["--device-index", str(device_idx)]
+    return [exe, "record", "--dir", str(output_dir), *pick, "--segment-seconds", str(segment_time_s)]
+
+
+_STATE_OF_LINE: dict[str, CaptureStateName] = {
+    "waiting": "waiting_permission",
+    "recording": "recording",
+    "stopped": "stopped",
+}
+
+
+def follow_record_output(stdout: IO[bytes], log_fh: IO[bytes], state: CaptureState) -> threading.Thread:
+    """Read ``odj-audio record``'s JSON lines into ``state``, copying them to the log.
+
+    ``{"waiting": ...}`` is the macOS microphone prompt, ``{"recording": ...}``
+    audio being written, ``{"stopped": ...}`` a clean stop. Output ending any
+    other way is a failed capture.
+    """
+
+    def _run() -> None:
+        for raw in stdout:
+            if not log_fh.closed:
+                log_fh.write(raw)
+            try:
+                line = json.loads(raw)
+            except ValueError:
+                continue
+            if isinstance(line, dict):
+                for key, value in _STATE_OF_LINE.items():
+                    if key in line:
+                        state.set(value)
+        if state.value != "stopped":
+            state.set("failed")
+
+    thread = threading.Thread(target=_run, name="odj-audio-record-output", daemon=True)
+    thread.start()
+    state.reader = thread
+    return thread
 
 
 def stop_odj_audio(proc: subprocess.Popen, timeout: float) -> int:
@@ -137,4 +182,10 @@ def stop_odj_audio(proc: subprocess.Popen, timeout: float) -> int:
     return int(proc.returncode or 0)
 
 
-__all__ = ["build_record_argv", "list_odj_audio_inputs", "odj_audio_backend", "stop_odj_audio"]
+__all__ = [
+    "build_record_argv",
+    "follow_record_output",
+    "list_odj_audio_inputs",
+    "odj_audio_backend",
+    "stop_odj_audio",
+]

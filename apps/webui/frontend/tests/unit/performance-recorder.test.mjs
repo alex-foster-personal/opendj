@@ -124,3 +124,30 @@ test('the live performance rail opens the in-app input picker instead of window.
 	assert.match(recordInputPicker, /listRecorderDevices\(\)/);
 	assert.match(recordInputPicker, /Tracklist only \(no audio\)/);
 });
+
+test('REC lights only once audio is written, not while the macOS microphone prompt is up', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
+	const waiting = recorder.recordRailState({ ...base, capture: 'waiting_permission' });
+	assert.equal(waiting.recording, false);
+	assert.equal(waiting.waiting, true);
+	assert.equal(waiting.poll, true);
+	assert.match(waiting.tip, /Waiting for microphone permission/);
+	assert.equal(recorder.recordRailState({ ...base, capture: 'starting' }).recording, false);
+	const failed = recorder.recordRailState({ ...base, capture: 'failed' });
+	assert.equal(failed.recording, false);
+	assert.equal(failed.poll, false);
+	assert.match(failed.tip, /stopped recording/);
+	// Controls: audio being written, and a tracklist-only recording, light REC.
+	for (const capture of ['recording', 'none', 'unknown']) {
+		const state = recorder.recordRailState({ ...base, capture });
+		assert.deepEqual([state.recording, state.waiting, state.tip], [true, false, null], capture);
+	}
+	assert.equal(recorder.recordRailState({ ...base, active: false, capture: 'none' }).recording, false);
+});
+
+test('the rail lights REC from the capture state and polls while it is waiting', () => {
+	assert.match(performanceRecorderRail, /recording=\{rail\.recording\}/);
+	assert.match(performanceRecorderRail, /recordingWaiting=\{rail\.waiting\}/);
+	assert.match(performanceRecorderRail, /if \(!rail\.poll\) return;/);
+	assert.match(iconRail, /class:waiting=\{isRecord && recordingWaiting\}/);
+});

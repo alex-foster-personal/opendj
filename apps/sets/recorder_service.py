@@ -65,6 +65,7 @@ class RecorderService:
                     "pid": os.getpid(),
                     "owned": True,
                     "recoverable": False,
+                    "capture": self._recorder.capture_state(),
                 }
             external = record_mod.status(
                 sets_root=self.sets_root,
@@ -78,6 +79,8 @@ class RecorderService:
             "recoverable": bool(
                 external["active"] and not _pid_is_running(int(external["pid"]))
             ),
+            # Another process owns that recording; its capture is not visible here.
+            "capture": "unknown" if external["active"] else "none",
         }
 
     def start(
@@ -124,6 +127,7 @@ class RecorderService:
                 sources=sources,
                 capture_device_name=device_label,
                 ffmpeg_device_idx=device_idx,
+                capture_input_name=device_name,
                 capture_disabled=not (self.capture_enabled and capture_audio),
             )
             recorder: record_mod.Recorder | None = None
@@ -154,6 +158,7 @@ class RecorderService:
                 "pid": os.getpid(),
                 "owned": True,
                 "recoverable": False,
+                "capture": recorder.capture_state(),
             }
 
     def _resolve_input(
@@ -287,6 +292,7 @@ class RecorderService:
             "pid": None,
             "owned": False,
             "recoverable": False,
+            "capture": "none",
         }
 
     def recover_stale(self, session_id: str, expected_pid: int) -> dict[str, Any]:
@@ -317,6 +323,7 @@ class RecorderService:
             "pid": None,
             "owned": False,
             "recoverable": False,
+            "capture": "none",
         }
 
     def stop_owned_on_shutdown(self) -> None:

@@ -46,11 +46,18 @@ from pathlib import Path
 
 from apps.shared.ffmpeg import FfmpegUnavailable, resolve_ffmpeg_including_homebrew
 
-from .capture_odj_audio import build_record_argv, list_odj_audio_inputs, odj_audio_backend, stop_odj_audio
+from .capture_odj_audio import (
+    build_record_argv,
+    follow_record_output,
+    list_odj_audio_inputs,
+    odj_audio_backend,
+    stop_odj_audio,
+)
 from .capture_types import (
     LOOPBACK_NAME_HINTS,
     CaptureBackend,
     CaptureHandle,
+    CaptureState,
     CaptureUnavailable,
     InputDevice,
     is_loopback_name,
@@ -315,6 +322,7 @@ def start_capture(
     ffmpeg: str | None = None,
     startup_check_s: float = 0.0,
     backend: CaptureBackend | None = None,
+    device_name: str | None = None,
 ) -> CaptureHandle:
     """Spawn the capture process; return a :class:`CaptureHandle`.
 
@@ -325,6 +333,8 @@ def start_capture(
 
     With ``startup_check_s`` > 0 the process must still be running after
     that long, else :class:`CaptureUnavailable` carries its stderr tail.
+    ``device_name``, when the input was picked by name, is what odj-audio
+    opens (exactly that name), so ``device_idx`` cannot have moved under it.
     """
     session_dir.mkdir(parents=True, exist_ok=True)
     chosen = (
@@ -334,7 +344,10 @@ def start_capture(
     )
     popen_cls = popen if popen is not None else subprocess.Popen
     if chosen.kind == "odj-audio":
-        return _start_odj_audio(chosen.exe, session_dir, device_idx, segment_time_s, popen_cls, startup_check_s)
+        argv = build_record_argv(
+            chosen.exe, device_idx, session_dir, segment_time_s=segment_time_s, device_name=device_name
+        )
+        return _start_odj_audio(argv, session_dir, popen_cls, startup_check_s)
     argv = build_segment_argv(
         device_idx,
         session_dir,
@@ -366,24 +379,27 @@ def start_capture(
 
 
 def _start_odj_audio(
-    exe: str,
+    argv: list[str],
     session_dir: Path,
-    device_idx: int,
-    segment_time_s: int,
     popen_cls: type[subprocess.Popen],
     startup_check_s: float,
 ) -> CaptureHandle:
-    argv = build_record_argv(exe, device_idx, session_dir, segment_time_s=segment_time_s)
     stderr_log = session_dir / "odj-audio.stderr.log"
     log_fh = stderr_log.open("ab", buffering=0)
     try:
         # stdin is the stop signal: closing it (or this process dying) ends
         # the recording and closes the last segment with its final sizes.
-        proc = popen_cls(argv, stdin=subprocess.PIPE, stdout=log_fh, stderr=log_fh)
+        # stdout carries its state lines (SET-11), read into the handle.
+        proc = popen_cls(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log_fh)
     except Exception:
         log_fh.close()
         raise
-    handle = CaptureHandle(proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh, backend="odj-audio")
+    state = CaptureState("starting")
+    handle = CaptureHandle(
+        proc=proc, argv=argv, stderr_log=stderr_log, log_fh=log_fh, backend="odj-audio", state=state
+    )
+    if proc.stdout is not None:
+        follow_record_output(proc.stdout, log_fh, state)
     if startup_check_s > 0:
         _require_running(handle, startup_check_s)
     return handle
@@ -398,7 +414,7 @@ def _require_running(handle: CaptureHandle, window_s: float) -> None:
     code = handle.proc.poll()
     if code is None:
         return
-    handle.log_fh.close()
+    _release(handle)
     try:
         tail = " | ".join(handle.stderr_log.read_text(errors="replace").strip().splitlines()[-3:])
     except OSError:
@@ -433,8 +449,22 @@ def stop_capture(handle: CaptureHandle, *, timeout: float = 10.0) -> int:
             proc.wait(timeout=2.0)
         return int(proc.returncode or 0)
     finally:
-        if handle.log_fh and not handle.log_fh.closed:
-            handle.log_fh.close()
+        _release(handle)
+
+
+def _release(handle: CaptureHandle) -> None:
+    """Close what the parent holds of an ended capture: its stdin pipe, then
+    its log once the output reader has copied the last line into it."""
+    stdin = getattr(handle.proc, "stdin", None)
+    if stdin is not None and not stdin.closed:
+        try:
+            stdin.close()
+        except OSError:
+            pass  # the child is gone; nothing left to tell it
+    if handle.state.reader is not None:
+        handle.state.reader.join(timeout=2.0)
+    if handle.log_fh and not handle.log_fh.closed:
+        handle.log_fh.close()
 
 
 # ---------------------------------------------------------------------------

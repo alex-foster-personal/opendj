@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Literal
 
@@ -33,13 +34,37 @@ class InputDevice:
     loopback: bool
 
 
+#: Where a capture is, as REC shows it. ``waiting_permission``: macOS's
+#: first-run microphone prompt is up and nothing is being written (SET-11).
+CaptureStateName = Literal["starting", "waiting_permission", "recording", "stopped", "failed"]
+
+
+class CaptureState:
+    """The capture's state, set by the thread reading its output."""
+
+    def __init__(self, value: CaptureStateName) -> None:
+        self._lock = threading.Lock()
+        self._value: CaptureStateName = value
+        self.reader: threading.Thread | None = None
+
+    @property
+    def value(self) -> CaptureStateName:
+        with self._lock:
+            return self._value
+
+    def set(self, value: CaptureStateName) -> None:
+        with self._lock:
+            self._value = value
+
+
 @dataclass(frozen=True)
 class CaptureHandle:
     """Live handle returned by :func:`start_capture`.
 
     Stores the ``Popen`` plus the capture argv (so tests can assert on
     it), the resolved stderr log path, the open log file handle so it
-    can be closed in :func:`stop_capture`, and which backend runs it.
+    can be closed in :func:`stop_capture`, which backend runs it, and its
+    state (ffmpeg reports none, so it counts as recording once running).
     """
 
     proc: subprocess.Popen
@@ -47,6 +72,14 @@ class CaptureHandle:
     stderr_log: Path
     log_fh: IO[bytes]
     backend: Literal["odj-audio", "ffmpeg"] = "ffmpeg"
+    state: CaptureState = field(default_factory=lambda: CaptureState("recording"))
+
+    def current_state(self) -> CaptureStateName:
+        """The state, or ``failed`` once the process is gone without stopping."""
+        value = self.state.value
+        if value != "stopped" and self.proc.poll() is not None:
+            return "failed"
+        return value
 
 
 def is_loopback_name(name: str) -> bool:
@@ -58,6 +91,8 @@ __all__ = [
     "LOOPBACK_NAME_HINTS",
     "CaptureBackend",
     "CaptureHandle",
+    "CaptureState",
+    "CaptureStateName",
     "CaptureUnavailable",
     "InputDevice",
     "is_loopback_name",

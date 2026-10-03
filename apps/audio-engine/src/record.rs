@@ -15,11 +15,22 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// The longest segment `record` accepts: an hour of 16-bit stereo at 192 kHz
 /// is about 2.6 GiB, inside a WAV file's 4 GiB.
 pub const MAX_SEGMENT_SECONDS: u32 = 3600;
+
+/// How many later seconds a segment name may move to when its own is taken
+/// (REC restarted on a session within the same second, or a writer catching
+/// up through two short segments in one second). The file there is never
+/// touched; past this the recording fails rather than guess.
+pub const NAME_TRIES: u64 = 5;
+
+/// How long the input may deliver nothing before the recording counts it as
+/// gone: a device that vanishes without an error otherwise leaves a live
+/// process writing nothing.
+pub const STALL_LIMIT: Duration = Duration::from_secs(5);
 
 /// `audio_YYYY-MM-DDTHH-MM-SS.wav` for a time `secs` after the Unix epoch, in
 /// UTC (proleptic Gregorian, days from Howard Hinnant's civil_from_days).
@@ -142,13 +153,21 @@ impl SegmentWriter {
 
     fn open_next(&mut self) -> io::Result<Open> {
         let secs = (self.clock)().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let name = segment_name(secs);
-        let path = self.dir.join(&name);
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|e| io::Error::new(e.kind(), format!("cannot create {}: {e} (recording never replaces a file)", path.display())))?;
+        let mut tried = 0;
+        let (name, file) = loop {
+            let name = segment_name(secs + tried);
+            let path = self.dir.join(&name);
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(f) => break (name, f),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists && tried + 1 < NAME_TRIES => tried += 1,
+                Err(e) => {
+                    return Err(io::Error::new(
+                        e.kind(),
+                        format!("cannot create {}: {e} (recording never replaces a file)", path.display()),
+                    ))
+                }
+            }
+        };
         let mut w = BufWriter::new(file);
         write_pcm16_header(&mut w, self.channels, self.rate, 0)?;
         self.segments.push(name);
@@ -203,6 +222,61 @@ impl SegmentWriter {
     }
 }
 
+/// Move whole frames from the capture ring into `writer`: every sample in
+/// it, less a trailing partial frame still being written. The ring wraps on
+/// a sample boundary, which need not be a frame boundary. Returns the samples
+/// moved.
+pub fn drain_ring(cons: &mut rtrb::Consumer<f32>, writer: &mut SegmentWriter, channels: usize) -> io::Result<usize> {
+    let n = cons.slots() - cons.slots() % channels;
+    if n == 0 {
+        return Ok(0);
+    }
+    let chunk = cons.read_chunk(n).map_err(|e| io::Error::other(e.to_string()))?;
+    let (a, b) = chunk.as_slices();
+    if a.len() % channels == 0 {
+        writer.push(a)?;
+        writer.push(b)?;
+    } else {
+        let mut joined = Vec::with_capacity(n);
+        joined.extend_from_slice(a);
+        joined.extend_from_slice(b);
+        writer.push(&joined)?;
+    }
+    chunk.commit_all();
+    Ok(n)
+}
+
+/// Throw away what the ring holds: the silence an input delivers while the
+/// microphone permission is still being asked for.
+pub fn discard_ring(cons: &mut rtrb::Consumer<f32>) {
+    let n = cons.slots();
+    if let Ok(chunk) = cons.read_chunk(n) {
+        chunk.commit_all();
+    }
+}
+
+/// Notices an input that stops delivering without reporting an error.
+pub struct StallWatch {
+    last: Instant,
+    limit: Duration,
+}
+
+impl StallWatch {
+    pub fn new(now: Instant, limit: Duration) -> Self {
+        Self { last: now, limit }
+    }
+
+    /// Record a drain of `samples` at `now`; true when the input has
+    /// delivered nothing for longer than the limit.
+    pub fn stalled(&mut self, samples: usize, now: Instant) -> bool {
+        if samples > 0 {
+            self.last = now;
+            return false;
+        }
+        now.duration_since(self.last) > self.limit
+    }
+}
+
 /// Rewrite the RIFF and data sizes for what has been written so far.
 fn patch(o: &mut Open, channels: u16) -> io::Result<()> {
     let data = o.frames * u64::from(channels) * 2;
@@ -223,8 +297,6 @@ fn patch(o: &mut Open, channels: u16) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::time::Duration;
 
     /// A clock that starts at `secs` and moves `step` seconds per reading.
     fn at_step(secs: u64, step: u64) -> impl FnMut() -> SystemTime + Send + 'static {
@@ -325,7 +397,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let existing = tmp.path().join(segment_name(50));
         std::fs::write(&existing, b"keep me").unwrap();
-        let mut w = SegmentWriter::new(tmp.path(), 2, 4, 1, at(50)).unwrap();
+        // A taken name moves to the next free second; the file is untouched.
+        let mut w = SegmentWriter::new(tmp.path(), 2, 4, 1, at_step(50, 0)).unwrap();
+        w.push(&[0.0; 2]).unwrap();
+        assert_eq!(w.finish().unwrap(), [segment_name(51)]);
+        assert_eq!(std::fs::read(&existing).unwrap(), b"keep me");
+        // With every nearby second taken, it fails rather than overwrite.
+        for s in 52..50 + NAME_TRIES {
+            std::fs::write(tmp.path().join(segment_name(s)), b"keep me").unwrap();
+        }
+        let mut w = SegmentWriter::new(tmp.path(), 2, 4, 1, at_step(50, 0)).unwrap();
         let err = w.push(&[0.0; 2]).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(std::fs::read(&existing).unwrap(), b"keep me");
@@ -345,5 +426,42 @@ mod tests {
         assert!(SegmentWriter::new(tmp.path(), 2, 48000, MAX_SEGMENT_SECONDS + 1, at(0)).is_err());
         assert!(SegmentWriter::new(&tmp.path().join("missing"), 2, 48000, 300, at(0)).is_err());
         assert!(SegmentWriter::new(tmp.path(), 2, 48000, MAX_SEGMENT_SECONDS, at(0)).is_ok());
+    }
+
+    #[test]
+    fn the_ring_drains_whole_frames_even_when_it_wraps_mid_frame() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut w = SegmentWriter::new(tmp.path(), 2, 8, 10, at(70)).unwrap();
+        // Capacity 5 samples: after 4 written and drained, the next 4 wrap
+        // with one sample before the end and three after it.
+        let (mut prod, mut cons) = rtrb::RingBuffer::<f32>::new(5);
+        for v in [0.1, 0.2, 0.3, 0.4] {
+            prod.push(v).unwrap();
+        }
+        assert_eq!(drain_ring(&mut cons, &mut w, 2).unwrap(), 4);
+        for v in [0.5, 0.6, 0.7] {
+            prod.push(v).unwrap();
+        }
+        // A partial frame waits for its other half.
+        assert_eq!(drain_ring(&mut cons, &mut w, 2).unwrap(), 2);
+        prod.push(0.8).unwrap();
+        assert_eq!(drain_ring(&mut cons, &mut w, 2).unwrap(), 2);
+        assert_eq!(drain_ring(&mut cons, &mut w, 2).unwrap(), 0);
+        let name = w.finish().unwrap().remove(0);
+        let b = std::fs::read(tmp.path().join(name)).unwrap();
+        let got: Vec<i16> = b[44..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        let want: Vec<i16> = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].iter().map(|s| to_i16(*s)).collect();
+        assert_eq!(got, want, "every sample in order, channels never shifted");
+    }
+
+    #[test]
+    fn an_input_that_goes_quiet_past_the_limit_is_stalled() {
+        let t0 = Instant::now();
+        let mut watch = StallWatch::new(t0, Duration::from_secs(5));
+        assert!(!watch.stalled(0, t0 + Duration::from_secs(4)));
+        // Audio arriving resets the clock.
+        assert!(!watch.stalled(512, t0 + Duration::from_secs(4)));
+        assert!(!watch.stalled(0, t0 + Duration::from_secs(9)));
+        assert!(watch.stalled(0, t0 + Duration::from_millis(9_001)));
     }
 }

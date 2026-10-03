@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -184,93 +186,134 @@ def test_a_real_empty_odj_audio_listing_is_an_empty_list():
 # ---------------------------------------------------------------------------
 
 
-class _Stdin:
-    def __init__(self) -> None:
-        self.closed = False
+# A stand-in for `odj-audio record` run as a real process, so the pipe
+# contract (state lines on stdout, stop on stdin EOF) is what is tested. It
+# is a Python file named `record`, run as `python record ...` from its own
+# directory, which works on every OS. `mode` picks its behavior.
+_STUB = """
+import json, pathlib, sys, time
+here = pathlib.Path(__file__).resolve().parent
+(here / "argv.json").write_text(json.dumps(sys.argv[1:]))
+mode = (here / "mode").read_text()
+if mode == "denied":
+    print("odj-audio: microphone access for Open DJ is off", file=sys.stderr)
+    sys.exit(2)
+if mode == "prompt":
+    print(json.dumps({"waiting": "microphone_permission"}), flush=True)
+    while not (here / "granted").exists():
+        time.sleep(0.02)
+print(json.dumps({"recording": {"device": "BlackHole 2ch"}}), flush=True)
+if mode == "deaf":
+    time.sleep(60)
+for line in sys.stdin:
+    if line.strip() == "stop":
+        break
+if mode == "dies":
+    sys.exit(1)
+print(json.dumps({"stopped": {"segments": [], "frames": 0, "dropped_samples": 0}}), flush=True)
+"""
 
-    def close(self) -> None:
-        self.closed = True
+
+@pytest.fixture
+def stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    home = tmp_path / "stub"
+    home.mkdir()
+    (home / "record").write_text(_STUB)
+    monkeypatch.chdir(home)
+
+    def make(mode: str) -> capture.CaptureBackend:
+        (home / "mode").write_text(mode)
+        return capture.CaptureBackend("odj-audio", sys.executable)
+
+    make.home = home  # type: ignore[attr-defined]
+    return make
 
 
-class _RecordPopen:
-    """Exits as soon as its stdin closes, as `odj-audio record` does."""
+def _wait_for(predicate: Any, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
 
+
+def test_odj_audio_records_by_name_and_stops_when_stdin_closes(tmp_path: Path, stub: Any):
+    """[if] REC starts on odj-audio by name [then] it opens that exact name and stops on stdin EOF."""
+    session = tmp_path / "session"
+    handle = capture.start_capture(
+        session, 1, backend=stub("ok"), segment_time_s=300, device_name="BlackHole 2ch", startup_check_s=0.3
+    )
+    assert handle.backend == "odj-audio"
+    assert handle.stderr_log == session / "odj-audio.stderr.log"
+    assert _wait_for(lambda: handle.current_state() == "recording")
+    assert capture.stop_capture(handle) == 0
+    assert handle.current_state() == "stopped"
+    assert handle.log_fh.closed and handle.proc.stdin is not None and handle.proc.stdin.closed
+    argv = json.loads((stub.home / "argv.json").read_text())
+    assert argv == ["--dir", str(session), "--device", "BlackHole 2ch", "--segment-seconds", "300"]
+    log = handle.stderr_log.read_text()
+    assert '"recording"' in log and '"stopped"' in log
+
+
+def test_odj_audio_without_a_name_records_the_index():
+    """Control: a scripted start by index passes the index."""
+    argv = capture.build_record_argv("/x/odj-audio", 4, Path("/s"), segment_time_s=60)
+    assert argv[argv.index("--device-index") + 1] == "4" and "--device" not in argv
+
+
+def test_rec_waits_while_the_macos_microphone_prompt_is_up(tmp_path: Path, stub: Any):
+    """[if] macOS is still asking for the microphone [then] the state is waiting, not recording,
+    until the grant (Silver lost 42 s to a REC that looked live during the prompt)."""
+    handle = capture.start_capture(tmp_path / "s", 1, backend=stub("prompt"), startup_check_s=0.3)
+    assert _wait_for(lambda: handle.current_state() == "waiting_permission")
+    time.sleep(0.2)
+    assert handle.current_state() == "waiting_permission"
+    (stub.home / "granted").write_text("")
+    assert _wait_for(lambda: handle.current_state() == "recording")
+    assert capture.stop_capture(handle) == 0
+
+
+def test_a_capture_that_dies_reads_failed(tmp_path: Path, stub: Any):
+    """[if] odj-audio exits without its stopped line [then] REC shows the capture failed."""
+    handle = capture.start_capture(tmp_path / "s", 1, backend=stub("dies"), startup_check_s=0.3)
+    assert _wait_for(lambda: handle.current_state() == "recording")
+    assert capture.stop_capture(handle) == 1
+    assert handle.current_state() == "failed"
+
+
+def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, stub: Any):
+    """[if] closing stdin does not end it [then] stop still returns, by kill."""
+    handle = capture.start_capture(tmp_path / "s", 1, backend=stub("deaf"), startup_check_s=0.3)
+    assert _wait_for(lambda: handle.current_state() == "recording")
+    assert capture.stop_capture(handle, timeout=0.2) != 0
+    assert handle.proc.poll() is not None
+    assert handle.log_fh.closed
+
+
+def test_microphone_access_turned_off_refuses_rec_with_the_reason(tmp_path: Path, stub: Any):
+    """[if] odj-audio refuses at start (access off) [then] REC fails with its message, pipes closed."""
+    with pytest.raises(capture.CaptureUnavailable) as exc:
+        capture.start_capture(tmp_path / "s", 1, backend=stub("denied"), startup_check_s=1.0)
+    assert "odj-audio stopped" in str(exc.value) and "microphone access" in str(exc.value)
+
+
+class _FfmpegPopen:
     def __init__(self, argv: list[str], **kwargs: Any) -> None:
         self.argv = argv
-        self.kwargs = kwargs
-        self.stdin = _Stdin()
         self.returncode: int | None = None
-        self.killed = False
 
     def poll(self) -> int | None:
         return self.returncode
-
-    def wait(self, timeout: float | None = None) -> int:
-        if self.stdin.closed or self.killed:
-            self.returncode = 0 if not self.killed else -9
-            return self.returncode
-        raise subprocess.TimeoutExpired(self.argv, timeout or 0)
-
-    def kill(self) -> None:
-        self.killed = True
-
-    def send_signal(self, sig: int) -> None:
-        raise AssertionError("odj-audio is stopped through stdin, not a signal")
-
-
-class _DeafPopen(_RecordPopen):
-    """Ignores stdin closing: only a kill ends it."""
-
-    def wait(self, timeout: float | None = None) -> int:
-        if self.killed:
-            self.returncode = -9
-            return self.returncode
-        raise subprocess.TimeoutExpired(self.argv, timeout or 0)
-
-
-def test_odj_audio_records_the_picked_index_and_stops_when_stdin_closes(tmp_path: Path):
-    """[if] REC starts on odj-audio [then] it records index N into the session dir until stdin closes."""
-    handle = capture.start_capture(tmp_path, 1, popen=cast(Any, _RecordPopen), backend=ODJ, segment_time_s=300)
-    proc = cast(_RecordPopen, handle.proc)
-    assert handle.argv == [
-        "/app/bin/odj-audio", "record", "--dir", str(tmp_path), "--device-index", "1", "--segment-seconds", "300",
-    ]
-    assert proc.kwargs["stdin"] == subprocess.PIPE
-    assert handle.backend == "odj-audio"
-    assert handle.stderr_log == tmp_path / "odj-audio.stderr.log"
-    assert capture.stop_capture(handle) == 0
-    assert proc.stdin.closed and not proc.killed
-    assert handle.log_fh.closed
-
-
-def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path):
-    """[if] closing stdin does not end it [then] stop still returns, by kill."""
-    handle = capture.start_capture(tmp_path, 1, popen=cast(Any, _DeafPopen), backend=ODJ)
-    assert capture.stop_capture(handle, timeout=0.01) == -9
-    assert cast(_DeafPopen, handle.proc).killed
-    assert handle.log_fh.closed
-
-
-def test_an_odj_audio_that_dies_at_start_is_reported_with_its_stderr(tmp_path: Path):
-    """[if] odj-audio exits in the startup window [then] REC refuses with its own message."""
-
-    class _Refused(_RecordPopen):
-        def __init__(self, argv: list[str], **kwargs: Any) -> None:
-            super().__init__(argv, **kwargs)
-            kwargs["stderr"].write(b'odj-audio: audio input "BlackHole 2ch" is not connected\n')
-            self.returncode = 2
-
-    with pytest.raises(capture.CaptureUnavailable) as exc:
-        capture.start_capture(tmp_path, 1, popen=cast(Any, _Refused), backend=ODJ, startup_check_s=0.1)
-    assert "odj-audio stopped" in str(exc.value) and "not connected" in str(exc.value)
 
 
 def test_a_pinned_ffmpeg_still_records_mp3_through_avfoundation(tmp_path: Path):
     """Control: the ffmpeg backend is unchanged when it is the one picked."""
     handle = capture.start_capture(
-        tmp_path, 2, popen=cast(Any, _RecordPopen), backend=capture.CaptureBackend("ffmpeg", "/usr/bin/ffmpeg")
+        tmp_path, 2, popen=cast(Any, _FfmpegPopen), backend=capture.CaptureBackend("ffmpeg", "/usr/bin/ffmpeg")
     )
     assert handle.backend == "ffmpeg"
+    assert handle.current_state() == "recording"
     assert handle.argv[0] == "/usr/bin/ffmpeg" and handle.argv[handle.argv.index("-i") + 1] == ":2"
     assert handle.argv[-1].endswith(".mp3")
     handle.log_fh.close()

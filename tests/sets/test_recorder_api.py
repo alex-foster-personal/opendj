@@ -45,6 +45,7 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
 
     assert started.status_code == 201
     assert started.json()["active"] is True
+    assert started.json()["capture"] == "none"
     assert duplicate.status_code == 409
     assert stopped.json() == {
         "active": False,
@@ -52,6 +53,7 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
         "pid": None,
         "owned": False,
         "recoverable": False,
+        "capture": "none",
     }
     session_dir = service.sets_root / session_id
     assert not (session_dir / "recorder.pid").exists()

@@ -12659,6 +12659,12 @@ export interface components {
         RecorderStatus: {
             /** Active */
             active: boolean;
+            /**
+             * Capture
+             * @description The audio capture of the recording: none (not recording, or tracklist only), unknown (owned by another process), waiting_permission (macOS's microphone prompt is up and nothing is written yet), recording, or failed (SET-11).
+             * @enum {string}
+             */
+            capture: "none" | "unknown" | "starting" | "waiting_permission" | "recording" | "stopped" | "failed";
             /** Owned */
             owned: boolean;
             /** Pid */

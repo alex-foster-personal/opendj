@@ -197,6 +197,15 @@ class RecorderStatus(BaseModel):
     pid: int | None
     owned: bool
     recoverable: bool
+    capture: Literal[
+        "none", "unknown", "starting", "waiting_permission", "recording", "stopped", "failed"
+    ] = Field(
+        description=(
+            "The audio capture of the recording: none (not recording, or tracklist only), "
+            "unknown (owned by another process), waiting_permission (macOS's microphone "
+            "prompt is up and nothing is written yet), recording, or failed (SET-11)."
+        )
+    )
 
 
 class RecorderRecoveryRequest(BaseModel):
