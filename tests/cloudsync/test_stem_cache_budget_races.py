@@ -456,12 +456,11 @@ def test_a_stale_hydrate_pin_is_removed_and_does_not_block_eviction(tmp_path: Pa
     Overshoot control: a pin that never expired would make a bundle
     unevictable forever after one crash.
     """
-    from apps.cloud.stem_bundles import HYDRATE_PIN_TTL_S, hydrate_pin_path, pin_for_hydrate
+    from apps.cloud.stem_bundles import HYDRATE_PIN_TTL_S, pin_for_hydrate
 
     stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
     index = {"crashed": make_bundle(stems_dir, "crashed", atime=100.0)}
-    pin_for_hydrate(stems_dir / "crashed")
-    pin = hydrate_pin_path(stems_dir / "crashed")
+    pin = pin_for_hydrate(stems_dir / "crashed")
     old = pin.stat().st_mtime - HYDRATE_PIN_TTL_S - 1
     os.utime(pin, (old, old))
 
@@ -469,6 +468,26 @@ def test_a_stale_hydrate_pin_is_removed_and_does_not_block_eviction(tmp_path: Pa
 
     assert report.evicted_stable_ids == ("crashed",)
     assert not pin.exists()
+
+
+@pytest.mark.requirement("STEM-42")
+def test_a_second_hydrate_of_the_same_id_never_drops_the_first_one_s_pin(tmp_path: Path):
+    """[if] two processes hydrate one id and the second finds it already local [then] the first one's pin stays, [else stop].
+
+    MUTATION TARGET: share one pin file per id and the second hydrate's
+    cleanup unpins the first, leaving its publish window open to eviction.
+    """
+    from apps.cloud.stem_bundles import is_hydrate_pinned, pin_for_hydrate, unpin_hydrate
+
+    bundle_dir = tmp_path / "stems" / "shared"
+    bundle_dir.parent.mkdir(parents=True)
+    first = pin_for_hydrate(bundle_dir)
+    second = pin_for_hydrate(bundle_dir)
+    unpin_hydrate(second)  # the second process gives up: already local
+
+    assert is_hydrate_pinned(bundle_dir)
+    unpin_hydrate(first)
+    assert not is_hydrate_pinned(bundle_dir), "control: the owner's own unpin releases it"
 
 
 class _CopySource:
@@ -495,7 +514,7 @@ def test_a_timer_pass_landing_between_publish_and_verify_keeps_the_hydrate(tmp_p
     a hydration failure.
     """
     from apps.cloud import stem_hydration
-    from apps.cloud.stem_bundles import hydrate_pin_path
+    from apps.cloud.stem_bundles import hydrate_pins
 
     remote, stems_dir, data_dir = tmp_path / "remote", tmp_path / "stems", tmp_path / "data"
     index = {"fresh": make_bundle(remote, "fresh", atime=100.0)}
@@ -517,7 +536,7 @@ def test_a_timer_pass_landing_between_publish_and_verify_keeps_the_hydrate(tmp_p
     assert timer_reports[0].evicted_stable_ids == ()
     assert outcome.status == "hydrated", outcome.reason
     assert (stems_dir / "fresh").is_dir()
-    assert not hydrate_pin_path(stems_dir / "fresh").exists(), "a drain hydrate leaves it evictable"
+    assert hydrate_pins(stems_dir / "fresh") == [], "a drain hydrate leaves it evictable"
     assert "fresh" not in stem_hydration.OPEN_DECKS.open_ids()
 
 
@@ -529,7 +548,7 @@ def test_a_deck_load_hydrate_hands_the_bundle_to_the_served_registry(tmp_path: P
     and the bundle is unprotected between this call and the deck's next poll.
     """
     from apps.cloud import stem_hydration
-    from apps.cloud.stem_bundles import hydrate_pin_path
+    from apps.cloud.stem_bundles import hydrate_pins
 
     remote, stems_dir, data_dir = tmp_path / "remote", tmp_path / "stems", tmp_path / "data"
     index = {"for-deck": make_bundle(remote, "for-deck", atime=100.0)}
@@ -545,7 +564,7 @@ def test_a_deck_load_hydrate_hands_the_bundle_to_the_served_registry(tmp_path: P
         stem_hydration.OPEN_DECKS = original
     assert outcome.status == "hydrated", outcome.reason
     assert "for-deck" in registry.open_ids()
-    assert not hydrate_pin_path(stems_dir / "for-deck").exists()
+    assert hydrate_pins(stems_dir / "for-deck") == []
 
 
 @pytest.mark.requirement("STEM-40")

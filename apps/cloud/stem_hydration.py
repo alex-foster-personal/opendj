@@ -39,7 +39,6 @@ Two entry points:
 
 from __future__ import annotations
 
-import contextlib
 import json
 import shutil
 import tempfile
@@ -286,6 +285,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             tempfile.mkdtemp(dir=root, prefix=f"{stable_id}{stem_cache_budget.IN_FLIGHT_MARKER}")
         )
         renamed = False
+        pin: Path | None = None
         try:
             total = source.fetch_bundle_files(
                 stable_id=stable_id,
@@ -294,15 +294,16 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
             )
             # Pin BEFORE publishing: an eviction pass in any process may scan
             # the bundle the moment the rename lands, before the verify below
-            # and before any deck registry names it.
-            pin_for_hydrate(bundle_dir)
+            # and before any deck registry names it. The pin is this call's
+            # own file, so another process's hydrate of this id cannot drop it.
+            pin = pin_for_hydrate(bundle_dir)
             if bundle_dir.exists():
                 # Cross-process race: something else already published a
                 # valid bundle while we were fetching. Keep the winner,
                 # discard our own copy rather than clobbering it.
                 if _is_local(stable_id, root):
                     shutil.rmtree(tmp_dir, ignore_errors=True)
-                    unpin_hydrate(bundle_dir)
+                    unpin_hydrate(pin)
                     return HydrationOutcome(stable_id, "already_local")
                 shutil.rmtree(bundle_dir)
             bundle_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -314,7 +315,7 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 shutil.rmtree(bundle_dir, ignore_errors=True)
             else:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-            unpin_hydrate(bundle_dir)
+            unpin_hydrate(pin)
             status = (
                 "hub_error"
                 if hub_transport_failure_kind(exc) is not None
@@ -337,27 +338,28 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
                 # Fetch failed before publish: remove only OUR OWN temp
                 # dir, never bundle_dir (which we never touched).
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-            unpin_hydrate(bundle_dir)
+            unpin_hydrate(pin)
             return HydrationOutcome(stable_id, "error", reason=str(exc))
 
     # A hydrate just succeeded, so this machine can demonstrably get an
     # evicted bundle back: that is what ``can_rehydrate`` asserts.
-    stem_cache_budget.enforce(
-        root,
-        data_dir=data_dir,
-        index=index,
-        protected=OPEN_DECKS.open_ids() | {stable_id},
-        can_rehydrate=True,
-        # Give back only what this hydrate took. A deck is waiting on this
-        # call, and confirming a bundle against R2 means hashing it; the
-        # engine timer clears any larger backlog off the request path.
-        max_evict_bytes=total,
-        live_protected=lambda: OPEN_DECKS.open_ids() | {stable_id},
-    )
-    if hand_off_to_deck:
-        OPEN_DECKS.mark_served(stable_id)
-    with contextlib.suppress(OSError):  # a leftover pin only delays eviction until it expires
-        unpin_hydrate(bundle_dir)
+    try:
+        stem_cache_budget.enforce(
+            root,
+            data_dir=data_dir,
+            index=index,
+            protected=OPEN_DECKS.open_ids() | {stable_id},
+            can_rehydrate=True,
+            # Give back only what this hydrate took. A deck is waiting on this
+            # call, and confirming a bundle against R2 means hashing it; the
+            # engine timer clears any larger backlog off the request path.
+            max_evict_bytes=total,
+            live_protected=lambda: OPEN_DECKS.open_ids() | {stable_id},
+        )
+        if hand_off_to_deck:
+            OPEN_DECKS.mark_served(stable_id)
+    finally:
+        unpin_hydrate(pin)
     return HydrationOutcome(stable_id, "hydrated", bytes_fetched=total)
 
 
