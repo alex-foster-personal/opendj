@@ -32,6 +32,7 @@ def chromium_unavailable_reason() -> str | None:
     node = shutil.which("node")
     if node is None:
         return "UNAVAILABLE: node is not on PATH"
+    node = str(Path(node).resolve())
     probe = subprocess.run(
         [node, "--input-type=module", "-e", _LAUNCH_PROBE],
         cwd=FRONTEND,
