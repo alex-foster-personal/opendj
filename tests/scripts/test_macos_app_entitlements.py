@@ -28,6 +28,7 @@ Single-line acceptance checks, in the repo's "if X then broken" shape:
 from __future__ import annotations
 
 import json
+import os
 import plistlib
 import shutil
 import subprocess
@@ -59,7 +60,10 @@ def _app(tmp_path: Path, entitlements: dict[str, bool] | None) -> Path:
     macos = app / "Contents/MacOS"
     macos.mkdir(parents=True)
     exe = macos / "opendj-desktop"
-    shutil.copy2(shutil.which("true") or "", exe)
+    # copyfile, not copy2: copy2 also copies the system file's restricted
+    # flag, and macOS refuses that with "Operation not permitted".
+    shutil.copyfile(shutil.which("true") or "", exe)
+    os.chmod(exe, 0o755)
     (app / "Contents/Info.plist").write_bytes(
         plistlib.dumps({"CFBundleExecutable": exe.name, "CFBundleIdentifier": "dev.opendj.test-entitlements"})
     )
