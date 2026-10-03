@@ -1,0 +1,29 @@
+[
+  {
+    "name": "rbox",
+    "version": "0.1.7",
+    "license": "GNU General Public License v3 (GPLv3)",
+    "texts": [],
+    "skipped_pyobjctest": [],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "pyobjc-core",
+    "version": "12.2.2",
+    "license": "MIT",
+    "texts": [],
+    "skipped_pyobjctest": [
+      "PyObjCTest/copying.cpython-311-darwin.so.dSYM/Contents/Resources/Relocations/aarch64/copying.cpython-311-darwin.so.yml",
+      "PyObjCTest/copying.cpython-311-darwin.so.dSYM/Contents/Resources/Relocations/x86_64/copying.cpython-311-darwin.so.yml"
+    ],
+    "site": "/Users/dev/code/music-dj-tools/.venv/lib/python3.11/site-packages"
+  },
+  {
+    "name": "antlr4-python3-runtime",
+    "version": "4.9.3",
+    "license": "BSD",
+    "texts": [],
+    "skipped_pyobjctest": [],
+    "site": "/tmp/pylib-license-5189"
+  }
+]
