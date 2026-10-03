@@ -14,7 +14,7 @@ from scripts.release_semver import parse_semver, read_configured_version
 def release_tag(version: str) -> str:
     """Use the independent app namespace with the configured SemVer intact."""
     parse_semver(version, source="shipping app version")
-    if version != version.strip() or version.startswith("v"):
+    if version != version.strip() or version.startswith(("v", "app-v")):
         raise ValueError("shipping app version must be an unprefixed SemVer")
     return f"app-v{version}"
 

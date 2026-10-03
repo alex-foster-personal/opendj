@@ -42,7 +42,7 @@ def test_asset_url_encodes_metadata_and_names() -> None:
     )
 
 
-@pytest.mark.parametrize("version", ["v1.0.0", " 1.0.0", "1.0.0 ", "1.0", "garbage"])
+@pytest.mark.parametrize("version", ["app-v1.0.0", "v1.0.0", " 1.0.0", "1.0.0 ", "1.0", "garbage"])
 def test_prefixed_or_invalid_config_versions_fail_explicitly(version: str) -> None:
     with pytest.raises(ValueError):
         release_tag(version)
