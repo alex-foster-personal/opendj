@@ -50,7 +50,33 @@ const svelteComponentStubs = {
  * one place (for example, once per child process spawned) can esbuild it
  * once and reuse the text, rather than paying a full compile per use.
  */
-export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias = {}, dev = false } = {}) {
+/**
+ * Modules a test wants to fail to load, as a browser does when a lazy chunk
+ * cannot be fetched. Each import whose path matches one of `failImports`
+ * resolves to a module that throws on evaluation, so a dynamic import() of it
+ * rejects with that TypeError.
+ */
+function failingImports(patterns) {
+	return {
+		name: 'failing-imports',
+		setup(build) {
+			for (const filter of patterns) {
+				build.onResolve({ filter }, (args) => ({ path: args.path, namespace: 'failing-import' }));
+			}
+			build.onLoad({ filter: /.*/, namespace: 'failing-import' }, (args) => ({
+				contents: `throw new TypeError(${JSON.stringify(
+					`Failed to fetch dynamically imported module: ${args.path}`
+				)});`,
+				loader: 'js'
+			}));
+		}
+	};
+}
+
+export async function bundleTypeScriptModule(
+	relativePath,
+	{ viteApiBase, alias = {}, dev = false, failImports = [] } = {}
+) {
 	const absolutePath = fileURLToPath(new URL(`../../${relativePath}`, import.meta.url));
 	const result = await build({
 		entryPoints: [absolutePath],
@@ -66,7 +92,7 @@ export async function bundleTypeScriptModule(relativePath, { viteApiBase, alias 
 		format: 'esm',
 		logLevel: 'silent',
 		platform: 'node',
-		plugins: [viteUrlSuffixPlugin, svelteComponentStubs],
+		plugins: [failingImports(failImports), viteUrlSuffixPlugin, svelteComponentStubs],
 		target: 'node20',
 		write: false
 	});

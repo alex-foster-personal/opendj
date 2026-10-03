@@ -34,12 +34,29 @@ BOOT_ID = "test-boot-cloudsync14"
 
 
 def free_port() -> int:
+    """A port nothing is bound to right now. Only for URLs that must find NOTHING
+    listening: the port is released on return, so a server started on it races every
+    other process picking a port in that window. Servers use `bound_loopback`.
+    """
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return int(probe.getsockname()[1])
 
 
-def start_hanging_listener(*, port: int) -> tuple[socket.socket, threading.Thread]:
+def bound_loopback() -> tuple[socket.socket, int]:
+    """A socket already bound to an OS-chosen loopback port, plus that port.
+
+    A server handed this socket (uvicorn ``sockets=[...]``) serves on a port no
+    other process can take in between. `free_port` released the port before the
+    server bound it, and main push CI run 37119163338 lost that race: the real
+    engine died with "address already in use" on 127.0.0.1:45673.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    return sock, int(sock.getsockname()[1])
+
+
+def start_hanging_listener() -> tuple[socket.socket, threading.Thread, int]:
     """A bare TCP listener that accepts a connection and then answers nothing,
     ever (Codex review, PR #3831, P1/BLOCKING, replacing a hand-rolled FastAPI
     ``/api/v1/health`` stub whose handler just ``await``ed a sleep).
@@ -52,9 +69,7 @@ def start_hanging_listener(*, port: int) -> tuple[socket.socket, threading.Threa
     stage is ever reached in the test that uses this, so nothing here needs
     to claim to BE the engine's health endpoint at all.
     """
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", port))
+    listener, port = bound_loopback()
     listener.listen(1)
 
     def _accept_and_hang() -> None:
@@ -79,7 +94,7 @@ def start_hanging_listener(*, port: int) -> tuple[socket.socket, threading.Threa
 
     thread = threading.Thread(target=_accept_and_hang, name="hanging-listener", daemon=True)
     thread.start()
-    return listener, thread
+    return listener, thread, port
 
 
 def start_path_delaying_proxy(
@@ -170,7 +185,7 @@ def write_lock(data_dir: Path, *, port: int, host: str = "127.0.0.1") -> None:
 
 
 def boot_real_engine(
-    data_dir: Path, monkeypatch: pytest.MonkeyPatch, *, port: int
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch, *, listener: socket.socket
 ) -> tuple[FastAPI, uvicorn.Server, Any, EngineLock]:
     """Boot ``apps.engine_core.app.create_app`` -- the ACTUAL production
     engine, not a hand-rolled stand-in (Codex review, PR #3831,
@@ -185,9 +200,13 @@ def boot_real_engine(
     lifecycle -- not routes a test author re-typed by hand, which can
     silently agree with the client even when the real thing differs.
 
+    ``listener`` comes from `bound_loopback`: the engine serves on that
+    already-bound socket, so no other process can take its port first.
+
     Returns ``(app, server, thread, lock)``; the caller owns tearing all four
     down (``server.should_exit = True``, join the thread, ``lock.release()``).
     """
+    port = int(listener.getsockname()[1])
     monkeypatch.setenv("MDT_DATA_DIR", str(data_dir))
     monkeypatch.setenv("MDT_LIBRARY_MODE", "local")
     monkeypatch.setenv("MUSIC_DJ_BACKEND_PORT", str(port))
@@ -197,5 +216,5 @@ def boot_real_engine(
     lock.acquire()
     app = create_app(EngineConfig(data_dir=data_dir, port=port), lock=lock)
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server, thread = start_uvicorn_in_thread(config, what="the real engine")
+    server, thread = start_uvicorn_in_thread(config, what="the real engine", sockets=[listener])
     return app, server, thread, lock

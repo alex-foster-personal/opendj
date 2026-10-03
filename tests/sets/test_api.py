@@ -268,6 +268,17 @@ def test_api_relabel_rejects_unknown_class(api_test_client):
     assert resp.status_code == 400
 
 
+@pytest.mark.requirement("SET-11")
+def test_api_audio_serves_an_odj_audio_wav_segment_as_wav(api_test_client):
+    """[if] the segment came from odj-audio's capture [then] it is served as audio/wav."""
+    client, sets_root = api_test_client
+    sess = _seed_api_session(sets_root, private=True)
+    (sess / "audio_2026-04-17T21-35-00.wav").write_bytes(b"RIFF" + b"\x00" * 40)
+    resp = client.get("/api/sets/s1/audio/audio_2026-04-17T21-35-00.wav")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "audio/wav"
+
+
 @pytest.mark.requirement("SET-03")
 def test_api_audio_allowed_on_localhost_when_private(api_test_client):
     client, sets_root = api_test_client

@@ -6,7 +6,6 @@ import struct
 import wave
 from pathlib import Path
 
-import pytest
 
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder
@@ -14,7 +13,7 @@ from apps.shared.state.writer import StateWriter
 
 
 def _write_wav(path: Path, seconds: float = 0.05) -> Path:
-    """A real, playable wav. Not a stub: mutagen has to be able to read it."""
+    """A real, playable wav. Not a stub: the tag reader has to be able to read it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     frames = int(44100 * seconds)
     with wave.open(str(path), "w") as handle:
@@ -108,11 +107,10 @@ def test_valid_untagged_wav_imports_without_rejection(tmp_path: Path) -> None:
     assert report.tracks_inserted == 1
 
 
-@pytest.mark.requires_mutagen
-def test_folder_import_rejects_corrupt_wav_with_mutagen_installed(
+def test_folder_import_rejects_corrupt_wav_with_tag_reader_installed(
     tmp_path: Path,
 ) -> None:
-    """[if] mutagen present [then] corrupt fixtures still rejected [else stop]."""
+    """[if] tag reader present [then] corrupt fixtures still rejected [else stop]."""
     root = tmp_path / "fixtures"
     root.mkdir()
     _build_corrupt_fixture_dir(root)

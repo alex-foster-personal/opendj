@@ -16,6 +16,8 @@ import {
 export const TRACKIFY_LOAD_SKIP_DEADLINE_MS = 2000;
 
 export const TRACKIFY_DECK_ID = 1 as const;
+/** ANLZ cache entries Trackify keeps: its one deck's track (PERFMODE-15). */
+export const TRACKIFY_ANLZ_ENTRY_CAP = 1;
 
 export type TrackifyDeckSnap = Pick<
 	AutoPlayDeckSnap,

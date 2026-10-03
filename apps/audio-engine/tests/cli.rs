@@ -860,6 +860,66 @@ fn an_m4a_decodes_without_its_priming_frames() {
     assert_eq!(v["delay"], 1024);
 }
 
+/// An AAC m4a with no edit list, only iTunes gapless metadata, also decodes
+/// in time: Apple's encoders commonly write just the `iTunSMPB` tag, and with
+/// nothing reading it those files played 2112 frames (47.9 ms) late. The
+/// fixture is the same one-second click encoded by ffmpeg with
+/// `-use_editlist 0`, then tagged with an `iTunSMPB` stating its 1024 priming
+/// frames and 44100-frame length, so the tag is the only thing that can trim it.
+#[test]
+fn an_m4a_with_only_an_itunes_gapless_tag_decodes_without_its_priming() {
+    let m4a = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/audio/click-250ms-aac-itunsmpb.m4a");
+    let raw = std::fs::read(m4a).unwrap();
+    assert!(!raw.windows(4).any(|w| w == b"elst"), "the fixture must have no edit list");
+    assert!(raw.windows(8).any(|w| w == b"iTunSMPB"), "the fixture must carry the gapless tag");
+    let out = Command::new(BIN).args(["decode", "--mono", m4a]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    assert_eq!(pcm.len(), 44100, "the tag's original length, padding dropped");
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
+    assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
+
+    let out = Command::new(BIN).args(["probe", m4a]).output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["frames"], 44100);
+    assert_eq!(v["delay"], 1024);
+
+    // The streaming `decode --in/--out` (stems, vocals) cuts at the tag's
+    // exact length too, rather than keeping the straddling packet whole as
+    // it does for an edit list.
+    let d = temp_dir("cli-itunsmpb");
+    let wav = d.join("out.wav");
+    let o = Command::new(BIN).args(["decode", "--in", m4a, "--out"]).arg(&wav).output().unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!((s["edit_list"].as_str(), s["trimmed_start_frames"].as_u64()), (Some("applied"), Some(1024)));
+    let (_, ch, pcm) = read_f32_wav(&wav);
+    assert_eq!(pcm.len() / ch as usize, 44100, "the tag's exact length, straddling packet cut");
+    let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap() / ch as usize;
+    assert!((11025..11040).contains(&peak), "click at frame {peak}, expected 11025 (0.25 s)");
+
+    // A stale tag whose delay (0xF000 = 61440) outlasts the stream (45
+    // packets, 46080 frames) is ignored by both paths, which decode untrimmed rather
+    // than fail or go silent.
+    let stale_bytes = {
+        let i = raw.windows(8).position(|w| w == b"00000400").unwrap();
+        let mut b = raw.clone();
+        b[i..i + 8].copy_from_slice(b"0000F000");
+        b
+    };
+    let stale = d.join("stale.m4a");
+    std::fs::write(&stale, stale_bytes).unwrap();
+    let wav = d.join("stale.wav");
+    let o = Command::new(BIN).arg("decode").arg("--in").arg(&stale).arg("--out").arg(&wav).output().unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let s: Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!((s["edit_list"].as_str(), s["trimmed_start_frames"].as_u64()), (Some("none"), Some(0)));
+    let (_, ch, pcm) = read_f32_wav(&wav);
+    assert_eq!(pcm.len() / ch as usize, 46080, "every decoded frame, untrimmed");
+    let deck = odj_audio::decode::decode_file(&stale).unwrap();
+    assert_eq!(deck.pcm.len() / 2, 46080, "the deck ignores the same edit");
+}
+
 /// An MP3 behind a large ID3v2 tag (several MB of embedded artwork) still
 /// opens. symphonia's probe counted the tag against its 1 MiB scan limit and
 /// gave up with "no suitable format reader found", while ffmpeg read the file.
@@ -891,4 +951,28 @@ fn an_mp3_behind_a_large_id3_tag_opens() {
     let pcm: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
     let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
     assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
+}
+
+#[test]
+fn version_says_whether_this_build_can_record_and_record_refuses_cleanly_without_it() {
+    // The sets recorder reads `capture` before choosing odj-audio over
+    // ffmpeg, so it must match the build.
+    let out = Command::new(BIN).arg("version").output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["capture"], serde_json::Value::Bool(cfg!(feature = "device")), "{v}");
+    if cfg!(feature = "device") {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    for args in [&["input-devices"][..], &["record", "--dir", tmp.path().to_str().unwrap(), "--device-index", "0"]] {
+        let out = Command::new(BIN).args(args).output().unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("rebuild with --features device"), "{args:?}: {err}");
+    }
+    assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0, "nothing written");
+    // A bad command line is named before the missing feature.
+    let out = Command::new(BIN).args(["record", "--dir", "d"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("exactly one of --device"));
 }

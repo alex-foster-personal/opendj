@@ -96,7 +96,7 @@ _VENV_PATH = re.compile(r"(?i)(?:^|/)[^/\s]*venv[^/\s]*/bin/")
 
 WAVEFORM_JOB = "periodic-checks.yml:perf-bench-waveform-render"
 WAVEFORM_STEP = "Install waveform native extension"
-HOSTED_JOB = "periodic-checks.yml:duplicate-writer"
+HOSTED_JOB = "periodic-checks.yml:preview-drift"
 
 
 # ---------------------------------------------------------------------------

@@ -276,6 +276,40 @@ def test_restore_play_orders_includes_entries(
         conn.close()
 
 
+@pytest.mark.requirement("PAIR-04")
+def test_restore_pairings_from_backup_taken_before_snapshot_json(
+    machine_data_dir: Path, tmp_path: Path
+) -> None:
+    """[if] a backup's pairings table predates snapshot_json [then] it still restores, [else stop]."""
+    backup = backup_state_db(machine_data_dir, tmp_path / "backups", keep=3)
+    old = sqlite3.connect(backup.path)
+    try:
+        old.execute("ALTER TABLE pairings DROP COLUMN snapshot_json")
+        old.commit()
+        cols = [row[1] for row in old.execute("PRAGMA table_info(pairings)")]
+    finally:
+        old.close()
+    assert "snapshot_json" not in cols
+    live = sab.state_db_path(machine_data_dir)
+    conn = sqlite3.connect(live)
+    try:
+        conn.execute("DELETE FROM pairings")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert restore_tables(backup.path, machine_data_dir, ["pairings"]) == ["pairings"]
+
+    conn = sqlite3.connect(live)
+    try:
+        rows = conn.execute(
+            "SELECT from_stable_id, to_stable_id, direction, snapshot_json FROM pairings"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows == [("track-a", "track-b", "into", None)]
+
+
 @pytest.mark.requirement("LIBM-113")
 def test_restore_track_fields_notes_tags_only(
     machine_data_dir: Path, tmp_path: Path

@@ -97,24 +97,36 @@ def _prepare_date_value(value: Any) -> Any:
     return value
 
 
-def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
-    base = (
-        "tracks.stable_id IN (SELECT to_stable_id FROM pairings "
-        "WHERE direction IN ('into','either') AND from_stable_id"
+def _paired_with_subquery(anchor_sql: str) -> str:
+    """Tracks the anchor pairs into, whichever way round the edge is stored.
+
+    ``(anchor, x, into|either)`` and ``(x, anchor, out_of|either)`` are the
+    same pairing, matching ``rank_stage2``.
+    """
+    return (
+        "SELECT to_stable_id FROM pairings "
+        f"WHERE direction IN ('into','either') AND from_stable_id {anchor_sql} "
+        "UNION SELECT from_stable_id FROM pairings "
+        f"WHERE direction IN ('out_of','either') AND to_stable_id {anchor_sql}"
     )
+
+
+def _compile_paired_with(op: str, value: Any) -> tuple[str, list[Any]]:
     if op == "=":
-        return base + " = ?)", [value]
+        return f"tracks.stable_id IN ({_paired_with_subquery('= ?')})", [value, value]
     if op == "!=":
         return (
-            "tracks.stable_id NOT IN (SELECT to_stable_id FROM pairings "
-            "WHERE direction IN ('into','either') AND from_stable_id = ?)",
-            [value],
+            f"tracks.stable_id NOT IN ({_paired_with_subquery('= ?')})",
+            [value, value],
         )
     if op == "in":
         if not value:
             return "0", []
         placeholders = ", ".join("?" for _ in value)
-        return base + f" IN ({placeholders}))", list(value)
+        return (
+            f"tracks.stable_id IN ({_paired_with_subquery(f'IN ({placeholders})')})",
+            [*value, *value],
+        )
     raise SmartlistRuleError(
         f"paired_with: only = / != / in supported; got {op!r}"
     )

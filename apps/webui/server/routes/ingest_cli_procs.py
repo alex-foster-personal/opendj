@@ -59,15 +59,18 @@ def reopen() -> None:
 def register(proc: subprocess.Popen[str]) -> bool:
     """Track a running CLI until :func:`unregister` or :func:`stop_all`.
 
-    After :func:`stop_all` the CLI is stopped at once instead, with its
-    descendants and within :data:`STOP_ALL_MAX_S`, and this returns False.
+    After :func:`stop_all` the CLI is killed at once instead, with its
+    descendants, and this returns False. It gets no SIGTERM grace: this runs
+    in the job's own thread after :func:`stop_all` has returned, so nothing
+    in the shutdown waits on it, and the interpreter can exit mid-grace
+    before the SIGKILL rung, leaving a CLI that ignores SIGTERM behind.
     """
     with _lock:
         if not _closed.is_set():
             _procs.add(proc)
             return True
-    log.warning("pipeline CLI pid %d started after shutdown began; stopping it", proc.pid)
-    _stop([proc])
+    log.warning("pipeline CLI pid %d started after shutdown began; killing it", proc.pid)
+    _kill([proc])
     return False
 
 
@@ -105,6 +108,12 @@ def _stop(running: list[subprocess.Popen[str]]) -> None:
     alive = _wait(running, descendants, STOP_GRACE_S)
     _signal(running, alive, kill=True)
     _wait(running, alive, KILL_WAIT_S)
+
+
+def _kill(running: list[subprocess.Popen[str]]) -> None:
+    descendants = [member for proc in running for member in _descendants(proc)]
+    _signal(running, descendants, kill=True)
+    _wait(running, descendants, KILL_WAIT_S)
 
 
 def _signal(
