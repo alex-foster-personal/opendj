@@ -9,6 +9,9 @@ with no way back.
 from __future__ import annotations
 
 import hashlib
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -157,3 +160,55 @@ def test_the_outer_swap_carries_the_original_files_metadata(
     assert [(src, live) for src, _dst, live in calls] == [(flac_fixture, True)]
     assert calls[0][1].parent == flac_fixture.parent and calls[0][1] != flac_fixture
     assert wt._read_current_tags(flac_fixture)["INITIALKEY"] == "8A"
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_a_rollback_carries_the_live_files_metadata(
+    flac_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] a failed write restores the snapshot [then] the live file's ACL and xattrs are copied onto the restored copy first, [else stop].
+
+    The snapshot is a ``copy2`` copy, which keeps no ACL on macOS.
+    MUTATION TARGET: drop ``copy_extended_metadata`` in ``_restore_from_snapshot``.
+    """
+    snapshot = tmp_path / "snap.flac"
+    snapshot.write_bytes(flac_fixture.read_bytes())
+    calls: list[tuple[Path, bool]] = []
+    monkeypatch.setattr(
+        wt, "copy_extended_metadata", lambda src, dst: calls.append((Path(src), Path(dst).exists()))
+    )
+    wt._restore_from_snapshot(snapshot, flac_fixture)
+    assert calls == [(flac_fixture, True)]
+
+
+def _user_xattrs_supported(path: Path) -> bool:
+    try:
+        getattr(os, "setxattr")(path, "user.opendj.probe", b"1")
+        getattr(os, "removexattr")(path, "user.opendj.probe")
+    except (AttributeError, OSError):
+        return False
+    return True
+
+
+@pytest.mark.requirement("TAGIO-02")
+def test_the_reversal_script_keeps_the_live_files_xattrs(
+    flac_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """[if] the standalone reversal script restores the snapshot [then] the live file's xattrs survive, [else stop].
+
+    MUTATION TARGET: drop ``keep_metadata`` from the generated script.
+    """
+    if not _user_xattrs_supported(flac_fixture):
+        pytest.skip("this filesystem has no user xattrs to keep")
+    monkeypatch.setattr(wt, "BACKUP_ROOT", tmp_path / "tb")
+    monkeypatch.setattr(wt, "REVERSAL_ROOT", tmp_path / "rv")
+    monkeypatch.setattr(wt, "FILE_BACKUP_ROOT", tmp_path / "fb")
+    delta = wt.TagDelta(
+        path=flac_fixture, stable_id="rev-xattr",
+        old=wt._read_current_tags(flac_fixture), new=wt._build_new_tags(_rec("rev-xattr")),
+    )
+    s = wt.apply_writes([delta], live=True, bulk=False)
+    getattr(os, "setxattr")(flac_fixture, "user.opendj.tag", b"kept")  # set after the snapshot
+    r = subprocess.run([sys.executable, str(s.reversal_scripts[0])], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert getattr(os, "getxattr")(flac_fixture, "user.opendj.tag") == b"kept"

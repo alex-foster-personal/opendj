@@ -75,6 +75,7 @@ from apps.cloud.stem_bundles import (
     claim_and_remove,
     index_gap,
     scan_bundles,
+    sweep_abandoned_claims,
     unconfirmed_reason,
 )
 from apps.cloud.stem_cache_settings import (
@@ -288,7 +289,13 @@ def _measure_cache_position(
     data_dir: Path,
     settings: StemCacheSettings | None,
     disk: DiskUsage | None,
+    *,
+    sweep: bool = False,
 ) -> _CachePosition:
+    """``sweep`` (writing passes only) first finishes removing claims a failed
+    ``rmtree`` left behind: scans skip them, so their bytes are otherwise lost."""
+    if sweep:
+        sweep_abandoned_claims(stems_dir)
     resolved = settings if settings is not None else load_settings(data_dir)
     usage = disk if disk is not None else measure_disk(stems_dir)
     bundles = scan_bundles(stems_dir)
@@ -407,7 +414,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     ``live_protected`` (``OPEN_DECKS.open_ids``) is asked again just before
     each removal, so a bundle a deck opened during the pass is kept.
     """
-    position = _measure_cache_position(stems_dir, data_dir, settings, disk)
+    position = _measure_cache_position(stems_dir, data_dir, settings, disk, sweep=not dry_run)
     bundles, usage = position.bundles, position.usage
     need = position.over_budget_bytes
     if max_evict_bytes is not None:

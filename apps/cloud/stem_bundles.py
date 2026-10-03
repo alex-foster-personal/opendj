@@ -13,6 +13,7 @@ import json
 import os
 import secrets
 import shutil
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,9 +70,20 @@ def scan_bundles(stems_dir: Path) -> list[LocalBundle]:
             or EVICTING_MARKER in child.name
         ):
             continue
-        size, newest_atime = 0, 0.0
-        names: set[str] = set()
-        stamps: list[tuple[str, int, int]] = []
+        bundle = _scan_one(child)
+        if bundle is not None:
+            bundles.append(bundle)
+    bundles.sort(key=lambda bundle: (bundle.newest_atime, bundle.stable_id))
+    return bundles
+
+
+def _scan_one(child: Path) -> LocalBundle | None:
+    """One bundle's size, recency and fingerprint, or None when a concurrent
+    eviction (or re-render) removed it, or one of its files, mid-scan."""
+    size, newest_atime = 0, 0.0
+    names: set[str] = set()
+    stamps: list[tuple[str, int, int]] = []
+    try:
         for file_path in child.rglob("*"):
             if file_path.is_file():
                 stat_result = file_path.stat()
@@ -80,12 +92,45 @@ def scan_bundles(stems_dir: Path) -> list[LocalBundle]:
                 name = file_path.relative_to(child).as_posix()
                 names.add(name)
                 stamps.append((name, stat_result.st_size, stat_result.st_mtime_ns))
-        fingerprint = hashlib.sha256(json.dumps(sorted(stamps)).encode("utf-8")).hexdigest()
-        bundles.append(
-            LocalBundle(child.name, child, size, newest_atime, frozenset(names), fingerprint)
-        )
-    bundles.sort(key=lambda bundle: (bundle.newest_atime, bundle.stable_id))
-    return bundles
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    if not names and not child.is_dir():
+        return None
+    fingerprint = hashlib.sha256(json.dumps(sorted(stamps)).encode("utf-8")).hexdigest()
+    return LocalBundle(child.name, child, size, newest_atime, frozenset(names), fingerprint)
+
+
+def _remove_tree(path: Path) -> None:
+    """``rmtree`` that treats an entry already gone as removed: a sweep and a
+    claimant may delete the same abandoned claim at once."""
+
+    def ignore_gone(_func: object, _path: str, error: BaseException) -> None:
+        if not isinstance(error, FileNotFoundError):
+            raise error
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=ignore_gone)
+    else:
+        shutil.rmtree(path, onerror=lambda func, p, info: ignore_gone(func, p, info[1]))
+
+
+def sweep_abandoned_claims(stems_dir: Path) -> list[str]:
+    """Finish removing claims a pass renamed but could not delete (an I/O or
+    permission error mid-``rmtree``). Scans skip ``.evicting-`` names, so
+    without this their bytes would never be counted or freed again. Returns
+    the claims still left; a failure here is retried on the next pass."""
+    root = Path(stems_dir)
+    if not root.is_dir():
+        return []
+    left: list[str] = []
+    for child in sorted(root.iterdir()):
+        if EVICTING_MARKER not in child.name or child.is_symlink():
+            continue
+        try:
+            _remove_tree(child)
+        except OSError:
+            left.append(child.name)
+    return left
 
 
 def index_gap(bundle: LocalBundle, index: StemAssetIndex) -> str | None:
@@ -131,15 +176,16 @@ def claim_and_remove(bundle_dir: Path) -> bool:
 
     The timer and a post-hydrate pass can pick the same LRU bundle. The rename
     to a unique name is the claim: exactly one ``os.rename`` of the directory
-    succeeds, the loser sees FileNotFoundError and reports nothing freed, and
-    no ``rmtree`` ever runs on a path another pass is deleting.
+    succeeds and the loser sees FileNotFoundError and reports nothing freed.
+    Only ``sweep_abandoned_claims`` may delete the same claim at once, and
+    both tolerate entries the other already removed.
     """
     claimed = bundle_dir.with_name(f"{bundle_dir.name}{EVICTING_MARKER}{secrets.token_hex(4)}")
     try:
         os.rename(bundle_dir, claimed)
     except FileNotFoundError:
         return False
-    shutil.rmtree(claimed)
+    _remove_tree(claimed)  # a failure leaves the claim for sweep_abandoned_claims
     return True
 
 
@@ -155,5 +201,6 @@ __all__ = [
     "claim_and_remove",
     "index_gap",
     "scan_bundles",
+    "sweep_abandoned_claims",
     "unconfirmed_reason",
 ]

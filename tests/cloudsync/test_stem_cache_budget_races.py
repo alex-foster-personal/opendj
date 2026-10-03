@@ -332,3 +332,50 @@ def test_a_bundle_removed_before_it_was_hashed_counts_toward_the_shortfall(tmp_p
     monkeypatch.setattr(budget, "unconfirmed_reason", removed_first)
     report = enforce(stems_dir, data_dir, index=index, disk=disk_usage(free=FLOOR_BYTES - 1))
     assert report.evicted_stable_ids == () and (stems_dir / "next").is_dir()
+
+
+@pytest.mark.requirement("STEM-41")
+def test_a_bundle_evicted_mid_scan_is_skipped_not_an_error(tmp_path: Path, monkeypatch):
+    """[if] another pass removes a bundle between listing a file and stat-ing it [then] the scan skips that bundle and carries on, [else stop].
+
+    MUTATION TARGET: drop the FileNotFoundError guard in ``_scan_one`` and
+    the post-hydrate pass raises, failing a deck load that had succeeded.
+    """
+    import shutil
+
+    from apps.cloud import stem_bundles
+
+    stems_dir = tmp_path / "stems"
+    make_bundle(stems_dir, "vanishing", atime=100.0)
+    make_bundle(stems_dir, "stays", atime=200.0)
+    real_stat = Path.stat
+
+    def stat_after_removal(self: Path, *args, **kwargs):
+        if self.parent.name == "vanishing" and (stems_dir / "vanishing").exists():
+            shutil.rmtree(stems_dir / "vanishing")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat_after_removal)
+    assert [b.stable_id for b in stem_bundles.scan_bundles(stems_dir)] == ["stays"]
+
+
+@pytest.mark.requirement("STEM-41")
+def test_a_claim_a_failed_rmtree_left_behind_is_swept_by_the_next_pass(tmp_path: Path):
+    """[if] a pass renamed a bundle to ``.evicting-`` but could not delete it [then] the next enforcement pass removes it, [else stop].
+
+    Scans skip that name, so without the sweep its bytes would never be
+    counted or freed again. MUTATION TARGET: drop the sweep in ``enforce``.
+    """
+    from apps.cloud.stem_bundles import EVICTING_MARKER
+
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    make_bundle(stems_dir, "abandoned", atime=100.0)
+    abandoned = stems_dir / f"abandoned{EVICTING_MARKER}deadbeef"
+    os.rename(stems_dir / "abandoned", abandoned)
+    enforce(stems_dir, data_dir, index={}, disk=disk_usage(free=200 * GIB))
+    assert not abandoned.exists()
+    # Control: a dry run writes nothing, so it leaves the claim alone.
+    make_bundle(stems_dir, "again", atime=100.0)
+    os.rename(stems_dir / "again", abandoned)
+    enforce(stems_dir, data_dir, index={}, disk=disk_usage(free=200 * GIB), dry_run=True)
+    assert abandoned.exists()

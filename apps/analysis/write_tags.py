@@ -358,6 +358,7 @@ def _restore_from_snapshot(snapshot: Path, target: Path) -> None:
     tmp = Path(tmp_name)
     try:
         shutil.copy2(snapshot, tmp)
+        copy_extended_metadata(target, tmp)  # the snapshot's copy2 kept no ACL
         os.replace(tmp, target)
     except Exception:
         try:
@@ -400,6 +401,8 @@ the tag write. Standard library only.
 """
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import os
 import shutil
 import sys
@@ -410,6 +413,19 @@ SNAPSHOT = Path({str(snapshot)!r})
 AUDIO = Path({str(delta.path)!r})
 
 
+def keep_metadata(src: str, dst: str) -> None:
+    """Carry the live file's ACL and xattrs onto the restored copy."""
+    if not os.path.exists(src):
+        return
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        if libc.copyfile(os.fsencode(src), os.fsencode(dst), None, (1 << 0) | (1 << 2)) < 0:
+            raise OSError(ctypes.get_errno(), "copyfile ACL/xattr")
+    elif hasattr(os, "listxattr"):
+        for name in os.listxattr(src):
+            os.setxattr(dst, name, os.getxattr(src, name))
+
+
 def main() -> int:
     if not SNAPSHOT.is_file():
         print(f"snapshot missing: {{SNAPSHOT}}", file=sys.stderr)
@@ -417,6 +433,7 @@ def main() -> int:
     fd, tmp = tempfile.mkstemp(prefix=f".{{AUDIO.name}}.restore-", dir=str(AUDIO.parent))
     os.close(fd)
     shutil.copy2(SNAPSHOT, tmp)
+    keep_metadata(str(AUDIO), tmp)
     os.replace(tmp, AUDIO)
     print(f"Restored {{AUDIO}} from {{SNAPSHOT}}")
     return 0
