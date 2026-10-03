@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.perf.playwright_chromium import chromium_unavailable_reason
+
 _REPO = Path(__file__).resolve().parents[2]
 _FRONTEND = _REPO / "apps" / "webui" / "frontend"
 _PROBE = _REPO / "scripts" / "perf" / "network_buffer_probe.mjs"
@@ -159,14 +161,6 @@ process.exit(0);
 """
 
 
-def _unavailable_chromium_reason() -> str | None:
-    if shutil.which("node") is None:
-        return "UNAVAILABLE: node is not on PATH"
-    if not (_FRONTEND / "node_modules" / "@playwright" / "test").is_dir():
-        return "UNAVAILABLE: the frontend has no @playwright/test install for a real Chromium"
-    return None
-
-
 @pytest.mark.requirement("PERFMODE-15")
 @pytest.mark.parametrize(("mode", "reason"), [("crash", "renderer crashed"), ("close", "target detached")])
 def test_an_in_flight_command_rejects_when_its_target_goes_away(mode: str, reason: str) -> None:
@@ -176,7 +170,7 @@ def test_an_in_flight_command_rejects_when_its_target_goes_away(mode: str, reaso
     the fix both cases left the evaluate pending past the 15 s deadline
     (measured on nucbox, Sat 3 Oct 2026), so `settled` is the discriminator.
     """
-    unavailable = _unavailable_chromium_reason()
+    unavailable = chromium_unavailable_reason()
     if unavailable is not None:
         pytest.skip(unavailable)
     completed = subprocess.run(

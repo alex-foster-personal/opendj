@@ -512,11 +512,8 @@ def _append_rows_after_reverification(
     Sol P1/BLOCKING (PR #4034, discussion_r4149791234): the leak capture can
     run for an hour, so every identity gate runs again after sampling and
     before any row is appended, as capture_library_mode.py does. With an
-    `engine`, the PERFMODE-14 target gate also runs with its pid pinned.
-
-    The leak series TSV is evidence too, so it is written only after the gates
-    pass (Codex P2/BLOCKING r4171071154, PR #4888): a series saved before a
-    refusal would sit under its normal name looking like a valid capture.
+    `engine`, the PERFMODE-14 target gate also runs with its pid pinned. The leak
+    series TSV is evidence too, so it is written only after the gates pass (r4171071154).
     """
     post_reason = _capture_identity_reason(frontend, sha, repo_root)
     if post_reason is None and engine is not None:
@@ -527,8 +524,7 @@ def _append_rows_after_reverification(
             f"frontend changed during the capture): {post_reason}"
         )
     if leak_series_out is not None:
-        series, path = leak_series_out
-        series.write_tsv(path)
+        leak_series_out[0].write_tsv(leak_series_out[1])
     append_ledger_rows(ledger, rows)
 
 
@@ -588,16 +584,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.leak_duration_s > 0:
         series = _capture_trackify_leak(args.frontend, args.leak_duration_s)
-        if args.leak_series_out is not None:
-            leak_series_out = (series, args.leak_series_out)
+        leak_series_out = None if args.leak_series_out is None else (series, args.leak_series_out)
         rows.extend(_leak_rows(series, meta))
 
     if not rows:
         raise SystemExit("no capture requested: pass --gig-baseline and/or --leak-duration-s")
 
-    _append_rows_after_reverification(
-        args.ledger, rows, args.frontend, sha, engine=engine, leak_series_out=leak_series_out
-    )
+    _append_rows_after_reverification(args.ledger, rows, args.frontend, sha, engine=engine, leak_series_out=leak_series_out)
     print(json.dumps({"capture_id": meta.capture_id, "rows": rows}, indent=2))
     return 0
 

@@ -25,7 +25,6 @@ Prerequisites, each reported UNAVAILABLE by name when absent, never a pass:
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -36,19 +35,11 @@ import pytest
 
 from scripts.diagnostics.probe_native_metrics import DarwinProcessMetrics
 from scripts.perf import capture_mode_ratios as cmr
+from tests.perf.playwright_chromium import chromium_unavailable_reason
 from tests.perf.test_capture_mode_ratios_browser_pid import _kill_tree, _RecordingNative
 
 _FRONTEND_ENV = "MDT_PERF_LIVE_FRONTEND"
 _CHECKPOINTS = 2
-_CHROMIUM_PROBE = (
-    "const { createRequire } = require('node:module');"
-    "const path = require('node:path');"
-    "const fs = require('node:fs');"
-    "const req = createRequire(path.join(process.cwd(), 'package.json'));"
-    "const { chromium } = req('@playwright/test');"
-    "const exe = chromium.executablePath();"
-    "if (!fs.existsSync(exe)) { console.error('missing ' + exe); process.exit(2); }"
-)
 
 
 # ----- prerequisites ---------------------------------------------------------
@@ -58,20 +49,7 @@ def _unavailable_reason() -> str | None:
     """Why the real helper cannot run here, or None when it can."""
     if not os.environ.get(_FRONTEND_ENV):
         return f"UNAVAILABLE: {_FRONTEND_ENV} names no live frontend whose Trackify feed plays"
-    node = shutil.which("node")
-    if node is None:
-        return "UNAVAILABLE: node is not on PATH, and mode_ratio_browser.mjs runs under node"
-    probe = subprocess.run(
-        [node, "-e", _CHROMIUM_PROBE],
-        cwd=cmr._FRONTEND_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if probe.returncode != 0:
-        return f"UNAVAILABLE: Playwright Chromium is not installed for the frontend: {probe.stderr.strip()[-400:]}"
-    return None
+    return chromium_unavailable_reason()
 
 
 @pytest.fixture
