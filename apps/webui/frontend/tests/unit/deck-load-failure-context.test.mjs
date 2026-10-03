@@ -61,6 +61,111 @@ test('[if] decode or audio fetch fails after getTrack [then] the toast message c
 	);
 });
 
+test('[if] a track is not on this computer [then] the deck says so in plain words, not the API code, [else stop].', () => {
+	// CLOUDSYNC-33: the raw CLOUD_POLICY_UNCONFIGURED text reached a DJ's deck.
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage(
+			'Outomorrow',
+			'abc',
+			"AUDIO_NOT_ON_THIS_MACHINE: This file isn't on this computer."
+		),
+		"Outomorrow: This file isn't on this computer."
+	);
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage(null, 'abc123', 'AUDIO_FILE_MISSING: iCloud file not downloaded'),
+		'abc123: AUDIO_FILE_MISSING: iCloud file not downloaded'
+	);
+	// Controls: a code with no plain wording, and a message that only looks
+	// like one, pass through unchanged.
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage('Night Ride', 'abc', 'CLOUD_HYDRATING: fetching'),
+		'Night Ride: CLOUD_HYDRATING: fetching'
+	);
+	assert.equal(
+		failureContext.formatDeckLoadFailureMessage('Night Ride', 'abc', 'AUDIO_FILE_MISSING without a colon'),
+		'Night Ride: AUDIO_FILE_MISSING without a colon'
+	);
+});
+
+test('[if] a load fails before its metadata is read [then] the title still comes from that request, [else stop].', async () => {
+	// CLOUDSYNC-33 Air check: the toast showed the stable id because the audio
+	// fetch rejected before getTrack was read.
+	assert.equal(
+		await failureContext.settledTrackTitle(Promise.resolve({ track: { title: 'Outomorrow' } })),
+		'Outomorrow'
+	);
+	// Controls: no request, a failed request, and an untitled track give null
+	// rather than throwing on the failure path.
+	assert.equal(await failureContext.settledTrackTitle(null), null);
+	assert.equal(await failureContext.settledTrackTitle(Promise.reject(new Error('404'))), null);
+	assert.equal(await failureContext.settledTrackTitle(Promise.resolve({ track: {} })), null);
+});
+
+test('[if] a load records its deck-facing message [then] only that same error object reads it back, [else stop].', () => {
+	const failed = new Error('AUDIO_NOT_ON_THIS_MACHINE: This file isn\'t on this computer.');
+	failureContext.rememberDeckFacingMessage(failed, "Outomorrow: This file isn't on this computer.");
+	assert.equal(failureContext.deckFacingMessage(failed), "Outomorrow: This file isn't on this computer.");
+	// Controls: another error with the same text, and non-objects, read nothing.
+	assert.equal(failureContext.deckFacingMessage(new Error(failed.message)), undefined);
+	assert.equal(failureContext.deckFacingMessage('AUDIO_NOT_ON_THIS_MACHINE: x'), undefined);
+	assert.equal(failureContext.deckFacingMessage(null), undefined);
+});
+
+test('[if] a failed load is worded [then] the title comes from the request when the track was never read, and the banner can read it back, [else stop].', async () => {
+	const failed = new Error('AUDIO_NOT_ON_THIS_MACHINE: x');
+	const text = await failureContext.failedDeckLoadMessage(
+		failed,
+		Promise.resolve({ track: { title: 'Outomorrow' } }),
+		'224a4561',
+		"AUDIO_NOT_ON_THIS_MACHINE: This file isn't on this computer."
+	);
+	assert.equal(text, "Outomorrow: This file isn't on this computer.");
+	assert.equal(failureContext.deckFacingMessage(failed), text);
+	// Control: a known title wins and is used as is.
+	assert.equal(
+		await failureContext.failedDeckLoadMessage(new Error('x'), 'Night Ride', 'abc', 'CLOUD_HYDRATING: fetching'),
+		'Night Ride: CLOUD_HYDRATING: fetching'
+	);
+});
+
+test('the deck banner reads the load path\'s wording, and the load path records it with the title', () => {
+	const body = engineBlockAfter('async load(deck: DeckId, stable_id: string, options: DeckLoadOptions = {}): Promise<void> {');
+	assert.ok(
+		body.includes('await failedDeckLoadMessage(exc, track?.title ?? trackRequest, stable_id,'),
+		'if the load stops recording its wording, or stops falling back to its own getTrack ' +
+			'request for the title, then the banner shows RbApiError: CODE: detail or the stable id again'
+	);
+	assert.ok(body.includes('(trackRequest = getTrack(stable_id))'), 'the title request must be the load\'s own getTrack');
+	const titled = body.indexOf('await failedDeckLoadMessage(');
+	const stale = body.indexOf('if (token !== rt.loadToken) throw exc;', titled);
+	assert.ok(
+		stale !== -1 && stale < body.indexOf('deckLoadErrors[deck] = msg;', titled),
+		'a newer load can start while the title resolves; the token check must follow that await ' +
+			'and precede publishing, or the old failure overwrites the new load\'s deck state'
+	);
+	const ipc = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/performance-ipc.svelte.ts', import.meta.url)),
+		'utf8'
+	).replaceAll('\r\n', '\n');
+	const start = ipc.indexOf('function _errorMessage(error: unknown): string {');
+	assert.ok(start !== -1, '_errorMessage moved; re-point this guard');
+	const fn = ipc.slice(start, ipc.indexOf('\n}\n', start));
+	assert.ok(
+		fn.includes('deckFacingMessage(error)'),
+		'if the banner text ignores the load\'s wording then deck_errors shows the raw API code'
+	);
+	const persistAt = ipc.indexOf('function _persistCommandError(');
+	assert.ok(persistAt !== -1, '_persistCommandError moved; re-point this guard');
+	const persist = ipc.slice(persistAt, ipc.indexOf('\n}\n', persistAt));
+	const skipAt = persist.indexOf('deckFacingMessage(error) !== undefined');
+	const toastAt = persist.indexOf('pushToast(`Performance command failed');
+	assert.ok(toastAt !== -1, 'the generic command toast moved; re-point this guard');
+	assert.ok(
+		skipAt !== -1 && skipAt < toastAt,
+		'if a worded load failure also raises the generic command toast then one missing file shows two toasts'
+	);
+});
+
 test('the context names the source, the deck, and every stage that was measured', () => {
 	const context = failureContext.deckLoadFailureContext(2, {
 		getTrack: 41,

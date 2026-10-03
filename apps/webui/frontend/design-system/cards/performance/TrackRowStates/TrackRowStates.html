@@ -1,0 +1,32 @@
+<!-- @dsCard group="Performance controls" name="TrackRowStates" subtitle="Browser rows: plain, selected, loaded, master" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>TrackRowStates</title>
+<link rel="stylesheet" href="../../../styles.css" />
+<link rel="stylesheet" href="../../../_preview/card.css" />
+<style>
+	/* Column layout only; the row-state colors come from theme.css. */
+	.ds-browser { width: 100%; border-collapse: collapse; font-size: var(--rb-fs-browser); }
+	.ds-browser th { text-align: left; font-weight: 500; color: var(--rb-text-dim); padding: 3px 6px; border-bottom: 1px solid var(--rb-border); }
+	.ds-browser td { padding: 3px 6px; border-bottom: 1px solid var(--rb-border); white-space: nowrap; }
+	.ds-browser td.num { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="perf-root ds-perf-frame" style="padding:0">
+	<table class="ds-browser">
+		<thead><tr><th>#</th><th>Title</th><th>Artist</th><th title="Tempo in BPM">BPM</th><th title="Camelot key">Key</th><th>State</th></tr></thead>
+		<tbody>
+			<tr><td class="num">1</td><td class="c-title">Skyline Drive (Extended)</td><td class="c-artist">Pell Arden</td><td class="num" title="Tempo 136.00 BPM">136.00</td><td>11B</td><td>plain</td></tr>
+			<tr class="rb-row-selected"><td class="num">2</td><td class="c-title">Sunday Clay</td><td class="c-artist">Hollis Wren, Odette Marsh</td><td class="num" title="Tempo 122.00 BPM">122.00</td><td>6A</td><td><code>.rb-row-selected</code></td></tr>
+			<tr><td class="num">3</td><td class="c-title rb-row-loaded">Open Windows</td><td class="c-artist rb-row-loaded">Cass Delaney</td><td class="num" title="Tempo 125.00 BPM">125.00</td><td>8A</td><td><code>.rb-row-loaded</code> on deck 2</td></tr>
+			<tr class="rb-row-master"><td class="num">4</td><td class="c-title rb-row-loaded">Daylight Hours (Studio Mix)</td><td class="c-artist rb-row-loaded">The Understudies</td><td class="num" title="Tempo 128.00 BPM">128.00</td><td>9A</td><td><code>tr.rb-row-master</code> on deck 1</td></tr>
+			<tr><td class="num">5</td><td class="c-title">Another Round</td><td class="c-artist">Chrome Duo</td><td class="num" title="Tempo 123.00 BPM">123.00</td><td>5B</td><td>plain</td></tr>
+		</tbody>
+	</table>
+</div>
+<p class="ds-note">11 px browser text. Selection is a full-row blue fill (<code>--rb-select</code>); a loaded track's title and artist cells turn green; the master deck's row turns gold and bold. States combine: a loaded row can also be selected. Numeric cells carry a hover <code>title</code>.</p>
+</body>
+</html>

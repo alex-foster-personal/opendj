@@ -49,6 +49,22 @@ import { completeLibraryUsable } from '$lib/client-telemetry';
  */
 export const LOCAL_FILTER_DEBOUNCE_MS = 80;
 
+/** A clock mismatch produces an epoch-sized value instead of a duration. */
+export const PLAYLIST_TREE_READY_MAX_MS = 60_000;
+
+/** Read and validate the navigation-relative playlist tree-ready duration. */
+export function measurePlaylistTreeReadyMs(nowMs: number = performance.now()): number {
+	if (!Number.isFinite(nowMs) || nowMs <= 0) {
+		throw new Error(`playlist tree ready duration must be positive, got ${nowMs}`);
+	}
+	if (nowMs >= PLAYLIST_TREE_READY_MAX_MS) {
+		throw new Error(
+			`playlist tree ready duration must be below 60 seconds, got ${nowMs}`
+		);
+	}
+	return Math.round(nowMs);
+}
+
 /** What one coalesced keystroke burst resolved to. */
 export interface FilterSettle {
 	/** The query as of the LAST keystroke in the burst. */
