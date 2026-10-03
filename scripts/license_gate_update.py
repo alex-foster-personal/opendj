@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -23,6 +24,7 @@ from scripts.license_gate import (
     POLICY,
     REGISTER,
     UNKNOWN_LICENSE,
+    GateError,
     _tokens,
     load_json,
     locked_packages,
@@ -180,9 +182,12 @@ def cargo_metadata_licenses(root: Path, lockfiles: Iterable[str]) -> dict[str, s
         manifest = (root / rel).parent / "Cargo.toml"
         if not manifest.is_file():
             continue
+        cargo = shutil.which("cargo")
+        if cargo is None:
+            raise GateError(f"cargo not found on PATH; cannot read licenses for {rel}")
         for extra in (["--offline"], []):
             proc = subprocess.run(
-                ["cargo", "metadata", "--format-version", "1", "--locked", *extra, "--manifest-path", str(manifest)],
+                [cargo, "metadata", "--format-version", "1", "--locked", *extra, "--manifest-path", str(manifest)],
                 capture_output=True,
                 text=True,
                 check=False,
