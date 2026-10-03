@@ -7,6 +7,7 @@
 
 pub mod deck;
 pub mod decode;
+pub mod edit_list;
 #[cfg(feature = "device")]
 pub mod device;
 pub mod dsp;
@@ -15,6 +16,7 @@ pub mod midi;
 #[cfg(feature = "midi")]
 pub mod midi_in;
 pub mod mixer;
+pub mod mp4edit;
 pub mod offline;
 pub mod plan;
 pub mod protocol;

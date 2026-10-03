@@ -34,12 +34,19 @@
 
 import { api } from './api/client';
 import type { BootScheduler } from './rb/boot-scheduler';
+import { sentryEventIsTransientNetwork } from './telemetry-network-noise';
 import {
 	scrubBreadcrumb,
 	scrubEvent,
 	scrubRecordingEvent,
 	type ScrubbableEvent
 } from './telemetry-scrub';
+
+export {
+	isTransientNetworkError,
+	sentryEventIsTransientNetwork,
+	TRANSIENT_NETWORK_MESSAGES
+} from './telemetry-network-noise';
 import {
 	currentConsent,
 	setConsentDialogOpen,
@@ -210,8 +217,13 @@ export function startReplay(consent: ConsentOut, deps: ReplayDeps): boolean {
 				),
 			// The loader SDK captures browser exceptions on its own; while a
 			// deck is live they are dropped here, the same answer the engine
-			// gives a forwarded error whose `any_deck_live` is true.
-			beforeSend: (event: ScrubbableEvent) => (deps.isLive() ? null : scrubEvent(event)),
+			// gives a forwarded error whose `any_deck_live` is true. Transient
+			// fetch/abort TypeErrors (Safari `Load failed`) stay local too.
+			beforeSend: (event: ScrubbableEvent) => {
+				if (deps.isLive()) return null;
+				if (sentryEventIsTransientNetwork(event)) return null;
+				return scrubEvent(event);
+			},
 			beforeBreadcrumb: (crumb: { message?: unknown; data?: unknown }) => scrubBreadcrumb(crumb)
 		});
 		Sentry.setTag('origin', 'browser-sdk');

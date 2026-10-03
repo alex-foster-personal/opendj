@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { startPerformanceRecorder, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
+	import { stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './IconRail.svelte';
 
@@ -21,6 +21,10 @@
 		recoverable: false
 	});
 	let recorderBusy = $state(false);
+	// Lazy: the picker renders only after a REC click, so it stays out of the
+	// /performance bundle budget (charged to other-lazy instead). Non-null
+	// means the picker is open.
+	let RecordInputPicker = $state<typeof import('./RecordInputPicker.svelte').default | null>(null);
 
 	onMount(() => {
 		void refreshRecorderStatus();
@@ -43,11 +47,9 @@
 				pushToast('Recording stopped and session finalized.', 'info');
 				return;
 			}
-			const input = window.prompt('ffmpeg audio input index for set recording');
-			if (input === null) return;
-			if (input.trim() === '') throw new Error('ffmpeg device index is required');
-			recorder = await startPerformanceRecorder(Number(input));
-			pushToast(`Recording ${recorder.session_id}`, 'info');
+			// SET-10: pick the input by name in-app. A browser prompt dialog never shows in
+			// the desktop app's WKWebView, so the old index prompt did nothing.
+			RecordInputPicker = (await import('./RecordInputPicker.svelte')).default;
 		} catch (error) {
 			pushToast(`REC failed: ${String(error)}`, 'error');
 		} finally {
@@ -63,3 +65,11 @@
 	recordingBusy={recorderBusy}
 	onrecord={() => void togglePerformanceRecording()}
 />
+
+{#if RecordInputPicker !== null}
+	<RecordInputPicker
+		onstarted={(status) => ((recorder = status), (RecordInputPicker = null))}
+		oncancel={() => (RecordInputPicker = null)}
+		notify={pushToast}
+	/>
+{/if}
