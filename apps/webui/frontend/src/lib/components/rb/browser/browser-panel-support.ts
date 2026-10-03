@@ -5,6 +5,8 @@ export { libraryEditShortcut } from './library-edit-shortcut';
 // The clipboard rules load on the first shortcut press, outside the
 // /performance static bundle (scripts/bundle-budget.mjs).
 export const loadTrackClipboard = () => import('./track-clipboard');
+// The delete/drop confirm dialog loads on first use, for the same reason.
+export const loadBrowserConfirmDialog = () => import('./BrowserConfirmDialog.svelte');
 export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';
@@ -67,6 +69,7 @@ export { rowFromListWire, rowFromPlaylistWire } from './browser-row-wire';
 export { settledAvailabilityFromRbMeta } from './browser-row-wire';
 export { startPendingSettle } from './pending-availability-settle';
 export { default as PlaylistSetTabs } from './PlaylistSetTabs.svelte';
+export { default as CompatibleFilterPopover } from './CompatibleFilterPopover.svelte';
 export { setTabLabel } from './playlist-set-tabs';
 /** A stick track row whose stick was pulled (USBPLAY-09: the browse store
  * grays it to awaiting_volume), refused as "Stick removed" (spec 4b) rather
@@ -92,7 +95,7 @@ export { registerBrowseAdapter } from '$lib/rb/midi/browse-adapter';
 export { createBrowserKeyboard } from './browser-keyboard';
 export { createLibraryEditKeys } from './library-edit-keys';
 export { openIoView } from '$lib/rb/io-surface.svelte';
-
+export { PairingIndex } from '$lib/rb/pairing-index.svelte';
 // Through here, not imported directly, to keep BrowserPanel's import fan-out
 // (frontend.max_fan_out quality ratchet) at main's figure.
 export {

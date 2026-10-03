@@ -86,6 +86,12 @@ from .backend import (
     resolve_tempo_pref_write,
 )
 from .etag import compute_etag, strip_quotes
+from .pairings_sqlite import (
+    count_http_pairings,
+    create_http_pairing,
+    delete_http_pairing,
+    list_http_pairings,
+)
 from .playlist_page import playlist_from_header, read_playlist_header, read_playlist_page
 
 log = logging.getLogger(__name__)
@@ -265,11 +271,6 @@ def _effective_updated_at(
     return best
 
 
-# The wire speaks "->" (from flows into to) and "<->" (either way); the
-# durable pairings table (apps.shared.pairings) speaks into/out_of/either.
-_WIRE_TO_DB_DIRECTION: dict[str, str] = {"->": "into", "<->": "either"}
-
-
 def _utcnow_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -299,32 +300,6 @@ def _pairing_matches(
     )
 
 
-def _find_pairing_edge(
-    conn: sqlite3.Connection, key: tuple[str, str, str]
-) -> tuple[tuple[str, str, str], tuple[str | None, str | None] | None]:
-    """Return the stored key and (notes, snapshot_json) for ``key``'s edge.
-
-    The CLI may hold the same visible edge as ``(to, from, 'out_of')``, which
-    the read path shows as ``from -> to``, or an ``either`` edge stored the
-    other way round; a capture of that row must merge into it rather than
-    insert a duplicate.
-    """
-    candidates = [key]
-    if key[2] == "into":
-        candidates.append((key[1], key[0], "out_of"))
-    elif key[2] == "either":
-        candidates.append((key[1], key[0], "either"))
-    for candidate in candidates:
-        row = conn.execute(
-            "SELECT notes, snapshot_json FROM pairings "
-            "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
-            candidate,
-        ).fetchone()
-        if row is not None:
-            return candidate, (row[0], row[1])
-    return key, None
-
-
 def _row_to_pairing(row: tuple[Any, ...]) -> Pairing:
     """Map a stored pairings row onto the wire's :class:`Pairing`.
 
@@ -346,6 +321,61 @@ def _row_to_pairing(row: tuple[Any, ...]) -> Pairing:
         snapshot=snapshot,
         created_at=row[5],
         updated_at=row[6],
+    )
+
+
+def _graph_pairings(conn: sqlite3.Connection) -> list[Pairing]:
+    """Wire view of the durable graph ``pairings`` table.
+
+    A missing table reads as empty. A table from before ``snapshot_json``
+    still lists; that column is projected as NULL until a write upgrades it.
+    """
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pairings'"
+    ).fetchone()
+    if exists is None:
+        return []
+    columns = {col[1] for col in conn.execute("PRAGMA table_info(pairings)")}
+    snapshot_col = "snapshot_json" if "snapshot_json" in columns else "NULL"
+    rows = conn.execute(
+        "SELECT from_stable_id, to_stable_id, direction, source, "
+        f"notes, created_at, modified_at, {snapshot_col} "
+        "FROM pairings"
+    ).fetchall()
+    return [_row_to_pairing(tuple(row)) for row in rows]
+
+
+def _delete_graph_pairing(
+    conn: sqlite3.Connection, pairing_id: str, *, expected_etag: str,
+) -> None:
+    """CAS-delete one graph edge addressed by its derived pairing id.
+
+    HTTP ids are handled by :func:`delete_http_pairing`. This path is the
+    graph table's own id (a CLI edge the HTTP table does not store).
+    """
+    rows = conn.execute(
+        "SELECT from_stable_id, to_stable_id, direction, source, "
+        "notes, created_at, modified_at, snapshot_json FROM pairings"
+    ).fetchall()
+    match = None
+    for row in rows:
+        if _pairing_id(row[0], row[1], row[2]) == pairing_id:
+            match = row
+            break
+    if match is None:
+        raise NotFoundError(f"pairing not found: {pairing_id}")
+    existing = _row_to_pairing(tuple(match))
+    current = compute_etag(existing.pairing_id, existing.updated_at)
+    if strip_quotes(current) != strip_quotes(expected_etag):
+        raise ConflictError(
+            current={"pairing_id": existing.pairing_id,
+                     "updated_at": existing.updated_at},
+            etag=current,
+        )
+    conn.execute(
+        "DELETE FROM pairings WHERE from_stable_id=? "
+        "AND to_stable_id=? AND direction=?",
+        (match[0], match[1], match[2]),
     )
 
 
@@ -878,27 +908,34 @@ class SqliteBackend:
         to_stable_id: str | None = None, source: str | None = None,
     ) -> list[Pairing]:
         with self._ro() as conn:
-            if not self._table_exists(conn, "pairings"):
-                return []
-            columns = {
-                col[1] for col in conn.execute("PRAGMA table_info(pairings)")
-            }
-            snapshot_col = (
-                "snapshot_json" if "snapshot_json" in columns else "NULL"
+            http_rows = list_http_pairings(
+                conn,
+                from_stable_id=from_stable_id,
+                to_stable_id=to_stable_id,
+                source=source,
             )
-            rows = conn.execute(
-                "SELECT from_stable_id, to_stable_id, direction, source, "
-                f"notes, created_at, modified_at, {snapshot_col} "
-                "FROM pairings"
-            ).fetchall()
-        out = [
-            pairing for pairing in map(_row_to_pairing, map(tuple, rows))
-            if _pairing_matches(
-                pairing, from_stable_id=from_stable_id,
-                to_stable_id=to_stable_id, source=source,
-            )
-        ]
-        out.sort(key=lambda p: p.created_at)
+            graph_rows = [
+                pairing for pairing in _graph_pairings(conn)
+                if _pairing_matches(
+                    pairing, from_stable_id=from_stable_id,
+                    to_stable_id=to_stable_id, source=source,
+                )
+            ]
+        # HTTP rows keep the wire id and snapshot. A graph edge with the
+        # same visible endpoints is that row's mirror (or a CLI edge the
+        # HTTP table already captured) and is not listed twice. Graph-only
+        # edges, including a reversed ``out_of`` read as ``->``, stay.
+        covered = {
+            (pairing.from_stable_id, pairing.to_stable_id, pairing.direction)
+            for pairing in http_rows
+        }
+        out = list(http_rows)
+        out.extend(
+            pairing for pairing in graph_rows
+            if (pairing.from_stable_id, pairing.to_stable_id, pairing.direction)
+            not in covered
+        )
+        out.sort(key=lambda pairing: pairing.created_at)
         return out
 
     def get_queue(
@@ -926,11 +963,18 @@ class SqliteBackend:
                 ).fetchone()[0]
             else:
                 _warn_fallback_once("stats:playlists", "no playlists table")
-            pairings = 0
+            http_rows = list_http_pairings(conn)
+            pairings = count_http_pairings(conn)
+            covered = {
+                (pairing.from_stable_id, pairing.to_stable_id, pairing.direction)
+                for pairing in http_rows
+            }
             if self._table_exists(conn, "pairings"):
-                pairings = conn.execute(
-                    "SELECT COUNT(*) FROM pairings"
-                ).fetchone()[0]
+                pairings += sum(
+                    1 for pairing in _graph_pairings(conn)
+                    if (pairing.from_stable_id, pairing.to_stable_id,
+                        pairing.direction) not in covered
+                )
         return {
             "tracks": tracks, "playlists": playlists, "pairings": pairings,
         }
@@ -1173,85 +1217,31 @@ class SqliteBackend:
     def create_pairing(self, pairing: Pairing) -> Pairing:
         """Persist ``pairing``; a repeat of the same edge merges into it.
 
-        Same contract as :meth:`InMemoryBackend.create_pairing`: new notes
-        append to the existing ones, and a snapshot is write-once (an edge
-        with none accepts the incoming capture, an edge with one keeps it).
+        The HTTP row keeps the wire id, direction and write-once snapshot.
+        The same transaction mirrors an edge this pairing owns into the
+        durable graph table. Notes append, and a snapshot already stored is
+        kept. Same contract as :meth:`InMemoryBackend.create_pairing`. A
+        direct edge this pairing does not own (CLI or other graph tooling)
+        is left unchanged. A reverse-stored edge that reads as this capture
+        is updated in place and the returned id is that stored key's id.
         """
-        direction = _WIRE_TO_DB_DIRECTION[pairing.direction]
-        key = (pairing.from_stable_id, pairing.to_stable_id, direction)
-        snapshot_json = (
-            None if pairing.snapshot is None
-            else json.dumps(pairing.snapshot, sort_keys=True)
-        )
-        writer: tuple[str, str] | None = None
         with self._pairings_rw() as conn:
-            key, row = _find_pairing_edge(conn, key)
-            now = _utcnow_iso()
-            if row is None:
-                conn.execute(
-                    "INSERT INTO pairings (from_stable_id, to_stable_id, "
-                    "direction, source, notes, confidence, created_at, "
-                    "modified_at, snapshot_json) "
-                    "VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
-                    (*key, pairing.source, pairing.notes,
-                     pairing.created_at, pairing.updated_at, snapshot_json),
-                )
-                writer = (pairing.source, pairing.created_at)
-            else:
-                existing_notes, existing_snapshot = row[0], row[1]
-                notes = existing_notes
-                if pairing.notes and pairing.notes != existing_notes:
-                    notes = f"{existing_notes or ''}\n{pairing.notes}".strip()
-                snapshot = (
-                    existing_snapshot if existing_snapshot is not None
-                    else snapshot_json
-                )
-                if notes != existing_notes or snapshot != existing_snapshot:
-                    conn.execute(
-                        "UPDATE pairings SET notes=?, snapshot_json=?, "
-                        "modified_at=? WHERE from_stable_id=? "
-                        "AND to_stable_id=? AND direction=?",
-                        (notes, snapshot, now, *key),
-                    )
-                    writer = (pairing.source, now)
-            stored = conn.execute(
-                "SELECT from_stable_id, to_stable_id, direction, source, "
-                "notes, created_at, modified_at, snapshot_json FROM pairings "
-                "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
-                key,
-            ).fetchone()
-        # Only once the transaction committed: a rolled-back write is no writer.
-        if writer is not None:
-            self._sqlite_last_writer = writer
-        return _row_to_pairing(tuple(stored))
+            conn.row_factory = sqlite3.Row
+            created = create_http_pairing(conn, pairing)
+        self._sqlite_last_writer = (pairing.source, pairing.created_at)
+        return created
 
     def delete_pairing(self, pairing_id: str, *, expected_etag: str) -> None:
-        from .etag import compute_etag, strip_quotes
         with self._pairings_rw() as conn:
-            rows = conn.execute(
-                "SELECT from_stable_id, to_stable_id, direction, source, "
-                "notes, created_at, modified_at, snapshot_json FROM pairings"
-            ).fetchall()
-            match = None
-            for row in rows:
-                if _pairing_id(row[0], row[1], row[2]) == pairing_id:
-                    match = row
-                    break
-            if match is None:
-                raise NotFoundError(f"pairing not found: {pairing_id}")
-            existing = _row_to_pairing(tuple(match))
-            current = compute_etag(existing.pairing_id, existing.updated_at)
-            if strip_quotes(current) != strip_quotes(expected_etag):
-                raise ConflictError(
-                    current={"pairing_id": existing.pairing_id,
-                             "updated_at": existing.updated_at},
-                    etag=current,
+            conn.row_factory = sqlite3.Row
+            try:
+                delete_http_pairing(
+                    conn, pairing_id, expected_etag=expected_etag,
                 )
-            conn.execute(
-                "DELETE FROM pairings WHERE from_stable_id=? "
-                "AND to_stable_id=? AND direction=?",
-                (match[0], match[1], match[2]),
-            )
+            except NotFoundError:
+                _delete_graph_pairing(
+                    conn, pairing_id, expected_etag=expected_etag,
+                )
         self._sqlite_last_writer = ("webui", _utcnow_iso())
 
     def last_writer(self) -> tuple[str, str] | None:

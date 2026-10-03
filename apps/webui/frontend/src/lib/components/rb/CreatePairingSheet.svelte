@@ -1,3 +1,10 @@
+<script lang="ts" module>
+	// Re-exported for the top-bar button, so TopBar reaches it through the
+	// sheet it already imports (no new import edge on the widest module).
+	import { pairingUnavailableReason as reason } from '$lib/rb/pairing-button-state';
+	export const pairingUnavailableReason = reason;
+</script>
+
 <script lang="ts">
 	// LV1 Create pairing freezes the loaded deck and EQ state at open, for the
 	// deck picker's display only. Align hotcues and Reload sync (PAIR-03) read
@@ -53,15 +60,17 @@
 			await dispatchPerformanceCommand({
 				type: 'pairing_snapshot_save', from_deck: selected[0], to_deck: selected[1]
 			});
-		} catch {
-			// The dispatcher already toasted the failure; keep the sheet open
-			// so the DJ can retry without re-freezing the decks.
+		} catch (exc) {
+			// Dispatcher toast covers the command failure; also name the
+			// exception here. Either way the sheet stays open so the DJ can
+			// retry without re-freezing the decks.
+			pushToast(`Capture pairing failed: ${String(exc)}`, 'error');
 			return;
 		} finally {
 			busy = false;
 		}
 		open = false;
-		pushToast('Pairing saved', 'info');
+		pushToast('Pairing captured', 'info');
 	}
 
 	interface LoadedPair {

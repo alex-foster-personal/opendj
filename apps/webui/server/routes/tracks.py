@@ -36,6 +36,7 @@ from ..etag import compute_etag
 from ..models import (
     LyricsUnavailableOut,
     QualityRungOut,
+    TrackListItemOut,
     TrackLyricsOut,
     TrackOut,
     TrackPatch,
@@ -327,41 +328,46 @@ def list_tracks(
     for track, row in zip(page.items, rows, strict=False):
         if not keep_by_availability(available, row.get("file_exists")):
             continue
+        base = _track_to_out(
+            track,
+            has_rb_mapping=row["has_rb_mapping"],
+            lyrics_available=lyrics_by_sid[track.stable_id],
+            auto_cues_available=auto_cues_by_sid[track.stable_id],
+            stems_available=_stems_available(track.stable_id, row["stems"], request),
+            artwork_available=row["artwork_available"],
+        ).model_dump()
         items.append(
-            {
-                **_track_fields(
-                    track,
-                    has_rb_mapping=row["has_rb_mapping"],
-                    lyrics_available=lyrics_by_sid[track.stable_id],
-                    auto_cues_available=auto_cues_by_sid[track.stable_id],
-                    stems_available=_stems_available(track.stable_id, row["stems"], request),
-                    artwork_available=row["artwork_available"],
-                ),
-                "play_count": int(row.get("play_count") or 0),
-                "preview_b64": row["preview_b64"],
-                "preview_max": row["preview_max"],
-                "file_availability": row["file_availability"],
-                "file_exists": row["file_exists"],
-                "is_remote": bool(row.get("is_remote")),
-                "is_streaming": row["is_streaming"],
-                "streaming_provider": row["streaming_provider"],
-                "has_remote_copy": bool(row["has_remote_copy"]),
-                "cloud_transfer": row["cloud_transfer"],
-                "quality": row["quality"],
-                "vocals": row["vocals"],
-                "stems": row["stems"],
-                "artwork_status": row["artwork_status"],
-                "energy": row["energy"],
-                "energy_source": row["energy_source"],
-                "energy_reason": row["energy_reason"],
-                "lyrics": row.get("lyrics"),
-                "grid_quality": row["grid_quality"],
-                "is_remix": bool(row.get("is_remix")),
-                "is_radio_edit": bool(row.get("is_radio_edit")),
-                "genre": row.get("genre"),
-                "genre_reason": row.get("genre_reason"),
-                "genre_guess": row.get("genre_guess"),
-            }
+            TrackListItemOut(
+                **base,
+                play_count=int(row.get("play_count") or 0),
+                preview_b64=row["preview_b64"],
+                preview_max=row["preview_max"],
+                file_availability=row["file_availability"],
+                file_exists=row["file_exists"],
+                is_remote=bool(row.get("is_remote")),
+                is_streaming=row["is_streaming"],
+                streaming_provider=row["streaming_provider"],
+                has_remote_copy=bool(row["has_remote_copy"]),
+                cloud_transfer=row["cloud_transfer"],
+                quality=row["quality"],
+                vocals=row["vocals"],
+                stems=row["stems"],
+                artwork_status=row["artwork_status"],
+                energy=row["energy"],
+                energy_source=row["energy_source"],
+                energy_reason=row["energy_reason"],
+                bpm_source=row.get("bpm_source"),
+                bpm_method=row.get("bpm_method"),
+                bpm_confidence=row.get("bpm_confidence"),
+                bpm_confidence_error=row.get("bpm_confidence_error"),
+                lyrics=row.get("lyrics"),
+                grid_quality=row["grid_quality"],
+                is_remix=bool(row.get("is_remix")),
+                is_radio_edit=bool(row.get("is_radio_edit")),
+                genre=row.get("genre"),
+                genre_reason=row.get("genre_reason"),
+                genre_guess=row.get("genre_guess"),
+            )
         )
     # The page is validated ONCE, as a whole, and returned already rendered
     # (LIBM-137). Before, each row was built as a TrackOut, dumped, rebuilt as a

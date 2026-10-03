@@ -8,7 +8,7 @@ import { GIG_HELPER_SETTING } from './gig-helper-setting';
 import { AUDIO_ENGINE_SETTING } from './audio-engine-setting';
 import { PREVIEW_BEAT_SYNC_SETTING } from './preview-beat-sync-setting';
 import { MIDI_ENABLED_SETTING } from './midi-enabled-setting';
-import { CONFIRM_SETTINGS } from './confirm-drop-mode';
+import { CONFIRMATION_SETTINGS } from './confirmation-settings';
 import { WAVE_PALETTE_SETTING } from './wave-palette-setting';
 import { DEV_UI_SETTING, HIDE_TODO_SETTING } from './dev-ui-setting';
 import {
@@ -70,6 +70,19 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 			'When on, missing-file rows and empty playlists leave the browser lists. Default off (grayed but visible).',
 		implemented: true,
 		control: { kind: 'boolean' }
+	},
+	{
+		id: 'library_watcher_folders',
+		label: 'Watcher folders (v2)',
+		group: 'library',
+		keywords: ['watcher', 'folder', 'import', 'auto', 'monitor', 'ingest'],
+		title: 'Folder paths to watch for auto-import (v2 - not active yet)',
+		detail: 'One absolute path per line, checked to exist on save. No watcher runs until v2.',
+		implemented: true,
+		control: {
+			kind: 'path_lines',
+			v2Notice: 'v2 - folder watcher not active; paths are stored for a future release only.'
+		}
 	},
 	{
 		id: 'library_density',
@@ -365,7 +378,7 @@ export const SETTINGS_CATALOG: readonly SettingDef[] = [
 		implemented: true,
 		control: _wheelSensitivityControl(WHEEL_SENSITIVITY.trackpad)
 	},
-	...CONFIRM_SETTINGS,
+	...CONFIRMATION_SETTINGS,
 	{
 		id: 'auto_sync',
 		label: 'Auto-sync destinations',

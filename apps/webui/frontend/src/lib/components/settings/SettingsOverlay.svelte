@@ -18,8 +18,6 @@
 		type SettingGroupId
 	} from '$lib/settings/catalog';
 	import { applySettingChange, readSettingValue, type AllowedSettingKey } from '$lib/settings/apply';
-	import WaveformDesignPreview from './WaveformDesignPreview.svelte';
-	import { aiApplySetting, aiSearchSettings } from '$lib/settings/ai-client';
 	import {
 		applyBooleanAction,
 		booleanKeyAction,
@@ -131,7 +129,8 @@
 			(s) => s.id
 		);
 		const handle = setTimeout(() => {
-			void aiSearchSettings(q, catalogIds)
+			void import('$lib/settings/ai-client') // on first use (library bundle budget, PR #4014)
+				.then((m) => m.aiSearchSettings(q, catalogIds))
 				.then((out) => {
 					if (seq !== aiSeq) return;
 					aiIds = out.ids;
@@ -287,6 +286,14 @@
 		writeNumber(def, def.control.defaultValue);
 	}
 
+	// The watcher-folders row loads on demand (it is drawn only while settings
+	// are open, and the overlay rides the library first paint; PR #4014).
+	let watcherFoldersEditor: Promise<typeof import('./WatcherFoldersEditor.svelte')> | null = null;
+	function loadWatcherFoldersEditor(): Promise<typeof import('./WatcherFoldersEditor.svelte')> {
+		watcherFoldersEditor ??= import('./WatcherFoldersEditor.svelte');
+		return watcherFoldersEditor;
+	}
+
 	async function askAiApply(): Promise<void> {
 		const instruction = settingsOverlay.query.trim();
 		if (!instruction || applyBusy) return;
@@ -295,7 +302,7 @@
 		applyOk = null;
 		pendingProposal = null;
 		try {
-			const out = await aiApplySetting(instruction);
+			const out = await (await import('$lib/settings/ai-client')).aiApplySetting(instruction);
 			if (!out.ok || !out.proposal) {
 				applyOk = false;
 				applyMsg = out.error ?? 'AI refused or could not map the instruction';
@@ -532,7 +539,10 @@
 													{/each}
 												</select>
 												{#if def.id === 'waveform_design' || def.id === 'wave_palette'}
-													<WaveformDesignPreview />
+													<!-- Loads with the row, not the first paint (library bundle budget, PR #4014). -->
+													{#await import('./WaveformDesignPreview.svelte') then { default: WaveformDesignPreview }}
+														<WaveformDesignPreview />
+													{/await}
 												{/if}
 											{:else if def.control.kind === 'multi_bool'}
 												<div class="so-multi" title={def.title}>
@@ -582,6 +592,12 @@
 														Reset
 													</button>
 												</div>
+											{:else if def.control.kind === 'path_lines'}
+												{#await loadWatcherFoldersEditor() then { default: WatcherFoldersEditor }}
+													<WatcherFoldersEditor {def} />
+												{:catch err}
+													<span class="so-path-lines-msg" title={String(err)}>Watcher folders failed to load: {String(err)}</span>
+												{/await}
 											{/if}
 										</div>
 									</div>

@@ -51,7 +51,7 @@ function mediaBlock(source, query) {
 	throw new Error(`@media ${query} is not brace-balanced`);
 }
 
-const NARROW = mediaBlock(topbar, '(max-width: 1125px)');
+const NARROW = mediaBlock(topbar, '(max-width: 1160px)');
 const COMMAND = mediaBlock(topbar, '(max-width: 1023px)');
 
 test('TopBar.svelte still compiles', () => {

@@ -219,6 +219,14 @@ const BUDGETS = [
   // bytes. Clean origin/main 01d5b3520 measured 262,071 locally (73 bytes of
   // headroom); main + this PR 262,341. Trunk's queue removed it at 178 over on CI.
   // Payback: the headphones.ts deferral above retires this KiB too.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin batch's
+  // compatible filter, pairing underline and confirm-pref plumbing reach the "/"
+  // first-paint closure through the shared library browser. Clean origin/main
+  // b6c894194 measured 261,672 locally; main + this PR at the merge of Sat 3 Oct
+  // measured 262,967 (823 OVER). Payback, not yet measured: move the compatible-filter
+  // and pairing derivation behind the /performance-only lazy imports. Re-merged with
+  // main 5504f60e7 (which carries #5086's KiB): 263,265 measured, 927 under.
   // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4906, STEM-44..48): the deck's named stem
   // states (stem-status.ts, StemRow) render on "/" and are first-paint weight. Clean
   // origin/main measured 262,071 locally before #5086; main + this PR 263,325, +1,254.
@@ -227,7 +235,10 @@ const BUDGETS = [
   // with #5086's own +1 KiB, main + this PR measures 263,784 locally (CI read within
   // 20 bytes of local on this PR's last head).
   // Payback, not yet measured: the label table in stem-status.ts.
-  { name: 'library', limit: 264192, measured: 263784, note: 'initial load of "/"' },
+  // Merge note (PR #4014 x #4906, Sat 3 Oct 2026): both sides already sit on the
+  // same 264,192 ceiling (the larger of the two). The merged tree measures
+  // 264,845 (653 over); +5% ceil-to-KiB => 278,528 (272 KiB).
+  { name: 'library', limit: 278528, measured: 264845, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
@@ -259,12 +270,29 @@ const BUDGETS = [
   // explainer dismiss, the 3Band waveform palette with its legacy option,
   // keyboard navigation in the track table, SVG MIDI marks), 241,794 merged,
   // 130 bytes over the old limit; 894 bytes of headroom remain.
+  // RAISED Fri 2 Oct 2026 (+2 KiB, PR #4014, issue #3986 library pins): the
+  // library pane on /performance gains the configurable compatible filter
+  // (Camelot steps, BPM window and direction), the purple pairing underline
+  // (PairingIndex + the reference-master derivation), the BPM provenance hover
+  // and the in-app confirm flow. BrowserConfirmDialog and the compatible-filter
+  // range panel load with a dynamic import on first use. Clean origin/main
+  // c8b8f5aeb measured 242,422 locally (266 bytes of headroom); main + this PR
+  // measured 244,327, +1,905, leaving 409 bytes under the new limit.
   // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4904, V1 copy and paste between
   // playlists): clean origin/main c8b8f5ae measures 242,439 locally (249
   // bytes of headroom). The library browser is part of /performance, and the
   // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
   // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
   // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
+  // Merge note (PR #4014 x #4904): both diffs land on this head; #4014's
+  // ceiling (244,736) is the larger of the two independent ratchets but does
+  // not include #4904's clipboard handlers stacked on the #3986 work. Limit
+  // raised to 245,760 (240 KiB) until the merged head is re-measured in CI.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): re-merged with main
+  // 5504f60e7, /performance measured 245,836, 76 bytes over 245,760: main's own
+  // growth since the last merge plus this PR's two-track pairing readiness check in
+  // the top bar. 948 bytes remain. Payback: the same compatible-filter deferral as the library entry.
   // RAISED Fri 2 Oct 2026 (+1 KiB, PR #4906, STEM-44..48 / PERFMODE-18): the live stem
   // handoff and the graded decode hold are genuine route weight. Clean origin/main
   // c8b8f5aeb measured 242,439 locally; main + this PR 243,377, 689 bytes over.
@@ -299,8 +327,10 @@ const BUDGETS = [
   // hover rides the /performance FeedbackWidget. Main 5504f60e7 + this PR
   // measured 243,886 locally, 174 bytes over 243,712 (CI measured 243,884); 850
   // bytes remain. Payback, not yet measured: load the summary popover lazily.
-  // Merge with #4906: keep the larger Preview ceiling (251,904), not #4906's 245,760.
-  { name: 'performance', limit: 251904, measured: 251283, note: '/performance and children' },
+  // Merge note (PR #4014 x SET-11 x #4094 x #4906): main's merged ceiling is
+  // 260,096. The Preview port's reviewed ceiling was 251,904. This merge keeps
+  // the larger of the two.
+  { name: 'performance', limit: 260096, measured: 251283, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager
   // closure - measured as ONE chunk of 43833 gzip bytes, which is the whole of the
@@ -442,27 +472,9 @@ const BUDGETS = [
   // deadline with its did-not-finish states and the Welcome retry. None of it
   // is first-paint weight (library stayed within its own limit). The ceiling
   // follows the +5% ceil-to-KiB rule on 267,629.
-  // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's 275 KiB
-  // (#4897) and the Preview's 280 KiB (#3837) are each one tree's raise; the
-  // merged limit keeps the Preview's reviewed 286,720 and does NOT add #4897's
-  // ~4.2 KB on top. NOT re-measured on the merged tree at resolution time; the
-  // two notes predict roughly 284,759 + 4,183, so the first merged build decides
-  // a payback (the ~3.6 KB MIDI split-chunk overhead above) or a reviewed raise.
-  // MEASURED Fri 2 Oct 2026 on the merged tree: 291,430, 4,710 over (the two
-  // notes predicted ~288,942). Reviewed raise to the measured size ceiled to KiB
-  // (285 KiB), no extra headroom; the MIDI split-chunk payback stays open.
-  // RE-MERGED Fri 2 Oct 2026 (main 69 commits ahead, incl. #4908's lazy native cue
-  // sink client and #4906): measured 293,800, 1,960 over. Reviewed raise to the
-  // measured size ceiled to KiB (287 KiB), no extra headroom; the MIDI split-chunk
-  // payback above still stands. Second re-merge (main +59 commits, Fri 2 Oct
-  // 2026 evening): measured 294,088, 200 over; raised to 288 KiB on the same rule.
-  // Third re-merge (main +74 commits to 01d5b3520, Sat 3 Oct 2026, incl. the
-  // first-run wizard and the lazy track clipboard): measured 297,104, 2,192
-  // over; raised to 291 KiB on the same rule, no extra headroom.
-  // Merge with #4906: keep the larger Preview ceiling (297,984), not #4906's 282,624.
-  // MEASURED Sat 3 Oct 2026 on the merged tree (main #4906 into the Preview port):
-  // 302,097, 4,113 over 297,984. Reviewed raise to the measured size ceiled to KiB
-  // (296 KiB), no extra headroom.
+  // MERGED Fri 2 Oct 2026 through Sat 3 Oct: the Preview port measured 302,097
+  // and reviewed a 303,104 ceiling. Main's #4014 x #4906 ceiling is 296,960.
+  // This merge keeps the larger Preview ceiling.
   { name: 'other-lazy', limit: 303104, measured: 302097, note: 'all other routes plus deferred shell' },
 ];
 

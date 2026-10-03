@@ -55,6 +55,7 @@ import {
 	toasts,
 	toastTimerArmed
 } from '$lib/stores.svelte';
+import { pairingBeatAt } from '$lib/rb/pairing-readiness';
 import { clearHotCue, restoreHotCue, saveHotCue } from '$lib/rb/api-rb';
 import { hotCueEditsAllowed } from '$lib/rb/track-source';
 import {
@@ -1632,21 +1633,22 @@ function _openPairingSnapshot(): PairingSnapshot {
 	const loaded = DECK_IDS.flatMap((deckId) => {
 		const deck = getDeckState(deckId);
 		if (deck.stable_id === null) return [];
-		const positionBeat = [...(deck.anlz?.beatgrid.beats ?? [])]
-			.reverse()
-			.find((beat) => beat.t * 1000 <= deck.position_ms);
+		// A playhead before the first beat (a deck parked at 0:00) is in the
+		// lead-in, not gridless; pairingBeatAt counts back to a beat-in-bar.
+		// Null only when the grid has no beats at all (pairing-readiness.ts).
+		const positionBeat = pairingBeatAt(deck.anlz?.beatgrid.beats ?? [], deck.position_ms);
 		return [{ deckId, deck, positionBeat }];
 	});
-	// Beat timestamps only when EVERY loaded deck has a beat at or before its
-	// position. A deck with no beatgrid yet, or one parked before its first
-	// beat (a fresh load sits at 0 ms), used to throw here and leave the sheet
-	// unopenable; it now captures every deck in real time instead, and the
-	// snapshot says so (beat_sync_max false = time units), so nothing is faked.
-	const beats = uiPrefs.beat_sync_max && loaded.every((item) => item.positionBeat !== undefined);
+	// Beat timestamps only when EVERY loaded deck has one. An empty grid used
+	// to throw here and leave the sheet unopenable; it now captures every deck
+	// in real time instead, and the snapshot says so (beat_sync_max false =
+	// time units), so nothing is faked. The top-bar button is disabled for an
+	// empty grid; a lead-in playhead still records a beat.
+	const beats = uiPrefs.beat_sync_max && loaded.every((item) => item.positionBeat !== null);
 	const unit: 'beats' | 'time' = beats ? 'beats' : 'time';
 	const decks = loaded.map(({ deckId, deck, positionBeat }) => {
 		const channel = mixerState.channels[deckId];
-		const timestampValue = beats && positionBeat !== undefined ? positionBeat.n : deck.position_ms;
+		const timestampValue = beats && positionBeat !== null ? positionBeat : deck.position_ms;
 		const adjustments: Array<{ band: EqBand; value: number }> = [
 			{ band: 'low', value: channel.eq_low },
 			{ band: 'mid', value: channel.eq_mid },

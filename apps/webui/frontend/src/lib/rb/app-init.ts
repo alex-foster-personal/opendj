@@ -36,6 +36,7 @@ import { installReloadCountdown } from './reload-countdown';
 import { readXrunSessionCounter } from './xrun-sentinel';
 import { pushToast } from '$lib/stores.svelte';
 import { setMidiLoadFailureReporter } from '$lib/settings/apply';
+import { installSettingSaveErrorSink } from '$lib/settings/setting-save-errors';
 import { startClientPerformanceSampling } from './client-performance-samples';
 import { startUsageHeartbeat } from './usage-heartbeat';
 import {
@@ -156,6 +157,8 @@ export function toastMidiLoadFailure(exc: unknown): void {
 export function startAppInstruments(scheduler: BootScheduler = bootScheduler): () => void {
 	installPerfEventLogGlobal();
 	setMidiLoadFailureReporter(toastMidiLoadFailure);
+	// A settings write that failed on disk shows as an error toast (PR #4014).
+	installSettingSaveErrorSink((message, cause) => pushToast(message, 'error', undefined, cause));
 	// Every client error from here on carries the page's own transport read,
 	// so the engine can hold the Sentry forward while a deck is live. Wired
 	// here rather than in client-error-reporting because that module boots

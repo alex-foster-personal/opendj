@@ -97,6 +97,10 @@ export function rowFromPlaylistWire(wire: PlaylistTrackRowWire, order: number): 
 		key_reason: wire.key_reason ?? null,
 		bpm_status: wire.bpm_status ?? 'ok',
 		bpm_reason: wire.bpm_reason ?? null,
+		bpm_source: wire.bpm_source ?? null,
+		bpm_method: wire.bpm_method ?? null,
+		bpm_confidence: wire.bpm_confidence ?? null,
+		bpm_confidence_error: wire.bpm_confidence_error ?? null,
 		loudness_status: wire.loudness_status ?? 'ok',
 		loudness_reason: wire.loudness_reason ?? null,
 		...availability,
@@ -168,6 +172,10 @@ export function rowFromListWire(track: TrackListItemWire, order: number): Browse
 		energy: track.energy,
 		energy_source: track.energy_source,
 		energy_reason: track.energy_reason,
+		bpm_source: track.bpm_source ?? null,
+		bpm_method: track.bpm_method ?? null,
+		bpm_confidence: track.bpm_confidence ?? null,
+		bpm_confidence_error: track.bpm_confidence_error ?? null,
 		...availability,
 		// CHROME-02 wire flag, with the listing's own availability verdict
 		// (issue #3934) winning when it already says streaming.

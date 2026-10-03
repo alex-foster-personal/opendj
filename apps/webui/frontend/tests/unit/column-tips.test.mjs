@@ -36,7 +36,14 @@ before(async () => {
 	tips = await loadTypeScriptModule('src/lib/rb/column-tips.ts');
 	// Line endings are a checkout detail, not source content: a Windows
 	// checkout carries CRLF, and the '>\n' tag scan below would find none.
-	source = readFileSync(TRACK_TABLE, 'utf8').replaceAll('\r\n', '\n');
+	const bpmCellTitle = readFileSync(
+		fileURLToPath(new URL('../../src/lib/rb/bpm-cell-title.ts', import.meta.url)),
+		'utf8'
+	).replaceAll('\r\n', '\n');
+	source = [
+		readFileSync(TRACK_TABLE, 'utf8').replaceAll('\r\n', '\n'),
+		bpmCellTitle
+	].join('\n');
 	supportSource = readFileSync(TRACK_TABLE_SUPPORT, 'utf8').replaceAll('\r\n', '\n');
 });
 

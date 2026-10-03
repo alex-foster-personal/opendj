@@ -796,10 +796,6 @@ def field_column_sql(field_name: str, selection: Selection, *, table: str = "tra
     source = selection.source(lane)
     if source == "own":
         if not selection.projection_available:
-            # No own store, so no own rows: the predicate matches NOTHING.
-            # Emitting the subquery anyway would raise `no such table` and
-            # take the whole smartlist down; emitting the rekordbox column
-            # would answer a question nobody asked.
             return "NULL"
         return (
             "(SELECT ap.value FROM analysis_projection ap "
