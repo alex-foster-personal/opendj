@@ -1156,13 +1156,10 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 	if (_masterMode === 'locked' && !options?.force) return _masterDeck;
 	const previous = _masterDeck, next = electMaster(_electionInput()), reason = options?.reason ?? 'master-left';
 	_assignMaster(next, reason);
-	// An AUTOMATIC handoff re-joins the playing followers as setDeckMaster does;
-	// otherwise each phase lock drops ('master moved') and the decks free-run.
+	// Automatic handoff re-joins playing followers (same as setDeckMaster). Queued
+	// on the shared sync claim so a later load/seek/tempo is not overwritten.
 	if (AUTOMATIC_HANDOFF_REASONS.has(reason) && previous !== null && next !== null && next !== previous && deckStates[next].playing) {
 		_bumpReanchorOperation(next);
-		// Under the shared sync claim, queued behind the command that moved the
-		// master, so a load, seek or tempo sent after it never completes first
-		// and then has its follower position or tempo overwritten by this.
 		void _automaticRejoinRunner(async () => {
 			if (_masterDeck !== next || !deckStates[next].playing) return;
 			const followers = masterSwitchFollowers(next, deckStates).filter((d) => effectiveBeatSync(deckStates[d]));
@@ -1171,7 +1168,6 @@ function _electPlayingMaster(options?: { force?: boolean; reason?: MasterReason 
 	}
 	return next;
 }
-
 
 function _maybeHandoffOnAir(): void {
 	if (_masterMode !== 'auto' || _masterDeck === null) return;
@@ -2079,8 +2075,7 @@ async function _resumeContext(): Promise<AudioContext> {
 interface _MasterSyncSchedule {
 	tempoRatio: number;
 	masterTempoEnabled: boolean;
-	/** When set, relocate master to the track position this returns for the
-	 * group's sync instant (`phaseKeepingLandingSec`, beat-sync-math.ts). */
+	/** Relocate master via this fn of the group's sync instant (`phaseKeepingLandingSec`). */
 	positionSec?: (syncAt: number) => number;
 }
 
@@ -2088,16 +2083,7 @@ interface _SyncOptions {
 	followerAnchorSec?: Partial<Record<DeckId, number>>;
 	anchorOnBeat?: boolean; // a user seek: join on the clicked beat (FollowerSyncRequest.anchorOnBeat)
 	masterSchedule?: _MasterSyncSchedule;
-	/**
-	 * Followers that were already playing and already beat-synced before
-	 * this call - a re-anchor of an ongoing lock, not a fresh join or the
-	 * first Beat Sync engage. Each caller below already restricts itself to
-	 * exactly that precondition (see seekSyncMaster, beatSyncMaxFollowers,
-	 * masterSwitchFollowers, syncChangeRequiresReschedule), so it passes the
-	 * same followers through here unchanged. Their recomputed
-	 * followerTempoRatio approaches its target through
-	 * `_scheduleReanchoredFollower` instead of stepping - see that function.
-	 */
+	/** Already-playing beat-synced followers to re-anchor via `_scheduleReanchoredFollower`. */
 	reanchorDecks?: ReadonlySet<DeckId>;
 	/** Q1: the press behind this sync. Set ONLY by `play` (one pressed follower);
 	 * resync callers leave it unset so a background re-anchor files no press row. */
@@ -2579,8 +2565,7 @@ async function _synchronizeFollowers(
 		const failedDecks = outcomes.flatMap((outcome, index) =>
 			outcome.status === 'rejected' ? [schedules[index].deck] : []
 		);
-		// Lock every follower that DID sync before a partial failure throws (a
-		// failed master schedule leaves no tempo to lock against).
+		// Lock followers that synced; a failed master schedule has no tempo to lock.
 		for (const item of planned) {
 			if (failedDecks.includes(item.deck) || failedDecks.includes(master)) continue;
 			item.st.sync_error = null;
@@ -2626,8 +2611,7 @@ const _beatgridResyncPorts: BeatgridResyncPorts = {
 	setSyncError: (deck, message) => (deckStates[deck].sync_error = message), requiresReschedule: syncChangeRequiresReschedule,
 	synchronizeFollowers: _synchronizeFollowers, ..._resyncTracking
 };
-// NAE-19 continuous phase lock: bookkeeping and ports in phase-lock-webaudio.ts.
-const _phaseLock = createWebAudioPhaseLock({
+const _phaseLock = createWebAudioPhaseLock({ // NAE-19; bookkeeping lives in phase-lock-webaudio.ts
 	deckIds: DECK_IDS, syncMaster: _syncMaster, masterDeck: _ownedMaster, ownsTempo: _syncOwnsFollowerTempo, playing: (deck) => deckStates[deck].playing,
 	loadToken: (deck) => _rt[deck].loadToken, stableId: (deck) => deckStates[deck].stable_id,
 	settled: (deck) => { const rt = _rt[deck]; return rt.pending.length === 0 && rt.scheduleIntentCount === 0 && !_presentationPending(rt) && !_reanchorRampPending(rt) && _quantizedLaunchAt[deck] === null; },
@@ -3408,9 +3392,7 @@ class RbAudioEngine implements AudioEngine {
 			scheduleIntentCount: rt.scheduleIntentCount
 		});
 		if (needsScheduledMutation) {
-			// Land on the deck's own beat phase at the EFFECTIVE landing time, not a
-			// fixed second that lands late (`phaseKeepingLandingSec`, beat-sync-math.ts).
-			const when = _ctx === null ? 0 : _futureScheduleTime(deck);
+			const when = _ctx === null ? 0 : _futureScheduleTime(deck); // phase at the effective time
 			const grid = !rt.desiredActive ? null : jumpBeats != null ? (st.anlz?.beatgrid.beats ?? null) : skipGridQuantize ? null : seekBeats; // never throws on a gridless deck
 			const landing = (at: number): number => phaseKeepingLandingSec(grid, _projectPositionAt(deck, at), jumpBeats ?? null, targetMs / 1000, durMs / 1000);
 			const activeMaster = _syncMaster();
