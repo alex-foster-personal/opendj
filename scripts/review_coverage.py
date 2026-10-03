@@ -105,10 +105,12 @@ from types import MappingProxyType
 
 try:
     from scripts.review_gh import (
+        REVIEWER_LOGINS,
         TriageError,
         _body_is_at_head,
         _checks,
         _head_sha,
+        _matches,
         _paginated_json_list,
         _paginated_json_pages,  # noqa: F401  (review_control_plane's fetch seam)
     )
@@ -169,15 +171,6 @@ OUTAGE_MARKERS: tuple[str, ...] = (
     "no credits",
 )
 
-#: The bot login each expected reviewer posts under. A reviewer's STATUS is not
-#: evidence it reviewed; #682 carried CodeRabbit "Review completed" with zero
-#: submitted reviews and zero inline comments (Tue 1 Sep 2026). Only an ARTIFACT
-#: -- a submitted review, an inline comment, or a review summary comment -- shows
-#: that something actually looked at the diff.
-REVIEWER_LOGINS: dict[str, tuple[str, ...]] = {
-    "Codex": ("chatgpt-codex-connector",),
-}
-
 #: Reviewers recognized by login PLUS an embedded marker rather than by a bot
 #: login alone, each with the matcher that owns that pair. A CLI lane posts
 #: through `gh` as the maintainer, so neither signal is sufficient by itself; the
@@ -228,10 +221,11 @@ KNOWN_UNAVAILABLE_REVIEWERS: dict[str, str] = {}
 
 
 # gh plumbing (`TriageError`, `_gh`, `_checks`, `_head_sha`, `_flatten_pages`,
-# `_paginated_json_list`, `_body_is_at_head`) lives in scripts/review_gh.py;
-# `TriageError`, `_checks` and `_head_sha` are re-exported here (via the
-# import above) for this module's own use and for
-# scripts/review_thread_triage.py's `review_coverage.TriageError` reference.
+# `_paginated_json_list`, `_body_is_at_head`, `REVIEWER_LOGINS`, `_matches`) lives
+# in scripts/review_gh.py; `TriageError`, `_checks`, `_head_sha`, `REVIEWER_LOGINS`
+# and `_matches` are re-exported here (via the import above) for this module's own
+# use and for scripts/review_thread_triage.py's `review_coverage.TriageError`
+# reference.
 
 
 # ----- review artifacts ---------------------------------------------------
@@ -255,21 +249,6 @@ class ReviewerEvidence:
     @property
     def artifact_count(self) -> int:
         return self.submitted_reviews + self.inline_comments + len(self.bodies)
-
-
-def _matches(login: str, name: str) -> bool:
-    """Exact match on the normalized login, never a substring test.
-
-    issue #1016 P1 BLOCKING, thread r3929765931 (PR #1053, Thu 3 Sep 2026): a
-    substring check accepted `chatgpt-codex-connector-attacker` as Codex,
-    because `"chatgpt-codex-connector" in login.lower()` is true for any
-    login merely CONTAINING the trusted stem. On a public repo any commenter
-    could post a current-head `Completed` line under that name and pass
-    coverage without a real Codex review. Normalize the `[bot]` suffix and
-    require full equality, the same rule `review_thread_parse._is_bot` already
-    applies to its own bot-identity check.
-    """
-    return login.removesuffix("[bot]").lower() in REVIEWER_LOGINS.get(name, ())
 
 
 def _collect_evidence(
