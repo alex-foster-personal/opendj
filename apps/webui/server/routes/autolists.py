@@ -6,6 +6,7 @@ bucket definitions as smartlist rows or call the materialiser.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,7 +23,7 @@ from apps.smartlists.evaluator import EvaluatorError, evaluate
 
 from .. import rb_vendor
 from ..backend import StateBackend
-from ..deps import get_read_state
+from ..deps import get_library_data_dir, get_read_state
 from ..models import TrackRowOut
 from .smartlists import get_smartlists_conn
 
@@ -134,6 +135,7 @@ def query_autolists(
     body: AutolistQueryIn,
     conn: Annotated[sqlite3.Connection, Depends(get_smartlists_conn)],
     backend: Annotated[StateBackend, Depends(get_read_state)],
+    data_dir: Annotated[Path, Depends(get_library_data_dir)],
 ) -> AutolistQueryOut:
     sel = _selection_dict(body.selection)
     try:
@@ -164,7 +166,7 @@ def query_autolists(
                 f"stable_ids with no track row (first: {missing[:5]})"
             ),
         })
-    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in page_ids])
+    rows = rb_vendor.build_track_rows([tracks_map[sid] for sid in page_ids], data_dir=data_dir)
     return AutolistQueryOut(
         items=stable_ids,
         tracks=[TrackRowOut(**r) for r in rows],

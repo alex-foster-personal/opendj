@@ -130,6 +130,14 @@ class QualityRungOut(BaseModel):
     blurb: str
 
 
+class GenreGuessOut(BaseModel):
+    """GENRE-02: a JEV genre-family GUESS, served only while ``genre`` is empty; never a tag."""
+
+    family: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    source: Literal["jev"]
+
+
 class LyricsRowSummaryOut(BaseModel):
     """Per-row karaoke verdict summary for library listings."""
 
@@ -214,6 +222,7 @@ class TrackListItemOut(TrackOut):
     # the cell is empty (no file tag vs no rekordbox genre).
     genre: str | None = None
     genre_reason: str | None = None
+    genre_guess: GenreGuessOut | None = None
 
 
 class LyricLineOut(BaseModel):
@@ -315,6 +324,7 @@ class TrackRowOut(BaseModel):
     duration_ms: int | None
     genre: str | None
     genre_reason: str | None = None
+    genre_guess: GenreGuessOut | None = None
     comments: str | None
     etag: str
     preview_b64: str | None
@@ -422,8 +432,8 @@ class PairingSnapshot(BaseModel):
 
 
 class PairingCreate(BaseModel):
-    from_stable_id: str
-    to_stable_id: str
+    from_stable_id: str = Field(min_length=1)
+    to_stable_id: str = Field(min_length=1)
     direction: Literal["->", "<->"] = "->"
     source: Literal["manual", "learned", "ai"] = "manual"
     notes: str | None = Field(default=None, max_length=1000)
@@ -431,6 +441,8 @@ class PairingCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot_decks_match_pair(self) -> PairingCreate:
+        if self.from_stable_id == self.to_stable_id:
+            raise ValueError("a pairing needs two different tracks")
         if self.snapshot is None:
             return self
         snapshot_ids = {deck.stable_id for deck in self.snapshot.decks}

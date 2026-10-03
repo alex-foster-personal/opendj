@@ -152,6 +152,20 @@ fn exit_requested_trigger(code: Option<i32>) -> String {
     }
 }
 
+/// Whether an `ExitRequested` must be held and handed to the web UI's quit gate.
+///
+/// Only a platform quit (`code == None`: Cmd-Q, the Dock, an Apple Event) is
+/// held. A self-requested exit (`Some(_)`) is the quit gate's own answer: the
+/// webview's `confirmQuit()` calling the process plugin's `exit()`, which runs
+/// only after the gate confirmed. Holding that one too sent it straight back
+/// to the gate, which confirmed again and called `exit()` again, so a
+/// `POST /api/v1/lifecycle/quit` returned 200 and the app kept running
+/// (demon-llama, Fri 2 Oct 2026). The restart code is passed through by tauri
+/// itself whatever this returns.
+fn exit_needs_quit_gate(code: Option<i32>) -> bool {
+    code.is_none()
+}
+
 // ----- build identity -----------------------------------------------------
 // Baked at COMPILE time by the `dmg` recipe. `option_env!` returns None for a
 // plain `cargo build`, and an unstamped shell says so rather than inventing a
@@ -649,16 +663,21 @@ fn main() {
         .expect("error while building Open DJ desktop shell");
 
     app.run(|handle, event| {
-        // INSTALL-21: ExitRequested is intercepted and delegated to the web UI.
-        // Shutdown runs only on the final Exit after a confirmed quit.
+        // INSTALL-21: a platform quit is intercepted and delegated to the web
+        // UI; the web UI's confirmed exit() is let through. Shutdown runs only
+        // on the final Exit after a confirmed quit.
         match event {
             RunEvent::ExitRequested { code, api, .. } => {
-                api.prevent_exit();
                 engine::append_shell_log(
                     "shutdown",
                     &format!("exit requested: {}", exit_requested_trigger(code)),
                 );
-                request_quit_from_webview(handle);
+                if exit_needs_quit_gate(code) {
+                    api.prevent_exit();
+                    request_quit_from_webview(handle);
+                } else {
+                    engine::append_shell_log("shutdown", "exit confirmed by the quit gate: exiting");
+                }
             }
             RunEvent::Exit => {
                 if let Some(state) = handle.try_state::<RuntimeSupervisorState>() {
@@ -800,6 +819,17 @@ mod tests {
     #[test]
     fn a_platform_delivered_exit_is_named_apple_event_quit() {
         assert_eq!(exit_requested_trigger(None), "apple-event-quit");
+    }
+
+    // - if a self-requested exit is held then the quit gate's own confirmed
+    //   exit() goes back to the gate and the app never quits -> broken
+    // - if a platform quit is let through then Cmd-Q skips the "are you
+    //   sure?" dialog while a deck plays -> broken (the overshoot)
+    #[test]
+    fn only_a_platform_quit_goes_to_the_quit_gate() {
+        assert!(exit_needs_quit_gate(None));
+        assert!(!exit_needs_quit_gate(Some(0)));
+        assert!(!exit_needs_quit_gate(Some(1)));
     }
 
     #[test]

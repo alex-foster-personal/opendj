@@ -84,7 +84,6 @@
 	import AnalysisSourceToggle from './AnalysisSourceToggle.svelte';
 	import CloudSyncStatusChip from '$lib/components/CloudSyncStatusChip.svelte';
 	import CommandEntry from './CommandEntry.svelte';
-	import CreatePairingSheet from './CreatePairingSheet.svelte';
 	import FeedbackWidget from './FeedbackWidget.svelte';
 	import PerfMeters from './PerfMeters.svelte';
 	import { plannedExplainerBullets, plannedTitle } from '$lib/rb/planned-explainers';
@@ -121,6 +120,9 @@
 
 	let pairingOpen = $state(false);
 	let pairingSnapshot = $state<PairingSnapshot | null>(null);
+	/** The capture sheet loads on its first open, so it stays out of the
+	 * /performance route's initial bundle (budget in scripts/bundle-budget.mjs). */
+	let PairingSheet = $state<typeof import('./CreatePairingSheet.svelte').default | null>(null);
 	let autoPlayMenuOpen = $state(false);
 	let autoPlayWrapEl: HTMLSpanElement | undefined = $state();
 	let autoPlayMenuStyle = $state('');
@@ -298,6 +300,7 @@
 	}
 
 	async function _openPairing(): Promise<void> {
+		PairingSheet ??= (await import('./CreatePairingSheet.svelte')).default;
 		const state = await dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
 		if (state.pairing_snapshot === null) throw new Error('pairing snapshot was not captured');
 		pairingSnapshot = state.pairing_snapshot;
@@ -532,6 +535,7 @@
 		type="button"
 		class="bsm-toggle topbar-slot-pairing"
 		title="Create pairing from two decks"
+		aria-label="Create pairing"
 		onclick={() => void _openPairing()}
 	>
 		Create pairing
@@ -852,7 +856,9 @@
 	{/if}
 </header>
 
-<CreatePairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
+{#if PairingSheet}
+	<PairingSheet bind:open={pairingOpen} bind:snapshot={pairingSnapshot} />
+{/if}
 
 <!-- MIDI drawer: fixed overlay, only visible while midiUi.panelOpen. -->
 <MidiPanelLoader />
@@ -1090,8 +1096,22 @@
 	   asserts it visible, labelled and hittable at 800x600. */
 
 	@media (max-width: 1740px) {
-		.rb-topbar .topbar-slot-pairing,
 		.rb-topbar .topbar-slot-vibe { display: none; }
+		/* Create pairing is the ONLY door to the pairing capture sheet, not
+		   read-only status, so it shrinks to a PAIR label (same idiom as STG,
+		   BSM and AP) instead of leaving with the vibe meter. Hiding it here
+		   hid it on every Mac laptop window (1470-1728px). Measured Fri 2 Oct
+		   2026 (playwright, chromium, fixture library, 10px sweep 780-1780px
+		   plus 2px across 1100-1260px): 34px wide, no row overflow at any
+		   width, and the command input stays hittable everywhere except
+		   1126-1136px, which the tier below covers. */
+		.rb-topbar .topbar-slot-pairing { font-size: 0; }
+		.rb-topbar .topbar-slot-pairing::after { content: 'PAIR'; font-size: 9px; }
+	}
+	@media (max-width: 1160px) {
+		/* 1136px (the last width where PAIR crushed the command input) + the
+		   same 25px margin the other tiers use. */
+		.rb-topbar .topbar-slot-pairing { display: none; }
 	}
 
 	.ap-wrap {

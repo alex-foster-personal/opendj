@@ -267,6 +267,85 @@ export function deckLoadFailureContext(
 }
 
 /**
+ * Load failures a DJ can act on, said plainly (CLOUDSYNC-33). The message
+ * arrives as RbApiError's `CODE: detail`; for these codes the deck shows only
+ * the sentence, while the toast's error report still carries the raw cause.
+ * AUDIO_FILE_MISSING is deliberately absent: it also covers iCloud stubs,
+ * unsupported extensions and unresolvable paths, where the file IS here.
+ */
+const PLAIN_LOAD_FAILURES: Readonly<Record<string, string>> = {
+	AUDIO_NOT_ON_THIS_MACHINE: "This file isn't on this computer."
+};
+
+function plainLoadFailure(message: string): string {
+	const code = /^([A-Z][A-Z0-9_]+): /.exec(message)?.[1];
+	return (code !== undefined && PLAIN_LOAD_FAILURES[code]) || message;
+}
+
+export function formatDeckLoadFailureMessage(
+	trackTitle: string | null | undefined,
+	stableId: string,
+	message: string
+): string {
+	const title = trackTitle?.trim();
+	const reason = plainLoadFailure(message);
+	return title ? `${title}: ${reason}` : `${stableId}: ${reason}`;
+}
+
+/**
+ * The deck banner's text for a failed load, keyed by the error that failed it
+ * (CLOUDSYNC-33). The banner is filled from the rejected command's error, which
+ * only knows `RbApiError: CODE: detail`; the load path knows the title and the
+ * plain wording, so it records them here against the same error object.
+ * A WeakMap, so nothing stale can outlive the error or leak onto another load.
+ */
+const deckFacingMessages = new WeakMap<object, string>();
+
+export function rememberDeckFacingMessage(error: unknown, message: string): void {
+	if (typeof error === 'object' && error !== null) deckFacingMessages.set(error, message);
+}
+
+export function deckFacingMessage(error: unknown): string | undefined {
+	return typeof error === 'object' && error !== null ? deckFacingMessages.get(error) : undefined;
+}
+
+/**
+ * The track title from a load's own metadata request, for a load that failed
+ * before that request was read (the audio fetch rejects first). Never throws.
+ *
+ * Deliberately unbounded and timer-free: the request is already in flight to a
+ * server that has just answered the audio fetch, and the load-failure path
+ * must not schedule stray timers (audio-engine-controller's timer guard).
+ */
+export async function settledTrackTitle(
+	request: Promise<{ track: { title?: string | null } }> | null
+): Promise<string | null> {
+	if (request === null) return null;
+	try {
+		return (await request).track.title ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The deck-facing text for a failed load (CLOUDSYNC-33): the title, from the
+ * loaded track or else the load's own in-flight metadata request, then the
+ * plain reason. Recorded against `error` so the deck banner shows the same.
+ */
+export async function failedDeckLoadMessage(
+	error: unknown,
+	title: string | null | undefined | Promise<{ track: { title?: string | null } }>,
+	stableId: string,
+	message: string
+): Promise<string> {
+	const resolved = title instanceof Promise ? await settledTrackTitle(title) : title;
+	const text = formatDeckLoadFailureMessage(resolved, stableId, message);
+	rememberDeckFacingMessage(error, text);
+	return text;
+}
+
+/**
  * Report one failed deck load: the user-facing toast, the client perf ring, and
  * - riding that same toast - the server-side error row carrying the stages.
  *
@@ -280,15 +359,6 @@ export function deckLoadFailureContext(
  * already be stamped when this is called, or every report is missing the one
  * number that says when the load died.
  */
-export function formatDeckLoadFailureMessage(
-	trackTitle: string | null | undefined,
-	stableId: string,
-	message: string
-): string {
-	const title = trackTitle?.trim();
-	return title ? `${title}: ${message}` : `${stableId}: ${message}`;
-}
-
 /** Plain words for a stick load refusal, keyed on the backend's detail.code
  * (spec 4b, USBPLAY-09). */
 const STICK_LOAD_FAILURE_WORDS: ReadonlyMap<string, string> = new Map([

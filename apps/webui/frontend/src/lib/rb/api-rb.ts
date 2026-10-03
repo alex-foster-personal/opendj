@@ -406,6 +406,8 @@ export interface PlaylistTrackRowWire {
 	genre: string | null;
 	/** When genre is null, names why (no file tag, no rekordbox genre, etc.). */
 	genre_reason?: string | null;
+	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
+	genre_guess?: GenreGuess | null;
 	comments: string | null;
 	etag: string;
 	preview_b64: string | null;
@@ -635,9 +637,14 @@ export async function getReconcileSummary(
  * provider, so an unmapped streaming row needs no rb-meta to classify. The
  * row mapper also settles it from `file_availability === 'streaming'`
  * (issue #3934), so a payload whose flag disagrees still reads as streaming. */
+/** GENRE-02 guess: never a tag, never written anywhere. */
+export type GenreGuess = { family: string; confidence: number; source: 'jev' };
+
 export type TrackListItemWire = Track & {
 	genre?: string | null;
 	genre_reason?: string | null;
+	/** GENRE-02: a JEV genre-family guess, served only while genre is empty. */
+	genre_guess?: GenreGuess | null;
 	duration_ms?: number | null;
 	energy: number | null;
 	energy_source: 'mik' | null;

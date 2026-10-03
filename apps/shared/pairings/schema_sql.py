@@ -35,6 +35,7 @@ _PAIRINGS_DDL: tuple[str, ...] = (
                                    (confidence BETWEEN 0 AND 1)),
         created_at     TEXT NOT NULL,
         modified_at    TEXT NOT NULL,
+        snapshot_json  TEXT,
         PRIMARY KEY (from_stable_id, to_stable_id, direction)
     )
     """,
@@ -79,6 +80,37 @@ def migrate_smartlists_deleted_at(conn: sqlite3.Connection) -> None:
     if "deleted_at" in columns:
         return
     conn.execute("ALTER TABLE smartlists ADD COLUMN deleted_at TEXT")
+
+
+def migrate_pairings_snapshot_json(conn: sqlite3.Connection) -> None:
+    """Add ``snapshot_json`` to an existing pairings table when missing.
+
+    The Create pairing sheet captures both decks' positions and EQ at the
+    moment the DJ saves a pairing. Before this column the webui kept those
+    pairings in process memory only, so they vanished on restart.
+    """
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pairings'"
+    ).fetchone()
+    if row is None:
+        return
+    if _pairings_has_snapshot_json(conn):
+        return
+    try:
+        conn.execute("ALTER TABLE pairings ADD COLUMN snapshot_json TEXT")
+    except sqlite3.OperationalError:
+        # Two processes opening the same pre-column DB can both see it absent;
+        # the one that loses the ALTER race finds the column already there.
+        # Anything else (a locked or read-only file) is a real failure.
+        if not _pairings_has_snapshot_json(conn):
+            raise
+
+
+def _pairings_has_snapshot_json(conn: sqlite3.Connection) -> bool:
+    return any(
+        col[1] == "snapshot_json"
+        for col in conn.execute("PRAGMA table_info(pairings)")
+    )
 
 _PAIRING_CAPTURE_V1: tuple[str, ...] = (
     """
@@ -147,17 +179,21 @@ def ensure_phase08_tables(conn: sqlite3.Connection) -> None:
     """Create the Phase 08 tables if they don't already exist.
 
     Idempotent. Wraps everything in a single transaction so partial
-    failure rolls back cleanly.
+    failure rolls back cleanly. IMMEDIATE, not DEFERRED: the column checks
+    below read and then ALTER, and a deferred reader that loses the write
+    lock to another process keeps its old snapshot, so it would see the
+    column still absent after the rival added it and fail the write.
     """
     in_transaction = conn.in_transaction
     if not in_transaction:
-        conn.execute("BEGIN")
+        conn.execute("BEGIN IMMEDIATE")
     try:
         for stmt in _PAIRINGS_DDL:
             conn.execute(stmt)
         for stmt in _SMARTLISTS_DDL:
             conn.execute(stmt)
         migrate_smartlists_deleted_at(conn)
+        migrate_pairings_snapshot_json(conn)
         if not in_transaction:
             conn.execute("COMMIT")
     except Exception:

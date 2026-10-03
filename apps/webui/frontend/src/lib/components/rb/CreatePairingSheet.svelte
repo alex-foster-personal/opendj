@@ -47,11 +47,21 @@
 	}
 
 	async function _save(): Promise<void> {
-		if (selected.length !== 2) return;
-		await dispatchPerformanceCommand({
-			type: 'pairing_snapshot_save', from_deck: selected[0], to_deck: selected[1]
-		});
+		if (busy || selected.length !== 2) return;
+		busy = true;
+		try {
+			await dispatchPerformanceCommand({
+				type: 'pairing_snapshot_save', from_deck: selected[0], to_deck: selected[1]
+			});
+		} catch {
+			// The dispatcher already toasted the failure; keep the sheet open
+			// so the DJ can retry without re-freezing the decks.
+			return;
+		} finally {
+			busy = false;
+		}
 		open = false;
+		pushToast('Pairing saved', 'info');
 	}
 
 	interface LoadedPair {
@@ -176,7 +186,7 @@
 			<button type="button" class="ghost" disabled={busy || selected.length !== 2} onclick={() => void _reloadSync()}>
 				Reload sync
 			</button>
-			<button type="button" class="primary" disabled={busy || selected.length !== 2} onclick={_save}>
+			<button type="button" class="primary" disabled={busy || selected.length !== 2} onclick={() => void _save()}>
 				Capture
 			</button>
 		</footer>

@@ -47,6 +47,7 @@
 	 */
 	import { listPairingsFor, getTrack, type Pairing, type Track } from '$lib/api';
 	import { ApiError } from '$lib/api/client';
+	import { subscribeKind, subscribeResync } from '$lib/api/events-bus';
 
 	type Props = {
 		candidates?: unknown[];
@@ -79,6 +80,24 @@
 	 * being empty, which means the call succeeded and found nothing. */
 	let loadError = $state<string | null>(null);
 	let requestSeq = 0; // stale-response guard, same pattern as SuggestNextStrip
+	/** Bumped when the server says pairings changed (a Capture from the
+	 * Create pairing sheet, a delete on /pairings), so a new pairing for the
+	 * loaded track shows without reloading the deck. */
+	let pairingsRevision = $state(0);
+	let shownFor: string | null = null;
+
+	$effect(() => {
+		const unkind = subscribeKind('pairings', () => {
+			pairingsRevision += 1;
+		});
+		const unresync = subscribeResync(() => {
+			pairingsRevision += 1;
+		});
+		return () => {
+			unkind();
+			unresync();
+		};
+	});
 
 	function _partnerId(p: Pairing, sid: string): string {
 		return p.from_stable_id === sid ? p.to_stable_id : p.from_stable_id;
@@ -105,7 +124,10 @@
 
 	$effect(() => {
 		const sid = stableId;
+		void pairingsRevision;
 		const seq = ++requestSeq;
+		const sameTrack = sid === shownFor;
+		shownFor = sid;
 		if (sid === null) {
 			pairedTracks = [];
 			loadError = null;
@@ -117,8 +139,9 @@
 		// is in flight, and a click there loads/plays the wrong track (P2,
 		// bot review PR #1285). A blank section for one request's duration
 		// is the honest state - there is nothing yet confirmed true for the
-		// new stableId.
-		pairedTracks = [];
+		// new stableId. A refresh for the SAME track keeps its rows until the
+		// answer lands: they are still true for this track.
+		if (!sameTrack) pairedTracks = [];
 		listPairingsFor(sid)
 			.then(async (pairings) => {
 				if (seq !== requestSeq) return;

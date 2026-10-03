@@ -101,6 +101,7 @@ from .routes import find_replace as find_replace_routes
 from .routes import grid_provenance as grid_provenance_routes
 from .routes import health as health_routes
 from .routes import ingest as ingest_routes
+from .routes import ingest_cli_procs
 from .routes import ingest_materialize as ingest_materialize_routes
 from .routes import ingest_pending as ingest_pending_routes
 from .routes import ingest_upload as ingest_upload_routes
@@ -284,6 +285,9 @@ def _start_ahead_analysis_if_armed(app: FastAPI) -> None:
 async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
     from .app import build_auto_analyze_watcher, build_lyric_index_watcher
 
+    # A previous lifespan's stop_all closed the CLI registry; this app runs
+    # refresh steps again.
+    ingest_cli_procs.reopen()
     # Kept ON THE APP, not rebuilt per lifespan. stop() joins with a
     # timeout, so a shutdown that gives up on a slow scan leaves a live
     # thread whose only handle is the watcher that owns it. A fresh
@@ -327,6 +331,10 @@ async def _lifespan_context(app: FastAPI) -> AsyncIterator[None]:
         path_availability_refresh.start_for_state_db(Path(app.state.state_db_path))
         yield
     finally:
+        # A step still running would outlive the engine with its pool
+        # workers. First, before the thread joins below (CloudSync waits up
+        # to 30 s), so they cannot push it past the shell's grace.
+        ingest_cli_procs.stop_all()
         from . import path_availability_refresh
 
         path_availability_refresh.stop()

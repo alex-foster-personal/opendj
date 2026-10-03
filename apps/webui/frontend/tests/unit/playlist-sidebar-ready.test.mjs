@@ -79,13 +79,18 @@ test('the All Tracks boot path does not await the pane before releasing the tree
 
 test('the tree-ready metric is open-to-tree, not now() minus an epoch (#3985)', () => {
 	assert.ok(
-		init.includes('recordPlaylistTreeReadyMs(Math.round(performance.now()));'),
-		'tree-ready must record performance.now(), which counts from navigation start'
+		init.includes('recordPlaylistTreeReadyMs(measurePlaylistTreeReadyMs());'),
+		'tree-ready must record the validated performance.now() duration'
 	);
 	assert.equal(
 		init.includes('.startedAt'),
 		false,
 		'bootTracksPrefetch().startedAt is performance.timeOrigin (an epoch); subtracting it clamps to 0'
+	);
+	assert.equal(
+		init.includes('Math.max(0'),
+		false,
+		'a negative duration must fail validation instead of being clamped to zero'
 	);
 });
 

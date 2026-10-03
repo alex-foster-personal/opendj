@@ -147,18 +147,30 @@ test('pairing snapshot freezes deck state, removes only real adjustments, and sa
 	}
 });
 
-test('pairing snapshot rejects beat timestamps when no beat is available', async () => {
+test('pairing snapshot falls back to time units when a deck has no beat to stamp', async () => {
 	globalThis.window = {};
 	const uninstall = pairing.installPerformanceBrowserIpc();
 	try {
 		pairing.uiPrefs.beat_sync_max = true;
+		for (const deckId of [1, 2, 3, 4]) {
+			pairing.deckStates[deckId].stable_id = null;
+			pairing.deckStates[deckId].anlz = null;
+		}
 		pairing.deckStates[1].stable_id = 'track-no-grid';
 		pairing.deckStates[1].title = 'No Grid';
 		pairing.deckStates[1].position_ms = 500;
 		pairing.deckStates[1].anlz = { beatgrid: { beats: [] } };
-		await assert.rejects(
-			pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' }),
-			/no beatgrid timestamp/
+		// Deck 2 HAS a grid but sits before its first beat, as a fresh load does.
+		pairing.deckStates[2].stable_id = 'track-at-zero';
+		pairing.deckStates[2].title = 'At Zero';
+		pairing.deckStates[2].position_ms = 0;
+		pairing.deckStates[2].anlz = { beatgrid: { beats: [{ n: 1, bpm: 128, t: 0.135 }] } };
+		await pairing.dispatchPerformanceCommand({ type: 'pairing_snapshot_open' });
+		const snapshot = pairing.queryPerformanceState().pairing_snapshot;
+		assert.equal(snapshot.beat_sync_max, false);
+		assert.deepEqual(
+			snapshot.decks.map((deck) => [deck.deck_id, deck.timestamp.unit, deck.timestamp.value]),
+			[[1, 'time', 500], [2, 'time', 0]]
 		);
 	} finally {
 		uninstall();

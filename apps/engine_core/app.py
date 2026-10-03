@@ -101,6 +101,7 @@ from apps.webui.server.deps import get_read_state
 from apps.webui.server.frontend_build import frontend_build_dir
 from apps.webui.server.models import HealthOut
 from apps.webui.server.request_guard import assert_request_guard_bind_allowed
+from apps.webui.server.routes import ingest_cli_procs
 from apps.webui.server.routes.health import health as legacy_health
 from apps.webui.server.sqlite_backend import make_backend
 
@@ -501,6 +502,19 @@ def _wrap_lifespan(
                 try:
                     yield
                 finally:
+                    # Child processes first (INSTALL-33). Job workers lead
+                    # their own sessions, so the shell's SIGKILL at the end
+                    # of its grace never reaches them, and a refresh step's
+                    # pool workers outlive a killed engine the same way. The
+                    # bounded joins after this (the audio engine, the
+                    # availability worker, then the legacy lifespan's
+                    # CloudSync, drain and watcher threads, up to 30 s each)
+                    # may outlast that grace, so they run once nothing would
+                    # be orphaned. runner.stop() runs again in the outer
+                    # finally: a no-op after this one, and still the stop
+                    # for a startup that failed before the yield.
+                    await asyncio.to_thread(ingest_cli_procs.stop_all)
+                    await runner.stop()
                     # Off the event loop: stop() waits for the process.
                     await asyncio.to_thread(audio_engine.stop)
                     availability_worker.stop()

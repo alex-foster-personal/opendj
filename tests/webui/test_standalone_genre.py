@@ -312,10 +312,10 @@ def test_tracks_listing_names_no_file_tag_reason_for_an_untagged_file(
     assert row["genre_reason"] == GENRE_REASON_NO_FILE_TAG
 
 
-def test_tracks_listing_genre_reason_needs_no_mutagen(
+def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
     tmp_path: Path,
 ) -> None:
-    """[if] mutagen is unimportable [then] genre_reason is still no-file-tag, [else stop]."""
+    """[if] mutagen is absent, as in the packaged app [then] the reason is no-file-tag, [else stop]."""
     state_path = tmp_path / "state.db"
     conn = state_db.open_rw(state_path)
     try:
@@ -376,7 +376,11 @@ def test_tracks_listing_genre_reason_needs_no_mutagen(
     ]
     assert len(reason_lines) == 1, completed.stdout
     reason = reason_lines[0].removeprefix("GENRE_REASON=")
+    # tinytag reads file genres when mutagen is absent, so a missing mutagen is
+    # not a missing genre reader, and the packaged app never ships mutagen.
     assert reason == GENRE_REASON_NO_FILE_TAG
+    assert "install" not in reason
+    assert "mutagen" not in reason
 
 
 def _find_track(result: dict, stable_id: str) -> dict:

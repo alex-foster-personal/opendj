@@ -2188,6 +2188,12 @@
 										{/each}
 									</button>
 								{/each}
+							{:else if row.genre_guess}
+								<span
+									class="genre-guess"
+									title={`JEV guess, ${Math.round(row.genre_guess.confidence * 100)}% sure; not a file tag`}
+									>{row.genre_guess.family}?</span
+								>
 							{/if}
 						</td>
 						<td class="c-stems">
@@ -3045,6 +3051,13 @@
 		text-shadow:
 			0 0 6px color-mix(in srgb, var(--genre-glow, #e8f0ff) 80%, transparent),
 			0 0 14px color-mix(in srgb, var(--genre-glow, #b4d2ff) 45%, transparent);
+	}
+	/* Inherits the td nowrap + ellipsis: a wrapping guess grows the
+	 * fixed-height row (22.5px -> 25px), which the virtualization math and
+	 * right-click anchored popovers both assume never happens. */
+	.genre-guess {
+		color: var(--text-muted, #8b949e);
+		font-style: italic;
 	}
 	.genre-tag.active {
 		color: var(--rb-text);

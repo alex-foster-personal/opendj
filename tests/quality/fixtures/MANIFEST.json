@@ -2,5 +2,15 @@
   "source_commit": "a4adf880",
   "source_commit_full": "a4adf880a4f45470de3eda0c7413521159073184",
   "path": "open-dj-a4adf880",
-  "note": "open-dj/ as of a4adf880 for issue #389 seed cases B1 B2 B3 B5. Not an ancestor of rewritten main; do not git-merge this tree."
+  "note": "open-dj/ as of a4adf880 for issue #389 seed cases B1 B2 B3 B5. Not an ancestor of rewritten main; do not git-merge this tree. Byte-for-byte except the files listed in modified_from_source.",
+  "modified_from_source": [
+    {
+      "file": "open-dj-a4adf880/conformance/corpus-0.2/case-01-classic-isrc.open-dj.json",
+      "date": "Sat 3 Oct 2026",
+      "pr": 4861,
+      "change": "title, artists, album and file_path replaced with invented values (go-public sample-data scrub); isrc, track_id, content_hash, bpm, key, duration_ms and vendor_ids unchanged",
+      "original_bytes": "git show a4adf880a4f45470de3eda0c7413521159073184:open-dj/conformance/corpus-0.2/case-01-classic-isrc.open-dj.json",
+      "rubric_check": "tests/quality/test_quality_rubric_a4adf880.py and test_quality_rubric_cli.py pass on both the source bytes (main before PR 4861) and these bytes"
+    }
+  ]
 }
