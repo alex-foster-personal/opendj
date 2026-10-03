@@ -952,3 +952,27 @@ fn an_mp3_behind_a_large_id3_tag_opens() {
     let peak = (0..pcm.len()).max_by(|&a, &b| pcm[a].abs().total_cmp(&pcm[b].abs())).unwrap();
     assert!((11000..11060).contains(&peak), "click at frame {peak}, expected about 11025 (0.25 s)");
 }
+
+#[test]
+fn version_says_whether_this_build_can_record_and_record_refuses_cleanly_without_it() {
+    // The sets recorder reads `capture` before choosing odj-audio over
+    // ffmpeg, so it must match the build.
+    let out = Command::new(BIN).arg("version").output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["capture"], serde_json::Value::Bool(cfg!(feature = "device")), "{v}");
+    if cfg!(feature = "device") {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    for args in [&["input-devices"][..], &["record", "--dir", tmp.path().to_str().unwrap(), "--device-index", "0"]] {
+        let out = Command::new(BIN).args(args).output().unwrap();
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("rebuild with --features device"), "{args:?}: {err}");
+    }
+    assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0, "nothing written");
+    // A bad command line is named before the missing feature.
+    let out = Command::new(BIN).args(["record", "--dir", "d"]).output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("exactly one of --device"));
+}

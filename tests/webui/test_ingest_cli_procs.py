@@ -212,6 +212,25 @@ def test_a_step_started_after_stop_all_is_stopped_at_once() -> None:
             assert _gone(int(last)), "its pool worker outlived the stop"
 
 
+def test_a_stubborn_cli_registered_after_stop_all_is_killed_without_grace() -> None:
+    # The late stop runs after stop_all has returned, so nothing waits on it:
+    # a SIGTERM grace there can be cut short by the interpreter exiting, which
+    # would leave a CLI that ignores SIGTERM alive. It must not need one.
+    assert ingest_cli_procs.stop_all() == 0
+    proc, grandchild = _start_cli(_STUBBORN_CLI_WITH_POOL)
+    try:
+        started = time.monotonic()
+        assert ingest_cli_procs.register(proc) is False
+        elapsed = time.monotonic() - started
+        assert proc.poll() is not None, "the late CLI outlived its registration"
+        assert _gone(grandchild, within_s=0.5), "its worker outlived the late stop"
+        assert elapsed < ingest_cli_procs.STOP_GRACE_S, (
+            f"the late stop took {elapsed:.1f}s, so it waited out a SIGTERM grace"
+        )
+    finally:
+        _kill(proc, grandchild)
+
+
 def test_a_new_lifespan_reopens_the_registry(tmp_path) -> None:
     assert ingest_cli_procs.stop_all() == 0
     armed = app_mod.create_app(

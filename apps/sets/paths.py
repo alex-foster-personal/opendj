@@ -3,7 +3,9 @@
 Every file the recorder writes lives under :data:`SETS_DIR`. A single
 session occupies ``<SETS_DIR>/<session_id>/``:
 
-  * ``audio_YYYY-MM-DDTHH-MM-SS.mp3`` -- rolling 5-minute segments
+  * ``audio_YYYY-MM-DDTHH-MM-SS.wav`` -- rolling 5-minute segments, 16-bit
+    PCM from odj-audio's capture; ``.mp3`` from the ffmpeg capture a
+    checkout without a capture-capable odj-audio build falls back to
   * ``timeline.jsonl``                -- append-only event log
   * ``manifest.json``                 -- summary written at stop
   * ``recorder.pid``                  -- live only while recording
@@ -25,6 +27,25 @@ SETS_DIR: Path = DATA_DIR / "sets"
 SETS_DB: Path = SETS_DIR / "sets.db"
 MODELS_DIR: Path = Path(__file__).resolve().parent / "models"
 _WINDOWS_DISALLOWED_SESSION_CHARS = frozenset('<>:"/\\|?*')
+
+
+#: The segment suffixes the recorder writes and the media type each is served
+#: as. Names are ``audio_<UTC start>`` plus one of these, so sorting by name
+#: is sorting by start even in a session resumed on the other backend.
+SEGMENT_MEDIA_TYPES: dict[str, str] = {".mp3": "audio/mpeg", ".wav": "audio/wav"}
+
+
+def is_segment_name(name: str) -> bool:
+    """Whether ``name`` is a recorder segment's file name (no directory part)."""
+    return name.startswith("audio_") and Path(name).suffix in SEGMENT_MEDIA_TYPES
+
+
+def segment_files(session_dir: Path) -> list[Path]:
+    """The session's audio segments, oldest first."""
+    return sorted(
+        (p for p in session_dir.glob("audio_*") if is_segment_name(p.name)),
+        key=lambda p: p.name,
+    )
 
 
 class SessionPathError(ValueError):

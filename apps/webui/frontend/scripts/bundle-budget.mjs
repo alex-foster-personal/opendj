@@ -257,6 +257,15 @@ const BUDGETS = [
   // Cmd+A/C/X/V handlers add 1,264 bytes there. Loading the clipboard rules
   // lazily (./track-clipboard behind loadTrackClipboard) pays back 388 of
   // them; 243,315 merged, 627 bytes over the old limit, 397 bytes remain.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, SET-11 set recording without ffmpeg, V1): REC now
+  // lights only once audio is really written, and shows "Waiting for microphone
+  // permission" while macOS's first-run prompt is up (Silver lost 42 s of a set to a
+  // REC that looked live during it). recordRailState, its tooltips and the 1 s status
+  // poll sit on the REC rail, which is first paint. Main measured 243,599 on Sat 3 Oct
+  // (ci/2026-10-03-quality-ratchets.md); this branch 243,933, +334 of its own and 221
+  // over the old limit. #4906 raises to the same 244,736 for its own +1,319: if it
+  // lands first, the merged tree needs one more KiB. Payback, not yet measured: load
+  // the REC tooltips with the lazy RecordInputPicker.
   // MERGED Fri 2 Oct 2026 (af--preview-live into main c8b8f5ae): main's #4923
   // raise is kept because its features are all in the merged route; the
   // Preview's #3837 work fit the old 241,664 by deferral (+882 measured). NOT
