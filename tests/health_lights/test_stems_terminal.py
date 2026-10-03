@@ -416,3 +416,46 @@ def test_concurrent_clears_keep_every_id(tmp_path: Path, monkeypatch: pytest.Mon
     assert errors == []
     assert real_load(keep) == set(ids)
     assert [p.name for p in keep.path.parent.iterdir()] == [keep.path.name]
+
+
+def _check_with(tmp_path: Path, probe_fn) -> st.StemsCheck:
+    return st.StemsCheck(
+        outcomes=co.OutcomeStore(co.store_path(tmp_path)),
+        keep=st.KeepPending(st.keep_pending_path(tmp_path)),
+        title_fn=lambda _stable_id: None,
+        probe_fn=probe_fn,
+        clock=lambda: 1.0,
+    )
+
+
+def test_an_inconclusive_probe_is_retried_on_a_later_tick(tmp_path: Path) -> None:
+    """[if] the probe was inconclusive (a timeout, a refused open) [then] the next tick probes the unchanged file again and can mark it, [else stop].
+
+    MUTATION TARGET: drop the ``_seen.discard`` and the recovered short file
+    stays pending for the life of the process (Codex, PR #4974).
+    """
+    audio = tmp_path / "short.mp3"
+    audio.write_bytes(b"x")
+    answers = [st.Probe("unknown", detail="timed out"), st.Probe("duration", duration_s=2.0)]
+    check = _check_with(tmp_path, lambda _p: answers.pop(0))
+    assert check.run([("sid", str(audio))], limit=5).marked == ()
+    assert check.run([("sid", str(audio))], limit=5).marked == ("sid",)
+
+
+def test_a_conclusive_pending_verdict_is_not_probed_again(tmp_path: Path) -> None:
+    """[if] the probe read a separable duration [then] later ticks skip the unchanged file, [else stop].
+
+    Overshoot control: the memo still holds for conclusive results.
+    """
+    audio = tmp_path / "long.mp3"
+    audio.write_bytes(b"x")
+    calls: list[Path] = []
+
+    def probe_fn(p: Path) -> st.Probe:
+        calls.append(p)
+        return st.Probe("duration", duration_s=300.0)
+
+    check = _check_with(tmp_path, probe_fn)
+    check.run([("sid", str(audio))], limit=5)
+    assert check.run([("sid", str(audio))], limit=5).checked == 0
+    assert len(calls) == 1

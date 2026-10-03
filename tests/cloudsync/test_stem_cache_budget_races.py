@@ -218,6 +218,13 @@ def test_claim_and_remove_lets_exactly_one_remover_win(tmp_path: Path):
     assert list(stems_dir.iterdir()) == []
 
 
+def _seen(stems_dir: Path, *ids: str) -> dict[str, str]:
+    """``seen`` as a pass that scanned these bundles just now passes it."""
+    from apps.cloud.stem_bundles import current_fingerprint
+
+    return {i: current_fingerprint(stems_dir / i) or "gone" for i in ids}
+
+
 @pytest.mark.requirement("STEM-40")
 def test_an_older_pass_does_not_erase_a_bundle_a_newer_pass_queued(tmp_path: Path):
     """[if] a pass that scanned before a bundle appeared saves after a pass that queued it [then] the entry stays, [else stop].
@@ -230,11 +237,11 @@ def test_an_older_pass_does_not_erase_a_bundle_a_newer_pass_queued(tmp_path: Pat
     entry: dict[str, object] = {"reason": "not_in_index", "bytes": 1, "queued_at": "t"}
     # The newer pass saw "late" and queued it, with a verified neighbor.
     budget.save_upload_queue(
-        data_dir, {"late": entry}, {"other": "fp"}, stems_dir=stems_dir, seen={"late"}
+        data_dir, {"late": entry}, {"other": "fp"}, stems_dir=stems_dir, seen=_seen(stems_dir, "late")
     )
     (stems_dir / "other").mkdir()
     # The older pass scanned before either existed and found nothing to queue.
-    written = budget.save_upload_queue(data_dir, {}, {}, stems_dir=stems_dir, seen=set())
+    written = budget.save_upload_queue(data_dir, {}, {}, stems_dir=stems_dir, seen={})
     assert "late" in written and "late" in budget.load_upload_queue(data_dir)
     assert budget.load_verified_fingerprints(data_dir) == {"other": "fp"}
 
@@ -252,10 +259,10 @@ def test_the_merge_does_not_keep_what_a_pass_saw_or_what_is_gone(tmp_path: Path)
         {"seen-clean": entry, "deleted": entry},
         {},
         stems_dir=stems_dir,
-        seen={"seen-clean", "deleted"},
+        seen={**_seen(stems_dir, "seen-clean"), "deleted": "gone"},
     )
     written = budget.save_upload_queue(
-        data_dir, {}, {}, stems_dir=stems_dir, seen={"seen-clean"}
+        data_dir, {}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "seen-clean")
     )
     assert written == {} and budget.load_upload_queue(data_dir) == {}
 
@@ -379,3 +386,45 @@ def test_a_claim_a_failed_rmtree_left_behind_is_swept_by_the_next_pass(tmp_path:
     os.rename(stems_dir / "again", abandoned)
     enforce(stems_dir, data_dir, index={}, disk=disk_usage(free=200 * GIB), dry_run=True)
     assert abandoned.exists()
+
+
+@pytest.mark.requirement("STEM-40")
+def test_a_pass_that_scanned_an_older_render_keeps_the_newer_verdict(tmp_path: Path):
+    """[if] a bundle is re-rendered after a pass scanned it and a newer pass queued the new bytes [then] the older pass's save keeps that entry, [else stop].
+
+    MUTATION TARGET: let every seen id take this pass's verdict again and the
+    re-render is reported as R2-backed (Codex, PR #4974).
+    """
+    data_dir, stems_dir = tmp_path / "data", tmp_path / "stems"
+    make_bundle(stems_dir, "rerendered", atime=100.0)
+    older = _seen(stems_dir, "rerendered")  # pass A scans generation 1
+    (stems_dir / "rerendered" / "vocals.wav").write_bytes(b"generation 2, a different length")
+    entry: dict[str, object] = {"reason": "content_differs_from_r2_index", "bytes": 1, "queued_at": "t"}
+    budget.save_upload_queue(  # pass B judged generation 2
+        data_dir, {"rerendered": entry}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "rerendered")
+    )
+    # Pass A judged generation 1 clean and saves last.
+    written = budget.save_upload_queue(
+        data_dir, {}, {"rerendered": "gen1-fp"}, stems_dir=stems_dir, seen=older
+    )
+    assert written == {"rerendered": entry}
+    assert budget.load_verified_fingerprints(data_dir) == {}
+
+
+@pytest.mark.requirement("STEM-40")
+def test_a_pass_whose_scan_is_current_still_overrides_the_file(tmp_path: Path):
+    """[if] the bundle is unchanged since this pass scanned it [then] this pass's verdict replaces the on-disk one, [else stop].
+
+    Overshoot control: the on-disk entry must not win for every seen id.
+    """
+    data_dir, stems_dir = tmp_path / "data", tmp_path / "stems"
+    make_bundle(stems_dir, "settled", atime=100.0)
+    entry: dict[str, object] = {"reason": "not_in_r2_index", "bytes": 1, "queued_at": "t"}
+    budget.save_upload_queue(
+        data_dir, {"settled": entry}, {}, stems_dir=stems_dir, seen=_seen(stems_dir, "settled")
+    )
+    written = budget.save_upload_queue(
+        data_dir, {}, {"settled": "fp"}, stems_dir=stems_dir, seen=_seen(stems_dir, "settled")
+    )
+    assert written == {}
+    assert budget.load_verified_fingerprints(data_dir) == {"settled": "fp"}

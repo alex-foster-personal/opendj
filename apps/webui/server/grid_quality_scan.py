@@ -34,6 +34,7 @@ Requirements (mini-PRD):
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 import time
@@ -133,9 +134,12 @@ def _grid_identity(
         # pending privacy prompt). Recorded as such; retried on the next scan.
         log.warning("grid-quality: cannot stat %s (%s)", mapped.resolved, exc)
         return GRID_SOURCE_REKORDBOX, "unreadable", None, REASON_ANLZ_UNREADABLE
+    # The path is part of the identity: a remap to another ANLZ file with the
+    # same size and mtime is a different grid.
+    path_id = hashlib.sha256(str(mapped.resolved).encode("utf-8")).hexdigest()[:16]
     return (
         GRID_SOURCE_REKORDBOX,
-        f"rbx:{stat.st_mtime_ns}:{stat.st_size}",
+        f"rbx:{path_id}:{stat.st_mtime_ns}:{stat.st_size}",
         mapped.resolved,
         None,
     )

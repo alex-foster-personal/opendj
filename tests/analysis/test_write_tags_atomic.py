@@ -14,6 +14,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -21,6 +22,9 @@ from apps.analysis import write_tags as wt
 from apps.analysis.record import AnalysisRecord
 
 pytestmark = pytest.mark.requirement("META-02")
+
+#: ``os`` untyped for the xattr calls: typeshed omits them on darwin.
+_OS: Any = os
 
 
 def _rec(sid: str) -> AnalysisRecord:
@@ -183,9 +187,9 @@ def test_a_rollback_carries_the_live_files_metadata(
 
 def _user_xattrs_supported(path: Path) -> bool:
     try:
-        getattr(os, "setxattr", None)(path, "user.opendj.probe", b"1")
-        getattr(os, "removexattr", None)(path, "user.opendj.probe")
-    except (TypeError, OSError):  # TypeError: no xattr API on this platform
+        _OS.setxattr(path, "user.opendj.probe", b"1")
+        _OS.removexattr(path, "user.opendj.probe")
+    except (AttributeError, OSError):  # AttributeError: no xattr API on this platform
         return False
     return True
 
@@ -208,10 +212,10 @@ def test_the_reversal_script_keeps_the_live_files_xattrs(
         old=wt._read_current_tags(flac_fixture), new=wt._build_new_tags(_rec("rev-xattr")),
     )
     s = wt.apply_writes([delta], live=True, bulk=False)
-    getattr(os, "setxattr", None)(flac_fixture, "user.opendj.tag", b"kept")  # set after the snapshot
-    r = subprocess.run([sys.executable, str(s.reversal_scripts[0])], capture_output=True, text=True)
+    _OS.setxattr(flac_fixture, "user.opendj.tag", b"kept")  # set after the snapshot
+    r = subprocess.run([sys.executable, str(s.reversal_scripts[0])], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
-    assert getattr(os, "getxattr", None)(flac_fixture, "user.opendj.tag") == b"kept"
+    assert _OS.getxattr(flac_fixture, "user.opendj.tag") == b"kept"
 
 
 @pytest.mark.requirement("TAGIO-02")
@@ -260,7 +264,7 @@ def test_the_reversal_script_restores_the_bytes_when_an_xattr_cannot_be_set(
     )
     s = wt.apply_writes([delta], live=True, bulk=False)
     assert flac_fixture.read_bytes() != original
-    getattr(os, "setxattr", None)(flac_fixture, "user.opendj.tag", b"kept")
+    _OS.setxattr(flac_fixture, "user.opendj.tag", b"kept")
     driver = (
         "import os, runpy, sys\n"
         "def refuse(*_a, **_k):\n"

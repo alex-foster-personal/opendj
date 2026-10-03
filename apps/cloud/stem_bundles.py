@@ -100,6 +100,14 @@ def _scan_one(child: Path) -> LocalBundle | None:
     return LocalBundle(child.name, child, size, newest_atime, frozenset(names), fingerprint)
 
 
+def current_fingerprint(bundle_dir: Path) -> str | None:
+    """The bundle's fingerprint as it stands now, or None when it is gone."""
+    if not bundle_dir.is_dir() or bundle_dir.is_symlink():
+        return None
+    bundle = _scan_one(bundle_dir)
+    return None if bundle is None else bundle.fingerprint
+
+
 def _remove_tree(path: Path) -> None:
     """``rmtree`` that treats an entry already gone as removed: a sweep and a
     claimant may delete the same abandoned claim at once."""
@@ -199,6 +207,7 @@ __all__ = [
     "LocalBundle",
     "StemAssetIndex",
     "claim_and_remove",
+    "current_fingerprint",
     "index_gap",
     "scan_bundles",
     "sweep_abandoned_claims",

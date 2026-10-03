@@ -5,21 +5,27 @@ each computes the queue from the bundles IT scanned. Writing that snapshot
 as-is would let an older pass erase a bundle a newer pass queued after the
 older one's scan. So every save is one serialized transaction that merges
 against the file as it stands on disk: an entry for a bundle this pass never
-saw (and did not evict) is kept while that bundle's directory still exists.
+saw (and did not evict) is kept while that bundle's directory still exists,
+and so is the on-disk verdict for a bundle this pass did see when the bundle
+was re-rendered after this pass scanned it (its fingerprint moved), since a
+newer pass may have judged the new bytes.
 """
 from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Collection
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TypeVar
 
+from apps.cloud.stem_bundles import current_fingerprint
 from apps.cloud.stem_cache_settings import write_json_atomically
 
 UPLOAD_QUEUE_FILENAME: str = "stem-upload-queue.json"
 UPLOAD_QUEUE_SCHEMA_VERSION: int = 1
 
 _SAVE_LOCK = threading.Lock()
+_V = TypeVar("_V")
 
 
 def upload_queue_path(data_dir: Path) -> Path:
@@ -52,27 +58,33 @@ def save_upload_queue(
     verified: dict[str, str],
     *,
     stems_dir: Path,
-    seen: Collection[str],
+    seen: Mapping[str, str],
 ) -> dict[str, dict[str, object]]:
-    """Write this pass's verdicts, keeping on-disk entries for bundles the
-    pass did not see (``seen`` is every id it scanned, evicted ones too)
-    that are still on disk. Returns the queue as written."""
-    def unseen_and_present(stable_id: str) -> bool:
-        return stable_id not in seen and (Path(stems_dir) / stable_id).is_dir()
+    """Write this pass's verdicts, merged against the file on disk. Returns
+    the queue as written.
+
+    ``seen`` maps every id the pass scanned (evicted ones too) to the
+    fingerprint it scanned. The on-disk entry wins for an id the pass did not
+    see whose directory is still there, and for a seen id whose bundle has
+    been re-rendered since (a newer pass may have judged those bytes); this
+    pass's verdict wins everywhere else, including for a bundle now gone."""
+    root = Path(stems_dir)
+
+    def disk_wins(stable_id: str) -> bool:
+        if stable_id not in seen:
+            return (root / stable_id).is_dir()
+        current = current_fingerprint(root / stable_id)
+        return current is not None and current != seen[stable_id]
+
+    def merge(ours: Mapping[str, _V], on_disk: Mapping[str, _V]) -> dict[str, _V]:
+        kept = {k for k in set(ours) | set(on_disk) if ours.get(k) != on_disk.get(k) and disk_wins(k)}
+        merged = {k: v for k, v in ours.items() if k not in kept}
+        merged.update({k: on_disk[k] for k in kept if k in on_disk})
+        return merged
 
     with _SAVE_LOCK:
-        merged = {
-            **{k: v for k, v in load_upload_queue(data_dir).items() if unseen_and_present(k)},
-            **queue,
-        }
-        merged_verified = {
-            **{
-                k: v
-                for k, v in load_verified_fingerprints(data_dir).items()
-                if unseen_and_present(k)
-            },
-            **verified,
-        }
+        merged = merge(queue, load_upload_queue(data_dir))
+        merged_verified = merge(verified, load_verified_fingerprints(data_dir))
         path = upload_queue_path(data_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload: dict[str, object] = {

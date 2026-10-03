@@ -454,7 +454,7 @@ def enforce(  # noqa: PLR0913 - each argument is one independent input to the de
     if not dry_run and (queue != previous or verified != previous_verified):
         queue = save_upload_queue(
             data_dir, queue, verified, stems_dir=stems_dir,
-            seen={bundle.stable_id for bundle in bundles},
+            seen={bundle.stable_id: bundle.fingerprint for bundle in bundles},
         )
 
     return EnforceReport(

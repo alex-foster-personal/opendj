@@ -371,7 +371,18 @@ class StemsCheck:
                 continue
             self._seen.add(key)
             checked += 1
-            reason = classify(path, self._title_fn(stable_id), probe_fn=self._probe_fn)
+            kinds: list[ProbeKind] = []
+
+            def recording_probe(p: Path) -> Probe:
+                result = self._probe_fn(p)
+                kinds.append(result.kind)
+                return result
+
+            reason = classify(path, self._title_fn(stable_id), probe_fn=recording_probe)
+            if reason is None and "unknown" in kinds:
+                # Inconclusive (a timeout, a refused open): retry on a later
+                # tick, since recovering does not change size or mtime.
+                self._seen.discard(key)
             if reason is not None:
                 self._outcomes.record_no_source(
                     STEP, stable_id, key[1], f"{AUTO_PREFIX}: {reason}", now=self._clock()
