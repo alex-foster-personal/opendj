@@ -64,13 +64,11 @@ export function evictAnlzLru<T extends AnlzLruEntry>(
  * track's waveform and beatgrid, about 1.25 MB of JS heap a track (measured
  * Thu 1 Oct 2026 on silver: 8.7 -> 46.6 MB over 29 loads, flat after the cap).
  */
-const _heldEntryCaps = new Set<{ readonly cap: number }>();
+const _heldCaps: number[] = [];
 
 /** The tier's entry cap, lowered to the smallest cap currently held. */
 export function effectiveAnlzEntryCap(): number {
-	let cap = anlzEntryCap();
-	for (const hold of _heldEntryCaps) cap = Math.min(cap, hold.cap);
-	return cap;
+	return Math.min(anlzEntryCap(), ..._heldCaps);
 }
 
 /**
@@ -79,14 +77,14 @@ export function effectiveAnlzEntryCap(): number {
  * the next smallest hold (or the tier cap) for later inserts.
  */
 export function holdAnlzEntryCap(cap: number): () => void {
-	if (!Number.isInteger(cap) || cap < 1) {
-		throw new RangeError(`anlz entry cap hold must be a positive integer, got ${cap}`);
-	}
-	const hold = { cap };
-	_heldEntryCaps.add(hold);
+	if (!Number.isInteger(cap) || cap < 1) throw new RangeError(`anlz cap hold ${cap}`);
+	_heldCaps.push(cap);
 	if (_boundCache !== null) applyAnlzCaps();
+	let held = true;
 	return () => {
-		if (!_heldEntryCaps.delete(hold)) throw new Error('anlz entry cap hold released twice');
+		if (!held) throw new Error('anlz cap released twice');
+		held = false;
+		_heldCaps.splice(_heldCaps.indexOf(cap), 1);
 	};
 }
 
