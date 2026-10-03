@@ -95,8 +95,8 @@ import { detachProcessorForDisposal, disposeAudioResources } from '$lib/rb/audio
 import {
 	beginDeckLoad,
 	formatDeckLoadFailureMessage,
-	libraryTrackLookupError,
 	recordDeckLoad,
+	rethrowLibraryTrackLookupError,
 	reportDeckLoadFailure
 } from '$lib/rb/deck-load-context';
 import { recordPerfEvent, recordPerfTiming, stageTimer } from '$lib/rb/perf-event-log';
@@ -3059,12 +3059,7 @@ class RbAudioEngine implements AudioEngine {
 			// 1-9ms endpoint). It now runs after the swap, in _upgradeDeckStems.
 			const [trackRes, audioBytes, requiredAnlz, requiredHotCueSlots] =
 				await Promise.all([
-					time(
-						'getTrack',
-						getTrack(stable_id).catch((error: unknown) => {
-							throw libraryTrackLookupError(error);
-						})
-					),
+					time('getTrack', getTrack(stable_id).catch(rethrowLibraryTrackLookupError)),
 					time(audio.fetchStage, audio.bytes),
 					time(anlzCached ? 'anlzCacheHit' : 'fetchAnlz', anlzPromise),
 					time('fetchHotCues', fetchHotCueSlots(stable_id))

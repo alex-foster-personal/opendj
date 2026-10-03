@@ -51,9 +51,8 @@ def upload_queue_lock_path(data_dir: Path) -> Path:
 
 
 @contextlib.contextmanager
-def upload_queue_file_lock(data_dir: Path) -> Iterator[None]:
-    """Hold the cross-process lock on ``data_dir``'s upload queue (blocking)."""
-    lock_path = upload_queue_lock_path(data_dir)
+def exclusive_file_lock(lock_path: Path) -> Iterator[None]:
+    """Hold an OS-level exclusive lock on ``lock_path`` (blocking), across processes."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
         if sys.platform == "win32":
@@ -69,6 +68,13 @@ def upload_queue_file_lock(data_dir: Path) -> Iterator[None]:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def upload_queue_file_lock(data_dir: Path) -> Iterator[None]:
+    """Hold the cross-process lock on ``data_dir``'s upload queue (blocking)."""
+    with exclusive_file_lock(upload_queue_lock_path(data_dir)):
+        yield
 
 
 def _payload(data_dir: Path) -> dict[str, object]:

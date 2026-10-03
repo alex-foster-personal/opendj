@@ -352,6 +352,11 @@ export function libraryTrackLookupError(error: unknown): unknown {
 	return error;
 }
 
+/** `libraryTrackLookupError` as a `.catch` handler for the load's getTrack. */
+export function rethrowLibraryTrackLookupError(error: unknown): never {
+	throw libraryTrackLookupError(error);
+}
+
 /** The toast headline for a failed deck load: always names the reason. */
 export function deckLoadFailureHeadline(deck: 1 | 2 | 3 | 4, cause: unknown): string {
 	const stickWords = stickLoadFailureWords(cause);

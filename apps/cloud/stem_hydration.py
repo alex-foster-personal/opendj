@@ -39,12 +39,14 @@ Two entry points:
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import shutil
 import tempfile
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -59,6 +61,7 @@ from apps.cloud.stem_source import (
     StemSourceError,
     hub_transport_failure_kind,
 )
+from apps.cloud.stem_upload_queue import exclusive_file_lock
 from apps.stems.artifacts import (
     DEFAULT_STEMS_DIR,
     StemArtifactError,
@@ -190,6 +193,27 @@ def _hydrate_lock(stable_id: str) -> threading.Lock:
         return _hydrate_locks.setdefault(stable_id, threading.Lock())
 
 
+#: Stripes of the cross-process hydrate lock. Bounded so the lock files never
+#: grow with the library; two ids sharing a stripe only wait on each other.
+HYDRATE_LOCK_STRIPES: int = 256
+
+
+def hydrate_lock_path(data_dir: Path, stable_id: str) -> Path:
+    """The OS lock file a hydrate of ``stable_id`` holds, in every process."""
+    stripe = int(hashlib.sha256(stable_id.encode("utf-8")).hexdigest(), 16) % HYDRATE_LOCK_STRIPES
+    return Path(data_dir) / "state" / "stem-hydrate-locks" / f"{stripe:03d}.lock"
+
+
+@contextlib.contextmanager
+def _hydrate_locks_held(data_dir: Path, stable_id: str) -> Iterator[None]:
+    """The in-process lock, then the cross-process one. The engine and a
+    ``hydrate_runner`` job can hydrate the same id at once; with only the
+    in-process lock both could judge an old bundle invalid and each remove
+    the other's freshly published copy (Codex P1 on #4974)."""
+    with _hydrate_lock(stable_id), exclusive_file_lock(hydrate_lock_path(data_dir, stable_id)):
+        yield
+
+
 # --- outcomes -------------------------------------------------------------------
 
 
@@ -288,9 +312,9 @@ def hydrate_one(  # noqa: PLR0911 - one outcome per named HydrationStatus branch
         )
 
     bundle_dir = root / stable_id
-    with _hydrate_lock(stable_id):
-        # Double-checked: another in-process call may have just published
-        # this bundle while we were waiting for the lock.
+    with _hydrate_locks_held(data_dir, stable_id):
+        # Double-checked: another call, in this process or another, may have
+        # just published this bundle while we were waiting for the lock.
         if _is_local(stable_id, root):
             return already_local()
         root.mkdir(parents=True, exist_ok=True)

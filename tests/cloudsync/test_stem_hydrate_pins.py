@@ -10,10 +10,13 @@ control:
   first hydrate's pin stays.
 * [if] another process holds the upload queue's file lock [then] a save
   waits and merges what that holder wrote.
+* [if] a hydrate fetches and replaces a bundle [then] it holds that id's
+  cross-process lock, so a hydrate in another process waits.
 """
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -259,3 +262,55 @@ def test_arming_hydration_in_the_engine_marks_it_the_deck_holder(tmp_path: Path,
     )
 
     assert registry.holds_decks is True
+
+
+def _stripe_is_locked(lock_path: Path) -> bool:
+    import fcntl
+
+    with lock_path.open("a+b") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return False
+
+
+@pytest.mark.requirement("STEM-42")
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="probes the lock with fcntl.flock; Windows takes the msvcrt.locking branch of the same helper",
+)
+def test_a_hydrate_holds_the_cross_process_lock_for_its_id(tmp_path: Path):
+    """[if] a hydrate is fetching and replacing a bundle [then] it holds that id's OS file lock, so another process's hydrate waits, [else stop].
+
+    Codex P1 on 0fbf044dd: with only the in-process lock, the engine and a
+    worker could each judge an old bundle invalid and remove the other's
+    fresh publish. MUTATION TARGET: drop ``exclusive_file_lock`` from
+    ``_hydrate_locks_held`` and the probe finds the stripe free mid-fetch.
+    Control: the lock is released when the hydrate returns.
+    """
+    from apps.cloud.eviction import HydrationError
+    from apps.cloud.stem_hydration import hydrate_lock_path, hydrate_one
+
+    stems_dir, data_dir = tmp_path / "stems", tmp_path / "data"
+    entry = make_bundle(tmp_path / "seed", "contested", atime=100.0)
+    lock_path = hydrate_lock_path(data_dir, "contested")
+    seen: list[bool] = []
+
+    class _ProbeSource:
+        def fetch_bundle_files(self, *, stable_id: str, file_hashes, tmp_dir: Path) -> int:
+            seen.append(_stripe_is_locked(lock_path))
+            raise HydrationError("probe stops the fetch here")
+
+    outcome = hydrate_one(
+        "contested",
+        data_dir=data_dir,
+        source=_ProbeSource(),  # type: ignore[arg-type]
+        index={"contested": entry},
+        stems_dir=stems_dir,
+    )
+
+    assert outcome.status == "error"
+    assert seen == [True], "the fetch ran without the cross-process lock"
+    assert not _stripe_is_locked(lock_path), "the lock outlived the hydrate"
