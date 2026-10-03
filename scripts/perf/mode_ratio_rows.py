@@ -44,7 +44,8 @@ RATIO_METHOD = (
     "engine reports in /api/v1/build-info, verified local by PERFMODE-14's "
     "engineRootPids (loopback origin, owns the listening port, runs engine code) and "
     "pinned for the whole capture. Footprint is phys_footprint (proc_pid_rusage), CPU "
-    "is psutil's per-process delta, median of samples at >=6 ticks per mode (PERFMODE-14 scorer)"
+    "is the sum of each family member's %cpu from `/bin/ps -Ao pid=,ppid=,rss=,%cpu=` "
+    "(PERFMODE-14 readPsTable), median of samples at >=6 ticks per mode (PERFMODE-14 scorer)"
 )
 BROWSER_METHOD = (
     "process-tree physical-footprint/CPU sampling of the Playwright-launched Chromium running "

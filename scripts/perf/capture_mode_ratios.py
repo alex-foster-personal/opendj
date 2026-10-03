@@ -59,8 +59,8 @@ from scripts.perf.trackify_leak_series import (
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "mode_ratio_browser.mjs"
 _MIN_SAMPLE_S = 60
-# Six scored ticks fit in the 60 s minimum dwell at this interval (PERFMODE-14 floor).
-_PROBE_INTERVAL_S = 10
+# Twelve samples fit in the 60 s minimum dwell at PERFMODE-14's 5 s cadence (KPI_CAPTURE_SAMPLE_INTERVAL_S default).
+_PROBE_INTERVAL_S = 5
 _BROWSER_EXIT_TIMEOUT_S = 30
 _BROWSER_SERVICE_ID = "com.af.music-dj-tools.mode-ratio-browser"
 

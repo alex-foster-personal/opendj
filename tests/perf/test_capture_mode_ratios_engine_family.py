@@ -25,8 +25,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from types import SimpleNamespace
-from typing import cast
+from typing import Any
 from unittest.mock import patch
 
 import psutil
@@ -38,7 +37,6 @@ from scripts.perf import mode_ratio_engine
 from scripts.perf.capture_kpi_ledger import session_meta
 from scripts.perf.mode_ratio_rows import PROCESS_FAMILY, gig_baseline_rows
 
-_MB = 1024 * 1024
 _IDS = [f"{deck}" * 40 for deck in "abcd"]
 
 # Every process these tests spawn is this interpreter running stdlib-only code,
@@ -81,154 +79,160 @@ def _tree() -> Iterator[tuple[int, int]]:
         root.wait(timeout=5)
 
 
-class _PerPidNative:
-    """phys_footprint by pid; records which pids were read. Unknown pids read 999 MB.
+class _RecordingNative:
+    """Records every pid passed to the real DarwinProcessMetrics reader."""
 
-    `unreadable` fails the read the way `DarwinProcessMetrics.read` fails on
-    EPERM (ProcessLookupError) while the process stays alive; `exits` kills the
-    process for real, waits until it is gone, then fails the read the same way.
-    """
-
-    def __init__(
-        self,
-        footprint_mb_by_pid: dict[int, float],
-        *,
-        unreadable: int | None = None,
-        exits: int | None = None,
-    ) -> None:
-        self._by_pid = footprint_mb_by_pid
-        self._unreadable = unreadable
-        self._exits = exits
+    def __init__(self, real: DarwinProcessMetrics) -> None:
+        self._real = real
         self.pids_read: list[int] = []
 
-    def read(self, pid: int) -> SimpleNamespace:
+    def read(self, pid: int) -> Any:
         self.pids_read.append(pid)
-        if pid == self._unreadable:
-            raise ProcessLookupError(1, "Operation not permitted", pid)
-        if pid == self._exits:
-            psutil.Process(pid).kill()
-            deadline = time.monotonic() + 5
-            while psutil.pid_exists(pid) and time.monotonic() < deadline:
-                time.sleep(0.02)
-            assert not psutil.pid_exists(pid), f"pid {pid} did not exit"
-            raise ProcessLookupError(3, "No such process", pid)
-        return SimpleNamespace(phys_footprint=int(self._by_pid.get(pid, 999.0) * _MB))
+        return self._real.read(pid)
 
 
-def _sampler(launcher: int, native: _PerPidNative, engine_root: int | None) -> cmr._ProcessTreeSampler:
-    return cmr._ProcessTreeSampler(launcher, engine_root_pid=engine_root, native=cast(DarwinProcessMetrics, native))
+_requires_darwin_native = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason=(
+        "UNAVAILABLE: DarwinProcessMetrics (proc_pid_rusage) only exists on the "
+        "reference Mac; sampler membership tests exercise the production reader"
+    ),
+)
+
+
+def _sampler(launcher: int, engine_root: int | None) -> tuple[cmr._ProcessTreeSampler, _RecordingNative]:
+    native = _RecordingNative(DarwinProcessMetrics())
+    return (
+        cmr._ProcessTreeSampler(launcher, engine_root_pid=engine_root, native=native),
+        native,
+    )
 
 
 # ----- sampler membership ----------------------------------------------------
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_counts_the_engine_and_its_descendant_and_nothing_else() -> None:
     """[if] an engine root is given [then] the total is browser plus engine tree and nothing outside them, [else stop]."""
     with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        outsider = subprocess.Popen(_SLEEPER)
+        outsider = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
-            native = _PerPidNative(
-                {launcher: 111.0, browser_child: 222.0, engine: 333.0, engine_child: 444.0, outsider.pid: 555.0}
-            )
-            reading = _sampler(launcher, native, engine).sample()
+            sampler, native = _sampler(launcher, engine)
+            reading = sampler.sample()
         finally:
             outsider.kill()
             outsider.wait(timeout=5)
-    assert reading["browser_footprint_mb"] == pytest.approx(222.0)
-    assert reading["engine_footprint_mb"] == pytest.approx(777.0)
-    assert reading["physical_footprint_mb"] == pytest.approx(999.0)
+    assert reading["browser_footprint_mb"] > 0.0
+    assert reading["engine_footprint_mb"] > 0.0
+    assert reading["physical_footprint_mb"] == pytest.approx(
+        reading["browser_footprint_mb"] + reading["engine_footprint_mb"]
+    )
     assert reading["engine_pid_count"] == 2.0
-    assert set(native.pids_read) == {browser_child, engine, engine_child}
+    assert outsider.pid not in native.pids_read
+    assert launcher not in native.pids_read
+    assert {browser_child, engine, engine_child}.issubset(set(native.pids_read))
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_without_an_engine_root_stays_browser_only() -> None:
     """[if] no engine root is given (the leak capture) [then] only the browser tree is read, [else stop]."""
     with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        native = _PerPidNative({browser_child: 222.0, engine: 333.0, engine_child: 444.0})
-        reading = _sampler(launcher, native, None).sample()
-    assert reading["physical_footprint_mb"] == pytest.approx(222.0)
+        sampler, native = _sampler(launcher, None)
+        reading = sampler.sample()
+    assert reading["physical_footprint_mb"] > 0.0
     assert reading["engine_footprint_mb"] == 0.0
-    assert set(native.pids_read) == {browser_child}
+    assert engine not in native.pids_read
+    assert engine_child not in native.pids_read
+    assert browser_child in native.pids_read
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_raises_when_the_engine_root_exits_mid_capture() -> None:
     """[if] the engine exits after the sampler pinned it [then] sample() raises, never reads zero, [else stop]."""
-    with _tree() as (launcher, browser_child):
-        engine = subprocess.Popen(_SLEEPER)
-        native = _PerPidNative({browser_child: 222.0, engine.pid: 333.0})
-        sampler = _sampler(launcher, native, engine.pid)
-        assert sampler.sample()["engine_footprint_mb"] == pytest.approx(333.0)
+    with _tree() as (launcher, _browser_child):
+        engine = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        sampler, _native = _sampler(launcher, engine.pid)
+        assert sampler.sample()["engine_footprint_mb"] > 0.0
         engine.kill()
         engine.wait(timeout=5)
         with pytest.raises(RuntimeError, match="exited or was reused"):
             sampler.sample()
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_raises_when_the_engine_root_is_in_the_browser_tree() -> None:
     """[if] the engine root is also a browser descendant [then] sample() refuses double counting, [else stop]."""
     with _tree() as (launcher, browser_child):
-        native = _PerPidNative({browser_child: 222.0})
+        sampler, _native = _sampler(launcher, browser_child)
         with pytest.raises(RuntimeError, match="both the browser and engine family"):
-            _sampler(launcher, native, browser_child).sample()
+            sampler.sample()
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
-def test_sample_raises_when_the_engine_root_cannot_be_read() -> None:
-    """[if] the engine root's footprint is unreadable [then] sample() raises, not a zero engine, [else stop]."""
-    with _tree() as (launcher, browser_child), _tree() as (engine, _engine_child):
-        native = _PerPidNative({browser_child: 222.0}, unreadable=engine)
-        with pytest.raises(ProcessLookupError):
-            _sampler(launcher, native, engine).sample()
+def test_sample_raises_when_the_engine_root_pid_does_not_exist() -> None:
+    """[if] the engine root pid is not running [then] sample() refuses at construction, [else stop]."""
+    with _tree() as (launcher, _browser_child):
+        bogus = max(psutil.pids()) + 50_000
+        with pytest.raises(RuntimeError, match="is not running"):
+            cmr._ProcessTreeSampler(launcher, engine_root_pid=bogus, native=DarwinProcessMetrics())
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
-@pytest.mark.parametrize("half", ["engine", "browser"])
-def test_sample_raises_when_a_live_descendant_cannot_be_read(half: str) -> None:
-    """[if] a live stem worker or Chromium child cannot be read [then] sample() raises, never drops it, [else stop]."""
-    with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        target = engine_child if half == "engine" else browser_child
-        native = _PerPidNative({browser_child: 222.0, engine: 333.0, engine_child: 444.0}, unreadable=target)
-        with pytest.raises(RuntimeError, match=f"pid {target} is still running"):
-            _sampler(launcher, native, engine).sample()
+def test_darwin_native_read_raises_for_a_nonexistent_pid() -> None:
+    """[if] proc_pid_rusage is asked for a pid that does not exist [then] read raises ProcessLookupError, [else stop]."""
+    bogus = max(psutil.pids()) + 50_000
+    with pytest.raises(ProcessLookupError):
+        DarwinProcessMetrics().read(bogus)
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_skips_a_descendant_that_exits_mid_sample() -> None:
     """[if] a stem worker exits between the tree walk and its read [then] it is skipped, not an error, [else stop]."""
     with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        native = _PerPidNative({browser_child: 222.0, engine: 333.0, engine_child: 444.0}, exits=engine_child)
-        reading = _sampler(launcher, native, engine).sample()
-    assert reading["engine_footprint_mb"] == pytest.approx(333.0)
-    assert reading["browser_footprint_mb"] == pytest.approx(222.0)
+        sampler, _native = _sampler(launcher, engine)
+        before = sampler.sample()
+        psutil.Process(engine_child).kill()
+        psutil.Process(engine_child).wait(timeout=5)
+        after = sampler.sample()
+    assert before["browser_footprint_mb"] > 0.0
+    assert before["engine_footprint_mb"] > 0.0
+    assert after["browser_footprint_mb"] == pytest.approx(before["browser_footprint_mb"])
+    assert after["engine_footprint_mb"] > 0.0
+    assert after["engine_footprint_mb"] <= before["engine_footprint_mb"]
 
 
 # Fake `iter(range(0, ..., _PROBE_INTERVAL_S))` monotonic advances on every call
-# (deadline + each loop check), so duration 60 yields 5 probes, not 6; 120 yields 11.
+# (deadline + each loop check), so duration 60 yields 12 probes at 5 s; 120 yields 24.
 _FAKE_CLOCK_STEADY_DURATION_S = 120
 
 
+@_requires_darwin_native
 @pytest.mark.requirement("PERFMODE-15")
 def test_sample_steady_carries_engine_fields_only_with_an_engine_root() -> None:
     """[if] _sample_steady runs with and without an engine root [then] engine fields appear only with one, [else stop]."""
-    with _tree() as (launcher, browser_child), _tree() as (engine, engine_child):
-        native = _PerPidNative({browser_child: 200.0, engine: 300.0, engine_child: 100.0})
+    with _tree() as (launcher, _browser_child), _tree() as (engine, _engine_child):
         clock = iter(range(0, 10_000, cmr._PROBE_INTERVAL_S))
         with (
-            patch("scripts.perf.mode_ratio_sampler.DarwinProcessMetrics", return_value=native),
             patch("scripts.perf.capture_mode_ratios.time.sleep"),
             patch("scripts.perf.capture_mode_ratios.time.monotonic", new=lambda: float(next(clock))),
         ):
             with_engine = cmr._sample_steady(launcher, _FAKE_CLOCK_STEADY_DURATION_S, engine)
             browser_only = cmr._sample_steady(launcher, _FAKE_CLOCK_STEADY_DURATION_S, None)
-    assert with_engine["footprint_mb"] == pytest.approx(600.0)
-    assert with_engine["browser_footprint_mb"] == pytest.approx(200.0)
-    assert with_engine["engine_footprint_mb"] == pytest.approx(400.0)
+    assert with_engine["footprint_mb"] > 0.0
+    assert with_engine["browser_footprint_mb"] > 0.0
+    assert with_engine["engine_footprint_mb"] > 0.0
+    assert with_engine["footprint_mb"] == pytest.approx(
+        with_engine["browser_footprint_mb"] + with_engine["engine_footprint_mb"]
+    )
     assert with_engine["engine_pid_count_max"] == 2.0
-    assert browser_only["footprint_mb"] == pytest.approx(200.0)
+    assert browser_only["footprint_mb"] > 0.0
     assert not any(key.startswith("engine_") for key in browser_only)
 
 

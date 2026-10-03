@@ -122,28 +122,6 @@ export async function openUninstrumentedPage(browser) {
 		}
 	});
 
-	async function send(method, params = {}) {
-		assertUninstrumentedMethod(method);
-		if (goneReason !== null) throw new Error(`${method}: ${goneReason}`);
-		sentMethods.push(method);
-		const id = ++nextId;
-		const result = new Promise((resolve, reject) => pending.set(id, { method, resolve, reject }));
-		// Registered before the send so a fast reply is never missed. The caller
-		// still gets every rejection through `return result` below; this handler
-		// only stops Node from reporting a detach that lands mid-send as unhandled.
-		result.catch(() => undefined);
-		try {
-			await browserSession.send('Target.sendMessageToTarget', {
-				sessionId,
-				message: JSON.stringify({ id, method, params })
-			});
-		} catch (error) {
-			pending.delete(id);
-			throw error;
-		}
-		return result;
-	}
-
 	function _runtimeEvaluateParams(fn, arg) {
 		return {
 			expression: _expression(fn, arg),
@@ -190,6 +168,10 @@ export async function openUninstrumentedPage(browser) {
 		} finally {
 			if (timer !== undefined) clearTimeout(timer);
 		}
+	}
+
+	async function send(method, params = {}) {
+		return sendWithDeadline(method, params, DEFAULT_PROTOCOL_MS);
 	}
 
 	async function evaluate(fn, arg, remainingMs = DEFAULT_PROTOCOL_MS) {

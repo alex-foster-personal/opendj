@@ -55,9 +55,12 @@ def _spawn_gig_trackify_child(stable_ids_line: str) -> subprocess.Popen[str]:
     )
 
 
+_PYTHON = getattr(sys, "_base_executable", None) or sys.executable
+_SLEEPER = [_PYTHON, "-c", "import time; time.sleep(30)"]
+
 _DESCENDANT_PREFIX = (
     "import subprocess as _sp\n"
-    "_sp.Popen(['sleep', '30'], stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
+    f"_sp.Popen({_SLEEPER!r}, stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)\n"
 )
 
 
@@ -91,7 +94,7 @@ def _kill_tree(pid: int) -> None:
 
 
 # Same fake-monotonic semantics as test_capture_mode_ratios_engine_family: each
-# `monotonic()` advances by `_PROBE_INTERVAL_S`, so 60s yields 5 probes, not 6.
+# `monotonic()` advances by `_PROBE_INTERVAL_S`, so 60s yields 12 probes at 5 s.
 _FAKE_CLOCK_STEADY_DURATION_S = 120
 
 
@@ -172,7 +175,7 @@ def test_capture_gig_then_trackify_samples_the_browser_pid_not_the_frontend_url(
     child = _spawn_with_descendant(
         _GIG_TRACKIFY_PROTOCOL_CHILD, 'GIG_STABLE_IDS ["a", "b", "c", "d"]'
     )
-    engine = subprocess.Popen(["sleep", "30"])
+    engine = subprocess.Popen(_SLEEPER, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         native = _RecordingNative(DarwinProcessMetrics())
 
