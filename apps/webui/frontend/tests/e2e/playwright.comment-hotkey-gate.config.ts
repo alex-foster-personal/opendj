@@ -69,6 +69,7 @@ export default defineConfig({
 		'comment-hotkey-browser.spec.ts',
 		'comment-pin-io-modal.spec.ts',
 		'comment-pin-admin-dock.spec.ts',
+		'feedback-review-panel-lazy.spec.ts',
 		'reanalyze-context-menu-toast.spec.ts'
 	],
 	fullyParallel: false,

@@ -1,4 +1,18 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
+
+// Real audio from the locked phase7 corpus: upload refuses a file it cannot
+// read a duration from (LIBMX-15), so the drop needs real bytes to stage.
+const DROP_FIXTURE = path.resolve(
+	fileURLToPath(new URL('.', import.meta.url)),
+	'../../../../../tests/fixtures/phase7-dedup/src-128.mp3'
+);
+// Digest of src-128.mp3 as committed in bf001438d; a changed file fails the
+// spec rather than uploading whatever bytes are present.
+const DROP_FIXTURE_SHA256 = '922d6cfa0886ef5a6ae195af01d992782d2680bc40244940254934c9aee7c4d0';
 
 // E2E for the ingest feature pair (real backend on the claimed worktree
 // port, isolated MDT_DATA_DIR - see PR notes):
@@ -75,15 +89,23 @@ test.describe('ingest drop modal', () => {
 		// Hydration gate: window drag listeners attach with the component tree.
 		await expect(page.getByTestId('refresh-analysis')).toBeVisible();
 
-		// Synthesize an external file drag: DataTransfer with a File. The
-		// bytes are junk mp3 (no parsable duration) - upload still stages it,
-		// which is the honest v1 contract for unparsable audio.
-		await page.evaluate(() => {
+		// Synthesize an external file drag: DataTransfer with a File holding a
+		// real mp3's bytes.
+		if (!fs.existsSync(DROP_FIXTURE)) throw new Error(`locked fixture missing: ${DROP_FIXTURE}`);
+		const raw = fs.readFileSync(DROP_FIXTURE);
+		expect(createHash('sha256').update(raw).digest('hex'), 'src-128.mp3 changed').toBe(
+			DROP_FIXTURE_SHA256
+		);
+		const b64 = raw.toString('base64');
+		await page.evaluate((data) => {
+			const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
 			const dt = new DataTransfer();
-			dt.items.add(new File([new Uint8Array(4096).fill(65)], 'e2e-junk.mp3', { type: 'audio/mpeg' }));
+			dt.items.add(new File([bytes], 'e2e-drop.mp3', { type: 'audio/mpeg' }));
 			window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
-			window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-		});
+			window.dispatchEvent(
+				new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })
+			);
+		}, b64);
 
 		const modal = page.getByTestId('ingest-modal');
 		await expect(modal).toBeVisible();
@@ -95,7 +117,7 @@ test.describe('ingest drop modal', () => {
 
 		await page.getByTestId('ingest-run').click();
 		await expect(modal).toContainText('Staged to', { timeout: 20_000 });
-		await expect(modal).toContainText('e2e-junk.mp3');
+		await expect(modal).toContainText('e2e-drop.mp3');
 
 		await page.getByRole('button', { name: 'Close' }).click();
 		await expect(modal).not.toBeVisible();

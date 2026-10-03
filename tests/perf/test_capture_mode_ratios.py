@@ -224,7 +224,7 @@ def test_reused_process_object_reports_nonzero_cpu_after_real_work() -> None:
 def test_sample_steady_rejects_a_duration_below_the_floor() -> None:
     """[if] duration_s is below the floor [then] _sample_steady raises first, [else stop]."""
     with pytest.raises(ValueError, match="at least"):
-        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1)
+        cmr._sample_steady(os.getpid(), cmr._MIN_SAMPLE_S - 1, None)
 
 
 @pytest.mark.requirement("PERFMODE-15")
@@ -236,8 +236,8 @@ def test_sample_leak_rejects_a_duration_below_one_hour() -> None:
     `trackify_mode_footprint_slope_mb_per_10min` with a note implying a 1h
     leak slope.
     """
-    with pytest.raises(ValueError, match="1 h unattended"):
-        cmr._sample_leak(os.getpid(), cmr._MIN_LEAK_DURATION_S - 1)
+    with subprocess.Popen([sys.executable, "-c", "pass"], text=True) as proc, pytest.raises(ValueError, match="1 h unattended"):
+        cmr._sample_leak(proc, cmr._MIN_LEAK_DURATION_S - 1)
 
 
 _PROTOCOL_CHILD = """

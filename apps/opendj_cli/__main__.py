@@ -91,6 +91,7 @@ _SCRIPT_COMMAND = "do"
 _TRACK_COMMAND = "track"
 _AUDIO_OUTPUT_HEALTH_COMMAND = "audio_output_health"
 _AUDIO_SWITCH_OUTPUT_COMMAND = "audio_switch_output"
+_FEEDBACK_COMMAND = "feedback"
 _API_COMMAND = "api"
 _INSTALL_COMMAND = "install-cli"
 _MCP_COMMAND = "mcp"
@@ -657,7 +658,12 @@ def _split_subcommand(tokens: Sequence[str], name: str) -> tuple[list[str], list
 
 
 _STANDALONE_COMMANDS = frozenset(
-    {_TRACK_COMMAND, _AUDIO_OUTPUT_HEALTH_COMMAND, _AUDIO_SWITCH_OUTPUT_COMMAND}
+    {
+        _TRACK_COMMAND,
+        _FEEDBACK_COMMAND,
+        _AUDIO_OUTPUT_HEALTH_COMMAND,
+        _AUDIO_SWITCH_OUTPUT_COMMAND,
+    }
 )
 
 
@@ -667,6 +673,10 @@ def _run_standalone(head: str, rest: list[str], args: argparse.Namespace) -> int
         from apps.opendj_cli import track_cli
 
         return track_cli.run(rest, as_json=args.json, state_db=args.state_db)
+    if head == _FEEDBACK_COMMAND:
+        from apps.opendj_cli import feedback_cli
+
+        return feedback_cli.run(rest, as_json=args.json, lock=args.lock)
     from apps.opendj_cli import audio_output_health_cli
 
     if head == _AUDIO_OUTPUT_HEALTH_COMMAND:
