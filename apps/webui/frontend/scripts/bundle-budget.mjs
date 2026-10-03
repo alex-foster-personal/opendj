@@ -188,7 +188,14 @@ const BUDGETS = [
   // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
   // of its own and raises once more. Payback, not yet measured: find what pulls
   // headphones.ts into the "/" closure and defer it.
-  { name: 'library', limit: 262144, measured: 261193, note: 'initial load of "/"' },
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4014, issue #3986 library pins; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin batch's
+  // compatible filter, pairing underline and confirm-pref plumbing reach the "/"
+  // first-paint closure through the shared library browser. Clean origin/main
+  // b6c894194 measured 261,672 locally; main + this PR at the merge of Sat 3 Oct
+  // measured 262,967 (823 OVER). Payback, not yet measured: move the compatible-filter
+  // and pairing derivation behind the /performance-only lazy imports.
+  { name: 'library', limit: 263168, measured: 262967, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix

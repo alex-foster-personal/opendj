@@ -5,6 +5,8 @@ export { libraryEditShortcut } from './library-edit-shortcut';
 // The clipboard rules load on the first shortcut press, outside the
 // /performance static bundle (scripts/bundle-budget.mjs).
 export const loadTrackClipboard = () => import('./track-clipboard');
+// The delete/drop confirm dialog loads on first use, for the same reason.
+export const loadBrowserConfirmDialog = () => import('./BrowserConfirmDialog.svelte');
 export { enqueueLibraryJobsBatched } from '$lib/rb/api-library-jobs';
 export { libraryJobsStore } from '$lib/rb/library-jobs-store.svelte';
 export { default as LibraryJobsChrome } from '../library-jobs/LibraryJobsChrome.svelte';

@@ -90,7 +90,8 @@
 		PairingIndex,
 		CompatibleFilterPopover,
 		libraryEditShortcut,
-		loadTrackClipboard
+		loadTrackClipboard,
+		loadBrowserConfirmDialog
 	} from './browser/browser-panel-support';
 	import type {
 		PlaylistSummaryHydrated,
@@ -313,7 +314,7 @@
 	// The confirm dialog renders only after a delete or drop asks, so it loads on
 	// first use instead of riding the /performance route's eager bundle budget.
 	let BrowserConfirmDialog = $state<
-		typeof import('./browser/BrowserConfirmDialog.svelte').default | null
+		Awaited<ReturnType<typeof loadBrowserConfirmDialog>>['default'] | null
 	>(null);
 	/** `cancelled`: superseded by a newer confirm before the user answered. */
 	type BrowserConfirmChoice = { ok: boolean; remember: boolean; setDefault: boolean; cancelled?: true };
@@ -660,7 +661,7 @@
 	}): Promise<BrowserConfirmChoice> {
 		const loaded =
 			BrowserConfirmDialog === null
-				? import('./browser/BrowserConfirmDialog.svelte').then((mod) => {
+				? loadBrowserConfirmDialog().then((mod) => {
 						BrowserConfirmDialog = mod.default;
 					})
 				: Promise.resolve();
