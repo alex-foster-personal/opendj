@@ -42,6 +42,11 @@ from scripts.perf.capture_build_identity import (
     _verify_frontend_build_version,
 )
 from scripts.perf.capture_kpi_ledger import session_meta
+from scripts.perf.capture_library_mode import (
+    _MIN_SCORED_SAMPLES,
+    perfmode14_median,
+    perfmode14_medians_from_lists,
+)
 from scripts.perf.capture_ledger import append_ledger_rows
 from scripts.perf.mode_ratio_engine import EngineTarget, reverify_engine_target, verify_engine_target
 from scripts.perf.mode_ratio_rows import gig_baseline_rows as _gig_baseline_rows
@@ -59,7 +64,8 @@ from scripts.perf.trackify_leak_series import (
 _FRONTEND_ROOT = _REPO / "apps" / "webui" / "frontend"
 _BROWSER_SCRIPT = _REPO / "scripts" / "perf" / "mode_ratio_browser.mjs"
 _MIN_SAMPLE_S = 60
-_PROBE_INTERVAL_S = 15
+# Six scored ticks fit in the 60 s minimum dwell at this interval (PERFMODE-14 floor).
+_PROBE_INTERVAL_S = 10
 _BROWSER_EXIT_TIMEOUT_S = 30
 _BROWSER_SERVICE_ID = "com.af.music-dj-tools.mode-ratio-browser"
 
@@ -252,9 +258,14 @@ _STEADY_MEANS = (
 
 
 def _sample_steady(root_pid: int, duration_s: int, engine_root_pid: int | None) -> dict[str, float]:
-    """Mean of every 15 s sample over `duration_s`; the engine fields only when an engine root is given."""
-    if duration_s < _MIN_SAMPLE_S:
-        raise ValueError(f"duration must be at least {_MIN_SAMPLE_S}s, got {duration_s}")
+    """Median of every `_PROBE_INTERVAL_S` sample over `duration_s` (PERFMODE-14 scorer).
+
+    Footprint uses phys_footprint; CPU is psutil's per-process delta summed over
+    the process family. The engine fields appear only when an engine root is given.
+    """
+    min_duration = max(_MIN_SAMPLE_S, _MIN_SCORED_SAMPLES * _PROBE_INTERVAL_S)
+    if duration_s < min_duration:
+        raise ValueError(f"duration must be at least {min_duration}s, got {duration_s}")
     sampler = _ProcessTreeSampler(root_pid, engine_root_pid=engine_root_pid)
     sampler.sample()  # discard the primed-CPU first reading
     samples: list[dict[str, float]] = []
@@ -264,7 +275,14 @@ def _sample_steady(root_pid: int, duration_s: int, engine_root_pid: int | None) 
         samples.append(sampler.sample())
     if not samples:
         raise RuntimeError("probe returned no footprint or cpu samples")
-    steady = {key: sum(s[field] for s in samples) / len(samples) for key, field in _STEADY_MEANS}
+    footprint_series = [s["physical_footprint_mb"] for s in samples]
+    cpu_series = [s["cpu_percent"] for s in samples]
+    perfmode14_medians_from_lists(
+        footprint_series, cpu_series, mode=f"steady pid={root_pid}"
+    )
+    steady = {
+        key: perfmode14_median([s[field] for s in samples]) for key, field in _STEADY_MEANS
+    }
     steady["sample_count"] = float(len(samples))
     if engine_root_pid is None:
         return {key: value for key, value in steady.items() if not key.startswith("engine_")}

@@ -12,6 +12,10 @@ from __future__ import annotations
 from typing import Any
 
 from scripts.perf.capture_kpi_ledger import CaptureMeta, build_row
+from scripts.perf.capture_library_mode import (
+    PERFMODE14_SCORER,
+    perfmode14_require_scored_sample_count,
+)
 from scripts.perf.trackify_leak_series import (
     ADR_REF,
     CHECKPOINT_INTERVAL_S,
@@ -36,7 +40,7 @@ RATIO_METHOD = (
     "engine reports in /api/v1/build-info, verified local by PERFMODE-14's "
     "engineRootPids (loopback origin, owns the listening port, runs engine code) and "
     "pinned for the whole capture. Footprint is phys_footprint (proc_pid_rusage), CPU "
-    "is psutil's per-process delta, mean of 15 s samples per mode"
+    "is psutil's per-process delta, median of samples at >=6 ticks per mode (PERFMODE-14 scorer)"
 )
 BROWSER_METHOD = (
     "process-tree physical-footprint/CPU sampling of the Playwright-launched Chromium running "
@@ -97,6 +101,12 @@ def gig_baseline_rows(
     stable_ids = validate_gig_stable_ids(gig_stable_ids)
     for mode, phase in (("gig", gig), ("trackify", trackify)):
         _require_engine_family(mode, phase)
+        try:
+            perfmode14_require_scored_sample_count(
+                int(phase["sample_count"]), mode=mode, field="footprint_samples_mb"
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     if gig["footprint_mb"] <= 0 or gig["cpu_percent"] <= 0:
         raise SystemExit("gig baseline denominators missing or zero; refusing ratio write")
     if gig["browser_footprint_mb"] <= 0 or gig["browser_cpu_percent"] <= 0:
@@ -137,6 +147,7 @@ def gig_baseline_rows(
     ]
     for row in rows:
         row["process_family"] = PROCESS_FAMILY
+        row["scorer"] = PERFMODE14_SCORER
     return rows
 
 

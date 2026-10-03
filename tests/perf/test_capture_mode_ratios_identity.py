@@ -43,7 +43,7 @@ _GIG_SAMPLE = {
     "engine_footprint_mb": 200.0,
     "engine_cpu_percent": 10.0,
     "engine_pid_count_max": 1.0,
-    "sample_count": 4.0,
+    "sample_count": 6.0,
 }
 _TRACKIFY_SAMPLE = {
     "footprint_mb": 400.0,
@@ -53,7 +53,7 @@ _TRACKIFY_SAMPLE = {
     "engine_footprint_mb": 150.0,
     "engine_cpu_percent": 5.0,
     "engine_pid_count_max": 1.0,
-    "sample_count": 4.0,
+    "sample_count": 6.0,
 }
 
 

@@ -239,7 +239,7 @@ def _phase(browser_fp: float, browser_cpu: float, engine_fp: float, engine_cpu: 
         "engine_footprint_mb": engine_fp,
         "engine_cpu_percent": engine_cpu,
         "engine_pid_count_max": 1.0,
-        "sample_count": 4.0,
+        "sample_count": 6.0,
     }
 
 
@@ -273,7 +273,7 @@ def test_engine_cost_moves_the_ratio_but_not_the_browser_only_diagnostic() -> No
 @pytest.mark.requirement("PERFMODE-15")
 def test_a_browser_only_phase_is_refused_as_a_ratio_row() -> None:
     """[if] a phase was sampled without the engine family [then] no ratio row is built, [else stop]."""
-    browser_only = {"footprint_mb": 1300.0, "cpu_percent": 100.0, "sample_count": 4.0}
+    browser_only = {"footprint_mb": 1300.0, "cpu_percent": 100.0, "sample_count": 6.0}
     with pytest.raises(SystemExit, match="no engine family"):
         gig_baseline_rows(browser_only, _phase(300.0, 20.0, 400.0, 5.0), list(_IDS), session_meta(sha="x"))
 
