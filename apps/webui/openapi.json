@@ -5118,6 +5118,32 @@
         "title": "CommentReplyOut",
         "type": "object"
       },
+      "CommentSummaryOut": {
+        "properties": {
+          "fleet_correlation": {
+            "enum": [
+              "ok",
+              "ledger_missing",
+              "ledger_unreadable"
+            ],
+            "title": "Fleet Correlation",
+            "type": "string"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/PinStatusSummaryOut"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/PinOperatorBreakdownOut"
+          }
+        },
+        "required": [
+          "operator",
+          "lifecycle",
+          "fleet_correlation"
+        ],
+        "title": "CommentSummaryOut",
+        "type": "object"
+      },
       "CommentUpdateIn": {
         "properties": {
           "agent_note": {
@@ -13897,6 +13923,118 @@
           "playlist_id"
         ],
         "title": "PinKeyIn",
+        "type": "object"
+      },
+      "PinOperatorBreakdownOut": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "delegated": {
+            "minimum": 0.0,
+            "title": "Delegated",
+            "type": "integer"
+          },
+          "fixed": {
+            "minimum": 0.0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "harvested": {
+            "minimum": 0.0,
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "in_progress": {
+            "minimum": 0.0,
+            "title": "In Progress",
+            "type": "integer"
+          },
+          "merged": {
+            "minimum": 0.0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "sent_to_queue": {
+            "minimum": 0.0,
+            "title": "Sent To Queue",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "sent_to_queue",
+          "in_progress",
+          "delegated",
+          "fixed",
+          "merged",
+          "blocked",
+          "harvested"
+        ],
+        "title": "PinOperatorBreakdownOut",
+        "type": "object"
+      },
+      "PinStatusSummaryOut": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "fixed": {
+            "minimum": 0.0,
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "harvested": {
+            "minimum": 0.0,
+            "title": "Harvested",
+            "type": "integer"
+          },
+          "issued": {
+            "minimum": 0.0,
+            "title": "Issued",
+            "type": "integer"
+          },
+          "merged": {
+            "minimum": 0.0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "open": {
+            "minimum": 0.0,
+            "title": "Open",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "untriaged": {
+            "minimum": 0.0,
+            "title": "Untriaged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "untriaged",
+          "open",
+          "issued",
+          "blocked",
+          "fixed",
+          "merged",
+          "harvested"
+        ],
+        "title": "PinStatusSummaryOut",
         "type": "object"
       },
       "PinSyncOut": {
@@ -28546,6 +28684,27 @@
           }
         },
         "summary": "Create Comment",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/v1/feedback/comments/summary": {
+      "get": {
+        "operationId": "comments_summary_api_v1_feedback_comments_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Comments Summary",
         "tags": [
           "feedback"
         ]

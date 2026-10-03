@@ -1907,6 +1907,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Comments Summary */
+        get: operations["comments_summary_api_v1_feedback_comments_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/comments/{comment_id}": {
         parameters: {
             query?: never;
@@ -8074,6 +8091,16 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** CommentSummaryOut */
+        CommentSummaryOut: {
+            /**
+             * Fleet Correlation
+             * @enum {string}
+             */
+            fleet_correlation: "ok" | "ledger_missing" | "ledger_unreadable";
+            lifecycle: components["schemas"]["PinStatusSummaryOut"];
+            operator: components["schemas"]["PinOperatorBreakdownOut"];
+        };
         /** CommentUpdateIn */
         CommentUpdateIn: {
             /** Agent Note */
@@ -11547,6 +11574,44 @@ export interface components {
             machine_id: string;
             /** Playlist Id */
             playlist_id: string;
+        };
+        /** PinOperatorBreakdownOut */
+        PinOperatorBreakdownOut: {
+            /** Blocked */
+            blocked: number;
+            /** Delegated */
+            delegated: number;
+            /** Fixed */
+            fixed: number;
+            /** Harvested */
+            harvested: number;
+            /** In Progress */
+            in_progress: number;
+            /** Merged */
+            merged: number;
+            /** Sent To Queue */
+            sent_to_queue: number;
+            /** Total */
+            total: number;
+        };
+        /** PinStatusSummaryOut */
+        PinStatusSummaryOut: {
+            /** Blocked */
+            blocked: number;
+            /** Fixed */
+            fixed: number;
+            /** Harvested */
+            harvested: number;
+            /** Issued */
+            issued: number;
+            /** Merged */
+            merged: number;
+            /** Open */
+            open: number;
+            /** Total */
+            total: number;
+            /** Untriaged */
+            untriaged: number;
         };
         /**
          * PinSyncOut
@@ -18929,6 +18994,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    comments_summary_api_v1_feedback_comments_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentSummaryOut"];
                 };
             };
         };
