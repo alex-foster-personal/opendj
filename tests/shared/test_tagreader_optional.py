@@ -33,6 +33,22 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "phase7-dedup" / "src-128.mp3"
+# Real raw ADTS AAC: src.m4a's own AAC-LC stream remuxed without re-encoding
+# (``ffmpeg -i src.m4a -c copy -f adts src.aac``), 22050 Hz mono. ffprobe
+# reports 3.050 s; the frame walk counts the encoder priming the m4a's edit
+# list hides, so it reads 3.065 s.
+REAL_AAC = REPO_ROOT / "tests" / "fixtures" / "phase7-dedup" / "src.aac"
+REAL_AAC_SHA256 = "2176a32dd99822d77c2c7038e1fa97a6a315851d6f9b2724c8f112c2e86481e4"
+REAL_AAC_SECONDS = 3.065
+
+
+def _real_aac() -> bytes:
+    """The real ADTS fixture's bytes, refused if they are not the checked-in file."""
+    import hashlib
+
+    data = REAL_AAC.read_bytes()
+    assert hashlib.sha256(data).hexdigest() == REAL_AAC_SHA256, "src.aac changed"
+    return data
 
 _DEPENDENTS = (
     "apps.shared.audio_files",
@@ -164,8 +180,9 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     from apps.shared import _tagreader, audio_playable
 
     track = tmp_path / "raw.aac"
-    track.write_bytes(_adts_frames(64))
+    track.write_bytes(_real_aac())
     assert _tagreader.can_read(track) is False
+    assert _tagreader.adts_duration(track) == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
     audio_playable.probe_playable_audio(track)
 
     # A bare ADTS sync word passes the magic check but holds no frame.
@@ -204,12 +221,13 @@ def test_playable_probe_accepts_raw_aac_tinytag_cannot_read(tmp_path):
     assert _tagreader.adts_duration(mixed) is None
     # ...while a trailing ID3v1 tag (no ADTS sync) is not a frame at all.
     tagged_tail = tmp_path / "tagged_tail.aac"
-    tagged_tail.write_bytes(_adts_frames(2) + b"TAG" + b"\x00" * 125)
-    assert _tagreader.adts_duration(tagged_tail) == pytest.approx(2 * 1024 / 44100)
+    tagged_tail.write_bytes(_real_aac() + b"TAG" + b"\x00" * 125)
+    assert _tagreader.adts_duration(tagged_tail) == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
+    audio_playable.probe_playable_audio(tagged_tail)
     for sig in (b"APETAGEX", b"LYRICSBEGIN"):
         tail_tag = tmp_path / "tail_tag.aac"
-        tail_tag.write_bytes(_adts_frames(2) + sig + b"\x00" * 32)
-        assert _tagreader.adts_duration(tail_tag) == pytest.approx(2 * 1024 / 44100), sig
+        tail_tag.write_bytes(_real_aac() + sig + b"\x00" * 32)
+        assert _tagreader.adts_duration(tail_tag) == pytest.approx(REAL_AAC_SECONDS, abs=0.01), sig
     with pytest.raises(audio_playable.UnplayableAudioError, match="adts frames"):
         audio_playable.probe_playable_audio(cut)
 
@@ -306,8 +324,8 @@ def test_upload_duration_reads_raw_aac_held_as_part(tmp_path):
     from apps.webui.server.routes import ingest_upload
 
     hold = tmp_path / "raw.aac.part"
-    hold.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x05" + b"\x00" * 5 + _adts_frames(430))
-    assert ingest_upload._duration_s(hold) == pytest.approx(430 * 1024 / 44100)
+    hold.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x05" + b"\x00" * 5 + _real_aac())
+    assert ingest_upload._duration_s(hold) == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
 
     assert _tagreader.adts_duration(FIXTURE) is None
     assert ingest_upload._duration_s(FIXTURE) == pytest.approx(3.06, abs=0.05)
@@ -322,7 +340,7 @@ def test_upload_refuses_a_damaged_raw_aac(tmp_path):
     lookup, against a disposable real state DB (``MDT_DATA_DIR`` is read at
     import, so the upload runs in its own interpreter).
     """
-    frames = _adts_frames(8)
+    frames = _real_aac()
     (tmp_path / "cut.bin").write_bytes(frames[:-100])
     (tmp_path / "ok.bin").write_bytes(frames)
     dest = tmp_path / "staged"
@@ -367,7 +385,7 @@ def test_upload_refuses_a_damaged_raw_aac(tmp_path):
     assert out["cut"] == 422
     assert out["left"] == []
     assert out["ok"][0] == "new"
-    assert out["ok"][1] == pytest.approx(8 * 1024 / 44100)
+    assert out["ok"][1] == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
     assert out["ok"][2] == "duration"
 
 
@@ -381,13 +399,19 @@ def test_shared_read_reports_true_raw_aac_duration(tmp_path):
     from apps.shared import _tagreader
 
     track = tmp_path / "raw.aac"
-    track.write_bytes(_adts_frames(430))
+    track.write_bytes(_real_aac())
     tag = _tagreader.read(track)
-    assert tag.duration == pytest.approx(430 * 1024 / 44100)
+    assert tag.duration == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
     # tinytag fills the other stream properties from the same misread frames,
-    # so they come from the walk too: 1024-byte frames over 1024 samples.
-    assert (tag.samplerate, tag.channels) == (44100, 1)
-    assert tag.bitrate == pytest.approx(1024 * 8 * 44100 / 1024 / 1000)
+    # so they come from the walk too; ffprobe reads this stream as 22050 Hz
+    # mono, and its bitrate is the frame bytes over that duration.
+    assert (tag.samplerate, tag.channels) == (22050, 1)
+    assert tag.bitrate == pytest.approx(len(_real_aac()) * 8 / tag.duration / 1000)
+    # tinytag reads the same AAC in its m4a container on its own: a
+    # cross-check from an independent parser, within the priming offset.
+    assert _tagreader.read(REAL_AAC.with_suffix(".m4a")).duration == pytest.approx(
+        tag.duration, abs=0.1
+    )
     assert _tagreader.read(FIXTURE).duration == pytest.approx(3.06, abs=0.05)
 
 
@@ -401,7 +425,7 @@ def test_shared_read_rejects_a_damaged_adts_stream(tmp_path):
     from apps.shared import _tagreader
 
     track = tmp_path / "cut.aac"
-    track.write_bytes(_adts_frames(8)[:-100])
+    track.write_bytes(_real_aac()[:-100])
     with pytest.raises(_tagreader.TagReadError):
         _tagreader.read(track)
     assert _tagreader.read(track, duration=False) is not None
@@ -424,5 +448,5 @@ def test_shared_read_rejects_a_damaged_adts_stream(tmp_path):
     gone = tmp_path / "gone.aac"
     with pytest.raises(_tagreader.TagReadError):
         _tagreader._apply_adts(gone, None)
-    track.write_bytes(_adts_frames(8))
-    assert _tagreader.read(track).duration == pytest.approx(8 * 1024 / 44100)
+    track.write_bytes(_real_aac())
+    assert _tagreader.read(track).duration == pytest.approx(REAL_AAC_SECONDS, abs=0.01)
