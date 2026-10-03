@@ -188,6 +188,7 @@
 			recorder = await startRecorder({
 				session_id: null,
 				ffmpeg_device_idx: parsedDeviceIndex,
+				capture_audio: true,
 				// opendj_decks records OUR own decks; the browser emitter installed
 				// on /performance posts their state to /api/sets/deck-observations
 				// while this session is live. Without it in this list REC captures
