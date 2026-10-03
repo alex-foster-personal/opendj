@@ -31,6 +31,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from apps.shared import fs_residency
 
 # pyacoustid import is lazy so the module can be imported even when the
 # package is missing (useful for test environments that stub it out). The
@@ -131,16 +132,16 @@ def compute(path: Path) -> Fingerprint:
 
 
 def _safe_bitrate(path: Path) -> int | None:
-    """Return bitrate in kbps, or ``None`` if the tag reader cannot parse it."""
-    # Lazy on purpose: the quality gate's sync-drift evaluator imports this
-    # module from an environment with NO third-party packages
-    # (tests/quality/test_sync_drift_imports.py), and tinytag is one.
-    from apps.shared.tag_reader import TagReadError, read_tags
+    """Return bitrate in kbps, or ``None`` if the tag reader cannot decode."""
+    from apps.shared import _tagreader
 
-    try:
-        return read_tags(path).bitrate_kbps
-    except TagReadError:
+    if not _tagreader.HAS_TAG_READER:
         return None
+    try:
+        kbps = _tagreader.read(path).bitrate
+    except _tagreader.TagReadError:
+        return None
+    return int(kbps) if kbps else None
 
 
 # ---------------------------------------------------------------- compare
@@ -243,6 +244,21 @@ class FingerprintCache:
         fp_str, duration, size, mtime, bitrate, computed_at = row
         if size != st.st_size or abs(mtime - st.st_mtime) > 1e-3:
             return None
+        if bitrate is None and not fs_residency.is_dataless_stub(st):
+            # Rows cached while no tag reader was installed (the packaged app
+            # before tinytag, Thu 1 Oct 2026) hold a NULL bitrate, which
+            # canonical selection reads as 0 and so can keep the worse twin.
+            # Backfill it here: the scan calls get() for every file, so the
+            # cache heals on the next scan without re-running fpcalc. An
+            # iCloud placeholder is skipped: opening it would download it.
+            bitrate = _safe_bitrate(path)
+            if bitrate is not None:
+                with self._conn() as c:
+                    c.execute(
+                        "UPDATE fingerprints SET bitrate = ? WHERE path = ?",
+                        (bitrate, str(path)),
+                    )
+                    c.commit()
         return Fingerprint(
             path=path,
             duration=float(duration),

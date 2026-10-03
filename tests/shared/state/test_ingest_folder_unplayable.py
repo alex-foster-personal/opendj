@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+
 from apps.shared import flac_meta
 from apps.shared.state import db as state_db
 from apps.shared.state.ingest import folder
@@ -110,10 +111,10 @@ def test_valid_untagged_wav_imports_without_rejection(tmp_path: Path) -> None:
     assert report.tracks_inserted == 1
 
 
-def test_folder_import_rejects_corrupt_wav_with_the_tag_reader_cross_check(
+def test_folder_import_rejects_corrupt_wav_with_tag_reader_installed(
     tmp_path: Path,
 ) -> None:
-    """[if] the tag reader cross-check runs [then] corrupt fixtures still rejected [else stop]."""
+    """[if] tag reader present [then] corrupt fixtures still rejected [else stop]."""
     root = tmp_path / "fixtures"
     root.mkdir()
     _build_corrupt_fixture_dir(root)

@@ -2,8 +2,9 @@ pyrekordbox>=0.4.4
 # CAT-06 (Phase 10 Pioneer USB read path): kaitai runtime for the vendored
 # rekordbox_pdb parser at apps/sync/usb/pioneer/_vendor/rekordbox_pdb.py.
 kaitaistruct>=0.11
-# Audio tag reads (MIT). Replaced GPL mutagen; ADR-NEW-permissive-audio-tag-io.
-tinytag>=2.3.2,<3
+mutagen>=1.47
+# Embedded cover art reads (MIT); mirrors pyproject.toml.
+tinytag>=2.2.1,<3
 rich>=13.0
 
 # Pioneer OneLibrary USB export and mounted-target readback.  Keep this

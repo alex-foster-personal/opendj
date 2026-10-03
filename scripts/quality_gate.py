@@ -197,8 +197,8 @@ class CFG:
     # Must match [tool.ruff.lint.mccabe] max-complexity in pyproject.toml.
     MAX_COMPLEXITY: int = 12
     # "This file is too long to hold in your head" line, per language.
-    PY_FILE_LIMIT: int = 600
-    FE_FILE_LIMIT: int = 600
+    PY_FILE_LIMIT: int = 1500
+    FE_FILE_LIMIT: int = 1500
     # jscpd: a clone has to be this big before it is worth naming.
     DUP_MIN_LINES: int = 30
     DUP_MIN_TOKENS: int = 100

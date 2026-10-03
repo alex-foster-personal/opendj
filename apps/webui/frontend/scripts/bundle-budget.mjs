@@ -281,6 +281,13 @@ const BUDGETS = [
   // (enrich card collapses beside the help buttons) merged in: 251,283, 403
   // over 245 KiB. Raised to the measured size ceiled to KiB (246 KiB), no extra
   // headroom; the same performance-register row covers it.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4094, FB-20 comment hover counts; JIK's V1
+  // budget decision, Sat 3 Oct 01:36Z, up to 4 KiB per V1 PR): the pin-summary
+  // hover rides the /performance FeedbackWidget. Main 5504f60e7 + this PR
+  // measured 243,886 locally, 174 bytes over 243,712 (CI measured 243,884); 850
+  // bytes remain. Payback, not yet measured: load the summary popover lazily.
+  // The merged tree also carries the Preview route (measured 251,283), so the
+  // ceiling stays at that measurement ceiled to KiB rather than #4094's 244,736.
   { name: 'performance', limit: 251904, measured: 251283, note: '/performance and children' },
   // Thu 10 Sep 2026: 66 -> 108 KiB for Q18 rung 1 (PR #1691). `@wasm-audio-decoders/flac`
   // is dynamically imported, so it lands here rather than in the deck route's eager

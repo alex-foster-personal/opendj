@@ -2094,6 +2094,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feedback/comments/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Comments Summary */
+        get: operations["comments_summary_api_v1_feedback_comments_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feedback/comments/{comment_id}": {
         parameters: {
             query?: never;
@@ -8728,6 +8745,16 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** CommentSummaryOut */
+        CommentSummaryOut: {
+            /**
+             * Fleet Correlation
+             * @enum {string}
+             */
+            fleet_correlation: "ok" | "ledger_missing" | "ledger_unreadable";
+            lifecycle: components["schemas"]["PinStatusSummaryOut"];
+            operator: components["schemas"]["PinOperatorBreakdownOut"];
+        };
         /** CommentUpdateIn */
         CommentUpdateIn: {
             /** Agent Note */
@@ -12435,6 +12462,44 @@ export interface components {
             /** Selector */
             selector: string;
         };
+        /** PinOperatorBreakdownOut */
+        PinOperatorBreakdownOut: {
+            /** Blocked */
+            blocked: number;
+            /** Delegated */
+            delegated: number;
+            /** Fixed */
+            fixed: number;
+            /** Harvested */
+            harvested: number;
+            /** In Progress */
+            in_progress: number;
+            /** Merged */
+            merged: number;
+            /** Sent To Queue */
+            sent_to_queue: number;
+            /** Total */
+            total: number;
+        };
+        /** PinStatusSummaryOut */
+        PinStatusSummaryOut: {
+            /** Blocked */
+            blocked: number;
+            /** Fixed */
+            fixed: number;
+            /** Harvested */
+            harvested: number;
+            /** Issued */
+            issued: number;
+            /** Merged */
+            merged: number;
+            /** Open */
+            open: number;
+            /** Total */
+            total: number;
+            /** Untriaged */
+            untriaged: number;
+        };
         /**
          * PinSyncOut
          * @description Where one pin stands. ``attachment_bytes: missing`` is FBSYNC-05's gap:
@@ -13435,10 +13500,12 @@ export interface components {
          *     serves that instead of a rekordbox-rendered jpg for these rows. See
          *     :func:`_local_rb_meta`.
          *
-         *     ``artwork_available`` is typed ``bool | None`` for wire compatibility, but
-         *     every current build answers a definite ``True``/``False``: the tag reader
-         *     (tinytag) is a core dependency, so a local-vendor row's file is always
-         *     checked. See :func:`apps.adapters.rekordbox.paths.local_artwork_available`.
+         *     ``artwork_available`` is tri-state (``bool | None``) rather than a plain
+         *     bool: for a local-vendor row it is ``None`` when the tinytag
+         *     tag reader was never available to check with, distinct from a checked
+         *     ``False`` (no embedded picture). A rekordbox-vendor row never needs the
+         *     reader, so it is always a definite ``True``/``False`` there. See
+         *     :func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).
          */
         RbMetaOut: {
             /** Analysis Available */
@@ -20579,6 +20646,26 @@ export interface operations {
             };
         };
     };
+    comments_summary_api_v1_feedback_comments_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentSummaryOut"];
+                };
+            };
+        };
+    };
     update_comment_api_v1_feedback_comments__comment_id__patch: {
         parameters: {
             query?: never;
@@ -21375,6 +21462,23 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The tinytag tag reader is not importable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "detail": {
+                     *         "code": "TAG_READER_UNAVAILABLE",
+                     *         "message": "ingest upload requires the 'tinytag' tag reader (a core dependency) for duration-based duplicate detection; reinstall the environment (uv sync)"
+                     *       }
+                     *     }
+                     */
+                    "application/json": unknown;
                 };
             };
         };

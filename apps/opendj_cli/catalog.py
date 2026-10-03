@@ -307,6 +307,9 @@ _VERBS: tuple[Verb, ...] = (
     #   opendj audio_switch_output --confirm
     #   opendj api GET /api/v1/audio/output-health
     #   opendj api POST /api/v1/audio/switch-output
+    # FB-20 HTTP parity (issue #4085, not command-bus verbs):
+    #   opendj feedback comments summary
+    #   opendj api GET /api/v1/feedback/comments/summary
     # ----- safety loop and hot cues -------------------------------------
     Verb("safety_loop_save", "safety_loop_save", (_DECK,)),
     Verb("safety_loop_arm", "safety_loop_arm",

@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any
 
 from apps.shared.djay_db import DjayTrack
-from apps.shared.tag_reader import TagReadError, read_tags
 
 # NOTE: Weight sums to 1.30, not 1.00. This is deliberate and NOT a
 # probability distribution. Each signal independently contributes evidence;
@@ -193,17 +192,27 @@ def _basename_nfc(path: Path | None) -> str | None:
 
 
 def _read_id3(path: Path | None) -> tuple[str, str] | None:
-    """Return ``(title, artist)`` from the file's tags, or ``None`` if unreadable.
+    """Return ``(title, artist)`` from the file's tags, or ``None``.
 
-    Unreadable means the signal does not fire; it never stops matching.
+    ``None`` on any read failure AND when the file carries neither a title nor
+    an artist: two untagged files share no tag evidence, and comparing their
+    empty strings would score a perfect 1.0 match.
     """
     if path is None:
         return None
-    try:
-        tags = read_tags(path)
-    except TagReadError:
+    from apps.shared import _tagreader
+
+    if not _tagreader.HAS_TAG_READER:
         return None
-    return (tags.title or "", tags.artist or "")
+    try:
+        tag = _tagreader.read(path, duration=False)  # only title/artist used
+    except _tagreader.TagReadError:
+        return None
+    title = (tag.title or "").strip()
+    artist = (tag.artist or "").strip()
+    if not title and not artist:
+        return None
+    return (title, artist)
 
 
 def _signal_isrc(rb: Any, dj: DjayTrack) -> Signal:

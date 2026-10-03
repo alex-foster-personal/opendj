@@ -1,4 +1,4 @@
-"""Filesystem audio scanner + lightweight metadata reader (tinytag, via :mod:`.tag_reader`)."""
+"""Filesystem audio scanner + lightweight metadata reader (tinytag)."""
 from __future__ import annotations
 
 import os
@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from . import paths, tag_reader
+from . import _tagreader, paths
+from ._tagreader import HAS_TAG_READER
 
 
 @dataclass(slots=True)
@@ -60,29 +61,42 @@ def scan_music_files(roots: list[Path] | None = None) -> Iterator[AudioFile]:
                 yield AudioFile(path=full, size_bytes=st.st_size, mtime=st.st_mtime, ext=ext)
 
 
-def read_metadata(path: Path) -> AudioMetadata | None:
-    """Tags and stream properties of ``path``, or ``None`` when unreadable.
-
-    ``None`` means the file could not be parsed as audio at all (the scanner
-    still yields it as an :class:`AudioFile`, titled from its filename); a
-    parsed file with no tags returns a record whose tag fields are ``None``.
-    """
-    try:
-        tags = tag_reader.read_tags(path)
-    except tag_reader.TagReadError:
+def _text(value: object) -> str | None:
+    if value is None:
         return None
+    text = str(value).strip()
+    return text or None
+
+
+def read_metadata(path: Path) -> AudioMetadata | None:
+    """Read audio metadata via tinytag. ``None`` on failure.
+
+    ``None`` too when the tag reader is unavailable (see
+    :mod:`apps.shared._tagreader`); the scanner layer still yields
+    :class:`AudioFile` entries from the filesystem.
+    """
+    if not HAS_TAG_READER:
+        return None
+    try:
+        tag = _tagreader.read(path)
+    except _tagreader.TagReadError:  # malformed tags must not stop scanning
+        return None
+    if tag.duration is None and not tag.other and tag.title is None and tag.artist is None:
+        return None  # nothing parsed: no tags and no stream info
+
+    bitrate = tag.bitrate
     return AudioMetadata(
-        title=tags.title,
-        artist=tags.artist,
-        album=tags.album,
-        genre=tags.genre,
-        comment=tags.comment,
-        bpm=tags.bpm,
-        key=tags.key,
-        isrc=tags.isrc,
-        duration_s=tags.duration_s,
-        bitrate_kbps=tags.bitrate_kbps,
-        sample_rate=tags.sample_rate,
+        title=_text(tag.title),
+        artist=_text(tag.artist),
+        album=_text(tag.album),
+        genre=_text(tag.genre),
+        comment=_text(tag.comment),
+        bpm=_parse_bpm(_tagreader.first_other(tag, "bpm")),
+        key=_text(_tagreader.first_other(tag, "initial_key")),
+        isrc=_text(_tagreader.first_other(tag, "isrc")),
+        duration_s=float(tag.duration) if tag.duration else None,
+        bitrate_kbps=int(bitrate) if bitrate else None,
+        sample_rate=int(tag.samplerate) if tag.samplerate else None,
     )
 
 
@@ -124,9 +138,9 @@ def _is_safe_raster_image(header: bytes, mime: str) -> bool:
 def _safe_picture_mime(data: object, mime: str) -> str | None:
     """Normalized mime when ``data`` is a bounded, safe raster payload.
 
-    Check the payload's length and only copy the tiny magic-byte prefix before
-    materializing a response-sized ``bytes`` object, so oversized tag frames
-    cannot multiply the process's memory use.
+    The reader already owns the frame payload. Check its length and only copy
+    the tiny magic-byte prefix before materializing a response-sized ``bytes``
+    object, so oversized tag frames cannot multiply the process's memory use.
     """
     try:
         if len(data) > MAX_EMBEDDED_ARTWORK_BYTES:  # type: ignore[arg-type]
@@ -184,27 +198,60 @@ def _has_safe_picture(candidates: Iterator[tuple[object, str, int | None]]) -> b
     return any(_safe_picture_mime(data, mime) is not None for data, mime, _ in candidates)
 
 
+def _parse_bpm(raw: str | None) -> float | None:
+    if raw is None:
+        return None
+    try:
+        number = float(raw.replace(",", "."))
+    except ValueError:
+        return None
+    return number if number > 0 else None
+
+
+def _picture_candidates(tag: object) -> Iterator[tuple[object, str, int | None]]:
+    """Embedded pictures in the order tinytag parsed them.
+
+    tinytag files the first front cover (ID3 APIC type 3, FLAC picture type 3,
+    MP4 ``covr``) under ``front_cover``; that maps to picture type 3 so
+    :func:`_first_safe_picture` still prefers it over earlier non-cover frames.
+    """
+    images = getattr(tag, "images", None)
+    if images is None:
+        return
+    for key, pictures in images.as_dict().items():
+        pic_type = 3 if key == "front_cover" else None
+        for picture in pictures:
+            yield picture.data, picture.mime_type or "", pic_type
+
+
 def read_embedded_artwork(path: Path) -> tuple[bytes, str] | None:
     """Real cover-art bytes + mime type embedded in ``path``'s tags, or ``None``.
 
-    Covers FLAC ``PICTURE`` blocks, ID3 ``APIC`` frames (mp3/wav/aiff) and the
-    MP4 ``covr`` atom (m4a/mp4). ``None`` when the file cannot be parsed, has
-    no picture, or every picture fails :func:`_is_safe_raster_image` -- never
-    a synthesised or placeholder image, and never a tag-declared mime trusted
-    verbatim into an HTTP response.
+    Reads FLAC picture blocks, ID3 ``APIC`` frames (mp3/wav/aiff) and the MP4
+    ``covr`` atom (m4a/mp4) through tinytag. ``None`` when the tag reader is
+    unavailable, the file has no tags, no
+    picture frame is present, or the frame fails :func:`_is_safe_raster_image`
+    -- never a synthesised or placeholder image, and never a tag-declared
+    mime trusted verbatim into an HTTP response.
     """
-    try:
-        return _first_safe_picture(tag_reader.embedded_pictures(path))
-    except tag_reader.TagReadError:
+    if not HAS_TAG_READER:
         return None
+    try:
+        tag = _tagreader.read(path, image=True, duration=False)
+    except _tagreader.TagReadError:
+        return None
+    return _first_safe_picture(_picture_candidates(tag))
 
 
 def embedded_artwork_available(path: Path) -> bool:
-    """Whether ``path`` contains a bounded safe picture."""
-    try:
-        return _has_safe_picture(tag_reader.embedded_pictures(path))
-    except tag_reader.TagReadError:
+    """Whether ``path`` contains a bounded safe picture without copying it."""
+    if not HAS_TAG_READER:
         return False
+    try:
+        tag = _tagreader.read(path, image=True, duration=False)
+    except _tagreader.TagReadError:
+        return False
+    return _has_safe_picture(_picture_candidates(tag))
 
 
 __all__ = [

@@ -91,10 +91,12 @@ class RbMetaOut(BaseModel):
     serves that instead of a rekordbox-rendered jpg for these rows. See
     :func:`_local_rb_meta`.
 
-    ``artwork_available`` is typed ``bool | None`` for wire compatibility, but
-    every current build answers a definite ``True``/``False``: the tag reader
-    (tinytag) is a core dependency, so a local-vendor row's file is always
-    checked. See :func:`apps.adapters.rekordbox.paths.local_artwork_available`.
+    ``artwork_available`` is tri-state (``bool | None``) rather than a plain
+    bool: for a local-vendor row it is ``None`` when the tinytag
+    tag reader was never available to check with, distinct from a checked
+    ``False`` (no embedded picture). A rekordbox-vendor row never needs the
+    reader, so it is always a definite ``True``/``False`` there. See
+    :func:`apps.adapters.rekordbox.paths.local_artwork_available` (#795).
     """
 
     stable_id: str

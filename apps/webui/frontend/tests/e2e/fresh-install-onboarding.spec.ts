@@ -4,6 +4,7 @@
  */
 import { expect, test } from '@playwright/test';
 
+import { expectFirstRunSetup } from './support/expect-first-run-setup';
 import { PREFLIGHT_GATE_BROKEN_ORIGIN } from './playwright.preflight-gate.config';
 
 test.describe('fresh install onboarding', () => {
@@ -17,13 +18,8 @@ test.describe('fresh install onboarding', () => {
 
 		await page.goto(`${PREFLIGHT_GATE_BROKEN_ORIGIN}/`);
 
-		const setupDialog = page.getByRole('dialog', { name: 'First-run setup' });
-		await expect(setupDialog).toBeVisible({ timeout: 10_000 });
+		await expectFirstRunSetup(page);
 
 		expect(setupStatusRequests.length).toBeGreaterThan(0);
-
-		// The boot gate yields while setup is open -- wizard is the interactive surface.
-		const blockingGate = page.locator('[data-preflight-blocking="true"]');
-		await expect(blockingGate).toHaveCount(0);
 	});
 });

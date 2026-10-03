@@ -1,10 +1,14 @@
-"""TAGIO-04: the GPL ``mutagen`` cannot come back into the shipped code path.
+"""TAGIO-04, after the merge with main's opt-in write gate.
 
-[if] mutagen re-enters code, deps or payload [then] this fails, [else stop].
+Reads, artwork and the payload stay free of GPL ``mutagen``. Main still
+ships ``apps/shared/_mutagen.py`` and the ``[tags]`` extra
+(``mutagen>=1.47,<2``) for callers that opt in. The in-house writers on
+this branch do not import it. A mutagen line in the locked payload export
+still fails the build.
 
 Regression one-liners:
-  - if any module under apps/ or scripts/ imports mutagen then broken
-  - if pyproject.toml declares mutagen in any dependency list or extra then broken
+  - if any module under apps/ or scripts/ other than the opt-in gate imports mutagen then broken
+  - if mutagen is declared anywhere except the ``[tags]`` extra then broken
   - if a mutagen line in the locked export does not fail the payload build then broken
   - if tags / artwork / Serato GEOB need mutagen importable to be read then broken
 """
@@ -40,15 +44,20 @@ def _imports_mutagen(path: Path) -> bool:
     return False
 
 
+# Main's optional write gate. Nothing else may import the GPL library.
+_MUTAGEN_IMPORT_ALLOWLIST = {"apps/shared/_mutagen.py"}
+
+
 def test_no_shipped_or_script_module_imports_mutagen() -> None:
-    """[if] any apps/ or scripts/ module imports mutagen [then] this fails, [else stop]."""
+    """[if] any apps/ or scripts/ module besides the opt-in gate imports mutagen [then] this fails, [else stop]."""
     offenders = [
         str(path.relative_to(REPO_ROOT))
         for root in ("apps", "scripts")
         for path in (REPO_ROOT / root).rglob("*.py")
         if "node_modules" not in path.parts and _imports_mutagen(path)
     ]
-    assert offenders == []
+    assert [path for path in offenders if path not in _MUTAGEN_IMPORT_ALLOWLIST] == []
+    assert _MUTAGEN_IMPORT_ALLOWLIST <= set(offenders)
 
 
 def test_the_import_scan_detects_a_mutagen_import(tmp_path: Path) -> None:
@@ -59,12 +68,15 @@ def test_the_import_scan_detects_a_mutagen_import(tmp_path: Path) -> None:
 
 
 def test_pyproject_declares_no_mutagen_anywhere() -> None:
-    """[if] pyproject lists mutagen as a dependency or extra [then] fail, [else stop]."""
+    """[if] mutagen is a core dep or sits in an extra other than ``[tags]`` [then] fail, [else stop]."""
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]
-    declared = list(project["dependencies"])
-    for extra in project.get("optional-dependencies", {}).values():
-        declared += extra
-    assert [req for req in declared if req.lower().startswith("mutagen")] == []
+    assert [req for req in project["dependencies"] if req.lower().startswith("mutagen")] == []
+    extras = project.get("optional-dependencies", {})
+    assert [req for req in extras.get("tags", []) if req.lower().startswith("mutagen")] == ["mutagen>=1.47,<2"]
+    for name, extra in extras.items():
+        if name == "tags":
+            continue
+        assert [req for req in extra if req.lower().startswith("mutagen")] == [], name
     assert any(req.startswith("tinytag") for req in project["dependencies"])
 
 

@@ -102,7 +102,7 @@ def test_scan_music_files_uses_default_roots_when_none(
 
 @pytest.mark.requirement("INFRA-02")
 def test_read_metadata_returns_none_for_non_audio(tmp_path: Path) -> None:
-    """The tag reader cannot parse a text file → return None (don't crash)."""
+    """The tag reader can't parse a text file → return None (don't crash)."""
     f = tmp_path / "not-audio.txt"
     f.write_text("hello")
     assert audio_files.read_metadata(f) is None

@@ -2,9 +2,8 @@
 
 - [if] a track has no stored duration [then] admission measures it with ffmpeg, [else stop].
 
-NATIVE-10 (issue #2315). A payload used to omit any tag reader (mutagen, GPL,
-was the opt-in ``tags`` extra; tinytag ships since Thu 1 Oct 2026), so
-folder ingest wrote ``tracks.duration_ms = NULL`` and the memory-admission
+NATIVE-10 (issue #2315). A payload omitted mutagen (GPL, the ``tags`` extra), so
+folder ingest writes ``tracks.duration_ms = NULL`` and the memory-admission
 rule refused EVERY folder-imported track as ``duration_unknown``: on the one
 install path that needs no rekordbox, the v1 backfill analyzed nothing.
 Found by the offline acceptance run against a payload built from main.

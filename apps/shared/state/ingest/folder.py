@@ -75,9 +75,8 @@ class FolderIngestReport:
     files_seen: int = 0
     #: iCloud placeholders: present, sized, no local bytes. Never opened.
     files_dataless: int = 0
-    #: Files with no user-facing tag (title/artist/album/genre/comment), or
-    #: that the tag reader could not parse. Still imported, titled from the
-    #: filename.
+    #: Files whose tags could not be read at all (tag reader absent, or the file
+    #: is not parseable). They are still imported, titled from the filename.
     files_without_tags: int = 0
     #: Tracks whose file tags carried a BPM / a key that was recorded.
     tracks_with_tag_bpm: int = 0
@@ -325,7 +324,7 @@ def _identify(
 
 
 def _has_file_tags(metadata: audio_files.AudioMetadata | None) -> bool:
-    """True when the file supplied a user-facing tag, not just a duration."""
+    """True when the tag reader (or a stub) supplied a user-facing tag, not just duration."""
     if metadata is None:
         return False
     return any(

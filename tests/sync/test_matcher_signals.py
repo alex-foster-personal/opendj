@@ -222,3 +222,33 @@ class TestConfidence:
         # the tag reader.
         assert MIN_SIGNALS_FOR_ACCEPT == 3
         assert MIN_CONFIDENCE_FOR_ACCEPT == 0.70
+
+
+_FIXTURE_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "phase7-dedup" / "src-128.mp3"
+
+
+class TestId3Signal:
+    """The id3 signal reads real tags (tinytag) and needs real tag evidence."""
+
+    def test_untagged_files_do_not_fire(self, tmp_path: Path) -> None:
+        """Two real but untagged mp3s share no tag evidence: no id3 match."""
+        a, b = tmp_path / "a.mp3", tmp_path / "b.mp3"
+        a.write_bytes(_FIXTURE_MP3.read_bytes())
+        b.write_bytes(_FIXTURE_MP3.read_bytes())
+        _, signals = score_pair(_FakeRB(file_path=a), _dj(file_path=b))
+        assert not _find(signals, "id3").fired
+
+    def test_matching_title_and_artist_fire(self, tmp_path: Path) -> None:
+        """Control for the test above: two copies of one tagged mp3 DO fire.
+
+        Uses an already-tagged fixture (title "Source V2", artist "Fixture"),
+        so the control runs where mutagen is absent, as in the packaged app.
+        """
+        tagged = _FIXTURE_MP3.parent / "src-v2.mp3"
+        paths = []
+        for name in ("a.mp3", "b.mp3"):
+            path = tmp_path / name
+            path.write_bytes(tagged.read_bytes())
+            paths.append(path)
+        _, signals = score_pair(_FakeRB(file_path=paths[0]), _dj(file_path=paths[1]))
+        assert _find(signals, "id3").fired

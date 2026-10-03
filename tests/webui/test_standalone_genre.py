@@ -1,7 +1,7 @@
 """STANDALONE-05: genre works without rekordbox and never fails silently.
 
 - [if] a folder GENRE tag and no rekordbox [then] the wheel files it in a family, [else stop].
-- [if] the optional tags extra is not installed [then] the genre column names it, [else stop].
+- [if] the tag reader (tinytag) is not importable [then] the genre column names it, [else stop].
 """
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ from apps.library_wheel.query import query_library_wheel
 from apps.shared import paths as shared_paths
 from apps.shared.state import db as state_db
 from apps.webui.server.app import create_app
-from apps.webui.server.rb_vendor_pkg.track_rows import GENRE_REASON_NO_FILE_TAG
+from apps.webui.server.rb_vendor_pkg.track_rows import (
+    GENRE_REASON_NO_FILE_TAG,
+    GENRE_REASON_TAG_READER_MISSING,
+)
 from apps.webui.server.sqlite_backend import SqliteBackend
 from tests.webui.library_wheel_fixtures import _make_master_db, _make_state_db
 
@@ -301,15 +304,86 @@ def untagged_state_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> It
         yield client
 
 
-def test_tracks_listing_names_no_file_tag_reason_for_an_untagged_file(
+def test_tracks_listing_names_no_file_tag_reason_when_tag_reader_available(
     untagged_state_client: TestClient,
 ) -> None:
-    """[if] a file has no genre tag [then] the no-file-tag reason is named, [else stop]."""
+    """[if] the reader is available and file has no genre [then] no-file-tag reason, [else stop]."""
     resp = untagged_state_client.get("/api/v1/tracks")
     assert resp.status_code == 200, resp.text
     row = resp.json()["items"][0]
     assert row["genre"] is None
     assert row["genre_reason"] == GENRE_REASON_NO_FILE_TAG
+
+
+def test_tracks_listing_names_tag_reader_when_unavailable(
+    tmp_path: Path,
+) -> None:
+    """[if] tinytag is not importable [then] genre_reason names it, [else stop]."""
+    state_path = tmp_path / "state.db"
+    conn = state_db.open_rw(state_path)
+    try:
+        conn.execute(
+            "INSERT INTO tracks (stable_id, stable_id_tier, title, file_path, "
+            "created_at, updated_at) VALUES (?, 'inferred', ?, ?, '2026-01-01', '2026-01-01')",
+            ("a" * 40, "Untagged", str(tmp_path / "x.mp3")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    probe = textwrap.dedent(
+        f"""
+        import sys
+        sys.modules["tinytag"] = None
+
+        from pathlib import Path
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from apps.adapters.rekordbox import config as rb_config
+        from apps.shared._tagreader import HAS_TAG_READER
+        from apps.webui.server.app import create_app
+        from apps.webui.server.sqlite_backend import SqliteBackend
+
+        assert HAS_TAG_READER is False, "tinytag import was not actually blocked"
+
+        state_path = Path({str(state_path)!r})
+        rb_config.STATE_DB = state_path
+        rb_config.MASTER_PLAIN_DB = state_path.parent / "absent.db"
+
+        app = create_app(
+            backend=SqliteBackend(state_path),
+            bind_host="127.0.0.1",
+            hostname="test-host",
+            state_db_path=str(state_path),
+            mount_frontend=False,
+        )
+        with TestClient(app, base_url="http://test-host") as client:
+            resp = client.get("/api/v1/tracks")
+
+        assert resp.status_code == 200, resp.text
+        row = resp.json()["items"][0]
+        assert row["genre"] is None
+        print("GENRE_REASON=" + str(row["genre_reason"]))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-"],
+        input=probe,
+        text=True,
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    reason_lines = [
+        line for line in completed.stdout.splitlines() if line.startswith("GENRE_REASON=")
+    ]
+    assert len(reason_lines) == 1, completed.stdout
+    reason = reason_lines[0].removeprefix("GENRE_REASON=")
+    assert reason == GENRE_REASON_TAG_READER_MISSING
+    assert "tinytag" in reason
 
 
 def test_tracks_listing_never_shows_an_install_hint_when_mutagen_unavailable(
