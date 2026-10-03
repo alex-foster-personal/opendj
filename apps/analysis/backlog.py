@@ -368,9 +368,8 @@ def _signature(pending: list[BacklogItem]) -> str:
 
     Note this is also what keeps the loop from re-arming itself: the drain
     shells out to ``apps.analysis.run``, which writes analysis ROWS and never
-    touches the audio file (tag writeback is the separate
-    ``apps.analysis.write_tags`` entry point, which the refresh job does not
-    invoke), so a failed drain leaves all three components standing still.
+    touches the audio file (writing tags into audio files was removed),
+    so a failed drain leaves all three components standing still.
     """
     if not pending:
         return ""

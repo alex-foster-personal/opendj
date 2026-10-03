@@ -61,8 +61,8 @@ def _tracks_by_stable_id(
 def _measured_durations(paths: dict[str, str]) -> dict[str, float | None]:
     """The decoder's stated length for each track whose row stores none.
 
-    An installed app has no mutagen (the GPL ``tags`` extra is omitted), so a
-    folder import writes ``duration_ms = NULL`` for every track and admission
+    Folder import stores duration from tinytag when the file has one. A row
+    that still has ``duration_ms = NULL`` is measured here, because admission
     would refuse the whole library. The app's own engine (``odj-audio``,
     bundled in every payload) reads the length first; ffmpeg is asked only
     where no engine build exists (a checkout that never ran cargo). With
