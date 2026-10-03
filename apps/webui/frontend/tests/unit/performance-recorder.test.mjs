@@ -158,3 +158,28 @@ test('the rail lights REC from the capture state and polls while it is waiting',
 	assert.match(performanceRecorderRail, /setTimeout\(\(\) => void refreshRecorderStatus\(\), after\)/);
 	assert.match(iconRail, /class:waiting=\{isRecord && recordingWaiting\}/);
 });
+
+test('a capture that fails says why when the engine said, on both REC surfaces', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
+	const why = 'microphone access for Open DJ is off; turn it on in System Settings';
+	assert.match(recorder.captureFailureMessage({ ...base, capture: 'failed', capture_error: why }), /System Settings/);
+	assert.match(recorder.captureFailureMessage({ ...base, capture: 'failed', capture_error: null }), /audio input stopped\. Press REC/);
+	// Controls: no failure, no message.
+	assert.equal(recorder.captureFailureMessage({ ...base, capture: 'recording', capture_error: null }), null);
+	assert.equal(recorder.captureFailureMessage({ ...base, active: false, capture: 'none' }), null);
+	assert.match(performanceRecorderRail, /captureFailureMessage\(recorder\)/);
+});
+
+test('the /sets panel reads the capture state, not just active, and polls it', () => {
+	const base = { active: true, session_id: 's', pid: 1, owned: true, recoverable: false };
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'waiting_permission' }), 'Waiting for microphone permission');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'starting' }), 'Starting the audio input');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'failed' }), 'Audio input stopped');
+	assert.equal(recorder.recorderHeadline({ ...base, capture: 'recording' }), 'Recording');
+	assert.equal(recorder.recorderHeadline({ ...base, active: false, capture: 'none' }), 'Recorder ready');
+	const page = readFileSync(new URL('../../src/routes/sets/+page.svelte', import.meta.url), 'utf8');
+	assert.match(page, /class:live=\{recorder\.active && rail\.recording\}/);
+	assert.match(page, /<strong>\{recorderHeadline\(recorder\)\}<\/strong>/);
+	assert.match(page, /setTimeout\(\(\) => void refreshRecorder\(\), after\)/);
+	assert.match(page, /captureFailureMessage\(recorder\)/);
+});

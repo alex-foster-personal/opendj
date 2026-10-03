@@ -45,6 +45,7 @@ class CaptureState:
     def __init__(self, value: CaptureStateName) -> None:
         self._lock = threading.Lock()
         self._value: CaptureStateName = value
+        self._error: str | None = None
         self.reader: threading.Thread | None = None
 
     @property
@@ -52,9 +53,20 @@ class CaptureState:
         with self._lock:
             return self._value
 
+    @property
+    def error(self) -> str | None:
+        """Why the capture failed, in the engine's words, when it said."""
+        with self._lock:
+            return self._error
+
     def set(self, value: CaptureStateName) -> None:
         with self._lock:
             self._value = value
+
+    def fail(self, error: str) -> None:
+        with self._lock:
+            self._value = "failed"
+            self._error = error
 
 
 @dataclass(frozen=True)

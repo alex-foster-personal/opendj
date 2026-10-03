@@ -17,6 +17,7 @@ does where the crate cannot build (tests/rust_build_env.py).
 from __future__ import annotations
 
 import io
+import json
 import os
 import shutil
 import signal
@@ -284,14 +285,15 @@ def test_an_odj_audio_that_ignores_stdin_is_killed(tmp_path: Path, capture_engin
     assert handle.log_fh.closed
 
 
-def test_rec_by_ffmpeg_index_is_refused_when_odj_audio_records(
-    tmp_path: Path, capture_engine: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_rec_by_ffmpeg_index_is_refused_when_odj_audio_records(tmp_path: Path, capture_engine: Path):
     """[if] a start names an ffmpeg input index but odj-audio is the recorder [then] 503, nothing starts:
     the two number inputs differently, so the index could record the room microphone."""
     # The installed app's own configuration: its engine, which can capture.
-    monkeypatch.setenv("ODJ_AUDIO_BIN", str(capture_engine))
-    service = RecorderService(sets_root=tmp_path / "sets", db_path=tmp_path / "sets" / "sets.db")
+    service = RecorderService(
+        sets_root=tmp_path / "sets",
+        db_path=tmp_path / "sets" / "sets.db",
+        environ={"ODJ_AUDIO_BIN": str(capture_engine)},
+    )
     app = FastAPI()
     app.state.sets_recorder_service = service
     app.include_router(router)
@@ -300,6 +302,22 @@ def test_rec_by_ffmpeg_index_is_refused_when_odj_audio_records(
         assert response.status_code == 503, response.text
         assert "start it by device_name" in response.json()["detail"]
         assert client.get("/api/sets/recorder").json()["active"] is False
+
+
+def test_a_recording_that_ends_on_an_error_says_why_on_stdout(tmp_path: Path, capture_engine: Path):
+    """[if] `odj-audio record` ends on an error [then] its stdout carries {"failed": why},
+    so REC can show why after the start has returned (a microphone denied at a late prompt)."""
+    run = subprocess.run(
+        [str(capture_engine), "record", "--dir", str(tmp_path), "--device", "No Such Input"],
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert run.returncode != 0
+    lines = [json.loads(line) for line in run.stdout.splitlines() if line.strip()]
+    assert len(lines) == 1 and "is not connected" in lines[0]["failed"], run.stdout
 
 
 #: `odj-audio record` stdout during a first-run macOS microphone prompt, as
@@ -338,10 +356,19 @@ def test_rec_waits_while_the_macos_microphone_prompt_is_up():
     assert log.getvalue() == b"".join(PROMPT_LINES)
 
 
+def test_a_failed_line_keeps_the_engines_reason():
+    """[if] the engine reports {"failed": why} after the prompt [then] the state is failed with that why."""
+    why = "microphone access for Open DJ is off; turn it on in System Settings"
+    state, _ = _follow(
+        [PROMPT_LINES[0], (json.dumps({"failed": why}) + "\n").encode()], ["waiting_permission", "failed"]
+    )
+    assert (state.value, state.error) == ("failed", why)
+
+
 def test_output_that_ends_without_stopped_is_a_failed_capture():
     """Control: the same prompt, then the engine gone, ends failed, not waiting."""
     state, _ = _follow(PROMPT_LINES[:1], ["waiting_permission"])
-    assert state.value == "failed"
+    assert (state.value, state.error) == ("failed", None)
 
 
 # ---------------------------------------------------------------------------

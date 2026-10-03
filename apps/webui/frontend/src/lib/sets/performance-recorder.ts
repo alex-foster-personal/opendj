@@ -50,6 +50,25 @@ export function recordRailState(status: RecorderStatus): RecordRailState {
 	}
 }
 
+/** The toast for a capture that ended on its own: the engine's reason when
+ *  it gave one (a microphone denied at a late prompt names System Settings),
+ *  else a generic line. Null while the capture has not failed. */
+export function captureFailureMessage(status: RecorderStatus): string | null {
+	if (!status.active || (status.capture !== 'failed' && status.capture !== 'stopped')) return null;
+	const why = status.capture_error ? `: ${status.capture_error}` : '';
+	return `Set recording: the audio input stopped${why}. Press REC to stop and keep what was recorded.`;
+}
+
+/** The recorder's headline for the /sets panel, from the same states as REC. */
+export function recorderHeadline(status: RecorderStatus): string {
+	if (!status.active) return 'Recorder ready';
+	const rail = recordRailState(status);
+	if (rail.recording) return 'Recording';
+	if (status.capture === 'waiting_permission') return 'Waiting for microphone permission';
+	if (rail.waiting) return 'Starting the audio input';
+	return 'Audio input stopped';
+}
+
 export async function stopPerformanceRecorder(
 	status: RecorderStatus
 ): Promise<RecorderStatus> {

@@ -206,6 +206,14 @@ class RecorderStatus(BaseModel):
             "prompt is up and nothing is written yet), recording, or failed (SET-11)."
         )
     )
+    capture_error: str | None = Field(
+        default=None,
+        description=(
+            "Why the capture failed, in the engine's words (for example microphone "
+            "access turned off at the macOS prompt), when capture is failed and the "
+            "engine said why; null otherwise (SET-11)."
+        ),
+    )
 
 
 class RecorderRecoveryRequest(BaseModel):

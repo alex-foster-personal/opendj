@@ -162,8 +162,9 @@ def follow_record_output(stdout: IO[bytes], log_fh: IO[bytes], state: CaptureSta
     """Read ``odj-audio record``'s JSON lines into ``state``, copying them to the log.
 
     ``{"waiting": ...}`` is the macOS microphone prompt, ``{"recording": ...}``
-    audio being written, ``{"stopped": ...}`` a clean stop. Output ending any
-    other way is a failed capture.
+    audio being written, ``{"stopped": ...}`` a clean stop, and
+    ``{"failed": "<why>"}`` a recording that ended on an error, kept as
+    ``state.error``. Output ending any other way is a failed capture.
     """
 
     def _run() -> None:
@@ -178,6 +179,8 @@ def follow_record_output(stdout: IO[bytes], log_fh: IO[bytes], state: CaptureSta
                 for key, value in _STATE_OF_LINE.items():
                     if key in line:
                         state.set(value)
+                if isinstance(line.get("failed"), str):
+                    state.fail(line["failed"])
         if state.value != "stopped":
             state.set("failed")
 

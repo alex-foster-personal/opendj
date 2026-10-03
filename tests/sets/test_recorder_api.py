@@ -54,6 +54,7 @@ def test_recorder_start_stop_settles_real_timeline(recorder_client):
         "owned": False,
         "recoverable": False,
         "capture": "none",
+        "capture_error": None,
     }
     session_dir = service.sets_root / session_id
     assert not (session_dir / "recorder.pid").exists()

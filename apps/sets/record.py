@@ -25,7 +25,13 @@ from typing import Any
 from apps.shared.paths import DJAY_WORKING_DB, REKORDBOX_WORKING_DB
 
 from . import paths as sets_paths
-from .capture import CAPTURE_STARTUP_CHECK_S, DEFAULT_DEVICE_NAME, CaptureHandle, start_capture
+from .capture import (
+    CAPTURE_STARTUP_CHECK_S,
+    DEFAULT_DEVICE_NAME,
+    CaptureBackend,
+    CaptureHandle,
+    start_capture,
+)
 from .manifest import AudioSegment, Manifest, write_manifest
 from .state import Event, SetsState
 
@@ -138,6 +144,8 @@ class RecorderConfig:
     # The input's exact name when REC picked it by name: odj-audio opens it
     # by that name rather than by an index that can move (SET-11).
     capture_input_name: str | None = None
+    # The backend REC resolved at start; None lets start_capture pick (SET-11).
+    capture_backend: CaptureBackend | None = None
     # When True we skip the ffmpeg subprocess entirely (test mode).
     capture_disabled: bool = False
     djay_db_path: Path | None = None
@@ -214,6 +222,7 @@ class Recorder:
             self.config.ffmpeg_device_idx,
             startup_check_s=CAPTURE_STARTUP_CHECK_S,
             device_name=self.config.capture_input_name,
+            backend=self.config.capture_backend,
         )
 
     def capture_state(self) -> str:
@@ -221,6 +230,12 @@ class Recorder:
         if self._capture is None:
             return "none"
         return self._capture.current_state()
+
+    def capture_error(self) -> str | None:
+        """Why the capture failed, as the engine said it, when it failed and said."""
+        if self._capture is None or self._capture.current_state() != "failed":
+            return None
+        return self._capture.state.error
 
     def attach_source(self, name: str, source_obj: Any) -> None:
         """Register a deck-state source that exposes ``poll_once()``."""

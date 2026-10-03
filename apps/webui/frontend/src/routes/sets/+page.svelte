@@ -22,6 +22,7 @@
 		type TimelineEvent,
 		type Transition
 	} from './sets-api';
+	import { captureFailureMessage, recordRailState, recorderHeadline } from '$lib/sets/performance-recorder';
 
 	type SessionView = SessionDetail & { transitions: Transition[] };
 
@@ -176,6 +177,33 @@
 		}
 	}
 
+	// SET-11: the panel shows the capture's own state, as the /performance REC
+	// rail does, and re-reads it while it can change, so a pending microphone
+	// prompt or an input that fails mid-set never reads as "Recording".
+	let rail = $derived(recordRailState(recorder));
+
+	$effect(() => {
+		const after = rail.poll;
+		if (after === null) return;
+		const timer = setTimeout(() => void refreshRecorder(), after);
+		return () => clearTimeout(timer);
+	});
+
+	let failureShown = false;
+	$effect(() => {
+		const failure = captureFailureMessage(recorder);
+		if (failure !== null && !failureShown) pushToast(failure, 'error');
+		failureShown = failure !== null;
+	});
+
+	async function refreshRecorder(): Promise<void> {
+		try {
+			recorder = await getRecorderStatus();
+		} catch (error) {
+			pushToast(`REC status failed: ${error}`, 'error');
+		}
+	}
+
 	// SET-11: REC picks its input by name, through the same picker as the
 	// /performance rail. A typed ffmpeg index meant nothing to odj-audio, whose
 	// inputs are numbered in another order (Codex, PR #5164). Lazy, so the
@@ -255,10 +283,10 @@
 
 <section class="rec-panel" aria-label="Recording controls">
 	<div class="rec-state">
-		<span class:live={recorder.active} class="rec-dot"></span>
+		<span class:live={recorder.active && rail.recording} class:waiting={rail.waiting} class="rec-dot"></span>
 		<div>
-			<strong>{recorder.active ? 'Recording' : 'Recorder ready'}</strong>
-			<p>{recorder.session_id ?? 'No active session'}</p>
+			<strong>{recorderHeadline(recorder)}</strong>
+			<p title={rail.tip ?? undefined}>{recorder.session_id ?? 'No active session'}</p>
 		</div>
 	</div>
 	{#if recorder.active && recorder.owned}
@@ -436,6 +464,7 @@
 	.rec-state { display: flex; align-items: center; gap: 0.8rem; margin-right: auto; }
 	.rec-state p, label span, small { display: block; color: var(--muted); font-size: 0.75rem; }
 	.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 5px var(--surface-raised); }
+	.rec-dot.waiting { background: var(--warning); }
 	.rec-dot.live { background: var(--danger); box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 30%, var(--surface)); }
 	.record { background: var(--danger); border-color: var(--danger); color: var(--on-danger); font-weight: 800; letter-spacing: 0.08em; }
 	.stop { border-color: var(--danger); color: var(--danger); }

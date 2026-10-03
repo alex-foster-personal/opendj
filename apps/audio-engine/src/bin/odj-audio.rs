@@ -808,7 +808,7 @@ fn record_cmd(args: Args) -> Result<(), String> {
     };
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     stop_on_stdin(stop.clone());
-    let stopped = record(
+    let stopped = match record(
         &select,
         &a.dir,
         a.segment_seconds,
@@ -821,7 +821,16 @@ fn record_cmd(args: Args) -> Result<(), String> {
             println!("{}", json!({ "recording": started }));
             let _ = io::stdout().flush();
         },
-    )?;
+    ) {
+        Ok(stopped) => stopped,
+        Err(e) => {
+            // On stdout too, so whoever started the recording can show why
+            // it ended (a microphone denied at the prompt, an unplugged input).
+            println!("{}", json!({ "failed": e }));
+            let _ = io::stdout().flush();
+            return Err(e);
+        }
+    };
     if stopped.dropped_samples > 0 {
         eprintln!("odj-audio: dropped {} samples the writer could not keep up with", stopped.dropped_samples);
     }

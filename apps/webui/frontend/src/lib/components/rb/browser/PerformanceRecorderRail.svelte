@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getRecorderStatus, type RecorderStatus } from '../../../../routes/sets/sets-api';
-	import { recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
+	import { captureFailureMessage, recordRailState, stopPerformanceRecorder } from '$lib/sets/performance-recorder';
 	import { pushToast } from '$lib/stores.svelte';
 	import IconRail from './IconRail.svelte';
 
@@ -44,11 +44,9 @@
 
 	let failureShown = false;
 	$effect(() => {
-		const failed = recorder.active && (recorder.capture === 'failed' || recorder.capture === 'stopped');
-		if (failed && !failureShown) {
-			pushToast('Set recording: the audio input stopped. Press REC to stop and keep what was recorded.', 'error');
-		}
-		failureShown = failed;
+		const failure = captureFailureMessage(recorder);
+		if (failure !== null && !failureShown) pushToast(failure, 'error');
+		failureShown = failure !== null;
 	});
 
 	async function refreshRecorderStatus(): Promise<void> {

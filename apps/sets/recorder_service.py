@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -47,11 +47,15 @@ class RecorderService:
         db_path: Path | None = None,
         capture_enabled: bool = True,
         list_devices: Callable[[], list[capture_mod.InputDevice]] = capture_mod.list_input_devices,
+        environ: Mapping[str, str] | None = None,
     ) -> None:
         self.sets_root = Path(sets_root or sets_paths.SETS_DIR)
         self.db_path = Path(db_path or sets_paths.SETS_DB)
         self.capture_enabled = capture_enabled
         self.list_devices = list_devices
+        # The process environment the capture backend is chosen from
+        # (``ODJ_AUDIO_BIN``); None reads this process's own.
+        self.environ = environ
         self.remembered_input_path = self.sets_root / REMEMBERED_INPUT_FILENAME
         self._lock = threading.Lock()
         self._recorder: record_mod.Recorder | None = None
@@ -66,6 +70,7 @@ class RecorderService:
                     "owned": True,
                     "recoverable": False,
                     "capture": self._recorder.capture_state(),
+                    "capture_error": self._recorder.capture_error(),
                 }
             external = record_mod.status(
                 sets_root=self.sets_root,
@@ -100,7 +105,7 @@ class RecorderService:
         """
         # Resolved BEFORE the lock: listing spawns ffmpeg (up to 10 s), and
         # status() shares the lock. A missing input or ffmpeg starts nothing.
-        device_idx, device_label = self._resolve_input(
+        device_idx, device_label, backend = self._resolve_input(
             ffmpeg_device_idx, device_name, capture_audio=capture_audio
         )
         with self._lock:
@@ -128,6 +133,7 @@ class RecorderService:
                 capture_device_name=device_label,
                 ffmpeg_device_idx=device_idx,
                 capture_input_name=device_name,
+                capture_backend=backend,
                 capture_disabled=not (self.capture_enabled and capture_audio),
             )
             recorder: record_mod.Recorder | None = None
@@ -159,6 +165,7 @@ class RecorderService:
                 "owned": True,
                 "recoverable": False,
                 "capture": recorder.capture_state(),
+                "capture_error": recorder.capture_error(),
             }
 
     def _resolve_input(
@@ -167,8 +174,9 @@ class RecorderService:
         device_name: str | None,
         *,
         capture_audio: bool,
-    ) -> tuple[int | None, str]:
-        """(ffmpeg index or None, manifest label) for one input, or for none."""
+    ) -> tuple[int | None, str, capture_mod.CaptureBackend | None]:
+        """(ffmpeg index or None, manifest label, the backend that will record
+        it) for one input, or for none."""
         if capture_audio == (ffmpeg_device_idx is None and device_name is None):
             raise ValueError(
                 "name exactly one audio input (ffmpeg_device_idx or device_name), "
@@ -177,10 +185,10 @@ class RecorderService:
         if ffmpeg_device_idx is not None and device_name is not None:
             raise ValueError("ffmpeg_device_idx and device_name are mutually exclusive")
         if not capture_audio:
-            return None, NO_AUDIO_DEVICE_LABEL
-        backend = capture_mod.capture_backend() if self.capture_enabled else None
+            return None, NO_AUDIO_DEVICE_LABEL, None
+        backend = capture_mod.capture_backend(environ=self.environ) if self.capture_enabled else None
         if device_name is not None:
-            return self._index_of(device_name), device_name
+            return self._index_of(device_name), device_name, backend
         if backend is not None and backend.kind != "ffmpeg":
             # An ffmpeg index numbers AVFoundation's inputs; odj-audio lists
             # them in its own order, so the same number can be the room mic.
@@ -188,7 +196,7 @@ class RecorderService:
                 f"ffmpeg_device_idx {ffmpeg_device_idx} numbers ffmpeg's inputs, but REC records "
                 f"through {backend.kind} here; start it by device_name instead"
             )
-        return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}"
+        return ffmpeg_device_idx, f"avfoundation input {ffmpeg_device_idx}", backend
 
     def remembered_input(self) -> dict[str, str] | None:
         """The input REC last started on by name, or none; None before any start.

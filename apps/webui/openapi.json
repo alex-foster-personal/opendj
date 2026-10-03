@@ -16737,6 +16737,18 @@
             "title": "Capture",
             "type": "string"
           },
+          "capture_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).",
+            "title": "Capture Error"
+          },
           "owned": {
             "title": "Owned",
             "type": "boolean"

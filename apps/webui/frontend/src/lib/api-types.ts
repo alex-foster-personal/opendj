@@ -12680,6 +12680,11 @@ export interface components {
              * @enum {string}
              */
             capture: "none" | "unknown" | "starting" | "waiting_permission" | "recording" | "stopped" | "failed";
+            /**
+             * Capture Error
+             * @description Why the capture failed, in the engine's words (for example microphone access turned off at the macOS prompt), when capture is failed and the engine said why; null otherwise (SET-11).
+             */
+            capture_error?: string | null;
             /** Owned */
             owned: boolean;
             /** Pid */
