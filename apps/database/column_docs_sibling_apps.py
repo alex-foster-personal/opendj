@@ -60,6 +60,13 @@ SIBLING_APP_COLUMN_DOCS: dict[str, dict[str, str]] = {
         ),
         "created_at": "RFC 3339 UTC timestamp the HTTP pairing row was created.",
         "updated_at": "RFC 3339 UTC timestamp the HTTP pairing row was last written.",
+        "graph_owner_stamp": (
+            "Ownership marker for the CAT-03 pairings edge this HTTP pairing "
+            "mirrors: that edge's created_at|modified_at as this row last wrote "
+            "it. The pairing updates or deletes the edge only while the edge "
+            "still carries this exact stamp. NULL when it owns no edge (the "
+            "edge predates it, or other tooling rewrote it since)."
+        ),
     },
     "launcher_meta": {
         "key": (

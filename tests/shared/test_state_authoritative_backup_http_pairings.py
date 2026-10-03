@@ -203,3 +203,34 @@ def test_backup_missing_the_required_graph_table_still_refuses(
         raw.close()
     with pytest.raises(sab.StateAuthoritativeBackupError, match="no table 'pairings'"):
         restore_tables(backup.path, old_data_dir, ["pairings"])
+
+
+@pytest.mark.requirement("PAIR-04")
+@pytest.mark.requirement("LIBM-113")
+def test_backup_from_before_graph_owner_stamp_still_restores(
+    new_data_dir: Path, tmp_path: Path
+) -> None:
+    """[if] the backup's http_pairings lacks a column added since [then] restore fills it with its default, [else stop]."""
+    backup = backup_state_db(new_data_dir, tmp_path / "backups", keep=3)
+    raw = sqlite3.connect(backup.path)
+    try:
+        raw.execute("ALTER TABLE http_pairings DROP COLUMN graph_owner_stamp")
+        raw.commit()
+    finally:
+        raw.close()
+    conn = _connect(new_data_dir)
+    try:
+        want_http = _http_pairings(conn)
+        conn.execute("UPDATE http_pairings SET notes = 'damaged', graph_owner_stamp = 'x|y'")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert restore_tables(backup.path, new_data_dir, ["pairings"]) == ["pairings"]
+
+    conn = _connect(new_data_dir)
+    try:
+        assert _http_pairings(conn) == want_http
+        assert conn.execute("SELECT graph_owner_stamp FROM http_pairings").fetchall() == [(None,)]
+    finally:
+        conn.close()

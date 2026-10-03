@@ -242,7 +242,16 @@ def _restore_optional_tables(
             f'SELECT COUNT(*) FROM restore_src."{extra.name}"'
         ).fetchone()
         conn.execute(f'DELETE FROM "{extra.name}"')
-        conn.execute(f'INSERT INTO main."{extra.name}" SELECT * FROM restore_src."{extra.name}"')
+        # Named columns: a backup older than a column added since restores
+        # with that column at its default instead of failing on the count.
+        source_cols = ", ".join(
+            f'"{row[1]}"'
+            for row in conn.execute(f'PRAGMA restore_src.table_info("{extra.name}")')
+        )
+        conn.execute(
+            f'INSERT INTO main."{extra.name}" ({source_cols}) '
+            f'SELECT {source_cols} FROM restore_src."{extra.name}"'
+        )
         (live_rows,) = conn.execute(f'SELECT COUNT(*) FROM "{extra.name}"').fetchone()
         expected += int(source_rows)
         live += int(live_rows)

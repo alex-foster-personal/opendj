@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import replace
-from datetime import datetime
 from typing import Any
 
 from apps.shared.pairings.repo import PairingsRepo
@@ -29,7 +28,8 @@ _HTTP_PAIRINGS_DDL: tuple[str, ...] = (
         notes          TEXT,
         snapshot_json  TEXT,
         created_at     TEXT NOT NULL,
-        updated_at     TEXT NOT NULL
+        updated_at     TEXT NOT NULL,
+        graph_owner_stamp TEXT
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_http_pairings_from ON http_pairings(from_stable_id)",
@@ -75,34 +75,49 @@ def _http_table_exists(conn: sqlite3.Connection) -> bool:
 def ensure_http_pairings_table(conn: sqlite3.Connection) -> None:
     for stmt in _HTTP_PAIRINGS_DDL:
         conn.execute(stmt)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(http_pairings)")}
+    if "graph_owner_stamp" not in columns:
+        # Rows from before the marker own no graph edge: delete leaves the
+        # edge in place, the direction that never loses someone else's data.
+        conn.execute("ALTER TABLE http_pairings ADD COLUMN graph_owner_stamp TEXT")
 
 
 def _graph_direction(http_dir: str) -> str:
     return "either" if http_dir == "<->" else "into"
 
 
-def _parse_utc(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _http_owns_graph_edge(conn: sqlite3.Connection, pairing: Pairing) -> bool:
-    """True when the CAT-03 graph edge for ``pairing`` is absent or was created by it.
-
-    Codex P2 (BLOCKING) on PR #4014: an edge authored earlier on its own, for
-    example through the pairing CLI, must survive capturing and then deleting
-    an HTTP pairing on the same endpoints. The graph keeps ``created_at`` on
-    upsert, so an edge created before this HTTP pairing was stamped belongs to
-    someone else: the HTTP pairing neither rewrites nor removes it.
-    """
+def _graph_edge_stamp(conn: sqlite3.Connection, pairing: Pairing) -> str | None:
+    """``created_at|modified_at`` of the CAT-03 edge for ``pairing``, or None when absent."""
     PairingsRepo(conn, ensure_schema=True)
     row = conn.execute(
-        "SELECT created_at FROM pairings "
+        "SELECT created_at, modified_at FROM pairings "
         "WHERE from_stable_id=? AND to_stable_id=? AND direction=?",
         (pairing.from_stable_id, pairing.to_stable_id, _graph_direction(pairing.direction)),
     ).fetchone()
-    if row is None:
-        return True
-    return _parse_utc(row[0]) >= _parse_utc(pairing.created_at)
+    return None if row is None else f"{row[0]}|{row[1]}"
+
+
+def _owner_stamp(conn: sqlite3.Connection, pairing_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT graph_owner_stamp FROM http_pairings WHERE pairing_id=?", (pairing_id,)
+    ).fetchone()
+    return None if row is None else row[0]
+
+
+def _http_owns_graph_edge(conn: sqlite3.Connection, pairing: Pairing) -> bool:
+    """True when ``pairing`` holds the ownership marker of its CAT-03 graph edge.
+
+    PR #4014 review (Codex P2 BLOCKING, then a Silver P0): an edge authored on
+    its own, through the pairing CLI or other graph tooling, must survive
+    capturing and deleting an HTTP pairing on the same endpoints, including
+    an edge that tooling recreated or rewrote after the capture. The HTTP
+    pairing records the edge's ``created_at|modified_at`` in
+    ``graph_owner_stamp`` each time it writes the edge, and owns it only while
+    the edge still carries exactly that stamp. Any other write to the edge
+    changes the stamp and hands the edge back to whoever wrote it.
+    """
+    marker = _owner_stamp(conn, pairing.pairing_id)
+    return marker is not None and marker == _graph_edge_stamp(conn, pairing)
 
 
 def _row_to_pairing(row: sqlite3.Row) -> Pairing:
@@ -170,6 +185,11 @@ def _find_existing(
 
 
 def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
+    # Decided before the row write: the edge is this pairing's to (re)write when
+    # nobody holds it yet, or when it still carries this pairing's marker.
+    owns_edge = _graph_edge_stamp(conn, pairing) is None or _http_owns_graph_edge(
+        conn, pairing
+    )
     snap_json = (
         None if pairing.snapshot is None else json.dumps(pairing.snapshot, separators=(",", ":"))
     )
@@ -198,15 +218,18 @@ def _upsert_row(conn: sqlite3.Connection, pairing: Pairing) -> Pairing:
             pairing.updated_at,
         ),
     )
-    repo = PairingsRepo(conn, ensure_schema=True)
-    if _http_owns_graph_edge(conn, pairing):
-        repo.add(
+    if owns_edge:
+        PairingsRepo(conn, ensure_schema=True).add(
             pairing.from_stable_id,
             pairing.to_stable_id,
             direction=_graph_direction(pairing.direction),
             source=pairing.source,
             notes=pairing.notes,
         )
+    conn.execute(
+        "UPDATE http_pairings SET graph_owner_stamp=? WHERE pairing_id=?",
+        (_graph_edge_stamp(conn, pairing) if owns_edge else None, pairing.pairing_id),
+    )
     row = conn.execute(
         "SELECT pairing_id FROM http_pairings WHERE pairing_id=?",
         (pairing.pairing_id,),
