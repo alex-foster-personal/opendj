@@ -210,20 +210,22 @@ def run_folder_import(
             "a folder import needs at least one folder to walk",
         )
 
-    emit(
-        FOLDER_STAGE_PROGRESS["detect"],
-        "detect: preparing folder import",
-    )
+    # Each line is emitted before the step it names. A stall keeps the last
+    # line, so "loading ..." is that import, "probing" is the filesystem
+    # probe, and "checking" means the probe has already returned.
+    detect_at = FOLDER_STAGE_PROGRESS["detect"]
+    emit(detect_at, "detect: preparing folder import")
+    emit(detect_at, "detect: loading filesystem access")
     from apps.shared import fs_access
+    emit(detect_at, "detect: loading state database")
     from apps.shared.state import db as state_db
+    emit(detect_at, "detect: loading folder ingest")
     from apps.shared.state.ingest import folder as folder_ingest
+    emit(detect_at, "detect: loading state writer")
     from apps.shared.state.writer import StateWriter
-
+    emit(detect_at, f"detect: probing {len(roots)} folder(s)")
     probes = fs_access.probe_all(roots)
-    emit(
-        FOLDER_STAGE_PROGRESS["detect"],
-        f"detect: checking {len(probes)} folder(s)",
-    )
+    emit(detect_at, f"detect: checking {len(probes)} folder(s)")
     denied = fs_access.denied_roots(probes)
     if denied and not any(probe.readable for probe in probes):
         raise SetupImportError(

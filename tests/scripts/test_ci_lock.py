@@ -299,7 +299,8 @@ def test_every_lock_ci_syncs_is_in_the_checked_inventory() -> None:
         for match in re.findall(r"ci_venv\.sh \S+ --lock (\S+)", path.read_text(encoding="utf-8"))
     }
     inventory = {lock.output for lock in LOCKS}
-    assert len(synced) >= 4, f"control: expected the four CI locks to be synced, found {synced}"
+    # Three since Thu 1 Oct 2026: the duplicate-writer lock left with that job for fleet-af.
+    assert len(synced) >= 3, f"control: expected the three CI locks to be synced, found {synced}"
     assert synced == inventory, (
         f"synced but never drift-checked: {sorted(synced - inventory)}; "
         f"checked but never synced: {sorted(inventory - synced)}"

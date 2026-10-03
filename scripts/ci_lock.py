@@ -82,7 +82,6 @@ LOCKS = (
     Lock("requirements-ci.in", "pylock.ci.toml"),
     Lock("requirements-release-check.in", "pylock.release-check.toml"),
     Lock("requirements-docs.txt", "pylock.docs.toml"),
-    Lock("ops/fleet/requirements-duplicate-writer.txt", "ops/fleet/pylock.duplicate-writer.toml"),
 )
 # Locked packages with no wheel. A warm cache holds their built wheel, so the
 # hot path stays offline; on a cold cache (new runner, bumped pin) uv builds
