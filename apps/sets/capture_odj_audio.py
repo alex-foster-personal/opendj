@@ -11,8 +11,8 @@ import json
 import subprocess
 import threading
 from collections.abc import Callable, Mapping
-from typing import IO
 from pathlib import Path
+from typing import IO
 
 from apps.shared.odj_audio_binary import BIN_ENV, OdjAudioUnavailable, find_binary
 

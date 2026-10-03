@@ -317,7 +317,6 @@ def start_capture(
     device_idx: int,
     *,
     segment_time_s: int = DEFAULT_SEGMENT_TIME_S,
-    bitrate_kbps: int = DEFAULT_BITRATE_KBPS,
     popen: type[subprocess.Popen] | None = None,
     ffmpeg: str | None = None,
     startup_check_s: float = 0.0,
@@ -352,7 +351,6 @@ def start_capture(
         device_idx,
         session_dir,
         segment_time_s=segment_time_s,
-        bitrate_kbps=bitrate_kbps,
         ffmpeg=chosen.exe,
     )
     stderr_log = session_dir / "ffmpeg.stderr.log"
