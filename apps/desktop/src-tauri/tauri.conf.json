@@ -28,7 +28,7 @@
       "payload": "payload"
     },
     "macOS": {
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "14.0",
       "entitlements": "./Entitlements.app.plist"
     }
   },
