@@ -166,7 +166,7 @@ from beat_this.inference import Audio2Frames, Postprocessor, load_audio
 # ----- Named constants ----------------------------------------------------
 
 PRODUCER = "own_beatgrid.backfill"
-PRODUCER_VERSION = "1.3.0"
+PRODUCER_VERSION = "1.5.0"
 
 FPS = 50                      # Beat This! framewise prediction rate.
 CHUNK_SIZE_FRAMES = 1500      # 30 s; the bound on inference memory.

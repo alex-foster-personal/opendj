@@ -22,8 +22,8 @@
 //   +1 KiB Fri 2 Oct 2026 (PR #4897) for the first-run wizard's plain-language
 //   copy, with main + that PR 142 bytes over, and +2 KiB Fri 2 Oct 2026 (PR #4908)
 //   for the native headphone cue sink plus #4906's stems on a playing deck, with
-//   main at 153 bytes of headroom, and +2 KiB Sat 3 Oct 2026 (PR #4906) for the
-//   deck's named stem states, with main at 73 bytes of headroom. Any further move is a deliberate act with
+//   main at 153 bytes of headroom, then +1 KiB Sat 3 Oct 2026 (PR #5086) and +1 KiB
+//   Sat 3 Oct 2026 (PR #4906, the deck's named stem states). Any further move is a deliberate act with
 //   its own dated note in scripts/bundle-budget.mjs and a new pin here.
 // - if a surface budget stops failing when its own chunk grows past the limit
 //   then that budget is decorative
@@ -150,7 +150,8 @@ test('the library limit is exactly 264192: the inherited 256000 plus eight revie
   assert.match(source, /RAISED Thu 24 Sep 2026 \(\+1 KiB, PR #3865/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 2 Oct 2026 \(\+1 KiB, PR #4897/, 'the raise must carry its note');
   assert.match(source, /RAISED Fri 2 Oct 2026 \(\+2 KiB, PR #4908/, 'the raise must carry its note');
-  assert.match(source, /RAISED Sat 3 Oct 2026 \(\+2 KiB, PR #4906/, 'the raise must carry its note');
+  assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #5086/, 'the raise must carry its note');
+  assert.match(source, /RAISED Sat 3 Oct 2026 \(\+1 KiB, PR #4906/, 'the raise must carry its note');
 });
 
 test('a clean build passes and every emitted chunk is charged to a budget', () => {

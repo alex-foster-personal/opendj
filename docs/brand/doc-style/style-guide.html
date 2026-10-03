@@ -1,0 +1,136 @@
+<!doctype html>
+<!-- Open DJ doc style guide, repo copy. Section ids S1 to S9 are stable: feedback cites them. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open DJ Doc Style</title>
+<link rel="stylesheet" href="odj-doc.css">
+</head>
+<body>
+<main>
+<header class="mast" aria-label="Open DJ">
+  <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M 367.72,144.28 A 188,188 0 0,0 101.85,410.15 Z" fill="var(--mark-dark)"/><path d="M 410.15,101.85 A 188,188 0 0,1 144.28,367.72 Z" fill="var(--mark-light)"/></svg>
+  <span class="wordmark">Open DJ</span><span class="stage" title="Open DJ is alpha software: features and stored formats can change between releases. Keep a library backup.">alpha</span>
+</header>
+<p class="eyebrow">Style guide · v0.2 repo copy · Thu 1 Oct 2026 · music-dj-tools main b99373a7f</p>
+<h1>The Open DJ doc style</h1>
+<p class="lede">How Open DJ writes and lays out anything a person reads outside the deck: briefs, runbooks, status pages, artifacts and the app's own error screens. One look, one voice, answers first.</p>
+
+<p class="note">Reply by section id, for example "S4: drop the verdict top border". Each section is one decision you can keep, change or cut. To start a page, copy a template from S8; the folder's <a href="README.md">README</a> says which file to use where.</p>
+
+<h2><span class="sid">S1</span>Where it comes from</h2>
+<p>This guide adds nothing new to the brand. It writes down what already exists and settles where the pieces disagree.</p>
+<div class="tbl"><table>
+  <thead><tr><th>Source</th><th>What it gives this guide</th></tr></thead>
+  <tbody>
+    <tr><td><code>apps/desktop/setup/</code> engine page</td><td>The page shape: caps headline, dim lede, facts card, accent note, numbered steps, one orange button, a "What exactly was tested" footer</td></tr>
+    <tr><td><code>apps/webui/frontend/design-system/DESIGN.md</code></td><td>The dark console, flat depth, one-pixel borders, semantic colors, the warm light theme, "every number gets a title"</td></tr>
+    <tr><td><code>docs/brand/wordmark-font/</code></td><td>Anybody 800 at width 150, ALL CAPS</td></tr>
+    <tr><td>The documentation templates in this directory</td><td>An eyebrow with date and commit, a verdict up front, status pills, source lines, and a "not verified" list. The repository templates keep these habits and the shared brand rules together</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="sid">S2</span>Masthead and title</h2>
+<ul class="steps">
+  <li>Masthead: the two-shade mark, the OPEN DJ wordmark, and the ALPHA stage badge. The mark and wordmark match the app's launch screen (<code>BrandLaunch.svelte</code>), and the ALPHA badge matches the app's own, shown beside the wordmark (<code>AlphaBadge.svelte</code>, stage from <code>release-stage.ts</code>).</li>
+  <li>Eyebrow, in mono capitals: <code>Doc type · Thu 1 Oct 2026 · repo sha</code>. The weekday is a checksum on the date.</li>
+  <li>Headline in Anybody capitals. If the page answers one question, the headline is that question.</li>
+  <li>Lede, one or two sentences, in the dim color: the answer, then the one reason that matters.</li>
+</ul>
+
+<h2><span class="sid">S3</span>Color</h2>
+<p>Dark first, because the app is a booth instrument. The warm light theme mirrors it for daylight reading, with a darker orange so links stay AA.</p>
+<div class="swatches">
+  <div class="sw"><i style="background:var(--bg)"></i><span><b>Ground</b>#14151a / #f7f3eb</span></div>
+  <div class="sw"><i style="background:var(--panel)"></i><span><b>Panel</b>#1c1e26 / #fffdf8</span></div>
+  <div class="sw"><i style="background:var(--ink)"></i><span><b>Ink</b>#e9eaef / #27241f</span></div>
+  <div class="sw"><i style="background:var(--ink-dim)"></i><span><b>Dim ink</b>#a4a8b6 / #5d574e</span></div>
+  <div class="sw"><i style="background:var(--accent)"></i><span><b>Accent</b>#f26b21 / #b4490c</span></div>
+  <div class="sw"><i style="background:var(--mark-light)"></i><span><b>Mark</b>#d97757 + #9c4b34</span></div>
+</div>
+<p>Semantic colors are separate from the accent and only ever mean state: <span class="pill ok">ok</span> <span class="pill warn">warn</span> <span class="pill bad">bad</span> <span class="pill neutral">neutral</span>. They come from the app's own green, amber and red.</p>
+
+<h2><span class="sid">S4</span>Type</h2>
+<dl class="facts">
+  <dt>Display</dt><dd><span class="wordmark">Anybody 800 · width 150</span>, capitals, for the wordmark and the one H1 only. Repo pages load the shipped subset in this folder (A-Z, a-z, digits, basic punctuation); other glyphs fall back to the system face</dd>
+  <dt>Body</dt><dd>The system stack, 15px on a 1.6 line, as the app uses. No webfont for reading text</dd>
+  <dt>Labels</dt><dd>Section labels in small capitals with 0.08em tracking, dim, like <em>WHAT TO DO</em></dd>
+  <dt>Mono</dt><dd><code>ui-monospace</code> for paths, commands, SHAs, timestamps and any column of numbers</dd>
+  <dt>Measure</dt><dd>One reading column, 46rem, prose near 65 characters</dd>
+</dl>
+
+<h2><span class="sid">S5</span>Components</h2>
+<p>Each has one job. Use a panel only for these; plain prose sits on the ground.</p>
+<section class="verdict" aria-label="Example verdict">
+  <span><span class="pill warn">Hold</span></span>
+  <p class="call">Verdict: the call in one sentence, with its status pill.</p>
+  <p>Then the one or two reasons. Used once, at the top of a brief.</p>
+</section>
+<dl class="facts">
+  <dt>Facts card</dt><dd>Label and value pairs: what was tried, the result, the counts</dd>
+  <dt>Numbers</dt><dd class="num" title="Example: every number carries a hover title with its unit and denominator">2,766 of 9,153 files</dd>
+</dl>
+<p class="note">Note: an accent rule on the left, for the one thing that changes how the reader acts on the page.</p>
+<ol class="tasks">
+  <li><span class="pill bad">Decide</span><div><p><strong>Task row.</strong> A status pill, a bold claim, one line of context.</p><p class="src">path/to/file.py:42</p></div></li>
+</ol>
+<pre><code>commands in a code block, one per block, copyable</code></pre>
+<p>Tables have uppercase dim headers on the panel color, mono for numbers, and scroll inside their own box on a phone. One orange button per page at most, and it always says what it did.</p>
+
+<h2><span class="sid">S6</span>Voice</h2>
+<div class="dodont">
+  <div><strong>Do</strong><ul>
+    <li>Lead with the answer, then the evidence.</li>
+    <li>Name things the way a person knows them: "the engine", not "the uvicorn process".</li>
+    <li>Short, active sentences. American spelling.</li>
+    <li>Dates with the weekday; times in UTC.</li>
+    <li>Say "I did not find" instead of "there is none".</li>
+  </ul></div>
+  <div><strong>Don't</strong><ul>
+    <li>Use the long dash characters (U+2013, U+2014). Use a hyphen, a comma or "--".</li>
+    <li>Use "not X, but Y" framing, scare quotes or "worth noting".</li>
+    <li>Use emoji as section markers.</li>
+    <li>Pad a pass with praise. A green check needs its control, not adjectives.</li>
+  </ul></div>
+</div>
+
+<h2><span class="sid">S7</span>Evidence</h2>
+<ul class="steps">
+  <li>Every claim that can drift carries a <code>source</code> line: a path and line, a PR, a session.</li>
+  <li>Every number has a hover title with its unit and its denominator.</li>
+  <li>Every "zero" or "none" names the control that proved the probe could fire.</li>
+  <li>Every page ends with a collapsed footer: <em>What exactly was tested</em>, or <em>Not verified</em> when corners were cut.</li>
+</ul>
+
+<h2><span class="sid">S8</span>Page types</h2>
+<div class="tbl"><table>
+  <thead><tr><th>Type</th><th>Opens with</th><th>Example</th></tr></thead>
+  <tbody>
+    <tr><td>Decision brief</td><td>Verdict box, then facts, then the options or open items</td><td><a href="template-brief.html">template-brief.html</a></td></tr>
+    <tr><td>Runbook</td><td>Facts card (runs on, needs, writes), then numbered steps, then a red-line table</td><td><a href="template-runbook.html">template-runbook.html</a></td></tr>
+    <tr><td>In-app error screen</td><td>What is wrong in one line, the facts tried, what to do, one button</td><td><a href="template-error-page.html">template-error-page.html</a>, shaped on the <code>apps/desktop/setup/</code> engine page</td></tr>
+    <tr><td>Status or task list</td><td>Counts strip, then task rows with pills, ordered by what blocks most</td><td><a href="template-status.html">template-status.html</a></td></tr>
+      <tr><td>Any claude.ai artifact</td><td>Whichever of the above fits, pasted into the one-file variant</td><td><a href="artifact-inline.html">artifact-inline.html</a> (artifacts cannot load repo files)</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="sid">S9</span>Open decisions</h2>
+<ol class="tasks">
+  <li><span class="pill bad">D1</span><div><p><strong>Three oranges are live.</strong> App chrome uses amber <code>#ffb43a</code>, the setup page uses <code>#f26b21</code>, the mark uses terracotta <code>#d97757</code> (and <code>BuildIdentity.svelte</code> falls back to it when <code>--accent</code> is unset). This guide uses <code>#f26b21</code> for actions and keeps terracotta for the mark and the alpha badge. Pick one action orange for app and docs.</p><p class="src">apps/webui/frontend/src/app.css --accent · apps/desktop/setup/setup.css --accent · BrandLaunch.svelte fill</p></div></li>
+  <li><span class="pill warn">D2</span><div><p><strong>Two font paths.</strong> Repo docs and in-app pages load the shipped offline subset through <code>odj-doc.css</code>. Artifacts can only load fonts from Google Fonts, so <code>artifact-inline.html</code> does that and carries its own copy of the rules. Open: keep two copies of the rules in step by hand, or generate the artifact file from <code>odj-doc.css</code>.</p><p class="src">docs/brand/doc-style/odj-doc.css · docs/brand/doc-style/artifact-inline.html</p></div></li>
+  <li><span class="pill warn">D3</span><div><p><strong>Dark-first for docs too?</strong> The app is dark-first; most past artifacts were light-first. This guide follows the app and gives light readers the warm theme.</p></div></li>
+</ol>
+
+<details class="tested">
+  <summary>What exactly was tested</summary>
+  <ul>
+    <li>Tokens and component shapes were read from <code>setup.css</code> and <code>DESIGN.md</code> on main ea2012f5, not remembered. The S2 and D1 claims about the app were re-read on main b99373a7f for this repo copy.</li>
+    <li>The offline font was loaded from this folder with no network font request, and the page was viewed in both themes, on Thu 1 Oct 2026.</li>
+    <li>Private account artifact inventory and review history are not included in this public guide.</li>
+    <li>Not checked: contrast was not measured with a tool. The light values come from DESIGN.md's AA-checked theme, and the light accent was picked by eye.</li>
+  </ul>
+</details>
+</main>
+</body>
+</html>

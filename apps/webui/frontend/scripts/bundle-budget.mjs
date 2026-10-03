@@ -188,13 +188,22 @@ const BUDGETS = [
   // headroom for #4906 (stems on a playing deck), which lands right after with +1,319
   // of its own and raises once more. Payback, not yet measured: find what pulls
   // headphones.ts into the "/" closure and defer it.
-  // RAISED Sat 3 Oct 2026 (+2 KiB, PR #4906, STEM-44..48): the deck's named stem
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #5086, CLOUDSYNC-33 "This file isn't on this
+  // computer"): audio-engine and performance-ipc are in the first-paint closure, and
+  // the deck-load failure wording (deck-load-context.ts: the plain-reason map, the
+  // error-keyed WeakMap the banner and toast read, the title fallback) adds +270
+  // bytes. Clean origin/main 01d5b3520 measured 262,071 locally (73 bytes of
+  // headroom); main + this PR 262,341. Trunk's queue removed it at 178 over on CI.
+  // Payback: the headphones.ts deferral above retires this KiB too.
+  // RAISED Sat 3 Oct 2026 (+1 KiB, PR #4906, STEM-44..48): the deck's named stem
   // states (stem-status.ts, StemRow) render on "/" and are first-paint weight. Clean
-  // origin/main measured 262,071 locally (73 bytes of headroom); main + this PR
-  // 263,325, +1,254. Already paid back inside this PR: the retry decision and the
-  // live handoff load on first use (stem-retry.ts, stem-live-handoff.ts), -232
-  // measured. Payback, not yet measured: the label table in stem-status.ts.
-  { name: 'library', limit: 264192, measured: 263325, note: 'initial load of "/"' },
+  // origin/main measured 262,071 locally before #5086; main + this PR 263,325, +1,254.
+  // Already paid back inside this PR: the retry decision and the live handoff load on
+  // first use (stem-retry.ts, stem-live-handoff.ts), -232 measured. On main 423376f7d
+  // with #5086's own +1 KiB, main + this PR measures 263,784 locally (CI read within
+  // 20 bytes of local on this PR's last head).
+  // Payback, not yet measured: the label table in stem-status.ts.
+  { name: 'library', limit: 264192, measured: 263784, note: 'initial load of "/"' },
   // Wed 2 Sep 2026 18:40: +1 KiB for audio-output-liveness (P0: "no audio" must be an error
   // state; main had 24 bytes of headroom). Payback: PR #695 ships signalsmith-stretch once.
   // Thu 10 Sep 2026: +12 KiB for the isSuperseded() supersession-guard fix
