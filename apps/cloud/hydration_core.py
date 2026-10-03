@@ -57,10 +57,10 @@ from typing import Literal
 from .asset_store import DEFAULT_PRESIGN_EXPIRY_SECONDS, presign_url, validate_content_hash
 from .config import CloudConfig
 from .eviction import HydrationError
-from .r2_keys import canonical_digest
+from .r2_keys import R2KeyError, canonical_digest
 
 PolicyMode = Literal["pinned", "cached", "stream", "excluded"]
-PolicySource = Literal["sync_policies", "playlist_pin"]
+PolicySource = Literal["sync_policies", "playlist_pin", "unconfigured"]
 Origin = Literal["local", "cache", "presigned", "unavailable"]
 LocalAction = Literal["kept", "cached", "deleted"]
 
@@ -137,6 +137,21 @@ def _validate_asset_kind(asset_kind: str) -> str:
     return asset_kind
 
 
+class PolicyUnconfigured(HydrationError):
+    """No ``sync_policies`` row for this machine and asset kind.
+
+    Raised by :func:`resolve_policy`, which refuses to assume a mode.
+    :func:`resolve_playback_source` treats an unconfigured machine as
+    local-only (CLOUDSYNC-33): it plays its own copies and reports anything
+    else as not on this computer, never as a policy error a DJ cannot act on.
+    """
+
+
+#: What a deck shows for a track this machine has no copy of and no CloudSync
+#: policy to fetch one by (CLOUDSYNC-33).
+NOT_ON_THIS_MACHINE = "This file isn't on this computer."
+
+
 def _default_mode(
     conn: sqlite3.Connection, machine_id: str, asset_kind: str
 ) -> PolicyMode:
@@ -146,7 +161,7 @@ def _default_mode(
         (machine_id, asset_kind),
     ).fetchone()
     if row is None:
-        raise HydrationError(
+        raise PolicyUnconfigured(
             f"no sync_policies row for machine {machine_id!r} / asset_kind "
             f"{asset_kind!r}. Configure the machine in the CloudSync panel "
             "(or POST /api/v1/cloudsync/policies) before resolving playback; "
@@ -329,6 +344,43 @@ def _content_hash(conn: sqlite3.Connection, stable_id: str) -> str | None:
     return str(row[0]) if row[0] else None
 
 
+def _existing_cache_entry(cache_dir: Path, content_hash: str | None) -> Path | None:
+    """The hydrated cache file for ``content_hash`` if it is on disk, else None.
+
+    Never raises: a missing or malformed hash simply has no cache entry.
+    """
+    if content_hash is None:
+        return None
+    try:
+        cached = cache_path(cache_dir, canonical_digest(content_hash))
+    except R2KeyError:
+        return None
+    return cached if cached.is_file() else None
+
+
+def _unconfigured_source(cache_dir: Path, content_hash: str | None) -> PlaybackSource:
+    """Local-only answer for a machine with no local file and no policy row."""
+    cached = _existing_cache_entry(cache_dir, content_hash)
+    if cached is not None and content_hash is not None:
+        # Bytes a past policy hydrated are still a copy this machine has;
+        # serving them neither presigns nor enqueues anything.
+        touch_cache_entry(cached)
+        return PlaybackSource(
+            origin="cache",
+            mode="cached",
+            policy_source="unconfigured",
+            path=cached,
+            content_hash=canonical_digest(content_hash),
+        )
+    return PlaybackSource(
+        origin="unavailable",
+        mode="excluded",
+        policy_source="unconfigured",
+        content_hash=content_hash,
+        reason=NOT_ON_THIS_MACHINE,
+    )
+
+
 def resolve_playback_source(
     conn: sqlite3.Connection,
     stable_id: str,
@@ -349,9 +401,14 @@ def resolve_playback_source(
     local = _local_file(conn, stable_id, machine_id)
     try:
         policy = resolve_policy(conn, stable_id, machine_id, asset_kind=asset_kind)
-    except HydrationError:
+    except HydrationError as exc:
+        # An unconfigured machine is local-only (CLOUDSYNC-33): its own copy
+        # plays, and a track it has no copy of is not on this computer. It
+        # never streams or hydrates, because nothing chose a mode that would.
+        # Any other policy error still lets a local copy play, but refuses
+        # loudly when there is none.
+        content_hash = _content_hash(conn, stable_id)
         if local is not None:
-            content_hash = _content_hash(conn, stable_id)
             return PlaybackSource(
                 origin="local",
                 mode="pinned",
@@ -359,7 +416,9 @@ def resolve_playback_source(
                 path=local,
                 content_hash=content_hash,
             )
-        raise
+        if not isinstance(exc, PolicyUnconfigured):
+            raise
+        return _unconfigured_source(cache_dir, content_hash)
 
     content_hash = _content_hash(conn, stable_id)
 

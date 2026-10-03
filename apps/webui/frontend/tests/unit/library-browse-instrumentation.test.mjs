@@ -58,6 +58,24 @@ test('the local filter debounce is shorter than the whole-collection one', () =>
 	);
 });
 
+test('playlist tree readiness is a positive navigation-relative duration', () => {
+	assert.equal(
+		lib.measurePlaylistTreeReadyMs(125),
+		125,
+		'a real tree-ready measurement must be positive and preserve milliseconds'
+	);
+	assert.throws(
+		() => lib.measurePlaylistTreeReadyMs(0),
+		/positive/,
+		'a zero duration would hide a clock mismatch'
+	);
+	assert.throws(
+		() => lib.measurePlaylistTreeReadyMs(60_000),
+		/60 seconds/,
+		'an epoch timestamp must not be accepted as a tree duration'
+	);
+});
+
 test('a keystroke burst coalesces into ONE settle carrying the last query', () => {
 	mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 	try {
