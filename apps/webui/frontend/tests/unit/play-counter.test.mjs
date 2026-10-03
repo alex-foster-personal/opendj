@@ -39,7 +39,7 @@ after(() => {
 });
 
 /** A counter over a scripted deck 1, with every other deck empty. */
-function harness({ post } = {}) {
+function harness({ post, retryLater } = {}) {
 	const deck1 = { stable_id: 'sid-a', duration_ms: 240_000 };
 	const world = { heard: true, t: 0 };
 	const posts = [];
@@ -60,7 +60,8 @@ function harness({ post } = {}) {
 				posts.push(play);
 			}),
 		now: () => world.t,
-		newPlayId: () => `play-${++ids}`
+		newPlayId: () => `play-${++ids}`,
+		retryLater
 	});
 	/** Advance the clock in 1 s samples. */
 	const run = (seconds) => {
@@ -213,6 +214,36 @@ test('a failed post is still retried after its deck unloads', async () => {
 	h.run(5);
 	await settle();
 	assert.equal(seen.length, 2, 'a landed post was sent again');
+});
+
+test('a post that fails after the counter stops retries on its own, not on a tick', async () => {
+	let fail = true;
+	const seen = [];
+	const later = [];
+	const h = harness({
+		post: async (play) => {
+			seen.push(play.playId);
+			if (fail) throw new Error('network down');
+		},
+		retryLater: (retry) => later.push(retry)
+	});
+	h.counter.tick();
+	h.run(60);
+	await settle();
+	assert.equal(seen.length, 1);
+	assert.equal(later.length, 0, 'a running counter must retry on its ticks, not on its own');
+	// Leaving /performance: the failed play is sent at once, and its next
+	// failure schedules its own retry since no tick will come.
+	h.counter.stop();
+	assert.equal(seen.length, 2, 'stop did not flush the play waiting to retry');
+	await settle();
+	assert.equal(later.length, 1, 'a failure after stop was left for a tick that never comes');
+	fail = false;
+	later.shift()();
+	await settle();
+	assert.deepEqual(seen, ['play-1', 'play-1', 'play-1']);
+	assert.equal(h.counter.status().posted, 1);
+	assert.equal(later.length, 0);
 });
 
 test('the default post hits POST /api/v1/tracks/{id}/plays with the wire body', async () => {

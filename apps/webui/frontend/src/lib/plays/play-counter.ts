@@ -78,11 +78,19 @@ export interface PlayCounterOptions {
 	post?: (play: PlayPost) => Promise<void>;
 	now?: () => number;
 	newPlayId?: () => string;
+	/** Run `retry` later, once the counter has stopped and no tick will. */
+	retryLater?: (retry: () => void) => void;
 }
 
 export interface PlayCounter {
 	tick(): void;
 	status(): PlayCounterStatus;
+	/**
+	 * Stop counting: plays already heard are sent now, and a failed post is
+	 * retried on its own (`retryLater`) rather than waiting for a tick that
+	 * will never come, so leaving /performance never loses a counted play.
+	 */
+	stop(): void;
 }
 
 function _defaultHeard(): (state: PerformanceState, deck: DeckId) => boolean {
@@ -112,12 +120,14 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 	const post = options.post ?? _defaultPost;
 	const now = options.now ?? (() => Date.now());
 	const newPlayId = options.newPlayId ?? _newPlayId;
+	const retryLater = options.retryLater ?? ((retry: () => void) => void setTimeout(retry, PLAY_SAMPLE_INTERVAL_MS));
 	const loads = new Map<DeckId, DeckLoad>();
 	// Plays waiting to be posted, kept apart from `loads` so a failed post is
 	// still retried after its deck unloads or loads the next track.
 	const outbox: Array<{ deck: DeckId; load: DeckLoad }> = [];
 	let posted = 0;
 	let failed = 0;
+	let stopped = false;
 
 	function _send(deck: DeckId, load: DeckLoad): void {
 		load.attempts += 1;
@@ -139,7 +149,8 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 					console.error(`play counter: giving up on ${load.stableId} deck ${deck}`, err);
 				} else {
 					load.phase = 'pending';
-					outbox.push({ deck, load });
+					if (stopped) retryLater(() => _send(deck, load));
+					else outbox.push({ deck, load });
 				}
 			}
 		);
@@ -199,6 +210,10 @@ export function createPlayCounter(options: PlayCounterOptions = {}): PlayCounter
 				};
 			}
 			return { decks, posted, failed };
+		},
+		stop(): void {
+			stopped = true;
+			for (const { deck, load } of outbox.splice(0)) _send(deck, load);
 		}
 	};
 }
@@ -223,6 +238,7 @@ export function installPlayCounter(options: PlayCounterOptions = {}): () => void
 	});
 	return () => {
 		clearInterval(timer);
+		counter.stop();
 		Reflect.deleteProperty(window, PLAY_COUNTER_GLOBAL);
 	};
 }
