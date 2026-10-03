@@ -5,6 +5,7 @@
  * with the mode (see `rust-mode.svelte.ts`).
  */
 import { API_BASE } from '$lib/api/base';
+import { runAutomaticMasterElection } from '$lib/rb/master-election';
 import { getTrack } from '$lib/api';
 import { fetchAnlzForDeckLoad } from '$lib/components/rb/wave/anlz-cache.svelte';
 import { _hotCueRevisionsFrom, deckStates, mixerState, pitchRanges } from '$lib/player/state.svelte';
@@ -169,6 +170,7 @@ export function activateRustEngineMode(toast: RustToast | null): void {
 /** Load a library track: the page's metadata fetches plus the engine load. */
 export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<void> {
 	if (stable_id.length === 0) throw new Error('load: stable_id must be non-empty');
+	deckStates[deck].load_generation += 1;
 	loadFences[deck] = Infinity;
 	let trackRes, anlz, slots;
 	try {
@@ -201,7 +203,6 @@ export async function loadRustDeck(deck: DeckId, stable_id: string): Promise<voi
 	st.has_rb_mapping = track.has_rb_mapping;
 	st.loop = displayLoopFrom(anlz.cues, anlz.beatgrid.beats);
 	displayLoops[deck] = st.loop;
-	st.load_generation += 1;
 	link.client?.send({ type: 'engine_state' }).catch(() => {});
 }
 
@@ -267,14 +268,16 @@ export function applyAcknowledged(command: PerformanceCommand): void {
 /** Transport truth from the engine: play state, tempo, loop, length, key. */
 export function mirrorEngineState(s: EngineState): void {
 	link.lastState = s;
-	let masterStopped = false;
+	let masterStopped: { deck: DeckId; stableId: string; generation: number } | null = null;
 	for (const d of s.decks) {
 		const deck = d.deck as DeckId;
 		const st = deckStates[deck];
 		if (st === undefined || st.stable_id === null) continue;
 		if (s.frame <= (loadFences[deck] ?? -1)) continue;
 		// A track that plays out stops in the engine, not on a command.
-		if (st.playing && !d.playing && rustMaster.deck === deck) masterStopped = true;
+		if (st.playing && !d.playing && rustMaster.deck === deck) {
+			masterStopped = { deck, stableId: st.stable_id, generation: st.load_generation };
+		}
 		st.playing = d.playing;
 		st.audible = d.playing;
 		st.transport_pending = false;
@@ -298,9 +301,22 @@ export function mirrorEngineState(s: EngineState): void {
 			: (displayLoops[d.deck as DeckId] ?? null);
 		if (!d.playing) st.position_ms = d.position_ms;
 	}
-	// Not awaited: a state frame must not wait on a re-join; `_reanchor`
-	// reports a follower that cannot lock in its own sync_error.
-	if (masterStopped) void electAndRejoin();
+	if (masterStopped !== null) {
+		const ended = masterStopped;
+		// Not awaited: a state frame must not wait on a re-join; `_reanchor`
+		// reports a follower that cannot lock in its own sync_error. The
+		// election runner still serializes the handoff, and a stale frame
+		// (replacement load, or the master already playing again) is ignored.
+		void runAutomaticMasterElection(async () => {
+			const st = deckStates[ended.deck];
+			if (rustMaster.deck !== ended.deck || st.playing ||
+				st.stable_id !== ended.stableId || st.load_generation !== ended.generation ||
+				loadFences[ended.deck] === Infinity) return;
+			await electAndRejoin();
+		}).catch((error: unknown) => {
+			rustMode.error = error instanceof Error ? error.message : String(error);
+		});
+	}
 	// Each frame is a fresh playhead for both decks: keep followers on phase.
 	phaseLockTick();
 }

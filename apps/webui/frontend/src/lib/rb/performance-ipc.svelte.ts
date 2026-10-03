@@ -46,6 +46,7 @@
  */
 
 import { assertHeadDelayMs } from '$lib/player/constants';
+import { installAutomaticMasterElectionRunner } from '$lib/rb/master-election';
 import {
 	copyToast,
 	dismissToast,
@@ -925,6 +926,7 @@ installScopedSyncRunner((_deck, run) => {
 // (discussion_r3968214009 P1 BLOCKING). Installed rather than imported
 // because analysis-source.svelte.ts is imported FROM here.
 installAnalysisSourceRefreshRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
+installAutomaticMasterElectionRunner((work) => _commandScheduler.run([...DECK_IDS, 'sync'], work));
 let _commandGeneration = 0;
 let _commandStatusGeneration = 0;
 let _activeCommandSession: { generation: number } | null = null;
