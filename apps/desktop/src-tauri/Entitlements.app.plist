@@ -15,8 +15,10 @@
   headphone cue latency calibration (CUEOUT-11), which listens briefly in the
   web view. NSMicrophoneUsageDescription in Info.plist is the prompt text.
 
-  The justfile re-seals the bundle after the icon install with
-  --preserve-metadata=entitlements, or this key would be dropped there.
+  The justfile re-seals the bundle after the icon install with codesign's
+  preserve-metadata=entitlements option, or this key would be dropped there.
+  (No double hyphen anywhere in this comment: XML forbids it inside a comment,
+  and a strict plist parser then refuses the whole file.)
 -->
 <plist version="1.0">
 <dict>
