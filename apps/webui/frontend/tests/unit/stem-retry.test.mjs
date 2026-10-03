@@ -11,6 +11,8 @@
 // [if] the deck has no decoded mix [then] the call rejects by name
 // [if] a second retry arrives for a deck while one is running [then] it joins
 //   that retry: one hydrate, one reload
+// [if] the deck loads another track while the hydrate request is out [then]
+//   the old track is never reloaded onto it
 import assert from 'node:assert/strict';
 import { before, test } from 'node:test';
 
@@ -31,6 +33,7 @@ function port(overrides = {}) {
 		port: {
 			landHeld: null,
 			reload: () => log.push('reload'),
+			current: () => true,
 			releaseDecode: () => {
 				log.push('releaseDecode');
 				return 0;
@@ -84,6 +87,20 @@ test('a failed load clears the recorded fetch failure before loading again', asy
 	const failed = { ...graph.unavailableStemDeckState('hub answered HTTP 503'), status: 'error' };
 	await mod.retryDeckStems(2, 'sid', failed, p);
 	assert.deepEqual(log, ['hydrate:sid', 'reload']);
+});
+
+test('a track loaded while the hydrate request is out never gets the old track\'s stems', async () => {
+	let loadedSince = false;
+	const { port: p, log } = port({
+		requestHydration: async (stableId) => {
+			log.push(`hydrate:${stableId}`);
+			loadedSince = true;
+		},
+		current: () => !loadedSince
+	});
+	const failed = { ...graph.unavailableStemDeckState('hub answered HTTP 503'), status: 'error' };
+	await mod.retryDeckStems(2, 'track-a', failed, p);
+	assert.deepEqual(log, ['hydrate:track-a'], 'track A was reloaded onto the deck now holding track B');
 });
 
 test('a failed hydrate request is reported, and no reload hides it', async () => {

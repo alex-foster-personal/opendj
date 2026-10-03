@@ -4159,10 +4159,11 @@ class RbAudioEngine implements AudioEngine {
 	/** STEM-46/47: get this deck's stems now (the decision is retryDeckStems, in stem-hydrate-wait.ts). */
 	retryStems(deck: DeckId): Promise<void> {
 		const { st, rt } = _requireLoaded(deck, 'retryStems');
-		const held = rt.pendingStemUpgrade, ctx = _ctx, mix = rt.audioBuffer, sid = st.stable_id;
+		const held = rt.pendingStemUpgrade, ctx = _ctx, mix = rt.audioBuffer, sid = st.stable_id, token = rt.loadToken;
 		return retryDeckStems(deck, sid, st.stems, {
 			landHeld: held === null || ctx === null ? null : () => _landHeldStems(deck, held, ctx),
-			reload: ctx === null || mix === null || sid === null ? null : () => { st.stems = loadingStemDeckState(); void _upgradeDeckStems(deck, sid, rt.loadToken, ctx, mix); }
+			reload: ctx === null || mix === null || sid === null ? null : () => { st.stems = loadingStemDeckState(); void _upgradeDeckStems(deck, sid, token, ctx, mix); },
+			current: () => rt.loadToken === token && st.stable_id === sid
 		});
 	}
 

@@ -577,7 +577,7 @@ def _bundle_landed(stable_id: str, stems_dir: Path, request: Request) -> bool:
     return True
 
 
-def _index_proves_absent(stable_id: str, data_dir: object) -> bool:
+def _index_proves_absent(stable_id: str, data_dir: Path | str | None) -> bool:
     """Whether a cached cloud index exists, reads cleanly and lacks ``stable_id``.
 
     A missing cache proves nothing (it was never fetched), and an unreadable
@@ -814,7 +814,8 @@ def hydrate_stem_bundle(stable_id: str, request: Request) -> StemStateOut:
         try:
             enqueued = _enqueue_hydration(stable_id, request)
         except HTTPException as not_indexed:
-            if not_indexed.detail.get("code") != STEM_BUNDLE_NOT_INDEXED:
+            detail = not_indexed.detail
+            if not isinstance(detail, dict) or detail.get("code") != STEM_BUNDLE_NOT_INDEXED:
                 raise
             raise invalid from exc
         if enqueued is None:

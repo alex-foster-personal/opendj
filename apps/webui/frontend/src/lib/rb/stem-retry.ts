@@ -29,6 +29,8 @@ export interface StemRetryPort {
 	reload: (() => void) | null;
 	releaseDecode?: () => number;
 	requestHydration?: (stableId: string) => Promise<void>;
+	/** False once the deck has loaded another track since the retry began. */
+	current: () => boolean;
 }
 
 /**
@@ -79,5 +81,8 @@ async function _retryDeckStems(
 		throw new Error(`retryStems: deck ${deck} has no decoded mix to align stems to`);
 	}
 	if (stems.status === 'error') await (port.requestHydration ?? requestStemHydration)(stableId);
+	// The hydrate request awaited: a track loaded since then owns the deck, and
+	// this track's stems must never land on it.
+	if (!port.current()) return;
 	port.reload();
 }
