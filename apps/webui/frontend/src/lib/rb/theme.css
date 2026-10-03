@@ -114,9 +114,9 @@ html[data-theme='light'][data-wave-palette='legacy'] .perf-root {
 
 /* Mono grayscale waveform palette (skin preview). TS mirror in wave-palette.ts. */
 html[data-wave-palette='mono'] .perf-root {
-	--rb-wave-low: #5c5c5c;
-	--rb-wave-mid: #9a9a9a;
-	--rb-wave-high: #e4e4e4;
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #b0b0b0;
+	--rb-wave-high: #f4f4f4;
 	--rb-wave-mono: #cfcfcf;
 }
 html[data-theme='light'][data-wave-palette='mono'] .perf-root {
@@ -147,9 +147,9 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-accent-glow: transparent;
 	--rb-green: #e8e8e8;
 	--rb-orange: #9a9a9a;
-	--rb-wave-low: #5c5c5c;
-	--rb-wave-mid: #9a9a9a;
-	--rb-wave-high: #e4e4e4;
+	--rb-wave-low: #6a6a6a;
+	--rb-wave-mid: #b0b0b0;
+	--rb-wave-high: #f4f4f4;
 	--rb-wave-mono: #cfcfcf;
 	--rb-red: #d0342c;
 	--rb-yellow: #b4b4b4;
@@ -160,6 +160,9 @@ html[data-skin='mono-dev'] .perf-root {
 	--rb-font: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
 	--rb-fs-browser: 10.5px;
 	--rb-fs-label: 9.5px;
+	/* Split rows (wave_split_master) paint two decks per row: 56px gives each
+	   half 28px; 72px read better but pushed the library off a 1280x800 screen. */
+	--rb-waverow-h: 56px;
 }
 /* Track artwork in grayscale, color back on hover. Keyed on the artwork
  * endpoint (/tracks/{sid}/artwork) rather than per-component classes, so it

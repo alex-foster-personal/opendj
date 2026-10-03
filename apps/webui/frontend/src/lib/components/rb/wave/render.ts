@@ -121,11 +121,15 @@ export const BLOCK_PITCH_PX = 3;
  *  - kick:     LOW band dominant, mid/high minor, gamma > 1 (expands peaks).
  *  - contrast: stretched between the rolling min/max over ~1 beat, scaled
  *              by that window's max so quiet sections stay quiet.
- *  - onset:    rise above the rolling mean over ~1/4 beat, plus a floor. */
-export type BlocksVariant = 'max' | 'kick' | 'contrast' | 'onset';
+ *  - onset:    rise above the rolling mean over ~1/4 beat, plus a floor.
+ *  - blend:    mix(max, contrast, BLEND_CONTRAST): a small step from max
+ *              that still separates neighboring beats. */
+export type BlocksVariant = 'max' | 'kick' | 'contrast' | 'onset' | 'blend';
 
 export const BLOCKS_CFG = {
-	VARIANT_DEFAULT: 'contrast' as BlocksVariant,
+	VARIANT_DEFAULT: 'blend' as BlocksVariant,
+	/** 0.25: whole-track neighbor variance 2.56x max on Strobe (contrast alone was 12x). */
+	BLEND_CONTRAST: 0.25,
 	KICK_LOW_WEIGHT: 0.8,
 	KICK_GAMMA: 1.6,
 	CONTRAST_WINDOW_BEATS: 1,
@@ -291,7 +295,7 @@ export function resolveStripWaveformKind(
 	waveformKind: 'tri' | 'mono',
 	design: WaveformDesign
 ): 'tri' | 'mono' {
-	if (design === 'mono' || design === 'blocks') return 'mono';
+	if (design === 'mono') return 'mono';
 	return waveformKind;
 }
 
@@ -428,14 +432,7 @@ function _drawBands(
 		const blocksPerBeat =
 			blocks.beatPeriodS === null ? null : (blocks.beatPeriodS * pxPerS) / BLOCK_PITCH_PX;
 		const heights = blockHeights(bands, w, norms, blocks.variant, blocksPerBeat);
-		const maxBarH = h - MARKER_BAND_PX - 1;
-		const blockPath = new Path2D();
-		for (let b = 0; b < heights.length; b++) {
-			const barH = Math.round(heights[b] * maxBarH);
-			if (barH > 0) blockPath.rect(b * BLOCK_PITCH_PX, h - barH, BLOCK_BAR_PX, barH);
-		}
-		ctx.fillStyle = palette.mono;
-		ctx.fill(blockPath);
+		paintStackedBlocks(ctx, heights, mono ? null : blockBandShares(bands, w, norms), h, h - MARKER_BAND_PX - 1, palette);
 		return;
 	}
 
@@ -562,11 +559,16 @@ export function blockHeights(
 	}
 	const out = new Float32Array(count);
 	const effective =
-		blocksPerBeat === null && (variant === 'contrast' || variant === 'onset')
+		blocksPerBeat === null && (variant === 'contrast' || variant === 'onset' || variant === 'blend')
 			? BLOCKS_CFG.NO_GRID_VARIANT
 			: variant;
 	if (effective === 'max') {
 		for (let b = 0; b < count; b++) out[b] = all[b] > 0 ? Math.pow(all[b], AMP_GAMMA) : 0;
+	} else if (effective === 'blend') {
+		const lifted = blockHeights(bands, widthPx, norms, 'max', blocksPerBeat);
+		const stretched = blockHeights(bands, widthPx, norms, 'contrast', blocksPerBeat);
+		const k = BLOCKS_CFG.BLEND_CONTRAST;
+		for (let b = 0; b < count; b++) out[b] = (1 - k) * lifted[b] + k * stretched[b];
 	} else if (effective === 'kick') {
 		const w = BLOCKS_CFG.KICK_LOW_WEIGHT;
 		for (let b = 0; b < count; b++) {
@@ -602,6 +604,63 @@ export function blockHeights(
 		}
 	}
 	return out;
+}
+
+/** Per-block share of each band relative to the block's loudest band (0..1),
+ * so a stacked block keeps its total height and shows the band mix. */
+export function blockBandShares(
+	bands: AnlzWaveform['detail'],
+	widthPx: number,
+	norms: { low: number; mid: number; high: number }
+): { low: Float32Array; mid: Float32Array; high: Float32Array } {
+	const n = bands.length;
+	const count = Math.ceil(widthPx / BLOCK_PITCH_PX);
+	const out = { low: new Float32Array(count), mid: new Float32Array(count), high: new Float32Array(count) };
+	for (let b = 0; b < count; b++) {
+		const x = b * BLOCK_PITCH_PX;
+		const p0 = Math.max(0, Math.floor((x / widthPx) * n));
+		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+		const lo = Math.min(1, _bucketMax(bands.low, p0, p1) / norms.low);
+		const mi = Math.min(1, _bucketMax(bands.mid, p0, p1) / norms.mid);
+		const hi = Math.min(1, _bucketMax(bands.high, p0, p1) / norms.high);
+		const top = Math.max(lo, mi, hi);
+		if (top <= 0) continue;
+		out.low[b] = lo / top;
+		out.mid[b] = mi / top;
+		out.high[b] = hi / top;
+	}
+	return out;
+}
+
+/** Paint one-sided blocks. shares null = single mono color; else stacked
+ * like tri-band: low (darkest) at the block height, mid and high in front at
+ * their share of it (scaled like the tri-band core). */
+export function paintStackedBlocks(
+	ctx: CanvasRenderingContext2D,
+	heights: Float32Array,
+	shares: { low: Float32Array; mid: Float32Array; high: Float32Array } | null,
+	baselineY: number,
+	maxBarH: number,
+	palette: Pick<WavePalette, 'low' | 'mid' | 'high' | 'mono'>
+): void {
+	const layers: [string, Float32Array | null, number][] =
+		shares === null
+			? [[palette.mono, null, 1]]
+			: [
+					[palette.low, shares.low, 1],
+					[palette.mid, shares.mid, MID_BAND_SCALE],
+					[palette.high, shares.high, HIGH_BAND_SCALE]
+				];
+	for (const [color, share, scale] of layers) {
+		const path = new Path2D();
+		for (let b = 0; b < heights.length; b++) {
+			const frac = share === null ? 1 : share[b] * scale;
+			const barH = Math.round(heights[b] * frac * maxBarH);
+			if (barH > 0) path.rect(b * BLOCK_PITCH_PX, baselineY - barH, BLOCK_BAR_PX, barH);
+		}
+		ctx.fillStyle = color;
+		ctx.fill(path);
+	}
 }
 
 /** Mean squared difference between adjacent block heights: the 'can I see

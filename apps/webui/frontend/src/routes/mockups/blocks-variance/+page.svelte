@@ -21,7 +21,7 @@
 	} from '$lib/components/rb/wave/render';
 	import '$lib/rb/theme.css';
 
-	const VARIANTS: readonly BlocksVariant[] = ['max', 'kick', 'contrast', 'onset'];
+	const VARIANTS: readonly BlocksVariant[] = ['max', 'blend', 'kick', 'contrast', 'onset'];
 	const WIDTH = 1240;
 
 	const sid = page.url.searchParams.get('sid');

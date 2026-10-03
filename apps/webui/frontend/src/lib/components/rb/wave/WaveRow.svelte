@@ -74,6 +74,8 @@
 	import { createLyricsFetchState } from './lyrics-fetch.svelte';
 	import { waveRowVocalsTitle } from './vocals-title';
 	import { uiPrefs } from '$lib/rb/prefs.svelte';
+	import { waveSplitActive } from '$lib/rb/ui-skin';
+	import { paintSplitRow, splitPartnerDeck } from './split-row';
 	import { STEM_WAVE_ROW_MAX, STEM_WAVE_ROW_PX } from './stem-waveform-ui';
 
 	const { deckId }: { deckId: DeckId } = $props();
@@ -148,6 +150,22 @@
 	const masterState = $derived(masterDeck === null ? null : getDeckState(masterDeck));
 	const masterAnlz = $derived(masterAnlzForDeck(masterState, getAnlzEntry));
 	const masterBeats = $derived(masterAnlz?.beatgrid.beats ?? null);
+
+	// Split main waveform (wave_split_master): partner deck on the top half.
+	const splitOn = $derived(waveSplitActive(uiPrefs.wave_split_master, uiPrefs.ui_skin));
+	const splitPartner = $derived(
+		splitOn
+			? splitPartnerDeck(
+					deckId,
+					DECK_IDS.map((id) => {
+						const st = getDeckState(id);
+						return { id, loaded: st.stable_id !== null && st.duration_ms !== null, isMaster: st.is_master };
+					})
+				)
+			: null
+	);
+	const partnerState = $derived(splitPartner === null ? null : getDeckState(splitPartner.id));
+	const partnerAnlz = $derived(masterAnlzForDeck(partnerState, getAnlzEntry));
 
 	const syncPlayheadTone = $derived.by((): PlayheadTone => {
 		if (!deck.audible) return 'stopped';
@@ -273,7 +291,11 @@
 			syncPlayheadTone,
 			cssW,
 			cssH,
-			palette
+			palette,
+			splitPartner?.id ?? null,
+			partnerAnlz,
+			partnerState?.position_ms ?? null,
+			partnerState?.pitch ?? null
 		] as const;
 		if (shouldSkipRepaint(_paintScheduleState, force, visualInputs, scrollPx)) return;
 		const dpr = window.devicePixelRatio;
@@ -290,6 +312,39 @@
 			ctx.fillStyle = paintPalette.bg;
 			ctx.fillRect(0, 0, cssW, cssH);
 			drawPlayhead(ctx, cssW, cssH, syncPlayheadTone);
+			return;
+		}
+		if (splitPartner !== null && partnerState !== null && partnerState.duration_ms !== null) {
+			const half = Math.floor(cssH / 2);
+			const common = { widthCss: cssW, heightCss: half, palette: paintPalette, waveformDesign: uiPrefs.waveform_design };
+			paintSplitRow(
+				el,
+				ctx,
+				{
+					...common,
+					positionMs: partnerState.position_ms,
+					durationMs: partnerState.duration_ms,
+					anlz: partnerAnlz,
+					pitch: partnerState.pitch,
+					loop: partnerState.loop,
+					playheadTone: partnerState.is_master ? 'master' : partnerState.audible ? 'now' : 'stopped',
+					playheadTimeMs: performance.now()
+				},
+				{
+					...common,
+					positionMs: paintPositionMs,
+					durationMs: deck.duration_ms,
+					anlz: paintAnlz,
+					pitch: deck.pitch,
+					loop: deck.loop,
+					playheadTone: syncPlayheadTone,
+					playheadTimeMs: performance.now(),
+					ghostSeekMs: waveformSeekArmed?.target_position_ms ?? null,
+					ghostSeekVisible: waveformSeekArmed !== null && ghostBlinkOn
+				},
+				{ top: splitPartner.label, bottom: `DECK ${deckId}`, color: paintPalette.phrase, line: paintPalette.tick },
+				dpr
+			);
 			return;
 		}
 		drawWaveRow(ctx, {
@@ -367,6 +422,11 @@
 		void anlzErrorCode;
 		void masterBeats;
 		void masterState?.position_ms;
+		void partnerState?.position_ms;
+		void partnerState?.pitch;
+		void partnerAnlz;
+		void splitPartner;
+		void uiPrefs.waveform_design;
 		void cssW;
 		void cssH;
 		void palette;

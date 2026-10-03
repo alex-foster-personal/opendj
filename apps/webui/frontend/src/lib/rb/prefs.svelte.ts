@@ -89,7 +89,15 @@ import { parseAutoSync, parseLastPlaylist, parseLevelCalibration, parseSpotifyLi
 import type { AutoSyncPrefs, LastPlaylistPref, LevelCalibrationPrefs, SpotifyLibraryPref } from './prefs-types';
 import { makeSpotifyLibrarySetters } from './spotify-library-prefs';
 import { validateActiveScheme } from './theme-tokens';
-import { applyUiSkinDom, parseUiSkin, UI_SKIN_DEFAULT, type UiSkin } from './ui-skin';
+import {
+	applyUiSkinDom,
+	parseUiSkin,
+	parseWaveSplitMaster,
+	UI_SKIN_DEFAULT,
+	WAVE_SPLIT_MASTER_DEFAULT,
+	type UiSkin,
+	type WaveSplitMaster
+} from './ui-skin';
 import { tryOfferGigHelperPromptOnPostureChange } from './gig-helper-prompt.svelte';
 export { DECK_LAYOUT_DURATIONS_MS, type DeckLayoutDurationMs, type DeckLayoutMode } from './deck-layout-prefs';
 // The top bar's 2-deck toggle copy, re-exported beside setDeckLayoutMode so
@@ -219,6 +227,8 @@ export interface RbUiPrefs
 	wave_palette: WavePaletteChoice;
 	/** Chrome skin layered over the theme, applied as html[data-skin]. */
 	ui_skin: UiSkin;
+	/** Split main waveform (master on top); 'auto' follows the skin. */
+	wave_split_master: WaveSplitMaster;
 	/**
 	 * Destructive / move confirms: false = skip the prompt forever.
 	 * Missing keys mean "ask". Persisted under the same blob.
@@ -279,6 +289,7 @@ const DEFAULTS: RbUiPrefs = {
 	waveform_design: WAVEFORM_DESIGN_DEFAULT,
 	wave_palette: WAVE_PALETTE_DEFAULT,
 	ui_skin: UI_SKIN_DEFAULT,
+	wave_split_master: WAVE_SPLIT_MASTER_DEFAULT,
 	confirm: {},
 	last_playlist: null,
 	spotify_library: { pinned_ids: [], recent_ids: [] },
@@ -482,6 +493,7 @@ function _load(): RbUiPrefs {
 	const waveformDesign = parseWaveformDesign(parsed.waveform_design);
 	const wavePalette = parseWavePalette(parsed.wave_palette);
 	const uiSkin = parseUiSkin(parsed.ui_skin);
+	const waveSplitMaster = parseWaveSplitMaster(parsed.wave_split_master);
 	const crossfadeCurve = parsed.crossfade_curve;
 	if (
 		crossfadeCurve !== undefined &&
@@ -556,6 +568,7 @@ function _load(): RbUiPrefs {
 		waveform_design: waveformDesign ?? DEFAULTS.waveform_design,
 		wave_palette: wavePalette ?? DEFAULTS.wave_palette,
 		ui_skin: uiSkin ?? DEFAULTS.ui_skin,
+		wave_split_master: waveSplitMaster ?? DEFAULTS.wave_split_master,
 		confirm: { ...(confirm as RbUiPrefs['confirm']) },
 		last_playlist: lastPlaylist,
 		spotify_library: parseSpotifyLibrary(parsed.spotify_library, STORAGE_KEY),
@@ -831,5 +844,11 @@ export function setUiSkin(next: UiSkin): void {
 	if (parseUiSkin(next) === undefined) throw new Error('ui_skin must be set, got undefined');
 	uiPrefs.ui_skin = next;
 	applyUiSkinDom(next);
+	_persist();
+}
+
+export function setWaveSplitMaster(next: WaveSplitMaster): void {
+	if (parseWaveSplitMaster(next) === undefined) throw new Error('wave_split_master must be set, got undefined');
+	uiPrefs.wave_split_master = next;
 	_persist();
 }

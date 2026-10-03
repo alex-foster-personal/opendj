@@ -29,3 +29,29 @@ export function applyUiSkinDom(skin: UiSkin): void {
 	if (skin === 'default') delete document.documentElement.dataset.skin;
 	else if (skin === 'mono-dev') document.documentElement.dataset.skin = skin;
 }
+
+/** Split main waveform: top half = the MASTER deck (or, on the master, the
+ * next loaded deck), bottom half = this deck. 'auto' = on for skins that
+ * declare it (mono-dev), off otherwise. */
+export type WaveSplitMaster = 'auto' | 'on' | 'off';
+
+export const WAVE_SPLIT_MASTER_CHOICES: readonly WaveSplitMaster[] = ['auto', 'on', 'off'];
+
+export const WAVE_SPLIT_MASTER_DEFAULT: WaveSplitMaster = 'auto';
+
+const _SKINS_WITH_SPLIT: ReadonlySet<UiSkin> = new Set<UiSkin>(['mono-dev']);
+
+export function parseWaveSplitMaster(raw: unknown): WaveSplitMaster | undefined {
+	if (raw === undefined) return undefined;
+	if (!WAVE_SPLIT_MASTER_CHOICES.includes(raw as WaveSplitMaster)) {
+		throw new Error(`wave_split_master must be ${WAVE_SPLIT_MASTER_CHOICES.join('|')}, got ${String(raw)}`);
+	}
+	return raw as WaveSplitMaster;
+}
+
+export function waveSplitActive(pref: WaveSplitMaster, skin: UiSkin): boolean {
+	if (pref === 'on') return true;
+	else if (pref === 'off') return false;
+	else if (pref === 'auto') return _SKINS_WITH_SPLIT.has(skin);
+	throw new Error(`wave_split_master: unhandled ${String(pref)}`);
+}

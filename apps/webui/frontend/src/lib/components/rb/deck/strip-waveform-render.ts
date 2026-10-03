@@ -174,7 +174,7 @@ function _drawPreview(
 	if (n === 0) return;
 	const w = widthPx / n;
 	if (design === 'blocks') {
-		_drawBlocks(ctx, bands, widthPx, heightPx, colors.mono);
+		_drawBlocks(ctx, bands, kind, widthPx, heightPx, colors);
 		return;
 	}
 	if (design === 'line') {
@@ -243,24 +243,36 @@ function _drawLoopCueBands(
 	}
 }
 
-/** 'blocks' design: one-sided single-color bars growing up from the bottom
- * baseline, BLOCK_BAR_PX wide on a BLOCK_PITCH_PX pitch, each the max of the
- * preview points it covers. */
+/** 'blocks' design: one-sided bars growing up from the bottom baseline,
+ * BLOCK_BAR_PX wide on a BLOCK_PITCH_PX pitch. 'tri' payloads stack the bands
+ * like the tri strip (low behind, high in front, each its own height);
+ * 'mono' payloads paint one color. */
 function _drawBlocks(
 	ctx: CanvasRenderingContext2D,
 	bands: StripBands,
+	kind: 'tri' | 'mono',
 	widthPx: number,
 	heightPx: number,
-	color: string
+	colors: WaveBandColors
 ): void {
 	const n = bands.length;
-	ctx.fillStyle = color;
-	for (let x = 0; x < widthPx; x += BLOCK_PITCH_PX) {
-		const p0 = Math.floor((x / widthPx) * n);
-		const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
-		let v = 0;
-		for (let i = p0; i <= p1; i++) v = Math.max(v, bands.low[i], bands.mid[i], bands.high[i]);
-		const barH = Math.round(Math.max(0, Math.min(1, v)) * heightPx);
-		if (barH > 0) ctx.fillRect(x, heightPx - barH, BLOCK_BAR_PX, barH);
+	const layers: [string, (i: number) => number][] =
+		kind === 'mono'
+			? [[colors.mono, (i) => Math.max(bands.low[i], bands.mid[i], bands.high[i])]]
+			: [
+					[colors.low, (i) => bands.low[i]],
+					[colors.mid, (i) => bands.mid[i]],
+					[colors.high, (i) => bands.high[i]]
+				];
+	for (const [color, valueAt] of layers) {
+		ctx.fillStyle = color;
+		for (let x = 0; x < widthPx; x += BLOCK_PITCH_PX) {
+			const p0 = Math.floor((x / widthPx) * n);
+			const p1 = Math.min(n - 1, Math.max(p0, Math.ceil(((x + BLOCK_PITCH_PX) / widthPx) * n) - 1));
+			let v = 0;
+			for (let i = p0; i <= p1; i++) v = Math.max(v, valueAt(i));
+			const barH = Math.round(Math.max(0, Math.min(1, v)) * heightPx);
+			if (barH > 0) ctx.fillRect(x, heightPx - barH, BLOCK_BAR_PX, barH);
+		}
 	}
 }
