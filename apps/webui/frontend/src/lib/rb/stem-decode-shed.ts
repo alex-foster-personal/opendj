@@ -20,13 +20,15 @@ import type { BackgroundDemandShed } from '$lib/rb/playing-gate';
 
 /** How a held decode came to start: the shed released it, or the DJ did. */
 type _ReleaseCause = 'released' | 'forced';
-let _pendingReleases: Array<(cause: _ReleaseCause) => void> = [];
+type _Release = (cause: _ReleaseCause) => void;
+let _pendingReleases: Array<{ deck: number | undefined; release: _Release }> = [];
 
-function _releaseAll(cause: _ReleaseCause): number {
-	const releases = _pendingReleases;
-	_pendingReleases = [];
-	for (const release of releases) release(cause);
-	return releases.length;
+/** Release the held decodes of one deck, or every deck when `deck` is undefined. */
+function _releaseAll(cause: _ReleaseCause, deck?: number): number {
+	const releasing = _pendingReleases.filter((held) => deck === undefined || held.deck === deck);
+	_pendingReleases = _pendingReleases.filter((held) => !releasing.includes(held));
+	for (const held of releasing) held.release(cause);
+	return releasing.length;
 }
 
 /** Drain callback: release every caller waiting on the owed decode start. */
@@ -34,10 +36,12 @@ export async function resumeEagerStemDecodeOwedJob(): Promise<void> {
 	_releaseAll('released');
 }
 
-/** STEM-47: the DJ asked for the stems now. Releases every held decode and
- * returns how many were waiting (0 means nothing was held). */
-export function releaseEagerStemDecodeNow(): number {
-	return _releaseAll('forced');
+/** STEM-47: the DJ asked for this deck's stems now. Releases that deck's held
+ * decode (every deck's when `deck` is omitted) and returns how many were
+ * waiting (0 means nothing was held). Other decks stay held: starting them
+ * too would put several decodes on a machine already under pressure. */
+export function releaseEagerStemDecodeNow(deck?: number): number {
+	return _releaseAll('forced', deck);
 }
 
 /**
@@ -50,7 +54,7 @@ let _shed: BackgroundDemandShed | null = null;
 let _kernelPressure: (() => boolean) | null = null;
 
 /** `kernelPressure` reads whether the kernel itself reports memory pressure
- * (PERFMODE-18); without it only an xrun counts as real pressure. */
+ * (PERFMODE-18); without it every hold takes the early-warning bound. */
 export function setEagerStemDecodeShed(
 	shed: BackgroundDemandShed | null,
 	kernelPressure: (() => boolean) | null = null
@@ -93,6 +97,8 @@ export const EAGER_STEM_DECODE_EARLY_WARNING_DEFER_MS = 500;
 export type EagerStemDecodeStart = 'immediate' | 'released' | 'forced' | 'timed_out';
 
 export interface EagerStemDecodeWait {
+	/** The deck whose stems these are, so `LOAD NOW` releases only that deck. */
+	deck?: number;
 	/** Called once, synchronously, if the decode is held back. */
 	onDeferred?: () => void;
 	maxDeferMs?: number;
@@ -107,13 +113,13 @@ export async function awaitEagerStemDecodeSlot(
 ): Promise<EagerStemDecodeStart> {
 	if (_shed === null) return 'immediate';
 	let cause: _ReleaseCause | null = null;
-	let release: ((cause: _ReleaseCause) => void) | null = null;
+	let release: _Release | null = null;
 	const slot = new Promise<_ReleaseCause>((resolve) => {
 		release = (released) => {
 			cause = released;
 			resolve(released);
 		};
-		_pendingReleases.push(release);
+		_pendingReleases.push({ deck: wait.deck, release });
 	});
 	// A shed that does not defer runs the resumer inside request(), so `cause`
 	// is already set when request() returns; anything else is a real hold.
@@ -136,6 +142,6 @@ export async function awaitEagerStemDecodeSlot(
 	clearTimer(handle);
 	// A timed-out decode is already running: it is no longer held, so a later
 	// release must neither count it nor call it.
-	if (start === 'timed_out') _pendingReleases = _pendingReleases.filter((r) => r !== release);
+	if (start === 'timed_out') _pendingReleases = _pendingReleases.filter((held) => held.release !== release);
 	return start;
 }

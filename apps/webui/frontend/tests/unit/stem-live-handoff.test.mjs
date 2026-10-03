@@ -69,8 +69,8 @@ function deck(overrides = {}) {
 		stopOutgoing: async (when) => {
 			log.push(['stopOutgoing', when]);
 		},
-		retireOutgoingNow: () => {
-			log.push(['retireOutgoingNow']);
+		retireRefusedOutgoing: (when, error) => {
+			log.push(['retireRefusedOutgoing', when, error.message]);
 		},
 		commit: (when, segment) => {
 			log.push(['commit', when, segment.positionSec]);
@@ -175,15 +175,15 @@ for (const [label, patch] of [
 	});
 }
 
-test('a mix that refuses its stop is retired at once, never left doubling the stems', async () => {
+test('a mix that refuses its stop is retired at the handoff instant with its error, never left doubling the stems', async () => {
 	const { deps, log } = deck();
 	deps.stopOutgoing = async () => {
 		throw new Error('stop refused');
 	};
 	assert.equal(await mod.handOffStemsLive(deps, 0.15), 'handed_off');
 	await new Promise((resolve) => setImmediate(resolve));
-	assert.ok(names(log).includes('commit'));
-	assert.ok(names(log).includes('retireOutgoingNow'));
+	const when = log.find((entry) => entry[0] === 'commit')[1];
+	assert.deepEqual(log.at(-1), ['retireRefusedOutgoing', when, 'stop refused']);
 });
 
 test('a stopped deck takes the ordinary stopped adoption', async () => {
@@ -346,6 +346,30 @@ test('the stopped mix is retired only after its stop instant has passed', async 
 	assert.ok(Math.abs(timers[0].ms - expectedMs) < 1e-6, `retire timer ${timers[0].ms}ms, expected ${expectedMs}ms`);
 	timers[0].run();
 	assert.deepEqual(log.at(-1), ['retire', 'mix']);
+});
+
+test('a mix that refuses its stop keeps playing until the stems start, then is retired once', async () => {
+	const { port, log, timers } = landing({ autoTimers: false });
+	port.runtime.processor.stop = async () => {
+		throw new Error('stop timed out');
+	};
+	const errors = [];
+	const consoleError = console.error;
+	console.error = (...args) => errors.push(args);
+	try {
+		assert.equal(await mod.landStemsOnDeck(port), 'handed_off');
+		await new Promise((resolve) => setImmediate(resolve));
+	} finally {
+		console.error = consoleError;
+	}
+	assert.ok(!names(log).includes('retire'), 'the mix was retired before the stems were audible: the deck goes silent');
+	assert.ok(errors.some((args) => args.some((arg) => arg instanceof Error && arg.message === 'stop timed out')), 'the stop error was swallowed');
+	const when = log.find((entry) => entry[0] === 'commit')[1];
+	assert.equal(timers.length, 2);
+	assert.ok(Math.abs(timers[1].ms - (when - 100) * 1000) < 1e-6, `refused-stop retire at ${timers[1].ms}ms, expected the handoff instant`);
+	timers[1].run();
+	timers[0].run();
+	assert.deepEqual(log.filter((entry) => entry[0] === 'retire'), [['retire', 'mix']], 'the mix was retired twice');
 });
 
 test('stems with a different latency than the deck are never scheduled live', async () => {

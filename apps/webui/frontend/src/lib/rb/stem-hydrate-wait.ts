@@ -192,7 +192,7 @@ async function _retryDeckStems(
 	if (stems.status === 'ready') return;
 	else if (stems.status === 'loading') {
 		if (port.landHeld !== null) await port.landHeld();
-		else if ((port.releaseDecode ?? releaseEagerStemDecodeNow)() === 0) {
+		else if ((port.releaseDecode ?? (() => releaseEagerStemDecodeNow(deck)))() === 0) {
 			throw new Error(`deck ${deck} stems are already loading (${stems.load?.phase ?? 'probing'})`);
 		}
 		return;

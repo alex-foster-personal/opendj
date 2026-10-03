@@ -577,6 +577,22 @@ def _bundle_landed(stable_id: str, stems_dir: Path, request: Request) -> bool:
     return True
 
 
+def _index_proves_absent(stable_id: str, data_dir: object) -> bool:
+    """Whether a cached cloud index exists, reads cleanly and lacks ``stable_id``.
+
+    A missing cache proves nothing (it was never fetched), and an unreadable
+    one is not evidence either, so both answer ``False``.
+    """
+    if data_dir is None:
+        return False
+    if not stem_index.local_index_cache_path(Path(data_dir)).is_file():
+        return False
+    try:
+        return stable_id not in stem_index.load_cached_index(Path(data_dir))
+    except stem_index.StemIndexError:
+        return False
+
+
 def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0911 - one return per named state
     """Name the track's stem state WITHOUT starting or re-arming anything.
 
@@ -610,7 +626,8 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     except StemBundleNotFoundError:
         pass
     except StemArtifactError as exc:
-        return _out("error", str(exc), error_code="STEM_ARTIFACT_INVALID")
+        if not _hydration_in_flight(stable_id):
+            return _out("error", str(exc), error_code="STEM_ARTIFACT_INVALID")
     else:
         return _out("local", "stem bundle is on this machine")
 
@@ -624,6 +641,8 @@ def _stem_state(stable_id: str, request: Request) -> StemStateOut:  # noqa: PLR0
     if recorded is not None:
         return _out("error", recorded.message, error_code=recorded.code)
     if unarmed_reason is not None:
+        if _index_proves_absent(stable_id, data_dir):
+            return _out("none", "no stem bundle on this machine or in the cloud")
         return _out("error", unarmed_reason, error_code="STEM_HYDRATION_NOT_ARMED")
     if not armed:
         return _out(
@@ -773,10 +792,22 @@ def hydrate_stem_bundle(stable_id: str, request: Request) -> StemStateOut:
             _LAST_HYDRATE_ERROR.pop(stable_id, None)
         _enqueue_hydration(stable_id, request)
     except StemArtifactError as exc:
-        raise HTTPException(
+        # An invalid bundle on disk is repaired by fetching the cloud copy,
+        # which replaces it; with no cloud copy there is nothing to retry.
+        invalid = HTTPException(
             status_code=422,
             detail={"code": "STEM_ARTIFACT_INVALID", "message": str(exc)},
-        ) from exc
+        )
+        with _INFLIGHT_LOCK:
+            _LAST_HYDRATE_ERROR.pop(stable_id, None)
+        try:
+            enqueued = _enqueue_hydration(stable_id, request)
+        except HTTPException as not_indexed:
+            if not_indexed.detail.get("code") != STEM_BUNDLE_NOT_INDEXED:
+                raise
+            raise invalid from exc
+        if enqueued is None:
+            raise invalid from exc
     return _stem_state(stable_id, request)
 
 

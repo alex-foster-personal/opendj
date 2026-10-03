@@ -29,6 +29,7 @@
  *       [if] a rejected stem schedule stops or retires the mix [then ⛔️]
  *       [if] a late acknowledgement commits [then ⛔️]
  *       [if] a mix that refuses its stop keeps playing under the stems [then ⛔️]
+ *       [if] a mix that refuses its stop is retired before the stems start [then ⛔️]
  */
 import { _positionForSegment, safeTransportScheduleTime } from '$lib/player/transport/schedule-math';
 import type { _ClockSegment } from '$lib/player/transport/schedule-math';
@@ -82,8 +83,10 @@ export interface StemHandoffDeps {
 	cancelIncoming(when: number): Promise<void>;
 	/** Stop the mix at `when`. */
 	stopOutgoing(when: number): Promise<void>;
-	/** Disconnect the mix right now (its stop was refused). */
-	retireOutgoingNow(): void;
+	/** The mix refused its stop: keep it audible until `when`, the instant the
+	 * stems take over, then retire it, and report `error`. Retiring it at once
+	 * would leave the deck silent until `when`. */
+	retireRefusedOutgoing(when: number, error: unknown): void;
 	/** Make the stems the deck's processor and publish `ready`. Synchronous. */
 	commit(when: number, segment: StemHandoffSegment): void;
 	/** The load this upgrade belongs to is gone (track swapped, graph rebuilt). */
@@ -144,7 +147,7 @@ export async function handOffStemsLive(
 	// From here to the end is synchronous: no command can interleave between
 	// the mix's stop being posted and the deck pointing at the stems.
 	deps.connectIncoming();
-	void deps.stopOutgoing(when).catch(() => deps.retireOutgoingNow());
+	void deps.stopOutgoing(when).catch((error: unknown) => deps.retireRefusedOutgoing(when, error));
 	deps.commit(when, segment);
 	return 'handed_off';
 }
@@ -232,6 +235,12 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 	const setTimer = port.setTimer ?? ((run: () => void, ms: number) => setTimeout(run, ms));
 	const rt = port.runtime;
 	let outgoing: StemLandingProcessor | null = null;
+	let outgoingRetired = false;
+	const retireOutgoingOnce = (): void => {
+		if (outgoing === null || outgoingRetired) return;
+		outgoingRetired = true;
+		port.retire(outgoing);
+	};
 	return {
 		now: () => port.clock.currentTime,
 		leadSec: port.leadSec,
@@ -275,11 +284,12 @@ export function stemLandingDeps(port: StemLandingPort, incomingLatencySec: numbe
 			const retiring = outgoing;
 			// Retired once its stop has rendered, never while it is the audible tail.
 			const delaySec = Math.max(0, when - port.clock.currentTime) + STEM_HANDOFF_RETIRE_AFTER_SEC;
-			setTimer(() => port.retire(retiring), delaySec * 1000);
+			setTimer(retireOutgoingOnce, delaySec * 1000);
 			await retiring.stop(when);
 		},
-		retireOutgoingNow: () => {
-			if (outgoing !== null) port.retire(outgoing);
+		retireRefusedOutgoing: (when, error) => {
+			console.error('stem handoff: the mix refused its stop; retiring it at the handoff instant', error);
+			setTimer(retireOutgoingOnce, Math.max(0, when - port.clock.currentTime) * 1000);
 		},
 		commit: (when) => port.commit(when),
 		stale: () => port.stale(),

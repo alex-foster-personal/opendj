@@ -217,33 +217,62 @@ def test_failed_fetch_is_a_named_error_and_hydrate_retries_it(tmp_path: Path):
 
 
 @pytest.mark.requirement("STEM-46")
-def test_a_fetch_landing_mid_state_read_reads_local_not_cloud(tmp_path: Path, monkeypatch):
-    """[if] a fetch lands mid state read [then] the state is local, never cloud, [else stop].
-
-    CI hit this on a loaded runner: the retried hydrate answered "cloud" for a
-    bundle that had just landed. Forcing the fetch to finish inside the
-    in-flight read makes that window deterministic.
-    """
+def test_hydrate_replaces_an_invalid_local_bundle_with_the_cloud_copy(tmp_path: Path):
+    """[if] the local bundle is invalid and the cloud has one [then] hydrate lands it, [else stop]."""
     stems_dir = tmp_path / "stems"
     data_dir = tmp_path / "data"
     cfg = _cfg()
     s3 = InMemoryAssetS3()
     save_cached_index(data_dir, {SID: _seed_bundle(s3, cfg, SID)})
-    real_in_flight = stems_module._hydration_in_flight
+    _write_local_bundle(stems_dir, SID)
+    (stems_dir / SID / "vocals.wav").write_bytes(b"not a wav")
 
-    def _in_flight_after_landing(stable_id: str) -> bool:
-        with stems_module._INFLIGHT_LOCK:
-            future = stems_module._INFLIGHT.get(stable_id)
-        if future is not None:
-            future.result(timeout=20)
-        return real_in_flight(stable_id)
-
-    monkeypatch.setattr(stems_module, "_hydration_in_flight", _in_flight_after_landing)
     with _client(stems_dir, data_dir=data_dir, hydration_cfg=cfg, hydration_s3=s3) as client:
-        hydrated = client.post(f"/api/v1/tracks/{SID}/stems/hydrate")
+        broken = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+        retried = client.post(f"/api/v1/tracks/{SID}/stems/hydrate")
+        stems_module._INFLIGHT[SID].result(timeout=20)
+        landed = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
 
-    assert hydrated.status_code == 200
-    assert hydrated.json()["state"] == "local"
+    assert broken["state"] == "error"
+    assert broken["error_code"] == "STEM_ARTIFACT_INVALID"
+    assert retried.status_code == 200
+    assert retried.json()["state"] in ("fetching", "local")
+    assert landed["state"] == "local"
+
+
+@pytest.mark.requirement("STEM-46")
+def test_hydrate_on_an_invalid_bundle_with_no_cloud_copy_names_the_bundle(tmp_path: Path):
+    """[if] the local bundle is invalid and the cloud has none [then] hydrate is a 422, [else stop]."""
+    stems_dir = tmp_path / "stems"
+    data_dir = tmp_path / "data"
+    save_cached_index(data_dir, {})
+    _write_local_bundle(stems_dir, SID)
+    (stems_dir / SID / "vocals.wav").write_bytes(b"not a wav")
+    with _client(stems_dir, data_dir=data_dir, hydration_cfg=_cfg(), hydration_s3=InMemoryAssetS3()) as client:
+        resp = client.post(f"/api/v1/tracks/{SID}/stems/hydrate")
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "STEM_ARTIFACT_INVALID"
+
+
+@pytest.mark.requirement("STEM-45")
+def test_unarmed_state_is_none_only_when_the_cached_index_lacks_the_track(tmp_path: Path):
+    """[if] hydration failed to arm and the cached index lacks the track [then] none; with no cache, error, [else stop]."""
+    stems_dir = tmp_path / "stems"
+    indexed = tmp_path / "indexed"
+    save_cached_index(indexed, {"someone-else": {}})
+    reason = "cloud stems are configured but the R2 credentials are missing"
+    with _client(stems_dir, data_dir=indexed) as client:
+        client.app.state.stem_hydration_unarmed_reason = reason
+        absent = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+    with _client(stems_dir, data_dir=tmp_path / "never-fetched") as client:
+        client.app.state.stem_hydration_unarmed_reason = reason
+        unknown = client.get(f"/api/v1/tracks/{SID}/stems/state").json()
+    assert absent["state"] == "none"
+    assert absent["hydration_armed"] is False
+    # Control: with no cached index nothing proves the track has no stems.
+    assert unknown["state"] == "error"
+    assert unknown["error_code"] == "STEM_HYDRATION_NOT_ARMED"
+    assert unknown["message"] == reason
 
 
 @pytest.mark.requirement("STEM-46")

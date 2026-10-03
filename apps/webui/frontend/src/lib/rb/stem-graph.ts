@@ -96,15 +96,16 @@ export async function decodeStemBuffers(
 	ctx: BaseAudioContext,
 	encoded: Partial<Record<StemPart, ArrayBuffer>>,
 	parts: readonly StemPart[],
-	hooks: { onDeferred?: () => void; onStart?: () => void } = {}
+	hooks: { deck?: number; onDeferred?: () => void; onStart?: () => void } = {}
 ): Promise<{ buffers: StemBuffers; labels: Record<string, string> }> {
 	// PERFMODE-04 (eager-stem-decode): the deck is already playable on its mix
 	// buffer at this point, so yielding here under pressure never blocks audio.
 	// STEM-47: the hold is bounded and named on the deck (`onDeferred`).
 	const waitStartedMs = performance.now();
-	const decodeStart = await awaitEagerStemDecodeSlot(
-		hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred }
-	);
+	const decodeStart = await awaitEagerStemDecodeSlot({
+		...(hooks.deck === undefined ? {} : { deck: hooks.deck }),
+		...(hooks.onDeferred === undefined ? {} : { onDeferred: hooks.onDeferred })
+	});
 	const decodeWaitMs = Math.round(performance.now() - waitStartedMs);
 	hooks.onStart?.();
 	const decoded = await decodeStemParts(ctx, encoded, parts);
