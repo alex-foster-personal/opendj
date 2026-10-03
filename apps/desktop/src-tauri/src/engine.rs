@@ -53,6 +53,23 @@ pub const ENGINE_LAUNCHER: &str = "bin/opendj-engine";
 /// launch on a slower machine while still being a bound rather than a wait.
 pub const BOOT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long a stopping engine gets between SIGTERM and SIGKILL.
+///
+/// Long enough for the engine's own shutdown to finish: uvicorn's graceful
+/// window (`GRACEFUL_SHUTDOWN_S`, apps/engine_core/__main__.py), the refresh
+/// job's CLIs being stopped (`STOP_ALL_MAX_S`,
+/// apps/webui/server/routes/ingest_cli_procs.py), and the job runner settling
+/// jobs still forking (`_SPAWN_SETTLE_S`, apps/engine_core/jobs/runner.py)
+/// then reaping its worker groups (`WORKER_TERMINATE_GRACE_S`,
+/// apps/engine_core/jobs/reap.py), worst case one after another. tests/scripts/test_desktop_quit_budget.py holds
+/// that sum under this number. Job
+/// workers lead their own sessions, so this group's SIGKILL never reaches
+/// them: a SIGKILL that lands before the runner has reaped them leaves them
+/// running after the app is gone (three analysis workers on demon-llama,
+/// Fri 2 Oct 2026, which then blocked the DMG installer). It is a bound,
+/// not a wait: an engine that exits sooner is reaped sooner.
+pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(25);
+
 const HEALTH_PATH: &str = "/api/v1/health";
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const SOCKET_TIMEOUT: Duration = Duration::from_millis(750);
@@ -123,11 +140,6 @@ impl Engine {
     /// Non-blocking reap. Returns the exit status when the child has exited.
     pub fn try_reap(&mut self) -> Option<std::process::ExitStatus> {
         self.child.try_wait().ok().flatten()
-    }
-
-    /// Block until the child is reaped.
-    pub fn wait_reap(&mut self) -> std::process::ExitStatus {
-        self.child.wait().expect("wait for engine child")
     }
 
     /// Wait for the engine to answer its own health route.
@@ -215,7 +227,7 @@ impl Engine {
             libc::killpg(pid, libc::SIGTERM);
         }
         let sigterm_sent = Instant::now();
-        let deadline = sigterm_sent + Duration::from_secs(5);
+        let deadline = sigterm_sent + SHUTDOWN_GRACE;
         loop {
             if Instant::now() >= deadline {
                 break;
@@ -978,7 +990,7 @@ mod tests {
     // - if `Engine::shutdown` never escalates past SIGTERM then an engine
     //   that ignores it (or one wedged deep enough not to act on it) outlives
     //   the shell that thinks it stopped -> broken
-    // - if shutdown returns before the 5s SIGTERM grace period then a slow
+    // - if shutdown returns before the SIGTERM grace period then a slow
     //   but honest shutdown looks identical to one that never got a chance to
     //   comply -> broken (this is the "SIGKILL escalation is logged
     //   distinctly from SIGTERM" contract issue #2801 asks for; the log
@@ -1004,11 +1016,11 @@ mod tests {
         let elapsed = started.elapsed();
 
         assert!(
-            elapsed >= Duration::from_secs(5),
+            elapsed >= SHUTDOWN_GRACE,
             "shutdown must wait out the SIGTERM grace period before escalating, took {elapsed:?}"
         );
         assert!(
-            elapsed < Duration::from_secs(10),
+            elapsed < SHUTDOWN_GRACE + Duration::from_secs(5),
             "SIGKILL should terminate the child promptly once sent, took {elapsed:?}"
         );
         std::fs::remove_dir_all(directory).unwrap();

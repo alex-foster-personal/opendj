@@ -141,6 +141,24 @@ def test_pairing_bumps_and_tags_candidate(
 
 
 @pytest.mark.requirement("CAT-05")
+@pytest.mark.parametrize(("direction", "tagged"), [("<->", True), ("->", False)])
+def test_pairing_stored_toward_current_only_bumps_when_undirected(
+    client: TestClient, backend: InMemoryBackend, direction: str, tagged: bool
+) -> None:
+    """If cand<->cur is stored with cur second then it still bumps cand, else stop."""
+    created = _iso(datetime(2026, 7, 22, 10, 0, 0, tzinfo=UTC))
+    backend.seed_pairing(Pairing(
+        pairing_id="p-rev", from_stable_id="cand-120",
+        to_stable_id="cur-001", direction=direction, source="manual",  # type: ignore[arg-type]
+        notes=None, created_at=created, updated_at=created,
+    ))
+    r = client.post(BASE, json={"stable_id": "cur-001"})
+    assert r.status_code == 200
+    by_id = {c["stable_id"]: c for c in r.json()["candidates"]}
+    assert ("pair_manual" in by_id["cand-120"]["rationale_tags"]) is tagged
+
+
+@pytest.mark.requirement("CAT-05")
 def test_session_ids_drive_artist_cooldown(client: TestClient) -> None:
     # Beta (cand-128's artist) just played -> cooldown must drop cand-128.
     r = client.post(

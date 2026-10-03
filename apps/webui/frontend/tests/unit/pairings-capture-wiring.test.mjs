@@ -112,7 +112,7 @@ test('Align hotcues and Reload sync carry live handlers, not the retired inert m
 	assert.match(buttons[0], /onclick=\{\(\) => void _alignHotcues\(\)\}/);
 	assert.match(buttons[1], /Reload sync/);
 	assert.match(buttons[1], /onclick=\{\(\) => void _reloadSync\(\)\}/);
-	assert.match(buttons[2], /onclick=\{_save\}/, 'Capture must still save the frozen pairing snapshot');
+	assert.match(buttons[2], /onclick=\{\(\) => void _save\(\)\}/, 'Capture must still save the frozen pairing snapshot');
 	for (const button of buttons) {
 		assert.doesNotMatch(
 			button,

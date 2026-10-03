@@ -19,6 +19,8 @@ Single-line intent:
   - if the affected-test canary is still in ci.yml then two jobs claim the same lane
   - if the legs still run on a PR head whose shards run the whole lane then 17k tests run twice
   - if the scope job's selection is not fail-open then a selector crash silently drops the legs
+  - if --splits differs from the number of legs then the legs cover only part of the fast tier
+  - if a leg's label says "of N" for an N other than the leg count then annotations misname the leg
 
 [if] a pull request opens [then] the fast tier runs every cheap test first, [else stop].
 """
@@ -87,7 +89,7 @@ def test_fast_job_prefers_its_own_pool_then_the_shard_chain() -> None:
     ), "the fast chain must stay a suffix of the shard chain; update both together"
 
 
-def test_fast_job_is_pull_request_only_with_four_legs() -> None:
+def test_fast_job_is_pull_request_only_with_two_legs() -> None:
     """if the fast job runs on push then a trunk push can cancel its own verdict
 
     A `workflow_dispatch` is the one other admitted event: main-control.yml
@@ -104,7 +106,7 @@ def test_fast_job_is_pull_request_only_with_four_legs() -> None:
         "needs.scope.outputs.pr_selection != 'full' && !(" + TRUNK_DRAFT + ")) || "
         "(github.event_name == 'workflow_dispatch' && inputs.tier == 'fast'))"
     )
-    assert job["strategy"]["matrix"]["leg"] == [1, 2, 3, 4]
+    assert job["strategy"]["matrix"]["leg"] == [1, 2], "TEST-CUT round 3: two legs, was four"
     assert job["strategy"]["fail-fast"] is False, "legs must all report; the cancel step decides"
 
 
@@ -155,7 +157,7 @@ def test_fast_job_pytest_flags_fail_loud_and_never_write_the_ledger() -> None:
         "--fast-tier-max-seconds 0.5",
         "--ledger-coverage-min 0.85 --ledger-coverage-warn 0.95",
         "--tier-min-selected 2000",
-        "--splits 4 --group ${{ matrix.leg }}",
+        "--splits 2 --group ${{ matrix.leg }}",
         "--durations-path .test_durations",
     ):
         assert flag in run, flag
@@ -203,7 +205,10 @@ def test_affected_canary_is_gone() -> None:
 # agentbox legs: step median 341 s, p90 439 s, max 470 s, and the 480 s budget killed
 # #3701 leg 1 at 94%. 1080 s is 1.5x the nucbox-wsl maximum; a budget under it
 # re-introduces the budget-kill with nothing to name.
+# That floor is for a QUARTER of the tier (four legs). A leg runs 1/legs of it, so the
+# floor scales by 4/legs: two legs need 2160 s (TEST-CUT round 3, Fri 2 Oct 2026).
 MIN_FAST_WALL_BUDGET_S = 1080
+MEASURED_AT_LEGS = 4
 # Provisioning ahead of pytest measured ~2 min warm, more cold, on the same runs.
 MIN_FAST_PRE_PYTEST_RESERVE_S = 240
 
@@ -216,9 +221,10 @@ def test_fast_leg_wall_budget_clears_the_measured_pool_maximum() -> None:
         f"the fast leg must declare its wall budget as MDT_FAST_TIMEOUT_S=<seconds>:\n{run}"
     )
     budget_s = int(budget.group(1))
-    assert budget_s >= MIN_FAST_WALL_BUDGET_S, (
-        f"a {budget_s} s leg budget is under the {MIN_FAST_WALL_BUDGET_S} s floor the pool "
-        "measurement sets, so it reintroduces the budget-kill at 94% that #3701 leg 1 hit"
+    floor_s = MIN_FAST_WALL_BUDGET_S * MEASURED_AT_LEGS // len(job["strategy"]["matrix"]["leg"])
+    assert budget_s >= floor_s, (
+        f"a {budget_s} s leg budget is under the {floor_s} s floor the pool measurement "
+        "sets for this many legs, so it reintroduces the budget-kill at 94% that #3701 leg 1 hit"
     )
     cap_s = job["timeout-minutes"] * 60
     assert cap_s >= budget_s + MIN_FAST_PRE_PYTEST_RESERVE_S, (
@@ -306,3 +312,37 @@ def test_scope_selection_ignores_match_the_shard_job() -> None:
     scope = _scope_selection_step()["run"]
     ignores = lambda run: sorted(tok for tok in run.replace("\\", " ").split() if tok.startswith("--ignore="))  # noqa: E731
     assert ignores(scope) == ignores(shard)
+
+
+@pytest.mark.requirement("TESTCUT-01")
+def test_the_legs_together_cover_the_whole_fast_tier() -> None:
+    """if --splits differs from the number of legs then the legs run only part of the fast
+    tier: with `--splits 4` and two legs, groups 3 and 4 never run and nothing reads red
+
+    TEST-CUT round 3 (Fri 2 Oct 2026) cut four legs to two on the condition that the
+    legs still cover the WHOLE tier. pytest-split runs group k of N, so the legs cover
+    the tier exactly when the matrix is 1..N for the N in `--splits N`.
+    """
+    job = _jobs()["fast"]
+    legs = job["strategy"]["matrix"]["leg"]
+    run = _pytest_step(job)
+    splits = re.findall(r"--splits (\d+) --group \$\{\{ matrix\.leg \}\}", run)
+    assert len(splits) == 1, f"the fast leg must split exactly once on matrix.leg:\n{run}"
+    assert legs == list(range(1, int(splits[0]) + 1)), (
+        f"matrix legs {legs} do not cover --splits {splits[0]}: some groups never run"
+    )
+
+
+@pytest.mark.requirement("TESTCUT-01")
+def test_every_leg_label_names_the_real_leg_count() -> None:
+    """if a label still says "of 4" after the leg count changed then the job name, the
+    TIMEOUT annotation and the cancel decision all misname the leg"""
+    job = _jobs()["fast"]
+    legs = len(job["strategy"]["matrix"]["leg"])
+    texts = [job["name"]] + [s.get("run") or "" for s in job["steps"]]
+    # A leg label is the leg's number, `${{ matrix.leg }}` or a printf `%s`, then "of N".
+    labels = [int(n) for t in texts for n in re.findall(r"(?:\}\}|%s) of (\d+)\b", t)]
+    assert job["name"] == f"pytest fast tier (leg ${{{{ matrix.leg }}}} of {legs})"
+    # Name, run summary line, summary heading, TIMEOUT title, cancel --leg: five today.
+    assert len(labels) >= 5, f"the probe found only {len(labels)} leg labels; it is not reading them"
+    assert set(labels) == {legs}, f"leg labels name {sorted(set(labels))}, the matrix has {legs} legs"

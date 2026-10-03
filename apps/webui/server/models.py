@@ -420,8 +420,8 @@ class PairingSnapshot(BaseModel):
 
 
 class PairingCreate(BaseModel):
-    from_stable_id: str
-    to_stable_id: str
+    from_stable_id: str = Field(min_length=1)
+    to_stable_id: str = Field(min_length=1)
     direction: Literal["->", "<->"] = "->"
     source: Literal["manual", "learned", "ai"] = "manual"
     notes: str | None = Field(default=None, max_length=1000)
@@ -429,6 +429,8 @@ class PairingCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot_decks_match_pair(self) -> PairingCreate:
+        if self.from_stable_id == self.to_stable_id:
+            raise ValueError("a pairing needs two different tracks")
         if self.snapshot is None:
             return self
         snapshot_ids = {deck.stable_id for deck in self.snapshot.decks}

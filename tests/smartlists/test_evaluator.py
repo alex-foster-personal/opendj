@@ -51,7 +51,7 @@ def test_compile_paired_with_equality() -> None:
         {"field": "paired_with", "op": "=", "value": "anchor-id"}
     , selection=RBX)
     assert "SELECT to_stable_id FROM pairings" in sql
-    assert params == ["anchor-id"]
+    assert params == ["anchor-id", "anchor-id"]
 
 
 def test_compile_paired_with_in_list() -> None:
@@ -59,7 +59,7 @@ def test_compile_paired_with_in_list() -> None:
         {"field": "paired_with", "op": "in", "value": ["a", "b", "c"]}
     , selection=RBX)
     assert "IN (?, ?, ?)" in sql
-    assert params == ["a", "b", "c"]
+    assert params == ["a", "b", "c", "a", "b", "c"]
 
 
 def test_compile_contains_string_uses_like() -> None:
@@ -240,6 +240,24 @@ def test_paired_with_ignores_out_of(
         state_conn,
     )
     assert result == []
+
+
+def test_paired_with_reads_reverse_stored_edges(
+    fixture_library, state_conn, pairings_repo_slm,
+) -> None:
+    """If anchor's pairing is stored as (x, anchor, out_of|either) then x matches, else stop."""
+    for sid in ("anchor", "b_rev", "c_rev", "d_into_anchor"):
+        fixture_library.add_track(sid)
+    pairings_repo_slm.add("b_rev", "anchor", direction="out_of")
+    pairings_repo_slm.add("c_rev", "anchor", direction="either")
+    pairings_repo_slm.add("d_into_anchor", "anchor", direction="into")
+    for rule, expected in (
+        ({"op": "=", "value": "anchor"}, {"b_rev", "c_rev"}),
+        ({"op": "in", "value": ["anchor"]}, {"b_rev", "c_rev"}),
+        ({"op": "!=", "value": "anchor"}, {"anchor", "d_into_anchor"}),
+    ):
+        result = evaluate({"field": "paired_with", **rule}, state_conn)
+        assert set(result) == expected, rule
 
 
 def test_evaluate_validates_by_default(state_conn) -> None:
